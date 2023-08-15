@@ -132,3 +132,8 @@ yarn-error.log*
 next-env.d.ts
 
 tmp
+
+#editor files
+.vscode/
+*.sublime-project
+*.sublime-workspace

@@ -70,6 +70,7 @@ export enum ModelProvider {
     SiliconFlow = 'silicon-flow',
     LMStudio = 'lm-studio',
     PPIO = 'ppio',
+    InfiniAI = 'infiniai',
 }
 
 export interface ModelSettings {
@@ -120,6 +121,11 @@ export interface ModelSettings {
     ppioHost: string
     ppioKey: string
     ppioModel: string
+
+    // infiniai
+    infiniaiHost: string
+    infiniaiKey: string
+    infiniaiModel: string | 'custom-model'
 
     temperature: number
     topP: number

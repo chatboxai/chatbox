@@ -56,6 +56,10 @@ export function settings(): Settings {
         ppioKey: '',
         ppioModel: 'deepseek/deepseek-r1/community',
 
+        infiniaiHost: 'https://cloud.infini-ai.com/maas/v1',
+        infiniaiKey: '',
+        infiniaiModel: 'deepseek-r1',
+
         autoGenerateTitle: true,
     }
 }

@@ -10,7 +10,6 @@ import useAppTheme from './hooks/useAppTheme'
 import CopilotWindow from './pages/CopilotWindow'
 import { useI18nEffect } from './hooks/useI18nEffect'
 import Toasts from './components/Toasts'
-import RemoteDialogWindow from './pages/RemoteDialogWindow'
 import { useSystemLanguageWhenInit } from './hooks/useDefaultSystemLanguage'
 import MainPane from './MainPane'
 import { useAtom, useAtomValue } from 'jotai'
@@ -50,7 +49,6 @@ function Main() {
             <ChatConfigWindow />
             <CleanWidnow />
             <CopilotWindow open={openCopilotWindow} close={() => setOpenCopilotWindow(false)} />
-            <RemoteDialogWindow />
             <Toasts />
         </Box>
     )

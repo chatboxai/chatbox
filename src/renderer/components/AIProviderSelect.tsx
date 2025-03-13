@@ -13,6 +13,7 @@ interface ModelConfigProps {
     setSettings(value: ModelSettings): void
     className?: string
     hideCustomProviderManage?: boolean
+    openModalAddAIProvider(val: boolean): void
 }
 
 export default function AIProviderSelect(props: ModelConfigProps) {
@@ -21,6 +22,8 @@ export default function AIProviderSelect(props: ModelConfigProps) {
 
     const [menuAnchorEl, setMenuAnchorEl] = React.useState<null | HTMLElement>(null);
     const menuState = Boolean(menuAnchorEl);
+
+
     const openMenu = (event: React.MouseEvent<HTMLElement>) => {
         setMenuAnchorEl(event.currentTarget);
     };
@@ -57,6 +60,14 @@ export default function AIProviderSelect(props: ModelConfigProps) {
                         horizontal: 'left',
                     }}
                 >
+                    <MenuItem key={"OpenAI Compatible"} disableRipple
+                              onClick={() => {
+                                  props.openModalAddAIProvider(true)
+                                  closeMenu()
+                              }}
+                    >
+                        { "Add OpenAI Compatible"}
+                    </MenuItem>
                     {
                         AIModelProviderMenuOptionList.map((provider) => (
                             <MenuItem key={provider.value} disableRipple
@@ -70,15 +81,6 @@ export default function AIProviderSelect(props: ModelConfigProps) {
                             >
                                 <StarIcon />
                                 {provider.label}
-                                {provider.featured && (
-                                    <Chip
-                                        label={t('Easy Access')}
-                                        size="small"
-                                        color="success"
-                                        variant="outlined"
-                                        sx={{ marginLeft: '10px' }}
-                                    />
-                                )}
                             </MenuItem>
                         ))
                     }

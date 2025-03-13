@@ -1,4 +1,4 @@
-import { Divider, Box } from '@mui/material'
+import { Box, Divider } from '@mui/material'
 import { ModelProvider, ModelSettings } from '../../../shared/types'
 import OpenAISetting from './OpenAISetting'
 import ChatboxAISetting from './ChatboxAISetting'
@@ -11,6 +11,8 @@ import TemperatureSlider from '@/components/TemperatureSlider'
 import ClaudeSetting from './ClaudeSetting'
 import PPIOSetting from './PPIOSetting'
 import DeepInfraSetting from '@/pages/SettingDialog/DeepInfraSetting'
+import OpenAICompModelSelect from '@/components/OpenAICompModelSelect'
+import * as React from 'react'
 
 interface ModelConfigProps {
     settingsEdit: ModelSettings
@@ -18,14 +20,31 @@ interface ModelConfigProps {
 }
 
 export default function ModelSettingTab(props: ModelConfigProps) {
+    const [modalAddAIProvider, setModalAddAIProvider] = React.useState(false);
+
     const { settingsEdit, setSettingsEdit } = props
     return (
         <Box>
-            <AIProviderSelect
-                settings={settingsEdit}
-                setSettings={setSettingsEdit}
+            <AIProviderSelect settings={settingsEdit} setSettings={setSettingsEdit} openModalAddAIProvider={setModalAddAIProvider} />
+            {settingsEdit.aiProvider !== 'openai-compatible' && (
+                <Divider sx={{ marginTop: '10px', marginBottom: '24px' }} />
+            )}
+
+            <OpenAICompModelSelect
+                open={modalAddAIProvider}
+                onClose={function (): void {
+                    setModalAddAIProvider(false)
+                }}
+                onSave={function (settings: {
+                    providerName: string
+                    baseUrl: string
+                    apiKey: string
+                    selectedModel: string
+                }): void {
+                    throw new Error('Function not implemented.')
+                }}
             />
-            <Divider sx={{ marginTop: '10px', marginBottom: '24px' }} />
+
             {settingsEdit.aiProvider === ModelProvider.OpenAI && (
                 <OpenAISetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
             )}
@@ -80,7 +99,7 @@ export default function ModelSettingTab(props: ModelConfigProps) {
                 <DeepInfraSetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
             )}
 
-             {settingsEdit.aiProvider === ModelProvider.SiliconFlow && (
+            {settingsEdit.aiProvider === ModelProvider.SiliconFlow && (
                 <SiliconFlowSetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
             )}
             {settingsEdit.aiProvider === ModelProvider.Claude && (

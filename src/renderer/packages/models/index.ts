@@ -86,6 +86,44 @@ export const AIModelProviderMenuOptionList = [
     }
 ]
 
+export function getModelName(settings: Settings) {
+    if (!settings) {
+        return 'unknown'
+    }
+    switch (settings.aiProvider) {
+        case ModelProvider.OpenAI:
+            if (settings.model === 'custom-model') {
+                let name = settings.openaiCustomModel || ''
+                if (name.length >= 10) {
+                    name = name.slice(0, 10) + '...'
+                }
+                return `${name}`
+            }
+            return settings.model || 'unknown'
+        case ModelProvider.Claude:
+            return settings.claudeModel || 'unknown'
+        case ModelProvider.ChatboxAI:
+            const model = settings.chatboxAIModel || 'chatboxai-3.5'
+            return model.replace('chatboxai-', 'Chatbox AI ')
+        case ModelProvider.Ollama:
+            return `${settings.ollamaModel}`
+        case ModelProvider.LMStudio:
+            return `${settings.lmStudioModel}`
+        case ModelProvider.SiliconFlow:
+            return `${settings.siliconCloudModel}`
+        case ModelProvider.PPIO:
+            return `${settings.ppioModel}`
+        case ModelProvider.DeepInfra:
+            if (settings.model === 'custom-model') {
+                let name = settings.deepInfraCustomModel
+                return `${name}`
+            }
+            return `${settings.deepInfraModel}` || 'unknown'
+        default:
+            return 'unknown'
+    }
+}
+
 export function getModelDisplayName(settings: Settings, sessionType: SessionType): string {
     if (!settings) {
         return 'unknown'

@@ -6,6 +6,7 @@ import SiliconFlow from './siliconflow'
 import LMStudio from './lmstudio'
 import Claude from './claude'
 import PPIO from './ppio'
+import Deepinfra from '@/packages/models/deepinfra'
 
 
 export function getModel(setting: Settings, config: Config) {
@@ -24,6 +25,8 @@ export function getModel(setting: Settings, config: Config) {
             return new SiliconFlow(setting)
         case ModelProvider.PPIO:
             return new PPIO(setting)
+        case ModelProvider.DeepInfra:
+            return new Deepinfra(setting)
         default:
             throw new Error('Cannot find model with provider: ' + setting.aiProvider)
     }
@@ -37,6 +40,7 @@ export const aiProviderNameHash = {
     [ModelProvider.Ollama]: 'Ollama',
     [ModelProvider.SiliconFlow]: 'SiliconCloud API',
     [ModelProvider.PPIO]: 'PPIO',
+    [ModelProvider.DeepInfra]: 'Deep Infra',
 }
 
 export const AIModelProviderMenuOptionList = [
@@ -76,6 +80,10 @@ export const AIModelProviderMenuOptionList = [
         label: aiProviderNameHash[ModelProvider.PPIO],
         disabled: false,
     },
+    {
+        value: ModelProvider.DeepInfra,
+        label: aiProviderNameHash[ModelProvider.DeepInfra],
+    }
 ]
 
 export function getModelDisplayName(settings: Settings, sessionType: SessionType): string {
@@ -105,6 +113,12 @@ export function getModelDisplayName(settings: Settings, sessionType: SessionType
             return `SiliconCloud (${settings.siliconCloudModel})`
         case ModelProvider.PPIO:
             return `PPIO (${settings.ppioModel})`
+        case ModelProvider.DeepInfra:
+            if (settings.model === 'custom-model') {
+                let name = settings.deepInfraCustomModel
+                return `Deep Infra (${name})`
+            }
+            return `Deep Infra (${settings.deepInfraModel})` || 'unknown'
         default:
             return 'unknown'
     }

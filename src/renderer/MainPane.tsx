@@ -6,7 +6,9 @@ import MessageList from './components/MessageList'
 import { drawerWidth } from './Sidebar'
 import Header from './components/Header'
 
-interface Props {}
+interface Props {
+    toggleSidebar: (newOpen: boolean) => void
+}
 
 export default function MainPane(props: Props) {
     const currentSession = useAtomValue(atoms.currentSessionAtom)
@@ -16,11 +18,10 @@ export default function MainPane(props: Props) {
             className="h-full w-full"
             sx={{
                 flexGrow: 1,
-                marginLeft: `${drawerWidth}px`,
             }}
         >
             <div className="flex flex-col h-full">
-                <Header />
+                <Header toggleSidebar={props.toggleSidebar} />
                 <MessageList />
                 <InputBox currentSessionId={currentSession.id} currentSessionType={currentSession.type || 'chat'} />
             </div>

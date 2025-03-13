@@ -202,8 +202,18 @@ export async function generate(sessionId: string, targetMsg: Message) {
             case 'chat':
             case undefined:
                 const promptMsgs = genMessageContext(settings, messages.slice(0, targetMsgIx))
+                const startThinking = Date.now()
+                let onThinking = false
                 const throttledModifyMessage = throttle(({ text, cancel }: { text: string, cancel: () => void }) => {
                     targetMsg = { ...targetMsg, content: text, cancel }
+
+                    const thinkMatch = text.match(/<think>([\s\S]*?)(<\/think>|$)/)
+                    if (thinkMatch) {
+                        onThinking = thinkMatch[2] !== '</think>';
+                        if (onThinking) {
+                            targetMsg.thinkingDuration = Date.now() - startThinking
+                        }
+                    }
                     modifyMessage(sessionId, targetMsg)
                 }, 100)
                 await model.chat(promptMsgs, throttledModifyMessage)

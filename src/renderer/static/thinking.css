@@ -1,0 +1,12 @@
+.think-content {
+    margin-top: 0.5rem;
+    padding-left: 0.5rem;
+    border-left: 2px solid;
+    border-color: #2196f3;
+    transition: all 0.3s ease;
+}
+
+/* Dark mode support */
+[data-theme='dark'] .think-section {
+    background-color: rgba(255, 255, 255, 0.1);
+}

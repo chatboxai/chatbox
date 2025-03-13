@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import React, { useRef } from 'react'
 import {
     Box,
     Badge,
@@ -11,6 +11,7 @@ import {
     Typography,
     Divider,
     useTheme,
+    Drawer,
 } from '@mui/material'
 import SettingsIcon from '@mui/icons-material/Settings'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
@@ -33,6 +34,8 @@ interface Props {
     openCopilotWindow(): void
     openAboutWindow(): void
     setOpenSettingWindow(name: 'ai' | 'display' | null): void
+    toggleSidebar(newOpen: boolean): void
+    sidebarOpen: boolean
 }
 
 export default function Sidebar(props: Props) {
@@ -51,7 +54,11 @@ export default function Sidebar(props: Props) {
     const theme = useTheme()
 
     return (
-        <div
+        <Drawer
+            open={props.sidebarOpen}
+            onClose={() => {
+                props.toggleSidebar(false)
+            }}
             className="fixed top-0 left-0 h-full z-50"
             style={{
                 boxSizing: 'border-box',
@@ -71,7 +78,7 @@ export default function Sidebar(props: Props) {
                     <Box className="flex justify-between items-center px-2">
                         <Box>
                             <a
-                                href="https://github.com/Bin-Huang/chatbox"
+                                // href="https://github.com/Bin-Huang/chatbox"
                                 target="_blank"
                                 className="flex items-center no-underline"
                             >
@@ -152,6 +159,6 @@ export default function Sidebar(props: Props) {
                     </MenuList>
                 </Stack>
             </div>
-        </div>
+        </Drawer>
     )
 }

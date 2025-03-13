@@ -27,6 +27,8 @@ function Main() {
 
     const [openCopilotWindow, setOpenCopilotWindow] = React.useState(false)
 
+    const [openSidebar, setOpenSidebar] = React.useState(false)
+
     return (
         <Box className="box-border App" spellCheck={spellCheck}>
             <Grid container className="h-full">
@@ -34,8 +36,10 @@ function Main() {
                     openCopilotWindow={() => setOpenCopilotWindow(true)}
                     openAboutWindow={() => setOpenAboutWindow(true)}
                     setOpenSettingWindow={setOpenSettingWindow}
+                    toggleSidebar={setOpenSidebar}
+                    sidebarOpen={openSidebar}
                 />
-                <MainPane />
+                <MainPane toggleSidebar={() => setOpenSidebar(true)} />
             </Grid>
             <SettingDialog
                 open={!!openSettingWindow}

@@ -10,6 +10,7 @@ import MaxContextMessageCountSlider from '@/components/MaxContextMessageCountSli
 import TemperatureSlider from '@/components/TemperatureSlider'
 import ClaudeSetting from './ClaudeSetting'
 import PPIOSetting from './PPIOSetting'
+import DeepInfraSetting from '@/pages/SettingDialog/DeepInfraSetting'
 
 interface ModelConfigProps {
     settingsEdit: ModelSettings
@@ -75,6 +76,9 @@ export default function ModelSettingTab(props: ModelConfigProps) {
                 </>
             )}
 
+            {settingsEdit.aiProvider === ModelProvider.DeepInfra && (
+                <DeepInfraSetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
+            )}
 
              {settingsEdit.aiProvider === ModelProvider.SiliconFlow && (
                 <SiliconFlowSetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />

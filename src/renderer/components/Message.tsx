@@ -24,11 +24,14 @@ import { currsentSessionPicUrlAtom, showTokenUsedAtom } from '../stores/atoms'
 import * as scrollActions from '../stores/scrollActions'
 import Markdown from '@/components/Markdown'
 import '../static/Block.css'
+import '../static/thinking.css'
 import MessageErrTips from './MessageErrTips'
 import * as dateFns from "date-fns"
 import { cn } from '@/lib/utils'
 import { estimateTokensFromMessages } from '@/packages/token'
 import { countWord } from '@/packages/word-count'
+import MessageThinking from '@/components/MessageThinking'
+import { modifyMessage } from '@/stores/sessionActions'
 
 export interface Props {
     id?: string
@@ -205,9 +208,9 @@ export default function Message(props: Props) {
                         }>
                             {
                                 enableMarkdownRendering && !isCollapsed ? (
-                                    <Markdown>
-                                        {content}
-                                    </Markdown>
+                                    <MessageThinking
+                                        msg={msg}
+                                    />
                                 ) : (
                                     <div>
                                         {content}

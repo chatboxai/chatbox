@@ -34,6 +34,9 @@ export interface Message {
     tokenCount?: number
     tokensUsed?: number
     timestamp?: number
+
+    // thinking duration in Ms
+    thinkingDuration?: number
 }
 
 export type SettingWindowTab = 'ai' | 'display' | 'chat' | 'advanced'
@@ -70,6 +73,7 @@ export enum ModelProvider {
     SiliconFlow = 'silicon-flow',
     LMStudio = 'lm-studio',
     PPIO = 'ppio',
+    DeepInfra = 'deep-infra',
 }
 
 export interface ModelSettings {
@@ -120,6 +124,12 @@ export interface ModelSettings {
     ppioHost: string
     ppioKey: string
     ppioModel: string
+
+    // deep infra
+    deepInfraHost: string
+    deepInfraKey: string
+    deepInfraModel: string
+    deepInfraCustomModel: string
 
     temperature: number
     topP: number

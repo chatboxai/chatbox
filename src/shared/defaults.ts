@@ -3,6 +3,10 @@ import { v4 as uuidv4 } from 'uuid'
 
 export function settings(): Settings {
     return {
+        deepInfraCustomModel: '',
+        deepInfraHost: '',
+        deepInfraKey: '',
+        deepInfraModel: '',
         aiProvider: ModelProvider.OpenAI,
         openaiKey: '',
         apiHost: 'https://api.openai.com',

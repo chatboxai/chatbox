@@ -36,7 +36,11 @@ export default function MainPane(props: Props) {
         >
             <div className="flex flex-col h-full">
                 <Header toggleSidebar={props.toggleSidebar} toggleModelSelect={setOpenModelSelect} />
-                <ModelSelectDialog open={openModelSelect} settings={settings} onClose={() => setOpenModelSelect(false)} />
+                <ModelSelectDialog
+                    open={openModelSelect}
+                    settings={settings}
+                    onClose={() => setOpenModelSelect(false)}
+                />
                 <MessageList />
                 <InputBox currentSessionId={currentSession.id} currentSessionType={currentSession.type || 'chat'} />
             </div>

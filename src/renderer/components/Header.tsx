@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { Button, Typography, useTheme } from '@mui/material'
+import React, { useEffect, useRef } from 'react'
+import { Button, IconButton, Typography, useTheme } from '@mui/material'
 import * as atoms from '../stores/atoms'
 import { useAtomValue, useSetAtom } from 'jotai'
 import * as sessionActions from '../stores/sessionActions'
@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils'
 import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded';
 import { getDefaultStore } from 'jotai/index'
 import { getModelName } from '@/packages/models'
+import AddIcon from '@mui/icons-material/AddCircleOutline'
+import { trackingEvent } from '@/packages/event'
 
 interface Props {
     toggleSidebar: (newOpen: boolean) => void
@@ -20,6 +22,14 @@ export default function Header(props: Props) {
     const setChatConfigDialogSession = useSetAtom(atoms.chatConfigDialogAtom)
     const store = getDefaultStore()
     const settings = store.get(atoms.settingsAtom)
+
+    const sessionListRef = useRef<HTMLDivElement>(null)
+    const handleCreateNewSession = () => {
+        sessionActions.createEmpty('chat')
+        if (sessionListRef.current) {
+            sessionListRef.current.scrollTo(0, 0)
+        }
+    }
 
     useEffect(() => {
         if (
@@ -88,7 +98,7 @@ export default function Header(props: Props) {
                             color: theme.palette.text.secondary
                         }}
                     >
-                        {settings.aiProvider}
+                        {settings.modelProvider}
                     </Typography>
                     <Typography
                         variant="h6"
@@ -102,10 +112,12 @@ export default function Header(props: Props) {
                             lineHeight: 1.3
                         }}
                     >
-                        {getModelName(settings)}
+                        {settings?.modelProviderSelected}
                     </Typography>
                 </Button>
-
+                <IconButton>
+                    <AddIcon fontSize="small" />
+                </IconButton>
                 <Toolbar />
             </div>
         </div>

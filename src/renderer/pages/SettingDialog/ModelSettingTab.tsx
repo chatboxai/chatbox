@@ -1,5 +1,5 @@
 import { Box, Divider } from '@mui/material'
-import { ModelProvider, ModelSettings } from '../../../shared/types'
+import { ModelProvider, ModelSettings, OpenAICompModel, OpenAICompProviderSettings } from '../../../shared/types'
 import OpenAISetting from './OpenAISetting'
 import ChatboxAISetting from './ChatboxAISetting'
 import AIProviderSelect from '../../components/AIProviderSelect'
@@ -23,6 +23,33 @@ export default function ModelSettingTab(props: ModelConfigProps) {
     const [modalAddAIProvider, setModalAddAIProvider] = React.useState(false);
 
     const { settingsEdit, setSettingsEdit } = props
+
+    console.log(settingsEdit)
+    const upsertProvider = (
+        list: OpenAICompProviderSettings[],
+        newItem: OpenAICompProviderSettings
+    ): OpenAICompProviderSettings[] => {
+
+        if (list === null || list === undefined) {
+            return [newItem]
+        }
+
+        // Create a copy to avoid mutating the original array
+        const newList = [...list];
+        const existingIndex = newList.findIndex(item => item.name === newItem.name);
+
+        if (existingIndex > -1) {
+            // Update existing item (replace completely)
+            newList[existingIndex] = newItem;
+
+        } else {
+            // Add new item
+            newList.push(newItem);
+        }
+
+        return newList;
+    };
+
     return (
         <Box>
             <AIProviderSelect settings={settingsEdit} setSettings={setSettingsEdit} openModalAddAIProvider={setModalAddAIProvider} />
@@ -40,8 +67,18 @@ export default function ModelSettingTab(props: ModelConfigProps) {
                     baseUrl: string
                     apiKey: string
                     selectedModel: string
+                    modelList: OpenAICompModel[]
                 }): void {
-                    throw new Error('Function not implemented.')
+                  settingsEdit.modelProviderList = upsertProvider(settingsEdit.modelProviderList,{
+                       apiKey: settings.apiKey,
+                       baseURl: settings.baseUrl,
+                       modelList: settings.modelList,
+                      name: settings.providerName,
+                      lastUpdatedModel: 0,
+                      openaiMaxContextMessageCount: 0,
+                       temperature: 0,
+                       topP: 0
+                   })
                 }}
             />
 

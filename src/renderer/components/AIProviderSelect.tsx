@@ -44,7 +44,8 @@ export default function AIProviderSelect(props: ModelConfigProps) {
                     endIcon={<KeyboardArrowDownIcon />}
                 >
                     <Typography className='text-left' maxWidth={200} noWrap>
-                        { AIModelProviderMenuOptionList.find((provider) => provider.value === settings.aiProvider)?.label || 'Unknown' }
+                        { props.settings.modelProviderList?.find((provider)=> provider.name === settings.modelProvider)?.name || 'Unknown'}
+                        {/*{ AIModelProviderMenuOptionList.find((provider) => provider.value === settings.aiProvider)?.label || 'Unknown' }*/}
                     </Typography>
                 </Button>
                 <StyledMenu
@@ -69,21 +70,39 @@ export default function AIProviderSelect(props: ModelConfigProps) {
                         { "Add OpenAI Compatible"}
                     </MenuItem>
                     {
-                        AIModelProviderMenuOptionList.map((provider) => (
-                            <MenuItem key={provider.value} disableRipple
-                                onClick={() => {
-                                    setSettings({
-                                        ...settings,
-                                        aiProvider: provider.value as ModelProvider,
-                                    })
-                                    closeMenu()
-                                }}
+                        props.settings.modelProviderList.map((provider) => (
+                            <MenuItem key={provider.name} disableRipple
+                                      onClick={() => {
+                                          setSettings({
+                                              ...settings,
+                                              aiProvider: provider.name as ModelProvider,
+                                              modelProvider: provider.name,
+
+                                          })
+                                          closeMenu()
+                                      }}
                             >
                                 <StarIcon />
-                                {provider.label}
+                                {provider.name}
                             </MenuItem>
                         ))
                     }
+                    {/*{*/}
+                    {/*    AIModelProviderMenuOptionList.map((provider) => (*/}
+                    {/*        <MenuItem key={provider.value} disableRipple*/}
+                    {/*            onClick={() => {*/}
+                    {/*                setSettings({*/}
+                    {/*                    ...settings,*/}
+                    {/*                    aiProvider: provider.value as ModelProvider,*/}
+                    {/*                })*/}
+                    {/*                closeMenu()*/}
+                    {/*            }}*/}
+                    {/*        >*/}
+                    {/*            <StarIcon />*/}
+                    {/*            {provider.label}*/}
+                    {/*        </MenuItem>*/}
+                    {/*    ))*/}
+                    {/*}*/}
                 </StyledMenu>
             </div>
         </>

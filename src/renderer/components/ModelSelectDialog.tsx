@@ -9,41 +9,34 @@ import {
     Popover,
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
+import { OpenAICompModel, Settings } from '../../shared/types'
+import { useAtom } from 'jotai'
+import { settingsAtom } from '@/stores/atoms'
 interface Props {
     open: boolean;
     onClose: () => void;
+    settings: Settings;
 }
 export function ModelSelectDialog(props: Props) {
-    // Example data
-    const modelList = [
-        'meta-llama/Meta-Llama-3.1-70B-Instruct',
-        'mistralai/Mistral-7B-Instruct-v0.2',
-        'google/gemma-2-27b-it',
-        'mistralai/Mixtral-8x7B-Instruct-v0.1',
-        'meta-llama/Llama-3.3-70B-Instruct',
-        'meta-llama/Llama-2-70b-chat-hf',
-        'microsoft/WizardLM-2-7B'
-    ];
-
     // States for popover, search, and selected model
     const [anchorEl, setAnchorEl] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedModel, setSelectedModel] = useState('');
 
+    const handleSelectModel = (selectedModel:OpenAICompModel ) => {
+        setSelectedModel(selectedModel.id)
+        props.settings.modelProviderSelected = selectedModel.id;
+        props.onClose();
+    }
+
     const handleClose = () => {
         setAnchorEl(null);
     };
 
-    const handleClick = (event) => {
-        setAnchorEl(event.currentTarget);
-    };
-
     const open = Boolean(anchorEl);
-
-    // Filtered list based on search term
-    const filteredModels = modelList.filter((model) =>
-        model.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredModels = props.settings.modelProviderList?.find((provider) =>
+       provider.name === props.settings.modelProvider
+    )?.modelList?.filter(model =>  model.id.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
         <div>
@@ -86,11 +79,11 @@ export function ModelSelectDialog(props: Props) {
 
                 {/* Scrollable list of models */}
                 <List sx={{ p: 0 }}>
-                    {filteredModels.map((model) => (
+                    {filteredModels?.map((model) => (
                         <ListItem
-                            key={model}
-                            onClick={() => setSelectedModel(model)}
-                            selected={selectedModel === model}
+                            key={model.id}
+                            onClick={() => handleSelectModel(model)}
+                            selected={selectedModel === model.id}
                             sx={{
                                 // Example of selected item styling
                                 '&.Mui-selected': {
@@ -101,8 +94,8 @@ export function ModelSelectDialog(props: Props) {
                                 }
                             }}
                         >
-                            <ListItemText primary={model} />
-                            {selectedModel === model && (
+                            <ListItemText primary={model.id} />
+                            {selectedModel === model.id && (
                                 <IconButton edge="end" disableRipple>
                                     <CheckIcon />
                                 </IconButton>

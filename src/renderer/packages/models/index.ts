@@ -7,9 +7,25 @@ import LMStudio from './lmstudio'
 import Claude from './claude'
 import PPIO from './ppio'
 import Deepinfra from '@/packages/models/deepinfra'
+import OpenAIComp from '@/packages/models/openai-comp'
 
 
 export function getModel(setting: Settings, config: Config) {
+
+    if (setting.modelProvider !== ""){
+        const modelProvider = setting.modelProviderList.find((m) => m.name === setting.modelProvider);
+        if (!modelProvider){
+            return null
+        }
+        return new OpenAIComp({
+            apiKey: modelProvider.apiKey,
+            baseURL: modelProvider.baseURl,
+            model: setting.modelProviderSelected,
+            temperature: 0,
+            topP: 0
+        })
+    }
+
     switch (setting.aiProvider) {
         case ModelProvider.ChatboxAI:
             return new ChatboxAI(setting, config)
@@ -125,8 +141,13 @@ export function getModelName(settings: Settings) {
 }
 
 export function getModelDisplayName(settings: Settings, sessionType: SessionType): string {
+
     if (!settings) {
         return 'unknown'
+    }
+
+    if (settings.modelProviderSelected !== ""){
+        return settings.modelProviderSelected
     }
     switch (settings.aiProvider) {
         case ModelProvider.OpenAI:

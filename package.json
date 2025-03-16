@@ -292,8 +292,8 @@
             }
         ]
     },
-    "devEngines": {
-        "node": ">=14.x",
+    "engines": {
+        "node": ">=18.0.0",
         "npm": ">=7.x"
     },
     "electronmon": {

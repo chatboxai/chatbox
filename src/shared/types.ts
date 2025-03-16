@@ -98,6 +98,7 @@ export interface ModelSettings {
 
     modelProvider: string
     modelProviderList: OpenAICompProviderSettings[]
+    modelProviderSelected: string
 
     // openai
     openaiKey: string

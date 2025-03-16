@@ -1,4 +1,4 @@
-import { Message } from 'src/shared/types'
+import { Message, OpenAICompModel } from 'src/shared/types'
 import { ApiError } from './errors'
 import Base, { onResultChange } from './base'
 import { siliconflowModelConfigs } from '@/packages/models/siliconflow'
@@ -7,8 +7,8 @@ export interface Options {
     apiKey: string
     baseURL: string
     model?: string
-    temperature: number
-    topP: number
+    temperature?: number
+    topP?: number
 }
 
 export default class OpenAIComp extends Base {
@@ -35,8 +35,8 @@ export default class OpenAIComp extends Base {
             {
                 messages,
                 model: this.options.model,
-                temperature: this.options.temperature,
-                top_p: this.options.topP,
+                temperature: this.options.temperature ? this.options.temperature : 0.7,
+                top_p: this.options.topP ? this.options.topP : 0.5,
                 stream: true,
             },
             signal
@@ -62,13 +62,13 @@ export default class OpenAIComp extends Base {
         return result
     }
 
-    public async listModels(): Promise<string[]> {
+    public async listModels(): Promise<OpenAICompModel[]> {
         const res = await this.get(`${this.options.baseURL}/models`, this.getHeaders())
         const json = await res.json()
         if (!json['data']) {
             throw new ApiError(JSON.stringify(json))
         }
-        return json['data'].map((m: any) => m['id'])
+        return json['data'];
     }
 
     getHeaders() {

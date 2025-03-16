@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next'
 import PasswordTextField from '@/components/PasswordTextField'
 import { useState } from 'react'
 import OpenAIComp from '@/packages/models/openai-comp'
+import { OpenAICompModel } from '../../shared/types'
 
 export interface Props {
     open: boolean
@@ -26,6 +27,7 @@ export interface Props {
         baseUrl: string
         apiKey: string
         selectedModel: string
+        modelList: OpenAICompModel[]
     }) => void
 }
 
@@ -35,7 +37,7 @@ export default function OpenAICompModelSelect(props: Props) {
     const [baseUrl, setBaseUrl] = useState('')
     const [apiKey, setApiKey] = useState('')
     const [selectedModel, setSelectedModel] = useState('')
-    const [modelList, setModelList] = useState<string[]>([])
+    const [modelList, setModelList] = useState<OpenAICompModel[]>([])
     const [error, setError] = useState('')
 
     const handleRefresh = async () => {
@@ -71,7 +73,8 @@ export default function OpenAICompModelSelect(props: Props) {
             providerName,
             baseUrl,
             apiKey,
-            selectedModel
+            selectedModel,
+            modelList
         })
         props.onClose()
     }
@@ -139,8 +142,8 @@ export default function OpenAICompModelSelect(props: Props) {
                         disabled={modelList.length === 0}
                     >
                         {modelList.map((model) => (
-                            <MenuItem key={model} value={model}>
-                                {model}
+                            <MenuItem key={model.id} value={model.id}>
+                                {model.id}
                             </MenuItem>
                         ))}
                         <MenuItem value="custom-model">

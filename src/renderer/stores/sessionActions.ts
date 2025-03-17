@@ -304,7 +304,7 @@ function genMessageContext(settings: Settings, msgs: Message[]) {
         if (msg.error || msg.errorCode) {
             // TODO: update how to minimize the token input used
             // in order to satisfy deepseek model reasoner
-            msg.content = msg.error
+            msg.content = "error"
         }
         const size = estimateTokensFromMessages([msg]) + 20 // 20 is a rough estimation of the overhead of the prompt
         if (settings.aiProvider === 'openai') {

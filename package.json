@@ -6,7 +6,7 @@
     "description": "A desktop client for multiple cutting-edge AI models",
     "main": "./src/main/main.ts",
     "scripts": {
-        "build": "concurrently \"npm run build:main\" \"npm run build:renderer\"",
+        "build": "npm run build:renderer",
         "build:main": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.prod.ts",
         "build:renderer": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.prod.ts",
         "postinstall": "ts-node .erb/scripts/check-native-dep.js && electron-builder install-app-deps && cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.dev.dll.ts",
@@ -24,7 +24,9 @@
         "check": "npx tsc --noEmit",
         "prettier": "cross-env prettier -w ./src/**/*.{ts,tsx,json,css}",
         "prepare": "husky",
-        "tauri": "tauri"
+        "tauri": "tauri",
+        "tauri:dev:clean": "tauri dev -- --clear-data",
+        "tauri-build": "ts-node ./.erb/scripts/clean.js dist && npm run build:renderer && tauri build"
     },
     "repository": {
         "type": "git",

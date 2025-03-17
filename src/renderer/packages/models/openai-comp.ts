@@ -43,6 +43,7 @@ export default class OpenAIComp extends Base {
         )
 
         let result = ''
+        let reasoning = false
         await this.handleSSE(response, (message) => {
             if (message === '[DONE]') {
                 return
@@ -51,7 +52,21 @@ export default class OpenAIComp extends Base {
             if (data.error) {
                 throw new ApiError(`Error from PPIO: ${JSON.stringify(data)}`)
             }
-            const text = data.choices[0]?.delta?.content
+            let text = data.choices[0]?.delta?.content
+            const reasoningContent = data.choices[0]?.delta?.reasoning_content
+
+            // beginning of reasoning
+            if (reasoningContent !== null && reasoningContent === "") {
+                reasoning = true
+                text = "<think>"
+
+            } else if (reasoning && reasoningContent !== null) {
+                text = reasoningContent
+            } else if (reasoning && reasoningContent === null) {
+                reasoning = false
+                text += "</think>"
+            }
+
             if (text !== undefined) {
                 result += text
                 if (onResultChange) {

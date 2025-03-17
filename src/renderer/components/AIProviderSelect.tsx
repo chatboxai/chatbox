@@ -70,7 +70,7 @@ export default function AIProviderSelect(props: ModelConfigProps) {
                         { "Add OpenAI Compatible"}
                     </MenuItem>
                     {
-                        props.settings.modelProviderList.map((provider) => (
+                        props.settings?.modelProviderList?.map((provider) => (
                             <MenuItem key={provider.name} disableRipple
                                       onClick={() => {
                                           setSettings({

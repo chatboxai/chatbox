@@ -2,12 +2,11 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Chatbox CE",
   "version": "0.1.0",
-  "identifier": "Chatbox CE",
+  "identifier": "ChatboxCE",
   "build": {
-    "frontendDist": "../build",
+    "frontendDist": "../release/app/dist/renderer/",
     "devUrl": "http://localhost:1212",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeDevCommand": "npm run dev"
   },
   "app": {
     "windows": [

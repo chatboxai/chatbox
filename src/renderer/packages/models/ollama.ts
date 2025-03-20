@@ -38,7 +38,10 @@ export default class Ollama extends Base {
         const messages = rawMessages.map(m => ({ role: m.role, content: m.content }))
         const res = await this.post(
             `${this.getHost()}/api/chat`,
-            { 'Content-Type': 'application/json' },
+            {
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': '1',
+            },
             {
                 model: this.options.ollamaModel,
                 messages,
@@ -68,7 +71,7 @@ export default class Ollama extends Base {
     }
 
     async listModels(): Promise<string[]> {
-        const res = await this.get(`${this.getHost()}/api/tags`, {})
+        const res = await this.get(`${this.getHost()}/api/tags`, { 'ngrok-skip-browser-warning': '1', })
         const json = await res.json()
         if (! json['models']) {
             throw new ApiError(JSON.stringify(json))

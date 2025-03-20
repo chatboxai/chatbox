@@ -52,6 +52,24 @@ export default class SiliconFlow extends Base {
                 ? this.options.siliconflowCustomModel || ''
                 : this.options.siliconCloudModel
         messages = injectModelSystemPrompt(model, messages)
+        let maxTokens = 4096; // Default value is 4096
+        if (
+            [
+                "deepseek-ai/DeepSeek-R1",
+                "Pro/deepseek-ai/DeepSeek-R1",
+                "Qwen/QVQ-72B-Preview",
+                "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+                "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+                "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+                "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+                "Pro/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+                "Pro/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+            ].includes(model)
+        ) {
+            maxTokens = 16384;
+        } else if (model === "Qwen/QwQ-32B-Preview") {
+            maxTokens = 8192;
+        }
 
         const apiPath = this.options.apiPath || '/v1/chat/completions'
         const response = await this.post(
@@ -60,7 +78,7 @@ export default class SiliconFlow extends Base {
             {
                 messages,
                 model,
-                max_tokens: undefined,
+                max_tokens: maxTokens,
                 temperature: this.options.temperature,
                 top_p: this.options.topP,
                 stream: true,

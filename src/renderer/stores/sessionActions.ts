@@ -4,6 +4,7 @@ import {
     createMessage,
     Message,
     Session,
+    ModelProvider,
 } from '../../shared/types'
 import * as atoms from './atoms'
 import * as promptFormat from '../packages/prompts'
@@ -180,12 +181,17 @@ export async function generate(sessionId: string, targetMsg: Message) {
         return
     }
     const placeholder = '...'
+    
+    // Use session aiProvider if specified, otherwise use global setting
+    const effectiveAIProvider: ModelProvider = session.aiProvider || settings.aiProvider
+    const effectiveSettings = { ...settings, aiProvider: effectiveAIProvider }
+    
     targetMsg = {
         ...targetMsg,
         content: placeholder,
         cancel: undefined,
-        aiProvider: settings.aiProvider,
-        model: getModelDisplayName(settings, session.type || 'chat'),
+        aiProvider: effectiveAIProvider,
+        model: getModelDisplayName(effectiveSettings, session.type || 'chat'),
         generating: true,
         errorCode: undefined,
         error: undefined,
@@ -197,7 +203,7 @@ export async function generate(sessionId: string, targetMsg: Message) {
     let targetMsgIx = messages.findIndex((m) => m.id === targetMsg.id)
 
     try {
-        const model = getModel(settings, configs)
+        const model = getModel(effectiveSettings, configs)
         switch (session.type) {
             case 'chat':
             case undefined:
@@ -237,7 +243,7 @@ export async function generate(sessionId: string, targetMsg: Message) {
             errorCode,
             error: `${err.message}`,
             errorExtra: {
-                aiProvider: settings.aiProvider,
+                aiProvider: effectiveAIProvider,
                 host: err['host'],
             },
         }
@@ -254,7 +260,9 @@ async function _generateName(sessionId: string, modifyName: (sessionId: string, 
     }
     const configs = await platform.getConfig()
     try {
-        const model = getModel(settings, configs)
+        const effectiveAIProvider: ModelProvider = session.aiProvider || settings.aiProvider
+        const effectiveSettings = { ...settings, aiProvider: effectiveAIProvider }
+        const model = getModel(effectiveSettings, configs)
         let name = await model.chat(promptFormat.nameConversation(
             session.messages
                 .filter(m => m.role !== 'system')

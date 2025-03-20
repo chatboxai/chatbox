@@ -49,6 +49,7 @@ export interface Session {
     type?: SessionType
     name: string
     picUrl?: string
+    aiProvider?: ModelProvider
     messages: Message[]
     copilotId?: string
 }

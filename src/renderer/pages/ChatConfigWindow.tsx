@@ -7,16 +7,19 @@ import {
     DialogTitle,
     DialogContentText,
     TextField,
+    Box,
 } from '@mui/material'
 import {
     Session,
     createMessage,
+    ModelSettings,
 } from '../../shared/types'
 import { useTranslation } from 'react-i18next'
 import * as sessionActions from '../stores/sessionActions'
 import * as atoms from '../stores/atoms'
 import { useAtom } from 'jotai'
 import { trackingEvent } from '@/packages/event'
+import AIProviderSelect from '../components/AIProviderSelect'
 
 interface Props {
 }
@@ -24,6 +27,7 @@ interface Props {
 export default function ChatConfigWindow(props: Props) {
     const { t } = useTranslation()
     const [chatConfigDialogSession, setChatConfigDialogSession] = useAtom(atoms.chatConfigDialogAtom)
+    const [settings] = useAtom(atoms.settingsAtom)
 
     const [editingData, setEditingData] = React.useState<Session | null>(chatConfigDialogSession)
     useEffect(() => {
@@ -78,9 +82,23 @@ export default function ChatConfigWindow(props: Props) {
         setChatConfigDialogSession(null)
     }
 
+    // Create a merged settings object that uses the session provider if set
+    const effectiveSettings = React.useMemo(() => ({
+        ...settings,
+        aiProvider: editingData?.aiProvider || settings.aiProvider,
+    }), [settings, editingData?.aiProvider])
+
     if (!chatConfigDialogSession || !editingData) {
         return null
     }
+
+    const handleProviderChange = (newSettings: ModelSettings) => {
+        setEditingData({
+            ...editingData,
+            aiProvider: newSettings.aiProvider,
+        })
+    }
+
     return (
         <Dialog open={!!chatConfigDialogSession} onClose={onCancel} fullWidth>
             <DialogTitle>{t('Conversation Settings')}</DialogTitle>
@@ -95,7 +113,13 @@ export default function ChatConfigWindow(props: Props) {
                     value={editingData.name}
                     onChange={(e) => setEditingData({ ...editingData, name: e.target.value })}
                 />
-                <div className='mt-1'>
+                <Box className='mt-4'>
+                    <AIProviderSelect
+                        settings={effectiveSettings}
+                        setSettings={handleProviderChange}                        
+                    />
+                </Box>
+                <div className='mt-4'>
                     <TextField
                         margin="dense"
                         label={t('Instruction (System Prompt)')}

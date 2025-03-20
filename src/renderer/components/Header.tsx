@@ -5,12 +5,14 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import * as sessionActions from '../stores/sessionActions'
 import Toolbar from './Toolbar'
 import { cn } from '@/lib/utils'
+import { getModelDisplayName } from '../packages/models'
 
 interface Props { }
 
 export default function Header(props: Props) {
     const theme = useTheme()
     const currentSession = useAtomValue(atoms.currentSessionAtom)
+    const settings = useAtomValue(atoms.settingsAtom)
     const setChatConfigDialogSession = useSetAtom(atoms.chatConfigDialogAtom)
 
     useEffect(() => {
@@ -52,11 +54,17 @@ export default function Header(props: Props) {
                         editCurrentSession()
                     }}
                 >
-                    {
-                        <Typography variant="h6" noWrap className={cn('max-w-56', 'ml-3')}>
-                            {currentSession.name}
-                        </Typography>
-                    }
+                    <Typography variant="h6" noWrap className={cn('max-w-56', 'ml-3')}>
+                        {currentSession.name}
+                    </Typography>
+                    <Typography 
+                        variant="body2" 
+                        color="text.secondary" 
+                        noWrap 
+                        className="ml-2 self-center"
+                    >
+                        {getModelDisplayName({...settings, aiProvider: currentSession.aiProvider || settings.aiProvider}, currentSession.type || 'chat')}
+                    </Typography>
                 </Typography>
                 <Toolbar />
             </div>

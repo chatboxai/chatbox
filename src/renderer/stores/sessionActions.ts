@@ -315,14 +315,10 @@ export function initEmptyChatSession(): Session {
         id: uuidv4(),
         name: 'Untitled',
         type: 'chat',
-        messages: [
-            {
-                id: uuidv4(),
-                role: 'system',
-                content: settings.defaultPrompt || defaults.getDefaultPrompt(),
-            },
-        ],
-    }
+        messages: settings.defaultPrompt 
+            ? [{ id: uuidv4(), role: 'system', content: settings.defaultPrompt }] 
+            : []
+    };
 }
 
 export function getSessions() {

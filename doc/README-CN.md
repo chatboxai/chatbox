@@ -38,7 +38,7 @@
       <a href='https://chatboxai.app/?c=download-mac-aarch'>
         <img src='./statics/mac.png' style="height:24px; width: 24px" />
         <br />
-        <b>M1/M2</b>
+        <b style="white-space: nowrap;">Apple Silicon</b>
       </a>
     </td>
     <td align="center" valign="middle">

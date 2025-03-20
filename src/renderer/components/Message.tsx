@@ -9,6 +9,8 @@ import {
 import PersonIcon from '@mui/icons-material/Person'
 import SmartToyIcon from '@mui/icons-material/SmartToy'
 import SettingsIcon from '@mui/icons-material/Settings'
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useTranslation } from 'react-i18next'
 import { Message, SessionType } from '../../shared/types'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -60,6 +62,7 @@ export default function Message(props: Props) {
         && (JSON.stringify(msg.content)).length > collapseThreshold
         && (JSON.stringify(msg.content)).length - collapseThreshold > 50
     const [isCollapsed, setIsCollapsed] = useState(needCollapse)
+    const [isThoughtsCollapsed, setIsThoughtsCollapsed] = useState(true)
 
     const ref = useRef<HTMLDivElement>(null)
 
@@ -109,6 +112,16 @@ export default function Message(props: Props) {
     if (msg.generating) {
         content += '...'
     }
+
+    let thinkingPart = ''
+    if (msg.role === 'assistant') {
+        const thinkMatches = content.match(/<thinking>(.*?)<\/thinking>/s)
+        if (thinkMatches) {
+            thinkingPart = thinkMatches[1].trim()
+            content = content.replace(thinkMatches[0], '').trim()
+        }
+    }
+
     if (needCollapse && isCollapsed) {
         content = msg.content.slice(0, collapseThreshold) + '... '
     }
@@ -203,6 +216,21 @@ export default function Message(props: Props) {
                         <Box className={cn('msg-content', { 'msg-content-small': small })} sx={
                             small ? { fontSize: theme.typography.body2.fontSize } : {}
                         }>
+                            {
+                                thinkingPart && ( 
+                                    <>
+                                        <Typography variant="body2" sx={{ opacity: 0.5 }}>
+                                            <span className='cursor-pointer flex items-center gap-1' onClick={() => setIsThoughtsCollapsed(!isThoughtsCollapsed)}>
+                                                {"Thoughts"}
+                                                {isThoughtsCollapsed ? <KeyboardArrowDownIcon/> : <KeyboardArrowUpIcon/>}
+                                            </span>
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }} className={isThoughtsCollapsed ? 'hidden' : ''}>
+                                            {thinkingPart}
+                                        </Typography>
+                                    </>
+                                )
+                            }
                             {
                                 enableMarkdownRendering && !isCollapsed ? (
                                     <Markdown>

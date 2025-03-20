@@ -4,6 +4,7 @@
     "show message word count": "Show message word count",
     "show message token count": "Show message token count",
     "show message token usage": "Show message token usage",
+    "hide initial message": "Hide initial message",
     "show model name": "Show model name",
     "show message timestamp": "Show message timestamp",
     "proxy": "Proxy",

@@ -4,6 +4,7 @@
     "show message word count": "메시지 단어 수 표시",
     "show message token count": "메시지 토큰 수 표시",
     "show message token usage": "메시지 토큰 사용량 표시",
+    "hide initial message": "초기 대화 프롬프트 숨기기",
     "show model name": "모델 이름 표시",
     "show message timestamp": "메시지 타임스탬프 표시",
     "proxy": "프록시",

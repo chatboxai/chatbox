@@ -132,6 +132,7 @@ export interface Settings extends ModelSettings {
     showTokenUsed?: boolean
     showModelName?: boolean
     showMessageTimestamp?: boolean
+    hideInitialMessage?: boolean
 
     theme: Theme
     language: Language

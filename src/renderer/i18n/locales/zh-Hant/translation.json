@@ -4,6 +4,7 @@
     "show message word count": "顯示消息的字數",
     "show message token count": "顯示消息的 token 數量",
     "show message token usage": "顯示消息的 token 消耗",
+    "hide initial message": "隱藏初始對話提示",
     "show model name": "顯示模型名稱",
     "show message timestamp": "顯示消息的時間戳",
     "proxy": "代理",

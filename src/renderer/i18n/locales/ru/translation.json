@@ -4,6 +4,7 @@
     "show message word count": "Показать количество слов в сообщении",
     "show message token count": "Показать количество токенов в сообщении",
     "show message token usage": "Показать использование токенов в сообщении",
+    "hide initial message": "Скрыть начальное сообщение",
     "show model name": "Показать название модели",
     "show message timestamp": "Показать временную метку сообщения",
     "proxy": "Прокси",

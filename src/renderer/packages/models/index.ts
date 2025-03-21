@@ -6,6 +6,7 @@ import SiliconFlow from './siliconflow'
 import LMStudio from './lmstudio'
 import Claude from './claude'
 import PPIO from './ppio'
+import InfiniAI from './infiniai'
 
 
 export function getModel(setting: Settings, config: Config) {
@@ -24,6 +25,8 @@ export function getModel(setting: Settings, config: Config) {
             return new SiliconFlow(setting)
         case ModelProvider.PPIO:
             return new PPIO(setting)
+        case ModelProvider.InfiniAI:
+            return new InfiniAI(setting)
         default:
             throw new Error('Cannot find model with provider: ' + setting.aiProvider)
     }
@@ -37,6 +40,7 @@ export const aiProviderNameHash = {
     [ModelProvider.Ollama]: 'Ollama',
     [ModelProvider.SiliconFlow]: 'SiliconCloud API',
     [ModelProvider.PPIO]: 'PPIO',
+    [ModelProvider.InfiniAI]: 'InfiniAI API',
 }
 
 export const AIModelProviderMenuOptionList = [
@@ -76,6 +80,11 @@ export const AIModelProviderMenuOptionList = [
         label: aiProviderNameHash[ModelProvider.PPIO],
         disabled: false,
     },
+    {
+        value: ModelProvider.InfiniAI,
+        label: aiProviderNameHash[ModelProvider.InfiniAI],
+        disabled: false,
+    },
 ]
 
 export function getModelDisplayName(settings: Settings, sessionType: SessionType): string {
@@ -105,6 +114,8 @@ export function getModelDisplayName(settings: Settings, sessionType: SessionType
             return `SiliconCloud (${settings.siliconCloudModel})`
         case ModelProvider.PPIO:
             return `PPIO (${settings.ppioModel})`
+        case ModelProvider.InfiniAI:
+            return `InfiniAI (${settings.infiniaiModel})`
         default:
             return 'unknown'
     }

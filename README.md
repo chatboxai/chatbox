@@ -134,6 +134,7 @@ For more information: [chatboxai.app](https://chatboxai.app/)
     -   Google Gemini Pro
     -   Ollama (enable access to local models like llama2, Mistral, Mixtral, codellama, vicuna, yi, and solar)
     -   ChatGLM-6B
+    -   Volcengine Ark
 
 -   **Image Generation with Dall-E-3**  
     :art: Create the images of your imagination with Dall-E-3.

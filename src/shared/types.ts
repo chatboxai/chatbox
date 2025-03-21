@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { Model } from '../renderer/packages/models/openai'
 import * as siliconflow from '../renderer/packages/models/siliconflow'
 import { ClaudeModel } from '../renderer/packages/models/claude'
+import { ArkModel } from '../renderer/packages/models/ark'
 
 export const MessageRoleEnum = {
     System: 'system',
@@ -70,6 +71,7 @@ export enum ModelProvider {
     SiliconFlow = 'silicon-flow',
     LMStudio = 'lm-studio',
     PPIO = 'ppio',
+    VolcengineArk = 'volc-ark',
 }
 
 export interface ModelSettings {
@@ -120,6 +122,12 @@ export interface ModelSettings {
     ppioHost: string
     ppioKey: string
     ppioModel: string
+
+    // ark
+    arkApiKey: string
+    arkBaseURL: string
+    arkModel: ArkModel | 'custom-model'
+    arkEndpointId: string
 
     temperature: number
     topP: number

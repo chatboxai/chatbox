@@ -56,6 +56,11 @@ export function settings(): Settings {
         ppioKey: '',
         ppioModel: 'deepseek/deepseek-r1/community',
 
+        arkApiKey: '',
+        arkBaseURL: 'https://ark.cn-beijing.volces.com/api/v3',
+        arkModel: 'doubao-1.5-pro-32k',
+        arkEndpointId: '',
+
         autoGenerateTitle: true,
     }
 }

@@ -6,7 +6,7 @@ import SiliconFlow from './siliconflow'
 import LMStudio from './lmstudio'
 import Claude from './claude'
 import PPIO from './ppio'
-
+import VolcArk from './ark'
 
 export function getModel(setting: Settings, config: Config) {
     switch (setting.aiProvider) {
@@ -24,6 +24,8 @@ export function getModel(setting: Settings, config: Config) {
             return new SiliconFlow(setting)
         case ModelProvider.PPIO:
             return new PPIO(setting)
+        case ModelProvider.VolcengineArk:
+            return new VolcArk(setting)
         default:
             throw new Error('Cannot find model with provider: ' + setting.aiProvider)
     }
@@ -37,6 +39,7 @@ export const aiProviderNameHash = {
     [ModelProvider.Ollama]: 'Ollama',
     [ModelProvider.SiliconFlow]: 'SiliconCloud API',
     [ModelProvider.PPIO]: 'PPIO',
+    [ModelProvider.VolcengineArk]: 'Volcengine Ark',
 }
 
 export const AIModelProviderMenuOptionList = [
@@ -76,6 +79,11 @@ export const AIModelProviderMenuOptionList = [
         label: aiProviderNameHash[ModelProvider.PPIO],
         disabled: false,
     },
+    {
+        value: ModelProvider.VolcengineArk,
+        label: aiProviderNameHash[ModelProvider.VolcengineArk],
+        disabled: false,
+    },
 ]
 
 export function getModelDisplayName(settings: Settings, sessionType: SessionType): string {
@@ -105,6 +113,8 @@ export function getModelDisplayName(settings: Settings, sessionType: SessionType
             return `SiliconCloud (${settings.siliconCloudModel})`
         case ModelProvider.PPIO:
             return `PPIO (${settings.ppioModel})`
+        case ModelProvider.VolcengineArk:
+            return `Ark (${settings.arkModel})`
         default:
             return 'unknown'
     }

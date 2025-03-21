@@ -97,7 +97,7 @@
         "jest-environment-jsdom": "^29.5.0",
         "mini-css-extract-plugin": "^2.7.6",
         "node-loader": "^2.0.0",
-        "postcss": "^8.4.25",
+        "postcss": "^8.5.3",
         "postcss-loader": "^7.3.3",
         "prettier": "^2.8.8",
         "react-refresh": "^0.14.0",

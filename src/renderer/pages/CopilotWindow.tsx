@@ -261,6 +261,7 @@ function MiniItem(props: MiniItemProps) {
                     marginLeft: '5px',
                 }}
                 className='w-28'
+                title={props.detail.name}
             >
                 <Typography variant="body1" noWrap>
                     {props.detail.name}

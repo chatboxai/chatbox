@@ -34,11 +34,11 @@ export class BasePlatform {
        return this.desktop.shouldUseDarkColors();
     }
 
-    public async onSystemThemeChange(callback: () => void): Promise<() => void> {
+    public async onSystemThemeChange(callback: () => void): Promise<void> {
         if (getOS() === 'Android') {
-           return this.mobile.onSystemThemeChange(callback)
-       }
-       return this.desktop.onSystemThemeChange(callback);
+            return this.mobile.onSystemThemeChange(callback)
+        }
+       return this.desktop.onSystemThemeChange(callback)
     }
 
     public onWindowShow(callback: () => void): () => void {

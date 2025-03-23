@@ -83,10 +83,12 @@ export interface OpenAICompModel {
 }
 
 export interface OpenAICompProviderSettings {
+    uuid:string,
     name: string
     apiKey: string
-    baseURl: string
+    baseURL: string
     modelList: OpenAICompModel[]
+    selectedModel: string
     lastUpdatedModel: number
     temperature: number
     topP: number
@@ -97,8 +99,8 @@ export interface ModelSettings {
     aiProvider: ModelProvider
 
     modelProvider: string
+    modelProviderID: string
     modelProviderList: OpenAICompProviderSettings[]
-    modelProviderSelected: string
 
     // openai
     openaiKey: string

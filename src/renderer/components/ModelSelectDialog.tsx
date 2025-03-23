@@ -12,6 +12,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import { OpenAICompModel, Settings } from '../../shared/types'
 import { useAtom } from 'jotai'
 import { settingsAtom } from '@/stores/atoms'
+import { settings } from '../../shared/defaults'
 interface Props {
     open: boolean;
     onClose: () => void;
@@ -25,7 +26,11 @@ export function ModelSelectDialog(props: Props) {
 
     const handleSelectModel = (selectedModel:OpenAICompModel ) => {
         setSelectedModel(selectedModel.id)
-        props.settings.modelProviderSelected = selectedModel.id;
+        props.settings.modelProviderList = props.settings.modelProviderList.map(provider =>
+            provider.uuid === props.settings.modelProviderID
+                ? { ...provider, selectedModel: selectedModel.id }
+                : provider
+        )
         props.onClose();
     }
 
@@ -35,7 +40,7 @@ export function ModelSelectDialog(props: Props) {
 
     const open = Boolean(anchorEl);
     const filteredModels = props.settings.modelProviderList?.find((provider) =>
-       provider.name === props.settings.modelProvider
+       provider.uuid === props.settings.modelProviderID
     )?.modelList?.filter(model =>  model.id.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (

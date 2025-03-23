@@ -11,9 +11,11 @@ export default function MessageList(props: Props) {
     const currentMessageList = useAtomValue(atoms.currentMessageListAtom)
     const ref = useRef<HTMLDivElement | null>(null)
     const [, setMessageListRef] = useAtom(atoms.messageListRefAtom)
+
     useEffect(() => {
         setMessageListRef(ref)
     }, [ref])
+
     return (
             <div className='overflow-y-auto w-full h-full pr-0 pl-0' ref={ref}>
                 {

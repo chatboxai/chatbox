@@ -1,17 +1,14 @@
 import { PlatformInterface } from '@/packages/platform.interface'
 
 export class MobilePlatform implements PlatformInterface {
-
     public constructor() {}
 
     public async shouldUseDarkColors(): Promise<boolean> {
         return false
     }
 
-    public async onSystemThemeChange(callback: () => void): Promise<() => void> {
-        return function() {
-            // do nothing unless to satisfy the args.
-        }
+    public async onSystemThemeChange(callback: () => void): Promise<void> {
+        return
     }
 
     public onWindowShow(callback: () => void): () => void {

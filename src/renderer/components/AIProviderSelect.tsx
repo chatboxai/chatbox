@@ -44,8 +44,7 @@ export default function AIProviderSelect(props: ModelConfigProps) {
                     endIcon={<KeyboardArrowDownIcon />}
                 >
                     <Typography className='text-left' maxWidth={200} noWrap>
-                        { props.settings.modelProviderList?.find((provider)=> provider.name === settings.modelProvider)?.name || 'Unknown'}
-                        {/*{ AIModelProviderMenuOptionList.find((provider) => provider.value === settings.aiProvider)?.label || 'Unknown' }*/}
+                        { props.settings.modelProviderList?.find((provider)=> provider.uuid === settings.modelProviderID)?.name || 'Unknown'}
                     </Typography>
                 </Button>
                 <StyledMenu
@@ -77,7 +76,7 @@ export default function AIProviderSelect(props: ModelConfigProps) {
                                               ...settings,
                                               aiProvider: provider.name as ModelProvider,
                                               modelProvider: provider.name,
-
+                                              modelProviderID: provider.uuid,
                                           })
                                           closeMenu()
                                       }}
@@ -87,22 +86,6 @@ export default function AIProviderSelect(props: ModelConfigProps) {
                             </MenuItem>
                         ))
                     }
-                    {/*{*/}
-                    {/*    AIModelProviderMenuOptionList.map((provider) => (*/}
-                    {/*        <MenuItem key={provider.value} disableRipple*/}
-                    {/*            onClick={() => {*/}
-                    {/*                setSettings({*/}
-                    {/*                    ...settings,*/}
-                    {/*                    aiProvider: provider.value as ModelProvider,*/}
-                    {/*                })*/}
-                    {/*                closeMenu()*/}
-                    {/*            }}*/}
-                    {/*        >*/}
-                    {/*            <StarIcon />*/}
-                    {/*            {provider.label}*/}
-                    {/*        </MenuItem>*/}
-                    {/*    ))*/}
-                    {/*}*/}
                 </StyledMenu>
             </div>
         </>

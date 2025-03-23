@@ -19,10 +19,10 @@ export function getModel(setting: Settings, config: Config) {
         }
         return new OpenAIComp({
             apiKey: modelProvider.apiKey,
-            baseURL: modelProvider.baseURl,
-            model: setting.modelProviderSelected,
-            temperature: 0,
-            topP: 0
+            baseURL: modelProvider.baseURL,
+            model: modelProvider.selectedModel,
+            temperature: modelProvider.temperature,
+            topP: modelProvider.topP,
         })
     }
 
@@ -146,39 +146,13 @@ export function getModelDisplayName(settings: Settings, sessionType: SessionType
         return 'unknown'
     }
 
-    if (settings.modelProviderSelected !== ""){
-        return settings.modelProviderSelected
-    }
-    switch (settings.aiProvider) {
-        case ModelProvider.OpenAI:
-            if (settings.model === 'custom-model') {
-                let name = settings.openaiCustomModel || ''
-                if (name.length >= 10) {
-                    name = name.slice(0, 10) + '...'
-                }
-                return `OpenAI Custom Model (${name})`
-            }
-            return settings.model || 'unknown'
-        case ModelProvider.Claude:
-            return settings.claudeModel || 'unknown'
-        case ModelProvider.ChatboxAI:
-            const model = settings.chatboxAIModel || 'chatboxai-3.5'
-            return model.replace('chatboxai-', 'Chatbox AI ')
-        case ModelProvider.Ollama:
-            return `Ollama (${settings.ollamaModel})`
-        case ModelProvider.LMStudio:
-            return `LMStudio (${settings.lmStudioModel})`
-        case ModelProvider.SiliconFlow:
-            return `SiliconCloud (${settings.siliconCloudModel})`
-        case ModelProvider.PPIO:
-            return `PPIO (${settings.ppioModel})`
-        case ModelProvider.DeepInfra:
-            if (settings.model === 'custom-model') {
-                let name = settings.deepInfraCustomModel
-                return `Deep Infra (${name})`
-            }
-            return `Deep Infra (${settings.deepInfraModel})` || 'unknown'
-        default:
+    if (settings.modelProvider !== ""){
+        const modelProvider = settings.modelProviderList.find((m) => m.name === settings.modelProvider);
+        if (!modelProvider){
             return 'unknown'
+        }
+        return modelProvider.selectedModel
     }
+
+    return 'unknown'
 }

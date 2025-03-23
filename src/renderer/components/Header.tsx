@@ -112,7 +112,7 @@ export default function Header(props: Props) {
                             lineHeight: 1.3
                         }}
                     >
-                        {settings?.modelProviderSelected}
+                        {settings?.modelProviderList?.find((provider) => (provider.uuid === settings.modelProviderID))?.selectedModel}
                     </Typography>
                 </Button>
                 <IconButton>

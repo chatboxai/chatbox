@@ -83,7 +83,7 @@ export interface OpenAICompModel {
 }
 
 export interface OpenAICompProviderSettings {
-    uuid:string,
+    uuid: string
     name: string
     apiKey: string
     baseURL: string

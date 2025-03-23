@@ -20,7 +20,7 @@ export default function ModelSettingTab(props: ModelConfigProps) {
 
     useEffect(() => {
         // Sync currentProvider when provider list or selected ID changes
-        const provider = settingsEdit.modelProviderList.find(
+        const provider = settingsEdit.modelProviderList?.find(
             (p) => p.uuid === settingsEdit.modelProviderID || p.name === settingsEdit.modelProvider
         );
         setCurrentProvider(provider);

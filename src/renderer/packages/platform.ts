@@ -1,93 +1,144 @@
-import { ElectronIPC } from "src/shared/electron-types"
-import { Config, Settings } from "src/shared/types"
-import { getOS } from './navigator'
-import { parseLocale } from '@/i18n/parser'
-import Exporter from './exporter'
+import { getVersion } from "@tauri-apps/api/app";
+import { platform } from '@tauri-apps/plugin-os';
+import { invoke } from '@tauri-apps/api/core';
+import { Config, Settings } from "src/shared/types";
+import { LazyStore } from '@tauri-apps/plugin-store';
+import { getOS } from './navigator';
+import { parseLocale } from '@/i18n/parser';
+import Exporter from './exporter';
+import { hostname } from '@tauri-apps/plugin-os';
+import * as defaults from '../../shared/defaults'
+import { MobilePlatform } from '@/packages/mobile-platform'
+import { DesktopPlatform } from '@/packages/desktop-platform'
 
-export class DesktopPlatform {
-    public ipc: ElectronIPC
-    constructor(ipc: ElectronIPC) {
-        this.ipc = ipc
+const store = new LazyStore("settings.json");
+
+export class BasePlatform {
+    public exporter = new Exporter();
+    private mobile = new MobilePlatform();
+    private desktop = new DesktopPlatform();
+
+
+    public async getVersion(): Promise<string> {
+        return getVersion();
     }
 
-    public exporter = new Exporter()
+    public async getPlatform(): Promise<string> {
+        return platform()
+    }
 
-    public async getVersion() {
-        return this.ipc.invoke('getVersion')
-    }
-    public async getPlatform() {
-        return this.ipc.invoke('getPlatform')
-    }
     public async shouldUseDarkColors(): Promise<boolean> {
-        return await this.ipc.invoke('shouldUseDarkColors')
+        if (getOS() === 'Android') {
+            return this.mobile.shouldUseDarkColors()
+        }
+       return this.desktop.shouldUseDarkColors();
     }
-    public onSystemThemeChange(callback: () => void): () => void {
-        return this.ipc.onSystemThemeChange(callback)
+
+    public async onSystemThemeChange(callback: () => void): Promise<void> {
+        if (getOS() === 'Android') {
+            return this.mobile.onSystemThemeChange(callback)
+        }
+       return this.desktop.onSystemThemeChange(callback)
     }
+
     public onWindowShow(callback: () => void): () => void {
-        return this.ipc.onWindowShow(callback)
+        if (getOS() === 'Android') {
+            return this.mobile.onWindowShow(callback)
+        }
+        return this.desktop.onWindowShow(callback);
     }
+
     public async openLink(url: string): Promise<void> {
-        return this.ipc.invoke('openLink', url)
+        return invoke('open_link', { url });
     }
+
     public async getInstanceName(): Promise<string> {
-        const hostname = await this.ipc.invoke('getHostname')
-        return `${hostname} / ${getOS()}`
+        return `${await hostname()} / ${getOS()}`;
     }
+
     public async getLocale() {
-        const locale = await this.ipc.invoke('getLocale')
-        return parseLocale(locale)
+        return parseLocale(navigator.language);
     }
+
     public async ensureShortcutConfig(config: { disableQuickToggleShortcut: boolean }): Promise<void> {
-        return this.ipc.invoke('ensureShortcutConfig', JSON.stringify(config))
+        return invoke('ensure_shortcut_config', { config });
     }
+
     public async ensureProxyConfig(config: { proxy?: string }): Promise<void> {
-        return this.ipc.invoke('ensureProxy', JSON.stringify(config))
+        return invoke('ensure_proxy_config', { config });
     }
+
     public async relaunch(): Promise<void> {
-        return this.ipc.invoke('relaunch')
+        return invoke('relaunch_app');
     }
 
     public async getConfig(): Promise<Config> {
-        return this.ipc.invoke('getConfig')
+        try {
+            const config = await store.get<Config>('configs');
+            return config ?? await this.createDefaultConfig();
+        } catch (error) {
+            console.error('Config load failed, using defaults', error);
+            return this.createDefaultConfig();
+        }
     }
+    private async createDefaultConfig(): Promise<Config> {
+        const defaultConfig = defaults.newConfigs();
+        await this.setStoreValue("configs", defaultConfig);
+        return defaultConfig;
+    }
+
+
     public async getSettings(): Promise<Settings> {
-        return this.ipc.invoke('getSettings')
+        try {
+            const setting = await store.get<Settings>('settings');
+            return setting ?? await this.createDefaultSettings()
+        } catch (error) {
+            console.error('Config load failed, using defaults', error);
+            return this.createDefaultSettings();
+        }
+    }
+
+    private async createDefaultSettings(): Promise<Settings> {
+        const setting = defaults.settings();
+        await this.setStoreValue("settings", setting);
+        return setting;
     }
 
     public async setStoreValue(key: string, value: any) {
-        const valueJson = JSON.stringify(value)
-        return this.ipc.invoke('setStoreValue', key, valueJson)
+         await store.set(key,value);
+         return await store.save()
     }
     public async getStoreValue(key: string) {
-        return this.ipc.invoke('getStoreValue', key)
+        return await store.get(key);
     }
+
     public delStoreValue(key: string) {
-        return this.ipc.invoke('delStoreValue', key)
+        return store.delete(key);
     }
+
     public async getAllStoreValues(): Promise<{ [key: string]: any }> {
-        const json = await this.ipc.invoke('getAllStoreValues')
-        return JSON.parse(json)
+        return await store.entries()
     }
+
     public async setAllStoreValues(data: { [key: string]: any }) {
-        await this.ipc.invoke('setAllStoreValues', JSON.stringify(data))
+        return "unsupported store values";
     }
 
     public initTracking(): void {
-        this.trackingEvent('user_engagement', {})
+        this.trackingEvent('user_engagement', {});
     }
+
     public trackingEvent(name: string, params: { [key: string]: string }) {
-        const dataJson = JSON.stringify({ name, params })
-        this.ipc.invoke('analysticTrackingEvent', dataJson)
+        // return invoke('tracking_event', { name, params });
     }
 
     public async shouldShowAboutDialogWhenStartUp(): Promise<boolean> {
-        return this.ipc.invoke('shouldShowAboutDialogWhenStartUp')
+        return invoke('should_show_about_on_startup');
     }
 
     public async appLog(level: string, message: string) {
-        return this.ipc.invoke('appLog', JSON.stringify({ level, message }))
+        // return invoke('app_log', { level, message });
     }
 }
 
-export default new DesktopPlatform(window.electronAPI as any)
+export default new BasePlatform();

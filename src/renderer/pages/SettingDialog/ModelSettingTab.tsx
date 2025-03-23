@@ -1,16 +1,11 @@
-import { Divider, Box } from '@mui/material'
-import { ModelProvider, ModelSettings } from '../../../shared/types'
-import OpenAISetting from './OpenAISetting'
-import ChatboxAISetting from './ChatboxAISetting'
+import { Box, Divider } from '@mui/material'
+import { ModelSettings, OpenAICompModel, OpenAICompProviderSettings } from '../../../shared/types'
 import AIProviderSelect from '../../components/AIProviderSelect'
-import { OllamaHostInput, OllamaModelSelect } from './OllamaSetting'
-import { LMStudioHostInput, LMStudioModelSelect } from './LMStudioSetting'
-import SiliconFlowSetting from './SiliconFlowSetting'
-import MaxContextMessageCountSlider from '@/components/MaxContextMessageCountSlider'
-import TemperatureSlider from '@/components/TemperatureSlider'
-import ClaudeSetting from './ClaudeSetting'
-import PPIOSetting from './PPIOSetting'
-import DeepInfraSetting from '@/pages/SettingDialog/DeepInfraSetting'
+import OpenAICompModelSelect from '@/components/OpenAICompModelSelect'
+import * as React from 'react'
+import { OpenAICompModelConfigure } from '@/components/OpenAICompModelConfigure'
+import { useEffect, useState } from 'react'
+import { v4 as uuid } from 'uuid';
 
 interface ModelConfigProps {
     settingsEdit: ModelSettings
@@ -19,75 +14,88 @@ interface ModelConfigProps {
 
 export default function ModelSettingTab(props: ModelConfigProps) {
     const { settingsEdit, setSettingsEdit } = props
+
+    const [modalAddAIProvider, setModalAddAIProvider] = React.useState(false);
+    const [currentProvider, setCurrentProvider] = useState<OpenAICompProviderSettings | undefined>();
+
+    useEffect(() => {
+        // Sync currentProvider when provider list or selected ID changes
+        const provider = settingsEdit.modelProviderList.find(
+            (p) => p.uuid === settingsEdit.modelProviderID || p.name === settingsEdit.modelProvider
+        );
+        setCurrentProvider(provider);
+    }, [settingsEdit.modelProviderID, settingsEdit.modelProviderList]);
+
+    useEffect(() => {
+        // Update provider list when currentProvider changes
+        if (!currentProvider) return;
+
+        setSettingsEdit({
+            ...settingsEdit,
+            modelProviderList: settingsEdit.modelProviderList.some(p => p.uuid === currentProvider.uuid)
+                ? settingsEdit.modelProviderList.map(p =>
+                    p.uuid === currentProvider.uuid ? currentProvider : p
+                )
+                : [...settingsEdit.modelProviderList, currentProvider]
+        });
+    }, [currentProvider]);
+
+    const upsertProvider = (
+        list: OpenAICompProviderSettings[],
+        newItem: OpenAICompProviderSettings
+    ): OpenAICompProviderSettings[] => {
+
+        if (list === null || list === undefined) {
+            return [newItem]
+        }
+
+        // Create a copy to avoid mutating the original array
+        const newList = [...list];
+        const existingIndex = newList.findIndex(item => item.uuid === newItem.uuid);
+
+        if (existingIndex > -1) {
+            // Update existing item (replace completely)
+            newList[existingIndex] = newItem;
+
+        } else {
+            // Add new item
+            newList.push(newItem);
+        }
+
+        return newList;
+    };
+
+    console.log(settingsEdit);
+    console.log(currentProvider);
+
     return (
         <Box>
             <AIProviderSelect
                 settings={settingsEdit}
                 setSettings={setSettingsEdit}
+                openModalAddAIProvider={setModalAddAIProvider}
             />
-            <Divider sx={{ marginTop: '10px', marginBottom: '24px' }} />
-            {settingsEdit.aiProvider === ModelProvider.OpenAI && (
-                <OpenAISetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
-            )}
-            {settingsEdit.aiProvider === ModelProvider.ChatboxAI && (
-                <ChatboxAISetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
-            )}
-            {settingsEdit.aiProvider === ModelProvider.Ollama && (
-                <>
-                    <OllamaHostInput
-                        ollamaHost={settingsEdit.ollamaHost}
-                        setOllamaHost={(v) => setSettingsEdit({ ...settingsEdit, ollamaHost: v })}
-                    />
-                    <OllamaModelSelect
-                        ollamaModel={settingsEdit.ollamaModel}
-                        setOlamaModel={(v) => setSettingsEdit({ ...settingsEdit, ollamaModel: v })}
-                        ollamaHost={settingsEdit.ollamaHost}
-                    />
-                    <MaxContextMessageCountSlider
-                        value={settingsEdit.openaiMaxContextMessageCount}
-                        onChange={(v) => setSettingsEdit({ ...settingsEdit, openaiMaxContextMessageCount: v })}
-                    />
-                    <TemperatureSlider
-                        value={settingsEdit.temperature}
-                        onChange={(v) => setSettingsEdit({ ...settingsEdit, temperature: v })}
-                    />
-                </>
+            {settingsEdit.aiProvider !== 'openai-compatible' && (
+                <Divider sx={{ marginTop: '10px', marginBottom: '24px' }} />
             )}
 
-            {settingsEdit.aiProvider === ModelProvider.LMStudio && (
-                <>
-                    <LMStudioHostInput
-                        LMStudioHost={settingsEdit.lmStudioHost}
-                        setLMStudioHost={(v) => setSettingsEdit({ ...settingsEdit, lmStudioHost: v })}
-                    />
-                    <LMStudioModelSelect
-                        LMStudioModel={settingsEdit.lmStudioModel}
-                        setLMStudioModel={(v) => setSettingsEdit({ ...settingsEdit, lmStudioModel: v })}
-                        LMStudioHost={settingsEdit.lmStudioHost}
-                    />
-                    <MaxContextMessageCountSlider
-                        value={settingsEdit.openaiMaxContextMessageCount}
-                        onChange={(v) => setSettingsEdit({ ...settingsEdit, openaiMaxContextMessageCount: v })}
-                    />
-                    <TemperatureSlider
-                        value={settingsEdit.temperature}
-                        onChange={(v) => setSettingsEdit({ ...settingsEdit, temperature: v })}
-                    />
-                </>
-            )}
+            <OpenAICompModelSelect
+                open={modalAddAIProvider}
+                onClose={function (): void {
+                    setModalAddAIProvider(false)
+                }}
+                settings={settingsEdit}
+                setSettings={setSettingsEdit}
+                onSave={(settings)=>{
+                    settingsEdit.modelProviderList = upsertProvider(settingsEdit.modelProviderList,settings)
+                }}
+            />
 
-            {settingsEdit.aiProvider === ModelProvider.DeepInfra && (
-                <DeepInfraSetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
-            )}
-
-             {settingsEdit.aiProvider === ModelProvider.SiliconFlow && (
-                <SiliconFlowSetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
-            )}
-            {settingsEdit.aiProvider === ModelProvider.Claude && (
-                <ClaudeSetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
-            )}
-            {settingsEdit.aiProvider === ModelProvider.PPIO && (
-                <PPIOSetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
+            {currentProvider && (
+                <OpenAICompModelConfigure
+                   provider={currentProvider}
+                   setProvider={setCurrentProvider}
+                />
             )}
         </Box>
     )

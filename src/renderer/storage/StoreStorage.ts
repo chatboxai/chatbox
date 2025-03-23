@@ -17,7 +17,6 @@ export default class StoreStorage extends BaseStorage {
     }
     public async getItem<T>(key: string, initialValue: T): Promise<T> {
         let value: T = await super.getItem(key, initialValue)
-
         if (key === StorageKey.ChatSessions && value === initialValue) {
             const lang = await platform.getLocale().catch(e => 'en')
             if (lang.startsWith('zh')) {

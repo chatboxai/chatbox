@@ -6,7 +6,7 @@
     "description": "A desktop client for multiple cutting-edge AI models",
     "main": "./src/main/main.ts",
     "scripts": {
-        "build": "concurrently \"npm run build:main\" \"npm run build:renderer\"",
+        "build": "npm run build:renderer",
         "build:main": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.prod.ts",
         "build:renderer": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.prod.ts",
         "postinstall": "ts-node .erb/scripts/check-native-dep.js && electron-builder install-app-deps && cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.dev.dll.ts",
@@ -23,7 +23,12 @@
         "lint": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx",
         "check": "npx tsc --noEmit",
         "prettier": "cross-env prettier -w ./src/**/*.{ts,tsx,json,css}",
-        "prepare": "husky"
+        "prepare": "husky",
+        "tauri": "tauri",
+        "tauri:dev:android": "tauri android dev",
+        "tauri:dev:clean": "tauri dev -- --clear-data",
+        "tauri-build": "ts-node ./.erb/scripts/clean.js dist && npm run build:renderer && tauri build",
+        "tauri:android:init": "tauri android init"
     },
     "repository": {
         "type": "git",
@@ -40,6 +45,7 @@
         "@faker-js/faker": "^8.0.2",
         "@pmmmwh/react-refresh-webpack-plugin": "^0.5.10",
         "@svgr/webpack": "^8.0.1",
+        "@tauri-apps/cli": "^2.3.0",
         "@teamsupercell/typings-for-css-modules-loader": "^2.5.2",
         "@testing-library/jest-dom": "^5.16.5",
         "@testing-library/react": "^14.0.0",
@@ -132,6 +138,10 @@
         "@mui/material": "^5.11.11",
         "@radix-ui/react-dialog": "^1.0.5",
         "@sentry/react": "^7.73.0",
+        "@tauri-apps/api": "^2",
+        "@tauri-apps/plugin-opener": "^2",
+        "@tauri-apps/plugin-os": "^2.2.0",
+        "@tauri-apps/plugin-store": "^2.2.0",
         "@testing-library/jest-dom": "^5.16.5",
         "@testing-library/react": "^13.4.0",
         "@testing-library/user-event": "^13.5.0",
@@ -167,6 +177,7 @@
         "sanitize-filename": "^1.6.3",
         "tailwind-merge": "^1.14.0",
         "tailwindcss-animate": "^1.0.7",
+        "tauri-plugin-store-api": "^0.0.0",
         "uuid": "^9.0.0",
         "web-vitals": "^4.2.4"
     },
@@ -285,8 +296,8 @@
             }
         ]
     },
-    "devEngines": {
-        "node": ">=14.x",
+    "engines": {
+        "node": ">=18.0.0",
         "npm": ">=7.x"
     },
     "electronmon": {

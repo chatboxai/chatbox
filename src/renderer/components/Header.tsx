@@ -1,21 +1,35 @@
-import { useEffect } from 'react'
-import { Button, Typography, useTheme } from '@mui/material'
+import React, { useEffect, useRef } from 'react'
+import { Button, IconButton, Typography, useTheme } from '@mui/material'
 import * as atoms from '../stores/atoms'
 import { useAtomValue, useSetAtom } from 'jotai'
 import * as sessionActions from '../stores/sessionActions'
 import Toolbar from './Toolbar'
 import { cn } from '@/lib/utils'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded';
+import { getDefaultStore } from 'jotai/index'
+import { getModelName } from '@/packages/models'
+import AddIcon from '@mui/icons-material/AddCircleOutline'
+import { trackingEvent } from '@/packages/event'
 
 interface Props {
     toggleSidebar: (newOpen: boolean) => void
+    toggleModelSelect: (newOpen: boolean) => void
 }
 
 export default function Header(props: Props) {
     const theme = useTheme()
     const currentSession = useAtomValue(atoms.currentSessionAtom)
     const setChatConfigDialogSession = useSetAtom(atoms.chatConfigDialogAtom)
+    const store = getDefaultStore()
+    const settings = store.get(atoms.settingsAtom)
+
+    const sessionListRef = useRef<HTMLDivElement>(null)
+    const handleCreateNewSession = () => {
+        sessionActions.createEmpty('chat')
+        if (sessionListRef.current) {
+            sessionListRef.current.scrollTo(0, 0)
+        }
+    }
 
     useEffect(() => {
         if (
@@ -30,7 +44,6 @@ export default function Header(props: Props) {
     const editCurrentSession = () => {
         setChatConfigDialogSession(currentSession)
     }
-
     return (
         <div
             className="pt-3 pb-2 px-4"
@@ -57,38 +70,57 @@ export default function Header(props: Props) {
                 </Button>
 
                 <Button
-                    onClick={editCurrentSession}
+                    onClick={() => props.toggleModelSelect(true)}
                     sx={{
                         flex: 1,
-                        justifyContent: 'space-between',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
                         minWidth: 'auto',
                         textTransform: 'none',
                         color: 'inherit',
                         padding: '8px 12px',
                         '&:hover': {
                             backgroundColor: theme.palette.action.hover
-                        }
+                        },
+                        gap: '2px'
                     }}
                     className="truncate"
                 >
+                    <Typography
+                        variant="body2"
+                        noWrap
+                        component="div"
+                        sx={{
+                            width: '100%',
+                            textAlign: 'left',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            color: theme.palette.text.secondary
+                        }}
+                    >
+                        {settings.modelProvider}
+                    </Typography>
                     <Typography
                         variant="h6"
                         noWrap
                         component="div"
                         sx={{
-                            flex: 1,
+                            width: '100%',
                             textAlign: 'left',
                             overflow: 'hidden',
-                            textOverflow: 'ellipsis'
+                            textOverflow: 'ellipsis',
+                            lineHeight: 1.3
                         }}
                     >
-                        {currentSession.name}
+                        {settings?.modelProviderList?.find((provider) => (provider.uuid === settings.modelProviderID))?.selectedModel}
                     </Typography>
-
                 </Button>
-
+                <IconButton>
+                    <AddIcon fontSize="small" />
+                </IconButton>
                 <Toolbar />
             </div>
         </div>
     )
+
 }

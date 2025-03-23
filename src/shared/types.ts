@@ -66,6 +66,7 @@ export function createMessage(role: MessageRole = MessageRoleEnum.User, content:
 }
 
 export enum ModelProvider {
+    OpenAIComp = 'openai-compatible',
     ChatboxAI = 'chatbox-ai',
     OpenAI = 'openai',
     Claude = 'claude',
@@ -76,8 +77,30 @@ export enum ModelProvider {
     DeepInfra = 'deep-infra',
 }
 
+export interface OpenAICompModel {
+    id: string
+    root: string
+}
+
+export interface OpenAICompProviderSettings {
+    uuid:string,
+    name: string
+    apiKey: string
+    baseURL: string
+    modelList: OpenAICompModel[]
+    selectedModel: string
+    lastUpdatedModel: number
+    temperature: number
+    topP: number
+    openaiMaxContextMessageCount: number
+}
+
 export interface ModelSettings {
     aiProvider: ModelProvider
+
+    modelProvider: string
+    modelProviderID: string
+    modelProviderList: OpenAICompProviderSettings[]
 
     // openai
     openaiKey: string

@@ -11,12 +11,12 @@ export default class BaseStorage {
         let value: any = await platform.getStoreValue(key)
         if (value === undefined || value === null) {
             value = initialValue
-            this.setItem(key, value)
+            await this.setItem(key, value)
         }
         return value
     }
 
-    public async removeItem(key: string): Promise<void> {
+    public async removeItem(key: string): Promise<boolean> {
         return platform.delStoreValue(key)
     }
 

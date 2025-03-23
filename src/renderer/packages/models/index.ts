@@ -7,9 +7,25 @@ import LMStudio from './lmstudio'
 import Claude from './claude'
 import PPIO from './ppio'
 import Deepinfra from '@/packages/models/deepinfra'
+import OpenAIComp from '@/packages/models/openai-comp'
 
 
 export function getModel(setting: Settings, config: Config) {
+
+    if (setting.modelProvider !== ""){
+        const modelProvider = setting.modelProviderList.find((m) => m.name === setting.modelProvider);
+        if (!modelProvider){
+            return null
+        }
+        return new OpenAIComp({
+            apiKey: modelProvider.apiKey,
+            baseURL: modelProvider.baseURL,
+            model: modelProvider.selectedModel,
+            temperature: modelProvider.temperature,
+            topP: modelProvider.topP,
+        })
+    }
+
     switch (setting.aiProvider) {
         case ModelProvider.ChatboxAI:
             return new ChatboxAI(setting, config)
@@ -86,7 +102,7 @@ export const AIModelProviderMenuOptionList = [
     }
 ]
 
-export function getModelDisplayName(settings: Settings, sessionType: SessionType): string {
+export function getModelName(settings: Settings) {
     if (!settings) {
         return 'unknown'
     }
@@ -97,7 +113,7 @@ export function getModelDisplayName(settings: Settings, sessionType: SessionType
                 if (name.length >= 10) {
                     name = name.slice(0, 10) + '...'
                 }
-                return `OpenAI Custom Model (${name})`
+                return `${name}`
             }
             return settings.model || 'unknown'
         case ModelProvider.Claude:
@@ -106,20 +122,37 @@ export function getModelDisplayName(settings: Settings, sessionType: SessionType
             const model = settings.chatboxAIModel || 'chatboxai-3.5'
             return model.replace('chatboxai-', 'Chatbox AI ')
         case ModelProvider.Ollama:
-            return `Ollama (${settings.ollamaModel})`
+            return `${settings.ollamaModel}`
         case ModelProvider.LMStudio:
-            return `LMStudio (${settings.lmStudioModel})`
+            return `${settings.lmStudioModel}`
         case ModelProvider.SiliconFlow:
-            return `SiliconCloud (${settings.siliconCloudModel})`
+            return `${settings.siliconCloudModel}`
         case ModelProvider.PPIO:
-            return `PPIO (${settings.ppioModel})`
+            return `${settings.ppioModel}`
         case ModelProvider.DeepInfra:
             if (settings.model === 'custom-model') {
                 let name = settings.deepInfraCustomModel
-                return `Deep Infra (${name})`
+                return `${name}`
             }
-            return `Deep Infra (${settings.deepInfraModel})` || 'unknown'
+            return `${settings.deepInfraModel}` || 'unknown'
         default:
             return 'unknown'
     }
+}
+
+export function getModelDisplayName(settings: Settings, sessionType: SessionType): string {
+
+    if (!settings) {
+        return 'unknown'
+    }
+
+    if (settings.modelProvider !== ""){
+        const modelProvider = settings.modelProviderList.find((m) => m.name === settings.modelProvider);
+        if (!modelProvider){
+            return 'unknown'
+        }
+        return modelProvider.selectedModel
+    }
+
+    return 'unknown'
 }

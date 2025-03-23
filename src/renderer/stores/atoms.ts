@@ -47,7 +47,10 @@ const _sessionsAtom = atomWithStorage<Session[]>(StorageKey.ChatSessions, [], st
 export const sessionsAtom = atom(
     (get) => {
         let sessions = get(_sessionsAtom)
-        if (sessions.length === 0) {
+        if (!Array.isArray(sessions)) { // Add type check
+            sessions = defaults.sessions()
+        }
+        else if (sessions.length === 0) {
             sessions = defaults.sessions()
         }
         return sessions
@@ -66,7 +69,8 @@ export const sortedSessionsAtom = atom((get) => {
 })
 
 export function sortSessions(sessions: Session[]): Session[] {
-    return [...sessions].reverse()
+    const safeSessions = Array.isArray(sessions) ? sessions : []
+    return [...safeSessions].reverse()
 }
 
 const _currentSessionIdCachedAtom = atomWithStorage<string | null>('_currentSessionIdCachedAtom', null)

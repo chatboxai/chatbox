@@ -1,4 +1,3 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { platform } from '@tauri-apps/plugin-os';
 import { invoke } from '@tauri-apps/api/core';
@@ -9,11 +8,16 @@ import { parseLocale } from '@/i18n/parser';
 import Exporter from './exporter';
 import { hostname } from '@tauri-apps/plugin-os';
 import * as defaults from '../../shared/defaults'
+import { MobilePlatform } from '@/packages/mobile-platform'
+import { DesktopPlatform } from '@/packages/desktop-platform'
 
 const store = new LazyStore("settings.json");
 
-export class DesktopPlatform {
+export class BasePlatform {
     public exporter = new Exporter();
+    private mobile = new MobilePlatform();
+    private desktop = new DesktopPlatform();
+
 
     public async getVersion(): Promise<string> {
         return getVersion();
@@ -24,19 +28,24 @@ export class DesktopPlatform {
     }
 
     public async shouldUseDarkColors(): Promise<boolean> {
-        const theme = await getCurrentWindow().theme();
-        return 'dark' === theme
+        if (getOS() === 'Android') {
+            return this.mobile.shouldUseDarkColors()
+        }
+       return this.desktop.shouldUseDarkColors();
     }
 
     public async onSystemThemeChange(callback: () => void): Promise<() => void> {
-
-        return await getCurrentWindow().onThemeChanged(callback);
+        if (getOS() === 'Android') {
+           return this.mobile.onSystemThemeChange(callback)
+       }
+       return this.desktop.onSystemThemeChange(callback);
     }
 
     public onWindowShow(callback: () => void): () => void {
-        // const unlisten = Event.listen('tauri://focus', callback);
-        // return () => unlisten.then(f => f());
-        return () => {}
+        if (getOS() === 'Android') {
+            return this.mobile.onWindowShow(callback)
+        }
+        return this.desktop.onWindowShow(callback);
     }
 
     public async openLink(url: string): Promise<void> {
@@ -132,4 +141,4 @@ export class DesktopPlatform {
     }
 }
 
-export default new DesktopPlatform();
+export default new BasePlatform();

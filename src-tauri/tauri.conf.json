@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Chatbox CE",
   "version": "0.1.0",
-  "identifier": "ChatboxCE",
+  "identifier": "com.chatboxce.app",
   "build": {
     "frontendDist": "../release/app/dist/renderer/",
     "devUrl": "http://localhost:1212",
@@ -17,13 +17,7 @@
         "resizable": true,
         "fullscreen": false
       }
-    ],
-    "security": {
-      "csp": null,
-      "capabilities": [
-
-      ]
-    }
+    ]
   },
   "bundle": {
     "active": true,
@@ -34,7 +28,5 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
-  },
-  "plugins": {
   }
 }

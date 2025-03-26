@@ -24,7 +24,11 @@ export default function Markdown(props: {
     return useMemo(() => (
         <ReactMarkdown
             remarkPlugins={
-                [remarkGfm, remarkMath, remarkBreaks]
+                [
+                    [remarkGfm, { singleTilde: false }],  // Disable single tilde strikethrough
+                    remarkMath,
+                    remarkBreaks
+                ]
             }
             rehypePlugins={[rehypeKatex]}
             className={`break-words ${className || ''}`}
@@ -43,7 +47,7 @@ export default function Markdown(props: {
                 ),
             }}
         >
-            { children }
+            {children}
         </ReactMarkdown>
     ), [children])
 }

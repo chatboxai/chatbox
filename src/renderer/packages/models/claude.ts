@@ -7,6 +7,16 @@ export type ClaudeModel = keyof typeof modelConfig
 
 // https://docs.anthropic.com/claude/docs/models-overview
 export const modelConfig = {
+    'claude-3-7-sonnet-latest': {
+        contextWindow: 200_000,
+        maxOutput: 8192,
+        vision: true,
+    },
+    'claude-3-7-sonnet-20250219': {
+        contextWindow: 200_000,
+        maxOutput: 8192,
+        vision: true,
+    },
     'claude-3-5-sonnet-latest': {
         contextWindow: 200_000,
         maxOutput: 8192,

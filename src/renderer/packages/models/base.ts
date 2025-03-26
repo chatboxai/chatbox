@@ -57,13 +57,16 @@ export default class Base {
         if (!response.body) {
             throw new Error('No response body')
         }
+        
+        const decoder = new TextDecoder() 
+
         const parser = createParser((event) => {
             if (event.type === 'event') {
                 onMessage(event.data)
             }
         })
         for await (const chunk of this.iterableStreamAsync(response.body)) {
-            const str = new TextDecoder().decode(chunk)
+            const str = decoder.decode(chunk, { stream: true })
             parser.feed(str)
         }
     }

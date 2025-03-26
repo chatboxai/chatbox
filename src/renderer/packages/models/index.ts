@@ -5,6 +5,7 @@ import Ollama from './ollama'
 import SiliconFlow from './siliconflow'
 import LMStudio from './lmstudio'
 import Claude from './claude'
+import PPIO from './ppio'
 
 
 export function getModel(setting: Settings, config: Config) {
@@ -21,6 +22,8 @@ export function getModel(setting: Settings, config: Config) {
             return new Ollama(setting)
         case ModelProvider.SiliconFlow:
             return new SiliconFlow(setting)
+        case ModelProvider.PPIO:
+            return new PPIO(setting)
         default:
             throw new Error('Cannot find model with provider: ' + setting.aiProvider)
     }
@@ -33,6 +36,7 @@ export const aiProviderNameHash = {
     [ModelProvider.LMStudio]: 'LMStudio',
     [ModelProvider.Ollama]: 'Ollama',
     [ModelProvider.SiliconFlow]: 'SiliconCloud API',
+    [ModelProvider.PPIO]: 'PPIO',
 }
 
 export const AIModelProviderMenuOptionList = [
@@ -67,6 +71,11 @@ export const AIModelProviderMenuOptionList = [
         label: aiProviderNameHash[ModelProvider.SiliconFlow],
         disabled: false,
     },
+    {
+        value: ModelProvider.PPIO,
+        label: aiProviderNameHash[ModelProvider.PPIO],
+        disabled: false,
+    },
 ]
 
 export function getModelDisplayName(settings: Settings, sessionType: SessionType): string {
@@ -94,6 +103,8 @@ export function getModelDisplayName(settings: Settings, sessionType: SessionType
             return `LMStudio (${settings.lmStudioModel})`
         case ModelProvider.SiliconFlow:
             return `SiliconCloud (${settings.siliconCloudModel})`
+        case ModelProvider.PPIO:
+            return `PPIO (${settings.ppioModel})`
         default:
             return 'unknown'
     }

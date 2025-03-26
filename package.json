@@ -106,7 +106,7 @@
         "sass": "^1.62.1",
         "sass-loader": "^13.3.1",
         "style-loader": "^3.3.3",
-        "tailwindcss": "^3.3.2",
+        "tailwindcss": "^3.4.0",
         "terser-webpack-plugin": "^5.3.9",
         "ts-jest": "^29.1.0",
         "ts-loader": "^9.4.3",
@@ -123,7 +123,7 @@
     "dependencies": {
         "@braintree/sanitize-url": "^6.0.4",
         "@dnd-kit/core": "^6.0.8",
-        "@dnd-kit/modifiers": "^6.0.1",
+        "@dnd-kit/modifiers": "^9.0.0",
         "@dnd-kit/sortable": "^7.0.2",
         "@dnd-kit/utilities": "^3.2.1",
         "@emotion/react": "^11.10.6",
@@ -168,7 +168,7 @@
         "tailwind-merge": "^1.14.0",
         "tailwindcss-animate": "^1.0.7",
         "uuid": "^9.0.0",
-        "web-vitals": "^2.1.4"
+        "web-vitals": "^4.2.4"
     },
     "browserslist": [],
     "prettier": {
@@ -285,7 +285,7 @@
             }
         ]
     },
-    "devEngines": {
+    "engines": {
         "node": ">=14.x",
         "npm": ">=7.x"
     },

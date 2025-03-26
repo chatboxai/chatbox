@@ -59,7 +59,7 @@ export default function AIProviderSelect(props: ModelConfigProps) {
                 >
                     {
                         AIModelProviderMenuOptionList.map((provider) => (
-                            <MenuItem disableRipple
+                            <MenuItem key={provider.value} disableRipple
                                 onClick={() => {
                                     setSettings({
                                         ...settings,

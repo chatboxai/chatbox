@@ -5,6 +5,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import * as sessionActions from '../stores/sessionActions'
 import Toolbar from './Toolbar'
 import { cn } from '@/lib/utils'
+import { getAutoGenerateTitle } from '@/stores/settingActions'
 
 interface Props { }
 
@@ -14,7 +15,9 @@ export default function Header(props: Props) {
     const setChatConfigDialogSession = useSetAtom(atoms.chatConfigDialogAtom)
 
     useEffect(() => {
+        const autoGenerateTitle : boolean = getAutoGenerateTitle()
         if (
+            autoGenerateTitle &&
             currentSession.name === 'Untitled'
             && currentSession.messages.length >= 2
         ) {

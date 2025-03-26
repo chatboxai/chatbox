@@ -9,6 +9,7 @@ import ko from './locales/ko/translation.json'
 import ru from './locales/ru/translation.json'
 import de from './locales/de/translation.json'
 import fr from './locales/fr/translation.json'
+import es from './locales/es/translation.json'
 
 import changelogZhHans from './changelogs/changelog_zh_Hans'
 import changelogZhHant from './changelogs/changelog_zh_Hant'
@@ -39,6 +40,9 @@ i18n.use(initReactI18next).init({
         },
         fr: {
             translation: fr,
+        },
+        es: {
+            translation: es,
         },
     },
     fallbackLng: 'en',

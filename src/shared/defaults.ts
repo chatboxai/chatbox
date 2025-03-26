@@ -23,7 +23,7 @@ export function settings(): Settings {
 
         claudeApiKey: '',
         claudeApiHost: 'https://api.anthropic.com',
-        claudeModel: 'claude-3-5-sonnet-20241022',
+        claudeModel: 'claude-3-7-sonnet-20250219',
 
         ollamaHost: 'http://127.0.0.1:11434',
         ollamaModel: '',
@@ -51,6 +51,10 @@ export function settings(): Settings {
         siliconCloudHost: 'https://api.siliconflow.cn',
         siliconCloudKey: '',
         siliconCloudModel: 'THUDM/glm-4-9b-chat',
+
+        ppioHost: 'https://api.ppinfra.com/v3/openai',
+        ppioKey: '',
+        ppioModel: 'deepseek/deepseek-r1/community',
 
         autoGenerateTitle: true,
     }

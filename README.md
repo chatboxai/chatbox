@@ -38,7 +38,7 @@ This is the repository for the Chatbox Community Edition, open-sourced under the
       <a href='https://chatboxai.app/?c=download-mac-aarch'>
         <img src='./doc/statics/mac.png' style="height:24px; width: 24px" />
         <br />
-        <b>M1/M2</b>
+        <b style="white-space: nowrap;">Apple Silicon</b>
       </a>
     </td>
     <td align="center" valign="middle">
@@ -179,6 +179,7 @@ For more information: [chatboxai.app](https://chatboxai.app/)
     -   Français (French)
     -   Deutsch (German)
     -   Русский (Russian)
+    -   Español (Spanish)
 
 -   **And More...**  
     :sparkles: Constantly enhancing the experience with new features!

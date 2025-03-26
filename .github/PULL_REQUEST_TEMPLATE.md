@@ -19,6 +19,6 @@ By submitting this Pull Request, I confirm that I have read and agree to the fol
 - I confirm that this code is my original work, or I have obtained the appropriate authorization from the copyright holder to submit this code under these terms.
 - I understand that the submitted code will be publicly released under the GPLv3 license, and may also be used in the proprietary official edition.
 
-Please check the box below to confirm:
+**Please check the box below to confirm:**
 
 [ ] I have read and agree with the above statement.

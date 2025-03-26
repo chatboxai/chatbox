@@ -35,5 +35,8 @@ export function parseLocale(locale: string): Language {
     if (locale.startsWith('fr')) {
         return 'fr'
     }
+    if (locale.startsWith('es')) {
+        return 'es'
+    }
     return 'en'
 }

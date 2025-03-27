@@ -10,6 +10,7 @@ interface Options {
     siliconflowCustomModel?: string
     temperature: number
     topP: number
+    openaiCustomModel?: string
 }
 
 export default class SiliconFlow extends Base {
@@ -49,7 +50,7 @@ export default class SiliconFlow extends Base {
 
         const model =
             this.options.siliconCloudModel === 'custom-model'
-                ? this.options.siliconflowCustomModel || ''
+                ? this.options.siliconflowCustomModel || this.options.openaiCustomModel || ''
                 : this.options.siliconCloudModel
         messages = injectModelSystemPrompt(model, messages)
 

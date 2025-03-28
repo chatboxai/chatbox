@@ -20,6 +20,14 @@ import { store, getConfig, getSettings } from './store-node'
 import * as proxy from './proxy'
 import * as fs from 'fs-extra'
 import * as analystic from './analystic-node'
+// Add app.isQuitting property to the Electron.App interface
+declare global {
+    namespace Electron {
+        interface App {
+            isQuitting?: boolean;
+        }
+    }
+}
 import sanitizeFilename from 'sanitize-filename'
 
 if (process.platform === 'win32') {
@@ -153,11 +161,39 @@ const createWindow = async () => {
  * Add event listeners...
  */
 
+// Function to safely quit the app after cleanup
+const safeQuit = () => {
+    // Mark app as quitting to prevent new network requests
+    app.isQuitting = true;
+    
+    // Only quit when no pending analytics requests
+    if (analystic.pendingRequests === 0) {
+        app.quit();
+    } else {
+        // Wait a bit and check again
+        setTimeout(() => safeQuit(), 100);
+    }
+}
+
+// Handle the 'before-quit' event
+app.on('before-quit', (event) => {
+    // If app is already in quitting state, don't prevent
+    if (app.isQuitting && analystic.pendingRequests === 0) {
+        return;
+    }
+    
+    // Prevent the default quit
+    event.preventDefault();
+    
+    // Use our safe quit procedure instead
+    safeQuit();
+});
+
 app.on('window-all-closed', () => {
     // Respect the OSX convention of having the application in memory even
     // after all windows have been closed
     if (process.platform !== 'darwin') {
-        app.quit()
+        safeQuit();
     }
 })
 
@@ -171,7 +207,10 @@ app.whenReady()
         })
         proxy.init()
     })
-    .catch(console.log)
+    .catch((error) => {
+        // Use electron-log instead of console.log to avoid EPIPE errors
+        log.error('App initialization error:', error)
+    })
 
 // IPC
 
@@ -226,10 +265,20 @@ ipcMain.handle('relaunch', () => {
 })
 
 ipcMain.handle('analysticTrackingEvent', (event, dataJson) => {
-    const data = JSON.parse(dataJson)
-    analystic.event(data.name, data.params).catch((e) => {
-        log.error('analystic_tracking_event', e)
-    })
+    // Skip analytics if app is quitting
+    if (app.isQuitting) {
+        return;
+    }
+    
+    try {
+        const data = JSON.parse(dataJson);
+        // Don't await this promise to avoid blocking
+        analystic.event(data.name, data.params).catch((e) => {
+            log.error('analystic_tracking_event', e);
+        });
+    } catch (e) {
+        log.error('analystic_tracking_event_parse', e);
+    }
 })
 
 ipcMain.handle('getConfig', (event) => {

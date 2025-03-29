@@ -70,6 +70,7 @@ export enum ModelProvider {
     SiliconFlow = 'silicon-flow',
     LMStudio = 'lm-studio',
     PPIO = 'ppio',
+    Flowise = 'flowise',
 }
 
 export interface ModelSettings {
@@ -120,6 +121,10 @@ export interface ModelSettings {
     ppioHost: string
     ppioKey: string
     ppioModel: string
+
+    // flowise
+    flowiseHost: string
+    flowiseChatflowId: string
 
     temperature: number
     topP: number

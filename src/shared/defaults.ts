@@ -56,6 +56,9 @@ export function settings(): Settings {
         ppioKey: '',
         ppioModel: 'deepseek/deepseek-r1/community',
 
+        flowiseHost: "http://127.0.0.1:3000",
+        flowiseChatflowId: "",
+
         autoGenerateTitle: true,
     }
 }

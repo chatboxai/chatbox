@@ -8,6 +8,7 @@
   "permissions": [
     "core:default",
     "store:default",
-    "opener:default"
+    "opener:default",
+    "os:default"
   ]
 }

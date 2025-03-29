@@ -85,6 +85,28 @@ export default function InputBox(props: Props) {
             }}
         >
             <div className={cn('w-full mx-auto flex flex-col')}>
+                <div className='w-full pl-1 pb-2'>
+                    <textarea
+                        className={cn(
+                            `w-full max-h-[${maxTextareaHeight}px]`,
+                            'overflow-y resize-none border-none outline-none',
+                            'bg-transparent p-1'
+                        )}
+                        value={messageInput} onChange={onMessageInput}
+                        onKeyDown={onKeyDown}
+                        ref={inputRef}
+                        style={{
+                            height: 'auto',
+                            minHeight: minTextareaHeight + 'px',
+                            color: theme.palette.text.primary,
+                            fontFamily: theme.typography.fontFamily,
+                            fontSize: theme.typography.body1.fontSize,
+                        }}
+                        placeholder={t('Type your question here...') || ''}
+                    />
+                    <div className='flex flex-row items-center'>
+                    </div>
+                </div>
                 <div className='flex flex-row flex-nowrap justify-between py-1'>
                     <div className='flex flex-row items-center'>
                         <MiniButton className='mr-2 hover:bg-transparent' style={{ color: theme.palette.text.primary }}
@@ -123,28 +145,6 @@ export default function InputBox(props: Props) {
                         >
                             <SendHorizontal size='22' strokeWidth={1} />
                         </MiniButton>
-                    </div>
-                </div>
-                <div className='w-full pl-1 pb-2'>
-                    <textarea
-                        className={cn(
-                            `w-full max-h-[${maxTextareaHeight}px]`,
-                            'overflow-y resize-none border-none outline-none',
-                            'bg-transparent p-1'
-                        )}
-                        value={messageInput} onChange={onMessageInput}
-                        onKeyDown={onKeyDown}
-                        ref={inputRef}
-                        style={{
-                            height: 'auto',
-                            minHeight: minTextareaHeight + 'px',
-                            color: theme.palette.text.primary,
-                            fontFamily: theme.typography.fontFamily,
-                            fontSize: theme.typography.body1.fontSize,
-                        }}
-                        placeholder={t('Type your question here...') || ''}
-                    />
-                    <div className='flex flex-row items-center'>
                     </div>
                 </div>
             </div>

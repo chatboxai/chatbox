@@ -6,6 +6,7 @@ import SiliconFlow from './siliconflow'
 import LMStudio from './lmstudio'
 import Claude from './claude'
 import PPIO from './ppio'
+import Flowise from './flowise'
 
 
 export function getModel(setting: Settings, config: Config) {
@@ -24,6 +25,8 @@ export function getModel(setting: Settings, config: Config) {
             return new SiliconFlow(setting)
         case ModelProvider.PPIO:
             return new PPIO(setting)
+        case ModelProvider.Flowise:
+            return new Flowise(setting)
         default:
             throw new Error('Cannot find model with provider: ' + setting.aiProvider)
     }
@@ -37,6 +40,7 @@ export const aiProviderNameHash = {
     [ModelProvider.Ollama]: 'Ollama',
     [ModelProvider.SiliconFlow]: 'SiliconCloud API',
     [ModelProvider.PPIO]: 'PPIO',
+    [ModelProvider.Flowise]: 'Flowise',
 }
 
 export const AIModelProviderMenuOptionList = [
@@ -76,6 +80,11 @@ export const AIModelProviderMenuOptionList = [
         label: aiProviderNameHash[ModelProvider.PPIO],
         disabled: false,
     },
+    {
+        value: ModelProvider.Flowise,
+        label: aiProviderNameHash[ModelProvider.Flowise],
+        disabled: false,
+    },
 ]
 
 export function getModelDisplayName(settings: Settings, sessionType: SessionType): string {
@@ -105,6 +114,8 @@ export function getModelDisplayName(settings: Settings, sessionType: SessionType
             return `SiliconCloud (${settings.siliconCloudModel})`
         case ModelProvider.PPIO:
             return `PPIO (${settings.ppioModel})`
+        case ModelProvider.Flowise:
+            return `Flowise ChatFlow API`
         default:
             return 'unknown'
     }

@@ -142,6 +142,7 @@
         "electron-store": "^8.1.0",
         "electron-updater": "^6.3.4",
         "eventsource-parser": "^1.0.0",
+        "flowise-sdk": "^1.0.9",
         "form-data": "^4.0.0",
         "fs-extra": "^11.1.1",
         "highlight.js": "^11.7.0",

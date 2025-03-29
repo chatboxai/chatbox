@@ -1,7 +1,7 @@
 import { getDefaultStore } from 'jotai'
 import * as atoms from './atoms'
 import * as defaults from '../../shared/defaults'
-import { Settings } from '../../shared/types'
+import { ModelProvider, Settings } from "../../shared/types";
 
 export function modify(update: Partial<Settings>) {
     const store = getDefaultStore()
@@ -25,6 +25,9 @@ export function needEditSetting() {
         return true
     }
     if (settings.aiProvider === 'ollama' && !settings.ollamaModel) {
+        return true
+    }
+    if (settings.aiProvider === ModelProvider.Flowise && !settings.flowiseChatflowId) {
         return true
     }
     return false

@@ -10,6 +10,7 @@ import MaxContextMessageCountSlider from '@/components/MaxContextMessageCountSli
 import TemperatureSlider from '@/components/TemperatureSlider'
 import ClaudeSetting from './ClaudeSetting'
 import PPIOSetting from './PPIOSetting'
+import { FlowiseSetting } from "@/pages/SettingDialog/FlowiseSetting";
 
 interface ModelConfigProps {
     settingsEdit: ModelSettings
@@ -84,6 +85,9 @@ export default function ModelSettingTab(props: ModelConfigProps) {
             )}
             {settingsEdit.aiProvider === ModelProvider.PPIO && (
                 <PPIOSetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
+            )}
+            {settingsEdit.aiProvider === ModelProvider.Flowise && (
+                <FlowiseSetting settingsEdit={settingsEdit} setSettingsEdit={setSettingsEdit} />
             )}
         </Box>
     )

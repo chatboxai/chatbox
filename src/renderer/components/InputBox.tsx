@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { Typography, useTheme } from '@mui/material'
 import { SessionType, createMessage } from '../../shared/types'
+import platform from '../packages/platform'
 import { useTranslation } from 'react-i18next'
 import * as atoms from '../stores/atoms'
 import { useSetAtom } from 'jotai'
@@ -49,7 +50,12 @@ export default function InputBox(props: Props) {
         setMessageInput(input)
     }
 
-    const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const  onKeyDown = async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        // on iOS and Android enter will behave as newline instead.
+        if (event.key === 'Enter' && (await platform.isMobile())) {
+           return
+        }
+
         if (
             event.keyCode === 13 &&
             !event.shiftKey &&

@@ -32,6 +32,9 @@ export default function MainPane(props: Props) {
             className="h-full w-full"
             sx={{
                 flexGrow: 1,
+                height: '100%', // Add explicit height
+                display: 'flex', // Ensure flex container
+                flexDirection: 'column'
             }}
         >
             <div className="flex flex-col h-full">
@@ -41,7 +44,11 @@ export default function MainPane(props: Props) {
                     settings={settings}
                     onClose={() => setOpenModelSelect(false)}
                 />
-                <MessageList />
+                <div className="flex-1 min-h-0"> {/* Crucial min-height */}
+                    <div className="h-full overflow-y-auto">
+                        <MessageList />
+                    </div>
+                </div>
                 <InputBox currentSessionId={currentSession.id} currentSessionType={currentSession.type || 'chat'} />
             </div>
         </Box>

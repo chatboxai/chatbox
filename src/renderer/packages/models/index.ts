@@ -140,19 +140,12 @@ export function getModelName(settings: Settings) {
     }
 }
 
-export function getModelDisplayName(settings: Settings, sessionType: SessionType): string {
+export function getModelDisplayName(settings: Settings): string {
+    const { modelProvider, modelProviderList } = settings ?? {};
 
-    if (!settings) {
-        return 'unknown'
-    }
+    const isValidProvider = modelProvider?.trim() && modelProviderList?.length;
+    if (!isValidProvider) return 'unknown';
 
-    if (settings.modelProvider !== ""){
-        const modelProvider = settings.modelProviderList.find((m) => m.name === settings.modelProvider);
-        if (!modelProvider){
-            return 'unknown'
-        }
-        return modelProvider.selectedModel
-    }
-
-    return 'unknown'
+    const selectedProvider = modelProviderList.find(m => m.name === modelProvider);
+    return selectedProvider?.selectedModel ?? 'unknown';
 }

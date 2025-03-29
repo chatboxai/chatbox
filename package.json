@@ -25,6 +25,7 @@
         "prettier": "cross-env prettier -w ./src/**/*.{ts,tsx,json,css}",
         "prepare": "husky",
         "tauri": "tauri",
+        "tauri:build:android": "tauri android build",
         "tauri:dev:android": "tauri android dev",
         "tauri:dev:clean": "tauri dev -- --clear-data",
         "tauri-build": "ts-node ./.erb/scripts/clean.js dist && npm run build:renderer && tauri build",

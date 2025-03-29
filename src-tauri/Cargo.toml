@@ -26,3 +26,4 @@ tauri-plugin-log = "2.0.0-rc"
 uuid = { version = "0.8", features = ["v4", "serde"] }
 tauri-plugin-store = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-os = "2"

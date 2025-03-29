@@ -51,6 +51,7 @@ export default function Header(props: Props) {
                 borderBottomWidth: '1px',
                 borderBottomStyle: 'solid',
                 borderBottomColor: theme.palette.divider,
+                padding: 5,
             }}
         >
             <div className={cn('w-full mx-auto flex flex-row items-center gap-2')}>

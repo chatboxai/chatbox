@@ -1,12 +1,11 @@
-import { getVersion } from "@tauri-apps/api/app";
-import { platform } from '@tauri-apps/plugin-os';
-import { invoke } from '@tauri-apps/api/core';
-import { Config, Settings } from "src/shared/types";
-import { LazyStore } from '@tauri-apps/plugin-store';
-import { getOS } from './navigator';
-import { parseLocale } from '@/i18n/parser';
-import Exporter from './exporter';
-import { hostname } from '@tauri-apps/plugin-os';
+import { getVersion } from '@tauri-apps/api/app'
+import { hostname, platform } from '@tauri-apps/plugin-os'
+import { invoke } from '@tauri-apps/api/core'
+import { Config, Settings } from 'src/shared/types'
+import { LazyStore } from '@tauri-apps/plugin-store'
+import { getOS } from './navigator'
+import { parseLocale } from '@/i18n/parser'
+import Exporter from './exporter'
 import * as defaults from '../../shared/defaults'
 import { MobilePlatform } from '@/packages/mobile-platform'
 import { DesktopPlatform } from '@/packages/desktop-platform'
@@ -27,25 +26,29 @@ export class BasePlatform {
         return platform()
     }
 
+    public async isMobile(): Promise<boolean> {
+        return await invoke('is_mobile_platform')
+    }
+
     public async shouldUseDarkColors(): Promise<boolean> {
-        if (getOS() === 'Android') {
+        // if (getOS() === 'Android') {
             return this.mobile.shouldUseDarkColors()
-        }
-       return this.desktop.shouldUseDarkColors();
+        // }
+       // return this.desktop.shouldUseDarkColors();
     }
 
     public async onSystemThemeChange(callback: () => void): Promise<void> {
-        if (getOS() === 'Android') {
+        // if (getOS() === 'Android') {
             return this.mobile.onSystemThemeChange(callback)
-        }
-       return this.desktop.onSystemThemeChange(callback)
+        // }
+       // return this.desktop.onSystemThemeChange(callback)
     }
 
     public onWindowShow(callback: () => void): () => void {
-        if (getOS() === 'Android') {
+        // if (getOS() === 'Android') {
             return this.mobile.onWindowShow(callback)
-        }
-        return this.desktop.onWindowShow(callback);
+        // }
+        // return this.desktop.onWindowShow(callback);
     }
 
     public async openLink(url: string): Promise<void> {

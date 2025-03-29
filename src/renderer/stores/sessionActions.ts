@@ -185,7 +185,7 @@ export async function generate(sessionId: string, targetMsg: Message) {
         content: placeholder,
         cancel: undefined,
         aiProvider: settings.aiProvider,
-        model: getModelDisplayName(settings, session.type || 'chat'),
+        model: getModelDisplayName(settings),
         generating: true,
         errorCode: undefined,
         error: undefined,

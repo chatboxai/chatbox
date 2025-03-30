@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Typography, useTheme } from '@mui/material'
 import { SessionType, createMessage } from '../../shared/types'
 import platform from '../packages/platform'
@@ -42,8 +42,27 @@ export default function InputBox(props: Props) {
         trackingEvent('send_message', { event_category: 'user' })
     }
 
-    const minTextareaHeight = 66
-    const maxTextareaHeight = 96
+    const minTextareaHeight = 25
+    const maxTextareaHeight = 300
+
+    // NOTE: this is temporary solution to solve the input box doesn't grow automatically.
+    // might require refactor in the future.
+    useEffect(() => {
+        if (inputRef.current) {
+            if (!messageInput) {
+                inputRef.current.style.height = `${minTextareaHeight}px`
+                return
+            }
+
+            inputRef.current.style.height = ''
+            const computedHeight = inputRef.current.scrollHeight
+            const newHeight = Math.max(
+                minTextareaHeight,
+                Math.min(computedHeight, maxTextareaHeight)
+            )
+            inputRef.current.style.height = `${newHeight}px`
+        }
+    }, [messageInput])
 
     const onMessageInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
         const input = event.target.value
@@ -85,19 +104,23 @@ export default function InputBox(props: Props) {
             }}
         >
             <div className={cn('w-full mx-auto flex flex-col')}>
-                <div className='w-full pl-1 pb-2'>
+                <div className='w-full pl-1 pb-2 flex-1 min-h-0'
+                style={{
+                    paddingLeft: '0',
+                }}
+                >
                     <textarea
                         className={cn(
-                            `w-full max-h-[${maxTextareaHeight}px]`,
-                            'overflow-y resize-none border-none outline-none',
+                            'w-full overflow-y-auto resize-none border-none outline-none',
                             'bg-transparent p-1'
                         )}
-                        value={messageInput} onChange={onMessageInput}
+                        value={messageInput}
+                        onChange={onMessageInput}
                         onKeyDown={onKeyDown}
                         ref={inputRef}
                         style={{
-                            height: 'auto',
                             minHeight: minTextareaHeight + 'px',
+                            maxHeight: maxTextareaHeight + 'px',
                             color: theme.palette.text.primary,
                             fontFamily: theme.typography.fontFamily,
                             fontSize: theme.typography.body1.fontSize,

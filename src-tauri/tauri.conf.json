@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../release/app/dist/renderer/",
     "devUrl": "http://localhost:1212",
-    "beforeDevCommand": "npm run dev"
+    "beforeDevCommand": "npm run start:renderer"
   },
   "app": {
     "windows": [

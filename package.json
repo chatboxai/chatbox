@@ -3,26 +3,24 @@
     "productName": "xyz.chatboxapp.ce",
     "version": "0.0.1",
     "license": "GPL-3.0 license",
-    "description": "A desktop client for multiple cutting-edge AI models",
+    "description": "A desktop & mobile client for multiple cutting-edge AI models",
     "main": "./src/main/main.ts",
     "scripts": {
         "build": "npm run build:renderer",
-        "build:main": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.prod.ts",
-        "build:renderer": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.prod.ts",
+        "build:main": "NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.prod.ts",
+        "build:renderer": "NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.prod.ts",
         "postinstall": "ts-node .erb/scripts/check-native-dep.js && electron-builder install-app-deps && cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.dev.dll.ts",
         "package": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never",
         "package:all": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never --win --mac --linux",
         "release": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish always --win --mac --linux",
         "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
-        "dev": "npm start",
+        "dev": "tauri dev",
         "start": "ts-node ./.erb/scripts/check-port-in-use.js && npm run start:renderer",
-        "start:main": "cross-env NODE_ENV=development electronmon -r ts-node/register/transpile-only .",
-        "start:preload": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.preload.dev.ts",
-        "start:renderer": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack serve --config ./.erb/configs/webpack.config.renderer.dev.ts",
+        "start:renderer": "NODE_ENV=development webpack serve --config ./.erb/configs/webpack.config.renderer.dev.ts",
         "test": "jest",
         "lint": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx",
         "check": "npx tsc --noEmit",
-        "prettier": "cross-env prettier -w ./src/**/*.{ts,tsx,json,css}",
+        "prettier": "prettier -w ./src/**/*.{ts,tsx,json,css}",
         "prepare": "husky",
         "tauri": "tauri",
         "tauri:build:android": "tauri android build",
@@ -33,12 +31,12 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/Bin-Huang/chatbox.git"
+        "url": "https://github.com/adzimzf/chatbox.git"
     },
     "keywords": [],
     "author": {
-        "name": "bennhuang",
-        "email": "tohuangbin@gmail.com"
+        "name": "azdim zul fahmy",
+        "email": "adzimzulfahmy@gmail.com"
     },
     "devDependencies": {
         "@electron/notarize": "^2.0.0",

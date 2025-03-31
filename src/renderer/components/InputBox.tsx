@@ -114,12 +114,13 @@ export default function InputBox(props: Props) {
                 borderTopWidth: '1px',
                 borderTopStyle: 'solid',
                 borderTopColor: theme.palette.divider,
+                padding: '0 4px'
             }}
         >
             <div className={cn('w-full mx-auto flex flex-col')}>
                 <div className='w-full pl-1 pb-2 flex-1 min-h-0'
                 style={{
-                    paddingLeft: '0',
+                    padding: '0',
                 }}
                 >
                     <textarea
@@ -173,6 +174,7 @@ export default function InputBox(props: Props) {
                                     ? theme.palette.error.main
                                     : theme.palette.primary.main,
                                 backgroundColor: 'transparent',
+                                margin: '0 auto',
                             }}
                             tooltipTitle={
                                 <Typography variant="caption">

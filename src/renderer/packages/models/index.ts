@@ -1,12 +1,4 @@
-import OpenAI from './openai'
-import { Settings, Config, ModelProvider, SessionType } from '../../../shared/types'
-import ChatboxAI from './chatboxai'
-import Ollama from './ollama'
-import SiliconFlow from './siliconflow'
-import LMStudio from './lmstudio'
-import Claude from './claude'
-import PPIO from './ppio'
-import Deepinfra from '@/packages/models/deepinfra'
+import { Settings, Config, ModelProvider } from '../../../shared/types'
 import OpenAIComp from '@/packages/models/openai-comp'
 
 
@@ -25,27 +17,7 @@ export function getModel(setting: Settings, config: Config) {
             topP: modelProvider.topP,
         })
     }
-
-    switch (setting.aiProvider) {
-        case ModelProvider.ChatboxAI:
-            return new ChatboxAI(setting, config)
-        case ModelProvider.OpenAI:
-            return new OpenAI(setting)
-        case ModelProvider.LMStudio:
-            return new LMStudio(setting)
-        case ModelProvider.Claude:
-            return new Claude(setting)
-        case ModelProvider.Ollama:
-            return new Ollama(setting)
-        case ModelProvider.SiliconFlow:
-            return new SiliconFlow(setting)
-        case ModelProvider.PPIO:
-            return new PPIO(setting)
-        case ModelProvider.DeepInfra:
-            return new Deepinfra(setting)
-        default:
-            throw new Error('Cannot find model with provider: ' + setting.aiProvider)
-    }
+    throw new Error('please select model provider!')
 }
 
 export const aiProviderNameHash = {

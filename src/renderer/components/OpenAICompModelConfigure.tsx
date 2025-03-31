@@ -102,18 +102,23 @@ export function OpenAICompModelConfigure(props: OpenAICompModelConfigureProps) {
                     }}
                     placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
                 />
-                <IconButton
-                    onClick={handleRefresh}
-                    size="large"
-                    sx={{
-                        border: 1,
-                        borderRadius: 1,
-                        borderColor: 'divider',
-                        height: '54px'
-                    }}
-                >
-                    <RefreshIcon />
-                </IconButton>
+                <div
+                style={{
+                    marginTop: 7,
+                }}>
+                    <IconButton
+                        onClick={handleRefresh}
+                        size="large"
+                        sx={{
+                            border: 1,
+                            borderRadius: 1,
+                            borderColor: 'divider',
+                            height: '53px'
+                        }}
+                    >
+                        <RefreshIcon />
+                    </IconButton>
+                </div>
             </div>
 
             <FormControl fullWidth style={{ marginTop: 8 }}>

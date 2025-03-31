@@ -255,6 +255,7 @@ export async function generate(sessionId: string, targetMsg: Message) {
     }
 }
 
+// _generateName generate the name of the session based on the last message.
 async function _generateName(sessionId: string, modifyName: (sessionId: string, name: string) => void) {
     const store = getDefaultStore()
     const settings = store.get(atoms.settingsAtom)
@@ -272,8 +273,8 @@ async function _generateName(sessionId: string, modifyName: (sessionId: string, 
             settings.language,
         ),
         )
-        name = name.replace(/['"“”]/g, '')
-        name = name.slice(0, 10)
+        name = name.replace(/<think>[\s\S]*?<\/think>/g, '')
+        name = name.slice(0, 30)
         modifyName(session.id, name)
     } catch (e: any) {
         if (!(e instanceof ApiError || e instanceof NetworkError)) {

@@ -82,7 +82,7 @@ export default function Header(props: Props) {
                         minWidth: 'auto',
                         textTransform: 'none',
                         color: 'inherit',
-                        padding: '0px 5px',
+                        padding: '5px',
                         gap: '2px'
                     }}
                     className="truncate"
@@ -110,7 +110,6 @@ export default function Header(props: Props) {
                             textAlign: 'left',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            lineHeight: 1.3
                         }}
                     >
                         {settings?.modelProviderList?.find((provider) => (provider.uuid === settings.modelProviderID))?.selectedModel}

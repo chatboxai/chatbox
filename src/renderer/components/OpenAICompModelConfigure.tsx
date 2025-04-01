@@ -104,7 +104,7 @@ export function OpenAICompModelConfigure(props: OpenAICompModelConfigureProps) {
                 />
                 <div
                 style={{
-                    marginTop: 7,
+                    marginTop: 5,
                 }}>
                     <IconButton
                         onClick={handleRefresh}
@@ -113,7 +113,7 @@ export function OpenAICompModelConfigure(props: OpenAICompModelConfigureProps) {
                             border: 1,
                             borderRadius: 1,
                             borderColor: 'divider',
-                            height: '53px'
+                            height: '52px'
                         }}
                     >
                         <RefreshIcon />

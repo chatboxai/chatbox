@@ -32,6 +32,8 @@ import { estimateTokensFromMessages } from '@/packages/token'
 import { countWord } from '@/packages/word-count'
 import MessageThinking from '@/components/MessageThinking'
 import { modifyMessage } from '@/stores/sessionActions'
+import * as atoms from '@/stores/atoms'
+import { useAtom } from 'jotai/index'
 
 export interface Props {
     id?: string
@@ -56,6 +58,7 @@ export default function Message(props: Props) {
     const enableMarkdownRendering = useAtomValue(enableMarkdownRenderingAtom)
     const currentSessionPicUrl = useAtomValue(currsentSessionPicUrlAtom)
     const setOpenSettingWindow = useSetAtom(openSettingDialogAtom)
+    const [messageListRef, setMessageListRef] = useAtom(atoms.messageListRefAtom)
 
     const { msg, className, collapseThreshold, hiddenButtonGroup, small } = props
 
@@ -100,8 +103,13 @@ export default function Message(props: Props) {
     }
 
     useEffect(() => {
-        if (msg.generating) {
-            scrollActions.scrollToBottom()
+        if (msg.generating && messageListRef?.current) {
+            const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
+            const bottomThreshold = 20;
+            const isAtBottom = scrollTop + clientHeight >= scrollHeight - bottomThreshold;
+            if (isAtBottom) {
+                scrollActions.scrollToBottom();
+            }
         }
     }, [msg.content])
 

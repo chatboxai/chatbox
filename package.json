@@ -78,7 +78,7 @@
         "electronmon": "^2.0.2",
         "eslint": "^8.42.0",
         "eslint-config-airbnb-base": "^15.0.0",
-        "eslint-config-erb": "^4.0.6",
+        "eslint-config-erb": "^4.1.0",
         "eslint-import-resolver-typescript": "^3.5.5",
         "eslint-import-resolver-webpack": "^0.13.2",
         "eslint-plugin-compat": "^4.1.4",

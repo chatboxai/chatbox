@@ -27,7 +27,8 @@
         "tauri:dev:android": "tauri android dev",
         "tauri:dev:clean": "tauri dev -- --clear-data",
         "tauri-build": "ts-node ./.erb/scripts/clean.js dist && npm run build:renderer && tauri build",
-        "tauri:android:init": "tauri android init"
+        "tauri:android:init": "tauri android init",
+        "tauri:build:all": "npm run tauri-build && npm run tauri:build:android"
     },
     "repository": {
         "type": "git",

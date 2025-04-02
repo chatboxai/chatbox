@@ -7,8 +7,7 @@ import * as atoms from '../stores/atoms'
 import { useSetAtom } from 'jotai'
 import * as sessionActions from '../stores/sessionActions'
 import {
-    SendHorizontal,
-    Settings2, StopCircle
+    Settings2
 } from 'lucide-react'
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import StopCircleRoundedIcon from '@mui/icons-material/StopCircleRounded';
@@ -17,6 +16,7 @@ import icon from '../static/icon.png'
 import { trackingEvent } from '@/packages/event'
 import MiniButton from './MiniButton'
 import _ from 'lodash'
+import * as scrollActions from '@/stores/scrollActions'
 
 export interface Props {
     currentSessionId: string
@@ -39,12 +39,14 @@ export default function InputBox(props: Props) {
         if (messageInput.trim() === '') {
             return
         }
+        scrollActions.scrollToBottom();
         const newMessage = createMessage('user', messageInput)
         sessionActions.submitNewUserMessage({
             currentSessionId: props.currentSessionId,
             newUserMsg: newMessage,
             needGenerating,
         })
+
         setMessageInput('')
         trackingEvent('send_message', { event_category: 'user' })
     }

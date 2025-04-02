@@ -34,6 +34,7 @@ import MessageThinking from '@/components/MessageThinking'
 import { modifyMessage } from '@/stores/sessionActions'
 import * as atoms from '@/stores/atoms'
 import { useAtom } from 'jotai/index'
+import LoadingSpinner from '@/components/LoadingSpinner'
 
 export interface Props {
     id?: string
@@ -59,6 +60,7 @@ export default function Message(props: Props) {
     const currentSessionPicUrl = useAtomValue(currsentSessionPicUrlAtom)
     const setOpenSettingWindow = useSetAtom(openSettingDialogAtom)
     const [messageListRef, setMessageListRef] = useAtom(atoms.messageListRefAtom)
+    const [showLoadingIcon, setShowLoadingIcon] = useState(false)
 
     const { msg, className, collapseThreshold, hiddenButtonGroup, small } = props
 
@@ -102,16 +104,24 @@ export default function Message(props: Props) {
         tips.push('time: ' + messageTimestamp)
     }
 
+    useEffect(()=>{
+        if (msg.role === 'assistant' && (msg.content === '' || msg.error === '')){
+            setShowLoadingIcon(true)
+        } else {
+            setShowLoadingIcon(false)
+        }
+    },[msg])
+
     useEffect(() => {
-        if (msg.generating && messageListRef?.current) {
+        if (messageListRef?.current) {
             const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
-            const bottomThreshold = 20;
+            const bottomThreshold = 50;
             const isAtBottom = scrollTop + clientHeight >= scrollHeight - bottomThreshold;
             if (isAtBottom) {
                 scrollActions.scrollToBottom();
             }
         }
-    }, [msg.content])
+    }, [msg])
 
     let content = msg.content
     if (typeof msg.content !== 'string') {
@@ -214,6 +224,10 @@ export default function Message(props: Props) {
                         <Box className={cn('msg-content', { 'msg-content-small': small })} sx={
                             small ? { fontSize: theme.typography.body2.fontSize } : {}
                         }>
+                            {
+                                showLoadingIcon && <LoadingSpinner speed={0.5} size={'20px'} />
+                            }
+
                             {
                                 enableMarkdownRendering && !isCollapsed ? (
                                     <MessageThinking

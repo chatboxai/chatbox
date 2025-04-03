@@ -6,40 +6,30 @@ import { useAtom } from 'jotai/index'
 import * as atoms from '@/stores/atoms'
 
 export default function ScrollToBottomButton ()  {
-    const [visible, setVisible] = useState(true);
+    const [visible, setVisible] = useState(false);
     const [messageListRef, setMessageListRef] = useAtom(atoms.messageListRefAtom)
 
-    // Get scroll container (body or custom element)
-    // useEffect(() => {
-        // if (messageListRef?.current) {
-        //     messageListRef.current = document.documentElement;
-        // }
-    // }, []);
-
-    // const checkScrollPosition = () => {
-        // if (messageListRef?.current) { return;
-        //
-        // const { scrollTop, clientHeight, scrollHeight } = messageListRef.current;
-        // const isNearBottom = scrollHeight - (scrollTop + clientHeight) > 100;
-        // setVisible(isNearBottom);
-    // };
+    const checkScrollPosition = () => {
+        if (messageListRef?.current) {
+            const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
+            const bottomThreshold = 100;
+            const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
+            if (distanceFromBottom >= bottomThreshold) {
+                setVisible(true);
+            } else {
+                setVisible(false);
+            }
+        }
+    };
 
     const scrollToBottom = () => {
         scrollActions.scrollToBottom();
     };
 
-    // Listen to scroll events
-    // useEffect(() => {
-        // const current = messageListRef.current;
-        // current?.addEventListener('scroll', checkScrollPosition);
-        // return () => current?.removeEventListener('scroll', checkScrollPosition);
-    // }, []);
-
-    // Check initial position
-    // useEffect(() => {
-    //     const timer = setInterval(checkScrollPosition, 1000);
-    //     return () => clearInterval(timer);
-    // }, []);
+    useEffect(() => {
+        const timer = setInterval(checkScrollPosition, 500);
+        return () => clearInterval(timer);
+    }, []);
 
     return (
         <Fade in={visible}>

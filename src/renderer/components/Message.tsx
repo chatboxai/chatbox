@@ -112,13 +112,40 @@ export default function Message(props: Props) {
         }
     },[msg])
 
+    const [isManualScroll, setIsManualScroll] = useState(false);
+    const lastScrollTime = useRef(Date.now());
+
     useEffect(() => {
+        if (!messageListRef?.current) return;
+
+        const container = messageListRef.current;
+
+        const handleScroll = () => {
+            // Detect manual scrolls (within last 150ms)
+            if (Date.now() - lastScrollTime.current > 150) {
+                setIsManualScroll(true);
+            }
+        };
+
+        container.addEventListener('scroll', handleScroll);
+        return () => container.removeEventListener('scroll', handleScroll);
+    }, []);
+
+    useEffect(() => {
+        if (msg.role === 'user'){
+            scrollActions.scrollToBottom();
+        }
+
         if (messageListRef?.current) {
             const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
-            const bottomThreshold = 50;
-            const isAtBottom = scrollTop + clientHeight >= scrollHeight - bottomThreshold;
-            if (isAtBottom) {
-                scrollActions.scrollToBottom();
+            const bottomThreshold = 100;
+            const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
+            if (distanceFromBottom < bottomThreshold) {
+                setIsManualScroll(false);
+            }
+            if (!isManualScroll && distanceFromBottom > bottomThreshold) {
+                scrollActions.scrollToBottom()
+                lastScrollTime.current = Date.now();
             }
         }
     }, [msg])
@@ -225,7 +252,7 @@ export default function Message(props: Props) {
                             small ? { fontSize: theme.typography.body2.fontSize } : {}
                         }>
                             {
-                                showLoadingIcon && <LoadingSpinner speed={0.5} size={'20px'} />
+                                showLoadingIcon && <LoadingSpinner speed={0.5} size={'15px'} />
                             }
 
                             {

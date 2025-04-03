@@ -39,7 +39,6 @@ export default function InputBox(props: Props) {
         if (messageInput.trim() === '') {
             return
         }
-        scrollActions.scrollToBottom();
         const newMessage = createMessage('user', messageInput)
         sessionActions.submitNewUserMessage({
             currentSessionId: props.currentSessionId,

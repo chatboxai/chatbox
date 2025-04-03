@@ -65,9 +65,6 @@ export default function ModelSettingTab(props: ModelConfigProps) {
         return newList;
     };
 
-    console.log(settingsEdit);
-    console.log(currentProvider);
-
     return (
         <Box>
             <AIProviderSelect

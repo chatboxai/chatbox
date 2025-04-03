@@ -32,6 +32,9 @@ import { estimateTokensFromMessages } from '@/packages/token'
 import { countWord } from '@/packages/word-count'
 import MessageThinking from '@/components/MessageThinking'
 import { modifyMessage } from '@/stores/sessionActions'
+import * as atoms from '@/stores/atoms'
+import { useAtom } from 'jotai/index'
+import LoadingSpinner from '@/components/LoadingSpinner'
 
 export interface Props {
     id?: string
@@ -56,6 +59,8 @@ export default function Message(props: Props) {
     const enableMarkdownRendering = useAtomValue(enableMarkdownRenderingAtom)
     const currentSessionPicUrl = useAtomValue(currsentSessionPicUrlAtom)
     const setOpenSettingWindow = useSetAtom(openSettingDialogAtom)
+    const [messageListRef, setMessageListRef] = useAtom(atoms.messageListRefAtom)
+    const [showLoadingIcon, setShowLoadingIcon] = useState(false)
 
     const { msg, className, collapseThreshold, hiddenButtonGroup, small } = props
 
@@ -99,11 +104,51 @@ export default function Message(props: Props) {
         tips.push('time: ' + messageTimestamp)
     }
 
-    useEffect(() => {
-        if (msg.generating) {
-            scrollActions.scrollToBottom()
+    useEffect(()=>{
+        if (msg.role === 'assistant' && (msg.content === '' || msg.error === '')){
+            setShowLoadingIcon(true)
+        } else {
+            setShowLoadingIcon(false)
         }
-    }, [msg.content])
+    },[msg])
+
+    const [isManualScroll, setIsManualScroll] = useState(false);
+    const lastScrollTime = useRef(Date.now());
+
+    useEffect(() => {
+        if (!messageListRef?.current) return;
+
+        const container = messageListRef.current;
+
+        const handleScroll = () => {
+            // Detect manual scrolls (within last 150ms)
+            if (Date.now() - lastScrollTime.current > 150) {
+                setIsManualScroll(true);
+            }
+        };
+
+        container.addEventListener('scroll', handleScroll);
+        return () => container.removeEventListener('scroll', handleScroll);
+    }, []);
+
+    useEffect(() => {
+        if (msg.role === 'user'){
+            scrollActions.scrollToBottom();
+        }
+
+        if (messageListRef?.current) {
+            const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
+            const bottomThreshold = 100;
+            const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
+            if (distanceFromBottom < bottomThreshold) {
+                setIsManualScroll(false);
+            }
+            if (!isManualScroll && distanceFromBottom > bottomThreshold) {
+                scrollActions.scrollToBottom()
+                lastScrollTime.current = Date.now();
+            }
+        }
+    }, [msg])
 
     let content = msg.content
     if (typeof msg.content !== 'string') {
@@ -206,6 +251,10 @@ export default function Message(props: Props) {
                         <Box className={cn('msg-content', { 'msg-content-small': small })} sx={
                             small ? { fontSize: theme.typography.body2.fontSize } : {}
                         }>
+                            {
+                                showLoadingIcon && <LoadingSpinner speed={0.5} size={'15px'} />
+                            }
+
                             {
                                 enableMarkdownRendering && !isCollapsed ? (
                                     <MessageThinking

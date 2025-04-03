@@ -50,7 +50,7 @@ export function ModelSelectDialog(props: Props) {
                 open={props.open}
                 onClose={props.onClose}
                 anchorReference="anchorPosition"
-                anchorPosition={{ top: 60, left: 55 }}
+                anchorPosition={{ top: 50, left: 40 }}
                 anchorOrigin={{
                     vertical: 'top',
                     horizontal: 'left'
@@ -89,14 +89,8 @@ export function ModelSelectDialog(props: Props) {
                             key={model.id}
                             onClick={() => handleSelectModel(model)}
                             selected={selectedModel === model.id}
-                            sx={{
-                                // Example of selected item styling
-                                '&.Mui-selected': {
-                                    backgroundColor: '#f0f0f0'
-                                },
-                                '&.Mui-selected:hover': {
-                                    backgroundColor: '#e0e0e0'
-                                }
+                            style={{
+                               padding: '5px',
                             }}
                         >
                             <ListItemText primary={model.id} />

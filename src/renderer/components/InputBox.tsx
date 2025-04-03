@@ -7,14 +7,16 @@ import * as atoms from '../stores/atoms'
 import { useSetAtom } from 'jotai'
 import * as sessionActions from '../stores/sessionActions'
 import {
-    SendHorizontal,
-    Settings2,
+    Settings2
 } from 'lucide-react'
+import SendRoundedIcon from '@mui/icons-material/SendRounded';
+import StopCircleRoundedIcon from '@mui/icons-material/StopCircleRounded';
 import { cn } from '@/lib/utils'
 import icon from '../static/icon.png'
 import { trackingEvent } from '@/packages/event'
 import MiniButton from './MiniButton'
 import _ from 'lodash'
+import * as scrollActions from '@/stores/scrollActions'
 
 export interface Props {
     currentSessionId: string
@@ -28,6 +30,11 @@ export default function InputBox(props: Props) {
     const [messageInput, setMessageInput] = useState('')
     const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
+    // Get current session state
+    const session = sessionActions.getSession(props.currentSessionId)
+    const lastMessage = session?.messages?.find(m => m.generating)
+    const isGenerating = lastMessage?.generating
+
     const handleSubmit = (needGenerating = true) => {
         if (messageInput.trim() === '') {
             return
@@ -38,8 +45,15 @@ export default function InputBox(props: Props) {
             newUserMsg: newMessage,
             needGenerating,
         })
+
         setMessageInput('')
         trackingEvent('send_message', { event_category: 'user' })
+    }
+
+    const handleCancelRequest = () => {
+        let session = sessionActions.getSession(props.currentSessionId)
+        const generatingMsg = session?.messages?.find(m => m.generating);
+        generatingMsg?.cancel?.();
     }
 
     const minTextareaHeight = 25
@@ -101,12 +115,13 @@ export default function InputBox(props: Props) {
                 borderTopWidth: '1px',
                 borderTopStyle: 'solid',
                 borderTopColor: theme.palette.divider,
+                padding: '0 4px'
             }}
         >
             <div className={cn('w-full mx-auto flex flex-col')}>
                 <div className='w-full pl-1 pb-2 flex-1 min-h-0'
                 style={{
-                    paddingLeft: '0',
+                    padding: '0',
                 }}
                 >
                     <textarea
@@ -153,20 +168,30 @@ export default function InputBox(props: Props) {
                         </MiniButton>
                     </div>
                     <div className='flex flex-row items-center'>
-                        <MiniButton className='w-8 ml-2'
+                        <MiniButton
+                            className='w-8 ml-2 hover:bg-gray-100 dark:hover:bg-gray-800'  // Add subtle hover
                             style={{
-                                color: theme.palette.getContrastText(theme.palette.primary.main),
-                                backgroundColor: theme.palette.primary.main,
+                                color: isGenerating
+                                    ? theme.palette.error.main
+                                    : theme.palette.primary.main,
+                                backgroundColor: 'transparent',
+                                margin: '0 auto',
                             }}
                             tooltipTitle={
                                 <Typography variant="caption">
-                                    {t('[Enter] send, [Shift+Enter] line break, [Ctrl+Enter] send without generating')}
+                                    {isGenerating
+                                        ? t('Stop generating')
+                                        : t('[Enter] send, [Shift+Enter] line break, [Ctrl+Enter] send without generating')}
                                 </Typography>
                             }
                             tooltipPlacement='top'
-                            onClick={() => handleSubmit()}
+                            onClick={isGenerating ? handleCancelRequest : () => handleSubmit()}
                         >
-                            <SendHorizontal size='22' strokeWidth={1} />
+                            {isGenerating ? (
+                                <StopCircleRoundedIcon/>
+                            ) : (
+                                <SendRoundedIcon/>
+                            )}
                         </MiniButton>
                     </div>
                 </div>

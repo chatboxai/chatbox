@@ -51,7 +51,10 @@ export default function Header(props: Props) {
                 borderBottomWidth: '1px',
                 borderBottomStyle: 'solid',
                 borderBottomColor: theme.palette.divider,
-                padding: 5,
+                paddingLeft: '5px',
+                paddingRight: '5px',
+                paddingBottom: '0',
+                paddingTop: '0',
             }}
         >
             <div className={cn('w-full mx-auto flex flex-row items-center gap-2')}>
@@ -79,10 +82,7 @@ export default function Header(props: Props) {
                         minWidth: 'auto',
                         textTransform: 'none',
                         color: 'inherit',
-                        padding: '8px 12px',
-                        '&:hover': {
-                            backgroundColor: theme.palette.action.hover
-                        },
+                        padding: '5px',
                         gap: '2px'
                     }}
                     className="truncate"
@@ -110,7 +110,6 @@ export default function Header(props: Props) {
                             textAlign: 'left',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            lineHeight: 1.3
                         }}
                     >
                         {settings?.modelProviderList?.find((provider) => (provider.uuid === settings.modelProviderID))?.selectedModel}

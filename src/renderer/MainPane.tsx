@@ -3,6 +3,7 @@ import * as atoms from './stores/atoms'
 import { useAtomValue } from 'jotai'
 import InputBox from './components/InputBox'
 import MessageList from './components/MessageList'
+import ScrollToBottomButton from './components/ScrollToButtomButton'
 import { drawerWidth } from './Sidebar'
 import Header from './components/Header'
 import { ModelSelectDialog } from '@/components/ModelSelectDialog'
@@ -49,6 +50,7 @@ export default function MainPane(props: Props) {
                         <MessageList />
                     </div>
                 </div>
+                <ScrollToBottomButton />
                 <InputBox currentSessionId={currentSession.id} currentSessionType={currentSession.type || 'chat'} />
             </div>
         </Box>

@@ -145,6 +145,7 @@ export function modifyMessage(sessionId: string, updated: Message, refreshCounti
                 return s
             }
             s.messages = handle(s.messages)
+            s.updateTime = new Date().getTime()
             return { ...s }
         })
     )

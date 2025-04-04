@@ -54,6 +54,8 @@ export interface Session {
     picUrl?: string
     messages: Message[]
     copilotId?: string
+    starred?: boolean
+    updateTime?: number
 }
 
 export function createMessage(role: MessageRole = MessageRoleEnum.User, content: string = ''): Message {

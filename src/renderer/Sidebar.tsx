@@ -96,18 +96,6 @@ export default function Sidebar(props: Props) {
                     <Divider variant="fullWidth" />
 
                     <MenuList sx={{ marginBottom: '20px' }}>
-                        <MenuItem onClick={handleCreateNewSession} sx={{ padding: '0.2rem 0.1rem', margin: '0.1rem' }}>
-                            <ListItemIcon>
-                                <IconButton>
-                                    <AddIcon fontSize="small" />
-                                </IconButton>
-                            </ListItemIcon>
-                            <ListItemText>{t('new chat')}</ListItemText>
-                            <Typography variant="body2" color="text.secondary">
-                                {/* ⌘N */}
-                            </Typography>
-                        </MenuItem>
-
                         <MenuItem onClick={props.openCopilotWindow} sx={{ padding: '0.2rem 0.1rem', margin: '0.1rem' }}>
                             <ListItemIcon>
                                 <IconButton>

@@ -115,9 +115,11 @@ export default function Header(props: Props) {
                         {settings?.modelProviderList?.find((provider) => (provider.uuid === settings.modelProviderID))?.selectedModel}
                     </Typography>
                 </Button>
-                <IconButton>
-                    <AddIcon fontSize="small" />
-                </IconButton>
+                <div onClick={handleCreateNewSession}>
+                    <IconButton>
+                        <AddIcon fontSize="small" />
+                    </IconButton>
+                </div>
                 <Toolbar />
             </div>
         </div>

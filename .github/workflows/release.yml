@@ -97,7 +97,6 @@ jobs:
         run: cargo install tauri-cli --version "2.0.0" --locked
 
       - name: Build app
-        if: matrix.target != 'android'
         run: |
           npm run tauri ${{matrix.args}}
 
@@ -119,8 +118,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           draft: true
-          name: Chatbox CE v${{ steps.package-version.outputs.latest-version}}
-          tag_name: v${{ steps.package-version.outputs.latest-version}}
+          name: Chatbox CE ${{ steps.package-version.outputs.latest-version}}
+          tag_name: ${{ steps.package-version.outputs.latest-version}}
           generate_release_notes: true
           files: |
             ./src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk

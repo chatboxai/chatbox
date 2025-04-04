@@ -4,11 +4,7 @@ on:
   push:
     branches:
       - release
-  pull_request:
-    branches: [main]
-    types:
-      - opened
-      - synchronize
+  workflow_dispatch:
 
 jobs:
   publish-tauri:
@@ -25,6 +21,8 @@ jobs:
           - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
             args: ''
           - platform: 'windows-latest'
+            args: ''
+          - platform: 'android-latest'
             args: ''
 
     runs-on: ${{ matrix.platform }}
@@ -61,7 +59,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: 'App v__VERSION__'
+          releaseName: 'Chatbox CE v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false

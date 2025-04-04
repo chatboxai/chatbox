@@ -11,7 +11,7 @@ import SmartToyIcon from '@mui/icons-material/SmartToy'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { useTranslation } from 'react-i18next'
 import { Message, SessionType } from '../../shared/types'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
     showMessageTimestampAtom,
     showModelNameAtom,
@@ -19,6 +19,7 @@ import {
     showWordCountAtom,
     openSettingDialogAtom,
     enableMarkdownRenderingAtom,
+    settingsAtom,
 } from '../stores/atoms'
 import { currsentSessionPicUrlAtom, showTokenUsedAtom } from '../stores/atoms'
 import * as scrollActions from '../stores/scrollActions'
@@ -44,6 +45,7 @@ export interface Props {
 export default function Message(props: Props) {
     const { t } = useTranslation()
     const theme = useTheme()
+    
 
     const showMessageTimestamp = useAtomValue(showMessageTimestampAtom)
     const showModelName = useAtomValue(showModelNameAtom)
@@ -102,6 +104,11 @@ export default function Message(props: Props) {
         }
     }, [msg.content])
 
+    const hideInitMsg = () => {
+        const [settings, _1] = useAtom(settingsAtom);
+        return settings.hideInitialMessage;
+    }
+
     let content = msg.content
     if (typeof msg.content !== 'string') {
         content = JSON.stringify(msg.content)
@@ -146,6 +153,7 @@ export default function Message(props: Props) {
                 [theme.breakpoints.down('sm')]: {
                     paddingX: '0.3rem',
                 },
+                display: msg?.role === 'system' && hideInitMsg() ? "none" : "initial"
             }}
         >
             <Grid container wrap="nowrap" spacing={1.5}>

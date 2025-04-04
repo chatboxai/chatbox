@@ -4,6 +4,7 @@
     "show message word count": "メッセージの単語数を表示",
     "show message token count": "メッセージのトークン数を表示",
     "show message token usage": "メッセージのトークン使用状況を表示",
+    "hide initial message": "初期メッセージを非表示にする",
     "show model name": "モデル名を表示",
     "show message timestamp": "メッセージのタイムスタンプを表示",
     "proxy": "プロキシ",

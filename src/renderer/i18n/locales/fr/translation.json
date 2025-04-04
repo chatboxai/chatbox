@@ -4,6 +4,7 @@
     "show message word count": "Afficher le nombre de mots du message",
     "show message token count": "Afficher le nombre de jetons du message",
     "show message token usage": "Afficher l'utilisation des jetons du message",
+    "hide initial message": "Masquer le message initial",
     "show model name": "Afficher le nom du modèle",
     "show message timestamp": "Afficher l'horodatage du message",
     "proxy": "Proxy",

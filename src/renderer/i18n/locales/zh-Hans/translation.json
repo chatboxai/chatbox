@@ -3,6 +3,7 @@
     "theme": "主题",
     "show message word count": "显示消息的字数统计",
     "show message token count": "显示消息的 token 数量",
+    "hide initial message": "隐藏初始对话提示",
     "show message token usage": "显示消息的 token 消耗",
     "show model name": "显示模型名称",
     "show message timestamp": "显示消息的时间戳",

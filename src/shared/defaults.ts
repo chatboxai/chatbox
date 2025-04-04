@@ -36,6 +36,7 @@ export function settings(): Settings {
         showTokenUsed: true,
         showModelName: true,
         showMessageTimestamp: false,
+        hideInitialMessage: false,
         userAvatarKey: '',
         theme: Theme.FollowSystem,
         language: 'en',

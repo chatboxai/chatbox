@@ -3,6 +3,7 @@
     "theme": "Thema",
     "show message word count": "Wortanzahl anzeigen",
     "show message token count": "Tokenanzahl anzeigen",
+    "hide initial message": "Anfangsgespräch verstecken",
     "show message token usage": "Token-Nutzung anzeigen",
     "show model name": "Modellname anzeigen",
     "show message timestamp": "Zeitstempel anzeigen",

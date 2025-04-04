@@ -97,6 +97,17 @@ export default function DisplaySettingTab(props: {
                         })
                     }
                 />
+                <FormControlLabel
+                    control={<Switch />}
+                    label={t('hide initial message')}
+                    checked={settingsEdit.hideInitialMessage}
+                    onChange={(e, checked) =>
+                        setSettingsEdit({
+                            ...settingsEdit,
+                            hideInitialMessage: checked,
+                        })
+                    }
+                />
             </FormGroup>
         </Box>
     )

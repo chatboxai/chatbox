@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - release
+  pull_request:
+    branches: [ main ]
+    types:
+      - opened
+      - synchronize
   workflow_dispatch:
 
 jobs:
@@ -15,15 +20,18 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: '--target aarch64-apple-darwin'
+            args: 'build --target aarch64-apple-darwin'
+            rust-target: aarch64-apple-darwin,x86_64-apple-darwin
           - platform: 'macos-latest' # for Intel based macs.
-            args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
-            args: ''
-          - platform: 'windows-latest'
-            args: ''
-          - platform: 'android-latest'
-            args: ''
+            args: 'build --target x86_64-apple-darwin'
+            rust-target: aarch64-apple-darwin,x86_64-apple-darwin
+#          - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
+#            args: ''
+#          - platform: 'windows-latest'
+#            args: ''
+          - platform: 'android'
+            args: 'android build'
+            rust-target: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -47,20 +55,66 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
         # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2.
         # You can remove the one that doesn't apply to your app to speed up the workflow a bit.
+      - name: Setup Java
+        if: matrix.platform == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
 
-      - name: install frontend dependencies
+      - name: Setup Android SDK
+        if: matrix.platform == 'android'
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        if: matrix.platform == 'android'
+        run: sdkmanager "ndk;27.0.11902837"
+
+      - name: Extract android signing key from env
+        if: matrix.platform == 'android'
+        run: |
+          echo "${{ secrets.ANDROID_RELEASE_KEYSTORE }}" > src-tauri/gen/android/release.jks.base64
+          base64 -d src-tauri/gen/android/release.jks.base64 > src-tauri/gen/android/release.decrypted.jks
+          cat <<EOF > src-tauri/gen/android/keystore.properties
+          password=${{ secrets.ANDROID_RELEASE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_RELEASE_KEY }}
+          storeFile=${PWD}/src-tauri/gen/android/release.decrypted.jks
+          EOF
+
+      - name: Install frontend dependencies
         run: npm install # change this to npm, pnpm or bun depending on which one you use.
 
-      - name: build frontend
+      - name: Build frontend
         run: npm run build
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
         with:
-          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: 'Chatbox CE v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          workspaces: './src-tauri -> target'
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "2.0.0" --locked
+
+      - name: Build app
+        if: matrix.platform != 'android'
+        run: |
+          npm run tauri ${{matrix.args}}
+
+      - name: Get Node project version
+        id: package-version
+        uses: martinbeentjes/npm-get-version-action@v1.3.1
+
+      - name: List files
+        run: |
+          ls -R ./src-tauri/target/release/bundle/
+
+      - name: Publish
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          name: Chatbox CE v${{ steps.package-version.outputs.current-version}}
+          tag_name: v${{ steps.package-version.outputs.current-version}}
+          generate_release_notes: true
+          files: |
+            ./src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+            ./src-tauri/target/release/bundle/dmg/Chatbox CE*.dmg

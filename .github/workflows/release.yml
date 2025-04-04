@@ -20,18 +20,19 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: 'build --target aarch64-apple-darwin'
+            args: 'build -- --target aarch64-apple-darwin'
             rust-target: aarch64-apple-darwin,x86_64-apple-darwin
           - platform: 'macos-latest' # for Intel based macs.
-            args: 'build --target x86_64-apple-darwin'
+            args: 'build -- --target x86_64-apple-darwin'
             rust-target: aarch64-apple-darwin,x86_64-apple-darwin
-#          - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
-#            args: ''
-#          - platform: 'windows-latest'
-#            args: ''
-          - platform: 'android'
+          - platform: 'ubuntu-22.04'
+            target: 'android'
             args: 'android build'
             rust-target: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          #          - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
+          #            args: ''
+          #          - platform: 'windows-latest'
+          #            args: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -51,26 +52,26 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
         # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2.
         # You can remove the one that doesn't apply to your app to speed up the workflow a bit.
       - name: Setup Java
-        if: matrix.platform == 'android'
+        if: matrix.target == 'android'
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '21'
 
       - name: Setup Android SDK
-        if: matrix.platform == 'android'
+        if: matrix.target == 'android'
         uses: android-actions/setup-android@v3
 
       - name: Install NDK
-        if: matrix.platform == 'android'
+        if: matrix.target == 'android'
         run: sdkmanager "ndk;27.0.11902837"
 
       - name: Extract android signing key from env
-        if: matrix.platform == 'android'
+        if: matrix.target == 'android'
         run: |
           echo "${{ secrets.ANDROID_RELEASE_KEYSTORE }}" > src-tauri/gen/android/release.jks.base64
           base64 -d src-tauri/gen/android/release.jks.base64 > src-tauri/gen/android/release.decrypted.jks
@@ -92,27 +93,34 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Install tauri-cli
+        if: matrix.target == 'android'
         run: cargo install tauri-cli --version "2.0.0" --locked
 
       - name: Build app
-        if: matrix.platform != 'android'
+        if: matrix.target != 'android'
         run: |
           npm run tauri ${{matrix.args}}
 
-      - name: Get Node project version
-        id: package-version
-        uses: martinbeentjes/npm-get-version-action@v1.3.1
-
       - name: List files
         run: |
-          ls -R ./src-tauri/target/release/bundle/
+#          ls -R ./src-tauri/target/release/bundle/
+
+      - name: Get version
+        id: package-version
+        run: |
+          latest_tag=$(git tag --list "v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          if [ -z "$latest_tag" ]; then
+            echo "latest-version=v0.0.0" >> $GITHUB_OUTPUT
+          else
+           echo "latest-version=$latest_tag" >> $GITHUB_OUTPUT
+          fi
 
       - name: Publish
         uses: softprops/action-gh-release@v1
         with:
           draft: true
-          name: Chatbox CE v${{ steps.package-version.outputs.current-version}}
-          tag_name: v${{ steps.package-version.outputs.current-version}}
+          name: Chatbox CE v${{ steps.package-version.outputs.latest-version}}
+          tag_name: v${{ steps.package-version.outputs.latest-version}}
           generate_release_notes: true
           files: |
             ./src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk

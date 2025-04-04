@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import * as sessionActions from '../stores/sessionActions'
 import * as atoms from '@/stores/atoms'
 import { cn } from '@/lib/utils'
+import StarIcon from '@mui/icons-material/Star'
 
 export interface Props {
     session: Session
@@ -35,6 +36,13 @@ function _SessionItem(props: Props) {
     const onClick = () => {
         sessionActions.switchCurrentSession(session.id)
     }
+
+    const handleStarred = () => {
+        session.starred = !session.starred
+        sessionActions.modify(session)
+        handleMenuClose()
+    }
+
     const theme = useTheme()
     const medianSize = theme.typography.pxToRem(24)
     // const smallSize = theme.typography.pxToRem(20)
@@ -48,11 +56,11 @@ function _SessionItem(props: Props) {
                 className='group/session-item'
             >
                 <ListItemIcon>
-                    <IconButton color={'inherit'} onClick={onClick}>
+                    <IconButton color={'inherit'} onClick={session.starred ? handleStarred : onClick}>
                         {session.picUrl ? (
                             <Avatar sizes={medianSize} sx={{ width: medianSize, height: medianSize }} src={session.picUrl} />
                         ) : (
-                            <ChatBubbleOutlineOutlinedIcon fontSize="small" />
+                            session.starred ? <StarIcon fontSize="small" /> : <ChatBubbleOutlineOutlinedIcon fontSize="small" />
                         )}
                     </IconButton>
                 </ListItemIcon>
@@ -75,6 +83,16 @@ function _SessionItem(props: Props) {
                 open={open}
                 onClose={handleMenuClose}
             >
+                <MenuItem
+                    key={session.id + 'star'}
+                    onClick={() => {
+                        handleStarred()
+                    }}
+                    disableRipple
+                >
+                    <StarIcon fontSize="small" />
+                    {session.starred? t('unstar') : t('star')}
+                </MenuItem>
                 <MenuItem
                     key={session.id + 'edit'}
                     onClick={() => {

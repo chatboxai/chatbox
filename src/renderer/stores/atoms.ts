@@ -68,9 +68,20 @@ export const sortedSessionsAtom = atom((get) => {
     return sortSessions(get(sessionsAtom))
 })
 
+
+// sortSessions sort the session based on:
+// 1. Starred session
+// 2. Updated Time
+// 3. Dragged session
 export function sortSessions(sessions: Session[]): Session[] {
     const safeSessions = Array.isArray(sessions) ? sessions : []
-    return [...safeSessions].reverse()
+    safeSessions.sort((a, b) => {
+        if (a.starred && !b.starred) return -1;
+        if (!a.starred && b.starred) return 1;
+
+        return (b.updateTime || 0) - (a.updateTime || 0);
+    });
+    return safeSessions
 }
 
 const _currentSessionIdCachedAtom = atomWithStorage<string | null>('_currentSessionIdCachedAtom', null)

@@ -35,7 +35,7 @@ export default function MainPane(props: Props) {
                 flexGrow: 1,
                 height: '100%', // Add explicit height
                 display: 'flex', // Ensure flex container
-                flexDirection: 'column'
+                flexDirection: 'column',
             }}
         >
             <div className="flex flex-col h-full">
@@ -45,7 +45,7 @@ export default function MainPane(props: Props) {
                     settings={settings}
                     onClose={() => setOpenModelSelect(false)}
                 />
-                <div className="flex-1 min-h-0"> {/* Crucial min-height */}
+                <div className="flex-1 min-h-0">
                     <div className="h-full overflow-y-auto">
                         <MessageList />
                     </div>

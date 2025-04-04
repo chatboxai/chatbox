@@ -14,11 +14,7 @@ export default function ScrollToBottomButton ()  {
             const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
             const bottomThreshold = 100;
             const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
-            if (distanceFromBottom >= bottomThreshold) {
-                setVisible(true);
-            } else {
-                setVisible(false);
-            }
+            setVisible(distanceFromBottom >= bottomThreshold)
         }
     };
 

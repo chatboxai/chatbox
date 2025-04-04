@@ -109,22 +109,8 @@ export default function AboutWindow(props: Props) {
                         >
                             {t('Follow me on Twitter(X)')}
                         </a>
-                        {/* <Button
-                            variant="text"
-                            onClick={() =>
-                                api.openLink(`https://chatboxai.app/redirect_app/become_sponsor/${language}`)
-                            }
-                        >
-                            {t('Or become a sponsor')}
-                        </Button> */}
                     </div>
                 </Paper>
-                {/* <Box>
-                    <h4 className="text-center mb-1 mt-2">{t('Changelog')}</h4>
-                    <Box className="px-6">
-                        <Markdown>{i18n.changelog()}</Markdown>
-                    </Box>
-                </Box> */}
             </DialogContent>
             <DialogActions>
                 <Button onClick={props.close}>{t('close')}</Button>

@@ -41,7 +41,6 @@ export default class Deepinfra extends Base {
             content: m.content,
         }))
 
-        console.log(this.options.deepInfraCustomModel)
 
         const response = await this.post(
             `${this.options.deepInfraHost}/chat/completions`,

@@ -29,10 +29,6 @@ jobs:
             target: 'android'
             args: 'android build'
             rust-target: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-          #          - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
-          #            args: ''
-          #          - platform: 'windows-latest'
-          #            args: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -97,12 +93,10 @@ jobs:
         run: cargo install tauri-cli --version "2.0.0" --locked
 
       - name: Build app
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.11902837
         run: |
           npm run tauri ${{matrix.args}}
-
-      - name: List files
-        run: |
-#          ls -R ./src-tauri/target/release/bundle/
 
       - name: Get version
         id: package-version
@@ -114,6 +108,12 @@ jobs:
            echo "latest-version=$latest_tag" >> $GITHUB_OUTPUT
           fi
 
+      - name: Rename Bundle
+        if: matrix.target == 'android'
+        run: |
+          mkdir ./release-assets
+          mv ./src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk ./release-assets/Chatbox_CE_${{steps.package-version.outputs.latest-version}}.apk
+
       - name: Publish
         uses: softprops/action-gh-release@v1
         with:
@@ -122,5 +122,5 @@ jobs:
           tag_name: ${{ steps.package-version.outputs.latest-version}}
           generate_release_notes: true
           files: |
-            ./src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
-            ./src-tauri/target/release/bundle/dmg/Chatbox CE*.dmg
+            ./release-assets/* 
+            ./src-tauri/target/*/release/bundle/dmg/*.dmg

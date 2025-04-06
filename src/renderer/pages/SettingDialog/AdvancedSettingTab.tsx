@@ -182,9 +182,6 @@ function ExportAndImport(props: { onCancel: () => void }) {
     const [importTips, setImportTips] = useState('')
     const onExport = async () => {
         const data = await storage.getAll()
-        delete data[StorageKey.Configs]
-            ; (data[StorageKey.Settings] as Settings).licenseDetail = undefined
-            ; (data[StorageKey.Settings] as Settings).licenseInstances = undefined
         if (!exportItems.includes(ExportDataItem.Setting)) {
             delete data[StorageKey.Settings]
         }

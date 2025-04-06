@@ -1,4 +1,14 @@
-import { Alert, FormControl, IconButton, InputLabel, MenuItem, Select, TextField } from '@mui/material'
+import {
+    Alert,
+    Box,
+    FormControl,
+    IconButton,
+    InputLabel,
+    MenuItem,
+    Modal,
+    Select,
+    TextField, Tooltip,
+} from '@mui/material'
 import PasswordTextField from '@/components/PasswordTextField'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { useState } from 'react'
@@ -7,6 +17,7 @@ import { useTranslation } from 'react-i18next'
 import OpenAIComp from '@/packages/models/openai-comp'
 import TemperatureSlider from '@/components/TemperatureSlider'
 import TopPSlider from '@/components/TopPSlider'
+import CircularProgress from '@mui/material/CircularProgress'
 
 export interface OpenAICompModelConfigureProps {
     provider: OpenAICompProviderSettings
@@ -17,6 +28,8 @@ export function OpenAICompModelConfigure(props: OpenAICompModelConfigureProps) {
     const { t } = useTranslation()
     const { provider, setProvider  } = props
     const [error, setError] = useState('')
+    const [isFetchingModel, setIsFetchingModel] = useState(false);
+    const [defaultModelName, setDefaultModelName] = useState('');
 
     const updateModelProvider = (updatedProvider: OpenAICompProviderSettings) => {
         setProvider(updatedProvider)
@@ -31,6 +44,7 @@ export function OpenAICompModelConfigure(props: OpenAICompModelConfigureProps) {
         }
 
         try {
+            setIsFetchingModel(true)
             const api = new OpenAIComp({
                 baseURL: provider.baseURL,
                 apiKey: provider.apiKey,
@@ -43,14 +57,32 @@ export function OpenAICompModelConfigure(props: OpenAICompModelConfigureProps) {
                 ...provider,
                 modelList: res
             })
+            setDefaultModelName(res[0].id)
         } catch (err) {
             setError(t('Failed to fetch models: ') + err)
             console.error('Error fetching models:', err)
+        } finally {
+            setIsFetchingModel(false)
         }
     }
 
     return (
         <>
+            <Modal open={isFetchingModel} onClose={() => setIsFetchingModel(false)}>
+                <Box sx={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    bgcolor: 'background.paper',
+                    boxShadow: 24,
+                    p: 4,
+                    borderRadius: 1,
+                    textAlign: 'center',
+                }}>
+                    <CircularProgress />
+                </Box>
+            </Modal>
             {error && (
                 <Alert severity="error" sx={{ mb: 2 }}>
                     {error}
@@ -102,10 +134,12 @@ export function OpenAICompModelConfigure(props: OpenAICompModelConfigureProps) {
                     }}
                     placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
                 />
-                <div
-                style={{
-                    marginTop: 5,
-                }}>
+                <Tooltip
+                    title={'Check the API Key'}
+                    style={{
+                       marginTop: 5,
+                    }}
+                >
                     <IconButton
                         onClick={handleRefresh}
                         size="large"
@@ -118,14 +152,14 @@ export function OpenAICompModelConfigure(props: OpenAICompModelConfigureProps) {
                     >
                         <RefreshIcon />
                     </IconButton>
-                </div>
+                </Tooltip>
             </div>
 
             <FormControl fullWidth style={{ marginTop: 8 }}>
                 <InputLabel>{t('Model List')}</InputLabel>
                 <Select
                     label={t('Model List')}
-                    value={provider.selectedModel || ''}
+                    value={provider.selectedModel || defaultModelName}
                     onChange={(e) => {
                         updateModelProvider({
                             ...provider,

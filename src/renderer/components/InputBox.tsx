@@ -107,6 +107,11 @@ export default function InputBox(props: Props) {
         }
     }
 
+    const onFocus = () => {
+        if (!platform.isMobile()) return;
+        scrollActions.scrollToBottom()
+    }
+
     const [easterEgg, setEasterEgg] = useState(false)
 
     return (
@@ -133,6 +138,7 @@ export default function InputBox(props: Props) {
                         onChange={onMessageInput}
                         onKeyDown={onKeyDown}
                         ref={inputRef}
+                        onFocus={onFocus}
                         style={{
                             minHeight: minTextareaHeight + 'px',
                             maxHeight: maxTextareaHeight + 'px',

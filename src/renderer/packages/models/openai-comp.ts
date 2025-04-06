@@ -59,12 +59,11 @@ export default class OpenAIComp extends Base {
             if (reasoningContent !== null && reasoningContent === "") {
                 reasoning = true
                 text = "<think>"
-
             } else if (reasoning && reasoningContent !== null) {
                 text = reasoningContent
             } else if (reasoning && reasoningContent === null) {
                 reasoning = false
-                text += "</think>"
+                text = "</think>" + text
             }
 
             if (text !== undefined) {

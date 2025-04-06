@@ -1,8 +1,11 @@
-import { Theme, Config, Settings, ModelProvider, Session } from './types'
+import { Theme, Config, Settings, ModelProvider, Session, OpenAICompProviderSettings, OpenAICompModel } from './types'
 import { v4 as uuidv4 } from 'uuid'
 
 export function settings(): Settings {
     return {
+        modelProvider: '',
+        modelProviderID: '',
+        modelProviderList: getDefaultModelProviders(),
         deepInfraCustomModel: '',
         deepInfraHost: '',
         deepInfraKey: '',
@@ -41,7 +44,7 @@ export function settings(): Settings {
         showModelName: true,
         showMessageTimestamp: false,
         userAvatarKey: '',
-        theme: Theme.FollowSystem,
+        theme: Theme.DarkMode,
         language: 'en',
         fontSize: 12,
         spellCheck: true,
@@ -60,7 +63,7 @@ export function settings(): Settings {
         ppioKey: '',
         ppioModel: 'deepseek/deepseek-r1/community',
 
-        autoGenerateTitle: true,
+        autoGenerateTitle: true
     }
 }
 
@@ -75,3 +78,67 @@ export function getDefaultPrompt() {
 export function sessions(): Session[] {
     return [{ id: uuidv4(), name: 'Untitled', messages: [], type: 'chat' }]
 }
+
+export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
+    return [
+        {
+            uuid: uuidv4(),
+            name: "Anthropic",
+            baseURL: "https://api.anthropic.com/v1/",
+            temperature: DefaultTemperature,
+            topP: DefaultTopP,
+        },
+        {
+            uuid: uuidv4(),
+            name: "Deepseek",
+            baseURL: "https://api.deepseek.com",
+            temperature: DefaultTemperature,
+            topP: DefaultTopP,
+        },
+        {
+            uuid: uuidv4(),
+            name: "Deepinfra",
+            baseURL: "https://api.deepinfra.com/v1/openai",
+            temperature: DefaultTemperature,
+            topP: DefaultTopP,
+        },
+        {
+            uuid: uuidv4(),
+            name: "Gemini",
+            baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+            temperature: DefaultTemperature,
+            topP: DefaultTopP,
+        },
+        {
+            uuid: uuidv4(),
+            name: "Grok",
+            baseURL: "https://api.groq.com/openai/v1",
+            temperature: DefaultTemperature,
+            topP: DefaultTopP,
+        },
+        {
+            uuid: uuidv4(),
+            name: "Open AI",
+            baseURL: "https://api.openai.com",
+            temperature: DefaultTemperature,
+            topP: DefaultTopP,
+        },
+        {
+            uuid: uuidv4(),
+            name: "Perplexity",
+            baseURL: "https://api.perplexity.ai",
+            temperature: DefaultTemperature,
+            topP: DefaultTopP,
+        },
+        {
+            uuid: uuidv4(),
+            name: "Siliconflow",
+            baseURL: "https://api.siliconflow.cn/v1",
+            temperature: DefaultTemperature,
+            topP: DefaultTopP,
+        }
+    ] as OpenAICompProviderSettings[]
+}
+
+export const DefaultTemperature: number = 1
+export const DefaultTopP: number = 0.50

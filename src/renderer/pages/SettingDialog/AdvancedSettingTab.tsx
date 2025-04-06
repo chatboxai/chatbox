@@ -7,7 +7,7 @@ import {
     FormGroup,
     FormControlLabel,
     Checkbox,
-    Button,
+    Button, Modal
 } from '@mui/material'
 import { Settings } from '../../../shared/types'
 import { useTranslation } from 'react-i18next'
@@ -18,6 +18,7 @@ import * as atoms from '../../stores/atoms'
 import storage, { StorageKey } from '../../storage'
 import { useState, useRef } from 'react'
 import platform from '../../packages/platform'
+import CircularProgress from '@mui/material/CircularProgress'
 
 interface Props {
     settingsEdit: Settings
@@ -46,6 +47,14 @@ export default function AdvancedSettingTab(props: Props) {
                         margin="dense"
                         variant="outlined"
                     />
+                </AccordionDetails>
+            </Accordion>
+            <Accordion>
+                <AccordionSummary aria-controls="panel1a-content">
+                    <Typography>{t('Reset Data')}</Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                    <ResetData />
                 </AccordionDetails>
             </Accordion>
             <Accordion>
@@ -82,6 +91,59 @@ export function AnalyticsSetting() {
             </div>
         </Box>
     )
+}
+
+export function ResetData() {
+    const { t } = useTranslation();
+    const [isResetting, setIsResetting] = useState(false); // State to track progress
+    const [resetComplete, setResetComplete] = useState(false); // State to track completion
+
+    const handleReset = async () => {
+        setIsResetting(true); // Show progress popup
+        try {
+            await platform.resetSettings(); // Reset data
+            setResetComplete(true); // Mark reset as complete
+        } catch (error) {
+            console.error('Reset failed:', error);
+        } finally {
+            setIsResetting(false); // Hide progress popup
+        }
+    };
+
+    return (
+        <Box>
+            <div>
+                <p className='opacity-70'>
+                    {t('Reset-Data-Text')}
+                </p>
+            </div>
+            <div className='my-2'>
+                <Button color={'error'} onClick={handleReset} disabled={isResetting}>
+                    {t('Reset-Data-Button')}
+                </Button>
+            </div>
+
+            {/* Progress Popup */}
+            <Modal open={isResetting} onClose={() => setIsResetting(false)}>
+                <Box sx={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    bgcolor: 'background.paper',
+                    boxShadow: 24,
+                    p: 4,
+                    borderRadius: 1,
+                    textAlign: 'center',
+                }}>
+                    <CircularProgress /> {/* Loading indicator */}
+                    <Typography variant="h6" sx={{ mt: 2 }}>
+                        {resetComplete ? t('Reset-Complete') : t('Resetting-Data')}
+                    </Typography>
+                </Box>
+            </Modal>
+        </Box>
+    );
 }
 
 export function AllowReportingAndTrackingCheckbox(props: {

@@ -68,7 +68,6 @@ export function createMessage(role: MessageRole = MessageRoleEnum.User, content:
 }
 
 export enum ModelProvider {
-    OpenAIComp = 'openai-compatible',
     ChatboxAI = 'chatbox-ai',
     OpenAI = 'openai',
     Claude = 'claude',

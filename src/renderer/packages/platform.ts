@@ -90,6 +90,12 @@ export class BasePlatform {
         return defaultConfig;
     }
 
+    public async resetSettings(): Promise<void> {
+        await store.delete('configs');
+        await store.delete('settings');
+        await store.reset()
+        await invoke('relaunch_app');
+    }
 
     public async getSettings(): Promise<Settings> {
         try {

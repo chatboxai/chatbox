@@ -2,13 +2,13 @@ name: 'publish'
 
 on:
   push:
-    branches:
-      - release
-  pull_request:
-    branches: [ main ]
-    types:
-      - opened
-      - synchronize
+    tags:
+      - v*
+#  pull_request:
+#    branches: [ main ]
+#    types:
+#      - opened
+#      - synchronize
   workflow_dispatch:
 
 jobs:

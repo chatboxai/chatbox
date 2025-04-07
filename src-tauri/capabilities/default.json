@@ -9,6 +9,9 @@
     "core:default",
     "store:default",
     "opener:default",
-    "os:default"
+    "os:default",
+    "dialog:default",
+    "fs:default",
+    "fs:allow-write-text-file"
   ]
 }

@@ -81,12 +81,23 @@ export default function MessageThinking(props: {
                 </div>
 
                 {!isCollapsed && (
-                    <Markdown
-                        className="think-content"
-                        hiddenCodeCopyButton={true}
-                    >
-                        {thinkContent}
-                    </Markdown>
+                    <>
+                        <Markdown
+                            className="think-content"
+                            hiddenCodeCopyButton={true}
+                        >
+                            {thinkContent}
+                        </Markdown>
+                        <ExpandLessIcon
+                            fontSize="small"
+                            style={{
+                                color: theme.palette.mode === 'dark'
+                                    ? '#90caf9'
+                                    : '#1976d2',
+                            }}
+                            onClick={()=>{setIsCollapsed(!isCollapsed)}}
+                        />
+                    </>
                 )}
             </div>
             <Markdown>{remainingContent}</Markdown>

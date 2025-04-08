@@ -248,3 +248,10 @@ export interface ChatboxAILicenseDetail {
 }
 
 export type ChatboxAIModel = 'chatboxai-3.5' | 'chatboxai-4'
+
+export interface MessageInfo {
+    WordCount: number
+    TokenUsed: number
+    Model: string
+    Provider: string
+}

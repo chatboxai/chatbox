@@ -1,16 +1,16 @@
-import { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Avatar from '@mui/material/Avatar'
 import {
     Typography,
     Grid,
-    useTheme,
+    useTheme, MenuItem
 } from '@mui/material'
 import PersonIcon from '@mui/icons-material/Person'
 import SmartToyIcon from '@mui/icons-material/SmartToy'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { useTranslation } from 'react-i18next'
-import { Message, SessionType } from '../../shared/types'
+import { Message, MessageInfo, SessionType } from '../../shared/types'
 import { useAtomValue, useSetAtom } from 'jotai'
 import {
     showMessageTimestampAtom,
@@ -35,6 +35,11 @@ import { modifyMessage } from '@/stores/sessionActions'
 import * as atoms from '@/stores/atoms'
 import { useAtom } from 'jotai/index'
 import LoadingSpinner from '@/components/LoadingSpinner'
+import StarIcon from '@mui/icons-material/Star'
+import StyledMenu from './StyledMenu'
+import Tooltip from '@mui/material/Tooltip';
+import { CachedRounded,InfoOutlined } from '@mui/icons-material'
+import MessageActions from '@/components/MessageActions'
 
 export interface Props {
     id?: string
@@ -61,6 +66,7 @@ export default function Message(props: Props) {
     const setOpenSettingWindow = useSetAtom(openSettingDialogAtom)
     const [messageListRef, setMessageListRef] = useAtom(atoms.messageListRefAtom)
     const [showLoadingIcon, setShowLoadingIcon] = useState(false)
+    const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null)
 
     const { msg, className, collapseThreshold, hiddenButtonGroup, small } = props
 
@@ -70,7 +76,6 @@ export default function Message(props: Props) {
     const [isCollapsed, setIsCollapsed] = useState(needCollapse)
 
     const ref = useRef<HTMLDivElement>(null)
-
     const tips: string[] = []
     if (props.sessionType === 'chat' || !props.sessionType) {
         if (showWordCount && !msg.generating) {
@@ -88,20 +93,6 @@ export default function Message(props: Props) {
         if (showModelName && props.msg.role === 'assistant') {
             tips.push(`model: ${props.msg.model || 'unknown'}`)
         }
-    }
-
-    if (showMessageTimestamp && msg.timestamp !== undefined) {
-        let date = new Date(msg.timestamp)
-        let messageTimestamp: string
-        if (dateFns.isToday(date)) {
-            messageTimestamp = dateFns.format(date, 'HH:mm')
-        } else if (dateFns.isThisYear(date)) {
-            messageTimestamp = dateFns.format(date, 'MM-dd HH:mm')
-        } else {
-            messageTimestamp = dateFns.format(date, 'yyyy-MM-dd HH:mm')
-        }
-
-        tips.push('time: ' + messageTimestamp)
     }
 
     useEffect(()=>{
@@ -276,9 +267,7 @@ export default function Message(props: Props) {
                         {
                             needCollapse && !isCollapsed && CollapseButton
                         }
-                        <Typography variant="body2" sx={{ opacity: 0.5, paddingBottom: '2rem' }}>
-                            {tips.join(', ')}
-                        </Typography>
+                        <MessageActions msg={msg}/>
                     </Grid>
                 </Grid>
             </Grid>

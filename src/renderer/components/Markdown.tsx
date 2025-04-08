@@ -14,6 +14,7 @@ import { sanitizeUrl } from '@braintree/sanitize-url'
 
 import 'katex/dist/katex.min.css' // `rehype-katex` does not import the CSS for you
 import { copyToClipboard } from '@/packages/navigator'
+import platform from '@/packages/platform'
 
 export default function Markdown(props: {
     children: string
@@ -36,8 +37,9 @@ export default function Markdown(props: {
                         {...props}
                         target="_blank"
                         rel="noreferrer"
-                        onClick={(e) => {
+                        onClick={async (e) => {
                             e.stopPropagation()
+                            if (props.href) await platform.openLink(props.href);
                         }}
                     />
                 ),

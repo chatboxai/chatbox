@@ -45,14 +45,30 @@ android {
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false
-            packaging {                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
+            packaging {                
+                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
                 jniLibs.keepDebugSymbols.add("*/armeabi-v7a/*.so")
                 jniLibs.keepDebugSymbols.add("*/x86/*.so")
                 jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
             }
         }
         getByName("release") {
-           signingConfig = signingConfigs.getByName("release")
+          // Enables code shrinking, obfuscation, and optimization for only
+          // your project's release build type. Make sure to use a build
+          // variant with `isDebuggable=false`.
+          // isMinifyEnabled = true
+          // isShrinkResources = true
+          
+          proguardFiles(
+              // Includes the default ProGuard rules files that are packaged with
+              // the Android Gradle plugin. To learn more, go to the section about
+              // R8 configuration files.
+              getDefaultProguardFile("proguard-android-optimize.txt"),
+
+              // Includes a local, custom Proguard rules file
+              "proguard-rules.pro"
+          )
+          signingConfig = signingConfigs.getByName("release")
         }
     }
     kotlinOptions {

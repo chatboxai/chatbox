@@ -9,6 +9,7 @@ import Exporter from './exporter'
 import * as defaults from '../../shared/defaults'
 import { MobilePlatform } from '@/packages/mobile-platform'
 import { DesktopPlatform } from '@/packages/desktop-platform'
+import { openUrl } from '@tauri-apps/plugin-opener';
 
 const store = new LazyStore("settings.json");
 
@@ -52,7 +53,7 @@ export class BasePlatform {
     }
 
     public async openLink(url: string): Promise<void> {
-        return invoke('open_link', { url });
+        await openUrl(url)
     }
 
     public async getInstanceName(): Promise<string> {

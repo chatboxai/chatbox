@@ -23,9 +23,10 @@ export default function ScrollToBottomButton ()  {
     };
 
     useEffect(() => {
+        if (!messageListRef?.current) return;
         const timer = setInterval(checkScrollPosition, 500);
         return () => clearInterval(timer);
-    }, []);
+    }, [messageListRef]);
 
     return (
         <Fade in={visible}>
@@ -35,7 +36,7 @@ export default function ScrollToBottomButton ()  {
                     position: 'fixed',
                     bottom: 80,
                     right: 5,
-                    zIndex: 0,
+                    zIndex: 9999,
                     backgroundColor: 'background.paper',
                     boxShadow: 2,
                     '&:hover': {

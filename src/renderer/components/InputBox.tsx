@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Typography, useTheme } from '@mui/material'
 import { SessionType, createMessage } from '../../shared/types'
 import platform from '../packages/platform'
@@ -13,6 +13,7 @@ import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import StopCircleRoundedIcon from '@mui/icons-material/StopCircleRounded';
 import { cn } from '@/lib/utils'
 import icon from '../static/icon.png'
+import TextareaAutosize from 'react-textarea-autosize';
 import { trackingEvent } from '@/packages/event'
 import MiniButton from './MiniButton'
 import _ from 'lodash'
@@ -28,7 +29,7 @@ export default function InputBox(props: Props) {
     const setChatConfigDialogSession = useSetAtom(atoms.chatConfigDialogAtom)
     const { t } = useTranslation()
     const [messageInput, setMessageInput] = useState('')
-    const inputRef = useRef<HTMLTextAreaElement | null>(null)
+    const [isMobile, setIsMobile] = useState(false)
 
     // Get current session state
     const session = sessionActions.getSession(props.currentSessionId)
@@ -56,36 +57,19 @@ export default function InputBox(props: Props) {
         generatingMsg?.cancel?.();
     }
 
-    const minTextareaHeight = 25
-    const maxTextareaHeight = 300
-
-    // NOTE: this is temporary solution to solve the input box doesn't grow automatically.
-    // might require refactor in the future.
-    useEffect(() => {
-        if (inputRef.current) {
-            if (!messageInput) {
-                inputRef.current.style.height = `${minTextareaHeight}px`
-                return
-            }
-
-            inputRef.current.style.height = ''
-            const computedHeight = inputRef.current.scrollHeight
-            const newHeight = Math.max(
-                minTextareaHeight,
-                Math.min(computedHeight, maxTextareaHeight)
-            )
-            inputRef.current.style.height = `${newHeight}px`
-        }
-    }, [messageInput])
 
     const onMessageInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
         const input = event.target.value
         setMessageInput(input)
     }
 
+    useMemo(async () => {
+        setIsMobile( await platform.isMobile())
+    },[])
+
     const  onKeyDown = async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
         // on iOS and Android enter will behave as newline instead.
-        if (event.key === 'Enter' && (await platform.isMobile())) {
+        if (event.key === 'Enter' && isMobile) {
            return
         }
 
@@ -108,7 +92,7 @@ export default function InputBox(props: Props) {
     }
 
     const onFocus = () => {
-        if (!platform.isMobile()) return;
+        if (!isMobile) return;
         scrollActions.scrollToBottom()
     }
 
@@ -129,22 +113,21 @@ export default function InputBox(props: Props) {
                     padding: '0',
                 }}
                 >
-                    <textarea
+                    <TextareaAutosize
                         className={cn(
                             'w-full overflow-y-auto resize-none border-none outline-none',
                             'bg-transparent p-1'
                         )}
+                        maxRows={15}
                         value={messageInput}
                         onChange={onMessageInput}
                         onKeyDown={onKeyDown}
-                        ref={inputRef}
                         onFocus={onFocus}
                         style={{
-                            minHeight: minTextareaHeight + 'px',
-                            maxHeight: maxTextareaHeight + 'px',
                             color: theme.palette.text.primary,
                             fontFamily: theme.typography.fontFamily,
                             fontSize: theme.typography.body1.fontSize,
+                            lineHeight: 1.6
                         }}
                         placeholder={t('Type your question here...') || ''}
                     />

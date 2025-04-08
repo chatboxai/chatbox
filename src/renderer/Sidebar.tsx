@@ -12,6 +12,7 @@ import {
     Divider,
     useTheme,
     Drawer,
+    SwipeableDrawer
 } from '@mui/material'
 import SettingsIcon from '@mui/icons-material/Settings'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
@@ -54,10 +55,13 @@ export default function Sidebar(props: Props) {
     const theme = useTheme()
 
     return (
-        <Drawer
+        <SwipeableDrawer
             open={props.sidebarOpen}
             onClose={() => {
                 props.toggleSidebar(false)
+            }}
+            onOpen={() => {
+                props.toggleSidebar(true)
             }}
             className="fixed top-0 left-0 h-full z-50"
             style={{
@@ -147,6 +151,6 @@ export default function Sidebar(props: Props) {
                     </MenuList>
                 </Stack>
             </div>
-        </Drawer>
+        </SwipeableDrawer>
     )
 }

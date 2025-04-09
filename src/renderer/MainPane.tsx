@@ -50,8 +50,14 @@ export default function MainPane(props: Props) {
                         <MessageList />
                     </div>
                 </div>
-                <ScrollToBottomButton />
-                <InputBox currentSessionId={currentSession.id} currentSessionType={currentSession.type || 'chat'} />
+                <div style={{
+                    position: 'relative',
+                    marginTop: 'auto',
+                    paddingTop: 10
+                }}>
+                    <ScrollToBottomButton />
+                    <InputBox currentSessionId={currentSession.id} currentSessionType={currentSession.type || 'chat'} />
+                </div>
             </div>
         </Box>
     )

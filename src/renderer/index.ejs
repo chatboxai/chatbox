@@ -38,6 +38,9 @@
 
         // gtag('config', 'G-B365F44W6E');
     </script>
+    <% if (process.env.NODE_ENV === 'development') { %>
+    <script src="http://localhost:8097"></script>
+    <% } %>
 </head>
 
 <body>

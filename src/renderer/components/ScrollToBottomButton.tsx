@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Box, IconButton, Fade } from '@mui/material';
 import * as scrollActions from '@/stores/scrollActions'
-import { KeyboardArrowDown } from '@mui/icons-material';
+import { KeyboardDoubleArrowDown } from '@mui/icons-material';
 import { useAtom } from 'jotai/index'
 import * as atoms from '@/stores/atoms'
 
@@ -33,8 +33,8 @@ export default function ScrollToBottomButton ()  {
             <IconButton
                 onClick={scrollToBottom}
                 sx={{
-                    position: 'fixed',
-                    bottom: 80,
+                    position: 'absolute',
+                    bottom: '100%',
                     right: 5,
                     zIndex: 9999,
                     backgroundColor: 'background.paper',
@@ -44,7 +44,7 @@ export default function ScrollToBottomButton ()  {
                     }
                 }}
             >
-                <KeyboardArrowDown />
+                <KeyboardDoubleArrowDown/>
             </IconButton>
         </Fade>
     );

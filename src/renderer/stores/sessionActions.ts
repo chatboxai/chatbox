@@ -1,10 +1,5 @@
 import { getDefaultStore } from 'jotai'
-import {
-    Settings,
-    createMessage,
-    Message,
-    Session,
-} from '../../shared/types'
+import { Settings, createMessage, Message, Session } from '../../shared/types'
 import * as atoms from './atoms'
 import * as promptFormat from '../packages/prompts'
 import * as Sentry from '@sentry/react'
@@ -12,12 +7,19 @@ import { v4 as uuidv4 } from 'uuid'
 import * as defaults from '../../shared/defaults'
 import * as scrollActions from './scrollActions'
 import { getModel, getModelDisplayName } from '@/packages/models'
-import { AIProviderNoImplementedPaintError, NetworkError, ApiError, BaseError, ChatboxAIAPIError } from '@/packages/models/errors'
+import {
+    AIProviderNoImplementedPaintError,
+    NetworkError,
+    ApiError,
+    BaseError,
+    ChatboxAIAPIError,
+} from '@/packages/models/errors'
 import platform from '../packages/platform'
 import { throttle } from 'lodash'
 import { countWord } from '@/packages/word-count'
 import { estimateTokensFromMessages } from '@/packages/token'
 import * as settingActions from './settingActions'
+import _ from 'lodash'
 
 export function create(newSession: Session) {
     const store = getDefaultStore()
@@ -168,7 +170,138 @@ export async function submitNewUserMessage(params: {
     }
 }
 
-export async function generate(sessionId: string, targetMsg: Message) {
+function addMessageToBranch(session: Session, parentId: string, newMessage: Message) {
+    const store = getDefaultStore()
+
+    newMessage.wordCount = countWord(newMessage.content)
+    newMessage.tokenCount = estimateTokensFromMessages([newMessage])
+
+    const parent = session.messages.find((m) => m.id === parentId)
+    if (!parent) return
+
+    // Initialize branches array if it doesn't exist
+    if (!parent.branches) {
+        parent.branches = []
+    }
+
+    newMessage.numIndex = parent.branches.length + 1
+    // Create the branch if it doesn't exist
+    if (parent.branches.length <= 0) {
+        parent.branches = [[newMessage]]
+    } else {
+        parent.branches.push([newMessage])
+    }
+
+    store.set(atoms.sessionsAtom, (sessions) =>
+        sessions.map((s) => {
+            if (s.id === session.id) {
+                return {
+                    ...s,
+                    messages: session.messages,
+                }
+            }
+            return s
+        })
+    )
+}
+
+function shiftBranchToMainThread(session: Session, targetIndex: number, targetBranchIndex?: number) {
+    const store = getDefaultStore()
+    const targetMessage = session.messages[targetIndex]
+    if (!targetMessage?.branches || targetMessage.branches.length === 0) return
+
+    // Default to last branch if not specified
+    if (typeof targetBranchIndex === 'undefined') {
+        targetBranchIndex = targetMessage.branches.length - 1
+    }
+
+    if (targetBranchIndex >= targetMessage.branches.length) return
+
+    // Extract the branch to promote and remaining branches
+    const branchToPromote = targetMessage.branches[targetBranchIndex]
+    const remainingBranches = targetMessage.branches.filter((_, i) => i !== targetBranchIndex)
+
+    // Clone original message without branches
+    const originalMessage = { ...targetMessage, branches: undefined }
+
+    // Remove target and subsequent messages
+    const removedMessages = session.messages.splice(targetIndex)
+    const subsequentMessages = removedMessages.slice(1)
+
+    // Insert promoted branch messages
+    session.messages.splice(targetIndex, 0, ...branchToPromote)
+
+    // Get new main message (first in promoted branch)
+    const mainMessage = session.messages[targetIndex]
+
+    // Create new branch with original message chain
+    const originalChainBranch = [originalMessage, ...subsequentMessages]
+
+    // Split remaining branches into left (before targetBranchIndex) and right (after)
+    const left = remainingBranches.slice(0, targetBranchIndex)
+    const right = remainingBranches.slice(targetBranchIndex)
+
+    // Add branches to main message, preserving original order
+    mainMessage.branches = [
+        ...left, // Branches originally before the promoted index
+        originalChainBranch, // Original message chain takes the promoted branch's position
+        ...right, // Branches originally after the promoted index
+    ]
+    store.set(atoms.sessionsAtom, (sessions) =>
+        sessions.map((s) => {
+            if (s.id === session.id) {
+                return {
+                    ...s,
+                    messages: session.messages,
+                }
+            }
+            return s
+        })
+    )
+}
+
+export async function shiftBranch(param: { sessionId: string; msg: Message; promoteBranchIndex: number }) {
+    const session = getSession(param.sessionId)
+    if (!session) {
+        return
+    }
+
+    const messageIndex = session.messages.findIndex((m) => m.id === param.msg.id)
+    if (messageIndex === -1) {
+        console.error('Message not found')
+        return
+    }
+
+    shiftBranchToMainThread(session, messageIndex, param.promoteBranchIndex)
+}
+
+export async function regenerateMessage(param: { sessionId: string; msg: Message }) {
+    const store = getDefaultStore()
+    let session = getSession(param.sessionId)
+    if (!session) {
+        return
+    }
+
+    const messageIndex = session.messages.findIndex((m) => m.id === param.msg.id)
+    if (messageIndex === -1) {
+        console.error('Message not found')
+        return
+    }
+
+    let newAssistantMsg = createMessage('assistant', '')
+    newAssistantMsg.generating = true
+
+    addMessageToBranch(session, param.msg.id, newAssistantMsg)
+    session = getSession(param.sessionId)
+    if (!session) {
+        return
+    }
+    shiftBranchToMainThread(session, messageIndex)
+
+    return generate(param.sessionId, newAssistantMsg)
+}
+
+export async function generate(sessionId: string, targetMsg: Message, promptMsgs: Message[] = []) {
     const store = getDefaultStore()
     const settings = store.get(atoms.settingsAtom)
     const configs = await platform.getConfig()
@@ -202,15 +335,17 @@ export async function generate(sessionId: string, targetMsg: Message) {
         switch (session.type) {
             case 'chat':
             case undefined:
-                const promptMsgs = genMessageContext(settings, messages.slice(0, targetMsgIx))
+                if (promptMsgs.length == 0) {
+                    promptMsgs = genMessageContext(settings, messages.slice(0, targetMsgIx))
+                }
                 const startThinking = Date.now()
                 let onThinking = false
-                const throttledModifyMessage = throttle(({ text, cancel }: { text: string, cancel: () => void }) => {
+                const throttledModifyMessage = throttle(({ text, cancel }: { text: string; cancel: () => void }) => {
                     targetMsg = { ...targetMsg, content: text, cancel }
 
                     const thinkMatch = text.match(/<think>([\s\S]*?)(<\/think>|$)/)
                     if (thinkMatch) {
-                        onThinking = thinkMatch[2] !== '</think>';
+                        onThinking = thinkMatch[2] !== '</think>'
                         if (onThinking) {
                             targetMsg.thinkingDuration = Date.now() - startThinking
                         }
@@ -233,7 +368,13 @@ export async function generate(sessionId: string, targetMsg: Message) {
         if (!(err instanceof Error)) {
             err = new Error(`${err}`)
         }
-        if (!(err instanceof ApiError || err instanceof NetworkError || err instanceof AIProviderNoImplementedPaintError)) {
+        if (
+            !(
+                err instanceof ApiError ||
+                err instanceof NetworkError ||
+                err instanceof AIProviderNoImplementedPaintError
+            )
+        ) {
             Sentry.captureException(err) // unexpected error should be reported
         }
         let errorCode: number | undefined = undefined
@@ -267,12 +408,11 @@ async function _generateName(sessionId: string, modifyName: (sessionId: string, 
     const configs = await platform.getConfig()
     try {
         const model = getModel(settings, configs)
-        let name = await model.chat(promptFormat.nameConversation(
-            session.messages
-                .filter(m => m.role !== 'system')
-                .slice(0, 4),
-            settings.language,
-        ),
+        let name = await model.chat(
+            promptFormat.nameConversation(
+                session.messages.filter((m) => m.role !== 'system').slice(0, 4),
+                settings.language
+            )
         )
         name = name.replace(/<think>[\s\S]*?<\/think>/g, '')
         name = name.slice(0, 30)
@@ -289,9 +429,7 @@ export async function generateName(sessionId: string) {
 }
 
 function genMessageContext(settings: Settings, msgs: Message[]) {
-    const {
-        openaiMaxContextMessageCount
-    } = settings
+    const { openaiMaxContextMessageCount } = settings
     if (msgs.length === 0) {
         throw new Error('No messages to replay')
     }
@@ -306,15 +444,12 @@ function genMessageContext(settings: Settings, msgs: Message[]) {
         if (msg.error || msg.errorCode) {
             // TODO: update how to minimize the token input used
             // in order to satisfy deepseek model reasoner
-            msg.content = "error"
+            msg.content = 'error'
         }
         const size = estimateTokensFromMessages([msg]) + 20 // 20 is a rough estimation of the overhead of the prompt
         if (settings.aiProvider === 'openai') {
         }
-        if (
-            openaiMaxContextMessageCount <= 20 &&
-            prompts.length >= openaiMaxContextMessageCount + 1
-        ) {
+        if (openaiMaxContextMessageCount <= 20 && prompts.length >= openaiMaxContextMessageCount + 1) {
             break
         }
         prompts = [msg, ...prompts]
@@ -338,6 +473,7 @@ export function initEmptyChatSession(): Session {
                 id: uuidv4(),
                 role: 'system',
                 content: settings.defaultPrompt || defaults.getDefaultPrompt(),
+                nodeType: 'node',
             },
         ],
     }

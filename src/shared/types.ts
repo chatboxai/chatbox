@@ -18,6 +18,9 @@ export interface Message {
     content: string
     name?: string
 
+    numIndex: number;
+    branches?: Message[][];
+
     cancel?: () => void
     generating?: boolean
 
@@ -64,6 +67,7 @@ export function createMessage(role: MessageRole = MessageRoleEnum.User, content:
         content: content,
         role: role,
         timestamp: new Date().getTime(),
+        numIndex:0
     }
 }
 
@@ -255,3 +259,4 @@ export interface MessageInfo {
     Model: string
     Provider: string
 }
+

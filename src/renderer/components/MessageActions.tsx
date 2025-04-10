@@ -9,51 +9,185 @@ import {
     Divider,
     Box, useTheme
 } from '@mui/material'
-import { CachedRounded, InfoOutlined,ContentCopy,HighlightAlt,Edit } from '@mui/icons-material'
+import {
+    CachedRounded,
+    InfoOutlined,
+    ContentCopy,
+    HighlightAlt,
+    Edit,
+    ArrowForwardIos,
+    ArrowBackIosNew
+} from '@mui/icons-material'
 import Tooltip from '@mui/material/Tooltip'
-import React from 'react'
+import React, { useMemo } from 'react'
 import { countWord } from '@/packages/word-count'
 import { estimateTokensFromMessages } from '@/packages/token'
 import { copyToClipboard } from '@/packages/navigator'
 import * as toastActions from '@/stores/toastActions'
 import { useTranslation } from 'react-i18next'
+import * as sessionActions from '@/stores/sessionActions'
 
 export interface Props {
     msg: Message
+    sessionId: string
 }
 
 export default function MessageActions(props: Props) {
+
+    const {msg, sessionId} = props
+
     const theme = useTheme()
     const { t } = useTranslation()
+    const [hasChild, setHasChild] = React.useState(false)
+    const [numChild, setNumChild] = React.useState(0)
+    const [currentChild, setCurrentChild] = React.useState(0)
+
+
+    useMemo(()=>{
+        if (msg.branches && msg.branches.length > 0){
+            setNumChild(msg.branches.length)
+            setHasChild(true)
+
+            // support the old message which doesn't have numIndex
+            setCurrentChild(msg.numIndex? msg.numIndex : 0)
+        }
+    },[msg])
+
+    const handleRegenerate =  () => {
+        sessionActions.regenerateMessage({
+            sessionId: sessionId,
+            msg: msg,
+        })
+    }
+
+    const handleNextMessage = (curChild: number) => {
+
+        const promoteTargetBranch = msg.branches?.
+        findIndex((element) => {
+            // support old message which doesn't have numIndex
+            if (typeof element[0].numIndex === 'undefined') return 0 === curChild
+            return element[0].numIndex === curChild
+        })
+
+         sessionActions.shiftBranch({
+             sessionId:sessionId,
+             msg: msg,
+             promoteBranchIndex: promoteTargetBranch ? promoteTargetBranch : 0,
+         })
+    }
+
+    const paginationCmp = () => {
+        if (!hasChild) {
+            return <></>
+        }
+
+        return (
+            <>
+            <Tooltip
+                title={"Go to previous message"}
+                sx={{
+                    backgroundColor: theme.palette.background.paper,
+                }}
+                arrow
+            >
+                <span>
+                   <IconButton
+                       size={"small"}
+                       onClick={() => handleNextMessage(currentChild-1)}
+                       disabled={currentChild <= 0}
+                   >
+                    <ArrowBackIosNew fontSize={'inherit'} />
+                </IconButton>
+                </span>
+
+                </Tooltip>
+                <Typography
+                    variant="body2"
+                    sx={{
+                        paddingTop: '5px',
+                    }}
+                >
+                    {currentChild+1}/{numChild+1}
+                </Typography>
+            <Tooltip
+                title={"Go to next message"}
+                sx={{
+                    backgroundColor: theme.palette.background.paper,
+                }}
+                arrow
+            >
+                <span>
+                <IconButton
+                    size={"small"}
+                    onClick={() => handleNextMessage(currentChild+1)}
+                    disabled={currentChild >= numChild}
+                >
+                    <ArrowForwardIos fontSize={'inherit'} />
+                </IconButton>
+                    </span>
+            </Tooltip>
+            </>
+        )
+    }
+
+    if (props.msg.role === 'system') {
+        return
+    }
 
     return (
         <Stack direction="row" spacing={0}>
-            {props.msg.role !== 'user' ? (
-                <IconButton size="small">
-                    <CachedRounded fontSize={'inherit'} />
-                </IconButton>
+            {paginationCmp()}
+
+            {msg.role !== 'user' ? (
+                <Tooltip
+                    title={"Regenerate the response"}
+                    sx={{
+                        backgroundColor: theme.palette.background.paper,
+                    }}
+                    arrow
+                >
+                    <IconButton size="small" onClick={handleRegenerate}>
+                        <CachedRounded fontSize={'inherit'} />
+                    </IconButton>
+                </Tooltip>
             ) : (
-                <IconButton size="small">
-                    <Edit fontSize={'inherit'} />
-                </IconButton>
+                <Tooltip
+                    title={"Edit the message"}
+                    sx={{
+                        backgroundColor: theme.palette.background.paper,
+                    }}
+                    arrow
+                >
+                    <IconButton size="small">
+                        <Edit fontSize={'inherit'} />
+                    </IconButton>
+                </Tooltip>
             )}
 
-            <IconButton
+            <Tooltip
+                title={"Copy the message"}
+                sx={{
+                    backgroundColor: theme.palette.background.paper,
+                }}
+                arrow
+            >
+                <IconButton
                 size="small"
                 onClick={() => {
-                    copyToClipboard(props.msg.content);
+                    copyToClipboard(msg.content);
                     toastActions.add(t('copied to clipboard'));
                 }}
             >
                 <ContentCopy fontSize={'inherit'} />
-            </IconButton>
+                </IconButton>
+            </Tooltip>
 
-            <IconButton size="small">
-                <HighlightAlt fontSize={'inherit'} />
-            </IconButton>
+            {/*<IconButton size="small">*/}
+            {/*    <HighlightAlt fontSize={'inherit'} />*/}
+            {/*</IconButton>*/}
 
             <Tooltip
-                title={<KeyValueList msg={props.msg} />}
+                title={<KeyValueList msg={msg} />}
                 sx={{
                     backgroundColor: theme.palette.background.paper,
                 }}
@@ -85,11 +219,14 @@ const KeyValueList = ({ msg }: KeyValueListProps) => {
             key: 'Tokens Used',
             value: msg.tokensUsed ?? 0
         },
-        {
-            key: 'Model',
-            value: msg.model || 'Unknown'
-        }
     ];
+
+    if (msg.model !== undefined || msg.model === "") {
+        entries.push({
+            key: 'Model',
+            value: msg.model || 'Unknown' as any
+        })
+    }
 
     return (
         <Box sx={{

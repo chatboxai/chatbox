@@ -20,7 +20,7 @@ export default function MessageThinking(props: {
     const [hasClosingTag, setHasClosingTag] = useState(false)
 
     useEffect(() => {
-        const thinkMatch = props.msg.content.match(/<think>([\s\S]*?)(<\/think>|$)/)
+        const thinkMatch = props.msg?.content?.match(/<think>([\s\S]*?)(<\/think>|$)/)
 
         if (thinkMatch) {
             const fullMatch = thinkMatch[0]

@@ -267,7 +267,7 @@ export default function Message(props: Props) {
                         {
                             needCollapse && !isCollapsed && CollapseButton
                         }
-                        <MessageActions msg={msg}/>
+                        <MessageActions msg={msg} sessionId={props.sessionId} />
                     </Grid>
                 </Grid>
             </Grid>

@@ -1,4 +1,4 @@
-import { Message  } from '../../shared/types'
+import { Message, OpenAICompProviderSettings } from '../../shared/types'
 import {
     Stack,
     Typography,
@@ -16,7 +16,9 @@ import {
     HighlightAlt,
     Edit,
     ArrowForwardIos,
-    ArrowBackIosNew
+    ArrowBackIosNew,
+    Send,
+    Close,
 } from '@mui/icons-material'
 import Tooltip from '@mui/material/Tooltip'
 import React, { useMemo } from 'react'
@@ -30,18 +32,19 @@ import * as sessionActions from '@/stores/sessionActions'
 export interface Props {
     msg: Message
     sessionId: string
+    setEditMessage: (show: boolean) => void
+    editMessage: boolean
 }
 
 export default function MessageActions(props: Props) {
 
-    const {msg, sessionId} = props
+    const {msg, sessionId, setEditMessage} = props
 
     const theme = useTheme()
     const { t } = useTranslation()
     const [hasChild, setHasChild] = React.useState(false)
     const [numChild, setNumChild] = React.useState(0)
     const [currentChild, setCurrentChild] = React.useState(0)
-
 
     useMemo(()=>{
         if (msg.branches && msg.branches.length > 0){
@@ -84,7 +87,7 @@ export default function MessageActions(props: Props) {
         return (
             <>
             <Tooltip
-                title={"Go to previous message"}
+                title={"Previous"}
                 sx={{
                     backgroundColor: theme.palette.background.paper,
                 }}
@@ -110,7 +113,7 @@ export default function MessageActions(props: Props) {
                     {currentChild+1}/{numChild+1}
                 </Typography>
             <Tooltip
-                title={"Go to next message"}
+                title={"Next"}
                 sx={{
                     backgroundColor: theme.palette.background.paper,
                 }}
@@ -131,7 +134,29 @@ export default function MessageActions(props: Props) {
     }
 
     if (props.msg.role === 'system') {
-        return
+        return (<></>)
+    }
+
+
+    if (props.editMessage) {
+        return (
+            <Stack direction="row" spacing={0}>
+                <Tooltip
+                    title={"Cancel"}
+                    sx={{
+                        backgroundColor: theme.palette.background.paper,
+                    }}
+                    arrow
+                >
+                    <IconButton size="small" onClick={() => setEditMessage(false)}>
+                        <Close fontSize={'inherit'} />
+                    </IconButton>
+                </Tooltip>
+                <IconButton size="small" >
+                    <Send fontSize={'inherit'} />
+                </IconButton>
+            </Stack>
+        )
     }
 
     return (
@@ -140,7 +165,7 @@ export default function MessageActions(props: Props) {
 
             {msg.role !== 'user' ? (
                 <Tooltip
-                    title={"Regenerate the response"}
+                    title={"Regenerate"}
                     sx={{
                         backgroundColor: theme.palette.background.paper,
                     }}
@@ -152,20 +177,20 @@ export default function MessageActions(props: Props) {
                 </Tooltip>
             ) : (
                 <Tooltip
-                    title={"Edit the message"}
+                    title={"Edit"}
                     sx={{
                         backgroundColor: theme.palette.background.paper,
                     }}
                     arrow
                 >
-                    <IconButton size="small">
+                    <IconButton size="small" onClick={()=> setEditMessage(true)}>
                         <Edit fontSize={'inherit'} />
                     </IconButton>
                 </Tooltip>
             )}
 
             <Tooltip
-                title={"Copy the message"}
+                title={"Copy"}
                 sx={{
                     backgroundColor: theme.palette.background.paper,
                 }}
@@ -181,10 +206,6 @@ export default function MessageActions(props: Props) {
                 <ContentCopy fontSize={'inherit'} />
                 </IconButton>
             </Tooltip>
-
-            {/*<IconButton size="small">*/}
-            {/*    <HighlightAlt fontSize={'inherit'} />*/}
-            {/*</IconButton>*/}
 
             <Tooltip
                 title={<KeyValueList msg={msg} />}

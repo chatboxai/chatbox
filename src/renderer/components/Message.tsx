@@ -40,6 +40,7 @@ import StyledMenu from './StyledMenu'
 import Tooltip from '@mui/material/Tooltip';
 import { CachedRounded,InfoOutlined } from '@mui/icons-material'
 import MessageActions from '@/components/MessageActions'
+import MessageEdit from '@/components/MessageEdit'
 
 export interface Props {
     id?: string
@@ -67,6 +68,7 @@ export default function Message(props: Props) {
     const [messageListRef, setMessageListRef] = useAtom(atoms.messageListRefAtom)
     const [showLoadingIcon, setShowLoadingIcon] = useState(false)
     const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null)
+    const [editMessage, setEditMessage] = React.useState(false)
 
     const { msg, className, collapseThreshold, hiddenButtonGroup, small } = props
 
@@ -161,6 +163,11 @@ export default function Message(props: Props) {
         </span>
     )
 
+    let messageContent = (<MessageThinking
+        msg={msg} />
+    )
+    if (editMessage) messageContent = (<MessageEdit msg={msg} sessionId={props.sessionId} />)
+
     return (
         <Box
             ref={ref}
@@ -248,9 +255,7 @@ export default function Message(props: Props) {
 
                             {
                                 enableMarkdownRendering && !isCollapsed ? (
-                                    <MessageThinking
-                                        msg={msg}
-                                    />
+                                   messageContent
                                 ) : (
                                     <div>
                                         {content}
@@ -267,7 +272,7 @@ export default function Message(props: Props) {
                         {
                             needCollapse && !isCollapsed && CollapseButton
                         }
-                        <MessageActions msg={msg} sessionId={props.sessionId} />
+                        <MessageActions msg={msg} sessionId={props.sessionId} setEditMessage={setEditMessage} editMessage={editMessage}/>
                     </Grid>
                 </Grid>
             </Grid>

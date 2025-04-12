@@ -275,6 +275,28 @@ export async function shiftBranch(param: { sessionId: string; msg: Message; prom
     shiftBranchToMainThread(session, messageIndex, param.promoteBranchIndex)
 }
 
+export async function editMessage(param: {sessionId: string; msgId: string, newMessage: Message}) {
+    const session = getSession(param.sessionId)
+    if (!session) {
+        return
+    }
+
+    const messageIndex = session.messages.findIndex((m) => m.id === param.msgId)
+    if (messageIndex === -1) {
+        console.error('Message not found')
+        return
+    }
+
+    addMessageToBranch(session, param.msgId, param.newMessage)
+    shiftBranchToMainThread(session, messageIndex)
+
+    let newAssistantMsg = createMessage('assistant', '')
+    newAssistantMsg.generating = true
+    insertMessage(param.sessionId, newAssistantMsg)
+
+    return generate(param.sessionId, newAssistantMsg)
+}
+
 export async function regenerateMessage(param: { sessionId: string; msg: Message }) {
     const store = getDefaultStore()
     let session = getSession(param.sessionId)

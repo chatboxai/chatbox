@@ -166,7 +166,7 @@ export default function Message(props: Props) {
     let messageContent = (<MessageThinking
         msg={msg} />
     )
-    if (editMessage) messageContent = (<MessageEdit msg={msg} sessionId={props.sessionId} />)
+    if (editMessage) messageContent = (<MessageEdit msg={msg} sessionId={props.sessionId} setEditMessage={setEditMessage} />)
 
     return (
         <Box

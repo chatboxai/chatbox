@@ -133,31 +133,10 @@ export default function MessageActions(props: Props) {
         )
     }
 
-    if (props.msg.role === 'system') {
+    if (props.editMessage || props.msg.role === 'system') {
         return (<></>)
     }
 
-
-    if (props.editMessage) {
-        return (
-            <Stack direction="row" spacing={0}>
-                <Tooltip
-                    title={"Cancel"}
-                    sx={{
-                        backgroundColor: theme.palette.background.paper,
-                    }}
-                    arrow
-                >
-                    <IconButton size="small" onClick={() => setEditMessage(false)}>
-                        <Close fontSize={'inherit'} />
-                    </IconButton>
-                </Tooltip>
-                <IconButton size="small" >
-                    <Send fontSize={'inherit'} />
-                </IconButton>
-            </Stack>
-        )
-    }
 
     return (
         <Stack direction="row" spacing={0}>

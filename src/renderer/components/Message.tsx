@@ -98,7 +98,8 @@ export default function Message(props: Props) {
     }
 
     useEffect(()=>{
-        if (msg.role === 'assistant' && (msg.content === '' || msg.error === '')){
+        const needShow = msg.role === 'assistant' && msg.content !== '' && msg.error === ''
+        if (needShow) {
             setShowLoadingIcon(true)
         } else {
             setShowLoadingIcon(false)

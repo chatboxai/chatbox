@@ -60,6 +60,12 @@ export default function MessageEdit(props: Props) {
         if (event.key === 'Enter' && isMobile) {
             return
         }
+
+        if (event.key === 'Escape') {
+            setEditMessage(false)
+            return
+        }
+
         if (
             event.keyCode === 13 &&
             !event.shiftKey &&

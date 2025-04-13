@@ -244,7 +244,7 @@ export default function Message(props: Props) {
                         }
                     </Box>
                 </Grid>
-                <Grid item xs sm container sx={{ width: '0px', paddingRight: '15px' }}>
+                <Grid item xs sm container sx={{ width: '0px', paddingRight: '15px' }} >
                     <Grid item xs>
                         <Box className={cn('msg-content', { 'msg-content-small': small })} sx={
                             small ? { fontSize: theme.typography.body2.fontSize } : {}

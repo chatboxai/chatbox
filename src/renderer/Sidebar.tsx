@@ -12,7 +12,7 @@ import {
     Divider,
     useTheme,
     Drawer,
-    SwipeableDrawer
+    SwipeableDrawer,
 } from '@mui/material'
 import SettingsIcon from '@mui/icons-material/Settings'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'

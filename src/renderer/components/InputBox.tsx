@@ -63,9 +63,9 @@ export default function InputBox(props: Props) {
         setMessageInput(input)
     }
 
-    useMemo(async () => {
-        setIsMobile( await platform.isMobile())
-    },[])
+    useEffect(() => {
+        platform.isMobile().then(setIsMobile)
+    }, [])
 
     const  onKeyDown = async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
         // on iOS and Android enter will behave as newline instead.

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react'
 import {
     TextField,
     List,
@@ -9,10 +9,14 @@ import {
     Popover,
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
-import { OpenAICompModel, Settings } from '../../shared/types'
+import { OpenAICompModel, Session, Settings } from '../../shared/types'
 import { useAtom } from 'jotai'
 import { settingsAtom } from '@/stores/atoms'
 import { settings } from '../../shared/defaults'
+import { getCurrentSession } from '@/stores/sessionActions'
+import * as sessionActions from '@/stores/sessionActions'
+import { useAtomValue } from 'jotai/index'
+import * as atoms from '@/stores/atoms'
 interface Props {
     open: boolean;
     onClose: () => void;
@@ -23,14 +27,15 @@ export function ModelSelectDialog(props: Props) {
     const [anchorEl, setAnchorEl] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedModel, setSelectedModel] = useState('');
+    const currentSession = useAtomValue(atoms.currentSessionAtom)
 
     const handleSelectModel = (selectedModel:OpenAICompModel ) => {
         setSelectedModel(selectedModel.id)
-        props.settings.modelProviderList = props.settings.modelProviderList.map(provider =>
-            provider.uuid === props.settings.modelProviderID
-                ? { ...provider, selectedModel: selectedModel.id }
-                : provider
-        )
+
+        if (currentSession) {
+            currentSession.model = selectedModel.id
+            sessionActions.modify(currentSession)
+        }
         props.onClose();
     }
 
@@ -39,13 +44,13 @@ export function ModelSelectDialog(props: Props) {
     };
 
     const open = Boolean(anchorEl);
-    const filteredModels = props.settings.modelProviderList?.find((provider) =>
-       provider.uuid === props.settings.modelProviderID
-    )?.modelList?.filter(model =>  model.id.toLowerCase().includes(searchTerm.toLowerCase()));
+    const filteredModels = props.settings.modelProviderList?.find((provider) =>{
+        if (currentSession.modelProviderID) return provider.uuid === currentSession.modelProviderID;
+        return provider.uuid === props.settings.modelProviderID
+    })?.modelList?.filter(model =>  model.id.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
         <div>
-            {/* Popover for the overlay */}
             <Popover
                 open={props.open}
                 onClose={props.onClose}
@@ -55,6 +60,7 @@ export function ModelSelectDialog(props: Props) {
                     vertical: 'top',
                     horizontal: 'left'
                 }}
+
                 transformOrigin={{
                     vertical: 'top',
                     horizontal: 'left'
@@ -90,7 +96,7 @@ export function ModelSelectDialog(props: Props) {
                             onClick={() => handleSelectModel(model)}
                             selected={selectedModel === model.id}
                             style={{
-                               padding: '5px',
+                                padding: '5px',
                             }}
                         >
                             <ListItemText primary={model.id} />

@@ -1,8 +1,18 @@
-import { Settings, Config, ModelProvider } from '../../../shared/types'
+import { Settings, Config, ModelProvider, OpenAICompProviderSettings } from '../../../shared/types'
 import OpenAIComp from '@/packages/models/openai-comp'
 
 
-export function getModel(setting: Settings, config: Config) {
+export function getModel(setting: Settings, provider?: OpenAICompProviderSettings, modelName?: string) {
+
+    if (provider) {
+        return new OpenAIComp({
+            apiKey: provider.apiKey,
+            baseURL: provider.baseURL,
+            model: modelName ? modelName : provider.selectedModel,
+            temperature: provider.temperature,
+            topP: provider.topP,
+        })
+    }
 
     if (setting.modelProvider !== ""){
         const modelProvider = setting.modelProviderList.find((m) => m.name === setting.modelProvider);

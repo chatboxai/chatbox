@@ -24,7 +24,7 @@ export interface Message {
     cancel?: () => void
     generating?: boolean
 
-    aiProvider?: ModelProvider
+    aiProvider?: string
     model?: string
 
     errorCode?: number
@@ -58,6 +58,8 @@ export interface Session {
     messages: Message[]
     copilotId?: string
     starred?: boolean
+    modelProviderID?: string
+    model?: string
     updateTime?: number
 }
 

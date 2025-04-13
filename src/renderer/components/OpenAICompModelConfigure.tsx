@@ -11,13 +11,15 @@ import {
 } from '@mui/material'
 import PasswordTextField from '@/components/PasswordTextField'
 import RefreshIcon from '@mui/icons-material/Refresh'
-import { useState } from 'react'
-import { OpenAICompProviderSettings } from '../../shared/types'
+import React, { useEffect, useState } from 'react'
+import { OpenAICompProviderSettings, Settings } from '../../shared/types'
 import { useTranslation } from 'react-i18next'
 import OpenAIComp from '@/packages/models/openai-comp'
 import TemperatureSlider from '@/components/TemperatureSlider'
 import TopPSlider from '@/components/TopPSlider'
 import CircularProgress from '@mui/material/CircularProgress'
+import { useAtom } from 'jotai/index'
+import { settingsAtom } from '@/stores/atoms'
 
 export interface OpenAICompModelConfigureProps {
     provider: OpenAICompProviderSettings
@@ -34,6 +36,10 @@ export function OpenAICompModelConfigure(props: OpenAICompModelConfigureProps) {
     const updateModelProvider = (updatedProvider: OpenAICompProviderSettings) => {
         setProvider(updatedProvider)
     }
+
+    useEffect(() => {
+        setDefaultModelName(provider.selectedModel)
+    },[provider])
 
     const handleRefresh = async () => {
         setError('')

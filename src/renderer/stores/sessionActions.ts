@@ -1,5 +1,5 @@
 import { getDefaultStore } from 'jotai'
-import { Settings, createMessage, Message, Session } from '../../shared/types'
+import { Settings, createMessage, Message, Session, OpenAICompProviderSettings } from '../../shared/types'
 import * as atoms from './atoms'
 import * as promptFormat from '../packages/prompts'
 import * as Sentry from '@sentry/react'
@@ -326,7 +326,6 @@ export async function regenerateMessage(param: { sessionId: string; msg: Message
 export async function generate(sessionId: string, targetMsg: Message, promptMsgs: Message[] = []) {
     const store = getDefaultStore()
     const settings = store.get(atoms.settingsAtom)
-    const configs = await platform.getConfig()
     const session = getSession(sessionId)
     if (!session) {
         return
@@ -335,13 +334,25 @@ export async function generate(sessionId: string, targetMsg: Message, promptMsgs
     if (!autoGenerateTitle) {
         return
     }
+
+    let aiProviderName = settings.modelProvider
+    let modelProvider : OpenAICompProviderSettings | undefined = undefined
+    if (session.modelProviderID){
+        modelProvider = settings.modelProviderList.find(m => m.uuid == session.modelProviderID)
+        if (modelProvider) {
+            aiProviderName = modelProvider.name
+        }
+    }
+
+    const modelName = session.model ? session.model : getModelDisplayName(settings)
+
     const placeholder = '...'
     targetMsg = {
         ...targetMsg,
         content: placeholder,
         cancel: undefined,
-        aiProvider: settings.aiProvider,
-        model: getModelDisplayName(settings),
+        aiProvider: aiProviderName,
+        model:modelName ,
         generating: true,
         errorCode: undefined,
         error: undefined,
@@ -353,7 +364,10 @@ export async function generate(sessionId: string, targetMsg: Message, promptMsgs
     let targetMsgIx = messages.findIndex((m) => m.id === targetMsg.id)
 
     try {
-        const model = getModel(settings, configs)
+        const model = getModel(settings,modelProvider,modelName)
+        if (!model) {
+            throw new Error(`Model not found for ${targetMsg.id}`)
+        }
         switch (session.type) {
             case 'chat':
             case undefined:
@@ -428,8 +442,24 @@ async function _generateName(sessionId: string, modifyName: (sessionId: string, 
         return
     }
     const configs = await platform.getConfig()
+
+
+    let aiProviderName = settings.modelProvider
+    let modelProvider : OpenAICompProviderSettings | undefined = undefined
+    if (session.modelProviderID){
+        modelProvider = settings.modelProviderList.find(m => m.uuid == session.modelProviderID)
+        if (modelProvider) {
+            aiProviderName = modelProvider.name
+        }
+    }
+
+    const modelName = session.model ? session.model : getModelDisplayName(settings)
+
     try {
-        const model = getModel(settings, configs)
+        const model = getModel(settings, modelProvider, modelName)
+        if (!model) {
+            throw new Error(`Model ${modelName} not found`)
+        }
         let name = await model.chat(
             promptFormat.nameConversation(
                 session.messages.filter((m) => m.role !== 'system').slice(0, 4),
@@ -491,12 +521,14 @@ export function initEmptyChatSession(): Session {
         id: uuidv4(),
         name: 'Untitled',
         type: 'chat',
+        updateTime: Date.now(),
+        modelProviderID: settings.modelProviderID,
         messages: [
             {
                 id: uuidv4(),
                 role: 'system',
                 content: settings.defaultPrompt || defaults.getDefaultPrompt(),
-                nodeType: 'node',
+                numIndex: 0,
             },
         ],
     }

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
     Box,
     Badge,
@@ -12,7 +12,7 @@ import {
     Divider,
     useTheme,
     Drawer,
-    SwipeableDrawer
+    SwipeableDrawer,
 } from '@mui/material'
 import SettingsIcon from '@mui/icons-material/Settings'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
@@ -28,6 +28,8 @@ import { useSetAtom } from 'jotai'
 import * as atoms from './stores/atoms'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import { trackingEvent } from './packages/event'
+import { useAtom } from 'jotai/index'
+import platform from '@/packages/platform'
 
 export const drawerWidth = 240
 
@@ -42,15 +44,12 @@ interface Props {
 export default function Sidebar(props: Props) {
     const { t } = useTranslation()
     const versionHook = useVersion()
+    const [isMobile, setIsMobile] = useState<boolean>(false)
+    useEffect(() => {
+        platform.isMobile().then(setIsMobile)
+    }, [])
 
     const sessionListRef = useRef<HTMLDivElement>(null)
-    const handleCreateNewSession = () => {
-        sessionActions.createEmpty('chat')
-        if (sessionListRef.current) {
-            sessionListRef.current.scrollTo(0, 0)
-        }
-        trackingEvent('create_new_conversation', { event_category: 'user' })
-    }
 
     const theme = useTheme()
 
@@ -70,6 +69,11 @@ export default function Sidebar(props: Props) {
                 borderRightWidth: '1px',
                 borderRightStyle: 'solid',
                 borderRightColor: theme.palette.divider,
+            }}
+            disableDiscovery={true}
+            swipeAreaWidth={isMobile? 0 : 0}
+            slotProps={{
+                backdrop: sessionListRef,
             }}
         >
             <div className="ToolBar h-full">

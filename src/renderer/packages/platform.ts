@@ -18,6 +18,7 @@ export class BasePlatform {
     private mobile = new MobilePlatform();
     private desktop = new DesktopPlatform();
 
+    private _isMobilePromise: Promise<boolean> | null = null;
 
     public async getVersion(): Promise<string> {
         return getVersion();
@@ -28,7 +29,22 @@ export class BasePlatform {
     }
 
     public async isMobile(): Promise<boolean> {
-        return await invoke('is_mobile_platform')
+        if (this._isMobilePromise) {
+            return this._isMobilePromise;
+        }
+
+        this._isMobilePromise = (async () => {
+            try {
+                return await invoke<boolean>('is_mobile_platform');
+            } catch (error) {
+                // Reset cache on error to allow retries
+                this._isMobilePromise = null;
+                console.error('Failed to detect mobile platform:', error);
+                return false;
+            }
+        })();
+
+        return this._isMobilePromise;
     }
 
     public async shouldUseDarkColors(): Promise<boolean> {
@@ -116,8 +132,8 @@ export class BasePlatform {
 
     public async setStoreValue(key: string, value: any) {
          await store.set(key,value);
-         return await store.save()
     }
+
     public async getStoreValue(key: string) {
         return await store.get(key);
     }

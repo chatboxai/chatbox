@@ -18,10 +18,13 @@ export interface Message {
     content: string
     name?: string
 
+    numIndex: number
+    branches?: Message[][]
+
     cancel?: () => void
     generating?: boolean
 
-    aiProvider?: ModelProvider
+    aiProvider?: string
     model?: string
 
     errorCode?: number
@@ -55,6 +58,8 @@ export interface Session {
     messages: Message[]
     copilotId?: string
     starred?: boolean
+    modelProviderID?: string
+    model?: string
     updateTime?: number
 }
 
@@ -64,6 +69,7 @@ export function createMessage(role: MessageRole = MessageRoleEnum.User, content:
         content: content,
         role: role,
         timestamp: new Date().getTime(),
+        numIndex: 0,
     }
 }
 
@@ -248,3 +254,10 @@ export interface ChatboxAILicenseDetail {
 }
 
 export type ChatboxAIModel = 'chatboxai-3.5' | 'chatboxai-4'
+
+export interface MessageInfo {
+    WordCount: number
+    TokenUsed: number
+    Model: string
+    Provider: string
+}

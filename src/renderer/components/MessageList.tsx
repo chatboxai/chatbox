@@ -15,7 +15,6 @@ export default function MessageList(props: Props) {
     useEffect(() => {
         setMessageListRef(ref)
     }, [ref])
-
     return (
             <div className='overflow-y-auto w-full h-full pr-0 pl-0' ref={ref}>
                 {

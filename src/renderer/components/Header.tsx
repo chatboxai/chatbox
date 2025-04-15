@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Button, IconButton, Typography, useTheme } from '@mui/material'
 import * as atoms from '../stores/atoms'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -22,6 +22,9 @@ export default function Header(props: Props) {
     const setChatConfigDialogSession = useSetAtom(atoms.chatConfigDialogAtom)
     const store = getDefaultStore()
     const settings = store.get(atoms.settingsAtom)
+    
+    let selectedMode = ''
+
 
     const sessionListRef = useRef<HTMLDivElement>(null)
     const handleCreateNewSession = () => {
@@ -40,6 +43,25 @@ export default function Header(props: Props) {
             return 
         }
     }, [currentSession.messages.length])
+
+
+    if (currentSession.model) {
+        selectedMode = currentSession.model
+    }else{
+        const model = settings?.
+        modelProviderList?.
+        find((provider) => (provider.uuid === settings.modelProviderID))?.selectedModel
+        if (model ) selectedMode = model
+    }
+
+    let providerName = ''
+    if (currentSession.modelProviderID && settings){
+        const provider = settings.modelProviderList.find((provider) => provider.uuid === currentSession.modelProviderID)
+        providerName = provider ? provider.name : ''
+    }
+
+    if (providerName === '') providerName = settings.modelProvider
+
 
     const editCurrentSession = () => {
         setChatConfigDialogSession(currentSession)
@@ -99,7 +121,7 @@ export default function Header(props: Props) {
                             color: theme.palette.text.secondary
                         }}
                     >
-                        {settings.modelProvider}
+                        {providerName}
                     </Typography>
                     <Typography
                         variant="h6"
@@ -112,7 +134,7 @@ export default function Header(props: Props) {
                             textOverflow: 'ellipsis',
                         }}
                     >
-                        {settings?.modelProviderList?.find((provider) => (provider.uuid === settings.modelProviderID))?.selectedModel}
+                        {selectedMode}
                     </Typography>
                 </Button>
                 <div onClick={handleCreateNewSession}>

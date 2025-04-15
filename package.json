@@ -170,6 +170,7 @@
         "react-i18next": "^12.2.0",
         "react-markdown": "^9.0.0",
         "react-router-dom": "^6.11.2",
+        "react-swipeable": "^7.0.2",
         "react-syntax-highlighter": "^15.5.0",
         "react-textarea-autosize": "^8.5.9",
         "react-zoom-pan-pinch": "^3.4.4",

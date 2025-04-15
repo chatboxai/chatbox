@@ -11,6 +11,7 @@ import React, { useEffect, useState } from 'react'
 import { useAtom } from 'jotai/index'
 import { settingsAtom } from './stores/atoms'
 import { Settings } from '../shared/types'
+import { useSwipeable } from 'react-swipeable'
 
 interface Props {
     toggleSidebar: (newOpen: boolean) => void
@@ -24,6 +25,41 @@ export default function MainPane(props: Props) {
     const setSettingsEdit = (updated: Settings) => {
         _setSettingsEdit(updated)
     }
+
+    function isElementOrParentsScrollable(element: HTMLElement | null ): boolean {
+        if (!element) return false;
+        let currentElement: HTMLElement | null = element;
+        while (currentElement) {
+            const styles = window.getComputedStyle(currentElement);
+            const overflowX = styles.getPropertyValue('overflow-x');
+            if (
+                (overflowX === 'auto' || overflowX === 'scroll') &&
+                currentElement.scrollWidth > currentElement.clientWidth
+            ) {
+                return true;
+            }
+
+            currentElement = currentElement.parentElement;
+            if (currentElement === document.body) break;
+        }
+
+        return false;
+    }
+
+
+    const swipeHandlers = useSwipeable({
+        onSwipedRight: (eventData) => {
+            if (eventData.event.target){
+                // ignore scrollable element.
+                const d = isElementOrParentsScrollable(eventData.event.target as HTMLElement);
+                if (d) return;
+            }
+            props.toggleSidebar(true)
+        },
+        delta: 40,
+        trackTouch: true
+
+    });
 
     useEffect(() => {
         _setSettingsEdit(settingsEdit)
@@ -45,7 +81,7 @@ export default function MainPane(props: Props) {
                     settings={settings}
                     onClose={() => setOpenModelSelect(false)}
                 />
-                <div className="flex-1 min-h-0">
+                <div className="flex-1 min-h-0" {...swipeHandlers} >
                     <div className="h-full overflow-y-auto">
                         <MessageList />
                     </div>

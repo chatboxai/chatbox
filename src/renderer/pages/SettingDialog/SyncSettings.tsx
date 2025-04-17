@@ -17,10 +17,17 @@ import {
     Divider, useTheme
 } from '@mui/material'
 import { useState } from 'react'
-import { SyncFrequencyList, SyncProvider, SyncProviderEnum, SyncProviderList } from '../../../shared/types'
+import {
+    SyncDataType,
+    SyncFrequencyList,
+    SyncProvider,
+    SyncProviderEnum,
+    SyncProviderList
+} from '../../../shared/types'
 import { models } from '@/packages/models/openai'
 import { settingsAtom } from '@/stores/atoms'
 import { useAtom } from 'jotai'
+import DropboxLogin from '@/pages/Sync/DropboxLogin'
 
 
 interface Props {}
@@ -39,8 +46,8 @@ export default function SyncSettings  (props :Props) {
         all: true,
         chat: true,
         config: true,
-        theme: true
     });
+    const [dropboxOpen, setDropboxOpen] = useState(false);
 
     // Handler for provider selection
     const handleProviderChange = (event: SelectChangeEvent) => {
@@ -81,11 +88,21 @@ export default function SyncSettings  (props :Props) {
         }
     };
 
-    console.log(settingsEdit.syncConfig);
+    const handleConnectButton = (event: React.ChangeEvent<HTMLInputElement>) => {
+        switch (settingsEdit.syncConfig.provider){
+            case 'Dropbox':
+                setDropboxOpen(true);
+                break
+            default:
+                setDropboxOpen(false);
+                break;
+        }
+    }
 
     return (
         <Box>
             <Box sx={{ p: 1 }}>
+                <DropboxLogin open={dropboxOpen} setOpen={setDropboxOpen}/>
                 <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
                     Cloud Provider
                 </Typography>
@@ -105,7 +122,7 @@ export default function SyncSettings  (props :Props) {
 
                 {selectedProvider !== 'None' && (
                     !isConnected ? (
-                        <Button variant="contained" fullWidth>
+                        <Button variant="contained" onClick={handleConnectButton} fullWidth>
                             Connect to {selectedProvider.replace('-', ' ')}
                         </Button>
                     ) : (
@@ -163,47 +180,20 @@ export default function SyncSettings  (props :Props) {
                 <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
                     Sync Data Types
                 </Typography>
+
                 <FormGroup>
-                    <FormControlLabel
-                        control={
-                            <Checkbox
-                                name="all"
-                                checked={selectedData.all}
-                                onChange={handleDataChange}
-                            />
-                        }
-                        label="All"
-                    />
-                    <FormControlLabel
-                        control={
-                            <Checkbox
-                                name="chat"
-                                checked={selectedData.chat}
-                                onChange={handleDataChange}
-                            />
-                        }
-                        label="Chat"
-                    />
-                    <FormControlLabel
-                        control={
-                            <Checkbox
-                                name="config"
-                                checked={selectedData.config}
-                                onChange={handleDataChange}
-                            />
-                        }
-                        label="Config"
-                    />
-                    <FormControlLabel
-                        control={
-                            <Checkbox
-                                name="theme"
-                                checked={selectedData.theme}
-                                onChange={handleDataChange}
-                            />
-                        }
-                        label="Theme"
-                    />
+                    {Object.entries(SyncDataType).map(([key, value]) => (
+                        <FormControlLabel
+                            control={
+                                <Checkbox
+                                    name={value}
+                                    checked={selectedData[value]}
+                                    onChange={handleDataChange}
+                                />
+                            }
+                            label={key}
+                        />
+                    ))}
                 </FormGroup>
             </Box>
         </Box>

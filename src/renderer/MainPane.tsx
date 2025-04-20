@@ -25,46 +25,44 @@ export default function MainPane(props: Props) {
     const setSettingsEdit = (updated: Settings) => {
         _setSettingsEdit(updated)
     }
-    const scrollPositionCache = new WeakMap<HTMLElement, number>();
-    function isElementOrParentsScrollable(element: HTMLElement | null ): boolean {
-        if (!element) return false;
-        let currentElement: HTMLElement | null = element;
+    const scrollPositionCache = new WeakMap<HTMLElement, number>()
+    function isElementOrParentsScrollable(element: HTMLElement | null): boolean {
+        if (!element) return false
+        let currentElement: HTMLElement | null = element
         while (currentElement) {
-            const styles = window.getComputedStyle(currentElement);
-            const overflowX = styles.getPropertyValue('overflow-x');
+            const styles = window.getComputedStyle(currentElement)
+            const overflowX = styles.getPropertyValue('overflow-x')
             if (
                 (overflowX === 'auto' || overflowX === 'scroll') &&
                 currentElement.scrollWidth > currentElement.clientWidth
             ) {
                 // if it's scrollable however the scroll position is on the left most
                 // return false hence it is still able to open the sidebar.
-                const lastScrollLeft = scrollPositionCache.get(currentElement) ?? 0;
-                const currentScrollLeft = currentElement.scrollLeft;
-                scrollPositionCache.set(currentElement, currentScrollLeft);
-                return !(lastScrollLeft >= 0 && currentScrollLeft === 0);
+                const lastScrollLeft = scrollPositionCache.get(currentElement) ?? 0
+                const currentScrollLeft = currentElement.scrollLeft
+                scrollPositionCache.set(currentElement, currentScrollLeft)
+                return !(lastScrollLeft >= 0 && currentScrollLeft === 0)
             }
 
-            currentElement = currentElement.parentElement;
-            if (currentElement === document.body) break;
+            currentElement = currentElement.parentElement
+            if (currentElement === document.body) break
         }
 
-        return false;
+        return false
     }
-
 
     const swipeHandlers = useSwipeable({
         onSwipedRight: (eventData) => {
-            if (eventData.event.target){
+            if (eventData.event.target) {
                 // ignore scrollable element.
-                const d = isElementOrParentsScrollable(eventData.event.target as HTMLElement);
-                if (d) return;
+                const d = isElementOrParentsScrollable(eventData.event.target as HTMLElement)
+                if (d) return
             }
             props.toggleSidebar(true)
         },
         delta: 40,
-        trackTouch: true
-
-    });
+        trackTouch: true,
+    })
 
     useEffect(() => {
         _setSettingsEdit(settingsEdit)
@@ -86,7 +84,7 @@ export default function MainPane(props: Props) {
                     settings={settings}
                     onClose={() => setOpenModelSelect(false)}
                 />
-                <div className="flex-1 min-h-0" {...swipeHandlers} >
+                <div className="flex-1 min-h-0" {...swipeHandlers}>
                     <div className="h-full overflow-y-auto">
                         <MessageList />
                     </div>

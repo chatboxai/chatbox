@@ -92,6 +92,18 @@ export class BasePlatform {
         return invoke('relaunch_app');
     }
 
+    public async getLastActiveTime(): Promise<number> {
+        let lastActiveTime = await store.get<number>("last_active_time")
+        if (lastActiveTime) return lastActiveTime;
+        lastActiveTime = Date.now()
+        await this.setLastActiveTime(lastActiveTime)
+        return lastActiveTime
+    }
+
+    public async setLastActiveTime(n: number): Promise<void> {
+       await store.set('last_active_time', n);
+    }
+
     public async getConfig(): Promise<Config> {
         try {
             const config = await store.get<Config>('configs');

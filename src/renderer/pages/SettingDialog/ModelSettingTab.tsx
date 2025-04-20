@@ -13,7 +13,7 @@ import LMStudioSetting from './LMStudioSetting'
 import OllamaSetting from './OllamaSetting'
 import OpenAISetting from './OpenAISetting'
 import PerplexitySetting from './PerplexitySetting'
-import SiliconflowSetting from './SiliconflowSetting'
+import SiliconflowSetting from './SiliconFlowSetting'
 import XAISetting from './XAISetting'
 
 interface ModelConfigProps {

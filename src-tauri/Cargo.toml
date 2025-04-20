@@ -1,7 +1,7 @@
 [package]
-name = "app"
+name = "cha"
 version = "0.1.0"
-description = "A Tauri App"
+description = "A chat-app client for many LLM model provider"
 authors = ["you"]
 license = ""
 repository = ""
@@ -11,7 +11,7 @@ rust-version = "1.77.2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "app_lib"
+name = "cha_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -29,3 +29,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+reqwest = { version = "0.11", features = ["json"] }
+once_cell = "1.18"
+sha2 = "0.10"
+hex = "0.4.3"

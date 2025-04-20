@@ -137,9 +137,10 @@ export default function Sidebar(props: Props) {
 
                         <MenuItem
                             sx={{ padding: '0.2rem 0.1rem', margin: '0.1rem' }}
+                            onClick={async () => platform.executeSync() }
                         >
                             <ListItemIcon>
-                                <IconButton>
+                                <IconButton >
                                     <CloudSync fontSize="small" />
                                 </IconButton>
                             </ListItemIcon>

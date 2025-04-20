@@ -1,30 +1,49 @@
 import {
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    Button,
-    Typography,
-    TextField,
-    Link,
     Box,
+    Button,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogTitle,
     Divider,
-    IconButton, useTheme
+    IconButton,
+    Link,
+    TextField,
+    Typography,
+    useTheme,
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close';
+import CloseIcon from '@mui/icons-material/Close'
 import { useTranslation } from 'react-i18next'
-import { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import platform from '../../packages/platform'
-
+import { dropbox } from '@/packages/synchronization/dropbox'
+import { useAtom } from 'jotai/index'
+import { settingsAtom } from '@/stores/atoms'
+import Alert from '@mui/material/Alert'
 
 interface Props {
     open: boolean
     setOpen: (open: boolean) => void
 }
-export default function DropboxLogin(props: Props)  {
+export default  function  DropboxLogin(props: Props) {
     const theme = useTheme()
     const { t } = useTranslation()
-    const { open, setOpen} = props
+    const { open, setOpen } = props
+
+    const [settingsEdit, setSettingsEdit] = useAtom(settingsAtom)
+    const [authCode, setAuthCode] = useState<string>('')
+    const [errorMessage, setErrorMessage] = useState<string>('')
+
+    const [loginURL, setLoginURL] = useState<string>('');
+
+    useEffect(() => {
+        const fetchURL = async () => {
+            const url = await platform.getDropboxLoginURL();
+            setLoginURL(url);
+        };
+        fetchURL();
+    }, []);
+
 
     const styles = {
         dialog: {
@@ -65,11 +84,48 @@ export default function DropboxLogin(props: Props)  {
         },
     };
 
+
+    const handleSubmit= async () =>  {
+        setErrorMessage('')
+        try {
+
+            const authToken = await platform.getDropboxAuthToken(authCode)
+
+            if (authToken === "") {
+                return
+            }
+
+            settingsEdit.syncConfig = {
+                ...settingsEdit.syncConfig,
+                providersConfig: {
+                    ...(settingsEdit.syncConfig?.providersConfig || {}),
+                    Dropbox: {
+                        ...(settingsEdit.syncConfig?.providersConfig?.Dropbox || {}),
+                        authToken: authToken
+                    }
+                }
+            };
+
+            setSettingsEdit(settingsEdit);
+
+            setOpen(false)
+        }catch (e) {
+            setErrorMessage(e)
+        }
+    }
+
+    const handleOnClose = () => {
+        setErrorMessage('')
+        setOpen(false)
+    }
+
+    console.log(settingsEdit.syncConfig)
+
     return (
-        <Dialog open={open} scroll="paper" sx={styles.dialog}>
+        <Dialog open={open} onClose={()=> handleOnClose()} scroll="paper" sx={styles.dialog}>
             <Box sx={styles.title}>
                 <DialogTitle sx={{ p: 0 }}>{t('Login with Dropbox')}</DialogTitle>
-                <IconButton onClick={()=> setOpen(false)}>
+                <IconButton onClick={() => handleOnClose()}>
                     <CloseIcon />
                 </IconButton>
             </Box>
@@ -77,6 +133,12 @@ export default function DropboxLogin(props: Props)  {
             <Divider />
 
             <DialogContent sx={styles.content}>
+                {errorMessage !== '' && (
+                    <Alert icon={false} severity="error">
+                        {errorMessage}
+                    </Alert>
+                )}
+
                 <Typography variant="body1" sx={styles.stepText}>
                     {t('To allow Chatbox CE to synchronise with Dropbox, please follow the steps below:')}
                 </Typography>
@@ -87,10 +149,10 @@ export default function DropboxLogin(props: Props)  {
 
                 <Link
                     component="button"
-                    onClick={()=>platform.openLink("https://some.url")}
+                    onClick={() => platform.openLink(`${loginURL}`)}
                     sx={styles.urlText}
                 >
-                   http://someurl.
+                    {loginURL}
                 </Link>
 
                 <Typography variant="body1" sx={styles.stepText}>
@@ -101,8 +163,8 @@ export default function DropboxLogin(props: Props)  {
                     fullWidth
                     variant="outlined"
                     placeholder={t('Enter code here')}
-                    // value={state.authCode}
-                    // onChange={handlers.authCodeInput_change}
+                    value={authCode}
+                    onChange={(e ) => setAuthCode(e.target.value)}
                     sx={styles.input}
                     InputProps={{
                         style: {
@@ -119,7 +181,7 @@ export default function DropboxLogin(props: Props)  {
             <DialogActions>
                 <Button
                     variant="contained"
-                    // onClick={handlers.submit_click}
+                    onClick={handleSubmit}
                     // disabled={state.checkingAuthToken}
                     sx={{ m: 2 }}
                 >
@@ -129,3 +191,7 @@ export default function DropboxLogin(props: Props)  {
         </Dialog>
     );
 };
+
+function async() {
+    throw new Error('Function not implemented.')
+}

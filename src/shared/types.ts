@@ -286,15 +286,35 @@ export type SyncProvider = (typeof SyncProviderEnum)[keyof typeof SyncProviderEn
 
 export interface SynchronizedConfig {
     provider: SyncProvider
+    providersConfig: {
+        Dropbox: DropboxConfig
+    }
     frequency: number // in seconds
     onAppLaunch: boolean
     syncDataType: [SyncDataTypeEnum]
 }
 
+interface DropboxConfig {
+    clientId: string
+    clientSecret: string
+    authToken?: string
+}
 
 export const SyncFrequencyList = {
     "5 Minutes": 300,
     "10 Minutes": 600,
     "15 Minutes": 900,
     "30 Minutes": 1800,
+}
+
+export interface ChatSessionMetadata{
+    hash: string
+    id: string
+    updateTime: number
+}
+
+export  interface SyncMetadata {
+    hash?: string
+    lastSync: number
+    chatSessions?: ChatSessionMetadata[]
 }

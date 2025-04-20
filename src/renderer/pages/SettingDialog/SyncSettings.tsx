@@ -28,6 +28,7 @@ import { models } from '@/packages/models/openai'
 import { settingsAtom } from '@/stores/atoms'
 import { useAtom } from 'jotai'
 import DropboxLogin from '@/pages/Sync/DropboxLogin'
+import { Dropbox } from '@/packages/synchronization/dropbox'
 
 
 interface Props {}
@@ -49,13 +50,20 @@ export default function SyncSettings  (props :Props) {
     });
     const [dropboxOpen, setDropboxOpen] = useState(false);
 
-    // Handler for provider selection
     const handleProviderChange = (event: SelectChangeEvent) => {
         const provider = event.target.value;
         setSelectedProvider(provider as SyncProvider);
-        settingsEdit.syncConfig.provider = provider
-        // Mock connection check
-        setIsConnected(provider === 'google-drive');
+        settingsEdit.syncConfig.provider = provider as SyncProvider;
+        const providerConfig = settingsEdit.syncConfig?.providersConfig
+        if (providerConfig) {
+           switch (provider) {
+               case 'Dropbox':
+                   setIsConnected(providerConfig.Dropbox.authToken?.trim() !== '');
+                   break
+               default:
+                   setIsConnected(false);
+           }
+        }
     };
 
     // Handler for data type selection
@@ -66,7 +74,6 @@ export default function SyncSettings  (props :Props) {
                 all: checked,
                 chat: checked,
                 config: checked,
-                theme: checked
             });
             settingsEdit.syncConfig.syncDataType = checked ? ['all'] : [];
         } else {

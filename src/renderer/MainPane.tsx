@@ -25,7 +25,7 @@ export default function MainPane(props: Props) {
     const setSettingsEdit = (updated: Settings) => {
         _setSettingsEdit(updated)
     }
-
+    const scrollPositionCache = new WeakMap<HTMLElement, number>();
     function isElementOrParentsScrollable(element: HTMLElement | null ): boolean {
         if (!element) return false;
         let currentElement: HTMLElement | null = element;
@@ -36,7 +36,12 @@ export default function MainPane(props: Props) {
                 (overflowX === 'auto' || overflowX === 'scroll') &&
                 currentElement.scrollWidth > currentElement.clientWidth
             ) {
-                return true;
+                // if it's scrollable however the scroll position is on the left most
+                // return false hence it is still able to open the sidebar.
+                const lastScrollLeft = scrollPositionCache.get(currentElement) ?? 0;
+                const currentScrollLeft = currentElement.scrollLeft;
+                scrollPositionCache.set(currentElement, currentScrollLeft);
+                return !(lastScrollLeft >= 0 && currentScrollLeft === 0);
             }
 
             currentElement = currentElement.parentElement;

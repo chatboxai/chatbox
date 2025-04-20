@@ -31,6 +31,7 @@ export default function Markdown(props: {
             className={`break-words ${className || ''}`}
             urlTransform={(url) => sanitizeUrl(url)}
             components={{
+                table: (props: any) => Table({...props}),
                 code: (props: any) => CodeBlock({ ...props, hiddenCodeCopyButton }),
                 a: ({ node, ...props }) => (
                     <a
@@ -48,6 +49,20 @@ export default function Markdown(props: {
             { children }
         </ReactMarkdown>
     ), [children])
+}
+
+export function Table(props: any){
+    const { t } = useTranslation()
+    const theme = useTheme()
+    return useMemo(() => {
+        return (
+            <div style={{
+                overflowX: 'auto',
+            }}>
+                <table {...props} />
+            </div>
+        )
+    },[props.children, theme.palette.mode])
 }
 
 export function CodeBlock(props: any) {

@@ -16,6 +16,7 @@ import { useAtom, useAtomValue } from 'jotai'
 import * as atoms from './stores/atoms'
 import Sidebar from './Sidebar'
 import * as premiumActions from './stores/premiumActions'
+import { useInactivityMonitor } from '@/inactiveMonitor'
 
 function Main() {
     const spellCheck = useAtomValue(atoms.spellCheckAtom)
@@ -27,6 +28,7 @@ function Main() {
     const [openCopilotWindow, setOpenCopilotWindow] = React.useState(false)
 
     const [openSidebar, setOpenSidebar] = React.useState(false)
+    useInactivityMonitor()
 
     return (
         <Box className="box-border App" spellCheck={spellCheck}>

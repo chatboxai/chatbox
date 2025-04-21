@@ -71,7 +71,7 @@ export default function Sidebar(props: Props) {
                 borderRightColor: theme.palette.divider,
             }}
             disableDiscovery={true}
-            swipeAreaWidth={isMobile? 0 : 0}
+            swipeAreaWidth={isMobile ? 0 : 0}
             slotProps={{
                 backdrop: sessionListRef,
             }}

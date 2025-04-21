@@ -60,6 +60,24 @@ export function createEmpty(type: 'chat') {
     }
 }
 
+// reuseInactiveSession will switch into last Untitled session if any,
+// and create new session if not found.
+// to reduce performance it'll only run thourgh the last 30 sessions.
+export function reuseInactiveSession() {
+    const sessions = getSortedSessions()
+    let count = 1
+
+    for (const session of sessions) {
+        if (count >= 30) break
+        if (session.name === 'Untitled' && session.model === undefined) {
+            switchCurrentSession(session.id)
+            return
+        }
+        count++
+    }
+    createEmpty('chat')
+}
+
 export function switchCurrentSession(sessionId: string) {
     const store = getDefaultStore()
     store.set(atoms.currentSessionIdAtom, sessionId)

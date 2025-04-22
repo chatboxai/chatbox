@@ -7,7 +7,7 @@ import {
     IconButton,
     Paper,
     Divider,
-    Box, useTheme
+    Box, useTheme, ClickAwayListener
 } from '@mui/material'
 import {
     CachedRounded,
@@ -45,6 +45,7 @@ export default function MessageActions(props: Props) {
     const [hasChild, setHasChild] = React.useState(false)
     const [numChild, setNumChild] = React.useState(0)
     const [currentChild, setCurrentChild] = React.useState(0)
+    const [showMessageInfo, setShowMessageInfo] = React.useState(false)
 
     useMemo(()=>{
         if (msg.branches && msg.branches.length > 0){
@@ -185,18 +186,20 @@ export default function MessageActions(props: Props) {
                 <ContentCopy fontSize={'inherit'} />
                 </IconButton>
             </Tooltip>
-
+            <ClickAwayListener onClickAway={()=> setShowMessageInfo(false)}>
             <Tooltip
+                open={showMessageInfo}
                 title={<KeyValueList msg={msg} />}
                 sx={{
                     backgroundColor: theme.palette.background.paper,
                 }}
                 arrow
             >
-                <IconButton size="small">
+                <IconButton size="small" onClick={()=> setShowMessageInfo(true)}>
                     <InfoOutlined fontSize={'inherit'} />
                 </IconButton>
             </Tooltip>
+            </ClickAwayListener>
         </Stack>
     );
 }

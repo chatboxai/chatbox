@@ -10,6 +10,8 @@ import * as defaults from '../../shared/defaults'
 import { MobilePlatform } from '@/packages/mobile-platform'
 import { DesktopPlatform } from '@/packages/desktop-platform'
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { listen } from '@tauri-apps/api/event'
+import * as sessionActions from '@/stores/sessionActions'
 
 const store = new LazyStore("settings.json");
 
@@ -19,6 +21,24 @@ export class BasePlatform {
     private desktop = new DesktopPlatform();
 
     private _isMobilePromise: Promise<boolean> | null = null;
+
+    constructor() {
+        listen("tauri://focus",async ()=>{
+            const lastActive = await this.getLastActiveTime()
+            const lastActiveDuration = Date.now() - lastActive
+            const oneHour = 3_600_000
+            if (lastActiveDuration <= oneHour) return
+            sessionActions.reuseInactiveSession()
+            await this.setLastActiveTime(Date.now())
+
+        })
+        listen("tauri://blur",async ()=>{
+            await this.setLastActiveTime(Date.now())
+        })
+        listen("tauri://theme-changed",async ()=>{
+            console.log("the theme changed")
+        })
+    }
 
     public async getVersion(): Promise<string> {
         return getVersion();

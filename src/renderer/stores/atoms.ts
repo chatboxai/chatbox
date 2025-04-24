@@ -6,6 +6,7 @@ import { focusAtom } from 'jotai-optics'
 import * as defaults from '../../shared/defaults'
 import storage, { StorageKey } from '../storage'
 import platform from '../packages/platform'
+import { VirtuosoHandle } from 'react-virtuoso'
 
 const _settingsAtom = atomWithStorage<Settings>(StorageKey.Settings, defaults.settings(), storage)
 export const settingsAtom = atom(
@@ -131,8 +132,9 @@ export const activeThemeAtom = atom<'light' | 'dark'>('light')
 
 export const configVersionAtom = atomWithStorage<number>(StorageKey.ConfigVersion, 0, storage)
 
-export const messageListRefAtom = atom<null | React.MutableRefObject<HTMLDivElement | null>>(null)
+export const messageListRefAtom = atom<React.RefObject<VirtuosoHandle> | null>(null)
 
 export const openSettingDialogAtom = atom<SettingWindowTab | null>(null)
 export const sessionCleanDialogAtom = atom<Session | null>(null)
 export const chatConfigDialogAtom = atom<Session | null>(null)
+export const showScrollToBottom = atom<boolean>(false)

@@ -4,32 +4,18 @@ import * as scrollActions from '@/stores/scrollActions'
 import { KeyboardDoubleArrowDown } from '@mui/icons-material';
 import { useAtom } from 'jotai/index'
 import * as atoms from '@/stores/atoms'
+import { StateSnapshot } from 'react-virtuoso'
+import { showScrollToBottom } from '@/stores/atoms'
 
 export default function ScrollToBottomButton ()  {
-    const [visible, setVisible] = useState(false);
-    const [messageListRef, setMessageListRef] = useAtom(atoms.messageListRefAtom)
-
-    const checkScrollPosition = () => {
-        if (messageListRef?.current) {
-            const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
-            const bottomThreshold = 100;
-            const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
-            setVisible(distanceFromBottom >= bottomThreshold)
-        }
-    };
+    const [showScrollToBottom, setShowScrollToBottom] = useAtom(atoms.showScrollToBottom)
 
     const scrollToBottom = () => {
-        scrollActions.scrollToBottom();
+        scrollActions.scrollToBottom('smooth');
     };
 
-    useEffect(() => {
-        if (!messageListRef?.current) return;
-        const timer = setInterval(checkScrollPosition, 500);
-        return () => clearInterval(timer);
-    }, [messageListRef]);
-
     return (
-        <Fade in={visible}>
+        <Fade in={showScrollToBottom}>
             <IconButton
                 onClick={scrollToBottom}
                 sx={{

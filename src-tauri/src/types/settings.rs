@@ -20,7 +20,7 @@ struct SynchronizedConfig {
     on_app_launch: bool,
 
     #[serde(rename = "syncDataType")]
-    sync_data_type: Vec<SyncDataType>
+    sync_data_type: Vec<SyncDataType>,
 }
 
 #[derive(Deserialize)]
@@ -42,12 +42,14 @@ enum SyncDataType {
 
 #[derive(Deserialize)]
 struct SyncProviderConfig {
-    dropbox: SyncDropboxProviderConfig
+    dropbox: SyncDropboxProviderConfig,
 }
 
 #[derive(Deserialize)]
 struct SyncDropboxProviderConfig {
     client_id: String,
     client_secret: String,
-    auth_token: String
+    auth_token: String,
 }
+
+pub const CHAT_SESSIONS_KEY: &str = "chat-sessions";

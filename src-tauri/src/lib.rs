@@ -1,12 +1,12 @@
+mod settings;
 pub mod synchronization;
 mod types;
-mod settings;
 
 use crate::synchronization::dropbox::Dropbox;
-use tauri::Manager;
-use std::sync::Arc;
-use tauri_plugin_store::StoreExt;
 use crate::synchronization::sync::Synchronize;
+use std::sync::Arc;
+use tauri::Manager;
+use tauri_plugin_store::StoreExt;
 
 #[tauri::command]
 fn is_mobile_platform() -> bool {
@@ -29,12 +29,15 @@ async fn sync_dropbox_get_auth_token(
     auth_code: &str,
     dropbox: tauri::State<'_, Arc<Dropbox>>,
 ) -> Result<String, String> {
-  dropbox.get_auth_token(auth_code).await.map_err(|e| e.to_string())
+    dropbox
+        .get_auth_token(auth_code)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn sync_execute(synchronize: tauri::State<'_, Arc<Synchronize>>) -> Result<(), String> {
-    synchronize.do_sync();
+    synchronize.do_sync().await?;
     Ok(())
 }
 
@@ -50,15 +53,12 @@ pub fn run() {
             // Create single instance
             let dropbox = Arc::new(Dropbox::new(
                 "cx9li9ur8taq1z7".into(),
-                "i8f9a1mvx3bijrt".into()
+                "i8f9a1mvx3bijrt".into(),
             ));
 
             let store = app.store("settings.json")?;
 
-            let synchronize = Arc::new(Synchronize::new(
-                dropbox.clone(),
-                store.clone(),
-            ));
+            let synchronize = Arc::new(Synchronize::new(dropbox.clone(), store.clone()));
 
             // Share it across commands
             app.manage(dropbox);
@@ -67,12 +67,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-             is_mobile_platform,
-             relaunch_app,
-             sync_dropbox_login_url,
-             sync_dropbox_get_auth_token,
+            is_mobile_platform,
+            relaunch_app,
+            sync_dropbox_login_url,
+            sync_dropbox_get_auth_token,
             sync_execute,
-             ])
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

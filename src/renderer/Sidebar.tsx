@@ -33,6 +33,7 @@ import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import { trackingEvent } from './packages/event'
 import { useAtom } from 'jotai/index'
 import platform from '@/packages/platform'
+import ErrorDialog from '@/components/ErrorDialog'
 
 export const drawerWidth = 240
 
@@ -48,13 +49,23 @@ export default function Sidebar(props: Props) {
     const { t } = useTranslation()
     const versionHook = useVersion()
     const [isMobile, setIsMobile] = useState<boolean>(false)
+    const sessionListRef = useRef<HTMLDivElement>(null)
+    const theme = useTheme()
+    const [showErrorSync, setShowErrorSync] = useState(false)
+    const [errorSync, setErrorSync] = useState("")
+
     useEffect(() => {
         platform.isMobile().then(setIsMobile)
     }, [])
 
-    const sessionListRef = useRef<HTMLDivElement>(null)
-
-    const theme = useTheme()
+    const handleSync = async () => {
+        try {
+            await platform.executeSync()
+        }catch (e: any) {
+            setShowErrorSync(true)
+            setErrorSync(e)
+        }
+    }
 
     return (
         <SwipeableDrawer
@@ -79,6 +90,15 @@ export default function Sidebar(props: Props) {
                 backdrop: sessionListRef,
             }}
         >
+            <ErrorDialog
+                open={showErrorSync}
+                title={t('Failed to sync')}
+                message={errorSync}
+                onClose={()=>{
+                    setShowErrorSync(false)
+                    setErrorSync("")
+                }}
+            />
             <div className="ToolBar h-full">
                 <Stack
                     className="pt-3 pl-2 pr-1"
@@ -135,18 +155,13 @@ export default function Sidebar(props: Props) {
                             </Typography>
                         </MenuItem>
 
-                        <MenuItem
-                            sx={{ padding: '0.2rem 0.1rem', margin: '0.1rem' }}
-                            onClick={async () => platform.executeSync() }
-                        >
+                        <MenuItem sx={{ padding: '0.2rem 0.1rem', margin: '0.1rem' }} onClick={handleSync}>
                             <ListItemIcon>
-                                <IconButton >
+                                <IconButton>
                                     <CloudSync fontSize="small" />
                                 </IconButton>
                             </ListItemIcon>
-                            <ListItemText>
-                                    {t('Synchronise')}
-                            </ListItemText>
+                            <ListItemText>{t('Synchronise')}</ListItemText>
                         </MenuItem>
 
                         {/*<MenuItem onClick={props.openAboutWindow} sx={{ padding: '0.2rem 0.1rem', margin: '0.1rem' }}>*/}

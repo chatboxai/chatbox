@@ -1,10 +1,15 @@
-mod settings;
 pub mod synchronization;
 mod types;
 
 use crate::synchronization::dropbox::Dropbox;
 use crate::synchronization::sync::Synchronize;
+use crate::types::settings;
+use crate::types::sync::SyncStatus;
+use log::{log, log_enabled, Level};
+use std::env;
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 
@@ -28,7 +33,7 @@ fn sync_dropbox_login_url(dropbox: tauri::State<Arc<Dropbox>>) -> String {
 async fn sync_dropbox_get_auth_token(
     auth_code: &str,
     dropbox: tauri::State<'_, Arc<Dropbox>>,
-) -> Result<String, String> {
+) -> Result<(String, String), String> {
     dropbox
         .get_auth_token(auth_code)
         .await
@@ -43,6 +48,7 @@ async fn sync_execute(synchronize: tauri::State<'_, Arc<Synchronize>>) -> Result
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    log_enabled!(Level::Info);
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -50,15 +56,28 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            let dropbox_client_id =
+                env::var("DROPBOX_CLIENT_ID").expect("DROPBOX_CLIENT_ID is required");
+            let dropbox_client_secret =
+                env::var("DROPBOX_CLIENT_SECRET").expect("DROPBOX_CLIENT_SECRET is required");
+
             // Create single instance
             let dropbox = Arc::new(Dropbox::new(
-                "cx9li9ur8taq1z7".into(),
-                "i8f9a1mvx3bijrt".into(),
+                dropbox_client_id.to_string(),
+                dropbox_client_secret.to_string(),
             ));
 
-            let store = app.store("settings.json")?;
+            let store = app.store(settings::STORE_FILES_KEY)?;
 
-            let synchronize = Arc::new(Synchronize::new(dropbox.clone(), store.clone()));
+            let synchronize = Arc::new(Synchronize::new(
+                dropbox.clone(),
+                store.clone(),
+                app.handle().clone(),
+            ));
+
+            // for now use clone, instead of reference.
+            // I still don't understand how does the lifetime works.
+            sync_scheduler(synchronize.clone());
 
             // Share it across commands
             app.manage(dropbox);
@@ -75,4 +94,23 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn sync_scheduler(synchronize: Arc<Synchronize>) {
+    thread::spawn(move || loop {
+        let dur = synchronize.sync_interval();
+
+        // stop the sync process.
+        if dur == Duration::ZERO {
+            break;
+        }
+        thread::sleep(dur);
+        let sync_clone = synchronize.clone();
+        tauri::async_runtime::spawn(async move {
+            match sync_clone.do_sync().await {
+                Ok(_) => {}
+                Err(e) => sync_clone.notify_fe(SyncStatus::Error, Some(e.to_string())),
+            }
+        });
+    });
 }

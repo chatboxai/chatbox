@@ -17,7 +17,6 @@ import platform from '../packages/platform'
             }, 1000);
             return;
         }
-        console.log("azdim :",e)
         console.error(e)
     }
 })()

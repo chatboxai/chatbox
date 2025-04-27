@@ -14,7 +14,7 @@ import {
     Toolbar,
     Typography,
     Chip,
-    Divider, useTheme
+    Divider, useTheme, Dialog, DialogTitle, DialogContent, DialogActions
 } from '@mui/material'
 import { useState } from 'react'
 import {
@@ -29,12 +29,15 @@ import { settingsAtom } from '@/stores/atoms'
 import { useAtom } from 'jotai'
 import DropboxLogin from '@/pages/Sync/DropboxLogin'
 import { Dropbox } from '@/packages/synchronization/dropbox'
+import { useTranslation } from 'react-i18next'
+import platform from '@/packages/platform'
 
 
 interface Props {}
 
 export default function SyncSettings  (props :Props) {
     const theme = useTheme()
+    const {t} = useTranslation()
 
     const [settingsEdit, setSettingsEdit] = useAtom(settingsAtom)
 
@@ -49,6 +52,7 @@ export default function SyncSettings  (props :Props) {
         config: true,
     });
     const [dropboxOpen, setDropboxOpen] = useState(false);
+    const [showRestartDialog, setShowRestartDialog] = useState(false);
 
     const handleProviderChange = (event: SelectChangeEvent) => {
         const provider = event.target.value;
@@ -109,6 +113,16 @@ export default function SyncSettings  (props :Props) {
     return (
         <Box>
             <Box sx={{ p: 1 }}>
+                <Dialog open={showRestartDialog}>
+                    <DialogTitle title={t('Restart Confirmation')}/>
+                    <DialogContent>
+                        {t('Changing sync interval require restart to implement, do u want to restart immediately?')}
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={()=> { setShowRestartDialog(false)}}>{t('Later')}</Button>
+                        <Button onClick={()=> {platform.relaunch()}} >{t('Restart Immediately')}</Button>
+                    </DialogActions>
+                </Dialog>
                 <DropboxLogin open={dropboxOpen} setOpen={setDropboxOpen}/>
                 <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
                     Cloud Provider
@@ -146,12 +160,13 @@ export default function SyncSettings  (props :Props) {
                 <FormControl fullWidth sx={{ mb: 1 }}>
                     <Select
                         value={syncInterval}
-                        onChange={(e) => {
+                        onChange={(e: any) => {
                             setSyncInterval(e.target.value)
-                            settingsEdit.syncConfig.frequency = e.target.value
+                            settingsEdit.syncConfig.frequency = e.target.value as number
+                            setShowRestartDialog(true)
                         }}
                     >
-                        <MenuItem key={'disabled'} value={-1}>
+                        <MenuItem key={'disabled'} value={0}>
                            Disabled
                         </MenuItem>
                         {Object.entries(SyncFrequencyList).map((syncFrequency) => (

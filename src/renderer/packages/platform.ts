@@ -1,7 +1,11 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { hostname, platform } from '@tauri-apps/plugin-os'
 import { invoke } from '@tauri-apps/api/core'
-import { ChatSessionMetadata, Config, Session, Settings, SyncMetadata } from 'src/shared/types'
+import {
+    Config,
+    Settings,
+    SyncPayload,
+} from 'src/shared/types'
 import { LazyStore } from '@tauri-apps/plugin-store'
 import { getOS } from './navigator'
 import { parseLocale } from '@/i18n/parser'
@@ -10,7 +14,7 @@ import * as defaults from '../../shared/defaults'
 import { MobilePlatform } from '@/packages/mobile-platform'
 import { DesktopPlatform } from '@/packages/desktop-platform'
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { listen } from '@tauri-apps/api/event'
+import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import * as sessionActions from '@/stores/sessionActions'
 import { encodeSha526 } from '@/lib/utils'
 
@@ -66,6 +70,16 @@ export class BasePlatform {
         })();
 
         return this._isMobilePromise;
+    }
+
+    public async reloadWebview(): Promise<void> {
+       location.reload();
+    }
+
+    public async handleSync(callback: (SyncPayload: SyncPayload) => void): Promise<UnlistenFn> {
+        return await listen<SyncPayload>("sync_event",function(event: any) {
+           callback(event.payload);
+        })
     }
 
     public async shouldUseDarkColors(): Promise<boolean> {
@@ -205,42 +219,12 @@ export class BasePlatform {
         return await invoke('sync_dropbox_login_url')
     }
 
-    public async getDropboxAuthToken(authCode: string): Promise<string> {
+    public async getDropboxAuthToken(authCode: string): Promise<[string, string]> {
         return await invoke('sync_dropbox_get_auth_token', {authCode: authCode });
     }
 
     public async executeSync(): Promise<void> {
-        console.log("settings: ",await this.getSettings());
         await invoke('sync_execute');
-    }
-
-    public async getSyncMetadata(): Promise<SyncMetadata> {
-        try {
-            const syncMetadata = await store.get<SyncMetadata>("sync_metadata")
-            return syncMetadata ?? await this.createSyncMetadata()
-        } catch (error) {
-            console.error('getSyncMetadata load failed, using defaults', error);
-            return this.createSyncMetadata()
-        }
-    }
-    private async createSyncMetadata(): Promise<SyncMetadata> {
-        let sessions = await store.get<Session[]>("chat-session")
-        if (!sessions) sessions = [{} as Session];
-        const sessionMD: ChatSessionMetadata[] = []
-        for (const session of sessions) {
-          const hash = await encodeSha526(JSON.stringify(session));
-           sessionMD.push({
-               hash: hash,
-               id: session.id,
-               updateTime: session.updateTime? session.updateTime : 0,
-           })
-        }
-        let localSyncMetadata: SyncMetadata = {
-            lastSync: Date.now(),
-            chatSessions: sessionMD
-        }
-        localSyncMetadata.hash = await encodeSha526(JSON.stringify(localSyncMetadata));
-        return localSyncMetadata
     }
 }
 

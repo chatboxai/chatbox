@@ -88,12 +88,10 @@ export default  function  DropboxLogin(props: Props) {
     const handleSubmit= async () =>  {
         setErrorMessage('')
         try {
-
-            const authToken = await platform.getDropboxAuthToken(authCode)
-
-            if (authToken === "") {
-                return
-            }
+            const res = await platform.getDropboxAuthToken(authCode)
+            const authToken = res[0];
+            const refreshToken = res[1];
+            if (authToken === "" || refreshToken === "") return;
 
             settingsEdit.syncConfig = {
                 ...settingsEdit.syncConfig,
@@ -101,7 +99,8 @@ export default  function  DropboxLogin(props: Props) {
                     ...(settingsEdit.syncConfig?.providersConfig || {}),
                     Dropbox: {
                         ...(settingsEdit.syncConfig?.providersConfig?.Dropbox || {}),
-                        authToken: authToken
+                        authToken: authToken,
+                        refreshToken:refreshToken,
                     }
                 }
             };
@@ -118,8 +117,6 @@ export default  function  DropboxLogin(props: Props) {
         setErrorMessage('')
         setOpen(false)
     }
-
-    console.log(settingsEdit.syncConfig)
 
     return (
         <Dialog open={open} onClose={()=> handleOnClose()} scroll="paper" sx={styles.dialog}>

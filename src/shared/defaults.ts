@@ -156,7 +156,8 @@ export const DefaultTopP: number = 0.5
 
 
 export function defaultSyncConfig(): SynchronizedConfig {
-    return {
+    return <SynchronizedConfig>{
+        providersConfig: { Dropbox: {} },
         frequency: SyncFrequencyList["5 Minutes"],
         onAppLaunch: true,
         provider: 'None',

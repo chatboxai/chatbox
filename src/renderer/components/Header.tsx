@@ -22,7 +22,7 @@ export default function Header(props: Props) {
     const setChatConfigDialogSession = useSetAtom(atoms.chatConfigDialogAtom)
     const store = getDefaultStore()
     const settings = store.get(atoms.settingsAtom)
-    
+
     let selectedMode = ''
 
 
@@ -37,13 +37,12 @@ export default function Header(props: Props) {
     useEffect(() => {
         if (
             currentSession.name === 'Untitled'
-            && currentSession.messages.length >= 2
+            && currentSession?.messages?.length >= 2
         ) {
             sessionActions.generateName(currentSession.id)
             return 
         }
-    }, [currentSession.messages.length])
-
+    }, [currentSession?.messages?.length])
 
     if (currentSession.model) {
         selectedMode = currentSession.model

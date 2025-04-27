@@ -625,6 +625,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-os",
  "tauri-plugin-store",
+ "tokio",
  "uuid 0.8.2",
 ]
 

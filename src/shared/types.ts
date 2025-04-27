@@ -298,6 +298,7 @@ interface DropboxConfig {
     clientId: string
     clientSecret: string
     authToken?: string
+    refreshToken?: string
 }
 
 export const SyncFrequencyList = {
@@ -317,4 +318,18 @@ export  interface SyncMetadata {
     hash?: string
     lastSync: number
     chatSessions?: ChatSessionMetadata[]
+}
+
+export const SyncStatusEnum = {
+    InProgress: 'InProgress',
+    RequireReload: 'RequireReload',
+    Finished: 'Finished',
+    Error: 'Error',
+} as const;
+
+export type SyncStatusEnumType = (typeof SyncStatusEnum)[keyof typeof SyncStatusEnum]
+
+export interface SyncPayload {
+    status: SyncStatusEnumType,
+    error_message?: string,
 }

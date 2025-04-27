@@ -14,6 +14,7 @@ import ModelSettingTab from './ModelSettingTab'
 import AdvancedSettingTab from './AdvancedSettingTab'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { trackingEvent } from '@/packages/event'
+import SyncSettings from '@/pages/SettingDialog/SyncSettings'
 
 interface Props {
     open: boolean
@@ -92,6 +93,15 @@ export default function SettingWindow(props: Props) {
                             }
                         />
                         <Tab
+                            value="synchronization"
+                            label={
+                                <span className="inline-flex justify-center items-center">
+                                    <SettingsBrightnessIcon fontSize="small" style={{ marginRight: 5 }} />
+                                    <span>{t('synchronization')}</span>
+                                </span>
+                            }
+                        />
+                        <Tab
                             value="display"
                             label={
                                 <span className="inline-flex justify-center items-center">
@@ -129,6 +139,16 @@ export default function SettingWindow(props: Props) {
                             setSettingsEdit({ ...settingsEdit, ...updated })
                         }}
                     />
+                )}
+
+                {currentTab === 'synchronization' && (
+                    <SyncSettings />
+                    // <SynchronizationTab
+                    //     settingsEdit={settingsEdit}
+                    //     setSettingsEdit={(updated) => {
+                    //         setSettingsEdit({ ...settingsEdit, ...updated })
+                    //     }}
+                    // />
                 )}
 
                 {currentTab === 'display' && (

@@ -1,7 +1,11 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { hostname, platform } from '@tauri-apps/plugin-os'
 import { invoke } from '@tauri-apps/api/core'
-import { Config, Settings } from 'src/shared/types'
+import {
+    Config,
+    Settings,
+    SyncPayload,
+} from 'src/shared/types'
 import { LazyStore } from '@tauri-apps/plugin-store'
 import { getOS } from './navigator'
 import { parseLocale } from '@/i18n/parser'
@@ -10,8 +14,9 @@ import * as defaults from '../../shared/defaults'
 import { MobilePlatform } from '@/packages/mobile-platform'
 import { DesktopPlatform } from '@/packages/desktop-platform'
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { listen } from '@tauri-apps/api/event'
+import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import * as sessionActions from '@/stores/sessionActions'
+import { encodeSha526 } from '@/lib/utils'
 
 const store = new LazyStore("settings.json");
 
@@ -65,6 +70,16 @@ export class BasePlatform {
         })();
 
         return this._isMobilePromise;
+    }
+
+    public async reloadWebview(): Promise<void> {
+       location.reload();
+    }
+
+    public async handleSync(callback: (SyncPayload: SyncPayload) => void): Promise<UnlistenFn> {
+        return await listen<SyncPayload>("sync_event",function(event: any) {
+           callback(event.payload);
+        })
     }
 
     public async shouldUseDarkColors(): Promise<boolean> {
@@ -164,6 +179,7 @@ export class BasePlatform {
 
     public async setStoreValue(key: string, value: any) {
          await store.set(key,value);
+         await store.save(); // immediately save to prevent data lost
     }
 
     public async getStoreValue(key: string) {
@@ -196,6 +212,19 @@ export class BasePlatform {
 
     public async appLog(level: string, message: string) {
         // return invoke('app_log', { level, message });
+    }
+
+
+    public async getDropboxLoginURL(): Promise<string> {
+        return await invoke('sync_dropbox_login_url')
+    }
+
+    public async getDropboxAuthToken(authCode: string): Promise<[string, string]> {
+        return await invoke('sync_dropbox_get_auth_token', {authCode: authCode });
+    }
+
+    public async executeSync(): Promise<void> {
+        await invoke('sync_execute');
     }
 }
 

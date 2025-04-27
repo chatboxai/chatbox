@@ -138,3 +138,6 @@ export const openSettingDialogAtom = atom<SettingWindowTab | null>(null)
 export const sessionCleanDialogAtom = atom<Session | null>(null)
 export const chatConfigDialogAtom = atom<Session | null>(null)
 export const showScrollToBottom = atom<boolean>(false)
+export const synchronizeShowLoading = atom<boolean>(false)
+export const synchronizeErrorMessage = atom<string>('')
+

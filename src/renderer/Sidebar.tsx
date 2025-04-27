@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     Box,
-    Badge,
     ListItemText,
     MenuList,
     IconButton,
@@ -11,25 +10,22 @@ import {
     Typography,
     Divider,
     useTheme,
-    Drawer,
     SwipeableDrawer,
 } from '@mui/material'
+import {
+    CloudSync
+} from '@mui/icons-material';
 import SettingsIcon from '@mui/icons-material/Settings'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import { useTranslation } from 'react-i18next'
 import icon from './static/icon.png'
 import SmartToyIcon from '@mui/icons-material/SmartToy'
-import AddIcon from '@mui/icons-material/AddCircleOutline'
 import useVersion from './hooks/useVersion'
 import SessionList from './components/SessionList'
-import * as sessionActions from './stores/sessionActions'
-import MenuOpenIcon from '@mui/icons-material/MenuOpen'
-import { useSetAtom } from 'jotai'
-import * as atoms from './stores/atoms'
-import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
-import { trackingEvent } from './packages/event'
 import { useAtom } from 'jotai/index'
 import platform from '@/packages/platform'
+import CircularProgress from '@mui/material/CircularProgress'
+import { synchronizeErrorMessage, synchronizeShowLoading } from './stores/atoms'
 
 export const drawerWidth = 240
 
@@ -45,13 +41,22 @@ export default function Sidebar(props: Props) {
     const { t } = useTranslation()
     const versionHook = useVersion()
     const [isMobile, setIsMobile] = useState<boolean>(false)
+    const sessionListRef = useRef<HTMLDivElement>(null)
+    const theme = useTheme()
+    const [loading,] = useAtom(synchronizeShowLoading);
+    const [, setSyncErrMsg] = useAtom(synchronizeErrorMessage);
+
     useEffect(() => {
         platform.isMobile().then(setIsMobile)
     }, [])
 
-    const sessionListRef = useRef<HTMLDivElement>(null)
-
-    const theme = useTheme()
+    const handleSync = async () => {
+        try {
+            await platform.executeSync()
+        }catch (e: any) {
+            setSyncErrMsg(e)
+        }
+    }
 
     return (
         <SwipeableDrawer
@@ -132,26 +137,40 @@ export default function Sidebar(props: Props) {
                             </Typography>
                         </MenuItem>
 
-                        <MenuItem onClick={props.openAboutWindow} sx={{ padding: '0.2rem 0.1rem', margin: '0.1rem' }}>
+                        <MenuItem sx={{ padding: '0.2rem 0.1rem', margin: '0.1rem' }} onClick={handleSync}>
                             <ListItemIcon>
                                 <IconButton>
-                                    <InfoOutlinedIcon fontSize="small" />
+                                    <CloudSync fontSize="small" />
                                 </IconButton>
                             </ListItemIcon>
-                            <ListItemText>
-                                <Badge
-                                    color="primary"
-                                    variant="dot"
-                                    invisible={!versionHook.needCheckUpdate}
-                                    sx={{ paddingRight: '8px' }}
-                                >
-                                    <Typography sx={{ opacity: 0.5 }}>
-                                        {t('About')}
-                                        {/\d/.test(versionHook.version) ? `(${versionHook.version})` : ''}
-                                    </Typography>
-                                </Badge>
-                            </ListItemText>
+                            <ListItemText>{t('Synchronise')}</ListItemText>
+                            {loading && (
+                                <ListItemIcon>
+                                    <CircularProgress size="20px" color="inherit" />
+                                </ListItemIcon>
+                            )}
                         </MenuItem>
+
+                        {/*<MenuItem onClick={props.openAboutWindow} sx={{ padding: '0.2rem 0.1rem', margin: '0.1rem' }}>*/}
+                        {/*    <ListItemIcon>*/}
+                        {/*        <IconButton>*/}
+                        {/*            <InfoOutlinedIcon fontSize="small" />*/}
+                        {/*        </IconButton>*/}
+                        {/*    </ListItemIcon>*/}
+                        {/*    <ListItemText>*/}
+                        {/*        <Badge*/}
+                        {/*            color="primary"*/}
+                        {/*            variant="dot"*/}
+                        {/*            invisible={!versionHook.needCheckUpdate}*/}
+                        {/*            sx={{ paddingRight: '8px' }}*/}
+                        {/*        >*/}
+                        {/*            <Typography sx={{ opacity: 0.5 }}>*/}
+                        {/*                {t('About')}*/}
+                        {/*                {/\d/.test(versionHook.version) ? `(${versionHook.version})` : ''}*/}
+                        {/*            </Typography>*/}
+                        {/*        </Badge>*/}
+                        {/*    </ListItemText>*/}
+                        {/*</MenuItem>*/}
                     </MenuList>
                 </Stack>
             </div>

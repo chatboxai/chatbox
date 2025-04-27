@@ -42,6 +42,7 @@ export default function SessionList(props: Props) {
             coordinateGetter: sortableKeyboardCoordinates,
         })
     )
+
     const onDragEnd = (event: DragEndEvent) => {
         if (!event.over) {
             return

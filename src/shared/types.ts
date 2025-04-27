@@ -190,6 +190,8 @@ export interface Settings extends ModelSettings {
     enableMarkdownRendering: boolean
 
     autoGenerateTitle: boolean
+
+    syncConfig: SynchronizedConfig
 }
 
 export type Language = 'en' | 'zh-Hans' | 'zh-Hant' | 'ja' | 'ko' | 'ru' | 'de' | 'fr'
@@ -260,4 +262,74 @@ export interface MessageInfo {
     TokenUsed: number
     Model: string
     Provider: string
+}
+
+export const SyncDataType = {
+    All: 'all',
+    Chat: 'chat',
+    Config: 'config',
+} as const
+
+export type SyncDataTypeEnum = (typeof SyncDataType)[keyof typeof SyncDataType]
+
+
+export const SyncProviderEnum = {
+    None: 'None',
+    Dropbox: 'Dropbox',
+    GoogleDrive: 'Google Drive',
+    OneDrive: 'One Drive',
+} as const
+
+export const SyncProviderList = Object.values(SyncProviderEnum);
+
+export type SyncProvider = (typeof SyncProviderEnum)[keyof typeof SyncProviderEnum]
+
+export interface SynchronizedConfig {
+    provider: SyncProvider
+    providersConfig: {
+        Dropbox: DropboxConfig
+    }
+    frequency: number // in seconds
+    onAppLaunch: boolean
+    syncDataType: [SyncDataTypeEnum]
+}
+
+interface DropboxConfig {
+    clientId: string
+    clientSecret: string
+    authToken?: string
+    refreshToken?: string
+}
+
+export const SyncFrequencyList = {
+    "5 Minutes": 300,
+    "10 Minutes": 600,
+    "15 Minutes": 900,
+    "30 Minutes": 1800,
+}
+
+export interface ChatSessionMetadata{
+    hash: string
+    id: string
+    updateTime: number
+}
+
+export  interface SyncMetadata {
+    hash?: string
+    lastSync: number
+    chatSessions?: ChatSessionMetadata[]
+}
+
+export const SyncStatusEnum = {
+    InProgress: 'InProgress',
+    RequireReload: 'RequireReload',
+    Finished: 'Finished',
+    Error: 'Error',
+} as const;
+
+export type SyncStatusEnumType = (typeof SyncStatusEnum)[keyof typeof SyncStatusEnum]
+
+export interface SyncPayload {
+    status: SyncStatusEnumType,
+    error_message?: string,
 }

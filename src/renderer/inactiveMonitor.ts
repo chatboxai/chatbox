@@ -37,9 +37,9 @@ export function useInactivityMonitor() {
             }
         }
 
-        const updateActivity = debounce(async () => {
+        const updateActivity = throttle(async () => {
             await platform.setLastActiveTime(Date.now())
-        }, 30000) // debounce for 30 seconds
+        }, 10)
 
         const handleActivity = () => {
             updateActivity()

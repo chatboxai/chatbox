@@ -65,7 +65,6 @@ export default function Message(props: Props) {
     const enableMarkdownRendering = useAtomValue(enableMarkdownRenderingAtom)
     const currentSessionPicUrl = useAtomValue(currsentSessionPicUrlAtom)
     const setOpenSettingWindow = useSetAtom(openSettingDialogAtom)
-    const [messageListRef, setMessageListRef] = useAtom(atoms.messageListRefAtom)
     const [showLoadingIcon, setShowLoadingIcon] = useState(false)
     const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null)
     const [editMessage, setEditMessage] = React.useState(false)
@@ -106,44 +105,6 @@ export default function Message(props: Props) {
             setShowLoadingIcon(false)
         }
     },[msg])
-
-    const [isManualScroll, setIsManualScroll] = useState(false);
-    const lastScrollTime = useRef(Date.now());
-
-    useEffect(() => {
-        if (!messageListRef?.current) return;
-
-        const container = messageListRef.current;
-
-        const handleScroll = () => {
-            // Detect manual scrolls (within last 150ms)
-            if (Date.now() - lastScrollTime.current > 150) {
-                setIsManualScroll(true);
-            }
-        };
-
-        container.addEventListener('scroll', handleScroll);
-        return () => container.removeEventListener('scroll', handleScroll);
-    }, []);
-
-    useEffect(() => {
-        if (msg.role === 'user'){
-            scrollActions.scrollToBottom();
-        }
-
-        if (messageListRef?.current) {
-            const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
-            const bottomThreshold = 100;
-            const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
-            if (distanceFromBottom < bottomThreshold) {
-                setIsManualScroll(false);
-            }
-            if (!isManualScroll && distanceFromBottom > bottomThreshold) {
-                scrollActions.scrollToBottom()
-                lastScrollTime.current = Date.now();
-            }
-        }
-    }, [msg])
 
     let content = msg.content
     if (typeof msg.content !== 'string') {

@@ -173,6 +173,7 @@
         "react-swipeable": "^7.0.2",
         "react-syntax-highlighter": "^15.5.0",
         "react-textarea-autosize": "^8.5.9",
+        "react-virtuoso": "^4.12.6",
         "react-zoom-pan-pinch": "^3.4.4",
         "rehype-katex": "^7.0.0",
         "remark-breaks": "^4.0.0",

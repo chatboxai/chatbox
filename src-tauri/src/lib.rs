@@ -56,10 +56,8 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let dropbox_client_id =
-                env::var("DROPBOX_CLIENT_ID").expect("DROPBOX_CLIENT_ID is required");
-            let dropbox_client_secret =
-                env::var("DROPBOX_CLIENT_SECRET").expect("DROPBOX_CLIENT_SECRET is required");
+            let dropbox_client_id: &'static str = env!("DROPBOX_CLIENT_ID");
+            let dropbox_client_secret: &'static str = env!("DROPBOX_CLIENT_SECRET");
 
             // Create single instance
             let dropbox = Arc::new(Dropbox::new(

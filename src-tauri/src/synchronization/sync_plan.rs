@@ -22,15 +22,9 @@ impl SyncPlan {
             conflicts: Vec::new(),
         };
 
-        let local_map: HashMap<_, _> = local
-            .chat_session
-            .iter()
-            .map(|s| (s.id.clone(), s))
-            .collect();
-
         // Check remote changes
-        for remote_session in &remote.chat_session {
-            match local_map.get(&remote_session.id) {
+        for (_, remote_session) in &remote.chat_session {
+            match local.chat_session.get(&remote_session.id) {
                 Some(local_session) => {
                     if local_session.hash != remote_session.hash {
                         if remote_session.update_time > local_session.update_time {
@@ -45,12 +39,8 @@ impl SyncPlan {
         }
 
         // Check local changes not in remote
-        for local_session in &local.chat_session {
-            if !remote
-                .chat_session
-                .iter()
-                .any(|rs| rs.id == local_session.id)
-            {
+        for (_, local_session) in &local.chat_session {
+            if remote.chat_session.get(&local_session.id).is_none() {
                 plan.to_upload.push(local_session.id.clone());
             }
         }

@@ -87,7 +87,7 @@ impl Synchronize {
         let root_path = self.dropbox.root_path();
 
         // Upload all chat sessions
-        for session in &local_metadata.chat_session {
+        for (_, session) in &local_metadata.chat_session {
             let path = format!("{}/chat_sessions/{}.json", root_path, session.id);
             let content = session
                 .content
@@ -121,8 +121,7 @@ impl Synchronize {
         for session_id in &plan.to_upload {
             let local_session = local_metadata
                 .chat_session
-                .iter()
-                .find(|s| &s.id == session_id)
+                .get(session_id)
                 .ok_or("Missing local session")?;
 
             let path = format!("{}/chat_sessions/{}.json", root_path, session_id);
@@ -322,7 +321,7 @@ impl Synchronize {
         sync_metadata
     }
 
-    fn create_chat_session_metadata(&self) -> Vec<ChatSessionMetadata> {
+    fn create_chat_session_metadata(&self) -> HashMap<String, ChatSessionMetadata> {
         // Get chats from store or default to empty array
         let chats_value = self.store.get(CHAT_SESSIONS_KEY);
         log!(
@@ -337,15 +336,16 @@ impl Synchronize {
                 Vec::new() // Fallback
             });
 
+        let mut chat_session_hash: HashMap<String, ChatSessionMetadata> = HashMap::new();
         for (index, chat) in chats_sessions.iter_mut().enumerate() {
             let mut hasher = Sha256::new();
             hasher.update(chat.content.clone().unwrap().as_bytes());
 
             let result = hasher.finalize();
             chat.hash = Option::from(hex::encode(result));
+            chat_session_hash.insert(chat.id.clone(), chat.clone());
         }
-
-        chats_sessions
+        chat_session_hash
     }
 
     pub fn sync_interval(&self) -> Duration {
@@ -369,7 +369,7 @@ pub struct ChatSessionMetadata {
 pub struct SyncMetadata {
     hash: String,
     last_sync: u128,
-    pub(crate) chat_session: Vec<ChatSessionMetadata>,
+    pub(crate) chat_session: HashMap<String, ChatSessionMetadata>,
 }
 
 impl SyncMetadata {
@@ -377,7 +377,7 @@ impl SyncMetadata {
         SyncMetadata {
             hash: "".to_string(),
             last_sync: 0,
-            chat_session: vec![],
+            chat_session: HashMap::new(),
         }
     }
 }

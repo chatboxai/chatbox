@@ -194,8 +194,15 @@ export default function MessageActions(props: Props) {
                     backgroundColor: theme.palette.background.paper,
                 }}
                 arrow
+                disableFocusListener
+                disableTouchListener
+                onMouseEnter={() => setShowMessageInfo(true)}
+                onMouseLeave={() => setShowMessageInfo(false)}
             >
-                <IconButton size="small" onClick={()=> setShowMessageInfo(true)}>
+                <IconButton 
+                    size="small" 
+                    onClick={() => setShowMessageInfo(!showMessageInfo)}
+                >
                     <InfoOutlined fontSize={'inherit'} />
                 </IconButton>
             </Tooltip>

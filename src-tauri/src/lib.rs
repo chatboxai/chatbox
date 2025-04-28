@@ -5,8 +5,7 @@ use crate::synchronization::dropbox::Dropbox;
 use crate::synchronization::sync::Synchronize;
 use crate::types::settings;
 use crate::types::sync::SyncStatus;
-use log::{log, log_enabled, Level};
-use std::env;
+use log::{log_enabled, Level};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -56,8 +55,8 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let dropbox_client_id: &'static str = env!("DROPBOX_CLIENT_ID");
-            let dropbox_client_secret: &'static str = env!("DROPBOX_CLIENT_SECRET");
+            let dropbox_client_id = std::env::var("DROPBOX_CLIENT_ID").expect("DROPBOX_CLIENT_ID environment variable not set");
+            let dropbox_client_secret = std::env::var("DROPBOX_CLIENT_SECRET").expect("DROPBOX_CLIENT_SECRET environment variable not set");
 
             // Create single instance
             let dropbox = Arc::new(Dropbox::new(

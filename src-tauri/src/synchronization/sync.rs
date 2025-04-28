@@ -275,17 +275,33 @@ impl Synchronize {
         let session_content = session.content.ok_or("Session content is missing")?;
 
         // Validate content is valid JSON
-        let _: serde_json::Value = serde_json::from_str(&session_content)
+        let session_value: serde_json::Value = serde_json::from_str(&session_content)
             .map_err(|e| format!("Invalid JSON content: {}", e))?;
 
-        log!(Level::Debug, "{}", session_content);
-        // Append new content
-        chats.push(session_content);
+        // Check for duplicates by comparing IDs
+        let mut found_duplicate = false;
+        let mut updated_chats: Vec<String> = Vec::new();
 
-        let new_val = format!("[{}]", chats.join(","));
+        for chat in chats {
+            if let Ok(chat_value) = serde_json::from_str::<serde_json::Value>(&chat) {
+                if let Some(chat_id) = chat_value.get("id").and_then(|v| v.as_str()) {
+                    if chat_id == session.id {
+                        // Replace the existing chat with the new one
+                        updated_chats.push(session_content.clone());
+                        found_duplicate = true;
+                    } else {
+                        updated_chats.push(chat);
+                    }
+                }
+            }
+        }
 
-        log!(Level::Debug, "{}", new_val);
+        // If no duplicate was found, append the new chat
+        if !found_duplicate {
+            updated_chats.push(session_content);
+        }
 
+        let new_val = format!("[{}]", updated_chats.join(","));
         let new_chat_session: Vec<Value> = serde_json::from_slice(new_val.as_bytes())
             .map_err(|e| format!("failed to parse chat session: {}", e))?;
 

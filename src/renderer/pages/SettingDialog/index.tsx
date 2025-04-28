@@ -141,14 +141,8 @@ export default function SettingWindow(props: Props) {
                     />
                 )}
 
-                {currentTab === 'synchronization' && (
+                {currentTab === 'synchronization' as SettingWindowTab && (
                     <SyncSettings />
-                    // <SynchronizationTab
-                    //     settingsEdit={settingsEdit}
-                    //     setSettingsEdit={(updated) => {
-                    //         setSettingsEdit({ ...settingsEdit, ...updated })
-                    //     }}
-                    // />
                 )}
 
                 {currentTab === 'display' && (

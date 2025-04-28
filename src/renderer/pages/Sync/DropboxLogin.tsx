@@ -20,6 +20,7 @@ import { dropbox } from '@/packages/synchronization/dropbox'
 import { useAtom } from 'jotai/index'
 import { settingsAtom } from '@/stores/atoms'
 import Alert from '@mui/material/Alert'
+import { node } from 'webpack'
 
 interface Props {
     open: boolean
@@ -117,9 +118,28 @@ export default  function  DropboxLogin(props: Props) {
         setErrorMessage('')
         setOpen(false)
     }
-
     return (
-        <Dialog open={open} onClose={()=> handleOnClose()} scroll="paper" sx={styles.dialog}>
+        <Dialog 
+            open={open} 
+            onClose={()=> handleOnClose()} 
+            scroll="paper" 
+            sx={{
+                ...styles.dialog,
+                '& .MuiDialog-paper': {
+                    ...styles.dialog['& .MuiDialog-paper'],
+                    maxWidth: 'calc(100vw - 32px)', // Prevent width overflow on mobile
+                    width: '100%',
+                    margin: 2,
+                    minWidth: 'unset',
+                    [theme.breakpoints.up('sm')]: {
+                        minWidth: 400,
+                        width: 'auto',
+                        margin: 0,
+                        maxWidth: 'none'
+                    }
+                }
+            }}
+        >
             <Box sx={styles.title}>
                 <DialogTitle sx={{ p: 0 }}>{t('Login with Dropbox')}</DialogTitle>
                 <IconButton onClick={() => handleOnClose()}>
@@ -129,7 +149,14 @@ export default  function  DropboxLogin(props: Props) {
 
             <Divider />
 
-            <DialogContent sx={styles.content}>
+            <DialogContent sx={{ 
+                ...styles.content,
+                overflowX: 'hidden',
+                maxHeight: 'calc(100vh - 200px)',
+                [theme.breakpoints.up('sm')]: {
+                    maxHeight: 'none'
+                }
+            }}>
                 {errorMessage !== '' && (
                     <Alert icon={false} severity="error">
                         {errorMessage}

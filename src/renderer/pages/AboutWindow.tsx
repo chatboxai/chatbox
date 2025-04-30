@@ -28,11 +28,11 @@ export default function AboutWindow(props: Props) {
     const versionHook = useVersion()
     return (
         <Dialog open={props.open} onClose={props.close} fullWidth>
-            <DialogTitle>{t('About Chatbox')}</DialogTitle>
+            <DialogTitle>{t('About Cha')}</DialogTitle>
             <DialogContent>
                 <Box sx={{ textAlign: 'center', padding: '0 20px' }}>
                     <img src={iconPNG} style={{ width: '100px', margin: 0, display: 'inline-block' }} />
-                    <h3 style={{ margin: '4px 0 5px 0' }}>Chatbox
+                    <h3 style={{ margin: '4px 0 5px 0' }}>Cha
                         {
                             /\d/.test(versionHook.version)
                                 ? `(v${versionHook.version})`
@@ -56,7 +56,6 @@ export default function AboutWindow(props: Props) {
                     >
                         <Button
                             variant="outlined"
-                            onClick={() => platform.openLink(`https://chatboxai.app/redirect_app/check_update/${language}`)}
                         >
                             {t('Check Update')}
                         </Button>
@@ -64,21 +63,18 @@ export default function AboutWindow(props: Props) {
                     <Button
                         variant="outlined"
                         sx={{ margin: '4px' }}
-                        onClick={() => platform.openLink(`https://chatboxai.app/redirect_app/homepage/${language}`)}
                     >
                         {t('Homepage')}
                     </Button>
                     <Button
                         variant="outlined"
                         sx={{ margin: '4px' }}
-                        onClick={() => platform.openLink(`https://chatboxai.app/redirect_app/feedback/${language}`)}
                     >
                         {t('Feedback')}
                     </Button>
                     <Button
                         variant="outlined"
                         sx={{ margin: '4px' }}
-                        onClick={() => platform.openLink(`https://chatboxai.app/redirect_app/faqs/${language}`)}
                     >
                         {t('FAQs')}
                     </Button>
@@ -99,13 +95,11 @@ export default function AboutWindow(props: Props) {
                     <div className='my-1'>
                         <a
                             className='underline font-normal cursor-pointer mr-4' style={{ color: theme.palette.primary.main }}
-                            onClick={() => platform.openLink(`https://chatboxai.app/redirect_app/donate/${language}`)}
                         >
                             {t('Donate')}
                         </a>
                         <a
                             className='underline font-normal cursor-pointer mr-4' style={{ color: theme.palette.primary.main }}
-                            onClick={() => platform.openLink(`https://chatboxai.app/redirect_app/author/${language}`)}
                         >
                             {t('Follow me on Twitter(X)')}
                         </a>

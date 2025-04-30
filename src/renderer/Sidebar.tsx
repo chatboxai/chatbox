@@ -91,14 +91,13 @@ export default function Sidebar(props: Props) {
                     <Box className="flex justify-between items-center px-2">
                         <Box>
                             <a
-                                // href="https://github.com/Bin-Huang/chatbox"
                                 target="_blank"
                                 className="flex items-center no-underline"
                             >
                                 <img src={icon} className="w-8 h-8 mr-3" />
                                 <div className="flex flex-col items-start">
-                                    <span className="text-2xl font-medium">Chatbox</span>
-                                    <span className="text-[10px] opacity-50">Community Edition</span>
+                                    <span className="text-2xl font-medium">Cha</span>
+                                    <span className="text-[10px] opacity-50">Your chat ai assistant</span>
                                 </div>
                             </a>
                         </Box>

@@ -1,13 +1,11 @@
 {
-    "name": "xyz.chatboxapp.ce",
-    "productName": "xyz.chatboxapp.ce",
+    "name": "xyz.cha.ce",
+    "productName": "xyz.cha.ce",
     "version": "0.0.1",
     "license": "GPL-3.0 license",
     "description": "A desktop & mobile client for multiple cutting-edge AI models",
-    "main": "./src/main/main.ts",
     "scripts": {
         "build": "npm run build:renderer",
-        "build:main": "NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.prod.ts",
         "build:renderer": "NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.prod.ts",
         "postinstall": "ts-node .erb/scripts/check-native-dep.js && electron-builder install-app-deps && cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.dev.dll.ts",
         "package": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never",
@@ -201,103 +199,6 @@
                 "options": {
                     "parser": "json"
                 }
-            }
-        ]
-    },
-    "build": {
-        "productName": "Chatbox CE",
-        "appId": "xyz.chatboxapp.ce",
-        "asar": true,
-        "asarUnpack": "**\\*.{node,dll}",
-        "files": [
-            "dist",
-            "node_modules",
-            "package.json"
-        ],
-        "afterSign": ".erb/scripts/notarize.js",
-        "mac": {
-            "notarize": false,
-            "category": "public.app-category.developer-tools",
-            "target": {
-                "target": "default",
-                "arch": [
-                    "arm64",
-                    "x64"
-                ]
-            },
-            "type": "distribution",
-            "hardenedRuntime": true,
-            "entitlements": "assets/entitlements.mac.plist",
-            "entitlementsInherit": "assets/entitlements.mac.plist",
-            "gatekeeperAssess": false
-        },
-        "dmg": {
-            "contents": [
-                {
-                    "x": 130,
-                    "y": 220
-                },
-                {
-                    "x": 410,
-                    "y": 220,
-                    "type": "link",
-                    "path": "/Applications"
-                }
-            ]
-        },
-        "win": {
-            "target": [
-                {
-                    "target": "nsis",
-                    "arch": [
-                        "x64",
-                        "arm64"
-                    ]
-                }
-            ],
-            "verifyUpdateCodeSignature": false,
-            "artifactName": "${productName}-${version}-Setup.${ext}",
-            "signingHashAlgorithms": [
-                "sha256"
-            ]
-        },
-        "nsis": {
-            "oneClick": false,
-            "allowToChangeInstallationDirectory": true
-        },
-        "linux": {
-            "target": [
-                {
-                    "target": "AppImage",
-                    "arch": [
-                        "x64",
-                        "arm64"
-                    ]
-                },
-                {
-                    "target": "deb",
-                    "arch": [
-                        "x64",
-                        "arm64"
-                    ]
-                }
-            ],
-            "category": "Development",
-            "artifactName": "${productName}-${version}-${arch}.${ext}"
-        },
-        "directories": {
-            "app": "release/app",
-            "buildResources": "assets",
-            "output": "release/build"
-        },
-        "extraResources": [
-            "./assets/**"
-        ],
-        "publish": [
-            {
-                "provider": "github",
-                "owner": "Bin-Huang",
-                "repo": "chatbox"
             }
         ]
     },

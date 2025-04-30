@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Chatbox CE",
+  "productName": "Cha",
   "version": "0.1.0",
-  "identifier": "com.chatboxce.app",
+  "identifier": "com.cha.app",
   "build": {
     "frontendDist": "../release/app/dist/renderer/",
     "devUrl": "http://localhost:1212",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Chatbox CE",
+        "title": "Cha",
         "width": 1000,
         "height": 800,
         "resizable": true,

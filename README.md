@@ -21,28 +21,28 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
   </tr>
   <tr style="text-align: center">
     <td align="center" valign="middle">
-      <a href='https://chatboxai.app/?c=download-windows'>
+      <a href='https://github.com/adzimzf/cha/releases/download/v0.0.3/Chatbox.CE_0.1.0.exe'>
         <img src='./doc/statics/windows.png' style="height:24px; width: 24px" />
         <br />
         <b>Setup.exe</b>
       </a>
     </td>
     <td align="center" valign="middle">
-      <a href='https://chatboxai.app/?c=download-mac-intel'>
+      <a href='https://github.com/adzimzf/cha/releases/download/v0.0.3/Chatbox.CE_0.1.0_aarch64.dmg'>
         <img src='./doc/statics/mac.png' style="height:24px; width: 24px" />
         <br />
         <b>Intel</b>
       </a>
     </td>
     <td align="center" valign="middle">
-      <a href='https://chatboxai.app/?c=download-mac-aarch'>
+      <a href='https://github.com/adzimzf/cha/releases/download/v0.0.3/Chatbox.CE_0.1.0_x64.dmg'>
         <img src='./doc/statics/mac.png' style="height:24px; width: 24px" />
         <br />
         <b>M1/M2</b>
       </a>
     </td>
     <td align="center" valign="middle">
-      <a href='https://chatboxai.app/?c=download-linux'>
+      <a href='https://github.com/adzimzf/cha/releases/download/v0.0.3/Chatbox.CE_0.1.0.dpkg'>
         <img src='./doc/statics/linux.png' style="height:24px; width: 24px" />
         <br />
         <b>AppImage</b>
@@ -50,21 +50,6 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
     </td>
   </tr>
 </table>
-
-### Download for iOS/Android
-
-<a href='https://apps.apple.com/app/chatbox-ai/id6471368056' style='margin-right: 4px'>
-<img src='./doc/statics/app_store.webp' style="height:38px;" />
-</a>
-<a href='https://play.google.com/store/apps/details?id=xyz.chatboxapp.chatbox' style='margin-right: 4px'>
-<img src='./doc/statics/google_play.png' style="height:38px;" />
-</a>
-<a href='https://chatboxai.app/install?download=android_apk' style='margin-right: 4px; display: inline-flex; justify-content: center'>
-<img src='./doc/statics/android.png' style="height:28px; display: inline-block" />
-.APK
-</a>
-
-For more information: [chatboxai.app](https://chatboxai.app/)
 
 ---
 
@@ -118,31 +103,15 @@ For more information: [chatboxai.app](https://chatboxai.app/)
 </table> -->
 
 ## Features
-
+### Inherit form Chatbox CE
 -   **Local Data Storage**  
     :floppy_disk: Your data remains on your device, ensuring it never gets lost and maintains your privacy.
 
 -   **No-Deployment Installation Packages**  
     :package: Get started quickly with downloadable installation packages. No complex setup necessary!
 
--   **Support for Multiple LLM Providers**  
-    :gear: Seamlessly integrate with a variety of cutting-edge language models:
-
-    -   OpenAI (ChatGPT)
-    -   Azure OpenAI
-    -   Claude
-    -   Google Gemini Pro
-    -   Ollama (enable access to local models like llama2, Mistral, Mixtral, codellama, vicuna, yi, and solar)
-    -   ChatGLM-6B
-
--   **Image Generation with Dall-E-3**  
-    :art: Create the images of your imagination with Dall-E-3.
-
 -   **Enhanced Prompting**  
     :speech_balloon: Advanced prompting features to refine and focus your queries for better responses.
-
--   **Keyboard Shortcuts**  
-    :keyboard: Stay productive with shortcuts that speed up your workflow.
 
 -   **Markdown, Latex & Code Highlighting**  
     :scroll: Generate messages with the full power of Markdown and Latex formatting, coupled with syntax highlighting for various programming languages, enhancing readability and presentation.
@@ -158,17 +127,8 @@ For more information: [chatboxai.app](https://chatboxai.app/)
 
 -   **Team Collaboration**  
     :busts_in_silhouette: Collaborate with ease and share OpenAI API resources among your team. [Learn More](./team-sharing/README.md)
-
--   **Cross-Platform Availability**  
-    :computer: Chatbox is ready for Windows, Mac, Linux users.
-
--   **Access Anywhere with the Web Version**  
-    :globe_with_meridians: Use the web application on any device with a browser, anywhere.
-
--   **iOS & Android**  
-    :phone: Use the mobile applications that will bring this power to your fingertips on the go.
-
--   **Multilingual Support**  
+-   
+- **Multilingual Support**  
     :earth_americas: Catering to a global audience by offering support in multiple languages:
 
     -   English
@@ -183,15 +143,23 @@ For more information: [chatboxai.app](https://chatboxai.app/)
 -   **And More...**  
     :sparkles: Constantly enhancing the experience with new features!
 
-## FAQ
-
--   [Frequently Asked Questions](./doc/FAQ.md)
+### Cha specific features
+- Support online synchronization to storage providers like:
+  - Dropbox
+  - Google Drive (soon)
+  - One Dive (soon)
+  
+- Multi-platform support to Windows, Mac, Linux, Android and iOS. Thanks to Tauri
+- Small size installation. Thanks to Tauri.
+- Chain of Thought (Reasoning Rendering).
+- Support all AI providers with Open AI standard.
+- Fast rendering for long message. Thanks to Virtuoso.
+- Customization model provider and model for each Chats.
 
 ## Why I made Chatbox?
 
-I developed Chatbox initially because I was debugging some prompts and found myself in need of a simple and easy-to-use prompt and API debugging tool. I thought there might be more people who needed such a tool, so I open-sourced it.
-
-At first, I didn't know that it would be so popular. I listened to the feedback from the open-source community and continued to develop and improve it. Now, it has become a very useful AI desktop application. There are many users who love Chatbox, and they not only use it for developing and debugging prompts, but also for daily chatting, and even to do some more interesting things like using well-designed prompts to make AI play various professional roles to assist them in everyday work...
+I like Chatbox, however when I want to request feature and try to run the open source version locally. The feature is far behind that I used, after reading the README.md turns out the version I use is Closed Source version.
+Then I fork it and porting to Tauri to support multi-platform.
 
 ## How to Contribute
 
@@ -205,50 +173,11 @@ Any form of contribution is welcome, including but not limited to:
 -   Submitting translations
 -   Submitting any other forms of contribution
 
-## Build Instructions
 
-1. Clone the repository from Github
-
-```bash
-git clone https://github.com/Bin-Huang/chatbox.git
-```
-
-2. Install the required dependencies
-
-```bash
-npm install
-```
-
-3. Start the application (in development mode)
-
-```bash
-npm run dev
-```
-
-4. Build the application, package the installer for current platform
-
-```bash
-npm run package
-```
-
-5. Build the application, package the installer for all platforms
-
-```bash
-npm run package:all
-```
-
-## Buy Me a Coffee
+## Buy the original author a Coffee
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/benn)
 
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Bin-Huang/chatbox&type=Date)](https://star-history.com/#Bin-Huang/chatbox&Date)
-
-## Contact
-
-[Twitter](https://twitter.com/benn_huang) | [Email](mailto:tohuangbin@gmail.com) | [Blog](https://bennhuang.com)
 
 ## License
 

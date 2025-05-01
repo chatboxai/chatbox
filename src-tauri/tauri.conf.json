@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Cha",
-  "version": "0.1.0",
+  "version": "somestring",
   "identifier": "com.cha.app",
   "build": {
     "frontendDist": "../release/app/dist/renderer/",

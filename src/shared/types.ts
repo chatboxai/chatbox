@@ -272,7 +272,6 @@ export const SyncDataType = {
 
 export type SyncDataTypeEnum = (typeof SyncDataType)[keyof typeof SyncDataType]
 
-
 export const SyncProviderEnum = {
     None: 'None',
     Dropbox: 'Dropbox',
@@ -280,7 +279,7 @@ export const SyncProviderEnum = {
     OneDrive: 'One Drive',
 } as const
 
-export const SyncProviderList = Object.values(SyncProviderEnum);
+export const SyncProviderList = Object.values(SyncProviderEnum)
 
 export type SyncProvider = (typeof SyncProviderEnum)[keyof typeof SyncProviderEnum]
 
@@ -302,19 +301,19 @@ interface DropboxConfig {
 }
 
 export const SyncFrequencyList = {
-    "5 Minutes": 300,
-    "10 Minutes": 600,
-    "15 Minutes": 900,
-    "30 Minutes": 1800,
+    '5 Minutes': 300,
+    '10 Minutes': 600,
+    '15 Minutes': 900,
+    '30 Minutes': 1800,
 }
 
-export interface ChatSessionMetadata{
+export interface ChatSessionMetadata {
     hash: string
     id: string
     updateTime: number
 }
 
-export  interface SyncMetadata {
+export interface SyncMetadata {
     hash?: string
     lastSync: number
     chatSessions?: ChatSessionMetadata[]
@@ -325,11 +324,11 @@ export const SyncStatusEnum = {
     RequireReload: 'RequireReload',
     Finished: 'Finished',
     Error: 'Error',
-} as const;
+} as const
 
 export type SyncStatusEnumType = (typeof SyncStatusEnum)[keyof typeof SyncStatusEnum]
 
 export interface SyncPayload {
-    status: SyncStatusEnumType,
-    error_message?: string,
+    status: SyncStatusEnumType
+    error_message?: string
 }

@@ -12,9 +12,7 @@ import {
     useTheme,
     SwipeableDrawer,
 } from '@mui/material'
-import {
-    CloudSync
-} from '@mui/icons-material';
+import { CloudSync } from '@mui/icons-material'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { useTranslation } from 'react-i18next'
 import icon from './static/icon.png'
@@ -42,8 +40,8 @@ export default function Sidebar(props: Props) {
     const [isMobile, setIsMobile] = useState<boolean>(false)
     const sessionListRef = useRef<HTMLDivElement>(null)
     const theme = useTheme()
-    const [loading,] = useAtom(synchronizeShowLoading);
-    const [, setSyncErrMsg] = useAtom(synchronizeErrorMessage);
+    const [loading] = useAtom(synchronizeShowLoading)
+    const [, setSyncErrMsg] = useAtom(synchronizeErrorMessage)
 
     useEffect(() => {
         platform.isMobile().then(setIsMobile)
@@ -52,7 +50,7 @@ export default function Sidebar(props: Props) {
     const handleSync = async () => {
         try {
             await platform.executeSync()
-        }catch (e: any) {
+        } catch (e: any) {
             setSyncErrMsg(e)
         }
     }
@@ -89,10 +87,7 @@ export default function Sidebar(props: Props) {
                 >
                     <Box className="flex justify-between items-center px-2">
                         <Box>
-                            <a
-                                target="_blank"
-                                className="flex items-center no-underline"
-                            >
+                            <a target="_blank" className="flex items-center no-underline">
                                 <img src={icon} className="w-8 h-8 mr-3" />
                                 <div className="flex flex-col items-start">
                                     <span className="text-2xl font-medium">Cha</span>

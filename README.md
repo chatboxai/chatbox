@@ -82,7 +82,7 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
 </p>
 
 <p align="center">
-<video src="https://github.com/user-attachments/assets/a7976ed4-1214-4d63-8646-d0a2cff28d19" controls="controls" style="max-width: 300px;"></video>
+<video src="https://github.com/user-attachments/assets/e8ff2ec8-e82f-4700-ba87-570d1237e480" controls="controls" style="max-width: 300px;"></video>
 </p>
 
 ## Features

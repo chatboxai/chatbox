@@ -1,0 +1,37 @@
+name: On Publish Event
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get release info
+        id: release
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=${TAG_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Update README
+        run: |
+          # Escape version for sed
+          VERSION=$(echo "${{ steps.release.outputs.version }}" | sed 's/[\/&]/\\&/g')
+          
+          # Update both Intel and ARM download links
+          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_v[0-9.]\+_x64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_v${VERSION}_x64.dmg/g" README.md
+          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_v[0-9.]\+_aarch64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_v${VERSION}_aarch64.dmg/g" README.md
+          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_v[0-9.]\+_x64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_v${VERSION}_x64.dmg/g" README.md
+          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_v[0-9.]\+.apk/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_v${VERSION}.apk/g" README.md
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add README.md
+          git commit -m "Update download links to ${{ steps.release.outputs.tag_name }}"
+          git push

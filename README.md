@@ -81,20 +81,9 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
 </a>
 </p>
 
-<a href="./doc/statics/snapshot_light.png">
-<img src="./doc/statics/snapshot_light.png" width="400"/>
-</a>
-<a href="./doc/statics/snapshot_dark.png">
-<img src="./doc/statics/snapshot_dark.png" width="400"/>
-</a>
-
-<!-- <table>
-<tr>
-<td>
-<video src="./doc/statics/demo_desktop_video_1.mov" controls="controls" style="max-width: 730px;"></video>
-</td>
-</tr>
-</table> -->
+<p align="center">
+<video src="https://github.com/user-attachments/assets/a7976ed4-1214-4d63-8646-d0a2cff28d19" controls="controls" style="max-width: 300px;"></video>
+</p>
 
 ## Features
 
@@ -153,7 +142,7 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
 -   **And More...**  
     :sparkles: Constantly enhancing the experience with new features!
 
-## Why I forked it build with Tauri?
+## Why I forked and port to Tauri?
 
 I like Chatbox, however when I want to request feature and try to run the open source version locally. The feature is far behind that I used, after reading the README.md turns out that the version I use is Closed Source version.
 Then I fork it and porting to Tauri to support multi-platform, as part of my journey learning Rust and TypeScript.

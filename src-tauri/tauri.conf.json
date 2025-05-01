@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Chatbox CE",
+  "productName": "Cha",
   "version": "0.1.0",
-  "identifier": "com.chatboxce.app",
+  "identifier": "com.cha.app",
   "build": {
     "frontendDist": "../release/app/dist/renderer/",
     "devUrl": "http://localhost:1212",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Chatbox CE",
+        "title": "Cha",
         "width": 1000,
         "height": 800,
         "resizable": true,
@@ -23,10 +23,24 @@
     "active": true,
     "targets": "all",
     "icon": [
-      "icons/icon-1024.png",
-      "icons/icon.svg",
+      "icons/icon.png",
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
       "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/icon.ico",
+      "icons/icon.png",
+      "icons/Square30x30Logo.png",
+      "icons/Square44x44Logo.png",
+      "icons/Square71x71Logo.png",
+      "icons/Square89x89Logo.png",
+      "icons/Square107x107Logo.png",
+      "icons/Square142x142Logo.png",
+      "icons/Square150x150Logo.png",
+      "icons/Square284x284Logo.png",
+      "icons/Square310x310Logo.png",
+      "icons/StoreLogo.png"
     ]
   }
 }

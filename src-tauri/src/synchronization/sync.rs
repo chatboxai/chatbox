@@ -73,8 +73,10 @@ impl Synchronize {
         let path = format!("{}/sync_metadata.json", self.dropbox.root_path());
 
         match self.dropbox.download(auth_token, &path).await {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|e| format!("Invalid remote metadata: {}", e)),
+            Ok(bytes) => {
+                serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("Invalid remote metadata: {}", e))
+            }
             Err(_) => Ok(SyncMetadata::default()),
         }
     }

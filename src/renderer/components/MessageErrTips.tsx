@@ -26,12 +26,7 @@ export default function MessageErrTips(props: { msg: Message }) {
                 values={{
                     aiProvider: msg.aiProvider ? aiProviderNameHash[msg.aiProvider] : 'AI Provider',
                 }}
-                components={[
-                    <a
-                        href={`https://chatboxai.app/redirect_app/faqs/${settingActions.getLanguage()}`}
-                        target="_blank"
-                    ></a>,
-                ]}
+                components={[]}
             />
         )
     } else if (msg.error.startsWith('Network Error')) {
@@ -73,12 +68,7 @@ export default function MessageErrTips(props: { msg: Message }) {
                         OpenSettingButton: (
                             <Link className="cursor-pointer italic" onClick={() => setOpenSettingDialogAtom('ai')}></Link>
                         ),
-                        OpenMorePlanButton: (
-                            <Link className="cursor-pointer italic" onClick={() => {
-                                platform.openLink('https://chatboxai.app/redirect_app/view_more_plans')
-                                trackingEvent('click_view_more_plans_button_from_upgrade_error_tips', { event_category: 'user' })
-                            }}></Link>
-                        )
+                        OpenMorePlanButton: (<div></div>)
                     }}
                 />
             )
@@ -89,7 +79,6 @@ export default function MessageErrTips(props: { msg: Message }) {
                 i18nKey="unknown error tips"
                 components={[
                     <a
-                        href={`https://chatboxai.app/redirect_app/faqs/${settingActions.getLanguage()}`}
                         target="_blank"
                     ></a>,
                 ]}

@@ -65,30 +65,6 @@ export default function AdvancedSettingTab(props: Props) {
                     <ExportAndImport onCancel={props.onCancel} />
                 </AccordionDetails>
             </Accordion>
-            <Accordion>
-                <AccordionSummary aria-controls="panel1a-content">
-                    <Typography>{t('Error Reporting')}</Typography>
-                </AccordionSummary>
-                <AccordionDetails>
-                    <AnalyticsSetting />
-                </AccordionDetails>
-            </Accordion>
-        </Box>
-    )
-}
-
-export function AnalyticsSetting() {
-    const { t } = useTranslation()
-    return (
-        <Box>
-            <div>
-                <p className='opacity-70'>
-                    {t('Chatbox respects your privacy and only uploads anonymous error data and events when necessary. You can change your preferences at any time in the settings.')}
-                </p>
-            </div>
-            <div className='my-2'>
-                <AllowReportingAndTrackingCheckbox />
-            </div>
         </Box>
     )
 }
@@ -195,7 +171,7 @@ function ExportAndImport(props: { onCancel: () => void }) {
         data['__exported_items'] = exportItems
         data['__exported_at'] = date.toISOString()
         const dateStr = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
-        platform.exporter.exportTextFile(`chatbox-exported-data-${dateStr}.json`, JSON.stringify(data))
+        platform.exporter.exportTextFile(`cha-exported-data-${dateStr}.json`, JSON.stringify(data))
     }
     const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const errTip = t('Import failed, unsupported data format')

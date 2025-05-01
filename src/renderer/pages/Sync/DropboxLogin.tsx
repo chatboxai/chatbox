@@ -164,7 +164,7 @@ export default  function  DropboxLogin(props: Props) {
                 )}
 
                 <Typography variant="body1" sx={styles.stepText}>
-                    {t('To allow Chatbox CE to synchronise with Dropbox, please follow the steps below:')}
+                    {t('To allow Cha to synchronise with Dropbox, please follow the steps below:')}
                 </Typography>
 
                 <Typography variant="body1" sx={styles.stepText}>

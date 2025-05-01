@@ -87,7 +87,7 @@ impl Synchronize {
         let root_path = self.dropbox.root_path();
 
         // Upload all chat sessions
-        for session in &local_metadata.chat_session {
+        for (_, session) in &local_metadata.chat_session {
             let path = format!("{}/chat_sessions/{}.json", root_path, session.id);
             let content = session
                 .content
@@ -121,8 +121,7 @@ impl Synchronize {
         for session_id in &plan.to_upload {
             let local_session = local_metadata
                 .chat_session
-                .iter()
-                .find(|s| &s.id == session_id)
+                .get(session_id)
                 .ok_or("Missing local session")?;
 
             let path = format!("{}/chat_sessions/{}.json", root_path, session_id);
@@ -276,17 +275,33 @@ impl Synchronize {
         let session_content = session.content.ok_or("Session content is missing")?;
 
         // Validate content is valid JSON
-        let _: serde_json::Value = serde_json::from_str(&session_content)
+        let session_value: serde_json::Value = serde_json::from_str(&session_content)
             .map_err(|e| format!("Invalid JSON content: {}", e))?;
 
-        log!(Level::Debug, "{}", session_content);
-        // Append new content
-        chats.push(session_content);
+        // Check for duplicates by comparing IDs
+        let mut found_duplicate = false;
+        let mut updated_chats: Vec<String> = Vec::new();
 
-        let new_val = format!("[{}]", chats.join(","));
+        for chat in chats {
+            if let Ok(chat_value) = serde_json::from_str::<serde_json::Value>(&chat) {
+                if let Some(chat_id) = chat_value.get("id").and_then(|v| v.as_str()) {
+                    if chat_id == session.id {
+                        // Replace the existing chat with the new one
+                        updated_chats.push(session_content.clone());
+                        found_duplicate = true;
+                    } else {
+                        updated_chats.push(chat);
+                    }
+                }
+            }
+        }
 
-        log!(Level::Debug, "{}", new_val);
+        // If no duplicate was found, append the new chat
+        if !found_duplicate {
+            updated_chats.push(session_content);
+        }
 
+        let new_val = format!("[{}]", updated_chats.join(","));
         let new_chat_session: Vec<Value> = serde_json::from_slice(new_val.as_bytes())
             .map_err(|e| format!("failed to parse chat session: {}", e))?;
 
@@ -322,7 +337,7 @@ impl Synchronize {
         sync_metadata
     }
 
-    fn create_chat_session_metadata(&self) -> Vec<ChatSessionMetadata> {
+    fn create_chat_session_metadata(&self) -> HashMap<String, ChatSessionMetadata> {
         // Get chats from store or default to empty array
         let chats_value = self.store.get(CHAT_SESSIONS_KEY);
         log!(
@@ -337,15 +352,16 @@ impl Synchronize {
                 Vec::new() // Fallback
             });
 
+        let mut chat_session_hash: HashMap<String, ChatSessionMetadata> = HashMap::new();
         for (index, chat) in chats_sessions.iter_mut().enumerate() {
             let mut hasher = Sha256::new();
             hasher.update(chat.content.clone().unwrap().as_bytes());
 
             let result = hasher.finalize();
             chat.hash = Option::from(hex::encode(result));
+            chat_session_hash.insert(chat.id.clone(), chat.clone());
         }
-
-        chats_sessions
+        chat_session_hash
     }
 
     pub fn sync_interval(&self) -> Duration {
@@ -369,7 +385,7 @@ pub struct ChatSessionMetadata {
 pub struct SyncMetadata {
     hash: String,
     last_sync: u128,
-    pub(crate) chat_session: Vec<ChatSessionMetadata>,
+    pub(crate) chat_session: HashMap<String, ChatSessionMetadata>,
 }
 
 impl SyncMetadata {
@@ -377,7 +393,7 @@ impl SyncMetadata {
         SyncMetadata {
             hash: "".to_string(),
             last_sync: 0,
-            chat_session: vec![],
+            chat_session: HashMap::new(),
         }
     }
 }

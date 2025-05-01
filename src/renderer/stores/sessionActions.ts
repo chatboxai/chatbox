@@ -23,7 +23,17 @@ import _ from 'lodash'
 
 export function create(newSession: Session) {
     const store = getDefaultStore()
-    store.set(atoms.sessionsAtom, (sessions) => [...sessions, newSession])
+    store.set(atoms.sessionsAtom, (sessions) => {
+        // Remove any existing session with the same ID
+        const filtered = sessions.filter(s => s.id !== newSession.id)
+        // Add the new session and sort by updateTime to ensure latest is last
+        const updated = [...filtered, newSession].sort((a, b) => {
+            const aTime = a.updateTime ?? Number.MAX_SAFE_INTEGER
+            const bTime = b.updateTime ?? Number.MAX_SAFE_INTEGER
+            return aTime - bTime
+        })
+        return updated
+    })
     switchCurrentSession(newSession.id)
 }
 

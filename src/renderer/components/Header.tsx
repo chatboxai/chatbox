@@ -61,10 +61,6 @@ export default function Header(props: Props) {
 
     if (providerName === '') providerName = settings.modelProvider
 
-
-    const editCurrentSession = () => {
-        setChatConfigDialogSession(currentSession)
-    }
     return (
         <div
             className="pt-3 pb-2 px-4"

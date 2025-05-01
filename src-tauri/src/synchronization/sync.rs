@@ -74,7 +74,6 @@ impl Synchronize {
 
         match self.dropbox.download(auth_token, &path).await {
             Ok(bytes) => {
-                println!("{}", String::from_utf8_lossy(&bytes));
                 serde_json::from_slice(&bytes)
                     .map_err(|e| format!("Invalid remote metadata: {}", e))
             }

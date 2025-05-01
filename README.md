@@ -56,12 +56,11 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
 <h1 align="center">
 <img src='./doc/statics/icon.png' width='30'>
 <span>
-    Chatbox
-    <span style="font-size:8px; font-weight: normal;">(Community Edition)</span>
+    Cha 
 </span>
 </h1>
 <p align="center">
-    <em>Your Ultimate AI Copilot on the Desktop. <br />Chatbox is a desktop client for ChatGPT, Claude and other LLMs, available on Windows, Mac, Linux</em>
+    <em>Your AI chat message client on the Desktop & Mobile.</em>
 </p>
 
 <p align="center">
@@ -82,8 +81,6 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
 </a>
 </p>
 
-<a href="https://www.producthunt.com/posts/chatbox?utm_source=badge-featured&utm_medium=badge&utm_souce=badge-chatbox" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=429547&theme=light" alt="Chatbox - Better&#0032;UI&#0032;&#0038;&#0032;Desktop&#0032;App&#0032;for&#0032;ChatGPT&#0044;&#0032;Claude&#0032;and&#0032;other&#0032;LLMs&#0046; | Product Hunt" style="width: 150px; height: 30px;" width="100" height="40" /></a>
-
 <a href="./doc/statics/snapshot_light.png">
 <img src="./doc/statics/snapshot_light.png" width="400"/>
 </a>
@@ -94,15 +91,28 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
 <!-- <table>
 <tr>
 <td>
-<img src="./dec/../doc/demo_mobile_1.png" alt="App Screenshot" style="box-shadow: 2px 2px 10px rgba(0,0,0,0.1); border: 1px solid #ddd; border-radius: 8px; height: 300px" />
-</td>
-<td>
-<img src="./dec/../doc/demo_mobile_2.png" alt="App Screenshot" style="box-shadow: 2px 2px 10px rgba(0,0,0,0.1); border: 1px solid #ddd; border-radius: 8px; height: 300px" />
+<video src="./doc/statics/demo_desktop_video_1.mov" controls="controls" style="max-width: 730px;"></video>
 </td>
 </tr>
 </table> -->
 
 ## Features
+
+### Cha specific features
+-   **Online synchronization** to storage providers like:
+    - Dropbox
+    - Google Drive (soon)
+    - One Dive (soon)
+-   Multi-platform support to Windows, Mac, Linux, Android and iOS (Once I have the device lol). Thanks to Tauri.
+  
+-   **Small bundle size installation.**  
+    :floppy_disk: By using the OS's native web renderer, the size of a Tauri app can be less than 600KB.
+-   Chain of Thought (Reasoning Rendering) rendering for both API Support or Not.
+-   Support all AI providers with Open AI standard.
+-   Fast rendering for long message. Thanks to Virtuoso.
+-   Customization model provider and model for each Chat.
+-   Edit, Regenerate and Paginate the Chat Tree.
+
 ### Inherit form Chatbox CE
 -   **Local Data Storage**  
     :floppy_disk: Your data remains on your device, ensuring it never gets lost and maintains your privacy.
@@ -127,7 +137,7 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
 
 -   **Team Collaboration**  
     :busts_in_silhouette: Collaborate with ease and share OpenAI API resources among your team. [Learn More](./team-sharing/README.md)
--   
+  
 - **Multilingual Support**  
     :earth_americas: Catering to a global audience by offering support in multiple languages:
 
@@ -143,40 +153,16 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
 -   **And More...**  
     :sparkles: Constantly enhancing the experience with new features!
 
-### Cha specific features
-- Support online synchronization to storage providers like:
-  - Dropbox
-  - Google Drive (soon)
-  - One Dive (soon)
-  
-- Multi-platform support to Windows, Mac, Linux, Android and iOS. Thanks to Tauri
-- Small size installation. Thanks to Tauri.
-- Chain of Thought (Reasoning Rendering).
-- Support all AI providers with Open AI standard.
-- Fast rendering for long message. Thanks to Virtuoso.
-- Customization model provider and model for each Chats.
+## Why I forked it build with Tauri?
 
-## Why I made Chatbox?
+I like Chatbox, however when I want to request feature and try to run the open source version locally. The feature is far behind that I used, after reading the README.md turns out that the version I use is Closed Source version.
+Then I fork it and porting to Tauri to support multi-platform, as part of my journey learning Rust and TypeScript.
 
-I like Chatbox, however when I want to request feature and try to run the open source version locally. The feature is far behind that I used, after reading the README.md turns out the version I use is Closed Source version.
-Then I fork it and porting to Tauri to support multi-platform.
-
-## How to Contribute
-
-Any form of contribution is welcome, including but not limited to:
-
--   Submitting issues
--   Submitting pull requests
--   Submitting feature requests
--   Submitting bug reports
--   Submitting documentation revisions
--   Submitting translations
--   Submitting any other forms of contribution
-
+BTW, my background is Backend Engineering, developing a front-end is a challenge for me, if you find any bug or feature request please reach me out.
 
 ## Buy the original author a Coffee
 
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/benn)
+[!["Buy The Original Author A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/benn)
 
 
 ## License

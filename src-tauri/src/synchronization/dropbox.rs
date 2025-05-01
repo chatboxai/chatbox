@@ -33,7 +33,7 @@ impl Dropbox {
     pub async fn get_auth_token_from_refresh(
         &self,
         refresh_token: &str,
-    ) -> Result<(String), String> {
+    ) -> Result<String, String> {
         let post_data = [
             ("refresh_token", refresh_token),
             ("grant_type", "refresh_token"),

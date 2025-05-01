@@ -1,3 +1,3 @@
-package com.chatboxce.app
+package com.cha.app
 
 class MainActivity : TauriActivity()

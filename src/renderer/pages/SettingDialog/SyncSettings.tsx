@@ -142,13 +142,9 @@ export default function SyncSettings  (props :Props) {
                 </FormControl>
 
                 {selectedProvider !== 'None' && (
-                    !isConnected ? (
-                        <Button variant="contained" onClick={handleConnectButton} fullWidth>
-                            Connect to {selectedProvider.replace('-', ' ')}
-                        </Button>
-                    ) : (
-                        <Chip label="Connected" color="success" variant="outlined" />
-                    )
+                    <Button variant="contained" onClick={handleConnectButton} fullWidth>
+                        {isConnected ? 'Reconnect' : 'Connect'} to {selectedProvider.replace('-', ' ')}
+                    </Button>
                 )}
 
 

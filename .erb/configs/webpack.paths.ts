@@ -5,7 +5,6 @@ const rootPath = path.join(__dirname, '../..')
 const dllPath = path.join(__dirname, '../dll')
 
 const srcPath = path.join(rootPath, 'src')
-const srcMainPath = path.join(srcPath, 'main')
 const srcRendererPath = path.join(srcPath, 'renderer')
 
 const releasePath = path.join(rootPath, 'release')
@@ -15,7 +14,6 @@ const appNodeModulesPath = path.join(appPath, 'node_modules')
 const srcNodeModulesPath = path.join(srcPath, 'node_modules')
 
 const distPath = path.join(appPath, 'dist')
-const distMainPath = path.join(distPath, 'main')
 const distRendererPath = path.join(distPath, 'renderer')
 
 const buildPath = path.join(releasePath, 'build')
@@ -24,7 +22,6 @@ export default {
     rootPath,
     dllPath,
     srcPath,
-    srcMainPath,
     srcRendererPath,
     releasePath,
     appPath,
@@ -32,7 +29,6 @@ export default {
     appNodeModulesPath,
     srcNodeModulesPath,
     distPath,
-    distMainPath,
     distRendererPath,
     buildPath,
 }

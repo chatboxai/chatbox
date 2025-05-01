@@ -14,19 +14,22 @@ jobs:
         id: release
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "Extracted tag: $TAG_NAME"
+          VERSION=${TAG_NAME#v}
+          echo "Release version: $VERSION"
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "version=${TAG_NAME#v}" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Update README
         run: |
           # Escape version for sed
-          VERSION=$(echo "${{ steps.release.outputs.version }}" | sed 's/[\/&]/\\&/g')
+          VERSION=${{ steps.release.outputs.version }} 
           
           # Update both Intel and ARM download links
-          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_v[0-9.]\+_x64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_v${VERSION}_x64.dmg/g" README.md
-          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_v[0-9.]\+_aarch64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_v${VERSION}_aarch64.dmg/g" README.md
-          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_v[0-9.]\+_x64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_v${VERSION}_x64.dmg/g" README.md
-          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_v[0-9.]\+.apk/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_v${VERSION}.apk/g" README.md
+          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_[0-9.]\+_x64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_${VERSION}_x64.dmg/g" README.md
+          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_[0-9.]\+_aarch64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_${VERSION}_aarch64.dmg/g" README.md
+          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_[0-9.]\+_x64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_${VERSION}_x64.dmg/g" README.md
+          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_[0-9.]\+.apk/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_${VERSION}.apk/g" README.md
 
       - name: Commit and push changes
         run: |

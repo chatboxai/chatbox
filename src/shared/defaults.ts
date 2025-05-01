@@ -6,7 +6,9 @@ import {
     Session,
     OpenAICompProviderSettings,
     OpenAICompModel,
-    SyncProvider, SynchronizedConfig, SyncFrequencyList
+    SyncProvider,
+    SynchronizedConfig,
+    SyncFrequencyList,
 } from './types'
 import { v4 as uuidv4 } from 'uuid'
 import SyncSettings from '@/pages/SettingDialog/SyncSetting2'
@@ -74,7 +76,7 @@ export function settings(): Settings {
         ppioModel: 'deepseek/deepseek-r1/community',
 
         autoGenerateTitle: true,
-        syncConfig: defaultSyncConfig()
+        syncConfig: defaultSyncConfig(),
     }
 }
 
@@ -154,13 +156,12 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
 export const DefaultTemperature: number = 1
 export const DefaultTopP: number = 0.5
 
-
 export function defaultSyncConfig(): SynchronizedConfig {
     return <SynchronizedConfig>{
         providersConfig: { Dropbox: {} },
-        frequency: SyncFrequencyList["5 Minutes"],
+        frequency: SyncFrequencyList['5 Minutes'],
         onAppLaunch: true,
         provider: 'None',
-        syncDataType: ['all']
+        syncDataType: ['all'],
     }
 }

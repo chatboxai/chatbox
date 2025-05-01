@@ -47,11 +47,14 @@ jobs:
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
           echo "Extracted tag: $TAG_NAME"
+          VERSION=${TAG_NAME#v}
+          echo "Release version: $VERSION"
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: update version in tauri config
         run: |
-          sed -i.bak 's/"version": "0.1.0"/"version": "${TAG_NAME}"/g' ./src-tauri/tauri.conf.json 
+          sed -i.bak 's/"version": "0.1.0"/"version": "${VERSION}"/g' ./src-tauri/tauri.conf.json 
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -116,13 +119,13 @@ jobs:
         if: matrix.target == 'android'
         run: |
           mkdir ./release-assets
-          mv ./src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk ./release-assets/Cha_${{steps.package-version.outputs.tag_name}}.apk
+          mv ./src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk ./release-assets/Cha_${{steps.package-version.outputs.version}}.apk
 
       - name: Publish
         uses: softprops/action-gh-release@v1
         with:
           draft: true
-          name: Cha ${{ steps.package-version.outputs.tag_name}}
+          name: Cha v${{ steps.package-version.outputs.version}}
           tag_name: ${{ steps.package-version.outputs.tag_name}}
           generate_release_notes: true
           files: |

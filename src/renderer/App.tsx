@@ -24,20 +24,20 @@ import { synchronizeErrorMessage, synchronizeShowLoading } from './stores/atoms'
 function Main() {
     const spellCheck = useAtomValue(atoms.spellCheckAtom)
     const [openSettingWindow, setOpenSettingWindow] = useAtom(atoms.openSettingDialogAtom)
-    const [setting,] = useAtom(atoms.settingsAtom);
-    const [,setLoading] = useAtom(synchronizeShowLoading);
-    const [, setSyncErrMsg] = useAtom(synchronizeErrorMessage);
+    const [setting] = useAtom(atoms.settingsAtom)
+    const [, setLoading] = useAtom(synchronizeShowLoading)
+    const [, setSyncErrMsg] = useAtom(synchronizeErrorMessage)
     const [openAboutWindow, setOpenAboutWindow] = React.useState(false)
     const [openCopilotWindow, setOpenCopilotWindow] = React.useState(false)
     const [openSidebar, setOpenSidebar] = React.useState(false)
     useInactivityMonitor()
 
     const handleExecuteSync = async () => {
-        if (setting?.syncConfig?.onAppLaunch){
-            setLoading(true);
+        if (setting?.syncConfig?.onAppLaunch) {
+            setLoading(true)
             try {
                 await platform.executeSync()
-            }catch (e: any) {
+            } catch (e: any) {
                 console.error(e)
                 setSyncErrMsg(e)
             }

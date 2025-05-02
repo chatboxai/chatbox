@@ -10,6 +10,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: checkout to main branch
+        run: |
+          git checkout origin/main 
+
       - name: Get release info
         id: release
         run: |

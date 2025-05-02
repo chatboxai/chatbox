@@ -55,6 +55,7 @@ jobs:
       - name: update version in tauri config
         run: |
           sed -i.bak 's/"version": "0.1.0"/"version": "${VERSION}"/g' ./src-tauri/tauri.conf.json 
+          cat ./src-tauri/tauri.conf.json  
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable

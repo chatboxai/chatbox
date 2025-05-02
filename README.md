@@ -34,14 +34,14 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
       <a href='https://github.com/adzimzf/cha/releases/download/v1.0.2/Cha_1.0.2_aarch64.dmg'>
         <img src='./doc/statics/mac.png' style="height:24px; width: 24px" />
         <br />
-        <b>Intel</b>
+        <b>M1/M2</b>
       </a>
     </td>
     <td align="center" valign="middle">
       <a href='https://github.com/adzimzf/cha/releases/download/v1.0.2/Cha_1.0.2_x64.dmg'>
         <img src='./doc/statics/mac.png' style="height:24px; width: 24px" />
         <br />
-        <b>M1/M2</b>
+        <b>Intel</b> 
       </a>
     </td>
     <td align="center" valign="middle">

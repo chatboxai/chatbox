@@ -24,12 +24,13 @@ jobs:
         run: |
           # Escape version for sed
           VERSION=${{ steps.release.outputs.version }} 
+          regex_escape() {
+              sed 's/[][\.*^$()+?{}|]/\\&/g' <<< "$1"
+          }
+          escaped=$(regex_escape "$VERSION") 
           
           # Update both Intel and ARM download links
-          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_[0-9.]\+_x64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_${VERSION}_x64.dmg/g" README.md
-          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_[0-9.]\+_aarch64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_${VERSION}_aarch64.dmg/g" README.md
-          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_[0-9.]\+_x64.dmg/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_${VERSION}_x64.dmg/g" README.md
-          sed -i "s/releases\/download\/v[0-9.]\+\/Cha_[0-9.]\+.apk/releases\/download\/${{ steps.release.outputs.tag_name }}\/Cha_${VERSION}.apk/g" README.md
+          sed -i.bak "s/download\/v[0-9]*\.[0-9]*\.[0-9]*\/Cha_[0-9]*\.[0-9]*\.[0-9]*/download\/v${escaped}\/Cha_${escaped}/g" README.md && rm README.md.bak
 
       - name: Commit and push changes
         run: |

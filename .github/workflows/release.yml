@@ -20,10 +20,10 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: 'build'
+            args: 'build -- --target aarch64-apple-darwin'
             rust-target: aarch64-apple-darwin
           - platform: 'macos-13' # for Intel based macs.
-            args: 'build'
+            args: 'build -- --target x86_64-apple-darwin'
             rust-target: x86_64-apple-darwin
           - platform: 'ubuntu-22.04'
             target: 'android'
@@ -41,6 +41,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20.18.3
+          cache: 'npm'
 
       - name: Extract tag name
         id: package-version
@@ -130,7 +131,7 @@ jobs:
         if: matrix.platform != 'macos-latest'
         run: |
           echo "delay 60 seconds to wait macos latest to create release"
-          sleep 60
+          sleep 30
 
       - name: Publish
         uses: softprops/action-gh-release@v1

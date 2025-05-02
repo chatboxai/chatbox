@@ -24,35 +24,35 @@ This repository is fork from https://github.com/Bin-Huang/chatbox.
   </tr>
   <tr style="text-align: center">
     <td align="center" valign="middle">
-      <a href='https://github.com/adzimzf/cha/releases/download/v0.0.3/Cha_0.1.0.exe'>
+      <a href='https://github.com/adzimzf/cha/releases/download/v1.0.3/Cha_1.0.3.exe'>
         <img src='./doc/statics/windows.png' style="height:24px; width: 24px" />
         <br />
         <b>Setup.exe</b>
       </a>
     </td>
     <td align="center" valign="middle">
-      <a href='https://github.com/adzimzf/cha/releases/download/v0.0.3/Cha_0.1.0_aarch64.dmg'>
+      <a href='https://github.com/adzimzf/cha/releases/download/v1.0.3/Cha_1.0.3_aarch64.dmg'>
         <img src='./doc/statics/mac.png' style="height:24px; width: 24px" />
         <br />
         <b>Intel</b>
       </a>
     </td>
     <td align="center" valign="middle">
-      <a href='https://github.com/adzimzf/cha/releases/download/v0.0.3/Cha_0.1.0_x64.dmg'>
+      <a href='https://github.com/adzimzf/cha/releases/download/v1.0.3/Cha_1.0.3_x64.dmg'>
         <img src='./doc/statics/mac.png' style="height:24px; width: 24px" />
         <br />
         <b>M1/M2</b>
       </a>
     </td>
     <td align="center" valign="middle">
-      <a href='https://github.com/adzimzf/cha/releases/download/v0.0.3/Cha_0.1.0.apk'>
+      <a href='https://github.com/adzimzf/cha/releases/download/v1.0.3/Cha_1.0.3.apk'>
         <img src='./doc/statics/android.png' style="height:24px; width: 24px" />
         <br />
         <b>APK</b>
       </a>
     </td>
     <td align="center" valign="middle">
-      <a href='https://github.com/adzimzf/cha/releases/download/v0.0.3/Cha_0.1.0.dpkg'>
+      <a href='https://github.com/adzimzf/cha/releases/download/v1.0.3/Cha_1.0.3.dpkg'>
         <img src='./doc/statics/linux.png' style="height:24px; width: 24px" />
         <br />
         <b>AppImage</b>

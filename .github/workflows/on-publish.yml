@@ -12,7 +12,7 @@ jobs:
 
       - name: checkout to main branch
         run: |
-          git checkout origin/main 
+          git checkout main 
 
       - name: Get release info
         id: release

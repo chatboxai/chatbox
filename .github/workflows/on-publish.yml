@@ -3,7 +3,7 @@ name: On Publish Event
 on:
   release:
     types: [published]
-
+  workflow_dispatch:
 jobs:
   update-readme:
     runs-on: ubuntu-latest

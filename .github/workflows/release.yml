@@ -20,10 +20,10 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: 'build -- --target aarch64-apple-darwin'
+            args: 'build'
             rust-target: aarch64-apple-darwin
-          - platform: 'macos-latest' # for Intel based macs.
-            args: 'build -- --target x86_64-apple-darwin'
+          - platform: 'macos-13' # for Intel based macs.
+            args: 'build'
             rust-target: x86_64-apple-darwin
           - platform: 'ubuntu-22.04'
             target: 'android'
@@ -125,6 +125,12 @@ jobs:
         run: |
           mkdir ./release-assets
           mv ./src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk ./release-assets/Cha_${{steps.package-version.outputs.version}}.apk
+
+      - name: Delay to prevent conflict  creating release
+        if: matrix.platform != 'macos-latest'
+        run: |
+          echo "delay 60 seconds to wait macos latest to create release"
+          sleep 60
 
       - name: Publish
         uses: softprops/action-gh-release@v1

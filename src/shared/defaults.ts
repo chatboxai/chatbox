@@ -132,7 +132,7 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
             baseURL: 'https://api.groq.com/openai/v1',
             temperature: DefaultTemperature,
             topP: DefaultTopP,
-            icon: 'https://img.icons8.com/?size=512&id=W864KQKLKmWj&format=png',
+            icon: 'https://play-lh.googleusercontent.com/dQRKhi30KpzG3gww3TdVLzyIAVuOAWylnAcgnEUxqfpm2A8dEt2sgApVvtKAy-DO8aI',
         },
         {
             uuid: uuidv4(),
@@ -140,7 +140,7 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
             baseURL: 'https://api.openai.com',
             temperature: DefaultTemperature,
             topP: DefaultTopP,
-            icon:'https://assets.streamlinehq.com/image/private/w_300,h_300,ar_1/f_auto/v1/icons/logos/openai-wx0xqojo8lrv572wcvlcb.png/openai-twkvg10vdyltj9fklcgusg.png?_a=DAJFJtWIZAAC'
+            icon:'https://static.vecteezy.com/system/resources/previews/024/558/811/non_2x/openai-chatgpt-logo-icon-free-png.png'
         },
         {
             uuid: uuidv4(),

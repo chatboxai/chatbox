@@ -211,16 +211,7 @@ export default function Message(props: Props) {
                                     </Avatar>
                                 ),
                                 user: (
-                                    <Avatar
-                                        sx={{
-                                            width: '28px',
-                                            height: '28px',
-                                        }}
-                                        className='cursor-pointer'
-                                        onClick={() => setOpenSettingWindow('chat')}
-                                    >
-                                        <PersonIcon fontSize='small' />
-                                    </Avatar>
+                                   <></>
                                 ),
                                 system:
                                         <Avatar
@@ -236,29 +227,42 @@ export default function Message(props: Props) {
                         }
                     </Box>
                 </Grid>
-                <Grid item xs sm container sx={{ width: '0px', paddingRight: '15px' }} >
-                    <Grid item xs>
-                        <Box className={cn('msg-content', { 'msg-content-small': small })} sx={
-                            small ? { fontSize: theme.typography.body2.fontSize } : {}
-                        }>
-                            {
-                                showLoadingIcon && <LoadingSpinner speed={0.5} size={'15px'} />
-                            }
-
-                            {
-                                enableMarkdownRendering && !isCollapsed ? (
-                                   messageContent
-                                ) : (
-                                    <div>
-                                        {content}
-                                        {
-                                            needCollapse && isCollapsed && (
-                                                CollapseButton
-                                            )
-                                        }
-                                    </div>
-                                )
-                            }
+                <Grid
+                    item
+                    xs
+                    sm
+                    container
+                    sx={{
+                        width: '0px',
+                        paddingRight: '15px',
+                        justifyContent: msg.role === 'user' ? 'flex-end' : 'center',
+                    }}
+                >
+                    <Grid
+                        item
+                        xs
+                        sx={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            textAlign: msg.role === 'user' ? 'right' : 'left',
+                        }}
+                    >
+                        <Box
+                            className={cn('msg-content', { 'msg-content-small': small })}
+                            sx={{
+                                ...(small ? { fontSize: theme.typography.body2.fontSize } : {}),
+                                textAlign: msg.role === 'user' ? 'right' : 'left',
+                            }}
+                        >
+                            {showLoadingIcon && <LoadingSpinner speed={0.5} size={'15px'} />}
+                            {enableMarkdownRendering && !isCollapsed ? (
+                                messageContent
+                            ) : (
+                                <div>
+                                    {content}
+                                    {needCollapse && isCollapsed && CollapseButton}
+                                </div>
+                            )}
                         </Box>
                         <MessageErrTips msg={msg} />
                         {

@@ -140,7 +140,13 @@ export default function MessageActions(props: Props) {
 
 
     return (
-        <Stack direction="row" spacing={0}>
+        <Stack
+            direction="row"
+            spacing={0}
+            sx={{
+                justifyContent: msg.role === 'user' ? "flex-end" : "flex-start",
+            }}
+        >
             {paginationCmp()}
 
             {msg.role !== 'user' ? (

@@ -49,12 +49,6 @@ export default function MessageList(props: Props) {
                     const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
                     const bottomThreshold = 100;
                     setShowScrollToBottom(distanceFromBottom >= bottomThreshold)
-                    console.log({
-                        clientHeight,
-                        scrollHeight,
-                        scrollTop,
-                        distanceFromBottom,
-                    });
                 }}
                 itemContent={(index, msg) => (
                     <>

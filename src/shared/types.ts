@@ -92,6 +92,7 @@ export interface OpenAICompModel {
 export interface OpenAICompProviderSettings {
     uuid: string
     name: string
+    icon?: string
     apiKey: string
     baseURL: string
     modelList: OpenAICompModel[]
@@ -284,6 +285,7 @@ export const SyncProviderList = Object.values(SyncProviderEnum)
 export type SyncProvider = (typeof SyncProviderEnum)[keyof typeof SyncProviderEnum]
 
 export interface SynchronizedConfig {
+    enabled: boolean
     provider: SyncProvider
     providersConfig: {
         Dropbox: DropboxConfig

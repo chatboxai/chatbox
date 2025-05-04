@@ -100,6 +100,7 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
             baseURL: 'https://api.anthropic.com/v1/',
             temperature: DefaultTemperature,
             topP: DefaultTopP,
+            icon: 'https://images.seeklogo.com/logo-png/51/2/anthropic-icon-logo-png_seeklogo-515014.png',
         },
         {
             uuid: uuidv4(),
@@ -107,6 +108,7 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
             baseURL: 'https://api.deepseek.com',
             temperature: DefaultTemperature,
             topP: DefaultTopP,
+            icon: 'https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/dark/deepseek-color.png',
         },
         {
             uuid: uuidv4(),
@@ -114,6 +116,7 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
             baseURL: 'https://api.deepinfra.com/v1/openai',
             temperature: DefaultTemperature,
             topP: DefaultTopP,
+            icon:'https://deepinfra.com/deepinfra-logo-512.webp',
         },
         {
             uuid: uuidv4(),
@@ -121,6 +124,7 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
             baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai',
             temperature: DefaultTemperature,
             topP: DefaultTopP,
+            icon:'https://lh3.googleusercontent.com/Xtt-WZqHiV8OjACMMMr6wMdoMGE7bABi-HYujupzevufo1kiHUFQZukI1JILhjItrPNrDWLq6pfd=s600-w600',
         },
         {
             uuid: uuidv4(),
@@ -128,6 +132,7 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
             baseURL: 'https://api.groq.com/openai/v1',
             temperature: DefaultTemperature,
             topP: DefaultTopP,
+            icon: 'https://play-lh.googleusercontent.com/dQRKhi30KpzG3gww3TdVLzyIAVuOAWylnAcgnEUxqfpm2A8dEt2sgApVvtKAy-DO8aI',
         },
         {
             uuid: uuidv4(),
@@ -135,6 +140,7 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
             baseURL: 'https://api.openai.com',
             temperature: DefaultTemperature,
             topP: DefaultTopP,
+            icon:'https://static.vecteezy.com/system/resources/previews/024/558/811/non_2x/openai-chatgpt-logo-icon-free-png.png'
         },
         {
             uuid: uuidv4(),
@@ -142,6 +148,7 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
             baseURL: 'https://api.perplexity.ai',
             temperature: DefaultTemperature,
             topP: DefaultTopP,
+            icon:'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSdFSv1lxsEwowysGSVpPBM_VMwocDGqxqRyg&s',
         },
         {
             uuid: uuidv4(),
@@ -149,6 +156,7 @@ export function getDefaultModelProviders(): OpenAICompProviderSettings[] {
             baseURL: 'https://api.siliconflow.cn/v1',
             temperature: DefaultTemperature,
             topP: DefaultTopP,
+            icon:'https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/dark/siliconcloud-color.png',
         },
     ] as OpenAICompProviderSettings[]
 }
@@ -158,6 +166,7 @@ export const DefaultTopP: number = 0.5
 
 export function defaultSyncConfig(): SynchronizedConfig {
     return <SynchronizedConfig>{
+        enabled: false,
         providersConfig: { Dropbox: {} },
         frequency: SyncFrequencyList['5 Minutes'],
         onAppLaunch: true,

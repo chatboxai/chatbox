@@ -22,7 +22,7 @@ jobs:
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
             args: 'build -- --target aarch64-apple-darwin'
             rust-target: aarch64-apple-darwin
-          - platform: 'macos-latest' # for Intel based macs.
+          - platform: 'macos-13' # for Intel based macs.
             args: 'build -- --target x86_64-apple-darwin'
             rust-target: x86_64-apple-darwin
           - platform: 'ubuntu-22.04'
@@ -41,6 +41,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20.18.3
+          cache: 'npm'
 
       - name: Extract tag name
         id: package-version
@@ -61,6 +62,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust-target }}
+      - name: check machine issue
+        run: |
+          uname -m
+          rustup show
 
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
@@ -121,6 +126,12 @@ jobs:
         run: |
           mkdir ./release-assets
           mv ./src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk ./release-assets/Cha_${{steps.package-version.outputs.version}}.apk
+
+      - name: Delay to prevent conflict  creating release
+        if: matrix.platform != 'macos-latest'
+        run: |
+          echo "delay 60 seconds to wait macos latest to create release"
+          sleep 30
 
       - name: Publish
         uses: softprops/action-gh-release@v1

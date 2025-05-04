@@ -110,109 +110,142 @@ export default function SyncSettings  (props :Props) {
         }
     }
 
+    const [syncEnabled, setSyncEnabled] = useState(settingsEdit.syncConfig?.enabled ?? false);
+
+    const handleSyncEnabledChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setSyncEnabled(event.target.checked);
+        settingsEdit.syncConfig.enabled = event.target.checked;
+    };
+
     return (
         <Box>
             <Box sx={{ p: 1 }}>
-                <Dialog open={showRestartDialog}>
-                    <DialogTitle title={t('Restart Confirmation')}/>
-                    <DialogContent>
-                        {t('Changing sync interval require restart to implement, do u want to restart immediately?')}
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={()=> { setShowRestartDialog(false)}}>{t('Later')}</Button>
-                        <Button onClick={()=> {platform.relaunch()}} >{t('Restart Immediately')}</Button>
-                    </DialogActions>
-                </Dialog>
-                <DropboxLogin open={dropboxOpen} setOpen={setDropboxOpen}/>
-                <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
-                    Cloud Provider
-                </Typography>
-                <FormControl fullWidth sx={{ mb: 1 }}>
-                    <Select
-                        value={selectedProvider}
-                        onChange={handleProviderChange}
-                        displayEmpty
-                    >
-                        {SyncProviderList.map((provider) => (
-                            <MenuItem key={provider} value={provider}>
-                                {provider}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
-
-                {selectedProvider !== 'None' && (
-                    <Button variant="contained" onClick={handleConnectButton} fullWidth>
-                        {isConnected ? 'Reconnect' : 'Connect'} to {selectedProvider.replace('-', ' ')}
-                    </Button>
-                )}
-
-
-                <Divider sx={{ my: 2 }} />
-
-                <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
-                    Sync Frequency
-                </Typography>
-                <FormControl fullWidth sx={{ mb: 1 }}>
-                    <Select
-                        value={syncInterval}
-                        onChange={(e: any) => {
-                            setSyncInterval(e.target.value)
-                            settingsEdit.syncConfig.frequency = e.target.value as number
-                            setShowRestartDialog(true)
-                        }}
-                    >
-                        <MenuItem key={'disabled'} value={0}>
-                           Disabled
-                        </MenuItem>
-                        {Object.entries(SyncFrequencyList).map((syncFrequency) => (
-                            <MenuItem key={syncFrequency[0]} value={syncFrequency[1]}>
-                                {syncFrequency[0]}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
-
-                <Divider sx={{ my: 2 }} />
-
-                {/* Auto-Sync Toggle */}
+                {/* Sync Enable/Disable Toggle */}
                 <FormControlLabel
                     control={
                         <Switch
-                            checked={syncOnLaunch}
-                            onChange={(e) => {
-                                setSyncOnLaunch(e.target.checked)
-                                settingsEdit.syncConfig.onAppLaunch = e.target.checked
-                            }}
+                            checked={syncEnabled}
+                            onChange={handleSyncEnabledChange}
                             color="primary"
                         />
                     }
-                    label="Sync on app launch"
+                    label="Enable Synchronization"
                     labelPlacement="start"
-                    sx={{ justifyContent: 'space-between', width: '100%', m: 0 }}
+                    sx={{ 
+                        justifyContent: 'space-between', 
+                        width: '100%', 
+                        mb: 0,
+                        ml: 0,
+                    }}
                 />
+                
 
-                <Divider sx={{ my: 2 }} />
+                <Divider sx={{ my: 1}} />
 
-                {/* Data Selection */}
-                <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
-                    Sync Data Types
-                </Typography>
+                {/* Wrap all other elements in a Box with disabled state */}
+                <Box sx={{ opacity: syncEnabled ? 1 : 0.5, pointerEvents: syncEnabled ? 'auto' : 'none' }}>
+                    <Dialog open={showRestartDialog}>
+                        <DialogTitle title={t('Restart Confirmation')}/>
+                        <DialogContent>
+                            {t('Changing sync interval require restart to implement, do u want to restart immediately?')}
+                        </DialogContent>
+                        <DialogActions>
+                            <Button onClick={()=> { setShowRestartDialog(false)}}>{t('Later')}</Button>
+                            <Button onClick={()=> {platform.relaunch()}} >{t('Restart Immediately')}</Button>
+                        </DialogActions>
+                    </Dialog>
+                    <DropboxLogin open={dropboxOpen} setOpen={setDropboxOpen}/>
 
-                <FormGroup>
-                    {Object.entries(SyncDataType).map(([key, value]) => (
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    name={value}
-                                    checked={selectedData[value]}
-                                    onChange={handleDataChange}
-                                />
-                            }
-                            label={key}
-                        />
-                    ))}
-                </FormGroup>
+                    <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
+                        Cloud Provider
+                    </Typography>
+                    <FormControl fullWidth sx={{ mb: 1 }}>
+                        <Select
+                            value={selectedProvider}
+                            onChange={handleProviderChange}
+                            displayEmpty
+                        >
+                            {SyncProviderList.map((provider) => (
+                                <MenuItem key={provider} value={provider}>
+                                    {provider}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+
+                    {selectedProvider !== 'None' && (
+                        <Button variant="contained" onClick={handleConnectButton} fullWidth>
+                            {isConnected ? 'Reconnect' : 'Connect'} to {selectedProvider.replace('-', ' ')}
+                        </Button>
+                    )}
+
+
+                    <Divider sx={{ my: 2 }} />
+
+                    <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
+                        Sync Frequency
+                    </Typography>
+                    <FormControl fullWidth sx={{ mb: 1 }}>
+                        <Select
+                            value={syncInterval}
+                            onChange={(e: any) => {
+                                setSyncInterval(e.target.value)
+                                settingsEdit.syncConfig.frequency = e.target.value as number
+                                setShowRestartDialog(true)
+                            }}
+                        >
+                            <MenuItem key={'disabled'} value={0}>
+                               Disabled
+                            </MenuItem>
+                            {Object.entries(SyncFrequencyList).map((syncFrequency) => (
+                                <MenuItem key={syncFrequency[0]} value={syncFrequency[1]}>
+                                    {syncFrequency[0]}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    {/* Auto-Sync Toggle */}
+                    <FormControlLabel
+                        control={
+                            <Switch
+                                checked={syncOnLaunch}
+                                onChange={(e) => {
+                                    setSyncOnLaunch(e.target.checked)
+                                    settingsEdit.syncConfig.onAppLaunch = e.target.checked
+                                }}
+                                color="primary"
+                            />
+                        }
+                        label="Sync on app launch"
+                        labelPlacement="start"
+                        sx={{ justifyContent: 'space-between', width: '100%', m: 0 }}
+                    />
+
+                    <Divider sx={{ my: 2 }} />
+
+                    {/* Data Selection */}
+                    <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
+                        Sync Data Types
+                    </Typography>
+
+                    <FormGroup>
+                        {Object.entries(SyncDataType).map(([key, value]) => (
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        name={value}
+                                        checked={selectedData[value]}
+                                        onChange={handleDataChange}
+                                    />
+                                }
+                                label={key}
+                            />
+                        ))}
+                    </FormGroup>
+                </Box>
             </Box>
         </Box>
     )

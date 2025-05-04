@@ -93,10 +93,17 @@ export default function MessageEdit(props: Props) {
                     color: theme.palette.text.primary,
                     fontFamily: theme.typography.fontFamily,
                     fontSize: theme.typography.body1.fontSize,
+                    textAlign: msg.role === 'user' ? 'right' : 'left',
                 }}
                 value={messageInput}
             />
-            <Stack direction="row" spacing={0}>
+            <Stack
+                direction="row"
+                spacing={0}
+               sx={{
+                   justifyContent: msg.role === 'user' ? "flex-end" : "flex-start",
+               }}
+            >
                 <Tooltip
                     title={"Cancel"}
                     sx={{

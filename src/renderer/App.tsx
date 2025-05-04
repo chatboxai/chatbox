@@ -33,7 +33,7 @@ function Main() {
     useInactivityMonitor()
 
     const handleExecuteSync = async () => {
-        if (setting?.syncConfig?.onAppLaunch) {
+        if (setting?.syncConfig?.enabled && setting?.syncConfig?.onAppLaunch) {
             setLoading(true)
             try {
                 await platform.executeSync()

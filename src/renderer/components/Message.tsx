@@ -10,7 +10,7 @@ import PersonIcon from '@mui/icons-material/Person'
 import SmartToyIcon from '@mui/icons-material/SmartToy'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { useTranslation } from 'react-i18next'
-import { Message, MessageInfo, SessionType } from '../../shared/types'
+import { Message, MessageInfo, SessionType, Settings } from '../../shared/types'
 import { useAtomValue, useSetAtom } from 'jotai'
 import {
     showMessageTimestampAtom,
@@ -18,7 +18,7 @@ import {
     showTokenCountAtom,
     showWordCountAtom,
     openSettingDialogAtom,
-    enableMarkdownRenderingAtom,
+    enableMarkdownRenderingAtom, settingsAtom
 } from '../stores/atoms'
 import { currsentSessionPicUrlAtom, showTokenUsedAtom } from '../stores/atoms'
 import * as scrollActions from '../stores/scrollActions'
@@ -41,6 +41,7 @@ import Tooltip from '@mui/material/Tooltip';
 import { CachedRounded,InfoOutlined } from '@mui/icons-material'
 import MessageActions from '@/components/MessageActions'
 import MessageEdit from '@/components/MessageEdit'
+import { getDefaultModelProviders, settings } from 'src/shared/defaults'
 
 export interface Props {
     id?: string
@@ -68,6 +69,8 @@ export default function Message(props: Props) {
     const [showLoadingIcon, setShowLoadingIcon] = useState(false)
     const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null)
     const [editMessage, setEditMessage] = React.useState(false)
+    const [aiIcon , setAiIcon] = useState('')
+    const [settings, _] = useAtom(settingsAtom)
 
     const { msg, className, collapseThreshold, hiddenButtonGroup, small } = props
 
@@ -131,6 +134,22 @@ export default function Message(props: Props) {
     )
     if (editMessage) messageContent = (<MessageEdit msg={msg} sessionId={props.sessionId} setEditMessage={setEditMessage} />)
 
+    useEffect(()=>{
+        if (msg.role === 'assistant') {
+            const aiProvider = settings.modelProviderList.find(m => msg.aiProvider == m.name);
+            const def = getDefaultModelProviders().find(m => m.name == msg.aiProvider);
+            if (aiProvider && def) {
+                if (aiProvider.icon === undefined || aiProvider.icon === ""){
+                   setAiIcon(def.icon ? def.icon : '')
+                }else {
+                    setAiIcon(aiProvider.icon)
+                }
+            } else {
+                setAiIcon('')
+            }
+        }
+    },[msg.aiProvider])
+
     return (
         <Box
             ref={ref}
@@ -173,25 +192,26 @@ export default function Message(props: Props) {
                                 ) : (
                                     <Avatar
                                         sx={{
-                                            backgroundColor: theme.palette.primary.main,
+                                            backgroundColor: aiIcon ? 'transparent' : theme.palette.primary.main,
                                             width: '28px',
                                             height: '28px',
                                         }}
                                     >
-                                        <SmartToyIcon fontSize='small' />
+                                        {
+                                            aiIcon ? (
+                                                <img
+                                                    src={aiIcon}
+                                                    alt="AI Icon"
+                                                    style={{ width: '28px', height: '28px' }}
+                                                />
+                                            ) : (
+                                                <SmartToyIcon fontSize='small' />
+                                            )
+                                        }
                                     </Avatar>
                                 ),
                                 user: (
-                                    <Avatar
-                                        sx={{
-                                            width: '28px',
-                                            height: '28px',
-                                        }}
-                                        className='cursor-pointer'
-                                        onClick={() => setOpenSettingWindow('chat')}
-                                    >
-                                        <PersonIcon fontSize='small' />
-                                    </Avatar>
+                                   <></>
                                 ),
                                 system:
                                         <Avatar
@@ -207,29 +227,42 @@ export default function Message(props: Props) {
                         }
                     </Box>
                 </Grid>
-                <Grid item xs sm container sx={{ width: '0px', paddingRight: '15px' }} >
-                    <Grid item xs>
-                        <Box className={cn('msg-content', { 'msg-content-small': small })} sx={
-                            small ? { fontSize: theme.typography.body2.fontSize } : {}
-                        }>
-                            {
-                                showLoadingIcon && <LoadingSpinner speed={0.5} size={'15px'} />
-                            }
-
-                            {
-                                enableMarkdownRendering && !isCollapsed ? (
-                                   messageContent
-                                ) : (
-                                    <div>
-                                        {content}
-                                        {
-                                            needCollapse && isCollapsed && (
-                                                CollapseButton
-                                            )
-                                        }
-                                    </div>
-                                )
-                            }
+                <Grid
+                    item
+                    xs
+                    sm
+                    container
+                    sx={{
+                        width: '0px',
+                        paddingRight: '15px',
+                        justifyContent: msg.role === 'user' ? 'flex-end' : 'center',
+                    }}
+                >
+                    <Grid
+                        item
+                        xs
+                        sx={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            textAlign: msg.role === 'user' ? 'right' : 'left',
+                        }}
+                    >
+                        <Box
+                            className={cn('msg-content', { 'msg-content-small': small })}
+                            sx={{
+                                ...(small ? { fontSize: theme.typography.body2.fontSize } : {}),
+                                textAlign: msg.role === 'user' ? 'right' : 'left',
+                            }}
+                        >
+                            {showLoadingIcon && <LoadingSpinner speed={0.5} size={'15px'} />}
+                            {enableMarkdownRendering && !isCollapsed ? (
+                                messageContent
+                            ) : (
+                                <div>
+                                    {content}
+                                    {needCollapse && isCollapsed && CollapseButton}
+                                </div>
+                            )}
                         </Box>
                         <MessageErrTips msg={msg} />
                         {

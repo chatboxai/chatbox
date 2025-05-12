@@ -30,6 +30,7 @@ function Root() {
   const navigate = useNavigate()
   const spellCheck = useAtomValue(atoms.spellCheckAtom)
   const language = useAtomValue(atoms.languageAtom)
+  const initSessionsList = useSetAtom(atoms.initSessionsListAtom)
 
   const setOpenAboutDialog = useSetAtom(atoms.openAboutDialogAtom)
 
@@ -72,6 +73,10 @@ function Root() {
 
     return () => clearTimeout(tid)
   }, [])
+
+  useEffect(() => {
+    initSessionsList()
+  }, [initSessionsList])
 
   const [showSidebar] = useAtom(atoms.showSidebarAtom)
   const sidebarWidth = useSidebarWidth()

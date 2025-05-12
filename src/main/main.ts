@@ -249,7 +249,7 @@ async function createWindow() {
     icon: getAssetPath('icon.png'),
     webPreferences: {
       spellcheck: true,
-      webSecurity: false, // 其中一个作用是解决跨域问题
+      webSecurity: true,
       allowRunningInsecureContent: false,
       preload: app.isPackaged ? path.join(__dirname, 'preload.js') : path.join(__dirname, '../../.erb/dll/preload.js'),
     },
@@ -303,8 +303,14 @@ async function createWindow() {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        // 'Content-Security-Policy': ['default-src \'self\'']
-        // 'Content-Security-Policy': ['*'], // 为了支持代理
+        'Content-Security-Policy': [
+          "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: https: http:;",
+          "img-src 'self' data: https: http:;",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com;",
+          "style-src 'self' 'unsafe-inline';",
+          "connect-src 'self' https: http:;",
+          "worker-src 'self' blob:;"
+        ].join(' ')
       },
     })
   })

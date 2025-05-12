@@ -10,9 +10,35 @@ import { createSessionAtom } from './throttleWriteSessionAtom'
 
 // sessions
 
+export const sessionsListAtom = atom<SessionMeta[]>([])
 
-export const sessionsListAtom = atomWithStorage<SessionMeta[]>(StorageKey.ChatSessionsList, [], storage)
-export const sortedSessionsListAtom = atom((get) => sortSessions(get(sessionsListAtom)))
+// 初始化会话列表
+export const initSessionsListAtom = atom(
+  null,
+  async (get, set) => {
+    try {
+      const sessions = await storage.getItem(StorageKey.ChatSessionsList, [])
+      if (Array.isArray(sessions)) {
+        set(sessionsListAtom, sessions)
+      } else {
+        console.error('Invalid session list type:', sessions)
+        set(sessionsListAtom, [])
+      }
+    } catch (error) {
+      console.error('Failed to initialize session list:', error)
+      set(sessionsListAtom, [])
+    }
+  }
+)
+
+export const sortedSessionsListAtom = atom((get) => {
+  const sessions = get(sessionsListAtom)
+  if (!Array.isArray(sessions)) {
+    console.error('sessions is not an array:', sessions)
+    return []
+  }
+  return sortSessions(sessions)
+})
 
 // current session and messages
 
@@ -35,11 +61,20 @@ export const currentSessionIdAtom = atom(
 export const currentSessionAtom = atom((get) => {
   const id = get(currentSessionIdAtom)
   const sessions = get(sessionsListAtom)
+  
+  // 确保 sessions 是一个数组
+  if (!Array.isArray(sessions)) {
+    console.error('sessions is not an array:', sessions)
+    return null
+  }
+
   let currentMeta = sessions.find((session) => session?.id === id)
 
   if (!currentMeta) {
     const sorted = get(sortedSessionsListAtom)
-    currentMeta = sorted[0]
+    if (Array.isArray(sorted) && sorted.length > 0) {
+      currentMeta = sorted[0]
+    }
   }
   if (!currentMeta) {
     return null

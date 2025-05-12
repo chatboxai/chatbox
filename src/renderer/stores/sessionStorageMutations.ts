@@ -1,11 +1,11 @@
-import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
+import { defaultSessionsForCN, defaultSessionsForEN, imageCreatorSessionForCN, imageCreatorSessionForEN } from '@/packages/initial_data'
 import platform from '@/platform'
 import storage from '@/storage'
 import { StorageKey, StorageKeyGenerator } from '@/storage/StoreStorage'
 import { arrayMove } from '@dnd-kit/sortable'
 import { getDefaultStore } from 'jotai'
 import { omit, pick } from 'lodash'
-import { copyMessage, copyThreads, Message, Session, SessionMeta } from 'src/shared/types'
+import { copyMessage, copyThreads, Message, Session, SessionMeta, SessionType } from 'src/shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { migrateSession, sortSessions } from '../utils/session-utils'
 import * as atoms from './atoms'
@@ -97,31 +97,60 @@ export function getSessionMeta(session: SessionMeta) {
 async function initPresetSessions() {
   const lang = await platform.getLocale().catch((e) => 'en')
   const defaultSessions = lang.startsWith('zh') ? defaultSessionsForCN : defaultSessionsForEN
+  const imageCreatorSession = lang.startsWith('zh') ? imageCreatorSessionForCN : imageCreatorSessionForEN
 
-  await pMap(defaultSessions, (session) => storage.setItemNow(StorageKeyGenerator.session(session.id), session), {
+  // 确保图片创建器会话被正确初始化
+  const allSessions = [...defaultSessions]
+  if (imageCreatorSession) {
+    allSessions.push(imageCreatorSession)
+  }
+
+  // 并行存储所有会话
+  await pMap(allSessions, (session) => storage.setItemNow(StorageKeyGenerator.session(session.id), session), {
     concurrency: 5,
   })
-  const sessionList = defaultSessions.map(getSessionMeta)
+
+  // 创建会话列表
+  const sessionList = allSessions.map(getSessionMeta)
   await storage.setItemNow(StorageKey.ChatSessionsList, sessionList)
   return sessionList
 }
 
 export async function initSessionsIfNeeded() {
-  const sessionList = await storage.getItem(StorageKey.ChatSessionsList, [])
-  if (sessionList.length > 0) {
-    return
-  }
-  const sessions = await storage.getItem(StorageKey.ChatSessions, [])
-  if (sessions.length > 0) {
-    return
-  }
-  const newSessionList = await initPresetSessions()
-  // 初始化之后，立即写入版本号，防止后续执行 migration
-  await storage.setItemNow(StorageKey.ConfigVersion, CurrentVersion)
+  try {
+    const sessionList = await storage.getItem(StorageKey.ChatSessionsList, [])
+    if (sessionList.length > 0) {
+      console.log('Found existing session list:', sessionList.length)
+      return
+    }
+    const sessions = await storage.getItem(StorageKey.ChatSessions, [])
+    if (sessions.length > 0) {
+      console.log('Found existing sessions:', sessions.length)
+      return
+    }
+    console.log('Initializing preset sessions...')
+    const newSessionList = await initPresetSessions()
+    // 初始化之后，立即写入版本号，防止后续执行 migration
+    await storage.setItemNow(StorageKey.ConfigVersion, CurrentVersion)
 
-  // 同时写入 atom，避免后续被覆盖
-  const store = getDefaultStore()
-  store.set(atoms.sessionsListAtom, newSessionList)
+    // 同时写入 atom，避免后续被覆盖
+    const store = getDefaultStore()
+    store.set(atoms.sessionsListAtom, newSessionList)
+  } catch (error) {
+    console.error('Failed to initialize sessions:', error)
+    // 如果初始化失败，创建一个空会话
+    const emptySession = {
+      id: uuidv4(),
+      name: 'Untitled',
+      type: 'chat' as SessionType,
+      messages: [],
+    }
+    await storage.setItemNow(StorageKeyGenerator.session(emptySession.id), emptySession)
+    const sessionList = [getSessionMeta(emptySession)]
+    await storage.setItemNow(StorageKey.ChatSessionsList, sessionList)
+    const store = getDefaultStore()
+    store.set(atoms.sessionsListAtom, sessionList)
+  }
 }
 
 export function clearConversations(keepNum: number) {

@@ -297,15 +297,15 @@ export const defaultSessionsForCN: Session[] = [
 ]
 
 export const imageCreatorSessionForCN: Session = {
-  id: 'chatbox-chat-demo-image-creator',
-  name: 'Image Creator (Example)',
+  id: 'chatbox-chat-demo-image-creator-cn',
+  name: 'Image Creator (示例)',
   type: 'picture',
   starred: true,
   messages: [
     {
       id: 'chatbox-chat-demo-image-creator-message-id-1',
       role: 'system' as const,
-      content: `Hi！我是 Chatbox Image Creator，“无情”的图片制造机。我可以根据你的描述生成精美图片，只要你能想象得到，我就能创造出来——迷人的风景、生动的角色、App 图标、或者抽象的构思……
+      content: `Hi！我是 Chatbox Image Creator，"无情"的图片制造机。我可以根据你的描述生成精美图片，只要你能想象得到，我就能创造出来——迷人的风景、生动的角色、App 图标、或者抽象的构思……
 
 (๑•́ ₃ •̀๑) 额…我是一个有点自闭的机器人，所以**请直接告诉我你想要图片的文字描述**，我会集中我所有的像素去实现你的想象。
 
@@ -405,7 +405,7 @@ export const imageCreatorSessionForCN: Session = {
 }
 
 export const imageCreatorSessionForEN: Session = {
-  id: 'chatbox-chat-demo-image-creator',
+  id: 'chatbox-chat-demo-image-creator-en',
   name: 'Image Creator (Example)',
   type: 'picture',
   starred: true,
@@ -413,11 +413,11 @@ export const imageCreatorSessionForEN: Session = {
     {
       id: 'chatbox-chat-demo-image-creator-message-id-1',
       role: 'system' as const,
-      content: `Hi! I'm Chatbox Image Creator, your artistic AI companion dedicated to converting your words into striking visuals. If you can dream it, I can create it—from enchanting landscapes, dynamic characters, app icons to the abstract and beyond.
+      content: `Hi! I'm Chatbox Image Creator, the "ruthless" image maker. I can generate beautiful images based on your descriptions - as long as you can imagine it, I can create it - stunning landscapes, vivid characters, app icons, or abstract concepts...
 
-I'm a quiet robot, just **simply tell me the description of the image you have in mind**, and I'll focus all my pixels into crafting your vision.
+(๑•́ ₃ •̀๑) Well... I'm a bit of an introverted robot, so **please just tell me the text description of the image you want**, and I'll focus all my pixels on realizing your imagination.
 
-Let's make art!`,
+Now let your imagination run wild!`,
     },
     {
       id: 'chatbox-chat-demo-image-creator-message-id-2',
@@ -552,7 +552,7 @@ export const artifactSessionCN: Session = {
     {
       id: 'a2c3edf2-3771-42bf-bd62-dfca2b9fcd65',
       content:
-        '请进一步改进：\n\n1. 添加方向按键，这样手机触摸屏也能玩\n2. 添加游戏得分\n3. 添加“开始游戏”与“重新开始”的按钮\n3. 重新设计一下 UI 样式',
+        '请进一步改进：\n\n1. 添加方向按键，这样手机触摸屏也能玩\n2. 添加游戏得分\n3. 添加"开始游戏"与"重新开始"的按钮\n3. 重新设计一下 UI 样式',
       role: 'user' as const,
       timestamp: 1721206033930,
       wordCount: 55,

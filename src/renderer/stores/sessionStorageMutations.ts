@@ -74,6 +74,7 @@ export function reorderSessions(oldIndex: number, newIndex: number) {
 
 export function copySession(
   sourceMeta: SessionMeta & {
+    name?: Session['name']
     messages?: Session['messages']
     threads?: Session['threads']
     threadName?: Session['threadName']
@@ -82,6 +83,7 @@ export function copySession(
   const source = getSession(sourceMeta.id)!
   const newSession = {
     ...omit(source, 'id', 'messages', 'threads', 'messageForksHash'),
+    ...(sourceMeta.name ? { name: sourceMeta.name } : {}),
     messages: sourceMeta.messages ? sourceMeta.messages.map(copyMessage) : source.messages.map(copyMessage),
     threads: sourceMeta.threads ? copyThreads(sourceMeta.threads) : source.threads,
     messageForksHash: undefined, // 不复制分叉数据

@@ -4,7 +4,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import ImageIcon from '@mui/icons-material/Image'
 import BookmarkIcon from '@mui/icons-material/Bookmark'
 import { Box, Chip, IconButton, Tooltip, Typography, useTheme } from '@mui/material'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { PanelRightClose } from 'lucide-react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -26,28 +26,43 @@ export default function Header(props: Props) {
   const currentSession = useAtomValue(atoms.currentSessionAtom)
   const [showSidebar, setShowSidebar] = useAtom(atoms.showSidebarAtom)
   const [bookmarkSidebarOpen, setBookmarkSidebarOpen] = useAtom(bookmarkSidebarOpenAtom)
-
+  const setBookmarks = useSetAtom(atoms.bookmarksAtom)
   const isSmallScreen = useIsSmallScreen()
-
   const { needRoomForMacWindowControls, needRoomForWindowsWindowControls } = useNeedRoomForWinControls()
 
-  // 会话名称自动生成
+  // 会话名称自动生成和底部书签插入
   useEffect(() => {
-    if (!currentSession) {
-      return
+    if (!currentSession) return;
+    if (currentSession.messages && currentSession.messages.length > 0) {
+      const lastMsg = currentSession.messages[currentSession.messages.length - 1];
+      setBookmarks((prev) => {
+        // 先移除当前会话的"返回最后一个"书签
+        const filtered = prev.filter(
+          (b) => !(b.sessionId === currentSession.id && b.title === '返回最后一个')
+        );
+        // 再插入最新的
+        return [
+          ...filtered,
+          {
+            messageId: lastMsg.id,
+            title: '返回最后一个',
+            timestamp: Date.now(),
+            sessionId: currentSession.id,
+          },
+        ];
+      });
     }
-    const autoGenerateTitle = settingActions.getAutoGenerateTitle()
-    if (!autoGenerateTitle) {
-      return
-    }
+    // 自动生成会话名称
+    const autoGenerateTitle = settingActions.getAutoGenerateTitle();
+    if (!autoGenerateTitle) return;
     if (currentSession.name === 'Untitled' && currentSession.messages.length >= 2) {
-      sessionActions.generateNameAndThreadName(currentSession.id)
-      return // 生成了会话名称，就不再生成 thread 名称
+      sessionActions.generateNameAndThreadName(currentSession.id);
+      return;
     }
     if (!currentSession.threadName && currentSession.messages.length >= 2) {
-      sessionActions.generateThreadName(currentSession.id)
+      sessionActions.generateThreadName(currentSession.id);
     }
-  }, [currentSession?.messages.length])
+  }, [currentSession?.id, currentSession?.messages.length, setBookmarks]);
 
   const editCurrentSession = () => {
     if (!currentSession) {

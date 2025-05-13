@@ -32,15 +32,12 @@ export default function Toolbar() {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
   const isLargeScreen = useIsLargeScreen()
-
   const currentSession = useAtomValue(atoms.currentSessionAtom)
   const [showUpdateNotification, setShowUpdateNotification] = useState(false)
-
   const setOpenSearchDialog = useSetAtom(atoms.openSearchDialogAtom)
   const setThreadHistoryDrawerOpen = useSetAtom(atoms.showThreadHistoryDrawerAtom)
   const [widthFull, setWidthFull] = useAtom(atoms.widthFullAtom)
   const setBookmarkSidebarOpen = useSetAtom(bookmarkSidebarOpenAtom)
-
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const open = Boolean(anchorEl)
 

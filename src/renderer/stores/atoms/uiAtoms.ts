@@ -22,7 +22,7 @@ export const messageScrollingAtBottomAtom = atom(false)
 export const messageScrollingScrollPositionAtom = atom<number>(0) // 当前视图高度位置（包含了视图的高度+视图距离顶部的偏移）
 
 // Sidebar visibility
-export const showSidebarAtom = atom(true)
+export const showSidebarAtom = atom(false)
 
 // Dialog states (excluding settings, session clean, copilot which were moved)
 export const openSearchDialogAtom = atom(false)

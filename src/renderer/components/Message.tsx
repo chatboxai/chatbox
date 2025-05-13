@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { Message, SessionType } from '../../shared/types'
 import ReplayIcon from '@mui/icons-material/Replay'
 import CopyAllIcon from '@mui/icons-material/CopyAll'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom, useAtom } from 'jotai'
 import {
   messageScrollingScrollPositionAtom,
   pictureShowAtom,
@@ -67,6 +67,8 @@ import Loading from './icons/Loading'
 import { getMessageText } from '@/utils/message'
 import { isEmpty } from 'lodash'
 import { ToolCallPartUI } from './message-parts/ToolCallPartUI'
+import BookmarkIcon from '@mui/icons-material/Bookmark'
+import { bookmarksAtom, Bookmark } from '../stores/atoms'
 
 interface Props {
   id?: string
@@ -106,6 +108,7 @@ const Message: FC<Props> = (props) => {
   const autoPreviewArtifacts = useAtomValue(autoPreviewArtifactsAtom)
   const autoCollapseCodeBlock = useAtomValue(autoCollapseCodeBlockAtom)
   const webBrowsingMode = useAtomValue(inputBoxWebBrowsingModeAtom)
+  const [bookmarks, setBookmarks] = useAtom(bookmarksAtom)
 
   const [previewArtifact, setPreviewArtifact] = useState(autoPreviewArtifacts)
   const contentLength = useMemo(() => {
@@ -345,6 +348,24 @@ const Message: FC<Props> = (props) => {
           : undefined,
     })
   }
+
+  const handleAddBookmark = () => {
+    if (isBookmarked) {
+      setBookmarks((prev: Bookmark[]) => prev.filter((b: Bookmark) => b.messageId !== msg.id))
+      toastActions.add(t('Bookmark removed'))
+    } else {
+      const newBookmark: Bookmark = {
+        messageId: msg.id,
+        title: getMessageText(msg).slice(0, 50) + '...',
+        timestamp: Date.now(),
+        sessionId: props.sessionId
+      }
+      setBookmarks((prev: Bookmark[]) => [...prev, newBookmark])
+      toastActions.add(t('Bookmark added'))
+    }
+  }
+
+  const isBookmarked = bookmarks.some((b: Bookmark) => b.messageId === msg.id)
 
   return (
     <Box
@@ -753,6 +774,18 @@ const Message: FC<Props> = (props) => {
                         </IconButton>
                       </Tooltip>
                     )}
+                    <Tooltip title={isBookmarked ? t('Remove bookmark') : t('Add bookmark')} placement="top">
+                      <IconButton
+                        aria-label="bookmark"
+                        onClick={handleAddBookmark}
+                        color={props.sessionType === 'picture' ? 'secondary' : 'primary'}
+                        sx={{
+                          color: isBookmarked ? theme.palette.warning.main : undefined
+                        }}
+                      >
+                        <BookmarkIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <IconButton onClick={handleClick} color={props.sessionType === 'picture' ? 'secondary' : 'primary'}>
                       <MoreVertIcon fontSize="small" />
                     </IconButton>

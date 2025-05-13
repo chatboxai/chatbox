@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import NiceModal from '@ebay/nice-modal-react'
 import EditIcon from '@mui/icons-material/Edit'
 import ImageIcon from '@mui/icons-material/Image'
+import BookmarkIcon from '@mui/icons-material/Bookmark'
 import { Box, Chip, IconButton, Tooltip, Typography, useTheme } from '@mui/material'
 import { useAtom, useAtomValue } from 'jotai'
 import { PanelRightClose } from 'lucide-react'
@@ -14,6 +15,8 @@ import * as atoms from '../stores/atoms'
 import * as sessionActions from '../stores/sessionActions'
 import * as settingActions from '../stores/settingActions'
 import Toolbar from './Toolbar'
+import BookmarkSidebar from './BookmarkSidebar'
+import { bookmarkSidebarOpenAtom } from '../stores/atoms'
 
 interface Props {}
 
@@ -22,6 +25,7 @@ export default function Header(props: Props) {
   const theme = useTheme()
   const currentSession = useAtomValue(atoms.currentSessionAtom)
   const [showSidebar, setShowSidebar] = useAtom(atoms.showSidebarAtom)
+  const [bookmarkSidebarOpen, setBookmarkSidebarOpen] = useAtom(bookmarkSidebarOpenAtom)
 
   const isSmallScreen = useIsSmallScreen()
 
@@ -84,78 +88,103 @@ export default function Header(props: Props) {
   }
 
   return (
-    <div
-      className={cn(
-        // 固定高度，和 Windows 的 win controls bar 高度一致
-        'title-bar flex flex-row h-12 items-center',
-        isSmallScreen ? '' : showSidebar ? 'sm:pl-3 sm:pr-2' : 'pr-2',
-        (!showSidebar || isSmallScreen) && needRoomForMacWindowControls ? 'pl-20' : 'pl-3'
-      )}
-      style={{
-        borderBottomWidth: '1px',
-        borderBottomStyle: 'solid',
-        borderBottomColor: theme.palette.divider,
-      }}
-    >
-      {(!showSidebar || isSmallScreen) && (
-        <Box className={cn('controls cursor-pointer')} onClick={() => setShowSidebar(!showSidebar)}>
-          <IconButton
-            sx={
-              isSmallScreen
-                ? {
-                    borderColor: theme.palette.action.hover,
-                    borderStyle: 'solid',
-                    borderWidth: 1,
-                  }
-                : {}
-            }
+    <div className="relative">
+      <div
+        className={cn(
+          'title-bar flex flex-row h-12 items-center',
+          isSmallScreen ? '' : showSidebar ? 'sm:pl-3 sm:pr-2' : 'pr-2',
+          (!showSidebar || isSmallScreen) && needRoomForMacWindowControls ? 'pl-20' : 'pl-3'
+        )}
+        style={{
+          borderBottomWidth: '1px',
+          borderBottomStyle: 'solid',
+          borderBottomColor: theme.palette.divider,
+        }}
+      >
+        {(!showSidebar || isSmallScreen) && (
+          <Box 
+            className="controls cursor-pointer" 
+            onClick={() => setShowSidebar(!showSidebar)}
+            sx={{ 
+              marginRight: 2,
+              display: 'flex',
+              alignItems: 'center',
+              '&:hover': {
+                backgroundColor: theme.palette.action.hover,
+                borderRadius: '50%'
+              }
+            }}
           >
-            <PanelRightClose size="20" strokeWidth={1.5} />
-          </IconButton>
-        </Box>
-      )}
-      <div className={cn('w-full mx-auto flex flex-row', 'pt-2 pb-2')}>
-        <Typography
-          variant="h6"
-          color="inherit"
-          component="div"
-          noWrap
-          sx={{
-            flex: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-          className="flex items-center"
-        >
-          <div className={cn('controls flex flex-row cursor-pointer')}>
-            {
-              <Typography
-                variant="h6"
-                noWrap
-                className={cn(showSidebar ? 'ml-3' : 'ml-1')}
-                sx={{
-                  maxWidth: isSmallScreen ? '12rem' : '18rem',
-                }}
-                onClick={() => {
-                  editCurrentSession()
-                }}
-              >
-                {currentSession.name}
-              </Typography>
-            }
-            <div
-              onClick={() => {
-                editCurrentSession()
+            <IconButton
+              sx={{
+                ...(isSmallScreen
+                  ? {
+                      borderColor: theme.palette.action.hover,
+                      borderStyle: 'solid',
+                      borderWidth: 1,
+                    }
+                  : {}),
+                color: theme.palette.text.secondary,
+                '&:hover': {
+                  backgroundColor: theme.palette.action.hover,
+                  color: theme.palette.text.primary,
+                }
               }}
             >
-              {EditButton}
+              <PanelRightClose size="20" strokeWidth={1.5} />
+            </IconButton>
+          </Box>
+        )}
+        <div className="flex items-center flex-1">
+          <Typography
+            variant="h6"
+            color="inherit"
+            component="div"
+            noWrap
+            sx={{
+              flex: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+            className="flex items-center"
+          >
+            <div className={cn('controls flex flex-row cursor-pointer')}>
+              {currentSession && (
+                <>
+                  <Typography
+                    variant="h6"
+                    noWrap
+                    className={cn(showSidebar ? 'ml-3' : 'ml-1')}
+                    sx={{
+                      maxWidth: isSmallScreen ? '12rem' : '18rem',
+                    }}
+                    onClick={() => {
+                      editCurrentSession()
+                    }}
+                  >
+                    {currentSession.name}
+                  </Typography>
+                  <div
+                    onClick={() => {
+                      editCurrentSession()
+                    }}
+                  >
+                    {EditButton}
+                  </div>
+                </>
+              )}
             </div>
+          </Typography>
+        </div>
+
+        <div className="flex items-center">
+          <div className={needRoomForWindowsWindowControls ? 'mr-36' : ''}>
+            <Toolbar />
           </div>
-        </Typography>
-        <div className={needRoomForWindowsWindowControls ? 'mr-36' : ''}>
-          <Toolbar />
+          {/* 书签按钮已移入 Toolbar 的更多菜单 */}
         </div>
       </div>
+      <BookmarkSidebar open={bookmarkSidebarOpen} onClose={() => setBookmarkSidebarOpen(false)} />
     </div>
   )
 }

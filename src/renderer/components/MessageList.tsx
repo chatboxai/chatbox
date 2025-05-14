@@ -80,6 +80,7 @@ export default function MessageList(props: { className?: string; currentSession:
             setAtBottom(atBottom)
           }}
           ref={virtuoso}
+          followOutput={true}
           {...(sessionScrollPositionCache.has(currentSession.id)
             ? {
                 restoreStateFrom: sessionScrollPositionCache.get(currentSession.id),

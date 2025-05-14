@@ -326,7 +326,7 @@ export function moveThreadToConversations(sessionId: string, threadId: string) {
     ...session,
     name: targetThread.name,
     messages: targetThread.messages,
-    threads: undefined,
+    threads: [],
     threadName: undefined,
   })
   removeThread(sessionId, threadId)
@@ -342,7 +342,7 @@ export function moveCurrentThreadToConversations(sessionId: string) {
     ...session,
     name: session.threadName || session.name,
     messages: session.messages,
-    threads: undefined,
+    threads: [],
     threadName: undefined,
   })
   removeCurrentThread(sessionId)

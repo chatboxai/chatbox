@@ -21,6 +21,8 @@ import NiceModal from '@ebay/nice-modal-react'
 import { removeSession } from '@/stores/sessionStorageMutations'
 import UpdateAvailableButton from './UpdateAvailableButton'
 import platform from '@/platform'
+import BookmarkIcon from '@mui/icons-material/Bookmark'
+import { bookmarkSidebarOpenAtom } from '../stores/atoms'
 
 /**
  * 顶部标题工具栏（右侧）
@@ -30,14 +32,12 @@ export default function Toolbar() {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
   const isLargeScreen = useIsLargeScreen()
-
   const currentSession = useAtomValue(atoms.currentSessionAtom)
   const [showUpdateNotification, setShowUpdateNotification] = useState(false)
-
   const setOpenSearchDialog = useSetAtom(atoms.openSearchDialogAtom)
   const setThreadHistoryDrawerOpen = useSetAtom(atoms.showThreadHistoryDrawerAtom)
   const [widthFull, setWidthFull] = useAtom(atoms.widthFullAtom)
-
+  const setBookmarkSidebarOpen = useSetAtom(bookmarkSidebarOpenAtom)
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const open = Boolean(anchorEl)
 
@@ -133,6 +133,13 @@ export default function Toolbar() {
         <MoreHorizIcon />
       </IconButton>
       <StyledMenu anchorEl={anchorEl} open={open} onClose={handleMoreMenuClose}>
+        <MenuItem onClick={() => {
+          setBookmarkSidebarOpen(true)
+          handleMoreMenuClose()
+        }} divider>
+          <BookmarkIcon fontSize="small" style={{ marginRight: 8 }} />
+          {t('Bookmarks')}
+        </MenuItem>
         <MenuItem onClick={handleExportAndSave} disableRipple divider>
           <Save fontSize="small" />
           {t('Export Chat')}

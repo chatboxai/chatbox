@@ -21,6 +21,9 @@ export function migrateSession(session: Session): Session {
 }
 
 export function sortSessions(sessions: SessionMeta[]): SessionMeta[] {
+  if (!sessions || !Array.isArray(sessions)) {
+    return []
+  }
   let reversed: SessionMeta[] = []
   let pinned: SessionMeta[] = []
   for (const sess of sessions) {

@@ -12,6 +12,7 @@ import DeepSeek from './deepseek'
 import SiliconFlow from './siliconflow'
 import Perplexity from './perplexity'
 import XAI from './xai'
+import BurnCloud from './burncloud'
 import type { ModelInterface } from './types'
 import CustomOpenAI from './custom-openai'
 import { SystemProviders } from 'src/shared/defaults'
@@ -143,6 +144,17 @@ export function getModel(setting: Settings, config: Config): ModelInterface {
         temperature: setting.temperature,
         topP: setting.topP,
       })
+
+    case ModelProvider.BurnCloud:
+      return new BurnCloud({
+        apiKey: providerSetting.apiKey || '',
+        apiHost: formattedApiHost,
+        model: setting.modelId || '',
+        temperature: setting.temperature,
+        topP: setting.topP,
+        useProxy: providerSetting.useProxy,
+      })
+
     default:
       if (providerBaseInfo.isCustom) {
         return new CustomOpenAI({
@@ -174,6 +186,7 @@ export const aiProviderNameHash: Record<ModelProvider, string> = {
   [ModelProvider.LMStudio]: 'LM Studio API',
   [ModelProvider.Perplexity]: 'Perplexity API',
   [ModelProvider.XAI]: 'xAI API',
+  [ModelProvider.BurnCloud]: 'BurnCloud API',
   [ModelProvider.Custom]: 'Custom Provider',
 }
 
@@ -242,6 +255,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProvider.ChatGLM6B,
     label: aiProviderNameHash[ModelProvider.ChatGLM6B],
+    disabled: false,
+  },
+  {
+    value: ModelProvider.BurnCloud,
+    label: aiProviderNameHash[ModelProvider.BurnCloud],
     disabled: false,
   },
   // {

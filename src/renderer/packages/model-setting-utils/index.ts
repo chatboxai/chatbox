@@ -14,6 +14,7 @@ import CustomModelSettingUtil from './custom-setting-util'
 import DeepSeekSettingUtil from './deepseek-setting-util'
 import SiliconFlowSettingUtil from './siliconflow-setting-util'
 import XAISettingUtil from './xai-setting-util'
+import BurnCloudSettingUtil from './burncloud-setting-util'
 
 export function getModelSettingUtil(aiProvider: ModelProvider): ModelSettingUtil {
   const hash: Record<ModelProvider, new () => ModelSettingUtil> = {
@@ -31,6 +32,7 @@ export function getModelSettingUtil(aiProvider: ModelProvider): ModelSettingUtil
     [ModelProvider.Perplexity]: PerplexitySettingUtil,
     [ModelProvider.XAI]: XAISettingUtil,
     [ModelProvider.Custom]: CustomModelSettingUtil,
+    [ModelProvider.BurnCloud]: BurnCloudSettingUtil,
   }
   const Class = hash[aiProvider] || CustomModelSettingUtil
   return new Class()

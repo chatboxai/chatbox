@@ -39,7 +39,7 @@ export default function SliderWithInput({ value, onChange, min = 0, max = 1, ste
   const handleInputBlur = useCallback(() => {
     if (tempInputValue) {
       const v = parseFloat(tempInputValue)
-      if (v >= min && v <= max) {
+      if (v >= min) {
         onChange?.(v)
       }
     }

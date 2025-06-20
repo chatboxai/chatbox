@@ -97,6 +97,7 @@ export function settings(): Settings {
     autoLaunch: false,
     autoUpdate: true,
     betaUpdate: false,
+    startupPage: 'home',
 
     shortcuts: {
       quickToggle: 'Alt+`', // 快速切换窗口显隐的快捷键
@@ -140,7 +141,7 @@ export function chatSessionSettings(): SessionSettings {
   return {
     provider: ModelProviderEnum.ChatboxAI,
     modelId: 'chatboxai-4',
-    maxContextMessageCount: 6,
+    maxContextMessageCount: Number.MAX_SAFE_INTEGER,
   }
 }
 

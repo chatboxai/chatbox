@@ -6,7 +6,8 @@ import platform from '../platform'
 import { FetchError } from 'ofetch'
 import omit from 'lodash/omit'
 import * as Sentry from '@sentry/react'
-import { ModelProvider, Settings } from 'src/shared/types'
+import { Settings } from 'src/shared/types'
+import { mcpController } from '@/packages/mcp/controller'
 
 /**
  * 自动验证当前的 license 是否有效，如果无效则清除相关数据
@@ -71,7 +72,15 @@ export async function deactivate() {
     licenseKey: '',
     licenseDetail: undefined,
     licenseInstances: omit(settings.licenseInstances, settings.licenseKey || ''),
+    mcp: {
+      ...settings.mcp,
+      enabledBuiltinServers: [],
+    },
   }))
+  // 停止所有内置MCP服务器
+  settings.mcp.enabledBuiltinServers.forEach((serverId) => {
+    mcpController.stopServer(serverId).catch(console.error)
+  })
   // 更新服务器状态（取消激活 license）
   const licenseKey = settings.licenseKey || ''
   const licenseInstances = settings.licenseInstances || {}

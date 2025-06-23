@@ -12,66 +12,70 @@ import checkNodeEnv from '../scripts/check-node-env'
 
 checkNodeEnv('development')
 
+const EXCLUDE_MODULES = new Set([
+  '@modelcontextprotocol/sdk', // avoid `Package path . is not exported from package` error
+])
+
 const dist = webpackPaths.dllPath
 
 const configuration: webpack.Configuration = {
-    context: webpackPaths.rootPath,
+  context: webpackPaths.rootPath,
 
-    devtool: 'eval',
+  devtool: 'eval',
 
-    mode: 'development',
+  mode: 'development',
 
-    target: 'electron-renderer',
+  target: 'electron-renderer',
 
-    externals: ['fsevents', 'crypto-browserify'],
+  externals: ['fsevents', 'crypto-browserify'],
+
+  /**
+   * Use `module` from `webpack.config.renderer.dev.js`
+   */
+  module: require('./webpack.config.renderer.dev').default.module,
+
+  entry: {
+    renderer: Object.keys(dependencies || {}).filter((dependency) => !EXCLUDE_MODULES.has(dependency)),
+  },
+
+  output: {
+    path: dist,
+    filename: '[name].dev.dll.js',
+    library: {
+      name: 'renderer',
+      type: 'var',
+    },
+  },
+
+  plugins: [
+    new webpack.DllPlugin({
+      path: path.join(dist, '[name].json'),
+      name: '[name]',
+    }),
 
     /**
-     * Use `module` from `webpack.config.renderer.dev.js`
+     * Create global constants which can be configured at compile time.
+     *
+     * Useful for allowing different behaviour between development builds and
+     * release builds
+     *
+     * NODE_ENV should be production so that modules do not perform certain
+     * development checks
      */
-    module: require('./webpack.config.renderer.dev').default.module,
+    new webpack.EnvironmentPlugin({
+      NODE_ENV: 'development',
+    }),
 
-    entry: {
-        renderer: Object.keys(dependencies || {}),
-    },
-
-    output: {
-        path: dist,
-        filename: '[name].dev.dll.js',
-        library: {
-            name: 'renderer',
-            type: 'var',
+    new webpack.LoaderOptionsPlugin({
+      debug: true,
+      options: {
+        context: webpackPaths.srcPath,
+        output: {
+          path: webpackPaths.dllPath,
         },
-    },
-
-    plugins: [
-        new webpack.DllPlugin({
-            path: path.join(dist, '[name].json'),
-            name: '[name]',
-        }),
-
-        /**
-         * Create global constants which can be configured at compile time.
-         *
-         * Useful for allowing different behaviour between development builds and
-         * release builds
-         *
-         * NODE_ENV should be production so that modules do not perform certain
-         * development checks
-         */
-        new webpack.EnvironmentPlugin({
-            NODE_ENV: 'development',
-        }),
-
-        new webpack.LoaderOptionsPlugin({
-            debug: true,
-            options: {
-                context: webpackPaths.srcPath,
-                output: {
-                    path: webpackPaths.dllPath,
-                },
-            },
-        }),
-    ],
+      },
+    }),
+  ],
 }
 
 export default merge(baseConfig, configuration)

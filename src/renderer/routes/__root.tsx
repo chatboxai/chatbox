@@ -3,7 +3,7 @@ import { useEffect, useMemo } from 'react'
 import CssBaseline from '@mui/material/CssBaseline'
 import { ThemeProvider } from '@mui/material/styles'
 import { Box, Grid } from '@mui/material'
-import { RemoteConfig, ModelProvider, Theme } from '@/../shared/types'
+import { RemoteConfig, Theme, Settings } from '@/../shared/types'
 import CleanWidnow from '@/pages/CleanWindow'
 import useAppTheme from '@/hooks/useAppTheme'
 import useShortcut from '@/hooks/useShortcut'
@@ -26,6 +26,7 @@ import ExitFullscreenButton from '@/components/ExitFullscreenButton'
 import NiceModal from '@ebay/nice-modal-react'
 import '@/modals'
 import {
+  Avatar,
   Button,
   Checkbox,
   Combobox,
@@ -35,6 +36,7 @@ import {
   MantineColorsTuple,
   MantineProvider,
   Modal,
+  NativeSelect,
   rem,
   Select,
   Switch,
@@ -46,6 +48,7 @@ import {
 } from '@mantine/core'
 import { QueryClientProvider } from '@tanstack/react-query'
 import queryClient from '@/stores/queryClient'
+import storage, { StorageKey } from '@/storage'
 
 function Root() {
   const navigate = useNavigate()
@@ -126,6 +129,19 @@ function Root() {
   useAtom(atoms.chatSessionSettingsAtom)
   useAtom(atoms.pictureSessionSettingsAtom)
 
+  useEffect(() => {
+    ;(async () => {
+      const settings = await storage.getItem(StorageKey.Settings, {} as Settings)
+      const sid = JSON.parse(localStorage.getItem('_currentSessionIdCachedAtom') || '""') as string
+      if (sid && settings?.startupPage === 'session') {
+        navigate({
+          to: `/session/${sid}`,
+          replace: true,
+        })
+      }
+    })()
+  }, [])
+
   return (
     <Box className="box-border App" spellCheck={spellCheck} dir={language === 'ar' ? 'rtl' : 'ltr'}>
       {platform.type === 'desktop' && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
@@ -145,7 +161,6 @@ function Root() {
           <Outlet />
         </Box>
       </Grid>
-
       {/* 对话设置 */}
       {/* <AppStoreRatingDialog /> */}
       {/* 代码预览 */}
@@ -172,7 +187,7 @@ function Root() {
       <SearchDialog />
       {/* 没有配置模型时的欢迎弹窗 */}
       {/* <WelcomeDialog /> */}
-      <Toasts />
+      <Toasts /> {/* mui */}
     </Box>
   )
 }
@@ -432,7 +447,32 @@ const creteMantineTheme = (scale = 1) =>
           },
         }),
       }),
+      Textarea: TextInput.extend({
+        defaultProps: {
+          size: 'sm',
+        },
+        styles: () => ({
+          label: {
+            marginBottom: 'var(--chatbox-spacing-xxs)',
+            fontWeight: '600',
+            lineHeight: '1.5',
+          },
+        }),
+      }),
       Select: Select.extend({
+        defaultProps: {
+          size: 'sm',
+          allowDeselect: false,
+        },
+        styles: () => ({
+          label: {
+            marginBottom: 'var(--chatbox-spacing-xxs)',
+            fontWeight: '600',
+            lineHeight: '1.5',
+          },
+        }),
+      }),
+      NativeSelect: NativeSelect.extend({
         defaultProps: {
           size: 'sm',
         },
@@ -491,6 +531,13 @@ const creteMantineTheme = (scale = 1) =>
         defaultProps: {
           shadow: 'md',
         },
+      }),
+      Avatar: Avatar.extend({
+        styles: () => ({
+          image: {
+            objectFit: 'contain',
+          },
+        }),
       }),
     },
   })

@@ -3,4 +3,5 @@ export interface ElectronIPC {
   onSystemThemeChange: (callback: () => void) => () => void
   onWindowShow: (callback: () => void) => () => void
   onUpdateDownloaded: (callback: () => void) => () => void
+  addMcpStdioTransportEventListener: (transportId: string, event: string, callback?: (...args: any[]) => void) => void
 }

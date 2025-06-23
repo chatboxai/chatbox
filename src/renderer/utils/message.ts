@@ -1,7 +1,6 @@
 import { countWord } from '@/packages/word-count'
 import { assign, cloneDeep, omit } from 'lodash'
 import type { Message, MessageContentParts, MessagePicture, SearchResultItem } from 'src/shared/types'
-import i18n from '../i18n'
 
 export function getMessageText(message: Message, includeImagePlaceHolder = true): string {
   if (message.contentParts && message.contentParts.length > 0) {
@@ -11,7 +10,7 @@ export function getMessageText(message: Message, includeImagePlaceHolder = true)
           return c.text
         }
         if (c.type === 'image') {
-          return includeImagePlaceHolder ? i18n.t('[image]') : null
+          return includeImagePlaceHolder ? '[image]' : null
         }
         return ''
       })

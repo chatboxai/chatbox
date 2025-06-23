@@ -1,22 +1,24 @@
-import { createFileRoute, Link, Outlet, useCanGoBack, useRouter, useRouterState } from '@tanstack/react-router'
-import {
-  IconMessages,
-  IconCategory,
-  IconKeyboard,
-  IconInfoCircle,
-  IconWorldWww,
-  IconAdjustmentsHorizontal,
-  IconBox,
-  IconChevronRight,
-} from '@tabler/icons-react'
-import { Box, Flex, Stack, Text, Title } from '@mantine/core'
-import { useTranslation } from 'react-i18next'
 import Page from '@/components/Page'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import clsx from 'clsx'
-import { IconButton, Box as MuiBox, useTheme } from '@mui/material'
-import { ChevronLeft, PanelRightClose } from 'lucide-react'
 import platform from '@/platform'
+import { featureFlags } from '@/utils/feature-flags'
+import { Box, Flex, Stack, Text } from '@mantine/core'
+import { IconButton, Box as MuiBox, useTheme } from '@mui/material'
+import {
+  IconAdjustmentsHorizontal,
+  IconBox,
+  IconCategory,
+  IconChevronRight,
+  IconCircleDottedLetterM,
+  IconKeyboard,
+  IconMessages,
+  IconWorldWww,
+} from '@tabler/icons-react'
+import { createFileRoute, Link, Outlet, useCanGoBack, useRouter, useRouterState } from '@tanstack/react-router'
+import clsx from 'clsx'
+import { ChevronLeft } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Toaster } from 'sonner'
 
 const ITEMS = [
   {
@@ -34,6 +36,15 @@ const ITEMS = [
     label: 'Web Search',
     icon: <IconWorldWww className="w-full h-full" />,
   },
+  ...(featureFlags.mcp
+    ? [
+        {
+          key: 'mcp',
+          label: 'MCP',
+          icon: <IconCircleDottedLetterM className="w-full h-full" />,
+        },
+      ]
+    : []),
   {
     key: 'chat',
     label: 'Chat Settings',
@@ -145,6 +156,7 @@ function RouteComponent() {
           </Box>
         )}
       </Flex>
+      <Toaster richColors position="bottom-center" />
     </Page>
   )
 }

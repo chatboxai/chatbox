@@ -23,3 +23,14 @@
   --chatbox-spacing-xl: 1.5rem;
   --chatbox-spacing-xxl: 2rem;
 }
+
+.mantine-Spotlight-actionsGroup {
+  margin-bottom: 2rem;
+}
+
+.mantine-Spotlight-actionDescription {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}

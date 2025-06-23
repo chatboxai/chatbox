@@ -1,5 +1,5 @@
 import Header from '@/components/Header'
-import InputBox from '@/components/InputBox'
+import InputBoxNew from '@/components/InputBoxNew'
 import MessageList from '@/components/MessageList'
 import ThreadHistoryDrawer from '@/components/ThreadHistoryDrawer'
 import * as atoms from '@/stores/atoms'
@@ -10,6 +10,11 @@ import { Box, ButtonGroup, IconButton } from '@mui/material'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { useEffect } from 'react'
+import * as sessionActions from '@/stores/sessionActions'
+import { createMessage, ModelProvider } from 'src/shared/types'
+import { saveSession } from '@/stores/sessionStorageMutations'
+import NiceModal from '@ebay/nice-modal-react'
+
 export const Route = createFileRoute('/session/$sessionId')({
   component: RouteComponent,
 })
@@ -20,6 +25,9 @@ function RouteComponent() {
   const currentSession = useAtomValue(atoms.currentSessionAtom)
   const setChatSessionSettings = useSetAtom(atoms.chatSessionSettingsAtom)
   const setPictureSessionSettings = useSetAtom(atoms.pictureSessionSettingsAtom)
+  const lastMessage = currentSession?.messages.length
+    ? currentSession.messages[currentSession.messages.length - 1]
+    : null
 
   useEffect(() => {
     setTimeout(() => {
@@ -39,25 +47,94 @@ function RouteComponent() {
         setPictureSessionSettings({ provider, modelId })
       }
     }
-  }, [currentSession])
+  }, [currentSession?.settings])
 
   return currentSession ? (
     <div className="flex flex-col h-full">
-      {/* {
-                    // 小屏幕的广告UI
-                    isSmallScreen && (
-                        <Box className="text-center">
-                            <SponsorChip />
-                        </Box>
-                    )
-                } */}
       <Header />
 
       {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
-      <MessageList key={currentSessionId} currentSession={currentSession} />
+      <MessageList key={'message-list' + currentSessionId} currentSession={currentSession} />
 
       <ScrollButtons />
-      <InputBox />
+      <InputBoxNew
+        key={'input-box' + currentSession.id}
+        sessionId={currentSession.id}
+        sessionType={currentSession.type}
+        model={
+          currentSession.settings?.provider && currentSession.settings?.modelId
+            ? {
+                provider: currentSession.settings.provider,
+                modelId: currentSession.settings.modelId,
+              }
+            : undefined
+        }
+        onStartNewThread={() => {
+          sessionActions.startNewThread()
+          return true
+        }}
+        onRollbackThread={() => {
+          sessionActions.removeCurrentThread(currentSessionId)
+          return true
+        }}
+        onSelectModel={(provider: ModelProvider, modelId: string) => {
+          if (!currentSession) {
+            return
+          }
+          saveSession({
+            id: currentSession.id,
+            settings: {
+              ...(currentSession.settings || {}),
+              provider,
+              modelId,
+            },
+          })
+        }}
+        onClickSessionSettings={() => {
+          if (!currentSession) {
+            return false
+          }
+          NiceModal.show('session-settings', {
+            chatConfigDialogSessionId: currentSession.id,
+          })
+          return true
+        }}
+        generating={lastMessage?.generating}
+        onSubmit={async ({
+          needGenerating = true,
+          input = '',
+          pictureKeys = [],
+          attachments = [],
+          links = [],
+          webBrowsing = false,
+        }) => {
+          const newMessage = createMessage('user', input)
+          if (pictureKeys?.length) {
+            newMessage.contentParts = newMessage.contentParts ?? []
+            newMessage.contentParts.push(...pictureKeys.map((k) => ({ type: 'image' as const, storageKey: k })))
+          }
+          sessionActions.submitNewUserMessage({
+            currentSessionId: currentSessionId,
+            newUserMsg: newMessage,
+            needGenerating,
+            attachments,
+            links,
+            webBrowsing,
+          })
+          return true
+        }}
+        onStopGenerating={() => {
+          if (!currentSession) {
+            return false
+          }
+          if (lastMessage?.generating) {
+            lastMessage?.cancel?.()
+            sessionActions.modifyMessage(currentSession.id, { ...lastMessage, generating: false }, true)
+          }
+          return true
+        }}
+      />
+      {/* <InputBox /> */}
       <ThreadHistoryDrawer />
     </div>
   ) : null

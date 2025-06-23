@@ -1,13 +1,15 @@
 <!DOCTYPE html>
 <html>
-
-<head>
+  <head>
     <meta charset="utf-8" />
     <!-- <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self' *.example.com"
     /> -->
-    <meta name="viewport" content="height=device-height, width=device-width, initial-scale=1, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="height=device-height, width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover"
+    />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="chatbox" />
     <meta name="theme-color" content="#000000" />
@@ -30,25 +32,54 @@
     <title>Chatbox</title>
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-B365F44W6E"></script>
+    <script defer data-domain="app.chatboxai.app" src="https://plausible.midway.run/js/script.local.hash.js"></script>
     <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('js', new Date());
-
-        // gtag('config', 'G-B365F44W6E');
+      window.plausible =
+        window.plausible ||
+        function () {
+          ;(window.plausible.q = window.plausible.q || []).push(arguments)
+        }
     </script>
-</head>
 
-<body>
+    <script>
+      window.dataLayer = window.dataLayer || []
+      function gtag() {
+        dataLayer.push(arguments)
+      }
+      gtag('js', new Date())
+
+      // gtag('config', 'G-B365F44W6E');
+    </script>
+    <script>
+      var initialTheme = localStorage.getItem('initial-theme')
+      if (initialTheme === 'light' || initialTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', initialTheme)
+        document.documentElement.setAttribute('data-mantine-color-scheme', initialTheme)
+      }
+    </script>
+    <style>
+      html[data-theme='dark'] {
+        background-color: #242424;
+      }
+      .loading-text-color {
+        color: #333;
+      }
+      html[data-theme='dark'] .loading-text-color {
+        color: #fff;
+      }
+    </style>
+  </head>
+
+  <body>
     <div id="root">
-        <div style="height: 80vh; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-            <h1 style="font-family: 'Roboto', sans-serif; font-weight: 700; color: #333; margin: 0;" >
-                Chatbox
-            </h1>
-            <p style="font-family: 'Roboto', sans-serif; font-weight: 400; color: #333; opacity: 0.4;" >
-                loading...
-            </p>
-        </div>
+      <div style="height: 80vh; display: flex; flex-direction: column; justify-content: center; align-items: center">
+        <h1 style="font-family: 'Roboto', sans-serif; font-weight: 700; margin: 0" class="loading-text-color">
+          Chatbox
+        </h1>
+        <p style="font-family: 'Roboto', sans-serif; font-weight: 400; opacity: 0.4" class="loading-text-color">
+          loading...
+        </p>
+      </div>
     </div>
     <!--
       This HTML file is a template.
@@ -60,6 +91,5 @@
       To begin the development, run `npm start` or `yarn start`.
       To create a production bundle, use `npm run build` or `yarn build`.
     -->
-</body>
-
+  </body>
 </html>

@@ -16,6 +16,7 @@ export const switchTheme = async (theme: Theme) => {
     finalTheme = theme === Theme.Dark ? 'dark' : 'light'
   }
   store.set(realThemeAtom, finalTheme)
+  localStorage.setItem('initial-theme', finalTheme)
   if (platform instanceof DesktopPlatform) {
     await platform.switchTheme(finalTheme)
   }
@@ -81,5 +82,14 @@ export function getThemeDesign(realTheme: 'light' | 'dark', fontSize: number, la
       fontSize: (fontSize * 14) / 16,
     },
     direction: language === 'ar' ? 'rtl' : 'ltr',
+    breakpoints: {
+      values: {
+        xs: 0,
+        sm: 640, // 修改sm的值与tailwindcss保持一致
+        md: 900,
+        lg: 1200,
+        xl: 1536,
+      },
+    },
   }
 }

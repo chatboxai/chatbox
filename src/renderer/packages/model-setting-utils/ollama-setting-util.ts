@@ -1,10 +1,10 @@
-import { ModelProvider, ProviderSettings, Session, SessionType, Settings } from 'src/shared/types'
-import { ModelSettingUtil } from './interface'
+import { ModelProvider, ModelProviderEnum, ProviderSettings, SessionType } from 'src/shared/types'
 import Ollama from '../models/ollama'
 import BaseConfig from './base-config'
+import { ModelSettingUtil } from './interface'
 
 export default class OllamaSettingUtil extends BaseConfig implements ModelSettingUtil {
-  public provider: ModelProvider = ModelProvider.Ollama
+  public provider: ModelProvider = ModelProviderEnum.Ollama
   async getCurrentModelDisplayName(
     model: string,
     sessionType: SessionType,
@@ -13,20 +13,15 @@ export default class OllamaSettingUtil extends BaseConfig implements ModelSettin
     return `Ollama (${providerSettings?.models?.find((m) => m.modelId === model)?.nickname || model})`
   }
 
-  public getLocalOptionGroups() {
-    return []
-  }
-
   protected async listProviderModels(settings: ProviderSettings) {
-    const ollama = new Ollama({ ollamaHost: settings.apiHost!, ollamaModel: '', temperature: 0 })
+    const ollama = new Ollama({
+      ollamaHost: settings.apiHost!,
+      model: {
+        modelId: '',
+        capabilities: [],
+      },
+      temperature: 0,
+    })
     return ollama.listModels()
-  }
-
-  isCurrentModelSupportImageInput(model: string): boolean {
-    return Ollama.helpers.isModelSupportVision(model)
-  }
-
-  isCurrentModelSupportToolUse(model: string): boolean {
-    return Ollama.helpers.isModelSupportToolUse(model)
   }
 }

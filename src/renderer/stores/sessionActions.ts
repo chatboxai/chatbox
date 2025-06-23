@@ -4,9 +4,8 @@ import { formatChatAsHtml, formatChatAsMarkdown, formatChatAsTxt } from '@/lib/f
 import * as appleAppStore from '@/packages/apple_app_store'
 import * as localParser from '@/packages/local-parser'
 import { generateImage, generateText, streamText } from '@/packages/model-calls'
-import { getModelDisplayName, isModelSupportToolUse } from '@/packages/model-setting-utils'
+import { getModelDisplayName } from '@/packages/model-setting-utils'
 import { getModel } from '@/packages/models'
-import type { onResultChangeWithCancel } from '@/packages/models/types'
 import {
   AIProviderNoImplementedPaintError,
   ApiError,
@@ -14,9 +13,11 @@ import {
   ChatboxAIAPIError,
   NetworkError,
 } from '@/packages/models/errors'
+import type { onResultChangeWithCancel } from '@/packages/models/types'
 import * as remote from '@/packages/remote'
 import { estimateTokensFromMessages } from '@/packages/token'
 import { router } from '@/router'
+import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import * as Sentry from '@sentry/react'
 import { getDefaultStore } from 'jotai'
 import { identity, pickBy, throttle } from 'lodash'
@@ -31,6 +32,7 @@ import {
   MessageLink,
   MessagePicture,
   ModelProvider,
+  ModelProviderEnum,
   Session,
   SessionMeta,
   SessionSettings,
@@ -42,13 +44,11 @@ import i18n from '../i18n'
 import * as promptFormat from '../packages/prompts'
 import platform from '../platform'
 import storage from '../storage'
+import { cloneMessage, countMessageWords, getMessageText, mergeMessages } from '../utils/message'
 import * as atoms from './atoms'
 import * as scrollActions from './scrollActions'
-import { createSession, getSession, saveSession, copySession, clearConversations } from './sessionStorageMutations'
-import { cloneMessage, countMessageWords, getMessageText, mergeMessages } from '../utils/message'
+import { clearConversations, copySession, createSession, getSession, saveSession } from './sessionStorageMutations'
 import * as settingActions from './settingActions'
-import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { toBeRemoved_getContextMessageCount } from '@/components/MaxContextMessageCountSlider'
 
 /**
  * 创建一个新的会话
@@ -513,7 +513,7 @@ export async function submitNewUserMessage(params: {
   insertMessage(currentSessionId, newUserMsg)
 
   const settings = getCurrentSessionMergedSettings()
-  const isChatboxAI = settings.provider === ModelProvider.ChatboxAI
+  const isChatboxAI = settings.provider === ModelProviderEnum.ChatboxAI
   const remoteConfig = settingActions.getRemoteConfig()
 
   // 根据需要，插入空白的回复消息
@@ -544,7 +544,7 @@ export async function submitNewUserMessage(params: {
   try {
     // 如果本次消息开启了联网问答，需要检查当前模型是否支持
     // 桌面版&手机端总是支持联网问答，不再需要检查模型是否支持
-    if (webBrowsing && platform.type === 'web' && !isModelSupportToolUse(settings.provider!, settings.modelId!)) {
+    if (webBrowsing && platform.type === 'web' && !getModel(settings, { uuid: '' }).isSupportToolUse()) {
       if (remoteConfig.setting_chatboxai_first) {
         throw ChatboxAIAPIError.fromCodeName('model_not_support_web_browsing', 'model_not_support_web_browsing')
       } else {
@@ -647,7 +647,7 @@ export async function submitNewUserMessage(params: {
       ...newAssistantMsg,
       generating: false,
       cancel: undefined,
-      model: await getModelDisplayName(settings.provider!, settings.modelId!, settings.providers, 'chat'),
+      model: await getModelDisplayName(settings, 'chat'),
       contentParts: [{ type: 'text', text: '' }],
       errorCode,
       error: `${err.message}`, // 这么写是为了避免类型问题
@@ -690,7 +690,7 @@ export async function generate(sessionId: string, targetMsg: Message, options?: 
     // pictures: session.type === 'picture' ? createLoadingPictures(settings.imageGenerateNum) : targetMsg.pictures,
     cancel: undefined,
     aiProvider: settings.provider,
-    model: await getModelDisplayName(settings.provider!, settings.modelId!, settings.providers, session.type || 'chat'),
+    model: await getModelDisplayName(settings, session.type || 'chat'),
     style: session.type === 'picture' ? settings.dalleStyle : undefined,
     generating: true,
     errorCode: undefined,
@@ -746,10 +746,14 @@ export async function generate(sessionId: string, targetMsg: Message, options?: 
           }
           modifyMessage(sessionId, targetMsg)
         }, 100)
+        if (!model.isSupportVision() && messages.some((m) => m.contentParts.some((c) => c.type === 'image'))) {
+          throw ChatboxAIAPIError.fromCodeName('model_not_support_image_2', 'model_not_support_image_2')
+        }
         await streamText(model, {
           messages: promptMsgs,
           onResultChangeWithCancel: throttledModifyMessage,
           webBrowsing: options?.webBrowsing,
+          providerOptions: settings.providerOptions,
         })
         targetMsg = {
           ...targetMsg,

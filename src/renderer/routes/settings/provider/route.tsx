@@ -90,7 +90,7 @@ function RouteComponent() {
                     flex={isSmallScreen ? 1 : undefined}
                     className="!text-inherit"
                   >
-                    {provider.name}
+                    {t(provider.name)}
                   </Text>
 
                   <Indicator

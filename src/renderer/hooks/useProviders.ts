@@ -1,8 +1,8 @@
 import { useCallback, useMemo } from 'react'
-import { useSettings } from './useSettings'
 import { SystemProviders } from 'src/shared/defaults'
-import { ModelProvider, ProviderInfo } from 'src/shared/types'
+import { ModelProviderEnum, ProviderInfo } from 'src/shared/types'
 import useChatboxAIModels from './useChatboxAIModels'
+import { useSettings } from './useSettings'
 
 export const useProviders = () => {
   const { chatboxAIModels } = useChatboxAIModels()
@@ -18,7 +18,7 @@ export const useProviders = () => {
       allProviderBaseInfos
         .map((p) => {
           const providerSettings = providerSettingsMap?.[p.id]
-          if (p.id === ModelProvider.ChatboxAI && settings.licenseKey) {
+          if (p.id === ModelProviderEnum.ChatboxAI && settings.licenseKey) {
             return {
               ...p,
               ...providerSettings,
@@ -26,7 +26,7 @@ export const useProviders = () => {
             }
           } else if (
             (!p.isCustom && providerSettings?.apiKey) ||
-            ((p.isCustom || p.id === ModelProvider.Ollama || p.id === ModelProvider.LMStudio) &&
+            ((p.isCustom || p.id === ModelProviderEnum.Ollama || p.id === ModelProviderEnum.LMStudio) &&
               providerSettings?.models?.length)
           ) {
             return {

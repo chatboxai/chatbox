@@ -1,5 +1,15 @@
 import { useProviders } from '@/hooks/useProviders'
-import { FC, PropsWithChildren, useMemo, useState } from 'react'
+import {
+  cloneElement,
+  FC,
+  forwardRef,
+  isValidElement,
+  MouseEvent,
+  PropsWithChildren,
+  ReactElement,
+  useMemo,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Badge,
@@ -31,293 +41,309 @@ export type ModelSelectorProps = PropsWithChildren<
   } & ComboboxProps
 >
 
-export const ModelSelector: FC<ModelSelectorProps> = ({
-  showAuto,
-  onSelect,
-  onDropdownOpen,
-  children,
-  ...comboboxProps
-}) => {
-  const { t } = useTranslation()
-  const navigate = useNavigate()
-  const { providers, favoritedModels, favoriteModel, unfavoriteModel, isFavoritedModel } = useProviders()
+export const ModelSelector = forwardRef<HTMLDivElement, ModelSelectorProps>(
+  ({ showAuto, onSelect, onDropdownOpen, children, ...comboboxProps }, ref) => {
+    const { t } = useTranslation()
+    const navigate = useNavigate()
+    const { providers, favoritedModels, favoriteModel, unfavoriteModel, isFavoritedModel } = useProviders()
 
-  const [search, setSearch] = useState('')
-  const filteredProviders = useMemo(
-    () =>
-      providers.map((provider) => {
-        const models = (provider.models || provider.defaultSettings?.models)?.filter(
-          (model) =>
-            provider.id.includes(search) ||
-            provider.name.includes(search) ||
-            model.nickname?.includes(search) ||
-            model.modelId?.includes(search)
+    const [search, setSearch] = useState('')
+    const filteredProviders = useMemo(
+      () =>
+        providers.map((provider) => {
+          const models = (provider.models || provider.defaultSettings?.models)?.filter(
+            (model) =>
+              provider.id.includes(search) ||
+              provider.name.includes(search) ||
+              model.nickname?.includes(search) ||
+              model.modelId?.includes(search)
+          )
+          return {
+            ...provider,
+            models,
+          }
+        }),
+      [providers, search]
+    )
+    const isEmpty = useMemo(
+      () => filteredProviders.reduce((pre, cur) => pre + (cur.models?.length || 0), 0) === 0,
+      [filteredProviders]
+    )
+    const combobox = useCombobox({
+      onDropdownClose: () => {
+        combobox.resetSelectedOption()
+        combobox.focusTarget()
+        setSearch('')
+      },
+
+      onDropdownOpen: () => {
+        combobox.focusSearchInput()
+        onDropdownOpen?.()
+      },
+    })
+
+    const groups = filteredProviders.map((provider) => {
+      provider
+      const options = provider.models?.map((model) => {
+        const isFavorited = isFavoritedModel(provider.id, model.modelId)
+
+        return (
+          <ModelItem
+            key={`${provider.id}/${model.modelId}`}
+            providerId={provider.id}
+            model={model}
+            isFavorited={isFavorited}
+            onToggleFavorited={() => {
+              if (isFavorited) {
+                unfavoriteModel(provider.id, model.modelId)
+              } else {
+                favoriteModel(provider.id, model.modelId)
+              }
+            }}
+          />
         )
-        return {
-          ...provider,
-          models,
-        }
-      }),
-    [providers, search]
-  )
-  const isEmpty = useMemo(
-    () => filteredProviders.reduce((pre, cur) => pre + (cur.models?.length || 0), 0) === 0,
-    [filteredProviders]
-  )
-  const combobox = useCombobox({
-    onDropdownClose: () => {
-      combobox.resetSelectedOption()
-      combobox.focusTarget()
-      setSearch('')
-    },
-
-    onDropdownOpen: () => {
-      combobox.focusSearchInput()
-      onDropdownOpen?.()
-    },
-  })
-
-  const groups = filteredProviders.map((provider) => {
-    provider
-    const options = provider.models?.map((model) => {
-      const isFavorited = isFavoritedModel(provider.id, model.modelId)
+      })
 
       return (
-        <ModelItem
-          key={`${provider.id}/${model.modelId}`}
-          providerId={provider.id}
-          model={model}
-          isFavorited={isFavorited}
-          onToggleFavorited={() => {
-            if (isFavorited) {
-              unfavoriteModel(provider.id, model.modelId)
-            } else {
-              favoriteModel(provider.id, model.modelId)
-            }
-          }}
-        />
+        <Combobox.Group
+          label={
+            <Flex align="center" gap="xs">
+              {!provider.isCustom && <ProviderIcon size={12} provider={provider.id} />}
+              <Text c="chatbox-tertiary" size="xs" fw={600}>
+                {provider.name}
+              </Text>
+            </Flex>
+          }
+          key={provider.id}
+        >
+          {options}
+        </Combobox.Group>
       )
     })
 
-    return (
-      <Combobox.Group
-        label={
-          <Flex align="center" gap="xs">
-            {!provider.isCustom && <ProviderIcon size={12} provider={provider.id} />}
-            <Text c="chatbox-tertiary" size="xs" fw={600}>
-              {provider.name}
-            </Text>
-          </Flex>
+    const handleOptionSubmit = (val: string) => {
+      if (!val) {
+        onSelect?.('', '')
+      } else {
+        const selectedProvider = providers.find((p) =>
+          (p.models || p.defaultSettings?.models)?.find((m) => val === `${p.id}/${m.modelId}`)
+        )
+        const selectedModel = (selectedProvider?.models || selectedProvider?.defaultSettings?.models)?.find(
+          (m) => val === `${selectedProvider.id}/${m.modelId}`
+        )
+
+        if (selectedProvider && selectedModel) {
+          onSelect?.(selectedProvider.id, selectedModel.modelId)
         }
-        key={provider.id}
-      >
-        {options}
-      </Combobox.Group>
-    )
-  })
-
-  const handleOptionSubmit = (val: string) => {
-    if (!val) {
-      onSelect?.('', '')
-    } else {
-      const selectedProvider = providers.find((p) =>
-        (p.models || p.defaultSettings?.models)?.find((m) => val === `${p.id}/${m.modelId}`)
-      )
-      const selectedModel = (selectedProvider?.models || selectedProvider?.defaultSettings?.models)?.find(
-        (m) => val === `${selectedProvider.id}/${m.modelId}`
-      )
-
-      if (selectedProvider && selectedModel) {
-        onSelect?.(selectedProvider.id, selectedModel.modelId)
       }
+      combobox.closeDropdown()
     }
-    combobox.closeDropdown()
-  }
 
-  const isSmallScreen = useIsSmallScreen()
-  const [opened, { open, close }] = useDisclosure(false)
+    const isSmallScreen = useIsSmallScreen()
+    const [opened, { open, close }] = useDisclosure(false)
 
-  return isSmallScreen ? (
-    <>
-      <button onClick={open} className="border-none bg-transparent p-0 flex">
-        {children}
-      </button>
+    return isSmallScreen ? (
+      <>
+        {isValidElement(children) ? (
+          cloneElement(children as ReactElement, {
+            onClick: (e: MouseEvent<HTMLButtonElement, MouseEvent>) => {
+              children.props?.onClick?.(e)
+              open()
+            },
+            ref,
+          })
+        ) : (
+          <button onClick={open} className="border-none bg-transparent p-0 flex">
+            {children}
+          </button>
+        )}
 
-      <Drawer
-        opened={opened}
-        onClose={close}
-        position="bottom"
-        title={t('Select Model')}
-        classNames={{
-          header: '!p-sm !min-h-0',
-          body: '!px-xs',
-          content: '!rounded-tl-lg !rounded-tr-lg',
-        }}
-        // className=' min-h-0'
-        styles={{
-          title: {
-            flex: 1,
-            marginLeft: 28,
-            textAlign: 'center',
-            fontWeight: 600,
-          },
-        }}
-        size="80%"
-        zIndex={3000}
-        trapFocus={false}
-      >
-        <Stack gap="md">
-          {showAuto && (
-            <Flex
-              component="button"
-              align="center"
-              gap="xs"
-              px="md"
-              py="sm"
-              className="rounded-md border-solid border border-[var(--mantine-color-chatbox-border-secondary-outline)] outline-none bg-transparent"
-              onClick={() => {
-                handleOptionSubmit('')
-                close()
-              }}
-            >
-              <Text span size="md" c="chatbox-secondary" lineClamp={1} className="flex-grow-0 flex-shrink text-left">
-                Auto
-              </Text>
-            </Flex>
-          )}
-          {!!favoritedModels?.length && (
-            <Stack gap="xs">
-              <Flex align="center" gap="xs" py="3xs" px="xxs" c="chatbox-tertiary">
-                <IconStarFilled size={16} className="text-inherit" />
-                <Text c="chatbox-tertiary" fw={600} className="uppercase">
-                  {t('Favorite')}
-                </Text>
-              </Flex>
-
-              {favoritedModels.map((fm) => {
-                return (
-                  <ModelItemInDrawer
-                    key={`${fm.provider?.id}/${fm.model?.modelId}`}
-                    providerId={fm.provider!.id}
-                    model={fm.model!}
-                    showIcon={true}
-                    isFavorited={true}
-                    onSelect={() => {
-                      handleOptionSubmit(`${fm.provider?.id}/${fm.model?.modelId}`)
-                      close()
-                    }}
-                    onToggleFavorited={() => {
-                      unfavoriteModel(fm.provider!.id, fm.model!.modelId)
-                    }}
-                  />
-                )
-              })}
-            </Stack>
-          )}
-          {filteredProviders.map((provider) => (
-            <Stack key={provider.id} gap="xs">
-              <Flex align="center" gap="xs" py="3xs" px="xxs" c="chatbox-tertiary">
-                {!provider.isCustom && <ProviderIcon size={16} provider={provider.id} className="text-inherit" />}
-                <Text c="chatbox-tertiary" fw={600} className="uppercase">
-                  {provider.name}
-                </Text>
-              </Flex>
-              {provider.models?.map((model) => {
-                const isFavorited = isFavoritedModel(provider.id, model.modelId)
-                return (
-                  <ModelItemInDrawer
-                    key={model.modelId}
-                    providerId={provider.id}
-                    model={model}
-                    isFavorited={isFavorited}
-                    onSelect={() => {
-                      handleOptionSubmit(`${provider.id}/${model.modelId}`)
-                      close()
-                    }}
-                    onToggleFavorited={() => {
-                      if (isFavorited) {
-                        unfavoriteModel(provider.id, model.modelId)
-                      } else {
-                        favoriteModel(provider.id, model.modelId)
-                      }
-                    }}
-                  />
-                )
-              })}
-            </Stack>
-          ))}
-        </Stack>
-      </Drawer>
-    </>
-  ) : (
-    <Combobox
-      store={combobox}
-      width={260}
-      position="top"
-      withinPortal={true}
-      {...comboboxProps}
-      onOptionSubmit={handleOptionSubmit}
-    >
-      <Combobox.Target targetType="button">
-        <button onClick={() => combobox.toggleDropdown()} className="border-none bg-transparent p-0 flex">
-          {children}
-        </button>
-      </Combobox.Target>
-
-      <Combobox.Dropdown>
-        <Combobox.Search
-          value={search}
-          onChange={(event) => setSearch(event.currentTarget.value)}
-          placeholder={t('Search models')!}
-        />
-        <Combobox.Options mah="50vh" style={{ overflowY: 'auto' }}>
-          {showAuto && (
-            <Combobox.Option value={''} c="chatbox-primary">
-              Auto
-            </Combobox.Option>
-          )}
-          {isEmpty && !showAuto ? (
-            <Stack gap="xs" pt="xs" align="center" className="overflow-hidden">
-              <Text c="chatbox-tertiary" size="xs">
-                {t('No eligible models available')}
-              </Text>
-              <Button variant="transparent" size="xs" onClick={() => navigate({ to: '/settings/provider' })}>
-                {t('Click here to set up')}
-              </Button>
-            </Stack>
-          ) : (
-            <>
-              <Combobox.Group
-                label={
-                  <Flex align="center" gap="xs">
-                    <IconStar size={12} className="text-[var(--mantine-color-chatbox-tertiary-text)]" />
-                    <Text c="chatbox-tertiary" size="xs" fw={600}>
-                      {t('Favorite')}
-                    </Text>
-                  </Flex>
-                }
+        <Drawer
+          opened={opened}
+          onClose={close}
+          position="bottom"
+          title={t('Select Model')}
+          classNames={{
+            header: '!p-sm !min-h-0',
+            body: '!px-xs',
+            content: '!rounded-tl-lg !rounded-tr-lg',
+          }}
+          // className=' min-h-0'
+          styles={{
+            title: {
+              flex: 1,
+              marginLeft: 28,
+              textAlign: 'center',
+              fontWeight: 600,
+            },
+          }}
+          size="80%"
+          zIndex={3000}
+          trapFocus={false}
+        >
+          <Stack gap="md">
+            {showAuto && (
+              <Flex
+                component="button"
+                align="center"
+                gap="xs"
+                px="md"
+                py="sm"
+                className="rounded-md border-solid border border-[var(--mantine-color-chatbox-border-secondary-outline)] outline-none bg-transparent"
+                onClick={() => {
+                  handleOptionSubmit('')
+                  close()
+                }}
               >
-                {favoritedModels?.map((fm) => (
-                  <ModelItem
-                    key={`${fm.provider?.id}/${fm.model?.modelId}`}
-                    showIcon={true}
-                    providerId={fm.provider!.id}
-                    model={fm.model!}
-                    isFavorited={true}
-                    onToggleFavorited={() => {
-                      unfavoriteModel(fm.provider!.id, fm.model!.modelId)
-                    }}
-                  />
-                ))}
-              </Combobox.Group>
-              {groups}
-            </>
+                <Text span size="md" c="chatbox-secondary" lineClamp={1} className="flex-grow-0 flex-shrink text-left">
+                  Auto
+                </Text>
+              </Flex>
+            )}
+            {!!favoritedModels?.length && (
+              <Stack gap="xs">
+                <Flex align="center" gap="xs" py="3xs" px="xxs" c="chatbox-tertiary">
+                  <IconStarFilled size={16} className="text-inherit" />
+                  <Text c="chatbox-tertiary" fw={600} className="uppercase">
+                    {t('Favorite')}
+                  </Text>
+                </Flex>
+
+                {favoritedModels.map((fm) => {
+                  return (
+                    <ModelItemInDrawer
+                      key={`${fm.provider?.id}/${fm.model?.modelId}`}
+                      providerId={fm.provider!.id}
+                      model={fm.model!}
+                      showIcon={true}
+                      isFavorited={true}
+                      onSelect={() => {
+                        handleOptionSubmit(`${fm.provider?.id}/${fm.model?.modelId}`)
+                        close()
+                      }}
+                      onToggleFavorited={() => {
+                        unfavoriteModel(fm.provider!.id, fm.model!.modelId)
+                      }}
+                    />
+                  )
+                })}
+              </Stack>
+            )}
+            {filteredProviders.map((provider) => (
+              <Stack key={provider.id} gap="xs">
+                <Flex align="center" gap="xs" py="3xs" px="xxs" c="chatbox-tertiary">
+                  {!provider.isCustom && <ProviderIcon size={16} provider={provider.id} className="text-inherit" />}
+                  <Text c="chatbox-tertiary" fw={600} className="uppercase">
+                    {provider.name}
+                  </Text>
+                </Flex>
+                {provider.models?.map((model) => {
+                  const isFavorited = isFavoritedModel(provider.id, model.modelId)
+                  return (
+                    <ModelItemInDrawer
+                      key={model.modelId}
+                      providerId={provider.id}
+                      model={model}
+                      isFavorited={isFavorited}
+                      onSelect={() => {
+                        handleOptionSubmit(`${provider.id}/${model.modelId}`)
+                        close()
+                      }}
+                      onToggleFavorited={() => {
+                        if (isFavorited) {
+                          unfavoriteModel(provider.id, model.modelId)
+                        } else {
+                          favoriteModel(provider.id, model.modelId)
+                        }
+                      }}
+                    />
+                  )
+                })}
+              </Stack>
+            ))}
+          </Stack>
+        </Drawer>
+      </>
+    ) : (
+      <Combobox
+        store={combobox}
+        width={260}
+        position="top"
+        withinPortal={true}
+        {...comboboxProps}
+        onOptionSubmit={handleOptionSubmit}
+      >
+        <Combobox.Target targetType="button">
+          {isValidElement(children) ? (
+            cloneElement(children as ReactElement, {
+              onClick: (e: MouseEvent<HTMLButtonElement, MouseEvent>) => {
+                children.props?.onClick?.(e)
+                combobox.toggleDropdown()
+              },
+              ref,
+            })
+          ) : (
+            <button onClick={() => combobox.toggleDropdown()} className="border-none bg-transparent p-0 flex">
+              {children}
+            </button>
           )}
-        </Combobox.Options>
-      </Combobox.Dropdown>
-    </Combobox>
-  )
-}
+        </Combobox.Target>
+
+        <Combobox.Dropdown>
+          <Combobox.Search
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+            placeholder={t('Search models')!}
+          />
+          <Combobox.Options mah="50vh" style={{ overflowY: 'auto' }}>
+            {showAuto && (
+              <Combobox.Option value={''} c="chatbox-primary">
+                Auto
+              </Combobox.Option>
+            )}
+            {isEmpty && !showAuto ? (
+              <Stack gap="xs" pt="xs" align="center" className="overflow-hidden">
+                <Text c="chatbox-tertiary" size="xs">
+                  {t('No eligible models available')}
+                </Text>
+                <Button variant="transparent" size="xs" onClick={() => navigate({ to: '/settings/provider' })}>
+                  {t('Click here to set up')}
+                </Button>
+              </Stack>
+            ) : (
+              <>
+                <Combobox.Group
+                  label={
+                    <Flex align="center" gap="xs">
+                      <IconStar size={12} className="text-[var(--mantine-color-chatbox-tertiary-text)]" />
+                      <Text c="chatbox-tertiary" size="xs" fw={600}>
+                        {t('Favorite')}
+                      </Text>
+                    </Flex>
+                  }
+                >
+                  {favoritedModels?.map((fm) => (
+                    <ModelItem
+                      key={`${fm.provider?.id}/${fm.model?.modelId}`}
+                      showIcon={true}
+                      providerId={fm.provider!.id}
+                      model={fm.model!}
+                      isFavorited={true}
+                      onToggleFavorited={() => {
+                        unfavoriteModel(fm.provider!.id, fm.model!.modelId)
+                      }}
+                    />
+                  ))}
+                </Combobox.Group>
+                {groups}
+              </>
+            )}
+          </Combobox.Options>
+        </Combobox.Dropdown>
+      </Combobox>
+    )
+  }
+)
 
 export default ModelSelector
 

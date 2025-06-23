@@ -1,25 +1,14 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { ChatboxAILicenseDetail, ChatboxAIModel } from 'src/shared/types'
+import { ChatboxAILicenseDetail, ProviderModelInfo } from 'src/shared/types'
 import * as remote from '../remote'
 import { afetch } from '../request'
 import AbstractAISDKModel from './abstract-ai-sdk'
-import { CallChatCompletionOptions, ModelHelpers, ModelInterface } from './types'
-
-export const chatboxAIModels: ChatboxAIModel[] = ['chatboxai-3.5', 'chatboxai-4']
-
-const helpers: ModelHelpers = {
-  isModelSupportVision: (model: string) => {
-    return !['gpt-3.5-turbo', 'o1-mini', 'o1-preview', 'DeepSeek-R1', 'DeepSeek-V3'].includes(model)
-  },
-  isModelSupportToolUse: (model: string) => {
-    return !['o1-mini', 'o1-preview', 'gemini-2.0-flash-exp', 'gemini-2.0-flash-exp-image-generation'].includes(model)
-  },
-}
+import { CallChatCompletionOptions, ModelInterface } from './types'
 
 interface Options {
   licenseKey?: string
-  chatboxAIModel: ChatboxAIModel
+  model: ProviderModelInfo
   licenseInstances?: {
     [key: string]: string
   }
@@ -41,16 +30,15 @@ async function chatboxAIFetch(url: RequestInfo | URL, options?: RequestInit) {
 
 export default class ChatboxAI extends AbstractAISDKModel implements ModelInterface {
   public name = 'ChatboxAI'
-  public static helpers = helpers
 
   constructor(public options: Options, public config: Config) {
-    super()
+    super(options)
   }
 
   getChatModel(options: CallChatCompletionOptions) {
     const license = this.options.licenseKey || ''
     const instanceId = (this.options.licenseInstances ? this.options.licenseInstances[license] : '') || ''
-    if (this.options.chatboxAIModel.startsWith('gemini')) {
+    if (this.options.model.modelId.startsWith('gemini')) {
       const provider = createGoogleGenerativeAI({
         apiKey: this.options.licenseKey || '',
         baseURL: `${remote.API_ORIGIN}/gateway/google-ai-studio/v1beta`,
@@ -60,7 +48,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
         },
         fetch: chatboxAIFetch,
       })
-      return provider.chat(this.options.chatboxAIModel, {
+      return provider.chat(this.options.model.modelId, {
         structuredOutputs: false,
       })
     } else {
@@ -73,7 +61,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
         },
         fetch: chatboxAIFetch,
       })
-      return provider.languageModel(this.options.chatboxAIModel)
+      return provider.languageModel(this.options.model.modelId)
     }
   }
 
@@ -126,14 +114,14 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
       'gemini-2.0-flash-exp',
       'gemini-2.0-flash-thinking-exp',
       'gemini-2.0-flash-exp-image-generation',
-    ].includes(this.options.chatboxAIModel)
+    ].includes(this.options.model.modelId)
   }
 
-  isSupportVision() {
-    return helpers.isModelSupportVision(this.options.chatboxAIModel)
+  public isSupportVision() {
+    return true
   }
 
-  isSupportToolUse() {
-    return helpers.isModelSupportToolUse(this.options.chatboxAIModel)
+  public isSupportToolUse() {
+    return true
   }
 }

@@ -1,7 +1,7 @@
 import { useProviders } from '@/hooks/useProviders'
 import { Combobox, ComboboxProps, useCombobox } from '@mantine/core'
 import { FC, PropsWithChildren } from 'react'
-import { ModelProvider } from 'src/shared/types'
+import { ModelProvider, ModelProviderEnum } from 'src/shared/types'
 
 export type ImageModelSelectProps = PropsWithChildren<
   {
@@ -12,7 +12,7 @@ export type ImageModelSelectProps = PropsWithChildren<
 export const ImageModelSelect: FC<ImageModelSelectProps> = ({ onSelect, children, ...comboboxProps }) => {
   const { providers } = useProviders()
 
-  const avaliableProviders = providers.filter((p) => [ModelProvider.OpenAI, ModelProvider.Azure, ''].includes(p.id))
+  const avaliableProviders = providers.filter((p) => [ModelProviderEnum.OpenAI, ModelProviderEnum.Azure, ''].includes(p.id))
 
   const combobox = useCombobox({
     onDropdownClose: () => {
@@ -43,9 +43,9 @@ export const ImageModelSelect: FC<ImageModelSelectProps> = ({ onSelect, children
 
       <Combobox.Dropdown>
         <Combobox.Options mah={500} style={{ overflowY: 'auto' }}>
-          {/* Chatbox AI (DALL-E-3) 作为默认选项 */}
-          <Combobox.Option value={ModelProvider.ChatboxAI} c="chatbox-primary">
-            Chatbox AI (DALL-E-3)
+          {/* Chatbox AI 作为默认选项 */}
+          <Combobox.Option value={ModelProviderEnum.ChatboxAI} c="chatbox-primary">
+            Chatbox AI
           </Combobox.Option>
           {avaliableProviders.map((p) => (
             <Combobox.Option key={p.id} value={p.id} c="chatbox-primary">

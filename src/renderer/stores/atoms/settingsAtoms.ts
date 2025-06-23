@@ -4,16 +4,32 @@ import { focusAtom } from 'jotai-optics'
 import * as defaults from '../../../shared/defaults'
 import storage, { StorageKey } from '../../storage'
 import platform from '../../platform'
-import { ModelProvider, SessionSettings, Settings, SettingWindowTab } from '../../../shared/types'
+import { SessionSettings, Settings, SettingWindowTab, Theme } from '../../../shared/types'
 
 // settings
-const _settingsAtom = atomWithStorage<Settings>(StorageKey.Settings, defaults.settings(), storage)
+const _settingsAtom = atomWithStorage<Settings>(
+  StorageKey.Settings,
+  {
+    ...defaults.settings(),
+    theme: (() => {
+      const initialTheme = localStorage.getItem('initial-theme')
+      if (initialTheme === 'light') {
+        return Theme.Light
+      } else if (initialTheme === 'dark') {
+        return Theme.Dark
+      }
+      return Theme.System
+    })(),
+  },
+  storage
+)
 export const settingsAtom = atom(
   (get) => {
     const _settings = get(_settingsAtom)
     // 兼容早期版本
     const settings = Object.assign({}, defaults.settings(), _settings)
     settings.shortcuts = Object.assign({}, defaults.settings().shortcuts, _settings.shortcuts)
+    settings.mcp = Object.assign({}, defaults.settings().mcp, _settings.mcp)
     return settings
   },
   (get, set, update: SetStateAction<Settings>) => {
@@ -66,6 +82,10 @@ export const pasteLongTextAsAFileAtom = focusAtom(settingsAtom, (optic) => optic
 // Related UI state, moved here for proximity to settings
 export const openSettingDialogAtom = atom<SettingWindowTab | null>(null)
 
-// 存储新创建SessionSettings的默认值 缓存在 localStorage
-export const chatSessionSettingsAtom = atomWithStorage<SessionSettings>(StorageKey.ChatSessionSettings, {})
-export const pictureSessionSettingsAtom = atomWithStorage<SessionSettings>(StorageKey.PictureSessionSettings, {})
+// 存储新创建SessionSettings的默认值 缓存在 localStorage (有用户出现 exceed quota 错误，改到 storage 中)
+export const chatSessionSettingsAtom = atomWithStorage<SessionSettings>(StorageKey.ChatSessionSettings, {}, storage)
+export const pictureSessionSettingsAtom = atomWithStorage<SessionSettings>(
+  StorageKey.PictureSessionSettings,
+  {},
+  storage
+)

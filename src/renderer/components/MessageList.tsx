@@ -16,12 +16,16 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import AddIcon from '@mui/icons-material/AddCircleOutline'
 import { Session } from 'src/shared/types'
 import { ConfirmDeleteMenuItem } from './ConfirmDeleteButton'
+import { Button, Flex, Text } from '@mantine/core'
+import { IconArrowBackUp, IconFilePencil } from '@tabler/icons-react'
+import { useIsSmallScreen } from '@/hooks/useScreenChange'
 
 const sessionScrollPositionCache = new Map<string, StateSnapshot>()
 
 export default function MessageList(props: { className?: string; currentSession: Session }) {
   const { t } = useTranslation()
   const theme = useTheme()
+  const isSmallScreen = useIsSmallScreen()
 
   const currentSession = props.currentSession
   const currentMessageList = useAtomValue(atoms.currentMessageListAtom)
@@ -131,6 +135,36 @@ export default function MessageList(props: { className?: string; currentSession:
               </>
               // </div>
             )
+          }}
+          components={{
+            Footer: () =>
+              isSmallScreen &&
+              currentMessageList &&
+              currentMessageList.length > 0 && (
+                <Flex justify="center">
+                  {currentThreadHash[currentMessageList[currentMessageList.length - 1].id] ? (
+                    <Button
+                      leftSection={<IconArrowBackUp size={20} />}
+                      variant="default"
+                      radius="xl"
+                      mb="md"
+                      onClick={() => sessionActions.removeCurrentThread(currentSession.id)}
+                    >
+                      {t('Back to Previous')}
+                    </Button>
+                  ) : (
+                    <Button
+                      leftSection={<IconFilePencil size={20} />}
+                      variant="default"
+                      radius="xl"
+                      mb="md"
+                      onClick={() => sessionActions.startNewThread()}
+                    >
+                      {t('Start a New Thread')}
+                    </Button>
+                  )}
+                </Flex>
+              ),
           }}
           onWheel={(e) => {
             scrollActions.clearAutoScroll() // 鼠标滚轮滚动时，清除自动滚动

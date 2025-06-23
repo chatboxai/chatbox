@@ -1,6 +1,5 @@
 import { cachified } from '@epic-web/cachified'
 import { truncate } from 'lodash'
-import type { SearchResultItem } from './base'
 import { BingNewsSearch } from './bing-news'
 import { BingSearch } from './bing'
 import { TavilySearch } from './tavily'
@@ -8,6 +7,7 @@ import { getExtensionSettings, getLanguage, getLicenseKey } from '@/stores/setti
 import WebSearch from './base'
 import { ChatboxAIAPIError } from '../models/errors'
 import { ChatboxSearch } from './chatbox-search'
+import { SearchResultItem } from 'src/shared/types'
 
 const MAX_CONTEXT_ITEMS = 10
 

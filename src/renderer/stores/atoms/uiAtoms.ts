@@ -12,7 +12,7 @@ export const toastsAtom = atom<Toast[]>([])
 export const quoteAtom = atom<string>('')
 
 // theme
-export const realThemeAtom = atom<'light' | 'dark'>('light') // This might relate more to settings? Re-evaluating. -> Keep here for now as it might be derived/runtime theme.
+export const realThemeAtom = atom<'light' | 'dark'>(localStorage.getItem('initial-theme') === 'dark' ? 'dark' : 'light') // This might relate more to settings? Re-evaluating. -> Keep here for now as it might be derived/runtime theme.
 
 // message scrolling
 export const messageListElementAtom = atom<null | RefObject<HTMLDivElement>>(null)
@@ -44,4 +44,4 @@ export const pictureShowAtom = atom<{
 } | null>(null)
 
 // Layout state
-export const widthFullAtom = atomWithStorage<boolean>('widthFull', false) // Stored UI preference 
+export const widthFullAtom = atomWithStorage<boolean>('widthFull', false) // Stored UI preference

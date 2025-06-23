@@ -51,16 +51,6 @@ export default function SliderWithInput({ value, onChange, min = 0, max = 1, ste
     }
   }, [])
 
-  console.log(
-    'tempSliderValue',
-    tempSliderValue,
-    'sliderValue',
-    sliderValue,
-    'tempInputValue',
-    tempInputValue,
-    'inputValue',
-    inputValue
-  )
   return (
     <Flex gap="sm" align="center" className={className}>
       <Slider

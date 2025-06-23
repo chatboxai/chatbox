@@ -1,4 +1,4 @@
-import { ModelOptionGroup, ModelProvider, ProviderSettings, SessionType } from '../../../shared/types'
+import { ModelOptionGroup, ModelProvider, ProviderBaseInfo, ProviderSettings, SessionType } from '../../../shared/types'
 import * as Sentry from '@sentry/react'
 import * as remote from '../../packages/remote'
 import { ModelSettingUtil } from './interface'
@@ -8,11 +8,9 @@ export default abstract class BaseConfig implements ModelSettingUtil {
   public abstract getCurrentModelDisplayName(
     model: string,
     sessionType: SessionType,
-    providerSettings?: ProviderSettings
+    providerSettings?: ProviderSettings,
+    providerBaseInfo?: ProviderBaseInfo,
   ): Promise<string>
-  public abstract getLocalOptionGroups(): ModelOptionGroup[]
-  public abstract isCurrentModelSupportImageInput(model: string): boolean
-  public abstract isCurrentModelSupportToolUse(model: string): boolean
 
   protected abstract listProviderModels(settings: ProviderSettings): Promise<string[]>
 
@@ -31,7 +29,9 @@ export default abstract class BaseConfig implements ModelSettingUtil {
 
   // 有三个来源：本地写死、后端配置、服务商模型列表
   public async getMergeOptionGroups(providerSettings: ProviderSettings): Promise<ModelOptionGroup[]> {
-    const localOptionGroups = this.getLocalOptionGroups()
+    const localOptionGroups = (providerSettings.models || []).map((model) => ({
+      options: [{ label: model.nickname || model.modelId, value: model.modelId }],
+    }))
     const [remoteModels, models] = await Promise.all([
       this.listRemoteProviderModels().catch((e) => {
         Sentry.captureException(e)

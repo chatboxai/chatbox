@@ -1,4 +1,32 @@
 const changelog = `
+### v1.14.1 - 2025.06.16
+
+1. Fixed issue where provider settings were lost after restarting the app
+
+### v1.14.0 - 2025.06.16
+
+1. Desktop support MCP
+2. New home page design
+3. Add VolcEngine model provider
+4. Fix issue where custom temperature was invalid in Azure, now you can set the temperature of o-series models to 1
+5. Fix shortcut key error on non-QWERT keyboard
+
+Thanks to @Fr0benius for their contributions
+
+### v1.13.4 - 2025.06.09
+
+1. Fixed storage performance issue
+2. Fixed issue where clearing conversation list in English language couldn't fill in the number of conversations to keep
+
+### v1.13.3 - 2025.06.08
+
+1. Fixed issue where custom provider couldn't set API Path
+2. OpenAI, Claude, Gemini models support setting thinking effort parameter
+
+### v1.13.2 - 2025.05.30
+
+1. Fixed window can't be dragged on session title bar
+
 ### v1.13.1 - 2025.05.28
 
 1. Refactor settings UI

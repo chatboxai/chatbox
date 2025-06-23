@@ -16,6 +16,7 @@ import {
   Flex,
   Modal,
   PasswordInput,
+  ScrollArea,
   Select,
   Stack,
   Switch,
@@ -38,15 +39,15 @@ import {
   IconTrash,
 } from '@tabler/icons-react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { ChangeEvent, useMemo, useState } from 'react'
+import { ChangeEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SystemProviders } from 'src/shared/defaults'
 import {
   MessageRoleEnum,
   ModelOptionGroup,
-  ModelProvider,
+  ModelProviderEnum,
   ModelProviderType,
-  ProviderModelInfo,
+  ProviderModelInfo
 } from 'src/shared/types'
 
 export const Route = createFileRoute('/settings/provider/$providerId')({
@@ -160,6 +161,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
 
   const [apiKeyAvaliable, setApiKeyAvaliable] = useState<boolean>()
   const [apiKeyChecking, setApiKeyChecking] = useState(false)
+  const [apiKeyCheckingError, setApiKeyCheckingError] = useState<string>()
   const checkModel = baseInfo?.defaultSettings?.models?.[0]?.modelId || providerSettings?.models?.[0]?.modelId
   const handleCheckApiKey = async () => {
     try {
@@ -189,7 +191,13 @@ function ProviderSettings({ providerId }: { providerId: string }) {
         {}
       )
       setApiKeyAvaliable(true)
-    } catch (e) {
+    } catch (e: any) {
+      try {
+        const errorMessage = JSON.parse(e.responseBody)
+        setApiKeyCheckingError(JSON.stringify(errorMessage, null, 2))
+      } catch {
+        setApiKeyCheckingError(e?.responseBody || e?.message || e?.error?.message || String(e))
+      }
       setApiKeyAvaliable(false)
     } finally {
       setApiKeyChecking(false)
@@ -204,7 +212,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
     <Stack key={baseInfo.id} gap="xxl">
       <Flex gap="xs" align="center">
         <Title order={3} c="chatbox-secondary">
-          {baseInfo.name}
+          {t(baseInfo.name)}
         </Title>
         {baseInfo.urls?.website && (
           <Button
@@ -279,21 +287,32 @@ function ProviderSettings({ providerId }: { providerId: string }) {
         )}
 
         {/* API Key */}
-        {![ModelProvider.Ollama, ModelProvider.LMStudio, ''].includes(baseInfo.id) && (
+        {![ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio, ''].includes(baseInfo.id) && (
           <Stack gap="xxs">
             <Text span fw="600">
               {t('API Key')}
             </Text>
             <Flex gap="xs" align="center">
               <PasswordInput flex={1} value={providerSettings?.apiKey || ''} onChange={handleApiKeyChange} />
-              <Button
-                size="sm"
-                disabled={!providerSettings?.apiKey || !checkModel}
-                loading={apiKeyChecking}
-                onClick={handleCheckApiKey}
+              <Tooltip
+                disabled={!!providerSettings?.apiKey && !!checkModel}
+                label={
+                  !providerSettings?.apiKey
+                    ? t('API Key is required to check connection')
+                    : !checkModel
+                    ? t('Add at least one model to check connection')
+                    : null
+                }
               >
-                {t('Check')}
-              </Button>
+                <Button
+                  size="sm"
+                  disabled={!providerSettings?.apiKey || !checkModel}
+                  loading={apiKeyChecking}
+                  onClick={handleCheckApiKey}
+                >
+                  {t('Check')}
+                </Button>
+              </Tooltip>
             </Flex>
             {apiKeyAvaliable === true && (
               <Text span c="chatbox-success">
@@ -303,6 +322,9 @@ function ProviderSettings({ providerId }: { providerId: string }) {
             {apiKeyAvaliable === false && (
               <Text span c="chatbox-error">
                 {t('Connection failed!')}
+                <ScrollArea w="100%" className="bg-red-50 dark:bg-red-900/20 px-2">
+                  <pre className="text-xs">{apiKeyCheckingError}</pre>
+                </ScrollArea>
               </Text>
             )}
           </Stack>
@@ -310,11 +332,11 @@ function ProviderSettings({ providerId }: { providerId: string }) {
 
         {/* API Host */}
         {[
-          ModelProvider.OpenAI,
-          ModelProvider.Claude,
-          ModelProvider.Gemini,
-          ModelProvider.Ollama,
-          ModelProvider.LMStudio,
+          ModelProviderEnum.OpenAI,
+          ModelProviderEnum.Claude,
+          ModelProviderEnum.Gemini,
+          ModelProviderEnum.Ollama,
+          ModelProviderEnum.LMStudio,
           '',
         ].includes(baseInfo.id) && (
           <Stack gap="xxs">
@@ -335,7 +357,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
               />
             </Flex>
             <Text span size="xs" flex="0 1 auto" c="chatbox-secondary">
-              {[ModelProvider.OpenAI, ModelProvider.Ollama, ModelProvider.LMStudio, ''].includes(baseInfo.id)
+              {[ModelProviderEnum.OpenAI, ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio, ''].includes(baseInfo.id)
                 ? normalizeOpenAIApiHostAndPath({
                     apiHost: providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost,
                   }).apiHost +
@@ -343,11 +365,11 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                     apiHost: providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost,
                   }).apiPath
                 : ''}
-              {baseInfo.id === ModelProvider.Claude
+              {baseInfo.id === ModelProviderEnum.Claude
                 ? normalizeClaudeHost(providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost || '').apiHost +
                   normalizeClaudeHost(providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost || '').apiPath
                 : ''}
-              {baseInfo.id === ModelProvider.Gemini
+              {baseInfo.id === ModelProviderEnum.Gemini
                 ? normalizeGeminiHost(providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost || '').apiHost +
                   normalizeGeminiHost(providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost || '').apiPath
                 : ''}
@@ -376,18 +398,16 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                   </Flex>
                 </Stack>
 
-                {providerSettings?.apiPath != undefined && (
-                  <Stack gap="xxs" flex={2}>
-                    <Flex justify="space-between" align="flex-end" gap="md">
-                      <Text span fw="600" className=" whitespace-nowrap">
-                        {t('API Path')}
-                      </Text>
-                    </Flex>
-                    <Flex gap="xs" align="center">
-                      <TextInput flex={1} value={providerSettings?.apiPath} onChange={handleApiPathChange} />
-                    </Flex>
-                  </Stack>
-                )}
+                <Stack gap="xxs" flex={2}>
+                  <Flex justify="space-between" align="flex-end" gap="md">
+                    <Text span fw="600" className=" whitespace-nowrap">
+                      {t('API Path')}
+                    </Text>
+                  </Flex>
+                  <Flex gap="xs" align="center">
+                    <TextInput flex={1} value={providerSettings?.apiPath} onChange={handleApiPathChange} />
+                  </Flex>
+                </Stack>
               </Flex>
               <Text span size="xs" flex="0 1 auto" c="chatbox-secondary">
                 {normalizeOpenAIApiHostAndPath({
@@ -419,7 +439,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
           </>
         )}
 
-        {baseInfo.id === ModelProvider.Azure && (
+        {baseInfo.id === ModelProviderEnum.Azure && (
           <>
             {/* Azure Endpoint */}
             <Stack gap="xxs">
@@ -439,7 +459,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                 />
               </Flex>
               <Text span size="xs" flex="0 1 auto" c="chatbox-secondary">
-                {baseInfo.id === ModelProvider.Azure
+                {baseInfo.id === ModelProviderEnum.Azure
                   ? normalizeAzureEndpoint(providerSettings?.endpoint || baseInfo.defaultSettings?.endpoint || '')
                       .endpoint +
                     normalizeAzureEndpoint(providerSettings?.endpoint || baseInfo.defaultSettings?.endpoint || '')

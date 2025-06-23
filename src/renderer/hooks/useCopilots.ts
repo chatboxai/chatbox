@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
 import * as remote from '../packages/remote'
 import { CopilotDetail } from '../../shared/types'
-import { useAtom } from 'jotai'
-import { myCopilotsAtom } from '../stores/atoms'
+import { useAtom, useAtomValue } from 'jotai'
+import { languageAtom, myCopilotsAtom } from '../stores/atoms'
+import { useQuery } from '@tanstack/react-query'
 
 export function useMyCopilots() {
   const [copilots, setCopilots] = useAtom(myCopilotsAtom)
@@ -35,14 +35,14 @@ export function useMyCopilots() {
   }
 }
 
-export function useRemoteCopilots(lang: string, windowOpen: boolean) {
-  const [copilots, _setCopilots] = useState<CopilotDetail[]>([])
-  useEffect(() => {
-    if (windowOpen) {
-      remote.listCopilots(lang).then((copilots) => {
-        _setCopilots(copilots)
-      })
-    }
-  }, [lang, windowOpen])
-  return { copilots }
+export function useRemoteCopilots() {
+  const language = useAtomValue(languageAtom)
+  const { data: copilots, ...others } = useQuery({
+    queryKey: ['remote-copilots', language],
+    queryFn: () => remote.listCopilots(language),
+    initialData: [],
+    initialDataUpdatedAt: 0,
+    staleTime: 3600 * 1000,
+  })
+  return { copilots, ...others }
 }

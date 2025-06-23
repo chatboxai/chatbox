@@ -1,5 +1,6 @@
 import { ofetch } from 'ofetch'
-import WebSearch, { SearchResult } from './base'
+import WebSearch from './base'
+import { SearchResult } from 'src/shared/types'
 
 export class TavilySearch extends WebSearch {
   private apiKey: string

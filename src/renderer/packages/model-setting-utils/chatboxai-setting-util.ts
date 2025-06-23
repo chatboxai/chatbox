@@ -1,33 +1,9 @@
-import { ChatboxAIModel, ModelProvider, ProviderSettings, Session, SessionType, Settings } from 'src/shared/types'
-import { ModelSettingUtil } from './interface'
-import { chatboxAIModels } from '../models/chatboxai'
+import { ModelOptionGroup, ModelProvider, ModelProviderEnum, ProviderSettings, SessionType } from 'src/shared/types'
 import BaseConfig from './base-config'
-import { ModelOptionGroup } from 'src/shared/types'
-import ChatboxAI from '../models/chatboxai'
-
-function formatModelLabel(value: string): string {
-  if (value === 'deepseek-chat') {
-    return 'DeepSeek V3'
-  } else if (value === 'deepseek-reasoner') {
-    return 'DeepSeek R1'
-  }
-  return value.replace('chatboxai-', 'Chatbox AI ')
-}
+import { ModelSettingUtil } from './interface'
 
 export default class ChatboxAISettingUtil extends BaseConfig implements ModelSettingUtil {
-  public provider: ModelProvider = ModelProvider.ChatboxAI
-
-  // private async getCurrentModelOptionLabel(settings: Settings): Promise<string> {
-  //   const currentValue = this.getCurrentModelOptionValue(settings)
-  //   const optionGroups = await this.getMergeOptionGroups(settings)
-  //   for (const optionGroup of optionGroups) {
-  //     const option = optionGroup.options.find((option) => option.value === currentValue)
-  //     if (option) {
-  //       return option.label
-  //     }
-  //   }
-  //   return currentValue
-  // }
+  public provider: ModelProvider = ModelProviderEnum.ChatboxAI
 
   async getCurrentModelDisplayName(
     model: string,
@@ -37,25 +13,8 @@ export default class ChatboxAISettingUtil extends BaseConfig implements ModelSet
     if (sessionType === 'picture') {
       return `Chatbox AI`
     } else {
-      // let model = await this.getCurrentModelOptionLabel(settings)
-      // if (!model.toLowerCase().includes('chatbox')) {
-      //   model = `Chatbox AI (${model})`
-      // }
-      // model = model.replace('chatboxai-', 'Chatbox AI ')
-      // return model
       return `Chatbox AI (${providerSettings?.models?.find((m) => m.modelId === model)?.nickname || model})`
     }
-  }
-
-  public getLocalOptionGroups() {
-    return [
-      {
-        options: chatboxAIModels.map((value) => ({
-          label: formatModelLabel(value),
-          value: value,
-        })),
-      },
-    ]
   }
 
   protected async listProviderModels() {
@@ -73,13 +32,5 @@ export default class ChatboxAISettingUtil extends BaseConfig implements ModelSet
       })
     }
     return ret.filter((group) => group.options.length > 0)
-  }
-
-  public isCurrentModelSupportImageInput(model: string) {
-    return ChatboxAI.helpers.isModelSupportVision(model)
-  }
-
-  public isCurrentModelSupportToolUse(model: string) {
-    return ChatboxAI.helpers.isModelSupportToolUse(model)
   }
 }

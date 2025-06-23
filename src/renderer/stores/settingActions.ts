@@ -1,6 +1,6 @@
 import { getDefaultStore } from 'jotai'
+import { ModelProvider, ModelProviderEnum, Settings } from '../../shared/types'
 import * as atoms from './atoms'
-import { Settings, ModelProvider } from '../../shared/types'
 
 export function modify(update: Partial<Settings>) {
   const store = getDefaultStore()
@@ -30,7 +30,7 @@ export function needEditSetting() {
     if (
       keys.filter(
         (key) =>
-          (key === ModelProvider.Ollama || key === ModelProvider.LMStudio || key.startsWith('custom-provider')) &&
+          (key === ModelProviderEnum.Ollama || key === ModelProviderEnum.LMStudio || key.startsWith('custom-provider')) &&
           providers[key].models?.length
       ).length > 0
     ) {
@@ -100,7 +100,7 @@ export function createCustomProvider() {
   // const store = getDefaultStore()
   // store.set(atoms.settingsAtom, (settings) => ({
   //   ...settings,
-  //   aiProvider: ModelProvider.Custom,
+  //   aiProvider: ModelProviderEnum.Custom,
   //   selectedCustomProviderId: newCustomProvider.id,
   //   customProviders: [newCustomProvider, ...settings.customProviders],
   // }))

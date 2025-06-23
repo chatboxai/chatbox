@@ -77,7 +77,7 @@ export function Keys(props: {
   const opacityClass = props.opacity !== undefined ? `opacity-${props.opacity * 100}` : ''
   return (
     <span
-      className={`inline-block px-1 font-mono whitespace-nowrap ${sizeClass} ${opacityClass} ${props.className || ''}`}
+      className={`inline-block px-1 ${opacityClass} ${props.className || ''}`}
     >
       {props.keys.map((key, index) => (
         <Kbd key={key + index} className="mr-3xs">

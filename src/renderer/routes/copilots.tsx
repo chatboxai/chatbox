@@ -31,7 +31,7 @@ import {
   useTheme,
 } from '@mui/material'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom } from 'jotai'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { v4 as uuidv4 } from 'uuid'
@@ -43,14 +43,13 @@ export const Route = createFileRoute('/copilots')({
 })
 
 function Copilots() {
-  const language = useAtomValue(atoms.languageAtom)
   const [open, setOpen] = useAtom(atoms.openCopilotDialogAtom)
   const navigate = useNavigate()
 
   const { t } = useTranslation()
 
   const store = useMyCopilots()
-  const remoteStore = useRemoteCopilots(language, true)
+  const { copilots: remoteCopilots } = useRemoteCopilots()
 
   const createChatSessionWithCopilot = async (copilot: CopilotDetail) => {
     const msgs: Message[] = []
@@ -90,7 +89,13 @@ function Copilots() {
       remote.recordCopilotShare(newDetail)
     }
     store.addOrUpdate(newDetail)
-    createChatSessionWithCopilot(newDetail)
+    // createChatSessionWithCopilot(newDetail)
+    navigate({
+      to: '/',
+      search: {
+        copilotId: detail.id,
+      },
+    })
     handleClose()
   }
 
@@ -190,7 +195,7 @@ function Copilots() {
             overflowX: 'hidden',
           }}
         >
-          {remoteStore.copilots.map((item, ix) => (
+          {remoteCopilots?.map((item, ix) => (
             <MiniItem key={`${item.id}_${ix}`} mode="remote" detail={item} useMe={() => useCopilot(item)} />
           ))}
         </div>

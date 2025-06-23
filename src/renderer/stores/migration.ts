@@ -1,4 +1,4 @@
-import { ModelProvider, ModelProviderType, Session, SessionMeta, SessionSettings, Settings } from '@/../shared/types'
+import { ModelProvider, ModelProviderEnum, ModelProviderType, Session, SessionMeta, Settings } from '@/../shared/types'
 import {
   artifactSessionCN,
   artifactSessionEN,
@@ -15,13 +15,13 @@ import storage, { StorageKey } from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import * as Sentry from '@sentry/react'
 import { getDefaultStore } from 'jotai'
+import { difference, intersection, keyBy, uniq, uniqBy } from 'lodash'
 import oldStore from 'store'
+import { v4 as uuidv4 } from 'uuid'
 import * as defaults from '../../shared/defaults'
 import { getLogger } from '../lib/utils'
 import { migrationProcessAtom } from './atoms/utilAtoms'
 import { getSessionMeta } from './sessionStorageMutations'
-import { difference, intersection, keyBy, uniq, uniqBy } from 'lodash'
-import { v4 as uuidv4 } from 'uuid'
 
 const log = getLogger('migration')
 
@@ -398,7 +398,7 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
 
   try {
     if (openaiKey || apiHost) {
-      providers[ModelProvider.OpenAI] = {
+      providers[ModelProviderEnum.OpenAI] = {
         apiHost,
         apiKey: openaiKey,
         // 将openaiCustomModelOptions和openaiCustomModel迁移过来
@@ -406,7 +406,7 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
           openaiCustomModel || openaiCustomModelOptions
             ? uniqBy(
                 [
-                  ...(defaults.SystemProviders.find((p) => p.id === ModelProvider.OpenAI)?.defaultSettings?.models ||
+                  ...(defaults.SystemProviders.find((p) => p.id === ModelProviderEnum.OpenAI)?.defaultSettings?.models ||
                     []),
                   ...(openaiCustomModel ? [{ modelId: openaiCustomModel }] : []),
                   ...(openaiCustomModelOptions || []).map((o: string) => ({ modelId: o })),
@@ -416,34 +416,39 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
             : undefined,
       }
     }
+    log.info('migrate openai settings done')
   } catch (e) {
     log.info('migrate openai settings failed.')
   }
 
   if (claudeApiKey || claudeApiHost) {
-    providers[ModelProvider.Claude] = {
+    providers[ModelProviderEnum.Claude] = {
       apiKey: claudeApiKey,
       apiHost: claudeApiHost,
     }
+    log.info('migrate claude settings done')
   }
   if (geminiAPIKey || geminiAPIHost) {
-    providers[ModelProvider.Gemini] = {
+    providers[ModelProviderEnum.Gemini] = {
       apiKey: geminiAPIKey,
       apiHost: geminiAPIHost,
     }
+    log.info('migrate gemini settings done')
   }
   if (deepseekAPIKey) {
-    providers[ModelProvider.DeepSeek] = {
+    providers[ModelProviderEnum.DeepSeek] = {
       apiKey: deepseekAPIKey,
     }
+    log.info('migrate deepseek settings done')
   }
   if (siliconCloudKey) {
-    providers[ModelProvider.SiliconFlow] = {
+    providers[ModelProviderEnum.SiliconFlow] = {
       apiKey: siliconCloudKey,
     }
+    log.info('migrate siliconflow settings done')
   }
   if (azureEndpoint || azureDeploymentNameOptions || azureDalleDeploymentName || azureApikey || azureApiVersion) {
-    providers[ModelProvider.Azure] = {
+    providers[ModelProviderEnum.Azure] = {
       apiKey: azureApikey,
       endpoint: azureEndpoint,
       dalleDeploymentName: azureDalleDeploymentName,
@@ -452,36 +457,43 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
         modelId: op,
       })),
     }
+    log.info('migrate azure settings done')
   }
   if (xAIKey) {
-    providers[ModelProvider.XAI] = {
+    providers[ModelProviderEnum.XAI] = {
       apiKey: xAIKey,
     }
+    log.info('migrate xai settings done')
   }
   if (ollamaHost) {
-    providers[ModelProvider.Ollama] = {
+    providers[ModelProviderEnum.Ollama] = {
       apiHost: ollamaHost,
     }
+    log.info('migrate ollama settings done')
   }
   if (lmStudioHost) {
-    providers[ModelProvider.LMStudio] = {
+    providers[ModelProviderEnum.LMStudio] = {
       apiHost: lmStudioHost,
     }
+    log.info('migrate lmstudio settings done')
   }
   if (perplexityApiKey) {
-    providers[ModelProvider.Perplexity] = {
+    providers[ModelProviderEnum.Perplexity] = {
       apiKey: perplexityApiKey,
     }
+    log.info('migrate perplexity settings done')
   }
   if (groqAPIKey) {
-    providers[ModelProvider.Groq] = {
+    providers[ModelProviderEnum.Groq] = {
       apiKey: groqAPIKey,
     }
+    log.info('migrate groq settings done')
   }
   if (chatglmApiKey) {
-    providers[ModelProvider.ChatGLM6B] = {
+    providers[ModelProviderEnum.ChatGLM6B] = {
       apiKey: chatglmApiKey,
     }
+    log.info('migrate chatglm settings done')
   }
 
   try {
@@ -505,6 +517,7 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
               modelId: op,
             })),
         }
+        log.info(`migrate custom provider [${cp.name}] settings done`)
       })
     }
   } catch (e) {
@@ -521,14 +534,18 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
 
   try {
     await dataStore.setData(StorageKey.Settings, { ...oldSettings, providers, customProviders, fontSize } as Settings)
+    log.info('migrate settings done')
   } catch (e) {
     log.info('save new settings to store failed.')
   }
 
   // 迁移session settings
   const chatSessionList = await dataStore.getData<SessionMeta[]>(StorageKey.ChatSessionsList, [])
+  log.info(`migrate_9_to_10, chatSessionList: ${chatSessionList.length}`)
+
   const sessionMap: { [key: string]: Session } = {}
-  for (const sessionMeta of chatSessionList) {
+  for (let i = 0; i < chatSessionList.length; i++) {
+    const sessionMeta = chatSessionList[i]
     try {
       const session: Session = await dataStore.getData(StorageKeyGenerator.session(sessionMeta.id) as any, {} as any)
 
@@ -536,20 +553,20 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
         const oldSessionSettings = (session.settings || {}) as any
         const sessionProvider: ModelProvider = oldSessionSettings.aiProvider ?? oldSettings.aiProvider
         const modelKey = {
-          [ModelProvider.ChatboxAI]: 'chatboxAIModel',
-          [ModelProvider.OpenAI]: 'model',
-          [ModelProvider.Claude]: 'claudeModel',
-          [ModelProvider.Gemini]: 'geminiModel',
-          [ModelProvider.Ollama]: 'ollamaModel',
-          [ModelProvider.LMStudio]: 'lmStudioModel',
-          [ModelProvider.DeepSeek]: 'deepseekModel',
-          [ModelProvider.SiliconFlow]: 'siliconCloudModel',
-          [ModelProvider.Azure]: 'azureDeploymentName',
-          [ModelProvider.XAI]: 'xAIModel',
-          [ModelProvider.Perplexity]: 'perplexityModel',
-          [ModelProvider.Groq]: 'groqModel',
-          [ModelProvider.ChatGLM6B]: 'chatglmModel',
-          [ModelProvider.Custom]: 'model',
+          [ModelProviderEnum.ChatboxAI]: 'chatboxAIModel',
+          [ModelProviderEnum.OpenAI]: 'model',
+          [ModelProviderEnum.Claude]: 'claudeModel',
+          [ModelProviderEnum.Gemini]: 'geminiModel',
+          [ModelProviderEnum.Ollama]: 'ollamaModel',
+          [ModelProviderEnum.LMStudio]: 'lmStudioModel',
+          [ModelProviderEnum.DeepSeek]: 'deepseekModel',
+          [ModelProviderEnum.SiliconFlow]: 'siliconCloudModel',
+          [ModelProviderEnum.Azure]: 'azureDeploymentName',
+          [ModelProviderEnum.XAI]: 'xAIModel',
+          [ModelProviderEnum.Perplexity]: 'perplexityModel',
+          [ModelProviderEnum.Groq]: 'groqModel',
+          [ModelProviderEnum.ChatGLM6B]: 'chatglmModel',
+          [ModelProviderEnum.Custom]: 'model',
         }[sessionProvider]
         const modelId: string = oldSessionSettings[modelKey] ?? oldSettings[modelKey]
         session.settings =
@@ -562,11 +579,11 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
                 topP: oldSessionSettings.topP ?? oldSettings.topP,
               }
             : {
-                provider: [ModelProvider.ChatboxAI, ModelProvider.OpenAI, ModelProvider.Azure].includes(
+                provider: [ModelProviderEnum.ChatboxAI, ModelProviderEnum.OpenAI, ModelProviderEnum.Azure].includes(
                   oldSettings.aiProvider
                 )
                   ? oldSettings.aiProvider
-                  : ModelProvider.ChatboxAI,
+                  : ModelProviderEnum.ChatboxAI,
                 modelId: 'DALL-E-3',
                 imageGenerateNum: oldSessionSettings.imageGenerateNum ?? 3,
                 dalleStyle: oldSessionSettings.dalleStyle ?? 'vivid',
@@ -574,13 +591,15 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
 
         sessionMap[StorageKeyGenerator.session(session.id)] = session
       }
+      log.info(`migrate session [${i + 1}/${chatSessionList.length}] settings done`)
     } catch (e) {
-      log.info(`migrate session [${sessionMeta.id}] settings failed.'`)
+      log.info(`migrate session [${i + 1}/${chatSessionList.length}] settings failed, ${sessionMeta.name}`)
     }
   }
 
   try {
     await dataStore.setAll(sessionMap)
+    log.info('migrate sessions settings done')
   } catch (e) {
     log.info('save sessions settings to store failed.')
   }

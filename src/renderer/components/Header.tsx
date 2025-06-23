@@ -116,59 +116,45 @@ export default function Header(props: Props) {
         </Box>
       )}
       <div className={cn('w-full flex flex-row flex-grow pt-2 pb-2')}>
-        <Typography
-          variant="h6"
-          color="inherit"
-          component="div"
-          noWrap
-          sx={{
-            flex: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            mr: 1,
-          }}
-          className="flex items-center w-0"
-        >
-          <div className={cn('controls flex flex-row items-center shrink w-full')}>
-            <Typography
-              variant="h6"
-              noWrap
-              className={cn(showSidebar ? 'ml-3' : 'ml-1')}
-              sx={{
-                maxWidth: isSmallScreen ? '12rem' : '18rem',
-              }}
-            >
-              {currentSession?.name}
-            </Typography>
-
-            {isSmallScreen ? (
-              <MiniButton
-                className="ml-1 sm:ml-2"
-                style={{ color: theme.palette.text.secondary }}
-                onClick={() => {
-                  editCurrentSession()
-                }}
-                tooltipTitle={
-                  <div className="text-center inline-block">
-                    <span>{t('Customize settings for the current conversation')}</span>
-                  </div>
-                }
-                tooltipPlacement="top"
-              >
-                <Settings2 size="16" strokeWidth={1} />
-              </MiniButton>
-            ) : (
-              <a
-                onClick={() => {
-                  editCurrentSession()
-                }}
-              >
-                {EditButton}
-              </a>
+        <div className="flex flex-row items-center w-0 flex-1 mr-1">
+          <Typography
+            variant="h6"
+            noWrap
+            className={cn(
+              'flex-shrink flex-grow-0 overflow-hidden text-ellipsis whitespace-nowrap',
+              showSidebar ? 'ml-3' : 'ml-1'
             )}
-          </div>
-        </Typography>
-        <div className={needRoomForWindowsWindowControls ? 'mr-36' : ''}>
+          >
+            {currentSession?.name}
+          </Typography>
+          {isSmallScreen ? (
+            <MiniButton
+              className="ml-1 sm:ml-2 controls cursor-pointer"
+              style={{ color: theme.palette.text.secondary }}
+              onClick={() => {
+                editCurrentSession()
+              }}
+              tooltipTitle={
+                <div className="text-center inline-block">
+                  <span>{t('Customize settings for the current conversation')}</span>
+                </div>
+              }
+              tooltipPlacement="top"
+            >
+              <Settings2 size="16" strokeWidth={1} />
+            </MiniButton>
+          ) : (
+            <a
+              onClick={() => {
+                editCurrentSession()
+              }}
+              className="controls flex mr-8 cursor-pointer"
+            >
+              {EditButton}
+            </a>
+          )}
+        </div>
+        <div className={cn('flex-shrink-0', needRoomForWindowsWindowControls ? 'mr-36' : '')}>
           <Toolbar />
         </div>
       </div>

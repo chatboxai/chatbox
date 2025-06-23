@@ -1,5 +1,6 @@
-import WebSearch, { SearchResult } from './base'
+import WebSearch from './base'
 import { webBrowsing } from '@/packages/remote'
+import { SearchResult } from 'src/shared/types'
 
 export class ChatboxSearch extends WebSearch {
   private licenseKey: string

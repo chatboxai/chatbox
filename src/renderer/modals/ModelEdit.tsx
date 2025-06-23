@@ -61,7 +61,7 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo }) => {
               <Text>{t('Nickname')}</Text>
             </Stack>
             <TextInput
-              placeholder={t('optional')}
+              placeholder={t('optional') || 'Optional'}
               flex={1}
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}

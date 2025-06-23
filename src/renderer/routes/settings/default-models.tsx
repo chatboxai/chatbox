@@ -3,7 +3,7 @@ import { useSettings } from '@/hooks/useSettings'
 import { Flex, Stack, Text, Title } from '@mantine/core'
 import { IconSelector } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo } from 'react'
+import { forwardRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SystemProviders } from 'src/shared/defaults'
 
@@ -82,33 +82,38 @@ function RouteComponent() {
   )
 }
 
-function ModelSelectContent({ provider, model }: { provider?: string; model?: string }) {
-  const { settings } = useSettings()
-  const displayText = useMemo(
-    () =>
-      !provider || !model
-        ? 'Auto'
-        : ([...SystemProviders, ...(settings.customProviders || [])].find((p) => p.id === provider)?.name || provider) +
-          '/' +
-          ((settings.providers?.[provider]?.models || SystemProviders[provider as any]?.defaultSettings?.models)?.find(
-            (m) => m.modelId === model
-          )?.nickname || model),
-    [provider, model, settings]
-  )
-  return (
-    <Flex
-      px={12}
-      py={6}
-      component="span"
-      align="center"
-      c="chatbox-tertiary"
-      w={320}
-      className="border-solid border border-[var(--mantine-color-chatbox-border-primary-outline)] rounded-sm"
-    >
-      <Text span flex={1} className=" text-left">
-        {displayText}
-      </Text>
-      <IconSelector size={16} className=" text-inherit" />
-    </Flex>
-  )
-}
+const ModelSelectContent = forwardRef<HTMLButtonElement, { provider?: string; model?: string; onClick?: () => void }>(
+  ({ provider, model, onClick }, ref) => {
+    const { settings } = useSettings()
+    const displayText = useMemo(
+      () =>
+        !provider || !model
+          ? 'Auto'
+          : ([...SystemProviders, ...(settings.customProviders || [])].find((p) => p.id === provider)?.name ||
+              provider) +
+            '/' +
+            ((
+              settings.providers?.[provider]?.models || SystemProviders[provider as any]?.defaultSettings?.models
+            )?.find((m) => m.modelId === model)?.nickname || model),
+      [provider, model, settings]
+    )
+    return (
+      <Flex
+        ref={ref}
+        px={12}
+        py={6}
+        component="button"
+        align="center"
+        c="chatbox-tertiary"
+        w={320}
+        className="border-solid border border-[var(--mantine-color-chatbox-border-primary-outline)] rounded-sm cursor-pointer bg-transparent"
+        onClick={onClick}
+      >
+        <Text span flex={1} className=" text-left">
+          {displayText}
+        </Text>
+        <IconSelector size={16} className=" text-inherit" />
+      </Flex>
+    )
+  }
+)

@@ -1,8 +1,8 @@
-import React from 'react'
+import React, { forwardRef } from 'react'
 import { Tooltip } from '@mui/material'
 import { cn } from '@/lib/utils'
 
-export default function MiniButton(props: {
+interface Props {
   children: React.ReactNode
   onClick?: React.MouseEventHandler<HTMLButtonElement>
   disabled?: boolean
@@ -22,10 +22,13 @@ export default function MiniButton(props: {
     | 'right-start'
     | 'top-end'
     | 'top-start'
-}) {
+}
+
+const MiniButton = forwardRef<HTMLButtonElement, Props>((props, ref) => {
   const { onClick, disabled, className, style, tooltipTitle, tooltipPlacement, children } = props
   const button = (
     <button
+      ref={ref}
       onClick={onClick}
       disabled={disabled}
       className={cn(
@@ -48,4 +51,6 @@ export default function MiniButton(props: {
       {button}
     </Tooltip>
   )
-}
+})
+
+export default MiniButton

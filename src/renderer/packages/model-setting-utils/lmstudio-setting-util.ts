@@ -1,10 +1,10 @@
-import { ModelProvider, ProviderSettings, Session, SessionType, Settings } from 'src/shared/types'
-import { ModelSettingUtil } from './interface'
-import BaseConfig from './base-config'
+import { ModelProvider, ModelProviderEnum, ProviderSettings, SessionType } from 'src/shared/types'
 import LMStudio from '../models/lmstudio'
+import BaseConfig from './base-config'
+import { ModelSettingUtil } from './interface'
 
 export default class LMStudioSettingUtil extends BaseConfig implements ModelSettingUtil {
-  public provider: ModelProvider = ModelProvider.LMStudio
+  public provider: ModelProvider = ModelProviderEnum.LMStudio
   async getCurrentModelDisplayName(
     model: string,
     sessionType: SessionType,
@@ -13,23 +13,14 @@ export default class LMStudioSettingUtil extends BaseConfig implements ModelSett
     return `LM Studio (${providerSettings?.models?.find((m) => m.modelId === model)?.nickname || model})`
   }
 
-  public getLocalOptionGroups() {
-    return []
-  }
-
   protected async listProviderModels(settings: ProviderSettings) {
     const lmStudio = new LMStudio({
       lmStudioHost: settings.apiHost!,
-      lmStudioModel: '',
+        model: {
+        modelId: '',
+        capabilities: [],
+      },
     })
     return lmStudio.listModels()
-  }
-
-  isCurrentModelSupportImageInput(model: string): boolean {
-    return LMStudio.helpers.isModelSupportVision(model)
-  }
-
-  isCurrentModelSupportToolUse(model: string): boolean {
-    return LMStudio.helpers.isModelSupportToolUse(model)
   }
 }

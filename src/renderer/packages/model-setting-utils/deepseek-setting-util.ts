@@ -1,10 +1,10 @@
-import { ModelProvider, ProviderSettings, Session, SessionType, Settings } from 'src/shared/types'
-import { ModelSettingUtil } from './interface'
+import { ModelProvider, ModelProviderEnum, ProviderSettings, SessionType } from 'src/shared/types'
+import DeepSeek from '../models/deepseek'
 import BaseConfig from './base-config'
-import DeepSeek, { deepSeekModels } from '../models/deepseek'
+import { ModelSettingUtil } from './interface'
 
 export default class DeepSeekSettingUtil extends BaseConfig implements ModelSettingUtil {
-  public provider: ModelProvider = ModelProvider.DeepSeek
+  public provider: ModelProvider = ModelProviderEnum.DeepSeek
   async getCurrentModelDisplayName(
     model: string,
     sessionType: SessionType,
@@ -13,32 +13,14 @@ export default class DeepSeekSettingUtil extends BaseConfig implements ModelSett
     return `DeepSeek API (${providerSettings?.models?.find((m) => m.modelId === model)?.nickname || model})`
   }
 
-  public getLocalOptionGroups() {
-    return [
-      {
-        options: deepSeekModels.map((value) => {
-          return {
-            label: value,
-            value: value,
-          }
-        }),
-      },
-    ]
-  }
-
   protected async listProviderModels(settings: ProviderSettings) {
     const deepSeek = new DeepSeek({
       deepseekAPIKey: settings.apiKey!,
-      deepseekModel: '',
+      model: {
+        modelId: '',
+        capabilities: [],
+      },
     })
     return deepSeek.listModels()
-  }
-
-  public isCurrentModelSupportImageInput(model: string) {
-    return DeepSeek.helpers.isModelSupportVision(model)
-  }
-
-  public isCurrentModelSupportToolUse(model: string) {
-    return DeepSeek.helpers.isModelSupportToolUse(model)
   }
 }

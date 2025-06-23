@@ -14,6 +14,7 @@ import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
 import { router } from './router'
 import { RouterProvider } from '@tanstack/react-router'
 import '@mantine/core/styles.css'
+import '@mantine/spotlight/styles.css'
 
 const log = getLogger('index')
 
@@ -59,6 +60,9 @@ async function initializeApp() {
 
   // 最后执行 storage 清理，清理不 block 进入UI
   import('./setup/storage_clear')
+
+  // 启动mcp服务器
+  import('./setup/mcp_bootstrap')
 }
 
 // ==========渲染节点==============
@@ -70,8 +74,8 @@ function InitPage() {
   return (
     <div className={cn('flex flex-col justify-center items-center', showLoadingLog ? 'pt-3' : 'h-80')}>
       <div className={cn('flex flex-col items-center', showLoadingLog ? 'hidden' : '')}>
-        <h1 className="font-roboto font-bold text-3xl text-gray-800 m-0">Chatbox</h1>
-        <p className="font-roboto font-normal text-gray-400 opacity-40">
+        <h1 className="font-roboto font-bold text-3xl m-0">Chatbox</h1>
+        <p className="font-roboto font-normal opacity-40">
           {migrationProcess ? `Migrating...(${migrationProcess})` : 'loading...'}
         </p>
       </div>

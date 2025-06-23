@@ -1,3 +1,4 @@
+import { useProviders } from '@/hooks/useProviders'
 import { useInputBoxHeight, useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { trackingEvent } from '@/packages/event'
@@ -6,14 +7,18 @@ import platform from '@/platform'
 import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { scrollToMessage } from '@/stores/scrollActions'
+import { saveSession } from '@/stores/sessionStorageMutations'
 import { getMessageText } from '@/utils/message'
 import NiceModal from '@ebay/nice-modal-react'
+import { Box, Text, Tooltip } from '@mantine/core'
 import StopIcon from '@mui/icons-material/Stop'
 import { useTheme } from '@mui/material'
+import { IconSelector } from '@tabler/icons-react'
 import autosize from 'autosize'
+import { clsx } from 'clsx'
 import { useAtom, useAtomValue } from 'jotai'
 import _ from 'lodash'
-import { FilePen, FolderClosed, Globe, Image, Link, SendHorizontal, Settings2, Undo2 } from 'lucide-react'
+import { FilePen, FolderClosed, Gavel, Globe, Image, Link, SendHorizontal, Settings2, Undo2 } from 'lucide-react'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useTranslation } from 'react-i18next'
@@ -23,15 +28,12 @@ import icon from '../static/icon.png'
 import * as atoms from '../stores/atoms'
 import * as sessionActions from '../stores/sessionActions'
 import { FileMiniCard, ImageMiniCard, LinkMiniCard } from './Attachments'
-import MiniButton from './MiniButton'
-import { Keys } from './Shortcut'
-import ModelSelector from './ModelSelectorNew'
-import { IconSelector } from '@tabler/icons-react'
-import { getSession, saveSession } from '@/stores/sessionStorageMutations'
-import { useProviders } from '@/hooks/useProviders'
 import ImageModelSelect from './ImageModelSelect'
-import { Box, Text, Tooltip } from '@mantine/core'
-import { clsx } from 'clsx'
+import MCPMenu from './mcp/MCPMenu'
+import MiniButton from './MiniButton'
+import ModelSelector from './ModelSelectorNew'
+import { Keys } from './Shortcut'
+import { featureFlags } from '@/utils/feature-flags'
 
 export default function InputBox() {
   const theme = useTheme()
@@ -541,6 +543,30 @@ export default function InputBox() {
                 className={cn(webBrowsingMode && 'text-blue-500')}
               />
             </MiniButton>
+            {featureFlags.mcp && (
+              <MCPMenu>
+                {(enabledTools) =>
+                  enabledTools > 0 ? (
+                    <div
+                      className={cn(
+                        'cursor-pointer flex flex-row gap-1 items-center mr-1 sm:mr-2 text-blue-500 bg-blue-100 rounded-md p-1',
+                        currentSessionType !== 'picture' ? '' : 'hidden'
+                      )}
+                    >
+                      <Gavel size="20" strokeWidth={1.5} />
+                      <span className="font-medium">{enabledTools}</span>
+                    </div>
+                  ) : (
+                    <MiniButton
+                      className={cn('mr-1 sm:mr-2', currentSessionType !== 'picture' ? '' : 'hidden')}
+                      style={{ color: theme.palette.text.primary }}
+                    >
+                      <Gavel size="22" strokeWidth={1} />
+                    </MiniButton>
+                  )
+                }
+              </MCPMenu>
+            )}
             {!isSmallScreen && (
               <MiniButton
                 className="mr-1 sm:mr-2"

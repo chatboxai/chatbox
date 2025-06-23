@@ -1,31 +1,21 @@
-import { ModelProvider, ProviderSettings, SessionType } from 'src/shared/types'
+import { ModelProvider, ModelProviderEnum, ProviderBaseInfo, ProviderSettings, SessionType } from 'src/shared/types'
 import { ModelSettingUtil } from './interface'
 import BaseConfig from './base-config'
 
 // TODO: 重新实现
 export default class CustomModelSettingUtil extends BaseConfig implements ModelSettingUtil {
-  public provider: ModelProvider = ModelProvider.Custom
+  public provider: ModelProvider = ModelProviderEnum.Custom
   async getCurrentModelDisplayName(
     model: string,
     sessionType: SessionType,
-    providerSettings?: ProviderSettings
+    providerSettings?: ProviderSettings,
+    providerBaseInfo?: ProviderBaseInfo
   ): Promise<string> {
-    return `Custom API (${providerSettings?.models?.find((m) => m.modelId === model)?.nickname || model})`
-  }
-
-  public getLocalOptionGroups() {
-    return []
+    const providerName = providerBaseInfo?.name ?? 'Custom API'
+    return `${providerName} (${providerSettings?.models?.find((m) => m.modelId === model)?.nickname || model})`
   }
 
   protected async listProviderModels(settings: ProviderSettings) {
     return []
-  }
-
-  isCurrentModelSupportImageInput(model: string): boolean {
-    return true
-  }
-
-  isCurrentModelSupportToolUse(model: string): boolean {
-    return false
   }
 }

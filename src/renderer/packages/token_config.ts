@@ -7,7 +7,7 @@
  */
 // export function resetTokenConfig(settings: SessionSettings): SessionSettings {
 //     switch (settings.aiProvider) {
-//         case ModelProvider.OpenAI:
+//         case ModelProviderEnum.OpenAI:
 //             const model = getTokenLimits(settings)
 //             settings.openaiMaxTokens = model.maxTokens // 默认最小值
 //             settings.openaiMaxContextTokens = model.maxContextTokens // 默认最大值
@@ -17,22 +17,22 @@
 //                 settings.openaiMaxContextMessageCount = 999
 //             }
 //             break
-//         case ModelProvider.Azure:
+//         case ModelProviderEnum.Azure:
 //             settings.openaiMaxTokens = defaults.settings().openaiMaxTokens
 //             settings.openaiMaxContextTokens = defaults.settings().openaiMaxContextTokens
 //             settings.openaiMaxContextMessageCount = 8
 //             break
-//         case ModelProvider.ChatboxAI:
+//         case ModelProviderEnum.ChatboxAI:
 //             settings.openaiMaxTokens = 0
 //             settings.openaiMaxContextTokens = 128_000
 //             settings.openaiMaxContextMessageCount = 8
 //             break
-//         case ModelProvider.ChatGLM6B:
+//         case ModelProviderEnum.ChatGLM6B:
 //             settings.openaiMaxTokens = 0
 //             settings.openaiMaxContextTokens = 2000
 //             settings.openaiMaxContextMessageCount = 4
 //             break
-//         case ModelProvider.Claude:
+//         case ModelProviderEnum.Claude:
 //             settings.openaiMaxContextMessageCount = 10
 //             break
 //         default:
@@ -47,7 +47,7 @@
  * @returns
  */
 // export function getTokenLimits(settings: SessionSettings) {
-//     if (settings.aiProvider === ModelProvider.OpenAI && settings.model !== 'custom-model') {
+//     if (settings.aiProvider === ModelProviderEnum.OpenAI && settings.model !== 'custom-model') {
 //         return openaiModelConfigs[settings.model]
 //     }
 //     return {

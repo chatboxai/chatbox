@@ -123,13 +123,20 @@ function SidebarButtons(props: { sessionListRef: React.RefObject<HTMLDivElement>
   const { sessionListRef } = props
   const { t } = useTranslation()
   const versionHook = useVersion()
+  const routerState = useRouterState()
+  const navigate = useNavigate()
+
   const handleCreateNewSession = () => {
-    sessionActions.createEmpty('chat')
-    if (sessionListRef.current) {
-      sessionListRef.current.scrollTo(0, 0)
-    }
+    // sessionActions.createEmpty('chat')
+    // if (sessionListRef.current) {
+    //   sessionListRef.current.scrollTo(0, 0)
+    // }
+    navigate({
+      to: `/`,
+    })
     trackingEvent('create_new_conversation', { event_category: 'user' })
   }
+
   const handleCreateNewPictureSession = () => {
     sessionActions.createEmpty('picture')
     if (sessionListRef.current) {
@@ -138,16 +145,13 @@ function SidebarButtons(props: { sessionListRef: React.RefObject<HTMLDivElement>
     trackingEvent('create_new_picture_conversation', { event_category: 'user' })
   }
 
-  const routerState = useRouterState()
-  const navigate = useNavigate()
-
   return (
     <MenuList>
       <Box className="flex flex-col m-1 mb-2 gap-2">
         <Button variant="outlined" className="w-full gap-2" size="large" onClick={handleCreateNewSession}>
           <AddIcon fontSize="small" />
           <span className="flex flex-col normal-case">
-            <span>{t('new chat')}</span>
+            <span>{t('New Chat')}</span>
             <span className="opacity-0 h-0">{t('New Images')}</span>
           </span>
         </Button>
@@ -155,7 +159,7 @@ function SidebarButtons(props: { sessionListRef: React.RefObject<HTMLDivElement>
         <Button variant="outlined" className="w-full gap-2 " size="large" onClick={handleCreateNewPictureSession}>
           <AddPhotoAlternateIcon fontSize="small" />
           <span className="flex flex-col normal-case">
-            <span className="opacity-0 h-0">{t('new chat')}</span>
+            <span className="opacity-0 h-0">{t('New Chat')}</span>
             <span>{t('New Images')}</span>
           </span>
         </Button>
@@ -219,7 +223,7 @@ function SidebarButtons(props: { sessionListRef: React.RefObject<HTMLDivElement>
             <SettingsIcon fontSize="small" />
           </IconButton>
         </ListItemIcon>
-        <ListItemText>{t('settings')}</ListItemText>
+        <ListItemText>{t('Settings')}</ListItemText>
         <Typography variant="body2" color="text.secondary">
           {/* ⌘N */}
         </Typography>

@@ -1,111 +1,148 @@
 import type { SearchResultItem } from '@/packages/web-search'
-import { ChevronDown, ChevronUp, ExternalLink, Globe } from 'lucide-react'
-import { FC, useMemo, useState } from 'react'
+import { alpha, SimpleGrid } from '@mantine/core'
+import { Box, Code, Group, Paper, Space, Stack, Text } from '@mantine/core'
+import {
+  IconArrowRight,
+  IconCircleCheckFilled,
+  IconCircleXFilled,
+  IconCode,
+  IconLoader,
+  IconTool,
+} from '@tabler/icons-react'
+import { Link } from '@tanstack/react-router'
+import { FC, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { MessageToolCallPart } from 'src/shared/types'
-import LinkTargetBlank from '../Link'
-import { LoadingBubble } from '../MessageLoading'
+
+const ToolCallHeader: FC<{ part: MessageToolCallPart; actionText: string; onClick: () => void }> = (props) => {
+  return (
+    <Paper withBorder radius="md" px="xs" onClick={props.onClick} className="cursor-pointer">
+      <Group justify="space-between" className="w-full">
+        <Group gap="xs">
+          <Text fw={600}>{props.part.toolName}</Text>
+          <IconTool size={16} color="var(--mantine-color-chatbox-brand-text)" />
+          {props.part.state === 'call' ? (
+            <IconLoader size={16} className="animate-spin" color="var(--mantine-color-chatbox-brand-text)" />
+          ) : props.part.state === 'error' ? (
+            <IconCircleXFilled size={16} color="var(--mantine-color-chatbox-error-text)" />
+          ) : (
+            <IconCircleCheckFilled size={16} color="var(--mantine-color-chatbox-success-text)" />
+          )}
+        </Group>
+        <Space miw="xl" />
+        <Text c="chatbox-brand" size="xs">
+          {props.actionText}
+        </Text>
+      </Group>
+    </Paper>
+  )
+}
 
 type WebBrowsingToolCallPart = MessageToolCallPart<
   { query: string },
   { query: string; searchResults: SearchResultItem[] }
 >
 
-interface Props {
-  part: MessageToolCallPart
+const SearchResultCard: FC<{ index: number; result: SearchResultItem }> = ({ index, result }) => {
+  return (
+    <Link to={result.link} target="_blank" className="no-underline">
+      <Paper radius="md" p={8} bg={alpha('var(--mantine-color-gray-6)', 0.1)} maw={200} title={result.title}>
+        <Text size="sm" truncate="end" m={0}>
+          <b>{index + 1}.</b> {result.title}
+        </Text>
+        <Text size="xs" truncate="end" c="chatbox-tertiary" m={0} mt={4}>
+          {result.link}
+        </Text>
+      </Paper>
+    </Link>
+  )
 }
 
-export const ToolCallPartUI: FC<Props> = ({ part }) => {
-  if (part.toolName !== 'web_search') {
-    return null
-  }
-  if (part.state === 'call') {
-    return <WebBrowsingLoading />
-  }
-  return <WebBrowsingCard webBrowsing={part as WebBrowsingToolCallPart} />
-}
-
-const WebBrowsingLoading = () => {
+const WebSearchToolCallUI: FC<{ part: WebBrowsingToolCallPart }> = ({ part }) => {
   const { t } = useTranslation()
+  const [expaned, setExpand] = useState(false)
   return (
-    <div>
-      <LoadingBubble>
-        <span className="flex flex-col">
-          <span>{t('Web Browsing...')}</span>
-          <span className="text-[10px] opacity-70 font-normal">
-            {t('Browsing and retrieving information from the internet.')}
-          </span>
-        </span>
-      </LoadingBubble>
-    </div>
+    <Stack gap="xs" mb="xs">
+      <ToolCallHeader
+        part={part}
+        actionText={t(expaned ? 'Hide' : 'Expand')}
+        onClick={() => setExpand((prev) => !prev)}
+      />
+      {expaned && (
+        <Stack gap="xs">
+          <Group gap="xs" my={2}>
+            <Text c="chatbox-tertiary" m={0}>
+              {t('Search query')}:
+            </Text>
+            <Text fw={600} size="sm" m={0} fs="italic">
+              {part.args.query}
+            </Text>
+          </Group>
+          {part.result && (
+            <SimpleGrid cols={{ sm: 3, md: 4 }} spacing="xs">
+              {part.result.searchResults.map((result, index) => (
+                <SearchResultCard key={result.link} index={index} result={result} />
+              ))}
+            </SimpleGrid>
+          )}
+        </Stack>
+      )}
+      {!expaned && part.result && (
+        <Group gap="xs" wrap="nowrap" className="overflow-x-auto" pb="xs">
+          {part.result.searchResults.map((result, index) => (
+            <SearchResultCard key={result.link} index={index} result={result} />
+          ))}
+        </Group>
+      )}
+    </Stack>
   )
 }
 
-function WebBrowsingCard(props: { webBrowsing: WebBrowsingToolCallPart }) {
-  const result = props.webBrowsing.result
-  const [showAll, setShowAll] = useState(false)
-  const DISPLAY_LINKS_COUNT = 4
-
-  if (!result) {
-    return null
-  }
-
-  const displayItems = useMemo(() => {
-    return showAll ? result.searchResults : result.searchResults.slice(0, DISPLAY_LINKS_COUNT)
-  }, [result.searchResults, showAll])
-
-  if (displayItems.length === 0) {
-    return null
-  }
-
+const GeneralToolCallUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
+  const { t } = useTranslation()
+  const [expaned, setExpand] = useState(false)
   return (
-    <div className="flex flex-col gap-1.5 mt-1.5 p-2 rounded bg-blue-50/80 dark:bg-blue-900/20 border border-blue-300/30 dark:border-blue-600/30">
-      <div className="flex flex-col gap-1.5 px-1.5 py-1 text-xs">
-        <div className="flex items-center gap-1.5">
-          <Globe className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <span className="font-medium bg-blue-100/90 dark:bg-blue-500/30 px-2.5 py-1 rounded-full inline-block max-w-full">
-              <span className="block truncate">{result.query}</span>
-            </span>
-          </div>
-          {result.searchResults.length > DISPLAY_LINKS_COUNT && (
-            <button
-              onClick={() => setShowAll(!showAll)}
-              className="cursor-pointer
-                            bg-white dark:bg-blue-500/30
-                            hover:bg-blue-50 dark:hover:bg-blue-500/20 
-                            text-blue-600 dark:text-blue-400
-                            px-2 py-0.5 rounded-full
-                            border border-blue-400/30
-                            transition-colors flex items-center gap-1.5 flex-shrink-0"
-            >
-              {showAll ? (
-                <ChevronUp size={14} />
-              ) : (
-                <>
-                  <span className="text-xs opacity-80">+{result.searchResults.length - DISPLAY_LINKS_COUNT}</span>
-                  <ChevronDown size={14} />
-                </>
-              )}
-            </button>
+    <Stack gap="xs" mb="xs">
+      <ToolCallHeader
+        part={part}
+        actionText={t(expaned ? 'Hide' : 'Expand')}
+        onClick={() => setExpand((prev) => !prev)}
+      />
+      {expaned && (
+        <Paper withBorder radius="md" p="sm">
+          <Stack gap="xs">
+            <Group gap="xs" c="chatbox-tertiary">
+              <IconCode size={16} />
+              <Text fw={600} size="xs" c="chatbox-tertiary" m="0">
+                {t('Arguments')}
+              </Text>
+            </Group>
+            <Box>
+              <Code block>{JSON.stringify(part.args, null, 2)}</Code>
+            </Box>
+          </Stack>
+          {!!part.result && (
+            <Stack gap="xs" className="mt-2">
+              <Group gap="xs" c="chatbox-tertiary">
+                <IconArrowRight size={16} />
+                <Text fw={600} size="xs" c="chatbox-tertiary" m="0">
+                  {t('Result')}
+                </Text>
+              </Group>
+              <Box>
+                <Code block>{JSON.stringify(part.result, null, 2)}</Code>
+              </Box>
+            </Stack>
           )}
-        </div>
-      </div>
-      <div className="px-0.5">
-        {displayItems.map((item, index) => (
-          <div key={index}>
-            <span className="text-xs text-gray-500 dark:text-gray-500">[{index + 1}]</span>
-            <LinkTargetBlank
-              key={index}
-              href={item.link}
-              className="text-xs py-0.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded px-1.5"
-            >
-              <span className="whitespace-pre-wrap flex-1 break-all">{item.title}</span>
-              <ExternalLink className="w-2.5 h-2.5 ml-1.5 text-gray-500 flex-shrink-0" />
-            </LinkTargetBlank>
-          </div>
-        ))}
-      </div>
-    </div>
+        </Paper>
+      )}
+    </Stack>
   )
+}
+
+export const ToolCallPartUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
+  if (part.toolName === 'web_search') {
+    return <WebSearchToolCallUI part={part as WebBrowsingToolCallPart} />
+  }
+  return <GeneralToolCallUI part={part} />
 }

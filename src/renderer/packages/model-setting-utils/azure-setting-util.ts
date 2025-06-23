@@ -1,10 +1,9 @@
-import { ModelProvider, ProviderSettings, SessionType } from 'src/shared/types'
-import { ModelSettingUtil } from './interface'
-import AzureOpenAI from '../models/azure'
+import { ModelProvider, ModelProviderEnum, ProviderSettings, SessionType } from 'src/shared/types'
 import BaseConfig from './base-config'
+import { ModelSettingUtil } from './interface'
 
 export default class AzureSettingUtil extends BaseConfig implements ModelSettingUtil {
-  public provider: ModelProvider = ModelProvider.Azure
+  public provider: ModelProvider = ModelProviderEnum.Azure
   async getCurrentModelDisplayName(
     model: string,
     sessionType: SessionType,
@@ -17,20 +16,7 @@ export default class AzureSettingUtil extends BaseConfig implements ModelSetting
     }
   }
 
-  public getLocalOptionGroups() {
-    // FIXME:
-    return []
-  }
-
   protected async listProviderModels() {
     return []
-  }
-
-  public isCurrentModelSupportImageInput(model: string) {
-    return AzureOpenAI.helpers.isModelSupportVision(model)
-  }
-
-  public isCurrentModelSupportToolUse(model: string) {
-    return AzureOpenAI.helpers.isModelSupportToolUse(model)
   }
 }

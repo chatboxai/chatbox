@@ -1,81 +1,30 @@
 import { apiRequest } from '@/utils/request'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createGoogleGenerativeAI, GoogleGenerativeAIProviderOptions } from '@ai-sdk/google'
 import { LanguageModelV1 } from 'ai'
 import AbstractAISDKModel, { CallSettings } from './abstract-ai-sdk'
-import { CallChatCompletionOptions, ModelHelpers } from './types'
 import { ApiError } from './errors'
 import { normalizeGeminiHost } from './llm_utils'
-
-export type GeminiModel = keyof typeof modelConfig
-
-// https://ai.google.dev/models/gemini?hl=zh-cn
-export const modelConfig = {
-  'gemini-2.5-flash-preview-04-17': {
-    visision: true,
-  },
-  'gemini-2.5-pro-preview-05-20': {
-    vision: true,
-  },
-  'gemini-2.0-flash': {
-    vision: true,
-  },
-  'gemini-2.0-flash-lite': {
-    vision: true,
-  },
-  'gemini-2.0-flash-preview-image-generation': {
-    vision: true,
-  },
-  'gemini-1.5-pro': {
-    vision: true,
-  },
-  'gemini-1.5-flash': {
-    vision: true,
-  },
-  'gemini-1.5-flash-8b': {
-    vision: true,
-  },
-}
-
-export const geminiModels: GeminiModel[] = Object.keys(modelConfig) as GeminiModel[]
-
-const helpers: ModelHelpers = {
-  isModelSupportVision: (model: string) => {
-    if (model.startsWith('gemini-pro') && !model.includes('vision')) {
-      return false
-    }
-    if (model.startsWith('gemini-1.0')) {
-      return false
-    }
-    return true
-  },
-  isModelSupportToolUse: (model: string) => {
-    return true
-  },
-}
+import { CallChatCompletionOptions } from './types'
+import { ProviderModelInfo } from 'src/shared/types'
 
 interface Options {
   geminiAPIKey: string
   geminiAPIHost: string
-  geminiModel: GeminiModel
+  model: ProviderModelInfo
   temperature: number
 }
 
 export default class Gemeni extends AbstractAISDKModel {
   public name = 'Google Gemini'
-  public static helpers = helpers
 
   constructor(public options: Options) {
-    super()
+    super(options)
     this.injectDefaultMetadata = false
-  }
-
-  isSupportToolUse() {
-    return helpers.isModelSupportToolUse(this.options.geminiModel)
   }
 
   isSupportSystemMessage() {
     return !['gemini-2.0-flash-exp', 'gemini-2.0-flash-thinking-exp', 'gemini-2.0-flash-exp-image-generation'].includes(
-      this.options.geminiModel
+      this.options.model.modelId
     )
   }
 
@@ -85,7 +34,7 @@ export default class Gemeni extends AbstractAISDKModel {
       baseURL: normalizeGeminiHost(this.options.geminiAPIHost).apiHost,
     })
 
-    return provider.chat(this.options.geminiModel, {
+    return provider.chat(this.options.model.modelId, {
       structuredOutputs: false,
       safetySettings: [
         { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
@@ -96,13 +45,32 @@ export default class Gemeni extends AbstractAISDKModel {
     })
   }
 
-  protected getCallSettings(): CallSettings {
-    const settings: CallSettings = {}
-    if (['gemini-2.0-flash-exp', 'gemini-2.0-flash-exp-image-generation'].includes(this.options.geminiModel)) {
+  protected getCallSettings(options: CallChatCompletionOptions): CallSettings {
+    const isModelSupportThinking = this.isSupportReasoning()
+    let providerParams = {} as GoogleGenerativeAIProviderOptions
+    if (isModelSupportThinking) {
+      providerParams = {
+        ...(options.providerOptions?.google || {}),
+        thinkingConfig: {
+          ...(options.providerOptions?.google?.thinkingConfig || {}),
+          includeThoughts: true,
+        },
+      }
+    }
+
+    const settings: CallSettings = {
+      providerOptions: {
+        google: {
+          ...providerParams,
+        } satisfies GoogleGenerativeAIProviderOptions,
+      },
+    }
+    if (['gemini-2.0-flash-preview-image-generation'].includes(this.options.model.modelId)) {
       settings.providerOptions = {
         google: {
+          ...providerParams,
           responseModalities: ['TEXT', 'IMAGE'],
-        },
+        } satisfies GoogleGenerativeAIProviderOptions,
       }
     }
     return settings
@@ -136,119 +104,3 @@ export default class Gemeni extends AbstractAISDKModel {
       .sort()
   }
 }
-
-// #!/bin/bash
-
-// API_KEY="YOUR_API_KEY"
-
-// curl \
-//   -X POST 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key='${API_KEY} \
-//   -H 'Content-Type: application/json' \
-//   -d @<(echo '{
-//   "contents": [
-//     {
-//       "role": "user",
-//       "parts": [
-//         {
-//           "text": "hi"
-//         }
-//       ]
-//     },
-//     {
-//       "role": "model",
-//       "parts": [
-//         {
-//           "text": "Hello! How can I assist you today? I'm here to answer your"
-//         }
-//       ]
-//     },
-//     {
-//       "role": "user",
-//       "parts": [
-//         {
-//           "text": "<div><br></div>hi"
-//         }
-//       ]
-//     }
-//   ],
-//   "generationConfig": {
-//     "temperature": 0.9,
-//     "topK": 1,
-//     "topP": 1,
-//     "maxOutputTokens": 2048,
-//     "stopSequences": []
-//   },
-//   "safetySettings": [
-//     {
-//       "category": "HARM_CATEGORY_HARASSMENT",
-//       "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-//     },
-//     {
-//       "category": "HARM_CATEGORY_HATE_SPEECH",
-//       "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-//     },
-//     {
-//       "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-//       "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-//     },
-//     {
-//       "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-//       "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-//     }
-//   ]
-// }')
-
-// {
-//     "candidates": [
-//         {
-//             "content": {
-//                 "parts": [
-//                     {
-//                         "text": "Hello again! Is there anything specific you'd like to ask or need assistance with? I'm here to help in any way I can."
-//                     }
-//                 ],
-//                 "role": "model"
-//             },
-//             "finishReason": "STOP",
-//             "index": 0,
-//             "safetyRatings": [
-//                 {
-//                     "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-//                     "probability": "NEGLIGIBLE"
-//                 },
-//                 {
-//                     "category": "HARM_CATEGORY_HATE_SPEECH",
-//                     "probability": "NEGLIGIBLE"
-//                 },
-//                 {
-//                     "category": "HARM_CATEGORY_HARASSMENT",
-//                     "probability": "NEGLIGIBLE"
-//                 },
-//                 {
-//                     "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-//                     "probability": "NEGLIGIBLE"
-//                 }
-//             ]
-//         }
-//     ],
-//     "promptFeedback": {
-//         "safetyRatings": [
-//             {
-//                 "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-//                 "probability": "NEGLIGIBLE"
-//             },
-//             {
-//                 "category": "HARM_CATEGORY_HATE_SPEECH",
-//                 "probability": "NEGLIGIBLE"
-//             },
-//             {
-//                 "category": "HARM_CATEGORY_HARASSMENT",
-//                 "probability": "NEGLIGIBLE"
-//             },
-//             {
-//                 "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-//                 "probability": "NEGLIGIBLE"
-//             }
-//         ]
-//     }
-// }

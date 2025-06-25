@@ -8,7 +8,10 @@ const envUtils = {
     const lines = env.split('\n')
     const result: Record<string, string> = {}
     for (const line of lines) {
-      const [key, value] = line.split('=')
+      const eqIndex = line.indexOf('=')
+      if (eqIndex === -1) continue
+      const key = line.slice(0, eqIndex)
+      const value = line.slice(eqIndex + 1)
       if (key && value && key.trim() && value.trim()) {
         result[key.trim()] = value.trim()
       }

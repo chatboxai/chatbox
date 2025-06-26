@@ -268,7 +268,6 @@ interface ThinkingBudgetConfigProps {
   onConfigChange: (config: { budgetTokens: number; enabled: boolean }) => void
   tooltipText: string
   minValue?: number
-  maxValue?: number
 }
 
 function ThinkingBudgetConfig({
@@ -277,12 +276,11 @@ function ThinkingBudgetConfig({
   onConfigChange,
   tooltipText,
   minValue = 1024,
-  maxValue = 10000,
 }: ThinkingBudgetConfigProps) {
   const { t } = useTranslation()
 
   // Define preset values in one place
-  const PRESET_VALUES = useMemo(() => [2048, 5120, 10240], [])
+  const PRESET_VALUES = useMemo(() => [2048, 5120, 10240, 32768, 65536, 131072], [])
 
   const thinkingBudgetOptions = useMemo(
     () => [
@@ -290,6 +288,7 @@ function ThinkingBudgetConfig({
       { label: `${t('Low')} (2K)`, value: PRESET_VALUES[0].toString() },
       { label: `${t('Medium')} (5K)`, value: PRESET_VALUES[1].toString() },
       { label: `${t('High')} (10K)`, value: PRESET_VALUES[2].toString() },
+      { label: `${t('Ultimate')} (32K)`, value: PRESET_VALUES[3].toString() },
       { label: t('Custom'), value: 'custom' },
     ],
     [t, PRESET_VALUES]
@@ -378,8 +377,8 @@ function ThinkingBudgetConfig({
       {currentSegmentValue === 'custom' && (
         <SliderWithInput
           min={minValue}
-          max={maxValue}
           step={1}
+          max={131072}
           value={currentBudgetTokens}
           onChange={handleCustomBudgetChange}
         />
@@ -418,7 +417,6 @@ function ClaudeProviderConfig({
       onConfigChange={handleConfigChange}
       tooltipText={t('Thinking Budget only works for 3.7 or later models')}
       minValue={1024}
-      maxValue={10000}
     />
   )
 }
@@ -514,7 +512,6 @@ function GoogleProviderConfig({
       onConfigChange={handleConfigChange}
       tooltipText={t('Thinking Budget only works for 2.0 or later models')}
       minValue={0}
-      maxValue={10000}
     />
   )
 }

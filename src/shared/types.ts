@@ -230,6 +230,7 @@ export enum ModelProviderEnum {
   Perplexity = 'perplexity',
   XAI = 'xAI',
   Custom = 'custom',
+  HuaweiCloudMaaS = 'huaweicloud-maas',
 }
 export type ModelProvider = ModelProviderEnum | string
 

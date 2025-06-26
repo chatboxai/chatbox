@@ -592,4 +592,39 @@ export const SystemProviders: ProviderBaseInfo[] = [
       ],
     },
   },
+  {
+    id: ModelProviderEnum.HuaweiCloudMaaS,
+    name: 'HuaweiCloudMaaS',
+    type: ModelProviderType.OpenAI,
+    defaultSettings: {
+      apiHost: 'https://api.modelarts-maas.com/v1/',
+      models: [
+        {
+          modelId: 'deepseek-r1-250528',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 64_000,
+        },
+        {
+          modelId: 'DeepSeek-V3',
+          capabilities: ['tool_use'],
+          contextWindow: 64_000,
+        },
+        {
+          modelId: 'DeepSeek-R1',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 64_000,
+        },
+        {
+          modelId: 'qwen3-235b-a22b',
+          capabilities: ['reasoning'],
+          contextWindow: 32_000,
+        },
+        {
+          modelId: 'qwen3-32b',
+          capabilities: ['reasoning'],
+          contextWindow: 32_000,
+        }
+      ],
+    },
+  },
 ]

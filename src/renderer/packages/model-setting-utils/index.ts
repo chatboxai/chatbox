@@ -16,6 +16,7 @@ import PerplexitySettingUtil from './perplexity-setting-util'
 import SiliconFlowSettingUtil from './siliconflow-setting-util'
 import VolcEngineSettingUtil from './volcengine-setting-util'
 import XAISettingUtil from './xai-setting-util'
+import HuaweiCloudMAASSettingUtil from './huaweicloud-maas-setting-util'
 
 export function getModelSettingUtil(aiProvider: ModelProvider): ModelSettingUtil {
   const hash: Record<ModelProvider, new () => ModelSettingUtil> = {
@@ -33,6 +34,7 @@ export function getModelSettingUtil(aiProvider: ModelProvider): ModelSettingUtil
     [ModelProviderEnum.LMStudio]: LMStudioSettingUtil,
     [ModelProviderEnum.Perplexity]: PerplexitySettingUtil,
     [ModelProviderEnum.XAI]: XAISettingUtil,
+    [ModelProviderEnum.HuaweiCloudMaaS]: HuaweiCloudMAASSettingUtil,
     [ModelProviderEnum.Custom]: CustomModelSettingUtil,
   }
   const Class = hash[aiProvider] || CustomModelSettingUtil

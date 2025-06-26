@@ -16,6 +16,7 @@ import SiliconFlow from './siliconflow'
 import type { ModelInterface } from './types'
 import VolcEngine from './volcengine'
 import XAI from './xai'
+import HuaweiCloudMaaS from './huaweicloud-maas'
 
 export function getModel(setting: Settings, config: Config): ModelInterface {
   const provider = setting.provider
@@ -121,6 +122,15 @@ export function getModel(setting: Settings, config: Config): ModelInterface {
     case ModelProviderEnum.DeepSeek:
       return new DeepSeek({
         deepseekAPIKey: providerSetting.apiKey || '',
+        model,
+        temperature: setting.temperature,
+        topP: setting.topP,
+      })
+
+    case ModelProviderEnum.HuaweiCloudMaaS:
+      return new HuaweiCloudMaaS({
+        apiKey: providerSetting.apiKey || '',
+        apiHost: formattedApiHost,
         model,
         temperature: setting.temperature,
         topP: setting.topP,

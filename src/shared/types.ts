@@ -229,6 +229,7 @@ export enum ModelProviderEnum {
   LMStudio = 'lm-studio',
   Perplexity = 'perplexity',
   XAI = 'xAI',
+  BurnCloud = 'burncloud',
   Custom = 'custom',
 }
 export type ModelProvider = ModelProviderEnum | string

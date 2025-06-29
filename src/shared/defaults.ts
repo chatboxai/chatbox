@@ -592,4 +592,87 @@ export const SystemProviders: ProviderBaseInfo[] = [
       ],
     },
   },
+  {
+    id: ModelProvider.BurnCloud,
+    name: 'BurnCloud',
+    type: ModelProviderType.OpenAI,
+    urls: {
+      website: 'https://burncloud.com',
+    },
+    defaultSettings: {
+      apiHost: 'https://ai.burncloud.com/v1',
+      models: [
+        // Claude 系列
+        {
+          modelId: 'claude-sonnet-4-20250514',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 200_000,
+        },
+        {
+          modelId: 'claude-3-7-sonnet-20250219',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 200_000,
+        },
+        {
+          modelId: 'claude-3-5-sonnet-20241022',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 200_000,
+        },
+        // GPT 系列
+        {
+          modelId: 'gpt-4o',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'gpt-4o-mini',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'o1',
+          capabilities: ['reasoning'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'gpt-4.5-preview',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'o1-mini',
+          capabilities: ['reasoning'],
+          contextWindow: 128_000,
+        },
+        // 图像生成模型
+        {
+          modelId: 'gpt-image-1',
+          capabilities: [],
+          contextWindow: 4_000,
+        },
+        // Gemini 系列
+        {
+          modelId: 'gemini-2.5-pro-preview-05-06',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 1_000_000,
+        },
+        {
+          modelId: 'gemini-2.0',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 1_000_000,
+        },
+        // DeepSeek 系列
+        {
+          modelId: 'deepseek-r1',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 64_000,
+        },
+        {
+          modelId: 'deepseek-v3',
+          capabilities: ['tool_use'],
+          contextWindow: 64_000,
+        },
+      ],
+    },
+  },
 ]

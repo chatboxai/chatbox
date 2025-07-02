@@ -29,12 +29,14 @@ export const PopoverConfirm: FC<PopoverConfirmProps> = ({
   // cloneElement 保证传递事件，不破坏原子元素的所有 CSS
   let target = children
   if (isValidElement(children)) {
-    target = cloneElement(children, {
-      onClick: (e) => {
-        if (children.props.onClick) children.props.onClick(e)
-        setOpened(true)
+    const elementWithOnClick = children as React.ReactElement<{ onClick?: (e: React.MouseEvent) => void }>;
+
+    target = cloneElement(elementWithOnClick, {
+      onClick: (e: React.MouseEvent) => {
+        if (elementWithOnClick.props.onClick) elementWithOnClick.props.onClick(e);
+        setOpened(true);
       },
-    })
+    });
   } else {
     // 不是 react element，警告
     console.warn('Popconfirm 的 children 需要是一个 React 元素')

@@ -12,6 +12,8 @@ import {
 import * as cache from './cache'
 import { getOS } from './navigator'
 import { afetch, uploadFile } from './request'
+import { uniq } from 'lodash'
+import platform from '../platform'
 
 // ========== API ORIGIN 根据可用性维护 ==========
 
@@ -44,17 +46,21 @@ async function testApiOrigins() {
       const origin: string = pool[i]
       const controller = new AbortController()
       setTimeout(() => controller.abort(), 2000) // 2秒超时
-      const res = await ofetch<{ data: { api_origins: string[] } }>(`${origin}/api/api_origins`, {
+      const res = await afetch(`${origin}/api/api_origins`, {
         signal: controller.signal,
+      }, {
         retry: 1,
       })
+      const json = await res.json()
       // 如果服务器返回了新的 API 域名，则更新缓存
-      if (res.data.api_origins.length > 0) {
-        pool = uniq([...pool, ...res.data.api_origins])
+      if (json.data.api_origins.length > 0) {
+        pool = uniq([...pool, ...json.data.api_origins])
       }
       // 如果当前 API 可用，则切换所有流量到该域名
       API_ORIGIN = origin
-      pool = uniq([origin, ...pool]) // 将当前 API 域名添加到列表顶部
+      if (pool) { // Add null check for pool
+        pool = uniq([origin, ...pool]) // 将当前 API 域名添加到列表顶部
+      }
       await cache.store.setItem('api_origins', pool)
       return
     } catch (e) {
@@ -81,8 +87,8 @@ export async function checkNeedUpdate(version: string, os: string, config: Confi
   type Response = {
     need_update?: boolean
   }
-  // const res = await ofetch<Response>(`${RELEASE_ORIGIN}/chatbox_need_update/${version}`, {
-  const res = await ofetch<Response>(`${API_ORIGIN}/chatbox_need_update/${version}`, {
+  // const res = await afetch<Response>(`${RELEASE_ORIGIN}/chatbox_need_update/${version}`, {
+  const res = await afetch<Response>(`${API_ORIGIN}/chatbox_need_update/${version}`, {
     method: 'POST',
     retry: 3,
     body: {
@@ -98,8 +104,8 @@ export async function checkNeedUpdate(version: string, os: string, config: Confi
 //     type Response = {
 //         data: null | SponsorAd
 //     }
-//     // const res = await ofetch<Response>(`${RELEASE_ORIGIN}/sponsor_ad`, {
-//     const res = await ofetch<Response>(`${API_ORIGIN}/sponsor_ad`, {
+//     // const res = await afetch<Response>(`${RELEASE_ORIGIN}/sponsor_ad`, {
+//     const res = await afetch<Response>(`${API_ORIGIN}/sponsor_ad`, {
 //         retry: 3,
 //     })
 //     return res['data'] || null
@@ -109,56 +115,64 @@ export async function checkNeedUpdate(version: string, os: string, config: Confi
 //     type Response = {
 //         data: SponsorAboutBanner[]
 //     }
-//     // const res = await ofetch<Response>(`${RELEASE_ORIGIN}/sponsor_about_banner`, {
-//     const res = await ofetch<Response>(`${API_ORIGIN}/sponsor_ad`, {
+//     // const res = await afetch<Response>(`${RELEASE_ORIGIN}/sponsor_about_banner`, {
+//     const res = await afetch<Response>(`${API_ORIGIN}/sponsor_ad`, {
 //         retry: 3,
 //     })
 //     return res['data'] || []
 // }
 
 export async function listCopilots(lang: string) {
-  type Response = {
+  type CopilotListResponse = {
     data: CopilotDetail[]
   }
-  const res = await ofetch<Response>(`${API_ORIGIN}/api/copilots/list`, {
+  const res = await afetch(`${API_ORIGIN}/api/copilots/list`, {
     method: 'POST',
+    body: JSON.stringify({ lang }),
+  }, {
     retry: 3,
-    body: { lang },
   })
-  return res['data']
+  const json: CopilotListResponse = await res.json()
+  return json['data']
 }
 
 export async function recordCopilotShare(detail: CopilotDetail) {
-  await ofetch(`${API_ORIGIN}/api/copilots/share-record`, {
+  await afetch(`${API_ORIGIN}/api/copilots/share-record`, {
     method: 'POST',
-    body: {
-      detail: detail,
-    },
+    body: JSON.stringify({ detail }),
+  }, {
+    retry: 3,
   })
 }
 
 export async function getPremiumPrice() {
-  type Response = {
+  type PremiumPriceResponse = {
     data: {
       price: number
       discount: number
       discountLabel: string
     }
   }
-  const res = await ofetch<Response>(`${API_ORIGIN}/api/premium/price`, {
+  const res = await afetch(`${API_ORIGIN}/api/premium/price`, {
+    method: 'GET',
+  }, {
     retry: 3,
   })
-  return res['data']
+  const json: PremiumPriceResponse = await res.json()
+  return json['data']
 }
 
 export async function getRemoteConfig(config: keyof RemoteConfig) {
-  type Response = {
+  type RemoteConfigResponse = {
     data: Pick<RemoteConfig, typeof config>
   }
-  const res = await ofetch<Response>(`${API_ORIGIN}/api/remote_config/${config}`, {
+  const res = await afetch(`${API_ORIGIN}/api/remote_config/${config}`, {
+    method: 'GET',
+  }, {
     retry: 3,
   })
-  return res['data']
+  const json: RemoteConfigResponse = await res.json()
+  return json['data']
 }
 
 export interface DialogConfig {
@@ -167,41 +181,49 @@ export interface DialogConfig {
 }
 
 export async function getDialogConfig(params: { uuid: string; language: string; version: string }) {
-  type Response = {
+  type DialogConfigResponse = {
     data: null | DialogConfig
   }
-  const res = await ofetch<Response>(`${API_ORIGIN}/api/dialog_config`, {
+  const res = await afetch(`${API_ORIGIN}/api/dialog_config`, {
     method: 'POST',
+    body: JSON.stringify(params),
+  }, {
     retry: 3,
-    body: params,
   })
-  return res['data'] || null
+  const json: DialogConfigResponse = await res.json()
+  return json['data'] || null
 }
 
 export async function getLicenseDetail(params: { licenseKey: string }) {
-  type Response = {
+  type LicenseDetailResponse = {
     data: ChatboxAILicenseDetail | null
   }
-  const res = await ofetch<Response>(`${API_ORIGIN}/api/license/detail`, {
-    retry: 3,
+  const res = await afetch(`${API_ORIGIN}/api/license/detail`, {
+    method: 'GET',
     headers: {
       Authorization: params.licenseKey,
     },
+  }, {
+    retry: 3,
   })
-  return res['data'] || null
+  const json: LicenseDetailResponse = await res.json()
+  return json['data'] || null
 }
 
 export async function getLicenseDetailRealtime(params: { licenseKey: string }) {
-  type Response = {
+  type LicenseDetailRealtimeResponse = {
     data: ChatboxAILicenseDetail | null
   }
-  const res = await ofetch<Response>(`${API_ORIGIN}/api/license/detail/realtime`, {
-    retry: 5,
+  const res = await afetch(`${API_ORIGIN}/api/license/detail/realtime`, {
+    method: 'GET',
     headers: {
       Authorization: params.licenseKey,
     },
+  }, {
+    retry: 5,
   })
-  return res['data'] || null
+  const json: LicenseDetailRealtimeResponse = await res.json()
+  return json['data'] || null
 }
 
 export async function generateUploadUrl(params: { licenseKey: string; filename: string }) {

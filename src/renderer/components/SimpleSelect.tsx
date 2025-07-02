@@ -3,9 +3,9 @@ import * as React from 'react'
 
 export interface Props<T extends string | number> {
   label: string | React.ReactNode
-  value: T
+  value: T | undefined
   options: { value: T; label: React.ReactNode; style?: React.CSSProperties }[]
-  onChange: (value: T) => void
+  onChange: (value: T | undefined) => void
   className?: string
   fullWidth?: boolean
   size?: 'small' | 'medium'

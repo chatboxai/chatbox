@@ -3,7 +3,7 @@
         "incremental": true,
         "target": "es2021",
         "module": "commonjs",
-        "lib": ["dom", "es2021"],
+        "lib": ["dom", "es2023"],
         "jsx": "react-jsx",
         "strict": true,
         "sourceMap": true,

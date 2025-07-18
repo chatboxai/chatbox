@@ -1,5 +1,5 @@
 import { ToolSet } from 'ai'
-import { Message, MessageContentParts, ProviderOptions, StreamTextResult } from 'src/shared/types'
+import { Message, MessageContentParts, MessageCitation, ProviderOptions, StreamTextResult } from 'src/shared/types'
 
 export interface ModelInterface {
   name: string
@@ -24,6 +24,7 @@ export interface ResultChange {
   contentParts?: MessageContentParts
   tokenCount?: number // 当前消息的 token 数量
   tokensUsed?: number // 生成当前消息的 token 使用量
+  citations?: MessageCitation[] // Perplexity AI citations
 }
 
 export type onResultChangeWithCancel = (data: ResultChange & { cancel?: () => void }) => void

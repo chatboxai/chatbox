@@ -24,6 +24,7 @@ import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import PlayCircleIcon from '@mui/icons-material/PlayCircle'
 import NiceModal from '@ebay/nice-modal-react'
+import { MessageCitation } from '../../shared/types'
 
 export default function Markdown(props: {
   children: string
@@ -33,6 +34,7 @@ export default function Markdown(props: {
   className?: string
   generating?: boolean
   preferCollapsedCodeBlock?: boolean
+  citations?: MessageCitation[]
 }) {
   const {
     children,
@@ -42,41 +44,58 @@ export default function Markdown(props: {
     preferCollapsedCodeBlock,
     className,
     generating,
+    citations,
   } = props
+
+  // Append sources to the text content
+  const contentWithSources = useMemo(() => {
+    let content = children
+    
+    if (citations && citations.length > 0) {
+      // Add sources section to the end of the content
+      content += '\n\nSources:\n'
+      citations.forEach((citation) => {
+        content += `[${citation.number}] ${citation.url}\n`
+      })
+    }
+    
+    return content
+  }, [children, citations])
+
   return useMemo(
     () => (
-      <ReactMarkdown
-        remarkPlugins={enableLaTeXRendering ? [remarkGfm, remarkMath, remarkBreaks] : [remarkGfm, remarkBreaks]}
-        rehypePlugins={[rehypeKatex]}
-        className={`break-words ${className || ''}`}
-        // react-markdown 默认的 defaultUrlTransform 会错误地编码 URL 中的 Query，比如 & 会被编码成 &amp;
-        // 这里改用 sanitizeUrl 库，同时也可以避免 XSS 攻击
-        urlTransform={(url) => sanitizeUrl(url)}
-        components={{
-          code: (props: any) =>
-            CodeRenderer({
-              ...props,
-              hiddenCodeCopyButton,
-              enableMermaidRendering,
-              generating,
-              preferCollapsedCodeBlock,
-            }),
-          a: ({ node, ...props }) => (
-            <a
-              {...props}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => {
-                e.stopPropagation()
-              }}
-            />
-          ),
-        }}
-      >
-        {enableLaTeXRendering ? latex.processLaTeX(children) : children}
-      </ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={enableLaTeXRendering ? [remarkGfm, remarkMath, remarkBreaks] : [remarkGfm, remarkBreaks]}
+          rehypePlugins={[rehypeKatex]}
+          className={`break-words ${className || ''}`}
+          // react-markdown 默认的 defaultUrlTransform 会错误地编码 URL 中的 Query，比如 & 会被编码成 &amp;
+          // 这里改用 sanitizeUrl 库，同时也可以避免 XSS 攻击
+          urlTransform={(url) => sanitizeUrl(url)}
+          components={{
+            code: (props: any) =>
+              CodeRenderer({
+                ...props,
+                hiddenCodeCopyButton,
+                enableMermaidRendering,
+                generating,
+                preferCollapsedCodeBlock,
+              }),
+            a: ({ node, ...props }) => (
+              <a
+                {...props}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => {
+                  e.stopPropagation()
+                }}
+              />
+            ),
+          }}
+        >
+        {enableLaTeXRendering ? latex.processLaTeX(contentWithSources) : contentWithSources}
+        </ReactMarkdown>
     ),
-    [children, enableLaTeXRendering, enableMermaidRendering]
+    [contentWithSources, enableLaTeXRendering, enableMermaidRendering, hiddenCodeCopyButton, generating, preferCollapsedCodeBlock, className]
   )
 }
 

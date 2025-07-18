@@ -16,6 +16,7 @@ import type React from 'react'
 import { type FC, type MouseEventHandler, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Markdown from '@/components/Markdown'
+import Citations from '@/components/Citations'
 import type { Message, SessionType } from '../../shared/types'
 import {
   autoCollapseCodeBlockAtom,
@@ -560,6 +561,7 @@ const Message: FC<Props> = (props) => {
                                 autoCollapseCodeBlock &&
                                 (preferCollapsedCodeBlock || msg.role !== 'assistant' || previewArtifact)
                               }
+                              citations={msg.citations}
                             >
                               {item.text || ''}
                             </Markdown>

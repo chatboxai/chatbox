@@ -46,11 +46,9 @@ export default function Markdown(props: {
     generating,
     citations,
   } = props
-
   // Append sources to the text content
   const contentWithSources = useMemo(() => {
     let content = children
-
     if (citations && citations.length > 0) {
       // Add sources section to the end of the content
       content += '\n\nSources:\n'
@@ -61,7 +59,6 @@ export default function Markdown(props: {
 
     return content
   }, [children, citations])
-
   return useMemo(
     () => (
       <ReactMarkdown

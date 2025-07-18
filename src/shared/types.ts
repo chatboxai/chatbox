@@ -29,6 +29,13 @@ export interface MessageLink {
   chatboxAILinkUUID?: string
 }
 
+export interface MessageCitation {
+  id: string
+  url: string
+  title: string
+  number: number // Citation number like [1], [2], etc.
+}
+
 export interface MessagePicture {
   url?: string
   storageKey?: string
@@ -60,6 +67,7 @@ export type StreamTextResult = {
   contentParts: MessageContentParts
   reasoningContent?: string
   usage?: LanguageModelUsage
+  citations?: MessageCitation[]
 }
 
 // Chatbox 应用的消息类型
@@ -82,6 +90,7 @@ export interface Message {
 
   files?: MessageFile[] // chatboxai 专用
   links?: MessageLink[] // chatboxai 专用
+  citations?: MessageCitation[] // Perplexity AI citations
 
   // webBrowsing?: MessageWebBrowsing // chatboxai 专用, （已废弃）
   // toolCalls?: MessageToolCalls // 已废弃，使用contentParts代替

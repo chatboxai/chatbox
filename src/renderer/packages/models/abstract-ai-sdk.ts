@@ -150,6 +150,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     let contentParts: MessageContentParts = []
     let currentTextPart: MessageTextPart | undefined = undefined
     let reasoningContent = ''
+    const citations: Array<{ id: string; url: string; title: string }> = []
 
     for await (const chunk of result.fullStream) {
       console.debug('stream chunk', chunk)
@@ -188,6 +189,16 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         currentTextPart = undefined
         const storageKey = await saveImage('response', `data:${chunk.mimeType};base64,${chunk.base64}`)
         contentParts.push({ type: 'image', storageKey })
+      } else if (chunk.type === 'source') {
+        // Perplexity citations come as source chunks
+        const url = chunk.source?.url
+        if (url && !citations.find((c) => c.url === url)) {
+          citations.push({ 
+            id: chunk.source.id || url, 
+            url, 
+            title: chunk.source.title || url 
+          })
+        }
       } else if (chunk.type === 'error') {
         const error = chunk.error
         if (APICallError.isInstance(error)) {
@@ -204,14 +215,22 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     }
 
     const usage = await result.usage
+    
+    // Process citations with numbers
+    const processedCitations = citations.map((citation, index) => ({
+      ...citation,
+      number: index + 1,
+    }))
+    
     options.onResultChange?.({
       contentParts,
       reasoningContent,
       tokenCount: usage?.completionTokens,
       tokensUsed: usage?.totalTokens,
+      citations: processedCitations,
     })
 
-    return { contentParts, reasoningContent, usage }
+    return { contentParts, reasoningContent, usage, citations: processedCitations }
   }
 }
 

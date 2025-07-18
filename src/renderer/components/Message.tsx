@@ -560,6 +560,7 @@ const Message: FC<Props> = (props) => {
                                 autoCollapseCodeBlock &&
                                 (preferCollapsedCodeBlock || msg.role !== 'assistant' || previewArtifact)
                               }
+                              citations={msg.citations}
                             >
                               {item.text || ''}
                             </Markdown>

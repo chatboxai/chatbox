@@ -24,6 +24,7 @@ import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import PlayCircleIcon from '@mui/icons-material/PlayCircle'
 import NiceModal from '@ebay/nice-modal-react'
+import { MessageCitation } from '../../shared/types'
 
 export default function Markdown(props: {
   children: string
@@ -33,6 +34,7 @@ export default function Markdown(props: {
   className?: string
   generating?: boolean
   preferCollapsedCodeBlock?: boolean
+  citations?: MessageCitation[]
 }) {
   const {
     children,
@@ -42,7 +44,24 @@ export default function Markdown(props: {
     preferCollapsedCodeBlock,
     className,
     generating,
+    citations,
   } = props
+
+  // Append sources to the text content
+  const contentWithSources = useMemo(() => {
+    let content = children
+
+    if (citations && citations.length > 0) {
+      // Add sources section to the end of the content
+      content += '\n\nSources:\n'
+      citations.forEach((citation) => {
+        content += `[${citation.number}] ${citation.url}\n`
+      })
+    }
+
+    return content
+  }, [children, citations])
+
   return useMemo(
     () => (
       <ReactMarkdown
@@ -73,10 +92,18 @@ export default function Markdown(props: {
           ),
         }}
       >
-        {enableLaTeXRendering ? latex.processLaTeX(children) : children}
+        {enableLaTeXRendering ? latex.processLaTeX(contentWithSources) : contentWithSources}
       </ReactMarkdown>
     ),
-    [children, enableLaTeXRendering, enableMermaidRendering]
+    [
+      contentWithSources,
+      enableLaTeXRendering,
+      enableMermaidRendering,
+      hiddenCodeCopyButton,
+      generating,
+      preferCollapsedCodeBlock,
+      className,
+    ]
   )
 }
 

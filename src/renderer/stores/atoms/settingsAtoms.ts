@@ -77,6 +77,7 @@ export const autoGenerateTitleAtom = focusAtom(settingsAtom, (optic) => optic.pr
 export const autoCollapseCodeBlockAtom = focusAtom(settingsAtom, (optic) => optic.prop('autoCollapseCodeBlock'))
 export const shortcutsAtom = focusAtom(settingsAtom, (optic) => optic.prop('shortcuts'))
 export const pasteLongTextAsAFileAtom = focusAtom(settingsAtom, (optic) => optic.prop('pasteLongTextAsAFile'))
+export const autoCollapseThinkingBlocksAtom = focusAtom(settingsAtom, (optic) => optic.prop('autoCollapseThinkingBlocks'))
 // export const licenseDetailAtom = focusAtom(settingsAtom, (optic) => optic.prop('licenseDetail'))
 
 // Related UI state, moved here for proximity to settings

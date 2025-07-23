@@ -62,6 +62,7 @@
   "Auto (Use Chatbox AI)": "자동 (Chatbox AI 사용)",
   "Auto (Use Last Used)": "자동 (마지막 사용 모델 사용)",
   "Auto-collapse code blocks": "코드 블록 자동 숨기기",
+  "Auto-collapse thinking blocks": "사고 블록 자동 숨기기",
   "Auto-Generate Chat Titles": "채팅 제목 자동 생성",
   "Auto-preview artifacts": "아티팩트 자동 미리보기",
   "Automatic updates": "자동 업데이트",

@@ -98,6 +98,7 @@ export function settings(): Settings {
     injectDefaultMetadata: true,
     autoPreviewArtifacts: false,
     autoCollapseCodeBlock: true,
+    autoCollapseThinkingBlocks: false,
     pasteLongTextAsAFile: true,
 
     autoGenerateTitle: true,

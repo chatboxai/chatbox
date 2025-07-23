@@ -62,6 +62,7 @@
   "Auto (Use Chatbox AI)": "自動 (Chatbox AI を使用)",
   "Auto (Use Last Used)": "自動（最後に使用したものを使用）",
   "Auto-collapse code blocks": "コードブロックを自動的に折りたたむ",
+  "Auto-collapse thinking blocks": "思考ブロックを自動的に折りたたむ",
   "Auto-Generate Chat Titles": "チャットのタイトルを自動生成",
   "Auto-preview artifacts": "アーティファクトを自動プレビュー",
   "Automatic updates": "自動更新",

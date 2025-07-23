@@ -62,6 +62,7 @@
   "Auto (Use Chatbox AI)": "自動 (使用 Chatbox AI)",
   "Auto (Use Last Used)": "自動（使用上次使用的模型）",
   "Auto-collapse code blocks": "自動收起代碼塊",
+  "Auto-collapse thinking blocks": "自動收起思考塊",
   "Auto-Generate Chat Titles": "自動生成聊天標題",
   "Auto-preview artifacts": "自動預覽生成內容(Artifacts)",
   "Automatic updates": "自動更新",

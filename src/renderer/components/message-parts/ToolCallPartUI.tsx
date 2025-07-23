@@ -12,12 +12,14 @@ import {
   IconTool,
 } from '@tabler/icons-react'
 import { Link } from '@tanstack/react-router'
-import { type FC, type ReactNode, useCallback, useState } from 'react'
+import { type FC, type ReactNode, useCallback, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAtomValue } from 'jotai'
 import type { Message, MessageReasoningPart, MessageToolCallPart } from 'src/shared/types'
 import { cn } from '@/lib/utils'
 import { getToolName } from '@/packages/tools'
 import type { SearchResultItem } from '@/packages/web-search'
+import { autoCollapseThinkingBlocksAtom } from '@/stores/atoms'
 
 const ToolCallHeader: FC<{ part: MessageToolCallPart; action: ReactNode; onClick: () => void }> = (props) => {
   return (
@@ -162,6 +164,7 @@ export const ReasoningContentUI: FC<{
 }> = ({ message, part, onCopyReasoningContent }) => {
   const reasoningContent = part?.text || message.reasoningContent || ''
   const { t } = useTranslation()
+  const autoCollapseThinkingBlocks = useAtomValue(autoCollapseThinkingBlocksAtom)
   const isThinking =
     (message.generating &&
       part &&
@@ -169,10 +172,20 @@ export const ReasoningContentUI: FC<{
       message.contentParts.length > 0 &&
       message.contentParts[message.contentParts.length - 1] === part) ||
     false
-  const [isExpanded, setIsExpanded] = useState<boolean>(isThinking)
+
+  const [isExpanded, setIsExpanded] = useState<boolean>(!autoCollapseThinkingBlocks)
+  const [userHasManuallyToggled, setUserHasManuallyToggled] = useState<boolean>(false)
+
+  // Update expanded state when settings change, but only if user hasn't manually toggled
+  useEffect(() => {
+    if (!userHasManuallyToggled) {
+      setIsExpanded(!autoCollapseThinkingBlocks)
+    }
+  }, [autoCollapseThinkingBlocks, userHasManuallyToggled])
 
   const toggleExpanded = useCallback(() => {
     setIsExpanded((prev) => !prev)
+    setUserHasManuallyToggled(true)
   }, [])
 
   return (

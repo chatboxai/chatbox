@@ -307,6 +307,16 @@ function RouteComponent() {
             }
           />
           <Switch
+            label={t('Auto-collapse thinking blocks')}
+            checked={settings.autoCollapseThinkingBlocks}
+            onChange={() =>
+              setSettings({
+                ...settings,
+                autoCollapseThinkingBlocks: !settings.autoCollapseThinkingBlocks,
+              })
+            }
+          />
+          <Switch
             label={t('Auto-Generate Chat Titles')}
             checked={settings.autoGenerateTitle}
             onChange={() =>

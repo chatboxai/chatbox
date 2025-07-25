@@ -18,6 +18,7 @@ import type { Message, MessageReasoningPart, MessageToolCallPart } from 'src/sha
 import { cn } from '@/lib/utils'
 import { getToolName } from '@/packages/tools'
 import type { SearchResultItem } from '@/packages/web-search'
+import { useThinkingTimer, formatElapsedTime } from '@/hooks/useThinkingTimer'
 
 const ToolCallHeader: FC<{ part: MessageToolCallPart; action: ReactNode; onClick: () => void }> = (props) => {
   return (
@@ -171,6 +172,24 @@ export const ReasoningContentUI: FC<{
     false
   const [isExpanded, setIsExpanded] = useState<boolean>(isThinking)
 
+  // Timer state management:
+  // - elapsedTime: Real-time updates while thinking is active (updates every 100ms)
+  // - isThinking: True when message is generating AND this reasoning part is the last content part
+  // - shouldShowTimer: Only show timer for streaming responses, hide for non-streaming
+  const elapsedTime = useThinkingTimer(part?.startTime, isThinking)
+  const shouldShowTimer = part?.isStreaming !== false // Show timer unless explicitly marked as non-streaming
+
+  // Timer display logic with clear priority order:
+  // 1. If we have a final duration (thinking completed), always show it (persistent display)
+  // 2. If actively thinking and we have elapsed time, show real-time updates
+  // 3. Otherwise show 0 (fallback for edge cases)
+  // This ensures the timer stops immediately when thinking ends and persists the final duration
+  const displayTime = part?.duration && part.duration > 0
+    ? part.duration
+    : isThinking && elapsedTime > 0
+      ? elapsedTime
+      : 0
+
   const toggleExpanded = useCallback(() => {
     setIsExpanded((prev) => !prev)
   }, [])
@@ -180,10 +199,15 @@ export const ReasoningContentUI: FC<{
       <Box onClick={toggleExpanded} className="cursor-pointer group">
         <Group px="xs" justify="space-between" className="w-full">
           <Group gap="xs" className={cn(isThinking ? 'animate-pulse' : '')}>
+            <IconBulb size={16} color="var(--mantine-color-chatbox-warning-text)" />
             <Text fw={600} size="sm">
               {isThinking ? t('Thinking') : t('Deeply thought')}
             </Text>
-            <IconBulb size={16} color="var(--mantine-color-chatbox-warning-text)" />
+            {reasoningContent.length > 0 && shouldShowTimer && (
+              <Text size="xs" c="chatbox-tertiary">
+                ({formatElapsedTime(displayTime)})
+              </Text>
+            )}
           </Group>
           <Space miw="xl" />
           <Group gap="xs">

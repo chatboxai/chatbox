@@ -164,11 +164,28 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     return dataUrls
   }
 
+  /**
+   * Adds a content part to the message and handles timing for reasoning parts
+   * @param contentPart - The content part to add
+   * @param contentParts - Array of existing content parts
+   * @param options - Call options with result change callback
+   */
   private addContentPart(
     contentPart: MessageContentParts[number],
     contentParts: MessageContentParts,
     options: CallChatCompletionOptions
   ): void {
+    // Handle timing for reasoning parts in non-streaming mode
+    if (contentPart.type === 'reasoning') {
+      const reasoningPart = contentPart as MessageReasoningPart
+      const now = Date.now()
+      reasoningPart.startTime = now
+      // In non-streaming mode, reasoning content arrives complete, so we set
+      // a minimal duration to indicate the thinking process occurred
+      reasoningPart.duration = 1
+      // Mark as non-streaming to hide timer UI
+      reasoningPart.isStreaming = false
+    }
     contentParts.push(contentPart)
     options.onResultChange?.({ contentParts })
   }
@@ -243,12 +260,30 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     return this.createOrUpdateContentPart(textDelta, contentParts, currentTextPart, 'text')
   }
 
+  /**
+   * Creates or updates a reasoning part with timing information for streaming responses
+   * @param textDelta - New text to append to the reasoning content
+   * @param contentParts - Array of message content parts
+   * @param currentReasoningPart - Existing reasoning part to update, if any
+   * @returns The updated or newly created reasoning part
+   */
   private createOrUpdateReasoningPart(
     textDelta: string,
     contentParts: MessageContentParts,
     currentReasoningPart: MessageReasoningPart | undefined
   ): MessageReasoningPart {
-    return this.createOrUpdateContentPart(textDelta, contentParts, currentReasoningPart, 'reasoning')
+    if (!currentReasoningPart) {
+      // Create new reasoning part with start time for timer tracking in streaming mode
+      currentReasoningPart = {
+        type: 'reasoning',
+        text: '',
+        startTime: Date.now(), // Capture when thinking begins
+        isStreaming: true // Mark as streaming for timer display
+      }
+      contentParts.push(currentReasoningPart)
+    }
+    currentReasoningPart.text += textDelta
+    return currentReasoningPart
   }
 
   private addToolCallPart(toolCall: ToolCallInfo, contentParts: MessageContentParts): void {
@@ -301,6 +336,12 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const knownChunk = chunk as KnownStreamChunk
     switch (knownChunk.type) {
       case 'text-delta': {
+        // Critical timing logic: When we receive the first text chunk, the thinking phase has ended.
+        // We must capture the thinking duration at this exact moment to ensure the timer
+        // shows only the thinking time, not the total response generation time.
+        if (currentReasoningPart && currentReasoningPart.startTime && !currentReasoningPart.duration) {
+          currentReasoningPart.duration = Date.now() - currentReasoningPart.startTime
+        }
         currentReasoningPart = undefined
         currentTextPart = this.createOrUpdateTextPart(knownChunk.textDelta, contentParts, currentTextPart)
         break
@@ -315,6 +356,11 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         break
       }
       case 'tool-call': {
+        // Similar to text-delta: when tool calls begin, thinking has ended.
+        // Capture the thinking duration before processing tool calls.
+        if (currentReasoningPart && currentReasoningPart.startTime && !currentReasoningPart.duration) {
+          currentReasoningPart.duration = Date.now() - currentReasoningPart.startTime
+        }
         currentTextPart = undefined
         this.addToolCallPart(knownChunk, contentParts)
         break
@@ -352,11 +398,29 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     this.handleError(chunk.error)
   }
 
+  /**
+   * Finalizes the result and ensures all reasoning parts have duration set
+   * This is a fallback to ensure timing is captured even if not set during streaming
+   * @param contentParts - Array of message content parts
+   * @param usage - Token usage information
+   * @param options - Call options with result change callback
+   * @returns The finalized stream text result
+   */
   private finalizeResult(
     contentParts: MessageContentParts,
     usage: LanguageModelUsage | undefined,
     options: CallChatCompletionOptions
   ): StreamTextResult {
+    // Fallback: Set final duration for any reasoning parts that don't have it yet
+    // This should rarely be needed since we capture duration at transition points,
+    // but provides safety for edge cases
+    const now = Date.now()
+    for (const part of contentParts) {
+      if (part.type === 'reasoning' && part.startTime && !part.duration) {
+        part.duration = now - part.startTime
+      }
+    }
+
     options.onResultChange?.({
       contentParts,
       tokenCount: usage?.completionTokens,
@@ -444,21 +508,29 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     let currentTextPart: MessageTextPart | undefined
     let currentReasoningPart: MessageReasoningPart | undefined
 
-    for await (const chunk of result.fullStream) {
-      console.debug('stream chunk', chunk)
-      const chunkResult = await this.processStreamChunk(
-        chunk,
-        contentParts,
-        currentTextPart,
-        currentReasoningPart,
-        options
-      )
-      currentTextPart = chunkResult.currentTextPart
-      currentReasoningPart = chunkResult.currentReasoningPart
+    try {
+      for await (const chunk of result.fullStream) {
+        console.debug('stream chunk', chunk)
+        const chunkResult = await this.processStreamChunk(
+          chunk,
+          contentParts,
+          currentTextPart,
+          currentReasoningPart,
+          options
+        )
+        currentTextPart = chunkResult.currentTextPart
+        currentReasoningPart = chunkResult.currentReasoningPart
 
-      if (chunk.type !== 'error') {
-        options.onResultChange?.({ contentParts })
+        if (chunk.type !== 'error') {
+          options.onResultChange?.({ contentParts })
+        }
       }
+    } catch (error) {
+      // Ensure reasoning parts get their duration set even if streaming is interrupted
+      if (currentReasoningPart && currentReasoningPart.startTime && !currentReasoningPart.duration) {
+        currentReasoningPart.duration = Date.now() - currentReasoningPart.startTime
+      }
+      throw error
     }
 
     const usage = await result.usage

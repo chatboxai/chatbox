@@ -238,6 +238,7 @@ export enum ModelProviderEnum {
   DeepSeek = 'deepseek',
   SiliconFlow = 'siliconflow',
   VolcEngine = 'volcengine',
+  MistralAI = 'mistral-ai',
   LMStudio = 'lm-studio',
   Perplexity = 'perplexity',
   XAI = 'xAI',

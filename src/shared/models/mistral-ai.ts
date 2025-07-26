@@ -3,7 +3,7 @@ import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import type { ProviderModelInfo } from 'src/shared/types'
 import type { ModelDependencies } from 'src/shared/types/adapters'
 import AbstractAISDKModel from './abstract-ai-sdk'
-import type { CallChatCompletionOptions } from './types'
+import { fetchRemoteModels } from './utils/fetch-proxy'
 
 interface Options {
   apiKey: string
@@ -67,4 +67,21 @@ export default class MistralAI extends AbstractAISDKModel {
     return this.options.model.capabilities?.includes('vision') || false
   }
 
+  isSupportReasoning() {
+    return this.options.model.capabilities?.includes('reasoning') || false
+  }
+
+  public async listModels(): Promise<string[]> {
+    return fetchRemoteModels(
+      {
+        apiHost: 'https://api.mistral.ai/v1',
+        apiKey: this.options.apiKey,
+        useProxy: false,
+      },
+      this.dependencies
+    ).catch((err) => {
+      console.error(err)
+      return []
+    })
+  }
 }

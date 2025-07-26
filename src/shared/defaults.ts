@@ -606,7 +606,6 @@ export const SystemProviders: ProviderBaseInfo[] = [
           contextWindow: 32_000,
           capabilities: ['reasoning', 'tool_use'],
         },
-         
         {
           modelId: 'codestral-22b-latest',
           contextWindow: 32_000,

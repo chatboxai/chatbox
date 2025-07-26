@@ -1,4 +1,6 @@
 import { ModelProvider, ModelProviderEnum, ProviderSettings, SessionType } from 'src/shared/types'
+import { createModelDependencies } from '@/adapters'
+import MistralAI from 'src/shared/models/mistral-ai'
 import BaseConfig from './base-config'
 import { ModelSettingUtil } from './interface'
 
@@ -13,6 +15,16 @@ export default class MistralAISettingUtil extends BaseConfig implements ModelSet
   }
 
   protected async listProviderModels(settings: ProviderSettings) {
-    return []
+    const model = settings.models?.[0] || { modelId: 'mistral-large-latest', capabilities: [] }
+    const dependencies = await createModelDependencies()
+    const mistral = new MistralAI(
+      {
+        apiKey: settings.apiKey!,
+        model,
+        temperature: 0,
+      },
+      dependencies
+    )
+    return mistral.listModels()
   }
 }

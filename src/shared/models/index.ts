@@ -10,6 +10,7 @@ import DeepSeek from './deepseek'
 import Gemini from './gemini'
 import Groq from './groq'
 import LMStudio from './lmstudio'
+import MistralAI from './mistral-ai'
 import Ollama from './ollama'
 import OpenAI from './openai'
 import Perplexity from './perplexity'
@@ -218,6 +219,19 @@ export function getModel(setting: Settings, config: Config, dependencies: ModelD
         dependencies
       )
 
+    case ModelProviderEnum.MistralAI:
+      return new MistralAI(
+        {
+          apiKey: providerSetting.apiKey || '',
+          model,
+          temperature: setting.temperature,
+          topP: setting.topP,
+          maxTokens: setting.maxTokens,
+          stream: setting.stream,
+        },
+        dependencies
+      )
+
     case ModelProviderEnum.LMStudio:
       return new LMStudio(
         {
@@ -290,6 +304,7 @@ export const aiProviderNameHash: Record<ModelProvider, string> = {
   [ModelProviderEnum.DeepSeek]: 'DeepSeek API',
   [ModelProviderEnum.SiliconFlow]: 'SiliconFlow API',
   [ModelProviderEnum.VolcEngine]: 'VolcEngine API',
+  [ModelProviderEnum.MistralAI]: 'MistralAI',
   [ModelProviderEnum.LMStudio]: 'LM Studio API',
   [ModelProviderEnum.Perplexity]: 'Perplexity API',
   [ModelProviderEnum.XAI]: 'xAI API',
@@ -336,6 +351,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.SiliconFlow,
     label: aiProviderNameHash[ModelProviderEnum.SiliconFlow],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.MistralAI,
+    label: aiProviderNameHash[ModelProviderEnum.MistralAI],
     disabled: false,
   },
   {

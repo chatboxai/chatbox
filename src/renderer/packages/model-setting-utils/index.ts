@@ -10,6 +10,7 @@ import GeminiSettingUtil from './gemini-setting-util'
 import GroqSettingUtil from './groq-setting-util'
 import { ModelSettingUtil } from './interface'
 import LMStudioSettingUtil from './lmstudio-setting-util'
+import MistralAISettingUtil from './mistral-ai-setting-util'
 import OllamaSettingUtil from './ollama-setting-util'
 import OpenAISettingUtil from './openai-setting-util'
 import PerplexitySettingUtil from './perplexity-setting-util'
@@ -30,6 +31,7 @@ export function getModelSettingUtil(aiProvider: ModelProvider): ModelSettingUtil
     [ModelProviderEnum.DeepSeek]: DeepSeekSettingUtil,
     [ModelProviderEnum.SiliconFlow]: SiliconFlowSettingUtil,
     [ModelProviderEnum.VolcEngine]: VolcEngineSettingUtil,
+    [ModelProviderEnum.MistralAI]: MistralAISettingUtil,
     [ModelProviderEnum.LMStudio]: LMStudioSettingUtil,
     [ModelProviderEnum.Perplexity]: PerplexitySettingUtil,
     [ModelProviderEnum.XAI]: XAISettingUtil,

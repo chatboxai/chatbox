@@ -567,6 +567,58 @@ export const SystemProviders: ProviderBaseInfo[] = [
     },
   },
   {
+    id: ModelProviderEnum.MistralAI,
+    name: 'Mistral AI',
+    type: ModelProviderType.OpenAI,
+    urls: {
+      website: 'https://mistral.ai',
+    },
+    defaultSettings: {
+      apiHost: 'https://api.mistral.ai/v1',
+      models: [
+        {
+          modelId: 'pixtral-large-latest',
+          contextWindow: 128_000,
+          capabilities: ['vision', 'tool_use'],
+        },
+        {
+          modelId: 'mistral-large-latest',
+          contextWindow: 32_000,
+          capabilities: ['tool_use'],
+        },
+        {
+          modelId: 'mistral-medium-latest',
+          contextWindow: 32_000,
+          capabilities: ['tool_use'],
+        },
+        {
+          modelId: 'mistral-small-latest',
+          contextWindow: 32_000,
+          capabilities: ['tool_use'],
+        },
+        {
+          modelId: 'magistral-medium-latest',
+          contextWindow: 32_000,
+          capabilities: ['reasoning', 'tool_use'],
+        },
+        {
+          modelId: 'magistral-small-latest',
+          contextWindow: 32_000,
+          capabilities: ['reasoning', 'tool_use'],
+        },
+        {
+          modelId: 'codestral-22b-latest',
+          contextWindow: 32_000,
+          capabilities: [],
+        },
+        {
+          modelId: 'mistral-embed',
+          type: 'embedding',
+        },
+      ],
+    },
+  },
+  {
     id: ModelProviderEnum.Perplexity,
     name: 'Perplexity',
     type: ModelProviderType.OpenAI,

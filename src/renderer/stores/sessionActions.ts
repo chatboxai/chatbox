@@ -794,6 +794,8 @@ export async function generate(
     errorExtra: undefined,
     status: [],
     firstTokenLatency: undefined,
+    // Set isStreamingMode once during Message initialization (constant property)
+    isStreamingMode: settings.stream !== false,
   }
 
   modifyMessage(sessionId, targetMsg)

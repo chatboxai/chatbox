@@ -58,7 +58,7 @@ export type MessageReasoningPart = {
   /** Total duration of the thinking process in milliseconds */
   duration?: number;
   /** Whether this reasoning part was generated in streaming mode (shows timer) or non-streaming mode (hides timer) */
-  isStreaming?: boolean;
+  isStreamingMode?: boolean;
 }
 export type MessageToolCallPart<Args = unknown, Result = unknown> = {
   type: 'tool-call'

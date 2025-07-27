@@ -184,7 +184,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       // a minimal duration to indicate the thinking process occurred
       reasoningPart.duration = 1
       // Mark as non-streaming to hide timer UI
-      reasoningPart.isStreaming = false
+      reasoningPart.isStreamingMode = false
     }
     contentParts.push(contentPart)
     options.onResultChange?.({ contentParts })
@@ -278,7 +278,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         type: 'reasoning',
         text: '',
         startTime: Date.now(), // Capture when thinking begins
-        isStreaming: true // Mark as streaming for timer display
+        isStreamingMode: true // Mark as streaming for timer display
       }
       contentParts.push(currentReasoningPart)
     }

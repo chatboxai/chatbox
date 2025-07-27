@@ -177,7 +177,7 @@ export const ReasoningContentUI: FC<{
   // - isThinking: True when message is generating AND this reasoning part is the last content part
   // - shouldShowTimer: Only show timer for streaming responses, hide for non-streaming
   const elapsedTime = useThinkingTimer(part?.startTime, isThinking)
-  const shouldShowTimer = part?.isStreaming !== false // Show timer unless explicitly marked as non-streaming
+  const shouldShowTimer = part?.isStreamingMode !== false // Show timer unless explicitly marked as non-streaming
 
   // Timer display logic with clear priority order:
   // 1. If we have a final duration (thinking completed), always show it (persistent display)

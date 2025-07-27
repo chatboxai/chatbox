@@ -58,19 +58,6 @@ export default class MistralAI extends AbstractAISDKModel {
       middleware: extractReasoningMiddleware({ tagName: 'think' }),
     })
   }
-
-  isSupportToolUse() {
-    return super.isSupportToolUse()
-  }
-
-  isSupportVision() {
-    return this.options.model.capabilities?.includes('vision') || false
-  }
-
-  isSupportReasoning() {
-    return this.options.model.capabilities?.includes('reasoning') || false
-  }
-
   public async listModels(): Promise<string[]> {
     return fetchRemoteModels(
       {

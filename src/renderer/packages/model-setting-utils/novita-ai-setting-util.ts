@@ -1,5 +1,5 @@
 import OpenAI from 'src/shared/models/openai'
-import { type ModelProvider, ModelProviderEnum, type ProviderSettings, type SessionType } from 'src/shared/types'
+import { type ModelProvider, ModelProviderEnum, type ProviderSettings } from 'src/shared/types'
 import { createModelDependencies } from '@/adapters'
 import BaseConfig from './base-config'
 import type { ModelSettingUtil } from './interface'
@@ -9,14 +9,8 @@ export default class NovitaAISettingUtil extends BaseConfig implements ModelSett
 
   async getCurrentModelDisplayName(
     model: string,
-    sessionType: SessionType,
-    providerSettings?: ProviderSettings
   ): Promise<string> {
-    if (sessionType === 'picture') {
-      return `Novita AI (DALL-E-3)`
-    } else {
-      return `Novita AI (${providerSettings?.models?.find((m) => m.modelId === model)?.nickname || model})`
-    }
+      return `Novita AI (${model})`
   }
 
   protected async listProviderModels(settings: ProviderSettings): Promise<string[]> {

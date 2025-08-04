@@ -695,4 +695,16 @@ export const SystemProviders: ProviderBaseInfo[] = [
       ],
     },
   },
+  {
+    id: ModelProviderEnum.NovitaAI,
+    name: 'Novita AI',
+    type: ModelProviderType.OpenAI,
+    urls: {
+      website: 'https://novita.ai',
+    },
+    defaultSettings: {
+      apiHost: 'https://api.novita.ai/v3/openai',
+      apiPath: '/chat/completions',
+    },
+  },
 ]

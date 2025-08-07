@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  chatbox:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/root/.config/xyz.chatboxapp.ce

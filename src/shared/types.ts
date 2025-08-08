@@ -255,6 +255,7 @@ export enum ModelProviderEnum {
   LMStudio = 'lm-studio',
   Perplexity = 'perplexity',
   XAI = 'xAI',
+  NovitaAI = 'novita-ai',
   Custom = 'custom',
 }
 export type ModelProvider = ModelProviderEnum | string

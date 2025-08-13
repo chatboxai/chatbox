@@ -1,10 +1,17 @@
-import NiceModal, { muiDialogV5, useModal } from '@ebay/nice-modal-react'
-import { Button, Dialog, DialogContent, DialogActions, DialogTitle } from '@mui/material'
+import NiceModal, { useModal } from '@ebay/nice-modal-react'
+import { ActionIcon, Button, Flex, Modal, Stack, Text } from '@mantine/core'
+import { IconReload } from '@tabler/icons-react'
+import clsx from 'clsx'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Artifact } from '@/components/Artifact'
-import { useState } from 'react'
+import { useIsSmallScreen } from '@/hooks/useScreenChange'
 
-const ArtifactPreview = NiceModal.create(({ htmlCode }: { htmlCode: string }) => {
+export interface ArtifactPreviewProps {
+  htmlCode: string
+}
+
+const ArtifactPreview = NiceModal.create(({ htmlCode }: ArtifactPreviewProps) => {
   const modal = useModal()
   const { t } = useTranslation()
   const [reloadSign, setReloadSign] = useState(0)
@@ -15,27 +22,55 @@ const ArtifactPreview = NiceModal.create(({ htmlCode }: { htmlCode: string }) =>
     modal.resolve()
     modal.hide()
   }
+  const isSmallScreen = useIsSmallScreen()
 
   return (
-    <Dialog
-      {...muiDialogV5(modal)}
-      onClose={() => {
-        modal.resolve()
-        modal.hide()
+    <Modal
+      opened={modal.visible}
+      onClose={onClose}
+      title={
+        <Flex align="center" gap="xxs" py="xs">
+          <Text fw={600} size="md">
+            {t('Preview')}
+          </Text>
+          {isSmallScreen && (
+            <ActionIcon
+              variant="transparent"
+              size="sm"
+              onClick={onReload}
+              aria-label={t('Refresh')}
+              title={t('Refresh')}
+            >
+              <IconReload />
+            </ActionIcon>
+          )}
+        </Flex>
+      }
+      size="100%"
+      classNames={{
+        content: clsx('flex flex-col', isSmallScreen ? '' : 'max-w-5xl h-4/5'),
+        header: 'flex-0 pt-[var(--mobile-safe-area-inset-top)] !pb-0',
+        body: clsx('flex-1', isSmallScreen ? '!p-0' : ''),
       }}
-      fullWidth
-      maxWidth="md"
-      classes={{ paper: 'h-4/5' }}
+      fullScreen={isSmallScreen}
+      centered
+      radius={0}
+      transitionProps={{ transition: 'slide-up', duration: 200 }}
     >
-      <DialogTitle>{t('Preview')}</DialogTitle>
-      <DialogContent style={{ padding: '0', margin: '0' }}>
-        <Artifact htmlCode={htmlCode} reloadSign={reloadSign} className="h-[96%]" />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onReload}>{t('Refresh')}</Button>
-        <Button onClick={onClose}>{t('close')}</Button>
-      </DialogActions>
-    </Dialog>
+      <Stack h="100%" gap="md">
+        <Artifact htmlCode={htmlCode} reloadSign={reloadSign} className="flex-1" />
+        {!isSmallScreen && (
+          <Flex justify="flex-end" align="center" gap="md">
+            <Button variant="transparent" onClick={onReload}>
+              {t('Refresh')}
+            </Button>
+            <Button variant="transparent" onClick={onClose}>
+              {t('Close')}
+            </Button>
+          </Flex>
+        )}
+      </Stack>
+    </Modal>
   )
 })
 

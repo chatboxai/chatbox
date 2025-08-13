@@ -1,14 +1,4 @@
-import { ConfirmDeleteMenuItem } from '@/components/ConfirmDeleteButton'
-import Page from '@/components/Page'
-import StyledMenu from '@/components/StyledMenu'
-import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
-import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { trackingEvent } from '@/packages/event'
-import * as remote from '@/packages/remote'
-import platform from '@/platform'
-import * as atoms from '@/stores/atoms'
-import * as sessionActions from '@/stores/sessionActions'
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline'
+import { Button as MantineButton, Switch as MantineSwitch } from '@mantine/core'
 import EditIcon from '@mui/icons-material/Edit'
 import MoreHorizOutlinedIcon from '@mui/icons-material/MoreHorizOutlined'
 import StarIcon from '@mui/icons-material/Star'
@@ -24,19 +14,26 @@ import {
   IconButton,
   MenuItem,
   Switch,
-  Tab,
-  Tabs,
   TextField,
   Typography,
   useTheme,
 } from '@mui/material'
+import { IconPlus } from '@tabler/icons-react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useAtom } from 'jotai'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { v4 as uuidv4 } from 'uuid'
-import { CopilotDetail, Message } from '../../shared/types'
-import { createSession } from '@/stores/sessionStorageMutations'
+import { ConfirmDeleteMenuItem } from '@/components/ConfirmDeleteButton'
+import Page from '@/components/Page'
+import StyledMenu from '@/components/StyledMenu'
+import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
+import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { trackingEvent } from '@/packages/event'
+import * as remote from '@/packages/remote'
+import platform from '@/platform'
+import * as atoms from '@/stores/atoms'
+import type { CopilotDetail } from '../../shared/types'
 
 export const Route = createFileRoute('/copilots')({
   component: Copilots,
@@ -44,6 +41,7 @@ export const Route = createFileRoute('/copilots')({
 
 function Copilots() {
   const [open, setOpen] = useAtom(atoms.openCopilotDialogAtom)
+  const [showCopilotsInNewSession, setShowCopilotsInNewSession] = useAtom(atoms.showCopilotsInNewSessionAtom)
   const navigate = useNavigate()
 
   const { t } = useTranslation()
@@ -51,45 +49,17 @@ function Copilots() {
   const store = useMyCopilots()
   const { copilots: remoteCopilots } = useRemoteCopilots()
 
-  const createChatSessionWithCopilot = async (copilot: CopilotDetail) => {
-    const msgs: Message[] = []
-    msgs.push({ id: uuidv4(), role: 'system', contentParts: [{ type: 'text', text: copilot.prompt }] })
-    if (copilot.demoQuestion) {
-      msgs.push({
-        id: uuidv4(),
-        role: 'user',
-        contentParts: [{ type: 'text', text: copilot.demoQuestion }],
-      })
-    }
-    if (copilot.demoAnswer) {
-      msgs.push({
-        id: uuidv4(),
-        role: 'assistant',
-        contentParts: [{ type: 'text', text: copilot.demoAnswer }],
-      })
-    }
-    const newSession = await createSession({
-      name: copilot.name,
-      type: 'chat',
-      picUrl: copilot.picUrl,
-      messages: msgs,
-      starred: false,
-      copilotId: copilot.id,
-    })
-    sessionActions.switchCurrentSession(newSession.id)
-    trackingEvent('create_copilot_conversation', { event_category: 'user' })
-  }
   const handleClose = () => {
     setOpen(false)
   }
 
-  const useCopilot = (detail: CopilotDetail) => {
+  const selectCopilot = (detail: CopilotDetail) => {
     const newDetail = { ...detail, usedCount: (detail.usedCount || 0) + 1 }
     if (newDetail.shared) {
       remote.recordCopilotShare(newDetail)
     }
     store.addOrUpdate(newDetail)
-    // createChatSessionWithCopilot(newDetail)
+
     navigate({
       to: '/',
       search: {
@@ -128,77 +98,113 @@ function Copilots() {
             }}
           />
         ) : (
-          <Button
-            variant="outlined"
-            startIcon={<AddCircleOutlineIcon />}
-            onClick={() => {
-              getEmptyCopilot().then(setCopilotEdit)
-            }}
-          >
-            {t('Create New Copilot')}
-          </Button>
-        )}
-        <ScrollableTabsButtonAuto
-          values={[{ value: 'my', label: t('My Copilots') }]}
-          currentValue="my"
-          onChange={() => {}}
-        />
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            width: '100%',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-          }}
-        >
-          {list.map((item, ix) => (
-            <MiniItem
-              key={`${item.id}_${ix}`}
-              mode="local"
-              detail={item}
-              useMe={() => useCopilot(item)}
-              switchStarred={() => {
-                store.addOrUpdate({
-                  ...item,
-                  starred: !item.starred,
-                })
-              }}
-              editMe={() => {
-                setCopilotEdit(item)
-              }}
-              deleteMe={() => {
-                store.remove(item.id)
-              }}
-            />
-          ))}
-        </div>
+          <>
+            {/* Setting Section */}
+            <Box sx={{ mb: 3 }}>
+              <Typography
+                variant="h6"
+                sx={{
+                  mb: 2,
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: (theme) => (theme.palette.mode === 'dark' ? '#fff' : '#212529'),
+                }}
+              >
+                {t('Settings')}
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <MantineSwitch
+                  checked={showCopilotsInNewSession}
+                  onChange={(event) => setShowCopilotsInNewSession(event.currentTarget.checked)}
+                  label={t('Show Copilots in New Session')}
+                />
+              </Box>
+            </Box>
 
-        <ScrollableTabsButtonAuto
-          values={[
-            {
-              value: 'chatbox-featured',
-              label: t('Chatbox Featured'),
-            },
-          ]}
-          currentValue="chatbox-featured"
-          onChange={() => {}}
-        />
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            width: '100%',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-          }}
-        >
-          {remoteCopilots?.map((item, ix) => (
-            <MiniItem key={`${item.id}_${ix}`} mode="remote" detail={item} useMe={() => useCopilot(item)} />
-          ))}
-        </div>
+            {/* My Copilots Section */}
+            <Box sx={{ mb: 4 }}>
+              <Typography
+                variant="h6"
+                sx={{
+                  mb: 2,
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: (theme) => (theme.palette.mode === 'dark' ? '#fff' : '#212529'),
+                }}
+              >
+                {t('My Copilots')}
+              </Typography>
+
+              <MantineButton
+                variant="light"
+                color="blue"
+                leftSection={<IconPlus size={20} />}
+                mb={16}
+                onClick={() => {
+                  getEmptyCopilot().then(setCopilotEdit)
+                }}
+              >
+                {t('Create New Copilot')}
+              </MantineButton>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                  gap: 1.5,
+                }}
+              >
+                {list.map((item, ix) => (
+                  <MiniItem
+                    key={`${item.id}_${ix}`}
+                    mode="local"
+                    detail={item}
+                    selectMe={() => selectCopilot(item)}
+                    switchStarred={() => {
+                      store.addOrUpdate({
+                        ...item,
+                        starred: !item.starred,
+                      })
+                    }}
+                    editMe={() => {
+                      setCopilotEdit(item)
+                    }}
+                    deleteMe={() => {
+                      store.remove(item.id)
+                    }}
+                  />
+                ))}
+              </Box>
+            </Box>
+
+            {/* Chatbox Featured Section */}
+            <Box>
+              <Typography
+                variant="h6"
+                sx={{
+                  mb: 2,
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: (theme) => (theme.palette.mode === 'dark' ? '#fff' : '#212529'),
+                }}
+              >
+                {t('Chatbox Featured')}
+              </Typography>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                  gap: 1.5,
+                }}
+              >
+                {remoteCopilots?.map((item, ix) => (
+                  <MiniItem key={`${item.id}_${ix}`} mode="remote" detail={item} selectMe={() => selectCopilot(item)} />
+                ))}
+              </Box>
+            </Box>
+          </>
+        )}
       </div>
     </Page>
   )
@@ -208,7 +214,7 @@ type MiniItemProps =
   | {
       mode: 'local'
       detail: CopilotDetail
-      useMe(): void
+      selectMe(): void
       switchStarred(): void
       editMe(): void
       deleteMe(): void
@@ -216,19 +222,19 @@ type MiniItemProps =
   | {
       mode: 'remote'
       detail: CopilotDetail
-      useMe(): void
+      selectMe(): void
     }
 
 function MiniItem(props: MiniItemProps) {
   const { t } = useTranslation()
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null)
   const open = Boolean(anchorEl)
-  const useCopilot = (event: React.MouseEvent<HTMLElement>) => {
+  const selectCopilot = (event: React.MouseEvent<HTMLElement>) => {
     event.preventDefault()
     if (open) {
       return
     }
-    props.useMe()
+    props.selectMe()
   }
   const openMenu = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation()
@@ -244,50 +250,78 @@ function MiniItem(props: MiniItemProps) {
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'center',
-        padding: '5px',
-        margin: '5px',
+        padding: '10px 16px',
+        height: '49px',
         cursor: 'pointer',
+        borderRadius: '8px',
+        border: '1px solid',
+        borderColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#dee2e6'),
+        backgroundColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#fff'),
+        transition: 'all 0.2s',
         '.edit-icon': {
           opacity: 0,
+        },
+        '&:hover': {
+          borderColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.2)' : '#adb5bd'),
+          backgroundColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : '#f8f9fa'),
         },
         '&:hover .edit-icon': {
           opacity: 1,
         },
       }}
-      className="w-full sm:w-48 hover:bg-slate-400/25 border-solid border-slate-400/20 rounded-md"
-      onClick={useCopilot}
+      onClick={selectCopilot}
     >
-      <Avatar sizes="30px" sx={{ width: '30px', height: '30px' }} src={props.detail.picUrl}></Avatar>
-      <div
-        style={{
-          marginLeft: '5px',
+      <Avatar
+        sx={{
+          width: '28px',
+          height: '28px',
+          backgroundColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#e9ecef'),
         }}
-        className="w-full sm:w-28"
+        src={props.detail.picUrl}
+      />
+      <Box
+        sx={{
+          marginLeft: '12px',
+          flex: 1,
+          overflow: 'hidden',
+        }}
       >
-        <Typography variant="body1" noWrap>
+        <Typography
+          variant="body1"
+          noWrap
+          sx={{
+            fontSize: '14px',
+            fontWeight: 400,
+            color: (theme) => (theme.palette.mode === 'dark' ? '#fff' : '#212529'),
+          }}
+        >
           {props.detail.name}
         </Typography>
-      </div>
+      </Box>
 
       {props.mode === 'local' && (
         <>
-          <div
-            style={{
-              width: '30px',
-              height: '10px',
-              marginLeft: '2px',
+          <Box
+            sx={{
               display: 'flex',
               alignItems: 'center',
+              marginLeft: 'auto',
             }}
           >
-            <IconButton onClick={openMenu}>
+            <IconButton
+              onClick={openMenu}
+              sx={{
+                padding: '4px',
+                color: (theme) => (theme.palette.mode === 'dark' ? '#fff' : '#495057'),
+              }}
+            >
               {props.detail.starred ? (
-                <StarIcon color="primary" fontSize="small" />
+                <StarIcon fontSize="small" sx={{ color: '#228be6' }} />
               ) : (
-                <MoreHorizOutlinedIcon className="edit-icon" color="primary" fontSize="small" />
+                <MoreHorizOutlinedIcon className="edit-icon" fontSize="small" />
               )}
             </IconButton>
-          </div>
+          </Box>
           <StyledMenu
             MenuListProps={{
               'aria-labelledby': 'long-button',
@@ -341,31 +375,6 @@ function MiniItem(props: MiniItemProps) {
           </StyledMenu>
         </>
       )}
-    </Box>
-  )
-}
-
-interface TabsProps {
-  currentValue: string
-  values: { value: string; label: string }[]
-  onChange(value: string): void
-}
-function ScrollableTabsButtonAuto(props: TabsProps) {
-  return (
-    <Box sx={{ marginTop: '14px' }}>
-      <Tabs
-        component="a"
-        value={props.currentValue}
-        onChange={(event, newValue) => {
-          props.onChange(newValue)
-        }}
-        variant="scrollable"
-        scrollButtons={false}
-      >
-        {props.values.map((item) => (
-          <Tab key={item.value} label={item.label} value={item.value} />
-        ))}
-      </Tabs>
     </Box>
   )
 }
@@ -436,7 +445,7 @@ function CopilotForm(props: CopilotFormProps) {
         placeholder={t('My Assistant') || ''}
         value={copilotEdit.name}
         onChange={inputHandler('name')}
-        helperText={helperTexts['name']}
+        helperText={helperTexts.name}
       />
       <TextField
         margin="dense"
@@ -449,7 +458,7 @@ function CopilotForm(props: CopilotFormProps) {
         maxRows={10}
         value={copilotEdit.prompt}
         onChange={inputHandler('prompt')}
-        helperText={helperTexts['prompt']}
+        helperText={helperTexts.prompt}
       />
       <TextField
         margin="dense"
@@ -466,7 +475,7 @@ function CopilotForm(props: CopilotFormProps) {
             control={<Switch />}
             label={t('Share with Chatbox')}
             checked={copilotEdit.shared}
-            onChange={(e, checked) => setCopilotEdit({ ...copilotEdit, shared: checked })}
+            onChange={(_e, checked) => setCopilotEdit({ ...copilotEdit, shared: checked })}
           />
         </FormGroup>
         <ButtonGroup>

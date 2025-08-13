@@ -23,6 +23,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { useDropzone } from 'react-dropzone'
 import { useTranslation } from 'react-i18next'
 import useInputBoxHistory from '@/hooks/useInputBoxHistory'
+import { useMessageInput } from '@/hooks/useMessageInput'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
@@ -68,7 +69,7 @@ export type InputBoxProps = {
   }
   fullWidth?: boolean
   onSelectModel?(provider: string, model: string): void
-  onSubmit?(payload: InputBoxPayload): Promise<boolean>
+  onSubmit?(payload: InputBoxPayload): Promise<void>
   onStopGenerating?(): boolean
   onStartNewThread?(): boolean
   onRollbackThread?(): boolean
@@ -99,7 +100,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const shortcuts = useAtomValue(atoms.shortcutsAtom)
     const widthFull = useAtomValue(atoms.widthFullAtom) || fullWidth
 
-    const [messageInput, setMessageInput] = useState('')
     const [pictureKeys, setPictureKeys] = useState<string[]>([])
     const [attachments, setAttachments] = useState<File[]>([])
 
@@ -107,6 +107,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const [newSessionState, setNewSessionState] = useAtom(atoms.newSessionStateAtom)
     const currentSessionId = sessionId || 'default'
     const isNewSession = currentSessionId === 'new'
+    const { messageInput, setMessageInput, clearDraft } = useMessageInput('', { isNewSession })
 
     const knowledgeBase = isNewSession ? newSessionState.knowledgeBase : sessionKnowledgeBaseMap[currentSessionId]
     const setKnowledgeBase = useCallback(
@@ -131,6 +132,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const [webBrowsingMode, setWebBrowsingMode] = useAtom(atoms.inputBoxWebBrowsingModeAtom)
 
     const [links, setLinks] = useAtom(atoms.inputBoxLinksAtom)
+
     const pictureInputRef = useRef<HTMLInputElement | null>(null)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
     const disableSubmit = useMemo(
@@ -189,7 +191,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           dom.setMessageInputCursorToEnd()
         },
       }),
-      []
+      [setMessageInput]
     )
 
     const { addInputBoxHistory, getPreviousHistoryInput, getNextHistoryInput, resetHistoryIndex } = useInputBoxHistory()
@@ -208,31 +210,29 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       }
 
       try {
-        const res = await onSubmit?.({
-          input: messageInput,
-          pictureKeys,
-          attachments,
-          links,
+        // clone params to avoid mutating the original state
+        const params = {
+          input: messageInput.trim(),
+          pictureKeys: pictureKeys && [...pictureKeys],
+          attachments: attachments && [...attachments],
+          links: links && [...links],
           needGenerating,
-        })
-        if (!res) {
-          return
         }
 
         // 重置输入内容
-        setMessageInput('')
+        clearDraft()
         setPictureKeys([])
         setAttachments([])
         setLinks([])
         // 重置清理上下文按钮
         setShowRollbackThreadButton(false)
-
-        trackingEvent('send_message', { event_category: 'user' })
-
         // 如果提交成功，添加到输入历史 (非手机端)
         if (platform.type !== 'mobile') {
-          addInputBoxHistory(messageInput)
+          addInputBoxHistory(params.input)
         }
+
+        await onSubmit?.(params)
+        trackingEvent('send_message', { event_category: 'user' })
       } catch (e) {
         console.error('Error submitting message:', e)
         toastActions.add((e as Error)?.message || t('An error occurred while sending the message.'))
@@ -245,7 +245,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         setMessageInput(input)
         resetHistoryIndex()
       },
-      [resetHistoryIndex]
+      [setMessageInput, resetHistoryIndex]
     )
 
     const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -431,13 +431,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         // TODO: 支持引用消息中的文件
         setQuote('')
         setMessageInput((val) => {
-          if (!val) {
-            return quote
-          } else {
-            const newlines = val.match(/(\n)+$/)?.[0].length || 0
-            console.log(newlines, Math.max(0, 2 - newlines))
-            return val + '\n'.repeat(Math.max(0, 2 - newlines)) + quote
-          }
+          const newValue = !val
+            ? quote
+            : val + '\n'.repeat(Math.max(0, 2 - (val.match(/(\n)+$/)?.[0].length || 0))) + quote
+          return newValue
         })
         // setPreviousMessageQuickInputMark('')
         dom.focusMessageInput()
@@ -465,9 +462,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         px={isSmallScreen ? '0.3rem' : '1rem'}
         id={dom.InputBoxID}
         {...getRootProps()}
-        onClick={() => {
-          inputRef.current?.focus()
-        }}
       >
         <input className="hidden" {...getInputProps()} />
         <Stack

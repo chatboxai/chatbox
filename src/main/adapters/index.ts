@@ -3,34 +3,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { createAfetch } from '../../shared/request/request'
-import { ModelDependencies, ApiRequestOptions } from '../../shared/types/adapters'
-import { isLocalHost } from '../../shared/utils/network_utils'
-import { getSettings } from '../store-node'
+import type { ApiRequestOptions, ModelDependencies } from '../../shared/types/adapters'
 import { sentry } from './sentry'
-
-async function createMainFetchWithProxy(platformInfo: { type: string; platform: string; os: string; version: string }) {
-  return async function fetchWithProxy(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    let targetUrl = typeof url === 'string' ? url : url instanceof URL ? url.toString() : (url as Request).url
-    let headers = new Headers(init?.headers)
-
-    // 检查是否需要使用代理
-    const settings = getSettings()
-    const shouldUseProxy = settings.proxy && !isLocalHost(targetUrl)
-
-    if (shouldUseProxy) {
-      // 使用 Chatbox 的代理服务
-      headers.set('CHATBOX-TARGET-URI', targetUrl)
-      headers.set('CHATBOX-PLATFORM', platformInfo.type)
-      headers.set('CHATBOX-VERSION', platformInfo.version)
-      targetUrl = 'https://cors-proxy.chatboxai.app/proxy-api/completions'
-    }
-
-    return fetch(targetUrl, {
-      ...init,
-      headers,
-    })
-  }
-}
 
 export async function createModelDependencies(): Promise<ModelDependencies> {
   // Main层的平台信息
@@ -42,7 +16,6 @@ export async function createModelDependencies(): Promise<ModelDependencies> {
   }
 
   const afetch = createAfetch(platformInfo)
-  const fetchWithProxy = await createMainFetchWithProxy(platformInfo)
 
   return {
     storage: {
@@ -74,17 +47,15 @@ export async function createModelDependencies(): Promise<ModelDependencies> {
       ): Promise<Response> => {
         return afetch(url, init, options)
       },
-      async apiRequest(options: ApiRequestOptions): Promise<any> {
-        const fetchFn = options.useProxy ? fetchWithProxy : fetch
-        const response = await fetchFn(options.url, {
+      async apiRequest(options: ApiRequestOptions) {
+        const response = await fetch(options.url, {
           method: options.method || 'GET',
           headers: options.headers,
-          body: options.body ? JSON.stringify(options.body) : undefined,
+          body: options.body,
           signal: options.signal,
         })
         return response
       },
-      fetchWithProxy: fetchWithProxy,
     },
     sentry,
     getRemoteConfig: () => {

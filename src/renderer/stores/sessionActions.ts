@@ -57,7 +57,6 @@ function trackGenerateEvent(
   })
 }
 
-import { imageOCR } from '@/packages/model-calls/preprocess'
 import {
   AIProviderNoImplementedPaintError,
   ApiError,
@@ -849,7 +848,8 @@ export async function generate(
           modifyMessage(sessionId, targetMsg)
         }, 100)
 
-        await streamText(model, {
+        const result = await streamText(model, {
+          sessionId,
           messages: promptMsgs,
           onResultChangeWithCancel: throttledModifyMessage,
           providerOptions: settings.providerOptions,
@@ -862,6 +862,7 @@ export async function generate(
           cancel: undefined,
           tokensUsed: targetMsg.tokensUsed ?? estimateTokensFromMessages([...promptMsgs, targetMsg]),
           status: [],
+          finishReason: result.finishReason,
         }
         modifyMessage(sessionId, targetMsg, true)
         break
@@ -1019,12 +1020,79 @@ async function _generateName(sessionId: string, modifyName: (sessionId: string, 
   }
 }
 
+// 全局跟踪正在进行的名称生成请求
+const pendingNameGenerations = new Map<string, ReturnType<typeof setTimeout>>()
+const activeNameGenerations = new Set<string>()
 export async function generateNameAndThreadName(sessionId: string) {
   return _generateName(sessionId, modifyNameAndThreadName)
 }
 
 export async function generateThreadName(sessionId: string) {
   return _generateName(sessionId, modifyThreadName)
+}
+
+/**
+ * 调度生成会话名称和线程名称（带去重和延迟）
+ */
+export function scheduleGenerateNameAndThreadName(sessionId: string) {
+  const key = `name-${sessionId}`
+
+  // 如果已经有正在进行的请求，不重复发送
+  if (activeNameGenerations.has(key)) {
+    return
+  }
+
+  // 清除之前的定时器
+  const existingTimeout = pendingNameGenerations.get(key)
+  if (existingTimeout) {
+    clearTimeout(existingTimeout)
+  }
+
+  // 设置新的定时器，延迟1秒执行
+  const timeout = setTimeout(async () => {
+    pendingNameGenerations.delete(key)
+    activeNameGenerations.add(key)
+
+    try {
+      await generateNameAndThreadName(sessionId)
+    } finally {
+      activeNameGenerations.delete(key)
+    }
+  }, 1000)
+
+  pendingNameGenerations.set(key, timeout)
+}
+
+/**
+ * 调度生成线程名称（带去重和延迟）
+ */
+export function scheduleGenerateThreadName(sessionId: string) {
+  const key = `thread-${sessionId}`
+
+  // 如果已经有正在进行的请求，不重复发送
+  if (activeNameGenerations.has(key)) {
+    return
+  }
+
+  // 清除之前的定时器
+  const existingTimeout = pendingNameGenerations.get(key)
+  if (existingTimeout) {
+    clearTimeout(existingTimeout)
+  }
+
+  // 设置新的定时器，延迟1秒执行
+  const timeout = setTimeout(async () => {
+    pendingNameGenerations.delete(key)
+    activeNameGenerations.add(key)
+
+    try {
+      await generateThreadName(sessionId)
+    } finally {
+      activeNameGenerations.delete(key)
+    }
+  }, 1000)
+
+  pendingNameGenerations.set(key, timeout)
 }
 
 /**

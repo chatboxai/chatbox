@@ -1,5 +1,5 @@
 diff --git a/node_modules/@ai-sdk/openai-compatible/dist/index.mjs b/node_modules/@ai-sdk/openai-compatible/dist/index.mjs
-index 6446ad8..04c71a3 100644
+index daa5e72..3ed7302 100644
 --- a/node_modules/@ai-sdk/openai-compatible/dist/index.mjs
 +++ b/node_modules/@ai-sdk/openai-compatible/dist/index.mjs
 @@ -366,7 +366,7 @@ var OpenAICompatibleChatLanguageModel = class {
@@ -47,4 +47,4 @@ index 6446ad8..04c71a3 100644
 +          reasoning: z2.string().nullish(),
            tool_calls: z2.array(
              z2.object({
-               index: z2.number(),
+               index: z2.number().optional(),

@@ -31,6 +31,7 @@ import { trackingEvent } from './packages/event'
 import icon from './static/icon.png'
 import * as atoms from './stores/atoms'
 import * as sessionActions from './stores/sessionActions'
+import { CHATBOX_BUILD_PLATFORM } from './variables'
 
 export default function Sidebar() {
   const language = useAtomValue(atoms.languageAtom)
@@ -71,6 +72,7 @@ export default function Sidebar() {
         }}
         SlideProps={language === 'ar' ? { direction: 'left' } : undefined}
         PaperProps={language === 'ar' ? { sx: { direction: 'rtl' } } : undefined}
+        disableSwipeToOpen={CHATBOX_BUILD_PLATFORM !== 'ios'} // 只在iOS设备上启用SwipeToOpen
       >
         <div className="ToolBar h-full">
           <Stack

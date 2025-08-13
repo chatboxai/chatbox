@@ -1,11 +1,3 @@
-import Header from '@/components/Header'
-import InputBox from '@/components/InputBox'
-import MessageList from '@/components/MessageList'
-import ThreadHistoryDrawer from '@/components/ThreadHistoryDrawer'
-import * as atoms from '@/stores/atoms'
-import * as scrollActions from '@/stores/scrollActions'
-import * as sessionActions from '@/stores/sessionActions'
-import { saveSession } from '@/stores/sessionStorageMutations'
 import NiceModal from '@ebay/nice-modal-react'
 import ArrowCircleDownIcon from '@mui/icons-material/ArrowCircleDown'
 import ArrowCircleUpIcon from '@mui/icons-material/ArrowCircleUp'
@@ -14,6 +6,14 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { useEffect } from 'react'
 import { createMessage, type ModelProvider } from 'src/shared/types'
+import Header from '@/components/Header'
+import InputBox from '@/components/InputBox'
+import MessageList from '@/components/MessageList'
+import ThreadHistoryDrawer from '@/components/ThreadHistoryDrawer'
+import * as atoms from '@/stores/atoms'
+import * as scrollActions from '@/stores/scrollActions'
+import * as sessionActions from '@/stores/sessionActions'
+import { saveSession } from '@/stores/sessionStorageMutations'
 
 export const Route = createFileRoute('/session/$sessionId')({
   component: RouteComponent,
@@ -118,7 +118,6 @@ function RouteComponent() {
             attachments,
             links,
           })
-          return true
         }}
         onStopGenerating={() => {
           if (!currentSession) {

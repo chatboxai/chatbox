@@ -159,8 +159,8 @@ const _Message: FC<Props> = (props) => {
   }
 
   const onCopyMsg = () => {
-    copyToClipboard(getMessageText(msg))
-    toastActions.add(t('copied to clipboard'))
+    copyToClipboard(getMessageText(msg, true, false))
+    toastActions.add(t('copied to clipboard'), 2000)
     setAnchorEl(null)
   }
 
@@ -218,6 +218,10 @@ const _Message: FC<Props> = (props) => {
       tips.push(`model: ${props.msg.model || 'unknown'}`)
       tips.push(`style: ${props.msg.style || 'unknown'}`)
     }
+  }
+
+  if (msg.finishReason && ['content-filter', 'length', 'error'].includes(msg.finishReason)) {
+    tips.push(`finish reason: ${msg.finishReason}`)
   }
 
   // 消息时间戳
@@ -694,10 +698,6 @@ const _Message: FC<Props> = (props) => {
                               aria-label="edit"
                               color={props.sessionType === 'picture' ? 'secondary' : 'primary'}
                               onClick={onEditClick}
-                              disabled={
-                                // 图文消息暂时不让编辑
-                                !isEmpty(msg.contentParts) && !msg.contentParts.every((c) => c.type === 'text')
-                              }
                             >
                               <EditIcon fontSize="small" />
                             </IconButton>

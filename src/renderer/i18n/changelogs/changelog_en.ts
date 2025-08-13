@@ -1,4 +1,35 @@
 const changelog = `
+## v1.15.4 - 2025.08.12
+
+1. Fix mobile "Improve Network Compatibility" feature, support cross-domain API requests
+2. OpenAI provider added support for gpt-5 series models
+3. Mobile full-screen preview artifacts
+4. Fix issue where input box draft was not cleared immediately after sending a message
+5. Sidebar support on iOS
+
+## v1.15.3 - 2025.08.06
+
+1. Optimize streaming output display
+2. Fix message edit box width
+3. Fix input box keyboard pop-up trigger condition
+4. Fix message count limit reset issue
+5. Optimize App system compatibility, now supports lower system versions
+6. Shorten the display time of the copied prompt
+7. Model list supports search
+8. Input box automatically saves draft
+9. Add mistral provider
+10. Show thinking time
+11. New conversation defaults to hiding my partner list, can be enabled in my partner page
+
+Thanks to @wc222, @julienheinen for their contributions
+
+## v1.15.2 - 2025.07.24
+
+1. Fixed issue where maxTokens parameter was missing in some clients, causing message sending to fail
+2. Fixed issue where thinking content couldn't be edited
+3. Fixed issue where third-party embedding API call failed in knowledge base
+4. Fixed issue where some API providers returned empty thinking content, causing multiple thinking content to appear
+
 ## v1.15.1 - 2025.07.22
 
 1. Support disabling streaming output

@@ -1,7 +1,3 @@
-import Page from '@/components/Page'
-import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import platform from '@/platform'
-import { featureFlags } from '@/utils/feature-flags'
 import { Box, Flex, Stack, Text } from '@mantine/core'
 import { IconButton, Box as MuiBox, useTheme } from '@mui/material'
 import {
@@ -20,6 +16,10 @@ import clsx from 'clsx'
 import { ChevronLeft } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Toaster } from 'sonner'
+import Page from '@/components/Page'
+import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import platform from '@/platform'
+import { featureFlags } from '@/utils/feature-flags'
 
 const ITEMS = [
   {
@@ -112,14 +112,14 @@ function RouteComponent() {
         ) : undefined
       }
     >
-      <Flex flex={1} h="100%">
+      <Flex flex={1} h="100%" miw={isSmallScreen ? undefined : 800}>
         {(!isSmallScreen || routerState.location.pathname === '/settings') && (
           <Stack
             p={isSmallScreen ? 0 : 'xs'}
             gap={isSmallScreen ? 0 : 'xs'}
             className={clsx(
               'border-solid border-0 border-r overflow-auto border-[var(--mantine-color-chatbox-border-primary-outline)]',
-              isSmallScreen ? 'w-full border-r-0' : ''
+              isSmallScreen ? 'w-full border-r-0' : 'flex-[1_0_auto] max-w-[16rem]'
             )}
           >
             {ITEMS.map((item) => (
@@ -128,7 +128,7 @@ function RouteComponent() {
                 key={item.key}
                 to={`/settings/${item.key}` as any}
                 className={clsx(
-                  'no-underline',
+                  'no-underline w-full',
                   isSmallScreen
                     ? 'border-solid border-0 border-b border-[var(--mantine-color-chatbox-border-primary-outline)]'
                     : ''
@@ -138,12 +138,12 @@ function RouteComponent() {
                   component="span"
                   gap="xs"
                   p="md"
+                  pr="xl"
                   align="center"
                   c={item.key === key ? 'chatbox-brand' : 'chatbox-secondary'}
                   bg={item.key === key ? 'var(--mantine-color-chatbox-brand-light)' : 'transparent'}
                   className={clsx(
-                    ' cursor-pointer select-none rounded-md hover:!bg-[var(--mantine-color-chatbox-brand-outline-hover)]',
-                    isSmallScreen ? '' : 'w-[16rem]'
+                    ' cursor-pointer select-none rounded-md hover:!bg-[var(--mantine-color-chatbox-brand-outline-hover)]'
                   )}
                 >
                   <Box component="span" flex="0 0 auto" w={20} h={20} mr="xs">
@@ -161,7 +161,7 @@ function RouteComponent() {
           </Stack>
         )}
         {!(isSmallScreen && routerState.location.pathname === '/settings') && (
-          <Box flex={1} className="overflow-auto">
+          <Box flex="1 1 80%" className="overflow-auto">
             <Outlet />
           </Box>
         )}

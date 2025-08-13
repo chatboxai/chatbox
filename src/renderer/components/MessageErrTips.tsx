@@ -23,10 +23,10 @@ export default function MessageErrTips(props: { msg: Message }) {
   const errorMessage = msg.errorExtra?.responseBody
     ? (() => {
         try {
-          const json = JSON.parse(msg.errorExtra.responseBody)
+          const json = JSON.parse(msg.errorExtra.responseBody as string)
           return JSON.stringify(json, null, 2)
-        } catch (e) {
-          return msg.errorExtra.responseBody
+        } catch {
+          return String(msg.errorExtra.responseBody)
         }
       })()
     : msg.error

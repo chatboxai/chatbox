@@ -29,15 +29,19 @@ function findNodeFiles(dir) {
 if (dependencies) {
     const dependenciesKeys = Object.keys(dependencies)
     
+    // Packages to exclude from native dependency check
+    const excludePackages = ['capacitor-stream-http'] // Capacitor plugins are not native Electron dependencies
+    
     // Check for packages with binding.gyp (source-based native modules)
     const nativeDepsByBindingGyp = fs
         .readdirSync('node_modules')
-        .filter((folder) => fs.existsSync(`node_modules/${folder}/binding.gyp`))
+        .filter((folder) => !excludePackages.includes(folder) && fs.existsSync(`node_modules/${folder}/binding.gyp`))
     
     // Check for packages with .node files (precompiled native modules)
     const nativeDepsByNodeFiles = fs
         .readdirSync('node_modules')
         .filter((folder) => {
+            if (excludePackages.includes(folder)) return false
             const nodeFiles = findNodeFiles(`node_modules/${folder}`)
             return nodeFiles.length > 0
         })
@@ -62,7 +66,7 @@ if (dependencies) {
         )
         const rootDependencies = Object.keys(dependenciesObject)
         const filteredRootDependencies = rootDependencies.filter((rootDependency) =>
-            dependenciesKeys.includes(rootDependency)
+            dependenciesKeys.includes(rootDependency) && !excludePackages.includes(rootDependency)
         )
         if (filteredRootDependencies.length > 0) {
             const plural = filteredRootDependencies.length > 1

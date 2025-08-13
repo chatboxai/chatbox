@@ -3,7 +3,7 @@ import type { Config, Settings, ShortcutSetting } from 'src/shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { parseLocale } from '@/i18n/parser'
 import { sliceTextByTokenLimit } from '@/packages/token'
-import { cache } from '../packages/cache'
+import { cache } from 'src/shared/utils/cache'
 import { getOS } from '../packages/navigator'
 import type { Platform, PlatformType } from './interfaces'
 import DesktopKnowledgeBaseController from './knowledge-base/desktop-controller'
@@ -23,7 +23,7 @@ export default class DesktopPlatform implements Platform {
   }
 
   public async getVersion() {
-    return cache('ipc:getVersion', () => this.ipc.invoke('getVersion'), { ttl: 5 * 60 * 1000 })
+    return cache('ipc:getVersion', () => this.ipc.invoke('getVersion'), { ttl: 5 * 60 * 1000, memoryOnly: true })
   }
   public async getPlatform() {
     return cache('ipc:getPlatform', () => this.ipc.invoke('getPlatform'), { ttl: 5 * 60 * 1000 })

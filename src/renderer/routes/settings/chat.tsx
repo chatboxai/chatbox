@@ -242,7 +242,7 @@ function RouteComponent() {
             }
           />
 
-          <Switch
+          {/* <Switch
             label={t('show message token count')}
             checked={settings.showTokenCount}
             onChange={() =>
@@ -250,7 +250,7 @@ function RouteComponent() {
                 showTokenCount: !settings.showTokenCount,
               })
             }
-          />
+          /> */}
 
           <Switch
             label={t('show message token usage')}

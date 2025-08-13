@@ -35,14 +35,22 @@ export default function Header() {
     if (!autoGenerateTitle) {
       return
     }
-    if (currentSession.name === 'Untitled' && currentSession.messages.length >= 2) {
-      sessionActions.generateNameAndThreadName(currentSession.id)
-      return // 生成了会话名称，就不再生成 thread 名称
+
+    // 检查是否有正在生成的消息
+    const hasGeneratingMessage = currentSession.messages.some((msg) => msg.generating)
+
+    // 如果有消息正在生成，或者消息数量少于2条，不触发名称生成
+    if (hasGeneratingMessage || currentSession.messages.length < 2) {
+      return
     }
-    if (!currentSession.threadName && currentSession.messages.length >= 2) {
-      sessionActions.generateThreadName(currentSession.id)
+
+    // 触发名称生成（在 sessionActions 中进行去重和延迟处理）
+    if (currentSession.name === 'Untitled') {
+      sessionActions.scheduleGenerateNameAndThreadName(currentSession.id)
+    } else if (!currentSession.threadName) {
+      sessionActions.scheduleGenerateThreadName(currentSession.id)
     }
-  }, [currentSession?.messages.length])
+  }, [currentSession])
 
   const editCurrentSession = () => {
     if (!currentSession) {

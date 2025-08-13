@@ -1,6 +1,6 @@
-import SimpleSelect from './SimpleSelect'
-import { SessionSettings } from '../../shared/types'
 import { useTranslation } from 'react-i18next'
+import type { SessionSettings } from '../../shared/types'
+import SimpleSelect from './SimpleSelect'
 
 export interface Props {
   value: SessionSettings['dalleStyle']
@@ -14,7 +14,7 @@ export default function ImageStyleSelect(props: Props) {
     <SimpleSelect
       className={props.className}
       label={t('Image Style')}
-      value={props.value}
+      value={props.value || 'vivid'}
       options={[
         {
           value: 'vivid',

@@ -41,7 +41,7 @@ export function ProviderList({ providers, onAddProvider, onImportProvider, isImp
     <Stack
       className={clsx(
         'border-solid border-0 border-r border-[var(--mantine-color-chatbox-border-primary-outline)] ',
-        isSmallScreen ? 'w-full border-r-0' : ''
+        isSmallScreen ? 'w-full border-r-0' : 'flex-[1_0_auto] max-w-[16rem]'
       )}
       gap={0}
     >
@@ -63,6 +63,7 @@ export function ProviderList({ providers, onAddProvider, onImportProvider, isImp
               align="center"
               gap="xs"
               p="md"
+              pr="xl"
               py={isSmallScreen ? 'sm' : undefined}
               c={provider.id === providerId ? 'chatbox-brand' : 'chatbox-secondary'}
               bg={provider.id === providerId ? 'var(--mantine-color-chatbox-brand-light)' : 'transparent'}
@@ -81,20 +82,20 @@ export function ProviderList({ providers, onAddProvider, onImportProvider, isImp
               <Text
                 span
                 size="sm"
-                w={isSmallScreen ? undefined : 132}
                 flex={isSmallScreen ? 1 : undefined}
-                className="!text-inherit"
+                className="!text-inherit whitespace-nowrap overflow-hidden text-ellipsis"
               >
                 {t(provider.name)}
               </Text>
 
-              <Indicator
-                size={8}
-                ml={12}
-                color="chatbox-success"
-                className="ml-auto"
-                disabled={!availableProviders.find((p) => p.id === provider.id)}
-              />
+              {!!availableProviders.find((p) => p.id === provider.id) && (
+                <Indicator
+                  size={8}
+                  color="chatbox-success"
+                  className="ml-auto"
+                  disabled={!availableProviders.find((p) => p.id === provider.id)}
+                />
+              )}
 
               {isSmallScreen && (
                 <IconChevronRight size={20} className="!text-[var(--mantine-color-chatbox-tertiary-outline)] ml-2" />

@@ -1,8 +1,8 @@
-import {} from 'react'
-import * as toastActions from '../stores/toastActions'
 import { Snackbar } from '@mui/material'
-import * as atoms from '../stores/atoms'
 import { useAtomValue } from 'jotai'
+import {} from 'react'
+import * as atoms from '../stores/atoms'
+import * as toastActions from '../stores/toastActions'
 
 function Toasts() {
   const toasts = useAtomValue(atoms.toastsAtom)
@@ -16,7 +16,7 @@ function Toasts() {
           onClose={() => toastActions.remove(toast.id)}
           message={toast.content}
           anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-          autoHideDuration={5000}
+          autoHideDuration={toast.duration ?? 3000}
         />
       ))}
     </>

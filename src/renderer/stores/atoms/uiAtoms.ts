@@ -55,3 +55,4 @@ export const pictureShowAtom = atom<{
 
 // Layout state
 export const widthFullAtom = atomWithStorage<boolean>('widthFull', false) // Stored UI preference
+export const showCopilotsInNewSessionAtom = atomWithStorage<boolean>('showCopilotsInNewSession', false)

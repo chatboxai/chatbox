@@ -1,4 +1,4 @@
-import type { ToolSet } from 'ai'
+import type { CoreMessage, ToolSet } from 'ai'
 import { t } from 'i18next'
 import { uniqueId } from 'lodash'
 import { getModel } from 'src/shared/models'
@@ -38,7 +38,7 @@ async function handleSearchResult(
   toolName: string,
   model: ModelInterface,
   messages: Message[],
-  coreMessages: any[],
+  coreMessages: CoreMessage[],
   controller: AbortController,
   onResultChange: OnResultChange,
   params: { providerOptions?: ProviderOptions }
@@ -103,6 +103,7 @@ async function ocrMessages(messages: Message[]) {
 export async function streamText(
   model: ModelInterface,
   params: {
+    sessionId?: string
     messages: Message[]
     onResultChangeWithCancel: onResultChangeWithCancel
     providerOptions?: ProviderOptions
@@ -111,7 +112,7 @@ export async function streamText(
   },
   signal?: AbortSignal
 ) {
-  const { knowledgeBase, webBrowsing } = params
+  const { knowledgeBase, webBrowsing, sessionId } = params
 
   const controller = new AbortController()
   const cancel = () => controller.abort()
@@ -258,6 +259,7 @@ export async function streamText(
     console.debug('tools', tools)
 
     result = await model.chat(coreMessages, {
+      sessionId,
       signal: controller.signal,
       onResultChange,
       providerOptions: params.providerOptions,

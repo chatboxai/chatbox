@@ -185,22 +185,28 @@ export const SystemProviders: ProviderBaseInfo[] = [
       // https://platform.openai.com/docs/models
       models: [
         {
-          modelId: 'gpt-4.1',
+          modelId: 'gpt-5-chat-latest',
           capabilities: ['vision', 'tool_use'],
-          contextWindow: 1_047_576,
-          maxOutput: 32_768,
+          contextWindow: 400_000,
+          maxOutput: 128_000,
         },
         {
-          modelId: 'gpt-4.1-mini',
+          modelId: 'gpt-5',
           capabilities: ['vision', 'tool_use'],
-          contextWindow: 1_047_576,
-          maxOutput: 32_768,
+          contextWindow: 400_000,
+          maxOutput: 128_000,
         },
         {
-          modelId: 'gpt-4.1-nano',
+          modelId: 'gpt-5-mini',
           capabilities: ['vision', 'tool_use'],
-          contextWindow: 1_047_576,
-          maxOutput: 32_768,
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'gpt-5-nano',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
         },
         {
           modelId: 'gpt-4o',
@@ -227,19 +233,7 @@ export const SystemProviders: ProviderBaseInfo[] = [
           maxOutput: 200_000,
         },
         {
-          modelId: 'o1-mini',
-          capabilities: ['vision', 'tool_use', 'reasoning'],
-          contextWindow: 128_000,
-          maxOutput: 128_000,
-        },
-        {
           modelId: 'o3',
-          capabilities: ['vision', 'tool_use', 'reasoning'],
-          contextWindow: 200_000,
-          maxOutput: 100_000,
-        },
-        {
-          modelId: 'o1',
           capabilities: ['vision', 'tool_use', 'reasoning'],
           contextWindow: 200_000,
           maxOutput: 100_000,
@@ -309,11 +303,11 @@ export const SystemProviders: ProviderBaseInfo[] = [
       // https://ai.google.dev/models/gemini
       models: [
         {
-          modelId: 'gemini-2.5-flash-preview-05-20',
+          modelId: 'gemini-2.5-flash',
           capabilities: ['vision', 'reasoning'],
         },
         {
-          modelId: 'gemini-2.5-pro-preview-06-05',
+          modelId: 'gemini-2.5-pro',
           capabilities: ['vision', 'reasoning'],
         },
         {
@@ -667,6 +661,21 @@ export const SystemProviders: ProviderBaseInfo[] = [
     defaultSettings: {
       apiHost: 'https://open.bigmodel.cn/api/paas/v4/',
       models: [
+        {
+          modelId: 'glm-4.5',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'glm-4.5-air',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'glm-4.5v',
+          capabilities: ['reasoning', 'vision', 'tool_use'],
+          contextWindow: 64_000,
+        },
         {
           modelId: 'glm-4-air',
           capabilities: ['tool_use'],

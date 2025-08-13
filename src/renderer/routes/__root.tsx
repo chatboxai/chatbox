@@ -121,6 +121,7 @@ function Root() {
 
   const _theme = useAtomValue(atoms.themeAtom)
   const { setColorScheme } = useMantineColorScheme()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setColorScheme is stable
   useEffect(() => {
     if (_theme === Theme.Dark) {
       setColorScheme('dark')
@@ -129,7 +130,7 @@ function Root() {
     } else {
       setColorScheme('auto')
     }
-  }, [_theme, setColorScheme])
+  }, [_theme])
 
   // FIXME: 为了从LocalStroage中初始化这两个atom，否则首次get这两个atom可能得到默认值
   useAtom(atoms.chatSessionSettingsAtom)

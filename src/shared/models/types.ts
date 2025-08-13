@@ -12,6 +12,7 @@ export interface ModelInterface {
 }
 
 export interface CallChatCompletionOptions<Tools extends ToolSet = ToolSet> {
+  sessionId?: string
   signal?: AbortSignal
   onResultChange?: onResultChange
   tools?: Tools

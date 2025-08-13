@@ -4,7 +4,7 @@ export interface ApiRequestOptions {
   url: string
   method?: string
   headers?: Record<string, string>
-  body?: any
+  body?: RequestInit['body']
   useProxy?: boolean
   signal?: AbortSignal
   retry?: number
@@ -22,7 +22,6 @@ export interface RequestAdapter {
     options?: { retry?: number; parseChatboxRemoteError?: boolean }
   ): Promise<Response>
   apiRequest(options: ApiRequestOptions): Promise<Response>
-  fetchWithProxy(url: string, init?: RequestInit): Promise<Response>
 }
 
 export interface ModelDependencies {

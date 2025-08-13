@@ -170,7 +170,7 @@ export const ReasoningContentUI: FC<{
       message.contentParts.length > 0 &&
       message.contentParts[message.contentParts.length - 1] === part) ||
     false
-  const [isExpanded, setIsExpanded] = useState<boolean>(isThinking)
+  const [isExpanded, setIsExpanded] = useState<boolean>(false)
 
   // Timer state management:
   // - elapsedTime: Real-time updates while thinking is active (updates every 100ms)

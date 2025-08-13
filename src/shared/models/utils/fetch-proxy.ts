@@ -6,37 +6,30 @@ import { ApiError } from '../errors'
  * or falls back to apiRequest for mobile CORS handling
  */
 export function createFetchWithProxy(useProxy: boolean | undefined, dependencies: ModelDependencies) {
-  if (!useProxy) {
-    // Use apiRequest which handles mobile CORS automatically via doRequest
-    return async (url: RequestInfo | URL, init?: RequestInit) => {
-      const method = init?.method || 'GET'
-      const headers = (init?.headers as Record<string, string>) || {}
-
-      if (method === 'POST') {
-        const response = await dependencies.request.apiRequest({
-          url: url.toString(),
-          method: 'POST',
-          headers,
-          body: init?.body,
-          signal: init?.signal || undefined,
-          useProxy: false,
-        })
-        return response
-      } else {
-        const response = await dependencies.request.apiRequest({
-          url: url.toString(),
-          method: 'GET',
-          headers,
-          signal: init?.signal || undefined,
-          useProxy: false,
-        })
-        return response
-      }
-    }
-  }
-
   return async (url: RequestInfo | URL, init?: RequestInit) => {
-    return dependencies.request.fetchWithProxy(url.toString(), init)
+    const method = init?.method || 'GET'
+    const headers = (init?.headers as Record<string, string>) || {}
+
+    if (method === 'POST') {
+      const response = await dependencies.request.apiRequest({
+        url: url.toString(),
+        method: 'POST',
+        headers,
+        body: init?.body,
+        signal: init?.signal || undefined,
+        useProxy,
+      })
+      return response
+    } else {
+      const response = await dependencies.request.apiRequest({
+        url: url.toString(),
+        method: 'GET',
+        headers,
+        signal: init?.signal || undefined,
+        useProxy,
+      })
+      return response
+    }
   }
 }
 

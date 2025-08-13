@@ -55,13 +55,6 @@ export async function createModelDependencies(): Promise<ModelDependencies> {
           })
         }
       },
-      fetchWithProxy: async (url: string, init?: RequestInit): Promise<Response> => {
-        // 整合 doRequest 和 afetch 的功能
-        return afetch(url, init, {
-          retry: 3, // 默认重试3次，与 doRequest 保持一致
-          parseChatboxRemoteError: true, // 启用 Chatbox 错误解析
-        })
-      },
     },
     sentry: new RendererSentryAdapter(),
     getRemoteConfig: settingActions.getRemoteConfig,

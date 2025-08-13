@@ -1,4 +1,4 @@
-import type { LanguageModelUsage } from 'ai'
+import type { FinishReason, LanguageModelUsage } from 'ai'
 import { v4 as uuidv4 } from 'uuid'
 import type { MCPServerConfig } from './types/mcp'
 
@@ -51,12 +51,12 @@ export type MessageInfoPart = { type: 'info'; text: string; values?: Record<stri
  * Represents a reasoning/thinking part of a message with timing information
  */
 export type MessageReasoningPart = {
-  type: 'reasoning';
-  text: string;
+  type: 'reasoning'
+  text: string
   /** Timestamp when the thinking process started (milliseconds since epoch) */
-  startTime?: number;
+  startTime?: number
   /** Total duration of the thinking process in milliseconds */
-  duration?: number;
+  duration?: number
 }
 export type MessageToolCallPart<Args = unknown, Result = unknown> = {
   type: 'tool-call'
@@ -78,6 +78,7 @@ export type StreamTextResult = {
   contentParts: MessageContentParts
   reasoningContent?: string
   usage?: LanguageModelUsage
+  finishReason?: FinishReason
 }
 
 // Chatbox 应用的消息类型
@@ -131,6 +132,7 @@ export interface Message {
   tokensUsed?: number // 生成当前消息的 token 使用量
   timestamp?: number // 当前消息的时间戳
   firstTokenLatency?: number // AI 回答首字耗时(毫秒) - 从发送请求到接收到第一个字的时间间隔
+  finishReason?: FinishReason // 生成当前消息的结束原因
 }
 
 export type SettingWindowTab = 'ai' | 'display' | 'chat' | 'advanced' | 'extension' | 'mcp'
@@ -262,6 +264,7 @@ export type ModelProvider = ModelProviderEnum | string
 export type ProviderModelInfo = {
   modelId: string
   type?: 'chat' | 'embedding' | 'rerank' // 模型类型，chat/embedding/rerank
+  apiStyle?: 'google' | 'openai' | 'anthropic'
   nickname?: string
   labels?: string[]
   capabilities?: ('vision' | 'reasoning' | 'tool_use' | 'web_search')[]
@@ -530,6 +533,7 @@ export interface CopilotDetail {
 export interface Toast {
   id: string
   content: string
+  duration?: number
 }
 
 export enum Theme {

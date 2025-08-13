@@ -118,7 +118,7 @@ function RouteComponent() {
   }
 
   return (
-    <Flex h="100%">
+    <Flex h="100%" w="100%">
       {(!isSmallScreen || routerState.location.pathname === '/settings/provider') && (
         <ProviderList
           providers={providers}
@@ -128,7 +128,7 @@ function RouteComponent() {
         />
       )}
       {!(isSmallScreen && routerState.location.pathname === '/settings/provider') && (
-        <Box flex={1} p="md" className="overflow-auto">
+        <Box flex="1 1 75%" p="md" className="overflow-auto">
           <Outlet />
         </Box>
       )}

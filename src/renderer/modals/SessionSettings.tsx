@@ -15,6 +15,7 @@ import {
 } from '@mui/material'
 import { IconInfoCircle } from '@tabler/icons-react'
 import { useAtomValue } from 'jotai'
+import { pick } from 'lodash'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { chatSessionSettings, pictureSessionSettings } from 'src/shared/defaults'
@@ -81,13 +82,7 @@ const SessionSettingsModal = NiceModal.create(
         _editingData
           ? {
               ..._editingData,
-              settings: {
-                ..._editingData.settings,
-                maxContextMessageCount: undefined,
-                temperature: undefined,
-                dalleStyle: pictureSessionSettings().dalleStyle,
-                imageGenerateNum: pictureSessionSettings().imageGenerateNum,
-              },
+              settings: pick(_editingData.settings, ['provider', 'modelId']),
             }
           : _editingData
       )

@@ -1,10 +1,10 @@
 import { getDefaultStore } from 'jotai'
-import * as atoms from './atoms'
 import { v4 as uuidv4 } from 'uuid'
+import * as atoms from './atoms'
 
-export function add(content: string) {
+export function add(content: string, duration?: number) {
   const store = getDefaultStore()
-  const newToast = { id: `toast:${uuidv4()}`, content }
+  const newToast = { id: `toast:${uuidv4()}`, content, duration }
   store.set(atoms.toastsAtom, (toasts) => [...toasts, newToast])
 }
 

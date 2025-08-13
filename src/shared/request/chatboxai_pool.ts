@@ -1,5 +1,6 @@
 import uniq from 'lodash/uniq'
 import { ofetch } from 'ofetch'
+import { cache } from '../utils/cache'
 
 let API_ORIGIN = 'https://api.chatboxai.app'
 
@@ -20,94 +21,6 @@ export function getChatboxAPIOrigin() {
     return 'http://localhost:8002'
   }
   return API_ORIGIN
-}
-
-// memory cache
-interface CacheItem<T> {
-  value: T
-  timestamp: number
-  ttl: number
-}
-
-// Cross-platform storage
-class CrossPlatformStorage {
-  private memoryCache = new Map<string, CacheItem<any>>()
-
-  set(key: string, value: any): void {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      // Browser environment
-      try {
-        localStorage.setItem(key, JSON.stringify(value))
-      } catch (error) {
-        // Fallback to memory if localStorage fails
-        this.memoryCache.set(key, value)
-      }
-    } else {
-      // Node.js environment
-      this.memoryCache.set(key, value)
-    }
-  }
-
-  get(key: string): any {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      // Browser environment
-      try {
-        const item = localStorage.getItem(key)
-        return item ? JSON.parse(item) : null
-      } catch (error) {
-        // Fallback to memory if localStorage fails
-        return this.memoryCache.get(key) || null
-      }
-    } else {
-      // Node.js environment
-      return this.memoryCache.get(key) || null
-    }
-  }
-
-  delete(key: string): void {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      // Browser environment
-      try {
-        localStorage.removeItem(key)
-      } catch (error) {
-        // Fallback to memory if localStorage fails
-        this.memoryCache.delete(key)
-      }
-    } else {
-      // Node.js environment
-      this.memoryCache.delete(key)
-    }
-  }
-}
-
-const storage = new CrossPlatformStorage()
-
-async function cache<T>(key: string, getter: () => Promise<T>, options: { ttl: number }): Promise<T> {
-  const now = Date.now()
-  const cachedItem = storage.get(key) as CacheItem<T> | null
-
-  // Check if cache is valid
-  if (cachedItem && now - cachedItem.timestamp < cachedItem.ttl) {
-    return cachedItem.value
-  }
-
-  // Cache is expired or doesn't exist, get fresh data
-  try {
-    const value = await getter()
-    const cacheItem: CacheItem<T> = {
-      value,
-      timestamp: now,
-      ttl: options.ttl,
-    }
-    storage.set(key, cacheItem)
-    return value
-  } catch (error) {
-    // If getter fails and we have expired cache, return expired cache
-    if (cachedItem) {
-      return cachedItem.value
-    }
-    throw error
-  }
 }
 
 /**
@@ -145,7 +58,7 @@ export async function testApiOrigins() {
       }
       return POOL
     },
-    { ttl: 1000 * 60 * 60 } // 1小时缓存
+    { ttl: 1000 * 60 * 60, refreshFallbackToCache: true } // 1小时缓存，失败时使用旧缓存
   )
 
   return result

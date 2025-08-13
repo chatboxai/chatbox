@@ -75,6 +75,7 @@ export default function MessageList(props: { className?: string; currentSession:
     <div className={cn('w-full h-full mx-auto', props.className)}>
       <div className="overflow-auto h-full pr-0 pl-1 sm:pl-0" ref={messageListRef}>
         <Virtuoso
+          style={{ scrollbarGutter: 'stable' }}
           data={currentMessageList}
           atTopStateChange={setAtTop}
           atBottomStateChange={setAtBottom}

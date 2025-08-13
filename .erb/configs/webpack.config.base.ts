@@ -28,6 +28,31 @@ const configuration: webpack.Configuration = {
           },
         },
       },
+      // Special rule for mermaid to transpile static blocks
+      {
+        test: /\.m?js$/,
+        include: /node_modules\/mermaid/,
+        use: {
+          loader: 'babel-loader',
+          options: {
+            presets: [
+              ['@babel/preset-env', {
+                targets: {
+                  chrome: '58',
+                  firefox: '60',
+                  safari: '11',
+                  edge: '16',
+                  ios: '11',
+                  android: '67'
+                }
+              }]
+            ],
+            plugins: [
+              '@babel/plugin-transform-class-static-block'
+            ]
+          }
+        }
+      },
     ],
   },
 

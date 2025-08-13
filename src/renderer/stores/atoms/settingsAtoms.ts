@@ -1,6 +1,7 @@
 import { atom, type SetStateAction } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import { focusAtom } from 'jotai-optics'
+import { omit } from 'lodash'
 import * as defaults from '../../../shared/defaults'
 import { type SessionSettings, type Settings, type SettingWindowTab, Theme } from '../../../shared/types'
 import platform from '../../platform'
@@ -30,7 +31,8 @@ export const settingsAtom = atom(
     const settings = Object.assign({}, defaults.settings(), _settings)
     settings.shortcuts = Object.assign({}, defaults.settings().shortcuts, _settings.shortcuts)
     settings.mcp = Object.assign({}, defaults.settings().mcp, _settings.mcp)
-    return settings
+    // 移除已废弃的属性
+    return omit(settings, ['maxTokens', 'maxContextSize']) as Settings
   },
   (get, set, update: SetStateAction<Settings>) => {
     const settings = get(_settingsAtom)

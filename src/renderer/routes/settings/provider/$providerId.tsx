@@ -1,6 +1,13 @@
+import { createModelDependencies } from '@/adapters'
+import { ModelList } from '@/components/ModelList'
+import PopoverConfirm from '@/components/PopoverConfirm'
+import { useProviderSettings, useSettings } from '@/hooks/useSettings'
+import { streamText } from '@/packages/model-calls'
+import { getModelSettingUtil } from '@/packages/model-setting-utils'
+import platform from '@/platform'
+import { add as addToast } from '@/stores/toastActions'
 import NiceModal from '@ebay/nice-modal-react'
 import {
-  Badge,
   Button,
   Flex,
   Modal,
@@ -12,7 +19,7 @@ import {
   Text,
   TextInput,
   Title,
-  Tooltip,
+  Tooltip
 } from '@mantine/core'
 import {
   IconBulb,
@@ -24,12 +31,10 @@ import {
   IconPlus,
   IconRefresh,
   IconRestore,
-  IconSettings,
   IconTool,
-  IconTrash,
+  IconTrash
 } from '@tabler/icons-react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { capitalize } from 'lodash'
 import { type ChangeEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SystemProviders } from 'src/shared/defaults'
@@ -47,14 +52,6 @@ import {
   normalizeGeminiHost,
   normalizeOpenAIApiHostAndPath,
 } from 'src/shared/utils'
-import { createModelDependencies } from '@/adapters'
-import { ModelList } from '@/components/ModelList'
-import PopoverConfirm from '@/components/PopoverConfirm'
-import { useProviderSettings, useSettings } from '@/hooks/useSettings'
-import { streamText } from '@/packages/model-calls'
-import { getModelSettingUtil } from '@/packages/model-setting-utils'
-import platform from '@/platform'
-import { add as addToast } from '@/stores/toastActions'
 
 export const Route = createFileRoute('/settings/provider/$providerId')({
   component: RouteComponent,
@@ -444,12 +441,6 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                 })
               }
             />
-
-            <Stack gap="xs">
-              <Text span fw="600" className=" whitespace-nowrap">
-                {t('Improve Network Compatibility')}
-              </Text>
-            </Stack>
           </>
         )}
 

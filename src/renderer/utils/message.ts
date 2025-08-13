@@ -2,12 +2,12 @@ import { assign, cloneDeep, omit } from 'lodash'
 import type { Message, MessageContentParts, MessagePicture, SearchResultItem } from 'src/shared/types'
 import { countWord } from '@/packages/word-count'
 
-export function getMessageText(message: Message, includeImagePlaceHolder = true): string {
+export function getMessageText(message: Message, includeImagePlaceHolder = true, includeReasoning = true): string {
   if (message.contentParts && message.contentParts.length > 0) {
     return message.contentParts
       .map((c) => {
         if (c.type === 'reasoning') {
-          return c.text
+          return includeReasoning ? c.text : null
         }
         if (c.type === 'text') {
           return c.text

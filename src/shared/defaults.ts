@@ -704,4 +704,89 @@ export const SystemProviders: ProviderBaseInfo[] = [
       ],
     },
   },
+  {
+    id: ModelProviderEnum.NovitaAI,
+    name: 'Novita AI',
+    type: ModelProviderType.OpenAI,
+    urls: {
+      website: 'https://novita.ai',
+    },
+    defaultSettings: {
+      apiHost: 'https://api.novita.ai/v3/openai',
+      apiPath: '/chat/completions',
+      models: [
+        {
+          modelId: 'deepseek/deepseek-v3-0324',
+          contextWindow: 163840,
+          maxOutput: 163840,
+          capabilities: ['tool_use'],
+        },
+        {
+          modelId: 'deepseek/deepseek-r1-0528',
+          contextWindow: 163840,
+          maxOutput: 163840,
+          capabilities: ['tool_use'],
+        },
+        {
+          modelId: 'moonshotai/kimi-k2-instruct',
+          contextWindow: 131072,
+          maxOutput: 131072,
+          capabilities: ['tool_use'],
+        },
+        {
+          modelId: 'zai-org/glm-4.5',
+          contextWindow: 131072,
+          maxOutput: 131072,
+          capabilities: ['tool_use'],
+        },
+        {
+          modelId: 'baidu/ernie-4.5-vl-424b-a47b',
+          contextWindow: 123000,
+          maxOutput: 16000,
+          capabilities: ['tool_use', 'vision'],
+        },
+        {
+          modelId: 'qwen/qwen3-235b-a22b-thinking-2507',
+          contextWindow: 131072,
+          maxOutput: 131072,
+          capabilities: ['tool_use'],
+        }, 
+        {
+          modelId: 'qwen/qwen3-235b-a22b-instruct-2507',
+          contextWindow: 262144,
+          maxOutput: 262144,
+          capabilities: ['tool_use'],
+        },  
+        {
+          modelId: 'qwen/qwen3-30b-a3b-fp8',
+          contextWindow: 262144,
+          maxOutput: 262144,
+        }, 
+        {
+          modelId: 'qwen/qwen2.5-vl-72b-instruct',
+          contextWindow: 32768,
+          maxOutput: 32768,
+          capabilities: ['vision'],
+        },
+        {
+          modelId: 'google/gemma-3-27b-it',
+          contextWindow: 32000,
+          maxOutput: 32000,
+          capabilities: ['tool_use', 'vision'],
+        },
+        {
+          modelId: 'qwen/qwen3-embedding-8b',
+          contextWindow: 32768,
+          maxOutput: 4096,
+          type: 'embedding',
+        },
+        {
+          modelId: 'baai/bge-m3',
+          contextWindow: 8192,
+          maxOutput: 96000,
+          type: 'embedding',
+        }
+      ],
+    },
+  },
 ]

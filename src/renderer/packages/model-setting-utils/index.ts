@@ -11,6 +11,7 @@ import GroqSettingUtil from './groq-setting-util'
 import { ModelSettingUtil } from './interface'
 import LMStudioSettingUtil from './lmstudio-setting-util'
 import MistralAISettingUtil from './mistral-ai-setting-util'
+import NovitaAISettingUtil from './novita-ai-setting-util'
 import OllamaSettingUtil from './ollama-setting-util'
 import OpenAISettingUtil from './openai-setting-util'
 import PerplexitySettingUtil from './perplexity-setting-util'
@@ -33,6 +34,7 @@ export function getModelSettingUtil(aiProvider: ModelProvider): ModelSettingUtil
     [ModelProviderEnum.VolcEngine]: VolcEngineSettingUtil,
     [ModelProviderEnum.MistralAI]: MistralAISettingUtil,
     [ModelProviderEnum.LMStudio]: LMStudioSettingUtil,
+    [ModelProviderEnum.NovitaAI]: NovitaAISettingUtil,
     [ModelProviderEnum.Perplexity]: PerplexitySettingUtil,
     [ModelProviderEnum.XAI]: XAISettingUtil,
     [ModelProviderEnum.Custom]: CustomModelSettingUtil,

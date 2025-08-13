@@ -270,6 +270,23 @@ export function getModel(setting: Settings, config: Config, dependencies: ModelD
         },
         dependencies
       )
+
+    case ModelProviderEnum.NovitaAI:
+      return new CustomOpenAI(
+        {
+          apiKey: providerSetting.apiKey || '',
+          apiHost: formattedApiHost,
+          apiPath: providerSetting.apiPath || '/chat/completions',
+          model,
+          temperature: setting.temperature,
+          topP: setting.topP,
+          maxTokens: setting.maxTokens,
+          stream: setting.stream,
+          useProxy: providerSetting.useProxy,
+        },
+        dependencies
+      )
+
     default:
       if (providerBaseInfo.isCustom) {
         return new CustomOpenAI(
@@ -308,6 +325,7 @@ export const aiProviderNameHash: Record<ModelProvider, string> = {
   [ModelProviderEnum.LMStudio]: 'LM Studio API',
   [ModelProviderEnum.Perplexity]: 'Perplexity API',
   [ModelProviderEnum.XAI]: 'xAI API',
+  [ModelProviderEnum.NovitaAI]: 'Novita AI API',
   [ModelProviderEnum.Custom]: 'Custom Provider',
 }
 
@@ -381,6 +399,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.ChatGLM6B,
     label: aiProviderNameHash[ModelProviderEnum.ChatGLM6B],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.NovitaAI,
+    label: aiProviderNameHash[ModelProviderEnum.NovitaAI],
     disabled: false,
   },
   // {

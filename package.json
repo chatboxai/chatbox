@@ -142,7 +142,7 @@
     "react-test-renderer": "^18.2.0",
     "rimraf": "^5.0.1",
     "sass": "^1.62.1",
-    "sass-loader": "^13.3.1",
+    "sass-loader": "^16.0.5",
     "style-loader": "^3.3.3",
     "tailwind-scrollbar": "^3.1.0",
     "tailwindcss": "^3.4.0",
@@ -274,7 +274,8 @@
     "tailwind-merge": "^1.14.0",
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^9.0.0",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "zod": "^4.0.17"
   },
   "browserslist": [],
   "electronmon": {

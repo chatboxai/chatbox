@@ -207,6 +207,11 @@ Any form of contribution is welcome, including but not limited to:
 -   Submitting translations
 -   Submitting any other forms of contribution
 
+## Prerequisites
+
+- Node.js (v20.x – v22.x)
+- npm (required – pnpm is not supported)
+
 ## Build Instructions
 
 1. Clone the repository from Github
@@ -238,8 +243,6 @@ npm run package
 ```bash
 npm run package:all
 ```
-
-**Note:** Ensure that you're using Node version 22 and npm (not pnpm). 
 
 ## Star History
 

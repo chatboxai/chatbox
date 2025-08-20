@@ -2,6 +2,10 @@
   "name": "xyz.chatboxapp.ce",
   "productName": "xyz.chatboxapp.ce",
   "version": "0.0.1",
+  "engines": {
+    "node": ">=20.0.0 <23.0.0",
+    "npm": ">=10.0.0"
+  },
   "private": true,
   "description": "A desktop client for multiple cutting-edge AI models",
   "main": "./src/main/main.ts",

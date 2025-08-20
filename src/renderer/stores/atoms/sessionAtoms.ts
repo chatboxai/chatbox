@@ -32,9 +32,9 @@ export const currentSessionIdAtom = atom(
   }
 )
 
-export const currentSessionAtom = atom((get) => {
+export const currentSessionAtom = atom(async (get) => {
   const id = get(currentSessionIdAtom)
-  const sessions = get(sessionsListAtom)
+  const sessions = await get(sessionsListAtom)
   let currentMeta = sessions.find((session) => session?.id === id)
 
   if (!currentMeta) {

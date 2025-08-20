@@ -14,7 +14,7 @@
     "build:main": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.prod.ts",
     "build:renderer": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.prod.ts",
     "build:web": "cross-env CHATBOX_BUILD_PLATFORM=web npm run build:renderer",
-    "postinstall": "ts-node .erb/scripts/check-native-dep.js && electron-builder install-app-deps && cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.dev.dll.ts",
+    "postinstall": "ts-node .erb/scripts/check-native-dep.js && electron-builder install-app-deps && cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true NODE_OPTIONS='-r ts-node/register/transpile-only' webpack --config ./.erb/configs/webpack.config.renderer.dev.dll.ts",
     "package": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never",
     "package:all": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never --win --mac --linux",
     "release:web": "bash release-web.sh",
@@ -25,7 +25,7 @@
     "electron:publish-linux": "ts-node ./.erb/scripts/clean.js dist && npm install && npm run postinstall && npm run build && electron-builder build --publish always --linux",
     "electron:publish-win": "ts-node ./.erb/scripts/clean.js dist && npm install && npm run postinstall && npm run build && electron-builder build --publish always --win",
     "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
-    "dev": "npm start",
+    "dev": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true NODE_OPTIONS='-r ts-node/register/transpile-only' npm start",
     "dev:web": "cross-env DEV_WEB_ONLY=true CHATBOX_BUILD_PLATFORM=web npm start",
     "dev:debug": "cross-env MAIN_ARGS=\"--inspect=5858\" npm start",
     "start": "ts-node ./.erb/scripts/check-port-in-use.js && npm run start:renderer",
@@ -146,7 +146,7 @@
     "react-test-renderer": "^18.2.0",
     "rimraf": "^5.0.1",
     "sass": "^1.62.1",
-    "sass-loader": "^13.3.1",
+    "sass-loader": "^16.0.5",
     "style-loader": "^3.3.3",
     "tailwind-scrollbar": "^3.1.0",
     "tailwindcss": "^3.4.0",
@@ -278,7 +278,8 @@
     "tailwind-merge": "^1.14.0",
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^9.0.0",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "zod": "^4.0.17"
   },
   "browserslist": [],
   "electronmon": {

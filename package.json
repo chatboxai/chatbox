@@ -137,7 +137,7 @@
     "mini-css-extract-plugin": "^2.7.6",
     "node-loader": "^2.0.0",
     "patch-package": "^8.0.0",
-    "postcss": "^8.5.3",
+    "postcss": "^8.5.6",
     "postcss-loader": "^7.3.3",
     "postcss-preset-mantine": "^1.17.0",
     "postcss-simple-vars": "^7.0.1",

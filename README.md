@@ -239,6 +239,8 @@ npm run package
 npm run package:all
 ```
 
+**Note:** Ensure that you're using Node version 22 and npm (not pnpm). 
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=chatboxai/chatbox&type=Date)](https://star-history.com/#chatboxai/chatbox&Date)

@@ -13,6 +13,7 @@ import LMStudioSettingUtil from './lmstudio-setting-util'
 import MistralAISettingUtil from './mistral-ai-setting-util'
 import OllamaSettingUtil from './ollama-setting-util'
 import OpenAISettingUtil from './openai-setting-util'
+import OpenRouterSettingUtil from './openrouter-setting-util'
 import PerplexitySettingUtil from './perplexity-setting-util'
 import SiliconFlowSettingUtil from './siliconflow-setting-util'
 import VolcEngineSettingUtil from './volcengine-setting-util'
@@ -28,6 +29,7 @@ export function getModelSettingUtil(aiProvider: ModelProvider): ModelSettingUtil
     [ModelProviderEnum.Groq]: GroqSettingUtil,
     [ModelProviderEnum.Ollama]: OllamaSettingUtil,
     [ModelProviderEnum.OpenAI]: OpenAISettingUtil,
+    [ModelProviderEnum.OpenRouter]: OpenRouterSettingUtil,
     [ModelProviderEnum.DeepSeek]: DeepSeekSettingUtil,
     [ModelProviderEnum.SiliconFlow]: SiliconFlowSettingUtil,
     [ModelProviderEnum.VolcEngine]: VolcEngineSettingUtil,

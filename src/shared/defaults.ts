@@ -704,4 +704,222 @@ export const SystemProviders: ProviderBaseInfo[] = [
       ],
     },
   },
+  {
+    id: ModelProviderEnum.OpenRouter,
+    name: 'OpenRouter',
+    type: ModelProviderType.OpenAI,
+    urls: {
+      website: 'https://openrouter.ai',
+      apiKey: 'https://openrouter.ai/keys',
+      docs: 'https://openrouter.ai/docs',
+      models: 'https://openrouter.ai/models',
+    },
+    defaultSettings: {
+      apiHost: 'https://openrouter.ai/api/v1',
+      models: [
+        // OpenAI Models
+        {
+          modelId: 'openai/gpt-4o',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'openai/gpt-4o-mini',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'openai/gpt-4-turbo',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'openai/gpt-3.5-turbo',
+          capabilities: ['tool_use'],
+          contextWindow: 16_385,
+          maxOutput: 4_096,
+        },
+        // Anthropic Models
+        {
+          modelId: 'anthropic/claude-3.5-sonnet',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 200_000,
+          maxOutput: 8_192,
+        },
+        {
+          modelId: 'anthropic/claude-3.5-haiku',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 200_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'anthropic/claude-3-opus',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 200_000,
+          maxOutput: 4_096,
+        },
+        // Google Models
+        {
+          modelId: 'google/gemini-pro-1.5',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 2_000_000,
+          maxOutput: 8_192,
+        },
+        {
+          modelId: 'google/gemini-flash-1.5',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 1_000_000,
+          maxOutput: 8_192,
+        },
+        // Meta Models
+        {
+          modelId: 'meta-llama/llama-3.1-405b-instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'meta-llama/llama-3.1-70b-instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'meta-llama/llama-3.1-8b-instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        // Mistral Models
+        {
+          modelId: 'mistralai/mistral-large',
+          capabilities: ['tool_use'],
+          contextWindow: 32_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'mistralai/mistral-medium',
+          capabilities: ['tool_use'],
+          contextWindow: 32_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'mistralai/mistral-small',
+          capabilities: ['tool_use'],
+          contextWindow: 32_000,
+          maxOutput: 4_096,
+        },
+        // Cohere Models
+        {
+          modelId: 'cohere/command-r-plus',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'cohere/command-r',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        // DeepSeek Models
+        {
+          modelId: 'deepseek/deepseek-chat',
+          capabilities: ['tool_use'],
+          contextWindow: 64_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'deepseek/deepseek-coder',
+          capabilities: ['tool_use'],
+          contextWindow: 64_000,
+          maxOutput: 4_096,
+        },
+        // xAI Models
+        {
+          modelId: 'x-ai/grok-beta',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'x-ai/grok-2-1212',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        // Perplexity Models
+        {
+          modelId: 'perplexity/llama-3.1-sonar-large-128k-online',
+          capabilities: ['web_search', 'tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'perplexity/llama-3.1-sonar-small-128k-online',
+          capabilities: ['web_search', 'tool_use'],
+          contextWindow: 128_000,
+          maxOutput: 4_096,
+        },
+        // Groq Models
+        {
+          modelId: 'groq/llama-3.1-70b-versatile',
+          capabilities: ['tool_use'],
+          contextWindow: 131_072,
+          maxOutput: 32_768,
+        },
+        {
+          modelId: 'groq/llama-3.1-8b-instant',
+          capabilities: ['tool_use'],
+          contextWindow: 131_072,
+          maxOutput: 32_768,
+        },
+        // Qwen Models
+        {
+          modelId: 'qwen/qwen-2.5-72b-instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 32_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'qwen/qwen-2.5-32b-instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 32_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'qwen/qwen-2.5-14b-instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 32_000,
+          maxOutput: 4_096,
+        },
+        {
+          modelId: 'qwen/qwen-2.5-7b-instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 32_000,
+          maxOutput: 4_096,
+        },
+        // Embedding Models
+        {
+          modelId: 'text-embedding-3-small',
+          type: 'embedding',
+        },
+        {
+          modelId: 'text-embedding-3-large',
+          type: 'embedding',
+        },
+        {
+          modelId: 'cohere/embed-english-v3.0',
+          type: 'embedding',
+        },
+        {
+          modelId: 'cohere/embed-multilingual-v3.0',
+          type: 'embedding',
+        },
+      ],
+    },
+  },
 ]

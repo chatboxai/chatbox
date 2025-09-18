@@ -13,6 +13,7 @@ import LMStudio from './lmstudio'
 import MistralAI from './mistral-ai'
 import Ollama from './ollama'
 import OpenAI from './openai'
+import OpenRouter from './openrouter'
 import Perplexity from './perplexity'
 import SiliconFlow from './siliconflow'
 import type { ModelInterface } from './types'
@@ -270,6 +271,19 @@ export function getModel(setting: Settings, config: Config, dependencies: ModelD
         },
         dependencies
       )
+
+    case ModelProviderEnum.OpenRouter:
+      return new OpenRouter(
+        {
+          apiKey: providerSetting.apiKey || '',
+          model,
+          temperature: setting.temperature,
+          topP: setting.topP,
+          maxTokens: setting.maxTokens,
+          stream: setting.stream,
+        },
+        dependencies
+      )
     default:
       if (providerBaseInfo.isCustom) {
         return new CustomOpenAI(
@@ -308,6 +322,7 @@ export const aiProviderNameHash: Record<ModelProvider, string> = {
   [ModelProviderEnum.LMStudio]: 'LM Studio API',
   [ModelProviderEnum.Perplexity]: 'Perplexity API',
   [ModelProviderEnum.XAI]: 'xAI API',
+  [ModelProviderEnum.OpenRouter]: 'OpenRouter API',
   [ModelProviderEnum.Custom]: 'Custom Provider',
 }
 
@@ -381,6 +396,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.ChatGLM6B,
     label: aiProviderNameHash[ModelProviderEnum.ChatGLM6B],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.OpenRouter,
+    label: aiProviderNameHash[ModelProviderEnum.OpenRouter],
     disabled: false,
   },
   // {

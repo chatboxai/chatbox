@@ -423,10 +423,11 @@ function MessageInput(props: {
         if (event) {
             event.preventDefault()
         }
-        if (messageInput.length === 0) {
+        const trimmedInput = messageInput.trim()
+        if (trimmedInput.length === 0) {
             return
         }
-        props.onSubmit(createMessage('user', messageInput))
+        props.onSubmit(createMessage('user', trimmedInput))
         setMessageInput('')
     }
     return (

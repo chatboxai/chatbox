@@ -45,6 +45,21 @@ export const MCP_ENTRIES_OFFICIAL: MCPRegistryEntry[] = [
     },
   },
   {
+    name: 'bright-data',
+    title: 'The Web MCP',
+    description:
+      'Discover, extract, and interact with the web - one interface powering automated access across the public internet.',
+    icon: 'https://brightdata.com/wp-content/themes/brightdata/assets/images/favicon.png',
+    homepage: 'https://github.com/brightdata/brightdata-mcp',
+    configuration: {
+      command: 'npx',
+      args: ['@brightdata/mcp'],
+      env: {
+        API_TOKEN: "your-token-here"
+      },
+    },
+  },
+  {
     name: 'chroma',
     title: 'Chroma',
     description:

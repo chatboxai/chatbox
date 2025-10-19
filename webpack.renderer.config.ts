@@ -10,7 +10,16 @@ rules.push(
   },
   {
       test: /\.s[ca]ss$/,
-      use: [{ loader: 'style-loader' }, { loader: 'css-loader' }, 'sass-loader'],
+      use: [
+        { loader: 'style-loader' }, 
+        { loader: 'css-loader' }, 
+        { 
+          loader: 'sass-loader',
+          options: {
+            api: 'modern'
+          }
+        }
+      ],
   }
 );
 

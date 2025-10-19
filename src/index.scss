@@ -1,5 +1,3 @@
-@use 'sass:meta';
-
 html > body {
     /* font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
         Arial, sans-serif; */
@@ -11,9 +9,11 @@ html > body {
 
 html[data-theme='dark'] {
     // ------------ highlight.js ---------------
-
-    // https://stackoverflow.com/questions/59257368/how-to-dynamically-change-the-theme-using-highlight-js
-    @include meta.load-css('highlight.js/styles/github-dark');
+    // Use dark theme styles
+    .hljs {
+        background: #0d1117 !important;
+        color: #e6edf3 !important;
+    }
 
     // ------------ 滚动条 ---------------
 
@@ -60,9 +60,11 @@ html[data-theme='dark'] {
 
 html[data-theme='light'] {
     // ------------ highlight.js ---------------
-
-    // https://stackoverflow.com/questions/59257368/how-to-dynamically-change-the-theme-using-highlight-js
-    @include meta.load-css('highlight.js/styles/github');
+    // Use light theme styles
+    .hljs {
+        background: #f6f8fa !important;
+        color: #24292f !important;
+    }
 
     // ------------ 滚动条 ---------------
 

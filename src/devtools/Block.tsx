@@ -21,6 +21,8 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import * as wordCount from './utils'
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
+import CopyButton from './CopyButton';
+import MarkdownRenderer from './MarkdownRenderer';
 import 'github-markdown-css/github-markdown-light.css'
 import mila from 'markdown-it-link-attributes'
 
@@ -39,7 +41,7 @@ const md = new MarkdownIt({
         } else {
             content = md.utils.escapeHtml(str)
         }
-        return `<pre class="hljs" style="max-width: 50vw; overflow: auto"><code>${content}</code></pre>`;
+        return `<div class="code-block-wrapper" style="position: relative; display: inline-block; width: 100%;"><pre class="hljs" style="max-width: 50vw; overflow: auto"><code>${content}</code></pre></div>`;
     }
 });
 md.use(mdKatex, { blockClass: 'katexmath-block rounded-md p-[10px]', errorColor: ' #cc0000' })
@@ -150,11 +152,8 @@ function _Block(props: Props) {
                                         id={msg.id + 'input'}
                                     />
                                 ) : (
-                                    <Box
-                                        sx={{
-                                            // bgcolor: "Background",
-                                        }}
-                                        dangerouslySetInnerHTML={{ __html: md.render(msg.content) }}
+                                    <MarkdownRenderer
+                                        content={md.render(msg.content)}
                                     />
                                 )
                             }

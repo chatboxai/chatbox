@@ -207,6 +207,11 @@ Any form of contribution is welcome, including but not limited to:
 -   Submitting translations
 -   Submitting any other forms of contribution
 
+## Prerequisites
+
+- Node.js (v20.x – v22.x)
+- npm (required – pnpm is not supported)
+
 ## Build Instructions
 
 1. Clone the repository from Github

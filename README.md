@@ -71,6 +71,16 @@ We regularly sync code from the pro repo to this repo, and vice versa.
 For more information: [chatboxai.app](https://chatboxai.app/)
 
 ---
+<div align="center" markdown="1">
+  <a href="https://go.warp.dev/chatbox">
+    <img alt="Warp sponsorship" width="400" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/refs/heads/main/Github/Sponsor/Warp-Github-LG-02.png">
+  </a>
+
+### [Warp, built for coding with multiple AI agents.](https://go.warp.dev/chatbox)
+[Available for MacOS, Linux, & Windows](https://go.warp.dev/chatbox)<br>
+</div>
+
+<hr>
 
 <h1 align="center">
 <img src='./doc/statics/icon.png' width='30'>

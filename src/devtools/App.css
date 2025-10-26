@@ -1,3 +1,13 @@
 .App {
   text-align: center;
 }
+
+/* Drag and drop styles */
+[role="listitem"] {
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.drag-overlay {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  cursor: grabbing !important;
+}

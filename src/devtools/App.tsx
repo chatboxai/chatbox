@@ -3,6 +3,7 @@ import './App.css';
 import Block from './Block'
 import * as client from './client'
 import SessionItem from './SessionItem'
+import SortableSessionItem from './SortableSessionItem'
 import {
     Toolbar, Box, Badge, Snackbar,
     List, ListSubheader, ListItemText, MenuList,
@@ -22,11 +23,59 @@ import * as prompts from './prompts'
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import CleanWidnow from './CleanWindow';
 import { ThemeSwitcherProvider } from './theme/ThemeSwitcher';
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+    DragStartEvent,
+    DragOverlay,
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 
 const { useEffect, useState } = React
 
 function Main() {
     const store = useStore()
+
+    // Drag and drop sensors
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const [activeId, setActiveId] = useState<string | null>(null);
+    const [draggedSession, setDraggedSession] = useState<Session | null>(null);
+
+    const handleDragStart = (event: DragStartEvent) => {
+        setActiveId(event.active.id as string);
+        const session = store.chatSessions.find(s => s.id === event.active.id);
+        setDraggedSession(session || null);
+    };
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (over && active.id !== over.id) {
+            store.reorderSessions(active.id as string, over.id as string);
+        }
+        setActiveId(null);
+        setDraggedSession(null);
+    };
+
+    const handleDragCancel = () => {
+        setActiveId(null);
+        setDraggedSession(null);
+    };
 
     // 是否展示设置窗口
     const [openSettingWindow, setOpenSettingWindow] = React.useState(false);
@@ -192,24 +241,53 @@ function Main() {
                                 </ListSubheader>
                             }
                         >
-                            {
-                                store.chatSessions.map((session, ix) => (
-                                    <SessionItem selected={store.currentSession.id === session.id}
-                                        session={session}
-                                        switchMe={() => {
-                                            store.switchCurrentSession(session)
-                                            document.getElementById('message-input')?.focus() // better way?
-                                        }}
-                                        deleteMe={() => store.deleteChatSession(session)}
-                                        copyMe={() => {
-                                            const newSession = createSession(session.name + ' Copyed')
-                                            newSession.messages = session.messages
-                                            store.createChatSession(newSession, ix)
-                                        }}
-                                        editMe={() => setConfigureChatConfig(session)}
-                                    />
-                                ))
-                            }
+                            <DndContext
+                                sensors={sensors}
+                                collisionDetection={closestCenter}
+                                onDragStart={handleDragStart}
+                                onDragEnd={handleDragEnd}
+                                onDragCancel={handleDragCancel}
+                            >
+                                <SortableContext
+                                    items={store.chatSessions.map(s => s.id)}
+                                    strategy={verticalListSortingStrategy}
+                                >
+                                    {
+                                        store.chatSessions.map((session, ix) => (
+                                            <SortableSessionItem
+                                                key={session.id}
+                                                selected={store.currentSession.id === session.id}
+                                                session={session}
+                                                switchMe={() => {
+                                                    store.switchCurrentSession(session)
+                                                    document.getElementById('message-input')?.focus() // better way?
+                                                }}
+                                                deleteMe={() => store.deleteChatSession(session)}
+                                                copyMe={() => {
+                                                    const newSession = createSession(session.name + ' Copyed')
+                                                    newSession.messages = session.messages
+                                                    store.createChatSession(newSession, ix)
+                                                }}
+                                                editMe={() => setConfigureChatConfig(session)}
+                                            />
+                                        ))
+                                    }
+                                </SortableContext>
+                                <DragOverlay style={{ cursor: 'grabbing' }}>
+                                    {draggedSession ? (
+                                        <div style={{ transform: 'rotate(2deg)', boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)' }}>
+                                            <SessionItem
+                                                session={draggedSession}
+                                                selected={false}
+                                                switchMe={() => {}}
+                                                deleteMe={() => {}}
+                                                copyMe={() => {}}
+                                                editMe={() => {}}
+                                            />
+                                        </div>
+                                    ) : null}
+                                </DragOverlay>
+                            </DndContext>
                         </MenuList>
 
                         <Divider />

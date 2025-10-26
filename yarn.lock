@@ -58,6 +58,37 @@
   dependencies:
     "@jridgewell/trace-mapping" "0.3.9"
 
+"@dnd-kit/accessibility@^3.1.1":
+  version "3.1.1"
+  resolved "https://registry.npmjs.org/@dnd-kit/accessibility/-/accessibility-3.1.1.tgz"
+  integrity sha512-2P+YgaXF+gRsIihwwY1gCsQSYnu9Zyj2py8kY5fFvUM1qm2WA2u639R6YNVfU4GWr+ZM5mqEsfHZZLoRONbemw==
+  dependencies:
+    tslib "^2.0.0"
+
+"@dnd-kit/core@^6.3.0", "@dnd-kit/core@^6.3.1":
+  version "6.3.1"
+  resolved "https://registry.npmjs.org/@dnd-kit/core/-/core-6.3.1.tgz"
+  integrity sha512-xkGBRQQab4RLwgXxoqETICr6S5JlogafbhNsidmrkVv2YRs5MLwpjoF2qpiGjQt8S9AoxtIV603s0GIUpY5eYQ==
+  dependencies:
+    "@dnd-kit/accessibility" "^3.1.1"
+    "@dnd-kit/utilities" "^3.2.2"
+    tslib "^2.0.0"
+
+"@dnd-kit/sortable@^10.0.0":
+  version "10.0.0"
+  resolved "https://registry.npmjs.org/@dnd-kit/sortable/-/sortable-10.0.0.tgz"
+  integrity sha512-+xqhmIIzvAYMGfBYYnbKuNicfSsk4RksY2XdmJhT+HAC01nix6fHCztU68jooFiMUB01Ky3F0FyOvhG/BZrWkg==
+  dependencies:
+    "@dnd-kit/utilities" "^3.2.2"
+    tslib "^2.0.0"
+
+"@dnd-kit/utilities@^3.2.2":
+  version "3.2.2"
+  resolved "https://registry.npmjs.org/@dnd-kit/utilities/-/utilities-3.2.2.tgz"
+  integrity sha512-+MKAJEOfaBe5SmV6t34p80MMKhjvUz0vRrvVJbPT0WElzaOJ/1xs+D+KDv+tD/NE5ujfrChEcshd4fLn0wpiqg==
+  dependencies:
+    tslib "^2.0.0"
+
 "@electron-forge/cli@^6.0.5":
   version "6.0.5"
   resolved "https://registry.npmjs.org/@electron-forge/cli/-/cli-6.0.5.tgz"
@@ -5406,7 +5437,7 @@ rcedit@^3.0.1:
   dependencies:
     cross-spawn-windows-exe "^1.1.0"
 
-"react-dom@^17.0.0 || ^18.0.0", react-dom@^18.2.0, react-dom@>=16.6.0:
+"react-dom@^17.0.0 || ^18.0.0", react-dom@^18.2.0, react-dom@>=16.6.0, react-dom@>=16.8.0:
   version "18.2.0"
   resolved "https://registry.npmjs.org/react-dom/-/react-dom-18.2.0.tgz"
   integrity sha512-6IMTriUmvsjHUjNtEDudZfuDQUoWXVxKHhlEGSk81n4YFS+r/Kl99wXiwlVXtPBtJenozv2P+hxDsw9eA7Xo6g==
@@ -6315,7 +6346,7 @@ tslib@^1.8.1:
   resolved "https://registry.npmjs.org/tslib/-/tslib-1.14.1.tgz"
   integrity sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43P7/7qvQwPh9BGkHewbMulVntbigmcT7rdX3BNo9wRJg==
 
-tslib@^2.0.3, tslib@^2.1.0:
+tslib@^2.0.0, tslib@^2.0.3, tslib@^2.1.0:
   version "2.5.0"
   resolved "https://registry.npmjs.org/tslib/-/tslib-2.5.0.tgz"
   integrity sha512-336iVw3rtn2BUK7ORdIAHTyxHGRIHVReokCR3XjbckJMK7ms8FysBfhLR8IXnAgy7T0PTPNBWKiH514FOW/WSg==

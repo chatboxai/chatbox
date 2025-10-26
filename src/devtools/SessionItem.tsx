@@ -24,10 +24,12 @@ export interface Props {
     deleteMe: () => void
     copyMe: () => void
     editMe: () => void
+    dragHandleProps?: any
+    isDragging?: boolean
 }
 
 export default function SessionItem(props: Props) {
-    const { session, selected, switchMe, deleteMe, copyMe, editMe } = props
+    const { session, selected, switchMe, deleteMe, copyMe, editMe, dragHandleProps, isDragging } = props
     const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
     const open = Boolean(anchorEl);
     const handleClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -38,14 +40,28 @@ export default function SessionItem(props: Props) {
         setAnchorEl(null);
     };
 
+    const handleClickWrapper = (e: React.MouseEvent) => {
+        if (isDragging) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    };
+
     return (
         <MenuItem
             key={session.id}
-            selected={selected}
-            onClick={() => switchMe()}
+            selected={selected && !isDragging}
+            onClick={switchMe}
+            {...(dragHandleProps || {})}
+            style={{ 
+                cursor: isDragging ? 'grabbing' : (dragHandleProps ? 'grab' : 'pointer'),
+                ...(isDragging ? { opacity: 0.5 } : {}),
+                userSelect: 'none'
+            }}
+            onPointerDown={handleClickWrapper}
         >
-            <ListItemIcon>
-                <IconButton><ChatBubbleOutlineOutlinedIcon fontSize="small" /></IconButton>
+            <ListItemIcon {...(dragHandleProps || {})}>
+                <IconButton {...(dragHandleProps || {})}><ChatBubbleOutlineOutlinedIcon fontSize="small" /></IconButton>
             </ListItemIcon>
             <ListItemText>
                 <Typography variant="inherit" noWrap>

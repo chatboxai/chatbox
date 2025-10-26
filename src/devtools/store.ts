@@ -131,6 +131,17 @@ export default function useStore() {
         }
         setSessions(sessions)
     }
+    const reorderSessions = (activeId: string, overId: string | null) => {
+        if (!overId) return
+        const oldIndex = chatSessions.findIndex(s => s.id === activeId)
+        const newIndex = chatSessions.findIndex(s => s.id === overId)
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
+        
+        const newSessions = [...chatSessions]
+        const [movedItem] = newSessions.splice(oldIndex, 1)
+        newSessions.splice(newIndex, 0, movedItem)
+        setSessions(newSessions)
+    }
     const updateChatSession = (session: Session) => {
         const sessions = chatSessions.map((s) => {
             if (s.id === session.id) {
@@ -180,6 +191,7 @@ export default function useStore() {
         updateChatSession,
         deleteChatSession,
         createEmptyChatSession,
+        reorderSessions,
 
         currentSession,
         switchCurrentSession,

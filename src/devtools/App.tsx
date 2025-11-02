@@ -200,16 +200,24 @@ function Main() {
         }}>
             <Grid container spacing={2} sx={{
                 height: '100%',
+                width: '100%',
+                flexDirection: 'row',
+                display: 'flex',
             }}>
                 <Grid item xs={3}
                     sx={{
                         height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
                     }}
                 >
                     <Stack
                         sx={{
                             height: '100%',
                             padding: '20px 0',
+                            display: 'flex',
+                            visibility: 'visible',
+                            width: '100%',
                         }}
                         spacing={2}
                     >
@@ -341,6 +349,8 @@ function Main() {
                 <Grid item xs={9}
                     sx={{
                         height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
                     }}
                 >
                     <Stack sx={{

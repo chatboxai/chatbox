@@ -532,7 +532,7 @@ function MessageInput(props: {
                         autoFocus
                         id='message-input'
                         onKeyDown={(event) => {
-                            if (event.keyCode === 13 && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+                            if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
                                 event.preventDefault()
                                 submit()
                                 return

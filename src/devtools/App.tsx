@@ -130,29 +130,47 @@ function Main() {
         if (
             store.currentSession.name === 'Untitled'
             && store.currentSession.messages.findIndex(msg => msg.role === 'assistant') !== -1
+            && store.settings.openaiKey && store.settings.openaiKey.trim() !== ''
         ) {
             generateName(store.currentSession)
         }
-    }, [store.currentSession.messages])
+    }, [store.currentSession.messages, store.settings.openaiKey])
 
     const [configureChatConfig, setConfigureChatConfig] = React.useState<Session | null>(null);
 
     const [sessionClean, setSessionClean] = React.useState<Session | null>(null);
 
     const generateName = async (session: Session) => {
-        client.replay(
-            store.settings.openaiKey,
-            store.settings.apiHost,
-            prompts.nameConversation(session.messages.slice(0, 3)),
-            (name) => {
-                name = name.replace(/['"“”]/g, '')
-                session.name = name
-                store.updateChatSession(session)
-            },
-            (err) => {
-                console.log(err)
+        // Skip if API key is not set
+        if (!store.settings.openaiKey || store.settings.openaiKey.trim() === '') {
+            return
+        }
+        
+        try {
+            await client.replay(
+                store.settings.openaiKey,
+                store.settings.apiHost,
+                prompts.nameConversation(session.messages.slice(0, 3)),
+                (name) => {
+                    name = name.replace(/['"""]/g, '')
+                    session.name = name
+                    store.updateChatSession(session)
+                },
+                (err) => {
+                    // Silently fail - name generation is optional
+                    // Only log if it's not an authentication error
+                    if (!err.message.includes('401') && !err.message.includes('Unauthorized')) {
+                        console.log('Failed to generate session name:', err)
+                    }
+                }
+            )
+        } catch (err) {
+            // Silently fail - name generation is optional
+            // Only log if it's not an authentication error
+            if (err instanceof Error && !err.message.includes('401') && !err.message.includes('Unauthorized')) {
+                console.log('Failed to generate session name:', err)
             }
-        )
+        }
     }
 
     const generate = async (session: Session, promptMsgs: Message[], targetMsg: Message) => {
@@ -192,6 +210,41 @@ function Main() {
     useEffect(() => {
         document.getElementById('message-input')?.focus() // better way?
     }, [messageInput])
+
+    // Keyboard shortcut for creating new chat (Cmd+N on macOS, Ctrl+N on Windows/Linux)
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            // Check if Cmd+N (macOS) or Ctrl+N (Windows/Linux) is pressed
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+            const isModifierPressed = isMac ? event.metaKey : event.ctrlKey
+            const isNKey = event.key === 'n' || event.key === 'N'
+
+            if (isModifierPressed && isNKey) {
+                // Check if user is actively typing in an input field, textarea, or contenteditable element
+                const target = event.target as HTMLElement
+                const isInputField = target.tagName === 'INPUT' || 
+                                    target.tagName === 'TEXTAREA' || 
+                                    target.isContentEditable
+
+                // Only trigger shortcut when not actively typing in an input field
+                // This prevents interference with text editing while allowing the shortcut
+                // to work when other parts of the UI have focus
+                if (!isInputField) {
+                    event.preventDefault()
+                    store.createEmptyChatSession()
+                    // Focus the message input after a short delay to ensure the new session is rendered
+                    setTimeout(() => {
+                        document.getElementById('message-input')?.focus()
+                    }, 0)
+                }
+            }
+        }
+
+        window.addEventListener('keydown', handleKeyDown)
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown)
+        }
+    }, [store])
 
     return (
         <Box sx={{
@@ -300,7 +353,12 @@ function Main() {
 
                         <Divider />
 
-                        <MenuItem onClick={() => store.createEmptyChatSession()} >
+                        <MenuItem onClick={() => {
+                            store.createEmptyChatSession()
+                            setTimeout(() => {
+                                document.getElementById('message-input')?.focus()
+                            }, 0)
+                        }} >
                             <ListItemIcon>
                                 <IconButton><AddIcon fontSize="small" /></IconButton>
                             </ListItemIcon>
@@ -308,7 +366,7 @@ function Main() {
                                 New Chat
                             </ListItemText>
                             <Typography variant="body2" color="text.secondary">
-                                {/* ⌘N */}
+                                {navigator.platform.toUpperCase().indexOf('MAC') >= 0 ? '⌘N' : 'Ctrl+N'}
                             </Typography>
                         </MenuItem>
                         <MenuItem onClick={() => {

@@ -37,6 +37,21 @@ export async function replay(apiKey: string, host: string, msgs: Message[], onTe
                 stream: true
             })
         });
+        
+        // Check response status before trying to read the stream
+        if (!response.ok) {
+            let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+            try {
+                const errorData = await response.json()
+                if (errorData.error) {
+                    errorMessage = errorData.error.message || errorMessage
+                }
+            } catch {
+                // If we can't parse the error, use the status text
+            }
+            throw new Error(errorMessage)
+        }
+        
         if (!response.body) {
             throw new Error('No response body')
         }

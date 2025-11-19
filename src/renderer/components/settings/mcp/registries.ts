@@ -607,4 +607,16 @@ export const MCP_ENTRIES_COMMUNITY: MCPRegistryEntry[] = [
       },
     },
   },
+  {
+    name: 'browser-use',
+    title: 'Browser Use',
+    description:
+      'Browser automation with real-time web access and search capabilities. Provides tools for executing browser tasks, managing persistent authentication profiles, and monitoring task progress.',
+    icon: 'https://browser-use.com/favicon.ico',
+    homepage: 'https://github.com/browser-use/browser-use',
+    configuration: {
+      command: 'npx',
+      args: ['mcp-remote', 'https://api.browser-use.com/mcp', '--header', 'X-Browser-Use-API-Key: <YOUR_API_KEY>'],
+    },
+  },
 ]

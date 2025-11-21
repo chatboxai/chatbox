@@ -356,7 +356,12 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
 
       case 'reasoning-delta':
         // 部分提供方会随文本返回空的reasoning，防止分割正常的content
-        if (chunk.text.trim()) {
+        // OpenRouter + Gemini 3.0 会在响应末尾返回加密的 reasoning.encrypted，
+        // SDK 将其转换为 [REDACTED] 占位符，需要过滤以避免创建多余的 reasoning part
+        const isGemini3ProEncrypted =
+          this.modelId.includes('gemini-3-pro') && chunk.text.trim() === '[REDACTED]'
+
+        if (chunk.text.trim() && !isGemini3ProEncrypted) {
           return {
             currentTextPart: undefined,
             currentReasoningPart: this.createOrUpdateReasoningPart(chunk.text, contentParts, currentReasoningPart),

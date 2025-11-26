@@ -29,7 +29,7 @@ export function RouteComponent() {
             Authorization: `Bearer ${extension.webSearch.tavilyApiKey}`,
           },
           body: {
-            query: 'test',
+            query: 'Chatbox',
             search_depth: 'basic',
             include_domains: [],
             exclude_domains: [],

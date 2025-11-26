@@ -97,6 +97,7 @@ async function _searchRelatedResults(query: string, signal?: AbortSignal) {
     title: item.title,
     snippet: truncate(item.snippet, { length: 150 }),
     link: item.link,
+    rawContent: item.rawContent,
   }))
 }
 

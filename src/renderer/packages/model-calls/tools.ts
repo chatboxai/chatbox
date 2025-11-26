@@ -66,14 +66,16 @@ export const parseLinkTool = tool({
  * @param result The model response result containing content parts
  * @returns The parsed search action object or null if none found
  */
-async function extractSearchActionFromResult<T = any>(result: { contentParts: Array<{ type: string; text?: string }> }): Promise<T | null> {
+async function extractSearchActionFromResult<T = any>(result: {
+  contentParts: Array<{ type: string; text?: string }>
+}): Promise<T | null> {
   const regex = /{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*}/g
   const textPart = result.contentParts.find((part) => part.type === 'text')
-  
+
   if (!textPart || !textPart.text) {
     return null
   }
-  
+
   const match = textPart.text.match(regex)
   if (match) {
     for (const jsonString of match) {
@@ -85,7 +87,7 @@ async function extractSearchActionFromResult<T = any>(result: { contentParts: Ar
       }
     }
   }
-  
+
   return null
 }
 
@@ -103,17 +105,17 @@ export async function searchByPromptEngineering(model: ModelInterface, messages:
       ...messages,
     ])
   )
-  
+
   const searchAction = await extractSearchActionFromResult<{
     action: 'search' | 'proceed'
     query: string
   }>(result)
-  
+
   if (searchAction && searchAction.action === 'search') {
     const { searchResults } = await webSearchExecutor({ query: searchAction.query }, { abortSignal: signal })
     return { query: searchAction.query, searchResults }
   }
-  
+
   return { query: '', searchResults: [] }
 }
 
@@ -135,18 +137,18 @@ export async function knowledgeBaseSearchByPromptEngineering(
       ...messages,
     ])
   )
-  
+
   const searchAction = await extractSearchActionFromResult<{
     action: 'search' | 'proceed'
     query: string
   }>(result)
-  
+
   if (searchAction && searchAction.action === 'search') {
     const knowledgeBaseController = platform.getKnowledgeBaseController()
     const searchResults = await knowledgeBaseController.search(knowledgeBaseId, searchAction.query)
     return { query: searchAction.query, searchResults }
   }
-  
+
   return { query: '', searchResults: [] }
 }
 
@@ -169,12 +171,12 @@ export async function combinedSearchByPromptEngineering(
       ...messages,
     ])
   )
-  
+
   const searchAction = await extractSearchActionFromResult<{
     action: 'search_knowledge_base' | 'search_web' | 'proceed'
     query: string
   }>(result)
-  
+
   if (searchAction) {
     if (searchAction.action === 'search_knowledge_base' && knowledgeBaseId) {
       const knowledgeBaseController = platform.getKnowledgeBaseController()
@@ -186,13 +188,13 @@ export async function combinedSearchByPromptEngineering(
       return { query: searchAction.query, searchResults, type: 'web' as const }
     }
   }
-  
+
   return { query: '', searchResults: [], type: 'none' as const }
 }
 
 export function constructMessagesWithSearchResults(
   messages: Message[],
-  searchResults: { title: string; snippet: string; link: string }[]
+  searchResults: { title: string; snippet: string; link: string; rawContent: string | null }[]
 ) {
   const systemPrompt = promptFormat.answerWithSearchResults()
   const formattedSearchResults = searchResults
@@ -201,6 +203,7 @@ export function constructMessagesWithSearchResults(
 Title: ${it.title}
 URL: ${it.link}
 Content: ${it.snippet}
+Raw Content: ${it.rawContent}
 [webpage ${i + 1} end]`
     })
     .join('\n')
@@ -218,7 +221,9 @@ Content: ${it.snippet}
       contentParts: [
         {
           type: 'text',
-          text: `${formattedSearchResults}\nUser Message:\n${getMessageText(last(messages) ?? { id: '', role: 'user', contentParts: [{ type: 'text', text: '' }] })}`,
+          text: `${formattedSearchResults}\nUser Message:\n${getMessageText(
+            last(messages) ?? { id: '', role: 'user', contentParts: [{ type: 'text', text: '' }] }
+          )}`,
         },
       ],
     },
@@ -260,7 +265,9 @@ Content: ${it.text}
       contentParts: [
         {
           type: 'text',
-          text: `${formattedSearchResults}\nUser Message:\n${getMessageText(last(messages) ?? { id: '', role: 'user', contentParts: [{ type: 'text', text: '' }] })}`,
+          text: `${formattedSearchResults}\nUser Message:\n${getMessageText(
+            last(messages) ?? { id: '', role: 'user', contentParts: [{ type: 'text', text: '' }] }
+          )}`,
         },
       ],
     },

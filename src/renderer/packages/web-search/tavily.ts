@@ -43,7 +43,7 @@ export class TavilySearch extends WebSearch {
         title: result.title,
         link: result.url,
         snippet: result.content,
-        raw_content: result.raw_content
+        rawContent: result.raw_content,
       }))
 
       return { items }

@@ -23,6 +23,7 @@ export const SearchResultItemSchema = z.object({
   title: z.string(),
   link: z.string(),
   snippet: z.string(),
+  rawContent: z.string().nullable().optional(),
 })
 
 export const SearchResultSchema = z.object({

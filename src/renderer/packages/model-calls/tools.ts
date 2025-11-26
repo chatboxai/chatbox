@@ -202,8 +202,7 @@ export function constructMessagesWithSearchResults(
       return `[webpage ${i + 1} begin]
 Title: ${it.title}
 URL: ${it.link}
-Content: ${it.snippet}
-Raw Content: ${it.rawContent}
+Content: ${it.snippet}${it.rawContent ? `\nRaw Content: ${it.rawContent}` : ''}
 [webpage ${i + 1} end]`
     })
     .join('\n')

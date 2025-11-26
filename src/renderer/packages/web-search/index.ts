@@ -43,7 +43,6 @@ function getSearchProviders() {
       selectedProviders.push(
         new TavilySearch(
           settings.webSearch.tavilyApiKey,
-          settings.webSearch.tavilyIncludeAnswer,
           settings.webSearch.tavilySearchDepth,
           settings.webSearch.tavilyMaxResults,
           settings.webSearch.tavilyTimeRange,

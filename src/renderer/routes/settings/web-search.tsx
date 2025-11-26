@@ -125,38 +125,6 @@ export function RouteComponent() {
           {/* Tavily Configuration Options */}
           <Stack mt="md" gap="sm">
             <Title order={6}>{t('Tavily Search Options')}</Title>
-            
-            {/* Include Answer */}
-            <Stack gap="xs">
-              <Flex align="center" gap="xs">
-                <Text size="sm">{t('Include Answer')}</Text>
-                <Tooltip label={t('Include an LLM-generated answer to the provided query. basic or true returns a quick answer. advanced returns a more detailed answer.')}>
-                  <Text size="sm" c="gray">ⓘ</Text>
-                </Tooltip>
-              </Flex>
-              <Select
-                comboboxProps={{ withinPortal: true, withArrow: true }}
-                data={[
-                  { value: 'none', label: 'None' },
-                  { value: 'basic', label: 'Basic' },
-                  { value: 'advanced', label: 'Advanced' },
-                ]}
-                value={extension.webSearch.tavilyIncludeAnswer || 'none'}
-                onChange={(e) =>
-                  e &&
-                  setSettings({
-                    extension: {
-                      ...extension,
-                      webSearch: {
-                        ...extension.webSearch,
-                        tavilyIncludeAnswer: e,
-                      },
-                    },
-                  })
-                }
-                maw={320}
-              />
-            </Stack>
 
             {/* Search Depth */}
             <Stack gap="xs">

@@ -3,8 +3,9 @@ import WebSearch from './base'
 import { SearchResult } from 'src/shared/types'
 
 export class TavilySearch extends WebSearch {
+  private readonly TAVILY_SEARCH_URL = 'https://api.tavily.com/search'
+
   private apiKey: string
-  private includeAnswer: string
   private searchDepth: string
   private maxResults: number
   private timeRange: string | null
@@ -12,15 +13,13 @@ export class TavilySearch extends WebSearch {
 
   constructor(
     apiKey: string,
-    includeAnswer: string = 'none',
     searchDepth: string = 'basic',
     maxResults: number = 5,
-    timeRange: string | null = 'none',
-    includeRawContent: string | null = 'none'
+    timeRange: string | null = null,
+    includeRawContent: string | null = null
   ) {
     super()
     this.apiKey = apiKey
-    this.includeAnswer = includeAnswer
     this.searchDepth = searchDepth
     this.maxResults = maxResults
     this.timeRange = timeRange === 'none' ? null : timeRange
@@ -29,27 +28,8 @@ export class TavilySearch extends WebSearch {
 
   async search(query: string, signal?: AbortSignal): Promise<SearchResult> {
     try {
-      const requestBody: any = {
-        query,
-        search_depth: this.searchDepth,
-        max_results: this.maxResults,
-        include_domains: [],
-        exclude_domains: [],
-      }
-
-      if (this.includeAnswer !== 'none') {
-        requestBody.include_answer = this.includeAnswer
-      }
-
-      if (this.timeRange !== null) {
-        requestBody.time_range = this.timeRange
-      }
-
-      if (this.includeRawContent !== null) {
-        requestBody.include_raw_content = this.includeRawContent
-      }
-
-      const response = await ofetch('https://api.tavily.com/search', {
+      const requestBody = this.buildRequestBody(query)
+      const response = await ofetch(this.TAVILY_SEARCH_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -63,12 +43,39 @@ export class TavilySearch extends WebSearch {
         title: result.title,
         link: result.url,
         snippet: result.content,
+        raw_content: result.raw_content
       }))
+
+      console.log("items", items)
 
       return { items }
     } catch (error) {
       console.error('Tavily search error:', error)
       return { items: [] }
     }
+  }
+
+  private buildRequestBody(query: string): any {
+    const requestBody: any = {
+      query,
+      search_depth: this.searchDepth,
+      max_results: this.maxResults,
+      include_domains: [],
+      exclude_domains: [],
+    }
+
+    if (!this.isNullOrNone(this.timeRange)) {
+      requestBody.time_range = this.timeRange
+    }
+
+    if (!this.isNullOrNone(this.includeRawContent)) {
+      requestBody.include_raw_content = this.includeRawContent
+    }
+
+    return requestBody
+  }
+
+  private isNullOrNone(value: string | null): boolean {
+    return value === null || value === 'none'
   }
 }

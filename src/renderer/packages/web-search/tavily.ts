@@ -46,8 +46,6 @@ export class TavilySearch extends WebSearch {
         raw_content: result.raw_content
       }))
 
-      console.log("items", items)
-
       return { items }
     } catch (error) {
       console.error('Tavily search error:', error)

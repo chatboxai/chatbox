@@ -207,6 +207,48 @@ function Main() {
     }
 
     const [ messageInput, setMessageInput ] = useState('')
+    const previousSessionIdRef = React.useRef<string>(store.currentSession.id)
+    const messageInputRef = React.useRef<string>('')
+    
+    // Keep messageInputRef in sync with messageInput
+    useEffect(() => {
+        messageInputRef.current = messageInput
+    }, [messageInput])
+    
+    // Save draft when messageInput changes (for current session)
+    useEffect(() => {
+        store.saveDraft(store.currentSession.id, messageInput)
+    }, [messageInput])
+    
+    // Handle session switching: save draft for old session, restore draft for new session
+    useEffect(() => {
+        const previousSessionId = previousSessionIdRef.current
+        const currentSessionId = store.currentSession.id
+        
+        // If session changed, save draft for previous session before switching
+        if (previousSessionId !== currentSessionId) {
+            // Save draft for the previous session (using the ref to get the latest value)
+            store.saveDraft(previousSessionId, messageInputRef.current)
+            
+            // Restore draft for the new session
+            const draft = store.getDraft(currentSessionId)
+            setMessageInput(draft)
+            
+            // Update ref to track current session
+            previousSessionIdRef.current = currentSessionId
+            
+            document.getElementById('message-input')?.focus()
+        }
+    }, [store.currentSession.id])
+    
+    // Initialize draft on mount
+    useEffect(() => {
+        const draft = store.getDraft(store.currentSession.id)
+        setMessageInput(draft)
+        messageInputRef.current = draft
+        previousSessionIdRef.current = store.currentSession.id
+    }, [])
+    
     useEffect(() => {
         document.getElementById('message-input')?.focus() // better way?
     }, [messageInput])
@@ -320,6 +362,7 @@ function Main() {
                                                 selected={store.currentSession.id === session.id}
                                                 session={session}
                                                 switchMe={() => {
+                                                    // Switch session (draft will be saved/restored via useEffect)
                                                     store.switchCurrentSession(session)
                                                     document.getElementById('message-input')?.focus() // better way?
                                                 }}
@@ -495,6 +538,8 @@ function Main() {
                                     const newAssistantMsg = createMessage('assistant', '....')
                                     store.currentSession.messages = [...store.currentSession.messages, newUserMsg, newAssistantMsg]
                                     store.updateChatSession(store.currentSession)
+                                    // Clear draft when message is submitted
+                                    store.clearDraft(store.currentSession.id)
                                     generate(store.currentSession, promptsMsgs, newAssistantMsg)
                                     setScrollToMsg({ msgId: newAssistantMsg.id, smooth: true })
                                 }}
@@ -529,6 +574,8 @@ function Main() {
                             session={sessionClean}
                             save={(session) => {
                                 store.updateChatSession(session)
+                                // Clear draft when session is cleared
+                                store.clearDraft(session.id)
                                 setSessionClean(null)
                             }}
                             close={() => setSessionClean(null)}

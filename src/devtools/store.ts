@@ -83,6 +83,22 @@ export async function writeSessions(sessions: Session[]) {
     return writeStore('chat-sessions', sessions)
 }
 
+// draft store
+
+export type Drafts = { [sessionId: string]: string }
+
+export async function readDrafts(): Promise<Drafts> {
+    const drafts = await readStore('chat-drafts')
+    if (!drafts) {
+        return {}
+    }
+    return drafts
+}
+
+export async function writeDrafts(drafts: Drafts) {
+    return writeStore('chat-drafts', drafts)
+}
+
 // react hook
 
 export default function useStore() {
@@ -110,6 +126,14 @@ export default function useStore() {
 
     const [chatSessions, _setChatSessions] = useState<Session[]>([createSession()])
     const [currentSession, switchCurrentSession] = useState<Session>(chatSessions[0])
+    const [drafts, _setDrafts] = useState<Drafts>({})
+    
+    // Load drafts from storage on mount
+    useEffect(() => {
+        readDrafts().then((loadedDrafts) => {
+            _setDrafts(loadedDrafts)
+        })
+    }, [])
     
     // Sync currentSession with chatSessions - if currentSession was deleted, switch to a valid one
     useEffect(() => {
@@ -132,6 +156,9 @@ export default function useStore() {
     }
 
     const deleteChatSession = (target: Session) => {
+        // Clear draft for deleted session
+        clearDraft(target.id)
+        
         // Find the index of the session being deleted
         const deletedIndex = chatSessions.findIndex((s) => s.id === target.id)
         
@@ -257,6 +284,24 @@ export default function useStore() {
         _setToasts(toasts.filter((t) => t.id !== id))
     }
 
+    // Draft management functions
+    const saveDraft = (sessionId: string, draft: string) => {
+        const newDrafts = { ...drafts, [sessionId]: draft }
+        _setDrafts(newDrafts)
+        writeDrafts(newDrafts)
+    }
+
+    const getDraft = (sessionId: string): string => {
+        return drafts[sessionId] || ''
+    }
+
+    const clearDraft = (sessionId: string) => {
+        const newDrafts = { ...drafts }
+        delete newDrafts[sessionId]
+        _setDrafts(newDrafts)
+        writeDrafts(newDrafts)
+    }
+
     return {
         version,
 
@@ -277,5 +322,9 @@ export default function useStore() {
         toasts,
         addToast,
         removeToast,
+
+        saveDraft,
+        getDraft,
+        clearDraft,
     }
 }

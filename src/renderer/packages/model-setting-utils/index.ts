@@ -28,6 +28,7 @@ import PerplexitySettingUtil from './perplexity-setting-util'
 import SiliconFlowSettingUtil from './siliconflow-setting-util'
 import VolcEngineSettingUtil from './volcengine-setting-util'
 import XAISettingUtil from './xai-setting-util'
+import ModelScopeSettingUtil from './modelscope-setting-util'
 
 export function getModelSettingUtil(
   aiProvider: ModelProvider,
@@ -50,6 +51,7 @@ export function getModelSettingUtil(
     [ModelProviderEnum.LMStudio]: LMStudioSettingUtil,
     [ModelProviderEnum.Perplexity]: PerplexitySettingUtil,
     [ModelProviderEnum.XAI]: XAISettingUtil,
+    [ModelProviderEnum.ModelScope]: ModelScopeSettingUtil,
     [ModelProviderEnum.Custom]: CustomModelSettingUtil,
   }
 

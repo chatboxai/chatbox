@@ -19,6 +19,7 @@ export enum ModelProviderEnum {
   Perplexity = 'perplexity',
   XAI = 'xAI',
   OpenRouter = 'openrouter',
+  ModelScope = 'modelscope',
   Custom = 'custom',
 }
 

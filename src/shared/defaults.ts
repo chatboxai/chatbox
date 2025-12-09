@@ -821,4 +821,87 @@ export const SystemProviders: ProviderBaseInfo[] = [
       ],
     },
   },
+  {
+    id: ModelProviderEnum.ModelScope,
+    name: 'ModelScope',
+    type: ModelProviderType.OpenAI,
+    urls: {
+      website: 'https://modelscope.cn',
+    },
+    defaultSettings: {
+      apiHost: 'https://api-inference.modelscope.cn/v1',
+      models: [
+        {
+          modelId: 'deepseek-ai/DeepSeek-V3.2-Exp',
+          capabilities: ['tool_use'],
+          contextWindow: 160_000,
+        },
+        {
+          modelId: 'deepseek-ai/DeepSeek-V3.1',
+          capabilities: ['tool_use'],
+          contextWindow: 64_000,
+        },
+        {
+          modelId: 'deepseek-ai/DeepSeek-R1-0528',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 64_000,
+        },
+        {
+          modelId: 'Qwen/Qwen2.5-7B-Instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'Qwen/Qwen2.5-14B-Instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'Qwen/Qwen2.5-32B-Instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'Qwen/Qwen2.5-72B-Instruct',
+          capabilities: ['tool_use'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'Qwen/Qwen2.5-VL-32B-Instruct',
+          capabilities: ['vision'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'Qwen/Qwen2.5-VL-72B-Instruct',
+          capabilities: ['vision'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'Qwen/QVQ-72B-Preview',
+          capabilities: ['vision'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'Qwen/QwQ-32B',
+          capabilities: ['tool_use'],
+          contextWindow: 32_000,
+        },
+        {
+          modelId: 'Qwen/Qwen3-8B',
+          capabilities: ['tool_use'],
+          contextWindow: 32_000,
+        },
+        {
+          modelId: 'Qwen/Qwen3-VL-8B-Instruct',
+          capabilities: ['vision'],
+          contextWindow: 32_000,
+        },
+        {
+          modelId: 'Qwen/Qwen3-235B-A22B-Instruct-2507',
+          capabilities: ['tool_use'],
+          contextWindow: 256_000,
+        },
+      ],
+    },
+  },
 ]

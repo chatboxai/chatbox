@@ -466,6 +466,10 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
       xAIKey,
       xAIModel,
 
+      // modelscope
+      modelscopeApiKey,
+      modelscopeModel,
+
       // custom provider
       selectedCustomProviderId, // 选中的自定义提供者 ID，仅当 aiProvider 为 custom 时有效
       customProviders: oldCustomProviders,
@@ -581,6 +585,12 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
       }
       log.info('migrate chatglm settings done')
     }
+    if (modelscopeApiKey) {
+      providers[ModelProviderEnum.ModelScope] = {
+        apiKey: modelscopeApiKey,
+      }
+      log.info('migrate modelscope settings done')
+    }
 
     try {
       if (oldCustomProviders) {
@@ -649,6 +659,7 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
           [ModelProviderEnum.Perplexity]: 'perplexityModel',
           [ModelProviderEnum.Groq]: 'groqModel',
           [ModelProviderEnum.ChatGLM6B]: 'chatglmModel',
+          [ModelProviderEnum.ModelScope]: 'modelscopeModel',
           [ModelProviderEnum.Custom]: 'model',
         }[sessionProvider]
         const modelId: string = oldSessionSettings[modelKey!] ?? oldSettings[modelKey!]

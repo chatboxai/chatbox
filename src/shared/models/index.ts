@@ -29,6 +29,7 @@ import SiliconFlow from './siliconflow'
 import type { ModelInterface } from './types'
 import VolcEngine from './volcengine'
 import XAI from './xai'
+import ModelScope from './modelscope'
 
 export function getProviderSettings(setting: SessionSettings, globalSettings: Settings) {
   console.debug('getModel', setting.provider, setting.modelId)
@@ -302,6 +303,18 @@ export function getModel(
         },
         dependencies
       )
+    case ModelProviderEnum.ModelScope:
+      return new ModelScope(
+        {
+          apiKey: providerSetting.apiKey || '',
+          model,
+          temperature: settings.temperature,
+          topP: settings.topP,
+          maxOutputTokens: settings.maxTokens,
+          stream: settings.stream,
+        },
+        dependencies
+      )
     case ModelProviderEnum.OpenAIResponses:
       return new CustomOpenAIResponses(
         {
@@ -403,6 +416,7 @@ export const aiProviderNameHash: Record<ModelProvider, string> = {
   [ModelProviderEnum.Perplexity]: 'Perplexity API',
   [ModelProviderEnum.XAI]: 'xAI API',
   [ModelProviderEnum.OpenRouter]: 'OpenRouter API',
+  [ModelProviderEnum.ModelScope]: 'ModelScope API',
   [ModelProviderEnum.Custom]: 'Custom Provider',
 }
 
@@ -486,6 +500,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.ChatGLM6B,
     label: aiProviderNameHash[ModelProviderEnum.ChatGLM6B],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.ModelScope,
+    label: aiProviderNameHash[ModelProviderEnum.ModelScope],
     disabled: false,
   },
   // {

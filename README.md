@@ -57,15 +57,15 @@ We regularly sync code from the pro repo to this repo, and vice versa.
 
 ### Download for iOS/Android
 
-<a href='https://apps.apple.com/app/chatbox-ai/id6471368056' style='margin-right: 4px'>
-<img src='./doc/statics/app_store.webp' style="height:38px;" />
+<a href='https://apps.apple.com/app/chatbox-ai/id6471368056' style='margin-right: 4px; display: inline-block; vertical-align: middle;'>
+<img src='./doc/statics/app_store.webp' style="height:38px; vertical-align: middle;" />
 </a>
-<a href='https://play.google.com/store/apps/details?id=xyz.chatboxapp.chatbox' style='margin-right: 4px'>
-<img src='./doc/statics/google_play.png' style="height:38px;" />
+<a href='https://play.google.com/store/apps/details?id=xyz.chatboxapp.chatbox' style='margin-right: 4px; display: inline-block; vertical-align: middle;'>
+<img src='./doc/statics/google_play.png' style="height:38px; vertical-align: middle;" />
 </a>
-<a href='https://chatboxai.app/install?download=android_apk' style='margin-right: 4px; display: inline-flex; justify-content: center'>
-<img src='./doc/statics/android.png' style="height:28px; display: inline-block" />
-.APK
+<a href='https://chatboxai.app/install?download=android_apk' style='margin-right: 4px; display: inline-flex; align-items: center; background-color: #fff; border: 2px solid #000; border-radius: 4px; padding: 4px 12px; text-decoration: none; height: 38px; box-sizing: border-box; vertical-align: middle;'>
+<img src='./doc/statics/android.png' style="height:20px; margin-right: 6px;" />
+<span style='color: #000; font-size: 13px; font-weight: 500;'>APK</span>
 </a>
 
 For more information: [chatboxai.app](https://chatboxai.app/)

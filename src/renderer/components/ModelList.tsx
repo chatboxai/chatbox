@@ -70,11 +70,7 @@ export function ModelList({
         />
       )}
 
-      <Stack
-        gap={0}
-        px="xxs"
-        className={`border-solid border rounded-sm min-h-[100px] border-[var(--mantine-color-chatbox-border-primary-outline)]`}
-      >
+      <Stack gap={0} px="xxs" className={`border-solid border rounded-sm min-h-[100px] border-chatbox-border-primary`}>
         {filteredModels.length > 0 ? (
           filteredModels.map((model) => (
             <Flex
@@ -83,7 +79,7 @@ export function ModelList({
               align="center"
               py="sm"
               px="xs"
-              className="border-solid border-0 border-b last:border-b-0 border-[var(--mantine-color-chatbox-border-primary-outline)]"
+              className="border-solid border-0 border-b last:border-b-0 border-chatbox-border-primary"
             >
               <Stack gap={4} flex="1 1 auto">
                 <Text
@@ -198,19 +194,11 @@ export function ModelList({
                         bd={0}
                         onClick={() => onRemoveModel(model.modelId)}
                       >
-                        <ScalableIcon
-                          icon={IconCircleMinus}
-                          size={20}
-                          className="text-[var(--mantine-color-chatbox-error-text)]"
-                        />
+                        <ScalableIcon icon={IconCircleMinus} size={20} className="text-chatbox-tint-error" />
                       </Button>
                     ) : (
                       <Button variant="transparent" p={0} h="auto" size="xs" bd={0} onClick={() => onAddModel(model)}>
-                        <ScalableIcon
-                          icon={IconCirclePlus}
-                          size={20}
-                          className="text-[var(--mantine-color-chatbox-success-text)]"
-                        />
+                        <ScalableIcon icon={IconCirclePlus} size={20} className="text-chatbox-tint-success" />
                       </Button>
                     ))}
                 </Flex>

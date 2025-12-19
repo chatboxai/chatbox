@@ -9,4 +9,4 @@ export const remoteConfigAtom = atomWithStorage<{ setting_chatboxai_first?: bool
   StorageKey.RemoteConfig,
   {},
   storage
-) 
+)

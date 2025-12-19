@@ -32,13 +32,13 @@ const ToolCallHeader: FC<{ part: MessageToolCallPart; action: ReactNode; onClick
       <Group justify="space-between" className="w-full">
         <Group gap="xs">
           <Text fw={600}>{getToolName(props.part.toolName)}</Text>
-          <ScalableIcon icon={IconTool} color="var(--mantine-color-chatbox-success-text)" />
+          <ScalableIcon icon={IconTool} color="var(--chatbox-tint-success)" />
           {props.part.state === 'call' ? (
-            <ScalableIcon icon={IconLoader} className="animate-spin" color="var(--mantine-color-chatbox-brand-text)" />
+            <ScalableIcon icon={IconLoader} className="animate-spin" color="var(--chatbox-tint-brand)" />
           ) : props.part.state === 'error' ? (
-            <ScalableIcon icon={IconCircleXFilled} color="var(--mantine-color-chatbox-error-text)" />
+            <ScalableIcon icon={IconCircleXFilled} color="var(--chatbox-tint-error)" />
           ) : (
-            <ScalableIcon icon={IconCircleCheckFilled} color="var(--mantine-color-chatbox-success-text)" />
+            <ScalableIcon icon={IconCircleCheckFilled} color="var(--chatbox-tint-success)" />
           )}
         </Group>
         <Space miw="xl" />
@@ -96,7 +96,7 @@ const SearchResultCard: FC<{ index: number; result: SearchResultItem }> = ({ ind
   const href = getSafeExternalHref(result.link)
 
   const content = (
-    <Paper radius="md" p={8} bg={alpha('var(--mantine-color-gray-6)', 0.1)} maw={200} title={result.title}>
+    <Paper radius="md" p={8} bg={'var(--chatbox-background-gray-secondary)'} maw={200} title={result.title}>
       <Text size="sm" truncate="end" m={0}>
         <b>{index + 1}.</b> {result.title}
       </Text>
@@ -256,7 +256,7 @@ export const ReasoningContentUI: FC<{
       <Box onClick={toggleExpanded} className="cursor-pointer group">
         <Group px="xs" justify="space-between" className="w-full">
           <Group gap="xs" className={cn(isThinking ? 'animate-pulse' : '')}>
-            <ScalableIcon icon={IconBulb} color="var(--mantine-color-chatbox-warning-text)" />
+            <ScalableIcon icon={IconBulb} color="var(--chatbox-tint-warning)" />
             <Text fw={600} size="sm">
               {isThinking ? t('Thinking') : t('Deeply thought')}
             </Text>

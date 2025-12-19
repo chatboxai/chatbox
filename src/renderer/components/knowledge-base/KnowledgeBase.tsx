@@ -1,4 +1,4 @@
-import { Alert, Button, Flex, Group, Modal, Paper, Pill, Stack, Text, Title } from '@mantine/core'
+import { Alert, Button, Flex, Group, Paper, Pill, Stack, Text, Title } from '@mantine/core'
 import { IconAlertTriangle, IconInfoCircle, IconPlus } from '@tabler/icons-react'
 import compact from 'lodash/compact'
 import flatten from 'lodash/flatten'
@@ -14,6 +14,7 @@ import * as remote from '@/packages/remote'
 import platform from '@/platform'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { trackEvent } from '@/utils/track'
+import { Modal } from '../Overlay'
 import { ScalableIcon } from '../ScalableIcon'
 import KnowledgeBaseDocuments from './KnowledgeBaseDocuments'
 import {
@@ -456,7 +457,7 @@ const KnowledgeBasePage: React.FC = () => {
           {kbList.length === 0 ? (
             <Paper withBorder p="xl" style={{ textAlign: 'center' }}>
               <Stack gap="md" align="center">
-                <ScalableIcon icon={IconInfoCircle} size={48} color="var(--mantine-color-dimmed)" />
+                <ScalableIcon icon={IconInfoCircle} size={48} color="var(--chatbox-tint-tertiary)" />
                 <Stack gap="xs" align="center">
                   <Text fw={500} size="lg">
                     {t('No Knowledge Base Yet')}

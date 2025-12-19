@@ -1,6 +1,7 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
-import { Button, Image, List, Modal, Paper, Stack, Text, Title } from '@mantine/core'
+import { Button, Image, List, Paper, Stack, Text, Title } from '@mantine/core'
 import { useTranslation } from 'react-i18next'
+import { Modal } from '@/components/Overlay'
 import icon from '../static/icon.png'
 import { navigateToSettings } from './Settings'
 

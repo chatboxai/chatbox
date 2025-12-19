@@ -181,7 +181,7 @@ export const MobileModelSelector = forwardRef<HTMLDivElement, MobileModelSelecto
                 px="md"
                 py="sm"
                 className={clsx(
-                  'rounded-md border-solid border border-[var(--mantine-color-chatbox-border-secondary-outline)] outline-none',
+                  'rounded-md border-solid border border-chatbox-border-secondary outline-none',
                   !selectedProviderId && !selectedModelId ? SELECTED_BG_CLASS : 'bg-transparent'
                 )}
                 onClick={() => {

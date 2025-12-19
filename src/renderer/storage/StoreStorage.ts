@@ -13,6 +13,7 @@ export enum StorageKey {
   ChatSessionsList = 'chat-sessions-list',
   ChatSessionSettings = 'chat-session-settings',
   PictureSessionSettings = 'picture-session-settings',
+  AuthInfo = 'authInfo',
 }
 
 export const StorageKeyGenerator = {

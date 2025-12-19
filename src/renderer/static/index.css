@@ -12,17 +12,15 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans",
+    "Droid Sans", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior: none;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
-    monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
 html > body {
@@ -41,7 +39,7 @@ body,
 
 html[data-theme="dark"] {
   .ToolBar {
-    background-color: rgb(40, 40, 40);
+    background-color: var(--chatbox-background-primary);
   }
 
   /* // ------------ 滚动条 --------------- */
@@ -93,7 +91,7 @@ html[data-theme="dark"] {
 
 html[data-theme="light"] {
   .ToolBar {
-    background-color: #fff;
+    background-color: var(--chatbox-background-primary);
   }
 
   /* // ------------ 滚动条 --------------- */

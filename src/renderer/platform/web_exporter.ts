@@ -60,4 +60,20 @@ export default class WebExporter implements Exporter {
     eleLink.click()
     document.body.removeChild(eleLink)
   }
+
+  async exportStreamingJson(filename: string, dataCallback: () => AsyncGenerator<string, void, unknown>) {
+    try {
+      let content = ''
+      const generator = dataCallback()
+
+      for await (const chunk of generator) {
+        content += chunk
+      }
+
+      await this.exportTextFile(filename, content)
+    } catch (error) {
+      console.error('Failed to export streaming JSON:', error)
+      throw error
+    }
+  }
 }

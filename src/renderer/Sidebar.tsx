@@ -10,7 +10,8 @@ import {
   IconSettingsFilled,
 } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
-import { useCallback, useRef } from 'react'
+import clsx from 'clsx'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ThemeSwitchButton from './components/dev/ThemeSwitchButton'
 import { ScalableIcon } from './components/ScalableIcon'
@@ -34,12 +35,17 @@ export default function Sidebar() {
   const navigate = useNavigate()
   const showSidebar = useUIStore((s) => s.showSidebar)
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
+  const setSidebarWidth = useUIStore((s) => s.setSidebarWidth)
 
   const sessionListViewportRef = useRef<HTMLDivElement>(null)
 
   const sidebarWidth = useSidebarWidth()
 
   const isSmallScreen = useIsSmallScreen()
+
+  const [isResizing, setIsResizing] = useState(false)
+  const resizeStartX = useRef<number>(0)
+  const resizeStartWidth = useRef<number>(0)
 
   const { needRoomForMacWindowControls } = useNeedRoomForMacWinControls()
 
@@ -63,6 +69,41 @@ export default function Sidebar() {
     trackingEvent('create_new_picture_conversation', { event_category: 'user' })
   }, [isSmallScreen, setShowSidebar])
 
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      if (isSmallScreen) return
+      e.preventDefault()
+      e.stopPropagation()
+      setIsResizing(true)
+      resizeStartX.current = e.clientX
+      resizeStartWidth.current = sidebarWidth
+    },
+    [isSmallScreen, sidebarWidth]
+  )
+
+  useEffect(() => {
+    if (!isResizing) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const isRTL = language === 'ar'
+      const deltaX = isRTL ? resizeStartX.current - e.clientX : e.clientX - resizeStartX.current
+      const newWidth = Math.max(200, Math.min(500, resizeStartWidth.current + deltaX))
+      setSidebarWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing, language, setSidebarWidth])
+
   return (
     <SwipeableDrawer
       anchor={language === 'ar' ? 'right' : 'left'}
@@ -82,14 +123,18 @@ export default function Sidebar() {
         },
       }}
       SlideProps={language === 'ar' ? { direction: 'left' } : undefined}
-      PaperProps={language === 'ar' ? { sx: { direction: 'rtl' } } : undefined}
+      PaperProps={
+        language === 'ar' ? { sx: { direction: 'rtl', overflowY: 'initial' } } : { sx: { overflowY: 'initial' } }
+      }
       disableSwipeToOpen={CHATBOX_BUILD_PLATFORM !== 'ios'} // 只在iOS设备上启用SwipeToOpen
+      disableEnforceFocus={true} // 关闭 focus trap，避免在侧边栏打开时弹出的 modal 中 input 无法点击
     >
       <Stack
         h="100%"
         gap={0}
         pt="var(--mobile-safe-area-inset-top, 0px)"
         pb="var(--mobile-safe-area-inset-bottom, 0px)"
+        className="relative"
       >
         {needRoomForMacWindowControls && <Box className="title-bar flex-[0_0_44px]" />}
         <Flex align="center" justify="space-between" px="md" py="sm">
@@ -186,6 +231,15 @@ export default function Sidebar() {
             p="xs"
           />
         </Stack>
+        {!isSmallScreen && (
+          <Box
+            onMouseDown={handleResizeStart}
+            className={clsx(
+              `sidebar-resizer absolute top-0 bottom-0 w-1 cursor-col-resize z-[1] bg-chatbox-border-primary opacity-0 hover:opacity-70 transition-opacity duration-200`,
+              language === 'ar' ? '-left-1' : '-right-1'
+            )}
+          />
+        )}
       </Stack>
     </SwipeableDrawer>
   )

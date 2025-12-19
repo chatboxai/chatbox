@@ -344,7 +344,6 @@ export async function refreshContextAndCreateNewThread(sessionId: string) {
     threads: session.threads ? [...session.threads, newThread] : [newThread],
     messages: systemPrompt ? [systemPrompt] : [createMessage('system', defaults.getDefaultPrompt())],
     threadName: '',
-    messageForksHash: undefined,
   })
 }
 
@@ -780,7 +779,7 @@ async function generate(
         let firstTokenLatency: number | undefined
         const persistInterval = 2000
         let lastPersistTimestamp = Date.now()
-        const promptMsgs = await genMessageContext(settings, messages.slice(0, targetMsgIx))
+        const promptMsgs = await genMessageContext(settings, messages.slice(0, targetMsgIx), model.isSupportToolUse())
         const modifyMessageCache: OnResultChangeWithCancel = async (updated) => {
           const textLength = getMessageText(targetMsg, true, true).length
           if (!firstTokenLatency && textLength > 0) {
@@ -815,6 +814,7 @@ async function generate(
           tokensUsed: targetMsg.tokensUsed ?? estimateTokensFromMessages([...promptMsgs, targetMsg]),
           status: [],
           finishReason: result.finishReason,
+          usage: result.usage,
         }
         await modifyMessage(sessionId, targetMsg, true)
         break
@@ -1109,7 +1109,7 @@ export async function clearConversationList(keepNum: number) {
 /**
  * 从历史消息中生成 prompt 上下文
  */
-async function genMessageContext(settings: SessionSettings, msgs: Message[]) {
+async function genMessageContext(settings: SessionSettings, msgs: Message[], modelSupportToolUse: boolean) {
   const {
     // openaiMaxContextTokens,
     maxContextMessageCount,
@@ -1147,18 +1147,23 @@ async function genMessageContext(settings: SessionSettings, msgs: Message[]) {
     }
 
     // 如果消息中包含本地文件（消息中携带有本地文件的storageKey），则将文件内容也作为 prompt 的一部分
+    let attachmentIndex = 1
     if (msg.files && msg.files.length > 0) {
-      for (const [fileIndex, file] of msg.files.entries()) {
+      for (const file of msg.files) {
         if (file.storageKey) {
           msg = cloneMessage(msg) // 复制一份消息，避免修改原始消息
           const content = await storage.getBlob(file.storageKey).catch(() => '')
           if (content) {
             let attachment = `\n\n<ATTACHMENT_FILE>\n`
-            attachment += `<FILE_INDEX>File ${fileIndex + 1}</FILE_INDEX>\n`
-            attachment += `<FILE_NAME>${file.name}</FILE_NAME>\n`
-            attachment += '<FILE_CONTENT>\n'
-            attachment += `${content}\n`
-            attachment += '</FILE_CONTENT>\n'
+            attachment += `<FILE_INDEX>File ${attachmentIndex++}</FILE_INDEX>\n`
+            attachment += `<FILE_NAME>${file.storageKey}</FILE_NAME>\n`
+            attachment += `<FILE_LINES>${content.split('\n').length}</FILE_LINES>\n`
+            attachment += `<FILE_SIZE>${content.length} bytes</FILE_SIZE>\n`
+            if (!modelSupportToolUse) {
+              attachment += '<FILE_CONTENT>\n'
+              attachment += `${content}\n`
+              attachment += '</FILE_CONTENT>\n'
+            }
             attachment += `</ATTACHMENT_FILE>\n`
             msg = mergeMessages(msg, createMessage(msg.role, attachment))
           }
@@ -1167,18 +1172,22 @@ async function genMessageContext(settings: SessionSettings, msgs: Message[]) {
     }
     // 如果消息中包含本地链接（消息中携带有本地链接的storageKey），则将链接内容也作为 prompt 的一部分
     if (msg.links && msg.links.length > 0) {
-      for (const [linkIndex, link] of msg.links.entries()) {
+      for (const link of msg.links) {
         if (link.storageKey) {
           msg = cloneMessage(msg) // 复制一份消息，避免修改原始消息
           const content = await storage.getBlob(link.storageKey).catch(() => '')
           if (content) {
-            let attachment = `\n\n<ATTACHMENT_LINK>\n`
-            attachment += `<LINK_INDEX>${linkIndex + 1}</LINK_INDEX>\n`
-            attachment += `<LINK_URL>${link.url}</LINK_URL>\n`
-            attachment += `<LINK_CONTENT>\n`
-            attachment += `${content}\n`
-            attachment += '</LINK_CONTENT>\n'
-            attachment += `</ATTACHMENT_LINK>\n`
+            let attachment = `\n\n<ATTACHMENT_FILE>\n`
+            attachment += `<FILE_INDEX>${attachmentIndex++}</FILE_INDEX>\n`
+            attachment += `<FILE_NAME>${link.storageKey}</FILE_NAME>\n`
+            attachment += `<FILE_LINES>${content.split('\n').length}</FILE_LINES>\n`
+            attachment += `<FILE_SIZE>${content.length} bytes</FILE_SIZE>\n`
+            if (!modelSupportToolUse) {
+              attachment += `<FILE_CONTENT>\n`
+              attachment += `${content}\n`
+              attachment += '</FILE_CONTENT>\n'
+            }
+            attachment += `</ATTACHMENT_FILE>\n`
             msg = mergeMessages(msg, createMessage(msg.role, attachment))
           }
         }
@@ -1293,7 +1302,7 @@ function buildSwitchForkPatch(
   }
 
   const forkEntry = messageForksHash[forkMessageId]
-  if (!forkEntry || forkEntry.lists.length === 0) {
+  if (!forkEntry || forkEntry.lists.length <= 1) {
     return null
   }
 

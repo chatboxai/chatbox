@@ -4,7 +4,6 @@ import {
   Button,
   Group,
   Kbd,
-  Modal,
   Paper,
   Radio,
   Stack,
@@ -17,6 +16,7 @@ import { useForm } from '@mantine/form'
 import pTimeout from 'p-timeout'
 import { type FC, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Modal } from '@/components/Overlay'
 import { MCPServer } from '@/packages/mcp/controller'
 import type { MCPServerConfig } from '@/packages/mcp/types'
 import { trackEvent } from '@/utils/track'

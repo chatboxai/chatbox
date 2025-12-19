@@ -110,7 +110,26 @@ describe('provider-config', () => {
       expect(result).toBeDefined()
       expect(result?.id).toBe('anthropic-custom')
       if (result && 'type' in result) {
-        expect(result.type).toBe(ModelProviderType.OpenAI) // Currently defaults to OpenAI
+        expect(result.type).toBe(ModelProviderType.Claude) // anthropic type should map to Claude
+      }
+    })
+
+    it('should handle provider config with openai-responses type', () => {
+      const configJson = JSON.stringify({
+        id: 'openai-responses-custom',
+        name: 'OpenAI Responses Custom',
+        type: 'openai-responses',
+        settings: {
+          apiHost: 'https://api.openai.com',
+        },
+      })
+
+      const result = parseProviderFromJson(configJson)
+
+      expect(result).toBeDefined()
+      expect(result?.id).toBe('openai-responses-custom')
+      if (result && 'type' in result) {
+        expect(result.type).toBe(ModelProviderType.OpenAIResponses) // openai-responses type should map to OpenAIResponses
       }
     })
 

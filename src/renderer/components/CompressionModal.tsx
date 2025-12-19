@@ -1,4 +1,4 @@
-import { Button, Flex, Modal, Stack, Text } from '@mantine/core'
+import { Button, Flex, Stack, Text } from '@mantine/core'
 import { IconCircleCheck } from '@tabler/icons-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -12,6 +12,7 @@ import * as promptFormat from '@/packages/prompts'
 import { useSessionSettings } from '@/stores/chatStore'
 import { compressAndCreateThread } from '@/stores/sessionActions'
 import { settingsStore } from '@/stores/settingsStore'
+import { Modal } from './Overlay'
 import { ScalableIcon } from './ScalableIcon'
 
 interface CompressionModalProps {
@@ -170,7 +171,7 @@ export function CompressionModal({ opened, onClose, session }: CompressionModalP
         {isCompleted && (
           <>
             <Flex align="center" gap="xs" mb="sm">
-              <ScalableIcon icon={IconCircleCheck} size={20} color="var(--mantine-color-green-6)" />
+              <ScalableIcon icon={IconCircleCheck} size={20} color="var(--chatbox-tint-success)" />
               <Text size="sm" c="green" fw={500}>
                 {t('Compression completed successfully!')}
               </Text>

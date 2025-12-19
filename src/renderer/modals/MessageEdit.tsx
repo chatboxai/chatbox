@@ -1,37 +1,52 @@
-import NiceModal, { muiDialogV5, useModal } from '@ebay/nice-modal-react'
-import PersonIcon from '@mui/icons-material/Person'
-import SettingsIcon from '@mui/icons-material/Settings'
-import SmartToyIcon from '@mui/icons-material/SmartToy'
-import {
-  Avatar,
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  MenuItem,
-  Select,
-  type SelectChangeEvent,
-  TextField,
-  Typography,
-} from '@mui/material'
+import NiceModal, { useModal } from '@ebay/nice-modal-react'
+import { Button, Combobox, Flex, Input, InputBase, Modal, Stack, Textarea, useCombobox } from '@mantine/core'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { type Message, type MessageContentParts, type MessageRole, MessageRoleEnum } from '@/../shared/types'
+import { AssistantAvatar, SystemAvatar, UserAvatar } from '@/components/Avatar'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { generateMoreInNewFork, modifyMessage } from '@/stores/sessionActions'
 
 const MessageEdit = NiceModal.create((props: { sessionId: string; msg: Message }) => {
   const modal = useModal()
+
+  if (!props.msg) {
+    return null
+  }
+
+  return (
+    <MessageEditModal
+      key={`${props.msg.id}-${modal.visible}`}
+      sessionId={props.sessionId}
+      msg={props.msg}
+      opened={modal.visible}
+      onClose={() => {
+        modal.resolve()
+        modal.hide()
+      }}
+    />
+  )
+})
+
+export default MessageEdit
+
+const MessageEditModal = ({
+  sessionId,
+  msg: origMsg,
+  opened,
+  onClose,
+}: {
+  sessionId: string
+  msg: Message
+  opened: boolean
+  onClose(): void
+}) => {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
-  // const [data, setData] = useAtom(atoms.messageEditDialogShowAtom)
 
-  const sessionId = props.sessionId
   const [msg, _setMsg] = useState<Message>({
-    ...props.msg,
-    contentParts: props.msg.contentParts.length ? props.msg.contentParts : [{ type: 'text', text: '' }],
+    ...origMsg,
+    contentParts: origMsg.contentParts.length ? origMsg.contentParts : [{ type: 'text', text: '' }],
   })
   const setMsg = useCallback((m: Partial<Message>) => {
     _setMsg((_m) => ({ ..._m, ...m }))
@@ -48,11 +63,6 @@ const MessageEdit = NiceModal.create((props: { sessionId: string; msg: Message }
     return ids
   }, [msg.id])
 
-  const onClose = () => {
-    modal.resolve()
-    modal.hide()
-  }
-
   const onSave = () => {
     if (!msg) {
       return
@@ -68,14 +78,6 @@ const MessageEdit = NiceModal.create((props: { sessionId: string; msg: Message }
     void generateMoreInNewFork(sessionId, msg.id)
   }
 
-  const onRoleSelect = (e: SelectChangeEvent) => {
-    if (!msg) {
-      return
-    }
-    setMsg({
-      role: e.target.value as MessageRole,
-    })
-  }
   const onContentPartInput = (index: number, text: string) => {
     if (!msg) {
       return
@@ -88,7 +90,7 @@ const MessageEdit = NiceModal.create((props: { sessionId: string; msg: Message }
       contentParts: newContentParts,
     })
   }
-  const handleTextPartKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, index: number) => {
+  const handleTextPartKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>, index: number) => {
     const target = event.target as HTMLTextAreaElement
     const cursorPosition = target.selectionStart
     const textLength = target.value.length
@@ -140,25 +142,36 @@ const MessageEdit = NiceModal.create((props: { sessionId: string; msg: Message }
     onKeyDown(event)
   }
 
-  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!msg) {
       return
     }
     const ctrlOrCmd = event.ctrlKey || event.metaKey
     const shift = event.shiftKey
-
+    const canSaveAndReply = msg.role === 'user'
     // ctrl + shift + enter 保存并生成
-    if (event.key === 'Enter' && ctrlOrCmd && shift) {
+    if (event.key === 'Enter' && ctrlOrCmd && shift && canSaveAndReply) {
       event.preventDefault()
       onSaveAndReply()
       return
     }
     // ctrl + enter 保存
-    if (event.key === 'Enter' && ctrlOrCmd && !shift) {
+    if (event.key === 'Enter' && ctrlOrCmd && (!shift || !canSaveAndReply)) {
       event.preventDefault()
       onSave()
       return
     }
+  }
+
+  const combobox = useCombobox({
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  })
+
+  const avatars = {
+    [MessageRoleEnum.System]: <SystemAvatar size={36} />,
+    [MessageRoleEnum.Assistant]: <AssistantAvatar size={36} />,
+    [MessageRoleEnum.User]: <UserAvatar size={36} />,
+    [MessageRoleEnum.Tool]: null,
   }
 
   if (!msg) {
@@ -166,122 +179,92 @@ const MessageEdit = NiceModal.create((props: { sessionId: string; msg: Message }
   }
 
   return (
-    <Dialog
-      {...muiDialogV5(modal)}
-      fullWidth
-      maxWidth="md"
-      onClose={() => {
-        modal.resolve()
-        modal.hide()
-      }}
-    >
-      <DialogTitle></DialogTitle>
-      <DialogContent>
-        <Select value={msg.role} onChange={onRoleSelect} size="small" id={`${msg.id}-select`} className="mb-2">
-          <MenuItem value={MessageRoleEnum.System}>
-            <Avatar>
-              <SettingsIcon />
-            </Avatar>
-          </MenuItem>
-          <MenuItem value={MessageRoleEnum.User}>
-            <Avatar>
-              <PersonIcon />
-            </Avatar>
-          </MenuItem>
-          <MenuItem value={MessageRoleEnum.Assistant}>
-            <Avatar>
-              <SmartToyIcon />
-            </Avatar>
-          </MenuItem>
-        </Select>
-        <Box
-          sx={{
-            border: 1,
-            borderColor: 'divider',
-            borderRadius: 1,
-            backgroundColor: 'background.paper',
-            p: 1,
+    <Modal opened={opened} centered size="lg" onClose={onClose} keepMounted={false}>
+      <Stack gap="md" className=" ">
+        <Combobox
+          store={combobox}
+          onOptionSubmit={(val) => {
+            setMsg({
+              role: val as MessageRole,
+            })
+            combobox.closeDropdown()
           }}
         >
-          {msg.contentParts.map((part, index) => {
+          <Combobox.Target>
+            <InputBase
+              component="button"
+              type="button"
+              classNames={{ root: 'self-start', input: 'p-xs pr-8 h-auto ' }}
+              pointer
+              rightSection={<Combobox.Chevron />}
+              rightSectionPointerEvents="none"
+              onClick={() => combobox.toggleDropdown()}
+            >
+              {msg.role ? avatars[msg.role] : <Input.Placeholder>Pick value</Input.Placeholder>}
+            </InputBase>
+          </Combobox.Target>
+
+          <Combobox.Dropdown>
+            <Combobox.Options>
+              {[MessageRoleEnum.System, MessageRoleEnum.Assistant, MessageRoleEnum.User].map((r) => (
+                <Combobox.Option value={r} key={r}>
+                  {avatars[r]}
+                </Combobox.Option>
+              ))}
+            </Combobox.Options>
+          </Combobox.Dropdown>
+        </Combobox>
+        {msg.contentParts.filter((part) => part.type === 'text').length === 0 ? (
+          <Textarea
+            id={`${msg.id}-input`}
+            autoFocus={!isSmallScreen}
+            autosize
+            minRows={5}
+            maxRows={15}
+            placeholder="prompt"
+            value=""
+            onChange={(e) => {
+              if (e.target.value) {
+                setMsg({
+                  contentParts: [{ type: 'text', text: e.target.value }],
+                })
+              }
+            }}
+            onKeyDown={onKeyDown}
+          />
+        ) : (
+          msg.contentParts.map((part, index, arr) => {
             if (part.type === 'text') {
               return (
-                <TextField
+                <Textarea
                   key={textPartIds[index] || `text-part-${index}`}
-                  className="w-full"
+                  id={`${msg.id}-input-${index}`}
                   autoFocus={!isSmallScreen && index === 0}
-                  multiline
-                  minRows={1}
+                  autosize
+                  minRows={arr.length > 1 ? 1 : 5}
                   maxRows={15}
                   placeholder="prompt"
                   value={part.text}
                   onChange={(e) => onContentPartInput(index, e.target.value)}
-                  id={`${msg.id}-input-${index}`}
                   onKeyDown={(e) => handleTextPartKeyDown(e, index)}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      '& fieldset': {
-                        border: 'none',
-                      },
-                      padding: 0,
-                      '& textarea': {
-                        padding: '8px',
-                      },
-                    },
-                    backgroundColor: 'transparent',
-                    mb: index < msg.contentParts.length - 1 && msg.contentParts[index + 1]?.type === 'text' ? 0.5 : 0,
-                  }}
                 />
               )
             }
             return null
-          })}
-          {msg.contentParts.filter((part) => part.type === 'text').length === 0 && (
-            <TextField
-              className="w-full"
-              autoFocus={!isSmallScreen}
-              multiline
-              minRows={5}
-              maxRows={15}
-              placeholder="prompt"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  setMsg({
-                    contentParts: [{ type: 'text', text: e.target.value }],
-                  })
-                }
-              }}
-              id={`${msg.id}-input`}
-              onKeyDown={onKeyDown}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  '& fieldset': {
-                    border: 'none',
-                  },
-                  padding: 0,
-                  '& textarea': {
-                    padding: '8px',
-                  },
-                },
-                backgroundColor: 'transparent',
-              }}
-            />
-          )}
-        </Box>
-        {!isSmallScreen && (
-          <Typography variant="caption" style={{ opacity: 0.3 }}>
-            {t('[Ctrl+Enter] Save, [Ctrl+Shift+Enter] Save and Resend')}
-          </Typography>
+          })
         )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>{t('cancel')}</Button>
-        <Button onClick={onSaveAndReply}>{t('Save & Resend')}</Button>
+      </Stack>
+      <Flex gap="md" mt="md" justify="flex-end" align="center">
+        <Button onClick={onClose} color="chatbox-gray" variant="light">
+          {t('cancel')}
+        </Button>
+        {msg.role === 'user' && (
+          <Button onClick={onSaveAndReply} variant="light">
+            {t('Save & Resend')}
+          </Button>
+        )}
         <Button onClick={onSave}>{t('save')}</Button>
-      </DialogActions>
-    </Dialog>
+      </Flex>
+    </Modal>
   )
-})
-
-export default MessageEdit
+}

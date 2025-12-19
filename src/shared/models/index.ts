@@ -15,6 +15,7 @@ import Claude from './claude'
 import CustomClaude from './custom-claude'
 import CustomGemini from './custom-gemini'
 import CustomOpenAI from './custom-openai'
+import CustomOpenAIResponses from './custom-openai-responses'
 import DeepSeek from './deepseek'
 import Gemini from './gemini'
 import Groq from './groq'
@@ -41,7 +42,7 @@ export function getProviderSettings(setting: SessionSettings, globalSettings: Se
   if (!providerBaseInfo) {
     throw new Error(`Cannot find model with provider: ${setting.provider}`)
   }
-  const providerSetting = globalSettings.providers?.[setting.provider!] || {}
+  const providerSetting = globalSettings.providers?.[provider] || {}
   const formattedApiHost = (providerSetting.apiHost || providerBaseInfo.defaultSettings?.apiHost || '').trim()
   return {
     providerSetting,
@@ -72,7 +73,7 @@ export function getModel(
   if (!model) {
     // 如果没有找到对应的 model 配置，直接使用传入的 modelId，这种情况通常发生在用户本地列表中删除了某个 model，但是某个 session 中还在使用，或是检查连接的时候，使用了 defaults 中的 modelId，
     model = {
-      modelId: settings.modelId!,
+      modelId: settings.modelId ?? '',
     }
   }
 
@@ -301,6 +302,21 @@ export function getModel(
         },
         dependencies
       )
+    case ModelProviderEnum.OpenAIResponses:
+      return new CustomOpenAIResponses(
+        {
+          apiKey: providerSetting.apiKey || '',
+          apiHost: formattedApiHost,
+          apiPath: providerSetting.apiPath || providerBaseInfo.defaultSettings?.apiPath || '',
+          model,
+          temperature: settings.temperature,
+          topP: settings.topP,
+          maxOutputTokens: settings.maxTokens,
+          stream: settings.stream,
+          useProxy: providerSetting.useProxy,
+        },
+        dependencies
+      )
     default:
       if (providerBaseInfo.isCustom) {
         switch (providerBaseInfo.type) {
@@ -330,6 +346,21 @@ export function getModel(
               },
               dependencies
             )
+          case ModelProviderType.OpenAIResponses:
+            return new CustomOpenAIResponses(
+              {
+                apiKey: providerSetting.apiKey || '',
+                apiHost: formattedApiHost,
+                apiPath: providerSetting.apiPath || '',
+                model,
+                temperature: settings.temperature,
+                topP: settings.topP,
+                maxOutputTokens: settings.maxTokens,
+                stream: settings.stream,
+                useProxy: providerSetting.useProxy,
+              },
+              dependencies
+            )
 
           case ModelProviderType.OpenAI:
           default:
@@ -356,6 +387,7 @@ export function getModel(
 
 export const aiProviderNameHash: Record<ModelProvider, string> = {
   [ModelProviderEnum.OpenAI]: 'OpenAI API',
+  [ModelProviderEnum.OpenAIResponses]: 'OpenAI Responses API',
   [ModelProviderEnum.Azure]: 'Azure OpenAI API',
   [ModelProviderEnum.ChatGLM6B]: 'ChatGLM API',
   [ModelProviderEnum.ChatboxAI]: 'Chatbox AI',
@@ -384,6 +416,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.OpenAI,
     label: aiProviderNameHash[ModelProviderEnum.OpenAI],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.OpenAIResponses,
+    label: aiProviderNameHash[ModelProviderEnum.OpenAIResponses],
     disabled: false,
   },
   {
@@ -457,7 +494,3 @@ export const AIModelProviderMenuOptionList = [
   //     disabled: true,
   // },
 ]
-
-function keepRange(num: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, num))
-}

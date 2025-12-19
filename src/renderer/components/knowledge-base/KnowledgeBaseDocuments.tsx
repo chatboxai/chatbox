@@ -536,19 +536,15 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
     switch (status) {
       case 'completed':
       case 'done':
-        return <IconCircleCheck size={16} color="var(--mantine-color-green-6)" />
+        return <IconCircleCheck size={16} color="var(--chatbox-tint-success)" />
       case 'processing':
         return (
-          <IconLoader
-            size={16}
-            color="var(--mantine-color-yellow-6)"
-            style={{ animation: 'spin 1s linear infinite' }}
-          />
+          <IconLoader size={16} color="var(--chatbox-tint-warning)" style={{ animation: 'spin 1s linear infinite' }} />
         )
       case 'pending':
-        return <IconLoader size={16} color="var(--mantine-color-gray-6)" />
+        return <IconLoader size={16} color="var(--chatbox-tint-gray)" />
       case 'paused':
-        return <IconPlayerPause size={16} color="var(--mantine-color-orange-6)" />
+        return <IconPlayerPause size={16} color="var(--chatbox-tint-warning)" />
       case 'failed':
         return (
           <Tooltip
@@ -559,7 +555,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
             position="top"
             transitionProps={{ duration: 200 }}
           >
-            <IconX size={16} color="var(--mantine-color-red-6)" style={{ cursor: 'help' }} />
+            <IconX size={16} color="var(--chatbox-tint-error)" style={{ cursor: 'help' }} />
           </Tooltip>
         )
       default:
@@ -643,24 +639,28 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
             py="2px"
             style={{
               cursor: 'pointer',
-              backgroundColor: 'var(--mantine-color-chatbox-background-secondary-text)',
-              borderBottom: '1px solid var(--mantine-color-chatbox-border-secondary-light)',
+              backgroundColor: 'var(--chatbox-background-secondary)',
+              borderBottom: '1px solid var(--chatbox-border-secondary-hover)',
             }}
             onClick={() => setIsExpanded(!isExpanded)}
           >
             <Group>
               {isExpanded ? (
-                <IconChevronDown size={16} color="var(--mantine-color-gray-6)" />
+                <IconChevronDown size={16} color="var(--chatbox-tint-gray)" />
               ) : (
-                <IconChevronRight size={16} color="var(--mantine-color-gray-6)" />
+                <IconChevronRight size={16} color="var(--chatbox-tint-gray)" />
               )}
-              <Text size="sm" fw={600} className="text-[var(--mantine-color-chatbox-primary-text)]">
+              <Text size="sm" fw={600} className="text-chatbox-tint-primary">
                 {t('Documents')}
               </Text>
               <Pill
                 size="xs"
-                bg={filesCount > 0 ? 'var(--mantine-color-chatbox-brand-light)' : 'var(--mantine-color-gray-2)'}
-                c={filesCount > 0 ? 'var(--mantine-color-chatbox-brand-filled)' : 'var(--mantine-color-gray-6)'}
+                bg={
+                  filesCount > 0
+                    ? 'var(--chatbox-background-brand-secondary)'
+                    : 'var(--chatbox-background-gray-secondary)'
+                }
+                c={filesCount > 0 ? 'var(--chatbox-tint-brand)' : 'var(--chatbox-tint-gray)'}
                 fz="xs"
               >
                 {filesCount}
@@ -668,7 +668,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
             </Group>
             <Button
               variant="subtle"
-              color="var(--mantine-color-chatbox-primary-text)"
+              color="var(--chatbox-tint-primary)"
               size="xs"
               fw={600}
               leftSection={showUploadArea ? <IconCheck size={14} /> : <IconPlus size={14} />}
@@ -687,7 +687,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
               <Box
                 p="md"
                 style={{
-                  borderBottom: allFiles.length > 0 ? '1px solid var(--mantine-color-chatbox-gray)' : 'none',
+                  borderBottom: allFiles.length > 0 ? '1px solid var(--chatbox-tint-gray)' : 'none',
                 }}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -699,9 +699,11 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
                   radius="md"
                   style={{
                     border: isDragOver
-                      ? '2px dashed var(--mantine-color-blue-4)'
-                      : '2px dashed var(--mantine-color-gray-3)',
-                    backgroundColor: isDragOver ? 'var(--mantine-color-blue-0)' : 'var(--mantine-color-chatbox-gray)',
+                      ? '2px dashed var(--chatbox-border-brand)'
+                      : '2px dashed var(--chatbox-border-primary)',
+                    backgroundColor: isDragOver
+                      ? 'var(--chatbox-background-brand-secondary)'
+                      : 'var(--chatbox-background-gray-secondary)',
                     transition: 'all 0.2s ease',
                     cursor: 'pointer',
                   }}
@@ -710,7 +712,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
                   <Stack align="center" gap="sm">
                     <IconUpload
                       size={32}
-                      color={isDragOver ? 'var(--mantine-color-blue-6)' : 'var(--mantine-color-gray-6)'}
+                      color={isDragOver ? 'var(--chatbox-tint-brand)' : 'var(--chatbox-tint-gray)'}
                     />
                     <Text size="sm" fw={500} ta="center" c={isDragOver ? 'blue' : 'dimmed'}>
                       {isDragOver ? t('Drop files here') : t('Drag and drop files here, or click to browse')}
@@ -747,7 +749,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
                           }}
                         >
                           <Group gap="sm" align="center" style={{ flex: 1 }}>
-                            <IconFile size={20} color="var(--mantine-color-blue-6)" />
+                            <IconFile size={20} color="var(--chatbox-tint-brand)" />
                             <Box style={{ flex: 1 }}>
                               <Text size="sm" fw={500} lineClamp={1}>
                                 {doc.filename}
@@ -871,7 +873,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
                       left: 0,
                       right: 0,
                       height: 30,
-                      background: 'linear-gradient(transparent, var(--mantine-color-body))',
+                      background: 'linear-gradient(transparent, var(--chatbox-background-body))',
                       pointerEvents: 'none',
                       zIndex: 1,
                     }}
@@ -888,7 +890,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
             {!isLoading && allFiles.length === 0 && (
               <Box p="xl">
                 <Stack align="center" gap="sm">
-                  <IconFile size={48} color="var(--mantine-color-gray-4)" />
+                  <IconFile size={48} color="var(--chatbox-tint-placeholder)" />
                   <Text size="sm" c="dimmed" ta="center">
                     {t('No documents yet')}
                   </Text>

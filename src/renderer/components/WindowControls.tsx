@@ -24,7 +24,7 @@ export const WindowControls: FC<FlexProps> = ({ className, ...otherProps }) => {
       <ControlButton
         label={t('Close')}
         icon={IconX}
-        className="hover:bg-[var(--mantine-color-chatbox-error-text)]"
+        className="hover:bg-chatbox-tint-error"
         onClick={() => platform.closeWindow()}
       />
     </Flex>

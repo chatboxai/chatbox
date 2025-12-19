@@ -3,7 +3,6 @@ import { IconChevronDown, IconServer, IconStarFilled } from '@tabler/icons-react
 import clsx from 'clsx'
 import ProviderIcon from '../icons/ProviderIcon'
 import { ScalableIcon } from '../ScalableIcon'
-import { TRANSITION_DURATION } from './shared'
 
 interface ProviderHeaderProps {
   provider: {
@@ -44,16 +43,16 @@ export const ProviderHeader = ({
   const iconClass = isMobile
     ? 'text-inherit'
     : isFavorite
-      ? 'text-[var(--mantine-color-chatbox-tertiary-text)]'
+      ? 'text-chatbox-tint-tertiary'
       : provider.isCustom
-        ? 'text-[var(--mantine-color-dimmed)]'
+        ? 'text-chatbox-tint-gray'
         : ''
 
   // Desktop 版本的容器样式
-  const desktopContainerClass = `${isClickable ? 'cursor-pointer select-none hover:bg-[var(--mantine-color-gray-0)] dark:hover:bg-[var(--mantine-color-dark-7)]' : ''} ${padding} sticky top-0 z-10 bg-[var(--mantine-color-body)] ${className}`
+  const desktopContainerClass = `${isClickable ? 'cursor-pointer select-none hover:bg-chatbox-background-primary-hover' : ''} ${padding} sticky top-0 z-10 bg-chatbox-background-primary ${className}`
 
   // Mobile 版本的容器样式
-  const mobileContainerClass = `${padding} ${isMobile ? 'text-[var(--mantine-color-chatbox-tertiary-text)]' : ''} sticky top-0 z-10 bg-[var(--mantine-color-body)] ${className}`
+  const mobileContainerClass = `${padding} ${isMobile ? 'text-chatbox-tint-tertiary' : ''} sticky top-0 z-10 bg-chatbox-background-primary ${className}`
 
   const containerClass = isMobile ? mobileContainerClass : desktopContainerClass
 
@@ -79,7 +78,7 @@ export const ProviderHeader = ({
     <div
       className={containerClass}
       style={{
-        borderBottom: '1px solid var(--mantine-color-chatbox-border-primary-outline)',
+        borderBottom: '1px solid var(--chatbox-border-primary)',
         userSelect: isClickable && !isMobile ? 'none' : undefined,
         ...style,
       }}

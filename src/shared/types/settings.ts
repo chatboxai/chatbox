@@ -38,6 +38,7 @@ const BuiltinProviderBaseInfoSchema = z.object({
   name: z.string(),
   type: z.nativeEnum(ModelProviderType).catch(ModelProviderType.OpenAI),
   isCustom: z.literal(false).optional().catch(undefined),
+  description: z.string().optional().catch(undefined),
   urls: z
     .object({
       website: z.string().nullish(),
@@ -117,6 +118,8 @@ const ChatboxAILicenseDetailSchema = z.object({
   remaining_quota_unified: z.number(),
   expansion_pack_limit: z.number(),
   expansion_pack_usage: z.number(),
+  unified_token_usage: z.number(),
+  unified_token_limit: z.number(),
 })
 
 export const shortcutSendValues = [
@@ -155,6 +158,10 @@ const ExtensionSettingsSchema = z.object({
   webSearch: z.object({
     provider: z.enum(['build-in', 'bing', 'tavily']),
     tavilyApiKey: z.string().optional(),
+    tavilySearchDepth: z.string().optional(),
+    tavilyMaxResults: z.number().optional(),
+    tavilyTimeRange: z.string().optional(),
+    tavilyIncludeRawContent: z.string().optional(),
   }),
   knowledgeBase: z
     .object({
@@ -257,6 +264,10 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   licenseKey: z.string().optional(),
   licenseInstances: z.record(z.string(), z.string()).optional().catch(undefined),
   licenseDetail: ChatboxAILicenseDetailSchema.optional().catch(undefined),
+  licenseActivationMethod: z.enum(['login', 'manual']).optional(),
+  lastSelectedLicenseByUser: z.record(z.string(), z.string()).optional().catch(undefined),
+  // 在 licensekeyview UI中显示/记忆的key，以免用户使用 login 方式后老 key 被清除，他也不记得
+  memorizedManualLicenseKey: z.string().optional(),
 
   // chat settings
   showWordCount: z.boolean().optional().catch(undefined),

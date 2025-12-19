@@ -24,7 +24,7 @@
 }
 
 /* // markdown table */
-html[data-theme='light'] .msg-block {
+html[data-theme="light"] .msg-block {
   table {
     background-color: #f8f8f8;
     margin: 0 auto;
@@ -49,7 +49,7 @@ html[data-theme='light'] .msg-block {
     background-color: #f2f2f2;
   }
 }
-html[data-theme='dark'] .msg-block {
+html[data-theme="dark"] .msg-block {
   table {
     background-color: #333;
     color: #fff;
@@ -76,7 +76,7 @@ html[data-theme='dark'] .msg-block {
 }
 
 /* // message */
-html[data-theme='light'] {
+html[data-theme="light"] {
   .assistant-msg {
     /* background-color: #fafafa; */
   }
@@ -84,7 +84,7 @@ html[data-theme='light'] {
     //     background-color: #fafafa;
     // } */
 }
-html[data-theme='dark'] {
+html[data-theme="dark"] {
   .assistant-msg {
     /* background-color: #212121; */
   }

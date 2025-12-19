@@ -1,4 +1,14 @@
 const changelog = `
+## v1.18.1 - 2025.11.28
+1. Added email login support, allowing users to use licenses bound to their email after logging in
+2. Added support for OpenAI Responses API
+3. Optimized code styling and generated webpage preview effects
+4. Generated webpages can now be published with a one-click share link
+5. Fixed an issue where deleting a new thread would also delete its branches
+6. Custom models can now automatically detect vision and tool calling capabilities
+7. Fixed a crash issue when importing data with too much historical data
+8. Desktop sidebar width is now adjustable
+
 ## v1.17.1 - 2025.11.04
 1. Added quick jump to the top of the message list
 2. Mobile: message action buttons now support floating display

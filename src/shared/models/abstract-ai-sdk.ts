@@ -457,7 +457,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const result = streamText({
       model,
       messages: coreMessages,
-      stopWhen: stepCountIs(Number.MAX_SAFE_INTEGER),
+      stopWhen: stepCountIs(options.maxSteps || Number.MAX_SAFE_INTEGER),
       tools: options.tools,
       abortSignal: options.signal,
       // experimental_transform: smoothStream({
@@ -503,7 +503,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     return this.finalizeResult(
       contentParts,
       {
-        usage: await result.usage,
+        usage: await result.totalUsage,
         finishReason: await result.finishReason,
       },
       options

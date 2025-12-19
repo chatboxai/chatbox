@@ -19,6 +19,7 @@ export function useAutoValidate() {
       licenseKey: '',
       licenseInstances: omit(state.licenseInstances, state.licenseKey || ''),
       licenseDetail: undefined,
+      licenseActivationMethod: undefined,
     }))
   }
   useEffect(() => {
@@ -60,13 +61,23 @@ export function useAutoValidate() {
 
 /**
  * 取消激活当前的 license
+ * @param clearLoginState 是否清除登录状态（默认true）。在login方式下切换license时传false
  */
-export async function deactivate() {
+export async function deactivate(clearLoginState = true) {
   const settings = settingsStore.getState()
+
+  // 如果是login方式激活的，同时清除登录状态（除非是在切换license）
+  if (clearLoginState && settings.licenseActivationMethod === 'login') {
+    const { authInfoStore } = await import('./authInfoStore')
+    authInfoStore.getState().clearTokens()
+    console.log('🔓 Cleared login tokens due to license deactivation')
+  }
+
   // 更新本地状态
   settingsStore.setState((settings) => ({
     licenseKey: '',
     licenseDetail: undefined,
+    licenseActivationMethod: undefined,
     licenseInstances: omit(settings.licenseInstances, settings.licenseKey || ''),
     mcp: {
       ...settings.mcp,
@@ -91,13 +102,24 @@ export async function deactivate() {
 /**
  * 激活新的 license key
  * @param licenseKey
+ * @param method 激活方式：'login' 表示通过登录激活，'manual' 表示手动输入license key激活
  * @returns
  */
-export async function activate(licenseKey: string) {
-  // 取消激活已存在的 license
+export async function activate(licenseKey: string, method: 'login' | 'manual' = 'manual') {
   const settings = settingsStore.getState()
+
+  // 互斥逻辑：manual方式激活时，清除login状态
+  if (method === 'manual') {
+    const { authInfoStore } = await import('./authInfoStore')
+    authInfoStore.getState().clearTokens()
+    console.log('🔓 Cleared login tokens due to manual license activation')
+  }
+
+  // 取消激活已存在的 license
   if (settings.licenseKey) {
-    await deactivate()
+    // 如果是登录状态下，从一个 license 切换到另一个 license，不清除登录状态
+    const isSwitchingLicense = method === 'login' && settings.licenseActivationMethod === 'login'
+    await deactivate(!isSwitchingLicense)
   }
   // 激活新的 license key，获取 instanceId
   const result = await remote.activateLicense({
@@ -112,6 +134,7 @@ export async function activate(licenseKey: string) {
   // 设置本地的 license 数据
   settingsStore.setState((settings) => ({
     licenseKey,
+    licenseActivationMethod: method,
     licenseInstances: {
       ...(settings.licenseInstances || {}),
       [licenseKey]: result.instanceId,

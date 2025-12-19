@@ -26,7 +26,14 @@ const displayNames = new Intl.DisplayNames(['en'], { type: 'language' })
 async function translateFile(locale, instruction) {
   const targetLanguage = displayNames.of(locale) || locale
   const path = `src/renderer/i18n/locales/${locale}/translation.json`
-  const json = JSON.parse(await fs.readFile(path, 'utf-8'))
+
+  // Read and validate the file first
+  const content = await fs.readFile(path, 'utf-8')
+  if (!content.trim()) {
+    throw new Error(`File ${path} is empty!`)
+  }
+
+  const json = JSON.parse(content)
 
   const keysToTrans = Object.keys(json)
   for (const [key, value] of Object.entries(json)) {
@@ -40,14 +47,37 @@ async function translateFile(locale, instruction) {
       }
     }
   }
-  await fs.writeFile(path, JSON.stringify(json, null, 2))
+
+  // Write to a temporary file first, then rename atomically
+  const tempPath = `${path}.tmp`
+  const newContent = JSON.stringify(json, null, 2)
+  await fs.writeFile(tempPath, newContent)
+  await fs.rename(tempPath, path)
+
   console.debug(`Translated ${path}`)
 }
 
 const instruction = process.argv[2] || ''
 
-await pMap(
-  ['en', 'ar', 'de', 'es', 'fr', 'it-IT', 'ja', 'ko', 'nb-NO', 'pt-PT', 'ru', 'sv', 'zh-Hans', 'zh-Hant'],
-  async (locale) => await translateFile(locale, instruction),
-  { concurrency: 5 }
-)
+try {
+  await pMap(
+    ['en', 'ar', 'de', 'es', 'fr', 'it-IT', 'ja', 'ko', 'nb-NO', 'pt-PT', 'ru', 'sv', 'zh-Hans', 'zh-Hant'],
+    async (locale) => {
+      try {
+        await translateFile(locale, instruction)
+        console.log(`✓ Translated ${locale}`)
+      } catch (error) {
+        console.error(`✗ Failed to translate ${locale}:`, error.message)
+        throw error // Re-throw to stop other translations
+      }
+    },
+    { concurrency: 3 }
+  )
+  console.log('\n✓ All translations completed successfully!')
+} catch (error) {
+  console.error('\n✗ Translation failed:', error.message)
+  console.error(
+    '\nTip: If files were corrupted, restore them with: git checkout src/renderer/i18n/locales/*/translation.json'
+  )
+  process.exit(1)
+}

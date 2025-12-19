@@ -1,9 +1,10 @@
+import { experimental_createMCPClient as createMCPClient } from '@ai-sdk/mcp'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { experimental_createMCPClient as createMCPClient, MCPClientError, ToolSet } from 'ai'
+import type { ToolSet } from 'ai'
 import Emittery from 'emittery'
 import { isEqual } from 'lodash'
 import { IPCStdioTransport } from './ipc-stdio-transport'
-import { MCPServerConfig, MCPServerStatus } from './types'
+import type { MCPServerConfig, MCPServerStatus } from './types'
 
 type TransportConfig = MCPServerConfig['transport']
 type MCPClient = Awaited<ReturnType<typeof createMCPClient>>
@@ -16,7 +17,7 @@ async function createClient(transportConfig: TransportConfig, name = 'chatbox-mc
       return await createMCPClient({
         name,
         transport,
-        onUncaughtError(error) {
+        onUncaughtError(error: unknown) {
           console.error('mcp:client:onUncaughtError', error)
           errorMessage += (error as Error).message
         },
@@ -27,7 +28,7 @@ async function createClient(transportConfig: TransportConfig, name = 'chatbox-mc
       if (errorMessage && !message.includes(errorMessage)) {
         message += `\n${errorMessage}`
       }
-      throw new MCPClientError({ message, cause: err })
+      throw new Error(message, { cause: err })
     }
   }
   if (transportConfig.type === 'http') {
@@ -38,7 +39,7 @@ async function createClient(transportConfig: TransportConfig, name = 'chatbox-mc
       return await createMCPClient({
         name,
         transport,
-        onUncaughtError(error) {
+        onUncaughtError(error: unknown) {
           console.error('mcp:client:onUncaughtError', error)
         },
       })
@@ -51,7 +52,7 @@ async function createClient(transportConfig: TransportConfig, name = 'chatbox-mc
           url: transportConfig.url,
           headers: transportConfig.headers,
         },
-        onUncaughtError(error) {
+        onUncaughtError(error: unknown) {
           console.error('mcp:client:onUncaughtError', error)
         },
       })
@@ -120,7 +121,7 @@ export const mcpController = {
   bootstrap(serverConfigs: MCPServerConfig[]) {
     for (const serverConfig of serverConfigs) {
       if (serverConfig.enabled) {
-        this.startServer(serverConfig)
+        void this.startServer(serverConfig)
       }
     }
   },

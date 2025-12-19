@@ -18,7 +18,6 @@ import {
   type ProviderOptions,
   type StreamTextResult,
 } from '../../../shared/types'
-import { getToolSet } from '../knowledge-base/tools'
 import { mcpController } from '../mcp/controller'
 import { convertToModelMessages, injectModelSystemPrompt } from './message-utils'
 import { imageOCR } from './preprocess'
@@ -27,10 +26,11 @@ import {
   constructMessagesWithKnowledgeBaseResults,
   constructMessagesWithSearchResults,
   knowledgeBaseSearchByPromptEngineering,
-  parseLinkTool,
   searchByPromptEngineering,
-  webSearchTool,
 } from './tools'
+import fileToolSet from './toolsets/file'
+import { getToolSet } from './toolsets/knowledge-base'
+import websearchToolSet, { parseLinkTool, webSearchTool } from './toolsets/web-search'
 
 /**
  * 处理搜索结果并返回模型响应的通用函数
@@ -115,6 +115,7 @@ export async function streamText(
   signal?: AbortSignal
 ) {
   const { knowledgeBase, webBrowsing, sessionId } = params
+  const hasFileOrLink = params.messages.some((m) => m.files?.length || m.links?.length)
 
   const controller = new AbortController()
   const cancel = () => controller.abort()
@@ -125,17 +126,28 @@ export async function streamText(
   let result: StreamTextResult = {
     contentParts: [],
   }
-  // 不支持工具调用的模型，使用prompt engineering的方式处理知识库和网络搜索
+  // for model not support tool use, use prompt engineering to handle knowledge base and web search
+  const needFileToolSet = hasFileOrLink && model.isSupportToolUse()
   const kbNotSupported = knowledgeBase && !model.isSupportToolUse('knowledge-base')
   const webNotSupported = webBrowsing && !model.isSupportToolUse('web-browsing')
+
+  // 1. inject system prompt for tool use
+  let toolSetInstructions = ''
+  if (knowledgeBase && !kbNotSupported) {
+    toolSetInstructions += getToolSet(knowledgeBase.id, knowledgeBase.name).description
+  }
+  if (needFileToolSet) {
+    toolSetInstructions += fileToolSet.description
+  }
+  if (webBrowsing && !webNotSupported) {
+    toolSetInstructions += websearchToolSet.description
+  }
 
   params.messages = injectModelSystemPrompt(
     model.modelId,
     params.messages,
     // 在系统提示中添加知识库名称，方便模型理解
-    knowledgeBase && !kbNotSupported
-      ? `Knowledge base is available to help you answer questions: ${knowledgeBase.name}`
-      : '',
+    toolSetInstructions,
     model.isSupportSystemMessage() ? 'system' : 'user'
   )
 
@@ -143,6 +155,7 @@ export async function streamText(
     params.messages = params.messages.map((m) => ({ ...m, role: m.role === 'system' ? 'user' : m.role }))
   }
 
+  // 2. sequence messages to fix the order, prevent model API 400 errors
   const messages = sequenceMessages(params.messages)
   const infoParts: MessageInfoPart[] = []
   try {
@@ -170,6 +183,7 @@ export async function streamText(
 
     const coreMessages = await convertToModelMessages(messages, { modelSupportVision: model.isSupportVision() })
 
+    // 3. handle model not support tool use scenarios
     if (kbNotSupported || webNotSupported) {
       // 当两个功能都启用且都不支持工具调用时，使用组合搜索
       if (kbNotSupported && webNotSupported) {
@@ -246,6 +260,7 @@ export async function streamText(
       }
     }
 
+    // 4. construct tool set
     let tools: ToolSet = {
       ...mcpController.getAvailableTools(),
     }
@@ -258,9 +273,17 @@ export async function streamText(
     if (knowledgeBase) {
       tools = {
         ...tools,
-        ...getToolSet(knowledgeBase.id),
+        ...getToolSet(knowledgeBase.id, knowledgeBase.name).tools,
       }
     }
+
+    if (needFileToolSet) {
+      tools = {
+        ...tools,
+        ...fileToolSet.tools,
+      }
+    }
+
     console.debug('tools', tools)
 
     result = await model.chat(coreMessages, {

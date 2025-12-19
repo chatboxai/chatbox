@@ -127,7 +127,7 @@ export function RouteComponent() {
             }
           />
           <Button
-            variant="transparent"
+            variant="subtle"
             color="chatbox-gray"
             onClick={() => {
               setSettings({
@@ -162,11 +162,7 @@ export function RouteComponent() {
               zIndex={3000}
               events={{ hover: true, focus: true, touch: true }}
             >
-              <ScalableIcon
-                icon={IconInfoCircle}
-                size={20}
-                className="text-[var(--mantine-color-chatbox-tertiary-text)]"
-              />
+              <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
             </Tooltip>
           </Flex>
 
@@ -186,11 +182,7 @@ export function RouteComponent() {
               zIndex={3000}
               events={{ hover: true, focus: true, touch: true }}
             >
-              <ScalableIcon
-                icon={IconInfoCircle}
-                size={20}
-                className="text-[var(--mantine-color-chatbox-tertiary-text)]"
-              />
+              <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
             </Tooltip>
           </Flex>
 

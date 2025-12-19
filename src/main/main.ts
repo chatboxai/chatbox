@@ -53,13 +53,18 @@ const getAssetPath = (...paths: string[]): string => {
   return path.join(RESOURCES_PATH, ...paths)
 }
 
+// 开发环境使用 chatbox-dev:// 协议，避免和正式版冲突
+const PROTOCOL_SCHEME = process.defaultApp ? 'chatbox-dev' : 'chatbox'
+
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('chatbox', process.execPath, [path.resolve(process.argv[1])])
+    app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [path.resolve(process.argv[1])])
   }
 } else {
-  app.setAsDefaultProtocolClient('chatbox')
+  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME)
 }
+
+console.log(`📱 URL Scheme registered: ${PROTOCOL_SCHEME}://`)
 
 // --------- 全局变量 ---------
 
@@ -366,11 +371,37 @@ if (!gotTheLock) {
   app.quit()
 } else {
   app.on('second-instance', async (event, commandLine, workingDirectory) => {
-    await showOrHideWindow()
     // on windows and linux, the deep link is passed in the command line
-    const url = commandLine.find((arg) => arg.startsWith('chatbox://'))
-    if (url && mainWindow) {
-      handleDeepLink(mainWindow, url)
+    const url = commandLine.find((arg) => arg.startsWith('chatbox://') || arg.startsWith('chatbox-dev://'))
+
+    if (url) {
+      // Deep Link 场景：总是显示并聚焦窗口
+      if (!mainWindow) {
+        // 窗口未创建，立即创建
+        await createWindow()
+      }
+
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) {
+          mainWindow.restore()
+        }
+        mainWindow.show()
+        mainWindow.focus()
+
+        // 确保窗口加载完成后再处理 Deep Link
+        if (mainWindow.webContents.isLoading()) {
+          mainWindow.webContents.once('did-finish-load', () => {
+            if (mainWindow) {
+              handleDeepLink(mainWindow, url)
+            }
+          })
+        } else {
+          handleDeepLink(mainWindow, url)
+        }
+      }
+    } else {
+      // 非 Deep Link 场景：切换显示/隐藏
+      await showOrHideWindow()
     }
   })
 
@@ -384,11 +415,30 @@ if (!gotTheLock) {
 
   app
     .whenReady()
-    .then(() => {
-      createWindow()
+    .then(async () => {
+      await createWindow()
       ensureTray()
       // Remove this if your app does not use auto updates
       // eslint-disable-next-line
+      new AppUpdater(() => mainWindow?.webContents.send('update-downloaded', {}))
+
+      // 处理启动时的 Deep Link (Windows/Linux)
+      // macOS 会通过 open-url 事件处理，不需要在这里处理
+      if (process.platform !== 'darwin') {
+        const url = process.argv.find((arg) => arg.startsWith('chatbox://') || arg.startsWith('chatbox-dev://'))
+        if (url && mainWindow) {
+          // 确保窗口加载完成后再处理 Deep Link
+          if (mainWindow.webContents.isLoading()) {
+            mainWindow.webContents.once('did-finish-load', () => {
+              if (mainWindow) {
+                handleDeepLink(mainWindow, url)
+              }
+            })
+          } else {
+            handleDeepLink(mainWindow, url)
+          }
+        }
+      }
       app.on('activate', () => {
         // On macOS it's common to re-create a window in the app when the
         // dock icon is clicked and there are no other windows open.
@@ -428,9 +478,29 @@ if (!gotTheLock) {
 }
 
 // macos uses this event to handle deep links
-app.on('open-url', (_event, url) => {
+app.on('open-url', async (_event, url) => {
+  if (!mainWindow) {
+    // 窗口未创建，立即创建
+    await createWindow()
+  }
+
   if (mainWindow) {
-    handleDeepLink(mainWindow, url)
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    mainWindow.show()
+    mainWindow.focus()
+
+    // 确保窗口加载完成后再处理 Deep Link
+    if (mainWindow.webContents.isLoading()) {
+      mainWindow.webContents.once('did-finish-load', () => {
+        if (mainWindow) {
+          handleDeepLink(mainWindow, url)
+        }
+      })
+    } else {
+      handleDeepLink(mainWindow, url)
+    }
   }
 })
 
@@ -479,6 +549,21 @@ ipcMain.handle('getArch', () => {
 })
 ipcMain.handle('getHostname', () => {
   return os.hostname()
+})
+ipcMain.handle('getDeviceName', () => {
+  if (process.platform === 'darwin') {
+    try {
+      const { execSync } = require('child_process')
+      const computerName = execSync('scutil --get ComputerName', { encoding: 'utf8' }).trim()
+      return computerName || os.hostname()
+    } catch (error) {
+      return os.hostname()
+    }
+  } else if (process.platform === 'win32') {
+    return process.env.COMPUTERNAME || os.hostname()
+  } else {
+    return os.hostname()
+  }
 })
 ipcMain.handle('getLocale', () => {
   try {

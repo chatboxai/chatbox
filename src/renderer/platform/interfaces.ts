@@ -30,6 +30,7 @@ export interface Platform extends Storage {
   onUpdateDownloaded(callback: () => void): () => void
   onNavigate?(callback: (path: string) => void): () => void
   openLink(url: string): Promise<void>
+  getDeviceName(): Promise<string>
   getInstanceName(): Promise<string>
   getLocale(): Promise<Language>
   ensureShortcutConfig(config: ShortcutSetting): Promise<void>

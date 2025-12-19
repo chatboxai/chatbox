@@ -10,7 +10,7 @@ export const queryKnowledgeBaseTool = (kbId: number) => {
     }),
     execute: async (input: { query: string }) => {
       const knowledgeBaseController = platform.getKnowledgeBaseController()
-      return knowledgeBaseController.search(kbId, input.query)
+      return await knowledgeBaseController.search(kbId, input.query)
     },
   })
 }
@@ -26,7 +26,7 @@ export function getFilesMetaTool(knowledgeBaseId: number) {
         return 'Please provide an array of file IDs.'
       }
       const knowledgeBaseController = platform.getKnowledgeBaseController()
-      return knowledgeBaseController.getFilesMeta(knowledgeBaseId, input.fileIds)
+      return await knowledgeBaseController.getFilesMeta(knowledgeBaseId, input.fileIds)
     },
   })
 }
@@ -49,7 +49,7 @@ export function readFileChunksTool(knowledgeBaseId: number) {
         return 'Please provide an array of chunks to read.'
       }
       const knowledgeBaseController = platform.getKnowledgeBaseController()
-      return knowledgeBaseController.readFileChunks(knowledgeBaseId, input.chunks)
+      return await knowledgeBaseController.readFileChunks(knowledgeBaseId, input.chunks)
     },
   })
 }
@@ -74,12 +74,24 @@ export function listFilesTool(knowledgeBaseId: number) {
     },
   })
 }
-
-export function getToolSet(knowledgeBaseId: number) {
+const getToolSetDescription = (knowledgeBaseId: number, knowledgeBaseName: string) => {
+  return `
+  Toolset for interacting with a knowledge base ${knowledgeBaseName}. Includes tools to query the knowledge base, get file metadata, read file chunks, and list files.
+  Available tools:
+  1. query_knowledge_base: Query the knowledge base with a search query.
+  2. get_files_meta: Get metadata for files in the knowledge base.
+  3. read_file_chunks: Read content chunks from specified files in the knowledge base.
+  4. list_files: List all files in the knowledge base.
+`
+}
+export function getToolSet(knowledgeBaseId: number, knowledgeBaseName: string) {
   return {
-    query_knowledge_base: queryKnowledgeBaseTool(knowledgeBaseId),
-    get_files_meta: getFilesMetaTool(knowledgeBaseId),
-    read_file_chunks: readFileChunksTool(knowledgeBaseId),
-    list_files: listFilesTool(knowledgeBaseId),
+    description: getToolSetDescription(knowledgeBaseId, knowledgeBaseName),
+    tools: {
+      query_knowledge_base: queryKnowledgeBaseTool(knowledgeBaseId),
+      get_files_meta: getFilesMetaTool(knowledgeBaseId),
+      read_file_chunks: readFileChunksTool(knowledgeBaseId),
+      list_files: listFilesTool(knowledgeBaseId),
+    },
   }
 }

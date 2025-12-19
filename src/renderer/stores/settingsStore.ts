@@ -48,7 +48,7 @@ export const settingsStore = createStore<Settings & Action>()(
           },
           removeItem: async (name) => await storage.removeItem(name),
         })),
-        version: 1,
+        version: 2,
         partialize: (state) => {
           try {
             return SettingsSchema.parse(state)
@@ -70,6 +70,11 @@ export const settingsStore = createStore<Settings & Action>()(
               settings.shortcuts.inputBoxSendMessageWithoutResponse =
                 settings.shortcuts.inpubBoxSendMessageWithoutResponse ||
                 settings.shortcuts.inputBoxSendMessageWithoutResponse
+            case 1:
+              if (settings.licenseKey && !settings.licenseActivationMethod) {
+                settings.licenseActivationMethod = 'manual'
+                settings.memorizedManualLicenseKey = settings.licenseKey
+              }
             default:
               break
           }

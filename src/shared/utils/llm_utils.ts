@@ -1,6 +1,9 @@
 import { ModelProviderEnum } from '../types';
 
-export function normalizeOpenAIApiHostAndPath(options: { apiHost?: string; apiPath?: string }) {
+export function normalizeOpenAIApiHostAndPath(
+  options: { apiHost?: string; apiPath?: string },
+  defaults?: { apiHost?: string; apiPath?: string }
+) {
   let { apiHost, apiPath } = options
   if (apiHost) {
     apiHost = apiHost.trim()
@@ -8,8 +11,8 @@ export function normalizeOpenAIApiHostAndPath(options: { apiHost?: string; apiPa
   if (apiPath) {
     apiPath = apiPath.trim()
   }
-  const DEFAULT_HOST = 'https://api.openai.com/v1'
-  const DEFAULT_PATH = '/chat/completions'
+  const DEFAULT_HOST = defaults?.apiHost ?? 'https://api.openai.com/v1'
+  const DEFAULT_PATH = defaults?.apiPath ?? '/chat/completions'
   // 如果 apiHost 为空，直接返回默认的 apiHost 和 apiPath
   if (!apiHost) {
     apiHost = DEFAULT_HOST
@@ -63,6 +66,21 @@ export function normalizeOpenAIApiHostAndPath(options: { apiHost?: string; apiPa
   return { apiHost, apiPath }
 }
 
+export function normalizeOpenAIResponsesHostAndPath(options: { apiHost?: string; apiPath?: string }) {
+  const trimmedApiPath = options.apiPath?.trim()
+  const hasCustomApiPath = !!trimmedApiPath && trimmedApiPath !== '/responses'
+  const normalized = normalizeOpenAIApiHostAndPath(
+    hasCustomApiPath ? { ...options, apiPath: trimmedApiPath } : { ...options, apiPath: undefined },
+    { apiPath: '/responses' }
+  )
+
+  if (!hasCustomApiPath) {
+    normalized.apiPath = '/responses'
+  }
+
+  return normalized
+}
+
 export function normalizeClaudeHost(apiHost: string) {
   apiHost = apiHost.trim()
   if (apiHost === 'https://api.anthropic.com') {
@@ -93,7 +111,7 @@ export function normalizeAzureEndpoint(endpoint: string) {
   let origin = endpoint
   try {
     origin = new URL(endpoint.trim()).origin
-  } catch (e) {
+  } catch (_error) {
     origin = `https://${origin}.openai.azure.com`
   }
   return {
@@ -102,7 +120,7 @@ export function normalizeAzureEndpoint(endpoint: string) {
   }
 }
 
-export function isOpenAICompatible(providerId: string, modelId: string) {
+export function isOpenAICompatible(providerId: string, _modelId: string) {
   if (providerId === 'chatbox-ai') {
     return false
   }

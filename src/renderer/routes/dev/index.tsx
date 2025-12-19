@@ -20,6 +20,12 @@ const devPages = [
     description: 'Inspect key-value and blob storage entries provided by the unified platform layer',
     tags: ['Tool', 'Storage'],
   },
+  {
+    path: '/dev/css-var',
+    name: 'CSS Variables Preview',
+    description: 'CSS Variables Preview',
+    tags: ['UI'],
+  },
   // Add more dev pages here as they are created
 ]
 

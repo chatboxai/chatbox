@@ -77,7 +77,7 @@ const MCPMenu: FC<{ children: (enabledTools: number) => ReactNode }> = ({ childr
                 navigateToSettings('/mcp')
               }}
             >
-              <ScalableIcon icon={IconSettings2} size={16} color="var(--mantine-color-chatbox-tertiary-text)" />
+              <ScalableIcon icon={IconSettings2} size={16} color="var(--chatbox-tint-tertiary)" />
             </ActionIcon>
           </Menu.Label>
         </Flex>

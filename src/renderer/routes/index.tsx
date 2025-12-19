@@ -338,10 +338,10 @@ const CopilotPicker = ({ selectedId, onSelect }: { selectedId?: string; onSelect
           className="copilot-picker-scroll-area"
         >
           {scrollPosition.x > 8 && !isSmallScreen && (
-            <div className="absolute top-0 left-0 w-8 h-full bg-gradient-to-r from-[var(--mantine-color-chatbox-background-primary-text)] to-transparent"></div>
+            <div className="absolute top-0 left-0 w-8 h-full bg-gradient-to-r from-chatbox-background-primary to-transparent"></div>
           )}
           {!isSmallScreen && (
-            <div className="absolute top-0 right-0 w-8 h-full bg-gradient-to-l from-[var(--mantine-color-chatbox-background-primary-text)] to-transparent"></div>
+            <div className="absolute top-0 right-0 w-8 h-full bg-gradient-to-l from-chatbox-background-primary to-transparent"></div>
           )}
           <Flex wrap="nowrap" gap="xs">
             <Space w="xs" />
@@ -400,8 +400,8 @@ const CopilotItem = ({
       gap={isSmallScreen ? 'xxs' : 'xs'}
       py="xs"
       px={isSmallScreen ? 'xs' : 'md'}
-      bd={selected ? 'none' : '1px solid var(--mantine-color-chatbox-border-primary-outline)'}
-      bg={selected ? 'var(--mantine-color-chatbox-brand-light)' : 'transparent'}
+      bd={selected ? 'none' : '1px solid var(--chatbox-border-primary)'}
+      bg={selected ? 'var(--chatbox-background-brand-secondary)' : 'transparent'}
       className={clsx(
         'cursor-pointer shrink-0 shadow-[0px_2px_12px_0px_rgba(0,0,0,0.04)]',
         isSmallScreen ? 'rounded-full' : 'rounded-md'

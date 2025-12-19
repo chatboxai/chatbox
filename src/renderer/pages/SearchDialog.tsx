@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Session } from 'src/shared/types'
 import Mark from '@/components/Mark'
+import { BlockCodeCollapsedStateProvider } from '@/components/Markdown'
 import Message from '@/components/Message'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
@@ -145,58 +146,59 @@ export default function SearchDialog(props: Props) {
             </div>
           )}
           {mode === 'search-result' && !loading && (
-            <Mark marks={[searchInput]}>
-              <CommandList>
-                <CommandEmpty>{t('No results found')}</CommandEmpty>
-                {searchResult.map((result, i) => (
-                  <CommandGroup
-                    key={i}
-                    heading={`${t('chat')} "${result.name}":`}
-                    className={cn('[&_[cmdk-group-heading]]:font-bold', '[&_[cmdk-group-heading]]:opacity-50')}
-                  >
-                    {result.messages.map((message, j) => (
-                      <CommandItem
-                        key={`${i}-${j}`}
-                        className={cn(
-                          theme.palette.mode === 'dark' ? 'bg-slate-600' : 'bg-slate-50',
-                          theme.palette.mode === 'dark' ? 'aria-selected:bg-slate-500' : 'aria-selected:bg-slate-200',
-                          'my-1',
-                          'cursor-pointer',
-                          'bg-opacity-50'
-                        )}
-                        onSelect={() => {
-                          switchCurrentSession(result.id)
-                          setTimeout(() => {
-                            scrollActions.scrollToMessage(result.id, message.id)
-                          }, 200)
-                          setOpen(false)
-                        }}
-                      >
-                        {/* 下面这个隐藏元素，是为了避免这个问题：
+            <BlockCodeCollapsedStateProvider defaultCollapsed={true}>
+              <Mark marks={[searchInput]}>
+                <CommandList>
+                  <CommandEmpty>{t('No results found')}</CommandEmpty>
+                  {searchResult.map((result, i) => (
+                    <CommandGroup
+                      key={i}
+                      heading={`${t('chat')} "${result.name}":`}
+                      className={cn('[&_[cmdk-group-heading]]:font-bold', '[&_[cmdk-group-heading]]:opacity-50')}
+                    >
+                      {result.messages.map((message, j) => (
+                        <CommandItem
+                          key={`${i}-${j}`}
+                          className={cn(
+                            theme.palette.mode === 'dark' ? 'bg-slate-600' : 'bg-slate-50',
+                            theme.palette.mode === 'dark' ? 'aria-selected:bg-slate-500' : 'aria-selected:bg-slate-200',
+                            'my-1',
+                            'cursor-pointer',
+                            'bg-opacity-50'
+                          )}
+                          onSelect={() => {
+                            switchCurrentSession(result.id)
+                            setTimeout(() => {
+                              scrollActions.scrollToMessage(result.id, message.id)
+                            }, 200)
+                            setOpen(false)
+                          }}
+                        >
+                          {/* 下面这个隐藏元素，是为了避免这个问题：
                                                         当搜索结果列表中出现重复的元素（相同的消息），此时键盘上下键选中第二条重复消息，继续按向下键会错误切换到第一条重复消息；并且当选中其中一条消息时，重复的消息同样会有选中的显示样式。
                                                         这些异常都会影响使用。我猜测可能和默认行为是根据元素内容进行判断的，因此加上这个唯一的隐藏元素可以规避问题。 */}
-                        <span className="hidden">
-                          {result.id}-{message.id}-{i}-{j}
-                        </span>
-                        <Message
-                          id={message.id}
-                          key={'msg-' + message.id}
-                          sessionId={result.id}
-                          sessionType={result.type || 'chat'}
-                          msg={message}
-                          className="w-full"
-                          buttonGroup="none"
-                          small
-                          preferCollapsedCodeBlock
-                          assistantAvatarKey={result.assistantAvatarKey}
-                          sessionPicUrl={result.picUrl}
-                        />
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                ))}
-              </CommandList>
-            </Mark>
+                          <span className="hidden">
+                            {result.id}-{message.id}-{i}-{j}
+                          </span>
+                          <Message
+                            id={message.id}
+                            key={'msg-' + message.id}
+                            sessionId={result.id}
+                            sessionType={result.type || 'chat'}
+                            msg={message}
+                            className="w-full"
+                            buttonGroup="none"
+                            small
+                            assistantAvatarKey={result.assistantAvatarKey}
+                            sessionPicUrl={result.picUrl}
+                          />
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  ))}
+                </CommandList>
+              </Mark>
+            </BlockCodeCollapsedStateProvider>
           )}
         </Command>
       </DialogContent>

@@ -1,11 +1,9 @@
-import { useMantineColorScheme } from '@mantine/core'
-import { useColorScheme } from '@mantine/hooks'
+import { useComputedColorScheme, useMantineColorScheme } from '@mantine/core'
 import * as React from 'react'
 
 function HomepageIcon(props: React.SVGProps<SVGSVGElement>) {
-  const { colorScheme } = useMantineColorScheme()
-  const systemColorScheme = useColorScheme('light')
-  const isDark = colorScheme === 'dark' || (colorScheme === 'auto' && systemColorScheme === 'dark')
+  const colorScheme = useComputedColorScheme()
+  const isDark = colorScheme === 'dark'
   const fillColor = isDark ? '#7D90A1' : '#EDF0F2'
   const strokeColor = isDark ? '#45525F' : '#899AA9'
 

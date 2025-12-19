@@ -676,7 +676,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         <input className="hidden" {...getInputProps()} />
         <Stack
           className={cn(
-            'rounded-lg sm:rounded-md bg-[var(--mantine-color-chatbox-background-secondary-text)] border border-solid border-[var(--mantine-color-chatbox-border-primary-outline)] justify-between',
+            'rounded-lg sm:rounded-md bg-chatbox-background-secondary border border-solid border-chatbox-border-primary justify-between',
             widthFull ? 'w-full' : 'max-w-4xl mx-auto',
             !isSmallScreen && 'min-h-[92px]'
           )}
@@ -686,7 +686,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             unstyled={true}
             classNames={{
               input:
-                'block w-full outline-none border-none px-sm pt-sm pb-sm resize-none bg-transparent text-[var(--mantine-color-chatbox-primary-text)]',
+                'block w-full outline-none border-none px-sm pt-sm pb-sm resize-none bg-transparent text-chatbox-tint-primary',
             }}
             size="sm"
             id={dom.messageInputID}
@@ -940,7 +940,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     <Flex
                       align="center"
                       gap="2"
-                      className="text-xs text-[var(--mantine-color-chatbox-secondary-text)] cursor-pointer hover:text-[var(--mantine-color-chatbox-primary-text)] transition-colors"
+                      className="text-xs text-chatbox-tint-secondary cursor-pointer hover:text-chatbox-tint-primary transition-colors"
                     >
                       <ScalableIcon icon={IconArrowUp} size={14} />
                       <Text span size="xs" className="whitespace-nowrap">
@@ -990,7 +990,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                         <ScalableIcon
                           icon={IconSelector}
                           size={20}
-                          className="flex-[0_0_auto] text-[var(--mantine-color-chatbox-tertiary-text)]"
+                          className="flex-[0_0_auto] text-chatbox-tint-tertiary"
                         />
                       </Flex>
                     </ModelSelector>
@@ -1007,7 +1007,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   // 'mt-[-6px] mb-[2px]',
                   (disableSubmit || isPreprocessing || isSubmitting) &&
                     !generating &&
-                    '!text-white !bg-[var(--mantine-color-chatbox-background-tertiary-text)]'
+                    '!text-white !bg-chatbox-background-tertiary'
                 )}
               >
                 {generating ? (

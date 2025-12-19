@@ -94,7 +94,11 @@ function SessionItem(props: Props) {
       align="center"
       className={clsx(
         'cursor-pointer rounded-sm group/session-item',
-        isSmallScreen ? '' : 'hover:bg-[var(--mantine-color-chatbox-brand-light)]'
+        isSmallScreen
+          ? ''
+          : selected
+            ? 'bg-chatbox-background-brand-secondary'
+            : 'hover:bg-chatbox-background-gray-secondary'
       )}
       mx="xs"
       px="xs"

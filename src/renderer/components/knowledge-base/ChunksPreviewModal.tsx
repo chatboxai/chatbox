@@ -1,8 +1,9 @@
-import { Center, Code, Group, Loader, Modal, Paper, ScrollArea, Stack, Text } from '@mantine/core'
+import { Center, Code, Group, Loader, Paper, ScrollArea, Stack, Text } from '@mantine/core'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { KnowledgeBaseFile } from 'src/shared/types'
 import platform from '@/platform'
+import { Modal } from '../Overlay'
 
 interface FileChunk {
   fileId: number

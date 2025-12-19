@@ -1,7 +1,8 @@
-import NiceModal, { muiDialogV5, useModal } from '@ebay/nice-modal-react'
-import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Input } from '@mui/material'
+import NiceModal, { useModal } from '@ebay/nice-modal-react'
+import { Button, Flex, Input } from '@mantine/core'
 import { type ChangeEvent, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
+import { Modal } from '@/components/Overlay'
 import { trackingEvent } from '@/packages/event'
 import { clearConversationList } from '@/stores/sessionActions'
 
@@ -32,38 +33,40 @@ const ClearSessionList = NiceModal.create(() => {
   }
 
   return (
-    <Dialog
-      {...muiDialogV5(modal)}
+    <Modal
+      opened={modal.visible}
       onClose={() => {
         modal.resolve()
         modal.hide()
       }}
+      centered
+      title={t('Clear Conversation List')}
     >
-      <DialogTitle>{t('Clear Conversation List')}</DialogTitle>
-      <DialogContent>
-        <DialogContentText>
-          <Trans
-            i18nKey="Keep only the Top <0>{{N}}</0> Conversations in List and Permanently Delete the Rest"
-            values={{ n: value }}
-            components={[
-              <Input
-                key={'0'}
-                value={value}
-                onChange={handleInput}
-                className="w-14"
-                inputProps={{ style: { textAlign: 'center' } }}
-              />,
-            ]}
-          />
-        </DialogContentText>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose}>{t('cancel')}</Button>
-        <Button onClick={clean} color="error">
+      <Trans
+        i18nKey="Keep only the Top <input /> Conversations in List and Permanently Delete the Rest"
+        values={{ n: value }}
+        components={{
+          input: (
+            <Input
+              key={'0'}
+              value={value}
+              onChange={handleInput}
+              className=" inline-block w-14"
+              classNames={{ input: '!border-0 !border-b !rounded-none !bg-transparent' }}
+            />
+          ),
+        }}
+      />
+
+      <Flex gap="md" mt="md" justify="flex-end" align="center">
+        <Button onClick={handleClose} color="chatbox-gray" variant="light">
+          {t('cancel')}
+        </Button>
+        <Button onClick={clean} color="chatbox-error">
           {t('clean it up')}
         </Button>
-      </DialogActions>
-    </Dialog>
+      </Flex>
+    </Modal>
   )
 })
 

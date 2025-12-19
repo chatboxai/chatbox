@@ -1,9 +1,10 @@
-import { Button, Flex, Modal, Select, Stack, Text, TextInput } from '@mantine/core'
+import { Button, Flex, Select, Stack, Text, TextInput } from '@mantine/core'
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ModelProviderType } from 'src/shared/types'
 import { v4 as uuidv4 } from 'uuid'
+import { Modal } from '@/components/Overlay'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 interface AddProviderModalProps {
@@ -59,6 +60,10 @@ export function AddProviderModal({ opened, onClose }: AddProviderModalProps) {
             {
               value: ModelProviderType.OpenAI,
               label: t('OpenAI API Compatible'),
+            },
+            {
+              value: ModelProviderType.OpenAIResponses,
+              label: t('OpenAI Responses API Compatible'),
             },
             {
               value: ModelProviderType.Claude,

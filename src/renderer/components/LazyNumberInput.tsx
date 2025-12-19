@@ -109,10 +109,10 @@ export default function LazyNumberInput({
           )}
           {hideControls ? null : (
             <Stack gap={0} className="border-0 border-l border-solid border-[var(--input-bd)] pr-px">
-              <ActionIcon variant="transparent" size={16} onClick={handleIncrement} color="chatbox-secondary">
+              <ActionIcon variant="transparent" size={16} onClick={handleIncrement} c="chatbox-secondary">
                 <IconChevronUp />
               </ActionIcon>
-              <ActionIcon variant="transparent" size={16} onClick={handleDecrement} color="chatbox-secondary">
+              <ActionIcon variant="transparent" size={16} onClick={handleDecrement} c="chatbox-secondary">
                 <IconChevronDown />
               </ActionIcon>
             </Stack>

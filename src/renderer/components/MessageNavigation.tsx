@@ -52,7 +52,7 @@ export const MessageNavigation: FC<MessageNavigationProps> = ({
       <Stack
         gap={6}
         p={'xxs'}
-        className="rounded border border-solid border-[var(--mantine-color-chatbox-border-primary-outline)] bg-[var(--mantine-color-chatbox-background-primary-text)] [&>.mantine-Divider-root]:border-[var(--mantine-color-chatbox-border-primary-outline)]"
+        className="rounded border border-solid border-chatbox-border-primary bg-chatbox-background-primary [&>.mantine-Divider-root]:border-chatbox-border-primary"
       >
         <MessageNavigationButton icon={<IconChevronsUp />} onClick={onScrollToTop} />
         <Divider />
@@ -73,8 +73,8 @@ const MessageNavigationButton = ({ icon, ...others }: { icon: React.ReactElement
   return (
     <button
       className={clsx(
-        'flex border-0 outline-none [-webkit-tap-highlight-color:transparent] p-0 cursor-pointer text-[var(--mantine-color-chatbox-tertiary-text)] active:translate-y-px',
-        'bg-transparent hover:text-[var(--mantine-color-chatbox-secondary-text)]'
+        'flex border-0 outline-none [-webkit-tap-highlight-color:transparent] p-0 cursor-pointer text-chatbox-tint-tertiary active:translate-y-px',
+        'bg-transparent hover:text-chatbox-tint-secondary'
       )}
       {...others}
     >
@@ -93,9 +93,9 @@ export const ScrollToBottomButton = ({ onClick, style }: { onClick?(): void; sty
         h={38}
         radius={19}
         p={0}
-        bg="chatbox-background-primary"
+        bg="var(--chatbox-background-primary)"
         c="chatbox-primary"
-        className="shadow-xl border-[var(--mantine-color-chatbox-border-primary-outline)]"
+        className="shadow-xl border-chatbox-border-primary"
         onClick={onClick}
         style={style}
       >

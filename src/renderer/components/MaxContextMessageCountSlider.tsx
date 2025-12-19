@@ -99,7 +99,7 @@ export default function MaxContextMessageCountSlider({ value, onChange, classNam
           zIndex={3000}
           events={{ hover: true, focus: true, touch: true }}
         >
-          <ScalableIcon icon={IconInfoCircle} size={20} className="text-[var(--mantine-color-chatbox-tertiary-text)]" />
+          <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
         </Tooltip>
       </Flex>
       <Flex gap="sm" align="center" className={className}>

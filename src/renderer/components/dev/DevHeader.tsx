@@ -19,8 +19,8 @@ export function DevHeader({ title }: DevHeaderProps) {
       p="md"
       shadow="sm"
       style={{
-        borderBottom: '1px solid var(--mantine-color-default-border)',
-        backgroundColor: 'var(--mantine-color-body)',
+        borderBottom: '1px solid var(--chatbox-border-primary)',
+        backgroundColor: 'var(--chatbox-background-primary)',
         position: 'sticky',
         top: 0,
         zIndex: 100,

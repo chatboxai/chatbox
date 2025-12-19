@@ -15,8 +15,10 @@ import {
   Button,
   Checkbox,
   Combobox,
+  colorsTuple,
   createTheme,
   type DefaultMantineColor,
+  Drawer,
   Input,
   type MantineColorsTuple,
   MantineProvider,
@@ -39,7 +41,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useSetAtom } from 'jotai'
 import { useEffect, useMemo, useRef } from 'react'
-import SettingsModal from '@/modals/Settings'
+import SettingsModal, { navigateToSettings } from '@/modals/Settings'
 import { getOS } from '@/packages/navigator'
 import * as remote from '@/packages/remote'
 import PictureDialog from '@/pages/PictureDialog'
@@ -128,7 +130,15 @@ function Root() {
     if (platform.onNavigate) {
       // 移动端和其他平台的导航监听器
       return platform.onNavigate((path) => {
-        router.navigate({ to: path })
+        // 如果是 settings 路径，使用 navigateToSettings 以保持与主页面设置按钮一致的行为
+        // 在桌面端会打开 Modal，在移动端会正常导航
+        if (path.startsWith('/settings')) {
+          // 提取 settings 之后的路径部分（包含查询参数）
+          const settingsPath = path.substring('/settings'.length)
+          navigateToSettings(settingsPath || '/')
+        } else {
+          router.navigate({ to: path })
+        }
       })
     }
   }, [])
@@ -201,154 +211,15 @@ const creteMantineTheme = (scale = 1) =>
     scale,
     primaryColor: 'chatbox-brand',
     colors: {
-      'chatbox-brand': virtualColor({
-        name: 'chatbox-brand',
-        dark: 'blue',
-        light: 'blue',
-      }),
-      'chatbox-gray': virtualColor({
-        name: 'chatbox-gray',
-        dark: 'gray',
-        light: 'gray',
-      }),
-      'chatbox-success': virtualColor({
-        name: 'chatbox-success',
-        dark: 'teal',
-        light: 'teal',
-      }),
-      'chatbox-error': virtualColor({
-        name: 'chatbox-error',
-        dark: 'red',
-        light: 'red',
-      }),
-      'chatbox-warning': virtualColor({
-        name: 'chatbox-warning',
-        dark: 'yellow',
-        light: 'yellow',
-      }),
+      'chatbox-brand': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-brand)')),
+      'chatbox-gray': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-gray)')),
+      'chatbox-success': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-success)')),
+      'chatbox-error': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-error)')),
+      'chatbox-warning': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-warning)')),
 
-      'chatbox-primary': [
-        'var(--mantine-color-white)',
-        'var(--mantine-color-white)',
-        'var(--mantine-color-white)',
-        'var(--mantine-color-white)',
-        'var(--mantine-color-white)',
-        'var(--mantine-color-gray-9)',
-        'var(--mantine-color-gray-9)',
-        'var(--mantine-color-gray-9)',
-        'var(--mantine-color-gray-9)',
-        'var(--mantine-color-gray-9)',
-      ],
-      'chatbox-secondary': [
-        'var(--mantine-color-gray-4)',
-        'var(--mantine-color-gray-4)',
-        'var(--mantine-color-gray-4)',
-        'var(--mantine-color-gray-4)',
-        'var(--mantine-color-gray-4)',
-        'var(--mantine-color-gray-7)',
-        'var(--mantine-color-gray-7)',
-        'var(--mantine-color-gray-7)',
-        'var(--mantine-color-gray-7)',
-        'var(--mantine-color-gray-7)',
-      ],
-      'chatbox-tertiary': [
-        'var(--mantine-color-dark-2)',
-        'var(--mantine-color-dark-2)',
-        'var(--mantine-color-dark-2)',
-        'var(--mantine-color-dark-2)',
-        'var(--mantine-color-dark-2)',
-        'var(--mantine-color-gray-6)',
-        'var(--mantine-color-gray-6)',
-        'var(--mantine-color-gray-6)',
-        'var(--mantine-color-gray-6)',
-        'var(--mantine-color-gray-6)',
-      ],
-
-      'chatbox-border-primary': [
-        'var(--mantine-color-gray-7)',
-        'var(--mantine-color-gray-7)',
-        'var(--mantine-color-gray-7)',
-        'var(--mantine-color-gray-7)',
-        'var(--mantine-color-gray-7)',
-        'var(--mantine-color-gray-3)',
-        'var(--mantine-color-gray-3)',
-        'var(--mantine-color-gray-3)',
-        'var(--mantine-color-gray-3)',
-        'var(--mantine-color-gray-3)',
-      ],
-      'chatbox-border-secondary': [
-        'var(--mantine-color-gray-6)',
-        'var(--mantine-color-gray-6)',
-        'var(--mantine-color-gray-6)',
-        'var(--mantine-color-gray-6)',
-        'var(--mantine-color-gray-6)',
-        'var(--mantine-color-gray-4)',
-        'var(--mantine-color-gray-4)',
-        'var(--mantine-color-gray-4)',
-        'var(--mantine-color-gray-4)',
-        'var(--mantine-color-gray-4)',
-      ],
-
-      'chatbox-background-primary': [
-        'var(--mantine-color-dark-7)',
-        'var(--mantine-color-dark-7)',
-        'var(--mantine-color-dark-7)',
-        'var(--mantine-color-dark-7)',
-        'var(--mantine-color-dark-7)',
-        'var(--mantine-color-white)',
-        'var(--mantine-color-white)',
-        'var(--mantine-color-white)',
-        'var(--mantine-color-dark-7)',
-        'var(--mantine-color-white)',
-      ],
-      'chatbox-background-secondary': [
-        'var(--mantine-color-dark-5)',
-        'var(--mantine-color-dark-5)',
-        'var(--mantine-color-dark-5)',
-        'var(--mantine-color-dark-5)',
-        'var(--mantine-color-dark-5)',
-        'var(--mantine-color-gray-1)',
-        'var(--mantine-color-gray-1)',
-        'var(--mantine-color-gray-1)',
-        'var(--mantine-color-dark-5)',
-        'var(--mantine-color-gray-1)',
-      ],
-      'chatbox-background-tertiary': [
-        'var(--mantine-color-dark-4)',
-        'var(--mantine-color-dark-4)',
-        'var(--mantine-color-dark-4)',
-        'var(--mantine-color-dark-4)',
-        'var(--mantine-color-dark-4)',
-        'var(--mantine-color-gray-3)',
-        'var(--mantine-color-gray-3)',
-        'var(--mantine-color-gray-3)',
-        'var(--mantine-color-gray-3)',
-        'var(--mantine-color-gray-3)',
-      ],
-      'chatbox-background-disabled': [
-        'var(--mantine-color-dark-6)',
-        'var(--mantine-color-dark-6)',
-        'var(--mantine-color-dark-6)',
-        'var(--mantine-color-dark-6)',
-        'var(--mantine-color-dark-6)',
-        'var(--mantine-color-gray-2)',
-        'var(--mantine-color-gray-2)',
-        'var(--mantine-color-gray-2)',
-        'var(--mantine-color-gray-2)',
-        'var(--mantine-color-gray-2)',
-      ],
-      'chatbox-background-error-secondary': [
-        'var(--mantine-color-red-9)',
-        'var(--mantine-color-red-9)',
-        'var(--mantine-color-red-9)',
-        'var(--mantine-color-red-9)',
-        'var(--mantine-color-red-9)',
-        'var(--mantine-color-red-1)',
-        'var(--mantine-color-red-1)',
-        'var(--mantine-color-red-1)',
-        'var(--mantine-color-red-1)',
-        'var(--mantine-color-red-1)',
-      ],
+      'chatbox-primary': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-primary)')),
+      'chatbox-secondary': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-secondary)')),
+      'chatbox-tertiary': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-tertiary)')),
     },
     headings: {
       fontWeight: 'Bold',
@@ -443,8 +314,8 @@ const creteMantineTheme = (scale = 1) =>
             '--input-height-sm': rem('32px'),
             ...(props.error
               ? {
-                  '--input-color': 'var(--mantine-color-chatbox-error-text)',
-                  '--input-bd': 'var(--mantine-color-chatbox-error-text)',
+                  '--input-color': 'var(--chatbox-tint-error)',
+                  '--input-bd': 'var(--chatbox-tint-error)',
                 }
               : {}),
           },
@@ -506,9 +377,7 @@ const creteMantineTheme = (scale = 1) =>
         styles: (_theme, props) => {
           return {
             label: {
-              color: props.checked
-                ? 'var(--mantine-color-chatbox-primary-text)'
-                : 'var(--mantine-color-chatbox-tertiary-text)',
+              color: props.checked ? 'var(--chatbox-tint-primary)' : 'var(--chatbox-tint-tertiary)',
             },
           }
         },
@@ -519,9 +388,7 @@ const creteMantineTheme = (scale = 1) =>
         },
         styles: (_theme, props) => ({
           label: {
-            color: props.checked
-              ? 'var(--mantine-color-chatbox-primary-text)'
-              : 'var(--mantine-color-chatbox-tertiary-text)',
+            color: props.checked ? 'var(--chatbox-tint-primary)' : 'var(--chatbox-tint-tertiary)',
           },
         }),
       }),
@@ -532,13 +399,42 @@ const creteMantineTheme = (scale = 1) =>
         styles: () => ({
           title: {
             fontWeight: '600',
-            color: 'var(--mantine-color-chatbox-primary-text)',
+            color: 'var(--chatbox-tint-primary)',
             fontSize: 'var(--mantine-font-size-sm)',
           },
           close: {
             width: rem('24px'),
             height: rem('24px'),
-            color: 'var(--mantine-color-chatbox-secondary-text)',
+            color: 'var(--chatbox-tint-secondary)',
+          },
+          content: {
+            backgroundColor: 'var(--chatbox-background-primary)',
+          },
+          overlay: {
+            '--overlay-bg': 'var(--chatbox-background-mask-overlay)',
+          },
+        }),
+      }),
+      Drawer: Drawer.extend({
+        defaultProps: {
+          zIndex: 2000,
+        },
+        styles: () => ({
+          title: {
+            fontWeight: '600',
+            color: 'var(--chatbox-tint-primary)',
+            fontSize: 'var(--mantine-font-size-sm)',
+          },
+          close: {
+            width: rem('24px'),
+            height: rem('24px'),
+            color: 'var(--chatbox-tint-secondary)',
+          },
+          content: {
+            backgroundColor: 'var(--chatbox-background-primary)',
+          },
+          overlay: {
+            '--overlay-bg': 'var(--chatbox-background-mask-overlay)',
           },
         }),
       }),
@@ -607,9 +503,6 @@ type ExtendedCustomColors =
   | 'chatbox-primary'
   | 'chatbox-secondary'
   | 'chatbox-tertiary'
-  | 'chatbox-border-primary'
-  | 'chatbox-border-secondary'
-  | 'chatbox-background-error-secondary'
   | DefaultMantineColor
 
 declare module '@mantine/core' {

@@ -12,7 +12,6 @@ export default class PerplexitySettingUtil extends BaseConfig implements ModelSe
     return `Perplexity API (${providerSettings?.models?.find((m) => m.modelId === model)?.nickname || model})`
   }
 
-
   protected async listProviderModels(settings: ProviderSettings) {
     return []
   }

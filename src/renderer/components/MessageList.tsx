@@ -43,9 +43,11 @@ import {
   switchThread,
 } from '@/stores/sessionActions'
 import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/sessionHelpers'
+import { settingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import ActionMenu from './ActionMenu'
 import { ErrorBoundary } from './ErrorBoundary'
+import { BlockCodeCollapsedStateProvider } from './Markdown'
 import Message from './Message'
 import MessageNavigation, { ScrollToBottomButton } from './MessageNavigation'
 import { ScalableIcon } from './ScalableIcon'
@@ -230,122 +232,120 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
 
   return (
     <div className={cn('w-full h-full mx-auto', props.className)}>
-      <div className="overflow-hidden h-full pr-0 pl-1 sm:pl-0 relative" ref={messageListRef}>
-        <Virtuoso
-          style={{ scrollbarGutter: 'stable' }}
-          className={platformType === 'win32' ? 'scrollbar-custom' : ''}
-          data={currentMessageList}
-          ref={virtuoso}
-          followOutput="smooth"
-          {...(sessionScrollPositionCache.has(currentSession.id)
-            ? {
-                restoreStateFrom: sessionScrollPositionCache.get(currentSession.id),
-                // 需要额外设置 initialScrollTop，否则恢复位置后 scrollTop 为 0。这时如果用户没有滚动，那么下次保存时 scrollTop 将记为 0，导致下一次恢复时位置始终为顶部。
-                initialScrollTop: sessionScrollPositionCache.get(currentSession.id)?.scrollTop,
-              }
-            : {
-                initialTopMostItemIndex: currentMessageList.length - 1,
-              })}
-          increaseViewportBy={{ top: 2000, bottom: 2000 }}
-          itemContent={(index, msg) => {
-            return (
-              <Stack
-                key={msg.id}
-                gap={0}
-                className={widthFull ? 'w-full' : 'max-w-4xl mx-auto'}
-                pt={msg.role === 'user' ? 4 : 0}
-              >
-                {currentThreadHash[msg.id] && (
-                  <ThreadLabel thread={currentThreadHash[msg.id]} sessionId={currentSession.id} />
-                )}
-                <ErrorBoundary name={`message-item`}>
-                  <Message
-                    id={msg.id}
-                    msg={msg}
-                    sessionId={currentSession.id}
-                    sessionType={currentSession.type || 'chat'}
-                    className={index === 0 ? 'pt-4' : index === currentMessageList.length - 1 ? '!pb-4' : ''}
-                    collapseThreshold={msg.role === 'system' ? 150 : undefined}
-                    preferCollapsedCodeBlock={index < currentMessageList.length - 10}
-                    buttonGroup={
-                      index === currentMessageList.length - 1 && msg.role === 'assistant' ? 'always' : 'auto'
-                    }
-                    assistantAvatarKey={currentSession.assistantAvatarKey}
-                    sessionPicUrl={currentSession.picUrl}
-                  />
-                </ErrorBoundary>
-                {currentSession.messageForksHash?.[msg.id] && (
-                  <Flex justify="flex-end" mt={-16} pr="md" mr="md" className="z-10 self-end">
-                    <ForkNav
+      <BlockCodeCollapsedStateProvider defaultCollapsed={!!settingsStore.getState().autoCollapseCodeBlock}>
+        <div className="overflow-hidden h-full pr-0 pl-1 sm:pl-0 relative" ref={messageListRef}>
+          <Virtuoso
+            style={{ scrollbarGutter: 'stable' }}
+            className={platformType === 'win32' ? 'scrollbar-custom' : ''}
+            data={currentMessageList}
+            ref={virtuoso}
+            followOutput="smooth"
+            {...(sessionScrollPositionCache.has(currentSession.id)
+              ? {
+                  restoreStateFrom: sessionScrollPositionCache.get(currentSession.id),
+                  // 需要额外设置 initialScrollTop，否则恢复位置后 scrollTop 为 0。这时如果用户没有滚动，那么下次保存时 scrollTop 将记为 0，导致下一次恢复时位置始终为顶部。
+                  initialScrollTop: sessionScrollPositionCache.get(currentSession.id)?.scrollTop,
+                }
+              : {
+                  initialTopMostItemIndex: currentMessageList.length - 1,
+                })}
+            increaseViewportBy={{ top: 2000, bottom: 2000 }}
+            itemContent={(index, msg) => {
+              return (
+                <Stack
+                  key={msg.id}
+                  gap={0}
+                  className={widthFull ? 'w-full' : 'max-w-4xl mx-auto'}
+                  pt={msg.role === 'user' ? 4 : 0}
+                >
+                  {currentThreadHash[msg.id] && (
+                    <ThreadLabel thread={currentThreadHash[msg.id]} sessionId={currentSession.id} />
+                  )}
+                  <ErrorBoundary name={`message-item`}>
+                    <Message
+                      id={msg.id}
+                      msg={msg}
                       sessionId={currentSession.id}
-                      msgId={msg.id}
-                      forks={currentSession.messageForksHash?.[msg.id]}
+                      sessionType={currentSession.type || 'chat'}
+                      className={index === 0 ? 'pt-4' : index === currentMessageList.length - 1 ? '!pb-4' : ''}
+                      collapseThreshold={msg.role === 'system' ? 150 : undefined}
+                      buttonGroup={
+                        index === currentMessageList.length - 1 && msg.role === 'assistant' ? 'always' : 'auto'
+                      }
+                      assistantAvatarKey={currentSession.assistantAvatarKey}
+                      sessionPicUrl={currentSession.picUrl}
                     />
+                  </ErrorBoundary>
+                  {currentSession.messageForksHash?.[msg.id] &&
+                    currentSession.messageForksHash[msg.id].lists.length > 1 && (
+                      <Flex justify="flex-end" mt={-16} pr="md" mr="md" className="z-10 self-end">
+                        <ForkNav
+                          sessionId={currentSession.id}
+                          msgId={msg.id}
+                          forks={currentSession.messageForksHash[msg.id]}
+                        />
+                      </Flex>
+                    )}
+                </Stack>
+              )
+            }}
+            atTopStateChange={setAtTop}
+            atBottomStateChange={setAtBottom}
+            onScroll={handleScroll}
+          />
+
+          {!isSmallScreen ? (
+            <MessageNavigation
+              visible={messageNavigationVisible}
+              onVisibleChange={handleMessageNavigationVisibleChanged}
+              onScrollToTop={handleScrollToTop}
+              onScrollToBottom={handleScrollToBottom}
+              onScrollToPrev={handleScrollToPrev}
+              onScrollToNext={handleScrollToNext}
+            />
+          ) : (
+            <>
+              <Transition mounted={showScrollToPrev && !atTop} transition="fade-down">
+                {(transitionStyle) => (
+                  <Flex
+                    style={transitionStyle}
+                    className="absolute z-10 top-0 left-0 right-0 leading-tight bg-chatbox-background-secondary"
+                  >
+                    {[
+                      { text: t('Return to the top'), icon: IconArrowBarToUp, onClick: handleScrollToTop },
+                      {
+                        text: t('Back to previous message'),
+                        icon: IconArrowUp,
+                        onClick: handleScrollToPrev,
+                      },
+                    ].map((item, idx) => (
+                      <Button
+                        key={item.text}
+                        variant="transparent"
+                        className={cn('w-1/2', idx === 0 ? 'border-r border-r-chatbox-border-primary' : '')}
+                        classNames={{
+                          section: '!mr-xxs',
+                        }}
+                        size="xs"
+                        h="auto"
+                        py={6}
+                        c="chatbox-tertiary"
+                        onClick={item.onClick}
+                        leftSection={<ScalableIcon icon={item.icon} size={16} />}
+                      >
+                        {item.text}
+                      </Button>
+                    ))}
                   </Flex>
                 )}
-              </Stack>
-            )
-          }}
-          atTopStateChange={setAtTop}
-          atBottomThreshold={100}
-          atBottomStateChange={setAtBottom}
-          onScroll={handleScroll}
-        />
-
-        {!isSmallScreen ? (
-          <MessageNavigation
-            visible={messageNavigationVisible}
-            onVisibleChange={handleMessageNavigationVisibleChanged}
-            onScrollToTop={handleScrollToTop}
-            onScrollToBottom={handleScrollToBottom}
-            onScrollToPrev={handleScrollToPrev}
-            onScrollToNext={handleScrollToNext}
-          />
-        ) : (
-          <>
-            <Transition mounted={showScrollToPrev && !atTop} transition="fade-down">
-              {(transitionStyle) => (
-                <Flex
-                  style={transitionStyle}
-                  className="absolute top-0 left-0 right-0 leading-tight bg-[var(--mantine-color-chatbox-background-secondary-filled)]"
-                >
-                  {[
-                    { text: t('Return to the top'), icon: IconArrowBarToUp, onClick: handleScrollToTop },
-                    {
-                      text: t('Back to previous message'),
-                      icon: IconArrowUp,
-                      onClick: handleScrollToPrev,
-                    },
-                  ].map((item, idx) => (
-                    <Button
-                      key={item.text}
-                      variant="transparent"
-                      className={cn(
-                        'w-1/2',
-                        idx === 0 ? 'border-r border-r-[var(--mantine-color-chatbox-border-primary-outline)]' : ''
-                      )}
-                      classNames={{
-                        section: '!mr-xxs',
-                      }}
-                      size="xs"
-                      h="auto"
-                      py={6}
-                      c="chatbox-tertiary"
-                      onClick={item.onClick}
-                      leftSection={<ScalableIcon icon={item.icon} size={16} />}
-                    >
-                      {item.text}
-                    </Button>
-                  ))}
-                </Flex>
-              )}
-            </Transition>
-            <Transition mounted={!atBottom} transition="slide-up">
-              {(transitionStyle) => <ScrollToBottomButton onClick={handleScrollToBottom} style={transitionStyle} />}
-            </Transition>
-          </>
-        )}
-      </div>
+              </Transition>
+              <Transition mounted={!atBottom} transition="slide-up">
+                {(transitionStyle) => <ScrollToBottomButton onClick={handleScrollToBottom} style={transitionStyle} />}
+              </Transition>
+            </>
+          )}
+        </div>
+      </BlockCodeCollapsedStateProvider>
     </div>
   )
 })
@@ -428,7 +428,7 @@ const ThreadLabel: FC<ThreadLabelProps> = memo(({ thread, sessionId }) => {
 
   const handleEditThreadName = useCallback(async () => {
     if (!thread.id) return
-    await NiceModal.show('thread-name-edit', { threadId: thread.id })
+    await NiceModal.show('thread-name-edit', { sessionId, threadId: thread.id })
   }, [thread.id])
 
   const handleContinueThread = useCallback(() => {

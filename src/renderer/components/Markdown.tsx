@@ -1,64 +1,133 @@
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { useTheme } from '@mui/material'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  createContext,
+  type ElementType,
+  memo,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { a11yDark, atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import rehypeKatex from 'rehype-katex'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import * as codeblockStateRecorder from '../packages/codeblock_state_recorder'
 import * as latex from '../packages/latex'
-import * as toastActions from '../stores/toastActions'
 import { isRenderableCodeLanguage } from './Artifact'
-
 import 'katex/dist/katex.min.css' // `rehype-katex` does not import the CSS for you
 import NiceModal from '@ebay/nice-modal-react'
-import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos'
-import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import ExpandLessIcon from '@mui/icons-material/ExpandLess'
-import PlayCircleIcon from '@mui/icons-material/PlayCircle'
-import { copyToClipboard } from '@/packages/navigator'
+import { ActionIcon, Flex, Loader, Stack, Text, Tooltip, useComputedColorScheme } from '@mantine/core'
+import {
+  IconBrandCpp,
+  IconBrandCSharp,
+  IconBrandCss3,
+  IconBrandDocker,
+  IconBrandGolang,
+  IconBrandJavascript,
+  IconBrandKotlin,
+  IconBrandPhp,
+  IconBrandPowershell,
+  IconBrandPython,
+  IconBrandReact,
+  IconBrandRust,
+  IconBrandSass,
+  IconBrandSwift,
+  IconBrandTypescript,
+  IconBrandVue,
+  IconCheck,
+  IconChevronRight,
+  IconCode,
+  IconCopy,
+  IconFileTypeCsv,
+  IconFileTypeHtml,
+  IconFileTypeSql,
+  IconFileTypeSvg,
+  IconFileTypeTxt,
+  IconFileTypeXml,
+  IconJson,
+  IconPlayerPlayFilled,
+  type IconProps,
+  IconWorldUpload,
+} from '@tabler/icons-react'
+import clsx from 'clsx'
+import { visit } from 'unist-util-visit'
+import { useCopied } from '@/hooks/useCopied'
+import { deployHtmlToEdgeOne } from '../packages/edgeone'
+import * as toastActions from '../stores/toastActions'
+import IconDart from './icons/Dart'
+import IconJava from './icons/Java'
 import { MessageMermaid, SVGPreview } from './Mermaid'
+import { ScalableIcon } from './ScalableIcon'
 
-export default function Markdown(props: {
+const CODE_BLOCK_COLLAPSE_LINE_THRESHOLD = 7
+
+function remarkAddCodeIndex() {
+  // biome-ignore lint/suspicious/noExplicitAny: remark AST nodes lack a friendly type here
+  return (tree: any) => {
+    let counter = 0
+    visit(tree, 'code', (node) => {
+      node.data = node.data || {}
+      node.data.hProperties = node.data.hProperties || {}
+      node.data.hProperties['data-code-index'] = counter++
+    })
+  }
+}
+
+function Markdown(props: {
   children: string
+  uniqueId?: string
   enableLaTeXRendering?: boolean
   enableMermaidRendering?: boolean
   hiddenCodeCopyButton?: boolean
   className?: string
   generating?: boolean
-  preferCollapsedCodeBlock?: boolean
 }) {
   const {
     children,
+    uniqueId,
     enableLaTeXRendering = true,
     enableMermaidRendering = true,
     hiddenCodeCopyButton,
-    preferCollapsedCodeBlock,
     className,
     generating,
   } = props
-  return useMemo(
-    () => (
-      <ReactMarkdown
-        remarkPlugins={enableLaTeXRendering ? [remarkGfm, remarkMath, remarkBreaks] : [remarkGfm, remarkBreaks]}
-        rehypePlugins={[rehypeKatex]}
-        className={`break-words ${className || ''}`}
-        // react-markdown 默认的 defaultUrlTransform 会错误地编码 URL 中的 Query，比如 & 会被编码成 &amp;
-        // 这里改用 sanitizeUrl 库，同时也可以避免 XSS 攻击
-        urlTransform={(url) => sanitizeUrl(url)}
-        components={{
-          code: (props: any) =>
-            CodeRenderer({
-              ...props,
-              hiddenCodeCopyButton,
-              enableMermaidRendering,
-              generating,
-              preferCollapsedCodeBlock,
-            }),
+
+  const codeFences = useMemo(() => (children.match(/```/g) || []).length, [children])
+  const generatingCodeIndex = useMemo(() => (codeFences % 2 === 0 ? -1 : Math.floor(codeFences / 2)), [codeFences])
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={
+        enableLaTeXRendering
+          ? [remarkGfm, remarkMath, remarkBreaks, remarkAddCodeIndex]
+          : [remarkGfm, remarkBreaks, remarkAddCodeIndex]
+      }
+      rehypePlugins={[rehypeKatex]}
+      className={`break-words ${className || ''}`}
+      // react-markdown's default defaultUrlTransform will incorrectly encode query parameters in URLs (e.g. & becomes &amp;)
+      // Use sanitizeUrl here to avoid that and to prevent XSS attacks
+      urlTransform={(url) => sanitizeUrl(url)}
+      components={useMemo(
+        () => ({
+          // biome-ignore lint/suspicious/noExplicitAny: react-markdown code component props are loosely typed
+          code: (props: any) => {
+            const codeIndex = typeof props['data-code-index'] === 'number' ? props['data-code-index'] : -1
+            return (
+              <CodeRenderer
+                {...props}
+                uniqueId={uniqueId ? `${uniqueId}-code-${codeIndex}` : undefined}
+                hiddenCodeCopyButton={hiddenCodeCopyButton}
+                enableMermaidRendering={enableMermaidRendering}
+                generating={generating && generatingCodeIndex === codeIndex}
+              />
+            )
+          },
           a: ({ node, ...props }) => (
             <a
               {...props}
@@ -69,263 +138,374 @@ export default function Markdown(props: {
               }}
             />
           ),
-        }}
-      >
-        {enableLaTeXRendering ? latex.processLaTeX(children) : children}
-      </ReactMarkdown>
-    ),
-    [children, enableLaTeXRendering, enableMermaidRendering, generating]
+        }),
+        [uniqueId, hiddenCodeCopyButton, enableMermaidRendering, generating, generatingCodeIndex]
+      )}
+    >
+      {enableLaTeXRendering ? latex.processLaTeX(children) : children}
+    </ReactMarkdown>
   )
 }
 
-export function CodeRenderer(props: {
-  children: string
-  className?: string
-  hiddenCodeCopyButton?: boolean
-  generating?: boolean
-  enableMermaidRendering?: boolean
-  preferCollapsedCodeBlock?: boolean
-}) {
-  const theme = useTheme()
-  return useMemo(() => {
-    const { children, className, hiddenCodeCopyButton, generating, enableMermaidRendering, preferCollapsedCodeBlock } =
-      props
+export default memo(Markdown)
+
+export const CodeRenderer = memo(
+  (props: {
+    children: string
+    className?: string
+    uniqueId?: string
+    hiddenCodeCopyButton?: boolean
+    generating?: boolean
+    enableMermaidRendering?: boolean
+  }) => {
+    const theme = useTheme()
+    const { children, className, hiddenCodeCopyButton, generating, enableMermaidRendering } = props
     const language = /language-(\w+)/.exec(className || '')?.[1] || 'text'
     if (!String(children).includes('\n')) {
-      return <InlineCode children={children} className={className} />
+      return <InlineCode className={className}>{children}</InlineCode>
     }
     if (language === 'mermaid' && enableMermaidRendering) {
       return <MessageMermaid source={String(children)} theme={theme.palette.mode} generating={generating} />
     }
-    if (
-      language === 'svg' ||
-      (language === 'text' && String(children).startsWith('<svg')) ||
-      (language === 'xml' && String(children).startsWith('<svg')) ||
-      (language === 'html' && String(children).startsWith('<svg'))
-    ) {
-      return (
-        <div>
-          <BlockCode
-            children={children}
-            hiddenCodeCopyButton={hiddenCodeCopyButton}
-            language={language}
-            preferCollapsed={true}
-            generating={generating}
-          />
-          <SVGPreview xmlCode={String(children)} className="max-w-sm" generating={generating} />
-        </div>
-      )
-    }
-    return (
-      <BlockCode
-        children={children}
-        hiddenCodeCopyButton={hiddenCodeCopyButton}
-        language={language}
-        preferCollapsed={preferCollapsedCodeBlock}
-        generating={generating}
-      />
-    )
-  }, [props.children, theme.palette.mode, props.enableMermaidRendering, props.generating])
-}
 
-function InlineCode(props: { children: string; className?: string }) {
+    return (
+      <>
+        <BlockCode
+          uniqueId={props.uniqueId}
+          hiddenCodeCopyButton={hiddenCodeCopyButton}
+          language={language}
+          generating={generating}
+        >
+          {children}
+        </BlockCode>
+        {language === 'svg' ||
+        (language === 'text' && String(children).startsWith('<svg')) ||
+        (language === 'xml' && String(children).startsWith('<svg')) ||
+        (language === 'html' && String(children).startsWith('<svg')) ? (
+          <SVGPreview xmlCode={String(children)} className="max-w-sm" generating={generating} />
+        ) : null}
+      </>
+    )
+  }
+)
+
+const InlineCode = memo((props: { children: string; className?: string }) => {
   const { children, className } = props
-  const theme = useTheme()
   return (
     <code
-      className={className}
-      style={{
-        backgroundColor: theme.palette.mode === 'dark' ? '#333' : '#f1f1f1',
-        padding: '2px 4px',
-        margin: '0 4px',
-        borderRadius: '4px',
-        border: '1px solid',
-        borderColor: theme.palette.mode === 'dark' ? '#444' : '#ddd',
-      }}
+      className={clsx(
+        'bg-chatbox-background-secondary border border-solid border-chatbox-border-secondary rounded-sm px-1 py-0.5 mx-1',
+        className
+      )}
     >
       {children}
     </code>
   )
+})
+
+// Define the Context type
+interface BlockCodeCollapsedStateContextType {
+  collapsedStates: Record<string, boolean>
+  toggleCollapse: (id: string) => void
+  setCollapse: (id: string, collapsed: boolean) => void
+  isCollapsed: (id: string) => boolean
+  resetAll: () => void
 }
 
-function BlockCode(props: {
+// Create the Context
+const BlockCodeCollapsedStateContext = createContext<BlockCodeCollapsedStateContextType | undefined>(undefined)
+
+// Provider Props type
+interface BlockCodeCollapsedStateProviderProps {
+  children: ReactNode
+  defaultCollapsed?: boolean // default collapsed state
+}
+
+// Provider component
+export const BlockCodeCollapsedStateProvider: React.FC<BlockCodeCollapsedStateProviderProps> = ({
+  children,
+  defaultCollapsed = false,
+}) => {
+  const [collapsedStates, setCollapsedStates] = useState<Record<string, boolean>>({})
+
+  // Toggle collapse state
+  const toggleCollapse = useCallback(
+    (id: string) => {
+      setCollapsedStates((prev) => ({
+        ...prev,
+        [id]: typeof prev[id] === 'boolean' ? !prev[id] : !defaultCollapsed,
+      }))
+    },
+    [defaultCollapsed]
+  )
+
+  // Set specific collapse state
+  const setCollapse = useCallback((id: string, collapsed: boolean) => {
+    setCollapsedStates((prev) => ({
+      ...prev,
+      [id]: collapsed,
+    }))
+  }, [])
+
+  // Check if collapsed
+  const isCollapsed = useCallback(
+    (id: string) => collapsedStates[id] ?? defaultCollapsed,
+    [collapsedStates, defaultCollapsed]
+  )
+
+  // Reset all states
+  const resetAll = useCallback(() => {
+    setCollapsedStates({})
+  }, [])
+
+  const value: BlockCodeCollapsedStateContextType = useMemo(
+    () => ({
+      collapsedStates,
+      toggleCollapse,
+      setCollapse,
+      isCollapsed,
+      resetAll,
+    }),
+    [collapsedStates, toggleCollapse, setCollapse, isCollapsed, resetAll]
+  )
+
+  return <BlockCodeCollapsedStateContext.Provider value={value}>{children}</BlockCodeCollapsedStateContext.Provider>
+}
+
+// Custom hook
+export const useBlockCodeCollapsedState = (messageId: string) => {
+  const context = useContext(BlockCodeCollapsedStateContext)
+
+  if (context === undefined) {
+    throw new Error('useBlockCodeCollapsedState must be used within a BlockCodeCollapsedStateProvider')
+  }
+
+  if (!messageId) {
+    console.warn('useBlockCodeCollapsedState: messageId is empty, collapse state may not work correctly')
+  }
+
+  return {
+    collapsed: context.isCollapsed(messageId),
+    toggleCollapsed: () => context.toggleCollapse(messageId),
+    setCollapsed: (collapsed: boolean) => context.setCollapse(messageId, collapsed),
+  }
+}
+
+type BlockCodeProps = {
   language: string
   children: string
+  uniqueId?: string
   hiddenCodeCopyButton?: boolean
-  preferCollapsed?: boolean
   generating?: boolean
-}) {
-  const { children, hiddenCodeCopyButton, preferCollapsed, language, generating } = props
-  const theme = useTheme()
+}
+
+const CodeIcons: { [key: string]: ElementType<IconProps> } = {
+  HTML: IconFileTypeHtml,
+  XML: IconFileTypeXml,
+  JSON: IconJson,
+  CSS: IconBrandCss3,
+  SASS: IconBrandSass,
+  SCSS: IconBrandSass,
+  CSV: IconFileTypeCsv,
+  SVG: IconFileTypeSvg,
+  TEXT: IconFileTypeTxt,
+  JAVASCRIPT: IconBrandJavascript,
+  JS: IconBrandJavascript,
+  TYPESCRIPT: IconBrandTypescript,
+  TS: IconBrandTypescript,
+  JSX: IconBrandReact,
+  TSX: IconBrandReact,
+  VUE: IconBrandVue,
+  JAVA: IconJava,
+  SWIFT: IconBrandSwift,
+  KOTLIN: IconBrandKotlin,
+  PYTHON: IconBrandPython,
+  PY: IconBrandPython,
+  PHP: IconBrandPhp,
+  GO: IconBrandGolang,
+  GOLANG: IconBrandGolang,
+  CPP: IconBrandCpp,
+  CSHARP: IconBrandCSharp,
+  RUST: IconBrandRust,
+  BASH: IconBrandPowershell,
+  SHELL: IconBrandPowershell,
+  POWERSHELL: IconBrandPowershell,
+  SQL: IconFileTypeSql,
+  MYSQL: IconFileTypeSql,
+  DOCKER: IconBrandDocker,
+  DOCKERFILE: IconBrandDocker,
+  DART: IconDart,
+}
+
+const BlockCode = memo(({ children, uniqueId, hiddenCodeCopyButton, language, generating }: BlockCodeProps) => {
   const { t } = useTranslation()
-
-  const initialState = useMemo(
-    () =>
-      codeblockStateRecorder.needCollapse({
-        content: String(children),
-        language,
-        generating,
-        preferCollapsed,
-      }),
-    []
-  )
-  const [collapsedState, setCollapsedState] = useState<codeblockStateRecorder.CodeblockState>(initialState)
-  useEffect(() => {
-    if (generating) {
-      codeblockStateRecorder.saveState({
-        content: String(children),
-        language,
-        generating,
-        preferCollapsed,
-        collapsed: false, // 如果重新生成消息，那么这个代码快应该保持展开的状态
-      })
-    }
-  }, [generating])
-
-  const languageName = useMemo(() => {
-    return language.toUpperCase()
-  }, [language])
+  const colorScheme = useComputedColorScheme()
+  const languageName = useMemo(() => language.toUpperCase(), [language])
   const isRenderableCode = useMemo(() => isRenderableCodeLanguage(language), [language])
+  const [deploying, setDeploying] = useState(false)
+  const canDeploy = useMemo(() => isRenderableCode && String(children).trim().length > 0, [children, isRenderableCode])
 
-  const onClickCollapse = (event: React.MouseEvent) => {
-    event.stopPropagation() // 优化搜索窗口中的展开逻辑
-    event.preventDefault()
-    const newState = codeblockStateRecorder.saveState({
-      collapsed: !collapsedState.collapsed,
-      content: String(children),
-      language,
-      generating,
-      preferCollapsed,
-    })
-    setCollapsedState(newState)
-  }
+  const icon = useMemo(() => CodeIcons[languageName] || IconCode, [languageName])
+
+  const { copied, copy } = useCopied(String(children))
   const onClickCopy = useCallback(
     (event: React.MouseEvent) => {
-      event.stopPropagation() // 优化搜索窗口中的展开逻辑
+      event.stopPropagation() // Avoid triggering parent select behavior in search window
       event.preventDefault()
-      copyToClipboard(String(children))
-      toastActions.add(t('copied to clipboard'))
+      copy()
     },
-    [children]
+    [copy]
   )
   const onClickArtifact = useCallback(
     (event: React.MouseEvent) => {
-      event.stopPropagation() // 优化搜索窗口中的展开逻辑
+      event.stopPropagation() // Avoid triggering parent select behavior in search window
       event.preventDefault()
       NiceModal.show('artifact-preview', {
         htmlCode: String(children),
-      })
+      }).catch(() => null)
     },
     [children]
   )
 
-  return (
-    <div>
-      <div
-        className="py-0.5 px-1"
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          width: '100%',
-          backgroundColor: 'rgb(50, 50, 50)',
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-          borderTopLeftRadius: '0.3rem',
-          borderTopRightRadius: '0.3rem',
-          borderBottomLeftRadius: '0',
-          borderBottomRightRadius: '0',
-        }}
-      >
-        <div className="flex items-center">
-          <span
-            className="text-gray-400/30 mx-1"
-            style={{
-              fontSize: theme.typography.body1.fontSize,
-            }}
-          >
-            {languageName}
-          </span>
-        </div>
-        <div className="flex items-center">
-          {collapsedState.shouldCollapse &&
-            (collapsedState.collapsed ? (
-              <ArrowForwardIosIcon
-                className="cursor-pointer text-white opacity-30 hover:bg-gray-800 hover:opacity-100 mx-1"
-                fontSize="small"
-                onClick={onClickCollapse}
-              />
-            ) : (
-              <ArrowForwardIosIcon
-                className="cursor-pointer text-white opacity-30 hover:bg-gray-800 hover:opacity-100 mx-1 rotate-90"
-                fontSize="small"
-                onClick={onClickCollapse}
-              />
-            ))}
-          {isRenderableCode && (
-            <PlayCircleIcon
-              className="cursor-pointer text-white opacity-30 hover:bg-gray-800 hover:opacity-100 mx-1"
-              fontSize="small"
-              onClick={onClickArtifact}
-            />
-          )}
-          {!hiddenCodeCopyButton && (
-            <ContentCopyIcon
-              className="cursor-pointer text-white opacity-30 hover:bg-gray-800 hover:opacity-100 mx-1"
-              fontSize="small"
-              onClick={onClickCopy}
-            />
-          )}
-        </div>
-      </div>
-      <div style={{ position: 'relative' }} className="group">
-        <div className={collapsedState.collapsed ? 'max-h-28 overflow-hidden' : ''}>
-          <SyntaxHighlighter
-            children={children}
-            style={theme.palette.mode === 'dark' ? atomDark : a11yDark}
-            language={language}
-            PreTag="div"
-            customStyle={{
-              marginTop: '0',
-              margin: '0',
-              borderTopLeftRadius: '0',
-              borderTopRightRadius: '0',
-              borderBottomLeftRadius: '0.3rem',
-              borderBottomRightRadius: '0.3rem',
-              border: 'none',
-            }}
-          />
-        </div>
-        {collapsedState.collapsed && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: '80px',
-              background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'flex-end',
-              cursor: 'pointer',
-            }}
-            onClick={onClickCollapse}
-          >
-            <span className="text-white mb-2 font-bold">{t('Show all ({{x}})', { x: collapsedState.lines })}</span>
-          </div>
-        )}
-        {!collapsedState.collapsed && collapsedState.shouldCollapse && (
-          <span
-            className="
-                                absolute bottom-0 left-0 right-0 w-12 mx-auto
-                                cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity duration-300
-                                text-white font-bold bg-slate-600/80 py-0 px-4 rounded-t-md"
-            onClick={onClickCollapse}
-          >
-            <ExpandLessIcon className="text-white" fontSize="small" />
-          </span>
-        )}
-      </div>
-    </div>
+  const onClickDeploy = useCallback(
+    async (event: React.MouseEvent) => {
+      event.stopPropagation()
+      event.preventDefault()
+      if (!canDeploy) {
+        return
+      }
+      setDeploying(true)
+      try {
+        const url = await deployHtmlToEdgeOne(String(children))
+        await NiceModal.show('edgeone-deploy-success', { url })
+      } catch (error) {
+        toastActions.add((error as Error)?.message || t('Publish failed'))
+      } finally {
+        setDeploying(false)
+      }
+    },
+    [canDeploy, children, t]
   )
-}
+
+  const needCollapse = useMemo(
+    () => !!uniqueId && children.split('\n').length > CODE_BLOCK_COLLAPSE_LINE_THRESHOLD,
+    [uniqueId, children]
+  )
+  const { collapsed, toggleCollapsed } = useBlockCodeCollapsedState(uniqueId || '')
+  const onClickCollapse = (event: React.MouseEvent) => {
+    event.stopPropagation() // Avoid triggering parent select behavior in search window
+    event.preventDefault()
+    toggleCollapsed()
+  }
+
+  return (
+    <Stack gap={0}>
+      <Flex
+        justify="space-between"
+        className={clsx(
+          'p-xs bg-chatbox-background-secondary rounded-t-md border border-solid border-[var(--chatbox-border-primary)]',
+          !needCollapse || !collapsed ? 'sticky top-0 z-10' : ''
+        )}
+      >
+        <Flex align="center" gap="xs">
+          {generating ? (
+            <Loader size={10} />
+          ) : (
+            <ScalableIcon size={16} icon={icon} color="var(--chatbox-tint-tertiary)" />
+          )}
+          <Text span c="chatbox-tertiary" fw="600" className="font-mono">
+            {languageName}
+          </Text>
+        </Flex>
+
+        <Flex gap="xs" align="center">
+          {!hiddenCodeCopyButton && (
+            <Tooltip label={t('copy')} withArrow openDelay={1000}>
+              <ActionIcon
+                variant="transparent"
+                color={copied ? 'chatbox-success' : 'chatbox-tertiary'}
+                size={20}
+                onClick={onClickCopy}
+              >
+                {copied ? <IconCheck /> : <IconCopy />}
+              </ActionIcon>
+            </Tooltip>
+          )}
+
+          {isRenderableCode && (
+            <Tooltip label={t('Preview')} withArrow openDelay={1000}>
+              <ActionIcon variant="transparent" color="chatbox-tertiary" size={20} onClick={onClickArtifact}>
+                <IconPlayerPlayFilled />
+              </ActionIcon>
+            </Tooltip>
+          )}
+
+          {canDeploy && (
+            <Tooltip label={t('Publish Webpage')} withArrow openDelay={1000}>
+              <ActionIcon
+                variant="transparent"
+                color="chatbox-tertiary"
+                size={20}
+                onClick={onClickDeploy}
+                disabled={deploying}
+              >
+                {deploying ? <Loader size={12} /> : <IconWorldUpload />}
+              </ActionIcon>
+            </Tooltip>
+          )}
+
+          {needCollapse && (
+            <Tooltip label={collapsed ? t('Expand') : t('Collapse')} withArrow openDelay={1000}>
+              <ActionIcon
+                variant="transparent"
+                color="chatbox-tertiary"
+                size={20}
+                onClick={onClickCollapse}
+                className={clsx('transition-transform ease-linear', !collapsed ? 'rotate-90' : '')}
+              >
+                <IconChevronRight />
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Flex>
+      </Flex>
+
+      <Stack
+        className={clsx(
+          'border border-t-0 border-solid border-[var(--chatbox-border-primary)] rounded-b-md',
+          needCollapse && collapsed ? 'h-[10rem]' : ''
+        )}
+      >
+        <SyntaxHighlighter
+          style={colorScheme !== 'light' ? oneDark : oneLight}
+          language={language}
+          PreTag="div"
+          showLineNumbers
+          customStyle={{
+            marginTop: '0',
+            margin: '0',
+            borderTopLeftRadius: '0',
+            borderTopRightRadius: '0',
+            borderBottomLeftRadius: 'var(--chatbox-radius-md)',
+            borderBottomRightRadius: 'var(--chatbox-radius-md)',
+            border: 'none',
+            background: 'transparent !important',
+            ...(generating && needCollapse && collapsed
+              ? {
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'flex-end',
+                }
+              : {}),
+          }}
+          codeTagProps={{
+            className: '!bg-transparent',
+          }}
+        >
+          {children}
+        </SyntaxHighlighter>
+      </Stack>
+    </Stack>
+  )
+})

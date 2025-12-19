@@ -40,6 +40,7 @@ export interface CallChatCompletionOptions<Tools extends ToolSet = ToolSet> {
   onResultChange?: OnResultChange
   tools?: Tools
   providerOptions?: ProviderOptions
+  maxSteps?: number
 }
 
 export interface ResultChange {

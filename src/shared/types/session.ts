@@ -23,6 +23,7 @@ export const SearchResultItemSchema = z.object({
   title: z.string(),
   link: z.string(),
   snippet: z.string(),
+  rawContent: z.string().nullable().optional(),
 })
 
 export const SearchResultSchema = z.object({
@@ -139,6 +140,28 @@ const CancelFunctionSchema = z.custom<(() => void) | undefined>(
   { message: 'Must be a function or undefined' }
 )
 
+const MessageUsageSchema = z.object({
+  inputTokens: z.number().optional().catch(undefined),
+  /**
+  The number of output (completion) tokens used.
+     */
+  outputTokens: z.number().optional().catch(undefined),
+  /**
+  The total number of tokens as reported by the provider.
+  This number might be different from the sum of `inputTokens` and `outputTokens`
+  and e.g. include reasoning tokens or other overhead.
+     */
+  totalTokens: z.number().optional().catch(undefined),
+  /**
+  The number of reasoning tokens used.
+     */
+  reasoningTokens: z.number().optional().catch(undefined),
+  /**
+  The number of cached input tokens.
+     */
+  cachedInputTokens: z.number().optional().catch(undefined),
+})
+
 export const MessageSchema = z.object({
   id: z.string(),
   role: z.nativeEnum(MessageRoleEnum),
@@ -159,7 +182,8 @@ export const MessageSchema = z.object({
   status: z.array(MessageStatusSchema).optional(),
   wordCount: z.number().optional(),
   tokenCount: z.number().optional(), // output token count
-  tokensUsed: z.number().optional(),
+  tokensUsed: z.number().optional(), // deprecated, use `usage` instead
+  usage: MessageUsageSchema.optional().catch(undefined),
   timestamp: z.number().optional(),
   firstTokenLatency: z.number().optional(),
   finishReason: z.string().optional(),

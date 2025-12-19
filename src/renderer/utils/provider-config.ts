@@ -23,7 +23,7 @@ const CustomProviderConfigSchema = z.object({
   isCustom: z.literal(true).catch(true),
   id: z.string(),
   name: z.string(),
-  type: z.enum(['openai', 'anthropic']),
+  type: z.enum(['openai', 'openai-responses', 'anthropic']),
   iconUrl: z.string().optional(),
   urls: z
     .object({
@@ -58,10 +58,17 @@ function parseProviderConfig(json: unknown): ProviderInfo | (ProviderSettings & 
   } else {
     const parsedCustom = parsed as z.infer<typeof CustomProviderConfigSchema>
     // Convert to ProviderInfo format
+    const providerType =
+      parsedCustom.type === 'openai'
+        ? ModelProviderType.OpenAI
+        : parsedCustom.type === 'openai-responses'
+          ? ModelProviderType.OpenAIResponses
+          : ModelProviderType.Claude
+
     const providerInfo: ProviderInfo = {
       id: parsedCustom.id,
       name: parsedCustom.name,
-      type: parsedCustom.type === 'openai' ? ModelProviderType.OpenAI : ModelProviderType.OpenAI, // Default to OpenAI for now
+      type: providerType,
       urls: parsedCustom.urls,
       iconUrl: parsedCustom.iconUrl,
       isCustom: true,

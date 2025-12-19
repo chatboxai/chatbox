@@ -40,7 +40,15 @@ function getSearchProviders() {
       if (!settings.webSearch.tavilyApiKey) {
         throw ChatboxAIAPIError.fromCodeName('tavily_api_key_required', 'tavily_api_key_required')
       }
-      selectedProviders.push(new TavilySearch(settings.webSearch.tavilyApiKey))
+      selectedProviders.push(
+        new TavilySearch(
+          settings.webSearch.tavilyApiKey,
+          settings.webSearch.tavilySearchDepth,
+          settings.webSearch.tavilyMaxResults,
+          settings.webSearch.tavilyTimeRange,
+          settings.webSearch.tavilyIncludeRawContent
+        )
+      )
       break
     default:
       throw new Error(`Unsupported search provider: ${provider}`)
@@ -89,6 +97,7 @@ async function _searchRelatedResults(query: string, signal?: AbortSignal) {
     title: item.title,
     snippet: truncate(item.snippet, { length: 150 }),
     link: item.link,
+    rawContent: item.rawContent,
   }))
 }
 

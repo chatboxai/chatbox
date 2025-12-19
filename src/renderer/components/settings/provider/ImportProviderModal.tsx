@@ -1,4 +1,4 @@
-import { Box, Button, Flex, Modal, ScrollArea, Stack, Text, TextInput } from '@mantine/core'
+import { Box, Button, Flex, ScrollArea, Stack, Text, TextInput } from '@mantine/core'
 import { IconAlertTriangle } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback } from 'react'
@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import type { CustomProviderBaseInfo, ModelProviderEnum, ProviderInfo, ProviderSettings } from 'src/shared/types'
 import { ModelProviderType } from 'src/shared/types'
 import { ModelList } from '@/components/ModelList'
+import { Modal } from '@/components/Overlay'
 import { ScalableIcon } from '@/components/ScalableIcon'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
@@ -23,9 +24,9 @@ const readOnlyInputStyles = {
     fontWeight: 'normal',
   },
   input: {
-    backgroundColor: 'var(--mantine-color-chatbox-background-secondary-text)',
+    backgroundColor: 'var(--chatbox-background-secondary)',
     border: 'none',
-    color: 'var(--mantine-color-chatbox-primary-text)',
+    color: 'var(--chatbox-tint-primary)',
     cursor: 'default',
   },
 }
@@ -53,6 +54,10 @@ export function ImportProviderModal({ opened, onClose, importedConfig, existingP
   const apiPath = importedConfig?.apiPath || ''
   const apiKey = importedConfig?.apiKey || ''
   const urls = importedConfig && 'urls' in importedConfig ? importedConfig?.urls : existingProvider?.urls || {}
+  const providerType =
+    (importedConfig && 'type' in importedConfig ? importedConfig.type : undefined) ||
+    (existingProvider && 'type' in existingProvider ? existingProvider.type : undefined) ||
+    ModelProviderType.OpenAI
 
   // Filter out duplicate model IDs, fallback to existing provider models
   const allModels = importedConfig?.models || existingProvider?.models || []
@@ -86,7 +91,7 @@ export function ImportProviderModal({ opened, onClose, importedConfig, existingP
       const baseProviderInfo: CustomProviderBaseInfo = {
         id: providerId,
         name: providerName,
-        type: ModelProviderType.OpenAI,
+        type: providerType,
         iconUrl: importedConfig && 'iconUrl' in importedConfig ? importedConfig?.iconUrl : undefined,
         urls,
         isCustom: true,
@@ -126,6 +131,7 @@ export function ImportProviderModal({ opened, onClose, importedConfig, existingP
     t,
     onClose,
     importedConfig,
+    providerType,
   ])
 
   return (
@@ -156,11 +162,11 @@ export function ImportProviderModal({ opened, onClose, importedConfig, existingP
             gap="xs"
             p="sm"
             style={{
-              backgroundColor: 'var(--mantine-color-chatbox-background-error-secondary-5)',
+              backgroundColor: 'var(--chatbox-background-error-secondary)',
               borderRadius: '8px',
             }}
           >
-            <ScalableIcon icon={IconAlertTriangle} color="var(--mantine-color-chatbox-error-5)" />
+            <ScalableIcon icon={IconAlertTriangle} color="var(--chatbox-tint-error)" />
             <Box flex={1}>
               <Text size="sm" fw={600} c="chatbox-error">
                 {t('Provider already exists')}

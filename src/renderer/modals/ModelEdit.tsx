@@ -1,12 +1,18 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
-import { Button, Checkbox, Flex, Modal, NumberInput, Stack, Text, TextInput, Select } from '@mantine/core'
+import { Button, Checkbox, Flex, Loader, NumberInput, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ProviderModelInfo } from 'src/shared/types'
+import type { ProviderModelInfo } from 'src/shared/types'
+import { createModelDependencies } from '@/adapters'
+import { Modal } from '@/components/Overlay'
+import platform from '@/platform'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { type ModelTestState, testModelCapabilities } from '@/utils/model-tester'
 
-const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo }) => {
+const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; providerId?: string }) => {
   const modal = useModal()
   const { t } = useTranslation()
+  const settings = useSettingsStore((state) => state)
 
   const isNew = !props.model
   const [modelId, setModelId] = useState(props.model?.modelId || '')
@@ -15,6 +21,9 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo }) => {
   const [type, setType] = useState<ProviderModelInfo['type']>(props.model?.type || 'chat')
   const [contextWindow, setContextWindow] = useState<number | undefined>(props.model?.contextWindow)
   const [maxOutput, setMaxOutput] = useState<number | undefined>(props.model?.maxOutput)
+  const [testState, setTestState] = useState<ModelTestState>({
+    testing: false,
+  })
 
   const typeOptions = [
     { value: 'chat', label: t('Chat')?.toString() ?? 'Chat' },
@@ -29,7 +38,34 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo }) => {
     setType(props.model?.type || 'chat')
     setContextWindow(props.model?.contextWindow)
     setMaxOutput(props.model?.maxOutput)
+    setTestState({ testing: false })
   }, [props])
+
+  const handleTestModel = async () => {
+    if (!modelId || !props.providerId) return
+
+    const configs = await platform.getConfig()
+    const dependencies = await createModelDependencies()
+
+    await testModelCapabilities({
+      providerId: props.providerId,
+      modelId,
+      settings,
+      configs,
+      dependencies,
+      onStateChange: (state) => {
+        setTestState(state)
+
+        // Auto-enable capabilities based on test results
+        if (state.visionTest?.status === 'success') {
+          setCapabilities((prev = []) => (prev.includes('vision') ? prev : [...prev, 'vision']))
+        }
+        if (state.toolTest?.status === 'success') {
+          setCapabilities((prev = []) => (prev.includes('tool_use') ? prev : [...prev, 'tool_use']))
+        }
+      },
+    })
+  }
 
   const handleCancel = () => {
     modal.resolve()
@@ -180,8 +216,22 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo }) => {
         </Stack>
 
         <Flex align="center" justify="flex-end" gap="xs">
+          <Text>
+            {testState.basicTest?.status === 'success' ? (
+              <Text c="chatbox-success">{t('Test successful')}</Text>
+            ) : testState.basicTest?.status === 'error' ? (
+              <Tooltip label={testState.basicTest.error} multiline maw={300}>
+                <Text c="chatbox-error" style={{ cursor: 'help' }}>
+                  {t('Test failed')}
+                </Text>
+              </Tooltip>
+            ) : null}
+          </Text>
           <Button onClick={handleCancel} color="chatbox-gray" variant="light">
             {t('Cancel')}
+          </Button>
+          <Button variant="light" onClick={handleTestModel}>
+            {testState.testing ? <Loader size="xs" /> : t('Test Model')}
           </Button>
           <Button onClick={handleSave}>{t('Save')}</Button>
         </Flex>

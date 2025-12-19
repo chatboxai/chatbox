@@ -1,13 +1,21 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Button, Flex } from '@mantine/core'
-import { IconClearAll, IconDeviceFloppy, IconDots, IconHistory, IconSearch, IconTrash } from '@tabler/icons-react'
+import {
+  IconClearAll,
+  IconCode,
+  IconDeviceFloppy,
+  IconDots,
+  IconHistory,
+  IconSearch,
+  IconTrash,
+} from '@tabler/icons-react'
 import { useSetAtom } from 'jotai'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useIsLargeScreen, useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform from '@/platform'
 import { router } from '@/router'
-import { deleteSession } from '@/stores/chatStore'
+import { deleteSession, getSession } from '@/stores/chatStore'
 import { clear as clearSession } from '@/stores/sessionActions'
 import { useUIStore } from '@/stores/uiStore'
 import * as atoms from '../stores/atoms'
@@ -57,6 +65,13 @@ export default function Toolbar({ sessionId }: { sessionId: string }) {
     }
   }
 
+  const handleViewSessionJson = useCallback(async () => {
+    const session = await getSession(sessionId)
+    if (session) {
+      await NiceModal.show('json-viewer', { title: t('Session Raw JSON'), data: session })
+    }
+  }, [sessionId, t])
+
   return !isSmallScreen ? (
     <Flex align="center" gap="md" className="controls">
       {showUpdateNotification && <UpdateAvailableButton />}
@@ -69,7 +84,7 @@ export default function Toolbar({ sessionId }: { sessionId: string }) {
           variant="outline"
           color="chatbox-tertiary"
           leftSection={<ScalableIcon icon={IconSearch} size={16} strokeWidth={1.8} />}
-          className="border-[var(--mantine-color-chatbox-border-primary-outline)]"
+          className="border-chatbox-border-primary"
           onClick={() => setOpenSearchDialog(true)}
         >
           {t('Search')}...
@@ -98,6 +113,15 @@ export default function Toolbar({ sessionId }: { sessionId: string }) {
             icon: IconDeviceFloppy,
             onClick: handleExportAndSave,
           },
+          ...(process.env.NODE_ENV === 'development'
+            ? [
+                {
+                  text: t('View Session JSON'),
+                  icon: IconCode,
+                  onClick: handleViewSessionJson,
+                },
+              ]
+            : []),
           {
             divider: true,
           },
@@ -145,6 +169,15 @@ export default function Toolbar({ sessionId }: { sessionId: string }) {
             icon: IconDeviceFloppy,
             onClick: handleExportAndSave,
           },
+          ...(process.env.NODE_ENV === 'development'
+            ? [
+                {
+                  text: t('View Session JSON'),
+                  icon: IconCode,
+                  onClick: handleViewSessionJson,
+                },
+              ]
+            : []),
           {
             divider: true,
           },

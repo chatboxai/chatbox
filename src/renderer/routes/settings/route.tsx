@@ -125,7 +125,7 @@ export function SettingsRoot() {
           gap={isSmallScreen ? 0 : 'xs'}
           maw={isSmallScreen ? undefined : 256}
           className={clsx(
-            'border-solid border-0 border-r overflow-auto border-[var(--mantine-color-chatbox-border-primary-outline)]',
+            'border-solid border-0 border-r overflow-auto border-chatbox-border-primary',
             isSmallScreen ? 'w-full border-r-0' : 'flex-[1_0_auto]'
           )}
         >
@@ -136,9 +136,7 @@ export function SettingsRoot() {
               to={`/settings/${item.key}` as any}
               className={clsx(
                 'no-underline w-full',
-                isSmallScreen
-                  ? 'border-solid border-0 border-b border-[var(--mantine-color-chatbox-border-primary-outline)]'
-                  : ''
+                isSmallScreen ? 'border-solid border-0 border-b border-chatbox-border-primary' : ''
               )}
             >
               <Flex
@@ -146,25 +144,28 @@ export function SettingsRoot() {
                 gap="xs"
                 p="md"
                 pr="xl"
+                py={isSmallScreen ? 'sm' : undefined}
                 align="center"
                 c={item.key === key ? 'chatbox-brand' : 'chatbox-secondary'}
-                bg={item.key === key ? 'var(--mantine-color-chatbox-brand-light)' : 'transparent'}
+                bg={item.key === key ? 'var(--chatbox-background-brand-secondary)' : 'transparent'}
                 className={clsx(
-                  ' cursor-pointer select-none rounded-md hover:!bg-[var(--mantine-color-chatbox-brand-outline-hover)]'
+                  ' cursor-pointer select-none rounded-md',
+                  item.key === key ? '' : 'hover:!bg-chatbox-background-gray-secondary'
                 )}
               >
                 <Box component="span" flex="0 0 auto" w={20} h={20} mr="xs">
                   {item.icon}
                 </Box>
-                <Text flex={1} lineClamp={1} span={true} className="!text-inherit">
+                <Text
+                  flex={1}
+                  lineClamp={1}
+                  span={true}
+                  className={`!text-inherit ${isSmallScreen ? 'min-h-[32px] leading-[32px]' : ''}`}
+                >
                   {t(item.label)}
                 </Text>
                 {isSmallScreen && (
-                  <ScalableIcon
-                    icon={IconChevronRight}
-                    size={20}
-                    className="!text-[var(--mantine-color-chatbox-tertiary-outline)]"
-                  />
+                  <ScalableIcon icon={IconChevronRight} size={20} className="!text-chatbox-tint-tertiary" />
                 )}
               </Flex>
             </Link>

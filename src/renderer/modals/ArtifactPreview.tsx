@@ -1,10 +1,11 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
-import { ActionIcon, Button, Flex, Modal, Stack, Text } from '@mantine/core'
+import { ActionIcon, Button, Flex, Stack, Text } from '@mantine/core'
 import { IconReload } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Artifact } from '@/components/Artifact'
+import { Modal } from '@/components/Overlay'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 
 export interface ArtifactPreviewProps {

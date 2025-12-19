@@ -443,17 +443,29 @@ export async function recoverSessionList() {
 
   // Fetch all sessions with their first message timestamp
   const sessionsWithTimestamp: Array<{ meta: SessionMeta; timestamp: number }> = []
+  const failedKeys: string[] = []
 
   for (const key of sessionKeys) {
-    const session = await storage.getItem<Session | null>(key, null)
-    if (session) {
-      const migratedSession = migrateSession(session)
-      const firstMessageTimestamp = migratedSession.messages[0]?.timestamp || 0
-      sessionsWithTimestamp.push({
-        meta: getSessionMeta(migratedSession),
-        timestamp: firstMessageTimestamp,
-      })
+    try {
+      const session = await storage.getItem<Session | null>(key, null)
+      if (session) {
+        const migratedSession = migrateSession(session)
+        const firstMessageTimestamp = migratedSession.messages[0]?.timestamp || 0
+        sessionsWithTimestamp.push({
+          meta: getSessionMeta(migratedSession),
+          timestamp: firstMessageTimestamp,
+        })
+      }
+    } catch (error) {
+      // Handle cases where IndexedDB fails to read large values
+      // This can happen with "DataError: Failed to read large IndexedDB value" in some browsers
+      console.error(`Failed to read session "${key}":`, error)
+      failedKeys.push(key)
     }
+  }
+
+  if (failedKeys.length > 0) {
+    console.warn(`chatStore: Failed to recover ${failedKeys.length} sessions due to read errors`)
   }
 
   // Sort by first message timestamp (older first)
@@ -467,7 +479,11 @@ export async function recoverSessionList() {
   // Update the query cache, apply additional sorting rules (pinned sessions, etc.)
   queryClient.setQueryData(QueryKeys.ChatSessionsList, sortSessions(recoveredSessionMetas))
 
-  console.debug('chatStore', 'recoverSessionList', `Recovered ${recoveredSessionMetas.length} sessions`)
+  console.debug(
+    'chatStore',
+    'recoverSessionList',
+    `Recovered ${recoveredSessionMetas.length} sessions, ${failedKeys.length} failed`
+  )
 
-  return recoveredSessionMetas.length
+  return { recovered: recoveredSessionMetas.length, failed: failedKeys.length }
 }

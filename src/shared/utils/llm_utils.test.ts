@@ -1,6 +1,6 @@
 import type { Message } from 'src/shared/types'
 import { describe, expect, it } from 'vitest'
-import { normalizeOpenAIApiHostAndPath } from './llm_utils'
+import { normalizeOpenAIApiHostAndPath, normalizeOpenAIResponsesHostAndPath } from './llm_utils'
 import { fixMessageRoleSequence } from './message'
 
 describe('normalizeOpenAIApiHostAndPath', () => {
@@ -110,6 +110,29 @@ describe('normalizeOpenAIApiHostAndPath', () => {
   it('http 协议 3', () => {
     const result = normalizeOpenAIApiHostAndPath({ apiHost: 'my-proxy.com', apiPath: '/chat/completions' })
     expect(result).toEqual({ apiHost: 'https://my-proxy.com', apiPath: '/chat/completions' })
+  })
+})
+
+describe('normalizeOpenAIResponsesHostAndPath', () => {
+  it('appends /v1 when only host is provided', () => {
+    const result = normalizeOpenAIResponsesHostAndPath({ apiHost: 'https://api.openai.com' })
+    expect(result).toEqual({ apiHost: 'https://api.openai.com/v1', apiPath: '/responses' })
+  })
+
+  it('appends /v1 even when caller passes default /responses path', () => {
+    const result = normalizeOpenAIResponsesHostAndPath({
+      apiHost: 'https://custom-proxy.com',
+      apiPath: '/responses',
+    })
+    expect(result).toEqual({ apiHost: 'https://custom-proxy.com/v1', apiPath: '/responses' })
+  })
+
+  it('respects custom api path overrides', () => {
+    const result = normalizeOpenAIResponsesHostAndPath({
+      apiHost: 'https://custom-proxy.com',
+      apiPath: '/custom/path',
+    })
+    expect(result).toEqual({ apiHost: 'https://custom-proxy.com', apiPath: '/custom/path' })
   })
 })
 

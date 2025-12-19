@@ -63,7 +63,7 @@ const SearchBox = ({
   t: (key: string) => string
 }) => (
   <Flex align="center" className="px-xs py-xs">
-    <ScalableIcon icon={IconSearch} className="text-[var(--mantine-color-dimmed)]" />
+    <ScalableIcon icon={IconSearch} className="text-chatbox-tint-gray" />
     <TextInput
       value={search}
       onChange={(event) => onSearchChange(event.currentTarget.value)}
@@ -205,7 +205,7 @@ export const DesktopModelSelector = forwardRef<HTMLDivElement, DesktopModelSelec
 
         <Combobox.Dropdown className="!p-0 overflow-hidden rounded-md">
           {searchPosition === 'top' && (
-            <div className="sticky top-0 z-10" style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
+            <div className="sticky top-0 z-10" style={{ borderBottom: '1px solid var(--chatbox-border-primary)' }}>
               <SearchBox
                 search={search}
                 activeTab={activeTab}
@@ -313,7 +313,7 @@ export const DesktopModelSelector = forwardRef<HTMLDivElement, DesktopModelSelec
           </Combobox.Options>
 
           {searchPosition === 'bottom' && (
-            <div className="sticky bottom-0 z-10" style={{ borderTop: '1px solid var(--mantine-color-gray-3)' }}>
+            <div className="sticky bottom-0 z-10" style={{ borderTop: '1px solid var(--chatbox-border-primary)' }}>
               <SearchBox
                 search={search}
                 activeTab={activeTab}

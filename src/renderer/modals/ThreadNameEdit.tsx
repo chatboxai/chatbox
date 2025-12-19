@@ -1,8 +1,9 @@
-import NiceModal, { muiDialogV5, useModal } from '@ebay/nice-modal-react'
-import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material'
-import { useCallback, useMemo, useState } from 'react'
+import NiceModal, { useModal } from '@ebay/nice-modal-react'
+import { Button, Flex, Input } from '@mantine/core'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Session } from '@/../shared/types'
+import { Modal } from '@/components/Overlay'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSession } from '@/stores/chatStore'
 import { editThread } from '@/stores/sessionActions'
@@ -22,6 +23,7 @@ const ThreadNameEdit = NiceModal.create((props: { sessionId: string; threadId: s
   }, [currentSession?.threadName, currentSession?.threads, currentSession?.id, threadId])
 
   const [threadName, setThreadName] = useState(currentThreadName)
+  useEffect(() => setThreadName(currentThreadName), [currentThreadName])
 
   const onClose = useCallback(() => {
     modal.resolve()
@@ -39,22 +41,16 @@ const ThreadNameEdit = NiceModal.create((props: { sessionId: string; threadId: s
   }, [])
 
   return (
-    <Dialog {...muiDialogV5(modal)} onClose={onClose}>
-      <DialogTitle>{t('Edit Thread Name')}</DialogTitle>
-      <DialogContent>
-        <TextField
-          className="w-full"
-          autoFocus={!isSmallScreen}
-          placeholder="Thread Name"
-          defaultValue={currentThreadName}
-          onChange={onContentInput}
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>{t('cancel')}</Button>
+    <Modal opened={modal.visible} onClose={onClose} centered title={t('Edit Thread Name')}>
+      <Input autoFocus={!isSmallScreen} placeholder="Thread Name" value={threadName} onChange={onContentInput} />
+
+      <Flex gap="md" mt="md" justify="flex-end" align="center">
+        <Button onClick={onClose} color="chatbox-gray" variant="light">
+          {t('cancel')}
+        </Button>
         <Button onClick={onSave}>{t('save')}</Button>
-      </DialogActions>
-    </Dialog>
+      </Flex>
+    </Modal>
   )
 })
 

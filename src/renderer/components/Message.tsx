@@ -1,10 +1,11 @@
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, type ActionIconProps, Flex, Loader, Text, Tooltip as Tooltip1 } from '@mantine/core'
-import { Alert, Grid, Typography, useTheme } from '@mui/material'
+import { ActionIcon, type ActionIconProps, Flex, Image as Img, Loader, Text, Tooltip as Tooltip1 } from '@mantine/core'
+import { Grid, Typography, useTheme } from '@mui/material'
 import Box from '@mui/material/Box'
 import {
   IconArrowDown,
   IconBug,
+  IconCode,
   IconCopy,
   IconDotsVertical,
   IconInfoCircle,
@@ -60,7 +61,6 @@ interface Props {
   collapseThreshold?: number // 文本长度阀值, 超过这个长度则会被折叠
   buttonGroup?: 'auto' | 'always' | 'none' // 按钮组显示策略, auto: 只在 hover 时显示; always: 总是显示; none: 不显示
   small?: boolean
-  preferCollapsedCodeBlock?: boolean
   assistantAvatarKey?: string
   sessionPicUrl?: string
 }
@@ -73,7 +73,6 @@ const _Message: FC<Props> = (props) => {
     collapseThreshold,
     buttonGroup = 'auto',
     small,
-    preferCollapsedCodeBlock,
     assistantAvatarKey,
     sessionPicUrl,
   } = props
@@ -169,6 +168,10 @@ const _Message: FC<Props> = (props) => {
     setShouldThrowError(true)
   }, [])
 
+  const onViewMessageJson = useCallback(async () => {
+    await NiceModal.show('json-viewer', { title: t('Message Raw JSON'), data: msg })
+  }, [msg, t])
+
   if (shouldThrowError) {
     throw new Error('Manual error triggered from Message component for testing ErrorBoundary')
   }
@@ -187,7 +190,8 @@ const _Message: FC<Props> = (props) => {
       tips.push(`token count: ${msg.tokenCount}`)
     }
     if (showTokenUsed && msg.role === 'assistant' && !msg.generating) {
-      tips.push(`tokens used: ${msg.tokensUsed || 'unknown'}`)
+      tips.push(`tokens used: ${msg.usage?.totalTokens ? msg.usage.totalTokens : msg.tokensUsed || 'unknown'}`)
+      // `tokens used: ${msg.usage?.totalTokens ? `${msg.usage.totalTokens}${msg.usage.cachedInputTokens ? `(cached: ${msg.usage.cachedInputTokens})` : ''}` : msg.tokensUsed || 'unknown'}`
     }
     if (showFirstTokenLatency && msg.role === 'assistant' && !msg.generating) {
       const latency = msg.firstTokenLatency ? `${msg.firstTokenLatency}ms` : 'unknown'
@@ -270,10 +274,15 @@ const _Message: FC<Props> = (props) => {
       // 开发环境添加测试错误按钮
       ...(process.env.NODE_ENV === 'development'
         ? [
+            // {
+            //   text: 'Trigger Error (Test)',
+            //   icon: IconBug,
+            //   onClick: onTriggerError,
+            // },
             {
-              text: 'Trigger Error (Test)',
-              icon: IconBug,
-              onClick: onTriggerError,
+              text: t('View Message JSON'),
+              icon: IconCode,
+              onClick: onViewMessageJson,
             },
           ]
         : []),
@@ -284,7 +293,7 @@ const _Message: FC<Props> = (props) => {
         onClick: onDelMsg,
       },
     ],
-    [t, msg.role, onReport, quoteMsg, onDelMsg, onTriggerError]
+    [t, msg.role, onReport, quoteMsg, onDelMsg, onTriggerError, onViewMessageJson]
   )
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
 
@@ -341,7 +350,7 @@ const _Message: FC<Props> = (props) => {
             <div
               className={cn(
                 'max-w-full inline-block',
-                msg.role !== 'assistant' ? 'bg-stone-400/10 dark:bg-blue-400/10 px-4 rounded-lg' : 'w-full'
+                msg.role !== 'assistant' ? 'bg-chatbox-background-secondary px-4 rounded-lg' : 'w-full'
               )}
             >
               <Box
@@ -371,13 +380,10 @@ const _Message: FC<Props> = (props) => {
                         <div key={`text-${msg.id}-${index}`}>
                           {enableMarkdownRendering && !isCollapsed ? (
                             <Markdown
+                              uniqueId={`${msg.id}-${index}`}
                               enableLaTeXRendering={enableLaTeXRendering}
                               enableMermaidRendering={enableMermaidRendering}
                               generating={msg.generating}
-                              preferCollapsedCodeBlock={
-                                autoCollapseCodeBlock &&
-                                (preferCollapsedCodeBlock || msg.role !== 'assistant' || previewArtifact)
-                              }
                             >
                               {item.text || ''}
                             </Markdown>
@@ -389,18 +395,31 @@ const _Message: FC<Props> = (props) => {
                           )}
                         </div>
                       ) : item.type === 'info' ? (
-                        <div key={`info-${item.text}`} className="mb-2">
-                          <Alert color="info" icon={<ScalableIcon icon={IconInfoCircle} />}>
-                            {item.text}
-                          </Alert>
-                        </div>
+                        <Flex key={`info-${item.text}`} className="mb-2 ">
+                          <Flex
+                            className="bg-chatbox-background-brand-secondary border-0 border-l-2 border-solid border-chatbox-tint-brand rounded-r-md"
+                            align="center"
+                            gap="xxs"
+                            px="xs"
+                          >
+                            <ScalableIcon
+                              icon={IconInfoCircle}
+                              size={16}
+                              className="flex-none text-chatbox-tint-brand"
+                            />
+
+                            <Text size="xs" c="chatbox-brand">
+                              {item.text}
+                            </Text>
+                          </Flex>
+                        </Flex>
                       ) : item.type === 'image' ? (
                         props.sessionType !== 'picture' && (
-                          <div key={`image-${item.storageKey}`}>
+                          <div key={`image-${item.storageKey}`} className="mt-2">
                             <PictureGallery key={`image-${item.storageKey}`} pictures={[item]} />
                             {item.ocrResult && (
                               <div
-                                className="mt-2 p-2 bg-gray-100 dark:bg-gray-800 rounded-md cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                                className="my-2 p-2 bg-chatbox-background-brand-secondary rounded-md cursor-pointer hover:bg-chatbox-background-brand-secondary-hover transition-colors"
                                 onClick={async (e) => {
                                   e.stopPropagation()
                                   await NiceModal.show('ocr-content-viewer', { content: item.ocrResult })
@@ -451,15 +470,6 @@ const _Message: FC<Props> = (props) => {
               )}
               <MessageErrTips msg={msg} />
               {needCollapse && !isCollapsed && CollapseButton}
-              {needArtifact && (
-                <MessageArtifact
-                  sessionId={sessionId}
-                  messageId={msg.id}
-                  messageContent={getMessageText(msg)}
-                  preview={previewArtifact}
-                  setPreview={setPreviewArtifact}
-                />
-              )}
 
               {msg.generating && msg.contentParts.length === 0 && <Loading />}
 
@@ -484,7 +494,7 @@ const _Message: FC<Props> = (props) => {
                   gap={0}
                   className={
                     isSamllScreen
-                      ? 'p-xxs bg-[var(--mantine-color-chatbox-background-primary-filled)] rounded-md border-[0.5px] border-solid border-[var(--mantine-color-chatbox-border-primary-outline)] shadow-sm'
+                      ? 'p-xxs bg-chatbox-background-primary rounded-md border-[0.5px] border-solid border-chatbox-border-primary shadow-sm'
                       : ''
                   }
                 >
@@ -555,6 +565,7 @@ type PictureGalleryProps = {
 }
 
 const PictureGallery = memo(({ pictures, onReport }: PictureGalleryProps) => {
+  const isSmallScreen = useIsSmallScreen()
   const uiElements: UIElementData[] = concat(
     [
       {
@@ -612,34 +623,35 @@ const PictureGallery = memo(({ pictures, onReport }: PictureGalleryProps) => {
       : []
   )
   return (
-    <Gallery uiElements={uiElements}>
-      {pictures.map((p) =>
-        p.storageKey ? (
-          <ImageInStorageGalleryItem key={p.storageKey} storageKey={p.storageKey} />
-        ) : p.url ? (
-          <GalleryItem key={p.url} original={p.url} thumbnail={p.url} width={1024} height={1024}>
-            {({ ref, open }) => (
-              <div
-                ref={ref}
-                className="w-[100px] min-w-[100px] h-[100px] min-h-[100px]
-                                              md:w-[200px] md:min-w-[200px] md:h-[200px] md:min-h-[200px]
-                                              p-1.5 mr-2 mb-2 inline-flex items-center justify-center
-                                              bg-white dark:bg-slate-800
-                                              border-solid border-slate-400/20 rounded-md
-                                              hover:cursor-pointer hover:border-slate-800/20 transition-all duration-200"
-                onClick={open}
-              >
-                <img src={p.url} alt="" className="w-full h-full object-contain" />
-              </div>
-            )}
-          </GalleryItem>
-        ) : undefined
-      )}
-    </Gallery>
+    <Flex gap="sm" wrap="wrap">
+      <Gallery uiElements={uiElements}>
+        {pictures.map((p) =>
+          p.storageKey ? (
+            <ImageInStorageGalleryItem key={p.storageKey} storageKey={p.storageKey} />
+          ) : p.url ? (
+            <GalleryItem key={p.url} original={p.url} thumbnail={p.url} width={1024} height={1024}>
+              {({ ref, open }) => (
+                <Img
+                  src={p.url}
+                  h={isSmallScreen ? 100 : 200}
+                  w="auto"
+                  fit="contain"
+                  radius="md"
+                  ref={ref}
+                  onClick={open}
+                  className="cursor-pointer"
+                />
+              )}
+            </GalleryItem>
+          ) : undefined
+        )}
+      </Gallery>
+    </Flex>
   )
 })
 
 const ImageInStorageGalleryItem = ({ storageKey }: { storageKey: string }) => {
+  const isSmallScreen = useIsSmallScreen()
   const { data: pic } = useQuery({
     queryKey: ['image-in-storage-gallery-item', storageKey],
     queryFn: async ({ queryKey: [, key] }) => {
@@ -658,18 +670,16 @@ const ImageInStorageGalleryItem = ({ storageKey }: { storageKey: string }) => {
   return pic ? (
     <GalleryItem original={pic.data} thumbnail={pic.data} width={pic.width} height={pic.height}>
       {({ ref, open }) => (
-        <div
+        <Img
+          src={pic.data}
+          h={isSmallScreen ? 100 : 200}
+          w="auto"
+          fit="contain"
+          radius="md"
           ref={ref}
-          className="w-[100px] min-w-[100px] h-[100px] min-h-[100px]
-                                              md:w-[200px] md:min-w-[200px] md:h-[200px] md:min-h-[200px]
-                                              p-1.5 mr-2 mb-2 inline-flex items-center justify-center
-                                              bg-white dark:bg-slate-800
-                                              border-solid border-slate-400/20 rounded-md
-                                              hover:cursor-pointer hover:border-slate-800/20 transition-all duration-200"
           onClick={open}
-        >
-          <img src={pic.data} alt="" className="w-full h-full object-contain" />
-        </div>
+          className="cursor-pointer"
+        />
       )}
     </GalleryItem>
   ) : null
@@ -702,7 +712,7 @@ export const MessageActionIcon = forwardRef<
   )
 
   return tooltip ? (
-    <Tooltip1 label={tooltip} openDelay={1000}>
+    <Tooltip1 label={tooltip} openDelay={1000} withArrow>
       {actionIcon}
     </Tooltip1>
   ) : (

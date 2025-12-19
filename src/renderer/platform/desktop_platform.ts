@@ -56,9 +56,15 @@ export default class DesktopPlatform implements Platform {
   public async openLink(url: string): Promise<void> {
     return this.ipc.invoke('openLink', url)
   }
+  public async getDeviceName(): Promise<string> {
+    const deviceName = await cache('ipc:getDeviceName', () => this.ipc.invoke('getDeviceName'), {
+      ttl: 5 * 60 * 1000,
+    })
+    return deviceName
+  }
   public async getInstanceName(): Promise<string> {
-    const hostname = await cache('ipc:getHostname', () => this.ipc.invoke('getHostname'), { ttl: 5 * 60 * 1000 })
-    return `${hostname} / ${getOS()}`
+    const deviceName = await this.getDeviceName()
+    return `${deviceName} / ${getOS()}`
   }
   public async getLocale() {
     const locale = await cache('ipc:getLocale', () => this.ipc.invoke('getLocale'), { ttl: 5 * 60 * 1000 })

@@ -42,7 +42,7 @@ export function ProviderList({ providers, onAddProvider, onImportProvider, isImp
     <Stack
       maw={isSmallScreen ? undefined : 256}
       className={clsx(
-        'border-solid border-0 border-r border-[var(--mantine-color-chatbox-border-primary-outline)] ',
+        'border-solid border-0 border-r border-chatbox-border-primary',
         isSmallScreen ? 'w-full border-r-0' : 'flex-[1_0_auto]'
       )}
       gap={0}
@@ -56,9 +56,7 @@ export function ProviderList({ providers, onAddProvider, onImportProvider, isImp
               params={{ providerId: provider.id }}
               className={clsx(
                 'no-underline',
-                isSmallScreen
-                  ? 'border-solid border-0 border-b border-[var(--mantine-color-chatbox-border-primary-outline)]'
-                  : ''
+                isSmallScreen ? 'border-solid border-0 border-b border-chatbox-border-primary' : ''
               )}
             >
               <Flex
@@ -69,17 +67,20 @@ export function ProviderList({ providers, onAddProvider, onImportProvider, isImp
                 pr="xl"
                 py={isSmallScreen ? 'sm' : undefined}
                 c={provider.id === providerId ? 'chatbox-brand' : 'chatbox-secondary'}
-                bg={provider.id === providerId ? 'var(--mantine-color-chatbox-brand-light)' : 'transparent'}
-                className="cursor-pointer select-none rounded-md hover:!bg-[var(--mantine-color-chatbox-brand-outline-hover)]"
+                bg={provider.id === providerId ? 'var(--chatbox-background-brand-secondary)' : 'transparent'}
+                className={clsx(
+                  'cursor-pointer select-none rounded-md',
+                  provider.id === providerId ? '' : 'hover:!bg-chatbox-background-gray-secondary'
+                )}
               >
                 {provider.isCustom ? (
                   provider.iconUrl ? (
-                    <Image w={36} h={36} src={provider.iconUrl} alt={provider.name} />
+                    <Image w={32} h={32} src={provider.iconUrl} alt={provider.name} />
                   ) : (
-                    <CustomProviderIcon providerId={provider.id} providerName={provider.name} size={36} />
+                    <CustomProviderIcon providerId={provider.id} providerName={provider.name} size={32} />
                   )
                 ) : (
-                  <Image w={36} h={36} src={icons.find((icon) => icon.name === provider.id)?.src} alt={provider.name} />
+                  <Image w={32} h={32} src={icons.find((icon) => icon.name === provider.id)?.src} alt={provider.name} />
                 )}
 
                 <Text
@@ -101,11 +102,7 @@ export function ProviderList({ providers, onAddProvider, onImportProvider, isImp
                 )}
 
                 {isSmallScreen && (
-                  <ScalableIcon
-                    icon={IconChevronRight}
-                    size={20}
-                    className="!text-[var(--mantine-color-chatbox-tertiary-outline)] ml-2"
-                  />
+                  <ScalableIcon icon={IconChevronRight} size={20} className="!text-chatbox-tint-tertiary ml-2" />
                 )}
               </Flex>
             </Link>

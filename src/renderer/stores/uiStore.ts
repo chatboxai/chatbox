@@ -39,6 +39,7 @@ export const uiStore = createStore(
         } | null,
         widthFull: false, // Stored UI preference
         showCopilotsInNewSession: false,
+        sidebarWidth: null as number | null, // Custom sidebar width, null means use default
       },
       (set, get) => ({
         addToast: (content: string, duration?: number) => {
@@ -131,6 +132,10 @@ export const uiStore = createStore(
         setShowCopilotsInNewSession: (showCopilotsInNewSession: boolean) => {
           set({ showCopilotsInNewSession })
         },
+
+        setSidebarWidth: (sidebarWidth: number | null) => {
+          set({ sidebarWidth })
+        },
       })
     ),
     {
@@ -140,6 +145,7 @@ export const uiStore = createStore(
         widthFull: state.widthFull,
         showCopilotsInNewSession: state.showCopilotsInNewSession,
         inputBoxWebBrowsingMode: state.inputBoxWebBrowsingMode,
+        sidebarWidth: state.sidebarWidth,
       }),
       storage: safeStorage,
     }

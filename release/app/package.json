@@ -1,7 +1,7 @@
 {
-  "name": "xyz.chatboxapp.ce",
-  "productName": "xyz.chatboxapp.ce",
-  "version": "1.17.1",
+  "name": "xyz.chatboxapp.app",
+  "productName": "xyz.chatboxapp.app",
+  "version": "1.18.1",
   "description": "A desktop client for multiple cutting-edge AI models",
   "author": {
     "name": "Mediocre Company",

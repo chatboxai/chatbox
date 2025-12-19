@@ -195,7 +195,7 @@ export function ShortcutConfig(props: {
     return false
   }
   return (
-    <Box className="border border-solid  py-xs px-md rounded-xs border-[var(--mantine-color-chatbox-border-primary-outline)]">
+    <Box className="border border-solid  py-xs px-md rounded-xs border-chatbox-border-primary">
       <Table>
         <Table.Thead>
           <Table.Tr>

@@ -7,7 +7,7 @@ import ProviderIcon from '../icons/ProviderIcon'
 import { ScalableIcon } from '../ScalableIcon'
 
 // Common styles
-export const SELECTED_BG_CLASS = 'bg-blue-50 dark:bg-[var(--mantine-color-dark-5)]'
+export const SELECTED_BG_CLASS = '!bg-chatbox-background-brand-secondary'
 export const TRANSITION_DURATION = 200
 
 // Helper function to group favorite models by provider
@@ -52,7 +52,11 @@ export const ModelItem = ({
   return (
     <Combobox.Option
       value={`${providerId}/${model.modelId}`}
-      className={clsx('flex flex-row items-center group -mx-xs px-xs', isSelected && SELECTED_BG_CLASS)}
+      className={clsx(
+        'flex flex-row items-center group -mx-xs px-xs',
+        !isSelected && 'hover:bg-chatbox-background-brand-secondary-hover',
+        isSelected && SELECTED_BG_CLASS
+      )}
     >
       {showIcon && <ProviderIcon size={12} provider={providerId} className="mr-xs flex-shrink-0" />}
       <Text
@@ -96,8 +100,8 @@ export const ModelItem = ({
           className={clsx(
             'ml-auto -m-xs p-xs',
             isFavorited
-              ? 'text-[var(--mantine-color-chatbox-brand-outline)]'
-              : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto text-[var(--mantine-color-chatbox-border-secondary-outline)] hover:text-[var(--mantine-color-chatbox-brand-outline)]'
+              ? 'text-chatbox-tint-brand'
+              : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto text-chatbox-border-secondary hover:text-chatbox-tint-brand'
           )}
           onClick={(e) => {
             e.stopPropagation()
@@ -146,8 +150,8 @@ export const ModelItemInDrawer = ({
       py="sm"
       c={isRecommended ? 'chatbox-brand' : 'chatbox-secondary'}
       className={clsx(
-        'border-solid border border-[var(--mantine-color-chatbox-border-secondary-outline)] outline-none rounded-md',
-        isSelected ? SELECTED_BG_CLASS : 'bg-transparent'
+        'border-solid border border-chatbox-border-secondary outline-none rounded-md',
+        isSelected ? clsx(SELECTED_BG_CLASS, 'border-chatbox-border-brand') : 'bg-transparent'
       )}
       onClick={() => {
         onSelect?.()
@@ -191,9 +195,7 @@ export const ModelItemInDrawer = ({
           component="span"
           className={clsx(
             'ml-auto -m-xs p-xs',
-            isFavorited
-              ? 'text-[var(--mantine-color-chatbox-brand-outline)]'
-              : 'text-[var(--mantine-color-chatbox-border-secondary-outline)]'
+            isFavorited ? 'text-chatbox-tint-brand' : 'text-chatbox-border-secondary'
           )}
           onClick={(e) => {
             e.stopPropagation()

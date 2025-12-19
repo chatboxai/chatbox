@@ -24,9 +24,7 @@ export const Page: FC<PageProps> = ({ children, title, left }) => {
         h={54}
         align="center"
         px="sm"
-        className={clsx(
-          'title-bar border-0 border-b border-solid border-[var(--mantine-color-chatbox-border-primary-outline)]'
-        )}
+        className={clsx('title-bar border-0 border-b border-solid border-chatbox-border-primary')}
       >
         {left ||
           ((!showSidebar || isSmallScreen) && (

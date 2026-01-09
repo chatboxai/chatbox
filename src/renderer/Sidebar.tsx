@@ -138,7 +138,13 @@ export default function Sidebar() {
       >
         {needRoomForMacWindowControls && <Box className="title-bar flex-[0_0_44px]" />}
         <Flex align="center" justify="space-between" px="md" py="sm">
-          <Flex align="center" gap="sm">
+          <Flex
+            align="center"
+            gap="sm"
+            onClick={handleCreateNewSession}
+            style={{ cursor: 'pointer' }}
+            className="hover:opacity-70 transition-opacity"
+          >
             <Image src={icon} w={20} h={20} />
             <Text span c="chatbox-secondary" size="xl" lh={1.2} fw="700">
               Chatbox

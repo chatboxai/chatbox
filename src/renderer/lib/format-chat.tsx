@@ -345,6 +345,21 @@ export async function formatChatAsHtml(sessionName: string, threads: SessionThre
     </script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
     <link rel="shortcut icon" href="https://chatboxai.app/icon.png">
+    <style>
+        :root {
+            --chatbox-border-primary: #e2e8f0;
+            --chatbox-border-secondary: #e2e8f0;
+            --chatbox-background-secondary: #f8fafc;
+            --chatbox-tint-tertiary: #64748b;
+            --chatbox-radius-md: 0.375rem;
+        }
+        .bg-chatbox-background-secondary {
+            background-color: var(--chatbox-background-secondary);
+        }
+        .border-chatbox-border-secondary {
+            border-color: var(--chatbox-border-secondary);
+        }
+    </style>
 </head>
 <body class='bg-slate-100'>
     <div class='mx-auto max-w-5xl shadow-md prose bg-white px-2 py-4'>

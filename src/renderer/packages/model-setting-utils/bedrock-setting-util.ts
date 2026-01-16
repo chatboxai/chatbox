@@ -104,17 +104,17 @@ export default class BedrockSettingUtil extends BaseConfig implements ModelSetti
       let nextToken: string | undefined = undefined
 
       do {
-        const command = new ListInferenceProfilesCommand({
+        const command: ListInferenceProfilesCommand = new ListInferenceProfilesCommand({
           maxResults: 1000, // Max allowed by AWS API
           nextToken,
         })
-        const response = await client.send(command)
+        const response: Awaited<ReturnType<typeof client.send>> = await client.send(command)
 
         if (response.inferenceProfileSummaries) {
           allProfiles.push(...response.inferenceProfileSummaries)
         }
 
-        nextToken = response.nextToken
+        nextToken = (response as any).nextToken
       } while (nextToken)
 
       // Step 3: Convert inference profiles to ProviderModelInfo

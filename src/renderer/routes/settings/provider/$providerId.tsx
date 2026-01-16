@@ -654,24 +654,18 @@ function ProviderSettings({ providerId }: { providerId: string }) {
               <Text span fw="600">
                 {t('AWS Region')}
               </Text>
-              <Select
-                value={providerSettings?.awsRegion || 'us-east-1'}
-                onChange={(value) =>
-                  setProviderSettings({
-                    awsRegion: value || 'us-east-1',
-                  })
-                }
-                data={[
-                  { value: 'us-east-1', label: 'US East (N. Virginia)' },
-                  { value: 'us-west-2', label: 'US West (Oregon)' },
-                  { value: 'us-west-1', label: 'US West (N. California)' },
-                  { value: 'eu-west-1', label: 'Europe (Ireland)' },
-                  { value: 'eu-central-1', label: 'Europe (Frankfurt)' },
-                  { value: 'ap-southeast-1', label: 'Asia Pacific (Singapore)' },
-                  { value: 'ap-northeast-1', label: 'Asia Pacific (Tokyo)' },
-                  { value: 'ap-south-1', label: 'Asia Pacific (Mumbai)' },
-                ]}
-              />
+              <Flex gap="xs" align="center">
+                <TextInput
+                  flex={1}
+                  value={providerSettings?.awsRegion || ''}
+                  placeholder="us-east-1"
+                  onChange={(e) =>
+                    setProviderSettings({
+                      awsRegion: e.currentTarget.value,
+                    })
+                  }
+                />
+              </Flex>
             </Stack>
           </>
         )}

@@ -8,6 +8,7 @@ import {
   type Settings,
 } from 'src/shared/types'
 import AzureSettingUtil from './azure-setting-util'
+import BedrockSettingUtil from './bedrock-setting-util'
 import ChatboxAISettingUtil from './chatboxai-setting-util'
 import ChatGLMSettingUtil from './chatglm-setting-util'
 import ClaudeSettingUtil from './claude-setting-util'
@@ -24,6 +25,7 @@ import MistralAISettingUtil from './mistral-ai-setting-util'
 import OllamaSettingUtil from './ollama-setting-util'
 import OpenAIResponsesSettingUtil from './openai-responses-setting-util'
 import OpenAISettingUtil from './openai-setting-util'
+import OpenRouterSettingUtil from './openrouter-setting-util'
 import PerplexitySettingUtil from './perplexity-setting-util'
 import SiliconFlowSettingUtil from './siliconflow-setting-util'
 import VolcEngineSettingUtil from './volcengine-setting-util'
@@ -35,6 +37,7 @@ export function getModelSettingUtil(
 ): ModelSettingUtil {
   const hash: Record<ModelProvider, new () => ModelSettingUtil> = {
     [ModelProviderEnum.Azure]: AzureSettingUtil,
+    [ModelProviderEnum.Bedrock]: BedrockSettingUtil,
     [ModelProviderEnum.ChatboxAI]: ChatboxAISettingUtil,
     [ModelProviderEnum.ChatGLM6B]: ChatGLMSettingUtil,
     [ModelProviderEnum.Claude]: ClaudeSettingUtil,
@@ -43,6 +46,7 @@ export function getModelSettingUtil(
     [ModelProviderEnum.Ollama]: OllamaSettingUtil,
     [ModelProviderEnum.OpenAI]: OpenAISettingUtil,
     [ModelProviderEnum.OpenAIResponses]: OpenAIResponsesSettingUtil,
+    [ModelProviderEnum.OpenRouter]: OpenRouterSettingUtil,
     [ModelProviderEnum.DeepSeek]: DeepSeekSettingUtil,
     [ModelProviderEnum.SiliconFlow]: SiliconFlowSettingUtil,
     [ModelProviderEnum.VolcEngine]: VolcEngineSettingUtil,

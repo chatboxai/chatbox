@@ -31,6 +31,12 @@ export const ProviderSettingsSchema = z.object({
   deploymentName: z.string().optional().catch(undefined),
   dalleDeploymentName: z.string().optional().catch(undefined),
   apiVersion: z.string().optional().catch(undefined),
+
+  // aws bedrock
+  awsAccessKeyId: z.string().optional().catch(undefined),
+  awsSecretAccessKey: z.string().optional().catch(undefined),
+  awsSessionToken: z.string().optional().catch(undefined),
+  awsRegion: z.string().optional().catch(undefined),
 })
 
 const BuiltinProviderBaseInfoSchema = z.object({

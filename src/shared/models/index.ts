@@ -9,6 +9,7 @@ import {
 } from '../types'
 import type { ModelDependencies } from '../types/adapters'
 import AzureOpenAI from './azure'
+import Bedrock from './bedrock'
 import ChatboxAI from './chatboxai'
 import ChatGLM from './chatglm'
 import Claude from './claude'
@@ -302,6 +303,21 @@ export function getModel(
         },
         dependencies
       )
+    case ModelProviderEnum.Bedrock:
+      return new Bedrock(
+        {
+          awsAccessKeyId: providerSetting.awsAccessKeyId || '',
+          awsSecretAccessKey: providerSetting.awsSecretAccessKey || '',
+          awsSessionToken: providerSetting.awsSessionToken,
+          awsRegion: providerSetting.awsRegion || 'us-east-1',
+          model: model,
+          temperature: settings.temperature,
+          topP: settings.topP,
+          maxOutputTokens: settings.maxTokens,
+          stream: settings.stream,
+        },
+        dependencies
+      )
     case ModelProviderEnum.OpenAIResponses:
       return new CustomOpenAIResponses(
         {
@@ -403,6 +419,7 @@ export const aiProviderNameHash: Record<ModelProvider, string> = {
   [ModelProviderEnum.Perplexity]: 'Perplexity API',
   [ModelProviderEnum.XAI]: 'xAI API',
   [ModelProviderEnum.OpenRouter]: 'OpenRouter API',
+  [ModelProviderEnum.Bedrock]: 'AWS Bedrock',
   [ModelProviderEnum.Custom]: 'Custom Provider',
 }
 
@@ -486,6 +503,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.ChatGLM6B,
     label: aiProviderNameHash[ModelProviderEnum.ChatGLM6B],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.Bedrock,
+    label: aiProviderNameHash[ModelProviderEnum.Bedrock],
     disabled: false,
   },
   // {

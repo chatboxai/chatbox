@@ -672,6 +672,48 @@ export const SystemProviders: ProviderBaseInfo[] = [
     },
   },
   {
+    id: ModelProviderEnum.Bedrock,
+    name: 'AWS Bedrock',
+    type: ModelProviderType.OpenAI,
+    urls: {
+      website: 'https://aws.amazon.com/bedrock/',
+      docs: 'https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html',
+    },
+    defaultSettings: {
+      awsRegion: 'us-east-1',
+      models: [
+        {
+          modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+          nickname: 'Global Anthropic Claude Haiku 4.5',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 200_000,
+          maxOutput: 8_192,
+        },
+        {
+          modelId: 'global.amazon.nova-2-lite-v1:0',
+          nickname: 'GLOBAL Amazon Nova 2 Lite',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 300_000,
+          maxOutput: 5_000,
+        },
+        {
+          modelId: 'us.anthropic.claude-opus-4-5-20251101-v1:0',
+          nickname: 'US Anthropic Claude Opus 4.5',
+          capabilities: ['vision', 'tool_use', 'reasoning'],
+          contextWindow: 200_000,
+          maxOutput: 64_000,
+        },
+        {
+          modelId: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+          nickname: 'Global Claude Sonnet 4.5',
+          capabilities: ['vision', 'tool_use', 'reasoning'],
+          contextWindow: 200_000,
+          maxOutput: 64_000,
+        },
+      ],
+    },
+  },
+  {
     id: ModelProviderEnum.MistralAI,
     name: 'Mistral AI',
     type: ModelProviderType.OpenAI,

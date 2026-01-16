@@ -39,41 +39,62 @@ export default class BedrockSettingUtil extends BaseConfig implements ModelSetti
       const client = new BedrockClient(clientConfig)
 
       // Step 1: Fetch all foundation models to get capabilities info
-      const foundationModelsCommand = new ListFoundationModelsCommand({
-        byInferenceType: 'ON_DEMAND', // Only models that support on-demand throughput
-      })
+      const foundationModelsCommand = new ListFoundationModelsCommand({})
       const foundationModelsResponse = await client.send(foundationModelsCommand)
 
-      // Build a map of foundation model ID to capabilities
+      // Build a map of foundation model ID to capabilities and limits
       const modelCapabilitiesMap = new Map<
         string,
         {
           hasVision: boolean
           hasToolUse: boolean
           hasReasoning: boolean
+          maxOutput: number
+          contextWindow: number
         }
       >()
 
       foundationModelsResponse.modelSummaries?.forEach((model) => {
-        // Include models that support ON_DEMAND inference and streaming
-        // LEGACY models are still usable (just means there's a newer version)
+        // Include models that support streaming and are ACTIVE/LEGACY
+        // Note: Claude 4+ models have inferenceTypesSupported: ["INFERENCE_PROFILE"] instead of ["ON_DEMAND"]
         if (
           model.modelId &&
           model.responseStreamingSupported === true &&
           (model.modelLifecycle?.status === 'ACTIVE' || model.modelLifecycle?.status === 'LEGACY')
         ) {
-          const hasImageInput = model.inputModalities?.includes('IMAGE') || false
+          // Use detailed info from 'converse' field if available
+          const hasImageInput =
+            model.inputModalities?.includes('IMAGE') ||
+            (model as any).converse?.userImageTypesSupported?.length > 0 ||
+            false
           const hasTextOutput = model.outputModalities?.includes('TEXT') || false
           const hasToolUse = hasTextOutput // Most text models support tool use
           const hasReasoning =
+            (model as any).converse?.reasoningSupported !== undefined ||
             model.modelId.includes('sonnet-4') ||
             model.modelId.includes('opus-4') ||
             model.modelId.includes('claude-3-7')
+
+          // Extract token limits from converse field
+          const maxTokens = (model as any).converse?.maxTokensMaximum || 8_192
+
+          // Parse context window from description or use defaults
+          let contextWindow = 200_000 // Default
+          const maxContextStr = (model as any).description?.maxContextWindow
+          if (maxContextStr === '1M') {
+            contextWindow = 1_000_000
+          } else if (model.modelId.includes('claude-4') || model.modelId.includes('claude-3-7')) {
+            contextWindow = 200_000
+          } else if (model.modelId.includes('nova')) {
+            contextWindow = 300_000
+          }
 
           modelCapabilitiesMap.set(model.modelId, {
             hasVision: hasImageInput && hasTextOutput,
             hasToolUse,
             hasReasoning,
+            maxOutput: maxTokens,
+            contextWindow,
           })
         }
       })
@@ -84,7 +105,7 @@ export default class BedrockSettingUtil extends BaseConfig implements ModelSetti
 
       do {
         const command = new ListInferenceProfilesCommand({
-          maxResults: 100,
+          maxResults: 1000, // Max allowed by AWS API
           nextToken,
         })
         const response = await client.send(command)
@@ -115,22 +136,27 @@ export default class BedrockSettingUtil extends BaseConfig implements ModelSetti
             }
           }
 
-          // Get capabilities from foundation model
+          // Get capabilities and limits from foundation model
           const capabilities: ('vision' | 'tool_use' | 'reasoning')[] = []
+          let contextWindow = 200_000 // Default
+          let maxOutput = 8_192 // Default
+
           if (foundationModelId && modelCapabilitiesMap.has(foundationModelId)) {
             const caps = modelCapabilitiesMap.get(foundationModelId)!
             if (caps.hasVision) capabilities.push('vision')
             if (caps.hasToolUse) capabilities.push('tool_use')
             if (caps.hasReasoning) capabilities.push('reasoning')
+            contextWindow = caps.contextWindow
+            maxOutput = caps.maxOutput
           }
 
           return {
             modelId: profile.inferenceProfileId!,
             nickname: profile.inferenceProfileName || profile.inferenceProfileId,
+            type: 'chat' as const,
             capabilities,
-            // AWS doesn't provide token limits in the list API, use defaults
-            contextWindow: 200_000,
-            maxOutput: 8_192,
+            contextWindow,
+            maxOutput,
           }
         })
 

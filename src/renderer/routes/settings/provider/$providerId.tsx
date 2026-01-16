@@ -189,6 +189,23 @@ function ProviderSettings({ providerId }: { providerId: string }) {
   const checkModel =
     selectedTestModel || baseInfo?.defaultSettings?.models?.[0]?.modelId || providerSettings?.models?.[0]?.modelId
 
+  // Check if credentials are valid for connection test
+  const hasValidCredentials = () => {
+    // For Bedrock, check if AWS Access Key ID and Secret Access Key are present
+    if (baseInfo.id === ModelProviderEnum.Bedrock) {
+      return !!providerSettings?.awsAccessKeyId && !!providerSettings?.awsSecretAccessKey
+    }
+    // For other providers, check API key
+    return !!providerSettings?.apiKey
+  }
+
+  const getCredentialTooltipMessage = () => {
+    if (baseInfo.id === ModelProviderEnum.Bedrock) {
+      return t('AWS Access Key ID and Secret Access Key are required to check connection')
+    }
+    return t('API Key is required to check connection')
+  }
+
   const handleCheckApiKey = async (modelId?: string) => {
     const testModel = modelId || checkModel
     if (!testModel) return
@@ -368,7 +385,9 @@ function ProviderSettings({ providerId }: { providerId: string }) {
         )}
 
         {/* API Key */}
-        {![ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio, ''].includes(baseInfo.id) && (
+        {![ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio, ModelProviderEnum.Bedrock, ''].includes(
+          baseInfo.id
+        ) && (
           <Stack gap="xxs">
             <Text span fw="600">
               {t('API Key')}
@@ -376,10 +395,10 @@ function ProviderSettings({ providerId }: { providerId: string }) {
             <Flex gap="xs" align="center">
               <PasswordInput flex={1} value={providerSettings?.apiKey || ''} onChange={handleApiKeyChange} />
               <Tooltip
-                disabled={!!providerSettings?.apiKey && displayModels.length > 0}
+                disabled={hasValidCredentials() && displayModels.length > 0}
                 label={
-                  !providerSettings?.apiKey
-                    ? t('API Key is required to check connection')
+                  !hasValidCredentials()
+                    ? getCredentialTooltipMessage()
                     : displayModels.length === 0
                       ? t('Add at least one model to check connection')
                       : null
@@ -387,7 +406,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
               >
                 <Button
                   size="sm"
-                  disabled={!providerSettings?.apiKey || displayModels.length === 0}
+                  disabled={!hasValidCredentials() || displayModels.length === 0}
                   loading={modelTestResult?.testing || false}
                   onClick={() => setShowTestModelSelector(true)}
                 >
@@ -581,6 +600,68 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                   onChange={(e) =>
                     setProviderSettings({
                       apiVersion: e.currentTarget.value,
+                    })
+                  }
+                />
+              </Flex>
+            </Stack>
+          </>
+        )}
+
+        {/* AWS Bedrock specific fields */}
+        {baseInfo.id === ModelProviderEnum.Bedrock && (
+          <>
+            {/* AWS Access Key ID */}
+            <Stack gap="xxs">
+              <Text span fw="600">
+                {t('AWS Access Key ID')}
+              </Text>
+              <Flex gap="xs" align="center">
+                <PasswordInput
+                  flex={1}
+                  value={providerSettings?.awsAccessKeyId || ''}
+                  placeholder="AKIAIOSFODNN7EXAMPLE"
+                  onChange={(e) =>
+                    setProviderSettings({
+                      awsAccessKeyId: e.currentTarget.value,
+                    })
+                  }
+                />
+              </Flex>
+            </Stack>
+
+            {/* AWS Secret Access Key */}
+            <Stack gap="xxs">
+              <Text span fw="600">
+                {t('AWS Secret Access Key')}
+              </Text>
+              <Flex gap="xs" align="center">
+                <PasswordInput
+                  flex={1}
+                  value={providerSettings?.awsSecretAccessKey || ''}
+                  placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                  onChange={(e) =>
+                    setProviderSettings({
+                      awsSecretAccessKey: e.currentTarget.value,
+                    })
+                  }
+                />
+              </Flex>
+            </Stack>
+
+            {/* AWS Region */}
+            <Stack gap="xxs">
+              <Text span fw="600">
+                {t('AWS Region')}
+              </Text>
+              <Flex gap="xs" align="center">
+                <TextInput
+                  flex={1}
+                  value={providerSettings?.awsRegion || ''}
+                  placeholder="us-east-1"
+                  onChange={(e) =>
+                    setProviderSettings({
+                      awsRegion: e.currentTarget.value,
                     })
                   }
                 />

@@ -25,7 +25,13 @@ export const useProviders = () => {
               models: chatboxAIModels,
             }
           } else if (
-            (!p.isCustom && providerSettings?.apiKey) ||
+            // For Bedrock, check AWS credentials instead of apiKey
+            (p.id === ModelProviderEnum.Bedrock &&
+              providerSettings?.awsAccessKeyId &&
+              providerSettings?.awsSecretAccessKey) ||
+            // For other non-custom providers, check apiKey
+            (!p.isCustom && p.id !== ModelProviderEnum.Bedrock && providerSettings?.apiKey) ||
+            // For custom providers, Ollama, and LMStudio, check models list
             ((p.isCustom || p.id === ModelProviderEnum.Ollama || p.id === ModelProviderEnum.LMStudio) &&
               providerSettings?.models?.length)
           ) {

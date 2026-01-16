@@ -159,6 +159,7 @@
     "webpack-obfuscator": "^3.5.1"
   },
   "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^3.0.73",
     "@ai-sdk/anthropic": "^2.0.47",
     "@ai-sdk/azure": "^2.0.74",
     "@ai-sdk/google": "^2.0.43",
@@ -168,6 +169,7 @@
     "@ai-sdk/openai-compatible": "^1.0.27",
     "@ai-sdk/perplexity": "^2.0.20",
     "@ai-sdk/provider": "^2.0.0",
+    "@aws-sdk/client-bedrock": "^3.969.0",
     "@braintree/sanitize-url": "^6.0.4",
     "@capacitor-community/sqlite": "^6.0.2",
     "@capacitor/android": "^6.1.1",

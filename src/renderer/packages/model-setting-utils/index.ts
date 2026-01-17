@@ -50,6 +50,7 @@ export function getModelSettingUtil(
     [ModelProviderEnum.LMStudio]: LMStudioSettingUtil,
     [ModelProviderEnum.Perplexity]: PerplexitySettingUtil,
     [ModelProviderEnum.XAI]: XAISettingUtil,
+    [ModelProviderEnum.N1N]: OpenAISettingUtil,
     [ModelProviderEnum.Custom]: CustomModelSettingUtil,
   }
 

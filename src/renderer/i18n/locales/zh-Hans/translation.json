@@ -603,6 +603,7 @@
   "Show/Hide the Search Dialog": "显示/隐藏搜索弹窗",
   "Showing {{loaded}} of {{total}} chunks": "显示 {{loaded}} / {{total}} 分块",
   "Showing first {{count}} chunks": "显示前 {{count}} 分块",
+  "n1n.ai": "n1n.ai",
   "SiliconFlow": "硅基流动",
   "Smartest AI-Powered Services for Rapid Access": "最智能的 AI 服务，快速访问",
   "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.": "抱歉，当前模型 {{model}} API 本身不支持图片理解。如果您需要发送图片，请切换到其他模型或使用推荐的 <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>。",

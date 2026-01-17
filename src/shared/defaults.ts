@@ -174,6 +174,49 @@ export const SystemProviders: ProviderBaseInfo[] = [
     type: ModelProviderType.ChatboxAI,
   },
   {
+    id: ModelProviderEnum.N1N,
+    name: 'n1n.ai',
+    type: ModelProviderType.OpenAI,
+    urls: {
+      website: 'https://n1n.ai',
+    },
+    defaultSettings: {
+      apiHost: 'https://api.n1n.ai/v1',
+      models: [
+        {
+          modelId: 'gpt-4o_repeat_n1n',
+          nickname: 'GPT-4o',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 128_000,
+        },
+        {
+          modelId: 'claude-3-5-sonnet-20240620_repeat_n1n',
+          nickname: 'Claude 3.5 Sonnet',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 200_000,
+        },
+        {
+          modelId: 'gemini-1.5-pro-latest_repeat_n1n',
+          nickname: 'Gemini 1.5 Pro',
+          capabilities: ['vision', 'tool_use'],
+          contextWindow: 1_000_000,
+        },
+        {
+          modelId: 'deepseek-chat_repeat_n1n',
+          nickname: 'DeepSeek V3',
+          capabilities: ['tool_use'],
+          contextWindow: 64_000,
+        },
+        {
+          modelId: 'deepseek-reasoner_repeat_n1n',
+          nickname: 'DeepSeek R1',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 64_000,
+        },
+      ],
+    },
+  },
+  {
     id: ModelProviderEnum.OpenAI,
     name: 'OpenAI',
     type: ModelProviderType.OpenAI,

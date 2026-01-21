@@ -1,4 +1,4 @@
-import { Button, Flex, PasswordInput, Stack, Text, Title } from '@mantine/core'
+import { Button, Flex, PasswordInput, Select, Stack, Text, Title, Tooltip } from '@mantine/core'
 import { createFileRoute } from '@tanstack/react-router'
 import { ofetch } from 'ofetch'
 import { useState } from 'react'
@@ -18,6 +18,8 @@ export function RouteComponent() {
 
   const [checkingTavily, setCheckingTavily] = useState(false)
   const [tavilyAvaliable, setTavilyAvaliable] = useState<boolean>()
+  const [checkingQuerit, setCheckingQuerit] = useState(false)
+  const [queritAvaliable, setQueritAvaliable] = useState<boolean>()
   const checkTavily = async () => {
     if (extension.webSearch.tavilyApiKey) {
       setCheckingTavily(true)
@@ -44,6 +46,29 @@ export function RouteComponent() {
       }
     }
   }
+  const checkQuerit = async () => {
+    if (extension.webSearch.queritApiKey) {
+      setCheckingQuerit(true)
+      setQueritAvaliable(undefined)
+      try {
+        await ofetch('https://api.querit.ai/v1/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${extension.webSearch.queritApiKey}`,
+          },
+          body: {
+            query: 'Chatbox',
+          },
+        })
+        setQueritAvaliable(true)
+      } catch (e) {
+        setQueritAvaliable(false)
+      } finally {
+        setCheckingQuerit(false)
+      }
+    }
+  }
 
   return (
     <Stack p="md" gap="xxl">
@@ -55,6 +80,7 @@ export function RouteComponent() {
           { value: 'build-in', label: 'Chatbox Search (Pro)' },
           { value: 'bing', label: 'Bing Search (Free)' },
           { value: 'tavily', label: 'Tavily' },
+          { value: 'querit', label: 'Querit' },
         ]}
         value={extension.webSearch.provider}
         onChange={(e) =>
@@ -272,6 +298,136 @@ export function RouteComponent() {
                       webSearch: {
                         ...extension.webSearch,
                         tavilyIncludeRawContent: e,
+                      },
+                    },
+                  })
+                }
+                maw={320}
+              />
+            </Stack>
+          </Stack>
+        </Stack>
+      )}
+      {/* Querit API Key */}
+      {extension.webSearch.provider === 'querit' && (
+        <Stack gap="xs">
+          <Text fw="600">{t('Querit API Key')}</Text>
+          <Flex align="center" gap="xs">
+            <PasswordInput
+              flex={1}
+              maw={320}
+              value={extension.webSearch.queritApiKey}
+              onChange={(e) => {
+                setQueritAvaliable(undefined)
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      queritApiKey: e.currentTarget.value,
+                    },
+                  },
+                })
+              }}
+              placeholder={t('Enter your Querit API Key') || 'Enter your Querit API Key'}
+              error={queritAvaliable === false}
+            />
+            <Button color="chatbox-gray" variant="light" onClick={checkQuerit} loading={checkingQuerit}>
+              {t('Check')}
+            </Button>
+          </Flex>
+
+          {typeof queritAvaliable === 'boolean' ? (
+            queritAvaliable ? (
+              <Text size="xs" c="chatbox-success">
+                {t('Connection successful!')}
+              </Text>
+            ) : (
+              <Text size="xs" c="chatbox-error">
+                {t('API key invalid!')}
+              </Text>
+            )
+          ) : null}
+
+          <Button
+            variant="transparent"
+            size="compact-xs"
+            px={0}
+            className="self-start"
+            onClick={() => platform.openLink('https://www.querit.ai')}
+          >
+            {t('Get API Key')}
+          </Button>
+
+          {/* Querit Configuration Options */}
+          <Stack mt="md" gap="sm">
+            <Title order={6}>{t('Querit Search Options')}</Title>
+
+            {/* Max Results */}
+            <Stack gap="xs">
+              <Flex align="center" gap="xs">
+                <Text size="sm">{t('Max Results')}</Text>
+                <Tooltip label={t('Maximum number of results to return.')}>
+                  <Text size="sm" c="gray">ⓘ</Text>
+                </Tooltip>
+              </Flex>
+              <Select
+                comboboxProps={{ withinPortal: true, withArrow: true }}
+                data={[
+                  { value: '1', label: '1' },
+                  { value: '2', label: '2' },
+                  { value: '3', label: '3' },
+                  { value: '4', label: '4' },
+                  { value: '5', label: '5' },
+                  { value: '6', label: '6' },
+                  { value: '7', label: '7' },
+                  { value: '8', label: '8' },
+                  { value: '9', label: '9' },
+                  { value: '10', label: '10' },
+                ]}
+                value={String(extension.webSearch.queritMaxResults || 5)}
+                onChange={(e) =>
+                  e &&
+                  setSettings({
+                    extension: {
+                      ...extension,
+                      webSearch: {
+                        ...extension.webSearch,
+                        queritMaxResults: parseInt(e),
+                      },
+                    },
+                  })
+                }
+                maw={320}
+              />
+            </Stack>
+
+            {/* Time Range */}
+            <Stack gap="xs">
+              <Flex align="center" gap="xs">
+                <Text size="sm">{t('Time Range')}</Text>
+                <Tooltip label={t('Time range of the search. For example, the last month.')}>
+                  <Text size="sm" c="gray">ⓘ</Text>
+                </Tooltip>
+              </Flex>
+              <Select
+                comboboxProps={{ withinPortal: true, withArrow: true }}
+                data={[
+                  { value: 'none', label: 'None' },
+                  { value: 'd1', label: 'Day' },
+                  { value: 'w1', label: 'Week' },
+                  { value: 'm1', label: 'Month' },
+                  { value: 'y1', label: 'Year' },
+                ]}
+                value={extension.webSearch.queritTimeRange || 'none'}
+                onChange={(e) =>
+                  e &&
+                  setSettings({
+                    extension: {
+                      ...extension,
+                      webSearch: {
+                        ...extension.webSearch,
+                        queritTimeRange: e,
                       },
                     },
                   })

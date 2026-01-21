@@ -14,7 +14,7 @@
     "build:main": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.prod.ts",
     "build:renderer": "cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.prod.ts",
     "build:web": "cross-env CHATBOX_BUILD_PLATFORM=web npm run build:renderer && npm run delete-sourcemaps",
-    "delete-sourcemaps": "ts-node ./.erb/scripts/delete-source-maps-runner.js",
+    "delete-sourcemaps": "ts-node ./.erb/scripts/delete-source-maps.js",
     "postinstall": "patch-package && ts-node .erb/scripts/check-native-dep.js && electron-builder install-app-deps && cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.renderer.dev.dll.ts",
     "package": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never",
     "package:all": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never --win --mac --linux",

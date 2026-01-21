@@ -8,7 +8,7 @@
  * When running `npm run build` or `npm run build:main`, this file is compiled to
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeTheme, session, shell, Tray } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeTheme, screen, session, shell, Tray } from 'electron'
 import log from 'electron-log/main'
 import { autoUpdater } from 'electron-updater'
 import os from 'os'
@@ -70,6 +70,7 @@ console.log(`📱 URL Scheme registered: ${PROTOCOL_SCHEME}://`)
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+let quickInputWindow: BrowserWindow | null = null
 
 // --------- 快捷键 ---------
 
@@ -142,10 +143,132 @@ function registerShortcuts(shortcutSetting?: ShortcutSetting) {
   } catch (error) {
     log.error('Failed to register shortcut [windowQuickToggle]:', error)
   }
+  // Register quick-input hotkey
+  registerQuickInputHotkey()
 }
 
 function unregisterShortcuts() {
   return globalShortcut.unregisterAll()
+}
+
+/**
+ * Register global hotkey for quick-input window
+ */
+function registerQuickInputHotkey(): boolean {
+  try {
+    const registered = globalShortcut.register('Super+Alt+P', () => {
+      createQuickInputWindow()
+    })
+    if (!registered) {
+      log.error('Failed to register quick-input hotkey')
+      return false
+    }
+    return true
+  } catch (error) {
+    log.error('Failed to register quick-input hotkey:', error)
+    return false
+  }
+}
+
+/**
+ * Create and show quick-input BrowserWindow
+ */
+async function createQuickInputWindow(): Promise<BrowserWindow | null> {
+  // Close existing window if open
+  if (quickInputWindow) {
+    quickInputWindow.close()
+    quickInputWindow = null
+  }
+
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const { width, height } = primaryDisplay.workAreaSize
+    const { x, y } = primaryDisplay.workArea
+
+    const windowWidth = 600
+    const windowHeight = 80
+
+    quickInputWindow = new BrowserWindow({
+      width: windowWidth,
+      height: windowHeight,
+      x: x + Math.floor((width - windowWidth) / 2),
+      y: y + Math.floor((height - windowHeight) / 2),
+      frame: false,
+      resizable: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      show: false,
+      webPreferences: {
+        spellcheck: false,
+        webSecurity: false,
+        allowRunningInsecureContent: false,
+        preload: app.isPackaged
+          ? path.join(__dirname, 'preload.js')
+          : path.join(__dirname, '../../.erb/dll/preload.js'),
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    })
+
+    // Set up event listeners before loading URL
+    if (!quickInputWindow) {
+      log.error('Failed to create quick-input window: window is null')
+      return null
+    }
+
+    quickInputWindow.on('ready-to-show', () => {
+      if (quickInputWindow) {
+        quickInputWindow.show()
+        quickInputWindow.focus()
+      }
+    })
+
+    quickInputWindow.on('closed', () => {
+      quickInputWindow = null
+    })
+
+    // Load the URL with hash route
+    const htmlPath = resolveHtmlPath('index.html')
+    // For hash routing, append the hash to the URL
+    const urlWithHash = htmlPath.includes('#') ? htmlPath : `${htmlPath}#/quick-input`
+    log.info('Quick-input: Loading URL with hash:', urlWithHash)
+    
+    try {
+      await quickInputWindow.loadURL(urlWithHash)
+    } catch (error) {
+      log.error('Quick-input: Error loading URL, trying base URL:', error)
+      // Fallback: load base URL and navigate after load
+      await quickInputWindow.loadURL(htmlPath)
+      quickInputWindow.webContents.once('did-finish-load', () => {
+        if (quickInputWindow && !quickInputWindow.isDestroyed()) {
+          quickInputWindow.webContents.executeJavaScript(`
+            window.location.hash = '#/quick-input';
+          `).catch((err) => {
+            log.error('Quick-input: Error setting hash:', err)
+          })
+        }
+      })
+    }
+
+    return quickInputWindow
+  } catch (error) {
+    log.error('Failed to create quick-input window:', error)
+    if (quickInputWindow) {
+      quickInputWindow.close()
+      quickInputWindow = null
+    }
+    return null
+  }
+}
+
+/**
+ * Close quick-input window
+ */
+function closeQuickInputWindow(): void {
+  if (quickInputWindow) {
+    quickInputWindow.close()
+    quickInputWindow = null
+  }
 }
 
 // --------- Tray 图标 ---------
@@ -709,4 +832,119 @@ ipcMain.handle('window:close', () => {
 
 ipcMain.handle('window:is-maximized', () => {
   return mainWindow?.isMaximized()
+})
+
+ipcMain.handle('window:show', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    mainWindow.show()
+    mainWindow.focus()
+    mainWindow.webContents.send('window-show')
+  } else {
+    createWindow()
+  }
+})
+
+// Quick-input IPC handlers
+ipcMain.on('quick-input:submit', async (event, { text }: { text: string }) => {
+  log.info('Quick-input: Received submit event with text:', text)
+  
+  // Ensure main window exists and is ready
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    log.info('Quick-input: Main window not found or destroyed, creating it')
+    await createWindow()
+  }
+  
+  // Wait for main window to be ready
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    // Wait for window to finish loading if it's still loading
+    if (mainWindow.webContents.isLoading()) {
+      log.info('Quick-input: Main window is loading, waiting for it to finish')
+      await new Promise<void>((resolve) => {
+        const handler = () => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.off('did-finish-load', handler)
+          }
+          resolve()
+        }
+        mainWindow.webContents.once('did-finish-load', handler)
+      })
+    }
+    
+    // Show and focus main window
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    if (!mainWindow.isVisible()) {
+      mainWindow.show()
+    }
+    mainWindow.focus()
+    
+    // Forward to main window renderer
+    // Wait for renderer to be ready - check if DOM is ready
+    const sendMessage = () => {
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        log.info('Quick-input: Forwarding to main window renderer')
+        try {
+          mainWindow.webContents.send('quick-input:submit', { text })
+        } catch (error) {
+          log.error('Quick-input: Error sending message to main window:', error)
+        }
+      } else {
+        log.warn('Quick-input: Main window webContents not available', {
+          mainWindow: !!mainWindow,
+          isDestroyed: mainWindow?.isDestroyed(),
+          webContents: !!mainWindow?.webContents,
+          webContentsDestroyed: mainWindow?.webContents?.isDestroyed(),
+        })
+      }
+    }
+
+    // Wait for the renderer to be fully ready
+    // Check if DOM is ready and React is mounted
+    const checkAndSend = async () => {
+      try {
+        const isReady = await mainWindow.webContents.executeJavaScript(`
+          (function() {
+            return document.readyState === 'complete' && 
+                   document.getElementById('root') !== null &&
+                   window.electronAPI !== undefined;
+          })()
+        `)
+        
+        if (isReady) {
+          log.info('Quick-input: Renderer is ready, sending message')
+          sendMessage()
+        } else {
+          log.info('Quick-input: Renderer not ready yet, waiting...')
+          setTimeout(checkAndSend, 200)
+        }
+      } catch (error) {
+        log.error('Quick-input: Error checking renderer readiness:', error)
+        // Fallback: just wait and send
+        setTimeout(sendMessage, 2000)
+      }
+    }
+    
+    // Start checking after a short delay
+    setTimeout(checkAndSend, 500)
+  } else {
+    log.warn('Quick-input: Main window not available after creation attempt')
+  }
+  
+  // Close quick-input window
+  closeQuickInputWindow()
+})
+
+ipcMain.handle('quick-input:close', () => {
+  closeQuickInputWindow()
+})
+
+ipcMain.on('quick-input:ready', () => {
+  // Window is ready, ensure it's focused
+  if (quickInputWindow) {
+    quickInputWindow.focus()
+  }
 })

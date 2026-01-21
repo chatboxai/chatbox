@@ -26,6 +26,19 @@ const electronHandler: ElectronIPC = {
   //     },
   // },
   invoke: ipcRenderer.invoke,
+  send: (channel: string, ...args: any[]) => {
+    ipcRenderer.send(channel, ...args)
+  },
+  on: (channel: string, func: (...args: any[]) => void) => {
+    const subscription = (_event: Electron.IpcRendererEvent, ...args: any[]) => {
+      // Pass the event as first argument, then the rest of the args
+      func(_event, ...args)
+    }
+    ipcRenderer.on(channel, subscription)
+    return () => {
+      ipcRenderer.removeListener(channel, subscription)
+    }
+  },
   onSystemThemeChange: (callback: () => void) => {
     ipcRenderer.on('system-theme-updated', callback)
     return () => ipcRenderer.off('system-theme-updated', callback)

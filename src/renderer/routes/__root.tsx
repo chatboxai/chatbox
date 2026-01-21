@@ -40,7 +40,7 @@ import CssBaseline from '@mui/material/CssBaseline'
 import { ThemeProvider } from '@mui/material/styles'
 import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useSetAtom } from 'jotai'
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import SettingsModal, { navigateToSettings } from '@/modals/Settings'
 import { getOS } from '@/packages/navigator'
 import * as remote from '@/packages/remote'
@@ -55,6 +55,11 @@ import * as premiumActions from '@/stores/premiumActions'
 import * as settingActions from '@/stores/settingActions'
 import { settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
+import { createSession as createSessionStore } from '@/stores/chatStore'
+import { submitNewUserMessage, switchCurrentSession } from '@/stores/sessionActions'
+import { initEmptyChatSession } from '@/stores/sessionHelpers'
+import { createMessage } from 'src/shared/types'
+import platform from '@/platform'
 
 function Root() {
   const location = useLocation()
@@ -152,27 +157,154 @@ function Root() {
     }
   }, [needRoomForMacWindowControls])
 
+  // Handle quick-input submission
+  const handleQuickInputSubmit = useCallback(async (text: string) => {
+    console.log('handleQuickInputSubmit: Called with text:', text)
+    // Validate input (non-empty, non-whitespace)
+    if (!text || !text.trim()) {
+      console.log('handleQuickInputSubmit: Text is empty, returning')
+      return
+    }
+
+    try {
+      console.log('handleQuickInputSubmit: Creating new session...')
+      // Create new session
+      const newSession = await createSessionStore(initEmptyChatSession())
+      console.log('handleQuickInputSubmit: Session created:', newSession.id)
+
+      // Create user message
+      console.log('handleQuickInputSubmit: Creating user message...')
+      const userMessage = createMessage('user', text)
+      console.log('handleQuickInputSubmit: User message created:', userMessage.id)
+
+      // Switch to new session FIRST (before submitting message)
+      // This ensures the UI is showing the correct session when messages are inserted
+      console.log('handleQuickInputSubmit: Switching to session:', newSession.id)
+      switchCurrentSession(newSession.id)
+      console.log('handleQuickInputSubmit: Session switched')
+
+      // Wait a moment for the UI to update and show the session
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      // Submit message (this will insert user message and start streaming)
+      // Don't await - let it run in the background so streaming can start immediately
+      console.log('handleQuickInputSubmit: Submitting message...')
+      void submitNewUserMessage(newSession.id, {
+        newUserMsg: userMessage,
+        needGenerating: true,
+      })
+      console.log('handleQuickInputSubmit: Message submission initiated')
+
+      // Show main window (already shown by main process, but ensure it's focused)
+      if (platform.type === 'desktop' && window.electronAPI) {
+        console.log('handleQuickInputSubmit: Ensuring main window is shown')
+        await window.electronAPI.invoke('window:show')
+      }
+      console.log('handleQuickInputSubmit: Completed successfully')
+    } catch (error) {
+      console.error('handleQuickInputSubmit: Error handling quick-input submit:', error)
+      // Error handling is done by existing error handling in submitNewUserMessage
+    }
+  }, [])
+
+  // IPC listener for quick-input:submit
+  useEffect(() => {
+    if (!window.electronAPI || !window.electronAPI.on) {
+      console.warn('Root: window.electronAPI.on is not available')
+      return
+    }
+    
+    console.log('Root: Setting up quick-input:submit listener')
+    const unsubscribe = window.electronAPI.on('quick-input:submit', async (_event, ...args) => {
+      console.log('Root: Received quick-input:submit event, _event:', _event, 'args:', args, 'args.length:', args?.length)
+      
+      // Handle different argument formats
+      // The payload could be in _event (if preload passes it as first arg) or in args[0]
+      let text: string | undefined
+      let payload: any = null
+      
+      // Check if payload is in args first (new format after preload fix)
+      if (args && args.length > 0) {
+        payload = args[0]
+      } else if (_event && typeof _event === 'object' && 'text' in _event) {
+        // Fallback: check if _event itself is the payload (old format)
+        payload = _event
+      }
+      
+      console.log('Root: Payload:', payload, 'type:', typeof payload)
+      
+      if (!payload) {
+        console.error('Root: No payload found, _event:', _event, 'args:', args)
+        return
+      }
+      
+      if (typeof payload === 'string') {
+        // Direct string
+        text = payload
+      } else if (typeof payload === 'object') {
+        // Object with text property
+        if ('text' in payload && typeof payload.text === 'string') {
+          text = payload.text
+        } else {
+          console.error('Root: Payload is object but missing text property:', payload, 'keys:', Object.keys(payload || {}))
+          return
+        }
+      } else {
+        console.error('Root: Unexpected payload type:', typeof payload, payload)
+        return
+      }
+      
+      console.log('Root: Extracted text:', text)
+      if (!text || !text.trim()) {
+        console.error('Root: Text is empty or whitespace')
+        return
+      }
+      
+      try {
+        await handleQuickInputSubmit(text)
+        console.log('Root: handleQuickInputSubmit completed successfully')
+      } catch (error) {
+        console.error('Root: Error in handleQuickInputSubmit:', error)
+      }
+    })
+    
+    return unsubscribe
+  }, [handleQuickInputSubmit])
+
+  // Check if we're on the quick-input route
+  const isQuickInputRoute = location.pathname === '/quick-input'
+
   return (
     <Box className="box-border App" spellCheck={spellCheck} dir={language === 'ar' ? 'rtl' : 'ltr'}>
-      {platform.type === 'desktop' && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
-      <Grid container className="h-full">
-        <Sidebar />
-        <Box
-          className="h-full w-full"
-          sx={{
-            flexGrow: 1,
-            ...(showSidebar
-              ? language === 'ar'
-                ? { paddingRight: { sm: `${sidebarWidth}px` } }
-                : { paddingLeft: { sm: `${sidebarWidth}px` } }
-              : {}),
-          }}
-        >
-          <ErrorBoundary name="main">
-            <Outlet />
-          </ErrorBoundary>
-        </Box>
-      </Grid>
+      {platform.type === 'desktop' && (getOS() === 'Windows' || getOS() === 'Linux') && !isQuickInputRoute && (
+        <ExitFullscreenButton />
+      )}
+      {isQuickInputRoute ? (
+        // Quick-input route: no sidebar, full screen input
+        <ErrorBoundary name="main">
+          <Outlet />
+        </ErrorBoundary>
+      ) : (
+        // Normal routes: with sidebar
+        <Grid container className="h-full">
+          <Sidebar />
+          <Box
+            className="h-full w-full"
+            sx={{
+              flexGrow: 1,
+              ...(showSidebar
+                ? language === 'ar'
+                  ? { paddingRight: { sm: `${sidebarWidth}px` } }
+                  : { paddingLeft: { sm: `${sidebarWidth}px` } }
+                : {}),
+            }}
+          >
+            <ErrorBoundary name="main">
+              <Outlet />
+            </ErrorBoundary>
+          </Box>
+        </Grid>
+      )}
       {/* 对话设置 */}
       {/* <AppStoreRatingDialog /> */}
       {/* 代码预览 */}

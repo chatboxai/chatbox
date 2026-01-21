@@ -7,6 +7,7 @@ import WebSearch from './base'
 import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
 import { ChatboxSearch } from './chatbox-search'
+import { QueritSearch } from './querit'
 import { TavilySearch } from './tavily'
 
 const MAX_CONTEXT_ITEMS = 10
@@ -49,6 +50,12 @@ function getSearchProviders() {
           settings.webSearch.tavilyIncludeRawContent
         )
       )
+      break
+    case 'querit':
+      if (!settings.webSearch.queritApiKey) {
+        throw ChatboxAIAPIError.fromCodeName('querit_api_key_required', 'querit_api_key_required')
+      }
+      selectedProviders.push(new QueritSearch(settings.webSearch.queritApiKey))
       break
     default:
       throw new Error(`Unsupported search provider: ${provider}`)

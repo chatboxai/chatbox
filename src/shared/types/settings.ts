@@ -156,12 +156,13 @@ const ShortcutSettingSchema = z.object({
 
 const ExtensionSettingsSchema = z.object({
   webSearch: z.object({
-    provider: z.enum(['build-in', 'bing', 'tavily']),
+    provider: z.enum(['build-in', 'bing', 'tavily', 'querit']),
     tavilyApiKey: z.string().optional(),
     tavilySearchDepth: z.string().optional(),
     tavilyMaxResults: z.number().optional(),
     tavilyTimeRange: z.string().optional(),
     tavilyIncludeRawContent: z.string().optional(),
+    queritApiKey: z.string().optional(),
   }),
   knowledgeBase: z
     .object({

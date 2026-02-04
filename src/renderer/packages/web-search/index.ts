@@ -8,7 +8,6 @@ import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
 import { ChatboxSearch } from './chatbox-search'
 import { TavilySearch } from './tavily'
-import { BoChaSearch} from './bocha'
 
 const MAX_CONTEXT_ITEMS = 10
 
@@ -50,12 +49,6 @@ function getSearchProviders() {
           settings.webSearch.tavilyIncludeRawContent
         )
       )
-      break
-    case 'bocha':
-      if (!settings.webSearch.bochaApiKey) {
-        throw ChatboxAIAPIError.fromCodeName('bocha_api_key_required', 'bocha_api_key_required')
-      }
-      selectedProviders.push(new BoChaSearch(settings.webSearch.bochaApiKey))
       break
     default:
       throw new Error(`Unsupported search provider: ${provider}`)

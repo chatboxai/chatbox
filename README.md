@@ -301,20 +301,21 @@ Before you begin, ensure you have the following installed:
 | `npm run package` | Build and package for current platform |
 | `npm run package:all` | Build and package for all platforms |
 | `npm run build` | Build for production without packaging |
-| `npm run lint` | Run ESLint to check code quality |
-| `npm run test` | Run test suite |
+| `npm run lint` | Run Biome to check code quality |
+| `npm run test` | Run Vitest test suite |
 
 ### Project Structure
 
 ```
 chatbox/
-├── src/                    # Source code
-│   ├── components/         # React components
-│   ├── locales/            # Translation files
-│   ├── stores/             # State management
-│   └── ...
-├── doc/                    # Documentation
-├── electron/               # Electron-specific code
+├── src/
+│   ├── main/               # Electron main process
+│   ├── renderer/           # React renderer (UI)
+│   ├── preload/            # Electron preload scripts
+│   └── shared/             # Shared utilities
+├── doc/                    # Documentation and assets
+├── resources/              # App resources and icons
+├── team-sharing/           # Team collaboration features
 └── package.json            # Project configuration
 ```
 
@@ -334,7 +335,7 @@ chatbox/
 - **Solution**: Run `npm config set script-shell "C:\\Program Files\\git\\bin\\bash.exe"` if using Git Bash
 
 **Issue**: Changes not reflecting in development
-- **Solution**: Try clearing the cache with `npm run clean` and restart the dev server
+- **Solution**: Stop the dev server, delete `node_modules/.vite`, and restart
 
 ## Star History
 

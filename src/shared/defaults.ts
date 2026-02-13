@@ -122,6 +122,7 @@ export function settings(): Settings {
       webSearch: {
         provider: 'build-in',
         tavilyApiKey: '',
+        bochaApiKey: '',
       },
       knowledgeBase: {
         models: {

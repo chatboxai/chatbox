@@ -44,6 +44,31 @@ export function RouteComponent() {
       }
     }
   }
+  const [checkingBoCha, setCheckingBoCha] = useState(false)
+  const [bochaAvaliable, setBoChaAvaliable] = useState<boolean>()
+  const checkBoCha = async () => {
+    if (extension.webSearch.bochaApiKey) {
+      setCheckingBoCha(true)
+      setBoChaAvaliable(undefined)
+      try {
+        await ofetch('https://api.bochaai.com/v1/web-search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${extension.webSearch.bochaApiKey}`,
+          },
+          body: {
+            query: 'Chatbox',
+          },
+        })
+        setBoChaAvaliable(true)
+      } catch (e) {
+        setBoChaAvaliable(false)
+      } finally {
+        setCheckingBoCha(false)
+      }
+    }
+  }
 
   return (
     <Stack p="md" gap="xxl">
@@ -55,6 +80,7 @@ export function RouteComponent() {
           { value: 'build-in', label: 'Chatbox Search (Pro)' },
           { value: 'bing', label: 'Bing Search (Free)' },
           { value: 'tavily', label: 'Tavily' },
+          {value: 'bocha', label: 'BoCha' },
         ]}
         value={extension.webSearch.provider}
         onChange={(e) =>
@@ -280,6 +306,58 @@ export function RouteComponent() {
               />
             </Stack>
           </Stack>
+        </Stack>
+      )}
+      {/* Bocha API Key */}
+      {extension.webSearch.provider === 'bocha' && (
+        <Stack gap="xs">
+          <Text fw="600">{t('BoCha API Key')}</Text>
+          <Flex align="center" gap="xs">
+            <PasswordInput
+              flex={1}
+              maw={320}
+              value={extension.webSearch.bochaApiKey}
+              onChange={(e) => {
+                setBoChaAvaliable(undefined)
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      bochaApiKey: e.currentTarget.value,
+                    },
+                  },
+                })
+              }}
+              placeholder={t('Enter your BoCha API Key') || 'Enter your BoCha API Key'}
+              error={bochaAvaliable === false}
+            />
+            <Button color="chatbox-gray" variant="light" onClick={checkBoCha} loading={checkingBoCha}>
+              {t('Check')}
+            </Button>
+          </Flex>
+
+          {typeof bochaAvaliable === 'boolean' ? (
+            bochaAvaliable ? (
+              <Text size="xs" c="chatbox-success">
+                {t('Connection successful!')}
+              </Text>
+            ) : (
+              <Text size="xs" c="chatbox-error">
+                {t('API key invalid!')}
+              </Text>
+            )
+          ) : null}
+
+          <Button
+            variant="transparent"
+            size="compact-xs"
+            px={0}
+            className="self-start"
+            onClick={() => platform.openLink('https://bocha.cn/')}
+          >
+            {t('Get API Key')}
+          </Button>
         </Stack>
       )}
     </Stack>

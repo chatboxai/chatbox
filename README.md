@@ -271,7 +271,7 @@ Help make Chatbox accessible to more people by contributing translations:
 Before you begin, ensure you have the following installed:
 
 - **Node.js** (v20.x – v22.x) - [Download here](https://nodejs.org/)
-- **npm** (v9.x or later) - Comes with Node.js (Note: pnpm is not supported)
+- **pnpm** (v10.x or later) - Install via `corepack enable && corepack prepare pnpm@latest --activate`
 - **Git** - [Download here](https://git-scm.com/)
 
 ### Quick Setup
@@ -284,12 +284,12 @@ Before you begin, ensure you have the following installed:
 
 2. **Install dependencies**
    ```bash
-   npm install
+   pnpm install
    ```
 
 3. **Start development server**
    ```bash
-   npm run dev
+   pnpm run dev
    ```
    The application will start in development mode with hot-reload enabled.
 
@@ -297,12 +297,12 @@ Before you begin, ensure you have the following installed:
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start development server with hot-reload |
-| `npm run package` | Build and package for current platform |
-| `npm run package:all` | Build and package for all platforms |
-| `npm run build` | Build for production without packaging |
-| `npm run lint` | Run Biome to check code quality |
-| `npm run test` | Run Vitest test suite |
+| `pnpm run dev` | Start development server with hot-reload |
+| `pnpm run package` | Build and package for current platform |
+| `pnpm run package:all` | Build and package for all platforms |
+| `pnpm run build` | Build for production without packaging |
+| `pnpm run lint` | Run Biome to check code quality |
+| `pnpm run test` | Run Vitest test suite |
 
 ### Project Structure
 
@@ -321,18 +321,18 @@ chatbox/
 
 ### Development Tips
 
-- Use `npm run lint` before committing to ensure code quality
+- Use `pnpm run lint` before committing to ensure code quality
 - Follow the existing code style and patterns
 - Test your changes on both light and dark themes
 - Ensure cross-platform compatibility when making UI changes
 
 ### Troubleshooting
 
-**Issue**: `npm install` fails
-- **Solution**: Ensure you're using npm (not pnpm or yarn) and Node.js version is within the required range
+**Issue**: `pnpm install` fails
+- **Solution**: Ensure you're using pnpm (not npm or yarn) and Node.js version is within the required range. Run `corepack enable` if pnpm is not found.
 
 **Issue**: Build fails on Windows
-- **Solution**: Run `npm config set script-shell "C:\\Program Files\\git\\bin\\bash.exe"` if using Git Bash
+- **Solution**: Run `pnpm config set script-shell "C:\\Program Files\\git\\bin\\bash.exe"` if using Git Bash
 
 **Issue**: Changes not reflecting in development
 - **Solution**: Stop the dev server, delete `node_modules/.vite`, and restart

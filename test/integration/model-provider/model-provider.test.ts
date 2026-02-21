@@ -70,6 +70,7 @@ const PROVIDER_TEST_MODELS: Record<ModelProvider, ProviderModelInfo[]> = {
     { modelId: 'anthropic/claude-haiku-4.5', capabilities: ['tool_use'] },
     { modelId: 'deepseek/deepseek-v3.2', capabilities: ['tool_use', 'reasoning'] },
   ],
+  [ModelProviderEnum.LLMApi]: [],
   [ModelProviderEnum.Perplexity]: [],
   [ModelProviderEnum.Custom]: [],
 }

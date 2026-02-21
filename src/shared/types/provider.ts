@@ -18,6 +18,7 @@ export enum ModelProviderEnum {
   LMStudio = 'lm-studio',
   Perplexity = 'perplexity',
   XAI = 'xAI',
+  LLMApi = 'llmapi',
   OpenRouter = 'openrouter',
   Custom = 'custom',
 }

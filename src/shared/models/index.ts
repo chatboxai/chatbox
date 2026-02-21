@@ -27,12 +27,6 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
 
 export const AIModelProviderMenuOptionList = [
   {
-    value: ModelProviderEnum.ChatboxAI,
-    label: aiProviderNameHash[ModelProviderEnum.ChatboxAI],
-    featured: true,
-    disabled: false,
-  },
-  {
     value: ModelProviderEnum.OpenAI,
     label: aiProviderNameHash[ModelProviderEnum.OpenAI],
     disabled: false,

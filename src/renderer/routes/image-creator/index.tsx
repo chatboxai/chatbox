@@ -9,24 +9,23 @@ import {
   Stack,
   Text,
   Textarea,
-  Tooltip,
   UnstyledButton,
 } from '@mantine/core'
 import type { ImageGeneration } from '@shared/types'
 import { ModelProviderEnum, ModelProviderType } from '@shared/types'
 import {
+  IconArrowUp,
   IconAspectRatio,
   IconChevronRight,
   IconHistory,
   IconPhoto,
-  IconArrowUp,
   IconPlus,
   IconSparkles,
 } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CHATBOXAI_DEFAULT_IMAGE_MODEL, ImageModelSelect } from '@/components/ImageModelSelect'
+import { ImageModelSelect } from '@/components/ImageModelSelect'
 import Page from '@/components/layout/Page'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
@@ -47,7 +46,6 @@ import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { queryClient } from '@/stores/queryClient'
 import {
   blobToDataUrl,
-  CHATBOXAI_IMAGE_MODEL_IDS,
   GEMINI_IMAGE_MODEL_IDS,
   getRatioOptionsForModel,
   HISTORY_PANEL_WIDTH,
@@ -215,7 +213,7 @@ function ImageCreatorPage() {
   >([])
   const [showHistory, setShowHistory] = useState(true)
   const [showMobileHistory, setShowMobileHistory] = useState(false)
-  const [selectedProvider, setSelectedProvider] = useState<string>(ModelProviderEnum.ChatboxAI)
+  const [selectedProvider, setSelectedProvider] = useState<string>(ModelProviderEnum.OpenAI)
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [selectedRatio, setSelectedRatio] = useState<string>('auto')
   const [showModelDrawer, setShowModelDrawer] = useState(false)
@@ -337,7 +335,7 @@ function ImageCreatorPage() {
         log.error('Failed to generate image:', error)
       }
     },
-    [selectedProvider, selectedModel, selectedRatio, isCurrentlyGenerating]
+    [selectedProvider, selectedModel, isCurrentlyGenerating]
   )
 
   const handleUseAsReference = useCallback(async (storageKey: string, sourceRecordId?: string) => {
@@ -388,35 +386,24 @@ function ImageCreatorPage() {
     }
   }, [])
 
-  const getAvailableImageModels = (
-    providerModels: { modelId: string; nickname?: string }[],
-    imageModelIds: string[]
-  ) => {
-    return imageModelIds
-      .map((modelId) => {
-        const model = providerModels.find((m) => m.modelId === modelId)
-        if (!model) return null
-        return {
-          modelId,
-          displayName: model.nickname || IMAGE_MODEL_FALLBACK_NAMES[modelId] || modelId,
-        }
-      })
-      .filter((m): m is { modelId: string; displayName: string } => m !== null)
-  }
+  const getAvailableImageModels = useCallback(
+    (providerModels: { modelId: string; nickname?: string }[], imageModelIds: string[]) => {
+      return imageModelIds
+        .map((modelId) => {
+          const model = providerModels.find((m) => m.modelId === modelId)
+          if (!model) return null
+          return {
+            modelId,
+            displayName: model.nickname || IMAGE_MODEL_FALLBACK_NAMES[modelId] || modelId,
+          }
+        })
+        .filter((m): m is { modelId: string; displayName: string } => m !== null)
+    },
+    []
+  )
 
   const imageModelGroups = useMemo(() => {
     const groups: { label: string; providerId: string; models: { modelId: string; displayName: string }[] }[] = []
-
-    const chatboxProvider = providers.find((p) => p.id === ModelProviderEnum.ChatboxAI)
-    if (chatboxProvider) {
-      const providerModels = chatboxProvider.models || chatboxProvider.defaultSettings?.models || []
-      const models = getAvailableImageModels(providerModels, CHATBOXAI_IMAGE_MODEL_IDS)
-      groups.push({
-        label: 'Chatbox AI',
-        providerId: ModelProviderEnum.ChatboxAI,
-        models: [CHATBOXAI_DEFAULT_IMAGE_MODEL, ...models],
-      })
-    }
 
     const geminiProvider = providers.find((p) => p.id === ModelProviderEnum.Gemini)
     if (geminiProvider) {
@@ -448,7 +435,25 @@ function ImageCreatorPage() {
       })
 
     return groups
-  }, [providers])
+  }, [providers, getAvailableImageModels])
+
+  useEffect(() => {
+    if (imageModelGroups.length === 0) {
+      return
+    }
+    const hasSelectedModel = imageModelGroups.some(
+      (group) => group.providerId === selectedProvider && group.models.some((model) => model.modelId === selectedModel)
+    )
+    if (hasSelectedModel) {
+      return
+    }
+    const firstGroup = imageModelGroups[0]
+    const firstModel = firstGroup?.models[0]
+    if (firstGroup && firstModel) {
+      setSelectedProvider(firstGroup.providerId)
+      setSelectedModel(firstModel.modelId)
+    }
+  }, [imageModelGroups, selectedProvider, selectedModel])
 
   // Workaround: DALL-E-3 was removed in new version, fallback to GPT Image
   useEffect(() => {
@@ -459,16 +464,19 @@ function ImageCreatorPage() {
 
   const modelDisplayName = useMemo(() => {
     const provider = providers.find((p) => p.id === selectedProvider)
+    if (!provider) {
+      return selectedModel || t('Select model')
+    }
+    if (!selectedModel) {
+      return provider.name
+    }
     const providerModels = provider?.models || provider?.defaultSettings?.models || []
     const model = providerModels.find((m) => m.modelId === selectedModel)
     const modelName = model?.nickname || IMAGE_MODEL_FALLBACK_NAMES[selectedModel] || selectedModel
 
-    if (selectedProvider === ModelProviderEnum.ChatboxAI) {
-      return modelName
-    }
     const providerName = provider?.name || selectedProvider
     return `${providerName} - ${modelName}`
-  }, [selectedProvider, selectedModel, providers])
+  }, [selectedProvider, selectedModel, providers, t])
 
   const headerRight = isSmallScreen ? (
     <ActionIcon

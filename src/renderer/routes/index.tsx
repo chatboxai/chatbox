@@ -1,7 +1,6 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Avatar, Box, Button, Divider, Flex, Paper, ScrollArea, Space, Stack, Text } from '@mantine/core'
 import type { CopilotDetail, Session } from '@shared/types'
-import { ModelProviderEnum } from '@shared/types'
 import { IconChevronLeft, IconChevronRight, IconX } from '@tabler/icons-react'
 import { createFileRoute, useRouterState } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
@@ -117,7 +116,7 @@ function Index() {
       }
 
       // Transfer web browsing setting from "new" session to the actual session
-      const newSessionWebBrowsing = sessionWebBrowsingMap['new']
+      const newSessionWebBrowsing = sessionWebBrowsingMap.new
       if (newSessionWebBrowsing !== undefined) {
         setSessionWebBrowsing(newSession.id, newSessionWebBrowsing)
         clearSessionWebBrowsing('new')
@@ -211,7 +210,7 @@ function Index() {
                     flex="0 1 auto"
                     onClick={() => {
                       router.navigate({
-                        to: isSmallScreen ? '/settings/provider' : '/settings/chatbox-ai',
+                        to: '/settings/provider',
                       })
                     }}
                   >

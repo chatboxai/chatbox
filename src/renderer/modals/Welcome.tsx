@@ -51,7 +51,7 @@ const Welcome = NiceModal.create(() => {
               radius="md"
               classNames={{ root: '!outline-none', label: 'flex flex-col items-center justify-center' }}
               onClick={() => {
-                navigateToSettings('/provider/chatbox-ai')
+                navigateToSettings('/provider')
                 modal.resolve('setup')
                 modal.hide()
               }}

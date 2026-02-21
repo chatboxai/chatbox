@@ -5,8 +5,8 @@ import { IconSelector } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { forwardRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import ModelSelector from '@/components/ModelSelector'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
+import ModelSelector from '@/components/ModelSelector'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 export const Route = createFileRoute('/settings/default-models')({
@@ -137,7 +137,7 @@ export function RouteComponent() {
         <ModelSelector
           position="bottom-start"
           showAuto={true}
-          autoText={settings.licenseKey ? t('Auto (Use Chatbox AI)')! : t('None')!}
+          autoText={t('None')!}
           width={320}
           modelFilter={(model) => model.capabilities?.includes('vision') ?? false}
           selectedProviderId={settings.ocrModel?.provider}
@@ -156,7 +156,7 @@ export function RouteComponent() {
           }
         >
           <ModelSelectContent
-            autoText={settings.licenseKey ? t('Auto (Use Chatbox AI)')! : t('None')!}
+            autoText={t('None')!}
             provider={settings.ocrModel?.provider}
             model={settings.ocrModel?.model}
           />

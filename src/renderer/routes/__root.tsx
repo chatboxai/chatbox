@@ -34,7 +34,6 @@ import {
   Title,
   Tooltip,
   useMantineColorScheme,
-  virtualColor,
 } from '@mantine/core'
 import { Box, Grid } from '@mui/material'
 import CssBaseline from '@mui/material/CssBaseline'
@@ -52,7 +51,6 @@ import platform from '@/platform'
 import { router } from '@/router'
 import Sidebar from '@/Sidebar'
 import * as atoms from '@/stores/atoms'
-import * as premiumActions from '@/stores/premiumActions'
 import * as settingActions from '@/stores/settingActions'
 import { settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -474,7 +472,6 @@ const creteMantineTheme = (scale = 1) =>
 export const Route = createRootRoute({
   component: () => {
     useI18nEffect()
-    premiumActions.useAutoValidate() // 每次启动都执行 license 检查，防止用户在lemonsqueezy管理页面中取消了当前设备的激活
     useSystemLanguageWhenInit()
     useShortcut()
     const theme = useAppTheme()

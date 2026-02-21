@@ -8,14 +8,8 @@ interface ImageModel {
   displayName: string
 }
 
-const CHATBOXAI_IMAGE_MODEL_IDS = ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'gemini-3-pro-image']
 const OPENAI_IMAGE_MODEL_IDS = ['gpt-image-1', 'gpt-image-1.5']
 const GEMINI_IMAGE_MODEL_IDS = ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'gemini-3-pro-image']
-
-export const CHATBOXAI_DEFAULT_IMAGE_MODEL: ImageModel = {
-  modelId: '',
-  displayName: 'GPT Image',
-}
 
 const IMAGE_MODEL_FALLBACK_NAMES: Record<string, string> = {
   'chatboxai-paint': 'Chatbox AI Paint',
@@ -49,14 +43,6 @@ export type ImageModelSelectProps = PropsWithChildren<
 export const ImageModelSelect = forwardRef<HTMLButtonElement, ImageModelSelectProps>(
   ({ onSelect, children, ...comboboxProps }, ref) => {
     const { providers } = useProviders()
-
-    const chatboxAIImageModels = useMemo(() => {
-      const provider = providers.find((p) => p.id === ModelProviderEnum.ChatboxAI)
-      if (!provider) {
-        return []
-      }
-      return getAvailableImageModels(provider, CHATBOXAI_IMAGE_MODEL_IDS)
-    }, [providers])
 
     const geminiProvider = useMemo(() => {
       const provider = providers.find((p) => p.id === ModelProviderEnum.Gemini)
@@ -115,46 +101,21 @@ export const ImageModelSelect = forwardRef<HTMLButtonElement, ImageModelSelectPr
 
         <Combobox.Dropdown className="!rounded-2xl !border-[var(--chatbox-border-primary)] !shadow-lg overflow-hidden">
           <Combobox.Options mah={400} style={{ overflowY: 'auto' }} className="p-1">
-            <Combobox.Group
-              label="Chatbox AI"
-              classNames={{ groupLabel: '!text-xs !font-semibold !uppercase tracking-wide' }}
-            >
-              <Combobox.Option
-                key={`${ModelProviderEnum.ChatboxAI}:${CHATBOXAI_DEFAULT_IMAGE_MODEL.modelId}`}
-                value={`${ModelProviderEnum.ChatboxAI}:${CHATBOXAI_DEFAULT_IMAGE_MODEL.modelId}`}
-                className="!rounded-lg"
-              >
-                <Text size="sm">{CHATBOXAI_DEFAULT_IMAGE_MODEL.displayName}</Text>
-              </Combobox.Option>
-              {chatboxAIImageModels.map((model) => (
-                <Combobox.Option
-                  key={`${ModelProviderEnum.ChatboxAI}:${model.modelId}`}
-                  value={`${ModelProviderEnum.ChatboxAI}:${model.modelId}`}
-                  className="!rounded-lg"
-                >
-                  <Text size="sm">{model.displayName}</Text>
-                </Combobox.Option>
-              ))}
-            </Combobox.Group>
-
             {geminiProvider && (
-              <>
-                <Divider my="xs" />
-                <Combobox.Group
-                  label="Google Gemini"
-                  classNames={{ groupLabel: '!text-xs !font-semibold !uppercase tracking-wide' }}
-                >
-                  {geminiProvider.imageModels.map((model) => (
-                    <Combobox.Option
-                      key={`${ModelProviderEnum.Gemini}:${model.modelId}`}
-                      value={`${ModelProviderEnum.Gemini}:${model.modelId}`}
-                      className="!rounded-lg"
-                    >
-                      <Text size="sm">{model.displayName}</Text>
-                    </Combobox.Option>
-                  ))}
-                </Combobox.Group>
-              </>
+              <Combobox.Group
+                label="Google Gemini"
+                classNames={{ groupLabel: '!text-xs !font-semibold !uppercase tracking-wide' }}
+              >
+                {geminiProvider.imageModels.map((model) => (
+                  <Combobox.Option
+                    key={`${ModelProviderEnum.Gemini}:${model.modelId}`}
+                    value={`${ModelProviderEnum.Gemini}:${model.modelId}`}
+                    className="!rounded-lg"
+                  >
+                    <Text size="sm">{model.displayName}</Text>
+                  </Combobox.Option>
+                ))}
+              </Combobox.Group>
             )}
 
             {customGeminiProviders.map(({ provider, imageModels }) => (

@@ -5,6 +5,7 @@
 
 import {
   type Message,
+  ModelProviderEnum,
   type Session,
   type SessionMeta,
   type SessionSettings,
@@ -254,16 +255,33 @@ export async function deleteSession(id: string) {
 // MARK: session settings operations
 
 function mergeDefaultSessionSettings(session: Session): SessionSettings {
+  const merged =
+    session.type === 'picture'
+      ? SessionSettingsSchema.parse({
+          ...defaults.pictureSessionSettings(),
+          ...session.settings,
+        })
+      : SessionSettingsSchema.parse({
+          ...defaults.chatSessionSettings(),
+          ...session.settings,
+        })
+
+  if (merged.provider !== ModelProviderEnum.ChatboxAI) {
+    return merged
+  }
+
+  // Chatbox AI provider is disabled in this build; remap legacy sessions.
   if (session.type === 'picture') {
-    return SessionSettingsSchema.parse({
-      ...defaults.pictureSessionSettings(),
-      ...session.settings,
-    })
-  } else {
-    return SessionSettingsSchema.parse({
-      ...defaults.chatSessionSettings(),
-      ...session.settings,
-    })
+    return {
+      ...merged,
+      provider: ModelProviderEnum.OpenAI,
+      modelId: 'gpt-image-1',
+    }
+  }
+  return {
+    ...merged,
+    provider: ModelProviderEnum.OpenAI,
+    modelId: merged.modelId?.startsWith('chatboxai-') ? 'gpt-4o' : merged.modelId,
   }
 }
 // session settings is copied from global settings when session is created, so no need to merge global settings here

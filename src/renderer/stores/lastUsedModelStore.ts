@@ -41,7 +41,22 @@ export const lastUsedModelStore = createStore(
     ),
     {
       name: 'last-used-model',
-      version: 0,
+      version: 1,
+      migrate: (persistedState, version) => {
+        const persisted = (persistedState as State | undefined) || {}
+        if (!persisted || version >= 1) {
+          return persisted
+        }
+
+        const next = { ...persisted }
+        if (next.chat?.provider === 'chatbox-ai') {
+          next.chat = { provider: 'openai', modelId: 'gpt-4o' }
+        }
+        if (next.picture?.provider === 'chatbox-ai') {
+          next.picture = { provider: 'openai', modelId: 'gpt-image-1' }
+        }
+        return next
+      },
       skipHydration: true,
       storage: safeStorage,
     }
@@ -49,7 +64,7 @@ export const lastUsedModelStore = createStore(
 )
 
 let initLastUsedModelStorePromise: Promise<State> | undefined
-export const initLastUsedModelStore = async () => {
+export const initLastUsedModelStore = () => {
   if (!initLastUsedModelStorePromise) {
     initLastUsedModelStorePromise = new Promise<State>((resolve) => {
       const unsub = lastUsedModelStore.persist.onFinishHydration((val) => {

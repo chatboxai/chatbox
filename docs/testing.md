@@ -18,7 +18,7 @@ export default defineConfig({
       NODE_ENV: 'test',
     },
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    exclude: ['node_modules', 'dist', 'release', '.erb'],
+    exclude: ['node_modules', 'dist', 'release'],
   }
 })
 ```
@@ -114,7 +114,7 @@ if (process.env.NODE_ENV !== 'test') {
 
 ### Low Priority (Extensions)
 - [ ] UI component testing
-- [ ] Electron main process testing
+- [ ] Desktop backend process testing (Tauri)
 - [ ] Platform-specific features
 - [ ] Performance benchmarks
 

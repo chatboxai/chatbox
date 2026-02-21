@@ -10,17 +10,36 @@
   -webkit-app-region: no-drag;
 }
 
+/* Ensure all interactive elements inside drag regions remain clickable in Tauri/WKWebView.
+   Without this, -webkit-app-region: drag on .title-bar ancestors can swallow mouse events
+   on inputs, buttons, etc., preventing focus and interaction in the native webview. */
+input,
+textarea,
+select,
+button,
+a,
+[role='button'],
+[contenteditable='true'],
+.mantine-PasswordInput-input,
+.mantine-TextInput-input,
+.mantine-Input-input,
+.mantine-Select-input,
+.mantine-Switch-input {
+  -webkit-app-region: no-drag;
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans",
-    "Droid Sans", "Helvetica Neue", sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans',
+    'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior: none;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
 html > body {
@@ -37,7 +56,7 @@ body,
   height: 100%;
 }
 
-html[data-theme="dark"] {
+html[data-theme='dark'] {
   .ToolBar {
     background-color: var(--chatbox-background-primary);
   }
@@ -89,7 +108,7 @@ html[data-theme="dark"] {
   }
 }
 
-html[data-theme="light"] {
+html[data-theme='light'] {
   .ToolBar {
     background-color: var(--chatbox-background-primary);
   }
@@ -197,15 +216,15 @@ html[data-theme="light"] {
 }
 
 @font-face {
-  font-family: "Cairo";
-  src: url("./fonts/Cairo-Regular.ttf") format("truetype");
+  font-family: 'Cairo';
+  src: url('./fonts/Cairo-Regular.ttf') format('truetype');
   font-weight: 400;
   font-style: normal;
 }
 
 @font-face {
-  font-family: "Cairo";
-  src: url("./fonts/Cairo-Bold.ttf") format("truetype");
+  font-family: 'Cairo';
+  src: url('./fonts/Cairo-Bold.ttf') format('truetype');
   font-weight: 700;
   font-style: normal;
 }

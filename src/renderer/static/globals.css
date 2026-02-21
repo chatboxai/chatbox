@@ -86,7 +86,7 @@
   --chatbox-background-mask-lighten: rgb(255, 255, 255, 0.76);
 }
 
-:root[data-mantine-color-scheme="dark"] {
+:root[data-mantine-color-scheme='dark'] {
   /* colors */
   --chatbox-tint-primary: #ffffff;
   --chatbox-tint-secondary: #ced4da;
@@ -148,8 +148,8 @@
   --chatbox-background-mask-lighten: rgb(173, 181, 189, 0.48);
 }
 
-:root[data-mantine-color-scheme="light"][data-mantine-color-scheme],
-:root[data-mantine-color-scheme="dark"][data-mantine-color-scheme] {
+:root[data-mantine-color-scheme='light'][data-mantine-color-scheme],
+:root[data-mantine-color-scheme='dark'][data-mantine-color-scheme] {
   /* brand */
   --mantine-color-chatbox-brand-text: var(--chatbox-tint-brand);
   --mantine-color-chatbox-brand-filled: var(--chatbox-background-brand-primary);
@@ -259,11 +259,11 @@
 }
 
 /* Dark mode scrollbar */
-[data-mantine-color-scheme="dark"] .katex-display::-webkit-scrollbar-thumb {
+[data-mantine-color-scheme='dark'] .katex-display::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
 }
 
-[data-mantine-color-scheme="dark"] .katex-display:hover::-webkit-scrollbar-thumb {
+[data-mantine-color-scheme='dark'] .katex-display:hover::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.3);
 }
 
@@ -276,10 +276,10 @@
   margin-top: var(--mobile-safe-area-inset-top);
   -webkit-app-region: no-drag;
 }
-html[data-need-room-for-mac-controls="true"] .pswp__counter {
+html[data-need-room-for-mac-controls='true'] .pswp__counter {
   padding-top: 1rem;
 }
-html[data-need-room-for-windows-controls="true"] .pswp__top-bar {
+html[data-need-room-for-windows-controls='true'] .pswp__top-bar {
   padding-right: 9rem;
 }
 

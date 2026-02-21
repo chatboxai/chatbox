@@ -22,7 +22,7 @@ export function getLogger(logId: string) {
       const now = dayjs().format('HH:mm:ss.SSS')
       store.set(initLogAtom, [...store.get(initLogAtom), `[${now}][${logId}] ${args.join(' ')}`])
       platform.appLog(level, args.join(' ')).catch((e) => {
-        console.error('Failed to send log to main process', e)
+        console.error('Failed to send log to desktop backend', e)
       })
     },
     info(...args: any[]) {

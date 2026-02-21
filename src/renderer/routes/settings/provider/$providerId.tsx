@@ -60,7 +60,7 @@ type ModelTestResult = ModelTestState & {
 
 function normalizeAPIHost(
   providerSettings: any,
-  providerType: ModelProviderType
+  providerType: ModelProviderType,
 ): {
   apiHost: string
   apiPath: string
@@ -242,12 +242,12 @@ function ProviderSettings({ providerId }: { providerId: string }) {
           models: displayModels.map((m) =>
             m.modelId === model.modelId
               ? { ...m, capabilities: uniq([...(m.capabilities || []), ...capabilitiesToAdd]) }
-              : m
+              : m,
           ),
         })
       }
     },
-    [displayModels, setProviderSettings, providerId]
+    [displayModels, setProviderSettings, providerId],
   )
 
   if (!baseInfo) {
@@ -316,7 +316,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                 onChange={(e) => {
                   setSettings({
                     customProviders: settings.customProviders?.map((p) =>
-                      p.id === baseInfo.id ? { ...p, name: e.currentTarget.value } : p
+                      p.id === baseInfo.id ? { ...p, name: e.currentTarget.value } : p,
                     ),
                   })
                 }}
@@ -332,7 +332,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                 onChange={(value) => {
                   setSettings({
                     customProviders: settings.customProviders?.map((p) =>
-                      p.id === baseInfo.id ? { ...p, type: value as ModelProviderType } : p
+                      p.id === baseInfo.id ? { ...p, type: value as ModelProviderType } : p,
                     ),
                   })
                 }}
@@ -428,7 +428,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
             </Flex>
             <Text span size="xs" flex="0 1 auto" c="chatbox-secondary">
               {[ModelProviderEnum.OpenAI, ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio, ''].includes(
-                baseInfo.id
+                baseInfo.id,
               )
                 ? normalizeOpenAIApiHostAndPath({
                     apiHost: providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost,

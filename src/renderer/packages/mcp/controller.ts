@@ -1,15 +1,58 @@
 import { experimental_createMCPClient as createMCPClient } from '@ai-sdk/mcp'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import type { ToolSet } from 'ai'
+import { type ToolSet, tool } from 'ai'
 import Emittery from 'emittery'
 import { isEqual } from 'lodash'
+import { z } from 'zod'
+import { isTauriRuntime } from '@/platform/tauri_ipc_adapter'
 import { IPCStdioTransport } from './ipc-stdio-transport'
 import type { MCPServerConfig, MCPServerStatus } from './types'
 
 type TransportConfig = MCPServerConfig['transport']
-type MCPClient = Awaited<ReturnType<typeof createMCPClient>>
 
-async function createClient(transportConfig: TransportConfig, name = 'chatbox-mcp-client'): Promise<MCPClient> {
+type MCPClientLike = {
+  tools: () => Promise<ToolSet>
+  close: () => Promise<void>
+}
+
+type TauriToolInfo = {
+  name: string
+  description?: string
+  inputSchema?: Record<string, unknown>
+}
+
+async function createTauriClient(transportConfig: TransportConfig): Promise<MCPClientLike> {
+  const serverId: string = await window.desktopAPI.invoke('mcp:server:create', transportConfig)
+  await window.desktopAPI.invoke('mcp:server:start', serverId)
+
+  return {
+    tools: async () => {
+      const tools = ((await window.desktopAPI.invoke('mcp:server:list-tools', serverId)) || []) as TauriToolInfo[]
+      const toolSet: ToolSet = {}
+
+      for (const toolInfo of tools) {
+        toolSet[toolInfo.name] = tool({
+          description: toolInfo.description || '',
+          inputSchema: z.record(z.string(), z.unknown()),
+          execute: async (args: unknown) => {
+            const result = await window.desktopAPI.invoke('mcp:server:call-tool', serverId, toolInfo.name, args || {})
+            return result
+          },
+        })
+      }
+      return toolSet
+    },
+    close: async () => {
+      await window.desktopAPI.invoke('mcp:server:close', serverId)
+    },
+  }
+}
+
+async function createClient(transportConfig: TransportConfig, name = 'chatbox-mcp-client'): Promise<MCPClientLike> {
+  if (isTauriRuntime()) {
+    return createTauriClient(transportConfig)
+  }
+
   if (transportConfig.type === 'stdio') {
     const transport = await IPCStdioTransport.create(transportConfig)
     let errorMessage = ''
@@ -63,7 +106,7 @@ async function createClient(transportConfig: TransportConfig, name = 'chatbox-mc
 
 export class MCPServer extends Emittery<{ status: MCPServerStatus }> {
   private _status: MCPServerStatus = { state: 'idle' }
-  private client?: MCPClient
+  private client?: MCPClientLike
   private tools?: ToolSet
 
   constructor(private readonly transportConfig: TransportConfig) {
@@ -198,7 +241,11 @@ export const mcpController = {
     const toolSet: ToolSet = {}
     for (const { instance, config } of this.servers.values()) {
       const mcpTools = instance.getAvailableTools()
-      for (const [toolName, tool] of Object.entries(mcpTools)) {
+      const typedMcpTools = mcpTools as Record<
+        string,
+        ToolSet[string] & { execute?: (...params: unknown[]) => Promise<unknown> }
+      >
+      for (const [toolName, tool] of Object.entries(typedMcpTools)) {
         const rawExecute = tool.execute?.bind(tool)
         toolSet[normalizeToolName(config.name, toolName)] = {
           ...tool,
@@ -210,7 +257,7 @@ export const mcpController = {
               return err
             }
           },
-        }
+        } as ToolSet[string]
       }
     }
     return toolSet

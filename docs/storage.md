@@ -146,7 +146,7 @@ if (type === 'MOBILE_SQLITE') {
 ```typescript
 beforeAll(async () => {
   const { default: DesktopPlatformClass } = await import('@/platform/desktop_platform')
-  desktopPlatform = new DesktopPlatformClass(window.electronAPI)
+  desktopPlatform = new DesktopPlatformClass(window.desktopAPI)
 })
 ```
 
@@ -170,4 +170,3 @@ A: 增加 `CurrentVersion`，在 `migrateFunctions` 添加迁移函数，更新�
 ---
 
 **最后更新**: 2025-10-25 | **当前版本**: v1.17.0 (Config Version 13)
-

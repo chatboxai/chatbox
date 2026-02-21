@@ -85,7 +85,7 @@ typings/
 # Webpack
 .webpack/
 
-# Electron-Forge
+# Desktop packaging output
 out/
 
 publish.sh
@@ -158,7 +158,6 @@ node_modules
 
 release/app/dist
 release/build
-.erb/dll
 
 .idea
 npm-debug.log.*
@@ -167,8 +166,6 @@ npm-debug.log.*
 *.scss.d.ts
 
 dist
-
-electron-builder.env
 
 # Share VS Code settings
 # .vscode

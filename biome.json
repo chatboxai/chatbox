@@ -17,13 +17,12 @@
     "includes": [
       "src/**",
       "test/integration/**/*.ts",
-      "!src/main/mcp/shell-env.cjs",
+      "!src-tauri/target/**",
       "!src/renderer/components/icons/**",
       "biome.json",
       "*.config.js",
       "*.config.ts",
-      "*.config.mjs",
-      "!erb/**"
+      "*.config.mjs"
     ]
   },
   "linter": {
@@ -44,13 +43,12 @@
     },
     "includes": [
       "src/**",
-      "!src/main/mcp/shell-env.cjs",
+      "!src-tauri/target/**",
       "!src/renderer/components/icons/**",
       "biome.json",
       "*.config.js",
       "*.config.ts",
-      "*.config.mjs",
-      "!erb/**"
+      "*.config.mjs"
     ]
   },
   "javascript": {

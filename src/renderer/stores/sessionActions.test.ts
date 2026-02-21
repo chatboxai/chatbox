@@ -28,7 +28,7 @@ vi.hoisted(() => {
     clear: () => undefined,
   }
   const windowMock: Record<string, unknown> = {
-    electronAPI: undefined,
+    desktopAPI: undefined,
     localStorage: storage,
   }
   ;(globalThis as unknown as { window: Record<string, unknown>; localStorage: typeof storage }).window = windowMock

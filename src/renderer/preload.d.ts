@@ -1,8 +1,8 @@
-import { ElectronIPC } from '../shared/electron-types'
+import type { DesktopIPC } from '../shared/desktop-ipc-types'
 
 declare global {
   // eslint-disable-next-line no-unused-vars
   interface Window {
-    electronAPI: ElectronIPC
+    desktopAPI: DesktopIPC
   }
 }

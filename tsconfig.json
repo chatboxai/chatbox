@@ -17,7 +17,7 @@
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "allowJs": true,
-    "outDir": ".erb/dll",
+    "outDir": "tmp/tsbuild",
     "skipLibCheck": true
   },
   "exclude": [
@@ -26,7 +26,6 @@
     "tmp",
     "test",
     "release",
-    ".erb/dll",
     "ios",
     "android"
   ]

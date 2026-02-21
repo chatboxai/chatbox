@@ -103,9 +103,9 @@ export const settingsStore = createStore<Settings & Action>()(
           return SettingsSchema.parse(settings)
         },
         skipHydration: true,
-      }
-    )
-  )
+      },
+    ),
+  ),
 )
 
 let _initSettingsStorePromise: Promise<Settings> | undefined
@@ -158,7 +158,7 @@ export const useProviderSettings = (providerId: string) => {
   const providerSettings = providers?.[providerId]
 
   const setProviderSettings = (
-    val: Partial<ProviderSettings> | ((prev: ProviderSettings | undefined) => Partial<ProviderSettings>)
+    val: Partial<ProviderSettings> | ((prev: ProviderSettings | undefined) => Partial<ProviderSettings>),
   ) => {
     settingsStore.setState((currentSettings) => {
       const currentProviderSettings = currentSettings.providers?.[providerId] || {}

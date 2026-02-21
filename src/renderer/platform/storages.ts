@@ -5,7 +5,7 @@ import platform from '.'
 import type { Storage } from './interfaces'
 
 export class DesktopFileStorage implements Storage {
-  public ipc = window.electronAPI
+  public ipc = window.desktopAPI
 
   public getStorageType(): string {
     return 'DESKTOP_FILE'
@@ -13,7 +13,7 @@ export class DesktopFileStorage implements Storage {
 
   public async setStoreValue(key: string, value: any) {
     // 为什么要序列化？
-    // 为了实现进程通信，electron invoke 会自动对传输数据进行序列化，
+    // 为了实现进程通信，desktop IPC invoke 会自动对传输数据进行序列化，
     // 但如果数据包含无法被序列化的类型（比如 message 中常带有的 cancel 函数）将直接报错：
     // Uncaught (in promise) Error: An object could not be cloned.
     // 因此对于数据类型不容易控制的场景，应该提前 JSON.stringify，这种序列化方式会自动处理异常类型。

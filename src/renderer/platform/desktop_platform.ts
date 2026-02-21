@@ -1,6 +1,6 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
 
-import type { ElectronIPC } from '@shared/electron-types'
+import type { DesktopIPC } from '@shared/desktop-ipc-types'
 import type { Config, Settings, ShortcutSetting } from '@shared/types'
 import { cache } from '@shared/utils/cache'
 import localforage from 'localforage'
@@ -23,8 +23,8 @@ export default class DesktopPlatform implements Platform {
   private _kbController?: DesktopKnowledgeBaseController
   private _imageGenerationStorage: ImageGenerationStorage | null = null
 
-  public ipc: ElectronIPC
-  constructor(ipc: ElectronIPC) {
+  public ipc: DesktopIPC
+  constructor(ipc: DesktopIPC) {
     this.ipc = ipc
   }
 
@@ -57,7 +57,7 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.onUpdateDownloaded(callback)
   }
   public onNavigate(callback: (path: string) => void): () => void {
-    return window.electronAPI.onNavigate(callback)
+    return this.ipc.onNavigate(callback)
   }
   public async openLink(url: string): Promise<void> {
     return this.ipc.invoke('openLink', url)

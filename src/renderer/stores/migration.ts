@@ -247,7 +247,7 @@ async function migrate_1_to_2(dataStore: MigrateStore) {
 }
 
 async function migrate_2_to_3(dataStore: MigrateStore) {
-  // 原来 Electron 应用存储图片 base64 数据到 IndexedDB，现在改成本地文件存储
+  // 原桌面端应用存储图片 base64 数据到 IndexedDB，现在改成本地文件存储
   if (!dataStore.setBlob) {
     return
   }

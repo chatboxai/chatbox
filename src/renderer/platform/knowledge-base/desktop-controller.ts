@@ -1,10 +1,10 @@
-import type { ElectronIPC } from '@shared/electron-types'
+import type { DesktopIPC } from '@shared/desktop-ipc-types'
 import type { FileMeta, KnowledgeBaseProviderMode } from '@shared/types'
 import type { DocumentParserConfig } from '@shared/types/settings'
 import type { KnowledgeBaseController } from './interface'
 
 class DesktopKnowledgeBaseController implements KnowledgeBaseController {
-  constructor(private ipc: ElectronIPC) {}
+  constructor(private ipc: DesktopIPC) {}
 
   async list() {
     const knowledgeBases = await this.ipc.invoke('kb:list')

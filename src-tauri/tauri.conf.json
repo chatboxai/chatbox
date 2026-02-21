@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Chaeboxi",
+  "version": "0.1.0",
+  "identifier": "com.chaeboxi",
+  "build": {
+    "beforeDevCommand": "pnpm start:renderer",
+    "beforeBuildCommand": "pnpm build:renderer",
+    "devUrl": "http://localhost:1212",
+    "frontendDist": "../release/app/dist/renderer"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Chaeboxi",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 1000,
+        "minHeight": 600,
+        "resizable": true,
+        "maximized": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

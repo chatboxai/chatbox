@@ -196,7 +196,7 @@ const mockIpcInvoke = vi.fn((channel: string, ...args: unknown[]) => {
 
 // Setup global mocks before any imports
 global.window = {
-  electronAPI: {
+  desktopAPI: {
     invoke: mockIpcInvoke,
     onWindowMaximizedChanged: vi.fn(() => () => {}),
   },
@@ -373,7 +373,7 @@ describe('migrateStorage test', () => {
     const { default: DesktopPlatformClass } = await import('@/platform/desktop_platform')
     const { default: MobilePlatformClass } = await import('@/platform/mobile_platform')
 
-    desktopPlatform = new DesktopPlatformClass(window.electronAPI)
+    desktopPlatform = new DesktopPlatformClass(window.desktopAPI)
     mobilePlatform = new MobilePlatformClass()
     currentPlatform = desktopPlatform
   })

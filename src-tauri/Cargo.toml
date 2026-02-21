@@ -1,0 +1,26 @@
+[package]
+description = "Tauri runtime for Chaeboxi"
+edition = "2021"
+name = "chaeboxi-tauri"
+version = "0.1.0"
+
+[build-dependencies]
+tauri-build = {version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+hostname = "0.4"
+http = "1"
+rmcp = {version = "0.16.0", features = [
+  "client",
+  "reqwest",
+  "transport-streamable-http-client-reqwest",
+  "transport-child-process",
+] }
+serde = {version = "1", features = ["derive"] }
+serde_json = "1"
+sys-locale = "0.3"
+tauri = {version = "2", features = [] }
+tokio = {version = "1", features = ["macros", "process", "rt-multi-thread"] }
+uuid = {version = "1", features = ["v4", "serde"] }
+webbrowser = "1"

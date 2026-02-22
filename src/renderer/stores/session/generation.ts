@@ -8,7 +8,6 @@ import {
   type Message,
   type MessageImagePart,
   type MessagePicture,
-  ModelProviderEnum,
   type SessionSettings,
   type SessionType,
   type Settings,
@@ -41,13 +40,13 @@ import { insertMessageAfter, modifyMessage } from './messages'
  * Get session-level web browsing setting
  * Returns user's explicit setting if set, otherwise returns default based on provider
  */
-export function getSessionWebBrowsing(sessionId: string, provider: string | undefined): boolean {
+export function getSessionWebBrowsing(sessionId: string, _provider: string | undefined): boolean {
   const sessionValue = uiStore.getState().sessionWebBrowsingMap[sessionId]
   if (sessionValue !== undefined) {
     return sessionValue
   }
-  // Default: true for ChatboxAI, false for others
-  return provider === ModelProviderEnum.ChatboxAI
+  // Default: disabled unless explicitly enabled by the user.
+  return false
 }
 
 /**

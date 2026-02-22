@@ -22,7 +22,7 @@ export function getModelSettingUtil(
 }
 
 export function getModelDisplayName(settings: SessionSettings, globalSettings: Settings, sessionType: SessionType) {
-  const provider = settings.provider ?? ModelProviderEnum.ChatboxAI
+  const provider = settings.provider ?? ModelProviderEnum.OpenAI
   const model = settings.modelId ?? ''
 
   const registryProviders = getSystemProviders()

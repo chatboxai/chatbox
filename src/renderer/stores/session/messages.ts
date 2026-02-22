@@ -7,7 +7,7 @@ import {
   ChatboxAIAPIError,
   NetworkError,
 } from '@shared/models/errors'
-import { createMessage, type Message, ModelProviderEnum } from '@shared/types'
+import { createMessage, type Message } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { createModelDependencies } from '@/adapters'
 import { runCompactionWithUIState } from '@/packages/context-management'
@@ -15,7 +15,6 @@ import { getModelDisplayName } from '@/packages/model-setting-utils'
 import { estimateTokensFromMessages } from '@/packages/token'
 import platform from '@/platform'
 import * as chatStore from '../chatStore'
-import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
 import { uiStore } from '../uiStore'
 
@@ -23,13 +22,13 @@ import { uiStore } from '../uiStore'
  * Get session-level web browsing setting
  * Returns user's explicit setting if set, otherwise returns default based on provider
  */
-function getSessionWebBrowsing(sessionId: string, provider: string | undefined): boolean {
+function getSessionWebBrowsing(sessionId: string, _provider: string | undefined): boolean {
   const sessionValue = uiStore.getState().sessionWebBrowsingMap[sessionId]
   if (sessionValue !== undefined) {
     return sessionValue
   }
-  // Default: true for ChatboxAI, false for others
-  return provider === ModelProviderEnum.ChatboxAI
+  // Default: disabled unless explicitly enabled by the user.
+  return false
 }
 
 /**
@@ -142,8 +141,6 @@ export async function submitNewUserMessage(
   await insertMessage(sessionId, newUserMsg)
 
   const globalSettings = settingsStore.getState().getSettings()
-  const isPro = settingActions.isPro()
-  const remoteConfig = settingActions.getRemoteConfig()
 
   // 根据需要，插入空白的回复消息
   let newAssistantMsg = createMessage('assistant', '')
@@ -153,7 +150,7 @@ export async function submitNewUserMessage(
     }
     newAssistantMsg.status.push({
       type: 'sending_file',
-      mode: isPro ? 'advanced' : 'local',
+      mode: 'local',
     })
   }
   if (newUserMsg.links && newUserMsg.links.length > 0) {
@@ -162,7 +159,7 @@ export async function submitNewUserMessage(
     }
     newAssistantMsg.status.push({
       type: 'loading_webpage',
-      mode: isPro ? 'advanced' : 'local',
+      mode: 'local',
     })
   }
   if (needGenerating) {
@@ -176,11 +173,7 @@ export async function submitNewUserMessage(
     const dependencies = await createModelDependencies()
     const model = getModel(settings, globalSettings, { uuid: '' }, dependencies)
     if (webBrowsing && platform.type === 'web' && !model.isSupportToolUse()) {
-      if (remoteConfig.setting_chatboxai_first) {
-        throw ChatboxAIAPIError.fromCodeName('model_not_support_web_browsing', 'model_not_support_web_browsing')
-      } else {
-        throw ChatboxAIAPIError.fromCodeName('model_not_support_web_browsing_2', 'model_not_support_web_browsing_2')
-      }
+      throw ChatboxAIAPIError.fromCodeName('model_not_support_web_browsing_2', 'model_not_support_web_browsing_2')
     }
 
     // Files and links are now preprocessed in InputBox with storage keys, so no need to process them here

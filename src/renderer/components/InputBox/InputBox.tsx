@@ -75,20 +75,13 @@ import { useUIStore } from '@/stores/uiStore'
 import { delay } from '@/utils'
 import { featureFlags } from '@/utils/feature-flags'
 import { trackEvent } from '@/utils/track'
-import {
-  type KnowledgeBase,
-  type Message,
-  ModelProviderEnum,
-  type SessionType,
-  type ShortcutSendValue,
-} from '../../../shared/types'
+import type { KnowledgeBase, Message, SessionType, ShortcutSendValue } from '../../../shared/types'
 import * as dom from '../../hooks/dom'
 import * as sessionHelpers from '../../stores/sessionHelpers'
 import * as toastActions from '../../stores/toastActions'
 import { CompactionStatus } from '../chat/CompactionStatus'
 import { CompressionModal } from '../common/CompressionModal'
 import { ScalableIcon } from '../common/ScalableIcon'
-import Disclaimer from '../Disclaimer'
 import ProviderImageIcon from '../icons/ProviderImageIcon'
 import KnowledgeBaseMenu from '../knowledge-base/KnowledgeBaseMenu'
 import ModelSelector from '../ModelSelector'
@@ -167,15 +160,14 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const sessionWebBrowsingMap = useUIStore((s) => s.sessionWebBrowsingMap)
     const setSessionWebBrowsing = useUIStore((s) => s.setSessionWebBrowsing)
     const updateCurrentWebBrowsingDisplay = useUIStore((s) => s.updateCurrentWebBrowsingDisplay)
-    // Get session-specific value, or use default based on provider (ChatboxAI defaults to true)
+    // Get session-specific value, or use default.
     const webBrowsingMode = useMemo(() => {
       const sessionValue = sessionWebBrowsingMap[currentSessionId || 'new']
       if (sessionValue !== undefined) {
         return sessionValue
       }
-      // Default: true for ChatboxAI, false for others
-      return model?.provider === ModelProviderEnum.ChatboxAI
-    }, [sessionWebBrowsingMap, currentSessionId, model?.provider])
+      return false
+    }, [sessionWebBrowsingMap, currentSessionId])
 
     // this is used for keyboard shortcut. if we don't provide this, kbd wont know what to set when it's a new session(it doesnt have provider info)
     useEffect(() => {

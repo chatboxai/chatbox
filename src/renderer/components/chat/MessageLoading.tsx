@@ -1,10 +1,6 @@
-import { Typography } from '@mui/material'
 import type { Message } from '@shared/types'
-import { useAtomValue } from 'jotai'
 import { Loader } from 'lucide-react'
-import { Trans, useTranslation } from 'react-i18next'
-import * as atoms from '@/stores/atoms'
-import LinkTargetBlank from '../common/Link'
+import { useTranslation } from 'react-i18next'
 
 export default function MessageStatuses(props: { statuses: Message['status'] }) {
   const { statuses } = props
@@ -23,7 +19,6 @@ export default function MessageStatuses(props: { statuses: Message['status'] }) 
 function MessageStatus(props: { status: NonNullable<Message['status']>[number] }) {
   const { status } = props
   const { t } = useTranslation()
-  const remoteConfig = useAtomValue(atoms.remoteConfigAtom)
   if (status.type === 'sending_file') {
     return (
       <div>
@@ -37,18 +32,6 @@ function MessageStatus(props: { status: NonNullable<Message['status']>[number] }
             )}
           </span>
         </LoadingBubble>
-        {status.mode === 'local' && remoteConfig.setting_chatboxai_first && (
-          <Typography variant="body2" sx={{ opacity: 0.5 }} className="pb-1">
-            <Trans
-              i18nKey="Due to local processing limitations, <Link>Chatbox AI Service</Link> is recommended for enhanced document processing capabilities and better results."
-              components={{
-                Link: (
-                  <LinkTargetBlank href="https://chatboxai.app/redirect_app/advanced_file_processing?utm_source=app&utm_content=msg_local_limitation"></LinkTargetBlank>
-                ),
-              }}
-            />
-          </Typography>
-        )}
       </div>
     )
   }
@@ -65,18 +48,6 @@ function MessageStatus(props: { status: NonNullable<Message['status']>[number] }
             )}
           </span>
         </LoadingBubble>
-        {status.mode === 'local' && remoteConfig.setting_chatboxai_first && (
-          <Typography variant="body2" sx={{ opacity: 0.5 }} className="pb-1">
-            <Trans
-              i18nKey="Due to local processing limitations, <Link>Chatbox AI Service</Link> is recommended to enhance webpage parsing capabilities, especially for dynamic pages."
-              components={{
-                Link: (
-                  <LinkTargetBlank href="https://chatboxai.app/redirect_app/advanced_url_processing?utm_source=app&utm_content=msg_local_limitation"></LinkTargetBlank>
-                ),
-              }}
-            />
-          </Typography>
-        )}
       </div>
     )
   }

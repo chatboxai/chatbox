@@ -32,6 +32,14 @@ function getTruncatedText(text: string): string {
   return text
 }
 
+function getProviderDisplayName(aiProvider: string | undefined): string {
+  if (!aiProvider) {
+    return 'AI Provider'
+  }
+  const providerNames = aiProviderNameHash as Record<string, string>
+  return providerNames[aiProvider] || aiProvider
+}
+
 /**
  * Detects if an error message indicates a context length exceeded error from various AI providers.
  */
@@ -101,9 +109,9 @@ export default function MessageErrTips(props: { msg: Message }) {
   } else if (msg.error.startsWith('API Error')) {
     tips.push(
       <Trans
-        i18nKey="Connection to {{aiProvider}} failed. This typically occurs due to incorrect configuration or {{aiProvider}} account issues. Please <buttonOpenSettings>check your settings</buttonOpenSettings> and verify your {{aiProvider}} account status, or purchase a <LinkToLicensePricing>Chatbox AI License</LinkToLicensePricing> to unlock all advanced models instantly without any configuration."
+        i18nKey="Connection to {{aiProvider}} failed. This typically occurs due to incorrect configuration or {{aiProvider}} account issues. Please <buttonOpenSettings>check your settings</buttonOpenSettings> and verify your {{aiProvider}} account status."
         values={{
-          aiProvider: msg.aiProvider ? aiProviderNameHash[msg.aiProvider] : 'AI Provider',
+          aiProvider: getProviderDisplayName(msg.aiProvider),
         }}
         components={{
           buttonOpenSettings: (
@@ -114,8 +122,6 @@ export default function MessageErrTips(props: { msg: Message }) {
               }}
             />
           ),
-          LinkToLicensePricing: <span className="font-bold text-gray-700" />,
-          a: <span />,
         }}
       />
     )
@@ -137,7 +143,7 @@ export default function MessageErrTips(props: { msg: Message }) {
       <Trans
         i18nKey="ai provider no implemented paint tips"
         values={{
-          aiProvider: msg.aiProvider ? aiProviderNameHash[msg.aiProvider] : 'AI Provider',
+          aiProvider: getProviderDisplayName(msg.aiProvider),
         }}
         components={[
           <Link

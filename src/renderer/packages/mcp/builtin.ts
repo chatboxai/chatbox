@@ -10,6 +10,6 @@ export interface BuildinMCPServerConfig {
 // Chatbox-hosted builtin MCP servers are disabled in this build.
 export const BUILTIN_MCP_SERVERS: BuildinMCPServerConfig[] = []
 
-export function getBuiltinServerConfig(_id: string, _licenseKey?: string): MCPServerConfig | null {
+export function getBuiltinServerConfig(_id: string): MCPServerConfig | null {
   return null
 }

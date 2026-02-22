@@ -163,8 +163,8 @@ function ExportAndImport(props: { onCancel: () => void }) {
   const onExport = async () => {
     const data = await storage.getAll()
     delete data[StorageKey.Configs] // 不导出 uuid
-    ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // 不导出license认证数据
-    ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // 不导出license设备数据，导入数据的新设备也应该计入设备数
+    ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // 不导出历史兼容字段
+    ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // 不导出历史兼容字段
     if (!exportItems.includes(ExportDataItem.Key)) {
       delete (data[StorageKey.Settings] as Settings).licenseKey
       delete (data[StorageKey.Settings] as Settings).providers
@@ -276,7 +276,7 @@ function ExportAndImport(props: { onCancel: () => void }) {
           <FormGroup className="mb-2">
             {[
               { label: t('Settings'), value: ExportDataItem.Setting },
-              { label: t('API KEY & License'), value: ExportDataItem.Key },
+              { label: t('API Keys'), value: ExportDataItem.Key },
               { label: t('Chat History'), value: ExportDataItem.Conversations },
               { label: t('My Copilots'), value: ExportDataItem.Copilot },
             ].map((item) => (

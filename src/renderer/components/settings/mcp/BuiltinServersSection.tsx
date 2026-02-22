@@ -41,10 +41,10 @@ export const BuiltinServersSection: FC = () => {
   return (
     <>
       <Text size="sm" fw={600} mb={4}>
-        Chatbox {t('Builtin MCP Servers')}
+        {t('Builtin MCP Servers')}
       </Text>
       <Text size="xs" c="chatbox-tertiary" mb={12}>
-        {t('One-click MCP servers for Chatbox AI subscribers')}
+        {t('One-click MCP servers')}
       </Text>
       <SimpleGrid type="container" cols={{ base: 1, '450px': 2, '800px': 3, '1200px': 4 }}>
         {BUILTIN_MCP_SERVERS.map((config) => (

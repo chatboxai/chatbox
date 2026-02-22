@@ -21,7 +21,7 @@ const PARSER_DESCRIPTIONS: Record<DocumentParserType, string> = {
   none: 'Only supports basic text files (.txt, .md, .json, code files, etc.).',
   local:
     'Uses built-in document parsing feature, supports common file types. Free usage, no compute points will be consumed.',
-  'chatbox-ai': 'Cloud-based document parsing service is disabled in this build.',
+  'chatbox-ai': 'Legacy parser setting from older versions. It is mapped to Local in this build.',
   mineru: 'Third-party cloud parsing service, supports PDF and most Office files. Requires API token.',
 }
 

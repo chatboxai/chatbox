@@ -50,9 +50,9 @@ export class OCRError extends BaseError {
   }
 }
 
-// 20000 - 29999 为 Chatbox AI 服务错误
+// 20000 - 29999 为远程服务错误（含兼容旧版本错误码）
 
-// Chatbox AI 服务错误
+// 远程服务错误
 // 注意，在开发时 i18nKey 中的标签和参数，都需要在 MessageErrTips 中定义
 // NOTE： 这个文件不会被 translate script 扫描到，为了能提取 key，把这里新增的 key 去 `src/renderer/i18n/for-key-scan.ts` 也添加一份
 export class ChatboxAIAPIError extends BaseError {
@@ -62,39 +62,39 @@ export class ChatboxAIAPIError extends BaseError {
       name: 'token_quota_exhausted',
       code: 10004, // 小于 20000 是为了兼容旧版本
       i18nKey:
-        'You have reached your monthly quota for the {{model}} model. Please <OpenSettingButton>go to Settings</OpenSettingButton> to switch to a different model, view your quota usage, or upgrade your plan.',
+        'You have reached your current quota for the {{model}} model. Please <OpenSettingButton>go to Settings</OpenSettingButton> to switch to a different model or check your provider configuration.',
     },
     // 当前套餐不支持该模型
     license_upgrade_required: {
       name: 'license_upgrade_required',
       code: 20001,
       i18nKey:
-        'Your current License (Chatbox AI Lite) does not support the {{model}} model. To use this model, please <OpenMorePlanButton>upgrade</OpenMorePlanButton> to Chatbox AI Pro or a higher-tier package. Alternatively, you can switch to a different model by <OpenSettingButton>accessing the settings</OpenSettingButton>.',
+        'The current account configuration does not support the {{model}} model. Please <OpenSettingButton>open Settings</OpenSettingButton> and switch to another model or provider.',
     },
     // license 过期
     expired_license: {
       name: 'expired_license',
       code: 20002,
-      i18nKey: 'Your license has expired. Please check your subscription or purchase a new one.',
+      i18nKey: 'Authentication has expired or is invalid. Please check your provider credentials and try again.',
     },
     // 未输入 license
     license_key_required: {
       name: 'license_key_required',
       code: 20003,
       i18nKey:
-        'You have selected Chatbox AI as the model provider, but a license key has not been entered yet. Please <OpenSettingButton>click here to open Settings</OpenSettingButton> and enter your license key, or choose a different model provider.',
+        'The selected model provider requires credentials that are not configured yet. Please <OpenSettingButton>open Settings</OpenSettingButton> and configure provider credentials, or choose a different provider.',
     },
     // 输入的 license 未找到
     license_not_found: {
       name: 'license_not_found',
       code: 20004,
-      i18nKey: 'The license key you entered is invalid. Please check your license key and try again.',
+      i18nKey: 'The configured provider credentials are invalid. Please update them and try again.',
     },
     // 超出配额
     rate_limit_exceeded: {
       name: 'rate_limit_exceeded',
       code: 20005,
-      i18nKey: 'You have exceeded the rate limit for the Chatbox AI service. Please try again later.',
+      i18nKey: 'You have exceeded the provider rate limit. Please try again later.',
     },
     // 参数错误
     bad_params: {
@@ -130,25 +130,25 @@ export class ChatboxAIAPIError extends BaseError {
       code: 20010,
       i18nKey: 'The file size exceeds the limit of 50MB. Please reduce the file size and try again.',
     },
-    // 当前模型不支持发送文件。目前支持的模型有 Chatbox AI 4
+    // 当前模型不支持发送文件
     model_not_support_file: {
       name: 'model_not_support_file',
       code: 20011,
       i18nKey:
-        "The {{model}} API doesn't support document understanding. You can use <LinkToAdvancedFileProcessing>Chatbox AI Service</LinkToAdvancedFileProcessing> for cloud-based document analysis, or download <LinkToHomePage>Chatbox Desktop App</LinkToHomePage> for local document analysis.",
+        "The {{model}} API doesn't support document understanding. Please switch to a model with vision/document capabilities, or use local document parsing where available.",
     },
     model_not_support_file_2: {
       name: 'model_not_support_file_2',
       code: 20012,
       i18nKey:
-        "The {{model}} API doesn't support document understanding. You can download <LinkToHomePage>Chatbox Desktop App</LinkToHomePage> for local document analysis.",
+        "The {{model}} API doesn't support document understanding. Please switch to a model with vision/document capabilities.",
     },
-    // 当前模型不支持发送图片，推荐模型：Chatbox AI 4
+    // 当前模型不支持发送图片
     model_not_support_image: {
       name: 'model_not_support_image',
       code: 20013,
       i18nKey:
-        'Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.',
+        'Sorry, the current model {{model}} API itself does not support image understanding. Please switch to another model that supports vision.',
     },
     model_not_support_image_2: {
       name: 'model_not_support_image_2',
@@ -160,7 +160,7 @@ export class ChatboxAIAPIError extends BaseError {
     // 'model_not_support_link': {
     //     name: 'model_not_support_link',
     //     code: 20015,
-    //     i18nKey: 'The {{model}} API does not support links. Please use <LinkToAdvancedUrlProcessing>Chatbox AI models</LinkToAdvancedUrlProcessing> instead, or download <LinkToHomePage>the desktop app</LinkToHomePage> for local processing.'
+    //     i18nKey: 'The {{model}} API does not support links. Please use another model that supports link processing, or download <LinkToHomePage>the desktop app</LinkToHomePage> for local processing.'
     // },
     // 'model_not_support_link_2': {
     //     name: 'model_not_support_link_2',
@@ -171,13 +171,13 @@ export class ChatboxAIAPIError extends BaseError {
       name: 'model_not_support_non_text_file',
       code: 20017,
       i18nKey:
-        'The {{model}} API itself does not support sending files. Due to the complexity of file parsing locally, Chatbox only processes text-based files (including code). For additional file formats and enhanced document understanding capabilities, <LinkToAdvancedFileProcessing>Chatbox AI Service</LinkToAdvancedFileProcessing> is recommended.',
+        'The {{model}} API itself does not support sending files. Local parsing currently supports text-based files (including code). For richer formats, switch to a model with document capabilities or configure a document parser.',
     },
     model_not_support_non_text_file_2: {
       name: 'model_not_support_non_text_file_2',
       code: 20018,
       i18nKey:
-        'The {{model}} API itself does not support sending files. Due to the complexity of file parsing locally, Chatbox only processes text-based files (including code).',
+        'The {{model}} API itself does not support sending files. Local parsing currently supports text-based files (including code).',
     },
     system_error: {
       name: 'system_error',
@@ -195,7 +195,7 @@ export class ChatboxAIAPIError extends BaseError {
       name: 'model_not_support_web_browsing',
       code: 20021,
       i18nKey:
-        'The {{model}} API itself does not support web browsing. Supported models: <OpenMorePlanButton>Chatbox AI models</OpenMorePlanButton>, {{supported_web_browsing_models}}',
+        'The {{model}} API itself does not support web browsing. Supported models: {{supported_web_browsing_models}}',
     },
     model_not_support_web_browsing_2: {
       name: 'model_not_support_web_browsing_2',
@@ -213,7 +213,7 @@ export class ChatboxAIAPIError extends BaseError {
       name: 'chatbox_search_license_key_required',
       code: 20024,
       i18nKey:
-        'You have selected Chatbox AI as the search provider, but a license key has not been entered yet. Please <OpenSettingButton>click here to open Settings</OpenSettingButton> and enter your license key, or choose a different <OpenExtensionSettingButton>search provider</OpenExtensionSettingButton>.',
+        'The selected search provider requires credentials that are not configured yet. Please <OpenExtensionSettingButton>open Settings</OpenExtensionSettingButton> and configure the required API key, or choose a different search provider.',
     },
     tavily_api_key_required: {
       name: 'tavily_api_key_required',
@@ -231,37 +231,37 @@ export class ChatboxAIAPIError extends BaseError {
       name: 'mobile_not_support_local_file_parsing',
       code: 20027,
       i18nKey:
-        'Mobile devices temporarily do not support local parsing of this file type. Please use text files (txt, markdown, etc.) or use <LinkToAdvancedFileProcessing>Chatbox AI Service</LinkToAdvancedFileProcessing> for cloud-based document analysis.',
+        'Mobile devices temporarily do not support local parsing of this file type. Please use text files (txt, markdown, etc.) or switch to a model/parser that supports document understanding.',
     },
     web_not_support_local_file_parsing: {
       name: 'web_not_support_local_file_parsing',
       code: 20028,
       i18nKey:
-        'The web version temporarily does not support local parsing of this file type. Please use text files (txt, markdown, etc.) or use <LinkToAdvancedFileProcessing>Chatbox AI Service</LinkToAdvancedFileProcessing> for cloud-based document analysis.',
+        'The web version temporarily does not support local parsing of this file type. Please use text files (txt, markdown, etc.) or switch to a model/parser that supports document understanding.',
     },
     // Document parser errors for InputBox file preprocessing
     local_parser_failed: {
       name: 'local_parser_failed',
       code: 20029,
       i18nKey:
-        'Local document parsing failed. You can go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and switch to Chatbox AI for cloud-based document parsing.',
+        'Local document parsing failed. You can go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and switch to another parser.',
     },
     chatbox_ai_parser_failed: {
       name: 'chatbox_ai_parser_failed',
       code: 20030,
-      i18nKey: 'Chatbox AI document parsing failed. Please try again later.',
+      i18nKey: 'Cloud document parsing failed. Please try again later.',
     },
     third_party_parser_failed: {
       name: 'third_party_parser_failed',
       code: 20031,
       i18nKey:
-        'Document parsing failed. You can go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and switch to Chatbox AI for cloud-based document parsing.',
+        'Document parsing failed. You can go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and switch to another parser.',
     },
     third_party_parser_not_supported_in_chat: {
       name: 'third_party_parser_not_supported_in_chat',
       code: 20032,
       i18nKey:
-        'Selected document parser is currently only supported in Knowledge Base. For chat file attachments, please go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and switch to Local or Chatbox AI.',
+        'Selected document parser is currently only supported in Knowledge Base. For chat file attachments, please go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and switch to Local.',
     },
     mineru_api_token_required: {
       name: 'mineru_api_token_required',
@@ -273,7 +273,7 @@ export class ChatboxAIAPIError extends BaseError {
       name: 'document_parser_not_configured',
       code: 20034,
       i18nKey:
-        'This file type requires a document parser. Please go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and enable Chatbox AI document parsing.',
+        'This file type requires a document parser. Please go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and enable a supported parser.',
     },
   }
   static fromCodeName(response: string, codeName: string) {

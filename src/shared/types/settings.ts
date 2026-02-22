@@ -10,7 +10,7 @@ export { ModelProviderType } from './provider'
  * Document parser service type
  * - none: No parsing service, only supports basic text files (mobile/web default)
  * - local: Local parsing using built-in libraries (desktop default)
- * - chatbox-ai: Chatbox cloud parsing service (requires login, consumes compute points)
+ * - chatbox-ai: Legacy value kept for backward compatibility (mapped to local in this build)
  * - mineru: Third-party MinerU parsing service (desktop only)
  */
 export type DocumentParserType = 'none' | 'local' | 'chatbox-ai' | 'mineru'

@@ -117,11 +117,6 @@ export const settingsStore = createStore<Settings & Action>()(
               settings.shortcuts.inputBoxSendMessageWithoutResponse =
                 settings.shortcuts.inpubBoxSendMessageWithoutResponse ||
                 settings.shortcuts.inputBoxSendMessageWithoutResponse
-            case 1:
-              if (settings.licenseKey && !settings.licenseActivationMethod) {
-                settings.licenseActivationMethod = 'manual'
-                settings.memorizedManualLicenseKey = settings.licenseKey
-              }
             default:
               break
           }

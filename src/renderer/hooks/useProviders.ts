@@ -13,7 +13,6 @@ export const useProviders = () => {
   const providers = useMemo(
     () =>
       allProviderBaseInfos
-        .filter((p) => p.id !== ModelProviderEnum.ChatboxAI)
         .map((p) => {
           const providerSettings = providerSettingsMap?.[p.id]
           if (

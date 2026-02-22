@@ -97,6 +97,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
 
   // MIME type correction for Windows compatibility
   const correctMimeType = useCallback((file: File): FileMeta => {
+    const fileWithPath = file as File & { path?: string }
     const filename = file.name.toLowerCase()
     let mimeType = file.type
 
@@ -138,7 +139,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
 
     return {
       name: file.name,
-      path: file.path,
+      path: fileWithPath.path || '',
       type: mimeType,
       size: file.size,
     }
@@ -550,13 +551,11 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
           switch (parserType) {
             case 'mineru':
               return t('MinerU parse failed')
-            case 'chatbox-ai':
-              return t('Chatbox AI parse failed')
             default:
               return t('Local parse failed')
           }
         }
-        const isRemoteParser = parserType === 'mineru' || parserType === 'chatbox-ai'
+        const isRemoteParser = parserType === 'mineru'
         return (
           <Flex gap={4} align="center">
             <Tooltip
@@ -792,11 +791,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
                                     </Text>
                                     {doc.parser_type && (
                                       <Pill size="xs" c="dimmed">
-                                        {doc.parser_type === 'chatbox-ai'
-                                          ? 'Chatbox AI'
-                                          : doc.parser_type === 'mineru'
-                                            ? 'MinerU'
-                                            : 'Local'}
+                                        {doc.parser_type === 'mineru' ? 'MinerU' : 'Local'}
                                       </Pill>
                                     )}
                                   </>

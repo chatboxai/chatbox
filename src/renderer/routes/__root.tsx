@@ -1,4 +1,4 @@
-import { type RemoteConfig, Theme } from '@shared/types'
+import { Theme } from '@shared/types'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
@@ -43,7 +43,6 @@ import { useSetAtom } from 'jotai'
 import { useEffect, useMemo, useRef } from 'react'
 import SettingsModal, { navigateToSettings } from '@/modals/Settings'
 import { getOS } from '@/packages/navigator'
-import * as remote from '@/packages/remote'
 import PictureDialog from '@/pages/PictureDialog'
 import RemoteDialogWindow from '@/pages/RemoteDialogWindow'
 import SearchDialog from '@/pages/SearchDialog'
@@ -73,10 +72,7 @@ function Root() {
     const tid = setTimeout(() => {
       // biome-ignore lint/nursery/noFloatingPromises: inline call
       ;(async () => {
-        const remoteConfig = await remote
-          .getRemoteConfig('setting_chatboxai_first')
-          .catch(() => ({ setting_chatboxai_first: false }) as RemoteConfig)
-        setRemoteConfig((conf) => ({ ...conf, ...remoteConfig }))
+        setRemoteConfig((conf) => ({ ...conf }))
         // 是否需要弹出设置窗口
         initialized.current = true
         if (settingActions.needEditSetting() && location.pathname !== '/settings/mcp') {
@@ -84,9 +80,9 @@ function Root() {
           return
         }
         // 是否需要弹出关于窗口（更新后首次启动）
-        // 目前仅在桌面版本更新后首次启动、且网络环境为"外网"的情况下才自动弹窗
+        // 目前仅在桌面版本更新后首次启动才自动弹窗
         const shouldShowAboutDialogWhenStartUp = await platform.shouldShowAboutDialogWhenStartUp()
-        if (shouldShowAboutDialogWhenStartUp && remoteConfig.setting_chatboxai_first) {
+        if (shouldShowAboutDialogWhenStartUp) {
           setOpenAboutDialog(true)
           return
         }

@@ -24,12 +24,12 @@ function monitorServerStatus() {
 
 platform
   .getSettings()
-  .then(({ mcp, licenseKey }) => {
+  .then(({ mcp }) => {
     const servers = [
-      ...(mcp.enabledBuiltinServers || []).map((id) => getBuiltinServerConfig(id, licenseKey)).filter((s) => !!s),
+      ...(mcp.enabledBuiltinServers || []).map((id) => getBuiltinServerConfig(id)).filter((s) => !!s),
       ...(mcp.servers || []), // user defined servers
     ]
-    console.info(`mcp bootstrap ${servers.length} servers, with license key: ${!!licenseKey}`)
+    console.info(`mcp bootstrap ${servers.length} servers`)
     mcpController.bootstrap(servers)
     if (NODE_ENV === 'development') {
       monitorServerStatus()

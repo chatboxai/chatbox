@@ -1,7 +1,11 @@
 import { createStore, useStore } from 'zustand'
 import { persist, subscribeWithSelector } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
-import type { AuthTokens } from '../routes/settings/provider/chatbox-ai/-components/types'
+
+export interface AuthTokens {
+  accessToken: string
+  refreshToken: string
+}
 
 interface AuthTokensState {
   accessToken: string | null
@@ -51,7 +55,7 @@ export const authInfoStore = createStore<AuthTokensState & AuthTokensActions>()(
         },
       })),
       {
-        name: 'chatbox-ai-auth-info',
+        name: 'auth-info',
         version: 0,
         partialize: (state) => ({
           accessToken: state.accessToken,

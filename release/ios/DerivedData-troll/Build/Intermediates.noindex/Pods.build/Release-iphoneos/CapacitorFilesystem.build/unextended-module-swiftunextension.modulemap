@@ -1,0 +1,4 @@
+
+module CapacitorFilesystem.__Swift {
+  exclude header "CapacitorFilesystem-Swift.h"
+}

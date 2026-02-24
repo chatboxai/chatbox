@@ -1,0 +1,4 @@
+
+module CapacitorCommunitySqlite.__Swift {
+  exclude header "CapacitorCommunitySqlite-Swift.h"
+}

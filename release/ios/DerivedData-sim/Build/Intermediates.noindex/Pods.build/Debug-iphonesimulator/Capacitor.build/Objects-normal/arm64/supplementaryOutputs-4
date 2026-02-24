@@ -1,0 +1,30 @@
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPBridge.swift":
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CAPBridge.o"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CAPBridge.d"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CAPBridge.swiftdeps"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CAPBridge.swiftconstvalues"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CAPBridge.dia"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CapacitorExtension.swift":
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorExtension.swiftconstvalues"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorExtension.swiftdeps"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorExtension.dia"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorExtension.o"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorExtension.d"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Plugins/CapacitorHttp.swift":
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorHttp.swiftconstvalues"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorHttp.dia"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorHttp.d"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorHttp.swiftdeps"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorHttp.o"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Plugins/CapacitorUrlRequest.swift":
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorUrlRequest.swiftdeps"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorUrlRequest.swiftconstvalues"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorUrlRequest.dia"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorUrlRequest.d"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CapacitorUrlRequest.o"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPApplicationDelegateProxy.swift":
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CAPApplicationDelegateProxy.swiftdeps"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CAPApplicationDelegateProxy.swiftconstvalues"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CAPApplicationDelegateProxy.o"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CAPApplicationDelegateProxy.d"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/CAPApplicationDelegateProxy.dia"

@@ -1,0 +1,18 @@
+{
+	"appId": "xyz.chatboxapp.ce",
+	"appName": "Chatbox",
+	"webDir": "release/app/dist/renderer",
+	"packageClassList": [
+		"CapacitorSQLitePlugin",
+		"AppPlugin",
+		"CAPBrowserPlugin",
+		"DevicePlugin",
+		"FilesystemPlugin",
+		"KeyboardPlugin",
+		"SharePlugin",
+		"SplashScreenPlugin",
+		"ToastPlugin",
+		"SafeAreaPlugin",
+		"StreamHttpPlugin"
+	]
+}

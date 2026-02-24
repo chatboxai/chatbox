@@ -44,6 +44,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     private var hasInstalledDebugGesture = false
     private var hasPresentedStartupDiag = false
     private var startupTimeoutWorkItem: DispatchWorkItem?
+    private var diagnosticsOverlayWindow: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         StartupDiagnosticsLogStore.shared.append("didFinishLaunching")
@@ -187,38 +188,71 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     private func presentDiagnosticsDialog(reason: String) {
         guard startupDiagEnabled else { return }
         guard !hasPresentedStartupDiag else { return }
-        guard let presenter = topViewController(base: window?.rootViewController) else {
-            StartupDiagnosticsLogStore.shared.append("present diagnostics skipped: presenter not ready")
-            return
-        }
 
         hasPresentedStartupDiag = true
         let allLogs = StartupDiagnosticsLogStore.shared.dump()
-        let preview = StartupDiagnosticsLogStore.shared.tailPreview(limit: 25)
-        let message = "\(reason)\n\n\(localizedText(zh: "以下为最近日志预览（完整日志请点“复制日志”）：", en: "Recent log preview (tap \"Copy Logs\" for full output):"))\n\n\(preview)"
+        let preview = StartupDiagnosticsLogStore.shared.tailPreview(limit: 40)
+        let message = "\(reason)\n\n\(localizedText(zh: "以下为最近日志预览（完整日志见下方文本，可直接复制）：", en: "Recent log preview (full logs are shown below and can be copied):"))\n\n\(preview)"
+        showDiagnosticsOverlay(message: message, fullLogs: allLogs)
+    }
 
-        let alert = UIAlertController(
-            title: localizedText(zh: "启动诊断日志", en: "Startup Diagnostics"),
+    private func showDiagnosticsOverlay(message: String, fullLogs: String) {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first(where: { $0.activationState == .foregroundActive })
+            ?? UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first(where: { $0.activationState == .foregroundInactive })
+
+        let overlayWindow: UIWindow
+        if let scene {
+            overlayWindow = UIWindow(windowScene: scene)
+        } else {
+            overlayWindow = UIWindow(frame: UIScreen.main.bounds)
+        }
+
+        let title = localizedText(zh: "启动诊断日志", en: "Startup Diagnostics")
+        let copyTitle = localizedText(zh: "复制日志", en: "Copy Logs")
+        let shareTitle = localizedText(zh: "分享日志", en: "Share Logs")
+        let closeTitle = localizedText(zh: "关闭", en: "Close")
+        let viewController = StartupDiagnosticsViewController(
+            titleText: title,
             message: message,
-            preferredStyle: .alert
+            fullLogs: fullLogs,
+            copyButtonTitle: copyTitle,
+            shareButtonTitle: shareTitle,
+            closeButtonTitle: closeTitle
         )
-        alert.addAction(UIAlertAction(title: localizedText(zh: "复制日志", en: "Copy Logs"), style: .default, handler: { _ in
-            UIPasteboard.general.string = allLogs
+
+        viewController.onCopy = { [weak self] logs in
+            UIPasteboard.general.string = logs
             StartupDiagnosticsLogStore.shared.append("diagnostics copied to pasteboard")
-            self.hasPresentedStartupDiag = false
-        }))
-        alert.addAction(UIAlertAction(title: localizedText(zh: "分享日志", en: "Share Logs"), style: .default, handler: { _ in
-            let activity = UIActivityViewController(activityItems: [allLogs], applicationActivities: nil)
+            self?.hasPresentedStartupDiag = false
+        }
+        viewController.onShare = { logs, presenter in
+            let activity = UIActivityViewController(activityItems: [logs], applicationActivities: nil)
             presenter.present(activity, animated: true)
             StartupDiagnosticsLogStore.shared.append("diagnostics share sheet opened")
-            self.hasPresentedStartupDiag = false
-        }))
-        alert.addAction(UIAlertAction(title: localizedText(zh: "关闭", en: "Close"), style: .cancel, handler: { _ in
-            self.hasPresentedStartupDiag = false
-        }))
+        }
+        viewController.onClose = { [weak self] in
+            self?.dismissDiagnosticsOverlay()
+        }
 
-        presenter.present(alert, animated: true)
-        StartupDiagnosticsLogStore.shared.append("diagnostics dialog presented")
+        overlayWindow.windowLevel = .alert + 1
+        overlayWindow.backgroundColor = .clear
+        overlayWindow.rootViewController = viewController
+        overlayWindow.makeKeyAndVisible()
+
+        diagnosticsOverlayWindow = overlayWindow
+        StartupDiagnosticsLogStore.shared.append("diagnostics overlay presented")
+    }
+
+    private func dismissDiagnosticsOverlay() {
+        diagnosticsOverlayWindow?.isHidden = true
+        diagnosticsOverlayWindow = nil
+        window?.makeKeyAndVisible()
+        hasPresentedStartupDiag = false
+        StartupDiagnosticsLogStore.shared.append("diagnostics overlay dismissed")
     }
 
     private func topViewController(base: UIViewController?) -> UIViewController? {
@@ -237,5 +271,128 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     private func localizedText(zh: String, en: String) -> String {
         let lang = Locale.preferredLanguages.first?.lowercased() ?? ""
         return lang.hasPrefix("zh") ? zh : en
+    }
+}
+
+private final class StartupDiagnosticsViewController: UIViewController {
+    var onCopy: ((String) -> Void)?
+    var onShare: ((String, UIViewController) -> Void)?
+    var onClose: (() -> Void)?
+
+    private let titleText: String
+    private let message: String
+    private let fullLogs: String
+    private let copyButtonTitle: String
+    private let shareButtonTitle: String
+    private let closeButtonTitle: String
+
+    init(
+        titleText: String,
+        message: String,
+        fullLogs: String,
+        copyButtonTitle: String,
+        shareButtonTitle: String,
+        closeButtonTitle: String
+    ) {
+        self.titleText = titleText
+        self.message = message
+        self.fullLogs = fullLogs
+        self.copyButtonTitle = copyButtonTitle
+        self.shareButtonTitle = shareButtonTitle
+        self.closeButtonTitle = closeButtonTitle
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .overFullScreen
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.backgroundColor = .systemBackground
+        container.layer.cornerRadius = 14
+        container.layer.masksToBounds = true
+        view.addSubview(container)
+
+        let titleLabel = UILabel()
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.text = titleText
+        titleLabel.font = .boldSystemFont(ofSize: 18)
+        titleLabel.textAlignment = .center
+
+        let logsView = UITextView()
+        logsView.translatesAutoresizingMaskIntoConstraints = false
+        logsView.text = "\(message)\n\n\(fullLogs)"
+        logsView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        logsView.textColor = .label
+        logsView.backgroundColor = .secondarySystemBackground
+        logsView.isEditable = false
+        logsView.isSelectable = true
+        logsView.layer.cornerRadius = 8
+
+        let copyButton = UIButton(type: .system)
+        copyButton.translatesAutoresizingMaskIntoConstraints = false
+        copyButton.setTitle(copyButtonTitle, for: .normal)
+        copyButton.addTarget(self, action: #selector(copyTapped), for: .touchUpInside)
+
+        let shareButton = UIButton(type: .system)
+        shareButton.translatesAutoresizingMaskIntoConstraints = false
+        shareButton.setTitle(shareButtonTitle, for: .normal)
+        shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
+
+        let closeButton = UIButton(type: .system)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.setTitle(closeButtonTitle, for: .normal)
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+
+        let buttonStack = UIStackView(arrangedSubviews: [copyButton, shareButton, closeButton])
+        buttonStack.translatesAutoresizingMaskIntoConstraints = false
+        buttonStack.axis = .horizontal
+        buttonStack.alignment = .fill
+        buttonStack.distribution = .fillEqually
+        buttonStack.spacing = 12
+
+        container.addSubview(titleLabel)
+        container.addSubview(logsView)
+        container.addSubview(buttonStack)
+
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+            container.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+            container.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            container.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.7),
+
+            titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
+            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            titleLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+
+            logsView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
+            logsView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            logsView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            logsView.bottomAnchor.constraint(equalTo: buttonStack.topAnchor, constant: -12),
+
+            buttonStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            buttonStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            buttonStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
+            buttonStack.heightAnchor.constraint(equalToConstant: 40)
+        ])
+    }
+
+    @objc private func copyTapped() {
+        onCopy?(fullLogs)
+    }
+
+    @objc private func shareTapped() {
+        onShare?(fullLogs, self)
+    }
+
+    @objc private func closeTapped() {
+        onClose?()
     }
 }

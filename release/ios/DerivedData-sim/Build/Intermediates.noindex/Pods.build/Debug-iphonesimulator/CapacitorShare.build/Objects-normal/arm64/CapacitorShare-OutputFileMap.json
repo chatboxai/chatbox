@@ -1,0 +1,18 @@
+{
+  "" : {
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/CapacitorShare-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/CapacitorShare-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/CapacitorShare-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/CapacitorShare-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/share/ios/Sources/SharePlugin/SharePlugin.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/SharePlugin.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/SharePlugin.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/SharePlugin.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/SharePlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/SharePlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/SharePlugin.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/SharePlugin.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorShare.build/Objects-normal/arm64/SharePlugin~partial.swiftmodule"
+  }
+}

@@ -1,0 +1,107 @@
+PODS:
+  - Capacitor (7.4.5):
+    - CapacitorCordova
+  - CapacitorApp (7.1.1):
+    - Capacitor
+  - CapacitorBrowser (7.0.3):
+    - Capacitor
+  - CapacitorCommunitySqlite (7.0.3):
+    - Capacitor
+    - SQLCipher
+    - ZIPFoundation
+  - CapacitorCordova (7.4.5)
+  - CapacitorDevice (7.0.3):
+    - Capacitor
+  - CapacitorFilesystem (7.1.6):
+    - Capacitor
+    - IONFilesystemLib (~> 1.0.1)
+  - CapacitorKeyboard (7.0.4):
+    - Capacitor
+  - CapacitorPluginSafeArea (4.0.3):
+    - Capacitor
+  - CapacitorShare (7.0.3):
+    - Capacitor
+  - CapacitorSplashScreen (7.0.4):
+    - Capacitor
+  - CapacitorStreamHttp (0.1.0):
+    - Capacitor
+  - CapacitorToast (7.0.3):
+    - Capacitor
+  - IONFilesystemLib (1.0.1)
+  - SQLCipher (4.10.0):
+    - SQLCipher/standard (= 4.10.0)
+  - SQLCipher/common (4.10.0)
+  - SQLCipher/standard (4.10.0):
+    - SQLCipher/common
+  - ZIPFoundation (0.9.20)
+
+DEPENDENCIES:
+  - "Capacitor (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
+  - "CapacitorBrowser (from `../../node_modules/@capacitor/browser`)"
+  - "CapacitorCommunitySqlite (from `../../node_modules/@capacitor-community/sqlite`)"
+  - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorDevice (from `../../node_modules/@capacitor/device`)"
+  - "CapacitorFilesystem (from `../../node_modules/@capacitor/filesystem`)"
+  - "CapacitorKeyboard (from `../../node_modules/@capacitor/keyboard`)"
+  - CapacitorPluginSafeArea (from `../../node_modules/capacitor-plugin-safe-area`)
+  - "CapacitorShare (from `../../node_modules/@capacitor/share`)"
+  - "CapacitorSplashScreen (from `../../node_modules/@capacitor/splash-screen`)"
+  - CapacitorStreamHttp (from `../../node_modules/capacitor-stream-http`)
+  - "CapacitorToast (from `../../node_modules/@capacitor/toast`)"
+
+SPEC REPOS:
+  trunk:
+    - IONFilesystemLib
+    - SQLCipher
+    - ZIPFoundation
+
+EXTERNAL SOURCES:
+  Capacitor:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorApp:
+    :path: "../../node_modules/@capacitor/app"
+  CapacitorBrowser:
+    :path: "../../node_modules/@capacitor/browser"
+  CapacitorCommunitySqlite:
+    :path: "../../node_modules/@capacitor-community/sqlite"
+  CapacitorCordova:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorDevice:
+    :path: "../../node_modules/@capacitor/device"
+  CapacitorFilesystem:
+    :path: "../../node_modules/@capacitor/filesystem"
+  CapacitorKeyboard:
+    :path: "../../node_modules/@capacitor/keyboard"
+  CapacitorPluginSafeArea:
+    :path: "../../node_modules/capacitor-plugin-safe-area"
+  CapacitorShare:
+    :path: "../../node_modules/@capacitor/share"
+  CapacitorSplashScreen:
+    :path: "../../node_modules/@capacitor/splash-screen"
+  CapacitorStreamHttp:
+    :path: "../../node_modules/capacitor-stream-http"
+  CapacitorToast:
+    :path: "../../node_modules/@capacitor/toast"
+
+SPEC CHECKSUMS:
+  Capacitor: 12914e6f1b7835e161a74ebd19cb361efa37a7dd
+  CapacitorApp: 63b237168fc869e758481dba283315a85743ee78
+  CapacitorBrowser: b98aa3db018a2ce4c68242d27e596c344f3b81b3
+  CapacitorCommunitySqlite: 4813d82ad33001e612a39d313cb5d28066cbafda
+  CapacitorCordova: 31bbe4466000c6b86d9b7f1181ee286cff0205aa
+  CapacitorDevice: b64654eb4d404373e733c01d835055ba59286e5c
+  CapacitorFilesystem: 66f05ee0d8b1ccdc00d509091273a9b3b57c4a0b
+  CapacitorKeyboard: 5660c760113bfa48962817a785879373cf5339c3
+  CapacitorPluginSafeArea: 1abd81c6facac9eae0c6ae3cb0b3b53ccc135522
+  CapacitorShare: a4f4f86eabd4b3ff52ba6a11b754713c6926a8d1
+  CapacitorSplashScreen: 000f7591d546907dda5cbb514bd6b6d9e6048cf8
+  CapacitorStreamHttp: 14ffb256b2c6daf803fe28aa488f27e2402eefd0
+  CapacitorToast: 827b4c977b062f39268188250c980d5b61927a4c
+  IONFilesystemLib: 89258b8e3e85465da93127d25d7ce37f977e8a6f
+  SQLCipher: eb79c64049cb002b4e9fcb30edb7979bf4706dfc
+  ZIPFoundation: dfd3d681c4053ff7e2f7350bc4e53b5dba3f5351
+
+PODFILE CHECKSUM: c762401fd579245b3a78c0b37667abbe9162e4d3
+
+COCOAPODS: 1.16.2

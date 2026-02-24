@@ -1,0 +1,8 @@
+version: "Apple Swift version 6.1 (swiftlang-6.1.0.110.21 clang-1700.0.13.3)"
+options: "168003bacaa3d2bfce7c6cd61c0f60c2878f7f19209c8f73ca5924dd7da5be4d"
+build_start_time: [1771901227, 844850000]
+build_end_time: [1771901233, 913882000]
+inputs:
+  "/Users/shenhualxt/workspace/chatbox/ios/App/App/AppDelegate.swift": [1771901167, 147091640]
+  ? "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/DerivedSources/GeneratedAssetSymbols.swift"
+  : [1771899974, 628685379]

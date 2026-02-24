@@ -1,0 +1,22 @@
+moduledependenciestarget: \
+  /Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCordova.build/module.modulemap \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/CapacitorCordova.h \
+  /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.4.sdk/System/Library/Frameworks/UIKit.framework/Modules/module.modulemap \
+  /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.4.sdk/System/Library/Frameworks/Foundation.framework/Modules/module.modulemap \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/AppDelegate.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVViewController.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDV.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVAvailability.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVPlugin.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVPluginResult.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVCommandDelegate.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVInvokedUrlCommand.h \
+  /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.4.sdk/System/Library/Frameworks/WebKit.framework/Modules/module.modulemap \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVURLProtocol.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVScreenOrientationDelegate.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVWebViewProcessPoolFactory.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVCommandDelegateImpl.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVPluginManager.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVConfigParser.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/CDVPlugin+Resources.h \
+  /Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/Classes/Public/NSDictionary+CordovaPreferences.h

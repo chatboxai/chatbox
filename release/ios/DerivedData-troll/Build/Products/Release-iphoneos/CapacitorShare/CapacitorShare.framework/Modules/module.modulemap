@@ -1,0 +1,11 @@
+framework module CapacitorShare {
+  umbrella header "CapacitorShare-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorShare.Swift {
+  header "CapacitorShare-Swift.h"
+  requires objc
+}

@@ -1,0 +1,72 @@
+{
+  "buildCommand" : {
+    "command" : "build",
+    "skipDependencies" : false,
+    "style" : "buildOnly"
+  },
+  "configuredTargets" : [
+    {
+      "guid" : "0ca3007d900a678c2b4d53418799ee3d34df47fa015b7e467e67e9235d8a1297"
+    }
+  ],
+  "containerPath" : "/Users/shenhualxt/workspace/chatbox/ios/App/App.xcodeproj",
+  "continueBuildingAfterErrors" : false,
+  "dependencyScope" : "workspace",
+  "enableIndexBuildArena" : false,
+  "hideShellScriptEnvironment" : false,
+  "parameters" : {
+    "action" : "build",
+    "activeArchitecture" : "undefined_arch",
+    "activeRunDestination" : {
+      "disableOnlyActiveArch" : true,
+      "platform" : "iphoneos",
+      "sdk" : "iphoneos18.4",
+      "sdkVariant" : "iphoneos",
+      "supportedArchitectures" : [
+        "armv4t",
+        "armv5",
+        "armv6",
+        "armv7",
+        "armv7f",
+        "armv7s",
+        "armv7k",
+        "arm64",
+        "arm64e"
+      ],
+      "targetArchitecture" : "undefined_arch"
+    },
+    "arenaInfo" : {
+      "buildIntermediatesPath" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-ipa/Build/Intermediates.noindex",
+      "buildProductsPath" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-ipa/Build/Products",
+      "derivedDataPath" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-ipa",
+      "indexDataStoreFolderPath" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-ipa/Index.noindex/DataStore",
+      "indexEnableDataStore" : true,
+      "indexPCHPath" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-ipa/Index.noindex/PrecompiledHeaders",
+      "pchPath" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-ipa/Build/Intermediates.noindex/PrecompiledHeaders"
+    },
+    "configurationName" : "Release",
+    "overrides" : {
+      "commandLine" : {
+        "table" : {
+          "CODE_SIGN_IDENTITY" : "",
+          "CODE_SIGNING_ALLOWED" : "NO",
+          "CODE_SIGNING_REQUIRED" : "NO"
+        }
+      },
+      "synthesized" : {
+        "table" : {
+          "ACTION" : "build",
+          "ENABLE_PREVIEWS" : "NO",
+          "ENABLE_XOJIT_PREVIEWS" : "YES",
+          "ONLY_ACTIVE_ARCH" : "YES"
+        }
+      }
+    }
+  },
+  "schemeCommand" : "launch",
+  "showNonLoggedProgress" : true,
+  "useDryRun" : false,
+  "useImplicitDependencies" : true,
+  "useLegacyBuildLocations" : false,
+  "useParallelTargets" : true
+}

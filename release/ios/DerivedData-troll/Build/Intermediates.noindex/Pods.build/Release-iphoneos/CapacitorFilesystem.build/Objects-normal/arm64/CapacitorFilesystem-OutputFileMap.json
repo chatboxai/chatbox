@@ -1,0 +1,55 @@
+{
+  "" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/CapacitorFilesystem-master.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/CapacitorFilesystem-master.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/CapacitorFilesystem-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/CapacitorFilesystem-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/CapacitorFilesystem-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/CapacitorFilesystem-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/CAPPluginCall+Accelerators.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemConstants.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemError.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemLocationResolver.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemOperation.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemOperationExecutor.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemPlugin.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/IONFileStructures+Converters.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/LegacyFilesystemImplementation.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation.o"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "" : {
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/CapacitorDevice-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/CapacitorDevice-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/CapacitorDevice-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/CapacitorDevice-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/device/ios/Sources/DevicePlugin/Device.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/Device.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/Device.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/Device.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/Device.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/Device.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/Device.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/Device.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/Device~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/device/ios/Sources/DevicePlugin/DevicePlugin.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin~partial.swiftmodule"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "version": 0,
+  "use-external-names": false,
+  "case-sensitive": false,
+  "roots": [{
+    "type": "directory",
+    "name": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Products/Debug-iphonesimulator/CapacitorPluginSafeArea/CapacitorPluginSafeArea.framework/Modules",
+    "contents": [{
+      "type": "file",
+      "name": "module.modulemap",
+      "external-contents": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/unextended-module.modulemap",
+    }]
+    },
+    {
+    "type": "directory",
+    "name": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Products/Debug-iphonesimulator/CapacitorPluginSafeArea/CapacitorPluginSafeArea.framework/Headers",
+    "contents": [{
+      "type": "file",
+      "name": "CapacitorPluginSafeArea-Swift.h",
+      "external-contents": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/unextended-interface-header.h",
+    }]
+  }]
+}

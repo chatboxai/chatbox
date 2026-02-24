@@ -1,0 +1,23 @@
+{
+  "version": 0,
+  "use-external-names": false,
+  "case-sensitive": false,
+  "roots": [{
+    "type": "directory",
+    "name": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Products/Debug-iphonesimulator/CapacitorStreamHttp/CapacitorStreamHttp.framework/Modules",
+    "contents": [{
+      "type": "file",
+      "name": "module.modulemap",
+      "external-contents": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorStreamHttp.build/unextended-module.modulemap",
+    }]
+    },
+    {
+    "type": "directory",
+    "name": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Products/Debug-iphonesimulator/CapacitorStreamHttp/CapacitorStreamHttp.framework/Headers",
+    "contents": [{
+      "type": "file",
+      "name": "CapacitorStreamHttp-Swift.h",
+      "external-contents": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorStreamHttp.build/unextended-interface-header.h",
+    }]
+  }]
+}

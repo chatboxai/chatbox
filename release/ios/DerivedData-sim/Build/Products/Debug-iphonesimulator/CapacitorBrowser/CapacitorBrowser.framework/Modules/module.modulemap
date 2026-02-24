@@ -1,0 +1,11 @@
+framework module CapacitorBrowser {
+  umbrella header "CapacitorBrowser-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorBrowser.Swift {
+  header "CapacitorBrowser-Swift.h"
+  requires objc
+}

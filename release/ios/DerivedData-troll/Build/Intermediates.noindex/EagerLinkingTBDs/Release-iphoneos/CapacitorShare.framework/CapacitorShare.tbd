@@ -1,0 +1,62 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_$s14CapacitorShare0B6PluginC6bridge8pluginId0E4NameAC0A017CAPBridgeProtocol_p_S2StcfC",
+            "_$s14CapacitorShare0B6PluginC6bridge8pluginId0E4NameAC0A017CAPBridgeProtocol_p_S2Stcfc",
+            "_$s14CapacitorShare0B6PluginC10identifierSSvpMV",
+            "_$s14CapacitorShare0B6PluginC6jsNameSSvpfi",
+            "_$s14CapacitorShare0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpfi",
+            "_$s14CapacitorShare0B6PluginCACycfC",
+            "_$s14CapacitorShare0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpWvd",
+            "_$s14CapacitorShare0B6PluginCACycfc",
+            "_CapacitorShareVersionNumber",
+            "_$s14CapacitorShare0B6PluginCMa",
+            "_$s14CapacitorShare0B6PluginC10identifierSSvpfi",
+            "_$s14CapacitorShare0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvg",
+            "_$s14CapacitorShare0B6PluginC6jsNameSSvg",
+            "_$s14CapacitorShare0B6PluginC10identifierSSvpWvd",
+            "_$s14CapacitorShare0B6PluginCfD",
+            "_$s14CapacitorShare0B6PluginC6jsNameSSvpWvd",
+            "_$s14CapacitorShare0B6PluginCMn",
+            "_$s14CapacitorShare0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpMV",
+            "_$s14CapacitorShare0B6PluginCN",
+            "_CapacitorShareVersionString",
+            "_$s14CapacitorShare0B6PluginC6jsNameSSvpMV",
+            "_$s14CapacitorShare0B6PluginC10identifierSSvg"
+          ],
+          "objc_class": [
+            "SharePlugin",
+            "PodsDummy_CapacitorShare"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/CapacitorShare.framework/CapacitorShare"
+      }
+    ],
+    "swift_abi": [
+      {
+        "abi": 7
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

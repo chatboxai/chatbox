@@ -1,0 +1,155 @@
+{
+  "" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorCommunitySqlite-master.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorCommunitySqlite-master.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorCommunitySqlite-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorCommunitySqlite-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorCommunitySqlite-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorCommunitySqlite-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/BiometricIDAuthentication.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/CapacitorSQLite.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/CapacitorSQLitePlugin.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Database.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Extensions/Array.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Extensions/Data.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Extensions/Notification.Name.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Extensions/String.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/GlobalSQLite.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ImportExportJson/ExportToJson.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ImportExportJson/ImportData.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ImportExportJson/ImportFromJson.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ImportExportJson/JsonSQLite.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Models/KeychainServices.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ReturnHandler.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/SqliteConfig.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsBinding.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsDelete.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsDownloadFromHTTP.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsDrop.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsEncryption.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsFile.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsJson.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsMigrate.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsNCDatabase.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsSQLCipher.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsSQLStatement.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsSecret.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsUpgrade.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade.o"
+  }
+}

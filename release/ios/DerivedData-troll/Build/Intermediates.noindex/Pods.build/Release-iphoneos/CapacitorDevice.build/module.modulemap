@@ -1,0 +1,11 @@
+framework module CapacitorDevice {
+  umbrella header "CapacitorDevice-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorDevice.Swift {
+  header "CapacitorDevice-Swift.h"
+  requires objc
+}

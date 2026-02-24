@@ -1,0 +1,4 @@
+
+module CapacitorBrowser.__Swift {
+  exclude header "CapacitorBrowser-Swift.h"
+}

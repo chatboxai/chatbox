@@ -1,0 +1,76 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_$s19CapacitorFilesystem0B6PluginC6jsNameSSvpWvd",
+            "_$s19CapacitorFilesystem0B6PluginC6jsNameSSvpfi",
+            "_$s19CapacitorFilesystem0B6PluginCfD",
+            "_$s19CapacitorFilesystem06LegacyB14ImplementationCACycfC",
+            "_$s19CapacitorFilesystem0B6PluginC10identifierSSvpWvd",
+            "_$s19CapacitorFilesystem0B6PluginC6jsNameSSvg",
+            "_CapacitorFilesystemVersionNumber",
+            "_$s19CapacitorFilesystem0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvg",
+            "_$s19CapacitorFilesystem06LegacyB14ImplementationCfD",
+            "_$s19CapacitorFilesystem0B6PluginCACycfc",
+            "_$s19CapacitorFilesystem0B6PluginC18requestPermissionsyySo13CAPPluginCallCF",
+            "_$s19CapacitorFilesystem0B6PluginCN",
+            "_$s19CapacitorFilesystem06LegacyB14ImplementationC12downloadFile4call7emitter6configySo13CAPPluginCallC_ys5Int64V_AKtcSo24CAPInstanceConfigurationCSgtKF",
+            "_$s19CapacitorFilesystem0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpMV",
+            "_$s19CapacitorFilesystem0B6PluginC16checkPermissionsyySo13CAPPluginCallCF",
+            "_$s19CapacitorFilesystem0B6PluginC20legacyImplementation33_E0BDDB64D3BC55476FF4F3C6C2B91150LLAA06LegacybE0Cvpfi",
+            "_CapacitorFilesystemVersionString",
+            "_$s19CapacitorFilesystem0B6PluginCACycfC",
+            "_$s19CapacitorFilesystem0B6PluginC4loadyyF",
+            "_$s19CapacitorFilesystem0B6PluginCMa",
+            "_$s19CapacitorFilesystem0B6PluginC6jsNameSSvpMV",
+            "_$s19CapacitorFilesystem0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpWvd",
+            "_$s19CapacitorFilesystem0B6PluginC6bridge8pluginId0E4NameAC0A017CAPBridgeProtocol_p_S2StcfC",
+            "_$s19CapacitorFilesystem0B6PluginC10identifierSSvg",
+            "_$s19CapacitorFilesystem0B6PluginC10identifierSSvpfi",
+            "_$s19CapacitorFilesystem0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpfi",
+            "_$s19CapacitorFilesystem0B6PluginCMn",
+            "_$s19CapacitorFilesystem0B6PluginC11fileService33_E0BDDB64D3BC55476FF4F3C6C2B91150LL16IONFilesystemLib23IONFILEDirectoryManager_AF011IONFILEFileR0pSgvpfi",
+            "_$s19CapacitorFilesystem06LegacyB14ImplementationCMn",
+            "_$s19CapacitorFilesystem06LegacyB14ImplementationC12downloadFile4call7emitter6configySo13CAPPluginCallC_ys5Int64V_AKtcSo24CAPInstanceConfigurationCSgtKFTq",
+            "_$s19CapacitorFilesystem06LegacyB14ImplementationCN",
+            "_$s19CapacitorFilesystem06LegacyB14ImplementationCACycfc",
+            "_$s19CapacitorFilesystem06LegacyB14ImplementationCMa",
+            "_$s19CapacitorFilesystem0B6PluginC10identifierSSvpMV",
+            "_$s19CapacitorFilesystem0B6PluginC6bridge8pluginId0E4NameAC0A017CAPBridgeProtocol_p_S2Stcfc"
+          ],
+          "objc_class": [
+            "_TtC19CapacitorFilesystem30LegacyFilesystemImplementation",
+            "PodsDummy_CapacitorFilesystem",
+            "FilesystemPlugin"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/CapacitorFilesystem.framework/CapacitorFilesystem"
+      }
+    ],
+    "swift_abi": [
+      {
+        "abi": 7
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

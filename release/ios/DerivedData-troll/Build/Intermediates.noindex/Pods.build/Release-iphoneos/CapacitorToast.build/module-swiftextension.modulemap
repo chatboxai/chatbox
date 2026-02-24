@@ -1,0 +1,5 @@
+
+module CapacitorToast.Swift {
+  header "CapacitorToast-Swift.h"
+  requires objc
+}

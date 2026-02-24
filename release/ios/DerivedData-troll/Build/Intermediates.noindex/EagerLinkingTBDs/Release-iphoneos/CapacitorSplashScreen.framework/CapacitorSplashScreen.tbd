@@ -1,0 +1,104 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_$s21CapacitorSplashScreen0bC6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginC6jsNameSSvpMV",
+            "_$s21CapacitorSplashScreen0bC8SettingsVN",
+            "_$s21CapacitorSplashScreen0bC6ConfigVMa",
+            "_$s21CapacitorSplashScreen0bC0C8hideTaskypSgvpfi",
+            "_$s21CapacitorSplashScreen0bC6ConfigV18launchShowDurationSivpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginC4showyySo13CAPPluginCallCFTq",
+            "_$s21CapacitorSplashScreen0bC6ConfigV14launchAutoHideSbvpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginC10identifierSSvg",
+            "_$s21CapacitorSplashScreen0bC6PluginC4hideyySo13CAPPluginCallCFTq",
+            "_$s21CapacitorSplashScreen0bC0C6configAA0bC6ConfigVvpfi",
+            "_$s21CapacitorSplashScreen0bC0CMn",
+            "_$s21CapacitorSplashScreen0bC6PluginC6bridge8pluginId0F4NameAC0A017CAPBridgeProtocol_p_S2Stcfc",
+            "_$s21CapacitorSplashScreen0bC6ConfigV11showSpinnerSbvpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvg",
+            "_$s21CapacitorSplashScreen0bC0C4show8settings10completionyAA0bC8SettingsV_yyctFTq",
+            "_$s21CapacitorSplashScreen0bC6ConfigV15backgroundColorSo7UIColorCSgvpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginCN",
+            "_$s21CapacitorSplashScreen0bC0C12showOnLaunchyyFTq",
+            "_$s21CapacitorSplashScreen0bC8SettingsV15fadeOutDurationSivpfi",
+            "_$s21CapacitorSplashScreen0bC6ConfigV20launchFadeInDurationSivpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginC4loadyyF",
+            "_$s21CapacitorSplashScreen0bC6PluginC6jsNameSSvg",
+            "_$s21CapacitorSplashScreen0bC6ConfigVMn",
+            "_$s21CapacitorSplashScreen0bC8SettingsVMa",
+            "_$s21CapacitorSplashScreen0bC6PluginC06splashC033_FD585EE12CE798D26CCD6CC2AAAA23ADLLAA0bC0CSgvpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginC6jsNameSSvpWvd",
+            "_$s21CapacitorSplashScreen0bC0CN",
+            "_$s21CapacitorSplashScreen0bC8SettingsVMn",
+            "_$s21CapacitorSplashScreen0bC6PluginC10identifierSSvpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginC4hideyySo13CAPPluginCallCF",
+            "_$s21CapacitorSplashScreen0bC6PluginC10identifierSSvpWvd",
+            "_$s21CapacitorSplashScreen0bC0CACycfc",
+            "_$s21CapacitorSplashScreen0bC0CfD",
+            "_$s21CapacitorSplashScreen0bC0C7spinnerSo23UIActivityIndicatorViewCvpfi",
+            "_$s21CapacitorSplashScreen0bC8SettingsV8autoHideSbvpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginCMn",
+            "_$s21CapacitorSplashScreen0bC6PluginCACycfC",
+            "_$s21CapacitorSplashScreen0bC0C4show8settings10completionyAA0bC8SettingsV_yyctF",
+            "_$s21CapacitorSplashScreen0bC8SettingsV12showDurationSivpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginC4showyySo13CAPPluginCallCF",
+            "_$s21CapacitorSplashScreen0bC0C12observeValue10forKeyPath2of6change7contextySSSg_ypSgSDySo05NSKeye6ChangeG0aypGSgSvSgtF",
+            "_$s21CapacitorSplashScreen0bC6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpWvd",
+            "_$s21CapacitorSplashScreen0bC0C4hide8settingsyAA0bC8SettingsV_tF",
+            "_$s21CapacitorSplashScreen0bC0CACycfC",
+            "_$s21CapacitorSplashScreen0bC0CMa",
+            "_$s21CapacitorSplashScreen0bC6PluginCMa",
+            "_$s21CapacitorSplashScreen0bC6ConfigV12spinnerColorSo7UIColorCSgvpfi",
+            "_$s21CapacitorSplashScreen0bC6ConfigVN",
+            "_CapacitorSplashScreenVersionNumber",
+            "_CapacitorSplashScreenVersionString",
+            "_$s21CapacitorSplashScreen0bC0C12showOnLaunchyyF",
+            "_$s21CapacitorSplashScreen0bC6ConfigV12spinnerStyleSo023UIActivityIndicatorViewF0VSgvpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginCfD",
+            "_$s21CapacitorSplashScreen0bC0C9isVisibleSbvpfi",
+            "_$s21CapacitorSplashScreen0bC0C4hide8settingsyAA0bC8SettingsV_tFTq",
+            "_$s21CapacitorSplashScreen0bC6PluginC10identifierSSvpMV",
+            "_$s21CapacitorSplashScreen0bC6PluginC6bridge8pluginId0F4NameAC0A017CAPBridgeProtocol_p_S2StcfC",
+            "_$s21CapacitorSplashScreen0bC6PluginCACycfc",
+            "_$s21CapacitorSplashScreen0bC0C14viewControllerSo06UIViewE0Cvpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginC6jsNameSSvpfi",
+            "_$s21CapacitorSplashScreen0bC8SettingsV14fadeInDurationSivpfi",
+            "_$s21CapacitorSplashScreen0bC6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpMV"
+          ],
+          "objc_class": [
+            "SplashScreenPlugin",
+            "_TtC21CapacitorSplashScreen12SplashScreen",
+            "PodsDummy_CapacitorSplashScreen"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/CapacitorSplashScreen.framework/CapacitorSplashScreen"
+      }
+    ],
+    "swift_abi": [
+      {
+        "abi": 7
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

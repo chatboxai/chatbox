@@ -1,0 +1,15 @@
+{
+  "" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorStreamHttp.build/Objects-normal/arm64/CapacitorStreamHttp-master.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorStreamHttp.build/Objects-normal/arm64/CapacitorStreamHttp-master.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorStreamHttp.build/Objects-normal/arm64/CapacitorStreamHttp-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorStreamHttp.build/Objects-normal/arm64/CapacitorStreamHttp-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorStreamHttp.build/Objects-normal/arm64/CapacitorStreamHttp-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorStreamHttp.build/Objects-normal/arm64/CapacitorStreamHttp-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/capacitor-stream-http/ios/Sources/StreamHttpPlugin/StreamHttpPlugin.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorStreamHttp.build/Objects-normal/arm64/StreamHttpPlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorStreamHttp.build/Objects-normal/arm64/StreamHttpPlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorStreamHttp.build/Objects-normal/arm64/StreamHttpPlugin.o"
+  }
+}

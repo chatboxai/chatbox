@@ -1,0 +1,4 @@
+
+module CapacitorToast.__Swift {
+  exclude header "CapacitorToast-Swift.h"
+}

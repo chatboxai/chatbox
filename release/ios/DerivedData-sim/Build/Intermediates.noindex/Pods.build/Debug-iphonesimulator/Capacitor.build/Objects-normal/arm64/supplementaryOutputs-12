@@ -1,0 +1,24 @@
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/WKWebView+Capacitor.swift":
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WKWebView+Capacitor-d2132c594b1dab8a920fcd7c8030ca85.o"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WKWebView+Capacitor-d2132c594b1dab8a920fcd7c8030ca85.d"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WKWebView+Capacitor-d2132c594b1dab8a920fcd7c8030ca85.dia"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WKWebView+Capacitor-d2132c594b1dab8a920fcd7c8030ca85.swiftconstvalues"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WKWebView+Capacitor-d2132c594b1dab8a920fcd7c8030ca85.swiftdeps"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Plugins/WebView.swift":
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebView.o"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebView.swiftconstvalues"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebView.d"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebView.swiftdeps"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebView.dia"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/WebViewDelegationHandler.swift":
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebViewDelegationHandler.swiftdeps"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebViewDelegationHandler.dia"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebViewDelegationHandler.o"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebViewDelegationHandler.d"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebViewDelegationHandler.swiftconstvalues"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/WebViewAssetHandler.swift":
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebViewAssetHandler.d"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebViewAssetHandler.dia"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebViewAssetHandler.o"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebViewAssetHandler.swiftconstvalues"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/Capacitor.build/Objects-normal/arm64/WebViewAssetHandler.swiftdeps"

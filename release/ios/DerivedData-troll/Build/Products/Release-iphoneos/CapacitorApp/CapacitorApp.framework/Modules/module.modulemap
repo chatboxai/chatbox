@@ -1,0 +1,11 @@
+framework module CapacitorApp {
+  umbrella header "CapacitorApp-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorApp.Swift {
+  header "CapacitorApp-Swift.h"
+  requires objc
+}

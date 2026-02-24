@@ -1,0 +1,7 @@
+version: "Apple Swift version 6.1 (swiftlang-6.1.0.110.21 clang-1700.0.13.3)"
+options: "8b413c889db7df053513bea32e10fef55d9c971a5ff8af2b3810b6fb52d727cf"
+build_start_time: [1771899965, 885784000]
+build_end_time: [1771899968, 495225000]
+inputs:
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/device/ios/Sources/DevicePlugin/Device.swift": [1771866534, 955837338]
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/device/ios/Sources/DevicePlugin/DevicePlugin.swift": [1771866534, 955985753]

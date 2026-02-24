@@ -1,0 +1,110 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_$s23CapacitorPluginSafeArea0cD0C03getcD6InsetsSo06UIEdgeF0VyF",
+            "_$s23CapacitorPluginSafeArea0cdB0C23handleOrientationChange33_806A468AC8EA4101F7010113F91FF82CLLyyF",
+            "_$s23CapacitorPluginSafeArea0cdB0C27unsetImmersiveNavigationBaryySo13CAPPluginCallCF",
+            "_$s23CapacitorPluginSafeArea0cdB0C15lastOrientation33_806A468AC8EA4101F7010113F91FF82CLLSo011UIInterfaceF0VSgvg",
+            "_$s23CapacitorPluginSafeArea0cD0CACycfc",
+            "_$s23CapacitorPluginSafeArea0cdB0C6jsNameSSvpWvd",
+            "_$s23CapacitorPluginSafeArea0cdB0C19pendingRotationTask33_806A468AC8EA4101F7010113F91FF82CLL8Dispatch0N8WorkItemCSgvg",
+            "_$s23CapacitorPluginSafeArea0cdB0CfD",
+            "_$s23CapacitorPluginSafeArea0cdB0C10identifierSSvpMV",
+            "_$s23CapacitorPluginSafeArea0cD0CMn",
+            "_$s23CapacitorPluginSafeArea0cdB0C25setImmersiveNavigationBaryySo13CAPPluginCallCFTq",
+            "_$s23CapacitorPluginSafeArea0cdB0C11insetsEqual33_806A468AC8EA4101F7010113F91FF82CLLySbSo12UIEdgeInsetsVSg_AGtF",
+            "_$s23CapacitorPluginSafeArea0cdB0C15lastOrientation33_806A468AC8EA4101F7010113F91FF82CLLSo011UIInterfaceF0VSgvpfi",
+            "_$s23CapacitorPluginSafeArea0cdB0C19pendingRotationTask33_806A468AC8EA4101F7010113F91FF82CLL8Dispatch0N8WorkItemCSgvs",
+            "_$s23CapacitorPluginSafeArea0cdB0CACycfc",
+            "_$s23CapacitorPluginSafeArea0cdB0C017startListeningForcD7Changes33_806A468AC8EA4101F7010113F91FF82CLLyyF",
+            "_$s23CapacitorPluginSafeArea0cdB0C18getStatusBarHeightyySo13CAPPluginCallCF",
+            "_$s23CapacitorPluginSafeArea0cdB0CMa",
+            "_$s23CapacitorPluginSafeArea0cdB0C15lastOrientation33_806A468AC8EA4101F7010113F91FF82CLLSo011UIInterfaceF0VSgvM",
+            "_$s23CapacitorPluginSafeArea0cdB0C4loadyyF",
+            "_CapacitorPluginSafeAreaVersionNumber",
+            "_$s23CapacitorPluginSafeArea0cdB0C6jsNameSSvpMV",
+            "_$s23CapacitorPluginSafeArea0cdB0C10lastInsets33_806A468AC8EA4101F7010113F91FF82CLLSo06UIEdgeF0VSgvg",
+            "_$s23CapacitorPluginSafeArea0cD0C18getStatusBarHeight12CoreGraphics7CGFloatVyFTq",
+            "_$s23CapacitorPluginSafeArea0cdB0C13pluginMethodsSaySo15CAPPluginMethodCGvpfi",
+            "_$s23CapacitorPluginSafeArea0cD0CfD",
+            "_CapacitorPluginSafeAreaVersionString",
+            "_$s23CapacitorPluginSafeArea0cdB0C6jsNameSSvg",
+            "_$s23CapacitorPluginSafeArea0cdB0CN",
+            "_$s23CapacitorPluginSafeArea0cdB0C13pluginMethodsSaySo15CAPPluginMethodCGvpMV",
+            "_$s23CapacitorPluginSafeArea0cdB0C15lastOrientation33_806A468AC8EA4101F7010113F91FF82CLLSo011UIInterfaceF0VSgvs",
+            "_$s23CapacitorPluginSafeArea0cdB0C25setImmersiveNavigationBaryySo13CAPPluginCallCF",
+            "_$s23CapacitorPluginSafeArea0cD0C9getWindowSo8UIWindowCSgyF",
+            "_$s23CapacitorPluginSafeArea0cdB0C016stopListeningForcD7ChangesyySo13CAPPluginCallCF",
+            "_$s23CapacitorPluginSafeArea0cdB0C014notifyWebAboutcD7Changes33_806A468AC8EA4101F7010113F91FF82CLLyySo12UIEdgeInsetsVF",
+            "_$s23CapacitorPluginSafeArea0cdB0C19pendingRotationTask33_806A468AC8EA4101F7010113F91FF82CLL8Dispatch0N8WorkItemCSgvpfi",
+            "_$s23CapacitorPluginSafeArea0cdB0C03getcD6InsetsyySo13CAPPluginCallCFTq",
+            "_$s23CapacitorPluginSafeArea0cdB0C19pendingRotationTask33_806A468AC8EA4101F7010113F91FF82CLL8Dispatch0N8WorkItemCSgvM",
+            "_$s23CapacitorPluginSafeArea0cdB0C27unsetImmersiveNavigationBaryySo13CAPPluginCallCFTq",
+            "_$s23CapacitorPluginSafeArea0cdB0C13pluginMethodsSaySo15CAPPluginMethodCGvpWvd",
+            "_$s23CapacitorPluginSafeArea0cdB0C10lastInsets33_806A468AC8EA4101F7010113F91FF82CLLSo06UIEdgeF0VSgvM",
+            "_$s23CapacitorPluginSafeArea0cdB0C19orientationObserver33_806A468AC8EA4101F7010113F91FF82CLLSo8NSObject_pSgvM",
+            "_$s23CapacitorPluginSafeArea0cdB0C21getCurrentOrientation33_806A468AC8EA4101F7010113F91FF82CLLSo011UIInterfaceG0VSgyF",
+            "_$s23CapacitorPluginSafeArea0cD0C03getcD18InsetsOnMainThread33_1A0637FB901D7DDC5742208DDA99E990LLSo06UIEdgeF0VyF",
+            "_$s23CapacitorPluginSafeArea0cdB0C03getcD6InsetsyySo13CAPPluginCallCF",
+            "_$s23CapacitorPluginSafeArea0cD0C18getStatusBarHeight12CoreGraphics7CGFloatVyF",
+            "_$s23CapacitorPluginSafeArea0cD0CACycfC",
+            "_$s23CapacitorPluginSafeArea0cdB0C10identifierSSvpWvd",
+            "_$s23CapacitorPluginSafeArea0cD0C30getStatusBarHeightOnMainThread33_1A0637FB901D7DDC5742208DDA99E990LL12CoreGraphics7CGFloatVyF",
+            "_$s23CapacitorPluginSafeArea0cdB0C016stopListeningForcD7ChangesyySo13CAPPluginCallCFTq",
+            "_$s23CapacitorPluginSafeArea0cdB0C13pluginMethodsSaySo15CAPPluginMethodCGvg",
+            "_$s23CapacitorPluginSafeArea0cdB0CACycfC",
+            "_$s23CapacitorPluginSafeArea0cD0CN",
+            "_$s23CapacitorPluginSafeArea0cD0C03getcD6InsetsSo06UIEdgeF0VyFTq",
+            "_$s23CapacitorPluginSafeArea0cD0CMa",
+            "_$s23CapacitorPluginSafeArea0cdB0C10lastInsets33_806A468AC8EA4101F7010113F91FF82CLLSo06UIEdgeF0VSgvpfi",
+            "_$s23CapacitorPluginSafeArea0cdB0C18getStatusBarHeightyySo13CAPPluginCallCFTq",
+            "_$s23CapacitorPluginSafeArea0cdB0C10identifierSSvpfi",
+            "_$s23CapacitorPluginSafeArea0cdB0C14implementation33_806A468AC8EA4101F7010113F91FF82CLLAA0cD0Cvpfi",
+            "_$s23CapacitorPluginSafeArea0cdB0C6bridge8pluginId0F4NameAC0A017CAPBridgeProtocol_p_S2StcfC",
+            "_$s23CapacitorPluginSafeArea0cdB0C19orientationObserver33_806A468AC8EA4101F7010113F91FF82CLLSo8NSObject_pSgvs",
+            "_$s23CapacitorPluginSafeArea0cdB0C19orientationObserver33_806A468AC8EA4101F7010113F91FF82CLLSo8NSObject_pSgvg",
+            "_$s23CapacitorPluginSafeArea0cdB0C10lastInsets33_806A468AC8EA4101F7010113F91FF82CLLSo06UIEdgeF0VSgvs",
+            "_$s23CapacitorPluginSafeArea0cdB0C10identifierSSvg",
+            "_$s23CapacitorPluginSafeArea0cdB0CMn",
+            "_$s23CapacitorPluginSafeArea0cdB0C6jsNameSSvpfi",
+            "_$s23CapacitorPluginSafeArea0cD0C9getWindowSo8UIWindowCSgyFTq",
+            "_$s23CapacitorPluginSafeArea0cdB0C6bridge8pluginId0F4NameAC0A017CAPBridgeProtocol_p_S2Stcfc",
+            "_$s23CapacitorPluginSafeArea0cdB0C19orientationObserver33_806A468AC8EA4101F7010113F91FF82CLLSo8NSObject_pSgvpfi"
+          ],
+          "objc_class": [
+            "PodsDummy_CapacitorPluginSafeArea",
+            "_TtC23CapacitorPluginSafeArea8SafeArea",
+            "SafeAreaPlugin"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/CapacitorPluginSafeArea.framework/CapacitorPluginSafeArea"
+      }
+    ],
+    "swift_abi": [
+      {
+        "abi": 7
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios-simulator"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

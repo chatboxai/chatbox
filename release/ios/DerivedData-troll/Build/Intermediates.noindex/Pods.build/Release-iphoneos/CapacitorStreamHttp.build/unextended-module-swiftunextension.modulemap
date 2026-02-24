@@ -1,0 +1,4 @@
+
+module CapacitorStreamHttp.__Swift {
+  exclude header "CapacitorStreamHttp-Swift.h"
+}

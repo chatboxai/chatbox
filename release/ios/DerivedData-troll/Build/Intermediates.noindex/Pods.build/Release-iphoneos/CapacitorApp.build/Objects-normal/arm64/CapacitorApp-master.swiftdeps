@@ -1,0 +1,6 @@
+version: "Apple Swift version 6.1 (swiftlang-6.1.0.110.21 clang-1700.0.13.3)"
+options: "0464908e1c8b16242ff0651f160a0ef8b892d656afe5c773e739e919b196789e"
+build_start_time: [1771899966, 368276000]
+build_end_time: [1771899968, 499250000]
+inputs:
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/app/ios/Sources/AppPlugin/AppPlugin.swift": [1771866533, 906177496]

@@ -1,0 +1,70 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_$s14CapacitorToast0B0CMn",
+            "_$s14CapacitorToast0B6PluginC6jsNameSSvpWvd",
+            "_$s14CapacitorToast0B6PluginCACycfc",
+            "_$s14CapacitorToast0B0CN",
+            "_$s14CapacitorToast0B6PluginC6bridge8pluginId0E4NameAC0A017CAPBridgeProtocol_p_S2StcfC",
+            "_$s14CapacitorToast0B0C04showB02in4text8duration8position10completionySo16UIViewControllerC_SSSiSSySbcSgtFZ",
+            "_$s14CapacitorToast0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpfi",
+            "_$s14CapacitorToast0B6PluginCN",
+            "_$s14CapacitorToast0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpMV",
+            "_CapacitorToastVersionNumber",
+            "_$s14CapacitorToast0B0CACycfc",
+            "_$s14CapacitorToast0B0CMa",
+            "_$s14CapacitorToast0B6PluginCMn",
+            "_$s14CapacitorToast0B6PluginCACycfC",
+            "_$s14CapacitorToast0B6PluginC10identifierSSvpfi",
+            "_$s14CapacitorToast0B6PluginC6jsNameSSvpfi",
+            "_$s14CapacitorToast0B6PluginC10identifierSSvg",
+            "_$s14CapacitorToast0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvg",
+            "_$s14CapacitorToast0B6PluginCMa",
+            "_$s14CapacitorToast0B0CACycfC",
+            "_$s14CapacitorToast0B6PluginC6jsNameSSvg",
+            "_CapacitorToastVersionString",
+            "_$s14CapacitorToast0B6PluginC10identifierSSvpMV",
+            "_$s14CapacitorToast0B6PluginCfD",
+            "_$s14CapacitorToast0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpWvd",
+            "_$s14CapacitorToast0B0CfD",
+            "_$s14CapacitorToast0B6PluginC10identifierSSvpWvd",
+            "_$s14CapacitorToast0B6PluginC6bridge8pluginId0E4NameAC0A017CAPBridgeProtocol_p_S2Stcfc",
+            "_$s14CapacitorToast0B6PluginC6jsNameSSvpMV"
+          ],
+          "objc_class": [
+            "PodsDummy_CapacitorToast",
+            "_TtC14CapacitorToast5Toast",
+            "ToastPlugin"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/CapacitorToast.framework/CapacitorToast"
+      }
+    ],
+    "swift_abi": [
+      {
+        "abi": 7
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

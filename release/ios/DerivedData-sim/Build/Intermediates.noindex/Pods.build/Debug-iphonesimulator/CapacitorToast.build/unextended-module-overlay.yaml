@@ -1,0 +1,23 @@
+{
+  "version": 0,
+  "use-external-names": false,
+  "case-sensitive": false,
+  "roots": [{
+    "type": "directory",
+    "name": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Products/Debug-iphonesimulator/CapacitorToast/CapacitorToast.framework/Modules",
+    "contents": [{
+      "type": "file",
+      "name": "module.modulemap",
+      "external-contents": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorToast.build/unextended-module.modulemap",
+    }]
+    },
+    {
+    "type": "directory",
+    "name": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Products/Debug-iphonesimulator/CapacitorToast/CapacitorToast.framework/Headers",
+    "contents": [{
+      "type": "file",
+      "name": "CapacitorToast-Swift.h",
+      "external-contents": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorToast.build/unextended-interface-header.h",
+    }]
+  }]
+}

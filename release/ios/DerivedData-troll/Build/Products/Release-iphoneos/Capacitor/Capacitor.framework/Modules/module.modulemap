@@ -1,0 +1,13 @@
+framework module Capacitor {
+  umbrella header "Capacitor.h"
+  exclude header "CAPBridgedJSTypes.h"
+  exclude header "CAPBridgeViewController+CDVScreenOrientationDelegate.h"
+
+  export *
+  module * { export * }
+}
+
+module Capacitor.Swift {
+  header "Capacitor-Swift.h"
+  requires objc
+}

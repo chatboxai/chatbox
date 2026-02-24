@@ -1,0 +1,18 @@
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Extensions/String.swift":
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.d"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.swiftconstvalues"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.swiftdeps"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.o"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.dia"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsBinding.swift":
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.o"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.swiftdeps"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.d"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.swiftconstvalues"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.dia"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsDelete.swift":
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.o"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.swiftdeps"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.swiftconstvalues"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.dia"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.d"

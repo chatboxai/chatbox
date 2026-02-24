@@ -1,0 +1,11 @@
+framework module CapacitorPluginSafeArea {
+  umbrella header "CapacitorPluginSafeArea-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorPluginSafeArea.Swift {
+  header "CapacitorPluginSafeArea-Swift.h"
+  requires objc
+}

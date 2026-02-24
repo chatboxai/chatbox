@@ -1,0 +1,20 @@
+{
+  "" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/Objects-normal/arm64/App-master.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/Objects-normal/arm64/App-master.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/Objects-normal/arm64/App-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/Objects-normal/arm64/App-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/Objects-normal/arm64/App-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/Objects-normal/arm64/App-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/App/AppDelegate.swift" : {
+    "index-unit-output-path" : "/App.build/Release-iphoneos/App.build/Objects-normal/arm64/AppDelegate.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/Objects-normal/arm64/AppDelegate.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/Objects-normal/arm64/AppDelegate.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/App.build/Release-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/App.build/Release-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  }
+}

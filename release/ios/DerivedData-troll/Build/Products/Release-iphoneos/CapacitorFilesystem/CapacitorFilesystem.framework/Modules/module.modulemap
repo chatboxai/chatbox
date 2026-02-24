@@ -1,0 +1,11 @@
+framework module CapacitorFilesystem {
+  umbrella header "CapacitorFilesystem-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorFilesystem.Swift {
+  header "CapacitorFilesystem-Swift.h"
+  requires objc
+}

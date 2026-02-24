@@ -1,0 +1,4 @@
+
+module CapacitorShare.__Swift {
+  exclude header "CapacitorShare-Swift.h"
+}

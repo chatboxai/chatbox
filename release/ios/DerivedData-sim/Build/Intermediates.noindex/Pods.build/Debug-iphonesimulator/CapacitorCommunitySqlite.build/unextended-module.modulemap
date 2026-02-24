@@ -1,0 +1,10 @@
+framework module CapacitorCommunitySqlite {
+  umbrella header "CapacitorCommunitySqlite-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorCommunitySqlite.__Swift {
+  exclude header "CapacitorCommunitySqlite-Swift.h"
+}

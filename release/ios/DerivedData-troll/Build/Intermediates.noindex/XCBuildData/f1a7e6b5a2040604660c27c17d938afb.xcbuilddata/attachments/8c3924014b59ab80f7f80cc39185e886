@@ -1,0 +1,5 @@
+
+module CapacitorDevice.Swift {
+  header "CapacitorDevice-Swift.h"
+  requires objc
+}

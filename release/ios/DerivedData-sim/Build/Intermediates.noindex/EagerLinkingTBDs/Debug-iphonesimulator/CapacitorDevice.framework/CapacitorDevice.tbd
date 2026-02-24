@@ -1,0 +1,90 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_$s15CapacitorDevice0B6PluginC6jsNameSSvg",
+            "_$s15CapacitorDevice0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvg",
+            "_$s15CapacitorDevice0B0C15getLanguageCodeSSyFTq",
+            "_$s15CapacitorDevice0B0C19getSystemVersionIntSiSgyFTq",
+            "_$s15CapacitorDevice0B6PluginCfD",
+            "_$s15CapacitorDevice0B6PluginC15getLanguageCodeyySo13CAPPluginCallCF",
+            "_$s15CapacitorDevice0B0CMn",
+            "_$s15CapacitorDevice0B0C19getSystemVersionIntSiSgyF",
+            "_$s15CapacitorDevice0B6PluginC5getIdyySo13CAPPluginCallCFTq",
+            "_$s15CapacitorDevice0B0C14getMemoryUsages6UInt64VyF",
+            "_$s15CapacitorDevice0B6PluginCMn",
+            "_CapacitorDeviceVersionNumber",
+            "_$s15CapacitorDevice0B6PluginC10identifierSSvpMV",
+            "_$s15CapacitorDevice0B6PluginCACycfc",
+            "_$s15CapacitorDevice0B0C12getModelNameSSyF",
+            "_$s15CapacitorDevice0B6PluginC10identifierSSvg",
+            "_$s15CapacitorDevice0B6PluginC14getLanguageTagyySo13CAPPluginCallCF",
+            "_$s15CapacitorDevice0B6PluginC10identifierSSvpWvd",
+            "_$s15CapacitorDevice0B6PluginC14implementation33_12CE9A21924CDB835718D28B8F8833BELLAA0B0Cvpfi",
+            "_$s15CapacitorDevice0B6PluginC10identifierSSvpfi",
+            "_$s15CapacitorDevice0B0C14getLanguageTagSSyF",
+            "_$s15CapacitorDevice0B6PluginC6jsNameSSvpfi",
+            "_$s15CapacitorDevice0B6PluginC6bridge8pluginId0E4NameAC0A017CAPBridgeProtocol_p_S2Stcfc",
+            "_$s15CapacitorDevice0B6PluginC14getLanguageTagyySo13CAPPluginCallCFTq",
+            "_$s15CapacitorDevice0B0CMa",
+            "_$s15CapacitorDevice0B6PluginC7getInfoyySo13CAPPluginCallCF",
+            "_$s15CapacitorDevice0B0C14getLanguageTagSSyFTq",
+            "_$s15CapacitorDevice0B0CACycfc",
+            "_CapacitorDeviceVersionString",
+            "_$s15CapacitorDevice0B0CfD",
+            "_$s15CapacitorDevice0B6PluginCACycfC",
+            "_$s15CapacitorDevice0B0CN",
+            "_$s15CapacitorDevice0B6PluginC5getIdyySo13CAPPluginCallCF",
+            "_$s15CapacitorDevice0B6PluginC14getBatteryInfoyySo13CAPPluginCallCFTq",
+            "_$s15CapacitorDevice0B6PluginC14getBatteryInfoyySo13CAPPluginCallCF",
+            "_$s15CapacitorDevice0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpfi",
+            "_$s15CapacitorDevice0B0C12getModelNameSSyFTq",
+            "_$s15CapacitorDevice0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpMV",
+            "_$s15CapacitorDevice0B0C15getLanguageCodeSSyF",
+            "_$s15CapacitorDevice0B0CACycfC",
+            "_$s15CapacitorDevice0B6PluginCN",
+            "_$s15CapacitorDevice0B6PluginC6bridge8pluginId0E4NameAC0A017CAPBridgeProtocol_p_S2StcfC",
+            "_$s15CapacitorDevice0B6PluginC15getLanguageCodeyySo13CAPPluginCallCFTq",
+            "_$s15CapacitorDevice0B0C14getMemoryUsages6UInt64VyFTq",
+            "_$s15CapacitorDevice0B6PluginC7getInfoyySo13CAPPluginCallCFTq",
+            "_$s15CapacitorDevice0B6PluginC6jsNameSSvpWvd",
+            "_$s15CapacitorDevice0B6PluginC6jsNameSSvpMV",
+            "_$s15CapacitorDevice0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpWvd",
+            "_$s15CapacitorDevice0B6PluginCMa"
+          ],
+          "objc_class": [
+            "PodsDummy_CapacitorDevice",
+            "_TtC15CapacitorDevice6Device",
+            "DevicePlugin"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/CapacitorDevice.framework/CapacitorDevice"
+      }
+    ],
+    "swift_abi": [
+      {
+        "abi": 7
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios-simulator"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

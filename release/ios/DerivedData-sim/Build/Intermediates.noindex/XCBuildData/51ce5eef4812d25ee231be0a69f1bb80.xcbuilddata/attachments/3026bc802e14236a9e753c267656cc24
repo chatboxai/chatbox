@@ -1,0 +1,98 @@
+{
+  "" : {
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CapacitorFilesystem-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CapacitorFilesystem-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CapacitorFilesystem-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CapacitorFilesystem-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/CAPPluginCall+Accelerators.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/CAPPluginCall+Accelerators~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemConstants.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemConstants~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemError.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemError~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemLocationResolver.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemLocationResolver~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemOperation.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperation~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemOperationExecutor.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemOperationExecutor~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemPlugin.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/FilesystemPlugin~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/IONFileStructures+Converters.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/IONFileStructures+Converters~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/LegacyFilesystemImplementation.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorFilesystem.build/Objects-normal/arm64/LegacyFilesystemImplementation~partial.swiftmodule"
+  }
+}

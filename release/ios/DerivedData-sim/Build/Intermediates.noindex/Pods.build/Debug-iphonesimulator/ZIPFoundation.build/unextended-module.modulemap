@@ -1,0 +1,10 @@
+framework module ZIPFoundation {
+  umbrella header "ZIPFoundation-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module ZIPFoundation.__Swift {
+  exclude header "ZIPFoundation-Swift.h"
+}

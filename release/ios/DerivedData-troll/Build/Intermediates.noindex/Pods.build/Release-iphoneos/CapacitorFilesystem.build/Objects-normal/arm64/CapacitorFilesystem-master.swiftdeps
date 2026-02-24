@@ -1,0 +1,19 @@
+version: "Apple Swift version 6.1 (swiftlang-6.1.0.110.21 clang-1700.0.13.3)"
+options: "cd70c1a13addaf309e64024f5d535d7a3f0a9b751dc63f75d6fdb56612041b76"
+build_start_time: [1771899965, 878567000]
+build_end_time: [1771899969, 234662000]
+inputs:
+  ? "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/CAPPluginCall+Accelerators.swift"
+  : [1771866534, 754865011]
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemConstants.swift": [1771866534, 755028468]
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemError.swift": [1771866534, 755186632]
+  ? "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemLocationResolver.swift"
+  : [1771866534, 755347297]
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemOperation.swift": [1771866534, 755510587]
+  ? "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemOperationExecutor.swift"
+  : [1771866534, 755676502]
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/FilesystemPlugin.swift": [1771866534, 755841666]
+  ? "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/IONFileStructures+Converters.swift"
+  : [1771866534, 756170037]
+  ? "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/filesystem/ios/Sources/FilesystemPlugin/LegacyFilesystemImplementation.swift"
+  : [1771866534, 756464409]

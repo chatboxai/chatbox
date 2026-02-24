@@ -1,0 +1,64 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_$s12CapacitorApp0B6PluginC6jsNameSSvg",
+            "_$s12CapacitorApp0B6PluginC10identifierSSvpfi",
+            "_$s12CapacitorApp0B6PluginC6jsNameSSvpfi",
+            "_$s12CapacitorApp0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpfi",
+            "_$s12CapacitorApp0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvg",
+            "_$s12CapacitorApp0B6PluginC6bridge8pluginId0E4NameAC0A017CAPBridgeProtocol_p_S2Stcfc",
+            "_$s12CapacitorApp0B6PluginC10identifierSSvg",
+            "_$s12CapacitorApp0B6PluginCMa",
+            "_$s12CapacitorApp0B6PluginCMn",
+            "_$s12CapacitorApp0B6PluginC6jsNameSSvpWvd",
+            "_CapacitorAppVersionString",
+            "_$s12CapacitorApp0B6PluginCfD",
+            "_$s12CapacitorApp0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpWvd",
+            "_$s12CapacitorApp0B6PluginCACycfC",
+            "_$s12CapacitorApp0B6PluginCACycfc",
+            "_$s12CapacitorApp0B6PluginC4loadyyF",
+            "_$s12CapacitorApp0B6PluginC10identifierSSvpWvd",
+            "_$s12CapacitorApp0B6PluginC10identifierSSvpMV",
+            "_CapacitorAppVersionNumber",
+            "_$s12CapacitorApp0B6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpMV",
+            "_$s12CapacitorApp0B6PluginC6bridge8pluginId0E4NameAC0A017CAPBridgeProtocol_p_S2StcfC",
+            "_$s12CapacitorApp0B6PluginC6jsNameSSvpMV",
+            "_$s12CapacitorApp0B6PluginC9observers33_ED32B0654111F2B472BA212349C8AF7BLLSaySo8NSObject_pGvpfi",
+            "_$s12CapacitorApp0B6PluginCN"
+          ],
+          "objc_class": [
+            "AppPlugin",
+            "PodsDummy_CapacitorApp"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/CapacitorApp.framework/CapacitorApp"
+      }
+    ],
+    "swift_abi": [
+      {
+        "abi": 7
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

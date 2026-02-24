@@ -1,0 +1,18 @@
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ImportExportJson/ImportData.swift":
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.swiftconstvalues"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.d"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.swiftdeps"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.o"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.dia"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/GlobalSQLite.swift":
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.o"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.swiftdeps"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.dia"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.d"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.swiftconstvalues"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ImportExportJson/ExportToJson.swift":
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.d"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.o"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.swiftdeps"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.swiftconstvalues"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.dia"

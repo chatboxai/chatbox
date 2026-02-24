@@ -41,9 +41,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
     private let startupDiagEnabled = true
+    private let startupTimeoutSeconds: TimeInterval = 8.0
     private var hasInstalledDebugGesture = false
     private var hasPresentedStartupDiag = false
     private var startupTimeoutWorkItem: DispatchWorkItem?
+    private var diagnosticsRetryWorkItem: DispatchWorkItem?
+    private var pendingDiagnosticsReason: String?
     private var diagnosticsOverlayWindow: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
@@ -71,6 +74,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         StartupDiagnosticsLogStore.shared.append("applicationDidBecomeActive")
         logTopContainer()
         installManualDiagnosticsGestureIfNeeded()
+        tryPresentPendingDiagnosticsIfNeeded()
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -127,6 +131,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     @objc private func handleLifecycleNotification(_ notification: Notification) {
         StartupDiagnosticsLogStore.shared.append("Notification: \(notification.name.rawValue)")
+        if notification.name == UIApplication.didBecomeActiveNotification
+            || notification.name == UIApplication.willEnterForegroundNotification {
+            tryPresentPendingDiagnosticsIfNeeded()
+        }
     }
 
     private func scheduleStartupTimeoutCheck() {
@@ -134,11 +142,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         startupTimeoutWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            StartupDiagnosticsLogStore.shared.append("startup timeout check fired (8s)")
-            self.presentDiagnosticsDialog(reason: self.localizedText(zh: "启动超过 8 秒，自动弹出诊断日志。", en: "Startup exceeded 8 seconds, showing diagnostics automatically."))
+            StartupDiagnosticsLogStore.shared.append("startup timeout check fired (\(Int(self.startupTimeoutSeconds))s)")
+            self.requestDiagnostics(reason: self.localizedText(
+                zh: "启动超过 \(Int(self.startupTimeoutSeconds)) 秒，自动弹出诊断日志。",
+                en: "Startup exceeded \(Int(self.startupTimeoutSeconds)) seconds, showing diagnostics automatically."
+            ))
         }
         startupTimeoutWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + startupTimeoutSeconds, execute: work)
     }
 
     private func installManualDiagnosticsGestureIfNeeded() {
@@ -155,7 +166,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     @objc private func handleManualDiagnosticsGesture(_ gesture: UILongPressGestureRecognizer) {
         if gesture.state == .began {
             StartupDiagnosticsLogStore.shared.append("Manual diagnostics gesture triggered")
-            presentDiagnosticsDialog(reason: localizedText(zh: "手势触发诊断日志。", en: "Diagnostics requested by gesture."))
+            requestDiagnostics(reason: localizedText(zh: "手势触发诊断日志。", en: "Diagnostics requested by gesture."))
         }
     }
 
@@ -186,30 +197,42 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func presentDiagnosticsDialog(reason: String) {
-        guard startupDiagEnabled else { return }
-        guard !hasPresentedStartupDiag else { return }
+        requestDiagnostics(reason: reason)
+    }
 
-        hasPresentedStartupDiag = true
+    private func requestDiagnostics(reason: String) {
+        guard startupDiagEnabled else { return }
+        if hasPresentedStartupDiag {
+            StartupDiagnosticsLogStore.shared.append("diagnostics request ignored: already presented")
+            return
+        }
+
         let allLogs = StartupDiagnosticsLogStore.shared.dump()
         let preview = StartupDiagnosticsLogStore.shared.tailPreview(limit: 40)
         let message = "\(reason)\n\n\(localizedText(zh: "以下为最近日志预览（完整日志见下方文本，可直接复制）：", en: "Recent log preview (full logs are shown below and can be copied):"))\n\n\(preview)"
-        showDiagnosticsOverlay(message: message, fullLogs: allLogs)
+        if showDiagnosticsOverlay(message: message, fullLogs: allLogs) {
+            hasPresentedStartupDiag = true
+            pendingDiagnosticsReason = nil
+            diagnosticsRetryWorkItem?.cancel()
+            diagnosticsRetryWorkItem = nil
+        } else {
+            pendingDiagnosticsReason = reason
+            scheduleDiagnosticsRetry()
+        }
     }
 
-    private func showDiagnosticsOverlay(message: String, fullLogs: String) {
-        let scene = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first(where: { $0.activationState == .foregroundActive })
-            ?? UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .first(where: { $0.activationState == .foregroundInactive })
+    private func showDiagnosticsOverlay(message: String, fullLogs: String) -> Bool {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let preferredScene = window?.windowScene
+        let activeScene = scenes.first(where: { $0.activationState == .foregroundActive })
+        let inactiveScene = scenes.first(where: { $0.activationState == .foregroundInactive })
+        let scene = preferredScene ?? activeScene ?? inactiveScene
 
-        let overlayWindow: UIWindow
-        if let scene {
-            overlayWindow = UIWindow(windowScene: scene)
-        } else {
-            overlayWindow = UIWindow(frame: UIScreen.main.bounds)
+        guard let scene else {
+            StartupDiagnosticsLogStore.shared.append("diagnostics overlay skipped: no active UIWindowScene")
+            return false
         }
+        let overlayWindow = UIWindow(windowScene: scene)
 
         let title = localizedText(zh: "启动诊断日志", en: "Startup Diagnostics")
         let copyTitle = localizedText(zh: "复制日志", en: "Copy Logs")
@@ -238,13 +261,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             self?.dismissDiagnosticsOverlay()
         }
 
-        overlayWindow.windowLevel = .alert + 1
-        overlayWindow.backgroundColor = .clear
+        overlayWindow.windowLevel = UIWindow.Level.alert + 1
+        overlayWindow.backgroundColor = UIColor.clear
         overlayWindow.rootViewController = viewController
         overlayWindow.makeKeyAndVisible()
 
         diagnosticsOverlayWindow = overlayWindow
         StartupDiagnosticsLogStore.shared.append("diagnostics overlay presented")
+        return true
     }
 
     private func dismissDiagnosticsOverlay() {
@@ -253,6 +277,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         window?.makeKeyAndVisible()
         hasPresentedStartupDiag = false
         StartupDiagnosticsLogStore.shared.append("diagnostics overlay dismissed")
+    }
+
+    private func scheduleDiagnosticsRetry() {
+        diagnosticsRetryWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.tryPresentPendingDiagnosticsIfNeeded()
+        }
+        diagnosticsRetryWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+
+    private func tryPresentPendingDiagnosticsIfNeeded() {
+        guard startupDiagEnabled else { return }
+        guard !hasPresentedStartupDiag else { return }
+        guard let reason = pendingDiagnosticsReason else { return }
+        requestDiagnostics(reason: reason)
     }
 
     private func topViewController(base: UIViewController?) -> UIViewController? {

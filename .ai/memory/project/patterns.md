@@ -1,0 +1,80 @@
+# Durable Patterns
+
+Capture repeatable patterns that match how this workspace actually works.
+
+## Repo Layout
+
+- Root `.ai/` holds the helper harness only.
+- The runnable application lives at the repo root.
+- Root-level validation should target the root `package.json`.
+
+## Chatbox App Structure
+
+- Electron main process: `src/main/`
+- Preload bridge: `src/preload/`
+- Renderer app: `src/renderer/`
+- Shared contracts and helpers: `src/shared/`
+- Integration and fixture-heavy tests: `test/`
+- Smaller colocated tests: `src/__tests__/`
+- Product docs: `README.md`, `docs/`, `doc/`
+
+## Testing and Validation
+
+- Tests use Vitest.
+- Type checking uses TypeScript strict mode.
+- Formatting and linting use Biome.
+- Baseline validation set is:
+  - `pnpm test`
+  - `pnpm check`
+  - `pnpm lint`
+  - `pnpm build`
+- Orchestration-heavy work should establish traces/evals early through
+  `.ai/workflows/trace-driven-development.md` instead of waiting for late debug
+  cycles.
+- Fresh story branches and worktrees should copy the required local `.env*`
+  files from the working `main` setup, run `pnpm install` before project
+  commands, and keep copied env files untracked.
+- Non-trivial implementation stories should start on fresh `codex/` branches;
+  if the current tree is already dirty with another story, isolate the new work
+  in a clean worktree rather than sharing the dirty tree.
+- Story completion defaults to the full GitHub flow: commit, push, PR, merge to
+  `main`, sync local `main`, and branch cleanup unless the user explicitly
+  pauses or chooses a different merge path.
+
+## Documentation Pattern
+
+- Repo rules and harness truth live at the root.
+- Product-specific implementation docs stay in the normal repo docs folders.
+- Durable workflow notes go in `.ai/memory/project/`.
+- Current-task notes go in `.ai/memory/session/`.
+- Standard feature stories usually live in `docs/specs/<story-id>/`.
+- Phase-pack or roadmap planning may nest full four-artifact story packets under
+  a program folder like `docs/specs/<program-id>/<pack-id>/<story-id>/` when
+  the work is being organized as a multi-pack roadmap.
+
+## UI Workflow Pattern
+
+- UI stories keep normal feature-spec and technical-plan artifacts.
+- Pencil stories begin by syncing the official docs locally under
+  `.ai/reference/pencil/`.
+- Visual exploration happens in Pencil after spec/plan and before code.
+- Existing UI stories should import the current code surface into Pencil before
+  variations are proposed.
+- The shared Pencil design-library foundation lives at
+  `design/system/design-system.lib.pen`.
+- Story authors should review the local `.pen` schema snapshot before
+  hand-editing `.pen` files.
+- Story-specific Pencil work should live at `design/stories/<story-id>.pen`.
+- UI stories should produce 2 or 3 variations and wait for user approval before
+  implementation.
+- Design-system maturity should be labeled honestly using
+  `.ai/docs/PENCIL_DESIGN_SYSTEM_STANDARD.md`.
+- The current Chatbox foundation is a first-pass comprehensive library: shared
+  primitives, forms, chrome, content patterns, and layout shells should extend
+  `design/system/design-system.lib.pen` before story work invents new shapes.
+- When UI stories change shared tokens, Pencil variables should be synced with
+  the corresponding code-side variables or token files.
+- Approved variation details should be recorded in
+  `docs/specs/<story-id>/pencil-review.md`.
+- Approved Pencil artifacts should stay in the repo workspace so design and code
+  can stay in sync and be versioned together.

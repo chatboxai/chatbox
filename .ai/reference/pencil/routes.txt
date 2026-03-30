@@ -1,0 +1,17 @@
+/
+/getting-started/installation
+/getting-started/authentication
+/getting-started/ai-integration
+/core-concepts/pen-files
+/core-concepts/design-as-code
+/core-concepts/pencil-interface
+/core-concepts/variables
+/core-concepts/components
+/core-concepts/slots
+/core-concepts/design-libraries
+/core-concepts/import-and-export
+/core-concepts/keyboard-shortcuts
+/design-and-code/design-to-code
+/troubleshooting
+/for-developers/the-pen-format
+/for-developers/pencil-cli

@@ -1,0 +1,143 @@
+{
+  "source_root": "https://docs.pencil.dev",
+  "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+  "page_count": 17,
+  "pages": [
+    {
+      "route": "/",
+      "title": "Pencil Documentation",
+      "source_url": "https://docs.pencil.dev/",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 29, 2026",
+      "output_path": "pages/index.md"
+    },
+    {
+      "route": "/getting-started/installation",
+      "title": "Installation",
+      "source_url": "https://docs.pencil.dev/getting-started/installation",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/getting-started/installation/index.md"
+    },
+    {
+      "route": "/getting-started/authentication",
+      "title": "Authentication",
+      "source_url": "https://docs.pencil.dev/getting-started/authentication",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/getting-started/authentication/index.md"
+    },
+    {
+      "route": "/getting-started/ai-integration",
+      "title": "AI Integration",
+      "source_url": "https://docs.pencil.dev/getting-started/ai-integration",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/getting-started/ai-integration/index.md"
+    },
+    {
+      "route": "/core-concepts/pen-files",
+      "title": ".pen Files",
+      "source_url": "https://docs.pencil.dev/core-concepts/pen-files",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/core-concepts/pen-files/index.md"
+    },
+    {
+      "route": "/core-concepts/design-as-code",
+      "title": "Design as Code",
+      "source_url": "https://docs.pencil.dev/core-concepts/design-as-code",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/core-concepts/design-as-code/index.md"
+    },
+    {
+      "route": "/core-concepts/pencil-interface",
+      "title": "Pencil Interface",
+      "source_url": "https://docs.pencil.dev/core-concepts/pencil-interface",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/core-concepts/pencil-interface/index.md"
+    },
+    {
+      "route": "/core-concepts/variables",
+      "title": "Variables",
+      "source_url": "https://docs.pencil.dev/core-concepts/variables",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/core-concepts/variables/index.md"
+    },
+    {
+      "route": "/core-concepts/components",
+      "title": "Components",
+      "source_url": "https://docs.pencil.dev/core-concepts/components",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/core-concepts/components/index.md"
+    },
+    {
+      "route": "/core-concepts/slots",
+      "title": "Slots",
+      "source_url": "https://docs.pencil.dev/core-concepts/slots",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/core-concepts/slots/index.md"
+    },
+    {
+      "route": "/core-concepts/design-libraries",
+      "title": "Design Libraries",
+      "source_url": "https://docs.pencil.dev/core-concepts/design-libraries",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/core-concepts/design-libraries/index.md"
+    },
+    {
+      "route": "/core-concepts/import-and-export",
+      "title": "Import & Export",
+      "source_url": "https://docs.pencil.dev/core-concepts/import-and-export",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/core-concepts/import-and-export/index.md"
+    },
+    {
+      "route": "/core-concepts/keyboard-shortcuts",
+      "title": "Keyboard Shortcuts",
+      "source_url": "https://docs.pencil.dev/core-concepts/keyboard-shortcuts",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/core-concepts/keyboard-shortcuts/index.md"
+    },
+    {
+      "route": "/design-and-code/design-to-code",
+      "title": "Design \u2194 Code",
+      "source_url": "https://docs.pencil.dev/design-and-code/design-to-code",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/design-and-code/design-to-code/index.md"
+    },
+    {
+      "route": "/troubleshooting",
+      "title": "Troubleshooting",
+      "source_url": "https://docs.pencil.dev/troubleshooting",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/troubleshooting/index.md"
+    },
+    {
+      "route": "/for-developers/the-pen-format",
+      "title": "The .pen Format",
+      "source_url": "https://docs.pencil.dev/for-developers/the-pen-format",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 23, 2026",
+      "output_path": "pages/for-developers/the-pen-format/index.md"
+    },
+    {
+      "route": "/for-developers/pencil-cli",
+      "title": "Pencil CLI",
+      "source_url": "https://docs.pencil.dev/for-developers/pencil-cli",
+      "fetched_at": "2026-03-30T17:59:42.279173+00:00",
+      "last_updated": "March 26, 2026",
+      "output_path": "pages/for-developers/pencil-cli/index.md"
+    }
+  ]
+}

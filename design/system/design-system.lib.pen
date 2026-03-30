@@ -1,0 +1,2371 @@
+{
+  "version": "2.9",
+  "themes": {
+    "mode": ["light", "dark"]
+  },
+  "variables": {
+    "color.transparent": {
+      "type": "color",
+      "value": "#00000000"
+    },
+    "color.canvas": {
+      "type": "color",
+      "value": [
+        { "value": "#FFFFFF", "theme": { "mode": "light" } },
+        { "value": "#242424", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.surface": {
+      "type": "color",
+      "value": [
+        { "value": "#F1F3F5", "theme": { "mode": "light" } },
+        { "value": "#3B3B3B", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.surface.hover": {
+      "type": "color",
+      "value": [
+        { "value": "#F8F9FA", "theme": { "mode": "light" } },
+        { "value": "#1F1F1F", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.surface.muted": {
+      "type": "color",
+      "value": [
+        { "value": "#DEE2E6", "theme": { "mode": "light" } },
+        { "value": "#424242", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.surface.selected": {
+      "type": "color",
+      "value": [
+        { "value": "#E9F5FF", "theme": { "mode": "light" } },
+        { "value": "#15324D", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.surface.gray.soft": {
+      "type": "color",
+      "value": [
+        { "value": "#F3F5F7", "theme": { "mode": "light" } },
+        { "value": "#343A40", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.surface.success.soft": {
+      "type": "color",
+      "value": [
+        { "value": "#EAFBF5", "theme": { "mode": "light" } },
+        { "value": "#124134", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.surface.warning.soft": {
+      "type": "color",
+      "value": [
+        { "value": "#FFF5D6", "theme": { "mode": "light" } },
+        { "value": "#4B3A12", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.surface.error.soft": {
+      "type": "color",
+      "value": [
+        { "value": "#FFECEC", "theme": { "mode": "light" } },
+        { "value": "#4C1919", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.primary": {
+      "type": "color",
+      "value": [
+        { "value": "#212529", "theme": { "mode": "light" } },
+        { "value": "#FFFFFF", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.secondary": {
+      "type": "color",
+      "value": [
+        { "value": "#495057", "theme": { "mode": "light" } },
+        { "value": "#CED4DA", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.tertiary": {
+      "type": "color",
+      "value": [
+        { "value": "#868E96", "theme": { "mode": "light" } },
+        { "value": "#828282", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.disabled": {
+      "type": "color",
+      "value": [
+        { "value": "#ADB5BD", "theme": { "mode": "light" } },
+        { "value": "#696969", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.inverse": {
+      "type": "color",
+      "value": "#FFFFFF"
+    },
+    "color.text.brand": {
+      "type": "color",
+      "value": [
+        { "value": "#228BE6", "theme": { "mode": "light" } },
+        { "value": "#4DABF7", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.success": {
+      "type": "color",
+      "value": [
+        { "value": "#12B886", "theme": { "mode": "light" } },
+        { "value": "#63E6BE", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.warning": {
+      "type": "color",
+      "value": [
+        { "value": "#FAB005", "theme": { "mode": "light" } },
+        { "value": "#FFE066", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.error": {
+      "type": "color",
+      "value": [
+        { "value": "#FA5252", "theme": { "mode": "light" } },
+        { "value": "#F03E3E", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.border.default": {
+      "type": "color",
+      "value": [
+        { "value": "#DEE2E6", "theme": { "mode": "light" } },
+        { "value": "#495057", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.border.muted": {
+      "type": "color",
+      "value": [
+        { "value": "#CED4DA", "theme": { "mode": "light" } },
+        { "value": "#868E96", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.border.brand": {
+      "type": "color",
+      "value": [
+        { "value": "#228BE6", "theme": { "mode": "light" } },
+        { "value": "#1971C2", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.border.success": {
+      "type": "color",
+      "value": [
+        { "value": "#12B886", "theme": { "mode": "light" } },
+        { "value": "#63E6BE", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.border.warning": {
+      "type": "color",
+      "value": [
+        { "value": "#FAB005", "theme": { "mode": "light" } },
+        { "value": "#FFE066", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.border.error": {
+      "type": "color",
+      "value": [
+        { "value": "#FA5252", "theme": { "mode": "light" } },
+        { "value": "#F03E3E", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.fill.brand": {
+      "type": "color",
+      "value": [
+        { "value": "#228BE6", "theme": { "mode": "light" } },
+        { "value": "#1971C2", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.fill.brand.hover": {
+      "type": "color",
+      "value": [
+        { "value": "#1C7ED6", "theme": { "mode": "light" } },
+        { "value": "#1864AB", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.fill.brand.pressed": {
+      "type": "color",
+      "value": [
+        { "value": "#1971C2", "theme": { "mode": "light" } },
+        { "value": "#14538D", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.fill.gray": {
+      "type": "color",
+      "value": [
+        { "value": "#868E96", "theme": { "mode": "light" } },
+        { "value": "#343A40", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.fill.error": {
+      "type": "color",
+      "value": [
+        { "value": "#FA5252", "theme": { "mode": "light" } },
+        { "value": "#E03131", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.overlay": {
+      "type": "color",
+      "value": [
+        { "value": "#0000001F", "theme": { "mode": "light" } },
+        { "value": "#00000052", "theme": { "mode": "dark" } }
+      ]
+    },
+    "space.3xs": { "type": "number", "value": 2 },
+    "space.xxs": { "type": "number", "value": 4 },
+    "space.xs": { "type": "number", "value": 8 },
+    "space.sm": { "type": "number", "value": 12 },
+    "space.md": { "type": "number", "value": 16 },
+    "space.lg": { "type": "number", "value": 20 },
+    "space.xl": { "type": "number", "value": 24 },
+    "space.xxl": { "type": "number", "value": 32 },
+    "radius.none": { "type": "number", "value": 0 },
+    "radius.xs": { "type": "number", "value": 2 },
+    "radius.sm": { "type": "number", "value": 4 },
+    "radius.md": { "type": "number", "value": 8 },
+    "radius.lg": { "type": "number", "value": 16 },
+    "radius.xl": { "type": "number", "value": 24 },
+    "radius.xxl": { "type": "number", "value": 32 },
+    "radius.pill": { "type": "number", "value": 999 },
+    "type.caption": { "type": "number", "value": 12 },
+    "type.label": { "type": "number", "value": 13 },
+    "type.body": { "type": "number", "value": 15 },
+    "type.subtitle": { "type": "number", "value": 18 },
+    "type.title": { "type": "number", "value": 24 },
+    "type.hero": { "type": "number", "value": 32 },
+    "size.icon.sm": { "type": "number", "value": 16 },
+    "size.icon.md": { "type": "number", "value": 20 },
+    "size.control.sm": { "type": "number", "value": 32 },
+    "size.control.md": { "type": "number", "value": 36 },
+    "size.control.lg": { "type": "number", "value": 40 },
+    "size.control.xl": { "type": "number", "value": 44 }
+  },
+  "children": [
+    {
+      "id": "system_context",
+      "type": "text",
+      "x": 0,
+      "y": 0,
+      "width": 1320,
+      "height": 48,
+      "textGrowth": "fixed-width-height",
+      "fontSize": 14,
+      "lineHeight": 1.4,
+      "fill": "$color.text.secondary",
+      "content": "Chatbox Pencil foundation library aligned to src/renderer/static/globals.css and the current renderer patterns in MiniButton, SessionItem, ActionMenu, AdaptiveModal, SegmentedControl, Divider, and Page."
+    },
+    {
+      "id": "system_status",
+      "type": "text",
+      "x": 0,
+      "y": 54,
+      "width": 1320,
+      "height": 40,
+      "textGrowth": "fixed-width-height",
+      "fontSize": 14,
+      "lineHeight": 1.4,
+      "fill": "$color.text.secondary",
+      "content": "This first-pass comprehensive library is organized in canvas sections: buttons and primitives, forms and states, app chrome, content patterns, overlay shells, and layout templates. Future stories should extend these primitives instead of sketching new one-off geometry."
+    },
+    {
+      "id": "section-primitives_heading",
+      "type": "text",
+      "x": 0,
+      "y": 108,
+      "textGrowth": "auto",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700",
+      "fill": "$color.text.primary",
+      "content": "Buttons and primitives"
+    },
+    {
+      "id": "section-primitives_note",
+      "type": "text",
+      "x": 0,
+      "y": 134,
+      "width": 760,
+      "height": 20,
+      "textGrowth": "fixed-width-height",
+      "fontSize": "$type.caption",
+      "fill": "$color.text.tertiary",
+      "content": "Core actions, pills, dividers, avatars, and small shared building blocks."
+    },
+    {
+      "id": "section-forms_heading",
+      "type": "text",
+      "x": 0,
+      "y": 272,
+      "textGrowth": "auto",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700",
+      "fill": "$color.text.primary",
+      "content": "Forms and states"
+    },
+    {
+      "id": "section-forms_note",
+      "type": "text",
+      "x": 0,
+      "y": 298,
+      "width": 760,
+      "height": 20,
+      "textGrowth": "fixed-width-height",
+      "fontSize": "$type.caption",
+      "fill": "$color.text.tertiary",
+      "content": "Field metadata, inputs, selectors, and common interaction states."
+    },
+    {
+      "id": "section-chrome_heading",
+      "type": "text",
+      "x": 1100,
+      "y": 108,
+      "textGrowth": "auto",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700",
+      "fill": "$color.text.primary",
+      "content": "App chrome and navigation"
+    },
+    {
+      "id": "section-chrome_note",
+      "type": "text",
+      "x": 1100,
+      "y": 134,
+      "width": 720,
+      "height": 20,
+      "textGrowth": "fixed-width-height",
+      "fontSize": "$type.caption",
+      "fill": "$color.text.tertiary",
+      "content": "Headers, toolbars, nav rows, session rows, sidebars, and menus."
+    },
+    {
+      "id": "section-content_heading",
+      "type": "text",
+      "x": 0,
+      "y": 640,
+      "textGrowth": "auto",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700",
+      "fill": "$color.text.primary",
+      "content": "Content patterns"
+    },
+    {
+      "id": "section-content_note",
+      "type": "text",
+      "x": 0,
+      "y": 666,
+      "width": 760,
+      "height": 20,
+      "textGrowth": "fixed-width-height",
+      "fontSize": "$type.caption",
+      "fill": "$color.text.tertiary",
+      "content": "Cards, rows, metrics, destinations, notices, and empty states."
+    },
+    {
+      "id": "section-overlays_heading",
+      "type": "text",
+      "x": 1400,
+      "y": 390,
+      "textGrowth": "auto",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700",
+      "fill": "$color.text.primary",
+      "content": "Overlay shells"
+    },
+    {
+      "id": "section-overlays_note",
+      "type": "text",
+      "x": 1400,
+      "y": 416,
+      "width": 520,
+      "height": 20,
+      "textGrowth": "fixed-width-height",
+      "fontSize": "$type.caption",
+      "fill": "$color.text.tertiary",
+      "content": "Desktop modal, mobile sheet, and shared dialog body patterns."
+    },
+    {
+      "id": "section-layouts_heading",
+      "type": "text",
+      "x": 0,
+      "y": 1184,
+      "textGrowth": "auto",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700",
+      "fill": "$color.text.primary",
+      "content": "Layout templates"
+    },
+    {
+      "id": "section-layouts_note",
+      "type": "text",
+      "x": 0,
+      "y": 1210,
+      "width": 900,
+      "height": 20,
+      "textGrowth": "fixed-width-height",
+      "fontSize": "$type.caption",
+      "fill": "$color.text.tertiary",
+      "content": "Page shells, multi-column layouts, split panes, and settings stacks."
+    },
+    {
+      "id": "ds_field_label_stack",
+      "name": "Field Label Stack",
+      "type": "frame",
+      "reusable": true,
+      "x": 740,
+      "y": 200,
+      "width": 220,
+      "height": 42,
+      "layout": "vertical",
+      "gap": "$space.3xs",
+      "children": [
+        {
+          "id": "field-label-stack_label",
+          "type": "text",
+          "content": "Field label",
+          "textGrowth": "auto",
+          "fontSize": "$type.label",
+          "fontWeight": "600",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "field-label-stack_helper",
+          "type": "text",
+          "content": "Short helper text or context note.",
+          "textGrowth": "fixed-width",
+          "width": 220,
+          "fontSize": "$type.caption",
+          "lineHeight": 1.4,
+          "fill": "$color.text.tertiary"
+        }
+      ]
+    },
+    {
+      "id": "ds_button_primary",
+      "name": "Button Primary",
+      "type": "frame",
+      "reusable": true,
+      "x": 0,
+      "y": 140,
+      "width": 180,
+      "height": 40,
+      "cornerRadius": "$radius.md",
+      "fill": "$color.fill.brand",
+      "layout": "horizontal",
+      "gap": "$space.xs",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "padding": ["$space.xs", "$space.md"],
+      "children": [
+        {
+          "id": "button-primary_icon",
+          "type": "icon_font",
+          "iconFontFamily": "lucide",
+          "iconFontName": "arrow-right",
+          "width": "$size.icon.sm",
+          "height": "$size.icon.sm",
+          "fill": "$color.text.inverse"
+        },
+        {
+          "id": "button-primary_label",
+          "type": "text",
+          "content": "Continue",
+          "textGrowth": "auto",
+          "fontSize": "$type.label",
+          "fontWeight": "700",
+          "fill": "$color.text.inverse"
+        }
+      ]
+    },
+    {
+      "id": "ds_button_secondary",
+      "name": "Button Secondary",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_button_primary",
+      "x": 200,
+      "y": 140,
+      "fill": "$color.surface",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "descendants": {
+        "button-primary_icon": {
+          "fill": "$color.text.primary"
+        },
+        "button-primary_label": {
+          "content": "Cancel",
+          "fill": "$color.text.primary"
+        }
+      }
+    },
+    {
+      "id": "ds_button_destructive",
+      "name": "Button Destructive",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_button_primary",
+      "x": 400,
+      "y": 140,
+      "fill": "$color.surface.error.soft",
+      "stroke": { "thickness": 1, "fill": "$color.border.error" },
+      "descendants": {
+        "button-primary_icon": {
+          "iconFontName": "trash-2",
+          "fill": "$color.text.error"
+        },
+        "button-primary_label": {
+          "content": "Delete",
+          "fill": "$color.text.error"
+        }
+      }
+    },
+    {
+      "id": "ds_button_disabled",
+      "name": "Button Disabled",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_button_secondary",
+      "x": 600,
+      "y": 140,
+      "opacity": 0.6,
+      "descendants": {
+        "button-primary_icon": {
+          "fill": "$color.text.disabled"
+        },
+        "button-primary_label": {
+          "content": "Unavailable",
+          "fill": "$color.text.disabled"
+        }
+      }
+    },
+    {
+      "id": "ds_button_loading",
+      "name": "Button Loading",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_button_primary",
+      "x": 800,
+      "y": 140,
+      "descendants": {
+        "button-primary_icon": {
+          "iconFontName": "loader-circle"
+        },
+        "button-primary_label": {
+          "content": "Working..."
+        }
+      }
+    },
+    {
+      "id": "ds_button_primary_pressed",
+      "name": "Button Primary Pressed",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_button_primary",
+      "x": 1000,
+      "y": 140,
+      "fill": "$color.fill.brand.pressed",
+      "descendants": {
+        "button-primary_label": {
+          "content": "Pressed"
+        }
+      }
+    },
+    {
+      "id": "ds_icon_button",
+      "name": "Icon Button",
+      "type": "frame",
+      "reusable": true,
+      "x": 0,
+      "y": 206,
+      "width": 32,
+      "height": 32,
+      "cornerRadius": "$radius.sm",
+      "fill": "$color.transparent",
+      "layout": "horizontal",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "id": "icon-button_icon",
+          "type": "icon_font",
+          "iconFontFamily": "lucide",
+          "iconFontName": "settings-2",
+          "width": "$size.icon.sm",
+          "height": "$size.icon.sm",
+          "fill": "$color.text.secondary"
+        }
+      ]
+    },
+    {
+      "id": "ds_icon_button_hover",
+      "name": "Icon Button Hover",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_icon_button",
+      "x": 48,
+      "y": 206,
+      "fill": "$color.surface.gray.soft"
+    },
+    {
+      "id": "ds_badge",
+      "name": "Badge",
+      "type": "frame",
+      "reusable": true,
+      "x": 104,
+      "y": 208,
+      "width": 128,
+      "height": 28,
+      "cornerRadius": "$radius.pill",
+      "fill": "$color.surface.warning.soft",
+      "layout": "horizontal",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "padding": ["$space.xxs", "$space.sm"],
+      "children": [
+        {
+          "id": "badge_label",
+          "type": "text",
+          "content": "Safety check",
+          "textGrowth": "auto",
+          "fontSize": "$type.caption",
+          "fontWeight": "700",
+          "fill": "$color.text.warning"
+        }
+      ]
+    },
+    {
+      "id": "ds_action_chip",
+      "name": "Action Chip",
+      "type": "frame",
+      "reusable": true,
+      "x": 248,
+      "y": 206,
+      "width": 176,
+      "height": 32,
+      "cornerRadius": "$radius.pill",
+      "fill": "$color.surface.selected",
+      "layout": "horizontal",
+      "gap": "$space.xxs",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "padding": ["$space.xxs", "$space.md"],
+      "children": [
+        {
+          "id": "action-chip_icon",
+          "type": "icon_font",
+          "iconFontFamily": "lucide",
+          "iconFontName": "sparkles",
+          "width": "$size.icon.sm",
+          "height": "$size.icon.sm",
+          "fill": "$color.text.brand"
+        },
+        {
+          "id": "action-chip_label",
+          "type": "text",
+          "content": "Quick action",
+          "textGrowth": "auto",
+          "fontSize": "$type.label",
+          "fontWeight": "700",
+          "fill": "$color.text.brand"
+        }
+      ]
+    },
+    {
+      "id": "ds_divider_horizontal",
+      "name": "Divider Horizontal",
+      "type": "rectangle",
+      "reusable": true,
+      "x": 448,
+      "y": 222,
+      "width": 220,
+      "height": 1,
+      "fill": "$color.border.default"
+    },
+    {
+      "id": "ds_divider_vertical",
+      "name": "Divider Vertical",
+      "type": "rectangle",
+      "reusable": true,
+      "x": 688,
+      "y": 184,
+      "width": 1,
+      "height": 72,
+      "fill": "$color.border.default"
+    },
+    {
+      "id": "ds_avatar",
+      "name": "Avatar",
+      "type": "frame",
+      "reusable": true,
+      "x": 710,
+      "y": 198,
+      "width": 40,
+      "height": 40,
+      "cornerRadius": "$radius.pill",
+      "fill": "$color.surface.selected",
+      "layout": "horizontal",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "id": "avatar_initial",
+          "type": "text",
+          "content": "A",
+          "textGrowth": "auto",
+          "fontSize": "$type.label",
+          "fontWeight": "700",
+          "fill": "$color.text.brand"
+        }
+      ]
+    },
+    {
+      "id": "ds_text_input",
+      "name": "Text Input",
+      "type": "frame",
+      "reusable": true,
+      "x": 0,
+      "y": 300,
+      "width": 320,
+      "height": 82,
+      "layout": "vertical",
+      "gap": "$space.xxs",
+      "children": [
+        {
+          "id": "text-input_label",
+          "type": "text",
+          "content": "Display name",
+          "textGrowth": "auto",
+          "fontSize": "$type.label",
+          "fontWeight": "600",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "text-input_surface",
+          "type": "frame",
+          "width": 320,
+          "height": 40,
+          "cornerRadius": "$radius.md",
+          "fill": "$color.canvas",
+          "stroke": { "thickness": 1, "fill": "$color.border.default" },
+          "layout": "horizontal",
+          "alignItems": "center",
+          "padding": ["$space.xs", "$space.md"],
+          "children": [
+            {
+              "id": "text-input_value",
+              "type": "text",
+              "content": "Placeholder or current value",
+              "textGrowth": "auto",
+              "fontSize": "$type.body",
+              "fill": "$color.text.tertiary"
+            }
+          ]
+        },
+        {
+          "id": "text-input_helper",
+          "type": "text",
+          "content": "Explain what this field controls.",
+          "textGrowth": "fixed-width",
+          "width": 320,
+          "fontSize": "$type.caption",
+          "lineHeight": 1.4,
+          "fill": "$color.text.tertiary"
+        }
+      ]
+    },
+    {
+      "id": "ds_text_input_focus",
+      "name": "Text Input Focus",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_text_input",
+      "x": 340,
+      "y": 300,
+      "descendants": {
+        "text-input_label": {
+          "fill": "$color.text.brand"
+        },
+        "text-input_surface": {
+          "stroke": { "thickness": 1, "fill": "$color.border.brand" }
+        },
+        "text-input_value": {
+          "fill": "$color.text.primary"
+        }
+      }
+    },
+    {
+      "id": "ds_text_input_error",
+      "name": "Text Input Error",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_text_input",
+      "x": 680,
+      "y": 300,
+      "descendants": {
+        "text-input_surface": {
+          "stroke": { "thickness": 1, "fill": "$color.border.error" }
+        },
+        "text-input_helper": {
+          "content": "Use a valid value before continuing.",
+          "fill": "$color.text.error"
+        },
+        "text-input_value": {
+          "fill": "$color.text.primary"
+        }
+      }
+    },
+    {
+      "id": "ds_select_field",
+      "name": "Select Field",
+      "type": "frame",
+      "reusable": true,
+      "x": 0,
+      "y": 398,
+      "width": 320,
+      "height": 82,
+      "layout": "vertical",
+      "gap": "$space.xxs",
+      "children": [
+        {
+          "id": "select-field_label",
+          "type": "text",
+          "content": "Default provider",
+          "textGrowth": "auto",
+          "fontSize": "$type.label",
+          "fontWeight": "600",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "select-field_surface",
+          "type": "frame",
+          "width": 320,
+          "height": 40,
+          "cornerRadius": "$radius.md",
+          "fill": "$color.canvas",
+          "stroke": { "thickness": 1, "fill": "$color.border.default" },
+          "layout": "horizontal",
+          "alignItems": "center",
+          "justifyContent": "space_between",
+          "padding": ["$space.xs", "$space.md"],
+          "children": [
+            {
+              "id": "select-field_value",
+              "type": "text",
+              "content": "ChatboxAI",
+              "textGrowth": "auto",
+              "fontSize": "$type.body",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "select-field_icon",
+              "type": "icon_font",
+              "iconFontFamily": "lucide",
+              "iconFontName": "chevron-down",
+              "width": "$size.icon.sm",
+              "height": "$size.icon.sm",
+              "fill": "$color.text.tertiary"
+            }
+          ]
+        },
+        {
+          "id": "select-field_helper",
+          "type": "text",
+          "content": "Pick a default for new sessions.",
+          "textGrowth": "fixed-width",
+          "width": 320,
+          "fontSize": "$type.caption",
+          "lineHeight": 1.4,
+          "fill": "$color.text.tertiary"
+        }
+      ]
+    },
+    {
+      "id": "ds_textarea",
+      "name": "Textarea",
+      "type": "frame",
+      "reusable": true,
+      "x": 340,
+      "y": 398,
+      "width": 320,
+      "height": 140,
+      "layout": "vertical",
+      "gap": "$space.xxs",
+      "children": [
+        {
+          "id": "textarea_label",
+          "type": "text",
+          "content": "System prompt",
+          "textGrowth": "auto",
+          "fontSize": "$type.label",
+          "fontWeight": "600",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "textarea_surface",
+          "type": "frame",
+          "width": 320,
+          "height": 98,
+          "cornerRadius": "$radius.md",
+          "fill": "$color.canvas",
+          "stroke": { "thickness": 1, "fill": "$color.border.default" },
+          "layout": "none",
+          "children": [
+            {
+              "id": "textarea_value",
+              "type": "text",
+              "x": 16,
+              "y": 14,
+              "width": 288,
+              "height": 68,
+              "textGrowth": "fixed-width-height",
+              "fontSize": "$type.body",
+              "lineHeight": 1.45,
+              "fill": "$color.text.secondary",
+              "content": "Give the assistant a reliable operating context and any guardrails that should persist across the session."
+            }
+          ]
+        },
+        {
+          "id": "textarea_helper",
+          "type": "text",
+          "content": "Longer settings or notes live well here.",
+          "textGrowth": "fixed-width",
+          "width": 320,
+          "fontSize": "$type.caption",
+          "lineHeight": 1.4,
+          "fill": "$color.text.tertiary"
+        }
+      ]
+    },
+    {
+      "id": "ds_checkbox",
+      "name": "Checkbox",
+      "type": "frame",
+      "reusable": true,
+      "x": 680,
+      "y": 406,
+      "width": 220,
+      "height": 36,
+      "layout": "horizontal",
+      "alignItems": "center",
+      "gap": "$space.sm",
+      "children": [
+        {
+          "id": "checkbox_box",
+          "type": "frame",
+          "width": 20,
+          "height": 20,
+          "cornerRadius": "$radius.sm",
+          "fill": "$color.canvas",
+          "stroke": { "thickness": 1, "fill": "$color.border.default" },
+          "layout": "horizontal",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "id": "checkbox_icon",
+              "type": "icon_font",
+              "iconFontFamily": "lucide",
+              "iconFontName": "check",
+              "width": 14,
+              "height": 14,
+              "fill": "$color.transparent"
+            }
+          ]
+        },
+        {
+          "id": "checkbox_label",
+          "type": "text",
+          "content": "Remember this preference",
+          "textGrowth": "auto",
+          "fontSize": "$type.body",
+          "fill": "$color.text.primary"
+        }
+      ]
+    },
+    {
+      "id": "ds_checkbox_checked",
+      "name": "Checkbox Checked",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_checkbox",
+      "x": 920,
+      "y": 406,
+      "descendants": {
+        "checkbox_box": {
+          "fill": "$color.fill.brand",
+          "stroke": { "thickness": 1, "fill": "$color.border.brand" }
+        },
+        "checkbox_icon": {
+          "fill": "$color.text.inverse"
+        }
+      }
+    },
+    {
+      "id": "ds_radio",
+      "name": "Radio",
+      "type": "frame",
+      "reusable": true,
+      "x": 680,
+      "y": 456,
+      "width": 220,
+      "height": 36,
+      "layout": "horizontal",
+      "alignItems": "center",
+      "gap": "$space.sm",
+      "children": [
+        {
+          "id": "radio_circle",
+          "type": "frame",
+          "width": 20,
+          "height": 20,
+          "cornerRadius": "$radius.pill",
+          "fill": "$color.canvas",
+          "stroke": { "thickness": 1, "fill": "$color.border.default" },
+          "layout": "horizontal",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "id": "radio_dot",
+              "type": "ellipse",
+              "width": 10,
+              "height": 10,
+              "fill": "$color.transparent"
+            }
+          ]
+        },
+        {
+          "id": "radio_label",
+          "type": "text",
+          "content": "Open in current tab",
+          "textGrowth": "auto",
+          "fontSize": "$type.body",
+          "fill": "$color.text.primary"
+        }
+      ]
+    },
+    {
+      "id": "ds_radio_selected",
+      "name": "Radio Selected",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_radio",
+      "x": 920,
+      "y": 456,
+      "descendants": {
+        "radio_circle": {
+          "stroke": { "thickness": 1, "fill": "$color.border.brand" }
+        },
+        "radio_dot": {
+          "fill": "$color.fill.brand"
+        }
+      }
+    },
+    {
+      "id": "ds_switch",
+      "name": "Switch",
+      "type": "frame",
+      "reusable": true,
+      "x": 680,
+      "y": 512,
+      "width": 240,
+      "height": 36,
+      "layout": "horizontal",
+      "alignItems": "center",
+      "justifyContent": "space_between",
+      "children": [
+        {
+          "id": "switch_label",
+          "type": "text",
+          "content": "Web browsing",
+          "textGrowth": "auto",
+          "fontSize": "$type.body",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "switch_track",
+          "type": "frame",
+          "width": 44,
+          "height": 24,
+          "cornerRadius": "$radius.pill",
+          "fill": "$color.surface.muted",
+          "layout": "none",
+          "children": [
+            {
+              "id": "switch_knob",
+              "type": "ellipse",
+              "x": 2,
+              "y": 2,
+              "width": 20,
+              "height": 20,
+              "fill": "$color.canvas"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ds_switch_on",
+      "name": "Switch On",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_switch",
+      "x": 920,
+      "y": 512,
+      "descendants": {
+        "switch_track": {
+          "fill": "$color.fill.brand"
+        },
+        "switch_knob": {
+          "x": 22
+        }
+      }
+    },
+    {
+      "id": "ds_segmented_control",
+      "name": "Segmented Control",
+      "type": "frame",
+      "reusable": true,
+      "x": 680,
+      "y": 568,
+      "width": 360,
+      "height": 40,
+      "cornerRadius": "$radius.md",
+      "fill": "$color.surface",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "horizontal",
+      "gap": 0,
+      "children": [
+        {
+          "id": "segmented-control_left",
+          "type": "frame",
+          "width": 120,
+          "height": 40,
+          "layout": "horizontal",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "id": "segmented-control_left-label",
+              "type": "text",
+              "content": "General",
+              "textGrowth": "auto",
+              "fontSize": "$type.label",
+              "fontWeight": "600",
+              "fill": "$color.text.secondary"
+            }
+          ]
+        },
+        {
+          "id": "segmented-control_center",
+          "type": "frame",
+          "width": 120,
+          "height": 40,
+          "fill": "$color.surface.selected",
+          "layout": "horizontal",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "id": "segmented-control_center-label",
+              "type": "text",
+              "content": "Advanced",
+              "textGrowth": "auto",
+              "fontSize": "$type.label",
+              "fontWeight": "700",
+              "fill": "$color.text.brand"
+            }
+          ]
+        },
+        {
+          "id": "segmented-control_right",
+          "type": "frame",
+          "width": 120,
+          "height": 40,
+          "layout": "horizontal",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "id": "segmented-control_right-label",
+              "type": "text",
+              "content": "Privacy",
+              "textGrowth": "auto",
+              "fontSize": "$type.label",
+              "fontWeight": "600",
+              "fill": "$color.text.secondary"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ds_page_header",
+      "name": "Page Header",
+      "type": "frame",
+      "reusable": true,
+      "x": 1100,
+      "y": 140,
+      "width": 560,
+      "height": 56,
+      "fill": "$color.canvas",
+      "stroke": { "thickness": { "top": 0, "right": 0, "bottom": 1, "left": 0 }, "fill": "$color.border.default" },
+      "layout": "horizontal",
+      "alignItems": "center",
+      "gap": "$space.sm",
+      "padding": ["$space.xs", "$space.md"],
+      "children": [
+        {
+          "id": "page-header_leading-slot",
+          "type": "frame",
+          "width": 40,
+          "height": 40,
+          "slot": ["ds_icon_button", "ds_badge"]
+        },
+        {
+          "id": "page-header_title",
+          "type": "text",
+          "content": "Settings",
+          "textGrowth": "fixed-width",
+          "width": 300,
+          "fontSize": "$type.title",
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "page-header_actions-slot",
+          "type": "frame",
+          "width": 176,
+          "height": 40,
+          "layout": "horizontal",
+          "gap": "$space.xs",
+          "justifyContent": "end",
+          "alignItems": "center",
+          "slot": ["ds_button_secondary", "ds_button_primary", "ds_icon_button", "ds_segmented_control"]
+        }
+      ]
+    },
+    {
+      "id": "ds_toolbar_shell",
+      "name": "Toolbar Shell",
+      "type": "frame",
+      "reusable": true,
+      "x": 1100,
+      "y": 220,
+      "width": 560,
+      "height": 44,
+      "cornerRadius": "$radius.md",
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "horizontal",
+      "alignItems": "center",
+      "justifyContent": "space_between",
+      "padding": ["$space.xs", "$space.sm"],
+      "children": [
+        {
+          "id": "toolbar-shell_left-slot",
+          "type": "frame",
+          "width": 160,
+          "height": 28,
+          "layout": "horizontal",
+          "gap": "$space.xs",
+          "alignItems": "center",
+          "slot": ["ds_badge", "ds_action_chip", "ds_segmented_control"]
+        },
+        {
+          "id": "toolbar-shell_center-slot",
+          "type": "frame",
+          "width": 160,
+          "height": 28,
+          "layout": "horizontal",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "slot": ["ds_badge", "ds_action_chip"]
+        },
+        {
+          "id": "toolbar-shell_right-slot",
+          "type": "frame",
+          "width": 160,
+          "height": 28,
+          "layout": "horizontal",
+          "justifyContent": "end",
+          "alignItems": "center",
+          "gap": "$space.xs",
+          "slot": ["ds_icon_button", "ds_button_secondary", "ds_button_primary"]
+        }
+      ]
+    },
+    {
+      "id": "ds_nav_item",
+      "name": "Nav Item",
+      "type": "frame",
+      "reusable": true,
+      "x": 1100,
+      "y": 292,
+      "width": 260,
+      "height": 40,
+      "cornerRadius": "$radius.sm",
+      "fill": "$color.transparent",
+      "layout": "horizontal",
+      "alignItems": "center",
+      "justifyContent": "space_between",
+      "padding": ["$space.xs", "$space.sm"],
+      "children": [
+        {
+          "id": "nav-item_lead",
+          "type": "frame",
+          "width": 20,
+          "height": 20,
+          "cornerRadius": "$radius.sm",
+          "fill": "$color.surface.selected"
+        },
+        {
+          "id": "nav-item_label",
+          "type": "text",
+          "content": "Messages",
+          "textGrowth": "auto",
+          "fontSize": "$type.body",
+          "fontWeight": "600",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "nav-item_meta",
+          "type": "text",
+          "content": "Cmd K",
+          "textGrowth": "auto",
+          "fontSize": "$type.caption",
+          "fill": "$color.text.tertiary"
+        }
+      ]
+    },
+    {
+      "id": "ds_nav_item_selected",
+      "name": "Nav Item Selected",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_nav_item",
+      "x": 1376,
+      "y": 292,
+      "fill": "$color.surface.selected",
+      "descendants": {
+        "nav-item_label": {
+          "fill": "$color.text.brand"
+        },
+        "nav-item_meta": {
+          "fill": "$color.text.brand"
+        }
+      }
+    },
+    {
+      "id": "ds_session_row",
+      "name": "Session Row",
+      "type": "frame",
+      "reusable": true,
+      "x": 1100,
+      "y": 344,
+      "width": 260,
+      "height": 44,
+      "cornerRadius": "$radius.sm",
+      "fill": "$color.transparent",
+      "layout": "horizontal",
+      "alignItems": "center",
+      "justifyContent": "space_between",
+      "padding": ["$space.xs", "$space.sm"],
+      "children": [
+        {
+          "id": "session-row_avatar",
+          "type": "ref",
+          "ref": "ds_avatar"
+        },
+        {
+          "id": "session-row_label",
+          "type": "text",
+          "content": "Project assistant",
+          "textGrowth": "auto",
+          "fontSize": "$type.body",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "session-row_action",
+          "type": "ref",
+          "ref": "ds_icon_button",
+          "descendants": {
+            "icon-button_icon": {
+              "iconFontName": "ellipsis"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ds_session_row_selected",
+      "name": "Session Row Selected",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_session_row",
+      "x": 1376,
+      "y": 344,
+      "fill": "$color.surface.selected",
+      "descendants": {
+        "session-row_label": {
+          "fill": "$color.text.brand"
+        },
+        "session-row_action/icon-button_icon": {
+          "fill": "$color.text.brand"
+        }
+      }
+    },
+    {
+      "id": "ds_sidebar_shell",
+      "name": "Sidebar Shell",
+      "type": "frame",
+      "reusable": true,
+      "x": 1100,
+      "y": 420,
+      "width": 280,
+      "height": 520,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.surface",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "vertical",
+      "gap": "$space.sm",
+      "padding": ["$space.md", "$space.md"],
+      "children": [
+        {
+          "id": "sidebar-shell_title",
+          "type": "text",
+          "content": "Workspace",
+          "textGrowth": "auto",
+          "fontSize": "$type.subtitle",
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "sidebar-shell_nav-slot",
+          "type": "frame",
+          "width": 248,
+          "height": 392,
+          "layout": "vertical",
+          "gap": "$space.xs",
+          "slot": ["ds_nav_item", "ds_nav_item_selected", "ds_session_row", "ds_session_row_selected"]
+        },
+        {
+          "id": "sidebar-shell_footer-slot",
+          "type": "frame",
+          "width": 248,
+          "height": 60,
+          "layout": "vertical",
+          "gap": "$space.xs",
+          "slot": ["ds_badge", "ds_action_chip", "ds_button_secondary"]
+        }
+      ]
+    },
+    {
+      "id": "ds_menu_item",
+      "name": "Menu Item",
+      "type": "frame",
+      "reusable": true,
+      "x": 1660,
+      "y": 320,
+      "width": 220,
+      "height": 36,
+      "cornerRadius": "$radius.sm",
+      "fill": "$color.transparent",
+      "layout": "horizontal",
+      "gap": "$space.sm",
+      "alignItems": "center",
+      "padding": ["$space.xs", "$space.sm"],
+      "children": [
+        {
+          "id": "menu-item_icon",
+          "type": "icon_font",
+          "iconFontFamily": "lucide",
+          "iconFontName": "pencil-line",
+          "width": "$size.icon.sm",
+          "height": "$size.icon.sm",
+          "fill": "$color.text.secondary"
+        },
+        {
+          "id": "menu-item_label",
+          "type": "text",
+          "content": "Edit",
+          "textGrowth": "auto",
+          "fontSize": "$type.body",
+          "fill": "$color.text.primary"
+        }
+      ]
+    },
+    {
+      "id": "ds_menu_item_danger",
+      "name": "Menu Item Danger",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_menu_item",
+      "x": 1660,
+      "y": 366,
+      "descendants": {
+        "menu-item_icon": {
+          "iconFontName": "trash-2",
+          "fill": "$color.text.error"
+        },
+        "menu-item_label": {
+          "content": "Delete",
+          "fill": "$color.text.error"
+        }
+      }
+    },
+    {
+      "id": "ds_menu_shell",
+      "name": "Menu Shell",
+      "type": "frame",
+      "reusable": true,
+      "x": 1660,
+      "y": 140,
+      "width": 240,
+      "height": 156,
+      "cornerRadius": "$radius.lg",
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "effect": [
+        {
+          "type": "shadow",
+          "shadowType": "outer",
+          "offset": { "x": 0, "y": 12 },
+          "blur": 24,
+          "color": "$color.overlay"
+        }
+      ],
+      "layout": "vertical",
+      "gap": "$space.xxs",
+      "padding": ["$space.xs", "$space.xs"],
+      "children": [
+        {
+          "id": "menu-shell_item-one",
+          "type": "ref",
+          "ref": "ds_menu_item"
+        },
+        {
+          "id": "menu-shell_item-two",
+          "type": "ref",
+          "ref": "ds_menu_item",
+          "descendants": {
+            "menu-item_icon": {
+              "iconFontName": "copy"
+            },
+            "menu-item_label": {
+              "content": "Duplicate"
+            }
+          }
+        },
+        {
+          "id": "menu-shell_divider",
+          "type": "ref",
+          "ref": "ds_divider_horizontal"
+        },
+        {
+          "id": "menu-shell_item-danger",
+          "type": "ref",
+          "ref": "ds_menu_item_danger"
+        }
+      ]
+    },
+    {
+      "id": "ds_section_card",
+      "name": "Section Card",
+      "type": "frame",
+      "reusable": true,
+      "x": 0,
+      "y": 680,
+      "width": 360,
+      "height": 260,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.surface",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "vertical",
+      "gap": "$space.sm",
+      "padding": ["$space.xl", "$space.xl"],
+      "children": [
+        {
+          "id": "section-card_eyebrow",
+          "type": "text",
+          "content": "SECTION",
+          "textGrowth": "auto",
+          "fontSize": "$type.caption",
+          "fontWeight": "700",
+          "letterSpacing": 1,
+          "fill": "$color.text.tertiary"
+        },
+        {
+          "id": "section-card_title",
+          "type": "text",
+          "content": "Section title",
+          "textGrowth": "auto",
+          "fontSize": "$type.title",
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "section-card_body",
+          "type": "text",
+          "content": "Use this for grouped settings, support sections, or any area that needs a clear title and a small stack of follow-on content.",
+          "textGrowth": "fixed-width",
+          "width": 312,
+          "fontSize": "$type.body",
+          "lineHeight": 1.45,
+          "fill": "$color.text.secondary"
+        },
+        {
+          "id": "section-card_content-slot",
+          "type": "frame",
+          "width": 312,
+          "height": 88,
+          "layout": "vertical",
+          "gap": "$space.xs",
+          "slot": ["ds_list_row", "ds_table_row", "ds_action_chip", "ds_badge", "ds_notice_banner"]
+        }
+      ]
+    },
+    {
+      "id": "ds_list_row",
+      "name": "List Row",
+      "type": "frame",
+      "reusable": true,
+      "x": 380,
+      "y": 680,
+      "width": 360,
+      "height": 76,
+      "cornerRadius": "$radius.lg",
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "horizontal",
+      "gap": "$space.md",
+      "alignItems": "center",
+      "padding": ["$space.md", "$space.md"],
+      "children": [
+        {
+          "id": "list-row_lead",
+          "type": "frame",
+          "width": 28,
+          "height": 28,
+          "cornerRadius": "$radius.md",
+          "fill": "$color.surface.selected"
+        },
+        {
+          "id": "list-row_content",
+          "type": "frame",
+          "width": 220,
+          "height": 44,
+          "layout": "vertical",
+          "gap": "$space.3xs",
+          "children": [
+            {
+              "id": "list-row_title",
+              "type": "text",
+              "content": "Community Discord",
+              "textGrowth": "auto",
+              "fontSize": "$type.body",
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "list-row_subtitle",
+              "type": "text",
+              "content": "Fast answers, product updates, and team support.",
+              "textGrowth": "fixed-width",
+              "width": 220,
+              "fontSize": "$type.caption",
+              "lineHeight": 1.4,
+              "fill": "$color.text.tertiary"
+            }
+          ]
+        },
+        {
+          "id": "list-row_meta",
+          "type": "text",
+          "content": "Open",
+          "textGrowth": "auto",
+          "fontSize": "$type.caption",
+          "fontWeight": "700",
+          "fill": "$color.text.brand"
+        }
+      ]
+    },
+    {
+      "id": "ds_table_row",
+      "name": "Table Row",
+      "type": "frame",
+      "reusable": true,
+      "x": 380,
+      "y": 772,
+      "width": 360,
+      "height": 48,
+      "cornerRadius": "$radius.md",
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "horizontal",
+      "justifyContent": "space_between",
+      "alignItems": "center",
+      "padding": ["$space.xs", "$space.md"],
+      "children": [
+        {
+          "id": "table-row_column-one",
+          "type": "text",
+          "content": "Provider",
+          "textGrowth": "auto",
+          "fontSize": "$type.caption",
+          "fontWeight": "700",
+          "fill": "$color.text.tertiary"
+        },
+        {
+          "id": "table-row_column-two",
+          "type": "text",
+          "content": "Connected",
+          "textGrowth": "auto",
+          "fontSize": "$type.body",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "table-row_column-three",
+          "type": "text",
+          "content": "Synced",
+          "textGrowth": "auto",
+          "fontSize": "$type.caption",
+          "fontWeight": "700",
+          "fill": "$color.text.success"
+        }
+      ]
+    },
+    {
+      "id": "ds_stat_tile",
+      "name": "Stat Tile",
+      "type": "frame",
+      "reusable": true,
+      "x": 760,
+      "y": 680,
+      "width": 220,
+      "height": 152,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.surface.selected",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "vertical",
+      "gap": "$space.xs",
+      "padding": ["$space.xl", "$space.xl"],
+      "children": [
+        {
+          "id": "stat-tile_value",
+          "type": "text",
+          "content": "12",
+          "textGrowth": "auto",
+          "fontSize": 40,
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "stat-tile_title",
+          "type": "text",
+          "content": "Connected tools",
+          "textGrowth": "auto",
+          "fontSize": "$type.body",
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "stat-tile_body",
+          "type": "text",
+          "content": "Compact metric tiles work best for fast scanning and lightweight status updates.",
+          "textGrowth": "fixed-width",
+          "width": 172,
+          "fontSize": "$type.caption",
+          "lineHeight": 1.4,
+          "fill": "$color.text.secondary"
+        }
+      ]
+    },
+    {
+      "id": "ds_resource_tile",
+      "name": "Resource Tile",
+      "type": "frame",
+      "reusable": true,
+      "x": 1000,
+      "y": 680,
+      "width": 300,
+      "height": 176,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "vertical",
+      "gap": "$space.xs",
+      "padding": ["$space.xl", "$space.xl"],
+      "children": [
+        {
+          "id": "resource-tile_eyebrow",
+          "type": "text",
+          "content": "RESOURCE",
+          "textGrowth": "auto",
+          "fontSize": "$type.caption",
+          "fontWeight": "700",
+          "letterSpacing": 1,
+          "fill": "$color.text.tertiary"
+        },
+        {
+          "id": "resource-tile_title",
+          "type": "text",
+          "content": "Documentation",
+          "textGrowth": "auto",
+          "fontSize": "$type.title",
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "resource-tile_body",
+          "type": "text",
+          "content": "For richer destinations that need stronger hierarchy than a simple list row.",
+          "textGrowth": "fixed-width",
+          "width": 252,
+          "fontSize": "$type.body",
+          "lineHeight": 1.45,
+          "fill": "$color.text.secondary"
+        },
+        {
+          "id": "resource-tile_footer-chip",
+          "type": "ref",
+          "ref": "ds_action_chip",
+          "descendants": {
+            "action-chip_label": {
+              "content": "Read more"
+            },
+            "action-chip_icon": {
+              "iconFontName": "book-open"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ds_notice_banner",
+      "name": "Notice Banner",
+      "type": "frame",
+      "reusable": true,
+      "x": 1320,
+      "y": 680,
+      "width": 600,
+      "height": 160,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.surface.warning.soft",
+      "stroke": { "thickness": 1, "fill": "$color.border.warning" },
+      "layout": "horizontal",
+      "gap": "$space.md",
+      "padding": ["$space.xl", "$space.xl"],
+      "children": [
+        {
+          "id": "notice-banner_icon-wrap",
+          "type": "frame",
+          "width": 36,
+          "height": 36,
+          "cornerRadius": "$radius.md",
+          "fill": "$color.canvas",
+          "layout": "horizontal",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "id": "notice-banner_icon",
+              "type": "icon_font",
+              "iconFontFamily": "lucide",
+              "iconFontName": "triangle-alert",
+              "width": "$size.icon.md",
+              "height": "$size.icon.md",
+              "fill": "$color.text.warning"
+            }
+          ]
+        },
+        {
+          "id": "notice-banner_content",
+          "type": "frame",
+          "width": 500,
+          "height": 112,
+          "layout": "vertical",
+          "gap": "$space.xxs",
+          "children": [
+            {
+              "id": "notice-banner_eyebrow",
+              "type": "text",
+              "content": "NOTICE",
+              "textGrowth": "auto",
+              "fontSize": "$type.caption",
+              "fontWeight": "700",
+              "letterSpacing": 1,
+              "fill": "$color.text.warning"
+            },
+            {
+              "id": "notice-banner_title",
+              "type": "text",
+              "content": "Important trust message",
+              "textGrowth": "auto",
+              "fontSize": "$type.subtitle",
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "notice-banner_body",
+              "type": "text",
+              "content": "Use a banner for warnings, migrations, or support notices that should stand out without feeling destructive.",
+              "textGrowth": "fixed-width",
+              "width": 500,
+              "fontSize": "$type.body",
+              "lineHeight": 1.45,
+              "fill": "$color.text.secondary"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ds_empty_state",
+      "name": "Empty State",
+      "type": "frame",
+      "reusable": true,
+      "x": 0,
+      "y": 960,
+      "width": 360,
+      "height": 236,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.surface",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "vertical",
+      "gap": "$space.sm",
+      "alignItems": "center",
+      "padding": ["$space.xxl", "$space.xl"],
+      "children": [
+        {
+          "id": "empty-state_illustration",
+          "type": "frame",
+          "width": 56,
+          "height": 56,
+          "cornerRadius": "$radius.lg",
+          "fill": "$color.surface.selected",
+          "layout": "horizontal",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "id": "empty-state_icon",
+              "type": "icon_font",
+              "iconFontFamily": "lucide",
+              "iconFontName": "inbox",
+              "width": 24,
+              "height": 24,
+              "fill": "$color.text.brand"
+            }
+          ]
+        },
+        {
+          "id": "empty-state_title",
+          "type": "text",
+          "content": "Nothing here yet",
+          "textGrowth": "auto",
+          "fontSize": "$type.title",
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "empty-state_body",
+          "type": "text",
+          "content": "Use an empty state when a surface would otherwise feel blank and directionless.",
+          "textGrowth": "fixed-width",
+          "width": 296,
+          "fontSize": "$type.body",
+          "lineHeight": 1.45,
+          "textAlign": "center",
+          "fill": "$color.text.secondary"
+        },
+        {
+          "id": "empty-state_action-slot",
+          "type": "frame",
+          "width": 296,
+          "height": 40,
+          "layout": "horizontal",
+          "justifyContent": "center",
+          "gap": "$space.xs",
+          "alignItems": "center",
+          "slot": ["ds_button_primary", "ds_button_secondary", "ds_action_chip"]
+        }
+      ]
+    },
+    {
+      "id": "ds_modal_shell",
+      "name": "Modal Shell",
+      "type": "frame",
+      "reusable": true,
+      "x": 1400,
+      "y": 420,
+      "width": 520,
+      "height": 420,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "effect": [
+        {
+          "type": "shadow",
+          "shadowType": "outer",
+          "offset": { "x": 0, "y": 18 },
+          "blur": 36,
+          "color": "$color.overlay"
+        }
+      ],
+      "layout": "vertical",
+      "gap": "$space.md",
+      "padding": ["$space.lg", "$space.lg"],
+      "children": [
+        {
+          "id": "modal-shell_header",
+          "type": "frame",
+          "width": 480,
+          "height": 40,
+          "layout": "horizontal",
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "id": "modal-shell_title",
+              "type": "text",
+              "content": "Modal title",
+              "textGrowth": "auto",
+              "fontSize": "$type.title",
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "modal-shell_close",
+              "type": "ref",
+              "ref": "ds_icon_button",
+              "descendants": {
+                "icon-button_icon": {
+                  "iconFontName": "x"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "modal-shell_body-slot",
+          "type": "frame",
+          "width": 480,
+          "height": 280,
+          "cornerRadius": "$radius.lg",
+          "fill": "$color.surface",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": ["$space.md", "$space.md"],
+          "slot": ["ds_dialog_body", "ds_textarea", "ds_notice_banner", "ds_empty_state"]
+        },
+        {
+          "id": "modal-shell_actions-slot",
+          "type": "frame",
+          "width": 480,
+          "height": 40,
+          "layout": "horizontal",
+          "justifyContent": "end",
+          "gap": "$space.xs",
+          "alignItems": "center",
+          "slot": ["ds_button_secondary", "ds_button_primary", "ds_button_destructive"]
+        }
+      ]
+    },
+    {
+      "id": "ds_bottom_sheet_shell",
+      "name": "Bottom Sheet Shell",
+      "type": "frame",
+      "reusable": true,
+      "x": 1400,
+      "y": 860,
+      "width": 420,
+      "height": 320,
+      "cornerRadius": [24, 24, 0, 0],
+      "fill": "$color.canvas",
+      "effect": [
+        {
+          "type": "shadow",
+          "shadowType": "outer",
+          "offset": { "x": 0, "y": -8 },
+          "blur": 24,
+          "color": "$color.overlay"
+        }
+      ],
+      "layout": "vertical",
+      "gap": "$space.sm",
+      "padding": ["$space.sm", "$space.lg", "$space.lg", "$space.lg"],
+      "children": [
+        {
+          "id": "bottom-sheet_handle",
+          "type": "rectangle",
+          "width": 48,
+          "height": 6,
+          "cornerRadius": "$radius.pill",
+          "fill": "$color.surface.muted"
+        },
+        {
+          "id": "bottom-sheet_title",
+          "type": "text",
+          "content": "Sheet title",
+          "textGrowth": "auto",
+          "fontSize": "$type.subtitle",
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "bottom-sheet_body-slot",
+          "type": "frame",
+          "width": 380,
+          "height": 224,
+          "cornerRadius": "$radius.lg",
+          "fill": "$color.surface",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": ["$space.md", "$space.md"],
+          "slot": ["ds_dialog_body", "ds_notice_banner", "ds_textarea", "ds_empty_state"]
+        }
+      ]
+    },
+    {
+      "id": "ds_dialog_body",
+      "name": "Dialog Body",
+      "type": "frame",
+      "reusable": true,
+      "x": 1400,
+      "y": 1204,
+      "width": 460,
+      "height": 240,
+      "layout": "vertical",
+      "gap": "$space.sm",
+      "children": [
+        {
+          "id": "dialog-body_title",
+          "type": "text",
+          "content": "Confirm the change",
+          "textGrowth": "auto",
+          "fontSize": "$type.subtitle",
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "dialog-body_body",
+          "type": "text",
+          "content": "Use this layout for alert dialogs, destructive confirmations, and short approval flows.",
+          "textGrowth": "fixed-width",
+          "width": 460,
+          "fontSize": "$type.body",
+          "lineHeight": 1.45,
+          "fill": "$color.text.secondary"
+        },
+        {
+          "id": "dialog-body_content-slot",
+          "type": "frame",
+          "width": 460,
+          "height": 112,
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "slot": ["ds_notice_banner", "ds_textarea", "ds_text_input", "ds_select_field"]
+        },
+        {
+          "id": "dialog-body_actions-slot",
+          "type": "frame",
+          "width": 460,
+          "height": 40,
+          "layout": "horizontal",
+          "justifyContent": "end",
+          "gap": "$space.xs",
+          "alignItems": "center",
+          "slot": ["ds_button_secondary", "ds_button_primary", "ds_button_destructive"]
+        }
+      ]
+    },
+    {
+      "id": "ds_page_shell",
+      "name": "Page Shell",
+      "type": "frame",
+      "reusable": true,
+      "x": 0,
+      "y": 1220,
+      "width": 1040,
+      "height": 820,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "vertical",
+      "gap": 0,
+      "children": [
+        {
+          "id": "page-shell_header-slot",
+          "type": "frame",
+          "width": 1040,
+          "height": 56,
+          "slot": ["ds_page_header", "ds_toolbar_shell"]
+        },
+        {
+          "id": "page-shell_content-slot",
+          "type": "frame",
+          "width": 1040,
+          "height": 764,
+          "layout": "vertical",
+          "gap": "$space.md",
+          "padding": ["$space.xl", "$space.xl"],
+          "slot": ["ds_settings_form_shell", "ds_two_column_shell", "ds_split_pane_shell", "ds_section_card", "ds_notice_banner", "ds_empty_state"]
+        }
+      ]
+    },
+    {
+      "id": "ds_two_column_shell",
+      "name": "Two Column Shell",
+      "type": "frame",
+      "reusable": true,
+      "x": 1080,
+      "y": 1220,
+      "width": 600,
+      "height": 360,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "horizontal",
+      "gap": "$space.md",
+      "padding": ["$space.md", "$space.md"],
+      "children": [
+        {
+          "id": "two-column_left-slot",
+          "type": "frame",
+          "width": 276,
+          "height": 328,
+          "cornerRadius": "$radius.lg",
+          "fill": "$color.surface",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": ["$space.md", "$space.md"],
+          "slot": ["ds_section_card", "ds_notice_banner", "ds_resource_tile", "ds_settings_form_shell"]
+        },
+        {
+          "id": "two-column_right-slot",
+          "type": "frame",
+          "width": 276,
+          "height": 328,
+          "cornerRadius": "$radius.lg",
+          "fill": "$color.surface.selected",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": ["$space.md", "$space.md"],
+          "slot": ["ds_section_card", "ds_stat_tile", "ds_resource_tile", "ds_empty_state"]
+        }
+      ]
+    },
+    {
+      "id": "ds_split_pane_shell",
+      "name": "Split Pane Shell",
+      "type": "frame",
+      "reusable": true,
+      "x": 1080,
+      "y": 1600,
+      "width": 720,
+      "height": 360,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "horizontal",
+      "gap": "$space.md",
+      "padding": ["$space.md", "$space.md"],
+      "children": [
+        {
+          "id": "split-pane_sidebar-slot",
+          "type": "frame",
+          "width": 232,
+          "height": 328,
+          "cornerRadius": "$radius.lg",
+          "fill": "$color.surface",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": ["$space.md", "$space.md"],
+          "slot": ["ds_sidebar_shell", "ds_section_card", "ds_notice_banner"]
+        },
+        {
+          "id": "split-pane_content-slot",
+          "type": "frame",
+          "width": 440,
+          "height": 328,
+          "cornerRadius": "$radius.lg",
+          "fill": "$color.canvas",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": ["$space.md", "$space.md"],
+          "slot": ["ds_settings_form_shell", "ds_resource_tile", "ds_empty_state", "ds_notice_banner"]
+        }
+      ]
+    },
+    {
+      "id": "ds_settings_form_shell",
+      "name": "Settings Form Shell",
+      "type": "frame",
+      "reusable": true,
+      "x": 0,
+      "y": 2060,
+      "width": 720,
+      "height": 420,
+      "cornerRadius": "$radius.xl",
+      "fill": "$color.surface",
+      "stroke": { "thickness": 1, "fill": "$color.border.default" },
+      "layout": "vertical",
+      "gap": "$space.md",
+      "padding": ["$space.xl", "$space.xl"],
+      "children": [
+        {
+          "id": "settings-form_eyebrow",
+          "type": "text",
+          "content": "SETTINGS",
+          "textGrowth": "auto",
+          "fontSize": "$type.caption",
+          "fontWeight": "700",
+          "letterSpacing": 1,
+          "fill": "$color.text.tertiary"
+        },
+        {
+          "id": "settings-form_title",
+          "type": "text",
+          "content": "Configure the experience",
+          "textGrowth": "auto",
+          "fontSize": "$type.title",
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "settings-form_body",
+          "type": "text",
+          "content": "Use the form shell for stacked controls, clear explanatory copy, and explicit save or cancel actions.",
+          "textGrowth": "fixed-width",
+          "width": 672,
+          "fontSize": "$type.body",
+          "lineHeight": 1.45,
+          "fill": "$color.text.secondary"
+        },
+        {
+          "id": "settings-form_fields-slot",
+          "type": "frame",
+          "width": 672,
+          "height": 200,
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "slot": ["ds_text_input", "ds_select_field", "ds_textarea", "ds_checkbox", "ds_radio", "ds_switch"]
+        },
+        {
+          "id": "settings-form_actions-slot",
+          "type": "frame",
+          "width": 672,
+          "height": 40,
+          "layout": "horizontal",
+          "justifyContent": "end",
+          "gap": "$space.xs",
+          "alignItems": "center",
+          "slot": ["ds_button_secondary", "ds_button_primary", "ds_button_loading"]
+        }
+      ]
+    }
+  ]
+}

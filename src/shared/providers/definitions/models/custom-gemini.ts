@@ -6,6 +6,7 @@ import { ApiError } from '../../../models/errors'
 import type { CallChatCompletionOptions } from '../../../models/types'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
+import { normalizeGoogleThinkingConfig } from '../../../utils/google-thinking'
 import { normalizeGeminiHost } from '../../../utils/llm_utils'
 
 const GEMINI_IMAGE_MODELS = [
@@ -14,6 +15,8 @@ const GEMINI_IMAGE_MODELS = [
   'gemini-3.1-flash-image-preview',
   'gemini-3.1-flash-image',
 ]
+
+type GoogleImageAspectRatio = NonNullable<NonNullable<GoogleGenerativeAIProviderOptions['imageConfig']>['aspectRatio']>
 
 interface Options {
   apiKey: string
@@ -74,7 +77,10 @@ export default class CustomGemini extends AbstractAISDKModel {
         ...providerParams,
         ...(options.providerOptions?.google || {}),
         thinkingConfig: {
-          ...(options.providerOptions?.google?.thinkingConfig || {}),
+          ...(normalizeGoogleThinkingConfig(
+            this.options.model.modelId,
+            options.providerOptions?.google?.thinkingConfig
+          ) || {}),
           includeThoughts: true,
         },
       }
@@ -126,7 +132,7 @@ export default class CustomGemini extends AbstractAISDKModel {
         responseModalities: ['TEXT', 'IMAGE'],
       }
       if (params.aspectRatio && params.aspectRatio !== 'auto') {
-        providerOptions.imageConfig = { aspectRatio: params.aspectRatio }
+        providerOptions.imageConfig = { aspectRatio: params.aspectRatio as GoogleImageAspectRatio }
       }
 
       const result = await generateText({

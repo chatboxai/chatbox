@@ -101,7 +101,8 @@ const OpenAIParamsSchema = z.object({
 
 const GoogleParamsSchema = z.object({
   thinkingConfig: z.object({
-    thinkingBudget: z.number().catch(1024),
+    thinkingBudget: z.number().optional().catch(undefined),
+    thinkingLevel: z.enum(['minimal', 'low', 'medium', 'high']).optional().catch(undefined),
     includeThoughts: z.boolean().catch(true),
   }),
 })

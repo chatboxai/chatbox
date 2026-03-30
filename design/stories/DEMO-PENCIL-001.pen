@@ -1,0 +1,1041 @@
+{
+  "version": "2.9",
+  "imports": {
+    "system": "../system/design-system.lib.pen"
+  },
+  "themes": {
+    "mode": ["light", "dark"]
+  },
+  "variables": {
+    "color.canvas": {
+      "type": "color",
+      "value": [
+        { "value": "#FFFFFF", "theme": { "mode": "light" } },
+        { "value": "#242424", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.surface": {
+      "type": "color",
+      "value": [
+        { "value": "#F1F3F5", "theme": { "mode": "light" } },
+        { "value": "#3B3B3B", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.surface.muted": {
+      "type": "color",
+      "value": [
+        { "value": "#DEE2E6", "theme": { "mode": "light" } },
+        { "value": "#424242", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.primary": {
+      "type": "color",
+      "value": [
+        { "value": "#212529", "theme": { "mode": "light" } },
+        { "value": "#FFFFFF", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.secondary": {
+      "type": "color",
+      "value": [
+        { "value": "#495057", "theme": { "mode": "light" } },
+        { "value": "#CED4DA", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.text.tertiary": {
+      "type": "color",
+      "value": [
+        { "value": "#868E96", "theme": { "mode": "light" } },
+        { "value": "#828282", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.border": {
+      "type": "color",
+      "value": [
+        { "value": "#DEE2E6", "theme": { "mode": "light" } },
+        { "value": "#495057", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.brand": {
+      "type": "color",
+      "value": [
+        { "value": "#228BE6", "theme": { "mode": "light" } },
+        { "value": "#4DABF7", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.brand.soft": {
+      "type": "color",
+      "value": [
+        { "value": "#E9F5FF", "theme": { "mode": "light" } },
+        { "value": "#15324D", "theme": { "mode": "dark" } }
+      ]
+    },
+    "color.warning.soft": {
+      "type": "color",
+      "value": [
+        { "value": "#FFF5D6", "theme": { "mode": "light" } },
+        { "value": "#4B3A12", "theme": { "mode": "dark" } }
+      ]
+    }
+  },
+  "children": [
+    {
+      "id": "story_prompt",
+      "type": "text",
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 120,
+      "textGrowth": "fixed-width-height",
+      "fontSize": 14,
+      "fill": "$color.text.secondary",
+      "content": "Story: DEMO-PENCIL-001 About Page Support Hub Refresh. The library baseline lives at design/system/design-system.lib.pen. These three frames are seeded first-pass variations for review before implementation."
+    },
+    {
+      "id": "variation-a_support-hub",
+      "name": "Variation A - Support Hub",
+      "type": "frame",
+      "x": 0,
+      "y": 160,
+      "width": 1200,
+      "height": 940,
+      "layout": "none",
+      "cornerRadius": 32,
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border" },
+      "children": [
+        {
+          "id": "a_label",
+          "type": "text",
+          "x": 40,
+          "y": 40,
+          "content": "VARIATION A",
+          "textGrowth": "auto",
+          "fontSize": 13,
+          "fontWeight": "700",
+          "letterSpacing": 1,
+          "fill": "$color.text.tertiary"
+        },
+        {
+          "id": "a_title",
+          "type": "text",
+          "x": 40,
+          "y": 72,
+          "content": "Support hub with a single clear next step",
+          "textGrowth": "auto",
+          "fontSize": 34,
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "a_summary",
+          "type": "text",
+          "x": 40,
+          "y": 122,
+          "width": 760,
+          "textGrowth": "fixed-width",
+          "fontSize": 15,
+          "lineHeight": 1.5,
+          "fill": "$color.text.secondary",
+          "content": "Hero-first layout that keeps the page helpful and calm. The top card answers version, updates, legal, and the most likely support actions before the page fans out into channels."
+        },
+        {
+          "id": "a_hero",
+          "type": "frame",
+          "x": 40,
+          "y": 210,
+          "width": 1120,
+          "height": 220,
+          "layout": "none",
+          "cornerRadius": 28,
+          "fill": "$color.surface",
+          "stroke": { "thickness": 1, "fill": "$color.border" },
+          "children": [
+            {
+              "id": "a_hero_kicker",
+              "type": "text",
+              "x": 28,
+              "y": 24,
+              "content": "VERSION / TRUST",
+              "textGrowth": "auto",
+              "fontSize": 13,
+              "fontWeight": "700",
+              "letterSpacing": 1,
+              "fill": "$color.text.tertiary"
+            },
+            {
+              "id": "a_hero_title",
+              "type": "text",
+              "x": 28,
+              "y": 54,
+              "content": "Chatbox vX.Y with support, updates, and legal in one place",
+              "textGrowth": "fixed-width",
+              "width": 640,
+              "fontSize": 28,
+              "fontWeight": "700",
+              "lineHeight": 1.25,
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "a_hero_body",
+              "type": "text",
+              "x": 28,
+              "y": 130,
+              "width": 720,
+              "textGrowth": "fixed-width",
+              "fontSize": 15,
+              "lineHeight": 1.45,
+              "fill": "$color.text.secondary",
+              "content": "Primary actions are surfaced as compact chips so users can immediately check updates, open feedback, or review FAQs without scanning the entire page."
+            },
+            {
+              "id": "a_chip_1",
+              "type": "frame",
+              "x": 800,
+              "y": 40,
+              "width": 260,
+              "height": 44,
+              "layout": "none",
+              "cornerRadius": 999,
+              "fill": "$color.brand.soft",
+              "children": [
+                {
+                  "id": "a_chip_1_text",
+                  "type": "text",
+                  "x": 28,
+                  "y": 13,
+                  "content": "Check update",
+                  "textGrowth": "auto",
+                  "fontSize": 13,
+                  "fontWeight": "700",
+                  "fill": "$color.brand"
+                }
+              ]
+            },
+            {
+              "id": "a_chip_2",
+              "type": "frame",
+              "x": 800,
+              "y": 96,
+              "width": 260,
+              "height": 44,
+              "layout": "none",
+              "cornerRadius": 999,
+              "fill": "$color.brand.soft",
+              "children": [
+                {
+                  "id": "a_chip_2_text",
+                  "type": "text",
+                  "x": 28,
+                  "y": 13,
+                  "content": "Leave feedback",
+                  "textGrowth": "auto",
+                  "fontSize": 13,
+                  "fontWeight": "700",
+                  "fill": "$color.brand"
+                }
+              ]
+            },
+            {
+              "id": "a_chip_3",
+              "type": "frame",
+              "x": 800,
+              "y": 152,
+              "width": 260,
+              "height": 44,
+              "layout": "none",
+              "cornerRadius": 999,
+              "fill": "$color.warning.soft",
+              "children": [
+                {
+                  "id": "a_chip_3_text",
+                  "type": "text",
+                  "x": 28,
+                  "y": 13,
+                  "content": "Trust and safety",
+                  "textGrowth": "auto",
+                  "fontSize": 13,
+                  "fontWeight": "700",
+                  "fill": "$color.text.primary"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "a_left_card",
+          "type": "frame",
+          "x": 40,
+          "y": 470,
+          "width": 540,
+          "height": 390,
+          "layout": "none",
+          "cornerRadius": 28,
+          "fill": "$color.surface",
+          "stroke": { "thickness": 1, "fill": "$color.border" },
+          "children": [
+            {
+              "id": "a_left_title",
+              "type": "text",
+              "x": 28,
+              "y": 24,
+              "content": "Community and contact",
+              "textGrowth": "auto",
+              "fontSize": 24,
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "a_left_row_1",
+              "type": "rectangle",
+              "x": 28,
+              "y": 86,
+              "width": 484,
+              "height": 64,
+              "cornerRadius": 18,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "a_left_row_2",
+              "type": "rectangle",
+              "x": 28,
+              "y": 162,
+              "width": 484,
+              "height": 64,
+              "cornerRadius": 18,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "a_left_row_3",
+              "type": "rectangle",
+              "x": 28,
+              "y": 238,
+              "width": 484,
+              "height": 64,
+              "cornerRadius": 18,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "a_left_row_4",
+              "type": "rectangle",
+              "x": 28,
+              "y": 314,
+              "width": 484,
+              "height": 48,
+              "cornerRadius": 18,
+              "fill": "$color.brand.soft"
+            },
+            {
+              "id": "a_left_row_1_text",
+              "type": "text",
+              "x": 52,
+              "y": 124,
+              "content": "GitHub  /  open source repo and issues",
+              "textGrowth": "auto",
+              "fontSize": 15,
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "a_left_row_2_text",
+              "type": "text",
+              "x": 52,
+              "y": 200,
+              "content": "RedNote  /  community updates",
+              "textGrowth": "auto",
+              "fontSize": 15,
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "a_left_row_3_text",
+              "type": "text",
+              "x": 52,
+              "y": 276,
+              "content": "WeChat  /  QR code and announcements",
+              "textGrowth": "auto",
+              "fontSize": 15,
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "a_left_row_4_text",
+              "type": "text",
+              "x": 52,
+              "y": 344,
+              "content": "Email  /  hi@chatboxai.com",
+              "textGrowth": "auto",
+              "fontSize": 13,
+              "fontWeight": "700",
+              "fill": "$color.brand"
+            }
+          ]
+        },
+        {
+          "id": "a_right_card",
+          "type": "frame",
+          "x": 620,
+          "y": 470,
+          "width": 540,
+          "height": 390,
+          "layout": "none",
+          "cornerRadius": 28,
+          "fill": "$color.brand.soft",
+          "stroke": { "thickness": 1, "fill": "$color.border" },
+          "children": [
+            {
+              "id": "a_right_title",
+              "type": "text",
+              "x": 28,
+              "y": 24,
+              "content": "Fast answers and trusted resources",
+              "textGrowth": "fixed-width",
+              "width": 400,
+              "fontSize": 24,
+              "fontWeight": "700",
+              "lineHeight": 1.25,
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "a_right_copy",
+              "type": "text",
+              "x": 28,
+              "y": 92,
+              "width": 450,
+              "textGrowth": "fixed-width",
+              "fontSize": 15,
+              "lineHeight": 1.45,
+              "fill": "$color.text.secondary",
+              "content": "This panel holds the most confidence-building routes: FAQ, changelog, homepage, and the locale-aware update path."
+            },
+            {
+              "id": "a_stat_1",
+              "type": "rectangle",
+              "x": 28,
+              "y": 176,
+              "width": 144,
+              "height": 150,
+              "cornerRadius": 24,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "a_stat_2",
+              "type": "rectangle",
+              "x": 188,
+              "y": 176,
+              "width": 144,
+              "height": 150,
+              "cornerRadius": 24,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "a_stat_3",
+              "type": "rectangle",
+              "x": 348,
+              "y": 176,
+              "width": 164,
+              "height": 150,
+              "cornerRadius": 24,
+              "fill": "$color.warning.soft"
+            },
+            {
+              "id": "a_stat_1_value",
+              "type": "text",
+              "x": 52,
+              "y": 222,
+              "content": "FAQ",
+              "textGrowth": "auto",
+              "fontSize": 26,
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "a_stat_1_label",
+              "type": "text",
+              "x": 52,
+              "y": 252,
+              "content": "Fast answers",
+              "textGrowth": "auto",
+              "fontSize": 13,
+              "fill": "$color.text.secondary"
+            },
+            {
+              "id": "a_stat_2_value",
+              "type": "text",
+              "x": 212,
+              "y": 222,
+              "content": "News",
+              "textGrowth": "auto",
+              "fontSize": 26,
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "a_stat_2_label",
+              "type": "text",
+              "x": 212,
+              "y": 252,
+              "content": "Changelog",
+              "textGrowth": "auto",
+              "fontSize": 13,
+              "fill": "$color.text.secondary"
+            },
+            {
+              "id": "a_stat_3_value",
+              "type": "text",
+              "x": 372,
+              "y": 222,
+              "content": "Trust",
+              "textGrowth": "auto",
+              "fontSize": 26,
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "a_stat_3_label",
+              "type": "text",
+              "x": 372,
+              "y": 252,
+              "content": "Policies and safety",
+              "textGrowth": "auto",
+              "fontSize": 13,
+              "fill": "$color.text.secondary"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "variation-b_command-center",
+      "name": "Variation B - Command Center",
+      "type": "frame",
+      "x": 1320,
+      "y": 160,
+      "width": 1200,
+      "height": 940,
+      "layout": "none",
+      "cornerRadius": 32,
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border" },
+      "children": [
+        {
+          "id": "b_label",
+          "type": "text",
+          "x": 40,
+          "y": 40,
+          "content": "VARIATION B",
+          "textGrowth": "auto",
+          "fontSize": 13,
+          "fontWeight": "700",
+          "letterSpacing": 1,
+          "fill": "$color.text.tertiary"
+        },
+        {
+          "id": "b_title",
+          "type": "text",
+          "x": 40,
+          "y": 72,
+          "content": "Command-center layout for quick scanning",
+          "textGrowth": "auto",
+          "fontSize": 34,
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "b_summary",
+          "type": "text",
+          "x": 40,
+          "y": 122,
+          "width": 760,
+          "textGrowth": "fixed-width",
+          "fontSize": 15,
+          "lineHeight": 1.5,
+          "fill": "$color.text.secondary",
+          "content": "This version treats the page like a compact control center: top-line metrics, then a broad destination matrix with legal and trust content docked into the lower band."
+        },
+        {
+          "id": "b_stat_1",
+          "type": "rectangle",
+          "x": 40,
+          "y": 200,
+          "width": 340,
+          "height": 150,
+          "cornerRadius": 28,
+          "fill": "$color.brand.soft"
+        },
+        {
+          "id": "b_stat_2",
+          "type": "rectangle",
+          "x": 430,
+          "y": 200,
+          "width": 340,
+          "height": 150,
+          "cornerRadius": 28,
+          "fill": "$color.surface"
+        },
+        {
+          "id": "b_stat_3",
+          "type": "rectangle",
+          "x": 820,
+          "y": 200,
+          "width": 340,
+          "height": 150,
+          "cornerRadius": 28,
+          "fill": "$color.warning.soft"
+        },
+        {
+          "id": "b_matrix",
+          "type": "frame",
+          "x": 40,
+          "y": 390,
+          "width": 1120,
+          "height": 380,
+          "layout": "none",
+          "cornerRadius": 28,
+          "fill": "$color.surface",
+          "stroke": { "thickness": 1, "fill": "$color.border" },
+          "children": [
+            {
+              "id": "b_matrix_title",
+              "type": "text",
+              "x": 28,
+              "y": 24,
+              "content": "Support destinations at a glance",
+              "textGrowth": "auto",
+              "fontSize": 24,
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "b_cell_1",
+              "type": "rectangle",
+              "x": 28,
+              "y": 86,
+              "width": 256,
+              "height": 108,
+              "cornerRadius": 22,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "b_cell_2",
+              "type": "rectangle",
+              "x": 300,
+              "y": 86,
+              "width": 256,
+              "height": 108,
+              "cornerRadius": 22,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "b_cell_3",
+              "type": "rectangle",
+              "x": 572,
+              "y": 86,
+              "width": 256,
+              "height": 108,
+              "cornerRadius": 22,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "b_cell_4",
+              "type": "rectangle",
+              "x": 844,
+              "y": 86,
+              "width": 248,
+              "height": 108,
+              "cornerRadius": 22,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "b_cell_5",
+              "type": "rectangle",
+              "x": 28,
+              "y": 212,
+              "width": 256,
+              "height": 108,
+              "cornerRadius": 22,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "b_cell_6",
+              "type": "rectangle",
+              "x": 300,
+              "y": 212,
+              "width": 256,
+              "height": 108,
+              "cornerRadius": 22,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "b_cell_7",
+              "type": "rectangle",
+              "x": 572,
+              "y": 212,
+              "width": 520,
+              "height": 108,
+              "cornerRadius": 22,
+              "fill": "$color.brand.soft"
+            },
+            {
+              "id": "b_stat_1_text",
+              "type": "text",
+              "x": 68,
+              "y": 244,
+              "content": "Version + updates",
+              "textGrowth": "auto",
+              "fontSize": 22,
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "b_stat_2_text",
+              "type": "text",
+              "x": 458,
+              "y": 244,
+              "content": "Community channels",
+              "textGrowth": "auto",
+              "fontSize": 22,
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "b_stat_3_text",
+              "type": "text",
+              "x": 848,
+              "y": 244,
+              "content": "Trust + legal",
+              "textGrowth": "auto",
+              "fontSize": 22,
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "b_cell_1_text",
+              "type": "text",
+              "x": 52,
+              "y": 486,
+              "content": "Homepage",
+              "textGrowth": "auto",
+              "fontSize": 16,
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "b_cell_2_text",
+              "type": "text",
+              "x": 324,
+              "y": 486,
+              "content": "Survey",
+              "textGrowth": "auto",
+              "fontSize": 16,
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "b_cell_3_text",
+              "type": "text",
+              "x": 596,
+              "y": 486,
+              "content": "Feedback",
+              "textGrowth": "auto",
+              "fontSize": 16,
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "b_cell_4_text",
+              "type": "text",
+              "x": 868,
+              "y": 486,
+              "content": "Email",
+              "textGrowth": "auto",
+              "fontSize": 16,
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "b_cell_5_text",
+              "type": "text",
+              "x": 52,
+              "y": 612,
+              "content": "GitHub",
+              "textGrowth": "auto",
+              "fontSize": 16,
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "b_cell_6_text",
+              "type": "text",
+              "x": 324,
+              "y": 612,
+              "content": "RedNote / WeChat",
+              "textGrowth": "auto",
+              "fontSize": 16,
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "b_cell_7_text",
+              "type": "text",
+              "x": 596,
+              "y": 612,
+              "content": "FAQ + Changelog as the confidence strip",
+              "textGrowth": "auto",
+              "fontSize": 16,
+              "fontWeight": "600",
+              "fill": "$color.text.primary"
+            }
+          ]
+        },
+        {
+          "id": "b_footer_band",
+          "type": "rectangle",
+          "x": 40,
+          "y": 800,
+          "width": 1120,
+          "height": 100,
+          "cornerRadius": 28,
+          "fill": "$color.surface.muted"
+        }
+      ]
+    },
+    {
+      "id": "variation-c_concierge-split",
+      "name": "Variation C - Concierge Split",
+      "type": "frame",
+      "x": 2640,
+      "y": 160,
+      "width": 1200,
+      "height": 940,
+      "layout": "none",
+      "cornerRadius": 32,
+      "fill": "$color.canvas",
+      "stroke": { "thickness": 1, "fill": "$color.border" },
+      "children": [
+        {
+          "id": "c_label",
+          "type": "text",
+          "x": 40,
+          "y": 40,
+          "content": "VARIATION C",
+          "textGrowth": "auto",
+          "fontSize": 13,
+          "fontWeight": "700",
+          "letterSpacing": 1,
+          "fill": "$color.text.tertiary"
+        },
+        {
+          "id": "c_title",
+          "type": "text",
+          "x": 40,
+          "y": 72,
+          "content": "Concierge split with a stronger editorial voice",
+          "textGrowth": "auto",
+          "fontSize": 34,
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "c_summary",
+          "type": "text",
+          "x": 40,
+          "y": 122,
+          "width": 760,
+          "textGrowth": "fixed-width",
+          "fontSize": 15,
+          "lineHeight": 1.5,
+          "fill": "$color.text.secondary",
+          "content": "This version gives the left side a calmer narrative panel while the right side becomes a tidy stack of routes. It is the most distinctive direction, but also the most editorial."
+        },
+        {
+          "id": "c_left_panel",
+          "type": "frame",
+          "x": 40,
+          "y": 200,
+          "width": 400,
+          "height": 700,
+          "layout": "none",
+          "cornerRadius": 28,
+          "fill": "$color.brand.soft",
+          "stroke": { "thickness": 1, "fill": "$color.border" },
+          "children": [
+            {
+              "id": "c_left_badge",
+              "type": "frame",
+              "x": 24,
+              "y": 24,
+              "width": 160,
+              "height": 40,
+              "layout": "none",
+              "cornerRadius": 999,
+              "fill": "$color.warning.soft"
+            },
+            {
+              "id": "c_left_copy_block_1",
+              "type": "rectangle",
+              "x": 24,
+              "y": 92,
+              "width": 352,
+              "height": 220,
+              "cornerRadius": 24,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "c_left_copy_block_2",
+              "type": "rectangle",
+              "x": 24,
+              "y": 336,
+              "width": 352,
+              "height": 160,
+              "cornerRadius": 24,
+              "fill": "$color.canvas"
+            },
+            {
+              "id": "c_left_copy_block_3",
+              "type": "rectangle",
+              "x": 24,
+              "y": 520,
+              "width": 352,
+              "height": 156,
+              "cornerRadius": 24,
+              "fill": "$color.warning.soft"
+            },
+            {
+              "id": "c_left_badge_text",
+              "type": "text",
+              "x": 52,
+              "y": 49,
+              "content": "Support guide",
+              "textGrowth": "auto",
+              "fontSize": 13,
+              "fontWeight": "700",
+              "fill": "$color.text.primary"
+            },
+            {
+              "id": "c_left_headline",
+              "type": "text",
+              "x": 48,
+              "y": 132,
+              "width": 300,
+              "textGrowth": "fixed-width",
+              "fontSize": 24,
+              "fontWeight": "700",
+              "lineHeight": 1.25,
+              "fill": "$color.text.primary",
+              "content": "A calmer support concierge for people who want guidance, not a grid."
+            },
+            {
+              "id": "c_left_copy_2",
+              "type": "text",
+              "x": 48,
+              "y": 378,
+              "width": 280,
+              "textGrowth": "fixed-width",
+              "fontSize": 15,
+              "lineHeight": 1.45,
+              "fill": "$color.text.secondary",
+              "content": "This rail carries version context, trust messaging, and a short explanation of where to go next."
+            },
+            {
+              "id": "c_left_copy_3",
+              "type": "text",
+              "x": 48,
+              "y": 566,
+              "width": 280,
+              "textGrowth": "fixed-width",
+              "fontSize": 15,
+              "lineHeight": 1.45,
+              "fill": "$color.text.primary",
+              "content": "The warning block remains available as a distinct, important section."
+            }
+          ]
+        },
+        {
+          "id": "c_right_top",
+          "type": "rectangle",
+          "x": 480,
+          "y": 200,
+          "width": 680,
+          "height": 176,
+          "cornerRadius": 28,
+          "fill": "$color.surface"
+        },
+        {
+          "id": "c_right_mid",
+          "type": "rectangle",
+          "x": 480,
+          "y": 400,
+          "width": 680,
+          "height": 220,
+          "cornerRadius": 28,
+          "fill": "$color.surface"
+        },
+        {
+          "id": "c_right_bottom_left",
+          "type": "rectangle",
+          "x": 480,
+          "y": 644,
+          "width": 328,
+          "height": 256,
+          "cornerRadius": 28,
+          "fill": "$color.canvas"
+        },
+        {
+          "id": "c_right_bottom_right",
+          "type": "rectangle",
+          "x": 832,
+          "y": 644,
+          "width": 328,
+          "height": 256,
+          "cornerRadius": 28,
+          "fill": "$color.warning.soft"
+        },
+        {
+          "id": "c_right_top_text",
+          "type": "text",
+          "x": 516,
+          "y": 252,
+          "content": "Version, updates, privacy, and terms",
+          "textGrowth": "auto",
+          "fontSize": 24,
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "c_right_mid_text",
+          "type": "text",
+          "x": 516,
+          "y": 462,
+          "content": "Community routes stacked as a tidy contact list",
+          "textGrowth": "auto",
+          "fontSize": 24,
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "c_right_bottom_left_text",
+          "type": "text",
+          "x": 516,
+          "y": 720,
+          "content": "FAQ / Changelog",
+          "textGrowth": "auto",
+          "fontSize": 22,
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        },
+        {
+          "id": "c_right_bottom_right_text",
+          "type": "text",
+          "x": 868,
+          "y": 720,
+          "content": "Trust warning",
+          "textGrowth": "auto",
+          "fontSize": 22,
+          "fontWeight": "700",
+          "fill": "$color.text.primary"
+        }
+      ]
+    }
+  ]
+}

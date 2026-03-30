@@ -1,0 +1,87 @@
+# Anti-Patterns
+
+Capture failures so they are not repeated.
+
+## Seeded Anti-Patterns
+
+- **Problem**: Treating `.ai/` as product code
+- **Example**: Adding app runtime features under `.ai/` instead of `src/` or
+  other real product directories
+- **Why it failed**: It blurs the boundary between helper scaffolding and the
+  actual application.
+- **Prevention rule**: Product code lives in the real app directories; `.ai/`
+  exists to help build and maintain them.
+
+- **Problem**: Importing repo-specific history into the harness
+- **Example**: Copying another project's backlog, deploy notes, or feature
+  memory into `.ai/memory/`
+- **Why it failed**: The helper harness starts giving the wrong instructions
+  for this workspace.
+- **Prevention rule**: Keep only generic workflows plus Chatbox-specific durable
+  memory.
+
+- **Problem**: Documenting commands that do not exist
+- **Example**: Telling the harness to run validation or deploy commands not
+  defined in `package.json`
+- **Why it failed**: Guidance becomes misleading and wastes time.
+- **Prevention rule**: Align the harness with the commands that actually exist
+  in this repo.
+
+- **Problem**: Letting current-task notes become a backlog archive
+- **Example**: Accumulating long story histories under `.ai/memory/session/`
+- **Why it failed**: Current context becomes noisy and harder to trust.
+- **Prevention rule**: Move only durable truths into project memory and keep
+  session notes concise.
+
+- **Problem**: Implementing new UI directly in code before design approval
+- **Example**: Using React/CSS as the first place to explore layout and visual
+  direction for a new UI story
+- **Why it failed**: Review happens too late, design churn spills into code, and
+  the user cannot compare alternatives cleanly.
+- **Prevention rule**: Use Pencil after spec/plan, generate 2 or 3 variations,
+  and wait for explicit approval before implementation.
+
+- **Problem**: Treating each UI story as a fresh one-off design system
+- **Example**: Building every new screen in Pencil from scratch with new tokens
+  and components instead of extending a shared foundation
+- **Why it failed**: Visual consistency drifts and implementation becomes harder
+  to keep coherent.
+- **Prevention rule**: Build UI variations on top of the shared Pencil design
+  system and extend the foundation intentionally.
+
+- **Problem**: Hand-authoring Pencil `frame` artboards without explicit layout
+- **Example**: Creating free-positioned story canvases with `frame` nodes but
+  forgetting that Pencil frames use layout behavior unless `layout: "none"` is
+  set
+- **Why it failed**: Children collapse into unexpected rows or stacks and the
+  story file becomes visually broken.
+- **Prevention rule**: Re-check the synced `.pen` format docs before editing
+  `.pen` files, and set `layout: "none"` on any artboard-style or
+  absolute-positioned composition frame.
+
+- **Problem**: Calling a starter library a comprehensive design system
+- **Example**: Treating tokens plus a few sample components as a finished
+  shared system
+- **Why it failed**: The process overestimates library readiness and future
+  stories fall back to one-off shapes and ad hoc patterns.
+- **Prevention rule**: Use `.ai/docs/PENCIL_DESIGN_SYSTEM_STANDARD.md` and
+  label the library honestly as `starter`, `working`, or `comprehensive`.
+
+- **Problem**: Treating direct shell `pencil` access as the default workflow
+- **Example**: Probing the shell for a `pencil` binary before checking whether
+  Pencil is already connected through MCP
+- **Why it failed**: It confuses the real readiness signal and makes the
+  workflow look broken even when Pencil MCP is available and fully usable.
+- **Prevention rule**: In this repo, Pencil MCP is the default bridge. Verify
+  Pencil through `/mcp` first and only treat direct shell CLI usage as an
+  optional special case.
+
+- **Problem**: Expecting direct `.pen` file patches to hot-reload in Pencil
+- **Example**: Editing a `.pen` file on disk with a normal file patch and then
+  expecting the open Pencil canvas to update immediately
+- **Why it failed**: Pencil's documented immediate-feedback loop applies to
+  MCP/editor-session changes, while external disk edits may leave the open file
+  stale until it is reopened or reloaded.
+- **Prevention rule**: When live feedback matters, mutate the active design
+  through Pencil MCP. If a direct disk patch is unavoidable, assume a reopen or
+  reload step is needed in Pencil.

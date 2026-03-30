@@ -1,0 +1,4 @@
+
+module CapacitorDevice.__Swift {
+  exclude header "CapacitorDevice-Swift.h"
+}

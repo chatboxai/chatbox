@@ -14,6 +14,7 @@ import platform from '@/platform'
 import storage from '@/storage'
 
 const log = getLogger('settings-store')
+const SETTINGS_HYDRATION_TIMEOUT_MS = 8000
 
 /**
  * Returns platform-specific default document parser configuration.
@@ -112,6 +113,15 @@ let _initSettingsStorePromise: Promise<Settings> | undefined
 export const initSettingsStore = async () => {
   if (!_initSettingsStorePromise) {
     _initSettingsStorePromise = new Promise<Settings>((resolve) => {
+      let settled = false
+      const resolveOnce = (val: Settings) => {
+        if (settled) {
+          return
+        }
+        settled = true
+        resolve(val)
+      }
+
       const unsub = settingsStore.persist.onFinishHydration((val) => {
         const providers = val?.providers
         const providersCount =
@@ -120,9 +130,22 @@ export const initSettingsStore = async () => {
           log.info(`[CONFIG_DEBUG] onFinishHydration: providersCount=0`)
         }
         unsub()
-        resolve(val)
+        clearTimeout(timeoutId)
+        resolveOnce(val)
       })
-      settingsStore.persist.rehydrate()
+
+      const timeoutId = setTimeout(() => {
+        unsub()
+        log.error(`settings hydration timeout after ${SETTINGS_HYDRATION_TIMEOUT_MS}ms, fallback to current state`)
+        resolveOnce(settingsStore.getState().getSettings())
+      }, SETTINGS_HYDRATION_TIMEOUT_MS)
+
+      Promise.resolve(settingsStore.persist.rehydrate()).catch((e) => {
+        unsub()
+        clearTimeout(timeoutId)
+        log.error('settings rehydrate failed, fallback to current state', e)
+        resolveOnce(settingsStore.getState().getSettings())
+      })
     })
   }
 

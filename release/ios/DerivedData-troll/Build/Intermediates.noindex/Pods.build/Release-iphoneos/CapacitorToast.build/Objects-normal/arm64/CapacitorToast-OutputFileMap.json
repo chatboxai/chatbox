@@ -1,0 +1,25 @@
+{
+  "" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/CapacitorToast-master.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/CapacitorToast-master.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/CapacitorToast-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/CapacitorToast-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/CapacitorToast-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/CapacitorToast-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/toast/ios/Sources/ToastPlugin/Toast.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/Toast.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/Toast.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/Toast.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/toast/ios/Sources/ToastPlugin/ToastLabel.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/ToastLabel.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/ToastLabel.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/ToastLabel.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/toast/ios/Sources/ToastPlugin/ToastPlugin.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/ToastPlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/ToastPlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorToast.build/Objects-normal/arm64/ToastPlugin.o"
+  }
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>colors</key>
+	<array/>
+	<key>images</key>
+	<array>
+		<dict>
+			<key>catalogPath</key>
+			<string>/Users/shenhualxt/workspace/chatbox/ios/App/App/Assets.xcassets</string>
+			<key>objcSymbol</key>
+			<string>ACImageNameSplash</string>
+			<key>relativePath</key>
+			<string>./Splash.imageset</string>
+			<key>swiftSymbol</key>
+			<string>splash</string>
+		</dict>
+	</array>
+	<key>symbols</key>
+	<array/>
+</dict>
+</plist>

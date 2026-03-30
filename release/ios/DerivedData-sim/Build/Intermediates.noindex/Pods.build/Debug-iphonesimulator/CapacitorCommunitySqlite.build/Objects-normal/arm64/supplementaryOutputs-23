@@ -1,0 +1,18 @@
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Extensions/Array.swift":
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.swiftconstvalues"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.d"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.swiftdeps"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.dia"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.o"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/BiometricIDAuthentication.swift":
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.o"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.swiftdeps"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.dia"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.d"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.swiftconstvalues"
+"/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/CapacitorSQLite.swift":
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.swiftconstvalues"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.swiftdeps"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.o"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.dia"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.d"

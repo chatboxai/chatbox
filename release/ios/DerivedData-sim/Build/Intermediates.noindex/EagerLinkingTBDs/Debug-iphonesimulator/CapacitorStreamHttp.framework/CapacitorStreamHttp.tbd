@@ -1,0 +1,78 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_$s19CapacitorStreamHttp0bC6PluginC10urlSession_4task20didCompleteWithErrorySo12NSURLSessionC_So0L4TaskCs0K0_pSgtFTq",
+            "_$s19CapacitorStreamHttp0bC6PluginC10urlSession_4task20didCompleteWithErrorySo12NSURLSessionC_So0L4TaskCs0K0_pSgtF",
+            "_$s19CapacitorStreamHttp0bC6PluginC10identifierSSvpfi",
+            "_$s19CapacitorStreamHttp0bC6PluginC5tasks33_58F0C9093DE563ECB4DF46623DD481F7LLSDySSSo20NSURLSessionDataTaskCGvM",
+            "_$s19CapacitorStreamHttp0bC6PluginCACycfc",
+            "_$s19CapacitorStreamHttp0bC6PluginC10identifierSSvpWvd",
+            "_$s19CapacitorStreamHttp0bC6PluginC10urlSession_8dataTask10didReceiveySo12NSURLSessionC_So0k4DataH0C10Foundation0L0VtF",
+            "_$s19CapacitorStreamHttp0bC6PluginC6bridge8pluginId0F4NameAC0A017CAPBridgeProtocol_p_S2StcfC",
+            "_$s19CapacitorStreamHttp0bC6PluginC05startB0yySo13CAPPluginCallCFTq",
+            "_$s19CapacitorStreamHttp0bC6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpMV",
+            "_$s19CapacitorStreamHttp0bC6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvg",
+            "_$s19CapacitorStreamHttp0bC6PluginC5tasks33_58F0C9093DE563ECB4DF46623DD481F7LLSDySSSo20NSURLSessionDataTaskCGvpfi",
+            "_$s19CapacitorStreamHttp0bC6PluginC6jsNameSSvpfi",
+            "_$s19CapacitorStreamHttp0bC6PluginC8sessions33_58F0C9093DE563ECB4DF46623DD481F7LLSDySSSo12NSURLSessionCGvM",
+            "_$s19CapacitorStreamHttp0bC6PluginCfD",
+            "_$s19CapacitorStreamHttp0bC6PluginC10identifierSSvpMV",
+            "_$s19CapacitorStreamHttp0bC6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpWvd",
+            "_$s19CapacitorStreamHttp0bC6PluginC10urlSession_8dataTask10didReceiveySo12NSURLSessionC_So0k4DataH0C10Foundation0L0VtFTq",
+            "_$s19CapacitorStreamHttp0bC6PluginC6jsNameSSvpMV",
+            "_CapacitorStreamHttpVersionNumber",
+            "_$s19CapacitorStreamHttp0bC6PluginC13pluginMethodsSaySo15CAPPluginMethodCGvpfi",
+            "_$s19CapacitorStreamHttp0bC6PluginC05startB0yySo13CAPPluginCallCF",
+            "_$s19CapacitorStreamHttp0bC6PluginCN",
+            "_$s19CapacitorStreamHttp0bC6PluginC06cancelB0yySo13CAPPluginCallCFTq",
+            "_$s19CapacitorStreamHttp0bC6PluginC8sessions33_58F0C9093DE563ECB4DF46623DD481F7LLSDySSSo12NSURLSessionCGvg",
+            "_$s19CapacitorStreamHttp0bC6PluginCMn",
+            "_$s19CapacitorStreamHttp0bC6PluginC06cancelB0yySo13CAPPluginCallCF",
+            "_$s19CapacitorStreamHttp0bC6PluginC6jsNameSSvg",
+            "_$s19CapacitorStreamHttp0bC6PluginC6bridge8pluginId0F4NameAC0A017CAPBridgeProtocol_p_S2Stcfc",
+            "_$s19CapacitorStreamHttp0bC6PluginCACycfC",
+            "_$s19CapacitorStreamHttp0bC6PluginC10identifierSSvg",
+            "_$s19CapacitorStreamHttp0bC6PluginC8sessions33_58F0C9093DE563ECB4DF46623DD481F7LLSDySSSo12NSURLSessionCGvpfi",
+            "_$s19CapacitorStreamHttp0bC6PluginC8sessions33_58F0C9093DE563ECB4DF46623DD481F7LLSDySSSo12NSURLSessionCGvs",
+            "_$s19CapacitorStreamHttp0bC6PluginC5tasks33_58F0C9093DE563ECB4DF46623DD481F7LLSDySSSo20NSURLSessionDataTaskCGvg",
+            "_CapacitorStreamHttpVersionString",
+            "_$s19CapacitorStreamHttp0bC6PluginC5tasks33_58F0C9093DE563ECB4DF46623DD481F7LLSDySSSo20NSURLSessionDataTaskCGvs",
+            "_$s19CapacitorStreamHttp0bC6PluginC6jsNameSSvpWvd",
+            "_$s19CapacitorStreamHttp0bC6PluginCMa"
+          ],
+          "objc_class": [
+            "StreamHttpPlugin",
+            "PodsDummy_CapacitorStreamHttp"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/CapacitorStreamHttp.framework/CapacitorStreamHttp"
+      }
+    ],
+    "swift_abi": [
+      {
+        "abi": 7
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios-simulator"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

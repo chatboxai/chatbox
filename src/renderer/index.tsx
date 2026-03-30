@@ -21,6 +21,7 @@ import queryClient from './stores/queryClient'
 import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
 
 const log = getLogger('index')
+const MOBILE_LAUNCH_GUARD_TIMEOUT_MS = 15000
 
 // 按需加载 polyfill
 import './setup/load_polyfill'
@@ -73,6 +74,48 @@ async function initializeApp() {
   import('./setup/mcp_bootstrap')
 }
 
+function hideNativeSplash() {
+  if (platform.type === 'mobile') {
+    SplashScreen.hide().catch((e) => {
+      log.error('failed to hide native splash screen', e)
+      Sentry.captureException(e as Error)
+    })
+  }
+}
+
+function hideHtmlSplash() {
+  const el = document.querySelector('.splash-screen')
+  if (!el) {
+    return
+  }
+  el.addEventListener('animationend', () => {
+    el.parentNode?.removeChild(el)
+  })
+  el.classList.add('splash-screen-fade-out')
+}
+
+function hideLaunchSplash(reason: string) {
+  log.info(`hide launch splash: ${reason}`)
+  hideNativeSplash()
+  hideHtmlSplash()
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) {
+      clearTimeout(timer)
+    }
+  }
+}
+
 // ==========渲染节点==============
 
 function InitPage() {
@@ -118,10 +161,18 @@ const tid = setTimeout(() => {
       </ErrorBoundary>
     </StrictMode>
   )
-  if (platform.type === 'mobile') {
-    SplashScreen.hide()
-  }
+  hideNativeSplash()
 }, 1000)
+
+const mobileLaunchGuardTimer =
+  platform.type === 'mobile'
+    ? setTimeout(() => {
+        const err = new Error(`mobile launch guard timeout (${MOBILE_LAUNCH_GUARD_TIMEOUT_MS}ms)`)
+        log.error(err.message)
+        Sentry.captureException(err)
+        hideLaunchSplash('mobile launch guard timeout')
+      }, MOBILE_LAUNCH_GUARD_TIMEOUT_MS)
+    : null
 
 // 等待初始化完成后再渲染
 initializeApp()
@@ -132,11 +183,23 @@ initializeApp()
   })
   .finally(async () => {
     clearTimeout(tid)
+    if (mobileLaunchGuardTimer) {
+      clearTimeout(mobileLaunchGuardTimer)
+    }
 
-    // 等待settings初始化完成，避免闪屏
-    const [settings] = await Promise.all([initSettingsStore(), initLastUsedModelStore()])
+    try {
+      // 等待settings初始化完成，避免闪屏；超时后直接进入主界面，避免卡启动页
+      const [settings] = await withTimeout(
+        Promise.all([initSettingsStore(), initLastUsedModelStore()]),
+        MOBILE_LAUNCH_GUARD_TIMEOUT_MS,
+        'settings bootstrap'
+      )
+      i18n.changeLanguage(settings.language)
+    } catch (e) {
+      log.error('settings bootstrap failed, continue rendering root', e)
+      Sentry.captureException(e as Error)
+    }
 
-    i18n.changeLanguage(settings.language)
     // 初始化完成，可以开始渲染
     ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
       <StrictMode>
@@ -148,16 +211,7 @@ initializeApp()
       </StrictMode>
     )
 
-    if (platform.type === 'mobile') {
-      SplashScreen.hide()
-    }
-    const el = document.querySelector('.splash-screen')
-    if (el) {
-      el.addEventListener('animationend', () => {
-        el.parentNode?.removeChild(el)
-      })
-      el.classList.add('splash-screen-fade-out')
-    }
+    hideLaunchSplash('root rendered')
 
     if (window?.navigator?.storage) {
       navigator.storage?.persisted().then((persisted) => {

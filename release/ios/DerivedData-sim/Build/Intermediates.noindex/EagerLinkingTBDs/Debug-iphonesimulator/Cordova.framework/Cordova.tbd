@@ -1,0 +1,87 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_SWIFT_CDVCommandStatus_ILLEGAL_ACCESS_EXCEPTION",
+            "_CDVViewWillTransitionToSizeNotification",
+            "_CDVPageDidLoadNotification",
+            "_CordovaVersionString",
+            "_SWIFT_CDVCommandStatus_IO_EXCEPTION",
+            "_CDVLocalNotification",
+            "_SWIFT_CDVCommandStatus_INVALID_ACTION",
+            "_CDVPluginHandleOpenURLNotification",
+            "_CDVPluginResetNotification",
+            "_kCDVAssetsLibraryPrefixes",
+            "_CDVViewDidAppearNotification",
+            "_CDVViewWillLayoutSubviewsNotification",
+            "_SWIFT_CDVCommandStatus_CLASS_NOT_FOUND_EXCEPTION",
+            "_CDVViewWillDisappearNotification",
+            "_CDVViewWillAppearNotification",
+            "_CDVViewDidDisappearNotification",
+            "_CDVViewDidLayoutSubviewsNotification",
+            "_CordovaVersionNumber",
+            "_SWIFT_CDVCommandStatus_INSTANTIATION_EXCEPTION",
+            "_CDVRemoteNotificationError",
+            "_SWIFT_CDVCommandStatus_ERROR",
+            "_SWIFT_CDVCommandStatus_MALFORMED_URL_EXCEPTION",
+            "_SWIFT_CDVCommandStatus_OK",
+            "_CDVPluginHandleOpenURLWithAppSourceAndAnnotationNotification",
+            "_CDVRemoteNotification",
+            "_SWIFT_CDVCommandStatus_JSON_EXCEPTION",
+            "_SWIFT_CDVCommandStatus_NO_RESULT"
+          ],
+          "objc_class": [
+            "CDVPluginManager",
+            "CDVWebViewProcessPoolFactory",
+            "CDVPluginResult",
+            "CDVPlugin",
+            "CDVViewController",
+            "CDVURLProtocol",
+            "AppDelegate",
+            "CDVCommandDelegateImpl",
+            "CDVConfigParser",
+            "CDVInvokedUrlCommand",
+            "PodsDummy_CapacitorCordova"
+          ],
+          "objc_ivar": [
+            "CDVCommandDelegateImpl._delayResponses",
+            "CDVConfigParser.featureName",
+            "CDVInvokedUrlCommand._arguments",
+            "CDVInvokedUrlCommand._callbackId",
+            "CDVInvokedUrlCommand._methodName",
+            "CDVInvokedUrlCommand._className",
+            "CDVCommandDelegateImpl._commandQueue"
+          ]
+        },
+        "text": {
+          "global": [
+            "_messageFromArrayBuffer",
+            "_messageFromMultipart",
+            "_massageMessage"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/Cordova.framework/Cordova"
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios-simulator"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

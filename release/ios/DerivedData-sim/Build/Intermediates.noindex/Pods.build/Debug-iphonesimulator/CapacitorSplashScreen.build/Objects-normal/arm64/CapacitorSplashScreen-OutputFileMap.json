@@ -1,0 +1,48 @@
+{
+  "" : {
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/CapacitorSplashScreen-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/CapacitorSplashScreen-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/CapacitorSplashScreen-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/CapacitorSplashScreen-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/splash-screen/ios/Sources/SplashScreenPlugin/SplashScreen.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/splash-screen/ios/Sources/SplashScreenPlugin/SplashScreenConfig.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/splash-screen/ios/Sources/SplashScreenPlugin/SplashScreenPlugin.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/splash-screen/ios/Sources/SplashScreenPlugin/SplashScreenSettings.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings~partial.swiftmodule"
+  }
+}

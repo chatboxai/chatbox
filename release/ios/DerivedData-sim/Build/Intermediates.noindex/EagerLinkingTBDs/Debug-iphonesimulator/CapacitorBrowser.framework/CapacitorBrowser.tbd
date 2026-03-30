@@ -1,0 +1,112 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_$s16CapacitorBrowser0B0CACycfC",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC10identifierSSvpWvd",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC13pluginMethodsSaySo15CAPPluginMethodCGvpWvd",
+            "_$s16CapacitorBrowser16CAPBrowserPluginCACycfc",
+            "_CapacitorBrowserVersionString",
+            "_$s16CapacitorBrowser0B5EventOSHAAMc",
+            "_$s16CapacitorBrowser0B0C20safariViewController_22didCompleteInitialLoadySo08SFSafaridE0C_SbtF",
+            "_$s16CapacitorBrowser0B0C29safariViewControllerDidFinishyySo08SFSafaridE0CFTq",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC10identifierSSvpfi",
+            "_$s16CapacitorBrowser0B5EventOSYAAMc",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC10identifierSSvpMV",
+            "_$s16CapacitorBrowser0B0C20browserEventDidOccuryAA0bD0OcSgvgTq",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC6jsNameSSvpfi",
+            "_$s16CapacitorBrowser0B0C7prepare3for8withTint17modalPresentationSb10Foundation3URLV_So7UIColorCSgSo07UIModalH5StyleVtF",
+            "_$s16CapacitorBrowser0B0CfD",
+            "_$s16CapacitorBrowser0B0C20browserEventDidOccuryAA0bD0OcSgvpfi",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC6bridge8pluginId0F4NameAC0A017CAPBridgeProtocol_p_S2StcfC",
+            "_$s16CapacitorBrowser0B0C46popoverPresentationControllerDidDismissPopoveryySo09UIPopoverdE0CFTq",
+            "_$s16CapacitorBrowser0B0C20safariViewController33_4E8D0229DB786B4F1BFA44EA416C5903LLSo08SFSafaridE0CSgvg",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC10identifierSSvg",
+            "_$s16CapacitorBrowser0B5EventO8rawValueACSgSi_tcfC",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC5closeyySo13CAPPluginCallCF",
+            "_$s16CapacitorBrowser16CAPBrowserPluginCfD",
+            "_$s16CapacitorBrowser0B0C20safariViewController33_4E8D0229DB786B4F1BFA44EA416C5903LLSo08SFSafaridE0CSgvpfi",
+            "_$s16CapacitorBrowser0B0C20browserEventDidOccuryAA0bD0OcSgvMTq",
+            "_$s16CapacitorBrowser0B5EventOMa",
+            "_CapacitorBrowserVersionNumber",
+            "_$s16CapacitorBrowser0B5EventOSQAAMc",
+            "_$s16CapacitorBrowser0B0C20safariViewController_22didCompleteInitialLoadySo08SFSafaridE0C_SbtFTq",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC4openyySo13CAPPluginCallCFTq",
+            "_$s16CapacitorBrowser0B0CMn",
+            "_$s16CapacitorBrowser0B0C20safariViewController33_4E8D0229DB786B4F1BFA44EA416C5903LLSo08SFSafaridE0CSgvs",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC5closeyySo13CAPPluginCallCFTq",
+            "_$s16CapacitorBrowser0B0C7prepare3for8withTint17modalPresentationSb10Foundation3URLV_So7UIColorCSgSo07UIModalH5StyleVtFTq",
+            "_$s16CapacitorBrowser16CAPBrowserPluginCACycfC",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC6bridge8pluginId0F4NameAC0A017CAPBridgeProtocol_p_S2Stcfc",
+            "_$s16CapacitorBrowser0B0C20browserEventDidOccuryAA0bD0OcSgvM",
+            "_$s16CapacitorBrowser0B5EventO8rawValueSivpMV",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC4openyySo13CAPPluginCallCF",
+            "_$s16CapacitorBrowser16CAPBrowserPluginCN",
+            "_$s16CapacitorBrowser0B0CMa",
+            "_$s16CapacitorBrowser0B0C20safariViewController33_4E8D0229DB786B4F1BFA44EA416C5903LLSo08SFSafaridE0CSgvM",
+            "_$s16CapacitorBrowser0B0CACycfc",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC14implementation33_E0078F9160D749EF13FE2974E592D817LLAA0B0Cvpfi",
+            "_$s16CapacitorBrowser0B0C20browserEventDidOccuryAA0bD0OcSgvs",
+            "_$s16CapacitorBrowser0B0C14viewControllerSo06UIViewD0CSgvpMV",
+            "_$s16CapacitorBrowser0B5EventO8rawValueSivg",
+            "_$s16CapacitorBrowser0B0C7cleanupyyFTq",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC6jsNameSSvpWvd",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC6jsNameSSvg",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC6jsNameSSvpMV",
+            "_$s16CapacitorBrowser16CAPBrowserPluginCMn",
+            "_$s16CapacitorBrowser0B0C20browserEventDidOccuryAA0bD0OcSgvpWvd",
+            "_$s16CapacitorBrowser0B0C20browserEventDidOccuryAA0bD0OcSgvsTq",
+            "_$s16CapacitorBrowser0B0C7cleanupyyF",
+            "_$s16CapacitorBrowser0B5EventOMn",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC17presentationStyle33_E0078F9160D749EF13FE2974E592D817LL3forSo019UIModalPresentationF0VSSSg_tF",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC13pluginMethodsSaySo15CAPPluginMethodCGvpfi",
+            "_$s16CapacitorBrowser0B0C14viewControllerSo06UIViewD0CSgvg",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC13pluginMethodsSaySo15CAPPluginMethodCGvpMV",
+            "_$s16CapacitorBrowser16CAPBrowserPluginCMa",
+            "_$s16CapacitorBrowser0B0C29safariViewControllerDidFinishyySo08SFSafaridE0CF",
+            "_$s16CapacitorBrowser16CAPBrowserPluginC13pluginMethodsSaySo15CAPPluginMethodCGvg",
+            "_$s16CapacitorBrowser0B0CN",
+            "_$s16CapacitorBrowser0B0C46popoverPresentationControllerDidDismissPopoveryySo09UIPopoverdE0CF",
+            "_$s16CapacitorBrowser0B0C14viewControllerSo06UIViewD0CSgvgTq",
+            "_$s16CapacitorBrowser0B0C32presentationControllerDidDismissyySo014UIPresentationD0CFTq",
+            "_$s16CapacitorBrowser0B5EventON",
+            "_$s16CapacitorBrowser0B0C20browserEventDidOccuryAA0bD0OcSgvg",
+            "_$s16CapacitorBrowser0B0C32presentationControllerDidDismissyySo014UIPresentationD0CF",
+            "_$s16CapacitorBrowser0B0C20browserEventDidOccuryAA0bD0OcSgvpMV"
+          ],
+          "objc_class": [
+            "CAPBrowserPlugin",
+            "PodsDummy_CapacitorBrowser",
+            "_TtC16CapacitorBrowser7Browser"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/CapacitorBrowser.framework/CapacitorBrowser"
+      }
+    ],
+    "swift_abi": [
+      {
+        "abi": 7
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios-simulator"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

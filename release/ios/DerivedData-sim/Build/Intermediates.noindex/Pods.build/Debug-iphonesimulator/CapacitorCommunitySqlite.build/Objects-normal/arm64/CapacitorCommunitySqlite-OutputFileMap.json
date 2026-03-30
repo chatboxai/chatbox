@@ -1,0 +1,298 @@
+{
+  "" : {
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorCommunitySqlite-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorCommunitySqlite-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorCommunitySqlite-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorCommunitySqlite-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/BiometricIDAuthentication.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/BiometricIDAuthentication~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/CapacitorSQLite.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLite~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/CapacitorSQLitePlugin.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/CapacitorSQLitePlugin-09c002b0a4e03dfec5c299a8bc04b8ef~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Database.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Database~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Extensions/Array.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Array~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Extensions/Data.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Data~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Extensions/Notification.Name.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/Notification.Name~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Extensions/String.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/String~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/GlobalSQLite.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/GlobalSQLite~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ImportExportJson/ExportToJson.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ExportToJson~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ImportExportJson/ImportData.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportData~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ImportExportJson/ImportFromJson.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ImportFromJson~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ImportExportJson/JsonSQLite.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/JsonSQLite~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Models/KeychainServices.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/KeychainServices~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/ReturnHandler.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/ReturnHandler~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/SqliteConfig.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/SqliteConfig~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsBinding.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsBinding~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsDelete.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDelete~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsDownloadFromHTTP.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDownloadFromHTTP~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsDrop.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsDrop~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsEncryption.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsEncryption~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsFile.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsFile~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsJson.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsJson~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsMigrate.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsMigrate~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsNCDatabase.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsNCDatabase~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsSQLCipher.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLCipher~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsSQLStatement.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSQLStatement~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsSecret.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsSecret~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor-community/sqlite/ios/Plugin/Utils/UtilsUpgrade.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorCommunitySqlite.build/Objects-normal/arm64/UtilsUpgrade~partial.swiftmodule"
+  }
+}

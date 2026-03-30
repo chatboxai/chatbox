@@ -1,0 +1,11 @@
+framework module ZIPFoundation {
+  umbrella header "ZIPFoundation-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module ZIPFoundation.Swift {
+  header "ZIPFoundation-Swift.h"
+  requires objc
+}

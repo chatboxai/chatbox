@@ -1,0 +1,10 @@
+framework module CapacitorSplashScreen {
+  umbrella header "CapacitorSplashScreen-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorSplashScreen.__Swift {
+  exclude header "CapacitorSplashScreen-Swift.h"
+}

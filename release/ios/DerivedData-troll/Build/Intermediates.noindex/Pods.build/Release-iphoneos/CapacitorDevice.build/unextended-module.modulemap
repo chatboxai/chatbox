@@ -1,0 +1,10 @@
+framework module CapacitorDevice {
+  umbrella header "CapacitorDevice-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorDevice.__Swift {
+  exclude header "CapacitorDevice-Swift.h"
+}

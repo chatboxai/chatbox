@@ -1,0 +1,6 @@
+version: "Apple Swift version 6.1 (swiftlang-6.1.0.110.21 clang-1700.0.13.3)"
+options: "ca0ea8c1f51612b3e16da0af331b5f9da71cf6dc6dc9a21906eb6f0e40a7cd09"
+build_start_time: [1771899965, 747311000]
+build_end_time: [1771899968, 342078000]
+inputs:
+  "/Users/shenhualxt/workspace/chatbox/node_modules/capacitor-stream-http/ios/Sources/StreamHttpPlugin/StreamHttpPlugin.swift": [1771866644, 622749566]

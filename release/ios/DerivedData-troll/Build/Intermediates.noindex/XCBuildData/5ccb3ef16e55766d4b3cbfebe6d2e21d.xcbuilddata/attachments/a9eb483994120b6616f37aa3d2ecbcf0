@@ -1,0 +1,5 @@
+
+module CapacitorBrowser.Swift {
+  header "CapacitorBrowser-Swift.h"
+  requires objc
+}

@@ -1,0 +1,218 @@
+{
+  "" : {
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/ZIPFoundation-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/ZIPFoundation-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/ZIPFoundation-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/ZIPFoundation-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+BackingConfiguration.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+Deprecated.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+Helpers.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Helpers.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Helpers.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Helpers.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Helpers.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Helpers.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Helpers.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Helpers.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Helpers~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+MemoryFile.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+MemoryFile.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+MemoryFile.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+MemoryFile.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+MemoryFile.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+MemoryFile.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+MemoryFile.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+MemoryFile.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+MemoryFile~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+Progress.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Progress.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Progress.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Progress.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Progress.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Progress.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Progress.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Progress.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Progress~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+Reading.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Reading.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Reading.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Reading.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Reading.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Reading.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Reading.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Reading.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Reading~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+ReadingDeprecated.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ReadingDeprecated.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ReadingDeprecated.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ReadingDeprecated.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ReadingDeprecated.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ReadingDeprecated.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ReadingDeprecated.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ReadingDeprecated.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ReadingDeprecated~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+Writing.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Writing.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Writing.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Writing.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Writing.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Writing.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Writing.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Writing.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Writing~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+WritingDeprecated.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+WritingDeprecated.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+WritingDeprecated.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+WritingDeprecated.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+WritingDeprecated.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+WritingDeprecated.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+WritingDeprecated.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+WritingDeprecated.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+WritingDeprecated~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+ZIP64.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ZIP64.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ZIP64.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ZIP64.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ZIP64.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ZIP64.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ZIP64.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ZIP64.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+ZIP64~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Data+Compression.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Compression.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Compression.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Compression.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Compression.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Compression.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Compression.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Compression.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Compression~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Data+CompressionDeprecated.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+CompressionDeprecated.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+CompressionDeprecated.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+CompressionDeprecated.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+CompressionDeprecated.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+CompressionDeprecated.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+CompressionDeprecated.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+CompressionDeprecated.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+CompressionDeprecated~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Data+Serialization.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Serialization.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Serialization.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Serialization.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Serialization.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Serialization.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Serialization.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Serialization.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Data+Serialization~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Date+ZIP.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Date+ZIP.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Date+ZIP.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Date+ZIP.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Date+ZIP.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Date+ZIP.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Date+ZIP.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Date+ZIP.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Date+ZIP~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Entry+Serialization.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+Serialization.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+Serialization.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+Serialization.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+Serialization.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+Serialization.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+Serialization.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+Serialization.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+Serialization~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Entry+ZIP64.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+ZIP64.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+ZIP64.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+ZIP64.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+ZIP64.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+ZIP64.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+ZIP64.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+ZIP64.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry+ZIP64~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Entry.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Entry~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/FileManager+ZIP.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIP.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIP.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIP.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIP.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIP.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIP.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIP.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIP~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/FileManager+ZIPDeprecated.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIPDeprecated.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIPDeprecated.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIPDeprecated.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIPDeprecated.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIPDeprecated.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIPDeprecated.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIPDeprecated.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/FileManager+ZIPDeprecated~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/URL+ZIP.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/URL+ZIP.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/URL+ZIP.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/URL+ZIP.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/URL+ZIP.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/URL+ZIP.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/URL+ZIP.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/URL+ZIP.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/URL+ZIP~partial.swiftmodule"
+  }
+}

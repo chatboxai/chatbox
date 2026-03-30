@@ -1,0 +1,5 @@
+
+module CapacitorStreamHttp.Swift {
+  header "CapacitorStreamHttp-Swift.h"
+  requires objc
+}

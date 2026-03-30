@@ -1,0 +1,7 @@
+version: "Apple Swift version 6.1 (swiftlang-6.1.0.110.21 clang-1700.0.13.3)"
+options: "52d7d39ba1177ba46b50b756e74a7a360d1744f2343676158f0702fcf6bdacd5"
+build_start_time: [1771899966, 15223000]
+build_end_time: [1771899968, 388881000]
+inputs:
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/browser/ios/Sources/BrowserPlugin/Browser.swift": [1771866534, 262740029]
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/browser/ios/Sources/BrowserPlugin/BrowserPlugin.swift": [1771866534, 262880111]

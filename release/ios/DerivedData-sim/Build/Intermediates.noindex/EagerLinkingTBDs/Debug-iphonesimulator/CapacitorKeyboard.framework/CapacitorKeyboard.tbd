@@ -1,0 +1,42 @@
+{
+  "main_library": {
+    "exported_symbols": [
+      {
+        "data": {
+          "global": [
+            "_stageManagerOffset",
+            "_CapacitorKeyboardVersionNumber",
+            "_UITraitsClassString",
+            "_hideTimer",
+            "_UIClassString",
+            "_WKClassString",
+            "_CapacitorKeyboardVersionString"
+          ],
+          "objc_class": [
+            "PodsDummy_CapacitorKeyboard",
+            "KeyboardPlugin"
+          ]
+        }
+      }
+    ],
+    "flags": [
+      {
+        "attributes": [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names": [
+      {
+        "name": "@rpath/CapacitorKeyboard.framework/CapacitorKeyboard"
+      }
+    ],
+    "target_info": [
+      {
+        "min_deployment": "14",
+        "target": "arm64-ios-simulator"
+      }
+    ]
+  },
+  "tapi_tbd_version": 5
+}

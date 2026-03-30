@@ -1,0 +1,23 @@
+{
+  "version": 0,
+  "use-external-names": false,
+  "case-sensitive": false,
+  "roots": [{
+    "type": "directory",
+    "name": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Products/Release-iphoneos/CapacitorApp/CapacitorApp.framework/Modules",
+    "contents": [{
+      "type": "file",
+      "name": "module.modulemap",
+      "external-contents": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorApp.build/unextended-module.modulemap",
+    }]
+    },
+    {
+    "type": "directory",
+    "name": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Products/Release-iphoneos/CapacitorApp/CapacitorApp.framework/Headers",
+    "contents": [{
+      "type": "file",
+      "name": "CapacitorApp-Swift.h",
+      "external-contents": "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorApp.build/unextended-interface-header.h",
+    }]
+  }]
+}

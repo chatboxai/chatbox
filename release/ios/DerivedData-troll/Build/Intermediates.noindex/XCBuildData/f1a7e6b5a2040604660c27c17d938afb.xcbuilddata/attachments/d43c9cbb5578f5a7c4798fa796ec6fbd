@@ -1,0 +1,20 @@
+{
+  "" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/CapacitorDevice-master.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/CapacitorDevice-master.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/CapacitorDevice-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/CapacitorDevice-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/CapacitorDevice-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/CapacitorDevice-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/device/ios/Sources/DevicePlugin/Device.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/Device.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/Device.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/Device.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/device/ios/Sources/DevicePlugin/DevicePlugin.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorDevice.build/Objects-normal/arm64/DevicePlugin.o"
+  }
+}

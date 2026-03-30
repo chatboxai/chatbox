@@ -1,0 +1,5 @@
+
+module CapacitorPluginSafeArea.Swift {
+  header "CapacitorPluginSafeArea-Swift.h"
+  requires objc
+}

@@ -1,0 +1,10 @@
+framework module CapacitorBrowser {
+  umbrella header "CapacitorBrowser-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorBrowser.__Swift {
+  exclude header "CapacitorBrowser-Swift.h"
+}

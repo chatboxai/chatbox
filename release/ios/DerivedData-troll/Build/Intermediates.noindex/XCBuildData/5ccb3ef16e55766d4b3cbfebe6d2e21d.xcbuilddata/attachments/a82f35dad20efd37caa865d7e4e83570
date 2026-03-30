@@ -1,0 +1,235 @@
+{
+  "" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Capacitor-master.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Capacitor-master.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Capacitor-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Capacitor-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Capacitor-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Capacitor-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/AppUUID.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/AppUUID.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/AppUUID.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/AppUUID.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Array+Capacitor.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Array+Capacitor.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Array+Capacitor.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Array+Capacitor.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPApplicationDelegateProxy.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPApplicationDelegateProxy.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPApplicationDelegateProxy.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPApplicationDelegateProxy.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPBridge.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridge.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridge.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridge.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPBridgeDelegate.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgeDelegate.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgeDelegate.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgeDelegate.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPBridgeProtocol.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgeProtocol.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgeProtocol.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgeProtocol.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPBridgeViewController.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgeViewController.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgeViewController.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgeViewController.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPBridgedPlugin+getMethod.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgedPlugin+getMethod.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgedPlugin+getMethod.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPBridgedPlugin+getMethod.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPFile.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPFile.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPFile.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPFile.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPInstanceConfiguration.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPInstanceConfiguration-ac42c0f4643ad47de6e88da228d6eec9.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPInstanceConfiguration-ac42c0f4643ad47de6e88da228d6eec9.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPInstanceConfiguration-ac42c0f4643ad47de6e88da228d6eec9.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPInstanceDescriptor.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPInstanceDescriptor-f76ddfb0cb920a9e3ea8a1b971aae8ff.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPInstanceDescriptor-f76ddfb0cb920a9e3ea8a1b971aae8ff.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPInstanceDescriptor-f76ddfb0cb920a9e3ea8a1b971aae8ff.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPInstancePlugin.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPInstancePlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPInstancePlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPInstancePlugin.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPLog.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPLog.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPLog.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPLog.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPNotifications.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPNotifications.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPNotifications.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPNotifications.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPPlugin+LoadInstance.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPPlugin+LoadInstance.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPPlugin+LoadInstance.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPPlugin+LoadInstance.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPPluginCall.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPPluginCall-bd655c49678fe8cc8bcb10763e632817.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPPluginCall-bd655c49678fe8cc8bcb10763e632817.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPPluginCall-bd655c49678fe8cc8bcb10763e632817.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CAPPluginMethod.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPPluginMethod-0c776f49724789eac73cf00163058dda.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPPluginMethod-0c776f49724789eac73cf00163058dda.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CAPPluginMethod-0c776f49724789eac73cf00163058dda.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CapacitorBridge.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorBridge.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorBridge.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorBridge.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/CapacitorExtension.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorExtension.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorExtension.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorExtension.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Codable/JSValueDecoder.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSValueDecoder.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSValueDecoder.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSValueDecoder.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Codable/JSValueEncoder.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSValueEncoder.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSValueEncoder.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSValueEncoder.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Data+Capacitor.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Data+Capacitor.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Data+Capacitor.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Data+Capacitor.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/DocLinks.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/DocLinks.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/DocLinks.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/DocLinks.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/JS.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JS.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JS.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JS.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/JSExport.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSExport.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSExport.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSExport.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/JSTypes.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSTypes.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSTypes.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/JSTypes.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/KeyPath.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/KeyPath.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/KeyPath.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/KeyPath.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/KeyValueStore.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/KeyValueStore.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/KeyValueStore.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/KeyValueStore.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/NotificationHandlerProtocol.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/NotificationHandlerProtocol.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/NotificationHandlerProtocol.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/NotificationHandlerProtocol.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/NotificationRouter.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/NotificationRouter.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/NotificationRouter.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/NotificationRouter.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/PluginCallResult.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/PluginCallResult.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/PluginCallResult.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/PluginCallResult.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/PluginConfig.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/PluginConfig.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/PluginConfig.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/PluginConfig.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Plugins/CapacitorCookieManager.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorCookieManager.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorCookieManager.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorCookieManager.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Plugins/CapacitorCookies.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorCookies.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorCookies.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorCookies.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Plugins/CapacitorHttp.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorHttp.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorHttp.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorHttp.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Plugins/CapacitorUrlRequest.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorUrlRequest.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorUrlRequest.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/CapacitorUrlRequest.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Plugins/Console.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Console.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Console.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Console.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Plugins/HttpRequestHandler.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/HttpRequestHandler.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/HttpRequestHandler.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/HttpRequestHandler.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Plugins/WebView.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WebView.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WebView.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WebView.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/Router.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Router.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Router.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/Router.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/TmpViewController.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/TmpViewController.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/TmpViewController.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/TmpViewController.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/UIColor.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/UIColor.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/UIColor.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/UIColor.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/WKWebView+Capacitor.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WKWebView+Capacitor-d2132c594b1dab8a920fcd7c8030ca85.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WKWebView+Capacitor-d2132c594b1dab8a920fcd7c8030ca85.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WKWebView+Capacitor-d2132c594b1dab8a920fcd7c8030ca85.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/WebViewAssetHandler.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WebViewAssetHandler.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WebViewAssetHandler.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WebViewAssetHandler.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/ios/Capacitor/Capacitor/WebViewDelegationHandler.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WebViewDelegationHandler.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WebViewDelegationHandler.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/Capacitor.build/Objects-normal/arm64/WebViewDelegationHandler.o"
+  }
+}

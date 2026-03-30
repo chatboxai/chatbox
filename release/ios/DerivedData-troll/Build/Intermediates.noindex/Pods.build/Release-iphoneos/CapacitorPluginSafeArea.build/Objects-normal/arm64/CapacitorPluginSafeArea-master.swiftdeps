@@ -1,0 +1,7 @@
+version: "Apple Swift version 6.1 (swiftlang-6.1.0.110.21 clang-1700.0.13.3)"
+options: "0bde6af32484707f199fff390878de7a02759bd3bab19c00f8d27e799a1a2e8c"
+build_start_time: [1771899965, 870805000]
+build_end_time: [1771899968, 373468000]
+inputs:
+  "/Users/shenhualxt/workspace/chatbox/node_modules/capacitor-plugin-safe-area/ios/Sources/SafeAreaPlugin/SafeArea.swift": [1771866538, 51109924]
+  "/Users/shenhualxt/workspace/chatbox/node_modules/capacitor-plugin-safe-area/ios/Sources/SafeAreaPlugin/SafeAreaPlugin.swift": [1771866538, 51225715]

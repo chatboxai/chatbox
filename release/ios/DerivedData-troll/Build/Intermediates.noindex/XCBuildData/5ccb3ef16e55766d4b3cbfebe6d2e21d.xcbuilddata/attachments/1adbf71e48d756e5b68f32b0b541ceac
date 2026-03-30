@@ -1,0 +1,30 @@
+{
+  "" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/CapacitorSplashScreen-master.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/CapacitorSplashScreen-master.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/CapacitorSplashScreen-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/CapacitorSplashScreen-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/CapacitorSplashScreen-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/CapacitorSplashScreen-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/splash-screen/ios/Sources/SplashScreenPlugin/SplashScreen.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreen.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/splash-screen/ios/Sources/SplashScreenPlugin/SplashScreenConfig.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenConfig.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/splash-screen/ios/Sources/SplashScreenPlugin/SplashScreenPlugin.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenPlugin.o"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/splash-screen/ios/Sources/SplashScreenPlugin/SplashScreenSettings.swift" : {
+    "index-unit-output-path" : "/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-troll/Build/Intermediates.noindex/Pods.build/Release-iphoneos/CapacitorSplashScreen.build/Objects-normal/arm64/SplashScreenSettings.o"
+  }
+}

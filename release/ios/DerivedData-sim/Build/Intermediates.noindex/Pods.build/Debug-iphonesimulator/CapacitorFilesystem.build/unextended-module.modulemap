@@ -1,0 +1,10 @@
+framework module CapacitorFilesystem {
+  umbrella header "CapacitorFilesystem-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorFilesystem.__Swift {
+  exclude header "CapacitorFilesystem-Swift.h"
+}

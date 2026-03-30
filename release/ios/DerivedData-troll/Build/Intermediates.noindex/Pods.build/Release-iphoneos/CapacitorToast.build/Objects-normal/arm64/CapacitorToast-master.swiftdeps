@@ -1,0 +1,8 @@
+version: "Apple Swift version 6.1 (swiftlang-6.1.0.110.21 clang-1700.0.13.3)"
+options: "3b4bfae85c4e790e0ba4a52e20695584ec6b2d8cefcaad15ab73397c415d8c89"
+build_start_time: [1771899965, 743847000]
+build_end_time: [1771899968, 340306000]
+inputs:
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/toast/ios/Sources/ToastPlugin/Toast.swift": [1771866535, 78978103]
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/toast/ios/Sources/ToastPlugin/ToastLabel.swift": [1771866535, 79170309]
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/toast/ios/Sources/ToastPlugin/ToastPlugin.swift": [1771866535, 79344973]

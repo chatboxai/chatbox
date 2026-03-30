@@ -1,4 +1,4 @@
-import { compareVersions } from 'compare-versions'
+import { compareVersions, validate } from 'compare-versions'
 import dayjs from 'dayjs'
 import { useAtomValue } from 'jotai'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -33,12 +33,19 @@ export default function useVersion() {
   const [needCheckUpdate, setNeedCheckUpdate] = useState(false)
   const remoteConfig = useAtomValue(remoteConfigAtom)
   const isExceeded = useMemo(
-    () =>
-      CHATBOX_BUILD_PLATFORM === 'ios' &&
-      Date.now() - getInitialTime() < 24 * 3600 * 1000 &&
-      version &&
-      remoteConfig.current_version &&
-      compareVersions(version, remoteConfig.current_version) === 1,
+    () => {
+      const currentVersion = version?.trim()
+      const latestVersion = remoteConfig.current_version?.trim()
+      const canCompare =
+        CHATBOX_BUILD_PLATFORM === 'ios' &&
+        Date.now() - getInitialTime() < 24 * 3600 * 1000 &&
+        !!currentVersion &&
+        !!latestVersion &&
+        validate(currentVersion) &&
+        validate(latestVersion)
+
+      return canCompare ? compareVersions(currentVersion, latestVersion) === 1 : false
+    },
     [version, remoteConfig]
   )
   const updateCheckTimer = useRef<NodeJS.Timeout>()
@@ -56,7 +63,7 @@ export default function useVersion() {
         console.log(e)
       }
     }
-    handler()
+    void handler()
     updateCheckTimer.current = setInterval(handler, 2 * 60 * 60 * 1000)
     return () => {
       if (updateCheckTimer.current) {

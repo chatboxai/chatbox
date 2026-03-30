@@ -1,0 +1,18 @@
+"/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+Deprecated.swift":
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.swiftdeps"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.dia"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.o"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.swiftconstvalues"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+Deprecated.d"
+"/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive+BackingConfiguration.swift":
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.swiftconstvalues"
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.o"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.d"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.swiftdeps"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive+BackingConfiguration.dia"
+"/Users/shenhualxt/workspace/chatbox/ios/App/Pods/ZIPFoundation/Sources/ZIPFoundation/Archive.swift":
+  object: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.o"
+  swift-dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.swiftdeps"
+  dependencies: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.d"
+  const-values: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.swiftconstvalues"
+  diagnostics: "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/ZIPFoundation.build/Objects-normal/arm64/Archive.dia"

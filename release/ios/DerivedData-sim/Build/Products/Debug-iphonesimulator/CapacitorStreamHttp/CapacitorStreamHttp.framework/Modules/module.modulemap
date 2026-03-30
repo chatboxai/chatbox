@@ -1,0 +1,11 @@
+framework module CapacitorStreamHttp {
+  umbrella header "CapacitorStreamHttp-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorStreamHttp.Swift {
+  header "CapacitorStreamHttp-Swift.h"
+  requires objc
+}

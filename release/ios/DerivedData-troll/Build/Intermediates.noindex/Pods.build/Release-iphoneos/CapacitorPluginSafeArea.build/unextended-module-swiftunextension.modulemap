@@ -1,0 +1,4 @@
+
+module CapacitorPluginSafeArea.__Swift {
+  exclude header "CapacitorPluginSafeArea-Swift.h"
+}

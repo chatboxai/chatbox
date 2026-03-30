@@ -1,0 +1,20 @@
+---
+path:            '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphoneos/prebuilt-modules/18.4/_signal.swiftmodule/arm64-apple-ios.swiftmodule'
+dependencies:
+  - mtime:           1742264270000000000
+    path:            '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphoneos/prebuilt-modules/18.4/_signal.swiftmodule/arm64-apple-ios.swiftmodule'
+    size:            18584
+  - mtime:           1741411541000000000
+    path:            'usr/lib/swift/Swift.swiftmodule/arm64-apple-ios.swiftinterface'
+    size:            1929089
+    sdk_relative:    true
+  - mtime:           1741412272000000000
+    path:            'usr/lib/swift/_errno.swiftmodule/arm64-apple-ios.swiftinterface'
+    size:            3841
+    sdk_relative:    true
+  - mtime:           1741412292000000000
+    path:            'usr/lib/swift/_signal.swiftmodule/arm64-apple-ios.swiftinterface'
+    size:            1052
+    sdk_relative:    true
+version:         1
+...

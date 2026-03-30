@@ -1,0 +1,6 @@
+version: "Apple Swift version 6.1 (swiftlang-6.1.0.110.21 clang-1700.0.13.3)"
+options: "697da5f3b2634045ca801fa2f45e808f86f000c5ffd5630c61e5e551d88463dc"
+build_start_time: [1771899965, 773107000]
+build_end_time: [1771899968, 348041000]
+inputs:
+  "/Users/shenhualxt/workspace/chatbox/node_modules/@capacitor/share/ios/Sources/SharePlugin/SharePlugin.swift": [1771866534, 784599153]

@@ -1,0 +1,28 @@
+{
+  "" : {
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/CapacitorPluginSafeArea-master.dia",
+    "emit-module-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/CapacitorPluginSafeArea-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/CapacitorPluginSafeArea-master-emit-module.dia",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/CapacitorPluginSafeArea-master.swiftdeps"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/capacitor-plugin-safe-area/ios/Sources/SafeAreaPlugin/SafeArea.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeArea.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeArea.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeArea.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeArea.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeArea.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeArea.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeArea.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeArea~partial.swiftmodule"
+  },
+  "/Users/shenhualxt/workspace/chatbox/node_modules/capacitor-plugin-safe-area/ios/Sources/SafeAreaPlugin/SafeAreaPlugin.swift" : {
+    "const-values" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeAreaPlugin.swiftconstvalues",
+    "dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeAreaPlugin.d",
+    "diagnostics" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeAreaPlugin.dia",
+    "index-unit-output-path" : "/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeAreaPlugin.o",
+    "llvm-bc" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeAreaPlugin.bc",
+    "object" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeAreaPlugin.o",
+    "swift-dependencies" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeAreaPlugin.swiftdeps",
+    "swiftmodule" : "/Users/shenhualxt/workspace/chatbox/release/ios/DerivedData-sim/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/CapacitorPluginSafeArea.build/Objects-normal/arm64/SafeAreaPlugin~partial.swiftmodule"
+  }
+}

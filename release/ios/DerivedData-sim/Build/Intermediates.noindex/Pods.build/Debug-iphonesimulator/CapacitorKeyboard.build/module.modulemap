@@ -1,0 +1,6 @@
+framework module CapacitorKeyboard {
+  umbrella header "CapacitorKeyboard-umbrella.h"
+
+  export *
+  module * { export * }
+}

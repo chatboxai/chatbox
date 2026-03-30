@@ -1,0 +1,10 @@
+framework module CapacitorToast {
+  umbrella header "CapacitorToast-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module CapacitorToast.__Swift {
+  exclude header "CapacitorToast-Swift.h"
+}

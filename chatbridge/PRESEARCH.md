@@ -28,6 +28,8 @@ The headline decisions are:
 - Hybrid app runtime
 - Host-owned conversation and app lifecycle state
 - Explicit completion signaling between app and chatbot
+- Backend-authoritative state with client-side cache and replay semantics
+- Launch-scoped bridge authentication for every app instance
 - Story Builder as the authenticated flagship app, using Google Drive first
 
 The recommended flagship app set is:
@@ -60,9 +62,12 @@ The current repo is a strong foundation, but not yet a finished partner platform
 - App manifests and a reviewed partner registry
 - App instances and lifecycle records
 - A typed host-app bridge contract
+- Per-instance bridge authentication and replay protection
 - Completion signaling as a first-class platform event
 - Tenant policy and teacher override controls
 - A host-managed partner auth broker
+- Reconciliation rules between local cache and backend truth
+- Host-side normalization of app outputs into model memory
 - Durable app-aware memory that survives future turns cleanly
 
 ### What must be hardened
@@ -79,7 +84,7 @@ The desktop client remains the user-facing shell. It owns the chat UI, streaming
 
 ### 2. Platform Services
 
-Backend services own user authentication, the reviewed app registry, tenant policy, teacher and classroom overrides, partner OAuth token brokerage, persistent conversation history, app instance records, audit logging, and operational telemetry.
+Backend services own user authentication, the reviewed app registry, tenant policy, teacher and classroom overrides, partner OAuth token brokerage, host-mediated resource access for authenticated partner apps, persistent conversation history, app instance records, audit logging, and operational telemetry.
 
 ### 3. Model Orchestrator
 
@@ -198,6 +203,35 @@ Core events should include:
 - `app.requestAuth`
 - `app.telemetry`
 
+### Bridge Session Security
+
+The bridge cannot rely on plain `window.postMessage` plus origin checks alone. Every app launch should mint a launch-scoped `bridgeSession` that includes:
+
+- `appInstanceId`
+- expected app origin
+- protocol version
+- capability list
+- expiration timestamp
+- launch-scoped opaque bridge token
+- a dedicated `MessagePort` for that specific iframe or native app session
+
+The host should bootstrap the app with a signed initialization envelope, transfer a dedicated `MessagePort`, and require a nonce-based acknowledgment before the session becomes active. After that point, the host should only accept messages that arrive on the bound port, carry the expected `appInstanceId`, advance a monotonic sequence number, and include an idempotency key for state-changing events.
+
+This design reduces spoofing risk from unrelated frames and makes replay or duplicate completion events rejectable at the host boundary.
+
+### Tool Execution Contract
+
+Tool invocation needs stronger rules than "the model calls a tool and the app handles it." For every app tool:
+
+- execution authority must be explicit,
+- arguments must be validated again at runtime by the host,
+- side-effecting calls must include idempotency keys,
+- retries must be opt-in and classified as safe or unsafe,
+- schema compatibility must be versioned,
+- and host logs must record the normalized invocation rather than untrusted raw payloads.
+
+The default rule should be that the host is the authoritative execution coordinator even when the app owns UI state. If a schema mismatch or unsupported version is detected, the host should fail closed rather than attempting a best-effort call.
+
 ## State, Memory, and Routing
 
 The host should own the canonical state model.
@@ -213,6 +247,23 @@ Conversation state should include:
 Each app launch should create an `appInstance` with status, version, ownership, resumability, state snapshot, summary-for-model, and error fields.
 
 The platform should also preserve an app event stream for initialization, render, tool use, state updates, completion, failure, cancellation, and resume. This is what lets the chatbot answer later questions about what happened in the app without depending on raw UI state.
+
+### Authority and Reconciliation
+
+The backend should be authoritative for:
+
+- conversations,
+- durable messages,
+- app instances,
+- app events,
+- auth grants,
+- and tenant policy.
+
+The Electron client may cache and queue local work for responsiveness, but it should not become an alternate source of truth. Each durable record should carry a revision or event offset, each state-changing action should carry an idempotency key, and reconnect logic should replay only unacknowledged operations. Local optimistic state is acceptable for transient UI, but app lifecycle transitions and completion records should be considered committed only after backend acknowledgment.
+
+### Memory Normalization
+
+Apps should never write directly into model memory. Instead, they should submit structured outputs or suggested summaries that the host validates, redacts if needed, and converts into a normalized `summaryForModel`. This ensures that later chatbot turns depend on host-approved memory rather than raw partner-authored prose.
 
 Routing rules should be conservative:
 
@@ -230,6 +281,8 @@ The platform needs to support three categories of apps:
 
 Story Builder should be the first authenticated app and should use Google Drive first. The host should initiate auth, store and refresh credentials, and hand apps scoped access or credential handles rather than long-lived raw tokens.
 
+For the data plane, Story Builder should not call Google Drive with a raw user token from inside the iframe. Instead, the app should call a host-mediated resource layer or partner backend using a scoped credential handle. The host or backend service then performs the Drive action, logs it appropriately, and returns the approved result to the app.
+
 ## Security and Ethics
 
 Security is part of the user experience, not separate from it.
@@ -245,6 +298,8 @@ The platform should enforce:
 - and audit trails for app launches, completions, auth grants, and important safety-relevant outputs.
 
 The key ethical stance is that apps should receive only the minimum context required to help the user. Teacher control and tenant governance are not just enterprise features here; they are part of what makes the platform appropriate for students.
+
+Auditability should not become surveillance by accident. The default logging mode should capture metadata, policy decisions, and normalized event envelopes, not raw student content. If exceptional forensic capture is ever needed, it should be separately gated, redacted by default, and governed by explicit retention rules.
 
 ## Required App Designs
 
@@ -267,7 +322,7 @@ Even though this presearch targets the final system rather than a toy MVP, the i
 Recommended sequence:
 
 1. Reliable chat and persistent history
-2. App manifest and bridge contract
+2. App manifest, bridge security, and tool execution contract
 3. One fully integrated flagship app
 4. Completion signaling and app-aware context retention
 5. Multiple apps and routing rules
@@ -304,11 +359,11 @@ That ordering keeps the hardest architectural risks early: lifecycle ownership, 
 
 9. **State Management**: The host owns conversation and app lifecycle state; apps own only their internal UI state. The rationale is that the chatbot cannot remain reliable if truth is scattered across untrusted app surfaces.
 
-10. **Authentication Architecture**: Keep platform auth separate from app auth and make the host the credential owner. The rationale is that OAuth flows become much safer and easier to govern when apps never hold long-lived credentials directly.
+10. **Authentication Architecture**: Keep platform auth separate from app auth and make the host the credential owner, with partner APIs accessed through scoped handles or host-mediated resource calls. The rationale is that OAuth flows become much safer and easier to govern when apps never hold long-lived credentials directly.
 
-11. **Database & Persistence**: Store conversations, app registrations, app instances, auth grants, policy, and audit events as separate records. The rationale is that governance and recovery become much harder when chat and app concerns are merged into one blob.
+11. **Database & Persistence**: Store conversations, app registrations, app instances, auth grants, policy, and audit events as separate records, with revisions and idempotency keys for reconciliation. The rationale is that governance and recovery become much harder when chat and app concerns are merged into one blob and client caches can drift.
 
-12. **Security & Sandboxing Deep Dive**: Default to deny, minimize iframe permissions, and validate every bridge event. The rationale is that small trust boundary mistakes compound quickly when student-facing partner apps are involved.
+12. **Security & Sandboxing Deep Dive**: Default to deny, minimize iframe permissions, and validate every bridge event against a launch-scoped session, expected origin, and monotonic sequence. The rationale is that small trust boundary mistakes compound quickly when student-facing partner apps are involved.
 
 13. **Error Handling & Resilience**: Treat load failures, auth failures, bad tool calls, and timeouts as recoverable host states. The rationale is that the conversation should remain usable even when an app is degraded.
 
@@ -318,6 +373,6 @@ That ordering keeps the hardest architectural risks early: lifecycle ownership, 
 
 16. **Deployment & Operations**: Version apps independently, monitor health and failures, and support safe rollback. The rationale is that app updates cannot be allowed to silently break active classroom workflows.
 
-17. **Tenant Policy & Teacher Controls**: Use district guardrails with teacher and classroom overrides. The rationale is that TutorMeAI's core product strength is configurability, and ChatBridge should amplify rather than flatten that advantage.
+17. **Tenant Policy & Teacher Controls**: Use district guardrails with teacher and classroom overrides, but make district denies absolute and let lower scopes only narrow or select within approved sets. The rationale is that TutorMeAI's core product strength is configurability, and ChatBridge should amplify rather than flatten that advantage without weakening governance.
 
-18. **Auditability & Safety Operations**: Log app launches, completions, auth grants, tool invocations, and safety-relevant outputs. The rationale is that reviewed partner apps still need operational accountability once they are in front of students.
+18. **Auditability & Safety Operations**: Log app launches, completions, auth grants, tool invocations, and safety-relevant outputs with redaction and retention rules that minimize raw student content by default. The rationale is that reviewed partner apps still need operational accountability once they are in front of students, but that accountability must not quietly expand into unnecessary data capture.

@@ -23,6 +23,7 @@ flowchart TD
         HOST --> ROUTER["Intent Router + App Orchestrator"]
         HOST --> EMBED["Embedded App Containers"]
         HOST --> CACHE["Local Cache / Offline Assist"]
+        HOST --> SYNC["Sync + Reconciliation Manager"]
         HOST --> POLICYCACHE["Cached Policy + App Config"]
         EMBED --> NATIVE["Native Internal App Surface"]
         EMBED --> IFRAME["Sandboxed Partner Iframe Surface"]
@@ -31,6 +32,7 @@ flowchart TD
     subgraph PLATFORM["Platform Services"]
         ROUTER --> REG["Reviewed App Registry"]
         ROUTER --> AUTH["Auth Broker / Token Vault"]
+        ROUTER --> PROXY["Partner Resource Proxy"]
         ROUTER --> TENANT["Tenant Policy Service"]
         ROUTER --> ORCH["LLM Orchestration Service"]
         ROUTER --> CONV["Conversation Store"]
@@ -44,9 +46,9 @@ flowchart TD
         BRIDGE --> APPA["Chess App"]
         BRIDGE --> APPB["Debate Arena"]
         BRIDGE --> APPC["Story Builder"]
-        APPC --> GDRIVE["Google Drive API"]
     end
 
+    PROXY --> GDRIVE["Google Drive API"]
     ORCH --> MODEL["Primary Tool-Calling LLM Path"]
 ```
 
@@ -56,6 +58,7 @@ flowchart TD
 - The host runtime becomes the policy and lifecycle brain of the app platform.
 - Platform services own the parts that must be centralized: registry, policy, auth, persistence, auditability, and health.
 - Partner apps remain isolated from both the raw desktop environment and the full conversation by default.
+- Local cache exists for responsiveness, but the backend remains authoritative for durable state.
 
 ## 3. Trust Boundaries
 
@@ -99,6 +102,21 @@ flowchart TD
 - Partner apps are reviewed, but still treated as less trusted than the host.
 - Apps get scoped context and capabilities, not blanket access to the whole conversation or desktop runtime.
 
+### Session binding rules
+
+Bridge security should be tied to the app session, not just the app origin. Every app launch should create a `bridgeSession` with:
+
+- `appInstanceId`
+- expected origin
+- protocol version
+- launch-scoped opaque bridge token
+- expiry timestamp
+- capability list
+- dedicated `MessagePort`
+- monotonic message sequence
+
+The host should send a signed bootstrap envelope plus a transferred `MessagePort`, require a nonce-based acknowledgment, and only accept subsequent messages on that bound port. Every state-changing event should also carry an idempotency key so replayed or duplicated events can be rejected safely.
+
 ## 4. Core Runtime Components
 
 ### Electron Client
@@ -117,6 +135,7 @@ flowchart TD
 - Tracks active app instances and summaries
 - Validates all bridge traffic
 - Converts app outcomes into durable chat memory
+- Normalizes partner outputs before they become model-visible summaries
 
 ### Platform Services
 
@@ -132,6 +151,14 @@ flowchart TD
 - Native React-hosted apps for internal surfaces
 - Sandboxed iframe apps for reviewed partners
 - Shared lifecycle contract no matter which rendering mode is used
+
+### Sync and Reconciliation Manager
+
+- Treats backend records as authoritative for conversations, app instances, and auth grants
+- Tracks revision numbers or event offsets for durable objects
+- Queues optimistic local actions with idempotency keys
+- Replays only unacknowledged operations after reconnect
+- Prevents stale local cache from overwriting committed server state
 
 ## 5. App Registration and Discovery
 
@@ -156,6 +183,7 @@ sequenceDiagram
 - Partner apps do not self-register live in production without review.
 - Tool schemas are validated and normalized by the host before any model sees them.
 - Availability is decided per context, not globally.
+- App and host protocol versions must be checked before activation; mismatched versions should fail closed.
 
 ## 6. App Invocation Lifecycle
 
@@ -193,6 +221,16 @@ sequenceDiagram
 
 The host, not the app, is responsible for translating app activity into conversational continuity.
 
+### Tool execution semantics
+
+The host should be the execution coordinator for app tools, even when the app owns the UI.
+
+- All tool arguments are validated at invocation time against the reviewed schema version.
+- Side-effecting invocations must carry idempotency keys.
+- Retry behavior must be declared per tool as safe or unsafe.
+- The host records normalized invocation payloads and results, not arbitrary raw partner blobs.
+- Schema-version mismatches should fail closed with an explicit host error state rather than a best-effort execution attempt.
+
 ## 7. Authentication Flow for Story Builder
 
 ```mermaid
@@ -201,6 +239,7 @@ sequenceDiagram
     participant Client as Electron Client
     participant Host as Host Runtime
     participant Auth as Auth Broker / Token Vault
+    participant Proxy as Host Resource Proxy
     participant Google as Google OAuth / Drive
     participant Story as Story Builder App
 
@@ -216,7 +255,12 @@ sequenceDiagram
     Auth->>Auth: Store encrypted credentials
     Auth-->>Host: Return scoped credential handle
     Host-->>Story: auth granted + scoped access
-    Story->>Google: Perform Drive actions through approved path
+    Story->>Host: Request Drive action with credential handle
+    Host->>Proxy: Authorize approved Drive operation
+    Proxy->>Google: Perform Drive action
+    Google-->>Proxy: Result
+    Proxy-->>Host: Normalized response
+    Host-->>Story: Approved result
 ```
 
 ### Auth design principles
@@ -224,6 +268,7 @@ sequenceDiagram
 - The host owns credentials.
 - The app never receives raw long-lived refresh tokens.
 - Auth is part of the app lifecycle, not a detached settings flow.
+- Authenticated partner apps should reach protected resources through host-mediated resource calls or an equivalent approved backend proxy.
 
 ## 8. State Ownership Model
 
@@ -267,6 +312,17 @@ flowchart LR
 
 Apps can propose state updates, but the host decides what becomes durable platform truth.
 
+### Consistency rules
+
+- Backend records are authoritative once acknowledged.
+- Local cache may render pending state, but not commit lifecycle transitions by itself.
+- Every durable update should include a revision or event offset.
+- Reconnect logic should replay only operations without a backend acknowledgment.
+
+### Memory normalization
+
+Apps should not write directly into `summaryForModel`. Instead, they should emit structured completion payloads and optional suggested summaries, and the host should validate, redact, and normalize that information before it becomes model-visible memory.
+
 ## 9. Data Model Snapshot
 
 The platform should persist these first-class records:
@@ -283,6 +339,8 @@ The platform should persist these first-class records:
 - `audit_events`
 
 This separation is important because governance, troubleshooting, and lifecycle recovery are all much harder if chat and app concerns are collapsed into a single record shape.
+
+Records that can produce side effects or state transitions should also carry idempotency and ordering metadata so the platform can recover safely after retries or reconnects.
 
 ## 10. Policy Evaluation Path
 
@@ -302,6 +360,13 @@ flowchart TD
 ### Why this matters
 
 Routing discipline is both a UX feature and a safety feature. A student should not be pushed into an app just because the model sees a vague opportunity.
+
+### Policy precedence rules
+
+- Reviewed registry status is a hard prerequisite for any app to be eligible.
+- District-level denies are absolute and cannot be overridden below.
+- Teacher and classroom controls may narrow, select, or disable from an approved set, but not enable an app outside district guardrails.
+- When policy data is stale, the host should fail closed for new app activations and continue only already-authorized active sessions when safe.
 
 ## 11. Error Handling and Recovery
 
@@ -342,6 +407,13 @@ Operationally, the platform needs:
 - app-version kill switches,
 - tenant-scoped disablement,
 - and audit trails that help support and safety teams reconstruct what happened.
+
+### Audit minimization rules
+
+- Default logs should favor metadata, normalized payload shapes, and policy decisions over raw student content.
+- Sensitive content should be redacted or hashed where possible.
+- Exceptional forensic capture should be separately gated, explicitly time-bounded, and subject to retention policy.
+- Auth logs should record grants, revocations, and resource classes accessed, not raw third-party credentials.
 
 ## 13. Presentation Talk Track
 

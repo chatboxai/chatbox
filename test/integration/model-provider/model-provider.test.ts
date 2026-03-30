@@ -6,7 +6,7 @@
  *    TEST_OPENAI_API_KEY=your_openai_api_key
  *    TEST_GEMINI_API_KEY=your_gemini_api_key
  *    TEST_OPENAI_RESPONSES_API_KEY=your_openai_api_key
- * 2. npm run test:model-provider
+ * 2. pnpm test:model-provider
  */
 import type { ModelMessage } from 'ai'
 import { describe, expect, it, vi } from 'vitest'

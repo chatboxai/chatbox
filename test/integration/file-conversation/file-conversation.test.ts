@@ -5,7 +5,7 @@
  *
  * Usage:
  * 1. Set CHATBOX_LICENSE_KEY environment variable
- * 2. npm run test:file-conversation
+ * 2. pnpm test:file-conversation
  *
  * Environment variables:
  * - CHATBOX_TEST_MODELS: comma-separated model list, e.g. "gpt-4o-mini,gpt-4o"

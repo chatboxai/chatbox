@@ -15,19 +15,23 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     env: {
+      ...loadEnv(mode, process.cwd(), ''),
       NODE_ENV: 'test',
     },
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'test/integration/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['node_modules', 'dist', 'release', '.erb'],
   }
 })
 ```
 
 ### Test Commands
-- `npm run test` - Run all tests once
-- `npm run test:watch` - Run tests in watch mode
-- `npm run test:ui` - Launch Vitest UI for interactive testing
-- `npm run test:coverage` - Run tests with coverage report
+- `pnpm test` - Run all tests once
+- `pnpm test:watch` - Run tests in watch mode
+- `pnpm test:ui` - Launch Vitest UI for interactive testing
+- `pnpm test:coverage` - Run tests with coverage report
+- `pnpm test:integration` - Run the integration suite
+- `pnpm test:file-conversation` - Run the file-conversation integration suite
+- `pnpm test:model-provider` - Run live provider integration coverage when env keys are set
 
 ## Existing Test Coverage
 

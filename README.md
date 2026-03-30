@@ -220,7 +220,7 @@ Any form of contribution is welcome, including but not limited to:
 ## Prerequisites
 
 - Node.js (v20.x – v22.x)
-- npm (required – pnpm is not supported)
+- pnpm (v10 or newer)
 
 ## Build Instructions
 
@@ -233,26 +233,35 @@ git clone https://github.com/chatboxai/chatbox.git
 2. Install the required dependencies
 
 ```bash
-npm install
+pnpm install
 ```
 
 3. Start the application (in development mode)
 
 ```bash
-npm run dev
+pnpm dev
+```
+
+To run against the local Chatbox API endpoint, use:
+
+```bash
+pnpm dev:local
 ```
 
 4. Build the application, package the installer for current platform
 
 ```bash
-npm run package
+pnpm package
 ```
 
 5. Build the application, package the installer for all platforms
 
 ```bash
-npm run package:all
+pnpm package:all
 ```
+
+For the current ChatBridge-specific bootstrap and environment contract, see
+[chatbridge/BOOTSTRAP.md](./chatbridge/BOOTSTRAP.md).
 
 ## Star History
 

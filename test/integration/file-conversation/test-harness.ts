@@ -5,7 +5,7 @@
  *
  * 使用方式：
  * 1. 设置环境变量 CHATBOX_LICENSE_KEY
- * 2. 运行 npm run test:file-conversation
+ * 2. 运行 pnpm test:file-conversation
  */
 
 import * as fs from 'node:fs'

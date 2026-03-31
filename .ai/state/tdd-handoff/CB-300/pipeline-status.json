@@ -1,0 +1,13 @@
+{
+  "storyId": "CB-300",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "failed",
+    "reason": "Missing reviewed-app catalog and single-app tool implementation modules."
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "pnpm vitest run src/shared/chatbridge/single-app-discovery.test.ts src/renderer/packages/chatbridge/single-app-tools.test.ts test/integration/chatbridge/scenarios/single-app-tool-discovery-and-invocation.test.ts"
+  }
+}

@@ -42,6 +42,13 @@ CB-202 adds the first host-owned app instance and event record slice:
   and durable hydration of `appInstance` plus `appEvent` records through the
   existing bridge controller seam
 
+CB-300 adds the first approved single-app discovery and invocation slice:
+
+- `scenarios/single-app-tool-discovery-and-invocation.test.ts`
+  covers explicit Chess routing from a natural-language prompt, host-managed
+  tool execution through the reviewed contract, ambiguous prompt refusal, and
+  recoverable invocation failure handling
+
 CB-303 adds the first live board-context reasoning slice:
 
 - `scenarios/mid-game-board-context.test.ts`

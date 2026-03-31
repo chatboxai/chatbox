@@ -25,9 +25,9 @@ Current session and thread persistence was designed for text, media, reasoning, 
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Hydration paths for sessions, threads, and compaction points are documented and prepared for app-capable message parts.
-- [ ] AC-2: Export and formatting paths have a compatibility plan for app-aware conversations.
-- [ ] AC-3: Reload and resume risks are mapped before any flagship app depends on them.
+- [x] AC-1: Hydration paths for sessions, threads, and compaction points are documented and prepared for app-capable message parts.
+- [x] AC-2: Export and formatting paths have a compatibility plan for app-aware conversations.
+- [x] AC-3: Reload and resume risks are mapped before any flagship app depends on them.
 
 ## Edge Cases
 

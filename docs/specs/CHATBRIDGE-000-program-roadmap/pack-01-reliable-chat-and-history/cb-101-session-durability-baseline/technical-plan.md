@@ -40,6 +40,12 @@
 - Storage/index changes:
   This story should update only the specific host/session/runtime records it needs and keep the broader ChatBridge model forward-compatible.
 
+## Implemented Compatibility Rules
+
+- Hydration keeps structured `contentParts` intact whenever a message already contains a non-placeholder structured part; legacy `content` is only used to backfill empty or placeholder-only text payloads.
+- Thread/archive transitions move `compactionPoints` with the message set they describe and clear them when a fresh thread starts from a clean system prompt.
+- Export formatting keeps current text/info/image behavior and emits a stable `[type]` fallback for future structured parts until CB-102 defines first-class app-aware schema/rendering.
+
 ## Dependency Plan
 
 - Existing dependencies used:

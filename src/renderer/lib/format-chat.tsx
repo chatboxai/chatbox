@@ -83,6 +83,27 @@ function getAttachmentNames(message: Message): string[] {
   return message.files?.map((file) => file.name).filter(Boolean) ?? []
 }
 
+function getStructuredPartFallbackLabel(type: unknown): string {
+  return `[${typeof type === 'string' && type.length > 0 ? type : 'content-part'}]`
+}
+
+function getInlineExportText(part: { type?: unknown; text?: unknown }): string | null {
+  switch (part.type) {
+    case 'text':
+      return typeof part.text === 'string' ? part.text : ''
+    case 'image':
+      return '[image]'
+    case 'info':
+      return typeof part.text === 'string' ? part.text : '[info]'
+    case 'reasoning':
+      return null
+    case 'tool-call':
+      return null
+    default:
+      return getStructuredPartFallbackLabel(part.type)
+  }
+}
+
 function renderToolCallMarkdown(summary: ToolCallSummary): string {
   let content = `Tool Call: ${summary.toolName} (state: ${summary.state})\n`
   const argsText = stringifyDataForExport(summary.args)
@@ -161,16 +182,9 @@ export function formatChatAsMarkdown(sessionName: string, threads: SessionThread
             renderedToolCalls.add(part.toolCallId)
             continue
           }
-          if (part.type === 'text') {
-            textBuffer.push(part.text)
-            continue
-          }
-          if (part.type === 'image') {
-            textBuffer.push('[image]')
-            continue
-          }
-          if (part.type === 'info') {
-            textBuffer.push(part.text)
+          const inlineText = getInlineExportText(part)
+          if (inlineText !== null) {
+            textBuffer.push(inlineText)
           }
         }
         flushTextBuffer()
@@ -230,16 +244,9 @@ export function formatChatAsTxt(sessionName: string, threads: SessionThread[]) {
             renderedToolCalls.add(part.toolCallId)
             continue
           }
-          if (part.type === 'text') {
-            textBuffer.push(part.text)
-            continue
-          }
-          if (part.type === 'image') {
-            textBuffer.push('[image]')
-            continue
-          }
-          if (part.type === 'info') {
-            textBuffer.push(part.text)
+          const inlineText = getInlineExportText(part)
+          if (inlineText !== null) {
+            textBuffer.push(inlineText)
           }
         }
         flushTextBuffer()
@@ -301,7 +308,9 @@ export async function formatChatAsHtml(sessionName: string, threads: SessionThre
               </BlockCodeCollapsedStateProvider>
             </MantineProvider>
           )
-        } else if (p.type === 'image') {
+          continue
+        }
+        if (p.type === 'image') {
           if (p.storageKey) {
             let url = ''
             const b64 = await storage.getBlob(p.storageKey)
@@ -317,6 +326,12 @@ export async function formatChatAsHtml(sessionName: string, threads: SessionThre
             }
             content += `<img src="${url}" class="my-2" />\n`
           }
+          continue
+        }
+
+        const inlineText = getInlineExportText(p)
+        if (inlineText !== null) {
+          content += `<p class="text-sm text-slate-600">${escapeHtml(inlineText)}</p>\n`
         }
       }
       if (attachments.length > 0) {

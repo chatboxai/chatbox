@@ -2,6 +2,11 @@ import { assign, cloneDeep, omit } from 'lodash'
 import type { Message, MessageContentParts, MessagePicture, SearchResultItem } from 'src/shared/types'
 import { countWord } from '@/packages/word-count'
 
+type MessageContentPartLike = {
+  type?: unknown
+  text?: unknown
+}
+
 export function getMessageText(message: Message, includeImagePlaceHolder = true, includeReasoning = true): string {
   if (message.contentParts && message.contentParts.length > 0) {
     return message.contentParts
@@ -23,6 +28,21 @@ export function getMessageText(message: Message, includeImagePlaceHolder = true,
   return ''
 }
 
+function shouldHydrateFromLegacyContent(contentParts?: MessageContentParts | MessageContentPartLike[]): boolean {
+  if (!contentParts?.length) {
+    return true
+  }
+
+  return contentParts.every((part) => {
+    if (part?.type !== 'text') {
+      return false
+    }
+
+    const text = typeof part.text === 'string' ? part.text.trim() : ''
+    return text === '' || text === '...'
+  })
+}
+
 // 只有这里可以访问 message 的 content / webBrowsing 字段，迁移到 contentParts 字段
 export function migrateMessage(
   message: Omit<Message, 'contentParts'> & { contentParts?: MessageContentParts }
@@ -36,10 +56,7 @@ export function migrateMessage(
   assign(result, omit(message, 'webBrowsing'))
 
   // 如果 contentParts 不存在，或者 contentParts 为空，或者 contentParts 的内容为 '...'(placeholder)，则使用 content 的值
-  if (
-    (!result.contentParts?.length || getMessageText(result) === '...' || !getMessageText(result)) &&
-    'content' in message
-  ) {
+  if (shouldHydrateFromLegacyContent(result.contentParts) && 'content' in message) {
     const imageParts = (message as Message & { pictures?: MessagePicture[] }).pictures
       ?.filter((pic) => pic.storageKey || pic.url)
       .map((pic) => ({ type: 'image' as const, storageKey: pic.storageKey!, url: pic.url }))

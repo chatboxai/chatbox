@@ -40,15 +40,15 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Session reload with app-capable messages present
+- [x] Session reload with app-capable messages present
 - T002 tests:
-  - [ ] Thread switching and compaction boundaries with non-text message parts
+  - [x] Thread switching and compaction boundaries with non-text message parts
 - T003 tests:
-  - [ ] Markdown/TXT/HTML export behavior remains valid
+  - [x] Markdown/TXT/HTML export behavior remains valid
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale

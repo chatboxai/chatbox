@@ -76,12 +76,14 @@ export async function switchThread(sessionId: string, threadId: string) {
     name: session.threadName || session.name,
     messages: session.messages,
     createdAt: Date.now(),
+    compactionPoints: session.compactionPoints,
   })
   await chatStore.updateSessionWithMessages(session.id, {
     ...session,
     threads: newThreads,
     messages: target.messages,
     threadName: target.name,
+    compactionPoints: target.compactionPoints,
   })
   setTimeout(() => scrollActions.scrollToBottom('smooth'), 300)
 }
@@ -103,6 +105,7 @@ export async function refreshContextAndCreateNewThread(sessionId: string) {
     name: session.threadName || session.name,
     messages: session.messages,
     createdAt: Date.now(),
+    compactionPoints: session.compactionPoints,
   }
 
   let systemPrompt = session.messages.find((m) => m.role === 'system')
@@ -114,6 +117,7 @@ export async function refreshContextAndCreateNewThread(sessionId: string) {
     threads: session.threads ? [...session.threads, newThread] : [newThread],
     messages: systemPrompt ? [systemPrompt] : [createMessage('system', defaults.getDefaultPrompt())],
     threadName: '',
+    compactionPoints: undefined,
   })
 }
 
@@ -138,12 +142,14 @@ export async function removeCurrentThread(sessionId: string) {
     ...session,
     messages: session.messages.filter((m) => m.role === 'system').slice(0, 1), // Keep only one system prompt
     threadName: undefined,
+    compactionPoints: undefined,
   }
   if (session.threads && session.threads.length > 0) {
     const lastThread = session.threads[session.threads.length - 1]
     updatedSession.messages = lastThread.messages
     updatedSession.threads = session.threads.slice(0, session.threads.length - 1)
     updatedSession.threadName = lastThread.name
+    updatedSession.compactionPoints = lastThread.compactionPoints
   }
   await chatStore.updateSession(session.id, updatedSession)
 }
@@ -170,6 +176,7 @@ export async function compressAndCreateThread(sessionId: string, summary: string
     name: session.threadName || session.name,
     messages: session.messages,
     createdAt: Date.now(),
+    compactionPoints: session.compactionPoints,
   }
 
   // Get original system prompt (if exists)
@@ -198,6 +205,7 @@ export async function compressAndCreateThread(sessionId: string, summary: string
     messages: newMessages,
     threadName: '',
     messageForksHash: undefined,
+    compactionPoints: undefined,
   })
 
   // Auto-scroll to bottom and focus input
@@ -243,6 +251,7 @@ export async function moveCurrentThreadToConversations(sessionId: string) {
     messages: session.messages,
     threads: [],
     threadName: undefined,
+    compactionPoints: session.compactionPoints,
   })
   await removeCurrentThread(sessionId)
   switchCurrentSession(newSession.id)

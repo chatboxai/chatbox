@@ -61,6 +61,9 @@ Capture repeatable patterns that match how this workspace actually works.
 - `main` pushes now deploy the hosted web shell through
   `.github/workflows/vercel-main-sync.yml`.
 - Mainline deployment is driven by `scripts/deploy-vercel-production.sh`.
+- Vercel deploy automation should capture the exact deployment URL from
+  `vercel deploy` stdout and treat stderr as human-readable logs/errors; do not
+  scrape URLs back out of terminal logs.
 - Post-merge hosted verification is driven by
   `scripts/verify-vercel-deployment.sh` and uses the Vercel CLI directly.
 - `vercel.json` disables Vercel Git auto-deploy for `main` so GitHub Actions is

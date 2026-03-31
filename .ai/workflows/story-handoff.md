@@ -12,6 +12,7 @@ Run this workflow at the end of every implementation task.
 
 Every completion gate must include:
 
+- `Story Explainer`
 - `Current Status`
 - `Testing Brief`
 - `Decision / Design Brief`
@@ -27,6 +28,26 @@ post-merge closeout must also include:
 - `Deployed Audit Checklist (Run On Hosted Version)`
 
 The completion gate is incomplete if any of these sections are missing.
+
+## Story Explainer Requirements
+
+The completion gate must include a concise explainer that tells the user:
+
+- what happened and why this story exists
+- what changed in user-facing terms and in repo terms
+- the key files, routes, components, workflows, or contracts that moved
+- how the user should inspect the result for themselves
+- how the automated checks and manual audit steps map to the story
+
+The explainer should read like a guided walkthrough, not a raw changelog.
+
+For UI stories, the explainer must also include:
+
+- the exact route, screen, modal, or component surface that changed
+- the starting state or entry path the user should use
+- the visible interaction or layout change they should expect
+- the proof artifact to review when available: screenshot, Pencil artifact, or
+  explicit blocker
 
 ## TDD Evidence Requirements
 
@@ -49,6 +70,29 @@ For UI stories that used Pencil, also include:
 - selected variation
 - whether implementation matched an already-approved design or included a fresh
   design-review cycle
+
+## Testing Brief Requirements
+
+The testing brief should not only list commands. It should explain:
+
+- which required checks were run
+- which story surfaces those checks cover
+- whether any failures are attributable to the current diff or are pre-existing
+- what still requires manual inspection
+
+For UI stories, explicitly separate automated coverage from visual/manual
+coverage so the user can see what still needs eyes-on review.
+
+## Visible Proof Requirements
+
+Visible proof should point to the strongest evidence the user can inspect
+without re-deriving the story from the diff.
+
+For UI stories, prefer:
+
+- screenshot or design artifact paths
+- route or component references tied to the changed surface
+- a short note on what the user should compare or notice
 
 ## Completion Plan Requirements
 
@@ -76,6 +120,8 @@ the user audit:
 - do not offload routine terminal verification Codex could run itself
 - name the exact route, click path, or state to inspect when UI changed
 - include expected outcome and failure hint for each step
+- align the checklist with the story explainer so the user can move directly
+  from "what changed" to "how do I verify it"
 
 ## Deployed Audit Checklist Requirements
 
@@ -110,6 +156,7 @@ exactly what to open after merge:
 
 ## Exit Criteria
 
+- story explainer clearly states what changed and how to inspect/test it
 - completion evidence summarized clearly
 - GitHub state and merge status made explicit so the user never has to guess
   whether work is only local, on a PR, or already merged
@@ -121,3 +168,5 @@ exactly what to open after merge:
   explicitly pauses or selects a different merge path
 - deploy-surface stories include a deployed-version audit checklist in the
   post-merge closeout
+- UI stories include route-level inspection guidance and visible proof that
+  tells the user what to look for

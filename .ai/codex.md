@@ -54,6 +54,10 @@ Then use as needed:
   explicitly asks to pause or choose a different merge path, continue through
   `.ai/workflows/git-finalization.md` automatically after the completion gate,
   and treat the story as incomplete until it is merged to `main` on GitHub.
+- The completion gate must include a plain-language story explainer covering
+  what changed, where it changed, and how the user should inspect and test it.
+  For UI changes, include the route or entry path, the visible expected result,
+  and the proof artifact when available.
 - For stories that touch the hosted web shell or deployment contract, merge is
   followed by `.ai/workflows/vercel-post-merge-verification.md`; treat the
   story as operationally incomplete until the `Vercel Main Sync` workflow

@@ -43,6 +43,9 @@ files reference.
 - For completion, use `.ai/workflows/story-handoff.md`, then continue through
   `.ai/workflows/git-finalization.md` by default unless the user explicitly
   pauses or chooses a different merge path.
+- The completion gate should explain what changed, where it changed, and how
+  the user should inspect and test it. UI stories must include route-level or
+  component-level inspection guidance plus the expected visible result.
 - During git finalization, unrelated dirty state is not a valid stop condition:
   preserve it, isolate the story diff, rerun validation there, and continue
   through merge unless safe disentangling is impossible.

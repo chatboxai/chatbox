@@ -78,6 +78,10 @@ harness still matches the actual repo layout and commands.
 
 - Do not assume deploy work exists unless the story explicitly adds it.
 - Use `.ai/workflows/story-handoff.md` as the completion gate.
+- The completion gate must include a story explainer that says what changed,
+  where it changed, and exactly how to inspect and test it. If the story has a
+  UI surface, include the route, click path, expected visible outcome, and the
+  proof artifact when available.
 - A story is not complete until it is merged to `main` on GitHub, unless the
   user explicitly asks to pause before merge or use a different merge path.
 - When parallel story work is active, do not infer completion state from the

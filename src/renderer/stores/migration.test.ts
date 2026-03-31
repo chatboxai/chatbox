@@ -22,7 +22,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
  *   - Mobile: Fully migrated to IndexedDB - all data in IndexedDB
  *   - Desktop: Split storage - sessions in IndexedDB, configs/settings/configVersion stay in IPC file
  *
- * v1.17.0 (config version 12-14) [CURRENT]
+ * v1.17.0 (config version 12-15) [CURRENT]
  *   - Mobile: Migrated to SQLite for better performance - all data in SQLite
  *   - Desktop: No change from v1.16.1 - sessions in IndexedDB, configs/settings/configVersion in IPC file
  *
@@ -218,6 +218,7 @@ import type { Platform } from '@/platform/interfaces'
 let currentPlatform: Platform
 let desktopPlatform: Platform
 let mobilePlatform: Platform
+let webPlatform: Platform
 
 // Mock @/platform to return our platform instance
 vi.mock('@/platform', () => ({
@@ -342,8 +343,8 @@ vi.mock('store', () => ({
 vi.mock('@/packages/initial_data', () => ({
   artifactSessionCN: { id: 'artifact-cn' },
   artifactSessionEN: { id: 'artifact-en' },
-  defaultSessionsForCN: [],
-  defaultSessionsForEN: [],
+  defaultSessionsForCN: [{ id: 'seed-cn', name: 'Seed CN', messages: [] }],
+  defaultSessionsForEN: [{ id: 'seed-en', name: 'Seed EN', messages: [] }],
   imageCreatorSessionForCN: { id: 'image-cn' },
   imageCreatorSessionForEN: { id: 'image-en' },
   mermaidSessionCN: { id: 'mermaid-cn' },
@@ -401,6 +402,39 @@ describe('migrateStorage test', () => {
       },
       relaunch: vi.fn(),
     } as unknown as Platform
+    webPlatform = {
+      type: 'web',
+      getStorageType: () => 'INDEXEDDB',
+      setStoreValue: async (key: string, value: unknown) => {
+        localforageData[key] = JSON.stringify(value)
+      },
+      getStoreValue: async (key: string) => {
+        const json = localforageData[key]
+        return json ? JSON.parse(json) : null
+      },
+      delStoreValue: async (key: string) => {
+        delete localforageData[key]
+      },
+      getAllStoreValues: async () => {
+        const items: { [key: string]: unknown } = {}
+        for (const [key, value] of Object.entries(localforageData)) {
+          try {
+            items[key] = JSON.parse(value)
+          } catch {
+            items[key] = value
+          }
+        }
+        return items
+      },
+      getAllStoreKeys: async () => Object.keys(localforageData),
+      setAllStoreValues: async (data: { [key: string]: unknown }) => {
+        for (const [key, value] of Object.entries(data)) {
+          localforageData[key] = JSON.stringify(value)
+        }
+      },
+      getLocale: async () => 'en-US',
+      relaunch: vi.fn(),
+    } as unknown as Platform
     currentPlatform = desktopPlatform
   })
 
@@ -418,16 +452,16 @@ describe('migrateStorage test', () => {
   it('should skip migration when config version is already current', async () => {
     const { initData } = await import('@/setup/init_data')
 
-    // Setup: Desktop v1.17.0 - configVersion = 14 (current) in IPC file storage
-    ipcFileData[StorageKey.ConfigVersion] = JSON.stringify(14)
+    // Setup: Desktop v1.17.0 - configVersion = 15 (current) in IPC file storage
+    ipcFileData[StorageKey.ConfigVersion] = JSON.stringify(15)
 
     const migration = await import('./migration')
     await migration._migrateStorageForTest()
 
     // Should not initialize data or set version when already at current version
     expect(initData).not.toHaveBeenCalled()
-    // configVersion should remain 14
-    expect(ipcFileData[StorageKey.ConfigVersion]).toBe(JSON.stringify(14))
+    // configVersion should remain 15
+    expect(ipcFileData[StorageKey.ConfigVersion]).toBe(JSON.stringify(15))
   })
 
   it('should initialize data on first run (configVersion = 0, no old storage)', async () => {
@@ -444,8 +478,8 @@ describe('migrateStorage test', () => {
     const migration = await import('./migration')
     await migration._migrateStorageForTest()
 
-    // Should set current version (14) to IPC file storage (Desktop platform)
-    expect(ipcFileData[StorageKey.ConfigVersion]).toBe(JSON.stringify(14))
+    // Should set current version (15) to IPC file storage (Desktop platform)
+    expect(ipcFileData[StorageKey.ConfigVersion]).toBe(JSON.stringify(15))
     expect(initData).toHaveBeenCalled()
   })
 
@@ -818,7 +852,7 @@ describe('migrateStorage test', () => {
     await migration._migrateStorageForTest()
 
     // Current storage reads configVersion from sqliteData, which is 7 (not 0)
-    // Since configVersion (7) < CurrentVersion (14), it checks for migration
+    // Since configVersion (7) < CurrentVersion (15), it checks for migration
     // But since old and current storage are same type, no migration occurs
     // And since configVersion is NOT 0, initData() is also not called
 
@@ -842,14 +876,14 @@ describe('migrateStorage test', () => {
     // Desktop platform already set in beforeEach
 
     // Setup: This tests a bug fix in the current branch
-    // BUG on release branch: Every time configVersion upgrades (e.g., 12→14),
+    // BUG on release branch: Every time configVersion upgrades (e.g., 12→15),
     // it would re-migrate from file storage to IndexedDB even though migration
     // already happened at v1.16.1 (configVersion 11→12)
     //
     // FIX: Desktop should NOT migrate from file storage if configVersion >= 12
     // because v1.16.1 already migrated sessions to IndexedDB
     //
-    // Scenario: Desktop v1.16.1 user (configVersion=12) upgrades to v1.17.0 (configVersion=14)
+    // Scenario: Desktop v1.16.1 user (configVersion=12) upgrades to v1.17.0 (configVersion=15)
     // File storage still has old session data from pre-v1.16.1 that wasn't cleaned up
     // Current configVersion in file: 12 (already migrated)
     // Should NOT re-migrate the old session data
@@ -894,6 +928,33 @@ describe('migrateStorage test', () => {
     expect(localforageData['session:current-session']).toBeDefined()
     expect(localforageData['session:old-session']).toBeUndefined()
 
+    expect(initData).not.toHaveBeenCalled()
+  })
+
+  it('should backfill missing preset sessions for existing web users on config version 14', async () => {
+    const { initData } = await import('@/setup/init_data')
+
+    currentPlatform = webPlatform
+
+    localforageData[StorageKey.ConfigVersion] = JSON.stringify(14)
+    localforageData[StorageKey.ChatSessionsList] = JSON.stringify([{ id: 'user-session', name: 'User Session' }])
+    localforageData['session:user-session'] = JSON.stringify({
+      id: 'user-session',
+      name: 'User Session',
+      messages: [],
+    })
+
+    const migration = await import('./migration')
+    await migration.migrate()
+
+    expect(localforageData[StorageKey.ConfigVersion]).toBe(JSON.stringify(15))
+    expect(localforageData['session:seed-en']).toBeDefined()
+
+    const sessionList = JSON.parse(localforageData[StorageKey.ChatSessionsList] || '[]')
+    expect(sessionList).toEqual([
+      { id: 'user-session', name: 'User Session' },
+      { id: 'seed-en', name: 'Seed EN' },
+    ])
     expect(initData).not.toHaveBeenCalled()
   })
 })

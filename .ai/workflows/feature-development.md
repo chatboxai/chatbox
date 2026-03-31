@@ -17,6 +17,11 @@ repo already uses.
   active story, or other agents' in-progress work, do not pile the new story
   onto that tree. Create a clean worktree from the latest base branch and start
   the story there on a fresh `codex/<short-task-name>` branch.
+- Before replaying a requested story from the current branch, check whether the
+  story is already merged on the latest base branch (`main` and
+  `origin/main`). If it is, treat that merge as the baseline and start any
+  follow-up change from a fresh clean worktree off the latest base rather than
+  duplicating the old story on a stale parallel branch.
 - When that story starts in a fresh branch or worktree, copy the required local
   `.env*` files from the working `main` setup or previous story worktree before
   running project commands, and keep them untracked.

@@ -37,6 +37,10 @@ Capture repeatable patterns that match how this workspace actually works.
 - Non-trivial implementation stories should start on fresh `codex/` branches;
   if the current tree is already dirty with another story, isolate the new work
   in a clean worktree rather than sharing the dirty tree.
+- When multiple story branches are active, verify the requested story's status
+  on `main` and `origin/main` before replaying it. If the story is already
+  merged there, treat that merge as the baseline and branch any additional work
+  as a clean follow-up instead of duplicating it on a stale parallel branch.
 - Story completion defaults to the full GitHub flow: commit, push, PR, merge to
   `main`, sync local `main`, and branch cleanup unless the user explicitly
   pauses or chooses a different merge path.

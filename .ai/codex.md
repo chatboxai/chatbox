@@ -25,6 +25,10 @@ Then use as needed:
   `codex/` branch for non-trivial work before edits.
 - If the current worktree is already dirty from another story or agent, move
   the new work into a clean worktree instead of sharing the dirty tree.
+- Before replaying a requested story from a stale branch, verify whether that
+  story is already merged on `main` or `origin/main`. If it is, treat that
+  merge as the baseline and start any additional correction from the latest
+  base branch instead of duplicating the old story on a parallel branch.
 - When a story starts in a fresh branch or worktree, copy the required local
   `.env*` files from the working `main` setup or previous story worktree, then
   run `pnpm install` before project commands. Keep copied env files untracked.

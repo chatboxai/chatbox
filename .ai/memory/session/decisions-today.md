@@ -10,3 +10,7 @@
   a Pencil-first workflow: spec and technical plan first, then 2 or 3 Pencil
   variations from a shared design-system foundation, explicit user approval, and
   only then implementation.
+- 2026-03-31: Standardized parallel-story handling so agents must check
+  `main`/`origin/main` before replaying a requested story from a stale branch;
+  already-merged work is now treated as the baseline and any extra change
+  starts as a clean follow-up story/worktree.

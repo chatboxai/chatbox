@@ -25,9 +25,9 @@ Chess needs a real interactive runtime with board state and legal move validatio
 
 ## Acceptance Criteria
 
-- [ ] AC-1: The chess runtime can render board state, accept moves, and reject illegal ones.
-- [ ] AC-2: Board updates are emitted to the host as structured state changes.
-- [ ] AC-3: The app remains coherent inside the host-owned container and lifecycle contract.
+- [x] AC-1: The chess runtime can render board state, accept moves, and reject illegal ones.
+- [x] AC-2: Board updates are emitted to the host as structured state changes.
+- [x] AC-3: The app remains coherent inside the host-owned container and lifecycle contract.
 
 ## Edge Cases
 
@@ -60,3 +60,5 @@ Chess needs a real interactive runtime with board state and legal move validatio
 - Tests cover the primary happy path and the important failure mode for this story.
 - Validation passes for the touched scope.
 - Any new visible UI state has approved Pencil evidence before code if applicable.
+- The seeded Chess mid-game fixture now renders through the live runtime shell and
+  persists host-owned board updates in-thread.

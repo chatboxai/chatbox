@@ -1,13 +1,20 @@
 import type { MessageAppPart } from '@shared/types'
+import { isChatBridgeChessAppId } from '@shared/chatbridge'
 import { ChatBridgeShell } from './ChatBridgeShell'
 import { getMessageAppPartViewModel } from './chatbridge'
+import { ChessRuntime } from './apps/chess/ChessRuntime'
 
 interface ChatBridgeMessagePartProps {
   part: MessageAppPart
+  onUpdatePart?: (nextPart: MessageAppPart) => void
 }
 
-export function ChatBridgeMessagePart({ part }: ChatBridgeMessagePartProps) {
+export function ChatBridgeMessagePart({ part, onUpdatePart }: ChatBridgeMessagePartProps) {
   const viewModel = getMessageAppPartViewModel(part)
+  const runtime =
+    part.lifecycle === 'active' && isChatBridgeChessAppId(part.appId) ? (
+      <ChessRuntime part={part} onUpdatePart={onUpdatePart} />
+    ) : undefined
 
   return (
     <ChatBridgeShell
@@ -19,6 +26,8 @@ export function ChatBridgeMessagePart({ part }: ChatBridgeMessagePartProps) {
       statusLabel={viewModel.statusLabel}
       fallbackTitle={viewModel.fallbackTitle}
       fallbackText={viewModel.fallbackText}
-    />
+    >
+      {runtime}
+    </ChatBridgeShell>
   )
 }

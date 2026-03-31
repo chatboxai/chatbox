@@ -153,6 +153,8 @@ The host should send a signed bootstrap envelope plus a transferred `MessagePort
 - Native React-hosted apps for internal surfaces
 - Sandboxed iframe apps for reviewed partners
 - Shared lifecycle contract no matter which rendering mode is used
+- Chess now proves the native-hosted path by keeping a renderer-owned legal move
+  engine behind the same host-owned app-part and reasoning-context contract
 
 ### Sync and Reconciliation Manager
 
@@ -218,6 +220,11 @@ sequenceDiagram
     Host->>Store: Persist summaryForModel + completion payload
     Host-->>Client: Resume natural chat flow
 ```
+
+For the current Chess vertical slice, the "App" side of this sequence is a
+native renderer component rather than an iframe partner. The important
+architectural rule stays the same: the host-visible state is the bounded
+`app.snapshot` payload, not opaque UI-local mutations.
 
 ### Key idea
 

@@ -466,7 +466,23 @@ const _Message: FC<Props> = (props) => {
                           </Flex>
                         </Flex>
                       ) : item.type === 'app' ? (
-                        <ChatBridgeMessagePart key={`app-${item.appInstanceId}-${index}`} part={item as MessageAppPart} />
+                        <ChatBridgeMessagePart
+                          key={`app-${item.appInstanceId}-${index}`}
+                          part={item as MessageAppPart}
+                          onUpdatePart={(nextPart) => {
+                            const nextContentParts = msg.contentParts.map((contentPart, contentPartIndex) =>
+                              contentPartIndex === index ? nextPart : contentPart
+                            )
+                            void modifyMessage(
+                              sessionId,
+                              {
+                                ...msg,
+                                contentParts: nextContentParts,
+                              },
+                              true
+                            )
+                          }}
+                        />
                       ) : item.type === 'image' ? (
                         props.sessionType !== 'picture' && (
                           <div key={`image-${item.storageKey}`} className="mt-2">

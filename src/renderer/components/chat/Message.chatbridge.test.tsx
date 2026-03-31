@@ -3,9 +3,11 @@
  */
 
 import { MantineProvider } from '@mantine/core'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { createChatBridgeChessRuntimeSnapshot } from '@shared/chatbridge'
 import type { Message } from '@shared/types'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { modifyMessage } from '@/stores/sessionActions'
 import MessageComponent from './Message'
 
 beforeAll(() => {
@@ -117,18 +119,69 @@ describe('Message chatbridge rendering', () => {
 
     render(
       <MantineProvider>
-        <MessageComponent
-          sessionId="session-1"
-          sessionType="chat"
-          msg={msg}
-          buttonGroup="none"
-          assistantAvatarKey=""
-        />
+        <MessageComponent sessionId="session-1" sessionType="chat" msg={msg} buttonGroup="none" assistantAvatarKey="" />
       </MantineProvider>
     )
 
     expect(screen.getAllByText('Chess shell')).toHaveLength(2)
     expect(screen.getByText('Running')).toBeTruthy()
     expect(screen.getByText('The host keeps the chess runtime in the thread.')).toBeTruthy()
+  })
+
+  it('persists a legal chess move through the existing message update path', () => {
+    const snapshot = createChatBridgeChessRuntimeSnapshot()
+    const msg: Message = {
+      id: 'assistant-chess-runtime-1',
+      role: 'assistant',
+      contentParts: [
+        {
+          type: 'app',
+          appId: 'chess',
+          appName: 'Chess',
+          appInstanceId: 'chess-instance-2',
+          lifecycle: 'active',
+          title: 'Chess runtime',
+          description:
+            'Moves validate inside the board first, then emit a structured host update for the same conversation block.',
+          summary: snapshot.boardContext.summary,
+          statusText: 'White to move',
+          snapshot,
+        },
+      ],
+      timestamp: Date.now(),
+    }
+
+    render(
+      <MantineProvider>
+        <MessageComponent sessionId="session-1" sessionType="chat" msg={msg} buttonGroup="none" assistantAvatarKey="" />
+      </MantineProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /g1, white knight/i }))
+    fireEvent.click(screen.getByRole('button', { name: /f3, legal destination/i }))
+
+    expect(vi.mocked(modifyMessage)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(modifyMessage).mock.calls[0][0]).toBe('session-1')
+    expect(vi.mocked(modifyMessage).mock.calls[0][1]).toMatchObject({
+      id: 'assistant-chess-runtime-1',
+      contentParts: [
+        {
+          type: 'app',
+          appId: 'chess',
+          appInstanceId: 'chess-instance-2',
+          summary: 'Black to move after Nf3.',
+          snapshot: {
+            boardContext: {
+              sideToMove: 'black',
+              lastMove: {
+                san: 'Nf3',
+                uci: 'g1f3',
+              },
+            },
+          },
+        },
+      ],
+    })
+    expect(vi.mocked(modifyMessage).mock.calls[0][2]).toBe(true)
   })
 })

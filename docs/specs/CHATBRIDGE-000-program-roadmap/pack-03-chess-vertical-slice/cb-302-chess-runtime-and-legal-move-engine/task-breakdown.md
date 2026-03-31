@@ -40,15 +40,21 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Legal/illegal move behavior
+  - [x] Legal/illegal move behavior
 - T002 tests:
-  - [ ] Board state propagation to host runtime
+  - [x] Board state propagation to host runtime
 - T003 tests:
-  - [ ] Runtime stability inside container lifecycle states
+  - [x] Runtime stability inside container lifecycle states
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Deferred Tasks
+
+- End-of-game lifecycle completion and resume semantics remain with CB-304. This
+  story keeps the board interactive and host-owned without normalizing terminal
+  summaries yet.

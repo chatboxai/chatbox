@@ -45,7 +45,8 @@
 - Existing dependencies used:
   current Chatbox session schema, renderer/timeline patterns, and model/tool orchestration seams
 - New dependencies proposed (if any):
-  none by default; prefer existing stack and utilities unless implementation proves a real gap
+  `chess.js` for legal move generation, game-state validation, and bounded
+  board reconstruction from host-owned snapshots
 - Risk and mitigation:
   keep the work inside existing seams and add targeted tests before broad refactors
 

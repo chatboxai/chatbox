@@ -21,12 +21,12 @@
 
 ## Tasks
 
-| Task ID | Description | Dependency | Parallelizable | Validation |
-|---|---|---|---|---|
-| T001 | Define the reviewed app manifest schema and approval-facing metadata contract. | must-have | no | Schema validation tests |
-| T002 | Add registry-side normalization and compatibility checks. | blocked-by:T001 | no | Integration tests with valid/invalid manifests |
-| T003 | Document the contract and host expectations for reviewed partners. | blocked-by:T001 | yes | Spec review |
-| T004 | Add host-side tests for consuming the approved app catalog safely. | blocked-by:T002,T003 | no | pnpm test and pnpm check |
+| Task ID | Description | Dependency | Parallelizable | Validation | Status |
+|---|---|---|---|---|---|
+| T001 | Define the reviewed app manifest schema and approval-facing metadata contract. | must-have | no | Schema validation tests | complete via `src/shared/chatbridge/manifest.ts` and `src/shared/chatbridge/manifest.test.ts` |
+| T002 | Add registry-side normalization and compatibility checks. | blocked-by:T001 | no | Integration tests with valid/invalid manifests | complete via `src/shared/chatbridge/registry.ts` and `src/shared/chatbridge/registry.test.ts` |
+| T003 | Document the contract and host expectations for reviewed partners. | blocked-by:T001 | yes | Spec review | complete via checked-in story packet updates and ChatBridge harness/README notes |
+| T004 | Add host-side tests for consuming the approved app catalog safely. | blocked-by:T002,T003 | no | pnpm test and pnpm check | complete via `test/integration/chatbridge/fixtures/reviewed-app-manifests.ts` and `test/integration/chatbridge/scenarios/reviewed-app-registry.test.ts` |
 
 Dependency values:
 - `must-have`
@@ -40,15 +40,19 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Manifest parse/validation coverage
+  - [x] Manifest parse/validation coverage
 - T002 tests:
-  - [ ] Unsupported version rejection
+  - [x] Unsupported version rejection
 - T003 tests:
-  - [ ] Invalid permission/auth metadata rejection
+  - [x] Invalid permission/auth metadata rejection
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+Deferred tasks:
+
+- None. Later Pack 02 stories still own app instances, bridge handshakes, and tool execution semantics.

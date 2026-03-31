@@ -20,6 +20,14 @@ CB-104 establishes the first required regression slice in this folder:
   covers session reload, thread continuity, export formatting, and stale
   partial lifecycle behavior using deterministic host-owned fixtures
 
+CB-201 adds the reviewed-manifest registry slice:
+
+- `fixtures/reviewed-app-manifests.ts`
+  provides deterministic reviewed app catalog entries for host-side tests
+- `scenarios/reviewed-app-registry.test.ts`
+  covers approved catalog ingestion plus malformed/unsupported rejection
+  behavior
+
 That scenario is the baseline gate for later ChatBridge packs that add real
 app-aware schema, containers, and lifecycle events. New ChatBridge persistence
 or export changes should extend this suite instead of creating isolated one-off

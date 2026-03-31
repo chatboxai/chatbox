@@ -37,6 +37,7 @@ import {
 import fileToolSet from './toolsets/file'
 import { getToolSet } from './toolsets/knowledge-base'
 import websearchToolSet, { parseLinkTool, webSearchTool } from './toolsets/web-search'
+import { createReviewedSingleAppToolSet } from '../chatbridge/single-app-tools'
 
 /**
  * 处理搜索结果并返回模型响应的通用函数
@@ -322,6 +323,16 @@ export async function streamText(
       tools = {
         ...tools,
         ...fileToolSet.tools,
+      }
+    }
+
+    if (model.isSupportToolUse()) {
+      const chatBridgeSingleAppTools = createReviewedSingleAppToolSet({ messages })
+      if (Object.keys(chatBridgeSingleAppTools.tools).length > 0) {
+        tools = {
+          ...tools,
+          ...chatBridgeSingleAppTools.tools,
+        }
       }
     }
 

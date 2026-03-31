@@ -1,0 +1,17 @@
+{
+  "storyId": "CB-300",
+  "status": "green",
+  "implementationFiles": [
+    "src/shared/chatbridge/reviewed-app-catalog.ts",
+    "src/shared/chatbridge/single-app-discovery.ts",
+    "src/renderer/packages/chatbridge/single-app-tools.ts",
+    "src/renderer/packages/model-calls/stream-text.ts",
+    "src/shared/chatbridge/tools.ts"
+  ],
+  "notes": [
+    "Added a default reviewed Chess catalog entry and a narrow single-app selection helper.",
+    "Injected the approved Chess host tool into the stream-text tool assembly seam only for explicit chess intent.",
+    "Hardened host validation to emit invalid_input for malformed reviewed tool arguments."
+  ],
+  "focusedGreenCommand": "pnpm vitest run src/shared/chatbridge/single-app-discovery.test.ts src/renderer/packages/chatbridge/single-app-tools.test.ts test/integration/chatbridge/scenarios/single-app-tool-discovery-and-invocation.test.ts"
+}

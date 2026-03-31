@@ -31,11 +31,11 @@ that the platform contract actually connects to the orchestrator.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: The chatbot can discover the approved Chess app capability from a
+- [x] AC-1: The chatbot can discover the approved Chess app capability from a
       natural-language request.
-- [ ] AC-2: The host invokes the app tool through the reviewed contract rather
+- [x] AC-2: The host invokes the app tool through the reviewed contract rather
       than an ad hoc side channel.
-- [ ] AC-3: The invocation path is observable and testable before UI embedding
+- [x] AC-3: The invocation path is observable and testable before UI embedding
       expands further.
 
 ## Edge Cases

@@ -109,6 +109,11 @@ Chatbox has useful primitives, but the assignment still requires platform work t
 - broader reviewed app registry service beyond the base in-repo manifest and
   registry contract now implemented in `src/shared/chatbridge/manifest.ts` and
   `src/shared/chatbridge/registry.ts`
+- the first in-repo single-app discovery and reviewed Chess invocation seam now
+  exists through `src/shared/chatbridge/reviewed-app-catalog.ts`,
+  `src/shared/chatbridge/single-app-discovery.ts`, and
+  `src/renderer/packages/chatbridge/single-app-tools.ts`, but later packs still
+  need the actual launch container, live runtime, and completion flow
 - broader third-party lifecycle wiring beyond the base `appInstance` and
   `appEvent` domain model now implemented in `src/shared/chatbridge/instance.ts`,
   `src/shared/chatbridge/events.ts`, and

@@ -9,6 +9,8 @@ Files:
 - `SERVICE_TOPOLOGY.md`: Pack 0 runtime, service, and deployment boundary map
 - `INTEGRATION_HARNESS.md`: Pack 0 fixture and mock-harness strategy
 - `EVALS_AND_OBSERVABILITY.md`: Pack 0 eval, trace, and observability baseline
+- `../test/integration/chatbridge/edd/README.md`: local-first EDD harness and
+  backfilled scenario map
 - `ARCHITECTURE.md`: presentation-friendly target architecture
 - `../docs/specs/CHATBRIDGE-000-program-roadmap/`: phased implementation packs
 

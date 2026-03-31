@@ -4,6 +4,10 @@
 before or during orchestration-heavy work so debugging and regression checks are
 grounded in runtime evidence instead of guesswork.
 
+For ChatBridge, this means local-first EDD under
+`test/integration/chatbridge/edd/` plus an optional live LangSmith finish check
+when fresh remote proof matters.
+
 ## When To Run
 
 Run this workflow when a story changes:
@@ -31,6 +35,8 @@ Before broad edits:
 - identify the current or mocked end-to-end flow
 - record which steps should emit traces or lifecycle events
 - note what is currently invisible
+- for ChatBridge stories, name the local EDD scenario you will add or extend
+  and the proof artifact that should appear under `test/output/chatbridge-edd/`
 
 ## Step 3: Define the Eval Set
 
@@ -41,6 +47,10 @@ Create a focused eval list for:
 - malformed or invalid input
 - timeout/crash/degraded path
 - one follow-up or continuity path when applicable
+
+If the story is a correction to behavior that already shipped, backfill the
+existing behavior into the EDD suite first so the regression is explicit before
+you rely on a new implementation.
 
 ## Step 4: Instrument Before Broad Logic Changes
 
@@ -54,6 +64,9 @@ Ensure the story has hooks for:
 
 Keep instrumentation structured and avoid raw secret or unnecessary sensitive
 content.
+For ChatBridge, prefer local JSON proof plus structured metadata over
+vendor-specific strings. Remote LangSmith uploads should stay optional and
+should activate only when `LANGSMITH_TEST_TRACKING=true` is intentionally set.
 
 ## Step 5: Implement With a Trace Review Loop
 
@@ -62,6 +75,10 @@ As the story lands:
 - inspect whether traces actually explain the path
 - tighten naming and correlation if the flow is still opaque
 - fix instrumentation gaps before declaring the story done
+- for ChatBridge, inspect the local JSON proof emitted under
+  `test/output/chatbridge-edd/`
+- when live proof is required and available, run
+  `.ai/workflows/langsmith-finish-check.md` before declaring the story done
 
 ## Step 6: Promote Stable Cases Into Regression Assets
 
@@ -70,9 +87,14 @@ After the flow is understandable:
 - convert key trace scenarios into tests or eval fixtures
 - document the expected signals in the story packet
 - carry only durable insights into `.ai/memory/project/`
+- for ChatBridge, the default regression asset is a scenario in
+  `test/integration/chatbridge/edd/` verified by `pnpm run test:chatbridge:edd`
 
 ## Exit Criteria
 
 - The critical path is traceable end to end.
 - A focused eval set exists for the important success and failure modes.
 - Instrumentation is good enough to support later debugging and regression work.
+- For ChatBridge work, the changed behavior is covered by local EDD and, when
+  acceptance needs live proof, the LangSmith finish check has either passed or
+  been recorded as explicitly blocked.

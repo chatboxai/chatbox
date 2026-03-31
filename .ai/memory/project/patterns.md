@@ -25,12 +25,20 @@ Capture repeatable patterns that match how this workspace actually works.
 - Formatting and linting use Biome.
 - Baseline validation set is:
   - `pnpm test`
+  - `pnpm run test:chatbridge:edd` for ChatBridge traced behavior
   - `pnpm check`
   - `pnpm lint`
   - `pnpm build`
 - Orchestration-heavy work should establish traces/evals early through
   `.ai/workflows/trace-driven-development.md` instead of waiting for late debug
   cycles.
+- ChatBridge EDD is local-first: `test/integration/chatbridge/edd/` contains
+  the reusable eval scenarios and `test/output/chatbridge-edd/` stores
+  vendor-neutral JSON proof for each run.
+- Live LangSmith uploads are opt-in for ChatBridge EDD. Use
+  `pnpm run test:chatbridge:edd:live` plus
+  `.ai/workflows/langsmith-finish-check.md` only when fresh remote evidence is
+  required and credentials plus quota are available.
 - Fresh story branches and worktrees should copy the required local `.env*`
   files from the working `main` setup, run `pnpm install` before project
   commands, and keep copied env files untracked.

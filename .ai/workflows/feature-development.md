@@ -51,6 +51,10 @@ If the task changes model orchestration, routing, tool execution, app lifecycle,
 completion, auth brokerage, or similar runtime coordination:
 - run `.ai/workflows/trace-driven-development.md`
 - define the trace and eval boundary before broad implementation
+- for ChatBridge stories, extend `test/integration/chatbridge/edd/` so the
+  changed behavior has durable local regression evidence
+- if fresh remote trace proof matters for acceptance, plan the live verification
+  pass through `.ai/workflows/langsmith-finish-check.md`
 
 ### Step 0.7: Run Pencil Design for UI Stories
 If the task changes visible UI and is not already implementing an approved
@@ -97,6 +101,9 @@ If the task changes behavior:
 ### Step 6: Run Validation Gates
 - run the relevant repo validation commands
 - add focused smoke checks for the changed surface when needed
+- for ChatBridge traced behavior, run `pnpm run test:chatbridge:edd`
+- when the story explicitly needs fresh remote trace proof and LangSmith access
+  is available, run `.ai/workflows/langsmith-finish-check.md`
 
 ### Step 7: Update Docs and Memory
 - update user-facing or architecture docs when the task changes them

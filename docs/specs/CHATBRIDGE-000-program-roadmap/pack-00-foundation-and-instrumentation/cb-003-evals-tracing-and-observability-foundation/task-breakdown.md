@@ -29,6 +29,8 @@
 | T003 | Publish the durable ChatBridge observability reference in `chatbridge/EVALS_AND_OBSERVABILITY.md`. | blocked-by:T001,T002 | yes | doc review |
 | T004 | Map which later story types must establish traces/evals before implementation. | blocked-by:T001,T002,T003 | yes | roadmap consistency check |
 | T005 | Record security and privacy guardrails for instrumentation. | blocked-by:T001,T002,T003 | yes | packet completeness review |
+| T006 | Land the local-first ChatBridge EDD harness plus opt-in live LangSmith finish check. | blocked-by:T001,T002,T003,T004,T005 | no | `pnpm run test:chatbridge:edd` |
+| T007 | Recomplete previously merged orchestration-heavy ChatBridge stories on top of the EDD layer and record the inventory. | blocked-by:T006 | no | EDD inventory and suite review |
 
 Dependency values:
 - `must-have`

@@ -53,6 +53,11 @@ Load context in this order before making non-trivial changes:
 - For model/orchestration/app-runtime/auth-heavy work, run
   `.ai/workflows/trace-driven-development.md` so traces, evals, and observable
   lifecycle seams exist before broad implementation.
+- For ChatBridge stories that change routing, tool execution, app lifecycle,
+  completion, app-aware memory, or auth brokerage, extend the local EDD suite
+  in `test/integration/chatbridge/edd/`, run `pnpm run test:chatbridge:edd`
+  before handoff, and use `.ai/workflows/langsmith-finish-check.md` when live
+  LangSmith proof is relevant and credentials plus quota are available.
 - When a story changes inspectable ChatBridge shell, lifecycle, history, or
   HTML-preview behavior, update the live seed catalog in
   `src/shared/chatbridge/live-seeds.ts`, the dev seeding helper in
@@ -71,6 +76,8 @@ Load context in this order before making non-trivial changes:
 Run validation from the repo root:
 
 - `pnpm test`
+- `pnpm run test:chatbridge:edd` for ChatBridge orchestration, lifecycle,
+  routing, completion, tool-execution, or auth stories
 - `pnpm check`
 - `pnpm lint`
 - `pnpm build`

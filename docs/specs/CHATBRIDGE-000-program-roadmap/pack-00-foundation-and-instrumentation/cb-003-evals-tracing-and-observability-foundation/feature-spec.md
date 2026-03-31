@@ -73,5 +73,8 @@ development instead of flying blind.
 - A trace-driven workflow exists for later orchestration-heavy stories.
 - Later packs can point back to this foundation instead of inventing their own
   observability story from scratch.
+- The local-first ChatBridge EDD harness exists in
+  `test/integration/chatbridge/edd/` and the merged runtime stories that should
+  have used EDD are backfilled in the recompletion inventory.
 - The durable observability reference lives in
   `chatbridge/EVALS_AND_OBSERVABILITY.md`.

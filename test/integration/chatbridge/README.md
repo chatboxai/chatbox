@@ -65,3 +65,16 @@ Reference:
 
 - `chatbridge/INTEGRATION_HARNESS.md`
 - `chatbridge/EVALS_AND_OBSERVABILITY.md`
+- `test/integration/chatbridge/edd/README.md`
+
+## ChatBridge EDD
+
+`test/integration/chatbridge/edd/` is the local-first EDD layer for
+orchestration-heavy ChatBridge behavior.
+
+Use it for:
+
+- durable regression coverage over already-merged ChatBridge runtime stories
+- vendor-neutral proof logs under `test/output/chatbridge-edd/`
+- optional live LangSmith uploads when
+  `.ai/workflows/langsmith-finish-check.md` is relevant

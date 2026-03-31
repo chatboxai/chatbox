@@ -34,6 +34,11 @@
 - **UI design baseline**: UI stories keep normal story specs, then use
   `.ai/workflows/pencil-ui-design.md` plus `.ai/docs/PENCIL_UI_WORKFLOW.md` to
   generate 2 or 3 Pencil variations and wait for user approval before code.
+- **ChatBridge EDD baseline**:
+  - local eval suite: `test/integration/chatbridge/edd/`
+  - local eval config: `ls.vitest.config.ts`
+  - local proof output: `test/output/chatbridge-edd/`
+  - live verification workflow: `.ai/workflows/langsmith-finish-check.md`
 - **ChatBridge live inspection baseline**:
   - shared seed catalog: `src/shared/chatbridge/live-seeds.ts`
   - dev seeding helper: `src/renderer/dev/chatbridgeSeeds.ts`
@@ -69,6 +74,9 @@
   so instead of implying one.
 - For the current web host shell, prefer the checked-in Vercel baseline before
   inventing a new provider path.
+- For ChatBridge orchestration-heavy stories, local EDD coverage is mandatory;
+  live LangSmith uploads are opt-in and should be treated as a finish-check
+  layer when credentials plus quota are available.
 - For hosted preview verification, prefer `vercel inspect` plus a logged-in
   preview session when Vercel deployment protection blocks anonymous route
   checks.

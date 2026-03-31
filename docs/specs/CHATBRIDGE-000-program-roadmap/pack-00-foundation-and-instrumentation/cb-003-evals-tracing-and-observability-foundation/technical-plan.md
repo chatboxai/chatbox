@@ -12,12 +12,12 @@
 - Components/modules affected:
   - `chatbridge/README.md`
   - `chatbridge/EVALS_AND_OBSERVABILITY.md`
+  - `ls.vitest.config.ts`
   - `.ai/workflows/feature-development.md`
+  - `.ai/workflows/langsmith-finish-check.md`
   - `.ai/workflows/trace-driven-development.md`
-  - `src/main/adapters/sentry.ts`
-  - `src/renderer/setup/sentry_init.ts`
-  - `src/shared/utils/sentry_adapter.ts`
-  - `test/integration/mocks/sentry.ts`
+  - `test/integration/chatbridge/README.md`
+  - `test/integration/chatbridge/edd/**`
   - roadmap pack docs and later ChatBridge instrumentation seams
 - Public interfaces/contracts:
   - trace-driven development workflow contract
@@ -65,7 +65,8 @@
 - Existing dependencies used:
   current feature workflow and ChatBridge architecture docs
 - New dependencies proposed (if any):
-  none required for the planning/workflow foundation
+  - `langsmith` as the optional live trace/eval transport used by the local
+    EDD harness when enabled
 - Risk and mitigation:
   keep the workflow vendor-neutral and attach concrete instrumentation only when
   a later story needs it
@@ -73,11 +74,13 @@
 ## Test Strategy
 
 - Unit tests:
-  future eval fixture and trace-schema helpers
+  local EDD helper coverage remains inside the ChatBridge integration harness
 - Integration tests:
-  trace capture and lifecycle event verification in later packs
+  `pnpm run test:chatbridge:edd` covers the merged orchestration-heavy stories
+  that now have backfilled local-first EDD evidence
 - E2E or smoke tests:
-  full lifecycle traces for flagship apps
+  `pnpm run test:chatbridge:edd:live` plus
+  `.ai/workflows/langsmith-finish-check.md` when fresh remote proof is required
 - Edge-case coverage mapping:
   timeouts, crashes, invalid tool calls, malformed bridge events, auth denial
 
@@ -100,7 +103,8 @@
   later packs may gate heavier instrumentation if needed
 - Observability checks:
   future stories should expose enough trace and event detail to explain failures
-  without leaking secrets
+  without leaking secrets, and they should extend the local-first EDD harness
+  rather than inventing one-off trace checks
 
 ## Validation Commands
 

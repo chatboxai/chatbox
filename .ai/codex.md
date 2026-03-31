@@ -40,6 +40,11 @@ Then use as needed:
 - For model/orchestration/app-runtime/auth-heavy work, run
   `.ai/workflows/trace-driven-development.md` so traces, evals, and observable
   lifecycle seams are established early.
+- For ChatBridge routing/tool/lifecycle/completion/auth work, extend
+  `test/integration/chatbridge/edd/`, run `pnpm run test:chatbridge:edd`
+  before handoff, and use `.ai/workflows/langsmith-finish-check.md` when the
+  story needs fresh live LangSmith evidence and credentials plus quota are
+  available.
 - When a story changes inspectable ChatBridge shell, lifecycle, history, or
   HTML-preview behavior, update `src/shared/chatbridge/live-seeds.ts`,
   `src/renderer/dev/chatbridgeSeeds.ts`, and the `/dev/chatbridge` lab so the
@@ -94,6 +99,7 @@ Then use as needed:
   `test/`.
 - Root validation commands are:
   - `pnpm test`
+  - `pnpm run test:chatbridge:edd` when ChatBridge traced behavior changed
   - `pnpm check`
   - `pnpm lint`
   - `pnpm build`

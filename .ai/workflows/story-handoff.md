@@ -22,6 +22,12 @@ Every completion gate must include:
 - `Completion Plan`
 - `User Audit Checklist (Run This Now)`
 
+When `.ai/workflows/trace-driven-development.md` or
+`.ai/workflows/langsmith-finish-check.md` ran, the completion gate must also
+include:
+
+- `EDD / LangSmith`
+
 For stories that touch the hosted web shell or deployment contract, the final
 post-merge closeout must also include:
 
@@ -64,6 +70,17 @@ When `.ai/workflows/tdd-pipeline.md` was used, also include:
 - TDD handoff artifact path
 - RED/GREEN checkpoint evidence
 - optional quality gate outcomes that were run or skipped
+
+## EDD / LangSmith Requirements
+
+When the story used trace-driven development or live LangSmith verification,
+include:
+
+- local EDD scenarios that were added or exercised
+- local proof artifact paths under `test/output/chatbridge-edd/` when relevant
+- whether live LangSmith tracking was run, skipped, or blocked
+- the exact block reason when live verification could not be completed
+- trace IDs or project references when live verification succeeded
 
 ## Docs / Memory Requirements
 

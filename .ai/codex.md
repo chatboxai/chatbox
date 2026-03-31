@@ -40,6 +40,10 @@ Then use as needed:
 - For model/orchestration/app-runtime/auth-heavy work, run
   `.ai/workflows/trace-driven-development.md` so traces, evals, and observable
   lifecycle seams are established early.
+- When a story changes inspectable ChatBridge shell, lifecycle, history, or
+  HTML-preview behavior, update `src/shared/chatbridge/live-seeds.ts`,
+  `src/renderer/dev/chatbridgeSeeds.ts`, and the `/dev/chatbridge` lab so the
+  change stays seedable in the live app.
 - For UI-affecting work, keep spec and implementation planning in the normal
   story flow, then route visual exploration through
   `.ai/workflows/pencil-ui-design.md`.
@@ -58,6 +62,9 @@ Then use as needed:
   what changed, where it changed, and how the user should inspect and test it.
   For UI changes, include the route or entry path, the visible expected result,
   and the proof artifact when available.
+- For ChatBridge stories that change inspectable behavior, also state whether
+  the `/dev/chatbridge` seed lab was updated and which seeded session the user
+  should reseed/open for live verification.
 - For stories that touch the hosted web shell or deployment contract, merge is
   followed by `.ai/workflows/vercel-post-merge-verification.md`; treat the
   story as operationally incomplete until the `Vercel Main Sync` workflow

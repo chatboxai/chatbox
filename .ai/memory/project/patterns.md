@@ -48,6 +48,10 @@ Capture repeatable patterns that match how this workspace actually works.
   changed plus concrete inspection and testing guidance. UI stories should name
   the route or component path, the click path or entry state, and the expected
   visible outcome.
+- Inspectable ChatBridge behavior should stay wired to the live seed lab:
+  `src/shared/chatbridge/live-seeds.ts` defines the seeded scenarios,
+  `src/renderer/dev/chatbridgeSeeds.ts` upserts them into storage, and
+  `/dev/chatbridge` is the live entry point for manual verification.
 
 ## Deployment and Release
 

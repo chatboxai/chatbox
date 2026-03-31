@@ -15,6 +15,20 @@ The goal is not to avoid real integrations forever. The goal is to prevent Pack
 runtime is not fully deployed yet, even though the host shell now has a real
 Phase 0 deployment surface.
 
+## Live Inspection Companion
+
+The harness now has a live manual-verification companion for inspectable
+ChatBridge behavior:
+
+- shared seed catalog: `src/shared/chatbridge/live-seeds.ts`
+- dev seeding helper: `src/renderer/dev/chatbridgeSeeds.ts`
+- live inspection route: `/dev/chatbridge`
+
+Use this when the user needs to verify host shell, history continuity, or
+artifact preview behavior in the actual app instead of only through Vitest
+fixtures. Relevant ChatBridge stories should keep this seed surface current in
+the same diff as the behavior change.
+
 ## Current Repo Harness Assets
 
 ### Existing integration test substrate

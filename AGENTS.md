@@ -53,6 +53,11 @@ Load context in this order before making non-trivial changes:
 - For model/orchestration/app-runtime/auth-heavy work, run
   `.ai/workflows/trace-driven-development.md` so traces, evals, and observable
   lifecycle seams exist before broad implementation.
+- When a story changes inspectable ChatBridge shell, lifecycle, history, or
+  HTML-preview behavior, update the live seed catalog in
+  `src/shared/chatbridge/live-seeds.ts`, the dev seeding helper in
+  `src/renderer/dev/chatbridgeSeeds.ts`, and the `/dev/chatbridge` lab so the
+  change is testable in the live app.
 - For behavior changes, use `.ai/workflows/tdd-pipeline.md` when practical.
 - For visible UI work, keep spec and implementation planning in the normal
   story flow, then run `.ai/workflows/pencil-ui-design.md` through Pencil MCP,
@@ -82,6 +87,9 @@ harness still matches the actual repo layout and commands.
   where it changed, and exactly how to inspect and test it. If the story has a
   UI surface, include the route, click path, expected visible outcome, and the
   proof artifact when available.
+- If a story changes inspectable ChatBridge behavior, the completion gate must
+  also say whether the `/dev/chatbridge` seed lab was updated and name the
+  exact seeded session or scenario the user should reseed and open.
 - A story is not complete until it is merged to `main` on GitHub, unless the
   user explicitly asks to pause before merge or use a different merge path.
 - When parallel story work is active, do not infer completion state from the

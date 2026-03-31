@@ -49,6 +49,14 @@ For UI stories, the explainer must also include:
 - the proof artifact to review when available: screenshot, Pencil artifact, or
   explicit blocker
 
+For ChatBridge stories that change inspectable shell, lifecycle, history, or
+HTML-preview behavior, the explainer must also include:
+
+- whether `src/shared/chatbridge/live-seeds.ts` was updated
+- whether the `/dev/chatbridge` seed lab was updated
+- the exact seeded session or scenario the user should reseed and open
+- the visible state that seed is proving
+
 ## TDD Evidence Requirements
 
 When `.ai/workflows/tdd-pipeline.md` was used, also include:
@@ -122,6 +130,8 @@ the user audit:
 - include expected outcome and failure hint for each step
 - align the checklist with the story explainer so the user can move directly
   from "what changed" to "how do I verify it"
+- for ChatBridge stories with inspectable behavior changes, point to
+  `/dev/chatbridge` and name the exact seeded session or scenario to use
 
 ## Deployed Audit Checklist Requirements
 
@@ -170,3 +180,5 @@ exactly what to open after merge:
   post-merge closeout
 - UI stories include route-level inspection guidance and visible proof that
   tells the user what to look for
+- ChatBridge stories with inspectable behavior changes identify the updated
+  live seed scenario and tell the user how to reseed/open it

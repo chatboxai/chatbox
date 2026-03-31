@@ -41,17 +41,43 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Current integration seams are mapped to future ChatBridge use
+  - [x] Current integration seams are mapped to future ChatBridge use
 - T002 tests:
-  - [ ] Mock and harness contracts are specific enough for later story work
+  - [x] Mock and harness contracts are specific enough for later story work
 - T003 tests:
-  - [ ] The starter ChatBridge harness location exists and matches the contract
+  - [x] The starter ChatBridge harness location exists and matches the contract
 - T004 tests:
-  - [ ] Later packs can identify where real integrations are required
+  - [x] Later packs can identify where real integrations are required
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Deferred tasks documented with rationale
-- [ ] `chatbridge/INTEGRATION_HARNESS.md` exists and `test/integration/chatbridge/` is present
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Deferred tasks documented with rationale
+- [x] `chatbridge/INTEGRATION_HARNESS.md` exists and `test/integration/chatbridge/` is present
+
+## Recorded Evidence
+
+- Durable harness reference:
+  `chatbridge/INTEGRATION_HARNESS.md`
+- Starter ChatBridge harness location:
+  `test/integration/chatbridge/README.md`
+- Starter fixture and mock placeholders:
+  `test/integration/chatbridge/fixtures/README.md`,
+  `test/integration/chatbridge/mocks/README.md`, and
+  `test/integration/chatbridge/scenarios/README.md`
+- Existing integration seam examples:
+  `test/integration/file-conversation/test-harness.ts`,
+  `test/integration/file-conversation/setup.ts`,
+  `test/integration/model-provider/model-provider.test.ts`,
+  `test/integration/mocks/model-dependencies.ts`, and
+  `test/integration/mocks/sentry.ts`
+
+## Deferred Follow-up
+
+- Add concrete manifest, lifecycle, completion, and failure payload fixtures to
+  the existing `test/integration/chatbridge/fixtures/` space as Pack 02+
+  contracts harden.
+- Add real mock registry, policy, auth-broker, and partner-runtime helpers to
+  `test/integration/chatbridge/mocks/` instead of creating a second harness
+  location later.

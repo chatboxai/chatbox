@@ -161,6 +161,12 @@ Return a concise update with:
 - branch cleanup status
 - finalization guard result
 
+If the story touched the hosted web shell or deployment contract, also include:
+
+- workflow URL for `Vercel Main Sync`
+- deployment URL when available, or the explicit blocker if not
+- `Deployed Audit Checklist (Run On Hosted Version)`
+
 ## Exit Criteria
 
 - combined completion gate issued with no pause or alternate merge-path request
@@ -174,3 +180,4 @@ Return a concise update with:
 - merge completed or failure routed to recovery
 - post-merge Vercel verification handled or explicitly marked `not applicable`
 - branch cleanup completed or explicitly deferred
+- deploy-surface finalization includes a hosted-version audit checklist

@@ -25,9 +25,9 @@ App tools cannot be treated as generic model tool calls if the platform wants sa
 
 ## Acceptance Criteria
 
-- [ ] AC-1: App tool invocation semantics define validation, version compatibility, and execution authority clearly.
-- [ ] AC-2: Side-effecting tools require idempotency and explicit retry classification.
-- [ ] AC-3: The host records normalized invocation payloads and results instead of arbitrary raw partner blobs.
+- [x] AC-1: App tool invocation semantics define validation, version compatibility, and execution authority clearly.
+- [x] AC-2: Side-effecting tools require idempotency and explicit retry classification.
+- [x] AC-3: The host records normalized invocation payloads and results instead of arbitrary raw partner blobs.
 
 ## Edge Cases
 

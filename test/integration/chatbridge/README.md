@@ -28,10 +28,17 @@ CB-201 adds the reviewed-manifest registry slice:
   covers approved catalog ingestion plus malformed/unsupported rejection
   behavior
 
-That scenario is the baseline gate for later ChatBridge packs that add real
-app-aware schema, containers, and lifecycle events. New ChatBridge persistence
-or export changes should extend this suite instead of creating isolated one-off
-tests elsewhere.
+CB-204 adds the first host-coordinated tool execution contract slice:
+
+- `scenarios/host-coordinated-tool-execution.test.ts`
+  covers host-managed tool validation, idempotency enforcement, retry
+  classification metadata, and normalized execution records using mock app
+  tools wired through the current orchestration seam
+
+That scenario set is the baseline gate for later ChatBridge packs that add real
+app-aware schema, containers, and lifecycle events. New ChatBridge persistence,
+manifest, or tool-execution changes should extend this suite instead of
+creating isolated one-off tests elsewhere.
 
 Reference:
 

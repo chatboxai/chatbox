@@ -2,7 +2,8 @@
  * Integration tests for AI model providers.
  *
  * 运行方式
- * 1. 创建 .env 文件，添加各个模型提供商的 API Key，例如：
+ * 1. 创建 .env.local 或 .env 文件，添加各个模型提供商的 API Key，例如：
+ *    OPENAI_API_KEY=your_openai_api_key
  *    TEST_OPENAI_API_KEY=your_openai_api_key
  *    TEST_GEMINI_API_KEY=your_gemini_api_key
  *    TEST_OPENAI_RESPONSES_API_KEY=your_openai_api_key
@@ -27,6 +28,24 @@ import { MockSentryAdapter } from '../mocks/sentry'
 
 function keyEnv(providerName: string): string {
   return `TEST_${providerName.toUpperCase().replace(/-/g, '_')}_API_KEY`
+}
+
+const PROVIDER_KEY_FALLBACKS: Partial<Record<ModelProviderEnum, string[]>> = {
+  [ModelProviderEnum.OpenAI]: ['OPENAI_API_KEY'],
+  [ModelProviderEnum.OpenAIResponses]: ['TEST_OPENAI_API_KEY', 'OPENAI_API_KEY'],
+}
+
+function resolveApiKey(providerName: ModelProviderEnum): string {
+  const candidateEnvs = [keyEnv(providerName), ...(PROVIDER_KEY_FALLBACKS[providerName] || [])]
+
+  for (const envName of candidateEnvs) {
+    const value = process.env[envName]
+    if (value) {
+      return value
+    }
+  }
+
+  return ''
 }
 
 const PROVIDER_TEST_MODELS: Record<ModelProvider, ProviderModelInfo[]> = {
@@ -75,7 +94,7 @@ const PROVIDER_TEST_MODELS: Record<ModelProvider, ProviderModelInfo[]> = {
 }
 
 function runProviderTest(providerName: ModelProviderEnum) {
-  const apiKey = process.env[keyEnv(providerName)] || ''
+  const apiKey = resolveApiKey(providerName)
   const models = PROVIDER_TEST_MODELS[providerName] || []
   const platform = new TestPlatform()
   const sentry = new MockSentryAdapter()

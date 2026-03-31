@@ -124,6 +124,9 @@ Important categories:
 
 - web/static deployment:
   - no runtime secret is required for the static shell itself
+  - `OPENAI_API_KEY` may be stored as a Vercel project secret for secure
+    server-side or build-adjacent automation, but it must not be injected into
+    the hosted client bundle
   - `VERCEL_TOKEN` is required in GitHub Actions for mainline deploy and
     verification
   - `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` may be supplied explicitly, but the
@@ -164,6 +167,10 @@ The following are still not deployed services in Phase 0:
   compile during `pnpm install` on Linux, but the static web-shell preview
   still completes successfully because the Phase 0 web build does not depend on
   that native binary at runtime.
+- The hosted web shell is still a static/client-heavy surface; storing
+  `OPENAI_API_KEY` in Vercel is valid for secure server-side or CI usage, but
+  the current checked-in web shell does not consume that key at runtime and
+  should not be changed to embed it client-side.
 
 Those remain later-pack backend work and should not be implied by the existence
 of the hosted web shell.

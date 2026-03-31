@@ -108,6 +108,22 @@ export const MessageReasoningPartSchema = z.object({
   duration: z.number().optional(),
 })
 
+export const MessageAppLifecycleSchema = z.enum(['launching', 'ready', 'active', 'complete', 'error', 'stale'])
+
+export const MessageAppPartSchema = z.object({
+  type: z.literal('app'),
+  appId: z.string(),
+  appName: z.string().optional(),
+  appInstanceId: z.string(),
+  lifecycle: MessageAppLifecycleSchema,
+  summary: z.string().optional(),
+  toolCallId: z.string().optional(),
+  bridgeSessionId: z.string().optional(),
+  snapshot: z.record(z.string(), z.unknown()).optional(),
+  values: z.record(z.string(), z.unknown()).optional(),
+  error: z.string().optional(),
+})
+
 export const MessageToolCallPartSchema = z.object({
   type: z.literal('tool-call'),
   state: z.enum(['call', 'result', 'error']),
@@ -122,6 +138,7 @@ export const MessageContentPartSchema = z.discriminatedUnion('type', [
   MessageImagePartSchema,
   MessageInfoPartSchema,
   MessageReasoningPartSchema,
+  MessageAppPartSchema,
   MessageToolCallPartSchema,
 ])
 
@@ -292,6 +309,8 @@ export type MessageTextPart = z.infer<typeof MessageTextPartSchema>
 export type MessageImagePart = z.infer<typeof MessageImagePartSchema>
 export type MessageInfoPart = z.infer<typeof MessageInfoPartSchema>
 export type MessageReasoningPart = z.infer<typeof MessageReasoningPartSchema>
+export type MessageAppLifecycle = z.infer<typeof MessageAppLifecycleSchema>
+export type MessageAppPart = z.infer<typeof MessageAppPartSchema>
 export type MessageToolCallPart<Args = unknown, Result = unknown> = z.infer<typeof MessageToolCallPartSchema> & {
   args: Args
   result?: Result

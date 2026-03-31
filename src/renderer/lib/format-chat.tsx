@@ -5,7 +5,7 @@ import Markdown, { BlockCodeCollapsedStateProvider } from '@/components/Markdown
 import * as base64 from '@/packages/base64'
 import storage from '@/storage'
 import type { Message, MessageToolCallPart, SessionThread } from '../../shared/types'
-import { getMessageText } from '../../shared/utils/message'
+import { getMessageAppPartText, getMessageText } from '../../shared/utils/message'
 
 type ToolCallSummary = {
   id: string
@@ -95,6 +95,8 @@ function getInlineExportText(part: { type?: unknown; text?: unknown }): string |
       return '[image]'
     case 'info':
       return typeof part.text === 'string' ? part.text : '[info]'
+    case 'app':
+      return getMessageAppPartText(part)
     case 'reasoning':
       return null
     case 'tool-call':

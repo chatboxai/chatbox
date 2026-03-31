@@ -25,9 +25,9 @@ ChatBridge needs first-class timeline artifacts for app launch, active state, co
 
 ## Acceptance Criteria
 
-- [ ] AC-1: The shared message schema supports app-aware artifacts without breaking older sessions.
-- [ ] AC-2: Message utilities and renderers have a clear extension point for app lifecycle parts.
-- [ ] AC-3: Tool-call parts remain available for tools, but app lifecycle state is not forced through the wrong abstraction.
+- [x] AC-1: The shared message schema supports app-aware artifacts without breaking older sessions.
+- [x] AC-2: Message utilities and renderers have a clear extension point for app lifecycle parts.
+- [x] AC-3: Tool-call parts remain available for tools, but app lifecycle state is not forced through the wrong abstraction.
 
 ## Edge Cases
 

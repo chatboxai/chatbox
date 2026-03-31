@@ -2,7 +2,7 @@ import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, type ActionIconProps, Flex, Image as Img, Loader, Text, Tooltip as Tooltip1 } from '@mantine/core'
 import { Grid, Typography, useTheme } from '@mui/material'
 import Box from '@mui/material/Box'
-import type { Message, MessagePicture, MessageToolCallPart, SessionType } from '@shared/types'
+import type { Message, MessageAppPart, MessagePicture, MessageToolCallPart, SessionType } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import {
   IconArrowDown,
@@ -47,6 +47,7 @@ import { isContainRenderableCode, MessageArtifact } from '../Artifact'
 import { AssistantAvatar, SystemAvatar, UserAvatar } from '../common/Avatar'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Loading from '../icons/Loading'
+import { AppPartUI } from '../message-parts/AppPartUI'
 import { ReasoningContentUI, ToolCallPartUI } from '../message-parts/ToolCallPartUI'
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
@@ -461,6 +462,8 @@ const _Message: FC<Props> = (props) => {
                             </Text>
                           </Flex>
                         </Flex>
+                      ) : item.type === 'app' ? (
+                        <AppPartUI key={`app-${item.appInstanceId}-${index}`} part={item as MessageAppPart} />
                       ) : item.type === 'image' ? (
                         props.sessionType !== 'picture' && (
                           <div key={`image-${item.storageKey}`} className="mt-2">

@@ -15,7 +15,7 @@ vi.mock('@/components/Markdown', async () => {
 import { formatChatAsHtml, formatChatAsMarkdown, formatChatAsTxt } from './format-chat'
 
 describe('format chat exports', () => {
-  it('keeps info parts visible and renders a fallback label for future structured parts', async () => {
+  it('keeps info parts visible and exports app lifecycle summaries as first-class text', async () => {
     const message: Message = {
       id: 'msg-1',
       role: 'assistant',
@@ -25,9 +25,11 @@ describe('format chat exports', () => {
         {
           type: 'app',
           appId: 'story-builder',
+          appName: 'Story Builder',
           appInstanceId: 'instance-1',
-          state: 'active',
-        } as never,
+          lifecycle: 'active',
+          summary: 'Restored the active story draft and preserved the exportable checkpoint.',
+        },
       ],
     }
 
@@ -44,14 +46,14 @@ describe('format chat exports', () => {
 
     expect(markdown).toContain('Visible text')
     expect(markdown).toContain('Host status note')
-    expect(markdown).toContain('[app]')
+    expect(markdown).toContain('Restored the active story draft and preserved the exportable checkpoint.')
 
     expect(text).toContain('Visible text')
     expect(text).toContain('Host status note')
-    expect(text).toContain('[app]')
+    expect(text).toContain('Restored the active story draft and preserved the exportable checkpoint.')
 
     expect(html).toContain('Visible text')
     expect(html).toContain('Host status note')
-    expect(html).toContain('[app]')
+    expect(html).toContain('Restored the active story draft and preserved the exportable checkpoint.')
   })
 })

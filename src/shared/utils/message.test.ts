@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { migrateMessage } from './message'
+import { getMessageAppPartText, getMessageText, migrateMessage } from './message'
 
 describe('migrateMessage', () => {
   it('preserves structured content parts when a legacy content field is also present', () => {
@@ -27,8 +27,8 @@ describe('migrateMessage', () => {
     })
   })
 
-  it('preserves forward-compatible app-like content parts during hydration', () => {
-    const appPart = {
+  it('normalizes legacy app parts that used state instead of lifecycle during hydration', () => {
+    const legacyAppPart = {
       type: 'app',
       appId: 'story-builder',
       appInstanceId: 'instance-1',
@@ -39,11 +39,16 @@ describe('migrateMessage', () => {
       id: 'msg-2',
       role: 'assistant',
       content: 'legacy text should not replace app state',
-      contentParts: [appPart] as never,
+      contentParts: [legacyAppPart] as never,
     } as never)
 
     expect(migrated.contentParts).toHaveLength(1)
-    expect(migrated.contentParts[0] as unknown).toMatchObject(appPart)
+    expect(migrated.contentParts[0]).toMatchObject({
+      type: 'app',
+      appId: 'story-builder',
+      appInstanceId: 'instance-1',
+      lifecycle: 'active',
+    })
   })
 
   it('still falls back to legacy content when content parts only contain placeholder text', () => {
@@ -55,5 +60,27 @@ describe('migrateMessage', () => {
     } as never)
 
     expect(migrated.contentParts).toEqual([{ type: 'text', text: 'Recovered body' }])
+  })
+
+  it('uses app lifecycle summaries in message text output', () => {
+    const message = migrateMessage({
+      id: 'msg-4',
+      role: 'assistant',
+      contentParts: [
+        {
+          type: 'app',
+          appId: 'story-builder',
+          appName: 'Story Builder',
+          appInstanceId: 'instance-2',
+          lifecycle: 'complete',
+          summary: 'Saved the previous draft summary for later follow-up questions.',
+        },
+      ],
+    } as never)
+
+    expect(getMessageAppPartText(message.contentParts[0])).toBe(
+      'Saved the previous draft summary for later follow-up questions.'
+    )
+    expect(getMessageText(message)).toBe('Saved the previous draft summary for later follow-up questions.')
   })
 })

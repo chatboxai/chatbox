@@ -1,7 +1,7 @@
 import '../setup'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { MessageToolCallPart } from '@shared/types/session'
+import type { MessageAppPart, MessageToolCallPart } from '@shared/types/session'
 import platform from '@/platform'
 import type TestPlatform from '@/platform/test_platform'
 import * as chatStore from '@/stores/chatStore'
@@ -17,6 +17,12 @@ function getToolCall(message: { contentParts: Array<{ type: string }> }): Messag
   const toolCall = message.contentParts.find((part) => part.type === 'tool-call')
   expect(toolCall).toBeDefined()
   return toolCall as MessageToolCallPart
+}
+
+function getAppPart(message: { contentParts: Array<{ type: string }> }): MessageAppPart {
+  const appPart = message.contentParts.find((part) => part.type === 'app')
+  expect(appPart).toBeDefined()
+  return appPart as MessageAppPart
 }
 
 describe('ChatBridge app-aware persistence regression coverage', () => {
@@ -49,6 +55,14 @@ describe('ChatBridge app-aware persistence regression coverage', () => {
     expect(reloadedSession?.threads?.[0].messages.map((message) => message.id)).toEqual(fixture.historyMessageIds)
 
     const currentToolCall = getToolCall(reloadedSession!.messages[2])
+    const currentAppPart = getAppPart(reloadedSession!.messages[2])
+
+    expect(currentAppPart).toMatchObject({
+      appId: 'story-builder',
+      appName: 'Story Builder',
+      lifecycle: 'active',
+      summary: 'Restored the active story draft and preserved the exportable checkpoint.',
+    })
     expect(currentToolCall).toMatchObject({
       toolName: 'chatbridge_app_state',
       state: 'result',
@@ -75,7 +89,12 @@ describe('ChatBridge app-aware persistence regression coverage', () => {
     expect(switchedSession?.threads).toHaveLength(1)
     expect(switchedSession?.threads?.[0].messages.map((message) => message.id)).toEqual(fixture.currentMessageIds)
 
+    const archivedAppPart = getAppPart(switchedSession!.threads![0].messages[2])
     const archivedToolCall = getToolCall(switchedSession!.threads![0].messages[2])
+    expect(archivedAppPart).toMatchObject({
+      lifecycle: 'active',
+      summary: 'Restored the active story draft and preserved the exportable checkpoint.',
+    })
     expect(archivedToolCall.result).toMatchObject({
       lifecycle: 'active',
       summary: 'Restored the active story draft and preserved the exportable checkpoint.',
@@ -97,10 +116,12 @@ describe('ChatBridge app-aware persistence regression coverage', () => {
     expect(markdown).toContain('Tool Call: chatbridge_app_state (state: result)')
     expect(markdown).toContain('story-builder-state.json')
     expect(markdown).toContain('Restored the active story draft and preserved the exportable checkpoint.')
+    expect(markdown).toContain('Story Builder resumed with the latest draft checkpoint.')
 
     expect(text).toContain('Tool Call: chatbridge_app_state (state: result)')
     expect(text).toContain('Attachments:')
     expect(text).toContain('story-builder-state.json')
+    expect(text).toContain('Restored the active story draft and preserved the exportable checkpoint.')
 
     expect(html).toContain('chatbridge_app_state')
     expect(html).toContain('story-builder-state.json')
@@ -112,8 +133,13 @@ describe('ChatBridge app-aware persistence regression coverage', () => {
 
     queryClient.clear()
     const reloadedSession = await chatStore.getSession(createdSession.id)
+    const partialAppPart = getAppPart(reloadedSession!.messages[1])
     const partialToolCall = getToolCall(reloadedSession!.messages[1])
 
+    expect(partialAppPart).toMatchObject({
+      lifecycle: 'stale',
+      summary: 'Cached app state expired before a fresh checkpoint arrived.',
+    })
     expect(partialToolCall).toMatchObject({
       toolName: 'chatbridge_app_state',
       state: 'call',

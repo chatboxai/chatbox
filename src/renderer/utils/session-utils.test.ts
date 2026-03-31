@@ -38,8 +38,17 @@ describe('migrateSession', () => {
 
     const migrated = migrateSession(session)
 
-    expect(migrated.messages[0].contentParts[0] as unknown).toMatchObject(appPart)
-    expect(migrated.threads?.[0].messages[0].contentParts[0] as unknown).toMatchObject(appPart)
-    expect(migrated.messageForksHash?.pivot.lists[0].messages[0].contentParts[0] as unknown).toMatchObject(appPart)
+    expect(migrated.messages[0].contentParts[0]).toMatchObject({
+      type: 'app',
+      appId: 'story-builder',
+      appInstanceId: 'instance-1',
+      lifecycle: 'complete',
+    })
+    expect(migrated.threads?.[0].messages[0].contentParts[0]).toMatchObject({
+      lifecycle: 'complete',
+    })
+    expect(migrated.messageForksHash?.pivot.lists[0].messages[0].contentParts[0]).toMatchObject({
+      lifecycle: 'complete',
+    })
   })
 })

@@ -68,6 +68,37 @@ export default defineConfig({
    - Multi-part content merging
    - Image content handling
 
+## ChatBridge Live Seed Lab
+
+For inspectable ChatBridge shell, history, or preview changes, use the live
+seed lab in addition to automated tests:
+
+- Route: `/dev/chatbridge`
+- Shared seed catalog: `src/shared/chatbridge/live-seeds.ts`
+- Dev seed helper: `src/renderer/dev/chatbridgeSeeds.ts`
+
+### How to use it
+
+1. Open `/dev/chatbridge`.
+2. Click `Seed All Sessions` after pulling the latest relevant change.
+3. Open the seeded sessions from the normal session list or from the lab page.
+4. Follow the audit steps shown on each scenario card.
+
+### Current seeded scenarios
+
+- `Lifecycle tour`
+  - Covers host-owned loading, ready, active, complete, stale, and error
+    states in the real message timeline.
+- `History + preview`
+  - Covers thread history continuity, a persisted Story Builder checkpoint, and
+    the live HTML preview shell with `Preview` and `Refresh`.
+
+### Maintenance rule
+
+If a ChatBridge story changes inspectable shell, lifecycle, history, or
+preview behavior, update the seed catalog and the `/dev/chatbridge` audit copy
+in the same diff so the live inspection path stays current.
+
 ## Testing Patterns and Best Practices
 
 ### Mock Server Pattern

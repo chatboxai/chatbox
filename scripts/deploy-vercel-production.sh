@@ -36,14 +36,23 @@ if [ -n "${GITHUB_SHA:-}" ]; then
   )
 fi
 
-vercel "${DEPLOY_ARGS[@]}" 2>&1 | tee "$LOG_FILE" >&2
+: >"$LOG_FILE"
+
+DEPLOYMENT_OUTPUT="$(
+  vercel "${DEPLOY_ARGS[@]}" 2> >(tee "$LOG_FILE" >&2)
+)"
 
 DEPLOYMENT_URL="$(
-  grep -Eo 'https://[^[:space:]]+\.vercel\.app' "$LOG_FILE" | tail -n 1
+  printf '%s\n' "$DEPLOYMENT_OUTPUT" | awk 'NF { url=$0 } END { print url }'
 )"
 
 if [ -z "$DEPLOYMENT_URL" ]; then
-  echo "Could not determine deployment URL from $LOG_FILE" >&2
+  echo "Could not determine deployment URL from Vercel stdout" >&2
+  exit 1
+fi
+
+if ! printf '%s\n' "$DEPLOYMENT_URL" | grep -Eq '^https://[^[:space:]]+\.vercel\.app/?$'; then
+  echo "Unexpected deployment URL from Vercel stdout: $DEPLOYMENT_URL" >&2
   exit 1
 fi
 

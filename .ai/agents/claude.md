@@ -39,8 +39,11 @@ files reference.
   story spec and technical plan exist, and stop for user approval before code.
 - When a story changes inspectable ChatBridge shell, lifecycle, history, or
   HTML-preview behavior, update `src/shared/chatbridge/live-seeds.ts`,
+  `src/renderer/packages/initial_data.ts`,
+  `src/renderer/setup/preset_sessions.ts`,
   `src/renderer/dev/chatbridgeSeeds.ts`, and the `/dev/chatbridge` lab so the
-  change stays seedable in the live app.
+  change stays seedable in both the default app bootstrap and the live audit
+  flow.
 - For behavior changes, use `.ai/workflows/tdd-pipeline.md`.
 - For broader feature work, use `.ai/skills/spec-driven-development.md`.
 - For `.ai/` changes, use `.ai/workflows/ai-architecture-change.md`.

@@ -27,6 +27,7 @@ async function initPresetSessions() {
     {
       getData: storage.getItem.bind(storage),
       setData: storage.setItemNow.bind(storage),
+      setBlob: storage.setBlob.bind(storage),
     },
     lang
   )

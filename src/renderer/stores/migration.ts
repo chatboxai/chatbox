@@ -817,6 +817,7 @@ async function migrate_14_to_15(dataStore: MigrateStore) {
     {
       getData: dataStore.getData,
       setData: dataStore.setData,
+      setBlob: dataStore.setBlob ?? storage.setBlob.bind(storage),
     },
     locale,
     sessionList

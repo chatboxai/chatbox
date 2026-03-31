@@ -12,27 +12,33 @@
 
 1. Integration setup should reduce later story risk, not add one-off demo
    infrastructure.
-   Source: requested build strategy
+   Sources:
+   `chatbridge/INTEGRATION_HARNESS.md`,
+   `docs/specs/CHATBRIDGE-000-program-roadmap/pack-00-foundation-and-instrumentation/README.md`
 2. Use current provider and request patterns as the foundation.
    Sources:
    `src/shared/providers/registry.ts`,
-   `src/renderer/packages/remote.ts`
+   `test/integration/model-provider/model-provider.test.ts`,
+   `test/integration/file-conversation/test-harness.ts`
 3. Keep later partner/runtime testing in mind when defining fixtures and local
    harnesses.
-   Source: `chatbridge/PRESEARCH.md`
+   Sources:
+   `chatbridge/PRESEARCH.md`,
+   `chatbridge/INTEGRATION_HARNESS.md`
 
 ## Structural Map
 
+ - `chatbridge/INTEGRATION_HARNESS.md`
 - `src/shared/providers/registry.ts`
 - `src/renderer/packages/remote.ts`
 - `test/integration/`
-- `chatbridge/`
+- `test/integration/chatbridge/`
 
 ## Exemplars
 
-1. `src/shared/providers/registry.ts`
-2. `test/integration/`
-3. `src/renderer/packages/remote.ts`
+1. `chatbridge/INTEGRATION_HARNESS.md`
+2. `test/integration/file-conversation/test-harness.ts`
+3. `test/integration/model-provider/model-provider.test.ts`
 
 ## Lane Decision
 

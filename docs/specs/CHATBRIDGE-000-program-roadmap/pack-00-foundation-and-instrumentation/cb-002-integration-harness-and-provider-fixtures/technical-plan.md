@@ -12,12 +12,15 @@
 - Components/modules affected:
   - `chatbridge/README.md`
   - `chatbridge/INTEGRATION_HARNESS.md`
+  - `vitest.config.ts`
   - `src/shared/providers/registry.ts`
   - `test/integration/`
+  - `test/integration/file-conversation/setup.ts`
+  - `test/integration/file-conversation/test-harness.ts`
   - `test/integration/mocks/model-dependencies.ts`
   - `test/integration/mocks/sentry.ts`
-  - future `test/integration/chatbridge/`
-  - future partner mock-app fixtures
+  - `test/integration/chatbridge/`
+  - future partner mock-app fixtures and concrete payload fixtures
 - Public interfaces/contracts:
   - provider and partner fixture contract
   - local mock-host/runtime harness expectations
@@ -45,7 +48,7 @@
 - Response shape:
   fixtures should surface both happy-path and failure-path behavior
 - Storage/index changes:
-  starter integration-harness folder and fixture/scenario placeholders
+  starter integration-harness folder and fixture/mock/scenario placeholders
 
 ## Starter Harness Plan
 
@@ -54,6 +57,7 @@
 - Initial checked-in scaffold:
   - `README.md`
   - `fixtures/README.md`
+  - `mocks/README.md`
   - `scenarios/README.md`
 - Real logic should be added later as host/runtime contracts stabilize, but the
   location and usage rules should be fixed now.
@@ -66,6 +70,13 @@
   none by default
 - Risk and mitigation:
   keep mock contracts aligned to reviewed schemas and real host boundaries
+
+## Known Harness Gaps
+
+- The repo now contains the starter ChatBridge harness home and usage contract,
+  but not concrete manifest payloads or host/runtime lifecycle tests yet.
+- Later packs should add real fixture payloads and mock adapter behavior to the
+  existing scaffold instead of inventing a second test home.
 
 ## Test Strategy
 

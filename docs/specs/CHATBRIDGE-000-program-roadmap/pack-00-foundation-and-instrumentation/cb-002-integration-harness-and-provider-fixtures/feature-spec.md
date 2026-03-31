@@ -31,13 +31,13 @@ real external dependency to exist.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Provider and partner integration fixtures are planned as reusable
+- [x] AC-1: Provider and partner integration fixtures are planned as reusable
       Pack 0 assets.
-- [ ] AC-2: Local harness assumptions for reviewed app/runtime testing are
+- [x] AC-2: Local harness assumptions for reviewed app/runtime testing are
       explicit.
-- [ ] AC-3: Later packs can identify which stories should use mocks versus real
+- [x] AC-3: Later packs can identify which stories should use mocks versus real
       integration paths.
-- [ ] AC-4: A starter ChatBridge integration-harness location exists in the repo
+- [x] AC-4: A starter ChatBridge integration-harness location exists in the repo
       for future tests and fixtures.
 
 ## Edge Cases
@@ -73,3 +73,20 @@ real external dependency to exist.
 - Provider and partner mock expectations are clear enough for later packs.
 - The durable harness reference lives in `chatbridge/INTEGRATION_HARNESS.md`
   and the starter folder exists under `test/integration/chatbridge/`.
+
+## Execution Evidence
+
+- Durable harness reference:
+  `chatbridge/INTEGRATION_HARNESS.md`
+- Starter integration-harness home:
+  `test/integration/chatbridge/README.md`
+- Starter fixture/mocks/scenario placeholders:
+  `test/integration/chatbridge/fixtures/README.md`,
+  `test/integration/chatbridge/mocks/README.md`, and
+  `test/integration/chatbridge/scenarios/README.md`
+- Existing integration seam exemplars reused by the harness contract:
+  `test/integration/file-conversation/test-harness.ts`,
+  `test/integration/file-conversation/setup.ts`,
+  `test/integration/model-provider/model-provider.test.ts`,
+  `test/integration/mocks/model-dependencies.ts`, and
+  `test/integration/mocks/sentry.ts`

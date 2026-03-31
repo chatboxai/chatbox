@@ -40,15 +40,18 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Schema mismatch rejection
+  - [x] Schema mismatch rejection
 - T002 tests:
-  - [ ] Idempotency and retry classification behavior
+  - [x] Idempotency and retry classification behavior
 - T003 tests:
-  - [ ] Normalized logging payload coverage
+  - [x] Normalized logging payload coverage
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+Deferred tasks:
+- None.

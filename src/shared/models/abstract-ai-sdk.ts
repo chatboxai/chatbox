@@ -20,6 +20,7 @@ import {
   wrapLanguageModel,
 } from 'ai'
 import { createRetryable, isErrorAttempt, type RetryContext } from 'ai-retry'
+import { getChatBridgeHostToolPartUpdate } from '../chatbridge/tools'
 import type {
   MessageContentParts,
   MessageReasoningPart,
@@ -278,6 +279,14 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       | undefined
 
     if (toolCallPart) {
+      const hostManagedUpdate = getChatBridgeHostToolPartUpdate(toolResult.result)
+      if (hostManagedUpdate) {
+        toolCallPart.args = hostManagedUpdate.args
+        toolCallPart.result = hostManagedUpdate.result
+        toolCallPart.state = hostManagedUpdate.state
+        return
+      }
+
       const isError = toolResult.isError || (toolResult.result as unknown) instanceof Error
       if (isError) {
         if ((toolResult.result as unknown) instanceof Error) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildAppAwareSessionFixture,
   buildChatBridgeChessMidGameSessionFixture,
+  buildChatBridgeChessRuntimeSessionFixture,
   buildChatBridgeHistoryAndPreviewSessionFixture,
   buildChatBridgeLifecycleTourSessionFixture,
   buildPartialLifecycleSessionFixture,
@@ -53,6 +54,7 @@ describe('chatbridge live seed fixtures', () => {
   it('builds a chess mid-game fixture with a validated host-owned board summary', () => {
     const fixture = buildChatBridgeChessMidGameSessionFixture()
     const assistantMessage = fixture.messages.find((message) => message.id === 'msg-chess-assistant-board')
+
     const appPart = assistantMessage?.contentParts.find((part) => part.type === 'app')
 
     expect(appPart && appPart.type === 'app' ? appPart.appId : undefined).toBe('chess')
@@ -67,6 +69,20 @@ describe('chatbridge live seed fixtures', () => {
     })
   })
 
+  it('builds a chess runtime fixture with a live board snapshot and seeded app records', () => {
+    const fixture = buildChatBridgeChessRuntimeSessionFixture()
+    const assistantMessage = fixture.messages.at(-1)
+    const appPart = assistantMessage?.contentParts.find((part) => part.type === 'app')
+
+    expect(appPart && appPart.type === 'app' ? appPart.appId : undefined).toBe('chess')
+    expect(appPart && appPart.type === 'app' ? appPart.lifecycle : undefined).toBe('active')
+    expect(fixture.chatBridgeAppRecords?.instances[0]).toMatchObject({
+      appId: 'chess',
+      status: 'active',
+    })
+    expect(fixture.chatBridgeAppRecords?.events).toHaveLength(3)
+  })
+
   it('publishes the live seed catalog with stable scenario ids', () => {
     const fixtures = getChatBridgeLiveSeedFixtures()
 
@@ -74,6 +90,7 @@ describe('chatbridge live seed fixtures', () => {
       'lifecycle-tour',
       'chess-mid-game-board-context',
       'history-and-preview',
+      'chess-runtime',
     ])
   })
 })

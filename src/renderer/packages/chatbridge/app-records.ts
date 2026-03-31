@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import type { BridgeAppEvent } from '@shared/chatbridge/bridge-session'
 import {
+  ChatBridgeAppRecordSnapshotSchema,
+  type ChatBridgeAppRecordSnapshot,
+} from '@shared/chatbridge/app-records'
+import {
   applyChatBridgeAppEvent,
   type ChatBridgeAppEvent,
   type ChatBridgeAppEventTransitionReason,
@@ -50,13 +54,6 @@ export type ChatBridgeAppRecordState = {
   instances: Record<string, ChatBridgeAppInstance>
   eventsByInstanceId: Record<string, ChatBridgeAppEvent[]>
 }
-
-export const ChatBridgeAppRecordSnapshotSchema = z.object({
-  instances: z.array(ChatBridgeAppInstanceSchema),
-  events: z.array(ChatBridgeAppEventSchema),
-})
-
-export type ChatBridgeAppRecordSnapshot = z.infer<typeof ChatBridgeAppRecordSnapshotSchema>
 
 function defaultCreateId() {
   return crypto.randomUUID()

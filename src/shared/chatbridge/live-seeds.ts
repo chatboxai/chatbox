@@ -1,4 +1,15 @@
 import { normalizeChatBridgeChessRuntimeSnapshot } from './chess'
+import {
+  CHESS_APP_ID,
+  CHESS_APP_NAME,
+  createInitialChessAppSnapshot,
+  getChessDescription,
+  getChessFallbackText,
+  getChessStatusLabel,
+  getChessSummary,
+} from './apps/chess'
+import { createChatBridgeAppEvent, applyChatBridgeAppEvent } from './events'
+import { createChatBridgeAppInstance } from './instance'
 import type { Message, Session, SessionThread } from '../types'
 
 type ToolCallState = 'call' | 'result' | 'error'
@@ -206,6 +217,147 @@ function createHtmlPreviewMessage(id: string, timestamp: number): Message {
   ].join('\n')
 
   return createTextMessage(id, 'assistant', htmlPreviewMarkdown, timestamp)
+}
+
+function createChessRuntimeMessage(id: string, timestamp: number): Message {
+  const snapshot = createInitialChessAppSnapshot(timestamp)
+  const appInstanceId = 'chess-instance-seeded-runtime'
+  const bridgeSessionId = 'bridge-chess-seeded-runtime'
+
+  return {
+    id,
+    role: 'assistant',
+    timestamp,
+    contentParts: [
+      {
+        type: 'text',
+        text: 'The chess runtime is live in-thread. Try an illegal move first, then a legal opening move, and confirm the host keeps the latest position on reload.',
+      },
+      {
+        type: 'app',
+        appId: CHESS_APP_ID,
+        appName: CHESS_APP_NAME,
+        appInstanceId,
+        lifecycle: 'active',
+        summary: getChessSummary(snapshot),
+        toolCallId: 'tool-chess-runtime-seeded',
+        bridgeSessionId,
+        title: 'Chess board',
+        description: getChessDescription(snapshot),
+        statusText: getChessStatusLabel(snapshot),
+        fallbackTitle: 'Chess fallback',
+        fallbackText: getChessFallbackText(snapshot),
+        snapshot,
+      },
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'tool-chess-runtime-seeded',
+        toolName: 'chatbridge_app_state',
+        args: {
+          appId: CHESS_APP_ID,
+          lifecycle: 'active',
+          bridgeSessionId,
+        },
+        result: {
+          appId: CHESS_APP_ID,
+          appName: CHESS_APP_NAME,
+          appInstanceId,
+          lifecycle: 'active',
+          summary: getChessSummary(snapshot),
+          snapshot,
+        },
+      },
+    ],
+  }
+}
+
+function createSeededChessAppRecords() {
+  const snapshot = createInitialChessAppSnapshot(3)
+  const baseInstance = createChatBridgeAppInstance({
+    id: 'chess-instance-seeded-runtime',
+    appId: CHESS_APP_ID,
+    appVersion: '1.0.0',
+    bridgeSessionId: 'bridge-chess-seeded-runtime',
+    owner: {
+      authority: 'host',
+      conversationSessionId: 'seeded-chess-runtime-session',
+      initiatedBy: 'assistant',
+    },
+    resumability: {
+      mode: 'resumable',
+      resumeKey: 'chess-instance-seeded-runtime',
+    },
+    createdAt: 3,
+  })
+
+  const createdEvent = createChatBridgeAppEvent({
+    id: 'event-chess-created',
+    appInstanceId: baseInstance.id,
+    kind: 'instance.created',
+    actor: 'host',
+    sequence: 1,
+    createdAt: 3,
+    bridgeSessionId: 'bridge-chess-seeded-runtime',
+    nextStatus: 'launching',
+    payload: {
+      initiatedBy: 'assistant',
+    },
+  })
+
+  const createdTransition = applyChatBridgeAppEvent(baseInstance, createdEvent)
+  if (!createdTransition.accepted) {
+    throw new Error(`Unable to seed chess created event: ${createdTransition.reason}`)
+  }
+
+  const readyEvent = createChatBridgeAppEvent({
+    id: 'event-chess-ready',
+    appInstanceId: baseInstance.id,
+    kind: 'bridge.ready',
+    actor: 'host',
+    sequence: 2,
+    createdAt: 3,
+    bridgeSessionId: 'bridge-chess-seeded-runtime',
+    nextStatus: 'ready',
+    snapshot,
+    payload: {
+      source: 'seeded-runtime',
+    },
+  })
+
+  const readyTransition = applyChatBridgeAppEvent(createdTransition.instance, readyEvent)
+  if (!readyTransition.accepted) {
+    throw new Error(`Unable to seed chess ready event: ${readyTransition.reason}`)
+  }
+
+  const activeEvent = createChatBridgeAppEvent({
+    id: 'event-chess-active',
+    appInstanceId: baseInstance.id,
+    kind: 'state.updated',
+    actor: 'host',
+    sequence: 3,
+    createdAt: 3,
+    bridgeSessionId: 'bridge-chess-seeded-runtime',
+    nextStatus: 'active',
+    snapshot,
+    payload: {
+      moveCount: 0,
+      turn: snapshot.turn,
+      phase: snapshot.status.phase,
+      lastAction: snapshot.lastAction,
+    },
+    summaryForModel: getChessSummary(snapshot),
+  })
+
+  const activeTransition = applyChatBridgeAppEvent(readyTransition.instance, activeEvent)
+  if (!activeTransition.accepted) {
+    throw new Error(`Unable to seed chess active event: ${activeTransition.reason}`)
+  }
+
+  return {
+    instances: [activeTransition.instance],
+    events: [createdEvent, readyEvent, activeEvent],
+  }
 }
 
 export function buildAppAwareSessionFixture(): {
@@ -495,6 +647,30 @@ export function buildChatBridgeChessMidGameSessionFixture(): Omit<Session, 'id'>
   }
 }
 
+export function buildChatBridgeChessRuntimeSessionFixture(): Omit<Session, 'id'> {
+  return {
+    name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess runtime`,
+    type: 'chat',
+    threadName: 'Chess Runtime',
+    messages: [
+      createTextMessage(
+        'msg-chess-system',
+        'system',
+        'Keep the live chess runtime inside the host shell and persist the legal board state after every relevant move attempt.',
+        1
+      ),
+      createTextMessage(
+        'msg-chess-user',
+        'user',
+        'Open the chess board in the thread and let me test legal and illegal moves.',
+        2
+      ),
+      createChessRuntimeMessage('msg-chess-assistant', 3),
+    ],
+    chatBridgeAppRecords: createSeededChessAppRecords(),
+  }
+}
+
 export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
   const historyAndPreview = buildChatBridgeHistoryAndPreviewSessionFixture()
 
@@ -559,6 +735,28 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
       ],
       sessionInput: historyAndPreview.sessionInput,
       blobEntries: historyAndPreview.blobEntries,
+    },
+    {
+      id: 'chess-runtime',
+      name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess runtime`,
+      description:
+        'Seeds a playable chess board in the real host shell so you can verify legal move acceptance, illegal move rejection, and reload continuity against live session storage.',
+      coverage: ['Chess runtime', 'Legal + illegal moves', 'Host state persistence'],
+      auditSteps: [
+        {
+          action: 'Open the seeded chess session, click `E2`, then click `E5`.',
+          expected: 'The board rejects the illegal move inline and keeps the legal opening position unchanged.',
+        },
+        {
+          action: 'Click `E2`, then click `E4`.',
+          expected: 'The board updates to the legal move, the move ledger shows `1. e4`, and the host sync card reflects the new position key.',
+        },
+        {
+          action: 'Reload the session route or switch away and back to the seeded session.',
+          expected: 'The pawn remains on `E4`; the board does not reset to the opening position because the host persisted the latest chess snapshot.',
+        },
+      ],
+      sessionInput: buildChatBridgeChessRuntimeSessionFixture(),
     },
   ]
 }

@@ -74,6 +74,7 @@ describe('ChatBridgeSeedLab', () => {
     expect(screen.getByText('ChatBridge Seed Lab')).toBeTruthy()
     expect(screen.getByText('[Seeded] ChatBridge: Lifecycle tour')).toBeTruthy()
     expect(screen.getByText('[Seeded] ChatBridge: History + preview')).toBeTruthy()
+    expect(screen.getByText('[Seeded] ChatBridge: Chess runtime')).toBeTruthy()
     expect(screen.getByText(/Seed real ChatBridge sessions into storage/i)).toBeTruthy()
   })
 

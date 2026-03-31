@@ -60,5 +60,27 @@ Chess needs a real interactive runtime with board state and legal move validatio
 - Tests cover the primary happy path and the important failure mode for this story.
 - Validation passes for the touched scope.
 - Any new visible UI state has approved Pencil evidence before code if applicable.
-- The seeded Chess mid-game fixture now renders through the live runtime shell and
-  persists host-owned board updates in-thread.
+
+## Implementation Evidence
+
+- Shared chess contract and persisted snapshot shape:
+  - `src/shared/chatbridge/apps/chess.ts`
+  - `src/shared/chatbridge/app-records.ts`
+  - `src/shared/types/session.ts`
+- Renderer runtime and host-owned persistence:
+  - `src/renderer/components/chatbridge/apps/chess/ChessRuntime.tsx`
+  - `src/renderer/packages/chatbridge/chess-session-state.ts`
+  - `src/renderer/components/chatbridge/ChatBridgeMessagePart.tsx`
+  - `src/renderer/components/chatbridge/chatbridge.ts`
+  - `src/renderer/components/chat/Message.tsx`
+- Live inspection path updated for this story:
+  - `src/shared/chatbridge/live-seeds.ts`
+  - `src/renderer/dev/chatbridgeSeeds.ts`
+  - `src/renderer/components/dev/ChatBridgeSeedLab.tsx`
+- Focused regression coverage:
+  - `src/shared/chatbridge/apps/chess.test.ts`
+  - `src/renderer/packages/chatbridge/chess-session-state.test.ts`
+  - `src/renderer/components/chatbridge/apps/chess/ChessRuntime.test.tsx`
+  - `src/shared/chatbridge/live-seeds.test.ts`
+  - `src/renderer/dev/chatbridgeSeeds.test.ts`
+- The seeded Chess mid-game fixture remains available for bounded reasoning checks, and the new seeded Chess runtime fixture persists host-owned board updates in-thread.

@@ -49,13 +49,13 @@ describe('chatbridge seed helpers', () => {
     const rows = getExistingChatBridgeSeedSessions([
       {
         id: 'session-1',
-        name: fixtures[1].name,
+        name: fixtures.find((fixture) => fixture.id === 'history-and-preview')?.name || '',
         type: 'chat',
       },
     ])
 
-    expect(rows[0].existing).toBeUndefined()
-    expect(rows[1].existing?.id).toBe('session-1')
+    expect(rows.find((row) => row.fixture.id === 'lifecycle-tour')?.existing).toBeUndefined()
+    expect(rows.find((row) => row.fixture.id === 'history-and-preview')?.existing?.id).toBe('session-1')
   })
 
   it('reseeds selected fixtures by clearing previous sessions and writing fixture blobs', async () => {

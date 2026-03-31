@@ -1,3 +1,11 @@
+import { getChatBridgeChessStatusText, isChatBridgeChessAppId, normalizeChatBridgeChessRuntimeSnapshot } from '@shared/chatbridge'
+import {
+  ChessAppSnapshotSchema,
+  getChessFallbackText,
+  getChessStatusLabel,
+  getChessSurfaceDescription,
+  parseChessAppSnapshot,
+} from '@shared/chatbridge/apps/chess'
 import type { MessageAppLifecycle, MessageAppPart } from '@shared/types'
 
 export type ChatBridgeShellState = 'loading' | 'ready' | 'active' | 'complete' | 'error'
@@ -63,6 +71,41 @@ export function getMessageAppPartViewModel(part: MessageAppPart): ChatBridgeShel
   const state = getChatBridgeShellStateFromLifecycle(part.lifecycle)
   const shellLabel = part.appName || part.appId
   const appLabel = part.title || shellLabel
+
+  if (isChatBridgeChessAppId(part.appId)) {
+    const persistentSnapshot = ChessAppSnapshotSchema.safeParse(part.snapshot)
+    if (persistentSnapshot.success) {
+      const snapshot = parseChessAppSnapshot(part.snapshot)
+
+      return {
+        state,
+        title: part.title || 'Chess board',
+        description: part.description || 'A live chess board is running inside the host shell for in-thread play.',
+        surfaceTitle: 'Board surface',
+        surfaceDescription: getChessSurfaceDescription(snapshot),
+        statusLabel: part.statusText || getChessStatusLabel(snapshot),
+        fallbackTitle: part.fallbackTitle || 'Chess fallback',
+        fallbackText: part.fallbackText || getChessFallbackText(snapshot),
+      }
+    }
+
+    const snapshot = normalizeChatBridgeChessRuntimeSnapshot(part.snapshot)
+
+      return {
+        state,
+        title: part.title || 'Chess board',
+        description: part.description || 'A live chess board is running inside the host shell for in-thread play.',
+        surfaceTitle: 'Board surface',
+        surfaceDescription: snapshot.boardContext.summary || 'The host owns the latest validated chess board state.',
+        statusLabel: part.statusText || getChatBridgeChessStatusText(snapshot),
+        fallbackTitle: part.fallbackTitle || 'Chess fallback',
+        fallbackText:
+        part.fallbackText ||
+        part.error ||
+        snapshot.feedback?.message ||
+        'The host can still explain the latest chess board state if the live runtime stops responding.',
+    }
+  }
 
   const descriptions: Record<ChatBridgeShellState, string> = {
     loading: `${appLabel} is still being prepared inside the host-owned shell.`,

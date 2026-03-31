@@ -123,8 +123,8 @@ describe('Message chatbridge rendering', () => {
       </MantineProvider>
     )
 
-    expect(screen.getAllByText('Chess shell')).toHaveLength(2)
-    expect(screen.getByText('Running')).toBeTruthy()
+    expect(screen.getByText('Chess shell')).toBeTruthy()
+    expect(screen.getAllByText('White to move').length).toBeGreaterThan(0)
     expect(screen.getByText('The host keeps the chess runtime in the thread.')).toBeTruthy()
   })
 

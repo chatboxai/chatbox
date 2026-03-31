@@ -482,6 +482,8 @@ const _Message: FC<Props> = (props) => {
                               true
                             )
                           }}
+                          sessionId={sessionId}
+                          messageId={msg.id}
                         />
                       ) : item.type === 'image' ? (
                         props.sessionType !== 'picture' && (

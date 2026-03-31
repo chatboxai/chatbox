@@ -5,22 +5,40 @@ import {
   getChatBridgeChessStatusText,
   normalizeChatBridgeChessRuntimeSnapshot,
   undoChatBridgeChessMove,
+  type ChatBridgeChessRuntimeFeedback,
   type ChatBridgeChessRuntimeSnapshot,
   type ChatBridgeChessRuntimeStatus,
-  type ChatBridgeChessRuntimeMove,
-  type ChatBridgeChessRuntimeFeedback,
 } from '@shared/chatbridge'
+import {
+  ChessAppSnapshotSchema,
+  createChessAppSnapshotFromGame,
+  createChessMoveState,
+  createInitialChessAppSnapshot,
+  createRejectedChessSnapshot,
+  getChessPieceAtSquare,
+  getChessStatusLabel,
+  getChessSummary,
+  getTurnLabel,
+  parseChessAppSnapshot,
+  type ChessAppSnapshot,
+} from '@shared/chatbridge/apps/chess'
 import type { MessageAppPart } from '@shared/types'
-import type { Piece, Square } from 'chess.js'
+import { Chess, type Piece, type Square } from 'chess.js'
 import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { buildChessMessageAppPart, persistChessSnapshot } from '@/packages/chatbridge/chess-session-state'
 
 interface ChessRuntimeProps {
   part: MessageAppPart
+  sessionId?: string
+  messageId?: string
   onUpdatePart?: (nextPart: MessageAppPart) => void
 }
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
+const RANKS = [8, 7, 6, 5, 4, 3, 2, 1] as const
+const PIECE_FONT_FAMILY =
+  '"Noto Sans Symbols 2", "Segoe UI Symbol", "Apple Symbols", "Arial Unicode MS", sans-serif'
 
 const PIECE_GLYPHS: Record<'w' | 'b', Record<Piece['type'], string>> = {
   w: {
@@ -48,6 +66,14 @@ const PIECE_NAMES: Record<Piece['type'], string> = {
   r: 'rook',
   q: 'queen',
   k: 'king',
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function isPersistentSnapshot(snapshot: unknown): snapshot is ChessAppSnapshot {
+  return ChessAppSnapshotSchema.safeParse(snapshot).success
 }
 
 function isTerminalStatus(status: ChatBridgeChessRuntimeSnapshot['boardContext']['positionStatus']) {
@@ -82,7 +108,7 @@ function getSnapshotFeedback(snapshot: ChatBridgeChessRuntimeSnapshot): ChatBrid
   )
 }
 
-function buildPartFromSnapshot(part: MessageAppPart, snapshot: ChatBridgeChessRuntimeSnapshot): MessageAppPart {
+function buildLegacyPartFromSnapshot(part: MessageAppPart, snapshot: ChatBridgeChessRuntimeSnapshot): MessageAppPart {
   const statusText = snapshot.status === 'stale' ? 'Stale board' : getChatBridgeChessStatusText(snapshot)
   const description =
     part.description ??
@@ -117,7 +143,47 @@ function buildExplainFeedback(snapshot: ChatBridgeChessRuntimeSnapshot) {
   })
 }
 
-export function ChessRuntime({ part, onUpdatePart }: ChessRuntimeProps) {
+function buildMoveRows(snapshot: ChessAppSnapshot) {
+  const rows: Array<{ turn: number; white?: string; black?: string }> = []
+
+  snapshot.moveHistory.forEach((move, index) => {
+    const rowIndex = Math.floor(index / 2)
+    const row = rows[rowIndex] ?? { turn: rowIndex + 1 }
+
+    if (index % 2 === 0) {
+      row.white = move.san
+    } else {
+      row.black = move.san
+    }
+
+    rows[rowIndex] = row
+  })
+
+  return rows
+}
+
+function getSquareName(file: (typeof FILES)[number], rank: (typeof RANKS)[number]) {
+  return `${file}${rank}`
+}
+
+function getSquareAriaLabel(snapshot: ChessAppSnapshot, square: string) {
+  const piece = getChessPieceAtSquare(snapshot, square)
+  if (!piece) {
+    return `${square} empty square`
+  }
+
+  return `${square} ${piece.color} ${piece.piece}`
+}
+
+function readChessSnapshot(part: MessageAppPart): ChessAppSnapshot {
+  try {
+    return parseChessAppSnapshot(part.snapshot)
+  } catch {
+    return createInitialChessAppSnapshot()
+  }
+}
+
+function LegacyChessRuntime({ part, onUpdatePart }: ChessRuntimeProps) {
   const snapshot = useMemo(() => normalizeChatBridgeChessRuntimeSnapshot(part.snapshot), [part.snapshot])
   const game = useMemo(() => createChatBridgeChessGame(snapshot), [snapshot])
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
@@ -138,6 +204,7 @@ export function ChessRuntime({ part, onUpdatePart }: ChessRuntimeProps) {
     if (!uci || uci.length < 4) {
       return new Set<string>()
     }
+
     return new Set([uci.slice(0, 2), uci.slice(2, 4)])
   }, [snapshot.boardContext.lastMove?.uci])
   const feedback = getSnapshotFeedback(snapshot)
@@ -146,7 +213,7 @@ export function ChessRuntime({ part, onUpdatePart }: ChessRuntimeProps) {
     part.lifecycle !== 'active' || snapshot.status === 'stale' || isTerminalStatus(snapshot.boardContext.positionStatus)
 
   function commitSnapshot(nextSnapshot: ChatBridgeChessRuntimeSnapshot) {
-    onUpdatePart?.(buildPartFromSnapshot(part, nextSnapshot))
+    onUpdatePart?.(buildLegacyPartFromSnapshot(part, nextSnapshot))
   }
 
   function handleExplainPosition() {
@@ -333,6 +400,302 @@ export function ChessRuntime({ part, onUpdatePart }: ChessRuntimeProps) {
   )
 }
 
-function capitalize(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1)
+function PersistentChessRuntime({ part, sessionId, messageId, onUpdatePart }: ChessRuntimeProps) {
+  const snapshot = readChessSnapshot(part)
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null)
+  const [transientMessage, setTransientMessage] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setTransientMessage(null)
+  }, [snapshot.lastUpdatedAt])
+
+  const selectedPiece = selectedSquare ? getChessPieceAtSquare(snapshot, selectedSquare) : null
+  const game = useMemo(() => new Chess(snapshot.fen), [snapshot.fen])
+  const legalTargets: string[] = useMemo(
+    () =>
+      selectedSquare ? game.moves({ square: selectedSquare as Square, verbose: true }).map((move) => `${move.to}`) : [],
+    [game, selectedSquare]
+  )
+  const moveRows = buildMoveRows(snapshot)
+  const latestMove = snapshot.moveHistory.at(-1)
+  const latestMessage = transientMessage || snapshot.lastAction.message
+
+  const commitSnapshot = async (nextSnapshot: ChessAppSnapshot) => {
+    setSaving(true)
+
+    try {
+      if (sessionId && messageId) {
+        await persistChessSnapshot({
+          sessionId,
+          messageId,
+          part,
+          snapshot: nextSnapshot,
+        })
+      } else if (onUpdatePart) {
+        onUpdatePart(buildChessMessageAppPart(part, nextSnapshot))
+      } else {
+        setTransientMessage('Chess runtime is read-only in this surface.')
+      }
+    } catch (error) {
+      setTransientMessage(error instanceof Error ? error.message : 'Failed to persist the chess runtime state.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSquareClick = async (square: string) => {
+    if (saving) {
+      return
+    }
+
+    if (snapshot.status.phase === 'complete') {
+      setSelectedSquare(null)
+      await commitSnapshot(
+        createRejectedChessSnapshot(snapshot, {
+          message: 'The game is already complete. Reseed the fixture to start from the opening position again.',
+          attemptedFrom: selectedSquare ?? undefined,
+          attemptedTo: square,
+        })
+      )
+      return
+    }
+
+    const clickedPiece = getChessPieceAtSquare(snapshot, square)
+
+    if (!selectedSquare) {
+      if (!clickedPiece) {
+        setTransientMessage(`Select a ${getTurnLabel(snapshot.turn).toLowerCase()} piece to start a move.`)
+        return
+      }
+
+      if (clickedPiece.color !== snapshot.turn) {
+        setTransientMessage(`It is ${getTurnLabel(snapshot.turn).toLowerCase()}'s turn. Pick one of that side's pieces.`)
+        return
+      }
+
+      setSelectedSquare(square)
+      setTransientMessage(null)
+      return
+    }
+
+    if (selectedSquare === square) {
+      setSelectedSquare(null)
+      setTransientMessage('Selection cleared.')
+      return
+    }
+
+    if (clickedPiece && clickedPiece.color === snapshot.turn && selectedPiece?.color === clickedPiece.color) {
+      setSelectedSquare(square)
+      setTransientMessage(null)
+      return
+    }
+
+    const nextGame = new Chess(snapshot.fen)
+    let attemptedMove: ReturnType<Chess['move']> | null = null
+
+    try {
+      attemptedMove = nextGame.move({
+        from: selectedSquare,
+        to: square,
+        promotion: 'q',
+      })
+    } catch {
+      attemptedMove = null
+    }
+
+    setSelectedSquare(null)
+
+    if (!attemptedMove) {
+      await commitSnapshot(
+        createRejectedChessSnapshot(snapshot, {
+          message: `${selectedSquare.toUpperCase()} cannot move to ${square.toUpperCase()} from the current board state.`,
+          attemptedFrom: selectedSquare,
+          attemptedTo: square,
+        })
+      )
+      return
+    }
+
+    const now = Date.now()
+    const moveState = createChessMoveState(attemptedMove, snapshot.moveHistory.length + 1, now)
+    const nextSnapshot = createChessAppSnapshotFromGame(nextGame, {
+      lastUpdatedAt: now,
+      lastAction: {
+        kind: 'accepted',
+        message: `Accepted ${attemptedMove.san}. ${getTurnLabel(nextGame.turn() === 'w' ? 'white' : 'black')} to move.`,
+        move: moveState,
+      },
+    })
+
+    await commitSnapshot(nextSnapshot)
+  }
+
+  return (
+    <div className="rounded-[20px] bg-chatbox-background-primary p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-chatbox-border-primary pb-3">
+        <div className="flex flex-wrap gap-2">
+          <span className="inline-flex items-center rounded-full bg-sky-100 px-3 py-1 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+            {getChessStatusLabel(snapshot)}
+          </span>
+          <span className="inline-flex items-center rounded-full bg-stone-200 px-3 py-1 text-[11px] font-semibold text-stone-700 dark:bg-stone-800 dark:text-stone-200">
+            {saving ? 'Syncing host state' : 'Host-owned runtime'}
+          </span>
+        </div>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-chatbox-tertiary">Variation A</span>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(16rem,0.9fr)]">
+        <section className="rounded-[18px] border border-chatbox-border-primary bg-chatbox-background-secondary p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-chatbox-tertiary">Board</p>
+              <p className="mt-1 text-sm text-chatbox-primary">{getChessSummary(snapshot)}</p>
+            </div>
+            <div className="rounded-full border border-chatbox-border-primary px-3 py-1 text-xs text-chatbox-tertiary">
+              {snapshot.moveHistory.length} half-move{snapshot.moveHistory.length === 1 ? '' : 's'}
+            </div>
+          </div>
+
+          <div className="mx-auto grid max-w-[32rem] grid-cols-[auto_repeat(8,minmax(0,1fr))] gap-1">
+            <div />
+            {FILES.map((file) => (
+              <div key={`file-${file}`} className="pb-1 text-center text-[11px] font-semibold uppercase text-chatbox-tertiary">
+                {file}
+              </div>
+            ))}
+
+            {RANKS.map((rank, rankIndex) => (
+              <div key={`rank-row-${rank}`} className="contents">
+                <div className="flex items-center justify-center text-[11px] font-semibold text-chatbox-tertiary">{rank}</div>
+                {FILES.map((file, fileIndex) => {
+                  const square = getSquareName(file, rank)
+                  const piece = getChessPieceAtSquare(snapshot, square)
+                  const isLightSquare = (rankIndex + fileIndex) % 2 === 0
+                  const isSelected = selectedSquare === square
+                  const isLegalTarget = legalTargets.includes(square)
+                  const isLastMove =
+                    snapshot.lastAction.kind === 'accepted' &&
+                    (snapshot.lastAction.move.from === square || snapshot.lastAction.move.to === square)
+
+                  return (
+                    <button
+                      key={square}
+                      type="button"
+                      aria-label={getSquareAriaLabel(snapshot, square)}
+                      className={cn(
+                        'relative aspect-square rounded-[10px] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-chatbox-tint-brand/70',
+                        isLightSquare
+                          ? 'bg-[#f2e8dc] text-slate-900'
+                          : 'bg-[#8d5f43] text-white',
+                        isSelected && 'border-blue-500 ring-2 ring-blue-500/40',
+                        !isSelected && isLastMove && 'border-emerald-400',
+                        !isSelected && !isLastMove && 'border-transparent',
+                        !saving && 'hover:brightness-[0.97]'
+                      )}
+                      disabled={saving}
+                      onClick={() => void handleSquareClick(square)}
+                    >
+                      {piece ? (
+                        <span
+                          aria-hidden="true"
+                          className="text-[1.85rem] leading-none sm:text-[2.1rem]"
+                          style={{ fontFamily: PIECE_FONT_FAMILY }}
+                        >
+                          {piece.glyph}
+                        </span>
+                      ) : isLegalTarget ? (
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            'absolute inset-0 flex items-center justify-center text-xl',
+                            isLightSquare ? 'text-blue-700/80' : 'text-white/80'
+                          )}
+                        >
+                          •
+                        </span>
+                      ) : null}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="grid gap-4">
+          <div
+            className={cn(
+              'rounded-[18px] border p-4',
+              snapshot.lastAction.kind === 'rejected'
+                ? 'border-amber-300 bg-amber-50/80 dark:border-amber-700 dark:bg-amber-950/20'
+                : snapshot.lastAction.kind === 'accepted'
+                  ? 'border-sky-200 bg-sky-50/80 dark:border-sky-800 dark:bg-sky-950/20'
+                  : 'border-chatbox-border-primary bg-chatbox-background-secondary'
+            )}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.06em] text-chatbox-tertiary">Latest update</p>
+            <p className="mt-2 text-sm text-chatbox-primary">{latestMessage}</p>
+          </div>
+
+          <div className="rounded-[18px] border border-chatbox-border-primary bg-chatbox-background-secondary p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.06em] text-chatbox-tertiary">Selection</p>
+            <p className="mt-2 text-sm text-chatbox-primary">
+              {selectedSquare && selectedPiece
+                ? `${selectedSquare.toUpperCase()} selected: ${selectedPiece.color} ${selectedPiece.piece}.`
+                : 'Select a piece, then click a destination square.'}
+            </p>
+            <p className="mt-2 text-xs text-chatbox-tertiary">
+              {selectedSquare
+                ? `${legalTargets.length} legal destination${legalTargets.length === 1 ? '' : 's'} highlighted from ${selectedSquare.toUpperCase()}.`
+                : `${getTurnLabel(snapshot.turn)} to move.`}
+            </p>
+          </div>
+
+          <div className="rounded-[18px] border border-chatbox-border-primary bg-chatbox-background-secondary p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.06em] text-chatbox-tertiary">Move ledger</p>
+            {moveRows.length > 0 ? (
+              <div className="mt-3 grid gap-2">
+                {moveRows.map((row) => (
+                  <div key={`turn-${row.turn}`} className="grid grid-cols-[2.25rem_minmax(0,1fr)_minmax(0,1fr)] gap-3 text-sm">
+                    <span className="font-semibold text-chatbox-tertiary">{row.turn}.</span>
+                    <span className="text-chatbox-primary">{row.white ?? '...'}</span>
+                    <span className="text-chatbox-primary">{row.black ?? '...'}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-chatbox-primary">No moves yet. Try `e2` to `e4`.</p>
+            )}
+          </div>
+
+          <div className="rounded-[18px] border border-chatbox-border-primary bg-chatbox-background-secondary p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.06em] text-chatbox-tertiary">Host sync</p>
+            <p className="mt-2 text-sm text-chatbox-primary">
+              {latestMove
+                ? `Latest legal move: ${latestMove.san} (${latestMove.from.toUpperCase()} to ${latestMove.to.toUpperCase()}).`
+                : 'Opening position seeded and ready.'}
+            </p>
+            <p className="mt-2 text-xs break-all text-chatbox-tertiary">FEN: {snapshot.fen}</p>
+            <p className="mt-2 text-xs text-chatbox-tertiary">
+              Updated at {new Date(snapshot.lastUpdatedAt).toLocaleTimeString()}
+            </p>
+            <p className="mt-2 text-xs text-chatbox-tertiary">
+              {saving
+                ? 'Writing the updated board state back into the host session record.'
+                : 'Every accepted change should survive a session reload through the host-owned snapshot.'}
+            </p>
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+export function ChessRuntime(props: ChessRuntimeProps) {
+  if (isPersistentSnapshot(props.part.snapshot)) {
+    return <PersistentChessRuntime {...props} />
+  }
+
+  return <LegacyChessRuntime {...props} />
 }

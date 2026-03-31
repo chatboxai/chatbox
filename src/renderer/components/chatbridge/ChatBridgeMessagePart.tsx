@@ -7,13 +7,15 @@ import { ChessRuntime } from './apps/chess/ChessRuntime'
 interface ChatBridgeMessagePartProps {
   part: MessageAppPart
   onUpdatePart?: (nextPart: MessageAppPart) => void
+  sessionId?: string
+  messageId?: string
 }
 
-export function ChatBridgeMessagePart({ part, onUpdatePart }: ChatBridgeMessagePartProps) {
+export function ChatBridgeMessagePart({ part, onUpdatePart, sessionId, messageId }: ChatBridgeMessagePartProps) {
   const viewModel = getMessageAppPartViewModel(part)
   const runtime =
     part.lifecycle === 'active' && isChatBridgeChessAppId(part.appId) ? (
-      <ChessRuntime part={part} onUpdatePart={onUpdatePart} />
+      <ChessRuntime part={part} onUpdatePart={onUpdatePart} sessionId={sessionId} messageId={messageId} />
     ) : undefined
 
   return (

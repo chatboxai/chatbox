@@ -25,10 +25,13 @@ Sources: `.ai/docs/PENCIL_UI_WORKFLOW.md`, `.ai/workflows/pencil-ui-design.md`
 
 ## Structural Map
 
-- Likely surface: `src/renderer/components/chatbridge/apps/chess/`
-- Likely surface: `src/renderer/packages/chatbridge/bridge/`
-- Likely surface: `test/integration/chatbridge/`
-- Likely surface: `design/stories/`
+- Actual surface: `src/shared/chatbridge/apps/chess.ts`
+- Actual surface: `src/shared/chatbridge/app-records.ts`
+- Actual surface: `src/shared/types/session.ts`
+- Actual surface: `src/renderer/components/chatbridge/apps/chess/`
+- Actual surface: `src/renderer/packages/chatbridge/chess-session-state.ts`
+- Actual surface: `src/shared/chatbridge/live-seeds.ts`
+- Actual surface: `design/stories/CB-302.pen`
 
 ## Exemplars
 
@@ -46,3 +49,28 @@ Current embedded surface precedent for future host-owned runtime containers.
 - Lane: `standard`
 - Why: this story changes shared contracts, runtime boundaries, or cross-cutting behavior that affects multiple code paths.
 - Required gates: constitution check, feature spec, technical plan, task breakdown, focused TDD during implementation, and Pencil review before UI code.
+
+## Completion Evidence
+
+- Approved visible direction:
+  - `design/stories/CB-302.pen`
+  - `docs/specs/CHATBRIDGE-000-program-roadmap/pack-03-chess-vertical-slice/cb-302-chess-runtime-and-legal-move-engine/pencil-review.md`
+- Shared contracts and persisted host-owned state:
+  - `src/shared/chatbridge/apps/chess.ts`
+  - `src/shared/chatbridge/app-records.ts`
+  - `src/shared/types/session.ts`
+- Renderer runtime and message-shell integration:
+  - `src/renderer/components/chatbridge/apps/chess/ChessRuntime.tsx`
+  - `src/renderer/packages/chatbridge/chess-session-state.ts`
+  - `src/renderer/components/chatbridge/ChatBridgeMessagePart.tsx`
+  - `src/renderer/components/chatbridge/chatbridge.ts`
+  - `src/renderer/components/chat/Message.tsx`
+- Live seeded inspection path:
+  - `src/shared/chatbridge/live-seeds.ts`
+  - `src/renderer/dev/chatbridgeSeeds.ts`
+  - `src/renderer/components/dev/ChatBridgeSeedLab.tsx`
+- Focused tests added:
+  - `src/shared/chatbridge/apps/chess.test.ts`
+  - `src/renderer/packages/chatbridge/chess-session-state.test.ts`
+  - `src/renderer/components/chatbridge/apps/chess/ChessRuntime.test.tsx`
+  - `src/shared/chatbridge/live-seeds.test.ts`

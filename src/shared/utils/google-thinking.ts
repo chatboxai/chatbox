@@ -65,7 +65,7 @@ export function normalizeGoogleThinkingConfig(
     const supportedLevels = getSupportedGoogleThinkingLevels(modelId)
     const thinkingLevel = thinkingConfig.thinkingLevel
 
-    if (thinkingLevel && (supportedLevels.length === 0 || supportedLevels.includes(thinkingLevel))) {
+    if (thinkingLevel && supportedLevels.includes(thinkingLevel)) {
       return {
         thinkingLevel,
         ...(thinkingConfig.includeThoughts !== undefined ? { includeThoughts: thinkingConfig.includeThoughts } : {}),

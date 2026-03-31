@@ -51,6 +51,15 @@ describe('google-thinking utils', () => {
     ).toEqual({
       includeThoughts: true,
     })
+
+    expect(
+      normalizeGoogleThinkingConfig('gemini-3.1-flash-image-preview', {
+        thinkingLevel: 'high',
+        includeThoughts: true,
+      })
+    ).toEqual({
+      includeThoughts: true,
+    })
   })
 
   it('preserves Gemini 2.5 thinking budgets', () => {

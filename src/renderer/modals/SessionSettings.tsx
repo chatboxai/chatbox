@@ -23,6 +23,7 @@ import {
   type SessionSettings,
 } from '@shared/types'
 import {
+  type GoogleThinkingConfig,
   type GoogleThinkingLevel,
   getDefaultGoogleThinkingLevel,
   getGoogleThinkingMode,
@@ -635,6 +636,63 @@ function GoogleProviderConfig({
 
     return getDefaultGoogleThinkingLevel(modelId)
   }, [modelId, providerOptions?.thinkingConfig?.thinkingLevel, supportedLevels])
+
+  const canonicalThinkingConfig = useMemo<GoogleThinkingConfig | undefined>(() => {
+    const thinkingConfig = providerOptions?.thinkingConfig
+
+    if (thinkingMode === 'level') {
+      if (supportedLevels.length === 0) {
+        if (!thinkingConfig) {
+          return undefined
+        }
+
+        if (
+          thinkingConfig.thinkingBudget === undefined &&
+          thinkingConfig.thinkingLevel === undefined &&
+          thinkingConfig.includeThoughts === undefined
+        ) {
+          return undefined
+        }
+
+        return {
+          includeThoughts: thinkingConfig.includeThoughts ?? true,
+        }
+      }
+
+      if (!currentThinkingLevel) {
+        return undefined
+      }
+
+      return {
+        thinkingLevel: currentThinkingLevel,
+        includeThoughts: thinkingConfig?.includeThoughts ?? true,
+      }
+    }
+
+    return undefined
+  }, [currentThinkingLevel, providerOptions?.thinkingConfig, supportedLevels, thinkingMode])
+
+  useEffect(() => {
+    if (thinkingMode !== 'level' || !canonicalThinkingConfig) {
+      return
+    }
+
+    const thinkingConfig = providerOptions?.thinkingConfig
+
+    if (
+      thinkingConfig?.thinkingBudget === canonicalThinkingConfig.thinkingBudget &&
+      thinkingConfig?.thinkingLevel === canonicalThinkingConfig.thinkingLevel &&
+      thinkingConfig?.includeThoughts === canonicalThinkingConfig.includeThoughts
+    ) {
+      return
+    }
+
+    onSettingsChange({
+      providerOptions: {
+        google: { thinkingConfig: canonicalThinkingConfig },
+      },
+    })
+  }, [canonicalThinkingConfig, onSettingsChange, providerOptions?.thinkingConfig, thinkingMode])
 
   if (thinkingMode === 'level' && currentThinkingLevel) {
     return (

@@ -260,6 +260,9 @@ pnpm package
 pnpm package:all
 ```
 
+For the current ChatBridge-specific bootstrap and environment contract, see
+[chatbridge/BOOTSTRAP.md](./chatbridge/BOOTSTRAP.md).
+
 ## Web Deployment
 
 Build and smoke-test the hosted web surface locally with:

@@ -104,3 +104,12 @@ Capture failures so they are not repeated.
 - **Prevention rule**: For hosted-shell and deploy-contract stories, watch the
   post-merge `Vercel Main Sync` workflow and record its verification result
   explicitly.
+
+- **Problem**: Injecting provider API keys into the renderer or browser bundle
+- **Example**: Wiring `OPENAI_API_KEY` through renderer compile-time env
+  injection so the hosted web shell can call OpenAI directly from client code
+- **Why it failed**: It exposes a secret to every browser session and violates
+  the secure secret-storage model expected by both the repo and OpenAI.
+- **Prevention rule**: Keep provider secrets in untracked local env files,
+  secret stores, or server-side runtime env only. Do not compile them into the
+  client bundle.

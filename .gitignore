@@ -128,7 +128,8 @@ yarn-error.log*
 .dir-locals.el
 
 # vercel
-.vercel
+.vercel/*
+!.vercel/project.json
 
 # typescript
 *.tsbuildinfo

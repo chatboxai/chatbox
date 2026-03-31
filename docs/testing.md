@@ -33,6 +33,15 @@ export default defineConfig({
 - `pnpm test:file-conversation` - Run the file-conversation integration suite
 - `pnpm test:model-provider` - Run live provider integration coverage when env keys are set
 
+### Live Provider Key Contract
+- Keep provider secrets in untracked `.env.local`, `.env`, or shell env only.
+- `OPENAI_API_KEY` is the canonical local fallback for OpenAI-backed live tests.
+- `TEST_OPENAI_API_KEY` overrides `OPENAI_API_KEY` for classic OpenAI tests.
+- `TEST_OPENAI_RESPONSES_API_KEY` overrides both `TEST_OPENAI_API_KEY` and
+  `OPENAI_API_KEY` for Responses API tests.
+- `TEST_GEMINI_API_KEY` remains provider-specific because there is no shared
+  fallback for Gemini.
+
 ## Existing Test Coverage
 
 ### ✅ Completed Tests

@@ -117,6 +117,15 @@ the setup baseline before product-facing ChatBridge stories begin.
 
 ### Provider integration tests
 
+- `OPENAI_API_KEY`
+  - Used by:
+    local bootstrap and as the fallback provider secret for OpenAI-backed live
+    integration tests
+  - Purpose: let one secure local secret power both classic OpenAI and
+    OpenAI Responses test coverage when no test-specific override is present
+  - Safe missing behavior: OpenAI-backed live suites skip unless a test-specific
+    override is present
+
 - `TEST_<PROVIDER>_API_KEY`
   - Used by:
     `test/integration/model-provider/model-provider.test.ts`
@@ -126,6 +135,9 @@ the setup baseline before product-facing ChatBridge stories begin.
     - `TEST_GEMINI_API_KEY`
     - `TEST_OPENAI_RESPONSES_API_KEY`
   - Safe missing behavior: provider-specific suites do not run
+  - Override rule:
+    `TEST_OPENAI_API_KEY` and `TEST_OPENAI_RESPONSES_API_KEY` override the
+    shared `OPENAI_API_KEY` fallback when both are present
 
 - `CHATBOX_TEST_MODELS`
   - Purpose: narrow file-conversation integration coverage to selected models

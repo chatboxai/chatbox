@@ -64,6 +64,11 @@ Capture repeatable patterns that match how this workspace actually works.
   Vercel CLI `inspect` and `/healthz.json` verification after merge.
 - Deploy-surface closeout should tell the user exactly what to open and inspect
   on the hosted version after merge, not only report merge and workflow status.
+- Provider secrets such as `OPENAI_API_KEY` should live only in untracked local
+  `.env*` files and Vercel project envs, not in tracked config.
+- OpenAI-backed live integration tests may use `OPENAI_API_KEY` as the shared
+  fallback secret, while `TEST_OPENAI_API_KEY` and
+  `TEST_OPENAI_RESPONSES_API_KEY` remain optional explicit overrides.
 - Desktop packaging and publish flows remain rooted in `electron-builder.yml`.
 - Root `release-*.sh` files are the checked-in entrypoints for release and
   deploy commands referenced by `package.json`.

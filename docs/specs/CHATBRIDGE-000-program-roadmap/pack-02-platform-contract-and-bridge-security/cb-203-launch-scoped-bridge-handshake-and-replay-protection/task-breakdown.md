@@ -40,15 +40,22 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Handshake success and failure paths
+  - [x] Handshake success and failure paths
 - T002 tests:
-  - [ ] Unexpected origin/session rejection
+  - [x] Unexpected origin/session rejection
 - T003 tests:
-  - [ ] Replay/duplicate event rejection behavior
+  - [x] Replay/duplicate event rejection behavior
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Completion Notes
+
+- T001 completed by defining the shared bridge-session envelope, ready/state/error/complete event contracts, and host-side validation in `src/shared/chatbridge/bridge-session.ts`.
+- T002 completed by adding the dedicated host/runtime bridge controller in `src/renderer/packages/chatbridge/bridge/host-controller.ts` and wiring the artifact preview to use a transferred `MessagePort` instead of ambient `postMessage('*')`.
+- T003 completed by enforcing monotonic sequence and idempotency checks in the shared validation layer, then covering replay rejection through `test/integration/chatbridge/scenarios/bridge-session-security.test.ts`.
+- T004 completed by recording the security seam and validation evidence in this story packet and by keeping the approved CB-103 shell while replacing the runtime bridge under `src/renderer/components/Artifact.tsx`.

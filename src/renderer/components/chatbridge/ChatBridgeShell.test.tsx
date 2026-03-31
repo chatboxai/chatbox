@@ -86,4 +86,10 @@ describe('getArtifactShellState', () => {
   it('returns error when no renderable html exists', () => {
     expect(getArtifactShellState({ generating: false, preview: false, hasRenderableHtml: false })).toBe('error')
   })
+
+  it('returns error when the bridge handshake fails after preview was requested', () => {
+    expect(getArtifactShellState({ generating: false, preview: true, hasRenderableHtml: true, bridgeError: true })).toBe(
+      'error'
+    )
+  })
 })

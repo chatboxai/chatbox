@@ -56,6 +56,13 @@ CB-303 adds the first live board-context reasoning slice:
   `stream-text` model path for live and stale mid-game follow-up turns without
   exposing raw partner prose
 
+CB-302 adds the first live Chess runtime interaction slice:
+
+- `scenarios/chess-runtime-legal-move-engine.test.tsx`
+  covers the in-thread Chess board accepting a legal move from the seeded
+  mid-game fixture and persisting the updated host-owned board snapshot plus
+  validation state through the runtime shell
+
 That scenario set is the baseline gate for later ChatBridge packs that add real
 app-aware schema, containers, and lifecycle events. New ChatBridge persistence,
 manifest, or tool-execution changes should extend this suite instead of

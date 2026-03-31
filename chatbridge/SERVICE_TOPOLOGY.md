@@ -158,8 +158,14 @@ service exists, the story should:
 - `src/shared/chatbridge/` now exists for shared execution-contract types and
   host-owned tool normalization helpers; later packs can extend it with
   manifest, bridge-session, lifecycle, and reasoning-context contracts
+- `src/shared/chatbridge/chess.ts` now carries the host-owned Chess snapshot,
+  legal-move, and board-summary helper contract used by both seeded fixtures
+  and the live runtime surface
 - future `src/renderer/components/chatbridge/` and
   `src/renderer/packages/chatbridge/` for renderer-side lifecycle/UI
+- `src/renderer/components/chatbridge/apps/chess/` now holds the native
+  board-first Chess runtime that persists moves back through the host-owned
+  message part
 
 ### Backend-facing adapters to introduce before full services
 

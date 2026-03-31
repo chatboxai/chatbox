@@ -1,3 +1,4 @@
+import { normalizeChatBridgeChessRuntimeSnapshot } from './chess'
 import type { Message, Session, SessionThread } from '../types'
 
 type ToolCallState = 'call' | 'result' | 'error'
@@ -42,6 +43,7 @@ export type ChatBridgeLiveSeedFixture = {
 const APP_ID = 'story-builder'
 const APP_NAME = 'Story Builder'
 export const CHATBRIDGE_LIVE_SEED_PREFIX = '[Seeded] ChatBridge:'
+const CHESS_MID_GAME_FEN = 'r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 0 6'
 
 function buildAttachmentStorageKey(messageId: string) {
   return `fixture:${messageId}:attachment`
@@ -244,12 +246,7 @@ export function buildAppAwareSessionFixture(): {
     name: 'Story Builder Draft',
     createdAt: 1,
     messages: [
-      createTextMessage(
-        'msg-history-user',
-        'user',
-        'Open Story Builder and summarize the current scene.',
-        1
-      ),
+      createTextMessage('msg-history-user', 'user', 'Open Story Builder and summarize the current scene.', 1),
       createAppLifecycleMessage(
         'msg-history-assistant',
         'assistant',
@@ -335,17 +332,12 @@ export function buildChatBridgeLifecycleTourSessionFixture(): Omit<Session, 'id'
           timestamp: 3,
         }
       ),
-      createAppLifecycleMessage(
-        'msg-tour-ready',
-        'assistant',
-        'Story Builder is ready to reopen from the thread.',
-        {
-          toolCallId: 'tool-tour-ready',
-          lifecycle: 'ready',
-          summary: 'Story Builder is staged and waiting for the next action.',
-          timestamp: 4,
-        }
-      ),
+      createAppLifecycleMessage('msg-tour-ready', 'assistant', 'Story Builder is ready to reopen from the thread.', {
+        toolCallId: 'tool-tour-ready',
+        lifecycle: 'ready',
+        summary: 'Story Builder is staged and waiting for the next action.',
+        timestamp: 4,
+      }),
       createAppLifecycleMessage(
         'msg-tour-active',
         'assistant',
@@ -378,7 +370,8 @@ export function buildChatBridgeLifecycleTourSessionFixture(): Omit<Session, 'id'
           state: 'call',
           partial: true,
           summary: 'The host kept the stale state explicit instead of inventing a successful resume.',
-          fallbackText: 'The runtime could not resume from the cached checkpoint, so the host is keeping recovery inline.',
+          fallbackText:
+            'The runtime could not resume from the cached checkpoint, so the host is keeping recovery inline.',
           timestamp: 7,
         }
       ),
@@ -441,6 +434,31 @@ export function buildChatBridgeHistoryAndPreviewSessionFixture(): {
 }
 
 export function buildChatBridgeChessMidGameSessionFixture(): Omit<Session, 'id'> {
+  const seededChessSnapshot = normalizeChatBridgeChessRuntimeSnapshot({
+    route: '/apps/chess',
+    status: 'active',
+    startingFen: CHESS_MID_GAME_FEN,
+    moveHistory: [],
+    boardContext: {
+      schemaVersion: 1,
+      fen: CHESS_MID_GAME_FEN,
+      sideToMove: 'white',
+      fullmoveNumber: 6,
+      legalMovesCount: 33,
+      positionStatus: 'in_progress',
+      lastMove: {
+        san: '...e5',
+        uci: 'e7e5',
+      },
+      summary: 'White to move in an Italian Game structure after ...e5.',
+    },
+    feedback: {
+      kind: 'info',
+      title: 'Host snapshot',
+      message: 'White to move in an Italian Game structure after ...e5.',
+    },
+  })
+
   return {
     name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess mid-game board context`,
     type: 'chat',
@@ -468,32 +486,11 @@ export function buildChatBridgeChessMidGameSessionFixture(): Omit<Session, 'id'>
           toolCallId: 'tool-chess-mid-game',
           lifecycle: 'active',
           summary: 'White to move in an Italian Game structure after ...e5.',
-          snapshot: {
-            route: '/apps/chess',
-            status: 'active',
-            boardContext: {
-              schemaVersion: 1,
-              fen: 'r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 0 6',
-              sideToMove: 'white',
-              fullmoveNumber: 6,
-              legalMovesCount: 33,
-              positionStatus: 'in_progress',
-              lastMove: {
-                san: '...e5',
-                uci: 'e7e5',
-              },
-              summary: 'White to move in an Italian Game structure after ...e5.',
-            },
-          },
+          snapshot: seededChessSnapshot,
           timestamp: 3,
         }
       ),
-      createTextMessage(
-        'msg-chess-user-follow-up',
-        'user',
-        'What should White focus on here?',
-        4
-      ),
+      createTextMessage('msg-chess-user-follow-up', 'user', 'What should White focus on here?', 4),
     ],
   }
 }
@@ -529,11 +526,17 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
       auditSteps: [
         {
           action: 'Open the seeded Chess session and inspect the active app message.',
-          expected: 'The message stays inside the host shell and exposes a live Chess runtime instead of a detached completion receipt.',
+          expected:
+            'The message stays inside the host shell and exposes a live Chess runtime instead of a detached completion receipt.',
+        },
+        {
+          action: 'Play a legal move such as `Bxf7+` directly on the seeded board.',
+          expected: 'The move is accepted inline and the host-owned app snapshot updates without leaving the thread.',
         },
         {
           action: 'Ask a follow-up such as `What should White focus on here?` from the seeded thread.',
-          expected: 'The reply stays grounded in the current host-owned board summary and does not invent board details outside the validated snapshot.',
+          expected:
+            'The reply stays grounded in the current host-owned board summary and does not invent board details outside the validated snapshot.',
         },
       ],
       sessionInput: buildChatBridgeChessMidGameSessionFixture(),

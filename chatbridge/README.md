@@ -106,7 +106,9 @@ That means ChatBridge should not be approached as a greenfield app. The better f
 
 Chatbox has useful primitives, but the assignment still requires platform work that does not appear complete yet:
 
-- app registry and app manifest model
+- broader reviewed app registry service beyond the base in-repo manifest and
+  registry contract now implemented in `src/shared/chatbridge/manifest.ts` and
+  `src/shared/chatbridge/registry.ts`
 - third-party app lifecycle contract
 - embedded app container UI inside the conversation timeline
 - secure message bus between host chat and embedded app

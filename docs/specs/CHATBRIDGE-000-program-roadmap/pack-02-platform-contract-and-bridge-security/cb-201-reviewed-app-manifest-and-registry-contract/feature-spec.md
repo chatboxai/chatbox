@@ -25,9 +25,9 @@ ChatBridge cannot safely expose app tools or UI until there is a reviewed manife
 
 ## Acceptance Criteria
 
-- [ ] AC-1: A typed manifest contract exists for reviewed app registration.
-- [ ] AC-2: The contract covers identity, origin, auth mode, permissions, tool schemas, supported events, and completion modes.
-- [ ] AC-3: Registry ingestion rules fail closed for invalid or unsupported manifests.
+- [x] AC-1: A typed manifest contract exists for reviewed app registration.
+- [x] AC-2: The contract covers identity, origin, auth mode, permissions, tool schemas, supported events, and completion modes.
+- [x] AC-3: Registry ingestion rules fail closed for invalid or unsupported manifests.
 
 ## Edge Cases
 

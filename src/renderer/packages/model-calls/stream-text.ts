@@ -1,3 +1,4 @@
+import { wrapChatBridgeHostTools } from '@shared/chatbridge/tools'
 import { getModel } from '@shared/models'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
 import { sequenceMessages } from '@shared/utils/message'
@@ -117,6 +118,10 @@ async function ocrMessages(messages: Message[]) {
   } catch (err) {
     throw new OCRError(ocrProviderName, err instanceof Error ? err : new Error(`${err}`))
   }
+}
+
+export function prepareToolsForExecution(tools: ToolSet, sessionId?: string): ToolSet {
+  return wrapChatBridgeHostTools(tools, { sessionId })
 }
 
 /**
@@ -315,6 +320,8 @@ export async function streamText(
         ...fileToolSet.tools,
       }
     }
+
+    tools = prepareToolsForExecution(tools, sessionId)
 
     console.debug('tools', tools)
 

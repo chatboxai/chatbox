@@ -153,7 +153,9 @@ service exists, the story should:
 ### In-repo surfaces to extend first
 
 - future `src/main/chatbridge/` for privileged host-runtime concerns
-- future `src/shared/chatbridge/` for contracts and shared types
+- `src/shared/chatbridge/` now exists for shared execution-contract types and
+  host-owned tool normalization helpers; later packs can extend it with
+  manifest, bridge-session, and lifecycle contracts
 - future `src/renderer/components/chatbridge/` and
   `src/renderer/packages/chatbridge/` for renderer-side lifecycle/UI
 

@@ -50,6 +50,10 @@ Then use as needed:
   explicitly asks to pause or choose a different merge path, continue through
   `.ai/workflows/git-finalization.md` automatically after the completion gate,
   and treat the story as incomplete until it is merged to `main` on GitHub.
+- For stories that touch the hosted web shell or deployment contract, merge is
+  followed by `.ai/workflows/vercel-post-merge-verification.md`; treat the
+  story as operationally incomplete until the `Vercel Main Sync` workflow
+  passes or an explicit blocker is recorded.
 - Shared dirty worktrees are not a finish blocker. Preserve unrelated WIP,
   isolate the story diff in a clean branch/worktree, rerun the required
   validation there, and continue through finalization unless safe
@@ -62,6 +66,7 @@ Then use as needed:
 - Performance -> `.ai/workflows/performance-optimization.md`
 - Security review -> `.ai/workflows/security-review.md`
 - Deployment or release wiring -> `.ai/workflows/deployment-setup.md`
+- Post-merge Vercel verification -> `.ai/workflows/vercel-post-merge-verification.md`
 - Pencil UI design and review -> `.ai/workflows/pencil-ui-design.md`
 - TDD coordination -> `.ai/workflows/tdd-pipeline.md`
 - Git finalization -> `.ai/workflows/git-finalization.md`

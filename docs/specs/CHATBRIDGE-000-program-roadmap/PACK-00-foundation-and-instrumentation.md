@@ -71,12 +71,24 @@ observable evidence.
   the host shell can be built, smoke-tested, and deployed through checked-in
   config while future backend services remain explicit later-pack work.
 
+### CB-005 Mainline Vercel sync and post-merge verification
+
+- Goal:
+  make merges to `main` deploy the hosted shell to Vercel automatically and
+  verify the exact deployment through the Vercel CLI.
+- Acceptance focus:
+  the mainline deploy hook is checked in, duplicate `main` deploys are avoided,
+  and deploy-surface stories stay operationally open until the post-merge
+  verification phase passes.
+
 ## Exit Criteria
 
 - Environment and secret requirements are explicit.
 - Deployment and runtime/service assumptions are captured.
 - A real hosted Phase 0 web shell exists with checked-in config and smoke
   validation.
+- Merges to `main` automatically sync and verify the hosted shell through the
+  checked-in Vercel workflow.
 - Integration fixtures exist for development and test flows.
 - Trace, eval, and observability hooks are ready before product-facing packs.
 

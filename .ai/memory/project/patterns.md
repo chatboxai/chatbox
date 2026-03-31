@@ -46,6 +46,13 @@ Capture repeatable patterns that match how this workspace actually works.
 - The current hosted web-shell baseline is Vercel with checked-in config in
   `vercel.json`.
 - The current Vercel project is `chatbox-web`.
+- `main` pushes now deploy the hosted web shell through
+  `.github/workflows/vercel-main-sync.yml`.
+- Mainline deployment is driven by `scripts/deploy-vercel-production.sh`.
+- Post-merge hosted verification is driven by
+  `scripts/verify-vercel-deployment.sh` and uses the Vercel CLI directly.
+- `vercel.json` disables Vercel Git auto-deploy for `main` so GitHub Actions is
+  the single checked-in production deploy trigger.
 - The canonical web deploy path is `pnpm build:web`, outputting to
   `release/app/dist/renderer`.
 - Web smoke verification should use `pnpm serve:web` and
@@ -53,6 +60,8 @@ Capture repeatable patterns that match how this workspace actually works.
 - Hosted preview verification should use `vercel inspect <preview-url> --wait`
   and a logged-in browser session when Vercel deployment protection blocks
   anonymous HTTP checks.
+- Hosted `main` verification should use the `Vercel Main Sync` workflow plus
+  Vercel CLI `inspect` and `/healthz.json` verification after merge.
 - Desktop packaging and publish flows remain rooted in `electron-builder.yml`.
 - Root `release-*.sh` files are the checked-in entrypoints for release and
   deploy commands referenced by `package.json`.

@@ -36,6 +36,8 @@ Critical guidance carried into the pack structure:
 - Treat completion signaling as a first-class protocol concern.
 - Make deployment real in Phase 0: a hosted surface, smoke path, and release
   entrypoints should exist before later packs assume them.
+- Treat post-merge deployment verification as part of Phase 0, not as an
+  optional operator habit.
 - Think like a platform designer so third parties can understand the API.
 
 ## Objective Set

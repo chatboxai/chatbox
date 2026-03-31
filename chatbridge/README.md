@@ -184,6 +184,8 @@ That is the actual target, not just adding a few buttons or launching iframes.
 Phase 0 now treats deployment as real infrastructure work, not just planning:
 
 - the web host shell is deployed through the checked-in `vercel.json` contract
+- every merge to `main` now syncs the hosted shell to Vercel through the
+  checked-in GitHub Actions workflow and verifies it with the Vercel CLI
 - local smoke validation is `pnpm build:web`, `pnpm serve:web`, and
   `GET /healthz.json`
 - desktop release entrypoints exist through the root `release-*.sh` wrappers

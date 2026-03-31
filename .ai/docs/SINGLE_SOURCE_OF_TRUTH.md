@@ -25,6 +25,9 @@
 - **Primary docs**: `README.md`, `docs/`, `doc/`, `.github/PULL_REQUEST_TEMPLATE.md`
 - **Current checked-in deploy surfaces**:
   - hosted web shell: `vercel.json` -> `pnpm build:web` -> `release/app/dist/renderer`
+  - mainline deploy automation: `.github/workflows/vercel-main-sync.yml`
+  - deploy script: `scripts/deploy-vercel-production.sh`
+  - verification script: `scripts/verify-vercel-deployment.sh`
   - deployment reference: `chatbridge/DEPLOYMENT.md`
   - desktop publish config: `electron-builder.yml`
   - current Vercel project: `chatbox-web`
@@ -62,6 +65,9 @@
 - For hosted preview verification, prefer `vercel inspect` plus a logged-in
   preview session when Vercel deployment protection blocks anonymous route
   checks.
+- For hosted `main` verification, prefer the checked-in Vercel CLI workflow:
+  deploy via `.github/workflows/vercel-main-sync.yml` and verify through
+  `.ai/workflows/vercel-post-merge-verification.md`.
 - Story completion defaults to merged-to-`main`, not just local validation,
   unless the user explicitly pauses or selects a different merge path.
 

@@ -30,6 +30,7 @@ without assuming a default platform.
 ### Step 1: Record Deployment Decisions
 - production environments needed
 - preview environments needed
+- deploy trigger policy for `main`
 - service topology
 - build and start commands
 - health checks
@@ -44,6 +45,11 @@ without assuming a default platform.
 
 ### Step 3: Add the Minimum Config
 - Add only the provider config required by the selected path
+- If the repo uses the current hosted Vercel shell baseline, make the `main`
+  deploy trigger explicit in checked-in CI instead of leaving it as a dashboard
+  assumption
+- Prevent duplicate provider and CI deploys when a checked-in `main` deploy
+  workflow becomes the source of truth
 
 ### Step 4: Configure Secrets
 - environment variables only
@@ -53,6 +59,9 @@ without assuming a default platform.
 ### Step 5: Validate the Deployment Path
 - run the relevant repo validation commands
 - verify runtime health or smoke path when possible
+- for the current Vercel shell baseline, the post-merge verification path must
+  use the Vercel CLI directly (`inspect`, build logs, and smoke payload check),
+  not only anonymous HTTP checks
 
 ## Phase 3: Completion
 
@@ -71,3 +80,5 @@ without assuming a default platform.
 - Deployment target and contract documented
 - Config and secrets management are in place
 - Execution status is explicit
+- If `main` auto-deploy exists, the post-merge verification path is also
+  checked in and explicit

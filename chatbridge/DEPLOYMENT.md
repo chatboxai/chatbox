@@ -10,6 +10,9 @@ checked-in execution contract.
 - Provider: Vercel
 - Project: `chatbox-web` (`prj_sDopuiczqA5vk8DFehkhClQkOooe`)
 - Checked-in config: `vercel.json`
+- Mainline sync workflow: `.github/workflows/vercel-main-sync.yml`
+- Mainline deploy script: `scripts/deploy-vercel-production.sh`
+- Mainline verify script: `scripts/verify-vercel-deployment.sh`
 - Hosted runtime: Node 20.x
 - Build command: `pnpm build:web`
 - Output directory: `release/app/dist/renderer`
@@ -17,6 +20,9 @@ checked-in execution contract.
 - Smoke path: `/healthz.json`
 - Access model: Vercel preview protected by team authentication unless the team
   changes deployment-protection policy in Vercel settings
+- Duplicate deploy guard: `vercel.json` disables Vercel Git auto-deploy for
+  `main` so the checked-in GitHub Actions workflow is the production source of
+  truth
 
 ### Desktop release pipeline
 
@@ -63,9 +69,31 @@ checked-in execution contract.
 
 - `pnpm deploy:web:preview`
 - `pnpm deploy:web:prod`
+- `bash scripts/deploy-vercel-production.sh`
+- `bash scripts/verify-vercel-deployment.sh <deployment-url> production <sha>`
 
 These commands route through `release-web.sh`. Preview is the safe default for
-Phase 0 validation; production is an explicit choice.
+Phase 0 validation; production is an explicit choice locally, but merges to
+`main` now trigger an automatic production sync through GitHub Actions.
+
+## Mainline Sync and Verification
+
+- Trigger: every `push` to `main`
+- Workflow: `.github/workflows/vercel-main-sync.yml`
+- Required secret: `VERCEL_TOKEN`
+- Project coordinates: read from `.vercel/project.json`
+- Phase 1:
+  deploy the hosted shell to Vercel production
+- Phase 2:
+  verify the exact deployment with the Vercel CLI:
+  - `vercel inspect <deployment-url> --wait --timeout 10m`
+  - `vercel inspect <deployment-url> --logs --wait --timeout 10m`
+  - `vercel curl /healthz.json --deployment <deployment-url>`
+- Health payload contract:
+  - `status = ok`
+  - `app = chatbox-web`
+  - `buildPlatform = web`
+  - `commitSha` should match the merged `main` commit when provided by CI
 
 ## Recorded Provider Evidence
 
@@ -96,6 +124,10 @@ Important categories:
 
 - web/static deployment:
   - no runtime secret is required for the static shell itself
+  - `VERCEL_TOKEN` is required in GitHub Actions for mainline deploy and
+    verification
+  - `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` may be supplied explicitly, but the
+    checked-in `.vercel/project.json` file is the canonical project-link source
   - `SENTRY_AUTH_TOKEN`, `SENTRY_RELEASE`, and `SENTRY_DIST` are optional
     release-metadata inputs
 - desktop publishing:
@@ -114,6 +146,8 @@ Phase 0 is only considered deployment-complete when:
 - the checked-in config exists
 - local smoke validation passes
 - at least one real hosted preview deployment exists with recorded evidence
+- the automatic `main` deploy hook is checked in
+- post-merge verification uses the Vercel CLI directly and is documented
 
 ## Remaining Explicit Gaps
 

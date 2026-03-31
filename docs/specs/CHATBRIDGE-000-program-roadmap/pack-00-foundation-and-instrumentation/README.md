@@ -28,6 +28,7 @@ evidence.
 - [CB-002 - Integration harness and provider fixtures](./cb-002-integration-harness-and-provider-fixtures/feature-spec.md)
 - [CB-003 - Evals, tracing, and observability foundation](./cb-003-evals-tracing-and-observability-foundation/feature-spec.md)
 - [CB-004 - Web deployment and release infrastructure baseline](./cb-004-web-deployment-and-release-infrastructure-baseline/feature-spec.md)
+- [CB-005 - Mainline Vercel sync and post-merge verification](./cb-005-mainline-vercel-sync-and-post-merge-verification/feature-spec.md)
 
 ## Exit Criteria
 
@@ -35,6 +36,8 @@ evidence.
 - Deployment and service-boundary assumptions are captured.
 - A real hosted Phase 0 web shell exists with a checked-in provider config and
   smoke path.
+- Merges to `main` automatically sync the hosted shell to Vercel and run a
+  checked-in post-merge verification phase.
 - Root release entrypoints exist for the web shell and desktop publishing
   surfaces.
 - Provider/app integration fixtures exist for development and tests.

@@ -110,7 +110,7 @@ export const ProviderHeader = ({
         ) : provider.isCustom ? (
           <ScalableIcon icon={IconServer} size={iconSize} className={iconClass} />
         ) : (
-          <ScalableIcon icon={ProviderIcon} size={iconSize} provider={provider.id} className={iconClass} />
+          <ProviderIcon size={iconSize} provider={provider.id} className={iconClass} />
         )}
         <Text span c={textColor} size="sm" fw={textWeight}>
           {provider.name}

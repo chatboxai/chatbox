@@ -15,14 +15,14 @@ export const WindowControls: FC<FlexProps> = ({ className, ...otherProps }) => {
   const platformType = useAtomValue(platformTypeAtom)
   return platformType === 'win32' || platformType === 'linux' ? (
     <Flex align="center" className={clsx('controls self-start', className)} {...otherProps}>
-      <ControlButton label={t('Minimize')} icon={IconMinus} onClick={() => platform.minimize()} />
+      <ControlButton label={t('Minimize') || undefined} icon={IconMinus} onClick={() => platform.minimize()} />
       {!windowMaximized ? (
-        <ControlButton label={t('Maximize')} icon={IconSquare} onClick={() => platform.maximize()} />
+        <ControlButton label={t('Maximize') || undefined} icon={IconSquare} onClick={() => platform.maximize()} />
       ) : (
-        <ControlButton label={t('Restore')} icon={IconSquares} onClick={() => platform.unmaximize()} />
+        <ControlButton label={t('Restore') || undefined} icon={IconSquares} onClick={() => platform.unmaximize()} />
       )}
       <ControlButton
-        label={t('Close')}
+        label={t('Close') || undefined}
         icon={IconX}
         className="hover:bg-chatbox-tint-error"
         onClick={() => platform.closeWindow()}

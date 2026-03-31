@@ -1,4 +1,5 @@
 import { ModelProviderEnum } from '@shared/types'
+import type { RemoteConfig } from '@shared/types'
 import { getDefaultStore } from 'jotai'
 import * as atoms from './atoms'
 import { settingsStore } from './settingsStore'
@@ -60,7 +61,7 @@ export function isPro() {
 
 export function getRemoteConfig() {
   const store = getDefaultStore()
-  return store.get(atoms.remoteConfigAtom)
+  return store.get(atoms.remoteConfigAtom) as Partial<RemoteConfig>
 }
 
 export function getAutoGenerateTitle() {

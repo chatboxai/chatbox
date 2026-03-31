@@ -1,6 +1,5 @@
 import { useAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
-import { e } from 'ofetch/dist/error-04138797'
 import { useState } from 'react'
 
 const MAX_HISTORY_LENGTH = 20

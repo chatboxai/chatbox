@@ -14,9 +14,12 @@ export function copyToClipboard(text: string) {
   }
 }
 
-const ua = navigator.userAgent
+function getUserAgent() {
+  return typeof navigator === 'undefined' ? '' : navigator.userAgent
+}
 
 export const getBrowser = (): 'Opera' | 'Chrome' | 'Firefox' | 'Safari' | 'IE' | 'Edge' | 'Unknown' | undefined => {
+  const ua = getUserAgent()
   if (ua.indexOf('Opera') > -1) {
     return 'Opera'
   }
@@ -42,6 +45,7 @@ export const getBrowser = (): 'Opera' | 'Chrome' | 'Firefox' | 'Safari' | 'IE' |
 }
 
 export const getOS = (): 'Windows' | 'Mac' | 'Linux' | 'Android' | 'iOS' | 'Unknown' => {
+  const ua = getUserAgent()
   if (ua.indexOf('Windows') > -1) {
     return 'Windows'
   }

@@ -1,5 +1,5 @@
 import { migrateMessage } from '@/utils/message'
-import { ModelProviderEnum, Session } from '../../shared/types'
+import { ModelProviderEnum, type Session } from '../../shared/types'
 
 export const defaultSessionsForEN: Session[] = [
   {

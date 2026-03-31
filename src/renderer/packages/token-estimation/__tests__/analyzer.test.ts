@@ -213,7 +213,7 @@ describe('analyzeTokenRequirements', () => {
       expect(result.breakdown.currentInput.attachments).toBe(30)
     })
 
-    it('creates task for attachment without cache', () => {
+    it('does not create task for current input attachment without cache', () => {
       const file = createFile({ id: 'file-no-cache' })
       const message = createMessage({
         id: 'msg-with-file',
@@ -230,16 +230,7 @@ describe('analyzeTokenRequirements', () => {
       })
 
       expect(result.breakdown.currentInput.attachments).toBe(0)
-      expect(result.pendingTasks).toHaveLength(1)
-      expect(result.pendingTasks[0]).toMatchObject({
-        type: 'attachment',
-        messageId: 'msg-with-file',
-        attachmentId: 'file-no-cache',
-        attachmentType: 'file',
-        tokenizerType: 'default',
-        contentMode: 'full',
-        priority: PRIORITY.CURRENT_INPUT_ATTACHMENT,
-      })
+      expect(result.pendingTasks).toHaveLength(0)
     })
 
     it('skips attachments without storageKey', () => {
@@ -276,8 +267,8 @@ describe('analyzeTokenRequirements', () => {
       })
 
       const result = analyzeTokenRequirements({
-        constructedMessage: message,
-        contextMessages: [],
+        constructedMessage: undefined,
+        contextMessages: [message],
         tokenizerType: 'default',
         modelSupportToolUseForFile: false,
       })
@@ -300,8 +291,8 @@ describe('analyzeTokenRequirements', () => {
       })
 
       const result = analyzeTokenRequirements({
-        constructedMessage: message,
-        contextMessages: [],
+        constructedMessage: undefined,
+        contextMessages: [message],
         tokenizerType: 'default',
         modelSupportToolUseForFile: true,
       })
@@ -324,8 +315,8 @@ describe('analyzeTokenRequirements', () => {
       })
 
       const result = analyzeTokenRequirements({
-        constructedMessage: message,
-        contextMessages: [],
+        constructedMessage: undefined,
+        contextMessages: [message],
         tokenizerType: 'default',
         modelSupportToolUseForFile: true,
       })
@@ -444,7 +435,7 @@ describe('analyzeTokenRequirements', () => {
       expect(result.currentInputTokens).toBe(2)
     })
 
-    it('assigns CURRENT_INPUT_ATTACHMENT priority for current input attachments', () => {
+    it('does not enqueue attachment work for current input attachments', () => {
       const file = createFile()
       const message = createMessage({
         id: 'current',
@@ -460,7 +451,8 @@ describe('analyzeTokenRequirements', () => {
         modelSupportToolUseForFile: false,
       })
 
-      expect(result.pendingTasks[0].priority).toBe(PRIORITY.CURRENT_INPUT_ATTACHMENT)
+      expect(result.pendingTasks).toHaveLength(0)
+      expect(result.breakdown.currentInput.attachments).toBe(0)
     })
 
     it('assigns CONTEXT_TEXT + reversed index priority for context text (newest first)', () => {

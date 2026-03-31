@@ -51,16 +51,7 @@ html[data-theme="dark"] {
     background-color: transparent;
     border-radius: 6px;
   }
-  ::scrollbar {
-    width: 6px;
-    height: 6px;
-    background-color: transparent;
-    border-radius: 6px;
-  }
   ::-webkit-scrollbar:hover {
-    background-color: #333333;
-  }
-  ::scrollbar:hover {
     background-color: #333333;
   }
   /* 滚动条上的滑块 */
@@ -103,16 +94,7 @@ html[data-theme="light"] {
     background-color: transparent;
     border-radius: 6px;
   }
-  ::scrollbar {
-    width: 6px;
-    height: 6px;
-    background-color: transparent;
-    border-radius: 6px;
-  }
   ::-webkit-scrollbar:hover {
-    background-color: #f5f5f5;
-  }
-  ::scrollbar:hover {
     background-color: #f5f5f5;
   }
   /* 滚动条上的滑块 */
@@ -146,14 +128,10 @@ html[data-theme="light"] {
   height: 100%;
 
   /* 移动端异形屏的显示问题 */
-  padding-top: env(safe-area-inset-top);
-  padding-right: env(safe-area-inset-right);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-top: var(--mobile-safe-area-inset-top, 0px);
-  padding-right: var(--mobile-safe-area-inset-right, 0px);
-  padding-bottom: var(--mobile-safe-area-inset-bottom, 0px);
-  padding-left: var(--mobile-safe-area-inset-left, 0px);
+  padding-top: max(env(safe-area-inset-top), var(--mobile-safe-area-inset-top, 0px));
+  padding-right: max(env(safe-area-inset-right), var(--mobile-safe-area-inset-right, 0px));
+  padding-bottom: max(env(safe-area-inset-bottom), var(--mobile-safe-area-inset-bottom, 0px));
+  padding-left: max(env(safe-area-inset-left), var(--mobile-safe-area-inset-left, 0px));
 }
 
 /* 当页面包含 disclaimer 时，取消 .App 的底部安全区域 padding，
@@ -164,36 +142,26 @@ html[data-theme="light"] {
 
 .ToolBar {
   /* 移动端异形屏的显示问题 */
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-top: var(--mobile-safe-area-inset-top, 0px);
-  padding-bottom: var(--mobile-safe-area-inset-bottom, 0px);
-  padding-left: var(--mobile-safe-area-inset-left, 0px);
+  padding-top: max(env(safe-area-inset-top, 0px), var(--mobile-safe-area-inset-top, 0px));
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--mobile-safe-area-inset-bottom, 0px));
+  padding-left: max(env(safe-area-inset-left, 0px), var(--mobile-safe-area-inset-left, 0px));
 }
 
 .ThreadHistoryDrawer {
   /* 移动端异形屏的显示问题 */
-  padding-top: env(safe-area-inset-top);
-  padding-right: env(safe-area-inset-right);
-  padding-bottom: env(safe-area-inset-bottom);
   /* padding-left: env(safe-area-inset-left); */
-  padding-top: var(--mobile-safe-area-inset-top, 0px);
-  padding-right: var(--mobile-safe-area-inset-right, 0px);
-  padding-bottom: var(--mobile-safe-area-inset-bottom, 0px);
+  padding-top: max(env(safe-area-inset-top), var(--mobile-safe-area-inset-top, 0px));
+  padding-right: max(env(safe-area-inset-right), var(--mobile-safe-area-inset-right, 0px));
+  padding-bottom: max(env(safe-area-inset-bottom), var(--mobile-safe-area-inset-bottom, 0px));
   /* padding-left: var(--mobile-safe-area-inset-left, 0px); */
 }
 
 .Snackbar {
   /* 移动端异形屏的显示问题 */
-  padding-top: env(safe-area-inset-top);
-  padding-right: env(safe-area-inset-right);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-top: var(--mobile-safe-area-inset-top, 0px);
-  padding-right: var(--mobile-safe-area-inset-right, 0px);
-  padding-bottom: var(--mobile-safe-area-inset-bottom, 0px);
-  padding-left: var(--mobile-safe-area-inset-left, 0px);
+  padding-top: max(env(safe-area-inset-top), var(--mobile-safe-area-inset-top, 0px));
+  padding-right: max(env(safe-area-inset-right), var(--mobile-safe-area-inset-right, 0px));
+  padding-bottom: max(env(safe-area-inset-bottom), var(--mobile-safe-area-inset-bottom, 0px));
+  padding-left: max(env(safe-area-inset-left), var(--mobile-safe-area-inset-left, 0px));
 }
 
 @font-face {

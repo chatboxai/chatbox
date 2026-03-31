@@ -26,7 +26,7 @@ export function HistoryItem({ record, isActive, isMobile, onClick, onDelete }: H
     (e: React.MouseEvent) => {
       e.stopPropagation()
       if (isMobile) {
-        if (window.confirm(t('Delete this record?'))) {
+        if (window.confirm(String(t('Delete this record?')))) {
           onDelete(record.id)
         }
       } else {

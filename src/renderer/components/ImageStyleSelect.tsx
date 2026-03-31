@@ -25,7 +25,7 @@ export default function ImageStyleSelect(props: Props) {
         },
       ]}
       value={props.value}
-      onChange={(e) => e && props.onChange && props.onChange(e)}
+      onChange={(e) => e && props.onChange && props.onChange(e as SessionSettings['dalleStyle'])}
     />
   )
 }

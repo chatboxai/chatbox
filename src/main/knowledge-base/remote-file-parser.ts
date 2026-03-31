@@ -86,7 +86,7 @@ async function uploadFileFromPath(filePath: string, uploadUrl: string, mimeType:
       'Content-Type': mimeType || 'application/octet-stream',
       'Content-Length': fileBuffer.length.toString(),
     },
-    body: fileBuffer,
+    body: new Uint8Array(fileBuffer),
   })
 
   if (!response.ok) {

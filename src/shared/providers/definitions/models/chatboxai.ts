@@ -11,6 +11,8 @@ import { getChatboxAPIOrigin } from '../../../request/chatboxai_pool'
 import type { ChatboxAILicenseDetail, ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 
+type GeminiAspectRatio = NonNullable<GoogleGenerativeAIProviderOptions['imageConfig']>['aspectRatio']
+
 interface Options {
   licenseKey?: string
   model: ProviderModelInfo
@@ -142,7 +144,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
         responseModalities: ['TEXT', 'IMAGE'],
       }
       if (params.aspectRatio && params.aspectRatio !== 'auto') {
-        providerOptions.imageConfig = { aspectRatio: params.aspectRatio }
+        providerOptions.imageConfig = { aspectRatio: params.aspectRatio as GeminiAspectRatio }
       }
 
       const result = streamText({

@@ -41,17 +41,40 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Current repo boundaries are mapped to the ChatBridge architecture
+  - [x] Current repo boundaries are mapped to the ChatBridge architecture
 - T002 tests:
-  - [ ] Ownership assumptions are explicit for local and hosted concerns
+  - [x] Ownership assumptions are explicit for local and hosted concerns
 - T003 tests:
-  - [ ] The topology reference exists and matches the story packet
+  - [x] The topology reference exists and matches the story packet
 - T004 tests:
-  - [ ] Later packs can reference real service boundaries instead of guessing
+  - [x] Later packs can reference real service boundaries instead of guessing
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Deferred tasks documented with rationale
-- [ ] `chatbridge/SERVICE_TOPOLOGY.md` exists and is linked from `chatbridge/README.md`
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Deferred tasks documented with rationale
+- [x] `chatbridge/SERVICE_TOPOLOGY.md` exists and is linked from `chatbridge/README.md`
+
+## Recorded Evidence
+
+- Topology reference:
+  `chatbridge/SERVICE_TOPOLOGY.md`
+- Linked ChatBridge entry doc:
+  `chatbridge/README.md`
+- Deployment contract that the topology now depends on:
+  `chatbridge/DEPLOYMENT.md`
+- Current repo seam examples captured in the topology:
+  `src/main/main.ts`, `src/preload/index.ts`,
+  `src/renderer/packages/model-calls/stream-text.ts`,
+  `src/renderer/packages/mcp/controller.ts`,
+  `src/renderer/packages/remote.ts`, and
+  `src/shared/providers/registry.ts`
+
+## Deferred Follow-up
+
+- When Pack 02+ introduces real host-runtime adapters or backend services,
+  update the topology and replace temporary mock/adapter language with the
+  concrete implementation boundaries.
+- Keep the distinction explicit between the deployed host shell and the future
+  ChatBridge control plane as later packs add hosted services.

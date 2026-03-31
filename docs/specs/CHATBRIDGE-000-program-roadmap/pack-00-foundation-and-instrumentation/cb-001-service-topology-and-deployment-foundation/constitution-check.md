@@ -14,24 +14,25 @@
    Source: `chatbridge/PRESEARCH.md`, `chatbridge/ARCHITECTURE.md`
 2. Treat deployment and service boundaries as explicit design choices before
    feature work depends on them.
-   Source: requested build strategy
+   Source: `chatbridge/SERVICE_TOPOLOGY.md`, `chatbridge/DEPLOYMENT.md`
 3. Do not imply a production topology that the repo and presearch do not
    support.
-   Source: `chatbridge/ARCHITECTURE.md`
+   Source: `chatbridge/ARCHITECTURE.md`, `chatbridge/SERVICE_TOPOLOGY.md`
 
 ## Structural Map
 
 - `chatbridge/PRESEARCH.md`
 - `chatbridge/ARCHITECTURE.md`
+- `chatbridge/DEPLOYMENT.md`
 - `src/main/`
 - `src/preload/`
 - `src/renderer/`
 
 ## Exemplars
 
-1. `chatbridge/ARCHITECTURE.md`
-2. `chatbridge/PRESEARCH.md`
-3. `src/main/`
+1. `chatbridge/SERVICE_TOPOLOGY.md`
+2. `chatbridge/DEPLOYMENT.md`
+3. `chatbridge/ARCHITECTURE.md`
 
 ## Lane Decision
 

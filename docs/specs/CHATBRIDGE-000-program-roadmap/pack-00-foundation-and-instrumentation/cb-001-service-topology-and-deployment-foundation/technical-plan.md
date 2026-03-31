@@ -12,6 +12,7 @@
 - Components/modules affected:
   - `chatbridge/README.md`
   - `chatbridge/SERVICE_TOPOLOGY.md`
+  - `chatbridge/DEPLOYMENT.md`
   - `chatbridge/PRESEARCH.md`
   - `chatbridge/ARCHITECTURE.md`
   - `electron-builder.yml`
@@ -62,9 +63,10 @@
 
 ## Known Topology Gaps
 
-- The repo does not yet contain a ChatBridge backend or service adapters.
-- `package.json` references release shell scripts that are not present in the
-  repo root.
+- The repo does not yet contain a ChatBridge backend or the backend-facing
+  adapters that later packs will need.
+- The hosted Phase 0 surface is the web shell and desktop release contract,
+  not the future ChatBridge control plane.
 - Later stories must distinguish "future backend authority" from "current local
   mock or adapter" instead of collapsing them into one layer.
 

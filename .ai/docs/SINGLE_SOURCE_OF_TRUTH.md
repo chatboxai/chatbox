@@ -70,6 +70,9 @@
   `.ai/workflows/vercel-post-merge-verification.md`.
 - Story completion defaults to merged-to-`main`, not just local validation,
   unless the user explicitly pauses or selects a different merge path.
+- Final handoff should explain what changed and how to inspect/test it; UI
+  stories should call out the exact route or component path plus the expected
+  visible result.
 
 ## Read Order
 

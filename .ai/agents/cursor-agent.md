@@ -22,6 +22,9 @@ Ensure Cursor follows the same orchestration contract as Claude and Codex.
 - AI-architecture gate for `.ai/` changes: run
   `.ai/workflows/ai-architecture-change.md`
 - Completion gate: run `.ai/workflows/story-handoff.md`
+- Completion gate output must explain what changed, where it changed, and how
+  the user should inspect and test it. UI stories must include route or
+  component inspection guidance and the expected visible result.
 
 ## Task Routing
 

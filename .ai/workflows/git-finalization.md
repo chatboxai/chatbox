@@ -29,8 +29,8 @@ story to merge.
 Before final git actions:
 
 - confirm the active branch matches the current story
-- confirm the completion gate already recorded deploy status and finalization
-  plan
+- confirm the completion gate already recorded the story explainer, deploy
+  status, and finalization plan
 - confirm the user has not explicitly paused finalization or requested a
   different merge path
 

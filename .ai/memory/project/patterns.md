@@ -40,6 +40,10 @@ Capture repeatable patterns that match how this workspace actually works.
 - Story completion defaults to the full GitHub flow: commit, push, PR, merge to
   `main`, sync local `main`, and branch cleanup unless the user explicitly
   pauses or chooses a different merge path.
+- Final handoff packets should include a plain-language explainer of what
+  changed plus concrete inspection and testing guidance. UI stories should name
+  the route or component path, the click path or entry state, and the expected
+  visible outcome.
 
 ## Deployment and Release
 

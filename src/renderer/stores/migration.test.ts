@@ -345,6 +345,8 @@ vi.mock('@/packages/initial_data', () => ({
   artifactSessionEN: { id: 'artifact-en' },
   defaultSessionsForCN: [{ id: 'seed-cn', name: 'Seed CN', messages: [] }],
   defaultSessionsForEN: [{ id: 'seed-en', name: 'Seed EN', messages: [] }],
+  defaultPresetSessionBundlesForCN: [{ session: { id: 'seed-cn', name: 'Seed CN', messages: [] } }],
+  defaultPresetSessionBundlesForEN: [{ session: { id: 'seed-en', name: 'Seed EN', messages: [] } }],
   imageCreatorSessionForCN: { id: 'image-cn' },
   imageCreatorSessionForEN: { id: 'image-en' },
   mermaidSessionCN: { id: 'mermaid-cn' },

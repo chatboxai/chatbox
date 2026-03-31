@@ -1,15 +1,30 @@
 import type { Session, SessionMeta } from '@shared/types'
-import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
+import {
+  defaultPresetSessionBundlesForCN,
+  defaultPresetSessionBundlesForEN,
+  type PresetSessionBundle,
+} from '@/packages/initial_data'
 import { StorageKey, StorageKeyGenerator } from '@/storage/StoreStorage'
 import { getSessionMeta } from '@/stores/sessionHelpers'
 
 type PresetSessionStore = {
   getData: <T>(key: string, defaultValue: T) => Promise<T>
   setData: <T>(key: string, value: T) => Promise<void>
+  setBlob: (key: string, value: string) => Promise<void>
 }
 
 export function getPresetSessionsForLocale(locale: string): Session[] {
-  return locale.startsWith('zh') ? defaultSessionsForCN : defaultSessionsForEN
+  return getPresetSessionBundlesForLocale(locale).map(({ session }) => session)
+}
+
+export function getPresetSessionBundlesForLocale(locale: string): PresetSessionBundle[] {
+  return locale.startsWith('zh') ? defaultPresetSessionBundlesForCN : defaultPresetSessionBundlesForEN
+}
+
+async function seedPresetSessionBlobs(store: PresetSessionStore, presetSessionBundle: PresetSessionBundle) {
+  for (const blobEntry of presetSessionBundle.blobEntries || []) {
+    await store.setBlob(blobEntry.key, blobEntry.value)
+  }
 }
 
 export async function backfillPresetSessions(
@@ -17,13 +32,17 @@ export async function backfillPresetSessions(
   locale: string,
   existingSessionList?: SessionMeta[]
 ): Promise<SessionMeta[]> {
-  const presetSessions = getPresetSessionsForLocale(locale)
+  const presetSessionBundles = getPresetSessionBundlesForLocale(locale)
   const currentSessionList = existingSessionList ?? (await store.getData<SessionMeta[]>(StorageKey.ChatSessionsList, []))
   const sessionMetaById = new Map(currentSessionList.map((sessionMeta) => [sessionMeta.id, sessionMeta]))
   const nextSessionList = [...currentSessionList]
   let changed = false
 
-  for (const presetSession of presetSessions) {
+  for (const presetSessionBundle of presetSessionBundles) {
+    const presetSession = presetSessionBundle.session
+
+    await seedPresetSessionBlobs(store, presetSessionBundle)
+
     if (sessionMetaById.has(presetSession.id)) {
       continue
     }

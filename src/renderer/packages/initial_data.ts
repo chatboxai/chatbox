@@ -1,3 +1,4 @@
+import { getChatBridgeLiveSeedFixtures, type ChatBridgeLiveSeedFixture } from '@shared/chatbridge/live-seeds'
 import { migrateMessage } from '@/utils/message'
 import { ModelProviderEnum, type Session } from '../../shared/types'
 
@@ -1030,5 +1031,59 @@ mindmap
   threads: [],
 }
 
-defaultSessionsForCN.unshift(imageCreatorSessionForCN, artifactSessionCN, mermaidSessionCN)
-defaultSessionsForEN.unshift(imageCreatorSessionForEN, artifactSessionEN, mermaidSessionEN)
+type PresetSessionBlobEntry = NonNullable<ChatBridgeLiveSeedFixture['blobEntries']>[number]
+
+export type PresetSessionBundle = {
+  session: Session
+  blobEntries?: PresetSessionBlobEntry[]
+}
+
+function createPresetSessionBundle(session: Session): PresetSessionBundle {
+  return { session }
+}
+
+function createChatBridgePresetSessionBundles(): PresetSessionBundle[] {
+  return getChatBridgeLiveSeedFixtures().map((fixture) => ({
+    session: {
+      id: `chatbox-chat-demo-chatbridge-${fixture.id}`,
+      ...structuredClone(fixture.sessionInput),
+    },
+    ...(fixture.blobEntries
+      ? {
+          blobEntries: fixture.blobEntries.map((blobEntry) => ({ ...blobEntry })),
+        }
+      : {}),
+  }))
+}
+
+const chatBridgePresetSessionBundlesForEN = createChatBridgePresetSessionBundles()
+const chatBridgePresetSessionBundlesForCN = createChatBridgePresetSessionBundles()
+
+export const defaultPresetSessionBundlesForEN: PresetSessionBundle[] = [
+  createPresetSessionBundle(imageCreatorSessionForEN),
+  ...chatBridgePresetSessionBundlesForEN,
+  createPresetSessionBundle(artifactSessionEN),
+  createPresetSessionBundle(mermaidSessionEN),
+  ...defaultSessionsForEN.map(createPresetSessionBundle),
+]
+
+export const defaultPresetSessionBundlesForCN: PresetSessionBundle[] = [
+  createPresetSessionBundle(imageCreatorSessionForCN),
+  ...chatBridgePresetSessionBundlesForCN,
+  createPresetSessionBundle(artifactSessionCN),
+  createPresetSessionBundle(mermaidSessionCN),
+  ...defaultSessionsForCN.map(createPresetSessionBundle),
+]
+
+defaultSessionsForCN.unshift(
+  imageCreatorSessionForCN,
+  ...chatBridgePresetSessionBundlesForCN.map(({ session }) => session),
+  artifactSessionCN,
+  mermaidSessionCN
+)
+defaultSessionsForEN.unshift(
+  imageCreatorSessionForEN,
+  ...chatBridgePresetSessionBundlesForEN.map(({ session }) => session),
+  artifactSessionEN,
+  mermaidSessionEN
+)

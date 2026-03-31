@@ -42,8 +42,11 @@ Then use as needed:
   lifecycle seams are established early.
 - When a story changes inspectable ChatBridge shell, lifecycle, history, or
   HTML-preview behavior, update `src/shared/chatbridge/live-seeds.ts`,
+  `src/renderer/packages/initial_data.ts`,
+  `src/renderer/setup/preset_sessions.ts`,
   `src/renderer/dev/chatbridgeSeeds.ts`, and the `/dev/chatbridge` lab so the
-  change stays seedable in the live app.
+  change stays seedable in both the default app bootstrap and the live audit
+  flow.
 - For UI-affecting work, keep spec and implementation planning in the normal
   story flow, then route visual exploration through
   `.ai/workflows/pencil-ui-design.md`.

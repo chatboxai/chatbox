@@ -36,6 +36,8 @@
   generate 2 or 3 Pencil variations and wait for user approval before code.
 - **ChatBridge live inspection baseline**:
   - shared seed catalog: `src/shared/chatbridge/live-seeds.ts`
+  - preset bootstrap bundles: `src/renderer/packages/initial_data.ts`
+  - preset backfill path: `src/renderer/setup/preset_sessions.ts`
   - dev seeding helper: `src/renderer/dev/chatbridgeSeeds.ts`
   - live inspection route: `/dev/chatbridge`
 - **Recommended Pencil asset paths**:
@@ -81,8 +83,8 @@
   stories should call out the exact route or component path plus the expected
   visible result.
 - ChatBridge stories that change inspectable runtime behavior should keep the
-  `/dev/chatbridge` live seed lab current and reference the exact seeded
-  session in the final audit guidance.
+  preset bootstrap plus the `/dev/chatbridge` live seed lab current and
+  reference the exact seeded session in the final audit guidance.
 
 ## Read Order
 

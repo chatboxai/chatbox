@@ -32,15 +32,15 @@ missing API keys, mismatched service assumptions, and ad hoc local setup.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: The workspace bootstrap and env contract is documented for local and
+- [x] AC-1: The workspace bootstrap and env contract is documented for local and
       shared development.
-- [ ] AC-2: Required secrets, provider keys, and service assumptions are mapped
+- [x] AC-2: Required secrets, provider keys, and service assumptions are mapped
       to the ChatBridge initiative.
-- [ ] AC-3: Missing-env behavior and safe defaults are identified before
+- [x] AC-3: Missing-env behavior and safe defaults are identified before
       feature work starts.
-- [ ] AC-4: The package-manager and setup contract in checked-in developer docs
+- [x] AC-4: The package-manager and setup contract in checked-in developer docs
       matches the repo's actual bootstrap path.
-- [ ] AC-5: Known bootstrap gaps are called out explicitly instead of being
+- [x] AC-5: Known bootstrap gaps are called out explicitly instead of being
       hidden behind optimistic assumptions.
 
 ## Edge Cases

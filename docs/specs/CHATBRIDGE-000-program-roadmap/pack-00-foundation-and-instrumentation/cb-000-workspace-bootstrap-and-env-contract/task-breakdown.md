@@ -42,17 +42,30 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Bootstrap and env assumptions are grounded in current repo seams
+  - [x] Bootstrap and env assumptions are grounded in current repo seams
 - T002 tests:
-  - [ ] Missing-env and malformed-env behaviors are documented
+  - [x] Missing-env and malformed-env behaviors are documented
 - T003 tests:
-  - [ ] Local/shared setup guidance is specific enough for future story work
+  - [x] Local/shared setup guidance is specific enough for future story work
 - T004 tests:
-  - [ ] Checked-in entry docs do not contradict the actual repo bootstrap path
+  - [x] Checked-in entry docs do not contradict the actual repo bootstrap path
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Deferred tasks documented with rationale
-- [ ] `chatbridge/BOOTSTRAP.md` exists and is linked from entry docs
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Deferred tasks documented with rationale
+- [x] `chatbridge/BOOTSTRAP.md` exists and is linked from entry docs
+
+## Completion Notes
+
+- AC-1 through AC-3 are satisfied by `chatbridge/BOOTSTRAP.md`, which documents
+  the local/shared bootstrap contract, env inventory, and safe-missing-env
+  behavior.
+- AC-4 is satisfied by `README.md`, which now points developers at the current
+  `pnpm` bootstrap path and links the durable ChatBridge bootstrap contract.
+- AC-5 is satisfied by the explicit gap sections in `chatbridge/BOOTSTRAP.md`
+  and `technical-plan.md`.
+- Deferred work is limited to future-pack backend/service env ownership, which
+  remains called out explicitly in `technical-plan.md` and is intentionally out
+  of scope for this story.

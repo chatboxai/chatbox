@@ -122,7 +122,19 @@ Use squash or rebase only when the user explicitly asks for it.
 If merge fails or GitHub reports conflicts/check failures, stop and route to
 `.ai/workflows/finalization-recovery.md`.
 
-## Step 8: Refresh Local Refs and Cleanup
+## Step 8: Run Post-Merge Deploy Verification When Required
+
+If the story touched the hosted web shell or deployment contract:
+
+- run `.ai/workflows/vercel-post-merge-verification.md`
+- watch the `Vercel Main Sync` workflow for the merged `main` commit
+- treat a failed deploy or failed verification as a post-merge release problem,
+  not as invisible background noise
+- record the workflow result in the finalization outcome
+
+If the story did not touch that surface, record `not applicable` and continue.
+
+## Step 9: Refresh Local Refs and Cleanup
 
 ```bash
 git fetch --all --prune
@@ -134,7 +146,7 @@ git branch -d <story-branch>
 If the branch must remain temporarily, record why instead of deleting it
 silently.
 
-## Step 9: Report Finalization Outcome
+## Step 10: Report Finalization Outcome
 
 Return a concise update with:
 
@@ -143,6 +155,7 @@ Return a concise update with:
 - target remote
 - PR URL/status
 - merge status
+- post-merge Vercel verification status: `passed`, `failed`, or `not applicable`
 - explicit GitHub state: `local-only`, `pushed-without-PR`, `open PR`, or
   `merged`
 - branch cleanup status
@@ -159,4 +172,5 @@ Return a concise update with:
 - PR created or updated
 - validation plus `git diff --check` passed
 - merge completed or failure routed to recovery
+- post-merge Vercel verification handled or explicitly marked `not applicable`
 - branch cleanup completed or explicitly deferred

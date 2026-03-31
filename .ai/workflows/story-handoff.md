@@ -57,6 +57,8 @@ the user audit:
   `merged`
 - proposed commit message
 - expected deploy status: `deployed`, `not deployed`, or `blocked`
+- if the change touches the hosted web shell or deployment contract, expected
+  post-merge `Vercel Main Sync` status and workflow path
 - recovery path: `.ai/workflows/finalization-recovery.md`
 - if unrelated WIP exists in the current worktree, the clean isolation plan
   instead of treating the dirty tree as a finish blocker

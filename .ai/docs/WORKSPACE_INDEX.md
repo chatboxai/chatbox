@@ -15,26 +15,28 @@ Use this as the quick map for where truth lives.
 9. Pencil local reference bundle: `.ai/reference/pencil/README.md`
 10. Trace-driven workflow for orchestration-heavy work:
     `.ai/workflows/trace-driven-development.md`
+11. Post-merge hosted deploy verification:
+    `.ai/workflows/vercel-post-merge-verification.md`
 
 ## Product Docs
 
-10. App overview and setup: `README.md`
-11. Contributor and PR shape: `.github/PULL_REQUEST_TEMPLATE.md`
-12. User-facing and reference docs: `docs/` and `doc/`
+12. App overview and setup: `README.md`
+13. Contributor and PR shape: `.github/PULL_REQUEST_TEMPLATE.md`
+14. User-facing and reference docs: `docs/` and `doc/`
 
 ## Code and Tests
 
-13. Electron main process: `src/main/`
-14. Renderer app: `src/renderer/`
-15. Shared contracts and helpers: `src/shared/`
-16. Tests: `test/` and `src/__tests__/`
-17. Scripts and utilities: `scripts/`, `script/`, and `.erb/scripts/`
-18. Recommended Pencil assets when present: `design/system/` and
+15. Electron main process: `src/main/`
+16. Renderer app: `src/renderer/`
+17. Shared contracts and helpers: `src/shared/`
+18. Tests: `test/` and `src/__tests__/`
+19. Scripts and utilities: `scripts/`, `script/`, and `.erb/scripts/`
+20. Recommended Pencil assets when present: `design/system/` and
     `design/stories/`
 
 ## Harness Memory
 
-19. Durable architecture log: `.ai/memory/project/architecture.md`
-20. Durable implementation patterns: `.ai/memory/project/patterns.md`
-21. Durable anti-patterns: `.ai/memory/project/anti-patterns.md`
-22. Current working context: `.ai/memory/session/active-context.md`
+21. Durable architecture log: `.ai/memory/project/architecture.md`
+22. Durable implementation patterns: `.ai/memory/project/patterns.md`
+23. Durable anti-patterns: `.ai/memory/project/anti-patterns.md`
+24. Current working context: `.ai/memory/session/active-context.md`

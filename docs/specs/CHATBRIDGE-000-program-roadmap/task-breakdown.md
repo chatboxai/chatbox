@@ -39,7 +39,7 @@
 
 | Task ID | Description | Dependency | Parallelizable | Validation |
 |---|---|---|---|---|
-| P000 | Pack 00: foundation and instrumentation | must-have | partial | bootstrap, env, hosted web deployment, release entrypoints, trace, eval, and observability readiness |
+| P000 | Pack 00: foundation and instrumentation | must-have | partial | bootstrap, env, hosted web deployment, mainline Vercel sync, post-merge verification, release entrypoints, trace, eval, and observability readiness |
 | P001 | Pack 01: reliable chat and history | blocked-by:P000 | no | `pnpm test`, `pnpm check` |
 | P002 | Pack 02: platform contract and bridge security | blocked-by:P001 | no | contract and integration tests for host/app bridge |
 | P003 | Pack 03: single-app invocation and first Chess vertical steps | blocked-by:P002 | no | single-app invocation and initial app embed smoke |

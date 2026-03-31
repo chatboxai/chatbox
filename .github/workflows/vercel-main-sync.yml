@@ -1,0 +1,89 @@
+name: Vercel Main Sync
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: vercel-main-sync
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy Hosted Web Shell
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deployment_url: ${{ steps.deploy.outputs.deployment_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Deploy production shell to Vercel
+        id: deploy
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "VERCEL_TOKEN secret is required for Vercel mainline sync" >&2
+            exit 1
+          fi
+
+          DEPLOYMENT_URL="$(bash scripts/deploy-vercel-production.sh)"
+          echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
+          echo "Deployment URL: $DEPLOYMENT_URL"
+
+  verify:
+    name: Verify Production Deployment
+    runs-on: ubuntu-latest
+    needs: deploy
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Verify production deployment with Vercel CLI
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "VERCEL_TOKEN secret is required for Vercel verification" >&2
+            exit 1
+          fi
+
+          bash scripts/verify-vercel-deployment.sh \
+            "${{ needs.deploy.outputs.deployment_url }}" \
+            production \
+            "${GITHUB_SHA}"
+

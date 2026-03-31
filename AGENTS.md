@@ -83,6 +83,11 @@ harness still matches the actual repo layout and commands.
   flow automatically: commit, push, open or update a PR, merge to `main`, sync
   local `main`, and clean up the story branch unless the user explicitly asks
   to pause finalization or use a different merge path.
+- After merges to `main`, the hosted web shell now syncs to Vercel through
+  `.github/workflows/vercel-main-sync.yml`. For stories that touch the hosted
+  web shell or deployment contract, do not treat finalization as fully closed
+  until the Vercel CLI verification phase in that workflow passes or an
+  explicit blocker is recorded.
 - When a task changes durable process, architecture, or design-system truth,
   update the relevant `.ai/docs/**`, `.ai/memory/**`, or `docs/specs/**`
   artifacts so the checked-in guidance stays current.

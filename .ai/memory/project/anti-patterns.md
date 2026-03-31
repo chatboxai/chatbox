@@ -94,3 +94,13 @@ Capture failures so they are not repeated.
 - **Prevention rule**: Treat deployment as incomplete until there is a checked-in
   provider config, a smoke-check path, runnable commands, and explicit deploy
   evidence.
+
+- **Problem**: Treating merge-to-`main` as the final operational gate for the
+  hosted shell
+- **Example**: Merging a deploy-surface story and stopping before the mainline
+  Vercel sync or CLI verification phase runs
+- **Why it failed**: The code is merged, but the hosted surface may still be
+  broken or out of sync with `main`.
+- **Prevention rule**: For hosted-shell and deploy-contract stories, watch the
+  post-merge `Vercel Main Sync` workflow and record its verification result
+  explicitly.

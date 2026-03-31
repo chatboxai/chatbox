@@ -86,3 +86,18 @@ Record durable workspace decisions here.
 - **Consequences**: Phase 0 now has a real deployable host shell and smoke
   path, while future ChatBridge backend services remain explicit later-pack
   work.
+
+- **ADR-ID**: ADR-0007
+- **Date**: 2026-03-31
+- **Context**: The hosted web shell had a manual Vercel production path, but
+  merge completion stopped before any automatic post-merge deployment
+  verification.
+- **Decision**: Standardize `main` production sync on a checked-in GitHub
+  Actions workflow (`.github/workflows/vercel-main-sync.yml`) backed by
+  checked-in deploy and verify scripts, and disable Vercel Git auto-deploy for
+  `main` so the repo-owned workflow is the single production source of truth.
+- **Alternatives Considered**: Leave production deploy manual; rely on Vercel
+  dashboard auto-deploys and undocumented post-merge checks.
+- **Consequences**: Hosted-shell stories now have a post-merge Vercel CLI
+  verification phase, and merge-to-`main` is no longer the last operational
+  checkpoint for deployment-surface changes.

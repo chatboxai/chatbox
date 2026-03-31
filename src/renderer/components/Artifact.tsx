@@ -1,17 +1,12 @@
-import NiceModal from '@ebay/nice-modal-react'
-import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined'
-import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined'
-import { ButtonGroup, IconButton } from '@mui/material'
 import type { Message } from '@shared/types/session'
 import { debounce } from 'lodash'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { getMessageThreadContext } from '@/stores/sessionActions'
 import { getMessageText } from '../../shared/utils/message'
-import ArrowRightIcon from './icons/ArrowRightIcon'
-import FullscreenIcon from './icons/FullscreenIcon'
+import { ChatBridgeShell } from './chatbridge/ChatBridgeShell'
+import { getArtifactShellState } from './chatbridge/chatbridge'
 
 const RENDERABLE_CODE_LANGUAGES = ['html'] as const
 export type RenderableCodeLanguage = (typeof RENDERABLE_CODE_LANGUAGES)[number]
@@ -37,10 +32,11 @@ export function MessageArtifact(props: {
   sessionId: string
   messageId: string
   messageContent: string
+  generating?: boolean
   preview: boolean
   setPreview: (preview: boolean) => void
 }) {
-  const { sessionId, messageId, messageContent, preview, setPreview } = props
+  const { sessionId, messageId, messageContent, generating, preview, setPreview } = props
 
   const [contextMessages, setContextMessages] = useState<Message[]>([])
 
@@ -63,18 +59,20 @@ export function MessageArtifact(props: {
     return generateHtml([...contextMessages.map((m) => getMessageText(m)), messageContent])
   }, [contextMessages, messageContent])
 
-  return <ArtifactWithButtons htmlCode={htmlCode} preview={preview} setPreview={setPreview} />
+  return <ArtifactWithButtons generating={generating} htmlCode={htmlCode} preview={preview} setPreview={setPreview} />
 }
 
 export function ArtifactWithButtons(props: {
+  generating?: boolean
   htmlCode: string
   preview: boolean
   setPreview: (preview: boolean) => void
 }) {
-  const { htmlCode, preview, setPreview } = props
+  const { generating, htmlCode, preview, setPreview } = props
   const { t } = useTranslation()
   const [reloadSign, setReloadSign] = useState(0)
-  const isSmallScreen = useIsSmallScreen()
+  const hasRenderableHtml = htmlCode.trim().length > 0
+  const shellState = getArtifactShellState({ generating, preview, hasRenderableHtml })
 
   const onReplay = () => {
     setReloadSign(Math.random())
@@ -86,85 +84,44 @@ export function ArtifactWithButtons(props: {
   const onStopPreview = () => {
     setPreview(false)
   }
-  const onOpenFullscreen = async () => {
-    await NiceModal.show('artifact-preview', {
-      htmlCode,
-    })
-  }
-  if (!preview) {
-    return (
-      <div
-        className="w-full my-1 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-all duration-300 cursor-pointer overflow-hidden group"
-        onClick={onPreview}
-      >
-        <div className="flex items-center justify-between p-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-7 h-7 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 text-white"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-            <span className="text-lg font-semibold text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300">
-              {t('Preview')}
-            </span>
-          </div>
-          <div className="flex items-center justify-center">
-            <FullscreenIcon
-              className="mr-1 hover:bg-white hover:rounded  hover:text-gray-500
-                            p-1 w-8 h-8 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                onOpenFullscreen()
-              }}
-            />
-            <ArrowRightIcon
-              className="hover:bg-white hover:rounded  hover:text-gray-500
-                            p-1 w-8 h-8 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400"
-              onClick={() => setPreview(true)}
-            />
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const descriptions = {
+    loading: 'The host wrapper is preparing the generated HTML preview.',
+    ready: 'The preview is ready to open from the message without dropping into a raw iframe panel.',
+    active: 'The preview is mounted inside the host-owned shell and can be refreshed or dismissed from the thread.',
+    complete: 'The preview completed inside the host-owned shell.',
+    error: 'No renderable HTML was found, so the host shell is presenting the fallback path instead.',
+  } as const
+
   return (
-    <div
-      className={cn(
-        'w-full',
-        'border border-solid rounded border-gray-500/40',
-        'flex',
-        isSmallScreen ? 'flex-col-reverse' : 'flex-row'
-      )}
+    <ChatBridgeShell
+      state={shellState}
+      title="Embedded app shell"
+      description={descriptions[shellState]}
+      surfaceTitle="Generated HTML preview"
+      surfaceDescription="The runtime surface stays inside the host-owned shell so loading, launch, and fallback remain part of the conversation."
+      statusLabel={
+        {
+          loading: 'Loading',
+          ready: 'Ready',
+          active: 'Running',
+          complete: 'Complete',
+          error: 'Fallback',
+        }[shellState]
+      }
+      fallbackTitle="Fallback"
+      fallbackText="The message still keeps its raw markdown content above, but there is no renderable HTML block available for an embedded preview."
+      secondaryAction={preview ? { label: t('Close'), onClick: onStopPreview, variant: 'secondary' } : undefined}
+      primaryAction={
+        hasRenderableHtml
+          ? {
+              label: preview ? t('Refresh') : t('Preview'),
+              onClick: preview ? onReplay : onPreview,
+            }
+          : undefined
+      }
     >
-      <Artifact htmlCode={htmlCode} reloadSign={reloadSign} />
-      <ButtonGroup
-        orientation={isSmallScreen ? 'horizontal' : 'vertical'}
-        className={cn(
-          'border-solid border-gray-500/20',
-          isSmallScreen ? 'border-r-0 border-b-1 border-l-0 border-t-0' : 'border-r-0 border-b-0 border-l-1 border-t-0'
-        )}
-      >
-        <IconButton onClick={onReplay} color="primary">
-          <ReplayOutlinedIcon />
-        </IconButton>
-        <IconButton onClick={onOpenFullscreen} color="primary">
-          <FullscreenIcon className="w-5 h-5" />
-        </IconButton>
-        <IconButton onClick={onStopPreview} color="error">
-          <StopCircleOutlinedIcon />
-        </IconButton>
-      </ButtonGroup>
-    </div>
+      {preview && hasRenderableHtml ? <Artifact htmlCode={htmlCode} reloadSign={reloadSign} /> : null}
+    </ChatBridgeShell>
   )
 }
 

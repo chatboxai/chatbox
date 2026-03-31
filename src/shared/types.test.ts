@@ -88,6 +88,27 @@ describe('MessageContentPartSchema', () => {
       })
     ).toThrow()
   })
+
+  it('supports host-shell display metadata on app lifecycle parts', () => {
+    const parsed = MessageContentPartSchema.parse({
+      type: 'app',
+      appId: 'app-chess-1',
+      appName: 'Chess',
+      appInstanceId: 'chess-instance-1',
+      lifecycle: 'active',
+      title: 'Active chess shell',
+      description: 'The host keeps the runtime inside the thread.',
+      fallbackTitle: 'Fallback',
+      fallbackText: 'Recover in place.',
+    })
+
+    expect(parsed.type).toBe('app')
+    if (parsed.type === 'app') {
+      expect(parsed.appName).toBe('Chess')
+      expect(parsed.lifecycle).toBe('active')
+      expect(parsed.fallbackText).toBe('Recover in place.')
+    }
+  })
 })
 
 describe('copyThreads with compactionPoints', () => {

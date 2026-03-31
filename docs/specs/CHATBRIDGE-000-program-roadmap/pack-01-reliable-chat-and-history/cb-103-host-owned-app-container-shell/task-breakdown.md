@@ -40,15 +40,31 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Renderer state coverage for loading/ready/error/complete
+  - [x] Renderer state coverage for loading/ready/error/complete
 - T002 tests:
-  - [ ] Accessibility coverage for focus, labels, and keyboard affordances
+  - [x] Accessibility coverage for focus, labels, and keyboard affordances
 - T003 tests:
-  - [ ] Smoke test that app-aware timeline parts render without crashing the thread
+  - [x] Smoke test that app-aware timeline parts render without crashing the thread
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Completion Notes
+
+- T001 completed with approved `Variation C` recorded in
+  `docs/specs/CHATBRIDGE-000-program-roadmap/pack-01-reliable-chat-and-history/cb-103-host-owned-app-container-shell/pencil-review.md`.
+- T002 completed by adding the `app` message-part schema and the host-owned
+  shell view-model logic in `src/shared/types/session.ts` and
+  `src/renderer/components/chatbridge/chatbridge.ts`.
+- T003 completed by wiring the approved shell into
+  `src/renderer/components/Artifact.tsx`,
+  `src/renderer/components/chat/Message.tsx`, and the new
+  `src/renderer/components/chatbridge/**` components.
+- T004 completed with focused regression coverage in
+  `src/renderer/components/chatbridge/ChatBridgeShell.test.tsx`,
+  `src/renderer/components/chat/Message.chatbridge.test.tsx`, and
+  `src/shared/types.test.ts`.

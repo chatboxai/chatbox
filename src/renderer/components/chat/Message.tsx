@@ -44,10 +44,10 @@ import { generateMore, modifyMessage, regenerateInNewFork, removeMessage } from 
 import * as toastActions from '@/stores/toastActions'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { isContainRenderableCode, MessageArtifact } from '../Artifact'
+import { ChatBridgeMessagePart } from '../chatbridge/ChatBridgeMessagePart'
 import { AssistantAvatar, SystemAvatar, UserAvatar } from '../common/Avatar'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Loading from '../icons/Loading'
-import { AppPartUI } from '../message-parts/AppPartUI'
 import { ReasoningContentUI, ToolCallPartUI } from '../message-parts/ToolCallPartUI'
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
@@ -233,6 +233,9 @@ const _Message: FC<Props> = (props) => {
   // 是否需要渲染 Aritfact 组件
   const needArtifact = useMemo(() => {
     if (msg.role !== 'assistant') {
+      return false
+    }
+    if (msg.contentParts.some((part) => part.type === 'app')) {
       return false
     }
     return isContainRenderableCode(getMessageText(msg))
@@ -463,7 +466,7 @@ const _Message: FC<Props> = (props) => {
                           </Flex>
                         </Flex>
                       ) : item.type === 'app' ? (
-                        <AppPartUI key={`app-${item.appInstanceId}-${index}`} part={item as MessageAppPart} />
+                        <ChatBridgeMessagePart key={`app-${item.appInstanceId}-${index}`} part={item as MessageAppPart} />
                       ) : item.type === 'image' ? (
                         props.sessionType !== 'picture' && (
                           <div key={`image-${item.storageKey}`} className="mt-2">
@@ -508,6 +511,16 @@ const _Message: FC<Props> = (props) => {
                       ) : null
                     )}
                   </div>
+                )}
+                {needArtifact && (
+                  <MessageArtifact
+                    sessionId={sessionId}
+                    messageId={msg.id}
+                    messageContent={getMessageText(msg, true, true)}
+                    generating={msg.generating}
+                    preview={previewArtifact}
+                    setPreview={setPreviewArtifact}
+                  />
                 )}
               </Box>
               {props.sessionType === 'picture' && msg.contentParts.filter((p) => p.type === 'image').length > 0 && (

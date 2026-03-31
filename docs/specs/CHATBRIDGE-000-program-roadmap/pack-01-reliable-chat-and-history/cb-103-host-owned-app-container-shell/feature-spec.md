@@ -25,9 +25,9 @@ The current Artifact surface is an iframe preview for generated HTML, not a gove
 
 ## Acceptance Criteria
 
-- [ ] AC-1: A dedicated host-owned app container exists as the canonical UI seam for embedded app experiences.
-- [ ] AC-2: The container supports baseline states: loading, ready, active, complete, and error/fallback.
-- [ ] AC-3: The container is designed to work with the shared design system and the Pencil approval workflow before code lands.
+- [x] AC-1: A dedicated host-owned app container exists as the canonical UI seam for embedded app experiences.
+- [x] AC-2: The container supports baseline states: loading, ready, active, complete, and error/fallback.
+- [x] AC-3: The container is designed to work with the shared design system and the Pencil approval workflow before code lands.
 
 ## Edge Cases
 
@@ -60,3 +60,19 @@ The current Artifact surface is an iframe preview for generated HTML, not a gove
 - Tests cover the primary happy path and the important failure mode for this story.
 - Validation passes for the touched scope.
 - Any new visible UI state has approved Pencil evidence before code if applicable.
+
+## Implementation Evidence
+
+- Approved Pencil variation: `Variation C` in `design/stories/CB-103.pen`
+- Pencil proof artifact:
+  `docs/specs/CHATBRIDGE-000-program-roadmap/pack-01-reliable-chat-and-history/cb-103-host-owned-app-container-shell/artifacts/pencil/gD9Vd.png`
+- Renderer seams implemented:
+  - `src/renderer/components/chatbridge/ChatBridgeShell.tsx`
+  - `src/renderer/components/chatbridge/ChatBridgeMessagePart.tsx`
+  - `src/renderer/components/Artifact.tsx`
+  - `src/renderer/components/chat/Message.tsx`
+  - `src/shared/types/session.ts`
+- Focused regression coverage:
+  - `src/renderer/components/chatbridge/ChatBridgeShell.test.tsx`
+  - `src/renderer/components/chat/Message.chatbridge.test.tsx`
+  - `src/shared/types.test.ts`

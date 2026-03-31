@@ -122,6 +122,11 @@ export const MessageAppPartSchema = z.object({
   snapshot: z.record(z.string(), z.unknown()).optional(),
   values: z.record(z.string(), z.unknown()).optional(),
   error: z.string().optional(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  statusText: z.string().optional(),
+  fallbackTitle: z.string().optional(),
+  fallbackText: z.string().optional(),
 })
 
 export const MessageToolCallPartSchema = z.object({

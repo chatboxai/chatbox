@@ -46,3 +46,18 @@ Current embedded surface precedent for future host-owned runtime containers.
 - Lane: `standard`
 - Why: this story changes shared contracts, runtime boundaries, or cross-cutting behavior that affects multiple code paths.
 - Required gates: constitution check, feature spec, technical plan, task breakdown, focused TDD during implementation, and Pencil review before UI code.
+
+## Completion Evidence
+
+- Approved UI direction: `Variation C` in
+  `docs/specs/CHATBRIDGE-000-program-roadmap/pack-01-reliable-chat-and-history/cb-103-host-owned-app-container-shell/pencil-review.md`
+- Checked-in design artifact: `design/stories/CB-103.pen`
+- Implemented renderer seams:
+  - `src/renderer/components/chatbridge/`
+  - `src/renderer/components/Artifact.tsx`
+  - `src/renderer/components/chat/Message.tsx`
+  - `src/shared/types/session.ts`
+- Focused tests added:
+  - `src/renderer/components/chatbridge/ChatBridgeShell.test.tsx`
+  - `src/renderer/components/chat/Message.chatbridge.test.tsx`
+  - `src/shared/types.test.ts`

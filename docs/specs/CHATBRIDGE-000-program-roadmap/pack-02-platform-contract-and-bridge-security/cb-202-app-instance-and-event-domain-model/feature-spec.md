@@ -25,9 +25,9 @@ The host needs first-class records for app sessions and lifecycle events so it c
 
 ## Acceptance Criteria
 
-- [ ] AC-1: The domain model for app instances and app events is explicit and typed.
-- [ ] AC-2: Lifecycle states, ownership, resumability, and error fields are represented directly.
-- [ ] AC-3: The model supports later completion normalization and auth grant linkage.
+- [x] AC-1: The domain model for app instances and app events is explicit and typed.
+- [x] AC-2: Lifecycle states, ownership, resumability, and error fields are represented directly.
+- [x] AC-3: The model supports later completion normalization and auth grant linkage.
 
 ## Edge Cases
 

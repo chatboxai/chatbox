@@ -35,6 +35,13 @@ CB-204 adds the first host-coordinated tool execution contract slice:
   classification metadata, and normalized execution records using mock app
   tools wired through the current orchestration seam
 
+CB-202 adds the first host-owned app instance and event record slice:
+
+- `scenarios/app-instance-domain-model.test.ts`
+  covers launch-scoped lifecycle recording, bridge/runtime event normalization,
+  and durable hydration of `appInstance` plus `appEvent` records through the
+  existing bridge controller seam
+
 That scenario set is the baseline gate for later ChatBridge packs that add real
 app-aware schema, containers, and lifecycle events. New ChatBridge persistence,
 manifest, or tool-execution changes should extend this suite instead of

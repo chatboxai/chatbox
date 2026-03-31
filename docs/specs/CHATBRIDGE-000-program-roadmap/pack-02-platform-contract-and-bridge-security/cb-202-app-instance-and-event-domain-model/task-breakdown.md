@@ -21,12 +21,12 @@
 
 ## Tasks
 
-| Task ID | Description | Dependency | Parallelizable | Validation |
-|---|---|---|---|---|
-| T001 | Define the appInstance and appEvent schema set with clear status transitions. | must-have | no | Domain model tests |
-| T002 | Create storage and selector seams for instance/event reads and writes. | blocked-by:T001 | no | Integration tests for persistence and hydration |
-| T003 | Document how lifecycle events map to renderer and orchestrator concerns. | blocked-by:T001 | yes | Spec review |
-| T004 | Add transition and hydration regression coverage. | blocked-by:T002,T003 | no | pnpm test and pnpm check |
+| Task ID | Description | Dependency | Parallelizable | Validation | Status |
+|---|---|---|---|---|---|
+| T001 | Define the appInstance and appEvent schema set with clear status transitions. | must-have | no | Domain model tests | complete via `src/shared/chatbridge/instance.ts`, `src/shared/chatbridge/events.ts`, `src/shared/chatbridge/instance.test.ts`, and `src/shared/chatbridge/events.test.ts` |
+| T002 | Create storage and selector seams for instance/event reads and writes. | blocked-by:T001 | no | Integration tests for persistence and hydration | complete via `src/renderer/packages/chatbridge/app-records.ts` and `src/renderer/packages/chatbridge/app-records.test.ts` |
+| T003 | Document how lifecycle events map to renderer and orchestrator concerns. | blocked-by:T001 | yes | Spec review | complete via checked-in story packet updates plus ChatBridge README and integration-harness notes |
+| T004 | Add transition and hydration regression coverage. | blocked-by:T002,T003 | no | pnpm test and pnpm check | complete via `test/integration/chatbridge/scenarios/app-instance-domain-model.test.ts` |
 
 Dependency values:
 - `must-have`
@@ -40,15 +40,19 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] State transition validation
+  - [x] State transition validation
 - T002 tests:
-  - [ ] Illegal lifecycle transition rejection
+  - [x] Illegal lifecycle transition rejection
 - T003 tests:
-  - [ ] App instance serialization and hydration
+  - [x] App instance serialization and hydration
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+Deferred tasks:
+
+- None. Later packs still own completion normalization behavior, auth grant persistence, and flagship app wiring.

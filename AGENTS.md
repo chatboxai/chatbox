@@ -33,6 +33,11 @@ Load context in this order before making non-trivial changes:
 - If the current worktree already contains unrelated in-progress changes or
   another active story, start the new story in a fresh `codex/` worktree/branch
   instead of layering onto the shared dirty tree.
+- Before replaying or re-implementing a requested story from a stale branch,
+  check whether the story is already present on `main` or `origin/main`. If it
+  is already merged there, treat that merge as the baseline and start any
+  follow-up correction from a fresh clean worktree instead of duplicating the
+  story on the dirty parallel branch.
 - When a story starts in a fresh branch or worktree, copy the required local
   `.env*` files from the working `main` setup or previous story worktree before
   running project commands, and keep them untracked.
@@ -75,6 +80,10 @@ harness still matches the actual repo layout and commands.
 - Use `.ai/workflows/story-handoff.md` as the completion gate.
 - A story is not complete until it is merged to `main` on GitHub, unless the
   user explicitly asks to pause before merge or use a different merge path.
+- When parallel story work is active, do not infer completion state from the
+  current branch alone. Check the latest base branch and remote first; if the
+  requested story is already merged, report that state explicitly and treat any
+  remaining changes as a new follow-up story from a clean worktree.
 - Unrelated dirty state is not a valid reason to stop at local validation.
   Preserve other in-progress changes, isolate the current story in the safest
   clean branch/worktree available, re-run the required validation on that

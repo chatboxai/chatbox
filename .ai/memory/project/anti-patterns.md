@@ -105,6 +105,16 @@ Capture failures so they are not repeated.
   post-merge `Vercel Main Sync` workflow and record its verification result
   explicitly.
 
+- **Problem**: Replaying an already-merged story onto a stale parallel branch
+- **Example**: Seeing that the current dirty branch lacks a requested story,
+  then re-implementing or cherry-picking it even though `main` or
+  `origin/main` already contains the merged result
+- **Why it failed**: It duplicates work, obscures the real completion state,
+  and increases merge risk for unrelated parallel stories
+- **Prevention rule**: Check the latest base branch and remote before replaying
+  a story. If it is already merged there, treat it as baseline and open only a
+  clean follow-up story for any new corrections.
+
 - **Problem**: Injecting provider API keys into the renderer or browser bundle
 - **Example**: Wiring `OPENAI_API_KEY` through renderer compile-time env
   injection so the hosted web shell can call OpenAI directly from client code

@@ -46,7 +46,10 @@
 - **Branch rule**: start non-trivial work on a fresh `codex/` branch, carry
   over required local `.env*` files into new branches/worktrees, and run
   `pnpm install` before project commands so missing local `node_modules` is
-  treated as setup, not as a story regression
+  treated as setup, not as a story regression. When parallel story branches are
+  active, check `main` and `origin/main` before replaying a requested story so
+  already-merged work is treated as the baseline, not as something to re-land
+  on a stale branch
 - **Helper-script rule**: workflow docs may reference optional helper scripts;
   if this repo does not contain them, follow the manual workflow equivalent.
 

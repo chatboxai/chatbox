@@ -58,6 +58,16 @@ If the worktree contains unrelated changes:
   staging
 - continue the rest of finalization from that isolated branch/worktree
 
+If the requested story is already merged to the target base branch:
+
+- do not replay or re-commit it during finalization just because the current
+  branch is stale
+- report GitHub state `merged` explicitly in the completion packet
+- treat any additional correction as a new follow-up story from the latest base
+  branch/worktree
+- finalize only the follow-up diff, not a duplicate copy of the already-merged
+  story
+
 If file ownership or overlapping hunks are ambiguous, stop and route to
 `.ai/workflows/finalization-recovery.md`.
 

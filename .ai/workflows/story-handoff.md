@@ -60,6 +60,8 @@ the user audit:
 - writable remote
 - current GitHub state: `local-only`, `pushed-without-PR`, `open PR`, or
   `merged`
+- whether the requested story is already present on the target base branch; if
+  yes, treat it as the baseline and describe any remaining work as follow-up
 - proposed commit message
 - expected deploy status: `deployed`, `not deployed`, or `blocked`
 - if the change touches the hosted web shell or deployment contract, expected

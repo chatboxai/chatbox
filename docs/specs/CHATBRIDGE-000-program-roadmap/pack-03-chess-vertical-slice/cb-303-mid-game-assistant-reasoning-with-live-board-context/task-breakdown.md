@@ -40,15 +40,19 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Context injection for active Chess session
+  - [x] Context injection for active Chess session
 - T002 tests:
-  - [ ] Fallback behavior when board state is stale
+  - [x] Fallback behavior when board state is stale
 - T003 tests:
-  - [ ] Model-path tests proving board context enters the prompt assembly path
+  - [x] Model-path tests proving board context enters the prompt assembly path
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Deferred Tasks
+
+- Full in-app Chess runtime visualization remains with the broader Pack 03 UI/runtime stories; CB-303 stays scoped to host-owned reasoning-context injection and regression coverage.

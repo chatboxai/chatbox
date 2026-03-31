@@ -1,4 +1,4 @@
-import { wrapChatBridgeHostTools } from '@shared/chatbridge/tools'
+import { buildChatBridgeChessReasoningPrompt, wrapChatBridgeHostTools } from '@shared/chatbridge'
 import { getModel } from '@shared/models'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
 import { sequenceMessages } from '@shared/utils/message'
@@ -124,6 +124,10 @@ export function prepareToolsForExecution(tools: ToolSet, sessionId?: string): To
   return wrapChatBridgeHostTools(tools, { sessionId })
 }
 
+export function buildAdditionalConversationInfo(messages: Message[], toolSetInstructions: string): string {
+  return [toolSetInstructions, buildChatBridgeChessReasoningPrompt(messages)].filter(Boolean).join('\n\n')
+}
+
 /**
  * 这里是供UI层调用，集中处理了模型的联网搜索、工具调用、系统消息等逻辑
  */
@@ -183,8 +187,8 @@ export async function streamText(
   params.messages = injectModelSystemPrompt(
     model.modelId,
     params.messages,
-    // 在系统提示中添加知识库名称，方便模型理解
-    toolSetInstructions,
+    // 在系统提示中添加工具能力和 ChatBridge 上下文，方便模型理解
+    buildAdditionalConversationInfo(params.messages, toolSetInstructions),
     model.isSupportSystemMessage() ? 'system' : 'user'
   )
 

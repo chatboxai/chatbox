@@ -72,6 +72,8 @@ backend-authoritative services.
 - bridge validation
 - tool coordination
 - context injection and completion normalization
+- host-owned reasoning-context reduction for active app state before it reaches
+  the model path
 
 ### Layer 3: Platform services
 
@@ -155,7 +157,7 @@ service exists, the story should:
 - future `src/main/chatbridge/` for privileged host-runtime concerns
 - `src/shared/chatbridge/` now exists for shared execution-contract types and
   host-owned tool normalization helpers; later packs can extend it with
-  manifest, bridge-session, and lifecycle contracts
+  manifest, bridge-session, lifecycle, and reasoning-context contracts
 - future `src/renderer/components/chatbridge/` and
   `src/renderer/packages/chatbridge/` for renderer-side lifecycle/UI
 

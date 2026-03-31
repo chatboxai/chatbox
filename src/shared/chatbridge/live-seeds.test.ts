@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAppAwareSessionFixture,
+  buildChatBridgeChessMidGameSessionFixture,
   buildChatBridgeHistoryAndPreviewSessionFixture,
   buildChatBridgeLifecycleTourSessionFixture,
   buildPartialLifecycleSessionFixture,
@@ -49,9 +50,30 @@ describe('chatbridge live seed fixtures', () => {
     expect(fixture.blobEntries[0].key).toContain('fixture:msg-current-assistant:attachment')
   })
 
+  it('builds a chess mid-game fixture with a validated host-owned board summary', () => {
+    const fixture = buildChatBridgeChessMidGameSessionFixture()
+    const assistantMessage = fixture.messages.find((message) => message.id === 'msg-chess-assistant-board')
+    const appPart = assistantMessage?.contentParts.find((part) => part.type === 'app')
+
+    expect(appPart && appPart.type === 'app' ? appPart.appId : undefined).toBe('chess')
+    expect(appPart && appPart.type === 'app' ? appPart.lifecycle : undefined).toBe('active')
+    expect(appPart && appPart.type === 'app' ? appPart.snapshot : undefined).toMatchObject({
+      route: '/apps/chess',
+      boardContext: {
+        schemaVersion: 1,
+        sideToMove: 'white',
+        fullmoveNumber: 6,
+      },
+    })
+  })
+
   it('publishes the live seed catalog with stable scenario ids', () => {
     const fixtures = getChatBridgeLiveSeedFixtures()
 
-    expect(fixtures.map((fixture) => fixture.id)).toEqual(['lifecycle-tour', 'history-and-preview'])
+    expect(fixtures.map((fixture) => fixture.id)).toEqual([
+      'lifecycle-tour',
+      'chess-mid-game-board-context',
+      'history-and-preview',
+    ])
   })
 })

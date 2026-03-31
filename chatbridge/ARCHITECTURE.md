@@ -136,6 +136,8 @@ The host should send a signed bootstrap envelope plus a transferred `MessagePort
 - Validates all bridge traffic
 - Converts app outcomes into durable chat memory
 - Normalizes partner outputs before they become model-visible summaries
+- Reduces active app state into bounded host-owned reasoning context before the
+  model sees any position-specific prompt supplement
 
 ### Platform Services
 
@@ -230,6 +232,17 @@ The host should be the execution coordinator for app tools, even when the app ow
 - Retry behavior must be declared per tool as safe or unsafe.
 - The host records normalized invocation payloads and results, not arbitrary raw partner blobs.
 - Schema-version mismatches should fail closed with an explicit host error state rather than a best-effort execution attempt.
+
+### Model-visible app context semantics
+
+- App runtimes may emit detailed state, but the model only receives the
+  host-owned subset that has been validated and normalized for the current
+  turn.
+- For Chess mid-game reasoning, the host reduces the board snapshot to bounded
+  fields such as FEN, side to move, move count, status, and a short host note.
+- If the latest board state is stale or cannot be validated, the host should
+  inject an explicit degraded-state warning instead of pretending the assistant
+  can still see the exact position.
 
 ## 7. Authentication Flow for Story Builder
 

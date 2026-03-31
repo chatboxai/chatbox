@@ -1,4 +1,6 @@
 export * from './events'
 export * from './instance'
 export * from './manifest'
+export * from './reasoning-context'
 export * from './registry'
+export * from './tools'

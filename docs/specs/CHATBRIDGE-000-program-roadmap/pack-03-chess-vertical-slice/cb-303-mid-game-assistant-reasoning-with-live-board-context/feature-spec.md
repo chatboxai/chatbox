@@ -25,9 +25,9 @@ The core product promise is that the assistant stays aware of app state. Chess n
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Mid-game follow-up questions incorporate current board context in the model path.
-- [ ] AC-2: The context passed to the model is host-owned and normalized, not raw partner prose.
-- [ ] AC-3: The conversation remains usable if current board context is stale or unavailable.
+- [x] AC-1: Mid-game follow-up questions incorporate current board context in the model path.
+- [x] AC-2: The context passed to the model is host-owned and normalized, not raw partner prose.
+- [x] AC-3: The conversation remains usable if current board context is stale or unavailable.
 
 ## Edge Cases
 
@@ -55,6 +55,6 @@ The core product promise is that the assistant stays aware of app state. Chess n
 ## Done Definition
 
 - The accepted behavior is implemented against the existing repo seams.
-- Tests cover the primary happy path and the important failure mode for this story.
-- Validation passes for the touched scope.
+- Tests cover the primary happy path and the important stale or unavailable failure mode for this story.
+- Validation passes for the touched scope and the repo baseline.
 - Any new visible UI state has approved Pencil evidence before code if applicable.

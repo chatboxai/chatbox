@@ -30,13 +30,13 @@ deployment assumptions.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Electron host, platform service, and partner runtime boundaries are
+- [x] AC-1: Electron host, platform service, and partner runtime boundaries are
       captured in a repo-grounded topology.
-- [ ] AC-2: Deployment and ownership assumptions are explicit enough for later
+- [x] AC-2: Deployment and ownership assumptions are explicit enough for later
       auth, registry, and persistence stories.
-- [ ] AC-3: Local-dev and future hosted-service assumptions are separated
+- [x] AC-3: Local-dev and future hosted-service assumptions are separated
       clearly.
-- [ ] AC-4: Current deployment-surface gaps are documented explicitly instead of
+- [x] AC-4: Current deployment-surface gaps are documented explicitly instead of
       being assumed away.
 
 ## Edge Cases
@@ -71,3 +71,20 @@ deployment assumptions.
 - Local-dev and future hosted assumptions are separated cleanly.
 - The durable topology reference lives in `chatbridge/SERVICE_TOPOLOGY.md` and
   is linked from `chatbridge/README.md`.
+
+## Execution Evidence
+
+- Topology reference:
+  `chatbridge/SERVICE_TOPOLOGY.md`
+- Entry-doc linkage:
+  `chatbridge/README.md`
+- Deployment dependency and gap reference:
+  `chatbridge/DEPLOYMENT.md`
+- Current runtime seams enumerated in the topology reference:
+  `src/main/main.ts`, `src/main/proxy.ts`,
+  `src/main/mcp/ipc-stdio-transport.ts`, `src/preload/index.ts`,
+  `src/renderer/packages/model-calls/stream-text.ts`,
+  `src/renderer/packages/mcp/controller.ts`,
+  `src/renderer/packages/remote.ts`, `src/shared/request/request.ts`,
+  `src/shared/request/chatboxai_pool.ts`, and
+  `src/shared/providers/registry.ts`

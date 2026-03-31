@@ -1,5 +1,5 @@
 import type { QueryResult } from '@mastra/core/vector'
-import type { RerankerFunctionOptions, RerankResult } from '@mastra/rag/dist/rerank'
+import type { RerankerFunctionOptions, RerankResult } from '@mastra/rag'
 import type { CohereClient } from 'cohere-ai'
 
 // Takes in a list of results from a vector store and reranks them based on Cohere's rerank API
@@ -15,8 +15,8 @@ export async function rerank(
   const { topK = 5 } = options
 
   // Extract text content from results for reranking
-  const documents = results.map((result) => result?.metadata?.text || '').filter(text => text.length > 0)
-  
+  const documents = results.map((result) => result?.metadata?.text || '').filter((text) => text.length > 0)
+
   if (documents.length === 0) {
     return []
   }
@@ -32,7 +32,7 @@ export async function rerank(
   // Map rerank results back to original QueryResult format
   const rerankResults: RerankResult[] = response.results.map((rerankItem) => {
     const originalResult = results[rerankItem.index]
-    
+
     return {
       result: originalResult,
       score: rerankItem.relevanceScore,

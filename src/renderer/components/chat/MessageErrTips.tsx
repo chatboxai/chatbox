@@ -106,7 +106,7 @@ export default function MessageErrTips(props: { msg: Message }) {
       <Trans
         i18nKey="Connection to {{aiProvider}} failed. This typically occurs due to incorrect configuration or {{aiProvider}} account issues. Please <buttonOpenSettings>check your settings</buttonOpenSettings> and verify your {{aiProvider}} account status, or purchase a <LinkToLicensePricing>Chatbox AI License</LinkToLicensePricing> to unlock all advanced models instantly without any configuration."
         values={{
-          aiProvider: msg.aiProvider ? aiProviderNameHash[msg.aiProvider] : 'AI Provider',
+          aiProvider: msg.aiProvider ? aiProviderNameHash[msg.aiProvider as keyof typeof aiProviderNameHash] : 'AI Provider',
         }}
         components={{
           buttonOpenSettings: (
@@ -145,7 +145,7 @@ export default function MessageErrTips(props: { msg: Message }) {
       <Trans
         i18nKey="ai provider no implemented paint tips"
         values={{
-          aiProvider: msg.aiProvider ? aiProviderNameHash[msg.aiProvider] : 'AI Provider',
+          aiProvider: msg.aiProvider ? aiProviderNameHash[msg.aiProvider as keyof typeof aiProviderNameHash] : 'AI Provider',
         }}
         components={[
           <Link

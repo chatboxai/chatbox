@@ -22,7 +22,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
  *   - Mobile: Fully migrated to IndexedDB - all data in IndexedDB
  *   - Desktop: Split storage - sessions in IndexedDB, configs/settings/configVersion stay in IPC file
  *
- * v1.17.0 (config version 12-13) [CURRENT]
+ * v1.17.0 (config version 12-14) [CURRENT]
  *   - Mobile: Migrated to SQLite for better performance - all data in SQLite
  *   - Desktop: No change from v1.16.1 - sessions in IndexedDB, configs/settings/configVersion in IPC file
  *
@@ -318,10 +318,6 @@ vi.mock('./sessionHelpers', () => ({
   })),
 }))
 
-vi.mock('@/platform/web_platform', () => ({
-  default: vi.fn(),
-}))
-
 vi.mock('@sentry/react', () => ({
   getCurrentScope: () => ({
     setTag: vi.fn(),
@@ -371,10 +367,40 @@ describe('migrateStorage test', () => {
   // Initialize platform instances after all mocks are set up
   beforeAll(async () => {
     const { default: DesktopPlatformClass } = await import('@/platform/desktop_platform')
-    const { default: MobilePlatformClass } = await import('@/platform/mobile_platform')
 
     desktopPlatform = new DesktopPlatformClass(window.electronAPI)
-    mobilePlatform = new MobilePlatformClass()
+    mobilePlatform = {
+      type: 'mobile',
+      getStorageType: () => 'MOBILE_SQLITE',
+      setStoreValue: async (key: string, value: unknown) => {
+        sqliteData[key] = JSON.stringify(value)
+      },
+      getStoreValue: async (key: string) => {
+        const json = sqliteData[key]
+        return json ? JSON.parse(json) : null
+      },
+      delStoreValue: async (key: string) => {
+        delete sqliteData[key]
+      },
+      getAllStoreValues: async () => {
+        const items: { [key: string]: unknown } = {}
+        for (const key in sqliteData) {
+          try {
+            items[key] = JSON.parse(sqliteData[key])
+          } catch {
+            items[key] = sqliteData[key]
+          }
+        }
+        return items
+      },
+      getAllStoreKeys: async () => Object.keys(sqliteData),
+      setAllStoreValues: async (data: { [key: string]: unknown }) => {
+        for (const [key, value] of Object.entries(data)) {
+          sqliteData[key] = JSON.stringify(value)
+        }
+      },
+      relaunch: vi.fn(),
+    } as unknown as Platform
     currentPlatform = desktopPlatform
   })
 
@@ -384,6 +410,7 @@ describe('migrateStorage test', () => {
     localforageData = {}
     ipcFileData = {}
     sqliteData = {}
+    localStorageData = {}
     // Reset to default desktop platform
     currentPlatform = desktopPlatform
   })
@@ -391,16 +418,16 @@ describe('migrateStorage test', () => {
   it('should skip migration when config version is already current', async () => {
     const { initData } = await import('@/setup/init_data')
 
-    // Setup: Desktop v1.17.0 - configVersion = 13 (current) in IPC file storage
-    ipcFileData[StorageKey.ConfigVersion] = JSON.stringify(13)
+    // Setup: Desktop v1.17.0 - configVersion = 14 (current) in IPC file storage
+    ipcFileData[StorageKey.ConfigVersion] = JSON.stringify(14)
 
     const migration = await import('./migration')
     await migration._migrateStorageForTest()
 
     // Should not initialize data or set version when already at current version
     expect(initData).not.toHaveBeenCalled()
-    // configVersion should remain 13
-    expect(ipcFileData[StorageKey.ConfigVersion]).toBe(JSON.stringify(13))
+    // configVersion should remain 14
+    expect(ipcFileData[StorageKey.ConfigVersion]).toBe(JSON.stringify(14))
   })
 
   it('should initialize data on first run (configVersion = 0, no old storage)', async () => {
@@ -417,8 +444,8 @@ describe('migrateStorage test', () => {
     const migration = await import('./migration')
     await migration._migrateStorageForTest()
 
-    // Should set current version (13) to IPC file storage (Desktop platform)
-    expect(ipcFileData[StorageKey.ConfigVersion]).toBe(JSON.stringify(13))
+    // Should set current version (14) to IPC file storage (Desktop platform)
+    expect(ipcFileData[StorageKey.ConfigVersion]).toBe(JSON.stringify(14))
     expect(initData).toHaveBeenCalled()
   })
 
@@ -791,7 +818,7 @@ describe('migrateStorage test', () => {
     await migration._migrateStorageForTest()
 
     // Current storage reads configVersion from sqliteData, which is 7 (not 0)
-    // Since configVersion (7) < CurrentVersion (13), it checks for migration
+    // Since configVersion (7) < CurrentVersion (14), it checks for migration
     // But since old and current storage are same type, no migration occurs
     // And since configVersion is NOT 0, initData() is also not called
 
@@ -815,14 +842,14 @@ describe('migrateStorage test', () => {
     // Desktop platform already set in beforeEach
 
     // Setup: This tests a bug fix in the current branch
-    // BUG on release branch: Every time configVersion upgrades (e.g., 12→13),
+    // BUG on release branch: Every time configVersion upgrades (e.g., 12→14),
     // it would re-migrate from file storage to IndexedDB even though migration
     // already happened at v1.16.1 (configVersion 11→12)
     //
     // FIX: Desktop should NOT migrate from file storage if configVersion >= 12
     // because v1.16.1 already migrated sessions to IndexedDB
     //
-    // Scenario: Desktop v1.16.1 user (configVersion=12) upgrades to v1.17.0 (configVersion=13)
+    // Scenario: Desktop v1.16.1 user (configVersion=12) upgrades to v1.17.0 (configVersion=14)
     // File storage still has old session data from pre-v1.16.1 that wasn't cleaned up
     // Current configVersion in file: 12 (already migrated)
     // Should NOT re-migrate the old session data

@@ -101,7 +101,7 @@ function runProviderTest(providerName: ModelProviderEnum) {
 
   describe.runIf(apiKey && models.length)(`Provider ${providerName} `, async () => {
     const mockDependencies = await createMockModelDependencies(platform, sentry)
-    const systemProvider: ProviderBaseInfo = SystemProviders.find((p) => p.id === providerName)!
+    const systemProvider: ProviderBaseInfo = SystemProviders().find((p) => p.id === providerName)!
     const globalSettings: Settings = {
       ...getDefaultSettings(),
       providers: {

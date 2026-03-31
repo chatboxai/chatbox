@@ -32,7 +32,7 @@ const _settingsAtom = atomWithStorage<Settings>(
 )
 export const settingsAtom = atom(
   (get) => {
-    const _settings = get(_settingsAtom)
+    const _settings = get(_settingsAtom) as Settings
     // 兼容早期版本
     const settings = Object.assign({}, defaults.settings(), _settings)
     settings.shortcuts = Object.assign({}, defaults.settings().shortcuts, _settings.shortcuts)
@@ -41,7 +41,7 @@ export const settingsAtom = atom(
     return omit(settings, ['maxTokens', 'maxContextSize']) as Settings
   },
   (get, set, update: SetStateAction<Settings>) => {
-    const settings = get(_settingsAtom)
+    const settings = get(_settingsAtom) as Settings
     const newSettings = typeof update === 'function' ? update(settings) : update
     // 考虑关键配置的缺省情况
     // if (!newSettings.apiHost) {

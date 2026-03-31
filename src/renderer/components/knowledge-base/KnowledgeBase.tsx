@@ -1,6 +1,6 @@
 import { Alert, Button, Flex, Group, Paper, Pill, Stack, Text, Title } from '@mantine/core'
 import { SystemProviders } from '@shared/defaults'
-import type { KnowledgeBase, ModelProvider, ProviderModelInfo } from '@shared/types'
+import type { KnowledgeBase, ProviderModelInfo } from '@shared/types'
 import type { DocumentParserConfig, DocumentParserType } from '@shared/types/settings'
 import { parseKnowledgeBaseModelString } from '@shared/utils/knowledge-base-model-parser'
 import { IconAlertTriangle, IconInfoCircle, IconPlus } from '@tabler/icons-react'
@@ -172,11 +172,7 @@ const KnowledgeBasePage: React.FC = () => {
 
   const getProviderName = useCallback(
     (providerId: string) => {
-      if (
-        SystemProviders()
-          .map((it) => it.id)
-          .includes(providerId as ModelProvider)
-      ) {
+      if (SystemProviders().some((it) => it.id === providerId)) {
         return SystemProviders().find((it) => it.id === providerId)?.name
       }
 

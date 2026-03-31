@@ -129,7 +129,7 @@ function renderToolCallHtml(summary: ToolCallSummary): string {
 export function formatChatAsMarkdown(sessionName: string, threads: SessionThread[]) {
   let content = `# ${sessionName}\n\n`
   for (let i = 0; i < threads.length; i++) {
-    let thread = threads[i]
+    const thread = threads[i]
     content += `## ${i + 1}. ${thread.name}\n\n`
     for (const msg of thread.messages) {
       const attachments = getAttachmentNames(msg)
@@ -200,7 +200,7 @@ export function formatChatAsMarkdown(sessionName: string, threads: SessionThread
 export function formatChatAsTxt(sessionName: string, threads: SessionThread[]) {
   let content = `==================================== [[${sessionName}]] ====================================`
   for (let i = 0; i < threads.length; i++) {
-    let thread = threads[i]
+    const thread = threads[i]
     content += `\n\n------------------------------ [${i + 1}. ${thread.name}] ------------------------------\n\n`
     for (const msg of thread.messages) {
       const attachments = getAttachmentNames(msg)
@@ -265,7 +265,7 @@ export function formatChatAsTxt(sessionName: string, threads: SessionThread[]) {
 export async function formatChatAsHtml(sessionName: string, threads: SessionThread[]) {
   let content = '<div class="prose-sm">\n'
   for (let i = 0; i < threads.length; i++) {
-    let thread = threads[i]
+    const thread = threads[i]
     content += `<h2>${i + 1}. ${thread.name}</h2>\n`
     for (const msg of thread.messages) {
       const attachments = getAttachmentNames(msg)

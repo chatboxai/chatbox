@@ -21,6 +21,11 @@ Every completion gate must include:
 - `Completion Plan`
 - `User Audit Checklist (Run This Now)`
 
+For stories that touch the hosted web shell or deployment contract, the final
+post-merge closeout must also include:
+
+- `Deployed Audit Checklist (Run On Hosted Version)`
+
 The completion gate is incomplete if any of these sections are missing.
 
 ## TDD Evidence Requirements
@@ -70,6 +75,19 @@ the user audit:
 - name the exact route, click path, or state to inspect when UI changed
 - include expected outcome and failure hint for each step
 
+## Deployed Audit Checklist Requirements
+
+For stories that touch the hosted web shell or deployment contract, the final
+post-merge closeout must include a hosted-version checklist that tells the user
+exactly what to open after merge:
+
+- include the exact hosted URL or the explicit blocker that prevents access
+- name the exact route, click path, or state to inspect on the deployed version
+- include the expected good outcome for each step
+- include a short failure hint for each step
+- call out deployment protection or login requirements when they affect access
+- keep the checklist focused on deployed behavior, not local terminal commands
+
 ## Feedback Rules
 
 1. Treat this completion gate as the main user-facing review step.
@@ -84,6 +102,9 @@ the user audit:
 5. If finalization fails, stop and route to
    `.ai/workflows/finalization-recovery.md`, then return here with updated
    status.
+6. If the story touched the hosted web shell or deployment contract, the
+   post-merge closeout must include the deployed audit checklist after the
+   Vercel verification result is known.
 
 ## Exit Criteria
 
@@ -96,3 +117,5 @@ the user audit:
   automatic follow-through unless the user pauses it
 - story completion is defined as merged-to-`main` on GitHub unless the user
   explicitly pauses or selects a different merge path
+- deploy-surface stories include a deployed-version audit checklist in the
+  post-merge closeout

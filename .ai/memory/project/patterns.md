@@ -62,6 +62,8 @@ Capture repeatable patterns that match how this workspace actually works.
   anonymous HTTP checks.
 - Hosted `main` verification should use the `Vercel Main Sync` workflow plus
   Vercel CLI `inspect` and `/healthz.json` verification after merge.
+- Deploy-surface closeout should tell the user exactly what to open and inspect
+  on the hosted version after merge, not only report merge and workflow status.
 - Desktop packaging and publish flows remain rooted in `electron-builder.yml`.
 - Root `release-*.sh` files are the checked-in entrypoints for release and
   deploy commands referenced by `package.json`.

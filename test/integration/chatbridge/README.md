@@ -42,6 +42,13 @@ CB-202 adds the first host-owned app instance and event record slice:
   and durable hydration of `appInstance` plus `appEvent` records through the
   existing bridge controller seam
 
+CB-303 adds the first live board-context reasoning slice:
+
+- `scenarios/mid-game-board-context.test.ts`
+  covers host-owned Chess board-summary normalization entering the
+  `stream-text` model path for live and stale mid-game follow-up turns without
+  exposing raw partner prose
+
 That scenario set is the baseline gate for later ChatBridge packs that add real
 app-aware schema, containers, and lifecycle events. New ChatBridge persistence,
 manifest, or tool-execution changes should extend this suite instead of

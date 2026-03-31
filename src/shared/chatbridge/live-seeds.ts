@@ -18,6 +18,7 @@ type AppLifecycleMessageOptions = {
   statusText?: string
   fallbackTitle?: string
   fallbackText?: string
+  snapshot?: Record<string, unknown>
 }
 
 export type ChatBridgeLiveSeedAuditStep = {
@@ -68,6 +69,10 @@ export function createAppLifecycleMessage(
   const appInstanceId = `app-instance-${options.toolCallId}`
   const bridgeSessionId = `bridge-${options.toolCallId}`
   const timestamp = options.timestamp ?? 1
+  const snapshot = options.snapshot ?? {
+    route: '/apps/story-builder',
+    status: lifecycle,
+  }
 
   return {
     id,
@@ -90,10 +95,7 @@ export function createAppLifecycleMessage(
         fallbackTitle: options.fallbackTitle,
         fallbackText: options.fallbackText,
         error: options.error,
-        snapshot: {
-          route: '/apps/story-builder',
-          status: lifecycle,
-        },
+        snapshot,
       },
       {
         type: 'tool-call',
@@ -114,10 +116,7 @@ export function createAppLifecycleMessage(
                 appInstanceId,
                 lifecycle,
                 summary,
-                snapshot: {
-                  route: '/apps/story-builder',
-                  status: lifecycle,
-                },
+                snapshot,
               },
             }),
       },
@@ -441,6 +440,64 @@ export function buildChatBridgeHistoryAndPreviewSessionFixture(): {
   }
 }
 
+export function buildChatBridgeChessMidGameSessionFixture(): Omit<Session, 'id'> {
+  return {
+    name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess mid-game board context`,
+    type: 'chat',
+    threadName: 'Chess Mid-game',
+    messages: [
+      createTextMessage(
+        'msg-chess-system',
+        'system',
+        'Keep Chess reasoning grounded in the host-owned board summary rather than partner-authored prose.',
+        1
+      ),
+      createTextMessage(
+        'msg-chess-user-open',
+        'user',
+        'Open Chess and keep the board visible in the thread while I think.',
+        2
+      ),
+      createAppLifecycleMessage(
+        'msg-chess-assistant-board',
+        'assistant',
+        'Chess is open in the thread with the current mid-game position restored.',
+        {
+          appId: 'chess',
+          appName: 'Chess',
+          toolCallId: 'tool-chess-mid-game',
+          lifecycle: 'active',
+          summary: 'White to move in an Italian Game structure after ...e5.',
+          snapshot: {
+            route: '/apps/chess',
+            status: 'active',
+            boardContext: {
+              schemaVersion: 1,
+              fen: 'r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 0 6',
+              sideToMove: 'white',
+              fullmoveNumber: 6,
+              legalMovesCount: 33,
+              positionStatus: 'in_progress',
+              lastMove: {
+                san: '...e5',
+                uci: 'e7e5',
+              },
+              summary: 'White to move in an Italian Game structure after ...e5.',
+            },
+          },
+          timestamp: 3,
+        }
+      ),
+      createTextMessage(
+        'msg-chess-user-follow-up',
+        'user',
+        'What should White focus on here?',
+        4
+      ),
+    ],
+  }
+}
+
 export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
   const historyAndPreview = buildChatBridgeHistoryAndPreviewSessionFixture()
 
@@ -462,6 +519,24 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
         },
       ],
       sessionInput: buildChatBridgeLifecycleTourSessionFixture(),
+    },
+    {
+      id: 'chess-mid-game-board-context',
+      name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess mid-game board context`,
+      description:
+        'Seeds a live Chess session with a validated host-owned board summary so you can ask a follow-up and confirm the assistant sees bounded mid-game context instead of raw app prose.',
+      coverage: ['Chess board context', 'Mid-game follow-up reasoning', 'Host-owned normalized summary'],
+      auditSteps: [
+        {
+          action: 'Open the seeded Chess session and inspect the active app message.',
+          expected: 'The message stays inside the host shell and exposes a live Chess runtime instead of a detached completion receipt.',
+        },
+        {
+          action: 'Ask a follow-up such as `What should White focus on here?` from the seeded thread.',
+          expected: 'The reply stays grounded in the current host-owned board summary and does not invent board details outside the validated snapshot.',
+        },
+      ],
+      sessionInput: buildChatBridgeChessMidGameSessionFixture(),
     },
     {
       id: 'history-and-preview',

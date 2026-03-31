@@ -40,15 +40,15 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Schema parse/serialize for new app-aware message parts
+  - [x] Schema parse/serialize for new app-aware message parts
 - T002 tests:
-  - [ ] Unknown/legacy message compatibility behavior
+  - [x] Unknown/legacy message compatibility behavior
 - T003 tests:
-  - [ ] Renderer handling of app-aware parts without throwing
+  - [x] Renderer handling of app-aware parts without throwing
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale

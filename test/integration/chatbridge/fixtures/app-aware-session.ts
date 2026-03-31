@@ -1,7 +1,7 @@
 import type { Message, Session, SessionThread } from '@shared/types'
 
 type ToolCallState = 'call' | 'result' | 'error'
-type AppLifecycle = 'ready' | 'active' | 'complete' | 'stale'
+type AppLifecycle = 'ready' | 'active' | 'complete' | 'stale' | 'error'
 
 type AppLifecycleMessageOptions = {
   appId?: string
@@ -27,6 +27,8 @@ export function createAppLifecycleMessage(
   const appName = options.appName ?? APP_NAME
   const lifecycle = options.lifecycle
   const summary = options.summary ?? `${appName} lifecycle: ${lifecycle}`
+  const appInstanceId = `app-instance-${options.toolCallId}`
+  const bridgeSessionId = `bridge-${options.toolCallId}`
 
   return {
     id,
@@ -35,12 +37,17 @@ export function createAppLifecycleMessage(
     contentParts: [
       { type: 'text', text },
       {
-        type: 'info',
-        text: `${appName} status: ${lifecycle}`,
-        values: {
-          appId,
-          lifecycle,
-          summary,
+        type: 'app',
+        appId,
+        appName,
+        appInstanceId,
+        lifecycle,
+        summary,
+        toolCallId: options.toolCallId,
+        bridgeSessionId,
+        snapshot: {
+          route: '/apps/story-builder',
+          status: lifecycle,
         },
       },
       {
@@ -51,7 +58,7 @@ export function createAppLifecycleMessage(
         args: {
           appId,
           lifecycle,
-          bridgeSessionId: `bridge-${options.toolCallId}`,
+          bridgeSessionId,
         },
         ...(options.partial
           ? {}
@@ -59,6 +66,7 @@ export function createAppLifecycleMessage(
               result: {
                 appId,
                 appName,
+                appInstanceId,
                 lifecycle,
                 summary,
                 snapshot: {

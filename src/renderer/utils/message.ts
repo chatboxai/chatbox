@@ -1,10 +1,85 @@
 import { assign, cloneDeep, omit } from 'lodash'
-import type { Message, MessageContentParts, MessagePicture, SearchResultItem } from 'src/shared/types'
+import type { Message, MessageAppLifecycle, MessageContentParts, MessagePicture, SearchResultItem } from 'src/shared/types'
 import { countWord } from '@/packages/word-count'
 
 type MessageContentPartLike = {
   type?: unknown
   text?: unknown
+  appId?: unknown
+  appName?: unknown
+  appInstanceId?: unknown
+  lifecycle?: unknown
+  state?: unknown
+  summary?: unknown
+  toolCallId?: unknown
+  bridgeSessionId?: unknown
+  snapshot?: unknown
+  values?: unknown
+  error?: unknown
+}
+
+const APP_LIFECYCLES = new Set<MessageAppLifecycle>(['launching', 'ready', 'active', 'complete', 'error', 'stale'])
+
+function getNormalizedAppLifecycle(part: MessageContentPartLike): MessageAppLifecycle | null {
+  if (typeof part.lifecycle === 'string' && APP_LIFECYCLES.has(part.lifecycle as MessageAppLifecycle)) {
+    return part.lifecycle as MessageAppLifecycle
+  }
+  if (typeof part.state === 'string' && APP_LIFECYCLES.has(part.state as MessageAppLifecycle)) {
+    return part.state as MessageAppLifecycle
+  }
+  return null
+}
+
+export function getMessageAppPartText(part: MessageContentPartLike): string {
+  const summary = typeof part.summary === 'string' ? part.summary.trim() : ''
+  if (summary) {
+    return summary
+  }
+
+  const appLabel =
+    typeof part.appName === 'string' && part.appName.trim()
+      ? part.appName.trim()
+      : typeof part.appId === 'string' && part.appId.trim()
+        ? part.appId.trim()
+        : 'App'
+  const lifecycle = getNormalizedAppLifecycle(part)
+
+  if (lifecycle === 'error' && typeof part.error === 'string' && part.error.trim()) {
+    return `${appLabel} error: ${part.error.trim()}`
+  }
+
+  return `${appLabel} lifecycle: ${lifecycle ?? 'unknown'}`
+}
+
+function normalizeContentParts(contentParts?: MessageContentParts | MessageContentPartLike[]): MessageContentParts {
+  return (contentParts ?? []).map((part) => {
+    if (part?.type !== 'app') {
+      return part as MessageContentParts[number]
+    }
+
+    const lifecycle = getNormalizedAppLifecycle(part)
+    if (!lifecycle || typeof part.appId !== 'string' || typeof part.appInstanceId !== 'string') {
+      return part as MessageContentParts[number]
+    }
+
+    return {
+      type: 'app',
+      appId: part.appId,
+      appInstanceId: part.appInstanceId,
+      lifecycle,
+      ...(typeof part.appName === 'string' ? { appName: part.appName } : {}),
+      ...(typeof part.summary === 'string' ? { summary: part.summary } : {}),
+      ...(typeof part.toolCallId === 'string' ? { toolCallId: part.toolCallId } : {}),
+      ...(typeof part.bridgeSessionId === 'string' ? { bridgeSessionId: part.bridgeSessionId } : {}),
+      ...(part.snapshot && typeof part.snapshot === 'object' && !Array.isArray(part.snapshot)
+        ? { snapshot: part.snapshot as Record<string, unknown> }
+        : {}),
+      ...(part.values && typeof part.values === 'object' && !Array.isArray(part.values)
+        ? { values: part.values as Record<string, unknown> }
+        : {}),
+      ...(typeof part.error === 'string' ? { error: part.error } : {}),
+    } satisfies MessageContentParts[number]
+  })
 }
 
 export function getMessageText(message: Message, includeImagePlaceHolder = true, includeReasoning = true): string {
@@ -19,6 +94,9 @@ export function getMessageText(message: Message, includeImagePlaceHolder = true,
         }
         if (c.type === 'image') {
           return includeImagePlaceHolder ? '[image]' : null
+        }
+        if (c.type === 'app') {
+          return getMessageAppPartText(c)
         }
         return ''
       })
@@ -50,10 +128,11 @@ export function migrateMessage(
   const result: Message = {
     id: message.id || '',
     role: message.role || 'user',
-    contentParts: message.contentParts || [],
+    contentParts: normalizeContentParts(message.contentParts),
   }
   // 还是保留原始content字段，删除webBrowsing字段
   assign(result, omit(message, 'webBrowsing'))
+  result.contentParts = normalizeContentParts(message.contentParts)
 
   // 如果 contentParts 不存在，或者 contentParts 为空，或者 contentParts 的内容为 '...'(placeholder)，则使用 content 的值
   if (shouldHydrateFromLegacyContent(result.contentParts) && 'content' in message) {

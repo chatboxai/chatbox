@@ -29,6 +29,17 @@ function createToolCallPart(toolName: string, state: 'call' | 'result' | 'error'
   }
 }
 
+function createAppPart(lifecycle: 'launching' | 'ready' | 'active' | 'complete' | 'error' | 'stale') {
+  return {
+    type: 'app' as const,
+    appId: 'story-builder',
+    appName: 'Story Builder',
+    appInstanceId: `app-${Math.random().toString(36).substr(2, 9)}`,
+    lifecycle,
+    summary: `Story Builder lifecycle: ${lifecycle}`,
+  }
+}
+
 describe('cleanToolCalls', () => {
   describe('basic functionality', () => {
     it('should return empty array for empty input', () => {
@@ -236,6 +247,25 @@ describe('cleanToolCalls', () => {
 
       expect(result[1].contentParts).toHaveLength(1)
       expect(result[1].contentParts[0].type).toBe('info')
+    })
+
+    it('should preserve app parts while removing tool-call parts', () => {
+      const appPart = createAppPart('active')
+      const messages = [
+        createMessage('user', [createTextPart('Q')]),
+        createMessage('assistant', [appPart, createToolCallPart('tool')]),
+        createMessage('user', [createTextPart('Q2')]),
+        createMessage('assistant', [createTextPart('OK')]),
+      ]
+
+      const result = cleanToolCalls(messages, 1)
+
+      expect(result[1].contentParts).toHaveLength(1)
+      expect(result[1].contentParts[0]).toMatchObject({
+        type: 'app',
+        appId: 'story-builder',
+        lifecycle: 'active',
+      })
     })
 
     it('should handle messages with empty contentParts', () => {

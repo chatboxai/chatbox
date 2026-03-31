@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { copyMessagesWithMapping, copyThreads, createMessage } from './types'
-import type { CompactionPoint, SessionThread } from './types/session'
+import { MessageContentPartSchema, type CompactionPoint, type SessionThread } from './types/session'
 
 describe('copyMessagesWithMapping', () => {
   it('should return messages with new IDs and mapping', () => {
@@ -51,6 +51,42 @@ describe('copyMessagesWithMapping', () => {
     const { messages: newMessages } = copyMessagesWithMapping([msg])
 
     expect(newMessages[0].timestamp).toBe(originalTimestamp)
+  })
+})
+
+describe('MessageContentPartSchema', () => {
+  it('parses app lifecycle parts with host-owned metadata', () => {
+    const parsed = MessageContentPartSchema.parse({
+      type: 'app',
+      appId: 'story-builder',
+      appName: 'Story Builder',
+      appInstanceId: 'instance-1',
+      lifecycle: 'active',
+      summary: 'Restored the active story draft and preserved the exportable checkpoint.',
+      toolCallId: 'tool-1',
+      bridgeSessionId: 'bridge-tool-1',
+      snapshot: {
+        route: '/apps/story-builder',
+        status: 'active',
+      },
+    })
+
+    expect(parsed).toMatchObject({
+      type: 'app',
+      appId: 'story-builder',
+      appInstanceId: 'instance-1',
+      lifecycle: 'active',
+    })
+  })
+
+  it('rejects app parts without a lifecycle value', () => {
+    expect(() =>
+      MessageContentPartSchema.parse({
+        type: 'app',
+        appId: 'story-builder',
+        appInstanceId: 'instance-1',
+      })
+    ).toThrow()
   })
 })
 

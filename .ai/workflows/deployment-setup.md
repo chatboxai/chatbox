@@ -17,6 +17,8 @@ without assuming a default platform.
 - Verify the active deployment contract from repo docs and scripts instead of
   guessing from neighboring repos
 - If the repo has no canonical deployment baseline yet, record that explicitly
+- In this repo, the current checked-in web-shell baseline is `vercel.json` plus
+  `pnpm build:web` outputting to `release/app/dist/renderer`
 
 ### Step 0.4: Verify Deployment Access Early
 - Before promising a deploy, verify the required provider access is available

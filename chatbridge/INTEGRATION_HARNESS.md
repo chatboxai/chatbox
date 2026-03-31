@@ -12,7 +12,8 @@ boundaries.
 
 The goal is not to avoid real integrations forever. The goal is to prevent Pack
 1-3 stories from stalling because the final registry, auth broker, or partner
-runtime is not fully deployed yet.
+runtime is not fully deployed yet, even though the host shell now has a real
+Phase 0 deployment surface.
 
 ## Current Repo Harness Assets
 

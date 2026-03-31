@@ -62,10 +62,21 @@ observable evidence.
   critical runtime flows have observable seams and seeded evaluation coverage
   before flagship app work.
 
+### CB-004 Web deployment and release infrastructure baseline
+
+- Goal:
+  create a real hosted surface, smoke path, and runnable release entrypoints so
+  Phase 0 deployment is actual infrastructure rather than planning-only prose.
+- Acceptance focus:
+  the host shell can be built, smoke-tested, and deployed through checked-in
+  config while future backend services remain explicit later-pack work.
+
 ## Exit Criteria
 
 - Environment and secret requirements are explicit.
 - Deployment and runtime/service assumptions are captured.
+- A real hosted Phase 0 web shell exists with checked-in config and smoke
+  validation.
 - Integration fixtures exist for development and test flows.
 - Trace, eval, and observability hooks are ready before product-facing packs.
 

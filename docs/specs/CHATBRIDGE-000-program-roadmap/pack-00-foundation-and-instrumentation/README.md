@@ -27,11 +27,16 @@ evidence.
 - [CB-001 - Service topology and deployment foundation](./cb-001-service-topology-and-deployment-foundation/feature-spec.md)
 - [CB-002 - Integration harness and provider fixtures](./cb-002-integration-harness-and-provider-fixtures/feature-spec.md)
 - [CB-003 - Evals, tracing, and observability foundation](./cb-003-evals-tracing-and-observability-foundation/feature-spec.md)
+- [CB-004 - Web deployment and release infrastructure baseline](./cb-004-web-deployment-and-release-infrastructure-baseline/feature-spec.md)
 
 ## Exit Criteria
 
 - Environment and secret requirements are explicit.
 - Deployment and service-boundary assumptions are captured.
+- A real hosted Phase 0 web shell exists with a checked-in provider config and
+  smoke path.
+- Root release entrypoints exist for the web shell and desktop publishing
+  surfaces.
 - Provider/app integration fixtures exist for development and tests.
 - Trace, eval, and observability hooks exist early enough to support
   trace-driven development in later packs.

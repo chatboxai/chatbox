@@ -57,6 +57,8 @@
 - Core local dev/runtime:
   `USE_LOCAL_API`,
   `USE_BETA_API`,
+  `USE_LOCAL_CHATBOX`,
+  `USE_BETA_CHATBOX`,
   `CHATBOX_BUILD_PLATFORM`,
   `CHATBOX_BUILD_TARGET`,
   `NODE_ENV`,
@@ -70,7 +72,12 @@
 - Observability/release:
   `SENTRY_AUTH_TOKEN`,
   `SENTRY_RELEASE`,
-  `SENTRY_DIST`
+  `SENTRY_DIST`,
+  `UPDATE_CHANNEL`
+- Publish credentials:
+  `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY`,
+  `AWS_REGION`
 - Packaging/notarization:
   `APPLE_ID`,
   `APPLE_ID_PASS`,
@@ -85,11 +92,10 @@
 
 - `README.md` had drifted to an `npm` contract even though the repo is now
   pnpm-based.
-- There is no checked-in `.env.example`.
-- `USE_LOCAL_CHATBOX` and `USE_BETA_CHATBOX` are declared/consumed in renderer
-  code but are not currently injected by the active Electron Vite build config.
-  This story documents the gap and leaves the runtime decision to a later story
-  unless explicitly pulled forward.
+- The repo needs the deploy/release docs and scripts to stay synchronized with
+  the checked-in env example going forward.
+- Future ChatBridge backend services still need their own env ownership model
+  once those services become real code surfaces.
 
 ## Dependency Plan
 

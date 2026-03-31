@@ -73,3 +73,16 @@ Record durable workspace decisions here.
 - **Consequences**: Future UI stories should extend the shared library before
   adding one-off components, and review packets must call out any new gap rather
   than silently working around it.
+
+- **ADR-ID**: ADR-0006
+- **Date**: 2026-03-31
+- **Context**: Phase 0 originally documented deployment assumptions without
+  creating a real hosted surface or runnable release entrypoints.
+- **Decision**: Standardize the current hosted web-shell baseline on the
+  checked-in Vercel config (`vercel.json`) and keep desktop publishing rooted in
+  `electron-builder.yml` plus the restored root `release-*.sh` wrappers.
+- **Alternatives Considered**: Keep deployment as docs-only; invent a separate
+  backend service deployment stack before the backend exists.
+- **Consequences**: Phase 0 now has a real deployable host shell and smoke
+  path, while future ChatBridge backend services remain explicit later-pack
+  work.

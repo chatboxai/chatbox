@@ -85,3 +85,12 @@ Capture failures so they are not repeated.
 - **Prevention rule**: When live feedback matters, mutate the active design
   through Pencil MCP. If a direct disk patch is unavoidable, assume a reopen or
   reload step is needed in Pencil.
+
+- **Problem**: Calling Phase 0 deployment complete when only docs exist
+- **Example**: Writing topology or bootstrap notes about deployment without
+  adding a real host config, smoke path, or runnable release entrypoints
+- **Why it failed**: Later stories assume infrastructure exists, but there is
+  nothing actually deployable or verifiable.
+- **Prevention rule**: Treat deployment as incomplete until there is a checked-in
+  provider config, a smoke-check path, runnable commands, and explicit deploy
+  evidence.

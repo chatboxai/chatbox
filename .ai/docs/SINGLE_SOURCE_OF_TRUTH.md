@@ -1,6 +1,6 @@
 # Chatbox Workspace - Single Source of Truth
 
-**Last Updated**: 2026-03-30
+**Last Updated**: 2026-03-31
 **Project Status**: Active
 **Canonical App Directory**: repo root
 **Canonical Harness Directory**: `.ai/`
@@ -23,6 +23,11 @@
 - **Primary source areas**: `src/main/`, `src/renderer/`, `src/shared/`
 - **Primary test area**: `test/`
 - **Primary docs**: `README.md`, `docs/`, `doc/`, `.github/PULL_REQUEST_TEMPLATE.md`
+- **Current checked-in deploy surfaces**:
+  - hosted web shell: `vercel.json` -> `pnpm build:web` -> `release/app/dist/renderer`
+  - deployment reference: `chatbridge/DEPLOYMENT.md`
+  - desktop publish config: `electron-builder.yml`
+  - current Vercel project: `chatbox-web`
 - **UI design baseline**: UI stories keep normal story specs, then use
   `.ai/workflows/pencil-ui-design.md` plus `.ai/docs/PENCIL_UI_WORKFLOW.md` to
   generate 2 or 3 Pencil variations and wait for user approval before code.
@@ -52,6 +57,11 @@
 - For UI-affecting stories, do not skip the Pencil variation and approval gate.
 - Treat deployment as explicit. If a task does not define a deploy surface, say
   so instead of implying one.
+- For the current web host shell, prefer the checked-in Vercel baseline before
+  inventing a new provider path.
+- For hosted preview verification, prefer `vercel inspect` plus a logged-in
+  preview session when Vercel deployment protection blocks anonymous route
+  checks.
 - Story completion defaults to merged-to-`main`, not just local validation,
   unless the user explicitly pauses or selects a different merge path.
 

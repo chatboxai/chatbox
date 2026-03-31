@@ -260,6 +260,25 @@ pnpm package
 pnpm package:all
 ```
 
+## Web Deployment
+
+Build and smoke-test the hosted web surface locally with:
+
+```bash
+pnpm build:web
+pnpm serve:web
+```
+
+Then verify the static health artifact:
+
+```bash
+curl http://localhost:3000/healthz.json
+```
+
+Checked-in Vercel hosting configuration now lives in
+[vercel.json](./vercel.json), and the current ChatBridge deployment contract
+lives in [chatbridge/DEPLOYMENT.md](./chatbridge/DEPLOYMENT.md).
+
 For the current ChatBridge-specific bootstrap and environment contract, see
 [chatbridge/BOOTSTRAP.md](./chatbridge/BOOTSTRAP.md).
 

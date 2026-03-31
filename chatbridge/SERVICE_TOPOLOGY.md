@@ -129,7 +129,10 @@ service exists, the story should:
 
 - desktop builds through `electron-builder.yml`
 - web builds through `build:web` in `package.json`
+- a checked-in Vercel host contract through `vercel.json`
+- a static smoke artifact at `/healthz.json` generated during `pnpm build:web`
 - local desktop dev through `pnpm dev`
+- local web smoke validation through `pnpm serve:web`
 
 ### What is not yet a real deployment surface for ChatBridge
 
@@ -140,11 +143,10 @@ service exists, the story should:
 
 ### Current deployment-related gaps
 
-- `package.json`
-  still references `release-web.sh`, `release-mac.sh`, `release-linux.sh`, and
-  `release-win.sh`, but those scripts are not present in the repo root.
-- Pack 0 treats that as a deployment-foundation gap to document, not a reason
-  to invent new release automation in this story.
+- the repo still does not contain the future ChatBridge backend services listed
+  above
+- the hosted Phase 0 surface is the host shell, not the final platform control
+  plane
 
 ## Recommended Service Boundaries For Later Packs
 
@@ -177,6 +179,8 @@ single backend implementation too soon.
 
 - `chatbridge/BOOTSTRAP.md`
   for env and setup assumptions
+- `chatbridge/DEPLOYMENT.md`
+  for the concrete web-host and desktop-release contract
 - `chatbridge/ARCHITECTURE.md`
   for the target presentation-level system design
 - Pack 02 and later stories should use this document when deciding whether a

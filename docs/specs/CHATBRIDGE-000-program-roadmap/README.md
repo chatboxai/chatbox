@@ -34,6 +34,8 @@ Critical guidance carried into the pack structure:
 - Define the API contract early because later packs inherit it.
 - Test the full lifecycle: invocation -> UI render -> interaction -> completion -> follow-up.
 - Treat completion signaling as a first-class protocol concern.
+- Make deployment real in Phase 0: a hosted surface, smoke path, and release
+  entrypoints should exist before later packs assume them.
 - Think like a platform designer so third parties can understand the API.
 
 ## Objective Set

@@ -7,8 +7,9 @@ the setup baseline before product-facing ChatBridge stories begin.
 ## Current Baseline
 
 - Package manager: `pnpm`
-- Supported Node runtime: `>=20.0.0 <23.0.0`
+- Supported Node runtime: `20.x`
 - Checked-in local version pin: `.node-version` -> `v20.20.0`
+- Checked-in env example: `.env.example`
 - Primary app scripts live in `package.json`
 - Build/runtime env injection currently flows through
   `electron.vite.config.ts`
@@ -28,6 +29,8 @@ the setup baseline before product-facing ChatBridge stories begin.
    depends on `http://localhost:8002`.
 5. Use `pnpm test`, `pnpm check`, `pnpm lint`, and `pnpm build` as the default
    validation gates.
+6. Smoke-test the hosted web surface with `pnpm build:web`, `pnpm serve:web`,
+   and `GET http://localhost:3000/healthz.json`.
 
 ## Environment Inventory
 
@@ -50,6 +53,15 @@ the setup baseline before product-facing ChatBridge stories begin.
   - Purpose: reserved beta API flag in current renderer/build contract
   - Safe missing behavior: defaults to production behavior
 
+- `USE_LOCAL_CHATBOX`
+- `USE_BETA_CHATBOX`
+  - Used by:
+    `electron.vite.config.ts`,
+    `src/renderer/variables.ts`,
+    `src/renderer/packages/remote.ts`
+  - Purpose: override the hosted Chatbox site origin for host-shell flows
+  - Safe missing behavior: defaults to `https://chatboxai.app`
+
 - `CHATBOX_BUILD_PLATFORM`
   - Used by:
     `package.json`,
@@ -71,6 +83,8 @@ the setup baseline before product-facing ChatBridge stories begin.
   - Purpose: development/test/production branching
   - Safe missing behavior: defaults to development in the build config and
     test config
+  - Deployment note: hosted web deploys should stay on Node 20.x to match the
+    checked-in runtime pin and avoid unsupported native-module rebuilds
 
 - `DEV_WEB_ONLY`
   - Used by:
@@ -135,6 +149,23 @@ the setup baseline before product-facing ChatBridge stories begin.
   - Safe missing behavior: release falls back to package version and optional
     dist remains unset
 
+- `UPDATE_CHANNEL`
+  - Used by:
+    `electron-builder.yml`
+  - Purpose: choose the published desktop update channel
+  - Safe missing behavior: publish steps should fail visibly instead of
+    guessing the channel
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_REGION`
+  - Used by:
+    desktop publish flows targeting the S3-compatible endpoint in
+    `electron-builder.yml`
+  - Purpose: authorize Cloudflare R2-backed update publishing
+  - Safe missing behavior: local development still works, publish steps fail
+    explicitly
+
 ### Packaging and notarization
 
 - `APPLE_ID`
@@ -161,18 +192,13 @@ the setup baseline before product-facing ChatBridge stories begin.
 
 ## Current Gaps
 
-- There is no checked-in `.env.example` yet.
 - The root
   `README.md` had drifted
   behind the repo's actual `pnpm` setup and needed correction.
-- `USE_LOCAL_CHATBOX` and `USE_BETA_CHATBOX` are declared in
-  `src/renderer/variables.ts`
-  and consumed in
-  `src/renderer/packages/remote.ts`,
-  but they are not currently injected in
-  `electron.vite.config.ts`.
-  Treat these as unresolved contract gaps until a later Pack 0 or Pack 1 story
-  decides whether to wire or remove them.
+- Before Phase 0 deployment work, the repo had no checked-in hosted web config
+  or smoke path for the web shell.
+- Future ChatBridge backend services are still not real deployable surfaces and
+  must stay explicit in topology and deployment docs.
 
 ## Dependency Map For Later Packs
 

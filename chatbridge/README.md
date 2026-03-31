@@ -5,6 +5,7 @@ This folder captures the Week 7 ChatBridge case study and a working interpretati
 Files:
 - `README.md`: distilled product and engineering brief
 - `BOOTSTRAP.md`: Pack 0 bootstrap, env, and setup contract
+- `DEPLOYMENT.md`: Pack 0 deployment and infrastructure baseline
 - `SERVICE_TOPOLOGY.md`: Pack 0 runtime, service, and deployment boundary map
 - `INTEGRATION_HARNESS.md`: Pack 0 fixture and mock-harness strategy
 - `EVALS_AND_OBSERVABILITY.md`: Pack 0 eval, trace, and observability baseline
@@ -177,3 +178,15 @@ If we adapt Chatbox well, the end state should feel like:
 "A local-first chat client whose assistant can call tools, open embedded mini-apps, track app state inside the conversation, and resume natural dialogue around those app interactions."
 
 That is the actual target, not just adding a few buttons or launching iframes.
+
+## Pack 0 Deployment Baseline
+
+Phase 0 now treats deployment as real infrastructure work, not just planning:
+
+- the web host shell is deployed through the checked-in `vercel.json` contract
+- local smoke validation is `pnpm build:web`, `pnpm serve:web`, and
+  `GET /healthz.json`
+- desktop release entrypoints exist through the root `release-*.sh` wrappers
+- future ChatBridge registry, policy, auth-broker, and app-instance services
+  remain later-pack backend work and are still called out explicitly in the
+  topology docs

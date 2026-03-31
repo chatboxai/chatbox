@@ -30,6 +30,8 @@ interface Config {
   uuid: string
 }
 
+type GoogleImageAspectRatio = NonNullable<NonNullable<GoogleGenerativeAIProviderOptions['imageConfig']>['aspectRatio']>
+
 // 将chatboxAIFetch移到类内部作为私有方法
 
 export default class ChatboxAI extends AbstractAISDKModel implements ModelInterface {
@@ -142,7 +144,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
         responseModalities: ['TEXT', 'IMAGE'],
       }
       if (params.aspectRatio && params.aspectRatio !== 'auto') {
-        providerOptions.imageConfig = { aspectRatio: params.aspectRatio }
+        providerOptions.imageConfig = { aspectRatio: params.aspectRatio as GoogleImageAspectRatio }
       }
 
       const result = streamText({

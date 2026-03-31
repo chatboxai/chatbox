@@ -14,6 +14,17 @@ Use this folder for:
 - completion and recovery scenarios
 - mock registry, policy, auth-broker, and partner-runtime helpers
 
+CB-104 establishes the first required regression slice in this folder:
+
+- `scenarios/app-aware-persistence.test.ts`
+  covers session reload, thread continuity, export formatting, and stale
+  partial lifecycle behavior using deterministic host-owned fixtures
+
+That scenario is the baseline gate for later ChatBridge packs that add real
+app-aware schema, containers, and lifecycle events. New ChatBridge persistence
+or export changes should extend this suite instead of creating isolated one-off
+tests elsewhere.
+
 Reference:
 
 - `chatbridge/INTEGRATION_HARNESS.md`

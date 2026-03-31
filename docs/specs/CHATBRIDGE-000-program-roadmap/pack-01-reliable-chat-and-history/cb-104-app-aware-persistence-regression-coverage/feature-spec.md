@@ -25,9 +25,9 @@ Without targeted tests, it will be too easy for later app lifecycle work to regr
 
 ## Acceptance Criteria
 
-- [ ] AC-1: A focused integration test slice exists for app-aware session reload and thread continuity.
-- [ ] AC-2: Export/format behavior stays covered once app-aware artifacts are introduced.
-- [ ] AC-3: The ChatBridge test harness direction is visible before flagship apps arrive.
+- [x] AC-1: A focused integration test slice exists for app-aware session reload and thread continuity.
+- [x] AC-2: Export/format behavior stays covered once app-aware artifacts are introduced.
+- [x] AC-3: The ChatBridge test harness direction is visible before flagship apps arrive.
 
 ## Edge Cases
 

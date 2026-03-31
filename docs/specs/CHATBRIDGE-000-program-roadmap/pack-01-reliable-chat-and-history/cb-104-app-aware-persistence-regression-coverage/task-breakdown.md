@@ -40,15 +40,18 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Integration fixture for app-aware session reload
+  - [x] Integration fixture for app-aware session reload
 - T002 tests:
-  - [ ] Export snapshot or assertion coverage
+  - [x] Export snapshot or assertion coverage
 - T003 tests:
-  - [ ] Stale/partial lifecycle hydration behavior
+  - [x] Stale/partial lifecycle hydration behavior
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+Deferred tasks:
+- None.

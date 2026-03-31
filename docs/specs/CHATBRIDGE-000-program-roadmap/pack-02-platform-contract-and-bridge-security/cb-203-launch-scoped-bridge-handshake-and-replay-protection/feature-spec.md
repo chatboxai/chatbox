@@ -25,9 +25,9 @@ A partner bridge based on plain postMessage and origin checks is too weak for a 
 
 ## Acceptance Criteria
 
-- [ ] AC-1: A bridgeSession contract exists with appInstanceId, expected origin, expiry, and capabilities.
-- [ ] AC-2: The host bootstraps partner runtimes through a dedicated session handshake rather than ambient messaging.
-- [ ] AC-3: Sequence numbers and idempotency rules are explicit for state-changing bridge events.
+- [x] AC-1: A bridgeSession contract exists with appInstanceId, expected origin, expiry, and capabilities.
+- [x] AC-2: The host bootstraps partner runtimes through a dedicated session handshake rather than ambient messaging.
+- [x] AC-3: Sequence numbers and idempotency rules are explicit for state-changing bridge events.
 
 ## Edge Cases
 
@@ -58,3 +58,22 @@ A partner bridge based on plain postMessage and origin checks is too weak for a 
 - Tests cover the primary happy path and the important failure mode for this story.
 - Validation passes for the touched scope.
 - Any new visible UI state has approved Pencil evidence before code if applicable.
+
+## Implementation Evidence
+
+- Shared bridge-session contract and validation logic:
+  - `src/shared/chatbridge/bridge-session.ts`
+- Dedicated host/runtime bridge controller:
+  - `src/renderer/packages/chatbridge/bridge/host-controller.ts`
+- Local artifact runtime that receives a transferred `MessagePort` and sends
+  sequenced lifecycle events:
+  - `src/renderer/packages/chatbridge/bridge/artifact-runtime.ts`
+- Existing renderer seam upgraded from ambient `postMessage('*')` to the
+  launch-scoped bridge path:
+  - `src/renderer/components/Artifact.tsx`
+  - `src/renderer/components/chatbridge/chatbridge.ts`
+- Focused regression coverage:
+  - `src/shared/chatbridge/bridge-session.test.ts`
+  - `src/renderer/packages/chatbridge/bridge/artifact-runtime.test.ts`
+  - `test/integration/chatbridge/scenarios/bridge-session-security.test.ts`
+  - `src/renderer/components/chatbridge/ChatBridgeShell.test.tsx`

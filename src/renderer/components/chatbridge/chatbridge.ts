@@ -48,11 +48,12 @@ export function getArtifactShellState(options: {
   generating?: boolean
   preview: boolean
   hasRenderableHtml: boolean
+  bridgeError?: boolean
 }): ChatBridgeShellState {
   if (options.generating) {
     return 'loading'
   }
-  if (!options.hasRenderableHtml) {
+  if (!options.hasRenderableHtml || options.bridgeError) {
     return 'error'
   }
   return options.preview ? 'active' : 'ready'

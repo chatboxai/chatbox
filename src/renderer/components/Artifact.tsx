@@ -1,8 +1,9 @@
 import type { Message } from '@shared/types/session'
-import { debounce } from 'lodash'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { createBridgeHostController } from '@/packages/chatbridge/bridge/host-controller'
+import { createArtifactPreviewRuntimeMarkup } from '@/packages/chatbridge/bridge/artifact-runtime'
 import { getMessageThreadContext } from '@/stores/sessionActions'
 import { getMessageText } from '../../shared/utils/message'
 import { ChatBridgeShell } from './chatbridge/ChatBridgeShell'
@@ -71,13 +72,22 @@ export function ArtifactWithButtons(props: {
   const { generating, htmlCode, preview, setPreview } = props
   const { t } = useTranslation()
   const [reloadSign, setReloadSign] = useState(0)
+  const [bridgeError, setBridgeError] = useState(false)
   const hasRenderableHtml = htmlCode.trim().length > 0
-  const shellState = getArtifactShellState({ generating, preview, hasRenderableHtml })
+  const shellState = getArtifactShellState({ generating, preview, hasRenderableHtml, bridgeError })
+
+  useEffect(() => {
+    if (!preview) {
+      setBridgeError(false)
+    }
+  }, [preview])
 
   const onReplay = () => {
+    setBridgeError(false)
     setReloadSign(Math.random())
   }
   const onPreview = () => {
+    setBridgeError(false)
     setPreview(true)
     setReloadSign(Math.random())
   }
@@ -120,46 +130,85 @@ export function ArtifactWithButtons(props: {
           : undefined
       }
     >
-      {preview && hasRenderableHtml ? <Artifact htmlCode={htmlCode} reloadSign={reloadSign} /> : null}
+      {preview && hasRenderableHtml && !bridgeError ? (
+        <Artifact htmlCode={htmlCode} reloadSign={reloadSign} onBridgeError={() => setBridgeError(true)} />
+      ) : null}
     </ChatBridgeShell>
   )
 }
 
-export function Artifact(props: { htmlCode: string; reloadSign?: number; className?: string }) {
-  const { htmlCode, reloadSign, className } = props
+export function Artifact(props: {
+  htmlCode: string
+  reloadSign?: number
+  className?: string
+  onBridgeError?: () => void
+}) {
+  const { htmlCode, reloadSign, className, onBridgeError } = props
   const ref = useRef<HTMLIFrameElement>(null)
-  const iframeOrigin = 'https://artifact-preview.chatboxai.app/preview'
+  const controllerRef = useRef<ReturnType<typeof createBridgeHostController> | null>(null)
+  const runtimeUrl = useMemo(() => {
+    const html = createArtifactPreviewRuntimeMarkup()
+    return URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+  }, [])
 
-  const sendIframeMsg = (type: 'html', code: string) => {
-    if (!ref.current) {
-      return
-    }
-    ref.current.contentWindow?.postMessage({ type, code }, '*')
-  }
-  // 当 reloadSign 改变时，重新加载 iframe 内容
+  const expectedOrigin = useMemo(() => {
+    return window.location.origin || 'null'
+  }, [])
+
+  const bootstrapTargetOrigin = expectedOrigin === 'null' ? '*' : expectedOrigin
+
   useEffect(() => {
-    ;(async () => {
-      sendIframeMsg('html', '')
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-      sendIframeMsg('html', htmlCode)
-    })()
+    return () => {
+      controllerRef.current?.dispose()
+      URL.revokeObjectURL(runtimeUrl)
+    }
+  }, [runtimeUrl])
+
+  useEffect(() => {
+    controllerRef.current?.dispose()
+    controllerRef.current = null
   }, [reloadSign])
 
-  // 当 htmlCode 改变时，防抖地刷新 iframe 内容
-  const updateIframe = debounce(() => {
-    sendIframeMsg('html', htmlCode)
-  }, 300)
   useEffect(() => {
-    updateIframe()
-    return () => updateIframe.cancel()
+    controllerRef.current?.renderHtml(htmlCode)
   }, [htmlCode])
+
+  const handleLoad = () => {
+    const targetWindow = ref.current?.contentWindow
+    if (!targetWindow) {
+      onBridgeError?.()
+      return
+    }
+
+    controllerRef.current?.dispose()
+    const controller = createBridgeHostController({
+      appId: 'artifact-preview',
+      appInstanceId: `artifact-preview-${crypto.randomUUID()}`,
+      expectedOrigin,
+      bootstrapTargetOrigin,
+      capabilities: ['render-html-preview'],
+      onRejectedAppEvent: () => {
+        onBridgeError?.()
+      },
+    })
+
+    controller.attach(targetWindow as unknown as Parameters<typeof controller.attach>[0])
+    controller.renderHtml(htmlCode)
+    controllerRef.current = controller
+
+    void controller.waitForReady().catch(() => {
+      onBridgeError?.()
+    })
+  }
 
   return (
     <iframe
+      key={reloadSign}
       className={cn('w-full', 'border-none', 'h-[400px]', className)}
       sandbox="allow-scripts allow-forms"
-      src={iframeOrigin}
+      src={runtimeUrl}
       ref={ref}
+      onLoad={handleLoad}
     />
   )
 }

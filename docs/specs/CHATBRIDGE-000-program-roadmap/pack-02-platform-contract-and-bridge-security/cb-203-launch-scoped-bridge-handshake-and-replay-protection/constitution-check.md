@@ -25,24 +25,42 @@ Source: `AGENTS.md`
 
 ## Structural Map
 
-- Likely surface: `src/main/chatbridge/`
-- Likely surface: `src/preload/`
-- Likely surface: `src/renderer/packages/chatbridge/bridge/`
-- Likely surface: `src/main/mcp/ipc-stdio-transport.ts`
+- Actual surface: `src/shared/chatbridge/`
+- Actual surface: `src/renderer/packages/chatbridge/bridge/`
+- Actual surface: `src/renderer/components/Artifact.tsx`
+- Actual surface: `src/renderer/components/chatbridge/chatbridge.ts`
 
 ## Exemplars
 
-1. `src/shared/types/session.ts`
-Shared schema precedent for durable conversation state.
-2. `src/renderer/components/chat/Message.tsx`
-Timeline rendering precedent for new conversation artifacts.
-3. `src/renderer/packages/model-calls/stream-text.ts`
-Current orchestration/tool-call precedent for host-controlled execution.
-4. `src/renderer/components/Artifact.tsx`
-Current embedded surface precedent for future host-owned runtime containers.
+1. `src/renderer/components/Artifact.tsx`
+Current embedded iframe surface and the real ambient bridge seam on `main`.
+2. `src/shared/types/session.ts`
+Shared schema precedent for durable host-owned contracts.
+3. `src/main/mcp/ipc-stdio-transport.ts`
+Example of keeping bridge logic in focused modules instead of adding ad hoc
+logic inline.
+4. `test/integration/chatbridge/scenarios/app-aware-persistence.test.ts`
+Existing ChatBridge integration-harness precedent for lifecycle regression
+coverage.
 
 ## Lane Decision
 
 - Lane: `standard`
 - Why: this story changes shared contracts, runtime boundaries, or cross-cutting behavior that affects multiple code paths.
 - Required gates: constitution check, feature spec, technical plan, task breakdown, focused TDD during implementation.
+
+## Completion Evidence
+
+- Shared bridge-session contract and replay validation:
+  - `src/shared/chatbridge/bridge-session.ts`
+- Dedicated renderer bridge path:
+  - `src/renderer/packages/chatbridge/bridge/host-controller.ts`
+  - `src/renderer/packages/chatbridge/bridge/artifact-runtime.ts`
+- Existing UI seam hardened in place:
+  - `src/renderer/components/Artifact.tsx`
+  - `src/renderer/components/chatbridge/chatbridge.ts`
+- Focused tests added:
+  - `src/shared/chatbridge/bridge-session.test.ts`
+  - `src/renderer/packages/chatbridge/bridge/artifact-runtime.test.ts`
+  - `test/integration/chatbridge/scenarios/bridge-session-security.test.ts`
+  - `src/renderer/components/chatbridge/ChatBridgeShell.test.tsx`

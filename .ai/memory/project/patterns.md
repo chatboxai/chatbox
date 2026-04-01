@@ -105,9 +105,13 @@ Capture repeatable patterns that match how this workspace actually works.
 
 ## UI Workflow Pattern
 
-- UI stories keep normal feature-spec and technical-plan artifacts.
+- UI stories keep normal feature-spec and technical-plan artifacts and add
+  `docs/specs/<story-id>/design-brief.md` before Pencil variations begin.
 - Pencil stories begin by syncing the official docs locally under
   `.ai/reference/pencil/`.
+- Design briefs should define audience, desired feeling, design language,
+  system direction, layout metaphor, and copy direction before variation work
+  starts.
 - Visual exploration happens in Pencil after spec/plan and before code.
 - Existing UI stories should import the current code surface into Pencil before
   variations are proposed.
@@ -118,6 +122,8 @@ Capture repeatable patterns that match how this workspace actually works.
 - Story-specific Pencil work should live at `design/stories/<story-id>.pen`.
 - UI stories should produce 2 or 3 variations and wait for user approval before
   implementation.
+- `design-grade` UI reviews should use real draft copy when the story changes
+  content; otherwise the review should mark copy fidelity honestly.
 - Design-system maturity should be labeled honestly using
   `.ai/docs/PENCIL_DESIGN_SYSTEM_STANDARD.md`.
 - The current Chatbox foundation is a first-pass comprehensive library: shared
@@ -126,6 +132,7 @@ Capture repeatable patterns that match how this workspace actually works.
 - When UI stories change shared tokens, Pencil variables should be synced with
   the corresponding code-side variables or token files.
 - Approved variation details should be recorded in
-  `docs/specs/<story-id>/pencil-review.md`.
+  `docs/specs/<story-id>/pencil-review.md` alongside the approved
+  `design-brief.md` path.
 - Approved Pencil artifacts should stay in the repo workspace so design and code
   can stay in sync and be versioned together.

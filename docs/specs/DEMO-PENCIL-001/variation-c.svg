@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="860" viewBox="0 0 1200 860">
+  <rect width="1200" height="860" rx="30" fill="#ffffff" stroke="#dee2e6"/>
+  <text x="40" y="52" fill="#868e96" font-family="Arial, sans-serif" font-size="13" font-weight="700">VARIATION C</text>
+  <text x="40" y="94" fill="#212529" font-family="Arial, sans-serif" font-size="34" font-weight="700">Concierge split with a stronger editorial voice</text>
+  <text x="40" y="132" fill="#495057" font-family="Arial, sans-serif" font-size="16">Narrative left rail, structured support stack on the right.</text>
+
+  <rect x="40" y="176" width="400" height="640" rx="28" fill="#e9f5ff" stroke="#dee2e6"/>
+  <rect x="64" y="200" width="160" height="40" rx="20" fill="#fff5d6"/>
+  <rect x="64" y="268" width="352" height="220" rx="24" fill="#ffffff"/>
+  <rect x="64" y="512" width="352" height="160" rx="24" fill="#ffffff"/>
+  <rect x="64" y="696" width="352" height="96" rx="24" fill="#fff5d6"/>
+
+  <rect x="480" y="176" width="680" height="176" rx="28" fill="#f1f3f5"/>
+  <rect x="480" y="376" width="680" height="220" rx="28" fill="#f1f3f5"/>
+  <rect x="480" y="620" width="328" height="196" rx="28" fill="#ffffff" stroke="#dee2e6"/>
+  <rect x="832" y="620" width="328" height="196" rx="28" fill="#fff5d6"/>
+</svg>

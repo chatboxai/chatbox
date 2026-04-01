@@ -70,12 +70,13 @@ git diff --check
 
 When a story changes visible UI:
 
-1. Keep spec writing and technical planning in the normal story flow.
-2. Use `.ai/workflows/pencil-ui-design.md`.
-3. Treat Pencil MCP as the default design bridge.
-4. Produce 2 or 3 variations from the shared design-system foundation when
+1. Keep feature spec and technical planning in the normal story flow.
+2. Add `docs/specs/<story-id>/design-brief.md` before Pencil variations begin.
+3. Use `.ai/workflows/pencil-ui-design.md`.
+4. Treat Pencil MCP as the default design bridge.
+5. Produce 2 or 3 variations from the shared design-system foundation when
    relevant.
-5. Stop for explicit approval before implementing UI code.
+6. Stop for explicit approval before implementing UI code.
 
 ## Workflow Routing
 

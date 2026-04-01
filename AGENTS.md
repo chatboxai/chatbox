@@ -59,9 +59,14 @@ Load context in this order before making non-trivial changes:
   `src/renderer/dev/chatbridgeSeeds.ts`, and the `/dev/chatbridge` lab so the
   change is testable in the live app.
 - For behavior changes, use `.ai/workflows/tdd-pipeline.md` when practical.
-- For visible UI work, keep spec and implementation planning in the normal
-  story flow, then run `.ai/workflows/pencil-ui-design.md` through Pencil MCP,
-  produce 2 or 3 variations, and stop for explicit approval before code.
+- For visible UI work, keep feature spec, technical plan, and
+  `docs/specs/<story-id>/design-brief.md` in the normal story flow, then run
+  `.ai/workflows/pencil-ui-design.md` through Pencil MCP, produce 2 or 3
+  variations, and stop for explicit approval before code.
+- For every completed story, refresh the seeded visual example data in
+  `src/renderer/packages/initial_data.ts` so local and production seeded
+  examples stay current with the latest behavior. If no update is needed, say
+  so explicitly in the completion handoff.
 - Keep narrow corrections narrow; do not silently expand scope.
 - When a change has non-obvious tradeoffs, pause and confirm direction before
   taking the more expensive path.

@@ -46,6 +46,10 @@ If the work is multi-file, contract-changing, or likely to branch in scope:
 - use `.ai/skills/spec-driven-development.md`
 - create the relevant artifacts under `docs/specs/<story-id>/`
 
+If visible UI scope exists:
+- extend the story packet with `docs/specs/<story-id>/design-brief.md` before
+  Pencil variation work starts
+
 ### Step 0.6: Add Trace/Eval Readiness for Orchestration-Heavy Work
 If the task changes model orchestration, routing, tool execution, app lifecycle,
 completion, auth brokerage, or similar runtime coordination:
@@ -57,6 +61,7 @@ If the task changes visible UI and is not already implementing an approved
 Pencil design:
 - run `.ai/workflows/pencil-ui-design.md`
 - sync and review the local Pencil docs snapshot first
+- write or refresh `docs/specs/<story-id>/design-brief.md`
 - produce 2 or 3 Pencil variations from the shared design-system foundation
 - present them to the user
 - wait for explicit approval or tweak requests before implementation
@@ -76,8 +81,9 @@ If the task changes behavior:
 ### Step 2: Design the Smallest Viable Change
 - reuse existing project patterns where possible
 - keep boundaries explicit
-- for UI scope, define concrete behavioral requirements in the spec and keep the
-  visual exploration inside Pencil
+- for UI scope, define concrete behavioral requirements in the spec, capture
+  feeling and copy direction in `design-brief.md`, and keep the visual
+  exploration inside Pencil
 
 ## Phase 2: Implement
 
@@ -103,6 +109,9 @@ If the task changes behavior:
 - update `.ai` memory only when a durable repo truth changed
 - for UI stories, record the approved Pencil artifact path and chosen variation
   in the story docs when relevant
+- refresh seeded visual examples in `src/renderer/packages/initial_data.ts` so
+  local and production defaults reflect the current behavior; if unchanged,
+  record `N/A` with a one-line reason in handoff
 
 ## Phase 4: Completion
 

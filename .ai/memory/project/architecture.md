@@ -101,3 +101,18 @@ Record durable workspace decisions here.
 - **Consequences**: Hosted-shell stories now have a post-merge Vercel CLI
   verification phase, and merge-to-`main` is no longer the last operational
   checkpoint for deployment-surface changes.
+
+- **ADR-ID**: ADR-0008
+- **Date**: 2026-04-01
+- **Context**: The Pencil-first workflow already blocked UI implementation
+  until design approval, but stories could still start from vague prompts and
+  generic placeholder copy.
+- **Decision**: Require `docs/specs/<story-id>/design-brief.md` before Pencil
+  variations begin so every visible UI story defines audience, feeling, design
+  language, system direction, layout metaphor, and copy direction. Design-grade
+  review packets must also record copy fidelity explicitly.
+- **Alternatives Considered**: Keep the design-intent work implicit inside the
+  feature spec; rely on the Pencil review packet alone to infer direction.
+- **Consequences**: UI story packets gain a first-class design brief artifact,
+  variation reviews have a clearer rubric, and content-heavy screens cannot
+  pass design review on placeholder copy alone.

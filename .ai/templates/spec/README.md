@@ -11,6 +11,7 @@ Use these templates to execute spec-driven development before implementation.
 
 ## Pencil UI Template
 
+- `UI_DESIGN_BRIEF_TEMPLATE.md`
 - `PENCIL_VARIATION_REVIEW_TEMPLATE.md`
 
 ## Recommended Story Artifact Layout
@@ -21,5 +22,6 @@ docs/specs/<story-id>/
   feature-spec.md
   technical-plan.md
   task-breakdown.md
+  design-brief.md       # when visible UI scope exists
   pencil-review.md       # only when UI scope exists
 ```

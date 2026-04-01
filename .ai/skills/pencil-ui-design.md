@@ -32,23 +32,27 @@ Do not use it for:
 4. When live visual feedback matters, make design changes through Pencil MCP on
    the open file instead of patching the `.pen` file directly on disk.
 5. Keep feature spec and technical plan in the normal story flow.
-6. Do not do visual exploration in code first.
-7. For existing UI surfaces, import the current code into Pencil before
+6. Add `docs/specs/<story-id>/design-brief.md` before variations begin.
+7. Do not do visual exploration in code first.
+8. For existing UI surfaces, import the current code into Pencil before
    exploring changes.
-8. Base UI exploration on the shared Pencil design library when it exists.
-9. Use `.ai/docs/PENCIL_DESIGN_SYSTEM_STANDARD.md` to judge library maturity
+9. Base UI exploration on the shared Pencil design library when it exists.
+10. Use `.ai/docs/PENCIL_DESIGN_SYSTEM_STANDARD.md` to judge library maturity
    honestly; do not call a starter library comprehensive.
-10. Produce 2 or 3 materially different variations.
-11. Present the variations and wait for explicit user approval or tweak requests.
-12. Do not implement UI code before approval.
-13. If a frame is acting as a free-positioned artboard, set `layout: "none"`
+11. Produce 2 or 3 materially different variations.
+12. Present the variations and wait for explicit user approval or tweak requests.
+13. Do not implement UI code before approval.
+14. If a frame is acting as a free-positioned artboard, set `layout: "none"`
     explicitly.
+15. Do not call a variation `design-grade` when the story changes content but
+    the headings or CTAs are still generic placeholders.
 
 ## Output Contract
 
 For each UI story:
 
 - sync the official Pencil docs into `.ai/reference/pencil/`
+- write `docs/specs/<story-id>/design-brief.md`
 - record which synced docs pages were reviewed
 - verify Pencil is running and visible in `/mcp`
 - prefer MCP-backed design mutations on the active file when live updates in
@@ -60,6 +64,8 @@ For each UI story:
 - capture screenshots for each variation
 - write `docs/specs/<story-id>/pencil-review.md`
 - record which option was approved and any requested tweaks
+- record copy fidelity for each variation and the approved `design-brief.md`
+  path
 - decide whether post-approval implementation should be manual or use Pencil's
   code export as a starting point
 
@@ -67,9 +73,13 @@ For each UI story:
 
 - Use the same variables/components across the variations when possible.
 - Make the options meaningfully different in hierarchy, density, or composition.
+- Make those differences legible against the design brief's declared layout or
+  hierarchy axes.
 - Do not present fake variety like tiny spacing shifts only.
 - Use real library-backed components where possible.
 - If an option is mostly placeholders, say so explicitly in the review packet.
+- If the story introduces or materially changes content, use real draft copy for
+  `design-grade` options or mark the option as lower-fidelity.
 
 ## Approval Gate
 

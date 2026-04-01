@@ -6,6 +6,7 @@ import {
   acceptBridgeAppEvent,
   createBridgeSession,
 } from './bridge-session'
+import { CHATBRIDGE_COMPLETION_SCHEMA_VERSION } from './completion'
 
 function createFixedIds(values: string[]) {
   const remaining = [...values]
@@ -207,8 +208,12 @@ describe('bridge-session validation', () => {
       bridgeToken: 'bridge-token-1',
       sequence: 3,
       idempotencyKey: 'state-2',
-      result: {
-        status: 'complete',
+      completion: {
+        schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+        status: 'success',
+        outcome: {
+          code: 'preview_complete',
+        },
       },
     }, {
       now: () => 10_000,

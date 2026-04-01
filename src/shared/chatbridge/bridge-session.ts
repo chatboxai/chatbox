@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ChatBridgeCompletionPayloadSchema } from './completion'
 
 export const CHATBRIDGE_PROTOCOL_VERSION = 'chatbridge-bridge-v1' as const
 
@@ -58,7 +59,7 @@ export const BridgeAppStateEventSchema = BridgeAppEventBaseSchema.extend({
 export const BridgeAppCompleteEventSchema = BridgeAppEventBaseSchema.extend({
   kind: z.literal('app.complete'),
   idempotencyKey: z.string().min(1),
-  result: z.record(z.string(), z.unknown()).optional(),
+  completion: ChatBridgeCompletionPayloadSchema,
 })
 
 export const BridgeAppErrorEventSchema = BridgeAppEventBaseSchema.extend({

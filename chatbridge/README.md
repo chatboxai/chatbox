@@ -151,7 +151,8 @@ The platform contract likely needs four layers:
 
 4. Completion and memory
 - app emits completion event
-- app returns structured result
+- app returns a structured completion payload from `src/shared/chatbridge/completion.ts`
+- apps may suggest a summary, but only the host can write `summaryForModel`
 - chat stores a normalized summary of outcome/state
 - later prompts can reference that summary
 

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { CHATBRIDGE_PROTOCOL_VERSION } from './bridge-session'
+import { ChatBridgeCompletionPayloadSchema } from './completion'
 
 export const CHATBRIDGE_APP_INSTANCE_SCHEMA_VERSION = 1 as const
 
@@ -54,7 +55,7 @@ export type ChatBridgeAppError = z.infer<typeof ChatBridgeAppErrorSchema>
 
 export const ChatBridgeAppCompletionStateSchema = z.object({
   status: z.enum(['pending', 'normalized', 'skipped']),
-  payload: z.record(z.string(), z.unknown()).optional(),
+  payload: ChatBridgeCompletionPayloadSchema.optional(),
   suggestedSummary: z.string().optional(),
   summaryForModel: z.string().optional(),
   normalizedAt: z.number().int().optional(),

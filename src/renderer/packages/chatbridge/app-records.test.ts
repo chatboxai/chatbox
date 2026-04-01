@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CHATBRIDGE_COMPLETION_SCHEMA_VERSION } from '@shared/chatbridge/completion'
 import {
   appendChatBridgeAppEvent,
   createChatBridgeAppRecordStore,
@@ -63,14 +64,22 @@ describe('ChatBridge app record store', () => {
       {
         kind: 'app.complete',
         bridgeSessionId: 'bridge-session-1',
-        appInstanceId: 'instance-1',
-        bridgeToken: 'bridge-token-1',
-        sequence: 3,
-        idempotencyKey: 'complete-3',
-        result: {
-          draftId: 'draft-1',
+      appInstanceId: 'instance-1',
+      bridgeToken: 'bridge-token-1',
+      sequence: 3,
+      idempotencyKey: 'complete-3',
+      completion: {
+        schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+        status: 'success',
+        outcome: {
+          code: 'draft_completed',
+          data: {
+            draftId: 'draft-1',
+          },
         },
+        suggestedSummary: 'The draft is ready for follow-up.',
       },
+    },
       1_300
     )
     expect(completed.accepted).toBe(true)
@@ -89,8 +98,17 @@ describe('ChatBridge app record store', () => {
       completion: {
         status: 'pending',
         payload: {
-          draftId: 'draft-1',
+          schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+          status: 'success',
+          outcome: {
+            code: 'draft_completed',
+            data: {
+              draftId: 'draft-1',
+            },
+          },
+          suggestedSummary: 'The draft is ready for follow-up.',
         },
+        suggestedSummary: 'The draft is ready for follow-up.',
       },
     })
   })
@@ -175,6 +193,13 @@ describe('ChatBridge app record store', () => {
       sequence: instance.lastEventSequence + 1,
       createdAt: 3_100,
       nextStatus: 'complete',
+      completion: {
+        schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+        status: 'success',
+        outcome: {
+          code: 'draft_completed',
+        },
+      },
     })
 
     expect(result.accepted).toBe(false)

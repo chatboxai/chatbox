@@ -1,5 +1,6 @@
 import type { LanguageModelUsage } from 'ai'
 import { z } from 'zod'
+import { ChatBridgeAppRecordSnapshotSchema } from '../chatbridge/app-records'
 import { SessionSettingsSchema } from '../types/settings'
 import { ModelProviderEnum } from './provider'
 
@@ -291,6 +292,7 @@ export const SessionSchema = z.object({
   threadName: z.string().optional(),
   messageForksHash: z.record(z.string(), MessageForkSchema).optional(),
   compactionPoints: z.array(CompactionPointSchema).optional(),
+  chatBridgeAppRecords: ChatBridgeAppRecordSnapshotSchema.optional(),
 })
 
 export const SessionMetaSchema = SessionSchema.pick({

@@ -133,9 +133,14 @@ The host should send a signed bootstrap envelope plus a transferred `MessagePort
 - Routes user intent to chat-only behavior or app-aware behavior
 - Injects allowed tool schemas into the orchestration path
 - Tracks active app instances and summaries
+- Selects the latest active or recent normalized app summary before later-turn
+  model calls and fails closed when the latest app state is stale or missing a
+  safe summary
 - Validates all bridge traffic
 - Converts app outcomes into durable chat memory
 - Normalizes partner outputs before they become model-visible summaries
+- Reduces active app state into bounded host-owned reasoning context before the
+  model sees any position-specific prompt supplement
 
 ### Platform Services
 
@@ -151,6 +156,8 @@ The host should send a signed bootstrap envelope plus a transferred `MessagePort
 - Native React-hosted apps for internal surfaces
 - Sandboxed iframe apps for reviewed partners
 - Shared lifecycle contract no matter which rendering mode is used
+- Chess now proves the native-hosted path by keeping a renderer-owned legal move
+  engine behind the same host-owned app-part and reasoning-context contract
 
 ### Sync and Reconciliation Manager
 
@@ -210,12 +217,17 @@ sequenceDiagram
     App-->>Host: app.state
     User->>Client: Ask follow-up in chat
     Client->>Host: Follow-up question
-    Host->>Store: Read active app summary + state
-    Host->>LLM: Answer with current app context
+    Host->>Store: Read active or recent host-owned app summary
+    Host->>LLM: Answer with bounded app-aware context
     App-->>Host: app.complete
     Host->>Store: Persist summaryForModel + completion payload
     Host-->>Client: Resume natural chat flow
 ```
+
+For the current Chess vertical slice, the "App" side of this sequence is a
+native renderer component rather than an iframe partner. The important
+architectural rule stays the same: the host-visible state is the bounded
+`app.snapshot` payload, not opaque UI-local mutations.
 
 ### Key idea
 
@@ -230,6 +242,17 @@ The host should be the execution coordinator for app tools, even when the app ow
 - Retry behavior must be declared per tool as safe or unsafe.
 - The host records normalized invocation payloads and results, not arbitrary raw partner blobs.
 - Schema-version mismatches should fail closed with an explicit host error state rather than a best-effort execution attempt.
+
+### Model-visible app context semantics
+
+- App runtimes may emit detailed state, but the model only receives the
+  host-owned subset that has been validated and normalized for the current
+  turn.
+- For Chess mid-game reasoning, the host reduces the board snapshot to bounded
+  fields such as FEN, side to move, move count, status, and a short host note.
+- If the latest board state is stale or cannot be validated, the host should
+  inject an explicit degraded-state warning instead of pretending the assistant
+  can still see the exact position.
 
 ## 7. Authentication Flow for Story Builder
 
@@ -322,6 +345,25 @@ Apps can propose state updates, but the host decides what becomes durable platfo
 ### Memory normalization
 
 Apps should not write directly into `summaryForModel`. Instead, they should emit structured completion payloads and optional suggested summaries, and the host should validate, redact, and normalize that information before it becomes model-visible memory.
+
+The shared completion contract lives in `src/shared/chatbridge/completion.ts` and is intentionally app-agnostic:
+
+- `status`: `success`, `interrupted`, or `failure`
+- `outcome`: machine-readable `code`, optional `label`, and optional structured `data`
+- `resumability`: optional hint about whether the app believes the work is resumable, restartable, or terminal
+- `suggestedSummary`: optional app-authored hint that the host may later redact or ignore
+- `error`: required only for `failure`, carrying structured code/message/details instead of freeform prose
+
+The host event stream should persist the structured completion payload itself and keep `summaryForModel` host-authored only. App-originated events may suggest summaries, but they must not populate model-visible memory directly.
+
+Later-turn prompt assembly should read only the latest host-owned app record and
+inject one of three states into the model path:
+
+- active summary when the newest live app instance has a normalized summary
+- recent summary when the newest relevant app instance is completed and
+  normalized
+- unavailable fallback when the newest app state is stale, errored, cancelled,
+  or missing a safe summary
 
 ## 9. Data Model Snapshot
 

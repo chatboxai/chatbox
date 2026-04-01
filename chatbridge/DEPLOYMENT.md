@@ -84,6 +84,8 @@ Phase 0 validation; production is an explicit choice locally, but merges to
 - Project coordinates: read from `.vercel/project.json`
 - Phase 1:
   deploy the hosted shell to Vercel production
+  - treat `vercel deploy` stdout as the canonical deployment URL passed to
+    verification; progress logs and alias messages stay on stderr
 - Phase 2:
   verify the exact deployment with the Vercel CLI:
   - `vercel inspect <deployment-url> --wait --timeout 10m`

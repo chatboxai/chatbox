@@ -3,7 +3,12 @@ import { IconAlertTriangle, IconCheck, IconPlayerPlay, IconSparkles } from '@tab
 import type { ReactNode } from 'react'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { cn } from '@/lib/utils'
-import type { ChatBridgeShellAction, ChatBridgeShellState } from './chatbridge'
+import type {
+  ChatBridgeShellAction,
+  ChatBridgeShellState,
+  ChatBridgeShellSupportItem,
+  ChatBridgeShellSupportPanel,
+} from './chatbridge'
 
 interface ChatBridgeShellProps {
   state: ChatBridgeShellState
@@ -14,12 +19,7 @@ interface ChatBridgeShellProps {
   statusLabel: string
   fallbackTitle?: string
   fallbackText?: string
-  goalLabel?: string
-  goalText?: string
-  recoveryLabel?: string
-  recoveryText?: string
-  recoveryFootnote?: string
-  recoveryTone?: 'warning' | 'calm'
+  supportPanel?: ChatBridgeShellSupportPanel
   primaryAction?: ChatBridgeShellAction
   secondaryAction?: ChatBridgeShellAction
   children?: ReactNode
@@ -48,12 +48,45 @@ function getStateStyles(state: ChatBridgeShellState) {
       accent: 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/70 dark:bg-emerald-950/20',
       icon: IconCheck,
     },
-    error: {
+    degraded: {
       badge: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300',
       accent: 'border-amber-300 dark:border-amber-700 bg-amber-50/70 dark:bg-amber-950/20',
       icon: IconAlertTriangle,
     },
+    error: {
+      badge: 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300',
+      accent: 'border-rose-300 dark:border-rose-700 bg-rose-50/70 dark:bg-rose-950/20',
+      icon: IconAlertTriangle,
+    },
   }[state]
+}
+
+function getSupportToneClasses(tone: ChatBridgeShellSupportItem['tone']) {
+  if (tone === 'safe') {
+    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+  }
+  if (tone === 'warning') {
+    return 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+  }
+  if (tone === 'blocked') {
+    return 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'
+  }
+
+  return 'bg-slate-100 text-slate-700 dark:bg-slate-900/40 dark:text-slate-300'
+}
+
+function getSupportToneLabel(tone: ChatBridgeShellSupportItem['tone']) {
+  if (tone === 'safe') {
+    return 'Safe'
+  }
+  if (tone === 'warning') {
+    return 'Watch'
+  }
+  if (tone === 'blocked') {
+    return 'Blocked'
+  }
+
+  return 'Info'
 }
 
 export function ChatBridgeShell(props: ChatBridgeShellProps) {
@@ -66,12 +99,7 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
     statusLabel,
     fallbackTitle,
     fallbackText,
-    goalLabel,
-    goalText,
-    recoveryLabel,
-    recoveryText,
-    recoveryFootnote,
-    recoveryTone,
+    supportPanel,
     primaryAction,
     secondaryAction,
     children,
@@ -80,13 +108,44 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
 
   const styles = getStateStyles(state)
   const hasInlineFallback = state === 'error' && fallbackText
-  const hasCustomSurfaceContent = Boolean(children) && state !== 'loading' && state !== 'error'
-  const hasInlineCompletion = state === 'complete' && !hasCustomSurfaceContent
-  const hasRecoveryCheckpoint = state === 'error' && recoveryText
-  const recoveryCardClasses =
-    recoveryTone === 'warning'
-      ? 'border-amber-300 bg-amber-50/80 dark:border-amber-700 dark:bg-amber-950/20'
-      : 'border-chatbox-border-primary bg-chatbox-background-secondary'
+  const hasInlineCompletion = state === 'complete'
+  const hasSupportPanel = state === 'degraded' && supportPanel
+
+  const surfaceCard = (
+    <div className="rounded-[24px] border border-chatbox-border-primary bg-chatbox-background-primary p-4">
+      <div className="flex items-center gap-2">
+        {state === 'loading' ? (
+          <Loader size="xs" />
+        ) : styles.icon ? (
+          <ScalableIcon icon={styles.icon} size={16} className="text-chatbox-tertiary" />
+        ) : null}
+        <Text size="sm" fw={700} className="text-chatbox-primary">
+          {surfaceTitle}
+        </Text>
+      </div>
+      <Text size="sm" c="dimmed" className="mt-2 whitespace-pre-wrap">
+        {surfaceDescription}
+      </Text>
+
+      {state === 'active' && children ? (
+        <div className={cn('mt-4 overflow-hidden rounded-[20px] border p-0', styles.accent)}>{children}</div>
+      ) : (
+        <div className={cn('mt-4 rounded-[20px] border p-4', styles.accent)}>
+          <Text size="sm" c="dimmed" className="whitespace-pre-wrap">
+            {state === 'loading' && 'The host wrapper is still preparing the runtime surface.'}
+            {state === 'ready' && 'The app is ready to open from this message when the user chooses to continue.'}
+            {state === 'active' &&
+              'The app is active inside the host-owned shell and remains part of the conversation.'}
+            {state === 'complete' &&
+              'The runtime finished. The host keeps the completion state inline without leaving a separate summary receipt.'}
+            {state === 'degraded' &&
+              'The host keeps the degraded ending explicit, bounded, and recoverable from the same message surface.'}
+            {state === 'error' && 'The active runtime is unavailable, so the host shell is presenting the fallback path below.'}
+          </Text>
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div
@@ -98,17 +157,6 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
         className
       )}
     >
-      {goalText && (
-        <div className="mb-3 rounded-[20px] border border-chatbox-border-primary bg-chatbox-background-secondary p-4">
-          <Text size="xs" fw={700} className="uppercase tracking-[0.06em] text-chatbox-tertiary">
-            {goalLabel || 'Last user goal'}
-          </Text>
-          <Text size="sm" fw={700} className="mt-2 whitespace-pre-wrap text-chatbox-primary">
-            {goalText}
-          </Text>
-        </div>
-      )}
-
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <Text size="sm" fw={700} className="text-chatbox-primary">
@@ -128,53 +176,59 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
         </span>
       </div>
 
-      <div className="mt-3 rounded-[24px] border border-chatbox-border-primary bg-chatbox-background-primary p-4">
-        <div className="flex items-center gap-2">
-          {state === 'loading' ? (
-            <Loader size="xs" />
-          ) : styles.icon ? (
-            <ScalableIcon icon={styles.icon} size={16} className="text-chatbox-tertiary" />
-          ) : null}
-          <Text size="sm" fw={700} className="text-chatbox-primary">
-            {surfaceTitle}
-          </Text>
-        </div>
-        <Text size="sm" c="dimmed" className="mt-2 whitespace-pre-wrap">
-          {surfaceDescription}
-        </Text>
-
-        {hasCustomSurfaceContent ? (
-          <div className={cn('mt-4 overflow-hidden rounded-[20px] border p-0', styles.accent)}>{children}</div>
-        ) : (
-          <div className={cn('mt-4 rounded-[20px] border p-4', styles.accent)}>
-            <Text size="sm" c="dimmed" className="whitespace-pre-wrap">
-              {state === 'loading' && 'The host wrapper is still preparing the runtime surface.'}
-              {state === 'ready' && 'The app is ready to open from this message when the user chooses to continue.'}
-              {state === 'active' &&
-                'The app is active inside the host-owned shell and remains part of the conversation.'}
-              {state === 'complete' &&
-                'The runtime finished. The host keeps the completion state inline without leaving a separate summary receipt.'}
-              {state === 'error' && 'The active runtime is unavailable, so the host shell is presenting the fallback path below.'}
+      {hasSupportPanel ? (
+        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
+          {surfaceCard}
+          <div className="rounded-[24px] border border-amber-300 bg-amber-50/80 p-4 dark:border-amber-700 dark:bg-amber-950/20">
+            {supportPanel.eyebrow ? (
+              <Text size="xs" fw={700} className="uppercase tracking-[0.06em] text-amber-700 dark:text-amber-300">
+                {supportPanel.eyebrow}
+              </Text>
+            ) : null}
+            <Text size="sm" fw={700} className={cn('text-chatbox-primary', supportPanel.eyebrow ? 'mt-1' : '')}>
+              {supportPanel.title}
             </Text>
+            {supportPanel.description ? (
+              <Text size="sm" c="dimmed" className="mt-2 whitespace-pre-wrap">
+                {supportPanel.description}
+              </Text>
+            ) : null}
+            {supportPanel.items?.length ? (
+              <div className="mt-3 space-y-2">
+                {supportPanel.items.map((item) => (
+                  <div
+                    key={`${item.label}-${item.description || ''}`}
+                    className="rounded-[18px] border border-chatbox-border-primary bg-chatbox-background-primary p-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <Text size="sm" fw={600} className="text-chatbox-primary">
+                        {item.label}
+                      </Text>
+                      <span
+                        className={cn(
+                          'inline-flex h-6 shrink-0 items-center rounded-full px-2 text-[10px] font-semibold uppercase tracking-[0.04em]',
+                          getSupportToneClasses(item.tone)
+                        )}
+                      >
+                        {getSupportToneLabel(item.tone)}
+                      </span>
+                    </div>
+                    {item.description ? (
+                      <Text size="xs" c="dimmed" className="mt-1 whitespace-pre-wrap">
+                        {item.description}
+                      </Text>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
-        )}
-      </div>
-
-      {hasRecoveryCheckpoint ? (
-        <div className={cn('mt-3 rounded-[24px] border p-4', recoveryCardClasses)}>
-          <Text size="xs" fw={700} className="uppercase tracking-[0.06em] text-chatbox-tertiary">
-            {recoveryLabel || fallbackTitle || 'Host-owned recovery'}
-          </Text>
-          <Text size="sm" c="dimmed" className="mt-2 whitespace-pre-wrap">
-            {recoveryText}
-          </Text>
-          {recoveryFootnote && (
-            <Text size="xs" c="dimmed" className="mt-3 whitespace-pre-wrap">
-              {recoveryFootnote}
-            </Text>
-          )}
         </div>
-      ) : hasInlineFallback ? (
+      ) : (
+        <div className="mt-3">{surfaceCard}</div>
+      )}
+
+      {hasInlineFallback && (
         <div className="mt-3 rounded-[24px] border border-amber-300 bg-amber-50/80 p-4 dark:border-amber-700 dark:bg-amber-950/20">
           <Text size="xs" fw={700} className="uppercase tracking-[0.06em] text-amber-700 dark:text-amber-300">
             {fallbackTitle || 'Fallback'}
@@ -186,7 +240,7 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
             {fallbackText}
           </Text>
         </div>
-      ) : null}
+      )}
 
       {hasInlineCompletion && (
         <div className="mt-3 rounded-[24px] border border-emerald-300 bg-emerald-50/80 p-4 dark:border-emerald-700 dark:bg-emerald-950/20">
@@ -205,12 +259,22 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
       {(secondaryAction || primaryAction) && (
         <Flex justify="flex-end" gap="xs" mt="md">
           {secondaryAction && (
-            <Button variant="default" size="xs" onClick={secondaryAction.onClick} disabled={secondaryAction.disabled}>
+            <Button
+              variant={secondaryAction.variant === 'secondary' ? 'default' : 'filled'}
+              size="xs"
+              onClick={secondaryAction.onClick}
+              disabled={secondaryAction.disabled}
+            >
               {secondaryAction.label}
             </Button>
           )}
           {primaryAction && (
-            <Button size="xs" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>
+            <Button
+              variant={primaryAction.variant === 'secondary' ? 'default' : 'filled'}
+              size="xs"
+              onClick={primaryAction.onClick}
+              disabled={primaryAction.disabled}
+            >
               {primaryAction.label}
             </Button>
           )}

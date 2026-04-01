@@ -6,6 +6,7 @@ import {
   acceptBridgeAppEvent,
   createBridgeSession,
 } from './bridge-session'
+import { CHATBRIDGE_COMPLETION_SCHEMA_VERSION } from './completion'
 
 function createFixedIds(values: string[]) {
   const remaining = [...values]
@@ -54,22 +55,6 @@ describe('bridge-session contract', () => {
         sequence: 2,
       })
     ).toThrow(/idempotency/i)
-  })
-
-  it('requires structured completion payloads for app.complete events', () => {
-    expect(() =>
-      BridgeAppEventSchema.parse({
-        kind: 'app.complete',
-        bridgeSessionId: 'bridge-session-1',
-        appInstanceId: 'app-instance-1',
-        bridgeToken: 'bridge-token-1',
-        sequence: 3,
-        idempotencyKey: 'complete-3',
-        result: {
-          status: 'success',
-        },
-      })
-    ).toThrow(/schemaVersion/i)
   })
 })
 
@@ -223,11 +208,11 @@ describe('bridge-session validation', () => {
       bridgeToken: 'bridge-token-1',
       sequence: 3,
       idempotencyKey: 'state-2',
-      result: {
-        schemaVersion: 1,
+      completion: {
+        schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
         status: 'success',
         outcomeData: {
-          status: 'complete',
+          artifactId: 'preview-1',
         },
       },
     }, {

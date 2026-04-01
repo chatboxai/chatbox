@@ -1,0 +1,10 @@
+{
+  "storyId": "CB-300",
+  "status": "reviewed",
+  "refactorApplied": false,
+  "qualityNotes": [
+    "The implementation stays within CB-300 scope by stopping at reviewed discovery and host-managed invocation rather than creating app instances or UI containers.",
+    "The host validation path reuses the existing ChatBridge wrapper instead of introducing a second argument-validation layer.",
+    "No additional missing-test gaps were identified for the CB-300 contract after the focused and full suite runs."
+  ]
+}

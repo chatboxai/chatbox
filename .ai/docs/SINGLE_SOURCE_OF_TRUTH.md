@@ -1,6 +1,6 @@
 # Chatbox Workspace - Single Source of Truth
 
-**Last Updated**: 2026-03-31
+**Last Updated**: 2026-04-01
 **Project Status**: Active
 **Canonical App Directory**: repo root
 **Canonical Harness Directory**: `.ai/`
@@ -11,7 +11,11 @@
 - Point harness guidance at the real root-level app layout and commands.
 - Avoid carrying source-project-specific history, scripts, or runtime
   assumptions into this repo.
-- Route UI design through Pencil after spec/plan and before implementation.
+- Keep the harness aligned to a production-product posture: no shipped mocks,
+  stubs, placeholder implementations, or sample-data stand-ins where real
+  runtime contracts should exist.
+- Route UI design through a story-level `design-brief.md` plus Pencil after
+  spec/plan and before implementation.
 
 ## Repo Baseline
 
@@ -31,10 +35,18 @@
   - deployment reference: `chatbridge/DEPLOYMENT.md`
   - desktop publish config: `electron-builder.yml`
   - current Vercel project: `chatbox-web`
-- **UI design baseline**: UI stories keep normal story specs, then use
+- **UI design baseline**: UI stories keep normal story specs, add
+  `docs/specs/<story-id>/design-brief.md`, then use
   `.ai/workflows/pencil-ui-design.md` plus `.ai/docs/PENCIL_UI_WORKFLOW.md` to
   generate 2 or 3 Pencil variations and wait for user approval before code.
+- **ChatBridge live inspection baseline**:
+  - shared seed catalog: `src/shared/chatbridge/live-seeds.ts`
+  - preset bootstrap bundles: `src/renderer/packages/initial_data.ts`
+  - preset backfill path: `src/renderer/setup/preset_sessions.ts`
+  - dev seeding helper: `src/renderer/dev/chatbridgeSeeds.ts`
+  - live inspection route: `/dev/chatbridge`
 - **Recommended Pencil asset paths**:
+  - `docs/specs/<story-id>/design-brief.md`
   - `design/system/design-system.lib.pen`
   - `design/stories/<story-id>.pen`
 - **Validation commands**:
@@ -57,10 +69,30 @@
 
 - `.ai/` is a helper harness for this workspace only.
 - Product code belongs in the real app directories, not under `.ai/`.
+- The repo is the single source of truth for implementation, module boundaries,
+  runtime contracts, and deploy wiring.
 - Keep durable repo truths in `.ai/memory/project/`.
 - Keep current-task notes in `.ai/memory/session/`.
 - Align harness guidance with commands that actually exist in `package.json`.
-- For UI-affecting stories, do not skip the Pencil variation and approval gate.
+- The main local workflow entrypoints (`pnpm dev`, `pnpm test`, `pnpm check`,
+  `pnpm build`, and their direct `start`/`build` variants) now fail fast on
+  wrong-Node shells through the repo engine constraints and on stale installs
+  through `scripts/workspace-guard.mjs`, before Vite or TypeScript starts.
+- Passing the baseline command suite is necessary but not sufficient for
+  production readiness. For bundling, packaging, or deploy-surface changes,
+  also verify compiled output loads, risky runtime dependencies are externalized
+  correctly when needed, and generated production package metadata includes the
+  dependencies the runtime surface requires.
+- Prefer explicit, DRY, well-tested code over cleverness, and treat deliberate
+  edge-case handling as part of done.
+- For authenticated agent endpoints, derive user identity from JWT or request
+  context rather than ad hoc database lookups. Keep tool logic pure where
+  possible and use framework DI at the boundaries.
+- For UI-affecting stories, do not skip the design-brief stage or the Pencil
+  variation and approval gate.
+- For completed stories, do not skip seeded example refresh checks in
+  `src/renderer/packages/initial_data.ts`; if no refresh is required, handoff
+  must state that explicitly.
 - Treat deployment as explicit. If a task does not define a deploy surface, say
   so instead of implying one.
 - For the current web host shell, prefer the checked-in Vercel baseline before
@@ -71,11 +103,20 @@
 - For hosted `main` verification, prefer the checked-in Vercel CLI workflow:
   deploy via `.github/workflows/vercel-main-sync.yml` and verify through
   `.ai/workflows/vercel-post-merge-verification.md`.
+- When user-facing verification is possible, prefer browser-first checks with
+  exact URLs, click paths, and explicit pass/fail signals over terminal-only
+  assertions.
+- If a task touches a checked-in deploy surface or other deployed user-facing
+  behavior, do not close it until deployment and post-deploy verification are
+  complete.
 - Story completion defaults to merged-to-`main`, not just local validation,
   unless the user explicitly pauses or selects a different merge path.
 - Final handoff should explain what changed and how to inspect/test it; UI
   stories should call out the exact route or component path plus the expected
   visible result.
+- ChatBridge stories that change inspectable runtime behavior should keep the
+  preset bootstrap plus the `/dev/chatbridge` live seed lab current and
+  reference the exact seeded session in the final audit guidance.
 
 ## Read Order
 

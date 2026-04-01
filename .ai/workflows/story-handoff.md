@@ -49,6 +49,14 @@ For UI stories, the explainer must also include:
 - the proof artifact to review when available: screenshot, Pencil artifact, or
   explicit blocker
 
+For ChatBridge stories that change inspectable shell, lifecycle, history, or
+HTML-preview behavior, the explainer must also include:
+
+- whether `src/shared/chatbridge/live-seeds.ts` was updated
+- whether the `/dev/chatbridge` seed lab was updated
+- the exact seeded session or scenario the user should reseed and open
+- the visible state that seed is proving
+
 ## TDD Evidence Requirements
 
 When `.ai/workflows/tdd-pipeline.md` was used, also include:
@@ -66,10 +74,16 @@ The completion gate should answer:
 
 For UI stories that used Pencil, also include:
 
+- approved `design-brief.md` artifact path
 - approved `.pen` artifact path
 - selected variation
 - whether implementation matched an already-approved design or included a fresh
   design-review cycle
+
+For all completed stories, also include:
+
+- whether `src/renderer/packages/initial_data.ts` seeded examples were
+  refreshed, including the exact update summary or `N/A` with a one-line reason
 
 ## Testing Brief Requirements
 
@@ -122,6 +136,8 @@ the user audit:
 - include expected outcome and failure hint for each step
 - align the checklist with the story explainer so the user can move directly
   from "what changed" to "how do I verify it"
+- for ChatBridge stories with inspectable behavior changes, point to
+  `/dev/chatbridge` and name the exact seeded session or scenario to use
 
 ## Deployed Audit Checklist Requirements
 
@@ -166,7 +182,11 @@ exactly what to open after merge:
   automatic follow-through unless the user pauses it
 - story completion is defined as merged-to-`main` on GitHub unless the user
   explicitly pauses or selects a different merge path
+- UI stories reference the approved `design-brief.md` path alongside the chosen
+  Pencil variation
 - deploy-surface stories include a deployed-version audit checklist in the
   post-merge closeout
 - UI stories include route-level inspection guidance and visible proof that
   tells the user what to look for
+- ChatBridge stories with inspectable behavior changes identify the updated
+  live seed scenario and tell the user how to reseed/open it

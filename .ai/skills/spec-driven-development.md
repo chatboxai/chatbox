@@ -26,6 +26,11 @@ For standard-lane feature work, create or update:
 3. Technical plan
 4. Task breakdown
 
+For visible UI scope, extend the story packet with:
+
+5. `design-brief.md`
+6. `pencil-review.md`
+
 Recommended location:
 - `docs/specs/<story-id>/`
 
@@ -61,6 +66,7 @@ Then run `.ai/workflows/tdd-pipeline.md` manually:
 For UI scope:
 
 - keep the normal feature spec and technical plan
+- add `design-brief.md` before Pencil variations start
 - use `.ai/workflows/pencil-ui-design.md` for visual exploration
 - use `PENCIL_VARIATION_REVIEW_TEMPLATE.md` to record the review packet
 - wait for approval before implementation

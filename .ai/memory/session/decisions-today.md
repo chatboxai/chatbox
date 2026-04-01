@@ -14,3 +14,21 @@
   `main`/`origin/main` before replaying a requested story from a stale branch;
   already-merged work is now treated as the baseline and any extra change
   starts as a clean follow-up story/worktree.
+- 2026-04-01: Stabilized ChatBridge chess local web development by explicitly
+  prebundling `chess.js` in the renderer `optimizeDeps` contract and locking it
+  with a focused regression test, so cold `pnpm dev:web` starts do not throw a
+  missing-module overlay before the dependency optimizer catches up.
+- 2026-04-01: Normalized desktop `getSettings()` reads at the store boundary so
+  persisted `null` settings records are rehydrated to defaults and written back
+  before main-process bootstrap consumers like Sentry, tray shortcuts, and the
+  updater dereference them.
+- 2026-04-01: Moved `disableEnforceFocus` overrides for the main sidebar and
+  thread-history drawer into MUI `ModalProps` so React stops forwarding the
+  prop to DOM nodes while the drawers still allow nested modal input focus.
+- 2026-04-01: Gave the shared `CommandDialog` wrapper a hidden title and
+  description by default so Radix dialog accessibility requirements are met
+  without forcing every caller to wire those fields manually.
+- 2026-04-01: Added a repo-local workspace guard so stale-install worktrees now
+  fail before Vite/TypeScript starts, while wrong-Node shells still fail at the
+  repo engine gate. `pnpm install` now records a worktree-local install stamp
+  in `node_modules/`.

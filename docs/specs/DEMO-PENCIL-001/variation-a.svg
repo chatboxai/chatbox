@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="860" viewBox="0 0 1200 860">
+  <rect width="1200" height="860" rx="30" fill="#ffffff" stroke="#dee2e6"/>
+  <text x="40" y="52" fill="#868e96" font-family="Arial, sans-serif" font-size="13" font-weight="700">VARIATION A</text>
+  <text x="40" y="94" fill="#212529" font-family="Arial, sans-serif" font-size="34" font-weight="700">Support hub with a single clear next step</text>
+  <text x="40" y="132" fill="#495057" font-family="Arial, sans-serif" font-size="16">Hero-first layout with quick actions, then channels and trusted resources.</text>
+
+  <rect x="40" y="170" width="1120" height="210" rx="28" fill="#f1f3f5" stroke="#dee2e6"/>
+  <text x="72" y="208" fill="#868e96" font-family="Arial, sans-serif" font-size="13" font-weight="700">VERSION / TRUST</text>
+  <text x="72" y="252" fill="#212529" font-family="Arial, sans-serif" font-size="28" font-weight="700">Chatbox vX.Y with support and legal up front</text>
+  <text x="72" y="292" fill="#495057" font-family="Arial, sans-serif" font-size="15">Immediate actions: check update, leave feedback, review trust and safety.</text>
+  <rect x="820" y="202" width="260" height="44" rx="22" fill="#e9f5ff"/>
+  <rect x="820" y="258" width="260" height="44" rx="22" fill="#e9f5ff"/>
+  <rect x="820" y="314" width="260" height="44" rx="22" fill="#fff5d6"/>
+  <text x="850" y="230" fill="#228be6" font-family="Arial, sans-serif" font-size="13" font-weight="700">Check update</text>
+  <text x="850" y="286" fill="#228be6" font-family="Arial, sans-serif" font-size="13" font-weight="700">Leave feedback</text>
+  <text x="850" y="342" fill="#212529" font-family="Arial, sans-serif" font-size="13" font-weight="700">Trust and safety</text>
+
+  <rect x="40" y="420" width="540" height="360" rx="28" fill="#f1f3f5" stroke="#dee2e6"/>
+  <text x="68" y="462" fill="#212529" font-family="Arial, sans-serif" font-size="24" font-weight="700">Community and contact</text>
+  <rect x="68" y="494" width="484" height="64" rx="18" fill="#ffffff"/>
+  <rect x="68" y="570" width="484" height="64" rx="18" fill="#ffffff"/>
+  <rect x="68" y="646" width="484" height="64" rx="18" fill="#ffffff"/>
+  <rect x="68" y="722" width="484" height="36" rx="18" fill="#e9f5ff"/>
+
+  <rect x="620" y="420" width="540" height="360" rx="28" fill="#e9f5ff" stroke="#dee2e6"/>
+  <text x="648" y="462" fill="#212529" font-family="Arial, sans-serif" font-size="24" font-weight="700">Fast answers and trusted resources</text>
+  <text x="648" y="492" fill="#495057" font-family="Arial, sans-serif" font-size="15">FAQ, changelog, homepage, and locale-aware update paths.</text>
+  <rect x="648" y="534" width="144" height="150" rx="24" fill="#ffffff"/>
+  <rect x="808" y="534" width="144" height="150" rx="24" fill="#ffffff"/>
+  <rect x="968" y="534" width="164" height="150" rx="24" fill="#fff5d6"/>
+</svg>

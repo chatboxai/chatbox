@@ -1,0 +1,27 @@
+{
+  "storyId": "CB-300",
+  "status": "red",
+  "testFiles": [
+    "src/shared/chatbridge/single-app-discovery.test.ts",
+    "src/renderer/packages/chatbridge/single-app-tools.test.ts",
+    "test/integration/chatbridge/scenarios/single-app-tool-discovery-and-invocation.test.ts"
+  ],
+  "contract": [
+    "explicit Chess requests resolve to the approved chess_prepare_session tool",
+    "unrelated prompts remain chat-only",
+    "generic board-game prompts are treated as ambiguous instead of routing to Chess",
+    "the approved Chess tool executes through the host-managed ChatBridge wrapper",
+    "malformed Chess tool args fail closed with invalid_input",
+    "Chess invocation failures normalize into host-visible tool_execution_failed records"
+  ],
+  "redGuard": {
+    "command": "pnpm vitest run src/shared/chatbridge/single-app-discovery.test.ts src/renderer/packages/chatbridge/single-app-tools.test.ts test/integration/chatbridge/scenarios/single-app-tool-discovery-and-invocation.test.ts",
+    "nodeVersion": "20.20.0",
+    "result": "failed",
+    "failureSummary": [
+      "Cannot find module './reviewed-app-catalog'",
+      "Cannot find module './single-app-tools'",
+      "Cannot find package '@/packages/chatbridge/single-app-tools'"
+    ]
+  }
+}

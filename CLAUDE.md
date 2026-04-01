@@ -8,4 +8,5 @@ Startup order:
 2. `.ai/docs/SINGLE_SOURCE_OF_TRUTH.md`
 3. `.ai/agents/claude.md`
 
-For visible UI work, also read `.ai/docs/PENCIL_UI_WORKFLOW.md`.
+For visible UI work, also read `.ai/docs/PENCIL_UI_WORKFLOW.md` and follow the
+`design-brief.md` plus Pencil review flow.

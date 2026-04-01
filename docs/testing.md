@@ -68,6 +68,46 @@ export default defineConfig({
    - Multi-part content merging
    - Image content handling
 
+## ChatBridge Live Seed Lab
+
+For inspectable ChatBridge shell, history, or preview changes, use the live
+seed lab in addition to automated tests:
+
+- Route: `/dev/chatbridge`
+- Shared seed catalog: `src/shared/chatbridge/live-seeds.ts`
+- Preset bootstrap bundles: `src/renderer/packages/initial_data.ts`
+- Preset backfill path: `src/renderer/setup/preset_sessions.ts`
+- Dev seed helper: `src/renderer/dev/chatbridgeSeeds.ts`
+
+### How to use it
+
+1. Open `/dev/chatbridge`.
+2. Click `Seed All Sessions` after pulling the latest relevant change.
+3. Open the seeded sessions from the normal session list or from the lab page.
+4. Follow the audit steps shown on each scenario card.
+
+The same ChatBridge fixtures are also backfilled into the normal preset session
+bootstrap, so a clean install and the manual reseed lab stay aligned.
+
+### Current seeded scenarios
+
+- `Lifecycle tour`
+  - Covers host-owned loading, ready, active, complete, stale, and error
+    states in the real message timeline.
+- `Chess mid-game board context`
+  - Covers the live Chess runtime, a validated host-owned board snapshot, and
+    a follow-up turn that should stay grounded in the current position.
+- `History + preview`
+  - Covers thread history continuity, a persisted Story Builder checkpoint, and
+    the live HTML preview shell with `Preview` and `Refresh`.
+
+### Maintenance rule
+
+If a ChatBridge story changes inspectable shell, lifecycle, history, or
+preview behavior, update the shared seed catalog, the preset bootstrap/backfill
+path, and the `/dev/chatbridge` audit copy in the same diff so default
+installs and manual reseeds stay current together.
+
 ## Testing Patterns and Best Practices
 
 ### Mock Server Pattern

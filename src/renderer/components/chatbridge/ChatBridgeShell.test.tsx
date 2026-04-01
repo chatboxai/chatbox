@@ -6,6 +6,7 @@ import { MantineProvider } from '@mantine/core'
 import { render, screen } from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { ChatBridgeShell } from './ChatBridgeShell'
+import type { ChatBridgeShellState } from './chatbridge'
 import { getArtifactShellState } from './chatbridge'
 
 beforeAll(() => {
@@ -24,10 +25,7 @@ beforeAll(() => {
   })
 })
 
-function renderShell(
-  state: 'loading' | 'ready' | 'active' | 'complete' | 'error',
-  options?: { includeChild?: boolean }
-) {
+function renderShell(state: ChatBridgeShellState) {
   return render(
     <MantineProvider>
       <ChatBridgeShell
@@ -39,10 +37,26 @@ function renderShell(
         statusLabel={state}
         fallbackTitle="Fallback"
         fallbackText="The shell keeps recovery in the same place."
-        primaryAction={{ label: 'Primary', onClick: vi.fn() }}
-        secondaryAction={{ label: 'Secondary', onClick: vi.fn() }}
+        supportPanel={
+          state === 'degraded'
+            ? {
+                eyebrow: 'Trust rail',
+                title: 'What still holds',
+                description: 'The host kept the trusted state visible.',
+                items: [
+                  {
+                    label: 'Validated state remains visible',
+                    description: 'Only trusted state remains in the thread.',
+                    tone: 'safe',
+                  },
+                ],
+              }
+            : undefined
+        }
+        primaryAction={{ label: 'Primary' }}
+        secondaryAction={{ label: 'Secondary' }}
       >
-        {options?.includeChild ? <div>Runtime child</div> : undefined}
+        <div>Runtime child</div>
       </ChatBridgeShell>
     </MantineProvider>
   )
@@ -50,19 +64,11 @@ function renderShell(
 
 describe('ChatBridgeShell', () => {
   it('renders active runtime content inside the host shell', () => {
-    renderShell('active', { includeChild: true })
+    renderShell('active')
 
     expect(screen.getByTestId('chatbridge-shell').getAttribute('data-state')).toBe('active')
     expect(screen.getByText('Runtime child')).toBeTruthy()
     expect(screen.getByText('Embedded app shell')).toBeTruthy()
-  })
-
-  it('renders ready runtime content inside the host shell when a custom surface is supplied', () => {
-    renderShell('ready', { includeChild: true })
-
-    expect(screen.getByTestId('chatbridge-shell').getAttribute('data-state')).toBe('ready')
-    expect(screen.getByText('Runtime child')).toBeTruthy()
-    expect(screen.queryByText('The app is ready to open from this message when the user chooses to continue.')).toBeNull()
   })
 
   it('renders the inline fallback state without a summary receipt', () => {
@@ -80,41 +86,13 @@ describe('ChatBridgeShell', () => {
     expect(screen.getByText(/no separate summary receipt/i)).toBeTruthy()
   })
 
-  it('suppresses the generic completion receipt when custom surface content is supplied', () => {
-    renderShell('complete', { includeChild: true })
+  it('renders the degraded recovery rail inline with trusted-state details', () => {
+    renderShell('degraded')
 
-    expect(screen.getByText('Runtime child')).toBeTruthy()
-    expect(screen.queryByText('The app finished inside the host shell')).toBeNull()
-  })
-
-  it('renders a calm recovery checkpoint when host-owned recovery details are supplied', () => {
-    render(
-      <MantineProvider>
-        <ChatBridgeShell
-          state="error"
-          title="Story Builder shell"
-          description="The host kept the thread usable."
-          surfaceTitle="Story Builder shell"
-          surfaceDescription="The host can keep helping from the last checkpoint."
-          statusLabel="Needs recovery"
-          goalLabel="Last user goal"
-          goalText="Keep writing chapter four, then save the draft back to Drive."
-          recoveryLabel="Host-owned recovery"
-          recoveryText="The runtime did not finish cleanly, but the host still has the draft outline and resume hint."
-          recoveryFootnote="The conversation can continue from preserved host-owned context even if the live runtime stays unavailable."
-          recoveryTone="calm"
-          primaryAction={{ label: 'Resume app', onClick: vi.fn() }}
-          secondaryAction={{ label: 'Ask follow-up', onClick: vi.fn() }}
-        />
-      </MantineProvider>
-    )
-
-    expect(screen.getByText('Last user goal')).toBeTruthy()
-    expect(screen.getByText('Keep writing chapter four, then save the draft back to Drive.')).toBeTruthy()
-    expect(screen.getByText('Host-owned recovery')).toBeTruthy()
-    expect(screen.getByText(/draft outline and resume hint/i)).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Resume app' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Ask follow-up' })).toBeTruthy()
+    expect(screen.getByTestId('chatbridge-shell').getAttribute('data-state')).toBe('degraded')
+    expect(screen.getByText('What still holds')).toBeTruthy()
+    expect(screen.getByText('Validated state remains visible')).toBeTruthy()
+    expect(screen.queryByText('Recovery stays in the same place')).toBeNull()
   })
 })
 

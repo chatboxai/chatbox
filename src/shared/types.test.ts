@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { copyMessagesWithMapping, copyThreads, createMessage } from './types'
-import { MessageContentPartSchema, type CompactionPoint, type SessionThread } from './types/session'
+import { CHATBRIDGE_PROTOCOL_VERSION } from './chatbridge/bridge-session'
+import { createInitialChessAppSnapshot } from './chatbridge/apps/chess'
+import { MessageContentPartSchema, SessionSchema, type CompactionPoint, type SessionThread } from './types/session'
 
 describe('copyMessagesWithMapping', () => {
   it('should return messages with new IDs and mapping', () => {
@@ -108,6 +110,67 @@ describe('MessageContentPartSchema', () => {
       expect(parsed.lifecycle).toBe('active')
       expect(parsed.fallbackText).toBe('Recover in place.')
     }
+  })
+})
+
+describe('SessionSchema', () => {
+  it('supports persisted ChatBridge app records on the session object', () => {
+    const parsed = SessionSchema.parse({
+      id: 'session-1',
+      name: 'ChatBridge Chess Session',
+      type: 'chat',
+      messages: [],
+      chatBridgeAppRecords: {
+        instances: [
+          {
+            schemaVersion: 1,
+            id: 'chess-instance-1',
+            appId: 'chess',
+            appVersion: '1.0.0',
+            protocolVersion: CHATBRIDGE_PROTOCOL_VERSION,
+            bridgeSessionId: 'bridge-chess-1',
+            status: 'active',
+            owner: {
+              authority: 'host',
+              conversationSessionId: 'session-1',
+              initiatedBy: 'assistant',
+            },
+            resumability: {
+              mode: 'resumable',
+              resumeKey: 'chess-instance-1',
+            },
+            completion: {
+              status: 'pending',
+            },
+            auth: {
+              status: 'not-required',
+              grantIds: [],
+            },
+            lastSnapshot: createInitialChessAppSnapshot(1_000),
+            createdAt: 1_000,
+            updatedAt: 1_000,
+            lastEventAt: 1_000,
+            lastEventSequence: 3,
+          },
+        ],
+        events: [
+          {
+            schemaVersion: 1,
+            id: 'event-1',
+            appInstanceId: 'chess-instance-1',
+            kind: 'state.updated',
+            actor: 'host',
+            sequence: 3,
+            createdAt: 1_000,
+            nextStatus: 'active',
+            snapshot: createInitialChessAppSnapshot(1_000),
+          },
+        ],
+      },
+    })
+
+    expect(parsed.chatBridgeAppRecords?.instances[0]?.appId).toBe('chess')
+    expect(parsed.chatBridgeAppRecords?.events[0]?.kind).toBe('state.updated')
   })
 })
 

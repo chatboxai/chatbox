@@ -1,32 +1,48 @@
 import type { MessageAppPart } from '@shared/types'
-import { getChatBridgeSurfaceContent } from './apps/surface'
+import { applyChatBridgeRecoveryAction, isChatBridgeChessAppId } from '@shared/chatbridge'
 import { ChatBridgeShell } from './ChatBridgeShell'
 import { getMessageAppPartViewModel } from './chatbridge'
+import { ChessRuntime } from './apps/chess/ChessRuntime'
 
 interface ChatBridgeMessagePartProps {
   part: MessageAppPart
-  onPrefillPrompt?: (prompt: string) => void
+  onUpdatePart?: (nextPart: MessageAppPart) => void
+  sessionId?: string
+  messageId?: string
 }
 
-export function ChatBridgeMessagePart({ part, onPrefillPrompt }: ChatBridgeMessagePartProps) {
+export function ChatBridgeMessagePart({ part, onUpdatePart, sessionId, messageId }: ChatBridgeMessagePartProps) {
   const viewModel = getMessageAppPartViewModel(part)
-  const surfaceContent = getChatBridgeSurfaceContent(part)
-  const primaryAction = viewModel.primaryAction
-    ? {
-        ...viewModel.primaryAction,
-        onClick: viewModel.primaryAction.prompt ? () => onPrefillPrompt?.(viewModel.primaryAction!.prompt!) : undefined,
-        disabled: !viewModel.primaryAction.prompt,
+  const runtime =
+    part.lifecycle === 'active' && isChatBridgeChessAppId(part.appId) ? (
+      <ChessRuntime part={part} onUpdatePart={onUpdatePart} sessionId={sessionId} messageId={messageId} />
+    ) : undefined
+  const primaryAction = viewModel.recoveryActions?.find((action) => action.variant !== 'secondary')
+  const secondaryAction = viewModel.recoveryActions?.find((action) => action.variant === 'secondary')
+
+  function buildShellAction(action?: typeof primaryAction) {
+    if (!action) {
+      return undefined
+    }
+
+    if (typeof onUpdatePart !== 'function') {
+      return {
+        ...action,
+        disabled: true,
       }
-    : undefined
-  const secondaryAction = viewModel.secondaryAction
-    ? {
-        ...viewModel.secondaryAction,
-        onClick: viewModel.secondaryAction.prompt
-          ? () => onPrefillPrompt?.(viewModel.secondaryAction!.prompt!)
-          : undefined,
-        disabled: !viewModel.secondaryAction.prompt,
-      }
-    : undefined
+    }
+
+    return {
+      ...action,
+      onClick: () => {
+        if (!action.id || action.disabled) {
+          return
+        }
+
+        onUpdatePart(applyChatBridgeRecoveryAction(part, action.id))
+      },
+    }
+  }
 
   return (
     <ChatBridgeShell
@@ -38,16 +54,11 @@ export function ChatBridgeMessagePart({ part, onPrefillPrompt }: ChatBridgeMessa
       statusLabel={viewModel.statusLabel}
       fallbackTitle={viewModel.fallbackTitle}
       fallbackText={viewModel.fallbackText}
-      goalLabel={viewModel.goalLabel}
-      goalText={viewModel.goalText}
-      recoveryLabel={viewModel.recoveryLabel}
-      recoveryText={viewModel.recoveryText}
-      recoveryFootnote={viewModel.recoveryFootnote}
-      recoveryTone={viewModel.recoveryTone}
-      primaryAction={primaryAction}
-      secondaryAction={secondaryAction}
+      supportPanel={viewModel.supportPanel}
+      primaryAction={buildShellAction(primaryAction)}
+      secondaryAction={buildShellAction(secondaryAction)}
     >
-      {surfaceContent}
+      {runtime}
     </ChatBridgeShell>
   )
 }

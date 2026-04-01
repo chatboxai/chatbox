@@ -26,6 +26,7 @@ import {
 import platform from '@/platform'
 import type { Storage } from '@/platform/interfaces'
 import { getOldVersionStorages } from '@/platform/storages'
+import { backfillPresetSessions } from '@/setup/preset_sessions'
 import WebPlatform from '@/platform/web_platform'
 import { initData } from '@/setup/init_data'
 import storage, { StorageKey } from '@/storage'
@@ -57,7 +58,7 @@ type MigrateStore = {
   setBlob?: (key: string, value: string) => Promise<void>
 }
 
-export const CurrentVersion = 14
+export const CurrentVersion = 15
 
 async function doMigrateStorage(oldStorage: Storage) {
   // 找到老版本的数据，说明是升级，执行数据迁移操作
@@ -203,6 +204,7 @@ export async function migrateOnData(dataStore: MigrateStore, canRelaunch = true)
     migrate_11_to_12,
     migrate_12_to_13,
     migrate_13_to_14,
+    migrate_14_to_15,
   ]
 
   for (; configVersion < CurrentVersion; configVersion++) {
@@ -801,5 +803,26 @@ async function migrate_13_to_14(dataStore: MigrateStore) {
   }
 
   log.info(`migrate_13_to_14, migrated ${migratedCount} image generation records`)
+  return false
+}
+
+async function migrate_14_to_15(dataStore: MigrateStore) {
+  if (platform.type !== 'web') {
+    return false
+  }
+
+  const locale = await platform.getLocale().catch(() => 'en')
+  const sessionList = await dataStore.getData<SessionMeta[]>(StorageKey.ChatSessionsList, [])
+  const nextSessionList = await backfillPresetSessions(
+    {
+      getData: dataStore.getData,
+      setData: dataStore.setData,
+      setBlob: dataStore.setBlob ?? storage.setBlob.bind(storage),
+    },
+    locale,
+    sessionList
+  )
+
+  log.info(`migrate_14_to_15, sessionList: ${nextSessionList.length}`)
   return false
 }

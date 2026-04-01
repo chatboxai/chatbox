@@ -27,6 +27,22 @@ Capture failures so they are not repeated.
 - **Prevention rule**: Align the harness with the commands that actually exist
   in this repo.
 
+- **Problem**: Shipping demo scaffolding as production behavior
+- **Example**: Leaving mocks, stubs, placeholder implementations, or hardcoded
+  sample data in runtime code where real integrations should exist
+- **Why it failed**: The product appears complete in local happy paths while
+  real user flows break or silently diverge from the actual contract.
+- **Prevention rule**: Keep mocks in tests only; if the real behavior is not
+  implemented, do not merge it.
+
+- **Problem**: Treating TODOs as acceptable implementation debt in merged code
+- **Example**: Closing a story with a TODO marker standing in for missing
+  runtime behavior or production hardening
+- **Why it failed**: The repository records unfinished behavior as if it were
+  complete, and later stories inherit hidden gaps.
+- **Prevention rule**: Missing implementation is a blocker, not a TODO-driven
+  closeout path.
+
 - **Problem**: Letting current-task notes become a backlog archive
 - **Example**: Accumulating long story histories under `.ai/memory/session/`
 - **Why it failed**: Current context becomes noisy and harder to trust.
@@ -40,6 +56,15 @@ Capture failures so they are not repeated.
   the user cannot compare alternatives cleanly.
 - **Prevention rule**: Use Pencil after spec/plan, generate 2 or 3 variations,
   and wait for explicit approval before implementation.
+
+- **Problem**: Jumping from a generic UI ask straight to Pencil variations
+- **Example**: Starting a story with "make a settings screen" and immediately
+  generating layouts without defining audience, feeling, design language, or
+  copy direction
+- **Why it failed**: The resulting options look generic, variation differences
+  become arbitrary, and the review lacks a stable decision rubric.
+- **Prevention rule**: Write `design-brief.md` before variation work and anchor
+  the options in explicit feeling, system, layout, and copy guidance.
 
 - **Problem**: Treating each UI story as a fresh one-off design system
 - **Example**: Building every new screen in Pencil from scratch with new tokens
@@ -105,6 +130,24 @@ Capture failures so they are not repeated.
   post-merge `Vercel Main Sync` workflow and record its verification result
   explicitly.
 
+- **Problem**: Stopping at green tests for bundling or runtime-loading changes
+- **Example**: Passing `pnpm test` and `pnpm build`, but never loading the
+  compiled output that still fails on a missing runtime dependency or malformed
+  production package metadata
+- **Why it failed**: Build success hides deploy-time or render-time breakage,
+  so users discover the failure first.
+- **Prevention rule**: For higher-risk runtime changes, verify compiled output
+  loads, runtime externals are correct, and production package metadata
+  includes required dependencies before closing the story.
+
+- **Problem**: Relying on terminal-only verification for user-facing deploy work
+- **Example**: Reporting a deploy-surface story complete from logs alone
+  without opening the deployed URL and checking the actual browser behavior
+- **Why it failed**: The terminal may show a successful build or deploy while
+  the real UX is still broken, redirected, blank, or missing assets.
+- **Prevention rule**: Use exact URLs, click paths, and explicit browser
+  pass/fail signals whenever user-facing verification is possible.
+
 - **Problem**: Replaying an already-merged story onto a stale parallel branch
 - **Example**: Seeing that the current dirty branch lacks a requested story,
   then re-implementing or cherry-picking it even though `main` or
@@ -123,3 +166,12 @@ Capture failures so they are not repeated.
 - **Prevention rule**: Keep provider secrets in untracked local env files,
   secret stores, or server-side runtime env only. Do not compile them into the
   client bundle.
+
+- **Problem**: Approving design-grade UI with placeholder copy
+- **Example**: Treating a variation with headings like "Welcome Here" and CTA
+  labels like "Learn More" as final-quality review evidence for a content-heavy
+  screen
+- **Why it failed**: The hierarchy, tone, and action quality cannot actually be
+  judged, so the design review gives false confidence.
+- **Prevention rule**: When content changes materially, use real draft copy for
+  design-grade reviews or mark the option as lower-fidelity.

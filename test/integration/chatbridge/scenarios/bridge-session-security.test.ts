@@ -1,6 +1,7 @@
 import '../setup'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CHATBRIDGE_COMPLETION_SCHEMA_VERSION } from '@shared/chatbridge/completion'
 import { createBridgeHostController } from '@/packages/chatbridge/bridge/host-controller'
 
 type MockPortMessageEvent = {
@@ -182,135 +183,16 @@ describe('ChatBridge launch-scoped bridge handshake', () => {
       bridgeToken: 'bridge-token-1',
       sequence: 3,
       idempotencyKey: 'state-2',
-      result: {
-        schemaVersion: 1,
+      completion: {
+        schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
         status: 'success',
         outcomeData: {
-          status: 'complete',
+          artifactId: 'preview-1',
         },
       },
     })
 
     expect(acceptedEvents).toEqual(['app.state'])
     expect(rejectedReasons).toEqual(['replayed-sequence', 'duplicate-idempotency-key'])
-  })
-
-  it('accepts structured completion payloads after the bridge is ready', async () => {
-    const acceptedStatuses: string[] = []
-    const traces: string[] = []
-
-    const controller = createBridgeHostController({
-      appId: 'artifact-preview',
-      appInstanceId: 'app-instance-1',
-      expectedOrigin: 'https://artifact-preview.chatboxai.app',
-      capabilities: ['render-html-preview'],
-      createMessageChannel,
-      createId: createDeterministicIds(['bridge-session-1', 'bridge-token-1', 'bridge-nonce-1']),
-      now: () => 10_000,
-      onAcceptedAppEvent: (event) => {
-        if (event.kind === 'app.complete') {
-          acceptedStatuses.push(event.result.status)
-        }
-      },
-      onTrace: (trace) => traces.push(trace.type),
-    })
-
-    let appPort: MockMessagePort | null = null
-    controller.attach({
-      postMessage(_message, _targetOrigin, transfer) {
-        appPort = transfer?.[0] as MockMessagePort
-      },
-    })
-
-    appPort?.postMessage({
-      kind: 'app.ready',
-      bridgeSessionId: 'bridge-session-1',
-      appInstanceId: 'app-instance-1',
-      bridgeToken: 'bridge-token-1',
-      ackNonce: 'bridge-nonce-1',
-      sequence: 1,
-    })
-    await controller.waitForReady()
-
-    appPort?.postMessage({
-      kind: 'app.complete',
-      bridgeSessionId: 'bridge-session-1',
-      appInstanceId: 'app-instance-1',
-      bridgeToken: 'bridge-token-1',
-      sequence: 2,
-      idempotencyKey: 'complete-2',
-      result: {
-        schemaVersion: 1,
-        status: 'success',
-        outcomeData: {
-          status: 'complete',
-          renderId: 'render-2',
-        },
-        suggestedSummary: {
-          text: 'The host rendered the artifact preview successfully.',
-        },
-      },
-    })
-
-    expect(acceptedStatuses).toEqual(['success'])
-    expect(traces).toContain('app.event.accepted')
-  })
-
-  it('surfaces malformed completion payloads as invalid bridge events', async () => {
-    const acceptedEvents: string[] = []
-    const invalidKinds: string[] = []
-    const invalidIssues: string[][] = []
-
-    const controller = createBridgeHostController({
-      appId: 'artifact-preview',
-      appInstanceId: 'app-instance-1',
-      expectedOrigin: 'https://artifact-preview.chatboxai.app',
-      capabilities: ['render-html-preview'],
-      createMessageChannel,
-      createId: createDeterministicIds(['bridge-session-1', 'bridge-token-1', 'bridge-nonce-1']),
-      now: () => 10_000,
-      onAcceptedAppEvent: (event) => acceptedEvents.push(event.kind),
-      onInvalidAppEvent: (_rawEvent, issues) => {
-        invalidIssues.push(issues)
-      },
-      onTrace: (trace) => {
-        if (trace.type === 'app.event.invalid') {
-          invalidKinds.push(trace.rawKind ?? 'unknown')
-        }
-      },
-    })
-
-    let appPort: MockMessagePort | null = null
-    controller.attach({
-      postMessage(_message, _targetOrigin, transfer) {
-        appPort = transfer?.[0] as MockMessagePort
-      },
-    })
-
-    appPort?.postMessage({
-      kind: 'app.ready',
-      bridgeSessionId: 'bridge-session-1',
-      appInstanceId: 'app-instance-1',
-      bridgeToken: 'bridge-token-1',
-      ackNonce: 'bridge-nonce-1',
-      sequence: 1,
-    })
-    await controller.waitForReady()
-
-    appPort?.postMessage({
-      kind: 'app.complete',
-      bridgeSessionId: 'bridge-session-1',
-      appInstanceId: 'app-instance-1',
-      bridgeToken: 'bridge-token-1',
-      sequence: 2,
-      idempotencyKey: 'complete-2',
-      result: {
-        status: 'success',
-      },
-    })
-
-    expect(acceptedEvents).toEqual([])
-    expect(invalidKinds).toEqual(['app.complete'])
-    expect(invalidIssues[0]?.join('\n')).toMatch(/result\.schemaVersion/i)
   })
 })

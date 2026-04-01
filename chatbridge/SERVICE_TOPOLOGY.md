@@ -72,6 +72,8 @@ backend-authoritative services.
 - bridge validation
 - tool coordination
 - context injection and completion normalization
+- host-owned reasoning-context reduction for active app state before it reaches
+  the model path
 
 ### Layer 3: Platform services
 
@@ -155,9 +157,18 @@ service exists, the story should:
 - future `src/main/chatbridge/` for privileged host-runtime concerns
 - `src/shared/chatbridge/` now exists for shared execution-contract types and
   host-owned tool normalization helpers; later packs can extend it with
-  manifest, bridge-session, and lifecycle contracts
+  manifest, bridge-session, lifecycle, and reasoning-context contracts
+- `src/shared/chatbridge/chess.ts` now carries the host-owned Chess snapshot,
+  legal-move, and board-summary helper contract used by both seeded fixtures
+  and the live runtime surface
 - future `src/renderer/components/chatbridge/` and
   `src/renderer/packages/chatbridge/` for renderer-side lifecycle/UI
+- `src/renderer/packages/context-management/app-context.ts` now selects the
+  latest active or recent host-owned app summary from durable app records
+  before later-turn model calls
+- `src/renderer/components/chatbridge/apps/chess/` now holds the native
+  board-first Chess runtime that persists moves back through the host-owned
+  message part
 
 ### Backend-facing adapters to introduce before full services
 

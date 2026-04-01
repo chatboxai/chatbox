@@ -303,7 +303,7 @@ export function wrapChatBridgeHostTools(
             args: rawArgs,
             status: 'rejected',
             error: {
-              code: 'invalid_arguments',
+              code: 'invalid_input',
               message: 'Tool arguments failed host validation.',
               details: parsed.error.issues,
             },

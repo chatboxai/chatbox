@@ -40,15 +40,26 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Legal/illegal move behavior
+  - [x] Legal/illegal move behavior
 - T002 tests:
-  - [ ] Board state propagation to host runtime
+  - [x] Board state propagation to host runtime
 - T003 tests:
-  - [ ] Runtime stability inside container lifecycle states
+  - [x] Runtime stability inside container lifecycle states
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Completion Notes
+
+- T001 completed by producing the Pencil review packet, revising Variation A to use actual chess-piece glyphs, and receiving explicit approval on the updated board-first layout.
+- T002 completed by adding the shared chess snapshot contract in `src/shared/chatbridge/apps/chess.ts`, mounting the board runtime in `src/renderer/components/chatbridge/apps/chess/ChessRuntime.tsx`, and validating legal/illegal moves with `chess.js`.
+- T003 completed by persisting chess snapshots back into the session app part and the new `chatBridgeAppRecords` session field through `src/renderer/packages/chatbridge/chess-session-state.ts`.
+- T004 completed by exposing the chess runtime through the live seed lab in `src/shared/chatbridge/live-seeds.ts`, adding square-level accessibility labels, and covering the rejection/continuity path in focused tests.
+
+## Deferred Tasks
+
+- End-of-game lifecycle completion and resume semantics remain with CB-304. This story keeps the board interactive and host-owned without normalizing terminal summaries yet.

@@ -109,10 +109,18 @@ Chatbox has useful primitives, but the assignment still requires platform work t
 - broader reviewed app registry service beyond the base in-repo manifest and
   registry contract now implemented in `src/shared/chatbridge/manifest.ts` and
   `src/shared/chatbridge/registry.ts`
-- third-party app lifecycle contract
+- the first in-repo single-app discovery and reviewed Chess invocation seam now
+  exists through `src/shared/chatbridge/reviewed-app-catalog.ts`,
+  `src/shared/chatbridge/single-app-discovery.ts`, and
+  `src/renderer/packages/chatbridge/single-app-tools.ts`, but later packs still
+  need the actual launch container, live runtime, and completion flow
+- broader third-party lifecycle wiring beyond the base `appInstance` and
+  `appEvent` domain model now implemented in `src/shared/chatbridge/instance.ts`,
+  `src/shared/chatbridge/events.ts`, and
+  `src/renderer/packages/chatbridge/app-records.ts`
 - embedded app container UI inside the conversation timeline
 - secure message bus between host chat and embedded app
-- app session state persistence model
+- full app session state persistence beyond the current host-owned record-store seam
 - explicit completion/result protocol
 - platform-level user auth
 - per-app auth flows for OAuth or API-key-backed apps
@@ -143,7 +151,8 @@ The platform contract likely needs four layers:
 
 4. Completion and memory
 - app emits completion event
-- app returns structured result
+- app returns a structured completion payload from `src/shared/chatbridge/completion.ts`
+- apps may suggest a summary, but only the host can write `summaryForModel`
 - chat stores a normalized summary of outcome/state
 - later prompts can reference that summary
 

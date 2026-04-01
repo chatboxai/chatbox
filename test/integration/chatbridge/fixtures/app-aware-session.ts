@@ -1,29 +1,22 @@
-import type { Message, Session, SessionThread } from '@shared/types'
+import type { Message, Session } from '@shared/types'
+import {
+  buildAppAwareSessionFixture,
+  buildChatBridgeChessMidGameSessionFixture,
+  buildPartialLifecycleSessionFixture,
+  createAppLifecycleMessage as createSeedAppLifecycleMessage,
+} from '@shared/chatbridge/live-seeds'
 
-type ToolCallState = 'call' | 'result' | 'error'
-type AppLifecycle = 'ready' | 'active' | 'complete' | 'stale' | 'error'
-
-type AppLifecycleMessageOptions = {
-  appId?: string
-  appName?: string
-  toolCallId: string
-  lifecycle: AppLifecycle
-  state?: ToolCallState
-  partial?: boolean
-  attachmentName?: string
-  summary?: string
-  summaryForModel?: string
-  values?: Record<string, unknown>
-  error?: string
-  title?: string
-  description?: string
-  statusText?: string
-  fallbackTitle?: string
-  fallbackText?: string
+export {
+  buildAppAwareSessionFixture,
+  buildChatBridgeChessMidGameSessionFixture,
+  buildPartialLifecycleSessionFixture,
 }
 
-const APP_ID = 'story-builder'
-const APP_NAME = 'Story Builder'
+type CreateSeedAppLifecycleMessageOptions = Parameters<typeof createSeedAppLifecycleMessage>[3]
+
+type AppLifecycleMessageOptions = CreateSeedAppLifecycleMessageOptions & {
+  summaryForModel?: string
+}
 
 export function createAppLifecycleMessage(
   id: string,
@@ -31,176 +24,31 @@ export function createAppLifecycleMessage(
   text: string,
   options: AppLifecycleMessageOptions
 ): Message {
-  const appId = options.appId ?? APP_ID
-  const appName = options.appName ?? APP_NAME
-  const lifecycle = options.lifecycle
-  const summary = options.summary ?? `${appName} lifecycle: ${lifecycle}`
-  const appInstanceId = `app-instance-${options.toolCallId}`
-  const bridgeSessionId = `bridge-${options.toolCallId}`
-  const route = `/apps/${appId}`
+  const message = createSeedAppLifecycleMessage(id, role, text, options)
 
+  if (!options.summaryForModel) {
+    return message
+  }
+
+  return {
+    ...message,
+    contentParts: message.contentParts.map((part) =>
+      part.type === 'app'
+        ? {
+            ...part,
+            summaryForModel: options.summaryForModel,
+          }
+        : part
+    ),
+  }
+}
+
+function createTextMessage(id: string, role: Message['role'], text: string, timestamp: number): Message {
   return {
     id,
     role,
-    timestamp: 1,
-    contentParts: [
-      { type: 'text', text },
-      {
-        type: 'app',
-        appId,
-        appName,
-        appInstanceId,
-        lifecycle,
-        summary,
-        ...(options.summaryForModel ? { summaryForModel: options.summaryForModel } : {}),
-        toolCallId: options.toolCallId,
-        bridgeSessionId,
-        ...(options.values ? { values: options.values } : {}),
-        ...(options.error ? { error: options.error } : {}),
-        ...(options.title ? { title: options.title } : {}),
-        ...(options.description ? { description: options.description } : {}),
-        ...(options.statusText ? { statusText: options.statusText } : {}),
-        ...(options.fallbackTitle ? { fallbackTitle: options.fallbackTitle } : {}),
-        ...(options.fallbackText ? { fallbackText: options.fallbackText } : {}),
-        snapshot: {
-          route,
-          status: lifecycle,
-        },
-      },
-      {
-        type: 'tool-call',
-        state: options.state ?? 'result',
-        toolCallId: options.toolCallId,
-        toolName: 'chatbridge_app_state',
-        args: {
-          appId,
-          lifecycle,
-          bridgeSessionId,
-        },
-        ...(options.partial
-          ? {}
-          : {
-              result: {
-                appId,
-                appName,
-                appInstanceId,
-                lifecycle,
-                summary,
-                snapshot: {
-                  route,
-                  status: lifecycle,
-                },
-              },
-            }),
-      },
-    ],
-    files: options.attachmentName
-      ? [
-          {
-            id: `file-${id}`,
-            name: options.attachmentName,
-            fileType: 'application/json',
-            storageKey: `fixture:${id}:attachment`,
-          },
-        ]
-      : undefined,
-  }
-}
-
-export function buildAppAwareSessionFixture(): {
-  sessionInput: Omit<Session, 'id'>
-  historyThread: SessionThread
-  currentMessageIds: string[]
-  historyMessageIds: string[]
-} {
-  const systemMessage: Message = {
-    id: 'msg-system',
-    role: 'system',
-    contentParts: [{ type: 'text', text: 'Keep host-owned app lifecycle state explicit and recoverable.' }],
-    timestamp: 1,
-  }
-
-  const currentUserMessage: Message = {
-    id: 'msg-current-user',
-    role: 'user',
-    contentParts: [{ type: 'text', text: 'Resume my Story Builder draft and keep the draft summary attached.' }],
-    timestamp: 2,
-  }
-
-  const currentAssistantMessage = createAppLifecycleMessage(
-    'msg-current-assistant',
-    'assistant',
-    'Story Builder resumed with the latest draft checkpoint.',
-    {
-      toolCallId: 'tool-current-assistant',
-      lifecycle: 'active',
-      attachmentName: 'story-builder-state.json',
-      summary: 'Restored the active story draft and preserved the exportable checkpoint.',
-    }
-  )
-
-  const historyThread: SessionThread = {
-    id: 'thread-story-builder-history',
-    name: 'Story Builder Draft',
-    createdAt: 1,
-    messages: [
-      {
-        id: 'msg-history-user',
-        role: 'user',
-        contentParts: [{ type: 'text', text: 'Open Story Builder and summarize the current scene.' }],
-        timestamp: 1,
-      },
-      createAppLifecycleMessage(
-        'msg-history-assistant',
-        'assistant',
-        'Story Builder completed the previous draft summary.',
-        {
-          toolCallId: 'tool-history-assistant',
-          lifecycle: 'complete',
-          summary: 'Saved the previous draft summary for later follow-up questions.',
-        }
-      ),
-    ],
-  }
-
-  return {
-    sessionInput: {
-      name: 'ChatBridge Story Session',
-      type: 'chat',
-      threadName: 'Story Builder Active',
-      messages: [systemMessage, currentUserMessage, currentAssistantMessage],
-      threads: [historyThread],
-    },
-    historyThread,
-    currentMessageIds: [systemMessage.id, currentUserMessage.id, currentAssistantMessage.id],
-    historyMessageIds: historyThread.messages.map((message) => message.id),
-  }
-}
-
-export function buildPartialLifecycleSessionFixture(): Omit<Session, 'id'> {
-  return {
-    name: 'ChatBridge Partial Lifecycle Session',
-    type: 'chat',
-    messages: [
-      {
-        id: 'msg-partial-user',
-        role: 'user',
-        contentParts: [{ type: 'text', text: 'Try to resume the last Story Builder state even if the snapshot is stale.' }],
-        timestamp: 1,
-      },
-      createAppLifecycleMessage(
-        'msg-partial-assistant',
-        'assistant',
-        'Cached app state expired. Resume should stay explicit without inventing a recovered result.',
-        {
-          toolCallId: 'tool-partial-assistant',
-          lifecycle: 'stale',
-          state: 'call',
-          partial: true,
-          summary: 'Cached app state expired before a fresh checkpoint arrived.',
-        }
-      ),
-    ],
+    timestamp,
+    contentParts: [{ type: 'text', text }],
   }
 }
 
@@ -209,17 +57,12 @@ export function buildRecoveryCheckpointSessionFixture(): Omit<Session, 'id'> {
     name: 'ChatBridge Recovery Checkpoint Session',
     type: 'chat',
     messages: [
-      {
-        id: 'msg-recovery-user',
-        role: 'user',
-        contentParts: [
-          {
-            type: 'text',
-            text: 'Keep writing chapter four, then save the draft back to Drive.',
-          },
-        ],
-        timestamp: 1,
-      },
+      createTextMessage(
+        'msg-recovery-user',
+        'user',
+        'Keep writing chapter four, then save the draft back to Drive.',
+        1
+      ),
       createAppLifecycleMessage(
         'msg-recovery-assistant',
         'assistant',
@@ -248,6 +91,7 @@ export function buildRecoveryCheckpointSessionFixture(): Omit<Session, 'id'> {
             },
           },
           error: 'Drive auth expired before export finished.',
+          timestamp: 2,
         }
       ),
     ],
@@ -303,6 +147,7 @@ export function buildDebateArenaContextInjectionFixture(): Omit<Session, 'id'> {
           },
         },
       },
+      timestamp: 2,
     }
   )
 
@@ -318,25 +163,20 @@ export function buildDebateArenaContextInjectionFixture(): Omit<Session, 'id'> {
     name: 'ChatBridge Debate Arena Session',
     type: 'chat',
     messages: [
-      {
-        id: 'msg-debate-system',
-        role: 'system',
-        contentParts: [{ type: 'text', text: 'Keep debate-state continuity host-owned and explicit.' }],
-        timestamp: 1,
-      },
+      createTextMessage(
+        'msg-debate-system',
+        'system',
+        'Keep debate-state continuity host-owned and explicit.',
+        1
+      ),
       completedDebate,
-      {
-        id: 'msg-debate-boundary',
-        role: 'assistant',
-        contentParts: [{ type: 'text', text: 'Boundary after the completed debate round.' }],
-        timestamp: 2,
-      },
-      {
-        id: 'msg-debate-follow-up',
-        role: 'user',
-        contentParts: [{ type: 'text', text: 'What was the strongest rebuttal from the winning side?' }],
-        timestamp: 4,
-      },
+      createTextMessage('msg-debate-boundary', 'assistant', 'Boundary after the completed debate round.', 2),
+      createTextMessage(
+        'msg-debate-follow-up',
+        'user',
+        'What was the strongest rebuttal from the winning side?',
+        4
+      ),
       summaryMessage,
     ],
     compactionPoints: [
@@ -362,46 +202,33 @@ export function buildMultiAppContinuitySessionFixture(): Omit<Session, 'id'> {
     name: 'ChatBridge Multi App Continuity Session',
     type: 'chat',
     messages: [
-      {
-        id: 'msg-multi-app-system',
-        role: 'system',
-        contentParts: [{ type: 'text', text: 'Keep active and recent app continuity attributable.' }],
-        timestamp: 1,
-      },
-      createAppLifecycleMessage(
-        'msg-story-complete',
-        'assistant',
-        'Story Builder saved the latest draft outline.',
-        {
-          toolCallId: 'tool-story-complete',
-          lifecycle: 'complete',
-          summaryForModel: 'Story Builder saved the latest draft outline for later revision.',
-        }
+      createTextMessage(
+        'msg-multi-app-system',
+        'system',
+        'Keep active and recent app continuity attributable.',
+        1
       ),
-      createAppLifecycleMessage(
-        'msg-debate-active',
-        'assistant',
-        'Debate Arena is still running the rebuttal round.',
-        {
-          appId: 'debate-arena',
-          appName: 'Debate Arena',
-          toolCallId: 'tool-debate-active',
-          lifecycle: 'active',
-          summaryForModel: 'Debate Arena is still running the rebuttal round on school uniforms.',
-        }
+      createAppLifecycleMessage('msg-story-complete', 'assistant', 'Story Builder saved the latest draft outline.', {
+        toolCallId: 'tool-story-complete',
+        lifecycle: 'complete',
+        summaryForModel: 'Story Builder saved the latest draft outline for later revision.',
+        timestamp: 2,
+      }),
+      createAppLifecycleMessage('msg-debate-active', 'assistant', 'Debate Arena is still running the rebuttal round.', {
+        appId: 'debate-arena',
+        appName: 'Debate Arena',
+        toolCallId: 'tool-debate-active',
+        lifecycle: 'active',
+        summaryForModel: 'Debate Arena is still running the rebuttal round on school uniforms.',
+        timestamp: 3,
+      }),
+      createTextMessage('msg-multi-app-boundary', 'assistant', 'Boundary after the mixed-app handoff.', 4),
+      createTextMessage(
+        'msg-multi-app-follow-up',
+        'user',
+        'Which app is still active, and what did the other one finish?',
+        6
       ),
-      {
-        id: 'msg-multi-app-boundary',
-        role: 'assistant',
-        contentParts: [{ type: 'text', text: 'Boundary after the mixed-app handoff.' }],
-        timestamp: 4,
-      },
-      {
-        id: 'msg-multi-app-follow-up',
-        role: 'user',
-        contentParts: [{ type: 'text', text: 'Which app is still active, and what did the other one finish?' }],
-        timestamp: 6,
-      },
       summaryMessage,
     ],
     compactionPoints: [
@@ -427,12 +254,12 @@ export function buildSupersededInstanceContinuityFixture(): Omit<Session, 'id'> 
     name: 'ChatBridge Superseded Instance Session',
     type: 'chat',
     messages: [
-      {
-        id: 'msg-superseded-system',
-        role: 'system',
-        contentParts: [{ type: 'text', text: 'Only keep continuity for the latest valid instance state.' }],
-        timestamp: 1,
-      },
+      createTextMessage(
+        'msg-superseded-system',
+        'system',
+        'Only keep continuity for the latest valid instance state.',
+        1
+      ),
       createAppLifecycleMessage(
         'msg-story-active-old',
         'assistant',
@@ -441,6 +268,7 @@ export function buildSupersededInstanceContinuityFixture(): Omit<Session, 'id'> 
           toolCallId: 'tool-story-active-old',
           lifecycle: 'active',
           summaryForModel: 'This older Story Builder draft should no longer be injected.',
+          timestamp: 2,
         }
       ),
       createAppLifecycleMessage(
@@ -453,6 +281,7 @@ export function buildSupersededInstanceContinuityFixture(): Omit<Session, 'id'> 
           state: 'call',
           partial: true,
           summary: 'The newer Story Builder state is stale and should suppress continuity for that instance.',
+          timestamp: 3,
         }
       ),
       createAppLifecycleMessage(
@@ -465,20 +294,11 @@ export function buildSupersededInstanceContinuityFixture(): Omit<Session, 'id'> 
           toolCallId: 'tool-debate-complete-recent',
           lifecycle: 'complete',
           summaryForModel: 'Debate Arena completed a recent round that should remain available for follow-up.',
+          timestamp: 4,
         }
       ),
-      {
-        id: 'msg-superseded-boundary',
-        role: 'assistant',
-        contentParts: [{ type: 'text', text: 'Boundary after the superseded instance state.' }],
-        timestamp: 4,
-      },
-      {
-        id: 'msg-superseded-follow-up',
-        role: 'user',
-        contentParts: [{ type: 'text', text: 'What app context is still safe to use?' }],
-        timestamp: 6,
-      },
+      createTextMessage('msg-superseded-boundary', 'assistant', 'Boundary after the superseded instance state.', 5),
+      createTextMessage('msg-superseded-follow-up', 'user', 'What app context is still safe to use?', 6),
       summaryMessage,
     ],
     compactionPoints: [
@@ -504,12 +324,12 @@ export function buildMalformedDebateArenaContextFixture(): Omit<Session, 'id'> {
     name: 'ChatBridge Malformed Debate Arena Session',
     type: 'chat',
     messages: [
-      {
-        id: 'msg-malformed-debate-system',
-        role: 'system',
-        contentParts: [{ type: 'text', text: 'Reject malformed Debate Arena state instead of guessing.' }],
-        timestamp: 1,
-      },
+      createTextMessage(
+        'msg-malformed-debate-system',
+        'system',
+        'Reject malformed Debate Arena state instead of guessing.',
+        1
+      ),
       createAppLifecycleMessage(
         'msg-malformed-debate',
         'assistant',
@@ -534,20 +354,16 @@ export function buildMalformedDebateArenaContextFixture(): Omit<Session, 'id'> {
               ],
             },
           },
+          timestamp: 2,
         }
       ),
-      {
-        id: 'msg-malformed-debate-boundary',
-        role: 'assistant',
-        contentParts: [{ type: 'text', text: 'Boundary after malformed debate state.' }],
-        timestamp: 2,
-      },
-      {
-        id: 'msg-malformed-debate-follow-up',
-        role: 'user',
-        contentParts: [{ type: 'text', text: 'Can you keep helping without inventing the result?' }],
-        timestamp: 4,
-      },
+      createTextMessage('msg-malformed-debate-boundary', 'assistant', 'Boundary after malformed debate state.', 3),
+      createTextMessage(
+        'msg-malformed-debate-follow-up',
+        'user',
+        'Can you keep helping without inventing the result?',
+        4
+      ),
       summaryMessage,
     ],
     compactionPoints: [

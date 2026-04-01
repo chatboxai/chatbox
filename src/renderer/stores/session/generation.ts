@@ -210,6 +210,7 @@ export async function generate(
         const { result } = await streamText(model, {
           sessionId: session.id,
           messages: promptMsgs,
+          appRecords: session.chatBridgeAppRecords,
           onResultChangeWithCancel: modifyMessageCache,
           onStatusChange: (status) => {
             targetMsg = {

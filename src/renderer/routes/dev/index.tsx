@@ -9,6 +9,12 @@ export const Route = createFileRoute('/dev/')({
 
 const devPages = [
   {
+    path: '/dev/chatbridge',
+    name: 'ChatBridge Seed Lab',
+    description: 'Seed real ChatBridge sessions into storage and inspect shell, history, and preview behavior live',
+    tags: ['Tool', 'ChatBridge', 'Testing'],
+  },
+  {
     path: '/dev/model-selector',
     name: 'ModelSelector',
     description: 'Model selection component with desktop/mobile responsive views',

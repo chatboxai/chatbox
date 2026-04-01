@@ -3,6 +3,7 @@ import type { ImageGeneration } from '@shared/types'
 import { IconPlus } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
+import { AccessibleDrawerContent } from '@/components/common/AccessibleDrawerContent'
 import { HistoryListContent } from './HistoryPanel'
 
 /* ============================================
@@ -42,7 +43,11 @@ export function MobileHistoryDrawer({
     <Drawer.Root open={open} onOpenChange={onOpenChange} noBodyStyles>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-        <Drawer.Content className="flex flex-col rounded-t-xl h-[70vh] fixed bottom-0 left-0 right-0 outline-none bg-[var(--chatbox-background-primary)]">
+        <AccessibleDrawerContent
+          accessibleTitle={t('History')}
+          accessibleDescription={t('Review recent image generations and reopen a previous result.')}
+          className="flex flex-col rounded-t-xl h-[70vh] fixed bottom-0 left-0 right-0 outline-none bg-[var(--chatbox-background-primary)]"
+        >
           <Drawer.Handle />
           <Flex
             align="center"
@@ -51,11 +56,9 @@ export function MobileHistoryDrawer({
             py="sm"
             className="border-b border-[var(--chatbox-border-primary)]"
           >
-            <Drawer.Title asChild>
-              <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
-                {t('History')}
-              </Text>
-            </Drawer.Title>
+            <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
+              {t('History')}
+            </Text>
             <ActionIcon
               variant="subtle"
               color="gray"
@@ -85,7 +88,7 @@ export function MobileHistoryDrawer({
               onDelete={onDelete}
             />
           </ScrollArea>
-        </Drawer.Content>
+        </AccessibleDrawerContent>
       </Drawer.Portal>
     </Drawer.Root>
   )
@@ -118,7 +121,11 @@ export function MobileModelDrawer({
     <Drawer.Root open={open} onOpenChange={onOpenChange} noBodyStyles>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-        <Drawer.Content className="flex flex-col rounded-t-xl max-h-[70vh] fixed bottom-0 left-0 right-0 outline-none bg-[var(--chatbox-background-primary)]">
+        <AccessibleDrawerContent
+          accessibleTitle={t('Select Model')}
+          accessibleDescription={t('Choose the provider model that should be used for image generation.')}
+          className="flex flex-col rounded-t-xl max-h-[70vh] fixed bottom-0 left-0 right-0 outline-none bg-[var(--chatbox-background-primary)]"
+        >
           <Drawer.Handle />
           <Flex
             align="center"
@@ -127,11 +134,9 @@ export function MobileModelDrawer({
             py="sm"
             className="border-b border-[var(--chatbox-border-primary)]"
           >
-            <Drawer.Title asChild>
-              <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
-                {t('Select Model')}
-              </Text>
-            </Drawer.Title>
+            <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
+              {t('Select Model')}
+            </Text>
           </Flex>
 
           <ScrollArea flex={1} type="auto" offsetScrollbars>
@@ -168,7 +173,7 @@ export function MobileModelDrawer({
               ))}
             </Stack>
           </ScrollArea>
-        </Drawer.Content>
+        </AccessibleDrawerContent>
       </Drawer.Portal>
     </Drawer.Root>
   )
@@ -193,7 +198,11 @@ export function MobileRatioDrawer({ open, onOpenChange, options, selectedRatio, 
     <Drawer.Root open={open} onOpenChange={onOpenChange} noBodyStyles>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-        <Drawer.Content className="flex flex-col rounded-t-xl fixed bottom-0 left-0 right-0 outline-none bg-[var(--chatbox-background-primary)]">
+        <AccessibleDrawerContent
+          accessibleTitle={t('Aspect Ratio')}
+          accessibleDescription={t('Choose the aspect ratio for the image generation result.')}
+          className="flex flex-col rounded-t-xl fixed bottom-0 left-0 right-0 outline-none bg-[var(--chatbox-background-primary)]"
+        >
           <Drawer.Handle />
           <Flex
             align="center"
@@ -202,11 +211,9 @@ export function MobileRatioDrawer({ open, onOpenChange, options, selectedRatio, 
             py="sm"
             className="border-b border-[var(--chatbox-border-primary)]"
           >
-            <Drawer.Title asChild>
-              <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
-                {t('Aspect Ratio')}
-              </Text>
-            </Drawer.Title>
+            <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
+              {t('Aspect Ratio')}
+            </Text>
           </Flex>
 
           <Stack gap={2} p="xs" pb="xl">
@@ -228,7 +235,7 @@ export function MobileRatioDrawer({ open, onOpenChange, options, selectedRatio, 
               </UnstyledButton>
             ))}
           </Stack>
-        </Drawer.Content>
+        </AccessibleDrawerContent>
       </Drawer.Portal>
     </Drawer.Root>
   )

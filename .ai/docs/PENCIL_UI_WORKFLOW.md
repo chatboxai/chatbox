@@ -5,8 +5,10 @@ before implementation.
 
 ## Goal
 
-Keep spec writing and implementation planning in the normal story flow, but move
-visual exploration into Pencil so UI decisions are reviewed before code lands.
+Keep feature spec and technical planning in the normal story flow, then add a
+story-level design brief before Pencil so the design starts from audience,
+feeling, design language, system direction, layout metaphor, and copy
+direction rather than a vague prompt.
 
 ## Non-Negotiable Preflight
 
@@ -35,8 +37,9 @@ operations, not because this workflow expects direct shell CLI usage.
 - Pencil is running locally.
 - A `.pen` file is open in Pencil.
 - Codex can see Pencil in `/mcp`.
-- The story already has a feature spec and technical plan, or an equivalent
-  scoped story contract.
+- The story already has a feature spec, technical plan, and
+  `docs/specs/<story-id>/design-brief.md`, or an equivalent scoped story
+  contract plus a committed plan to write the design brief before variations.
 
 Do not rely on the harness to auto-provision Pencil config. Pencil's own docs
 note Codex config duplication issues, so setup should stay manual and verified.
@@ -95,6 +98,7 @@ Operational default:
 
 - `docs/specs/<story-id>/feature-spec.md`
 - `docs/specs/<story-id>/technical-plan.md`
+- `docs/specs/<story-id>/design-brief.md`
 - `docs/specs/<story-id>/pencil-review.md`
 - `design/system/design-system.lib.pen` for shared variables, components, and
   slots
@@ -102,6 +106,34 @@ Operational default:
 
 The `design/` paths are the checked-in locations for this repo's shared library
 and story-specific Pencil assets.
+
+## Design Brief Contract
+
+Every visible UI story needs a concise but explicit `design-brief.md` before
+variations begin. The brief must answer:
+
+1. Audience and entry context:
+   who is landing on the surface and why now
+2. Desired feeling:
+   what the user should feel, plus feelings to avoid
+3. Design-language translation:
+   5 to 8 concrete material, spatial, editorial, or interaction cues plus
+   anti-cues
+4. System direction:
+   the job of neutral, primary, secondary, and accent roles; typography
+   posture; and component or surface character
+5. Layout metaphor:
+   a physical-object or editorial analogy and the axes that should vary across
+   variations
+6. Copy direction:
+   voice, naming, CTA posture, and whether real draft copy is required
+7. Constraints and no-go decisions:
+   implementation, content, accessibility, or scope constraints
+8. Pencil prompt inputs:
+   the short prompt-ready phrases that should guide the variations
+
+For bounded UI tweaks the brief can be short, but every section still needs an
+explicit answer.
 
 ## Design-System Standard
 
@@ -140,23 +172,30 @@ Do not let Pencil variables and code-side tokens drift silently.
 
 1. Sync the official Pencil docs locally and review the relevant snapshots.
 2. Write or refresh the feature spec and technical plan first.
-3. For existing UI surfaces, import the current code into Pencil first so the
+3. Write or refresh `docs/specs/<story-id>/design-brief.md` before opening
+   variation work.
+4. For existing UI surfaces, import the current code into Pencil first so the
    baseline reflects the real app before variations begin.
-4. Confirm whether the story should extend an existing Pencil design library or
+5. Confirm whether the story should extend an existing Pencil design library or
    add one as the foundation.
-5. Build or update shared Pencil variables, components, and slots first, then
+6. Build or update shared Pencil variables, components, and slots first, then
    create the story-specific screen or component work from that foundation.
-6. For live design work, make the actual design mutations through Pencil MCP on
+7. For live design work, make the actual design mutations through Pencil MCP on
    the open file rather than patching the `.pen` JSON on disk.
-7. Produce 2 or 3 materially different variations, not just one draft plus tiny
-   tweaks.
-8. Use real library-backed components where possible; if a variation is mostly
+8. Produce 2 or 3 materially different variations, not just one draft plus tiny
+   tweaks. Variation differences should map back to the layout metaphor or
+   hierarchy axes declared in the design brief.
+9. Use real library-backed components where possible; if a variation is mostly
    placeholder geometry, label it as wireframe-grade in the review packet.
-9. Capture screenshots and short tradeoff notes for each variation.
-10. Write `docs/specs/<story-id>/pencil-review.md`.
-11. Present the variations to the user and stop for approval or tweaks.
-12. Only after approval, update the technical plan with the chosen variation and
-   proceed to implementation.
+10. When the story introduces or materially changes content, do not label an
+    option `design-grade` if it still relies on generic placeholder headings or
+    CTAs. Use real draft copy or mark the copy fidelity honestly. If copy is
+    unchanged, record `N/A`.
+11. Capture screenshots and short tradeoff notes for each variation.
+12. Write `docs/specs/<story-id>/pencil-review.md`.
+13. Present the variations to the user and stop for approval or tweaks.
+14. Only after approval, update the technical plan with the chosen variation and
+    proceed to implementation.
 
 ## Approval Gate
 
@@ -167,7 +206,8 @@ For UI stories, implementation is blocked until one of these is true:
 - or the task is explicitly downgraded to non-visual UI work only.
 
 Do not treat "I think this looks good" as approval. The review artifact should
-show which variation was chosen and any requested tweaks.
+show which variation was chosen, which `design-brief.md` guided it, and any
+requested tweaks.
 
 ## Design to Code After Approval
 

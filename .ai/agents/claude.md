@@ -36,16 +36,30 @@ files reference.
 - Use `.ai/workflows/story-lookup.md` before meaningful implementation.
 - Use `.ai/workflows/story-sizing.md` to classify the task.
 - For UI-affecting stories, run `.ai/workflows/pencil-ui-design.md` after the
-  story spec and technical plan exist, and stop for user approval before code.
+  story spec, technical plan, and `design-brief.md` exist, and stop for user
+  approval before code.
+- When a story changes inspectable ChatBridge shell, lifecycle, history, or
+  HTML-preview behavior, update `src/shared/chatbridge/live-seeds.ts`,
+  `src/renderer/packages/initial_data.ts`,
+  `src/renderer/setup/preset_sessions.ts`,
+  `src/renderer/dev/chatbridgeSeeds.ts`, and the `/dev/chatbridge` lab so the
+  change stays seedable in both the default app bootstrap and the live audit
+  flow.
 - For behavior changes, use `.ai/workflows/tdd-pipeline.md`.
 - For broader feature work, use `.ai/skills/spec-driven-development.md`.
 - For `.ai/` changes, use `.ai/workflows/ai-architecture-change.md`.
+- For every completed story, refresh the seeded visual example data in
+  `src/renderer/packages/initial_data.ts` or call out `N/A` explicitly in the
+  completion handoff.
 - For completion, use `.ai/workflows/story-handoff.md`, then continue through
   `.ai/workflows/git-finalization.md` by default unless the user explicitly
   pauses or chooses a different merge path.
 - The completion gate should explain what changed, where it changed, and how
   the user should inspect and test it. UI stories must include route-level or
   component-level inspection guidance plus the expected visible result.
+- For ChatBridge stories with inspectable behavior changes, the completion gate
+  should also say whether the `/dev/chatbridge` seed lab was updated and which
+  seeded session the user should reseed/open.
 - During git finalization, unrelated dirty state is not a valid stop condition:
   preserve it, isolate the story diff, rerun validation there, and continue
   through merge unless safe disentangling is impossible.
@@ -66,4 +80,6 @@ files reference.
 - Validation commands are `pnpm test`, `pnpm check`, `pnpm lint`, `pnpm build`
 - Harness files under `.ai/` are support material, not product code
 - UI designs should come from approved Pencil variations, not code-first design
-  exploration
+  exploration.
+- Visible UI story packets should include `design-brief.md` plus
+  `pencil-review.md` in addition to the normal spec artifacts.

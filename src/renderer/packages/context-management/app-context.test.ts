@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CHATBRIDGE_COMPLETION_SCHEMA_VERSION } from '@shared/chatbridge/completion'
 import type { ChatBridgeAppInstanceStatus } from '@shared/chatbridge/instance'
 import { createChatBridgeAppRecordStore } from '../chatbridge/app-records'
 import { buildChatBridgeAppContextPrompt, resolveChatBridgeAppContext } from './app-context'
@@ -78,6 +79,16 @@ function createAppRecordSnapshot(fixtures: AppRecordFixture[]) {
         createdAt: fixture.updatedAt,
         payload: {
           source: 'unit-test',
+        },
+        completion: {
+          schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+          status: 'success',
+          outcome: {
+            code: 'seeded_complete',
+            data: {
+              appInstanceId: fixture.id,
+            },
+          },
         },
         summaryForModel: fixture.summaryForModel,
       })

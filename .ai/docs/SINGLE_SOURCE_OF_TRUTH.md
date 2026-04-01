@@ -69,6 +69,10 @@
 - Keep durable repo truths in `.ai/memory/project/`.
 - Keep current-task notes in `.ai/memory/session/`.
 - Align harness guidance with commands that actually exist in `package.json`.
+- The main local workflow entrypoints (`pnpm dev`, `pnpm test`, `pnpm check`,
+  `pnpm build`, and their direct `start`/`build` variants) now fail fast on
+  wrong-Node shells through the repo engine constraints and on stale installs
+  through `scripts/workspace-guard.mjs`, before Vite or TypeScript starts.
 - For UI-affecting stories, do not skip the design-brief stage or the Pencil
   variation and approval gate.
 - For completed stories, do not skip seeded example refresh checks in

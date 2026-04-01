@@ -34,6 +34,10 @@ Capture repeatable patterns that match how this workspace actually works.
 - Fresh story branches and worktrees should copy the required local `.env*`
   files from the working `main` setup, run `pnpm install` before project
   commands, and keep copied env files untracked.
+- `pnpm install` records a worktree-local install stamp in `node_modules/`, and
+  the main workflow entrypoints now fail fast on wrong-Node shells via the repo
+  engine constraints plus on stale dependency inputs via
+  `scripts/workspace-guard.mjs`.
 - Non-trivial implementation stories should start on fresh `codex/` branches;
   if the current tree is already dirty with another story, isolate the new work
   in a clean worktree rather than sharing the dirty tree.

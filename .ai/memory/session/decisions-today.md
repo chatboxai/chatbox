@@ -28,3 +28,7 @@
 - 2026-04-01: Gave the shared `CommandDialog` wrapper a hidden title and
   description by default so Radix dialog accessibility requirements are met
   without forcing every caller to wire those fields manually.
+- 2026-04-01: Added a repo-local workspace guard so stale-install worktrees now
+  fail before Vite/TypeScript starts, while wrong-Node shells still fail at the
+  repo engine gate. `pnpm install` now records a worktree-local install stamp
+  in `node_modules/`.

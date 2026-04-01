@@ -49,6 +49,21 @@ export interface ProviderDefinition {
   /** Default settings for the provider */
   defaultSettings?: ProviderSettings
   /**
+   * The provider ID on models.dev (e.g., 'openai', 'anthropic', 'google').
+   * If set, models.dev data will be used to enrich model metadata and
+   * provide fallback model lists when the provider API is unreachable.
+   * Providers without this field skip models.dev integration entirely.
+   */
+  modelsDevProviderId?: string
+  /**
+   * Curated list of model IDs that should be shown by default for this provider.
+   * These are the "known good" models. Models found in models.dev but not in
+   * this list are treated as "discovered" and shown separately when the user
+   * clicks Fetch Models (filtered by recent release_date).
+   * Only meaningful when modelsDevProviderId is set.
+   */
+  curatedModelIds?: string[]
+  /**
    * Factory function to create a model instance.
    * This replaces the switch statement in getModel().
    */

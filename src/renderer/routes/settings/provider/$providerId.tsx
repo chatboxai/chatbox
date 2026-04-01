@@ -5,7 +5,7 @@ import {
   Flex,
   Loader,
   PasswordInput,
-  Select,
+  SegmentedControl,
   Stack,
   Switch,
   Text,
@@ -14,7 +14,14 @@ import {
   Tooltip,
 } from '@mantine/core'
 import { SystemProviders } from '@shared/defaults'
-import { ModelProviderEnum, ModelProviderType, type ProviderModelInfo } from '@shared/types'
+import { type OAuthProviderInfo, toOAuthProviderId, toOAuthSettingsProviderId } from '@shared/oauth'
+import { getProviderDefinition } from '@shared/providers'
+import {
+  ModelProviderEnum,
+  ModelProviderType,
+  type ProviderModelInfo,
+  type ProviderSettings as SharedProviderSettings,
+} from '@shared/types'
 import {
   normalizeAzureEndpoint,
   normalizeClaudeHost,
@@ -27,6 +34,8 @@ import {
   IconDiscount2,
   IconExternalLink,
   IconHelpCircle,
+  IconLogin,
+  IconLogout,
   IconPlus,
   IconRefresh,
   IconRestore,
@@ -35,14 +44,19 @@ import {
 } from '@tabler/icons-react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { uniq } from 'lodash'
-import { type ChangeEvent, useCallback, useState } from 'react'
+import { type ChangeEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createModelDependencies } from '@/adapters'
+import { trackJkClickEvent } from '@/analytics/jk'
+import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import PopoverConfirm from '@/components/common/PopoverConfirm'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { ModelList } from '@/components/ModelList'
+import { useOAuth } from '@/hooks/useOAuth'
+import { useOAuthProviders } from '@/hooks/useOAuthProviders'
+import { enrichModelsFromRegistry, forceRefreshRegistry, useModelRegistryVersion } from '@/packages/model-registry'
 import { getModelSettingUtil } from '@/packages/model-setting-utils'
 import platform from '@/platform'
 import { useLanguage, useProviderSettings, useSettingsStore } from '@/stores/settingsStore'
@@ -58,8 +72,63 @@ type ModelTestResult = ModelTestState & {
   modelName: string
 }
 
+const BUILTIN_API_HOST_PROVIDERS = new Set<string>([
+  ModelProviderEnum.OpenAI,
+  ModelProviderEnum.OpenAIResponses,
+  ModelProviderEnum.Claude,
+  ModelProviderEnum.Gemini,
+  ModelProviderEnum.Qwen,
+  ModelProviderEnum.QwenPortal,
+  ModelProviderEnum.MiniMax,
+  ModelProviderEnum.MiniMaxCN,
+  ModelProviderEnum.Moonshot,
+  ModelProviderEnum.MoonshotCN,
+  ModelProviderEnum.Ollama,
+  ModelProviderEnum.LMStudio,
+])
+
+const OAUTH_ONLY_PROVIDERS = new Set<string>([ModelProviderEnum.QwenPortal])
+
+const OAUTH_PROVIDER_FALLBACKS: Record<string, OAuthProviderInfo> = {
+  claude: {
+    providerId: 'claude',
+    name: 'Claude',
+    flowType: 'code-paste',
+  },
+  gemini: {
+    providerId: 'gemini',
+    name: 'Gemini',
+    flowType: 'callback',
+  },
+  'github-copilot': {
+    providerId: 'github-copilot',
+    name: 'GitHub Copilot',
+    flowType: 'device-code',
+  },
+  minimax: {
+    providerId: 'minimax',
+    name: 'MiniMax',
+    flowType: 'device-code',
+  },
+  'minimax-cn': {
+    providerId: 'minimax-cn',
+    name: 'MiniMax CN',
+    flowType: 'device-code',
+  },
+  openai: {
+    providerId: 'openai',
+    name: 'OpenAI',
+    flowType: 'callback',
+  },
+  'qwen-portal': {
+    providerId: 'qwen-portal',
+    name: 'Qwen Portal',
+    flowType: 'device-code',
+  },
+}
+
 function normalizeAPIHost(
-  providerSettings: any,
+  providerSettings: SharedProviderSettings | undefined,
   providerType: ModelProviderType
 ): {
   apiHost: string
@@ -75,7 +144,6 @@ function normalizeAPIHost(
         apiHost: providerSettings?.apiHost,
         apiPath: providerSettings?.apiPath,
       })
-    case ModelProviderType.OpenAI:
     default:
       return normalizeOpenAIApiHostAndPath({
         apiHost: providerSettings?.apiHost,
@@ -90,6 +158,8 @@ export function RouteComponent() {
 }
 
 function ProviderSettings({ providerId }: { providerId: string }) {
+  useModelRegistryVersion()
+
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { setSettings, ...settings } = useSettingsStore((state) => state)
@@ -99,8 +169,131 @@ function ProviderSettings({ providerId }: { providerId: string }) {
   const baseInfo = [...SystemProviders(), ...(settings.customProviders || [])].find((p) => p.id === providerId)
 
   const { providerSettings, setProviderSettings } = useProviderSettings(providerId)
+  const oauthProviderId = toOAuthProviderId(providerId)
+  const oauthSettingsProviderId = toOAuthSettingsProviderId(providerId) || providerId
 
-  const displayModels = providerSettings?.models || baseInfo?.defaultSettings?.models || []
+  // OAuth
+  const oauthProviders = useOAuthProviders()
+  const oauthProviderInfo = oauthProviderId
+    ? oauthProviders.find((p) => p.providerId === oauthProviderId) || OAUTH_PROVIDER_FALLBACKS[oauthProviderId]
+    : undefined
+  const supportsOAuth = !!oauthProviderInfo
+  const {
+    isDesktop,
+    hasOAuth,
+    isOAuthActive,
+    flowType,
+    loginCallback,
+    startLogin,
+    exchangeCode,
+    startDeviceFlow,
+    waitForDeviceToken,
+    cancel,
+    logout,
+  } = useOAuth(oauthProviderId || providerId, oauthProviderInfo, oauthSettingsProviderId, providerId)
+  const [oauthLoading, setOAuthLoading] = useState(false)
+  const [showCodeInput, setShowCodeInput] = useState(false)
+  const [codeInputValue, setCodeInputValue] = useState('')
+  const [codeInputInstructions, setCodeInputInstructions] = useState('')
+  const [showDeviceCode, setShowDeviceCode] = useState(false)
+  const [deviceUserCode, setDeviceUserCode] = useState('')
+  const [deviceVerificationUri, setDeviceVerificationUri] = useState('')
+
+  const handleOAuthLogin = async () => {
+    if (flowType === 'code-paste') {
+      // Code-paste flow: start login, show code input dialog
+      setOAuthLoading(true)
+      try {
+        const startResult = await startLogin()
+        if (!startResult.success) {
+          addToast(startResult.error || t('Login failed'))
+          return
+        }
+        // Open auth URL in browser
+        if (startResult.authUrl) {
+          platform.openLink(startResult.authUrl)
+        }
+        setCodeInputInstructions(startResult.instructions || '')
+        setCodeInputValue('')
+        setShowCodeInput(true)
+      } finally {
+        setOAuthLoading(false)
+      }
+    } else if (flowType === 'device-code') {
+      // Device-code flow: start flow, show user code, poll for token
+      setOAuthLoading(true)
+      try {
+        const startResult = await startDeviceFlow()
+        if (!startResult.success) {
+          addToast(startResult.error || t('Login failed'))
+          return
+        }
+        setDeviceUserCode(startResult.userCode || '')
+        setDeviceVerificationUri(startResult.verificationUri || '')
+        setShowDeviceCode(true)
+        // Open verification URL in browser
+        if (startResult.verificationUri) {
+          platform.openLink(startResult.verificationUri)
+        }
+        // Poll for token in background
+        const result = await waitForDeviceToken()
+        setShowDeviceCode(false)
+        if (!result.success) {
+          addToast(result.error || t('Login failed'))
+        }
+      } finally {
+        setOAuthLoading(false)
+      }
+    } else {
+      // Callback flow: single step (OpenAI, Gemini)
+      setOAuthLoading(true)
+      try {
+        const result = await loginCallback()
+        if (!result.success && result.error !== 'Login cancelled') {
+          addToast(result.error || t('Login failed'))
+        }
+      } finally {
+        setOAuthLoading(false)
+      }
+    }
+  }
+
+  const handleCancelOAuth = async () => {
+    await cancel()
+    setOAuthLoading(false)
+    setShowDeviceCode(false)
+    setShowCodeInput(false)
+  }
+
+  const handleCodeSubmit = async () => {
+    if (!codeInputValue.trim()) return
+    setOAuthLoading(true)
+    try {
+      const result = await exchangeCode(codeInputValue.trim())
+      if (result.success) {
+        setShowCodeInput(false)
+        setCodeInputValue('')
+      } else {
+        addToast(result.error || t('Login failed'))
+      }
+    } finally {
+      setOAuthLoading(false)
+    }
+  }
+
+  const handleAuthModeChange = (value: string) => {
+    setProviderSettings({
+      activeAuthMode: value as 'apikey' | 'oauth',
+    })
+  }
+
+  const rawModels = providerSettings?.models || baseInfo?.defaultSettings?.models || []
+  const displayModels = enrichModelsFromRegistry(rawModels, providerId)
+  const usesResponsesTransportForOAuth = [ModelProviderEnum.OpenAI, ModelProviderEnum.OpenAIResponses].includes(
+    providerId as ModelProviderEnum
+  )
+  const isOAuthOnlyProvider = baseInfo?.id ? OAUTH_ONLY_PROVIDERS.has(baseInfo.id) : false
+  const providerWebsite = baseInfo?.urls?.website || ''
 
   const handleApiKeyChange = (e: ChangeEvent<HTMLInputElement>) => {
     setProviderSettings({
@@ -119,6 +312,16 @@ function ProviderSettings({ providerId }: { providerId: string }) {
       apiPath: e.currentTarget.value,
     })
   }
+  const normalizedBuiltinApiHost = baseInfo
+    ? normalizeAPIHost(
+        {
+          ...providerSettings,
+          apiHost: providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost,
+          apiPath: providerSettings?.apiPath || baseInfo.defaultSettings?.apiPath,
+        },
+        baseInfo.type
+      )
+    : { apiHost: '', apiPath: '' }
 
   const handleAddModel = async () => {
     const newModel: ProviderModelInfo = await NiceModal.show('model-edit', { providerId })
@@ -163,10 +366,16 @@ function ProviderSettings({ providerId }: { providerId: string }) {
   const [fetchedModels, setFetchedModels] = useState<ProviderModelInfo[]>()
 
   const handleFetchModels = async () => {
+    if (!baseInfo) return
+
     try {
       setFetchedModels(undefined)
       setFetchingModels(true)
-      const modelConfig = getModelSettingUtil(baseInfo!.id, baseInfo!.isCustom ? baseInfo!.type : undefined)
+      const providerDefinition = getProviderDefinition(baseInfo.id)
+      if (providerDefinition?.modelsDevProviderId) {
+        await forceRefreshRegistry()
+      }
+      const modelConfig = getModelSettingUtil(baseInfo.id, baseInfo.isCustom ? baseInfo.type : undefined)
       const modelList = await modelConfig.getMergeOptionGroups({
         ...baseInfo?.defaultSettings,
         ...providerSettings,
@@ -202,53 +411,66 @@ function ProviderSettings({ providerId }: { providerId: string }) {
     await handleCheckModel(modelInfo)
   }
 
-  const handleCheckModel = useCallback(
-    async (model: ProviderModelInfo) => {
-      // Initialize result with model info
-      const result: ModelTestResult = {
-        modelId: model.modelId,
-        modelName: model.nickname || model.modelId,
-        testing: true,
-        basicTest: { status: 'pending' },
-        visionTest: { status: 'pending' },
-        toolTest: { status: 'pending' },
-      }
-      setModelTestResult(result)
+  const handleCheckModel = async (model: ProviderModelInfo) => {
+    // Initialize result with model info
+    const result: ModelTestResult = {
+      modelId: model.modelId,
+      modelName: model.nickname || model.modelId,
+      testing: true,
+      basicTest: { status: 'pending' },
+      visionTest: { status: 'pending' },
+      toolTest: { status: 'pending' },
+    }
+    setModelTestResult(result)
 
-      const configs = await platform.getConfig()
-      const dependencies = await createModelDependencies()
+    const configs = await platform.getConfig()
+    const dependencies = await createModelDependencies()
 
-      const finalState = await testModelCapabilities({
-        providerId,
-        modelId: model.modelId,
-        settings,
-        configs,
-        dependencies,
-        onStateChange: (state) => {
-          setModelTestResult({
-            ...result,
-            ...state,
-          })
-        },
-      })
-      const visionSupported = finalState.visionTest?.status === 'success'
-      const toolUseSupported = finalState.toolTest?.status === 'success'
-      if (visionSupported || toolUseSupported) {
-        const capabilitiesToAdd: ('vision' | 'tool_use')[] = []
-        if (visionSupported) capabilitiesToAdd.push('vision')
-        if (toolUseSupported) capabilitiesToAdd.push('tool_use')
-        console.log('Auto-enable capabilities based on test results')
-        setProviderSettings({
-          models: displayModels.map((m) =>
-            m.modelId === model.modelId
-              ? { ...m, capabilities: uniq([...(m.capabilities || []), ...capabilitiesToAdd]) }
-              : m
-          ),
+    const finalState = await testModelCapabilities({
+      providerId,
+      modelId: model.modelId,
+      settings,
+      configs,
+      dependencies,
+      onStateChange: (state) => {
+        setModelTestResult({
+          ...result,
+          ...state,
         })
-      }
-    },
-    [displayModels, setProviderSettings, providerId]
-  )
+      },
+    })
+    const modelName = model.nickname || model.modelId
+    const providerName = baseInfo?.name ? t(baseInfo.name) : providerId
+    if (finalState.basicTest?.status === 'success') {
+      trackJkClickEvent(JK_EVENTS.KEY_VERIFY_SUCCESS, {
+        pageName: JK_PAGE_NAMES.SETTING_PAGE,
+        content: null,
+        contentType: modelName,
+        props: { content_add_info: { content: providerName } },
+      })
+    } else if (finalState.basicTest?.status === 'error') {
+      trackJkClickEvent(JK_EVENTS.KEY_VERIFY_FAILED, {
+        pageName: JK_PAGE_NAMES.SETTING_PAGE,
+        content: finalState.basicTest.error || 'unknown_error',
+        contentType: modelName,
+        props: { content_add_info: { content: providerName } },
+      })
+    }
+    const visionSupported = finalState.visionTest?.status === 'success'
+    const toolUseSupported = finalState.toolTest?.status === 'success'
+    if (visionSupported || toolUseSupported) {
+      const capabilitiesToAdd: ('vision' | 'tool_use')[] = []
+      if (visionSupported) capabilitiesToAdd.push('vision')
+      if (toolUseSupported) capabilitiesToAdd.push('tool_use')
+      setProviderSettings({
+        models: displayModels.map((m) =>
+          m.modelId === model.modelId
+            ? { ...m, capabilities: uniq([...(m.capabilities || []), ...capabilitiesToAdd]) }
+            : m
+        ),
+      })
+    }
+  }
 
   if (!baseInfo) {
     return <Text>{t('Provider not found')}</Text>
@@ -260,13 +482,13 @@ function ProviderSettings({ providerId }: { providerId: string }) {
         <Title order={3} c="chatbox-secondary">
           {t(baseInfo.name)}
         </Title>
-        {baseInfo.urls?.website && (
+        {providerWebsite && (
           <Button
             variant="transparent"
             c="chatbox-tertiary"
             px={0}
             h={24}
-            onClick={() => platform.openLink(baseInfo.urls!.website!)}
+            onClick={() => platform.openLink(providerWebsite)}
           >
             <ScalableIcon icon={IconExternalLink} size={24} />
           </Button>
@@ -279,7 +501,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
               setSettings({
                 customProviders: settings.customProviders?.filter((p) => p.id !== baseInfo.id),
               })
-              navigate({ to: './..' as any, replace: true })
+              navigate({ to: '/settings/provider', replace: true })
             }}
           >
             <Button
@@ -368,14 +590,93 @@ function ProviderSettings({ providerId }: { providerId: string }) {
           </Stack>
         )}
 
-        {/* API Key */}
-        {![ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio, ''].includes(baseInfo.id) && (
-          <Stack gap="xxs">
+        {/* OAuth Login (Desktop only) */}
+        {isDesktop && supportsOAuth && (
+          <Stack gap="xs">
             <Text span fw="600">
-              {t('API Key')}
+              {t('Authentication')}
             </Text>
+
+            {/* Auth mode toggle - show when both OAuth and API key are configured */}
+            {hasOAuth && !isOAuthOnlyProvider && (
+              <SegmentedControl
+                value={providerSettings?.activeAuthMode || 'apikey'}
+                onChange={handleAuthModeChange}
+                data={[
+                  { label: t('API Key'), value: 'apikey' },
+                  { label: t('OAuth Login'), value: 'oauth' },
+                ]}
+              />
+            )}
+
+            {/* OAuth status & actions */}
             <Flex gap="xs" align="center">
-              <PasswordInput flex={1} value={providerSettings?.apiKey || ''} onChange={handleApiKeyChange} />
+              {hasOAuth ? (
+                <>
+                  <Badge color="green" variant="light">
+                    {t('Logged in')}
+                  </Badge>
+                  <Button
+                    variant="light"
+                    color="red"
+                    size="compact-sm"
+                    leftSection={<ScalableIcon icon={IconLogout} size={14} />}
+                    onClick={logout}
+                  >
+                    {t('Logout')}
+                  </Button>
+                </>
+              ) : oauthLoading ? (
+                <Flex gap="xs" align="center">
+                  <Loader size="xs" />
+                  <Text size="sm" c="chatbox-tertiary">
+                    {t('Waiting for authorization...')}
+                  </Text>
+                  <Button variant="light" color="red" size="compact-sm" onClick={handleCancelOAuth}>
+                    {t('Cancel')}
+                  </Button>
+                </Flex>
+              ) : (
+                <Button
+                  variant="light"
+                  size="sm"
+                  leftSection={<ScalableIcon icon={IconLogin} size={16} />}
+                  onClick={handleOAuthLogin}
+                >
+                  {t('Login with OAuth')}
+                </Button>
+              )}
+            </Flex>
+            {usesResponsesTransportForOAuth && (
+              <Text size="xs" c="chatbox-tertiary">
+                {t(
+                  'When OAuth Login is enabled, OpenAI requests use the Responses transport instead of the legacy Chat Completions transport.'
+                )}
+              </Text>
+            )}
+          </Stack>
+        )}
+
+        {/* API Key */}
+        {!isOAuthOnlyProvider && ![ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio, ''].includes(baseInfo.id) && (
+          <Stack gap="xxs" style={isOAuthActive ? { opacity: 0.5 } : undefined}>
+            <Flex gap="xs" align="center">
+              <Text span fw="600">
+                {t('API Key')}
+              </Text>
+              {isOAuthActive && (
+                <Text span size="xs" c="chatbox-tertiary">
+                  ({t('Using OAuth')})
+                </Text>
+              )}
+            </Flex>
+            <Flex gap="xs" align="center">
+              <PasswordInput
+                flex={1}
+                value={providerSettings?.apiKey || ''}
+                onChange={handleApiKeyChange}
+                disabled={isOAuthActive}
+              />
               <Tooltip
                 disabled={!!providerSettings?.apiKey && displayModels.length > 0}
                 label={
@@ -388,7 +689,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
               >
                 <Button
                   size="sm"
-                  disabled={!providerSettings?.apiKey || displayModels.length === 0}
+                  disabled={isOAuthActive || !providerSettings?.apiKey || displayModels.length === 0}
                   loading={modelTestResult?.testing || false}
                   onClick={() => setShowTestModelSelector(true)}
                 >
@@ -400,16 +701,8 @@ function ProviderSettings({ providerId }: { providerId: string }) {
         )}
 
         {/* API Host */}
-        {[
-          ModelProviderEnum.OpenAI,
-          ModelProviderEnum.OpenAIResponses,
-          ModelProviderEnum.Claude,
-          ModelProviderEnum.Gemini,
-          ModelProviderEnum.Ollama,
-          ModelProviderEnum.LMStudio,
-          '',
-        ].includes(baseInfo.id) && (
-          <Stack gap="xxs">
+        {BUILTIN_API_HOST_PROVIDERS.has(baseInfo.id) && (
+          <Stack gap="xxs" style={isOAuthActive ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
             <Flex justify="space-between" align="flex-end" gap="md">
               <Text span fw="600" className=" whitespace-nowrap">
                 {t('API Host')}
@@ -427,34 +720,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
               />
             </Flex>
             <Text span size="xs" flex="0 1 auto" c="chatbox-secondary">
-              {[ModelProviderEnum.OpenAI, ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio, ''].includes(
-                baseInfo.id
-              )
-                ? normalizeOpenAIApiHostAndPath({
-                    apiHost: providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost,
-                  }).apiHost +
-                  normalizeOpenAIApiHostAndPath({
-                    apiHost: providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost,
-                  }).apiPath
-                : ''}
-              {baseInfo.id === ModelProviderEnum.OpenAIResponses
-                ? normalizeOpenAIResponsesHostAndPath({
-                    apiHost: providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost,
-                    apiPath: providerSettings?.apiPath || baseInfo.defaultSettings?.apiPath,
-                  }).apiHost +
-                  normalizeOpenAIResponsesHostAndPath({
-                    apiHost: providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost,
-                    apiPath: providerSettings?.apiPath || baseInfo.defaultSettings?.apiPath,
-                  }).apiPath
-                : ''}
-              {baseInfo.id === ModelProviderEnum.Claude
-                ? normalizeClaudeHost(providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost || '').apiHost +
-                  normalizeClaudeHost(providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost || '').apiPath
-                : ''}
-              {baseInfo.id === ModelProviderEnum.Gemini
-                ? normalizeGeminiHost(providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost || '').apiHost +
-                  normalizeGeminiHost(providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost || '').apiPath
-                : ''}
+              {normalizedBuiltinApiHost.apiHost + normalizedBuiltinApiHost.apiPath}
             </Text>
           </Stack>
         )}
@@ -519,12 +785,6 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                 })
               }
             />
-
-            <Stack gap="xs">
-              <Text span fw="600" className=" whitespace-nowrap">
-                {t('Improve Network Compatibility')}
-              </Text>
-            </Stack>
           </>
         )}
 
@@ -699,6 +959,89 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                 {t('No models available')}
               </Text>
             )}
+          </Stack>
+        </AdaptiveModal>
+
+        {/* OAuth Code Input Modal */}
+        <AdaptiveModal
+          opened={showCodeInput}
+          onClose={handleCancelOAuth}
+          title={t('Authorization Code')}
+          centered={true}
+          size="md"
+        >
+          <Stack gap="md">
+            {codeInputInstructions && (
+              <Text size="sm" c="chatbox-secondary">
+                {codeInputInstructions}
+              </Text>
+            )}
+            <TextInput
+              value={codeInputValue}
+              onChange={(e) => setCodeInputValue(e.currentTarget.value)}
+              placeholder={t('Paste code here') || ''}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleCodeSubmit()
+              }}
+            />
+            <AdaptiveModal.Actions>
+              <Flex gap="sm" justify="flex-end">
+                <Button variant="default" onClick={handleCancelOAuth}>
+                  {t('Cancel')}
+                </Button>
+                <Button loading={oauthLoading} disabled={!codeInputValue.trim()} onClick={handleCodeSubmit}>
+                  {t('Confirm')}
+                </Button>
+              </Flex>
+            </AdaptiveModal.Actions>
+          </Stack>
+        </AdaptiveModal>
+
+        {/* OAuth Device Code Modal */}
+        <AdaptiveModal
+          opened={showDeviceCode}
+          onClose={handleCancelOAuth}
+          title={t('Device Authorization')}
+          centered={true}
+          size="md"
+          closeOnClickOutside={false}
+        >
+          <Stack gap="md" align="center">
+            <Text size="sm" c="chatbox-secondary" ta="center">
+              {t('Enter the code below on the authorization page, then wait for approval.')}
+            </Text>
+            <Text
+              size="xl"
+              fw={700}
+              ff="monospace"
+              p="md"
+              bg="var(--chatbox-background-secondary)"
+              bd="1px solid var(--chatbox-border-primary)"
+              style={{ borderRadius: 'var(--mantine-radius-md)', letterSpacing: '0.2em', userSelect: 'all' }}
+            >
+              {deviceUserCode}
+            </Text>
+            <Flex align="center" gap="xs">
+              <Loader size="xs" />
+              <Text size="sm" c="chatbox-tertiary">
+                {t('Waiting for authorization...')}
+              </Text>
+            </Flex>
+            <Flex gap="sm">
+              {deviceVerificationUri && (
+                <Button
+                  variant="light"
+                  size="compact-sm"
+                  leftSection={<ScalableIcon icon={IconExternalLink} size={14} />}
+                  onClick={() => platform.openLink(deviceVerificationUri)}
+                >
+                  {t('Open Authorization Page')}
+                </Button>
+              )}
+              <Button variant="light" color="red" size="compact-sm" onClick={handleCancelOAuth}>
+                {t('Cancel')}
+              </Button>
+            </Flex>
           </Stack>
         </AdaptiveModal>
 

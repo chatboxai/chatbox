@@ -269,6 +269,12 @@ export const SessionThreadSchema = z.object({
   compactionPoints: z.array(CompactionPointSchema).optional(),
 })
 
+// Image source schema
+export const ImageSourceSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('url'), url: z.string() }),
+  z.object({ type: z.literal('storage-key'), storageKey: z.string() }),
+])
+
 export const SessionSchema = z.object({
   id: z.string(),
   type: SessionTypeSchema.optional(),
@@ -279,6 +285,7 @@ export const SessionSchema = z.object({
   hidden: z.boolean().optional(), // Hidden from session list (e.g., migrated picture sessions)
   copilotId: z.string().optional(),
   assistantAvatarKey: z.string().optional(),
+  backgroundImage: ImageSourceSchema.optional(),
   settings: SessionSettingsSchema.optional(),
   threads: z.array(SessionThreadSchema).optional(),
   threadName: z.string().optional(),
@@ -293,6 +300,7 @@ export const SessionMetaSchema = SessionSchema.pick({
   hidden: true,
   assistantAvatarKey: true,
   picUrl: true,
+  backgroundImage: true,
   type: true,
 })
 

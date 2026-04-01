@@ -10,7 +10,7 @@
  * 2. pnpm test:model-provider
  */
 import type { ModelMessage } from 'ai'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import TestPlatform from '../../../src/renderer/platform/test_platform'
 import { settings as getDefaultSettings, newConfigs, SystemProviders } from '../../../src/shared/defaults'
 import { aiProviderNameHash, getModel } from '../../../src/shared/models'
@@ -18,7 +18,6 @@ import type AbstractAISDKModel from '../../../src/shared/models/abstract-ai-sdk'
 import {
   type ModelProvider,
   ModelProviderEnum,
-  type ProviderBaseInfo,
   type ProviderModelInfo,
   type SessionSettings,
   type Settings,
@@ -101,7 +100,8 @@ function runProviderTest(providerName: ModelProviderEnum) {
 
   describe.runIf(apiKey && models.length)(`Provider ${providerName} `, async () => {
     const mockDependencies = await createMockModelDependencies(platform, sentry)
-    const systemProvider: ProviderBaseInfo = SystemProviders().find((p) => p.id === providerName)!
+    const systemProvider = SystemProviders().find((p) => p.id === providerName)
+    if (!systemProvider) throw new Error(`Provider ${providerName} not found in SystemProviders`)
     const globalSettings: Settings = {
       ...getDefaultSettings(),
       providers: {

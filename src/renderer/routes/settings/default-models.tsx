@@ -5,8 +5,9 @@ import { IconSelector } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { forwardRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import ModelSelector from '@/components/ModelSelector'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
+import ModelSelector from '@/components/ModelSelector'
+import { enrichModelsFromRegistry, useModelRegistryVersion } from '@/packages/model-registry'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 export const Route = createFileRoute('/settings/default-models')({
@@ -174,19 +175,27 @@ const ModelSelectContent = forwardRef<
   HTMLButtonElement,
   { provider?: string; model?: string; autoText?: string; onClick?: () => void }
 >(({ provider, model, autoText, onClick }, ref) => {
+  useModelRegistryVersion()
+
   const { t } = useTranslation()
   const customProviders = useSettingsStore((state) => state.customProviders)
   const providers = useSettingsStore((state) => state.providers)
+  const modelOptions = useMemo(() => {
+    if (!provider) return []
+    const rawModels =
+      providers?.[provider]?.models ||
+      SystemProviders().find((candidate) => candidate.id === provider)?.defaultSettings?.models ||
+      []
+    return enrichModelsFromRegistry(rawModels, provider)
+  }, [provider, providers])
   const displayText = useMemo(
     () =>
       !provider || !model
         ? autoText || t('Auto')
         : ([...SystemProviders(), ...(customProviders || [])].find((p) => p.id === provider)?.name || provider) +
           '/' +
-          ((
-            providers?.[provider]?.models || SystemProviders().find((p) => p.id === provider)?.defaultSettings?.models
-          )?.find((m) => m.modelId === model)?.nickname || model),
-    [provider, model, autoText, t, customProviders, providers]
+          (modelOptions.find((candidate) => candidate.modelId === model)?.nickname || model),
+    [provider, model, autoText, t, customProviders, modelOptions]
   )
   return (
     <Flex

@@ -1,5 +1,5 @@
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Flex, Title, Tooltip } from '@mantine/core'
+import { ActionIcon, Badge, Flex, Text, Tooltip } from '@mantine/core'
 import type { Session } from '@shared/types'
 import { IconLayoutSidebarLeftExpand, IconMenu2, IconPencil } from '@tabler/icons-react'
 import clsx from 'clsx'
@@ -25,22 +25,18 @@ export default function Header(props: { session: Session }) {
 
   const { session: currentSession } = props
 
-  // 会话名称自动生成
   useEffect(() => {
     const autoGenerateTitle = settingActions.getAutoGenerateTitle()
     if (!autoGenerateTitle) {
       return
     }
 
-    // 检查是否有正在生成的消息
     const hasGeneratingMessage = currentSession.messages.some((msg) => msg.generating)
 
-    // 如果有消息正在生成，或者消息数量少于2条，不触发名称生成
     if (hasGeneratingMessage || currentSession.messages.length < 2) {
       return
     }
 
-    // 触发名称生成（在 sessionActions 中进行去重和延迟处理）
     if (currentSession.name === 'Untitled') {
       scheduleGenerateNameAndThreadName(currentSession.id)
     } else if (!currentSession.threadName) {
@@ -57,7 +53,12 @@ export default function Header(props: { session: Session }) {
 
   return (
     <>
-      <Flex h={54} align="center" px="sm" className={'flex-none title-bar'}>
+      <Flex
+        h={48}
+        align="center"
+        px="md"
+        className={clsx('flex-none title-bar', isSmallScreen ? 'bg-chatbox-background-primary' : '')}
+      >
         {(!showSidebar || isSmallScreen) && (
           <Flex align="center" className={needRoomForMacWindowControls ? 'pl-20' : ''}>
             <ActionIcon
@@ -65,7 +66,7 @@ export default function Header(props: { session: Session }) {
               variant="subtle"
               size={isSmallScreen ? 24 : 20}
               color={isSmallScreen ? 'chatbox-secondary' : 'chatbox-tertiary'}
-              mr="sm"
+              mr="xs"
               onClick={() => setShowSidebar(!showSidebar)}
             >
               {isSmallScreen ? <IconMenu2 /> : <IconLayoutSidebarLeftExpand />}
@@ -73,22 +74,38 @@ export default function Header(props: { session: Session }) {
           </Flex>
         )}
 
-        <Flex align="center" gap={'xxs'} flex={1} {...(isSmallScreen ? { justify: 'center', pl: 28, pr: 8 } : {})}>
-          <Title order={4} fz={!isSmallScreen ? 20 : undefined} lineClamp={1}>
+        <Flex
+          align="center"
+          flex={1}
+          className="min-w-0"
+          {...(isSmallScreen ? { justify: 'center', pl: 28, pr: 8 } : {})}
+        >
+          <Text fw={600} size="18px" lineClamp={1}>
             {currentSession?.name}
-          </Title>
-
+          </Text>
+          {currentSession?.threadName && currentSession.threadName !== currentSession.name && (
+            <Badge
+              size="xs"
+              variant="light"
+              color="gray"
+              ml={6}
+              maw={180}
+              className="flex-shrink-0"
+              classNames={{ label: 'truncate' }}
+            >
+              {currentSession.threadName}
+            </Badge>
+          )}
           <Tooltip label={t('Customize settings for the current conversation')}>
             <ActionIcon
               className="controls"
               variant="subtle"
               color="chatbox-tertiary"
-              size={20}
-              onClick={() => {
-                editCurrentSession()
-              }}
+              size={isSmallScreen ? 20 : 16}
+              ml={4}
+              onClick={editCurrentSession}
             >
-              <ScalableIcon icon={IconPencil} size={20} />
+              <ScalableIcon icon={IconPencil} size={14} />
             </ActionIcon>
           </Tooltip>
         </Flex>

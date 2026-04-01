@@ -179,3 +179,12 @@ electron-builder.env
 
 .env.sentry-build-plugin
 .sisyphus/
+temp.md
+.playwright-cli/
+node-compile-cache/
+
+*storybook.log
+storybook-static
+.gstack/
+.worktrees/
+.claude/worktrees/

@@ -33,7 +33,7 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { getLogger } from '@/lib/utils'
 import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { createAndGenerate, retryGeneration } from '@/stores/imageGenerationActions'
+import { cancelGeneration, createAndGenerate, resumeGeneration, retryGeneration } from '@/stores/imageGenerationActions'
 import {
   deleteRecord,
   IMAGE_GEN_LIST_QUERY_KEY,
@@ -43,10 +43,10 @@ import {
   useImageGenerationHistory,
   useImageGenerationRecord,
 } from '@/stores/imageGenerationStore'
-import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { queryClient } from '@/stores/queryClient'
+import { settingsStore } from '@/stores/settingsStore'
+import * as toastActions from '@/stores/toastActions'
 import {
-  blobToDataUrl,
   CHATBOXAI_IMAGE_MODEL_IDS,
   GEMINI_IMAGE_MODEL_IDS,
   getRatioOptionsForModel,
@@ -211,8 +211,11 @@ function ImageCreatorPage() {
 
   const [prompt, setPrompt] = useState('')
   const [referenceImages, setReferenceImages] = useState<
-    { storageKey: string; dataUrl: string; sourceRecordId?: string }[]
+    { storageKey: string; sourceRecordId?: string; isTempUpload?: boolean }[]
   >([])
+  const referenceImagesRef = useRef(referenceImages)
+  referenceImagesRef.current = referenceImages
+  const tempUploadKeysRef = useRef<Set<string>>(new Set())
   const [showHistory, setShowHistory] = useState(true)
   const [showMobileHistory, setShowMobileHistory] = useState(false)
   const [selectedProvider, setSelectedProvider] = useState<string>(ModelProviderEnum.ChatboxAI)
@@ -245,18 +248,34 @@ function ImageCreatorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Restore last used model on mount
-  useEffect(() => {
-    const lastUsed = lastUsedModelStore.getState().picture
-    if (lastUsed) {
-      setSelectedProvider(lastUsed.provider)
-      setSelectedModel(lastUsed.modelId)
-    }
+  const cleanupTempUploads = useCallback(async () => {
+    const keys = Array.from(tempUploadKeysRef.current)
+    tempUploadKeysRef.current.clear()
+    await Promise.all(
+      keys.map(async (key) => {
+        try {
+          await storage.delBlob(key)
+        } catch (e) {
+          log.error('Failed to cleanup temp reference image blob:', key, e)
+        }
+      })
+    )
   }, [])
+
+  // Default model is always ChatboxAI "GPT Image" (provider=ChatboxAI, modelId='')
+  // No need to restore from lastUsedModelStore
+
+  // Cleanup orphan temp uploads if user leaves the page mid-way.
+  useEffect(() => {
+    return () => {
+      void cleanupTempUploads()
+    }
+  }, [cleanupTempUploads])
 
   const handleModelSelect = useCallback((provider: string, model: string) => {
     setSelectedProvider(provider)
     setSelectedModel(model)
+    // lastUsedModelStore.getState().setPictureModel(provider, model)
 
     // Reset ratio to 'auto' if current ratio is not supported by the new model
     const newRatioOptions = getRatioOptionsForModel(model)
@@ -266,17 +285,30 @@ function ImageCreatorPage() {
   const handleImageUpload = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return
 
+    let available = MAX_REFERENCE_IMAGES - referenceImagesRef.current.length
+    if (available <= 0) return
+
     for (const file of Array.from(files)) {
       if (!file.type.startsWith('image/')) continue
+      if (available <= 0) break
+      available--
 
       const reader = new FileReader()
       reader.onload = async (e) => {
         const dataUrl = e.target?.result as string
         const storageKey = StorageKeyGenerator.picture('image-creator-ref')
-        await storage.setBlob(storageKey, dataUrl)
+        try {
+          await storage.setBlob(storageKey, dataUrl)
+        } catch (err) {
+          log.error('Failed to store uploaded reference image:', err)
+          return
+        }
+        // Prime blob cache so preview doesn't need to refetch immediately.
+        queryClient.setQueryData(['blob', storageKey], dataUrl)
+        tempUploadKeysRef.current.add(storageKey)
         setReferenceImages((prev) => {
           if (prev.length >= MAX_REFERENCE_IMAGES) return prev
-          return [...prev, { storageKey, dataUrl }]
+          return [...prev, { storageKey, isTempUpload: true }]
         })
       }
       reader.onerror = () => {
@@ -287,11 +319,21 @@ function ImageCreatorPage() {
   }, [])
 
   const handleRemoveReferenceImage = useCallback((storageKey: string) => {
+    const current = referenceImagesRef.current.find((img) => img.storageKey === storageKey)
     setReferenceImages((prev) => prev.filter((img) => img.storageKey !== storageKey))
+    if (current?.isTempUpload) {
+      tempUploadKeysRef.current.delete(storageKey)
+      void storage.delBlob(storageKey).catch((e) => log.error('Failed to delete temp reference image blob:', e))
+    }
   }, [])
 
   const handleSubmit = useCallback(async () => {
     if (!prompt.trim() || isCurrentlyGenerating) return
+
+    if (selectedProvider === ModelProviderEnum.ChatboxAI && !settingsStore.getState().licenseKey) {
+      toastActions.add(t('Please log in to Chatbox AI first'))
+      return
+    }
 
     try {
       // Collect all unique source record IDs from reference images (DAG support)
@@ -311,16 +353,23 @@ function ImageCreatorPage() {
         parentIds: parentIds.length > 0 ? parentIds : undefined,
       })
 
+      // Temp uploads are now "owned" by the created record; don't delete them on page leave.
+      tempUploadKeysRef.current.clear()
       setPrompt('')
       setReferenceImages([])
     } catch (error) {
       log.error('Failed to generate image:', error)
     }
-  }, [prompt, referenceImages, selectedProvider, selectedModel, selectedRatio, isCurrentlyGenerating])
+  }, [prompt, referenceImages, selectedProvider, selectedModel, selectedRatio, isCurrentlyGenerating, t])
 
   const handleQuickPromptSubmit = useCallback(
     async (quickPrompt: string) => {
       if (isCurrentlyGenerating) return
+
+      if (selectedProvider === ModelProviderEnum.ChatboxAI && !settingsStore.getState().licenseKey) {
+        toastActions.add(t('Please log in to Chatbox AI first'))
+        return
+      }
 
       try {
         await createAndGenerate({
@@ -337,41 +386,34 @@ function ImageCreatorPage() {
         log.error('Failed to generate image:', error)
       }
     },
-    [selectedProvider, selectedModel, selectedRatio, isCurrentlyGenerating]
+    [selectedProvider, selectedModel, selectedRatio, isCurrentlyGenerating, t]
   )
 
   const handleUseAsReference = useCallback(async (storageKey: string, sourceRecordId?: string) => {
-    const blob = await storage.getBlob(storageKey)
-    if (blob) {
-      setReferenceImages((prev) => {
-        if (prev.length >= MAX_REFERENCE_IMAGES) return prev
-        return [...prev, { storageKey, dataUrl: blobToDataUrl(blob), sourceRecordId }]
-      })
-    }
+    setReferenceImages((prev) => {
+      if (prev.length >= MAX_REFERENCE_IMAGES) return prev
+      return [...prev, { storageKey, sourceRecordId, isTempUpload: false }]
+    })
   }, [])
 
-  const handleHistoryClick = useCallback(async (record: ImageGeneration) => {
-    imageGenerationStore.getState().setCurrentRecordId(record.id)
-    setPrompt(record.prompt)
+  const handleHistoryClick = useCallback(
+    async (record: ImageGeneration) => {
+      await cleanupTempUploads()
+      imageGenerationStore.getState().setCurrentRecordId(record.id)
+      setPrompt(record.prompt)
 
-    const refs = await Promise.all(
-      record.referenceImages.map(async (key) => {
-        const blob = await storage.getBlob(key)
-        if (!blob) return null
-        return { storageKey: key, dataUrl: blobToDataUrl(blob) }
-      })
-    )
-    setReferenceImages(
-      refs.filter((r): r is { storageKey: string; dataUrl: string; sourceRecordId?: string } => r !== null)
-    )
-  }, [])
+      setReferenceImages(record.referenceImages.map((key) => ({ storageKey: key, isTempUpload: false })))
+    },
+    [cleanupTempUploads]
+  )
 
   const handleNewCreation = useCallback(() => {
+    void cleanupTempUploads()
     imageGenerationStore.getState().setCurrentRecordId(null)
     setPrompt('')
     setReferenceImages([])
     textareaRef.current?.focus()
-  }, [])
+  }, [cleanupTempUploads])
 
   const handleLoadMoreHistory = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
@@ -408,15 +450,17 @@ function ImageCreatorPage() {
     const groups: { label: string; providerId: string; models: { modelId: string; displayName: string }[] }[] = []
 
     const chatboxProvider = providers.find((p) => p.id === ModelProviderEnum.ChatboxAI)
-    if (chatboxProvider) {
-      const providerModels = chatboxProvider.models || chatboxProvider.defaultSettings?.models || []
-      const models = getAvailableImageModels(providerModels, CHATBOXAI_IMAGE_MODEL_IDS)
-      groups.push({
-        label: 'Chatbox AI',
-        providerId: ModelProviderEnum.ChatboxAI,
-        models: [CHATBOXAI_DEFAULT_IMAGE_MODEL, ...models],
-      })
-    }
+    const chatboxModels = chatboxProvider
+      ? getAvailableImageModels(
+          chatboxProvider.models || chatboxProvider.defaultSettings?.models || [],
+          CHATBOXAI_IMAGE_MODEL_IDS
+        )
+      : []
+    groups.push({
+      label: 'Chatbox AI',
+      providerId: ModelProviderEnum.ChatboxAI,
+      models: [CHATBOXAI_DEFAULT_IMAGE_MODEL, ...chatboxModels],
+    })
 
     const geminiProvider = providers.find((p) => p.id === ModelProviderEnum.Gemini)
     if (geminiProvider) {
@@ -450,7 +494,7 @@ function ImageCreatorPage() {
     return groups
   }, [providers])
 
-  // Workaround: DALL-E-3 was removed in new version, fallback to GPT Image
+  // Workaround: DALL-E-3 was removed in new version, fallback to default
   useEffect(() => {
     if (selectedModel === 'DALL-E-3') {
       setSelectedModel('')
@@ -461,7 +505,11 @@ function ImageCreatorPage() {
     const provider = providers.find((p) => p.id === selectedProvider)
     const providerModels = provider?.models || provider?.defaultSettings?.models || []
     const model = providerModels.find((m) => m.modelId === selectedModel)
-    const modelName = model?.nickname || IMAGE_MODEL_FALLBACK_NAMES[selectedModel] || selectedModel
+    const modelName =
+      model?.nickname ||
+      IMAGE_MODEL_FALLBACK_NAMES[selectedModel] ||
+      selectedModel ||
+      CHATBOXAI_DEFAULT_IMAGE_MODEL.displayName
 
     if (selectedProvider === ModelProviderEnum.ChatboxAI) {
       return modelName
@@ -512,17 +560,25 @@ function ImageCreatorPage() {
                   {currentRecord.generatedImages.length > 0 && (
                     <Flex justify="center" w="100%">
                       <GeneratedImagesGallery
-                        storageKeys={currentRecord.generatedImages}
-                        onUseAsReference={(storageKey) => handleUseAsReference(storageKey, currentRecord.id)}
+                        images={currentRecord.generatedImages}
+                        onUseAsReference={(urlOrKey) => handleUseAsReference(urlOrKey, currentRecord.id)}
                       />
                     </Flex>
                   )}
 
                   <PromptDisplay
                     prompt={currentRecord.prompt}
-                    modelDisplayName={modelDisplayName}
+                    model={currentRecord.model}
                     referenceImageCount={currentRecord.referenceImages.length}
                   />
+
+                  {currentRecord.status === 'generating' && currentRecord.taskId && !isCurrentlyGenerating && (
+                    <Flex justify="center" w="100%">
+                      <Button variant="light" onClick={() => void resumeGeneration(currentRecord.id)}>
+                        {t('Resume Generation')}
+                      </Button>
+                    </Flex>
+                  )}
 
                   {currentRecord.status === 'error' && (
                     <ImageGenerationErrorTips
@@ -590,17 +646,17 @@ function ImageCreatorPage() {
                       }}
                     />
 
-                    {/* Send Button */}
+                    {/* Send / Stop Button */}
                     <ActionIcon
                       size={32}
                       variant="filled"
                       color={isCurrentlyGenerating ? 'dark' : 'chatbox-brand'}
                       radius="xl"
-                      onClick={isCurrentlyGenerating ? undefined : handleSubmit}
+                      onClick={isCurrentlyGenerating ? cancelGeneration : handleSubmit}
                       disabled={!prompt.trim() && !isCurrentlyGenerating}
                       className={`shrink-0 mb-1 ${!prompt.trim() && !isCurrentlyGenerating ? 'disabled:!opacity-100 !text-white' : ''}`}
                       style={{
-                        cursor: isCurrentlyGenerating ? 'default' : undefined,
+                        cursor: isCurrentlyGenerating ? 'pointer' : undefined,
                         ...(!prompt.trim() && !isCurrentlyGenerating
                           ? { backgroundColor: 'rgba(222, 226, 230, 1)' }
                           : {}),

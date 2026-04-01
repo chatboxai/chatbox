@@ -332,7 +332,7 @@ const MessageEditModal = ({
               {t('Save & Resend')}
             </Button>
           )}
-          <Button onClick={onSave}>{t('save')}</Button>
+          <Button onClick={onSave}>{t('Save')}</Button>
         </AdaptiveModal.Actions>
       </AdaptiveModal>
 

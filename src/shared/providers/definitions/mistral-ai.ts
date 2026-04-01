@@ -6,6 +6,18 @@ export const mistralAIProvider = defineProvider({
   id: ModelProviderEnum.MistralAI,
   name: 'Mistral AI',
   type: ModelProviderType.OpenAI,
+  modelsDevProviderId: 'mistral',
+  curatedModelIds: [
+    'pixtral-large-latest',
+    'mistral-large-latest',
+    'mistral-medium-latest',
+    'mistral-small-latest',
+    'magistral-medium-latest',
+    'magistral-small-latest',
+    'devstral-medium-latest',
+    'codestral-latest',
+    'mistral-embed',
+  ],
   urls: {
     website: 'https://mistral.ai',
   },
@@ -41,6 +53,11 @@ export const mistralAIProvider = defineProvider({
         modelId: 'magistral-small-latest',
         contextWindow: 32_000,
         capabilities: ['reasoning', 'tool_use'],
+      },
+      {
+        modelId: 'devstral-medium-latest',
+        contextWindow: 128_000,
+        capabilities: ['tool_use'],
       },
       {
         modelId: 'codestral-latest',

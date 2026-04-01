@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/react'
+import { getProviderDefinition } from '../../../shared/providers'
 import type {
   ModelProvider,
   ProviderBaseInfo,
@@ -6,6 +7,12 @@ import type {
   ProviderSettings,
   SessionType,
 } from '../../../shared/types'
+import {
+  enrichModelsFromRegistry,
+  getDiscoveredModels,
+  getProviderModelsFromRegistry,
+  getRegistry,
+} from '../../packages/model-registry'
 import * as remote from '../../packages/remote'
 import type { ModelSettingUtil } from './interface'
 
@@ -33,10 +40,15 @@ export default abstract class BaseConfig implements ModelSettingUtil {
       })
   }
 
-  // 有三个来源：本地写死、后端配置、服务商模型列表
+  // 有四个来源：本地写死、后端配置、服务商模型列表、models.dev registry（fallback + enrichment）
   public async getMergeOptionGroups(providerSettings: ProviderSettings): Promise<ProviderModelInfo[]> {
+    const definition = getProviderDefinition(this.provider)
+    if (definition?.modelsDevProviderId) {
+      await getRegistry()
+    }
+
     const localOptionGroups = providerSettings.models || []
-    const [remoteModels, models] = await Promise.all([
+    const [remoteModels, providerApiModels] = await Promise.all([
       this.listRemoteProviderModels().catch((e) => {
         Sentry.captureException(e)
         return []
@@ -46,14 +58,38 @@ export default abstract class BaseConfig implements ModelSettingUtil {
         return []
       }),
     ])
-    // 确保两个数组都是有效的数组
+
     const safeRemoteModels = Array.isArray(remoteModels) ? remoteModels : []
-    const safeProviderModels = Array.isArray(models) ? models : []
+    let safeProviderModels = Array.isArray(providerApiModels) ? providerApiModels : []
+
+    // Fallback: 当 provider API 返回空时，使用 models.dev registry 的 curated model list
+    let usedRegistryFallback = false
+    if (safeProviderModels.length === 0 && definition?.modelsDevProviderId && definition?.curatedModelIds) {
+      const registryModels = getProviderModelsFromRegistry(this.provider)
+      if (registryModels.length > 0) {
+        // 只使用 curated models 作为 fallback（不包含所有 registry models）
+        const curatedSet = new Set(definition.curatedModelIds.map((id) => id.toLowerCase()))
+        safeProviderModels = registryModels.filter((m) => curatedSet.has(m.modelId.toLowerCase()))
+        usedRegistryFallback = true
+      }
+    }
+
     const remoteOptionGroups = [...safeRemoteModels, ...safeProviderModels]
     const mergedModels = this.mergeOptionGroups(localOptionGroups, remoteOptionGroups)
 
-    // 尝试获取模型信息来丰富模型数据
-    const enrichedModels = await this.enrichModelsWithInfo(mergedModels)
+    // 使用 models.dev registry 丰富模型元数据（同步，无网络调用）
+    const enrichedModels = enrichModelsFromRegistry(mergedModels, this.provider)
+
+    // 追加近期发布的 discovered models（不在 curated list 中的新 model）
+    // 仅当 provider API 成功返回时才追加（fallback 路径下不追加未经确认的模型）
+    if (!usedRegistryFallback && definition?.modelsDevProviderId && definition?.curatedModelIds) {
+      const existingIds = enrichedModels.map((m) => m.modelId)
+      const discovered = getDiscoveredModels(this.provider, definition.curatedModelIds, existingIds)
+      if (discovered.length > 0) {
+        enrichedModels.push(...discovered)
+      }
+    }
+
     return enrichedModels
   }
 
@@ -90,50 +126,5 @@ export default abstract class BaseConfig implements ModelSettingUtil {
     }
 
     return mergedModels
-  }
-
-  private async enrichModelsWithInfo(models: ProviderModelInfo[]): Promise<ProviderModelInfo[]> {
-    if (models.length === 0) {
-      return models
-    }
-
-    try {
-      // 检查模型信息是否完整，只查询信息不完整的模型
-      const incompleteModels = models.filter(
-        (model) => !model.type || !model.capabilities || !model.contextWindow || !model.maxOutput
-      )
-
-      if (incompleteModels.length === 0) {
-        // 所有模型信息都完整，无需API请求
-        return models
-      }
-
-      // 收集需要查询的模型ID，最多100个
-      const modelIds = incompleteModels.map((model) => model.modelId).slice(0, 100)
-
-      // 调用API获取模型信息
-      const modelsInfoData = await remote.getProviderModelsInfo({ modelIds })
-
-      // 用获取到的信息丰富现有模型数据，只添加缺失的字段
-      return models.map((model) => {
-        const modelInfo = modelsInfoData[model.modelId]
-        if (modelInfo) {
-          return {
-            ...model,
-            type: model.type || modelInfo.type,
-            capabilities: model.capabilities || modelInfo.capabilities,
-            contextWindow: model.contextWindow || modelInfo.contextWindow,
-            maxOutput: model.maxOutput || modelInfo.maxOutput,
-            nickname: model.nickname || modelInfo.nickname,
-            labels: model.labels || modelInfo.labels,
-          }
-        }
-        return model
-      })
-    } catch (error) {
-      // 如果获取模型信息失败，返回原始模型列表
-      Sentry.captureException(error)
-      return models
-    }
   }
 }

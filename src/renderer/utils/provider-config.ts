@@ -1,6 +1,9 @@
+import { isBuiltinProviderId } from '@shared/providers'
 import type { ProviderInfo, ProviderSettings } from '@shared/types'
 import { ModelProviderEnum, ModelProviderType } from '@shared/types'
 import { z } from 'zod'
+
+export const CUSTOM_PROVIDER_ID_CONFLICT = 'builtin-provider-id-conflict'
 
 const modelInfoSchema = z.object({
   modelId: z.string(),
@@ -45,19 +48,16 @@ const ProviderConfigSchema = z.union([BuiltinProviderConfigSchema, CustomProvide
 
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>
 
+function assertCustomProviderIdIsAvailable(providerId: string): void {
+  if (isBuiltinProviderId(providerId)) {
+    throw new Error(CUSTOM_PROVIDER_ID_CONFLICT)
+  }
+}
+
 function parseProviderConfig(json: unknown): ProviderInfo | (ProviderSettings & { id: ModelProviderEnum }) | undefined {
-  const parsed = ProviderConfigSchema.parse(json)
-  if (parsed.id in ModelProviderEnum) {
-    // builtin provider
-    const providerSettings: ProviderSettings & { id: ModelProviderEnum } = {
-      id: parsed.id as ModelProviderEnum,
-      apiHost: parsed.settings.apiHost,
-      apiKey: parsed.settings.apiKey,
-    }
-    return providerSettings
-  } else {
-    const parsedCustom = parsed as z.infer<typeof CustomProviderConfigSchema>
-    // Convert to ProviderInfo format
+  if (json && typeof json === 'object' && 'isCustom' in json && json.isCustom === true) {
+    const parsedCustom = CustomProviderConfigSchema.parse(json)
+    assertCustomProviderIdIsAvailable(parsedCustom.id)
     const providerType =
       parsedCustom.type === 'openai'
         ? ModelProviderType.OpenAI
@@ -81,6 +81,39 @@ function parseProviderConfig(json: unknown): ProviderInfo | (ProviderSettings & 
 
     return providerInfo
   }
+
+  const parsed = ProviderConfigSchema.parse(json)
+  if (Object.values(ModelProviderEnum).includes(parsed.id as ModelProviderEnum)) {
+    // builtin provider
+    const providerSettings: ProviderSettings & { id: ModelProviderEnum } = {
+      id: parsed.id as ModelProviderEnum,
+      apiHost: parsed.settings.apiHost,
+      apiKey: parsed.settings.apiKey,
+    }
+    return providerSettings
+  }
+
+  const parsedCustom = parsed as z.infer<typeof CustomProviderConfigSchema>
+  assertCustomProviderIdIsAvailable(parsedCustom.id)
+  const providerType =
+    parsedCustom.type === 'openai'
+      ? ModelProviderType.OpenAI
+      : parsedCustom.type === 'openai-responses'
+        ? ModelProviderType.OpenAIResponses
+        : ModelProviderType.Claude
+
+  return {
+    id: parsedCustom.id,
+    name: parsedCustom.name,
+    type: providerType,
+    urls: parsedCustom.urls,
+    iconUrl: parsedCustom.iconUrl,
+    isCustom: true,
+    apiHost: parsedCustom.settings.apiHost,
+    apiPath: parsedCustom.settings.apiPath,
+    apiKey: parsedCustom.settings.apiKey,
+    models: parsedCustom.settings.models,
+  }
 }
 export function parseProviderFromJson(
   text: string
@@ -99,7 +132,16 @@ export function parseProviderFromJson(
 
 export function validateProviderConfig(config: unknown): ProviderConfig | undefined {
   try {
-    return ProviderConfigSchema.parse(config)
+    if (config && typeof config === 'object' && 'isCustom' in config && config.isCustom === true) {
+      const parsed = CustomProviderConfigSchema.parse(config)
+      assertCustomProviderIdIsAvailable(parsed.id)
+      return parsed
+    }
+    const parsed = ProviderConfigSchema.parse(config)
+    if (!Object.values(ModelProviderEnum).includes(parsed.id as ModelProviderEnum)) {
+      assertCustomProviderIdIsAvailable(parsed.id)
+    }
+    return parsed
   } catch (err) {
     // In test environment, don't log expected errors
     if (process.env.NODE_ENV !== 'test') {

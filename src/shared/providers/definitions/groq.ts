@@ -6,6 +6,15 @@ export const groqProvider = defineProvider({
   id: ModelProviderEnum.Groq,
   name: 'Groq',
   type: ModelProviderType.OpenAI,
+  modelsDevProviderId: 'groq',
+  curatedModelIds: [
+    'meta-llama/llama-4-scout-17b-16e-instruct',
+    'meta-llama/llama-4-maverick-17b-128e-instruct',
+    'llama-3.3-70b-versatile',
+    'moonshotai/kimi-k2-instruct-0905',
+    'qwen/qwen3-32b',
+    'llama-3.1-8b-instant',
+  ],
   urls: {
     website: 'https://groq.com/',
   },
@@ -13,21 +22,33 @@ export const groqProvider = defineProvider({
     apiHost: 'https://api.groq.com/openai',
     models: [
       {
+        modelId: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        contextWindow: 131_072,
+        capabilities: ['vision', 'tool_use'],
+      },
+      {
+        modelId: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+        contextWindow: 131_072,
+        capabilities: ['vision', 'tool_use'],
+      },
+      {
         modelId: 'llama-3.3-70b-versatile',
         contextWindow: 131_072,
-        maxOutput: 32_768,
         capabilities: ['tool_use'],
       },
       {
-        modelId: 'moonshotai/kimi-k2-instruct',
-        contextWindow: 131_072,
-        maxOutput: 16_384,
+        modelId: 'moonshotai/kimi-k2-instruct-0905',
+        contextWindow: 262_144,
         capabilities: ['tool_use'],
       },
       {
         modelId: 'qwen/qwen3-32b',
         contextWindow: 131_072,
-        maxOutput: 40_960,
+        capabilities: ['tool_use'],
+      },
+      {
+        modelId: 'llama-3.1-8b-instant',
+        contextWindow: 131_072,
         capabilities: ['tool_use'],
       },
     ],

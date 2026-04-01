@@ -73,7 +73,7 @@ function AdaptiveModalCloseButton(props: ButtonProps & HTMLAttributes<HTMLButton
 
   return (
     <Button color="chatbox-gray" variant="light" {...props}>
-      {props.children || t('cancel')}
+      {props.children || t('Cancel')}
     </Button>
   )
 }

@@ -21,6 +21,9 @@
     width: 100%;
     max-width: 40rem;
   }
+  .msg-content {
+    overflow-x: auto;
+  }
 }
 
 /* // markdown table */

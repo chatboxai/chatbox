@@ -73,6 +73,26 @@ describe('provider-config', () => {
       expect(result?.apiKey).toBe('sk-test-key')
     })
 
+    it('should reject explicitly custom configs when the id matches a builtin provider', () => {
+      const configJson = JSON.stringify({
+        isCustom: true,
+        id: ModelProviderEnum.OpenAI,
+        name: 'My OpenAI Mirror',
+        type: 'openai',
+        urls: {
+          website: 'https://example.com',
+        },
+        settings: {
+          apiHost: 'https://mirror.example.com',
+          apiKey: 'mirror-key',
+        },
+      })
+
+      const result = parseProviderFromJson(configJson)
+
+      expect(result).toBeUndefined()
+    })
+
     it('should handle minimal valid provider config', () => {
       const configJson = JSON.stringify({
         id: 'minimal-provider',
@@ -346,6 +366,20 @@ describe('provider-config', () => {
       }
 
       const result = validateProviderConfig(config)
+
+      expect(result).toBeUndefined()
+    })
+
+    it('should reject custom configs that reuse builtin provider ids', () => {
+      const result = validateProviderConfig({
+        isCustom: true,
+        id: ModelProviderEnum.OpenAI,
+        name: 'Conflicting OpenAI Mirror',
+        type: 'openai',
+        settings: {
+          apiHost: 'https://mirror.example.com',
+        },
+      })
 
       expect(result).toBeUndefined()
     })

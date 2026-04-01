@@ -68,7 +68,7 @@ export default function RemoteDialogWindow() {
         </DialogContentText>
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => onClose()}>{t('cancel')}</Button>
+        <Button onClick={() => onClose()}>{t('Cancel')}</Button>
       </DialogActions>
     </Dialog>
   )

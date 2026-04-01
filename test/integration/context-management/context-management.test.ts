@@ -21,7 +21,7 @@ import type {
 } from '../../../src/shared/types/session'
 import type { SessionSettings, Settings } from '../../../src/shared/types/settings'
 
-vi.mock('../../../src/renderer/packages/model-context', () => ({
+vi.mock('../../../src/renderer/packages/model-registry', () => ({
   getModelContextWindowSync: vi.fn((modelId: string) => {
     const contextWindows: Record<string, number> = {
       'gpt-4o': 128_000,

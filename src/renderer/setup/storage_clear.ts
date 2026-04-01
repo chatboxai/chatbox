@@ -63,6 +63,10 @@ export async function tickStorageTask() {
     if (session.assistantAvatarKey) {
       needDeletedSet.delete(session.assistantAvatarKey)
     }
+    // 会话背景图片不需要删除
+    if (session.backgroundImage?.type === 'storage-key') {
+      needDeletedSet.delete(session.backgroundImage.storageKey)
+    }
   }
 
   // 用户头像不需要删除
@@ -73,6 +77,10 @@ export async function tickStorageTask() {
   // 助手头像不需要删除
   if (settings.defaultAssistantAvatarKey) {
     needDeletedSet.delete(settings.defaultAssistantAvatarKey)
+  }
+  // 背景图片不需要删除
+  if (settings.backgroundImageKey) {
+    needDeletedSet.delete(settings.backgroundImageKey)
   }
 
   // Image Creator 的图片存储在独立的 ImageGenerationStorage 中，不在 chat sessions 里，不应被清理

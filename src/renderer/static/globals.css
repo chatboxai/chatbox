@@ -282,6 +282,9 @@ html[data-need-room-for-mac-controls="true"] .pswp__counter {
 html[data-need-room-for-windows-controls="true"] .pswp__top-bar {
   padding-right: 9rem;
 }
+.pswp {
+  pointer-events: auto;
+}
 
 .scrollbar-custom::-webkit-scrollbar {
   width: 12px !important;

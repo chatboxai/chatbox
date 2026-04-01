@@ -3,14 +3,15 @@
   "productName": "xyz.chatboxapp.ce",
   "version": "0.0.1",
   "engines": {
-    "node": "20.x",
-    "pnpm": ">=10.0.0"
+    "node": ">=20.0.0 <23.0.0",
+    "pnpm": ">=10.17.0"
   },
   "private": true,
   "description": "A desktop client for multiple cutting-edge AI models",
   "main": "out/main/main.js",
   "scripts": {
     "generate:routes": "node scripts/generate-route-tree.mjs",
+    "generate:model-snapshot": "pnpm exec tsx scripts/generate-model-snapshot.ts",
     "build": "electron-vite build",
     "build:main": "electron-vite build",
     "build:preload": "electron-vite build",
@@ -347,5 +348,5 @@
       "mdast-util-gfm-autolink-literal@2.0.1": "patches/mdast-util-gfm-autolink-literal@2.0.1.patch"
     }
   },
-  "packageManager": "pnpm@10.15.1+sha512.34e538c329b5553014ca8e8f4535997f96180a1d0f614339357449935350d924e22f8614682191264ec33d1462ac21561aff97f6bb18065351c162c7e8f6de67"
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
 }

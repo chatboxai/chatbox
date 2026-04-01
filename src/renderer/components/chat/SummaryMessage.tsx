@@ -61,7 +61,7 @@ const SummaryMessage: FC<SummaryMessageProps> = ({ msg, className, isLatestSumma
       </Flex>
 
       <Collapse in={expanded}>
-        <div className="mt-3 mx-4 p-3 rounded-md bg-chatbox-background-secondary border border-solid border-chatbox-border-primary">
+        <div className="msg-block mt-3 mx-4 p-3 rounded-md bg-chatbox-background-secondary border border-solid border-chatbox-border-primary">
           {enableMarkdownRendering ? (
             <Markdown
               uniqueId={`summary-${msg.id}`}

@@ -164,7 +164,7 @@ export default function SearchDialog(props: Props) {
                   {searchResult.map((result, i) => (
                     <CommandGroup
                       key={i}
-                      heading={`${t('chat')} "${result.name}":`}
+                      heading={`${t('Chat')} "${result.name}":`}
                       className={cn('[&_[cmdk-group-heading]]:font-bold', '[&_[cmdk-group-heading]]:opacity-50')}
                     >
                       {result.messages.map((message, j) => (

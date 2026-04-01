@@ -8,6 +8,7 @@ import { useI18nEffect } from '@/hooks/useI18nEffect'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { useSidebarWidth } from '@/hooks/useScreenChange'
 import useShortcut from '@/hooks/useShortcut'
+import useVersion from '@/hooks/useVersion'
 import '@/modals'
 import NiceModal from '@ebay/nice-modal-react'
 import {
@@ -19,6 +20,7 @@ import {
   createTheme,
   type DefaultMantineColor,
   Drawer,
+  Flex,
   Input,
   type MantineColorsTuple,
   MantineProvider,
@@ -34,15 +36,16 @@ import {
   Title,
   Tooltip,
   useMantineColorScheme,
-  virtualColor,
 } from '@mantine/core'
 import { Box, Grid } from '@mui/material'
 import CssBaseline from '@mui/material/CssBaseline'
 import { ThemeProvider } from '@mui/material/styles'
+import { useQuery } from '@tanstack/react-query'
 import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
-import { useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { useEffect, useMemo, useRef } from 'react'
 import SettingsModal, { navigateToSettings } from '@/modals/Settings'
+import { prefetchModelRegistry } from '@/packages/model-registry'
 import { getOS } from '@/packages/navigator'
 import * as remote from '@/packages/remote'
 import PictureDialog from '@/pages/PictureDialog'
@@ -51,13 +54,83 @@ import SearchDialog from '@/pages/SearchDialog'
 import platform from '@/platform'
 import { router } from '@/router'
 import Sidebar from '@/Sidebar'
+import storage from '@/storage'
 import * as atoms from '@/stores/atoms'
+import { useSession } from '@/stores/chatStore'
+import { initOnboardingStore, onboardingStore } from '@/stores/onboardingStore'
 import * as premiumActions from '@/stores/premiumActions'
 import * as settingActions from '@/stores/settingActions'
-import { settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
+import { initSettingsStore, settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
+import { CHATBOX_BUILD_CHANNEL, CHATBOX_BUILD_PLATFORM } from '@/variables'
+import { blobToDataUrl } from './image-creator/-components/constants'
+
+function BackgroundImageOverlay() {
+  const location = useLocation()
+  const globalBackgroundImageKey = useSettingsStore((s) => s.backgroundImageKey)
+  const showSidebar = useUIStore((s) => s.showSidebar)
+  const sidebarWidth = useSidebarWidth()
+  const currentSessionId = useAtomValue(atoms.currentSessionIdAtom)
+  const isRootPage = location.pathname === '/'
+  const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
+  const sessionId = isSessionPage && currentSessionId && currentSessionId !== 'new' ? currentSessionId : null
+  const { session } = useSession(sessionId)
+  const effectiveKey =
+    session?.backgroundImage?.type === 'storage-key'
+      ? session?.backgroundImage?.storageKey
+      : session?.backgroundImage?.type === 'url'
+        ? undefined
+        : globalBackgroundImageKey
+  const { data: blob } = useQuery({
+    queryKey: ['image-in-storage', effectiveKey],
+    queryFn: async () => {
+      if (!effectiveKey) return null
+      const b = await storage.getBlob(effectiveKey).catch(() => null)
+      return b ?? null
+    },
+    enabled: !!effectiveKey,
+    staleTime: Number.POSITIVE_INFINITY,
+  })
+  const imageUrl =
+    session?.backgroundImage?.type === 'url'
+      ? session.backgroundImage.url
+      : effectiveKey && blob
+        ? blobToDataUrl(blob)
+        : undefined
+
+  if (!isRootPage && !isSessionPage) return null
+  if (!imageUrl) return null
+  return (
+    <div className="absolute z-0 top-0 left-0 w-full h-full">
+      <div
+        className="absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat opacity-[0.16]"
+        style={{
+          backgroundImage: `
+          url("${imageUrl.replace(/"/g, '%22')}")
+        `,
+        }}
+      />
+      <div className="hidden sm:block absolute top-0 left-0 w-full h-40 bg-gradient-to-b from-chatbox-background-primary from-0 to-transparent to-100%" />
+      {showSidebar && (
+        <div
+          className="hidden sm:block absolute top-0 left-0 h-full bg-gradient-to-r from-chatbox-background-primary from-[25%] to-transparent to-100%"
+          style={{
+            width: `${sidebarWidth * 2}px`,
+          }}
+        />
+      )}
+
+      <Flex h={48} className="sm:hidden bg-chatbox-background-primary" />
+
+      <Flex className="sm:hidden relative h-36 bg-gradient-to-b from-chatbox-background-primary from-0 to-transparent to-100%" />
+
+      <Flex className="sm:hidden absolute bottom-0 left-0 w-full h-36 bg-gradient-to-t from-chatbox-background-primary from-0 to-transparent to-100%" />
+    </div>
+  )
+}
 
 function Root() {
+  const { isExceeded, versionLoaded } = useVersion()
   const location = useLocation()
   const spellCheck = useSettingsStore((state) => state.spellCheck)
   const language = useLanguage()
@@ -71,32 +144,55 @@ function Root() {
     if (initialized.current) {
       return
     }
-    // 通过定时器延迟启动，防止处理状态底层存储的异步加载前错误的初始数据
-    const tid = setTimeout(() => {
-      // biome-ignore lint/nursery/noFloatingPromises: inline call
-      ;(async () => {
-        const remoteConfig = await remote
-          .getRemoteConfig('setting_chatboxai_first')
-          .catch(() => ({ setting_chatboxai_first: false }) as RemoteConfig)
-        setRemoteConfig((conf) => ({ ...conf, ...remoteConfig }))
-        // 是否需要弹出设置窗口
-        initialized.current = true
-        if (settingActions.needEditSetting() && location.pathname !== '/settings/mcp') {
-          await NiceModal.show('welcome')
-          return
-        }
-        // 是否需要弹出关于窗口（更新后首次启动）
-        // 目前仅在桌面版本更新后首次启动、且网络环境为"外网"的情况下才自动弹窗
-        const shouldShowAboutDialogWhenStartUp = await platform.shouldShowAboutDialogWhenStartUp()
-        if (shouldShowAboutDialogWhenStartUp && remoteConfig.setting_chatboxai_first) {
-          setOpenAboutDialog(true)
-          return
-        }
-      })()
-    }, 2000)
+    // biome-ignore lint/nursery/noFloatingPromises: inline call
+    ;(async () => {
+      // Wait for stores to hydrate from persistent storage
+      await Promise.all([initSettingsStore(), initOnboardingStore()])
+      void prefetchModelRegistry()
 
-    return () => clearTimeout(tid)
-  }, [setOpenAboutDialog, setRemoteConfig, location.pathname])
+      const remoteConfig = await remote
+        .getRemoteConfig('setting_chatboxai_first')
+        .catch(() => ({ setting_chatboxai_first: false }) as RemoteConfig)
+      setRemoteConfig(async (prev) => ({ ...(await prev), ...remoteConfig }))
+
+      // Skip guide-related checks if already on guide or settings/mcp page
+      if (location.pathname === '/guide' || location.pathname === '/settings/mcp') {
+        initialized.current = true
+        return
+      }
+
+      // On store builds (iOS / Google Play), wait for version to load before making guide/navigation decisions.
+      // Without this, isExceeded is initially false (version not yet loaded),
+      // which would incorrectly navigate to the guide during store review.
+      const isStoreReviewPlatform =
+        CHATBOX_BUILD_PLATFORM === 'ios' ||
+        (CHATBOX_BUILD_PLATFORM === 'android' && CHATBOX_BUILD_CHANNEL === 'google_play')
+      if (isStoreReviewPlatform && !versionLoaded) {
+        return
+      }
+
+      initialized.current = true
+
+      // Check if user needs onboarding guide
+      // Conditions: not completed onboarding AND no valid config
+      const onboardingCompleted = onboardingStore.getState().completed
+      const needsSetup = settingActions.needEditSetting()
+
+      // Auto-navigate to guide for new users who need setup
+      if (!isExceeded && !onboardingCompleted && needsSetup) {
+        router.navigate({ to: '/guide', replace: true })
+        return
+      }
+
+      // 是否需要弹出关于窗口（更新后首次启动）
+      // 目前仅在桌面版本更新后首次启动、且网络环境为"外网"的情况下才自动弹窗
+      const shouldShowAboutDialogWhenStartUp = await platform.shouldShowAboutDialogWhenStartUp()
+      if (shouldShowAboutDialogWhenStartUp && remoteConfig.setting_chatboxai_first) {
+        setOpenAboutDialog(true)
+        return
+      }
+    })()
+  }, [setOpenAboutDialog, setRemoteConfig, location.pathname, isExceeded, versionLoaded])
 
   const showSidebar = useUIStore((s) => s.showSidebar)
   const sidebarWidth = useSidebarWidth()
@@ -144,6 +240,8 @@ function Root() {
     }
   }, [])
 
+
+
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
   useEffect(() => {
     if (needRoomForMacWindowControls) {
@@ -154,9 +252,10 @@ function Root() {
   }, [needRoomForMacWindowControls])
 
   return (
-    <Box className="box-border App" spellCheck={spellCheck} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+    <Box className="box-border App relative" spellCheck={spellCheck} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <BackgroundImageOverlay />
       {platform.type === 'desktop' && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
-      <Grid container className="h-full">
+      <Grid container className="h-full relative z-[1]">
         <Sidebar />
         <Box
           className="h-full w-full"
@@ -480,8 +579,10 @@ export const Route = createRootRoute({
     const theme = useAppTheme()
     const _theme = useTheme()
     const fontSize = useSettingsStore((state) => state.fontSize)
-    const scale = fontSize / 14
-    const mantineTheme = useMemo(() => creteMantineTheme(scale), [scale])
+    useEffect(() => {
+      document.documentElement.style.setProperty('--chatbox-msg-font-size', `${fontSize}px`)
+    }, [fontSize])
+    const mantineTheme = useMemo(() => creteMantineTheme(), [])
 
     return (
       <MantineProvider

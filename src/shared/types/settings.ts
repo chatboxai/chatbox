@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ModelProviderEnum, ModelProviderType } from './provider'
+import { SkillSettingsSchema } from './skills'
 
 // Re-export for backward compatibility
 export { ModelProviderType } from './provider'
@@ -44,6 +45,13 @@ export const ProviderModelInfoSchema = z.object({
   maxOutput: z.number().optional().catch(undefined),
 })
 
+export const OAuthCredentialsSchema = z.object({
+  accessToken: z.string(),
+  refreshToken: z.string().optional().catch(undefined),
+  expiresAt: z.number().optional().catch(undefined),
+  extra: z.record(z.string(), z.unknown()).optional().catch(undefined),
+})
+
 export const ProviderSettingsSchema = z.object({
   apiKey: z.string().optional().catch(undefined),
   apiHost: z.string().optional().catch(undefined),
@@ -51,6 +59,11 @@ export const ProviderSettingsSchema = z.object({
   models: z.array(ProviderModelInfoSchema).optional().catch(undefined),
   excludedModels: z.array(z.string()).optional().catch(undefined),
   useProxy: z.boolean().optional().catch(undefined),
+
+  // oauth
+  oauth: OAuthCredentialsSchema.optional().catch(undefined),
+  /** Which auth method is active: 'apikey' (default) or 'oauth' */
+  activeAuthMode: z.enum(['apikey', 'oauth']).optional().catch(undefined),
 
   // azure
   endpoint: z.string().optional().catch(undefined),
@@ -201,10 +214,6 @@ const ExtensionSettingsSchema = z.object({
   webSearch: z.object({
     provider: z.enum(['build-in', 'bing', 'tavily']),
     tavilyApiKey: z.string().optional(),
-    tavilySearchDepth: z.string().optional(),
-    tavilyMaxResults: z.number().optional(),
-    tavilyTimeRange: z.string().optional(),
-    tavilyIncludeRawContent: z.string().optional(),
   }),
   knowledgeBase: z
     .object({
@@ -322,6 +331,9 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   showMessageTimestamp: z.boolean().optional().catch(undefined),
   showFirstTokenLatency: z.boolean().optional().catch(undefined),
 
+  showAvatar: z.boolean().optional().catch(undefined),
+  messageLayout: z.enum(['left', 'bubble']).optional().catch(undefined),
+
   theme: z.nativeEnum(Theme),
   language: z.enum([
     'en',
@@ -355,6 +367,7 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
 
   userAvatarKey: z.string().optional(), // 用户头像的 key
   defaultAssistantAvatarKey: z.string().optional(), // 默认助手头像的 key
+  backgroundImageKey: z.string().optional(), // 应用背景图片的 key（本地上传）
 
   enableMarkdownRendering: z.boolean().default(true),
   enableMermaidRendering: z.boolean().default(true),
@@ -377,6 +390,10 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
 
   extension: ExtensionSettingsSchema,
   mcp: MCPSettingsSchema,
+  skills: SkillSettingsSchema.catch({
+    enabledSkillNames: [],
+    translationEnabled: true,
+  }),
 })
 
 // TODO: provider的 base info 和 settings混在一起了，可以考虑像 session settings 和 global settings一样拆开
@@ -404,3 +421,6 @@ export type ExtensionSettings = z.infer<typeof ExtensionSettingsSchema>
 export type MCPTransportConfig = z.infer<typeof MCPTransportConfigSchema>
 export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>
 export type MCPSettings = z.infer<typeof MCPSettingsSchema>
+
+// Re-export SkillSettings for convenience
+export type { SkillSettings } from './skills'

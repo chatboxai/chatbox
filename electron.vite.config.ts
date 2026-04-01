@@ -26,6 +26,37 @@ export function injectBaseTag(): Plugin {
 }
 
 /**
+ * Vite plugin to inject window.chatbox_release_date for web builds
+ */
+export function injectReleaseDate(): Plugin {
+  const releaseDate = new Date().toISOString().slice(0, 10)
+  return {
+    name: 'inject-release-date',
+    transformIndexHtml() {
+      return [
+        {
+          tag: 'script',
+          children: `window.chatbox_release_date="${releaseDate}";`,
+          injectTo: 'head-prepend',
+        },
+      ]
+    },
+  }
+}
+
+/**
+ * Vite plugin to replace Plausible data-domain for web builds
+ */
+export function replacePlausibleDomain(): Plugin {
+  return {
+    name: 'replace-plausible-domain',
+    transformIndexHtml(html) {
+      return html.replace('data-domain="app.chatboxai.app"', 'data-domain="web.chatboxai.app"')
+    },
+  }
+}
+
+/**
  * Vite plugin to replace dvh units with vh units
  * This replaces the webpack string-replace-loader functionality
  */
@@ -111,6 +142,7 @@ export default defineConfig(({ mode }) => {
         'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
         'process.env.CHATBOX_BUILD_TARGET': JSON.stringify(process.env.CHATBOX_BUILD_TARGET || 'unknown'),
         'process.env.CHATBOX_BUILD_PLATFORM': JSON.stringify(process.env.CHATBOX_BUILD_PLATFORM || 'unknown'),
+        'process.env.CHATBOX_BUILD_CHANNEL': JSON.stringify(process.env.CHATBOX_BUILD_CHANNEL || 'unknown'),
         'process.env.USE_LOCAL_API': JSON.stringify(process.env.USE_LOCAL_API || ''),
         'process.env.USE_BETA_API': JSON.stringify(process.env.USE_BETA_API || ''),
         'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
@@ -157,6 +189,8 @@ export default defineConfig(({ mode }) => {
         react({}),
         dvhToVh(),
         isWeb ? injectBaseTag() : undefined,
+        injectReleaseDate(),
+        isWeb ? replacePlausibleDomain() : undefined,
         visualizer({
           filename: 'release/app/dist/renderer/stats.html',
           open: false,
@@ -233,6 +267,7 @@ export default defineConfig(({ mode }) => {
         'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
         'process.env.CHATBOX_BUILD_TARGET': JSON.stringify(process.env.CHATBOX_BUILD_TARGET || 'unknown'),
         'process.env.CHATBOX_BUILD_PLATFORM': JSON.stringify(process.env.CHATBOX_BUILD_PLATFORM || 'unknown'),
+        'process.env.CHATBOX_BUILD_CHANNEL': JSON.stringify(process.env.CHATBOX_BUILD_CHANNEL || 'unknown'),
         'process.env.USE_LOCAL_API': JSON.stringify(process.env.USE_LOCAL_API || ''),
         'process.env.USE_BETA_API': JSON.stringify(process.env.USE_BETA_API || ''),
         'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),

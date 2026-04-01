@@ -150,7 +150,7 @@ function ThreadItem(props: {
           },
           {
             doubleCheck: true,
-            text: t('delete'),
+            text: t('Delete'),
             icon: IconTrash,
             onClick: () => {
               if (!currentSessionId) {

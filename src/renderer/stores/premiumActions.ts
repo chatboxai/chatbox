@@ -2,6 +2,8 @@ import * as Sentry from '@sentry/react'
 import omit from 'lodash/omit'
 import { FetchError } from 'ofetch'
 import { useEffect } from 'react'
+import { trackJkClickEvent } from '@/analytics/jk'
+import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { getLogger } from '@/lib/utils'
 import { mcpController } from '@/packages/mcp/controller'
 import * as remote from '../packages/remote'
@@ -73,7 +75,6 @@ export async function deactivate(clearLoginState = true) {
   if (clearLoginState && settings.licenseActivationMethod === 'login') {
     const { authInfoStore } = await import('./authInfoStore')
     authInfoStore.getState().clearTokens()
-    console.log('🔓 Cleared login tokens due to license deactivation')
   }
 
   // 更新本地状态
@@ -108,7 +109,12 @@ export async function deactivate(clearLoginState = true) {
  * @param method 激活方式：'login' 表示通过登录激活，'manual' 表示手动输入license key激活
  * @returns
  */
-export async function activate(licenseKey: string, method: 'login' | 'manual' = 'manual') {
+export async function activate(
+  licenseKey: string,
+  method: 'login' | 'manual' = 'manual',
+  options?: { pageName?: string }
+) {
+  const pageName = options?.pageName ?? JK_PAGE_NAMES.SETTING_PAGE
   const settings = settingsStore.getState()
 
   // 互斥逻辑：manual方式激活时，清除login状态
@@ -130,15 +136,28 @@ export async function activate(licenseKey: string, method: 'login' | 'manual' = 
     instanceName: await platform.getInstanceName(),
   })
   if (!result.valid) {
+    trackJkClickEvent(JK_EVENTS.KEY_VERIFY_FAILED, {
+      pageName,
+      content: result.error || 'activation_failed',
+      contentType: 'Chatbox AI',
+      props: { content_add_info: { content: 'Chatbox AI' } },
+    })
     return result
   }
   // 获取 license 详情
   const licenseDetailResponse = await remote.getLicenseDetailRealtime({ licenseKey })
   // 如果获取详情返回错误（如过期、额度用尽），返回错误码
   if (licenseDetailResponse.error) {
+    const error = licenseDetailResponse.error.code || 'license_error'
+    trackJkClickEvent(JK_EVENTS.KEY_VERIFY_FAILED, {
+      pageName,
+      content: error,
+      contentType: 'Chatbox AI',
+      props: { content_add_info: { content: 'Chatbox AI' } },
+    })
     return {
       valid: false,
-      error: licenseDetailResponse.error.code || 'license_error',
+      error,
     }
   }
   // 设置本地的 license 数据
@@ -150,7 +169,15 @@ export async function activate(licenseKey: string, method: 'login' | 'manual' = 
       [licenseKey]: result.instanceId,
     },
     licenseDetail: licenseDetailResponse.data || undefined,
+    // 同步更新手动激活的 license key 显示值（用于设置页面输入框回显）
+    ...(method === 'manual' ? { memorizedManualLicenseKey: licenseKey } : {}),
   }))
+  trackJkClickEvent(JK_EVENTS.KEY_VERIFY_SUCCESS, {
+    pageName,
+    content: licenseKey,
+    contentType: 'Chatbox AI',
+    props: { content_add_info: { content: 'Chatbox AI' } },
+  })
   log.info(`✅ Activated license key: ${licenseKey.slice(0, 8)}****`)
   return result
 }

@@ -1,5 +1,5 @@
 import { Box, Button, Flex, ScrollArea, Stack, Text, TextInput } from '@mantine/core'
-import type { CustomProviderBaseInfo, ModelProviderEnum, ProviderInfo, ProviderSettings } from '@shared/types'
+import type { ModelProviderEnum, ProviderInfo, ProviderSettings } from '@shared/types'
 import { ModelProviderType } from '@shared/types'
 import { IconAlertTriangle } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { ModelList } from '@/components/ModelList'
+import { buildImportedProviderSettingsUpdate } from '@/components/settings/provider/importProviderState'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
 
@@ -46,14 +47,13 @@ export function ImportProviderModal({ opened, onClose, importedConfig, existingP
 
   // Derive form values from props directly
   const providerName =
-    (importedConfig && ('name' in importedConfig ? importedConfig?.name : '')) ||
+    (importedConfig && ('name' in importedConfig ? importedConfig.name : '')) ||
     (existingProvider && 'name' in existingProvider ? existingProvider.name : '') ||
     ''
   const providerId = importedConfig?.id || ''
   const apiHost = importedConfig?.apiHost || existingProvider?.apiHost || ''
   const apiPath = importedConfig?.apiPath || ''
   const apiKey = importedConfig?.apiKey || ''
-  const urls = importedConfig && 'urls' in importedConfig ? importedConfig?.urls : existingProvider?.urls || {}
   const providerType =
     (importedConfig && 'type' in importedConfig ? importedConfig.type : undefined) ||
     (existingProvider && 'type' in existingProvider ? existingProvider.type : undefined) ||
@@ -66,73 +66,29 @@ export function ImportProviderModal({ opened, onClose, importedConfig, existingP
   )
 
   const handleConfirmImport = useCallback(() => {
-    // 如果有 existing provider， 可能是 built-in 也可能是 custom provider，如果没有，一定是 custom provider
+    if (!importedConfig) return
 
-    const providerSettings = {
-      ...providers?.[providerId],
-      ...{
-        apiHost,
-        apiPath,
-        apiKey,
-        models: uniqueModels,
-      },
-    }
-    if (existingProvider && !existingProvider.isCustom) {
-      // import for built-in provder，only import provider settings
-      const updatedSettings = {
-        providers: {
-          ...providers,
-          [providerId]: providerSettings,
-        },
-      }
-      setSettings(updatedSettings)
-    } else {
-      // import custom provider, include provider base info
-      const baseProviderInfo: CustomProviderBaseInfo = {
-        id: providerId,
-        name: providerName,
-        type: providerType,
-        iconUrl: importedConfig && 'iconUrl' in importedConfig ? importedConfig?.iconUrl : undefined,
-        urls,
-        isCustom: true,
-      }
-      const updatedSettings = {
-        // replace or insert custom provider info
-        customProviders: existingProvider
-          ? (customProviders || []).map((p) => (p.id === providerId ? { ...p, ...baseProviderInfo } : p))
-          : [...(customProviders || []), baseProviderInfo],
-        providers: {
-          ...providers,
-          [providerId]: providerSettings,
-        },
-      }
-      setSettings(updatedSettings)
-    }
-    addToast(t(existingProvider ? 'Provider updated successfully' : 'Provider imported successfully'))
-    onClose()
+    try {
+      // 如果有 existing provider， 可能是 built-in 也可能是 custom provider，如果没有，一定是 custom provider
+      setSettings(
+        buildImportedProviderSettingsUpdate({
+          importedConfig,
+          existingProvider,
+          providers,
+          customProviders,
+        })
+      )
+      addToast(t(existingProvider ? 'Provider updated successfully' : 'Provider imported successfully'))
+      onClose()
 
-    navigate({
-      to: '/settings/provider/$providerId',
-      params: { providerId },
-    })
-  }, [
-    providerId,
-    providerName,
-    apiHost,
-    apiPath,
-    apiKey,
-    urls,
-    uniqueModels,
-    existingProvider,
-    providers,
-    customProviders,
-    setSettings,
-    navigate,
-    t,
-    onClose,
-    importedConfig,
-    providerType,
-  ])
+      navigate({
+        to: '/settings/provider/$providerId',
+        params: { providerId },
+      })
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : t('Failed to import provider'))
+    }
+  }, [providerId, existingProvider, providers, customProviders, setSettings, navigate, t, onClose, importedConfig])
 
   return (
     <AdaptiveModal

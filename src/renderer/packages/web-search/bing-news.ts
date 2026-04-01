@@ -23,12 +23,15 @@ export class BingNewsSearch extends WebSearch {
     return Array.from(nodes)
       .slice(0, 10)
       .map((node) => {
-        const nodeA = node.querySelector('.title')!
-        const link = nodeA.getAttribute('href')!
+        const nodeA = node.querySelector('.title')
+        if (!nodeA) return null
+        const link = nodeA.getAttribute('href')
+        if (!link) return null
         const title = nodeA.textContent || ''
         const nodeAbstract = node.querySelector('.snippet')
         const snippet = nodeAbstract?.textContent || ''
         return { title, link, snippet }
       })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
   }
 }

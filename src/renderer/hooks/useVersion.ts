@@ -3,7 +3,7 @@ import dayjs from 'dayjs'
 import { useAtomValue } from 'jotai'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { remoteConfigAtom } from '@/stores/atoms'
-import { CHATBOX_BUILD_PLATFORM } from '@/variables'
+import { CHATBOX_BUILD_CHANNEL, CHATBOX_BUILD_PLATFORM } from '@/variables'
 import * as remote from '../packages/remote'
 import platform from '../platform'
 
@@ -29,12 +29,15 @@ export function isFirstDay(): boolean {
 }
 
 export default function useVersion() {
+  const remoteConfig = useAtomValue(remoteConfigAtom)
   const [version, _setVersion] = useState('')
   const [needCheckUpdate, setNeedCheckUpdate] = useState(false)
-  const remoteConfig = useAtomValue(remoteConfigAtom)
+  const isStoreReviewPlatform =
+    CHATBOX_BUILD_PLATFORM === 'ios' ||
+    (CHATBOX_BUILD_PLATFORM === 'android' && CHATBOX_BUILD_CHANNEL === 'google_play')
   const isExceeded = useMemo(
     () =>
-      CHATBOX_BUILD_PLATFORM === 'ios' &&
+      isStoreReviewPlatform &&
       Date.now() - getInitialTime() < 24 * 3600 * 1000 &&
       version &&
       remoteConfig.current_version &&
@@ -53,7 +56,7 @@ export default function useVersion() {
         const needUpdate = await remote.checkNeedUpdate(version, os, config, settings)
         setNeedCheckUpdate(needUpdate)
       } catch (e) {
-        console.log(e)
+        console.error('Failed to check for updates:', e)
       }
     }
     handler()
@@ -68,6 +71,7 @@ export default function useVersion() {
 
   return {
     version,
+    versionLoaded: !!version,
     isExceeded,
     needCheckUpdate,
   }

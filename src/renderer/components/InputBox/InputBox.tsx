@@ -52,6 +52,7 @@ import useInputBoxHistory from '@/hooks/useInputBoxHistory'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { useMessageInput } from '@/hooks/useMessageInput'
 import { useProviders } from '@/hooks/useProviders'
+import { useSaveBlob } from '@/hooks/useSaveBlob'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import {
@@ -61,10 +62,13 @@ import {
   useContextTokens,
 } from '@/packages/context-management'
 import { trackingEvent } from '@/packages/event'
-import { getModelContextWindowSync } from '@/packages/model-context'
+import {
+  getModelContextWindowSync,
+  getProviderModelContextWindowSync,
+  useModelRegistryVersion,
+} from '@/packages/model-registry'
 import * as picUtils from '@/packages/pic_utils'
 import platform from '@/platform'
-import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import * as atoms from '@/stores/atoms'
 import { compactionUIStateMapAtom } from '@/stores/atoms/compactionAtoms'
@@ -151,6 +155,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     },
     ref
   ) => {
+    const modelRegistryVersion = useModelRegistryVersion()
+
     const { t } = useTranslation()
     const navigate = useNavigate()
     const isSmallScreen = useIsSmallScreen()
@@ -159,6 +165,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const pasteLongTextAsAFile = useSettingsStore((state) => state.pasteLongTextAsAFile)
     const shortcuts = useSettingsStore((state) => state.shortcuts)
     const widthFull = useUIStore((s) => s.widthFull) || fullWidth
+    const saveBlob = useSaveBlob()
 
     const currentSessionId = sessionId
     const isNewSession = currentSessionId === 'new'
@@ -350,15 +357,23 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     const contextWindowKnown = useMemo(() => {
       if (!model?.modelId) return false
-      return !!modelInfo?.contextWindow || getModelContextWindowSync(model.modelId) !== null
-    }, [model?.modelId, modelInfo?.contextWindow])
+      if (modelInfo?.contextWindow) return true
+      if (model?.provider && getProviderModelContextWindowSync(model.provider, model.modelId) !== null) return true
+      // Fallback: provider-agnostic lookup (same as compaction detector)
+      return getModelContextWindowSync(model.modelId) !== null
+    }, [model?.modelId, model?.provider, modelInfo?.contextWindow, modelRegistryVersion])
 
     // Use model setting contextWindow if available, otherwise fallback to models.dev data
     const effectiveContextWindow = useMemo(() => {
       if (modelInfo?.contextWindow) return modelInfo.contextWindow
+      if (model?.provider && model?.modelId) {
+        const providerWindow = getProviderModelContextWindowSync(model.provider, model.modelId)
+        if (providerWindow !== null) return providerWindow
+      }
+      // Fallback: provider-agnostic lookup (same as compaction detector)
       if (model?.modelId) return getModelContextWindowSync(model.modelId)
       return null
-    }, [modelInfo?.contextWindow, model?.modelId])
+    }, [modelInfo?.contextWindow, model?.modelId, model?.provider, modelRegistryVersion])
 
     // Calculate token usage percentage
     const tokenPercentage = useMemo(() => {
@@ -577,6 +592,13 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           }
         }
       }
+
+      // Prevent Chromium's native Escape behaviour which reverts textarea
+      // value to its defaultValue, causing controlled-input state to desync.
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        inputRef.current?.blur()
+      }
     }
 
     const startNewThread = () => {
@@ -672,7 +694,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         if (file.type.startsWith('image/')) {
           const base64 = await picUtils.getImageBase64AndResize(file)
           const key = StorageKeyGenerator.picture('input-box')
-          await storage.setBlob(key, base64)
+          await saveBlob.mutateAsync({ key, value: base64 })
           setPreConstructedMessage((prev) => ({
             ...prev,
             pictureKeys: [...(prev.pictureKeys || []), key].slice(-8),
@@ -899,7 +921,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   root: 'flex-1',
                   wrapper: 'flex-1',
                   input:
-                    'block w-full outline-none border-none px-2 py-1 resize-none bg-transparent text-chatbox-tint-primary',
+                    'block w-full outline-none border-none px-2 py-1 resize-none bg-transparent text-chatbox-tint-primary leading-6',
                 }}
                 size="sm"
                 id={dom.messageInputID}
@@ -915,6 +937,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 onChange={onMessageInput}
                 onKeyDown={onKeyDown}
                 onPaste={onPaste}
+                data-testid="message-input"
               />
 
               {/* Send Button */}
@@ -1178,7 +1201,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
               </Flex>
 
               {/* Right Group: Token Count + Model Selector */}
-              <Flex align="center" gap={0}>
+              <Flex align="center" gap={0} className="min-w-0 ml-auto">
                 <TokenCountMenu
                   currentInputTokens={currentInputTokens}
                   contextTokens={contextTokens}
@@ -1198,7 +1221,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   <Flex
                     align="center"
                     gap="2"
-                    className={`text-xs cursor-pointer hover:text-chatbox-tint-secondary transition-colors px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] ${
+                    className={`shrink-0 text-xs cursor-pointer hover:text-chatbox-tint-secondary transition-colors px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] ${
                       tokenPercentage && tokenPercentage > 80 ? 'text-red-500' : 'text-chatbox-tint-tertiary'
                     }`}
                   >
@@ -1213,50 +1236,59 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 </TokenCountMenu>
 
                 {/* Model Selector */}
-                <Tooltip
-                  label={
-                    <Flex align="center" c="white" gap="xxs">
-                      <ScalableIcon icon={IconAlertCircle} size={12} className="text-inherit" />
-                      <Text span size="xxs" c="white">
-                        {t('Please select a model')}
-                      </Text>
-                    </Flex>
-                  }
-                  color="dark"
-                  opened={showSelectModelErrorTip}
-                  withArrow
-                >
-                  <ModelSelector
-                    onSelect={onSelectModel}
-                    selectedProviderId={model?.provider}
-                    selectedModelId={model?.modelId}
-                    position="top-end"
-                    transitionProps={{
-                      transition: 'fade-up',
-                      duration: 200,
-                    }}
+                <Box className="min-w-0 flex-1 justify-end max-w-[200px]">
+                  <Tooltip
+                    label={
+                      <Flex align="center" c="white" gap="xxs" min-w-0>
+                        <ScalableIcon icon={IconAlertCircle} size={12} className="text-inherit" />
+                        <Text span size="xxs" c="white">
+                          {t('Please select a model')}
+                        </Text>
+                      </Flex>
+                    }
+                    color="dark"
+                    opened={showSelectModelErrorTip}
+                    withArrow
                   >
-                    <UnstyledButton className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors">
-                      {!!model && <ProviderImageIcon size={18} provider={model.provider} />}
-                      <Text
-                        size="sm"
+                    <ModelSelector
+                      onSelect={onSelectModel}
+                      selectedProviderId={model?.provider}
+                      selectedModelId={model?.modelId}
+                      position="top-end"
+                      transitionProps={{
+                        transition: 'fade-up',
+                        duration: 200,
+                      }}
+                    >
+                      <UnstyledButton
                         className={cn(
-                          'text-[var(--chatbox-tint-secondary)] truncate',
-                          isSmallScreen ? 'max-w-[100px]' : 'max-w-[160px]'
+                          'flex min-w-0 max-w-full items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors',
+                          !model && 'animate-pulse bg-blue-500/20'
                         )}
                       >
-                        {modelSelectorDisplayText}
-                      </Text>
-                      <IconChevronRight
-                        size={14}
-                        className="text-[var(--chatbox-tint-tertiary)] rotate-90 flex-shrink-0"
-                      />
-                    </UnstyledButton>
-                  </ModelSelector>
-                </Tooltip>
+                        {!!model && <ProviderImageIcon size={18} provider={model.provider} />}
+                        <Text
+                          size="sm"
+                          className={cn(
+                            'min-w-0 flex-1 truncate text-[var(--chatbox-tint-secondary)]',
+                            isSmallScreen ? 'max-w-[100px]' : 'max-w-[160px]'
+                          )}
+                        >
+                          {modelSelectorDisplayText}
+                        </Text>
+                        <IconChevronRight
+                          size={14}
+                          className="text-[var(--chatbox-tint-tertiary)] rotate-90 flex-shrink-0"
+                        />
+                      </UnstyledButton>
+                    </ModelSelector>
+                  </Tooltip>
+                </Box>
               </Flex>
             </Flex>
           </Stack>
+
+          <Disclaimer />
         </Stack>
         {currentSession && (
           <CompressionModal

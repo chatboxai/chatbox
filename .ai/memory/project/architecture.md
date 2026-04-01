@@ -116,3 +116,21 @@ Record durable workspace decisions here.
 - **Consequences**: UI story packets gain a first-class design brief artifact,
   variation reviews have a clearer rubric, and content-heavy screens cannot
   pass design review on placeholder copy alone.
+
+- **ADR-ID**: ADR-0009
+- **Date**: 2026-04-01
+- **Context**: Several failures could still escape the normal green path and
+  only surface when compiled output actually loaded in the renderer or deployed
+  environment.
+- **Decision**: Treat Chatbox as production software by default: no mocks,
+  stubs, placeholder implementations, or TODO-driven gaps in shipped code;
+  require explicit post-green runtime-readiness checks for bundling and
+  packaging changes; prefer browser-first verification for deployed user-facing
+  behavior; keep repo code/docs as the source of truth; derive authenticated
+  agent identity from JWT/request context; and keep tool logic pure with DI at
+  framework edges.
+- **Alternatives Considered**: Continue treating baseline tests/build as the
+  main finish signal; allow ad hoc runtime data paths and identity lookups.
+- **Consequences**: Stories now carry stricter production-readiness gates and
+  clearer review expectations, but hidden runtime and deploy-time regressions
+  should surface earlier and be easier to reason about.

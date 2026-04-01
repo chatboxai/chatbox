@@ -18,6 +18,21 @@ Capture repeatable patterns that match how this workspace actually works.
 - Smaller colocated tests: `src/__tests__/`
 - Product docs: `README.md`, `docs/`, `doc/`
 
+## Engineering Posture
+
+- Treat shipped Chatbox code as production code, not demo code.
+- Do not merge mocks, stubs, placeholder implementations, or hardcoded sample
+  data where real runtime integrations should exist.
+- TODO comments are not an acceptable substitute for missing implementation in
+  merged production code.
+- Prefer clear module boundaries and colocated feature code/tests.
+- Prefer explicit code over clever code, and keep abstractions proportional to
+  the actual problem.
+- For authenticated agent endpoints, derive identity from JWT or request
+  context, not ad hoc database lookups.
+- Keep tool logic pure where possible and use framework DI at the application
+  boundaries.
+
 ## Testing and Validation
 
 - Tests use Vitest.
@@ -28,6 +43,12 @@ Capture repeatable patterns that match how this workspace actually works.
   - `pnpm check`
   - `pnpm lint`
   - `pnpm build`
+- Green unit tests are necessary but not sufficient for production readiness.
+- Bundling, packaging, and deploy-surface changes should also verify compiled
+  output loads without missing-module failures.
+- Those higher-risk changes should also verify risky runtime dependencies are
+  marked as externals when needed and that generated production package
+  metadata includes required runtime dependencies.
 - Orchestration-heavy work should establish traces/evals early through
   `.ai/workflows/trace-driven-development.md` instead of waiting for late debug
   cycles.
@@ -48,6 +69,9 @@ Capture repeatable patterns that match how this workspace actually works.
 - Story completion defaults to the full GitHub flow: commit, push, PR, merge to
   `main`, sync local `main`, and branch cleanup unless the user explicitly
   pauses or chooses a different merge path.
+- Reviews should explain concrete tradeoffs, provide an opinionated
+  recommendation, include file/line references for issues, and describe fix
+  options in terms of effort, risk, impact, and maintenance burden.
 - Final handoff packets should include a plain-language explainer of what
   changed plus concrete inspection and testing guidance. UI stories should name
   the route or component path, the click path or entry state, and the expected
@@ -85,6 +109,12 @@ Capture repeatable patterns that match how this workspace actually works.
   anonymous HTTP checks.
 - Hosted `main` verification should use the `Vercel Main Sync` workflow plus
   Vercel CLI `inspect` and `/healthz.json` verification after merge.
+- When user-facing verification is possible, prefer browser-first checks with
+  exact URLs, click paths, and explicit pass/fail signals over terminal-only
+  assertions.
+- If a story changes a checked-in deploy surface or other deployed user-facing
+  behavior, do not close it until deployment and post-deploy verification are
+  complete.
 - Deploy-surface closeout should tell the user exactly what to open and inspect
   on the hosted version after merge, not only report merge and workflow status.
 - Provider secrets such as `OPENAI_API_KEY` should live only in untracked local

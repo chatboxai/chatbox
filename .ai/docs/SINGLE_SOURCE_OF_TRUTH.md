@@ -11,6 +11,9 @@
 - Point harness guidance at the real root-level app layout and commands.
 - Avoid carrying source-project-specific history, scripts, or runtime
   assumptions into this repo.
+- Keep the harness aligned to a production-product posture: no shipped mocks,
+  stubs, placeholder implementations, or sample-data stand-ins where real
+  runtime contracts should exist.
 - Route UI design through a story-level `design-brief.md` plus Pencil after
   spec/plan and before implementation.
 
@@ -66,6 +69,8 @@
 
 - `.ai/` is a helper harness for this workspace only.
 - Product code belongs in the real app directories, not under `.ai/`.
+- The repo is the single source of truth for implementation, module boundaries,
+  runtime contracts, and deploy wiring.
 - Keep durable repo truths in `.ai/memory/project/`.
 - Keep current-task notes in `.ai/memory/session/`.
 - Align harness guidance with commands that actually exist in `package.json`.
@@ -73,6 +78,16 @@
   `pnpm build`, and their direct `start`/`build` variants) now fail fast on
   wrong-Node shells through the repo engine constraints and on stale installs
   through `scripts/workspace-guard.mjs`, before Vite or TypeScript starts.
+- Passing the baseline command suite is necessary but not sufficient for
+  production readiness. For bundling, packaging, or deploy-surface changes,
+  also verify compiled output loads, risky runtime dependencies are externalized
+  correctly when needed, and generated production package metadata includes the
+  dependencies the runtime surface requires.
+- Prefer explicit, DRY, well-tested code over cleverness, and treat deliberate
+  edge-case handling as part of done.
+- For authenticated agent endpoints, derive user identity from JWT or request
+  context rather than ad hoc database lookups. Keep tool logic pure where
+  possible and use framework DI at the boundaries.
 - For UI-affecting stories, do not skip the design-brief stage or the Pencil
   variation and approval gate.
 - For completed stories, do not skip seeded example refresh checks in
@@ -88,6 +103,12 @@
 - For hosted `main` verification, prefer the checked-in Vercel CLI workflow:
   deploy via `.github/workflows/vercel-main-sync.yml` and verify through
   `.ai/workflows/vercel-post-merge-verification.md`.
+- When user-facing verification is possible, prefer browser-first checks with
+  exact URLs, click paths, and explicit pass/fail signals over terminal-only
+  assertions.
+- If a task touches a checked-in deploy surface or other deployed user-facing
+  behavior, do not close it until deployment and post-deploy verification are
+  complete.
 - Story completion defaults to merged-to-`main`, not just local validation,
   unless the user explicitly pauses or selects a different merge path.
 - Final handoff should explain what changed and how to inspect/test it; UI

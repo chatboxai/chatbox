@@ -27,6 +27,22 @@ Capture failures so they are not repeated.
 - **Prevention rule**: Align the harness with the commands that actually exist
   in this repo.
 
+- **Problem**: Shipping demo scaffolding as production behavior
+- **Example**: Leaving mocks, stubs, placeholder implementations, or hardcoded
+  sample data in runtime code where real integrations should exist
+- **Why it failed**: The product appears complete in local happy paths while
+  real user flows break or silently diverge from the actual contract.
+- **Prevention rule**: Keep mocks in tests only; if the real behavior is not
+  implemented, do not merge it.
+
+- **Problem**: Treating TODOs as acceptable implementation debt in merged code
+- **Example**: Closing a story with a TODO marker standing in for missing
+  runtime behavior or production hardening
+- **Why it failed**: The repository records unfinished behavior as if it were
+  complete, and later stories inherit hidden gaps.
+- **Prevention rule**: Missing implementation is a blocker, not a TODO-driven
+  closeout path.
+
 - **Problem**: Letting current-task notes become a backlog archive
 - **Example**: Accumulating long story histories under `.ai/memory/session/`
 - **Why it failed**: Current context becomes noisy and harder to trust.
@@ -113,6 +129,24 @@ Capture failures so they are not repeated.
 - **Prevention rule**: For hosted-shell and deploy-contract stories, watch the
   post-merge `Vercel Main Sync` workflow and record its verification result
   explicitly.
+
+- **Problem**: Stopping at green tests for bundling or runtime-loading changes
+- **Example**: Passing `pnpm test` and `pnpm build`, but never loading the
+  compiled output that still fails on a missing runtime dependency or malformed
+  production package metadata
+- **Why it failed**: Build success hides deploy-time or render-time breakage,
+  so users discover the failure first.
+- **Prevention rule**: For higher-risk runtime changes, verify compiled output
+  loads, runtime externals are correct, and production package metadata
+  includes required dependencies before closing the story.
+
+- **Problem**: Relying on terminal-only verification for user-facing deploy work
+- **Example**: Reporting a deploy-surface story complete from logs alone
+  without opening the deployed URL and checking the actual browser behavior
+- **Why it failed**: The terminal may show a successful build or deploy while
+  the real UX is still broken, redirected, blank, or missing assets.
+- **Prevention rule**: Use exact URLs, click paths, and explicit browser
+  pass/fail signals whenever user-facing verification is possible.
 
 - **Problem**: Replaying an already-merged story onto a stale parallel branch
 - **Example**: Seeing that the current dirty branch lacks a requested story,

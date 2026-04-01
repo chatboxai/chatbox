@@ -239,7 +239,8 @@ export default defineConfig(({ mode }) => {
         'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
       },
       optimizeDeps: {
-        include: ['mermaid'],
+        // Prebundle renderer-only deps that otherwise race cold dev startup.
+        include: ['mermaid', 'chess.js'],
         esbuildOptions: {
           target: 'es2015',
         },

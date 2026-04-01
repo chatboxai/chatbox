@@ -14,3 +14,7 @@
   `main`/`origin/main` before replaying a requested story from a stale branch;
   already-merged work is now treated as the baseline and any extra change
   starts as a clean follow-up story/worktree.
+- 2026-04-01: Stabilized ChatBridge chess local web development by explicitly
+  prebundling `chess.js` in the renderer `optimizeDeps` contract and locking it
+  with a focused regression test, so cold `pnpm dev:web` starts do not throw a
+  missing-module overlay before the dependency optimizer catches up.

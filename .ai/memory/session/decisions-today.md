@@ -18,3 +18,7 @@
   prebundling `chess.js` in the renderer `optimizeDeps` contract and locking it
   with a focused regression test, so cold `pnpm dev:web` starts do not throw a
   missing-module overlay before the dependency optimizer catches up.
+- 2026-04-01: Added a repo-local workspace guard so stale-install worktrees now
+  fail before Vite/TypeScript starts, while wrong-Node shells still fail at the
+  repo engine gate. `pnpm install` now records a worktree-local install stamp
+  in `node_modules/`.

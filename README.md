@@ -236,11 +236,20 @@ git clone https://github.com/chatboxai/chatbox.git
 pnpm install
 ```
 
+`pnpm install` now records the dependency state for the current worktree. If you
+switch branches or worktrees after `package.json`, `pnpm-lock.yaml`, or
+`.node-version` changes, rerun `pnpm install` before `pnpm dev`, `pnpm test`,
+`pnpm check`, or `pnpm build`.
+
 3. Start the application (in development mode)
 
 ```bash
 pnpm dev
 ```
+
+The main `pnpm` workflow entrypoints now fail fast if the shell is on the wrong
+Node major or the worktree install state is stale, so you get an early
+“switch Node / rerun pnpm install” failure before Vite starts rendering routes.
 
 To run against the local Chatbox API endpoint, use:
 

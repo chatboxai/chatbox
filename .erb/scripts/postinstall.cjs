@@ -25,3 +25,12 @@ try {
 }
 
 console.log('Postinstall complete (skipping electron-builder install-app-deps for pnpm compatibility)')
+
+try {
+    execSync('node scripts/workspace-guard.mjs --record-install-state', {
+        stdio: 'inherit',
+    })
+} catch (error) {
+    console.error('Workspace install state recording failed')
+    throw error
+}

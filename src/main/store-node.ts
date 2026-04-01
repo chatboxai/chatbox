@@ -66,8 +66,15 @@ async function autoBackup() {
 }
 
 export function getSettings(): Settings {
-  const settings = store.get<'settings'>('settings', defaults.settings())
-  return settings
+  const fallbackSettings = defaults.settings()
+  const settings = store.get<'settings'>('settings', fallbackSettings)
+
+  if (settings) {
+    return settings
+  }
+
+  store.set<'settings'>('settings', fallbackSettings)
+  return fallbackSettings
 }
 
 export function getConfig(): Config {

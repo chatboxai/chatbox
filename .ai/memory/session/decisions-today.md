@@ -18,3 +18,7 @@
   prebundling `chess.js` in the renderer `optimizeDeps` contract and locking it
   with a focused regression test, so cold `pnpm dev:web` starts do not throw a
   missing-module overlay before the dependency optimizer catches up.
+- 2026-04-01: Normalized desktop `getSettings()` reads at the store boundary so
+  persisted `null` settings records are rehydrated to defaults and written back
+  before main-process bootstrap consumers like Sentry, tray shortcuts, and the
+  updater dereference them.

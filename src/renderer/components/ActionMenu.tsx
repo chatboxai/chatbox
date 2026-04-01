@@ -4,6 +4,7 @@ import { type FC, type MouseEventHandler, type ReactElement, useEffect, useRef, 
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { AccessibleDrawerContent } from './common/AccessibleDrawerContent'
 import { Divider } from './common/Divider'
 import { ScalableIcon } from './common/ScalableIcon'
 
@@ -94,6 +95,7 @@ const DesktopActionMenu: FC<ActionMenuProps> = ({
 
 const MobileActionMenu: FC<ActionMenuProps> = ({ children, items, title }) => {
   const [open, setOpen] = useState(false)
+  const { t } = useTranslation()
 
   const handleItemClick = (onClick?: MouseEventHandler<HTMLButtonElement>) => {
     return (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -109,7 +111,11 @@ const MobileActionMenu: FC<ActionMenuProps> = ({ children, items, title }) => {
       <Drawer.Trigger asChild>{children}</Drawer.Trigger>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-        <Drawer.Content className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none">
+        <AccessibleDrawerContent
+          accessibleTitle={title || t('Actions')}
+          accessibleDescription={t('Choose one of the available actions for this menu.')}
+          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none"
+        >
           <div className="bg-chatbox-background-primary rounded-t-lg">
             <Drawer.Handle />
             {title && (
@@ -142,7 +148,7 @@ const MobileActionMenu: FC<ActionMenuProps> = ({ children, items, title }) => {
             </Stack>
             <div className="h-[--mobile-safe-area-inset-bottom] min-h-4" />
           </div>
-        </Drawer.Content>
+        </AccessibleDrawerContent>
       </Drawer.Portal>
     </Drawer.Root>
   )
@@ -177,7 +183,11 @@ const MobileDoubleCheckMenuItem: FC<{
       </Drawer.Trigger>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-        <Drawer.Content className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none">
+        <AccessibleDrawerContent
+          accessibleTitle={doubleCheckText}
+          accessibleDescription={t('Confirm this action or cancel to go back.')}
+          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none"
+        >
           <div className="bg-chatbox-background-primary rounded-t-lg">
             <Drawer.Handle />
             <Stack className="px-2" gap={0}>
@@ -207,7 +217,7 @@ const MobileDoubleCheckMenuItem: FC<{
               <div className="h-[--mobile-safe-area-inset-bottom] min-h-4" />
             </Stack>
           </div>
-        </Drawer.Content>
+        </AccessibleDrawerContent>
       </Drawer.Portal>
     </Drawer.NestedRoot>
   )

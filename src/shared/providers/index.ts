@@ -26,6 +26,7 @@ import './definitions/mistral-ai'
 import './definitions/perplexity'
 import './definitions/volcengine'
 import './definitions/chatglm'
+import './definitions/qiniu'
 import {
   clearProviderRegistry,
   defineProvider,

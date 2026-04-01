@@ -11,6 +11,7 @@
 
 - Feature spec:
 - Technical plan:
+- Design brief:
 
 ## Pencil Prerequisites
 
@@ -40,30 +41,42 @@
 ## Variations
 
 ### Variation A
+
 - Name:
 - Fidelity level: wireframe / design-grade / implementation-grade
+- Brief interpretation:
+- Copy fidelity: placeholder / draft / implementation-ready / N/A
 - Summary:
-- Tradeoffs:
+- Strengths:
+- Failure modes or misses against the brief:
 - Screenshot reference:
 
 ### Variation B
+
 - Name:
 - Fidelity level: wireframe / design-grade / implementation-grade
+- Brief interpretation:
+- Copy fidelity: placeholder / draft / implementation-ready / N/A
 - Summary:
-- Tradeoffs:
+- Strengths:
+- Failure modes or misses against the brief:
 - Screenshot reference:
 
 ### Variation C
+
 - Name:
 - Fidelity level: wireframe / design-grade / implementation-grade
+- Brief interpretation:
+- Copy fidelity: placeholder / draft / implementation-ready / N/A
 - Summary:
-- Tradeoffs:
+- Strengths:
+- Failure modes or misses against the brief:
 - Screenshot reference:
 
 ## Recommendation
 
 - Recommended option:
-- Why:
+- Why it best matches the design brief:
 
 ## User Feedback
 
@@ -72,6 +85,7 @@
 
 ## Approval
 
+- Approved design brief:
 - Selected option:
 - Requested tweaks:
 - Approval status: pending / approved / rework

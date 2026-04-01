@@ -74,10 +74,16 @@ The completion gate should answer:
 
 For UI stories that used Pencil, also include:
 
+- approved `design-brief.md` artifact path
 - approved `.pen` artifact path
 - selected variation
 - whether implementation matched an already-approved design or included a fresh
   design-review cycle
+
+For all completed stories, also include:
+
+- whether `src/renderer/packages/initial_data.ts` seeded examples were
+  refreshed, including the exact update summary or `N/A` with a one-line reason
 
 ## Testing Brief Requirements
 
@@ -176,6 +182,8 @@ exactly what to open after merge:
   automatic follow-through unless the user pauses it
 - story completion is defined as merged-to-`main` on GitHub unless the user
   explicitly pauses or selects a different merge path
+- UI stories reference the approved `design-brief.md` path alongside the chosen
+  Pencil variation
 - deploy-surface stories include a deployed-version audit checklist in the
   post-merge closeout
 - UI stories include route-level inspection guidance and visible proof that

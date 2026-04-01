@@ -1,6 +1,6 @@
 # Chatbox Workspace - Single Source of Truth
 
-**Last Updated**: 2026-03-31
+**Last Updated**: 2026-04-01
 **Project Status**: Active
 **Canonical App Directory**: repo root
 **Canonical Harness Directory**: `.ai/`
@@ -11,7 +11,8 @@
 - Point harness guidance at the real root-level app layout and commands.
 - Avoid carrying source-project-specific history, scripts, or runtime
   assumptions into this repo.
-- Route UI design through Pencil after spec/plan and before implementation.
+- Route UI design through a story-level `design-brief.md` plus Pencil after
+  spec/plan and before implementation.
 
 ## Repo Baseline
 
@@ -31,7 +32,8 @@
   - deployment reference: `chatbridge/DEPLOYMENT.md`
   - desktop publish config: `electron-builder.yml`
   - current Vercel project: `chatbox-web`
-- **UI design baseline**: UI stories keep normal story specs, then use
+- **UI design baseline**: UI stories keep normal story specs, add
+  `docs/specs/<story-id>/design-brief.md`, then use
   `.ai/workflows/pencil-ui-design.md` plus `.ai/docs/PENCIL_UI_WORKFLOW.md` to
   generate 2 or 3 Pencil variations and wait for user approval before code.
 - **ChatBridge live inspection baseline**:
@@ -41,6 +43,7 @@
   - dev seeding helper: `src/renderer/dev/chatbridgeSeeds.ts`
   - live inspection route: `/dev/chatbridge`
 - **Recommended Pencil asset paths**:
+  - `docs/specs/<story-id>/design-brief.md`
   - `design/system/design-system.lib.pen`
   - `design/stories/<story-id>.pen`
 - **Validation commands**:
@@ -66,7 +69,11 @@
 - Keep durable repo truths in `.ai/memory/project/`.
 - Keep current-task notes in `.ai/memory/session/`.
 - Align harness guidance with commands that actually exist in `package.json`.
-- For UI-affecting stories, do not skip the Pencil variation and approval gate.
+- For UI-affecting stories, do not skip the design-brief stage or the Pencil
+  variation and approval gate.
+- For completed stories, do not skip seeded example refresh checks in
+  `src/renderer/packages/initial_data.ts`; if no refresh is required, handoff
+  must state that explicitly.
 - Treat deployment as explicit. If a task does not define a deploy surface, say
   so instead of implying one.
 - For the current web host shell, prefer the checked-in Vercel baseline before

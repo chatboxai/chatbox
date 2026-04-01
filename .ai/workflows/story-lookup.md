@@ -38,7 +38,9 @@ Read relevant internal docs first:
 9. for UI work: `.ai/docs/PENCIL_UI_WORKFLOW.md`
 10. for UI work: existing `design/**/*.pen` assets when they exist
 11. for UI work: `.ai/skills/pencil-ui-design.md`
-12. for UI work: the current code surface that may need to be imported into
+12. for UI work: existing `docs/specs/**/design-brief.md` artifacts when the
+    story is a continuation or exemplar hunt
+13. for UI work: the current code surface that may need to be imported into
     Pencil first
 
 Capture reusable patterns and constraints from local docs.
@@ -67,9 +69,10 @@ Deliver a concise lookup brief before coding:
 2. local findings
 3. external findings, when required
 4. implementation implications
-5. risks or open questions
-6. initial test strategy
-7. sizing recommendation
+5. initial design-intent implications for UI work when applicable
+6. risks or open questions
+7. initial test strategy
+8. sizing recommendation
 
 ## Exit Criteria
 

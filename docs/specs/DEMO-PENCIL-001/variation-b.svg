@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="860" viewBox="0 0 1200 860">
+  <rect width="1200" height="860" rx="30" fill="#ffffff" stroke="#dee2e6"/>
+  <text x="40" y="52" fill="#868e96" font-family="Arial, sans-serif" font-size="13" font-weight="700">VARIATION B</text>
+  <text x="40" y="94" fill="#212529" font-family="Arial, sans-serif" font-size="34" font-weight="700">Command-center layout for quick scanning</text>
+  <text x="40" y="132" fill="#495057" font-family="Arial, sans-serif" font-size="16">Metrics first, then a support matrix and a lower legal/trust band.</text>
+
+  <rect x="40" y="176" width="340" height="150" rx="28" fill="#e9f5ff"/>
+  <rect x="430" y="176" width="340" height="150" rx="28" fill="#f1f3f5"/>
+  <rect x="820" y="176" width="340" height="150" rx="28" fill="#fff5d6"/>
+
+  <rect x="40" y="366" width="1120" height="360" rx="28" fill="#f1f3f5" stroke="#dee2e6"/>
+  <text x="68" y="408" fill="#212529" font-family="Arial, sans-serif" font-size="24" font-weight="700">Support destinations at a glance</text>
+  <rect x="68" y="436" width="256" height="108" rx="22" fill="#ffffff"/>
+  <rect x="340" y="436" width="256" height="108" rx="22" fill="#ffffff"/>
+  <rect x="612" y="436" width="256" height="108" rx="22" fill="#ffffff"/>
+  <rect x="884" y="436" width="248" height="108" rx="22" fill="#ffffff"/>
+  <rect x="68" y="562" width="256" height="108" rx="22" fill="#ffffff"/>
+  <rect x="340" y="562" width="256" height="108" rx="22" fill="#ffffff"/>
+  <rect x="612" y="562" width="520" height="108" rx="22" fill="#e9f5ff"/>
+
+  <rect x="40" y="754" width="1120" height="68" rx="28" fill="#dee2e6"/>
+</svg>

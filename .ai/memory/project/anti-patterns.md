@@ -41,6 +41,15 @@ Capture failures so they are not repeated.
 - **Prevention rule**: Use Pencil after spec/plan, generate 2 or 3 variations,
   and wait for explicit approval before implementation.
 
+- **Problem**: Jumping from a generic UI ask straight to Pencil variations
+- **Example**: Starting a story with "make a settings screen" and immediately
+  generating layouts without defining audience, feeling, design language, or
+  copy direction
+- **Why it failed**: The resulting options look generic, variation differences
+  become arbitrary, and the review lacks a stable decision rubric.
+- **Prevention rule**: Write `design-brief.md` before variation work and anchor
+  the options in explicit feeling, system, layout, and copy guidance.
+
 - **Problem**: Treating each UI story as a fresh one-off design system
 - **Example**: Building every new screen in Pencil from scratch with new tokens
   and components instead of extending a shared foundation
@@ -123,3 +132,12 @@ Capture failures so they are not repeated.
 - **Prevention rule**: Keep provider secrets in untracked local env files,
   secret stores, or server-side runtime env only. Do not compile them into the
   client bundle.
+
+- **Problem**: Approving design-grade UI with placeholder copy
+- **Example**: Treating a variation with headings like "Welcome Here" and CTA
+  labels like "Learn More" as final-quality review evidence for a content-heavy
+  screen
+- **Why it failed**: The hierarchy, tone, and action quality cannot actually be
+  judged, so the design review gives false confidence.
+- **Prevention rule**: When content changes materially, use real draft copy for
+  design-grade reviews or mark the option as lower-fidelity.

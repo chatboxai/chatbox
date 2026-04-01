@@ -8,6 +8,8 @@ derived from the official docs snapshot under `.ai/reference/pencil/pages/`.
 - Run `python3 .ai/scripts/sync_pencil_docs.py` at the start of every Pencil
   story.
 - Record the sync timestamp in the story's `pencil-review.md`.
+- Write or refresh `docs/specs/<story-id>/design-brief.md` before opening
+  variation work.
 
 ## Schema Guardrails
 
@@ -38,6 +40,15 @@ Sources:
 - Use slots for container patterns that are meant to accept child components.
 - Keep tokens semantic and theme-aware when practical.
 - Sync shared Pencil variables with code-side tokens when a story changes them.
+
+## Design-Intent Rules
+
+- Every visible UI story needs `design-brief.md` before variations start.
+- The brief should translate abstract feeling into concrete cues the design can
+  actually express: audience, desired feeling, anti-feelings, design language,
+  system direction, layout metaphor, and copy direction.
+- Variation differences should respond to the brief's declared hierarchy or
+  layout axes instead of arbitrary styling drift.
 
 ## Design ↔ Code Rules
 
@@ -77,3 +88,6 @@ Sources:
 - Placeholder-only blocks are allowed for explicit wireframe exploration, but
   they must be labeled honestly and should not be presented as finished
   production-ready design work.
+- A `design-grade` review cannot rely on generic placeholder headings or CTAs
+  when the story changes content. Use real draft copy or mark copy fidelity
+  honestly. If copy is unchanged, record `N/A`.

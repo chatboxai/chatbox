@@ -98,23 +98,23 @@ export async function uploadFile(file: File, url: string) {
   })
 }
 
-interface AuthTokens {
+export interface PlatformSessionTokens {
   accessToken: string
   refreshToken: string
 }
 
-interface AuthenticatedAfetchConfig {
+export interface PlatformAuthenticatedAfetchConfig {
   platformInfo: PlatformInfo
-  getTokens: () => Promise<AuthTokens | null>
-  refreshTokens: (refreshToken: string) => Promise<AuthTokens>
-  clearTokens: () => Promise<void>
+  getPlatformTokens: () => Promise<PlatformSessionTokens | null>
+  refreshPlatformTokens: (refreshToken: string) => Promise<PlatformSessionTokens>
+  clearPlatformTokens: () => Promise<void>
 }
 
-export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
-  const { platformInfo, getTokens, refreshTokens, clearTokens } = config
+export function createPlatformAuthenticatedAfetch(config: PlatformAuthenticatedAfetchConfig) {
+  const { platformInfo, getPlatformTokens, refreshPlatformTokens, clearPlatformTokens } = config
 
   // 用于防止并发刷新 token
-  let refreshPromise: Promise<AuthTokens> | null = null
+  let refreshPromise: Promise<PlatformSessionTokens> | null = null
 
   return async function authenticatedAfetch(
     url: RequestInfo | URL,
@@ -125,7 +125,7 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
     } = {}
   ) {
     // 获取当前 tokens
-    const tokens = await getTokens()
+    const tokens = await getPlatformTokens()
     if (!tokens) {
       throw new ApiError('No authentication tokens available')
     }
@@ -170,19 +170,19 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
           if (!refreshPromise) {
             refreshPromise = (async () => {
               try {
-                const currentTokens = await getTokens()
+                const currentTokens = await getPlatformTokens()
                 if (!currentTokens) {
                   throw new ApiError('No refresh token available')
                 }
 
                 console.log('🔑 Refreshing access token with refresh token...')
-                const newTokens = await refreshTokens(currentTokens.refreshToken)
+                const newTokens = await refreshPlatformTokens(currentTokens.refreshToken)
                 console.log('✅ Token refreshed successfully')
                 return newTokens
               } catch (error) {
                 console.error('❌ Failed to refresh token:', error)
                 // 刷新失败，清除所有 tokens
-                await clearTokens()
+                await clearPlatformTokens()
                 throw new ApiError('Token refresh failed, please login again')
               } finally {
                 refreshPromise = null
@@ -255,3 +255,5 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
     }
   }
 }
+
+export const createAuthenticatedAfetch = createPlatformAuthenticatedAfetch

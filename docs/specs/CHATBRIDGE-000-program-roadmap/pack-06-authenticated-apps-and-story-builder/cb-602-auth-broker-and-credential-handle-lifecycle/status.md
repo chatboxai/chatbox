@@ -1,14 +1,29 @@
 # CB-602 Status
 
-- status: planned
+- status: validated
 - pack: Pack 06 - Authenticated Apps and Story Builder
 - single-agent order: 2 of 4
-- blocked by: CB-601 at least `validated`
+- blocked by: none
 - unblocks: CB-604
-- implementation surfaces: see `technical-plan.md`
-- validation surfaces: see `task-breakdown.md` and `test/integration/chatbridge/`
-- happy-path scenario proof: pending
-- failure or degraded proof: pending
-- acceptance-criteria status: pending implementation
-- notes: Credential handles should not land until the platform/app auth
-  boundary is explicit and testable.
+- implementation surfaces:
+  - `src/shared/chatbridge/auth.ts`
+  - `src/main/chatbridge/auth-broker/index.ts`
+- validation surfaces:
+  - `src/main/chatbridge/auth-broker/index.test.ts`
+  - `test/integration/chatbridge/scenarios/auth-broker-lifecycle.test.ts`
+  - `pnpm test`
+  - `pnpm lint`
+  - `pnpm build`
+  - `git diff --check`
+- happy-path scenario proof:
+  - `test/integration/chatbridge/scenarios/auth-broker-lifecycle.test.ts`
+- failure or degraded proof:
+  - `src/main/chatbridge/auth-broker/index.test.ts` and `test/integration/chatbridge/scenarios/auth-broker-lifecycle.test.ts`
+  - revoked, expired, missing, and over-scoped handles all fail closed
+- acceptance-criteria status:
+  - AC-1 complete: a credential-handle schema and host-owned broker lifecycle now exist
+  - AC-2 complete: issue, refresh, revoke, validate, and expiry behavior are explicit and covered by tests
+  - AC-3 complete: launch/resource access return scoped handles or platform-session capability, never raw partner secrets
+- notes:
+  - The broker is intentionally in-memory and deterministic for Pack 6 contract proof; persistence and live OAuth exchange remain later-pack work
+  - `pnpm check` is still blocked by unchanged upstream-wide type-contract drift outside the touched CB-602 files

@@ -15,7 +15,7 @@ export function useAuthTokens() {
 
   const saveAuthTokens = useCallback(async (tokens: AuthTokens) => {
     try {
-      await authInfoStore.getState().setTokens(tokens)
+      await authInfoStore.getState().setPlatformTokens(tokens)
       console.log('✅ Tokens saved to store')
     } catch (error) {
       console.error('❌ Failed to save tokens:', error)
@@ -31,7 +31,7 @@ export function useAuthTokens() {
         await premiumActions.deactivate()
       }
 
-      authInfoStore.getState().clearTokens()
+      authInfoStore.getState().clearPlatformTokens()
 
       queryClient.removeQueries({ queryKey: ['userProfile'] })
       queryClient.removeQueries({ queryKey: ['userLicenses'] })

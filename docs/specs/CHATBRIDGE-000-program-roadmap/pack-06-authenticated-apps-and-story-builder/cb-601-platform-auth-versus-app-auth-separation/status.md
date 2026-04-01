@@ -1,14 +1,33 @@
 # CB-601 Status
 
-- status: planned
+- status: validated
 - pack: Pack 06 - Authenticated Apps and Story Builder
 - single-agent order: 1 of 4
-- blocked by: Pack 5 exit memo and validated proof
+- blocked by: none
 - unblocks: CB-602
-- implementation surfaces: see `technical-plan.md`
-- validation surfaces: see `task-breakdown.md` and `test/integration/chatbridge/`
-- happy-path scenario proof: pending
-- failure or degraded proof: pending
-- acceptance-criteria status: pending implementation
-- notes: Start the auth lane by separating platform auth from app auth before
-  credential handles or Story Builder runtime work opens.
+- implementation surfaces:
+  - `src/shared/chatbridge/auth.ts`
+  - `src/shared/chatbridge/index.ts`
+  - `src/shared/request/request.ts`
+  - `src/renderer/packages/remote.ts`
+  - `src/renderer/stores/authInfoStore.ts`
+  - `src/renderer/routes/settings/provider/chatbox-ai/-components/useAuthTokens.ts`
+  - `src/renderer/stores/premiumActions.ts`
+- validation surfaces:
+  - `src/shared/chatbridge/auth.test.ts`
+  - `test/integration/chatbridge/scenarios/auth-boundary-separation.test.ts`
+  - `pnpm test`
+  - `pnpm lint`
+  - `pnpm build`
+  - `git diff --check`
+- happy-path scenario proof:
+  - `test/integration/chatbridge/scenarios/auth-boundary-separation.test.ts`
+- failure or degraded proof:
+  - `src/shared/chatbridge/auth.test.ts` rejects raw platform tokens on app grants and treats expired/revoked grants as unusable
+- acceptance-criteria status:
+  - AC-1 complete: platform auth and app auth have separate shared contracts and explicit boundary resolution
+  - AC-2 complete: app grants are linked by `userId` + `appId` lookup key and remain host-owned via `credentialHandle`
+  - AC-3 complete: the boundary now names platform-session versus host-owned app-grant behavior for later broker/proxy work
+- notes:
+  - Existing Chatbox login tokens are now explicitly treated as platform auth via `getPlatformTokens` / `setPlatformTokens` / `clearPlatformTokens`
+  - `pnpm check` is still blocked by upstream-wide type-contract drift outside the touched CB-601 files; see the current branch validation log for the unchanged failure set

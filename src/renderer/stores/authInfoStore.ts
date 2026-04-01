@@ -9,6 +9,9 @@ interface AuthTokensState {
 }
 
 interface AuthTokensActions {
+  setPlatformTokens: (tokens: AuthTokens) => void
+  clearPlatformTokens: () => void
+  getPlatformTokens: () => AuthTokens | null
   setTokens: (tokens: AuthTokens) => void
   clearTokens: () => void
   getTokens: () => AuthTokens | null
@@ -25,21 +28,21 @@ export const authInfoStore = createStore<AuthTokensState & AuthTokensActions>()(
       immer((set, get) => ({
         ...initialState,
 
-        setTokens: (tokens: AuthTokens) => {
+        setPlatformTokens: (tokens: AuthTokens) => {
           set((state) => {
             state.accessToken = tokens.accessToken
             state.refreshToken = tokens.refreshToken
           })
         },
 
-        clearTokens: () => {
+        clearPlatformTokens: () => {
           set((state) => {
             state.accessToken = null
             state.refreshToken = null
           })
         },
 
-        getTokens: () => {
+        getPlatformTokens: () => {
           const state = get()
           if (state.accessToken && state.refreshToken) {
             return {
@@ -48,6 +51,15 @@ export const authInfoStore = createStore<AuthTokensState & AuthTokensActions>()(
             }
           }
           return null
+        },
+        setTokens: (tokens: AuthTokens) => {
+          get().setPlatformTokens(tokens)
+        },
+        clearTokens: () => {
+          get().clearPlatformTokens()
+        },
+        getTokens: () => {
+          return get().getPlatformTokens()
         },
       })),
       {
@@ -70,6 +82,9 @@ export const useAuthTokens = () => {
   return useAuthInfoStore((state) => ({
     accessToken: state.accessToken,
     refreshToken: state.refreshToken,
+    setPlatformTokens: state.setPlatformTokens,
+    clearPlatformTokens: state.clearPlatformTokens,
+    getPlatformTokens: state.getPlatformTokens,
     setTokens: state.setTokens,
     clearTokens: state.clearTokens,
     getTokens: state.getTokens,

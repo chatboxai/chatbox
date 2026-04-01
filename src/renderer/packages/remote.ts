@@ -5,7 +5,7 @@ import platform from '@/platform'
 import { authInfoStore } from '@/stores/authInfoStore'
 import { CHATBOX_BUILD_CHANNEL, USE_BETA_API, USE_BETA_CHATBOX, USE_LOCAL_API, USE_LOCAL_CHATBOX } from '@/variables'
 import * as chatboxaiAPI from '../../shared/request/chatboxai_pool'
-import { createAfetch, createAuthenticatedAfetch, uploadFile } from '../../shared/request/request'
+import { createAfetch, createPlatformAuthenticatedAfetch, uploadFile } from '../../shared/request/request'
 import {
   type ChatboxAILicenseDetail,
   type Config,
@@ -47,44 +47,44 @@ async function getAfetch() {
 
 // ========== Authenticated Afetch (带 token 自动刷新) ==========
 
-let _authenticatedAfetch: ReturnType<typeof createAuthenticatedAfetch> | null = null
-let authenticatedAfetchPromise: Promise<ReturnType<typeof createAuthenticatedAfetch>> | null = null
+let _platformAuthenticatedAfetch: ReturnType<typeof createPlatformAuthenticatedAfetch> | null = null
+let platformAuthenticatedAfetchPromise: Promise<ReturnType<typeof createPlatformAuthenticatedAfetch>> | null = null
 
-async function initAuthenticatedAfetch(): Promise<ReturnType<typeof createAuthenticatedAfetch>> {
-  if (authenticatedAfetchPromise) return authenticatedAfetchPromise
+async function initPlatformAuthenticatedAfetch(): Promise<ReturnType<typeof createPlatformAuthenticatedAfetch>> {
+  if (platformAuthenticatedAfetchPromise) return platformAuthenticatedAfetchPromise
 
-  authenticatedAfetchPromise = (async () => {
-    _authenticatedAfetch = createAuthenticatedAfetch({
+  platformAuthenticatedAfetchPromise = (async () => {
+    _platformAuthenticatedAfetch = createPlatformAuthenticatedAfetch({
       platformInfo: {
         type: platform.type,
         platform: await platform.getPlatform(),
         os: getOS(),
         version: await platform.getVersion(),
       },
-      getTokens: async () => {
-        const tokens = authInfoStore.getState().getTokens()
+      getPlatformTokens: async () => {
+        const tokens = authInfoStore.getState().getPlatformTokens()
         return tokens
       },
-      refreshTokens: async (refreshToken: string) => {
+      refreshPlatformTokens: async (refreshToken: string) => {
         const result = await refreshAccessToken({ refreshToken })
-        authInfoStore.getState().setTokens(result)
+        authInfoStore.getState().setPlatformTokens(result)
         return result
       },
-      clearTokens: async () => {
-        authInfoStore.getState().clearTokens()
+      clearPlatformTokens: async () => {
+        authInfoStore.getState().clearPlatformTokens()
       },
     })
-    return _authenticatedAfetch
+    return _platformAuthenticatedAfetch
   })()
 
-  return authenticatedAfetchPromise
+  return platformAuthenticatedAfetchPromise
 }
 
-async function getAuthenticatedAfetch() {
-  if (!_authenticatedAfetch) {
-    return await initAuthenticatedAfetch()
+async function getPlatformAuthenticatedAfetch() {
+  if (!_platformAuthenticatedAfetch) {
+    return await initPlatformAuthenticatedAfetch()
   }
-  return _authenticatedAfetch
+  return _platformAuthenticatedAfetch
 }
 
 // ========== API ORIGIN 根据可用性维护 ==========
@@ -778,7 +778,7 @@ export async function getUserProfile() {
       created_at: string
     }
   }
-  const afetch = await getAuthenticatedAfetch()
+  const afetch = await getPlatformAuthenticatedAfetch()
   const res = await afetch(
     `${getChatboxOrigin()}/api/user/profile`,
     {
@@ -824,7 +824,7 @@ export async function listLicensesByUser(): Promise<UserLicense[]> {
   type Response = {
     data: UserLicense[]
   }
-  const afetch = await getAuthenticatedAfetch()
+  const afetch = await getPlatformAuthenticatedAfetch()
   const res = await afetch(
     `${getChatboxOrigin()}/api/license/list_by_user`,
     {

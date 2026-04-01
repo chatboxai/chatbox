@@ -41,7 +41,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 | Pack 03 | historical baseline | inherited `merged` baseline | inherited | Chess lifecycle baseline is assumed ready for Pack 4 exit work. |
 | Pack 04 | validated | CB-401 through CB-404 validated | written | Exit proof is recorded in `pack-04.../STATUS.md`; Pack 5 and Pack 6 are unlocked. |
 | Pack 05 | validated | CB-501 through CB-504 validated | written | Eligibility, routing, Debate Arena, and bounded multi-app continuity are proven. |
-| Pack 06 | queued | ready to open at CB-601 | pending | Auth lane opens next in the single-agent rollout. |
+| Pack 06 | in_progress | CB-601, CB-602, and CB-604 validated; CB-603 in progress | pending | Auth boundary, credential-handle lifecycle, and host-mediated resource access are explicit; finish Story Builder to close the pack. |
 | Pack 07 | queued | waiting on Packs 5 and 6 | pending | Governance and convergence finish only after product lanes are done. |
 
 ## Single-Agent Queue
@@ -87,7 +87,7 @@ Required Pack 4 proof set:
 | O1 continuous in-thread app UX | Packs 01, 03, 04, 05 | partial | Pack 6 authenticated-app proof and final convergence scenarios |
 | O2 host-owned lifecycle, routing, and memory | Packs 02, 04, 05, 06 | partial | Pack 6 auth/resource proof and final convergence audit |
 | O3 reviewed-partner trust and governance | Packs 02, 05, 07 | partial | policy enforcement, privacy-aware audit, kill switches |
-| O4 authenticated app support without raw credentials | Pack 06 | queued | credential-handle lifecycle, resource proxying, Story Builder end-to-end proof |
+| O4 authenticated app support without raw credentials | Pack 06 | partial | Story Builder end-to-end proof on top of the validated credential-handle lifecycle and resource proxy seams |
 | O5 partner-ready governable platform | Pack 07 | queued | recovery model, operator controls, validator/harness, final audited proof set |
 
 ## Required Scenario Families

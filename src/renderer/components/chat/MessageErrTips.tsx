@@ -256,7 +256,7 @@ export default function MessageErrTips(props: { msg: Message }) {
               </Flex>
               <Collapse in={expanded}>
                 <Flex justify="flex-end" mt="xs">
-                  <Tooltip label={t('copy')} withArrow openDelay={1000}>
+                  <Tooltip label={t('Copy')} withArrow openDelay={1000}>
                     <ActionIcon
                       variant="subtle"
                       size="sm"
@@ -276,7 +276,7 @@ export default function MessageErrTips(props: { msg: Message }) {
             <div className="text-sm p-2 rounded-md bg-red-50 dark:bg-red-900/20 overflow-hidden">
               <div className="whitespace-pre-wrap break-all">{errorMessage}</div>
               <Flex justify="flex-end" mt="xs">
-                <Tooltip label={t('copy')} withArrow openDelay={1000}>
+                <Tooltip label={t('Copy')} withArrow openDelay={1000}>
                   <ActionIcon variant="subtle" size="sm" color="red" onClick={() => copy()}>
                     {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
                   </ActionIcon>

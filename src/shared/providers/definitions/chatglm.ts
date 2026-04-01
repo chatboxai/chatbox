@@ -6,6 +6,7 @@ export const chatGLMProvider = defineProvider({
   id: ModelProviderEnum.ChatGLM6B,
   name: 'ChatGLM6B',
   type: ModelProviderType.OpenAI,
+  modelsDevProviderId: 'zhipuai',
   defaultSettings: {
     apiHost: 'https://open.bigmodel.cn/api/paas/v4/',
     models: [

@@ -174,13 +174,12 @@ describe('ChatBridge app instance and event domain model', () => {
       completion: {
         schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
         status: 'success',
-        outcome: {
-          code: 'artifact_ready',
-          data: {
-            artifactId: 'artifact-1',
-          },
+        outcomeData: {
+          artifactId: 'artifact-1',
         },
-        suggestedSummary: 'The preview artifact is ready.',
+        suggestedSummary: {
+          text: 'The preview artifact is ready.',
+        },
       },
     })
 
@@ -197,13 +196,12 @@ describe('ChatBridge app instance and event domain model', () => {
         payload: {
           schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
           status: 'success',
-          outcome: {
-            code: 'artifact_ready',
-            data: {
-              artifactId: 'artifact-1',
-            },
+          outcomeData: {
+            artifactId: 'artifact-1',
           },
-          suggestedSummary: 'The preview artifact is ready.',
+          suggestedSummary: {
+            text: 'The preview artifact is ready.',
+          },
         },
         suggestedSummary: 'The preview artifact is ready.',
       },

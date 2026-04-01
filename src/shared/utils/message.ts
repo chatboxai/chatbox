@@ -11,6 +11,7 @@ type MessageContentPartLike = {
   lifecycle?: unknown
   state?: unknown
   summary?: unknown
+  summaryForModel?: unknown
   toolCallId?: unknown
   bridgeSessionId?: unknown
   snapshot?: unknown
@@ -74,6 +75,7 @@ function normalizeContentParts(contentParts?: MessageContentParts | MessageConte
       lifecycle,
       ...(typeof part.appName === 'string' ? { appName: part.appName } : {}),
       ...(typeof part.summary === 'string' ? { summary: part.summary } : {}),
+      ...(typeof part.summaryForModel === 'string' ? { summaryForModel: part.summaryForModel } : {}),
       ...(typeof part.toolCallId === 'string' ? { toolCallId: part.toolCallId } : {}),
       ...(typeof part.bridgeSessionId === 'string' ? { bridgeSessionId: part.bridgeSessionId } : {}),
       ...(part.snapshot && typeof part.snapshot === 'object' && !Array.isArray(part.snapshot)

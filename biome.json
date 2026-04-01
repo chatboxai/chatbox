@@ -1,7 +1,13 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
-  "vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": false },
-  "files": { "ignoreUnknown": true },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true
+  },
   "formatter": {
     "enabled": true,
     "formatWithErrors": false,
@@ -17,6 +23,7 @@
     "includes": [
       "src/**",
       "test/integration/**/*.ts",
+      "test/e2e/**/*.ts",
       "!src/main/mcp/shell-env.cjs",
       "!src/renderer/components/icons/**",
       "biome.json",
@@ -32,11 +39,24 @@
       "recommended": true,
       "a11y": "off",
       "correctness": {
-        "useExhaustiveDependencies": "warn"
+        "useExhaustiveDependencies": "warn",
+        "noUnusedFunctionParameters": "warn",
+        "noUnusedImports": "warn"
+      },
+      "style": {
+        "useNodejsImportProtocol": "warn",
+        "noNonNullAssertion": "warn"
       },
       "suspicious": {
+        "noExplicitAny": "warn",
         "useAwait": "warn",
-        "noArrayIndexKey": "warn"
+        "noArrayIndexKey": "warn",
+        "noConsole": {
+          "level": "warn",
+          "options": {
+            "allow": ["assert", "error", "info", "warn"]
+          }
+        }
       },
       "nursery": {
         "noFloatingPromises": "warn"
@@ -44,6 +64,8 @@
     },
     "includes": [
       "src/**",
+      "test/integration/**/*.ts",
+      "test/e2e/**/*.ts",
       "!src/main/mcp/shell-env.cjs",
       "!src/renderer/components/icons/**",
       "biome.json",
@@ -68,6 +90,10 @@
   },
   "assist": {
     "enabled": true,
-    "actions": { "source": { "organizeImports": "on" } }
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
   }
 }

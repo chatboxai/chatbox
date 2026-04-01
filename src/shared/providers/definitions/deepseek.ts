@@ -6,6 +6,8 @@ export const deepseekProvider = defineProvider({
   id: ModelProviderEnum.DeepSeek,
   name: 'DeepSeek',
   type: ModelProviderType.OpenAI,
+  modelsDevProviderId: 'deepseek',
+  curatedModelIds: ['deepseek-chat', 'deepseek-reasoner'],
   urls: {
     website: 'https://www.deepseek.com/',
   },

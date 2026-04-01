@@ -22,7 +22,7 @@ import {
   type Session,
   type SessionSettings,
 } from '@shared/types'
-import { IconInfoCircle, IconTrash } from '@tabler/icons-react'
+import { IconInfoCircle, IconTrash, IconUpload } from '@tabler/icons-react'
 import { pick } from 'lodash'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -31,7 +31,7 @@ import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import LazyNumberInput from '@/components/common/LazyNumberInput'
 import MaxContextMessageCountSlider from '@/components/common/MaxContextMessageCountSlider'
 import SliderWithInput from '@/components/common/SliderWithInput'
-import { handleImageInputAndSave } from '@/components/Image'
+import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
 import ImageStyleSelect from '@/components/ImageStyleSelect'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import SegmentedControl from '@/components/common/SegmentedControl'
@@ -41,6 +41,7 @@ import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { updateSession } from '@/stores/chatStore'
 import { getSessionMeta, mergeSettings } from '@/stores/sessionHelpers'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
+import { add as addToast } from '@/stores/toastActions'
 import { getMessageText } from '../../shared/utils/message'
 
 const SessionSettingsModal = NiceModal.create(
@@ -202,9 +203,10 @@ const SessionSettingsModal = NiceModal.create(
               )}
             </FileButton>
 
-            <Input.Wrapper label={t('name')}>
+            <Stack gap="xs">
+              <Text fw={700}>{t('Name')}</Text>
               <Input
-                placeholder={t('name')}
+                placeholder={t('Name')}
                 autoFocus={!isSmallScreen}
                 value={editingData.name}
                 onChange={(e) => setEditingData({ ...editingData, name: e.target.value })}
@@ -212,7 +214,7 @@ const SessionSettingsModal = NiceModal.create(
                   input: '!text-chatbox-tint-primary',
                 }}
               />
-            </Input.Wrapper>
+            </Stack>
 
             <Textarea
               label={t('Instruction (System Prompt)')}
@@ -230,21 +232,15 @@ const SessionSettingsModal = NiceModal.create(
               }}
             />
 
-            <Stack className=" border border-solid border-chatbox-border-primary rounded-md">
-              <Flex
-                align="center"
-                justify="space-between"
-                px="md"
-                py="sm"
-                className="border-0 border-b border-solid border-chatbox-border-primary"
-              >
+            <Stack gap="xs">
+              <Flex align="center" justify="space-between">
                 <Text fw={700}>{t('Specific model settings')}</Text>
-                <Button size="compact-sm" color="chatbox-secondary" variant="light" onClick={onReset}>
+                <Button size="compact-sm" color="chatbox-brand" variant="transparent" onClick={onReset} fw={600}>
                   {t('Reset')}
                 </Button>
               </Flex>
 
-              <Box px="md" py="sm">
+              <Box p="sm" className="border border-solid border-chatbox-border-primary rounded-md">
                 {isChatSession(session) && (
                   <ChatConfig
                     settings={editingData.settings}
@@ -268,12 +264,90 @@ const SessionSettingsModal = NiceModal.create(
                 {isPictureSession(session) && <PictureConfig dataEdit={editingData} setDataEdit={setEditingData} />}
               </Box>
             </Stack>
+
+            <Stack gap="xs">
+              <Text fw={600}>{t('Background Settings')}</Text>
+              <Flex
+                align="center"
+                gap="sm"
+                wrap="wrap"
+                className="p-sm border border-solid border-chatbox-border-primary rounded-md"
+              >
+                <Flex align="center" gap="xxs">
+                  <Text>{t('Background Image')}</Text>
+                  <Tooltip
+                    label={t('Support jpg or png file smaller than 5MB. Overrides global background when set.')}
+                    withArrow
+                    offset={4}
+                  >
+                    <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
+                  </Tooltip>
+                </Flex>
+
+                <div className="flex-1" />
+
+                <FileButton
+                  accept="image/png,image/jpeg"
+                  onChange={(file) => {
+                    if (file) {
+                      if (file.size > 5 * 1024 * 1024) {
+                        addToast(t('Support jpg or png file smaller than 5MB'))
+                        return
+                      }
+                      const key = StorageKeyGenerator.picture(`session-bg:${session.id}`)
+                      handleImageInputAndSave(
+                        file,
+                        key,
+                        () =>
+                          setEditingData({ ...editingData, backgroundImage: { type: 'storage-key', storageKey: key } }),
+                        (k, v) => storage.setBlob(k, v)
+                      )
+                    }
+                  }}
+                >
+                  {(props) => (
+                    <Button {...props} variant="default" size="compact-sm">
+                      <ScalableIcon icon={IconUpload} size={12} className="mr-xs" />
+                      {t('Upload')}
+                    </Button>
+                  )}
+                </FileButton>
+
+                {editingData.backgroundImage?.type === 'storage-key' ? (
+                  <Box w={48} h={48} className="relative overflow-hidden rounded bg-chatbox-tertiary/20 flex-shrink-0">
+                    <ImageInStorage
+                      storageKey={editingData.backgroundImage.storageKey}
+                      className="object-cover w-full h-full"
+                    />
+
+                    <ActionIcon
+                      color="chatbox-error"
+                      size={20}
+                      radius={10}
+                      bottom={3}
+                      right={3}
+                      className="absolute"
+                      onClick={() => {
+                        if (editingData.backgroundImage) {
+                          if (editingData.backgroundImage.type === 'storage-key') {
+                            storage.removeItem(editingData.backgroundImage.storageKey)
+                          }
+                          setEditingData({ ...editingData, backgroundImage: undefined })
+                        }
+                      }}
+                    >
+                      <ScalableIcon icon={IconTrash} size={16} />
+                    </ActionIcon>
+                  </Box>
+                ) : null}
+              </Flex>
+            </Stack>
           </Stack>
         </div>
 
         <AdaptiveModal.Actions>
           <AdaptiveModal.CloseButton onClick={onCancel} />
-          <Button onClick={onSave}>{t('save')}</Button>
+          <Button onClick={onSave}>{t('Save')}</Button>
         </AdaptiveModal.Actions>
       </AdaptiveModal>
     )
@@ -654,17 +728,15 @@ export function ChatConfig({
         </Stack>
       )}
 
-      <Stack>
-        {settings?.provider === ModelProviderEnum.Claude && (
-          <ClaudeProviderConfig settings={settings} onSettingsChange={onSettingsChange} />
-        )}
-        {settings?.provider === ModelProviderEnum.OpenAI && (
-          <OpenAIProviderConfig settings={settings} onSettingsChange={onSettingsChange} />
-        )}
-        {settings?.provider === ModelProviderEnum.Gemini && (
-          <GoogleProviderConfig settings={settings} onSettingsChange={onSettingsChange} />
-        )}
-      </Stack>
+      {settings?.provider === ModelProviderEnum.Claude && (
+        <ClaudeProviderConfig settings={settings} onSettingsChange={onSettingsChange} />
+      )}
+      {settings?.provider === ModelProviderEnum.OpenAI && (
+        <OpenAIProviderConfig settings={settings} onSettingsChange={onSettingsChange} />
+      )}
+      {settings?.provider === ModelProviderEnum.Gemini && (
+        <GoogleProviderConfig settings={settings} onSettingsChange={onSettingsChange} />
+      )}
     </Stack>
   )
 }

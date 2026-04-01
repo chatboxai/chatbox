@@ -83,11 +83,8 @@ function createAppRecordSnapshot(fixtures: AppRecordFixture[]) {
         completion: {
           schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
           status: 'success',
-          outcome: {
-            code: 'seeded_complete',
-            data: {
-              appInstanceId: fixture.id,
-            },
+          outcomeData: {
+            appInstanceId: fixture.id,
           },
         },
         summaryForModel: fixture.summaryForModel,

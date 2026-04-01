@@ -81,7 +81,6 @@ export async function updateSessionList(updater: UpdaterFn<SessionMeta[]>) {
       }
     )
   }
-  console.debug('chatStore', 'updateSessionList', updater)
   const result = await sessionListUpdateQueue.set(updater)
   queryClient.setQueryData(QueryKeys.ChatSessionsList, sortSessions(result))
 }
@@ -161,7 +160,6 @@ export async function createSession(newSession: Omit<Session, 'id'>, previousId?
 const sessionUpdateQueues: Record<string, UpdateQueue<Session>> = {}
 
 export async function updateSessionWithMessages(sessionId: string, updater: Updater<Session>) {
-  console.debug('chatStore', 'updateSession', sessionId, updater)
   if (!sessionUpdateQueues[sessionId]) {
     // do not use await here to avoid data race
     sessionUpdateQueues[sessionId] = new UpdateQueue<Session>(
@@ -216,7 +214,6 @@ export async function updateSession(sessionId: string, updater: Updater<Omit<Ses
 
 // only update session cache without touching storage, for performance sensitive usage
 export async function updateSessionCache(sessionId: string, updater: Updater<Session>) {
-  console.debug('chatStore', 'updateSessionCache', sessionId, updater)
   const session = await getSession(sessionId)
   if (!session) {
     throw new Error(`Session ${sessionId} not found`)

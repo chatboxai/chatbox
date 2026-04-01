@@ -211,8 +211,8 @@ describe('bridge-session validation', () => {
       completion: {
         schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
         status: 'success',
-        outcome: {
-          code: 'preview_complete',
+        outcomeData: {
+          artifactId: 'preview-1',
         },
       },
     }, {

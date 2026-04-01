@@ -1,10 +1,15 @@
 import { SystemProviders } from '@shared/defaults'
+import { isUsingOAuth, mergeSharedOAuthProviderSettings } from '@shared/oauth'
 import { ModelProviderEnum, type ProviderInfo } from '@shared/types'
 import { useCallback, useMemo } from 'react'
+import { enrichModelsFromRegistry, useModelRegistryVersion } from '@/packages/model-registry'
+import platform from '@/platform'
 import { useSettingsStore } from '@/stores/settingsStore'
 import useChatboxAIModels from './useChatboxAIModels'
 
 export const useProviders = () => {
+  useModelRegistryVersion()
+
   const { chatboxAIModels } = useChatboxAIModels()
   const { setSettings, ...settings } = useSettingsStore((state) => state)
   const providerSettingsMap = settings.providers
@@ -17,7 +22,7 @@ export const useProviders = () => {
     () =>
       allProviderBaseInfos
         .map((p) => {
-          const providerSettings = providerSettingsMap?.[p.id]
+          const providerSettings = mergeSharedOAuthProviderSettings(p.id, providerSettingsMap)
           if (p.id === ModelProviderEnum.ChatboxAI && settings.licenseKey) {
             return {
               ...p,
@@ -25,15 +30,16 @@ export const useProviders = () => {
               models: chatboxAIModels,
             }
           } else if (
-            (!p.isCustom && providerSettings?.apiKey) ||
+            (!p.isCustom && (providerSettings?.apiKey || isUsingOAuth(providerSettings || {}, platform.type))) ||
             ((p.isCustom || p.id === ModelProviderEnum.Ollama || p.id === ModelProviderEnum.LMStudio) &&
               providerSettings?.models?.length)
           ) {
+            const baseModels = providerSettings?.models || p.defaultSettings?.models || []
             return {
-              // 如果没有自定义 models 列表，使用 defaultSettings，否则被自定义的列表（可能有添加或删除部分 model）覆盖, 不能包含用户排除过的 models
-              models: p.defaultSettings?.models,
               ...p,
               ...providerSettings,
+              // 如果没有自定义 models 列表，使用 defaultSettings，否则被自定义的列表（可能有添加或删除部分 model）覆盖, 不能包含用户排除过的 models
+              models: enrichModelsFromRegistry(baseModels, p.id),
             } as ProviderInfo
           } else {
             return null

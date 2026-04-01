@@ -75,7 +75,7 @@ const ReportContent = NiceModal.create(({ contentId }: { contentId: string }) =>
 
       <AdaptiveModal.Actions>
         <AdaptiveModal.CloseButton onClick={onClose} />
-        <Button onClick={onSubmit}>{t('submit')}</Button>
+        <Button onClick={onSubmit}>{t('Submit')}</Button>
       </AdaptiveModal.Actions>
     </AdaptiveModal>
   )

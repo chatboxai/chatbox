@@ -68,7 +68,7 @@ const ExportChat = NiceModal.create(() => {
       <AdaptiveModal.Actions>
         <AdaptiveModal.CloseButton onClick={onCancel} />
 
-        <Button onClick={onExport}>{t('export')}</Button>
+        <Button onClick={onExport}>{t('Export')}</Button>
       </AdaptiveModal.Actions>
     </AdaptiveModal>
   )

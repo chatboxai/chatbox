@@ -12,6 +12,7 @@ import { immer } from 'zustand/middleware/immer'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import storage from '@/storage'
+import { mergeProviderSettings, type ProviderSettingsUpdate } from './providerSettings'
 
 const log = getLogger('settings-store')
 
@@ -61,7 +62,7 @@ export const settingsStore = createStore<Settings & Action>()(
           },
           removeItem: async (name) => await storage.removeItem(name),
         })),
-        version: 2,
+        version: 4,
         partialize: (state) => {
           try {
             return SettingsSchema.parse(state)
@@ -157,22 +158,9 @@ export const useProviderSettings = (providerId: string) => {
 
   const providerSettings = providers?.[providerId]
 
-  const setProviderSettings = (
-    val: Partial<ProviderSettings> | ((prev: ProviderSettings | undefined) => Partial<ProviderSettings>)
-  ) => {
+  const setProviderSettings = (val: ProviderSettingsUpdate) => {
     settingsStore.setState((currentSettings) => {
-      const currentProviderSettings = currentSettings.providers?.[providerId] || {}
-      const newProviderSettings = typeof val === 'function' ? val(currentProviderSettings) : val
-
-      return {
-        providers: {
-          ...(currentSettings.providers || {}),
-          [providerId]: {
-            ...currentProviderSettings,
-            ...newProviderSettings,
-          },
-        },
-      }
+      return mergeProviderSettings(currentSettings, providerId, val)
     })
   }
 

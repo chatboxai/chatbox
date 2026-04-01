@@ -33,6 +33,12 @@ describe('migrateMessage', () => {
       appId: 'story-builder',
       appInstanceId: 'instance-1',
       state: 'active',
+      summaryForModel: 'Host-approved app memory.',
+      title: 'Story Builder shell',
+      description: 'The host keeps recovery inside the thread.',
+      statusText: 'Running',
+      fallbackTitle: 'Recovery checkpoint',
+      fallbackText: 'The host can keep helping from the saved draft.',
     }
 
     const migrated = migrateMessage({
@@ -48,6 +54,12 @@ describe('migrateMessage', () => {
       appId: 'story-builder',
       appInstanceId: 'instance-1',
       lifecycle: 'active',
+      summaryForModel: 'Host-approved app memory.',
+      title: 'Story Builder shell',
+      description: 'The host keeps recovery inside the thread.',
+      statusText: 'Running',
+      fallbackTitle: 'Recovery checkpoint',
+      fallbackText: 'The host can keep helping from the saved draft.',
     })
   })
 

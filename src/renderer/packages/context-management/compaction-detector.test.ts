@@ -7,7 +7,7 @@ import {
   OUTPUT_RESERVE_TOKENS,
 } from './compaction-detector'
 
-vi.mock('../model-context', () => ({
+vi.mock('../model-registry', () => ({
   getModelContextWindowSync: vi.fn((modelId: string) => {
     const contextWindows: Record<string, number> = {
       'gpt-4o': 128_000,

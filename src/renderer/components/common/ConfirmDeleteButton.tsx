@@ -76,7 +76,7 @@ export function ConfirmDeleteMenuItem({ onDelete, label, color = 'error', icon }
       sx={hoverStyleHash[color]}
     >
       {icon || <DeleteIcon fontSize="small" />}
-      {label || t('delete')}
+      {label || t('Delete')}
     </MenuItem>
   )
 }

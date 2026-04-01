@@ -76,6 +76,11 @@ export const ModelItem = ({
           Pro
         </Badge>
       )}
+      {model.labels?.includes('new') && (
+        <Badge color="teal" size="xs" variant="light" ml="xxs" className="flex-shrink-0 flex-grow-0">
+          New
+        </Badge>
+      )}
 
       {model.capabilities?.includes('reasoning') && (
         <Tooltip label={t('Reasoning')} events={{ hover: true, focus: true, touch: true }}>
@@ -175,6 +180,11 @@ export const ModelItemInDrawer = ({
       {model.labels?.includes('pro') && (
         <Badge color="chatbox-brand" size="xs" variant="light" className="flex-grow-0 flex-shrink-0">
           Pro
+        </Badge>
+      )}
+      {model.labels?.includes('new') && (
+        <Badge color="teal" size="xs" variant="light" className="flex-grow-0 flex-shrink-0">
+          New
         </Badge>
       )}
 

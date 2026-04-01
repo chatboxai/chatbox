@@ -2,69 +2,69 @@ import { z } from 'zod'
 
 export const CHATBRIDGE_COMPLETION_SCHEMA_VERSION = 1 as const
 
-export const ChatBridgeCompletionStatusSchema = z.enum([
-  'success',
-  'interrupted',
-  'failure',
-])
+export const ChatBridgeCompletionSuggestedSummarySchema = z
+  .object({
+    title: z.string().min(1).optional(),
+    text: z.string().min(1),
+    bullets: z.array(z.string().min(1)).max(5).optional(),
+  })
+  .strict()
 
-export type ChatBridgeCompletionStatus = z.infer<typeof ChatBridgeCompletionStatusSchema>
+export type ChatBridgeCompletionSuggestedSummary = z.infer<typeof ChatBridgeCompletionSuggestedSummarySchema>
 
-export const ChatBridgeCompletionOutcomeSchema = z.object({
-  code: z.string().trim().min(1),
-  label: z.string().trim().min(1).optional(),
-  data: z.record(z.string(), z.unknown()).optional(),
-})
+export const ChatBridgeCompletionResumabilitySchema = z
+  .object({
+    resumable: z.boolean(),
+    checkpointId: z.string().min(1).optional(),
+    resumeHint: z.string().min(1).optional(),
+    resumeToken: z.string().min(1).optional(),
+  })
+  .strict()
 
-export type ChatBridgeCompletionOutcome = z.infer<typeof ChatBridgeCompletionOutcomeSchema>
+export type ChatBridgeCompletionResumability = z.infer<typeof ChatBridgeCompletionResumabilitySchema>
 
-export const ChatBridgeCompletionResumabilityHintSchema = z.object({
-  mode: z.enum(['resumable', 'restartable', 'not-resumable', 'unknown']),
-  resumeKey: z.string().trim().min(1).optional(),
-  reason: z.string().trim().min(1).optional(),
-})
-
-export type ChatBridgeCompletionResumabilityHint = z.infer<typeof ChatBridgeCompletionResumabilityHintSchema>
-
-export const ChatBridgeCompletionErrorSchema = z.object({
-  code: z.string().trim().min(1),
-  message: z.string().trim().min(1),
-  recoverable: z.boolean().optional(),
-  details: z.record(z.string(), z.unknown()).optional(),
-})
+export const ChatBridgeCompletionErrorSchema = z
+  .object({
+    code: z.string().min(1),
+    message: z.string().min(1),
+    retryable: z.boolean().optional(),
+  })
+  .strict()
 
 export type ChatBridgeCompletionError = z.infer<typeof ChatBridgeCompletionErrorSchema>
 
-const ChatBridgeCompletionPayloadBaseSchema = z.object({
-  schemaVersion: z.literal(CHATBRIDGE_COMPLETION_SCHEMA_VERSION),
-  outcome: ChatBridgeCompletionOutcomeSchema,
-  suggestedSummary: z.string().trim().min(1).optional(),
-  resumability: ChatBridgeCompletionResumabilityHintSchema.optional(),
-})
+const ChatBridgeCompletionPayloadBaseSchema = z
+  .object({
+    schemaVersion: z.literal(CHATBRIDGE_COMPLETION_SCHEMA_VERSION),
+    outcomeData: z.record(z.string(), z.unknown()).optional(),
+    suggestedSummary: ChatBridgeCompletionSuggestedSummarySchema.optional(),
+  })
+  .strict()
 
-export const ChatBridgeCompletionSuccessPayloadSchema = ChatBridgeCompletionPayloadBaseSchema.extend({
+export const ChatBridgeSuccessCompletionPayloadSchema = ChatBridgeCompletionPayloadBaseSchema.extend({
   status: z.literal('success'),
+  resumability: ChatBridgeCompletionResumabilitySchema.optional(),
 })
 
-export type ChatBridgeCompletionSuccessPayload = z.infer<typeof ChatBridgeCompletionSuccessPayloadSchema>
-
-export const ChatBridgeCompletionInterruptedPayloadSchema = ChatBridgeCompletionPayloadBaseSchema.extend({
+export const ChatBridgeInterruptedCompletionPayloadSchema = ChatBridgeCompletionPayloadBaseSchema.extend({
   status: z.literal('interrupted'),
+  reason: z.string().min(1),
+  resumability: ChatBridgeCompletionResumabilitySchema,
 })
 
-export type ChatBridgeCompletionInterruptedPayload = z.infer<typeof ChatBridgeCompletionInterruptedPayloadSchema>
-
-export const ChatBridgeCompletionFailurePayloadSchema = ChatBridgeCompletionPayloadBaseSchema.extend({
-  status: z.literal('failure'),
+export const ChatBridgeFailedCompletionPayloadSchema = ChatBridgeCompletionPayloadBaseSchema.extend({
+  status: z.literal('failed'),
   error: ChatBridgeCompletionErrorSchema,
+  resumability: ChatBridgeCompletionResumabilitySchema.optional(),
 })
-
-export type ChatBridgeCompletionFailurePayload = z.infer<typeof ChatBridgeCompletionFailurePayloadSchema>
 
 export const ChatBridgeCompletionPayloadSchema = z.discriminatedUnion('status', [
-  ChatBridgeCompletionSuccessPayloadSchema,
-  ChatBridgeCompletionInterruptedPayloadSchema,
-  ChatBridgeCompletionFailurePayloadSchema,
+  ChatBridgeSuccessCompletionPayloadSchema,
+  ChatBridgeInterruptedCompletionPayloadSchema,
+  ChatBridgeFailedCompletionPayloadSchema,
 ])
 
 export type ChatBridgeCompletionPayload = z.infer<typeof ChatBridgeCompletionPayloadSchema>
+export type ChatBridgeSuccessCompletionPayload = z.infer<typeof ChatBridgeSuccessCompletionPayloadSchema>
+export type ChatBridgeInterruptedCompletionPayload = z.infer<typeof ChatBridgeInterruptedCompletionPayloadSchema>
+export type ChatBridgeFailedCompletionPayload = z.infer<typeof ChatBridgeFailedCompletionPayloadSchema>

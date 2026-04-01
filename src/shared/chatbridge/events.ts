@@ -198,7 +198,7 @@ function reject(instance: ChatBridgeAppInstance, reason: ChatBridgeAppEventTrans
 
 function createDefaultError(event: ChatBridgeAppEvent) {
   const completionFailure =
-    event.kind === 'completion.recorded' && event.completion?.status === 'failure'
+    event.kind === 'completion.recorded' && event.completion?.status === 'failed'
       ? event.completion.error
       : null
 
@@ -206,8 +206,8 @@ function createDefaultError(event: ChatBridgeAppEvent) {
     code: completionFailure?.code ?? 'app_error',
     message: completionFailure?.message ?? 'App lifecycle event reported an error state.',
     occurredAt: event.createdAt,
-    recoverable: completionFailure?.recoverable,
-    details: completionFailure?.details ?? event.payload,
+    recoverable: completionFailure?.retryable,
+    details: event.payload,
   }
 }
 
@@ -335,7 +335,7 @@ export function applyChatBridgeAppEvent(
       ? {
           ...parsedInstance.completion,
           payload: parsedEvent.completion,
-          suggestedSummary: parsedEvent.completion?.suggestedSummary,
+          suggestedSummary: parsedEvent.completion?.suggestedSummary?.text,
           summaryForModel: parsedEvent.summaryForModel ?? parsedInstance.completion.summaryForModel,
           status: parsedEvent.summaryForModel ? ('normalized' as const) : parsedInstance.completion.status,
         }

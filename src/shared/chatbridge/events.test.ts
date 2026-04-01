@@ -70,14 +70,13 @@ describe('ChatBridge app event domain model', () => {
       completion: {
         schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
         status: 'success',
-        outcome: {
-          code: 'draft_completed',
-          data: {
-            draftId: 'draft-1',
-            sceneCount: 3,
-          },
+        outcomeData: {
+          draftId: 'draft-1',
+          sceneCount: 3,
         },
-        suggestedSummary: 'The draft completed with three scenes.',
+        suggestedSummary: {
+          text: 'The draft completed with three scenes.',
+        },
       },
     })
     const completed = applyChatBridgeAppEvent(active.instance, completionEvent)
@@ -98,14 +97,13 @@ describe('ChatBridge app event domain model', () => {
         payload: {
           schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
           status: 'success',
-          outcome: {
-            code: 'draft_completed',
-            data: {
-              draftId: 'draft-1',
-              sceneCount: 3,
-            },
+          outcomeData: {
+            draftId: 'draft-1',
+            sceneCount: 3,
           },
-          suggestedSummary: 'The draft completed with three scenes.',
+          suggestedSummary: {
+            text: 'The draft completed with three scenes.',
+          },
         },
         suggestedSummary: 'The draft completed with three scenes.',
       },
@@ -215,16 +213,16 @@ describe('ChatBridge app event domain model', () => {
       completion: {
         schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
         status: 'interrupted',
-        outcome: {
-          code: 'draft_saved',
-          data: {
-            draftId: 'draft-11',
-          },
+        reason: 'draft_saved',
+        outcomeData: {
+          draftId: 'draft-11',
         },
-        suggestedSummary: 'The student paused with a saved draft.',
+        suggestedSummary: {
+          text: 'The student paused with a saved draft.',
+        },
         resumability: {
-          mode: 'resumable',
-          resumeKey: 'draft-11',
+          resumable: true,
+          checkpointId: 'draft-11',
         },
       },
     }
@@ -260,8 +258,8 @@ describe('ChatBridge app event domain model', () => {
         completion: {
           schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
           status: 'success',
-          outcome: {
-            code: 'draft_completed',
+          outcomeData: {
+            draftId: 'draft-4',
           },
         },
       })

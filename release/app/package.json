@@ -1,7 +1,7 @@
 {
   "name": "xyz.chatboxapp.ce",
   "productName": "xyz.chatboxapp.ce",
-  "version": "1.19.1",
+  "version": "1.20.0",
   "description": "A desktop client for multiple cutting-edge AI models",
   "author": {
     "name": "Mediocre Company",
@@ -11,10 +11,12 @@
   "main": "./dist/main/main.js",
   "scripts": {
     "rebuild": "node ../../.erb/scripts/electron-rebuild.cjs",
-    "postinstall": "pnpm run rebuild && pnpm run link-modules",
+    "postinstall": "pnpm run rebuild && pnpm run link-modules && node ../../.erb/scripts/patch-libsql.cjs",
     "link-modules": "node ../../.erb/scripts/link-modules.cjs"
   },
   "dependencies": {
-    "@libsql/client": "^0.15.6"
+    "@anthropic-ai/sandbox-runtime": "^0.0.34",
+    "@libsql/client": "^0.15.6",
+    "gray-matter": "^4.0.3"
   }
 }

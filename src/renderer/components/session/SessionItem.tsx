@@ -41,7 +41,7 @@ function SessionItem(props: Props) {
   const actionMenuItems = useMemo<ActionMenuItemProps[]>(
     () => [
       {
-        text: t('edit'),
+        text: t('Edit'),
         icon: IconEdit,
         onClick: async () => {
           await NiceModal.show('session-settings', {
@@ -50,14 +50,14 @@ function SessionItem(props: Props) {
         },
       },
       {
-        text: t('copy'),
+        text: t('Copy'),
         icon: IconCopy,
         onClick: () => {
           copyAndSwitchSession(session)
         },
       },
       {
-        text: session.starred ? t('unstar') : t('star'),
+        text: session.starred ? t('Unstar') : t('Star'),
         icon: session.starred ? IconStarFilled : IconStar,
         onClick: () => {
           void updateSessionStore(session.id, (s) => {
@@ -71,7 +71,7 @@ function SessionItem(props: Props) {
       { divider: true },
       {
         doubleCheck: true,
-        text: t('delete'),
+        text: t('Delete'),
         icon: IconTrash,
         onClick: async () => {
           try {

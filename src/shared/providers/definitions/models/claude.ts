@@ -14,21 +14,33 @@ interface Options {
   topP?: number
   maxOutputTokens?: number
   stream?: boolean
+  extraHeaders?: Record<string, string>
+  customFetch?: typeof globalThis.fetch
+  authToken?: string
+  isOAuth?: boolean
 }
 
 export default class Claude extends AbstractAISDKModel {
   public name = 'Claude'
 
-  constructor(public options: Options, dependencies: ModelDependencies) {
+  constructor(
+    public options: Options,
+    dependencies: ModelDependencies
+  ) {
     super(options, dependencies)
   }
 
   protected getProvider() {
+    const authOptions = this.options.authToken
+      ? { authToken: this.options.authToken }
+      : { apiKey: this.options.claudeApiKey }
     return createAnthropic({
+      ...authOptions,
       baseURL: normalizeClaudeHost(this.options.claudeApiHost).apiHost,
-      apiKey: this.options.claudeApiKey,
+      fetch: this.options.customFetch,
       headers: {
         'anthropic-dangerous-direct-browser-access': 'true',
+        ...this.options.extraHeaders,
       },
     })
   }
@@ -63,6 +75,11 @@ export default class Claude extends AbstractAISDKModel {
       callSettings.topP = this.options.topP
     }
 
+    // Anthropic OAuth tokens require Claude Code identity passphrase as the first system block
+    if (this.options.isOAuth) {
+      callSettings.system = "You are Claude Code, Anthropic's official CLI for Claude."
+    }
+
     return callSettings
   }
 
@@ -72,13 +89,19 @@ export default class Claude extends AbstractAISDKModel {
       data: { id: string; type: string }[]
     }
     const url = `${this.options.claudeApiHost}/models?limit=990`
+    const headers: Record<string, string> = {
+      'anthropic-version': '2023-06-01',
+      ...this.options.extraHeaders,
+    }
+    if (this.options.authToken) {
+      headers['Authorization'] = `Bearer ${this.options.authToken}`
+    } else if (this.options.claudeApiKey) {
+      headers['x-api-key'] = this.options.claudeApiKey
+    }
     const res = await this.dependencies.request.apiRequest({
       url: url,
       method: 'GET',
-      headers: {
-        'anthropic-version': '2023-06-01',
-        'x-api-key': this.options.claudeApiKey,
-      }
+      headers,
     })
     const json: Response = await res.json()
     if (!json['data']) {

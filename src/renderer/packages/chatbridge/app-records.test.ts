@@ -71,13 +71,12 @@ describe('ChatBridge app record store', () => {
       completion: {
         schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
         status: 'success',
-        outcome: {
-          code: 'draft_completed',
-          data: {
-            draftId: 'draft-1',
-          },
+        outcomeData: {
+          draftId: 'draft-1',
         },
-        suggestedSummary: 'The draft is ready for follow-up.',
+        suggestedSummary: {
+          text: 'The draft is ready for follow-up.',
+        },
       },
     },
       1_300
@@ -100,13 +99,12 @@ describe('ChatBridge app record store', () => {
         payload: {
           schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
           status: 'success',
-          outcome: {
-            code: 'draft_completed',
-            data: {
-              draftId: 'draft-1',
-            },
+          outcomeData: {
+            draftId: 'draft-1',
           },
-          suggestedSummary: 'The draft is ready for follow-up.',
+          suggestedSummary: {
+            text: 'The draft is ready for follow-up.',
+          },
         },
         suggestedSummary: 'The draft is ready for follow-up.',
       },
@@ -196,8 +194,8 @@ describe('ChatBridge app record store', () => {
       completion: {
         schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
         status: 'success',
-        outcome: {
-          code: 'draft_completed',
+        outcomeData: {
+          draftId: 'draft-3',
         },
       },
     })

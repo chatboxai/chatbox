@@ -74,7 +74,7 @@ export default function SessionList(props: Props) {
     <>
       <Flex align="center" py="xs" px="md" gap={'xs'}>
         <Text c="chatbox-tertiary" flex={1}>
-          {t('chat')}
+          {t('Chat')}
         </Text>
 
         <Tooltip label={t('Search')} openDelay={1000} withArrow>

@@ -108,7 +108,7 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId }: Co
         {(expanded || !isTruncated) && (
           <Collapse in={expanded || !isTruncated}>
             <Flex justify="flex-end" mt="xs">
-              <Tooltip label={t('copy')} withArrow openDelay={1000}>
+              <Tooltip label={t('Copy')} withArrow openDelay={1000}>
                 <ActionIcon
                   variant="subtle"
                   size="sm"

@@ -71,7 +71,7 @@ const ContentViewer = NiceModal.create(({ title, content: directContent, storage
           disabled={!content}
           leftSection={<ScalableIcon size={16} icon={copied ? IconCheck : IconCopy} />}
         >
-          {t('copy')}
+          {t('Copy')}
         </Button>
       </AdaptiveModal.Actions>
     </AdaptiveModal>

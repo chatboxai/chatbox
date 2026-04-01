@@ -1,5 +1,7 @@
 # Pack 06 - Authenticated Apps and Story Builder
 
+Operational tracking: [`STATUS.md`](./STATUS.md)
+
 ## Phase Fit
 
 - Phase: 6 of 7
@@ -22,11 +24,20 @@ Prove that ChatBridge can support authenticated partner apps without giving runt
 - [CB-603 - Story Builder with Google Drive connect/save/resume](./cb-603-story-builder-with-google-drive-connect-save-resume/feature-spec.md)
 - [CB-604 - Host-mediated resource proxy](./cb-604-host-mediated-resource-proxy/feature-spec.md)
 
+## Single-Agent Order
+
+1. CB-601
+2. CB-602
+3. CB-604
+4. CB-603
+
 ## Exit Criteria
 
 - Platform auth and app auth are clearly separated.
 - Story Builder proves an authenticated workflow end to end.
 - Protected resource access stays host-mediated and auditable.
+- Save and resume continuity stays host-owned even when auth or resource access
+  is required.
 
 ## Risks
 

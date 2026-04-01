@@ -1,4 +1,5 @@
 import type { CompactionPoint, Message, Session, SessionSettings, SessionThread, Settings } from '@shared/types'
+import { applyChatBridgeAppContext } from '@/packages/chatbridge/context'
 import { cleanToolCalls } from './tool-cleanup'
 
 export interface BuildContextOptions {
@@ -28,7 +29,7 @@ export function buildContextForAI(options: BuildContextOptions): Message[] {
   const latestCompactionPoint = findLatestCompactionPoint(compactionPoints)
 
   if (!latestCompactionPoint) {
-    return cleanToolCalls(completedMessages, keepToolCallRounds)
+    return applyChatBridgeAppContext(cleanToolCalls(completedMessages, keepToolCallRounds), completedMessages)
   }
 
   const boundaryIndex = findMessageIndex(completedMessages, latestCompactionPoint.boundaryMessageId)
@@ -52,7 +53,7 @@ export function buildContextForAI(options: BuildContextOptions): Message[] {
     contextMessages = [systemMessage, ...contextMessages]
   }
 
-  return cleanToolCalls(contextMessages, keepToolCallRounds)
+  return applyChatBridgeAppContext(cleanToolCalls(contextMessages, keepToolCallRounds), completedMessages)
 }
 
 export function buildContextForSession(

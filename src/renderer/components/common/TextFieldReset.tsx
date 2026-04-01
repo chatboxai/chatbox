@@ -26,7 +26,7 @@ export default function TextFieldReset(
           : {
               endAdornment: (
                 <Button variant="text" onClick={handleReset} onMouseDown={handleMouseDown}>
-                  {t('reset')}
+                  {t('Reset')}
                 </Button>
               ),
             }

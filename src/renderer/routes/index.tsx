@@ -1,8 +1,7 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Avatar, Box, Button, Divider, Flex, Paper, ScrollArea, Space, Stack, Text } from '@mantine/core'
-import type { CopilotDetail, Session } from '@shared/types'
-import { ModelProviderEnum } from '@shared/types'
-import { IconChevronLeft, IconChevronRight, IconX } from '@tabler/icons-react'
+import type { CopilotDetail, ImageSource, Session } from '@shared/types'
+import { IconChevronLeft, IconChevronRight, IconMessageCircle2Filled, IconX } from '@tabler/icons-react'
 import { createFileRoute, useRouterState } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import clsx from 'clsx'
@@ -10,24 +9,36 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
+import { trackJkClickEvent } from '@/analytics/jk'
+import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
+import { MessageLayoutSelector } from '@/components/common/MessageLayoutPreview'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
+import { ImageInStorage } from '@/components/Image'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import HomepageIcon from '@/components/icons/HomepageIcon'
 import Page from '@/components/layout/Page'
-import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
+import { useMyCopilots, useRemoteCopilotsByCursor } from '@/hooks/useCopilots'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { navigateToSettings } from '@/modals/Settings'
+import * as remote from '@/packages/remote'
+import platform from '@/platform'
 import { router } from '@/router'
+import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { createSession as createSessionStore } from '@/stores/chatStore'
 import { submitNewUserMessage, switchCurrentSession } from '@/stores/sessionActions'
 import { initEmptyChatSession } from '@/stores/sessionHelpers'
+import { useLanguage, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
+import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
 
 export const Route = createFileRoute('/')({
   component: Index,
   validateSearch: zodValidator(
     z.object({
       copilotId: z.string().optional(),
+      copilot: z.string().optional(),
+      settings: z.string().optional(),
     })
   ),
 })
@@ -35,7 +46,10 @@ export const Route = createFileRoute('/')({
 function Index() {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
+  const messageLayout = useSettingsStore((s) => s.messageLayout)
+  const [tempMessageLayout, setTempMessageLayout] = useState<'left' | 'bubble' | undefined>(undefined)
 
+  const setSettings = useSettingsStore((s) => s.setSettings)
   const newSessionState = useUIStore((s) => s.newSessionState)
   const setNewSessionState = useUIStore((s) => s.setNewSessionState)
   const addSessionKnowledgeBase = useUIStore((s) => s.addSessionKnowledgeBase)
@@ -50,6 +64,13 @@ function Index() {
   })
 
   const { providers } = useProviders()
+  const language = useLanguage()
+  const hasLicense = useSettingsStore((s) => Boolean(s.licenseKey))
+  const isLoggedIn = useAuthInfoStore((s) => Boolean(s.accessToken && s.refreshToken))
+  const welcomeCardMode = useMemo(
+    () => getHomeWelcomeCardMode({ providerCount: providers.length, isLoggedIn, hasLicense }),
+    [providers.length, isLoggedIn, hasLicense]
+  )
 
   const selectedModel = useMemo(() => {
     if (session.settings?.provider && session.settings?.modelId) {
@@ -61,7 +82,7 @@ function Index() {
   }, [session.settings?.provider, session.settings?.modelId])
 
   const { copilots: myCopilots } = useMyCopilots()
-  const { copilots: remoteCopilots } = useRemoteCopilots()
+  const { copilots: remoteCopilots } = useRemoteCopilotsByCursor({ limit: 10 })
   const selectedCopilotId = useMemo(() => session?.copilotId, [session?.copilotId])
   const selectedCopilot = useMemo(
     () => myCopilots.find((c) => c.id === selectedCopilotId) || remoteCopilots.find((c) => c.id === selectedCopilotId),
@@ -70,7 +91,10 @@ function Index() {
   useEffect(() => {
     setSession((old) => ({
       ...old,
-      picUrl: selectedCopilot?.picUrl,
+      assistantAvatarKey:
+        selectedCopilot?.avatar?.type === 'storage-key' ? selectedCopilot.avatar.storageKey : undefined,
+      picUrl: selectedCopilot?.avatar?.type === 'url' ? selectedCopilot.avatar.url : selectedCopilot?.picUrl,
+      backgroundImage: selectedCopilot?.backgroundImage,
       name: selectedCopilot?.name || 'Untitled',
       messages: selectedCopilot
         ? [
@@ -91,8 +115,36 @@ function Index() {
 
   const routerState = useRouterState()
   useEffect(() => {
-    const { copilotId } = routerState.location.search
-    if (copilotId) {
+    const { copilotId, copilot } = routerState.location.search
+    if (copilot) {
+      let c: CopilotDetail | null = null
+      try {
+        c = JSON.parse(copilot) as CopilotDetail
+      } catch (e) {
+        return
+      }
+
+      setSession((old) => ({
+        ...old,
+        copilotId: c.id,
+        assistantAvatarKey: c.avatar?.type === 'storage-key' ? c.avatar.storageKey : undefined,
+        picUrl: c.avatar?.type === 'url' ? c.avatar.url : c.picUrl,
+        backgroundImage: c.backgroundImage,
+        name: c.name || 'Untitled',
+        messages: [
+          {
+            id: uuidv4(),
+            role: 'system',
+            contentParts: [
+              {
+                type: 'text',
+                text: c.prompt,
+              },
+            ],
+          },
+        ],
+      }))
+    } else if (copilotId) {
       setSession((old) => ({ ...old, copilotId }))
     }
   }, [routerState.location.search])
@@ -104,10 +156,17 @@ function Index() {
         type: 'chat',
         assistantAvatarKey: session.assistantAvatarKey,
         picUrl: session.picUrl,
+        backgroundImage: session.backgroundImage,
         messages: session.messages,
         copilotId: session.copilotId,
         settings: session.settings,
       })
+
+      if (session.copilotId) {
+        void remote
+          .recordCopilotUsage({ id: session.copilotId, action: 'create_session' })
+          .catch((error) => console.warn('[recordCopilotUsage] failed', error))
+      }
 
       // Transfer knowledge base from newSessionState to the actual session
       if (newSessionState.knowledgeBase) {
@@ -170,14 +229,66 @@ function Index() {
   return (
     <Page title="">
       <div className="p-0 flex flex-col h-full">
-        <Stack align="center" justify="center" gap="sm" flex={1}>
-          <HomepageIcon className="h-8" />
-          <Text fw="600" size={isSmallScreen ? 'sm' : 'md'}>
-            {t('What can I help you with today?')}
-          </Text>
-        </Stack>
+        {messageLayout || welcomeCardMode !== 'none' ? (
+          <Stack align="center" justify="center" gap="sm" flex={1}>
+            <HomepageIcon className="h-8" />
+            <Text fw="600" size={isSmallScreen ? 'sm' : 'md'}>
+              {t('What can I help you with today?')}
+            </Text>
+          </Stack>
+        ) : (
+          <Stack align="center" justify="center" gap="sm" flex={1} p="sm">
+            <Stack
+              align="center"
+              justify="center"
+              gap="lg"
+              w={isSmallScreen ? '100%' : '80%'}
+              maw={386}
+              p="xl"
+              className="border border-solid border-chatbox-border-primary rounded-lg relative"
+            >
+              <div className="absolute top-0 right-0">
+                <ActionIcon
+                  variant="transparent"
+                  color="chatbox-tertiary"
+                  m={10}
+                  onClick={() => setSettings({ messageLayout: 'left' })}
+                >
+                  <ScalableIcon icon={IconX} size={20} className="text-chatbox-tint-tertiary" />
+                </ActionIcon>
+              </div>
+              <Text size="md" fw="600">
+                {t('Message Layout')}
+              </Text>
+              <Stack gap="sm">
+                <MessageLayoutSelector
+                  w="100%"
+                  size="sm"
+                  value={tempMessageLayout || 'left'}
+                  onValueChange={(val) => setTempMessageLayout(val)}
+                />
 
-        {!providers.length && (
+                <Text size="xs" c="chatbox-secondary">
+                  {t('You can change this setting later in Settings → ')}
+                  <a className="cursor-pointer !text-chatbox-tint-brand" onClick={() => navigateToSettings('chat')}>
+                    {t('Conversation Settings')}
+                  </a>
+                </Text>
+              </Stack>
+
+              <Button
+                variant="filled"
+                size="md"
+                className="w-full"
+                onClick={() => setSettings({ messageLayout: tempMessageLayout || 'left' })}
+              >
+                {t('Save')}
+              </Button>
+            </Stack>
+          </Stack>
+        )}
+
+        {welcomeCardMode !== 'none' && (
           <Box px="sm">
             <Paper
               radius="md"
@@ -191,32 +302,82 @@ function Index() {
               <Stack gap="sm">
                 <Stack gap="xxs" align="center">
                   <Text fw={600} className="text-center">
-                    {t('Select and configure an AI model provider')}
+                    {t('Welcome to Chatbox!')}
                   </Text>
 
                   <Text size="xs" c="chatbox-tertiary" className="text-center">
-                    {t(
-                      'To start a conversation, you need to configure at least one AI model. Click the buttons below to get started.'
-                    )}
+                    {welcomeCardMode === 'no-license' ? t('No licenses found') : t('Login to start chatting with AI')}
                   </Text>
                 </Stack>
 
-                <Flex gap="xs" justify="center" align="center">
-                  <Button
-                    size="xs"
-                    variant="light"
-                    h={32}
-                    miw={160}
-                    fw={600}
-                    flex="0 1 auto"
-                    onClick={() => {
-                      router.navigate({
-                        to: isSmallScreen ? '/settings/provider' : '/settings/chatbox-ai',
-                      })
-                    }}
-                  >
-                    {t('Setup Provider')}
-                  </Button>
+                <Flex gap="xs" justify="center" align="center" wrap="wrap">
+                  {welcomeCardMode === 'no-license' ? (
+                    <>
+                      <Button
+                        size="xs"
+                        variant="filled"
+                        h={32}
+                        miw={160}
+                        fw={600}
+                        flex="0 1 auto"
+                        onClick={() => {
+                          trackJkClickEvent(JK_EVENTS.FREE_LICENSE_CLAIM_CLICK, {
+                            pageName: JK_PAGE_NAMES.CHAT_PAGE,
+                          })
+                          platform.openLink(
+                            `https://chatboxai.app/redirect_app/claim_free_plan/${language}/?utm_source=app&utm_content=provider_cb_login_claim_free`
+                          )
+                        }}
+                      >
+                        {t('Claim Free Plan')}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        c="chatbox-tertiary"
+                        h={32}
+                        fw={400}
+                        flex="0 1 auto"
+                        onClick={() => {
+                          platform.openLink(
+                            `https://chatboxai.app/redirect_app/view_more_plans/${language}/?utm_source=app&utm_content=provider_cb_login_more_plans`
+                          )
+                        }}
+                      >
+                        {t('View More Plans')}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        size="xs"
+                        variant="filled"
+                        h={32}
+                        miw={160}
+                        fw={600}
+                        flex="0 1 auto"
+                        onClick={() => {
+                          trackJkClickEvent(JK_EVENTS.LOGIN_BUTTON_CLICK, {
+                            pageName: JK_PAGE_NAMES.CHAT_PAGE,
+                          })
+                          navigateToSettings('chatbox-ai')
+                        }}
+                      >
+                        {t('Login Chatbox AI')}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        c="chatbox-tertiary"
+                        h={32}
+                        fw={400}
+                        flex="0 1 auto"
+                        onClick={() => navigateToSettings('provider')}
+                      >
+                        {t('Other options')}
+                      </Button>
+                    </>
+                  )}
                 </Flex>
               </Stack>
             </Paper>
@@ -228,7 +389,17 @@ function Index() {
             <Box px="md">
               <Stack gap="sm" className={widthFull ? 'w-full' : 'w-full max-w-4xl mx-auto'}>
                 <Flex align="center" gap="sm">
-                  <CopilotItem name={session.name} picUrl={session.picUrl} selected />
+                  <CopilotItem
+                    name={session.name}
+                    avatar={
+                      session.assistantAvatarKey
+                        ? { type: 'storage-key', storageKey: session.assistantAvatarKey }
+                        : undefined
+                    }
+                    picUrl={session.picUrl}
+                    selected
+                    onClick={() => onClickSessionSettings?.()}
+                  />
                   <ActionIcon
                     size={32}
                     radius={16}
@@ -274,7 +445,7 @@ const CopilotPicker = ({ selectedId, onSelect }: { selectedId?: string; onSelect
   const isSmallScreen = useIsSmallScreen()
   const widthFull = useUIStore((s) => s.widthFull)
   const { copilots: myCopilots } = useMyCopilots()
-  const { copilots: remoteCopilots } = useRemoteCopilots()
+  const { copilots: remoteCopilots } = useRemoteCopilotsByCursor()
 
   const copilots = useMemo(
     () =>
@@ -370,6 +541,7 @@ const CopilotPicker = ({ selectedId, onSelect }: { selectedId?: string; onSelect
                 <CopilotItem
                   key={copilot.id}
                   name={copilot.name}
+                  avatar={copilot.avatar}
                   picUrl={copilot.picUrl}
                   selected={selectedId === copilot.id}
                   onClick={() => {
@@ -402,12 +574,14 @@ const CopilotPicker = ({ selectedId, onSelect }: { selectedId?: string; onSelect
 
 const CopilotItem = ({
   name,
+  avatar,
   picUrl,
   selected,
   onClick,
   noAvatar = false,
 }: {
   name: string
+  avatar?: ImageSource
   picUrl?: string
   selected?: boolean
   onClick?(): void
@@ -423,17 +597,38 @@ const CopilotItem = ({
       bd={selected ? 'none' : '1px solid var(--chatbox-border-primary)'}
       bg={selected ? 'var(--chatbox-background-brand-secondary)' : 'transparent'}
       className={clsx(
-        'cursor-pointer shrink-0 shadow-[0px_2px_12px_0px_rgba(0,0,0,0.04)]',
+        'max-w-[75vw] sm:max-w-[50vw] cursor-pointer shrink-0 shadow-[0px_2px_12px_0px_rgba(0,0,0,0.04)]',
         isSmallScreen ? 'rounded-full' : 'rounded-md'
       )}
       onClick={onClick}
     >
-      {!noAvatar && (
-        <Avatar src={picUrl} color="chatbox-brand" size={isSmallScreen ? 20 : 24}>
-          {name.slice(0, 1)}
-        </Avatar>
-      )}
-      <Text fw="600" c={selected ? 'chatbox-brand' : 'chatbox-primary'}>
+      {!noAvatar &&
+        (avatar?.type === 'storage-key' || avatar?.type === 'url' || picUrl ? (
+          <Avatar
+            src={avatar?.type === 'storage-key' ? '' : avatar?.url || picUrl}
+            alt={name}
+            size={isSmallScreen ? 20 : 24}
+            radius="xl"
+            className="flex-shrink-0 border border-solid border-chatbox-border-primary"
+          >
+            {avatar?.type === 'storage-key' ? (
+              <ImageInStorage storageKey={avatar.storageKey} className="object-cover object-center w-full h-full" />
+            ) : (
+              name?.charAt(0)?.toUpperCase()
+            )}
+          </Avatar>
+        ) : (
+          <Stack
+            w={isSmallScreen ? 20 : 24}
+            h={isSmallScreen ? 20 : 24}
+            align="center"
+            justify="center"
+            className="flex-shrink-0 rounded-full bg-chatbox-background-brand-secondary"
+          >
+            <ScalableIcon icon={IconMessageCircle2Filled} size={24} className="text-chatbox-tint-brand" />
+          </Stack>
+        ))}
+      <Text fw="600" c={selected ? 'chatbox-brand' : 'chatbox-primary'} lineClamp={1}>
         {name}
       </Text>
     </Flex>

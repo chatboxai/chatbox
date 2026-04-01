@@ -6,6 +6,7 @@ export const siliconFlowProvider = defineProvider({
   id: ModelProviderEnum.SiliconFlow,
   name: 'SiliconFlow',
   type: ModelProviderType.OpenAI,
+  modelsDevProviderId: 'siliconflow',
   urls: {
     website: 'https://siliconflow.cn/',
   },

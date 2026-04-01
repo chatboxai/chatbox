@@ -1,5 +1,7 @@
 # Pack 07 - Error Handling, Safety, and Partner DX
 
+Operational tracking: [`STATUS.md`](./STATUS.md)
+
 ## Phase Fit
 
 - Phase: 7 of 7
@@ -24,6 +26,14 @@ observability, and partner developer tooling.
 - [CB-703 - Privacy-aware audit trail and safety operations](./cb-703-privacy-aware-audit-trail-and-safety-operations/feature-spec.md)
 - [CB-704 - Partner SDK, manifest validator, and local harness](./cb-704-partner-sdk-manifest-validator-and-local-harness/feature-spec.md)
 - [CB-705 - Platform-wide error handling and recovery](./cb-705-platform-wide-error-handling-and-recovery/feature-spec.md)
+
+## Single-Agent Order
+
+1. CB-701
+2. CB-703
+3. CB-705
+4. CB-702
+5. CB-704
 
 ## Exit Criteria
 

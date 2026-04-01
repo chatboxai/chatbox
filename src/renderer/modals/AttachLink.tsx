@@ -57,7 +57,7 @@ const AttachLink = NiceModal.create(() => {
 
       <AdaptiveModal.Actions>
         <AdaptiveModal.CloseButton onClick={onClose} />
-        <Button onClick={onSubmit}>{t('submit')}</Button>
+        <Button onClick={onSubmit}>{t('Submit')}</Button>
       </AdaptiveModal.Actions>
     </AdaptiveModal>
   )

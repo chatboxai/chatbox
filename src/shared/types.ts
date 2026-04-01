@@ -71,16 +71,32 @@ export interface SponsorAboutBanner {
   description: string
 }
 
+export type ImageSource =
+  | {
+      type: 'url'
+      url: string
+    }
+  | {
+      type: 'storage-key'
+      storageKey: string
+    }
+
 export interface CopilotDetail {
   id: string
   name: string
-  picUrl?: string
   prompt: string
-  demoQuestion?: string
-  demoAnswer?: string
+  picUrl?: string // Deprecated
+  avatar?: ImageSource
+  backgroundImage?: ImageSource
+  description?: string
+  tags?: string[]
+  screenshots?: ImageSource[]
+  createdAt?: number
+  updatedAt?: number
+  usedCount?: number
+  /** If this copilot is copied from a remote copilot, sourceId stores the original copilot's id */
+  sourceId?: string
   starred?: boolean
-  usedCount: number
-  shared?: boolean
 }
 
 export interface Toast {

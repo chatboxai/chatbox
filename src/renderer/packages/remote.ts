@@ -1,12 +1,11 @@
+import { ofetch } from 'ofetch'
+import { z } from 'zod'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import { authInfoStore } from '@/stores/authInfoStore'
-import { USE_BETA_API, USE_BETA_CHATBOX, USE_LOCAL_API, USE_LOCAL_CHATBOX } from '@/variables'
-import { ofetch } from 'ofetch'
-import { z } from 'zod'
-import * as cache from 'src/shared/utils/cache'
+import { CHATBOX_BUILD_CHANNEL, USE_BETA_API, USE_BETA_CHATBOX, USE_LOCAL_API, USE_LOCAL_CHATBOX } from '@/variables'
 import * as chatboxaiAPI from '../../shared/request/chatboxai_pool'
-import { createAfetch, createAuthenticatedAfetch, uploadFile } from '../../shared/request/request'
+import { createAfetch, createPlatformAuthenticatedAfetch, uploadFile } from '../../shared/request/request'
 import {
   type ChatboxAILicenseDetail,
   type Config,
@@ -48,44 +47,44 @@ async function getAfetch() {
 
 // ========== Authenticated Afetch (带 token 自动刷新) ==========
 
-let _authenticatedAfetch: ReturnType<typeof createAuthenticatedAfetch> | null = null
-let authenticatedAfetchPromise: Promise<ReturnType<typeof createAuthenticatedAfetch>> | null = null
+let _platformAuthenticatedAfetch: ReturnType<typeof createPlatformAuthenticatedAfetch> | null = null
+let platformAuthenticatedAfetchPromise: Promise<ReturnType<typeof createPlatformAuthenticatedAfetch>> | null = null
 
-async function initAuthenticatedAfetch(): Promise<ReturnType<typeof createAuthenticatedAfetch>> {
-  if (authenticatedAfetchPromise) return authenticatedAfetchPromise
+async function initPlatformAuthenticatedAfetch(): Promise<ReturnType<typeof createPlatformAuthenticatedAfetch>> {
+  if (platformAuthenticatedAfetchPromise) return platformAuthenticatedAfetchPromise
 
-  authenticatedAfetchPromise = (async () => {
-    _authenticatedAfetch = createAuthenticatedAfetch({
+  platformAuthenticatedAfetchPromise = (async () => {
+    _platformAuthenticatedAfetch = createPlatformAuthenticatedAfetch({
       platformInfo: {
         type: platform.type,
         platform: await platform.getPlatform(),
         os: getOS(),
         version: await platform.getVersion(),
       },
-      getTokens: async () => {
-        const tokens = authInfoStore.getState().getTokens()
+      getPlatformTokens: async () => {
+        const tokens = authInfoStore.getState().getPlatformTokens()
         return tokens
       },
-      refreshTokens: async (refreshToken: string) => {
+      refreshPlatformTokens: async (refreshToken: string) => {
         const result = await refreshAccessToken({ refreshToken })
-        authInfoStore.getState().setTokens(result)
+        authInfoStore.getState().setPlatformTokens(result)
         return result
       },
-      clearTokens: async () => {
-        authInfoStore.getState().clearTokens()
+      clearPlatformTokens: async () => {
+        authInfoStore.getState().clearPlatformTokens()
       },
     })
-    return _authenticatedAfetch
+    return _platformAuthenticatedAfetch
   })()
 
-  return authenticatedAfetchPromise
+  return platformAuthenticatedAfetchPromise
 }
 
-async function getAuthenticatedAfetch() {
-  if (!_authenticatedAfetch) {
-    return await initAuthenticatedAfetch()
+async function getPlatformAuthenticatedAfetch() {
+  if (!_platformAuthenticatedAfetch) {
+    return await initPlatformAuthenticatedAfetch()
   }
-  return _authenticatedAfetch
+  return _platformAuthenticatedAfetch
 }
 
 // ========== API ORIGIN 根据可用性维护 ==========
@@ -94,6 +93,8 @@ async function getAuthenticatedAfetch() {
 function getAPIOrigin() {
   if (USE_LOCAL_API) {
     return 'http://localhost:8002'
+  } else if (USE_BETA_API) {
+    return 'https://api-beta.chatboxai.app'
   } else {
     return chatboxaiAPI.getChatboxAPIOrigin()
   }
@@ -113,6 +114,7 @@ const getChatboxHeaders = async () => {
   return {
     'CHATBOX-PLATFORM': await platform.getPlatform(),
     'CHATBOX-PLATFORM-TYPE': platform.type,
+    'CHATBOX-CHANNEL': CHATBOX_BUILD_CHANNEL,
     'CHATBOX-VERSION': await platform.getVersion(),
     'CHATBOX-OS': getOS(),
   }
@@ -159,16 +161,49 @@ export async function checkNeedUpdate(version: string, os: string, config: Confi
 //     return res['data'] || []
 // }
 
-export async function listCopilots(lang: string) {
+export async function listCopilotTags(lang: string) {
   type Response = {
-    data: CopilotDetail[]
+    data: string[]
   }
-  const res = await ofetch<Response>(`${getAPIOrigin()}/api/copilots/list`, {
-    method: 'POST',
+  const res = await ofetch<Response>(`${getAPIOrigin()}/api/system_copilots/tags/${lang}`, {
+    method: 'GET',
     retry: 3,
-    body: { lang },
   })
   return res.data
+}
+
+export async function listCopilotsByCursor(
+  lang: string,
+  filters?: {
+    limit?: number
+    cursor?: string
+    tag?: string
+    search?: string
+  }
+) {
+  type Response = {
+    data: CopilotDetail[]
+    next_cursor: string | null
+  }
+  const res = await ofetch<Response>(`${getAPIOrigin()}/api/system_copilots/list`, {
+    method: 'POST',
+    retry: 3,
+    body: { lang, ...filters },
+  })
+  return res
+}
+
+export async function recordCopilotUsage(params: {
+  id: string
+  action: 'create_session' | 'create_thread' | 'create_message' | 'use_copilot'
+}) {
+  await ofetch(`${getAPIOrigin()}/api/system_copilots/record_usage`, {
+    method: 'POST',
+    body: {
+      ...params,
+      device_id: (await platform.getConfig()).uuid,
+    },
+  })
 }
 
 export async function recordCopilotShare(detail: CopilotDetail) {
@@ -272,7 +307,7 @@ export async function getLicenseDetailRealtime(params: { licenseKey: string }): 
       },
     })
     return { data: res.data || null, error: res.error }
-  } catch (e: any) {
+  } catch (e: unknown) {
     // 如果捕获到了错误响应体，返回它
     if (capturedError) {
       return { data: null, error: capturedError }
@@ -408,6 +443,7 @@ export async function parseUserLinkFree(params: { url: string }) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(await getChatboxHeaders()),
     },
     body: JSON.stringify(params),
   })
@@ -626,7 +662,6 @@ export async function requestLoginTicketId() {
   const appVersion = await platform.getVersion()
   const deviceName = await platform.getDeviceName()
 
-  console.log('getChatboxOrigin()', getChatboxOrigin())
   const res = await afetch(
     `${getChatboxOrigin()}/api/auth/request_login_ticket`,
     {
@@ -743,7 +778,7 @@ export async function getUserProfile() {
       created_at: string
     }
   }
-  const afetch = await getAuthenticatedAfetch()
+  const afetch = await getPlatformAuthenticatedAfetch()
   const res = await afetch(
     `${getChatboxOrigin()}/api/user/profile`,
     {
@@ -789,7 +824,7 @@ export async function listLicensesByUser(): Promise<UserLicense[]> {
   type Response = {
     data: UserLicense[]
   }
-  const afetch = await getAuthenticatedAfetch()
+  const afetch = await getPlatformAuthenticatedAfetch()
   const res = await afetch(
     `${getChatboxOrigin()}/api/license/list_by_user`,
     {
@@ -806,4 +841,112 @@ export async function listLicensesByUser(): Promise<UserLicense[]> {
   )
   const json: Response = await res.json()
   return json.data
+}
+
+// ========== Image Generation API ==========
+
+const IMAGE_GEN_API_ORIGIN = getAPIOrigin()
+
+export interface ImageCompletionRequest {
+  model: string
+  prompt: string
+  response_format: 'b64_json'
+  style?: string
+  aspect_ratio?: string
+  quantity?: number
+  images?: Array<{ image_url: string }>
+}
+
+// Zod schemas for runtime validation
+const ImageGenerationItemSchema = z.object({
+  uuid: z.string(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed']),
+  created_at: z.string(),
+  image_url: z.string().optional(),
+  generated_at: z.string().optional(),
+})
+
+const ImageGenerationTaskResponseSchema = z.object({
+  items: z.array(ImageGenerationItemSchema),
+  is_finished: z.boolean(),
+  task_id: z.string(),
+})
+
+export type ImageGenerationItem = z.infer<typeof ImageGenerationItemSchema>
+export type ImageGenerationTaskResponse = z.infer<typeof ImageGenerationTaskResponseSchema>
+
+export async function submitImageGeneration(
+  params: ImageCompletionRequest,
+  licenseKey: string
+): Promise<ImageGenerationTaskResponse> {
+  const afetch = await getAfetch()
+  const res = await afetch(
+    `${IMAGE_GEN_API_ORIGIN}/api/images/async_generations`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${licenseKey}`,
+        'Content-Type': 'application/json',
+        ...(await getChatboxHeaders()),
+      },
+      body: JSON.stringify(params),
+    },
+    {
+      parseChatboxRemoteError: true,
+      retry: 2,
+    }
+  )
+  const json = await res.json()
+  return ImageGenerationTaskResponseSchema.parse(json)
+}
+
+export async function pollImageTask(
+  taskId: string,
+  licenseKey: string,
+  signal?: AbortSignal
+): Promise<ImageGenerationTaskResponse> {
+  const afetch = await getAfetch()
+  const res = await afetch(
+    `${IMAGE_GEN_API_ORIGIN}/api/images/async_generations/${taskId}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${licenseKey}`,
+        ...(await getChatboxHeaders()),
+      },
+      signal,
+    },
+    {
+      parseChatboxRemoteError: true,
+      retry: 2,
+    }
+  )
+  const json = await res.json()
+  return ImageGenerationTaskResponseSchema.parse(json)
+}
+
+const POLL_INTERVAL_MS = 2000
+
+export async function pollTaskUntilComplete(
+  taskId: string,
+  licenseKey: string,
+  options?: {
+    signal?: AbortSignal
+    onPoll?: (response: ImageGenerationTaskResponse) => void
+  }
+): Promise<ImageGenerationTaskResponse> {
+  while (true) {
+    if (options?.signal?.aborted) {
+      throw new DOMException('Polling aborted', 'AbortError')
+    }
+
+    const result = await pollImageTask(taskId, licenseKey, options?.signal)
+    options?.onPoll?.(result)
+
+    if (result.is_finished) {
+      return result
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+  }
 }

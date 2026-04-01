@@ -28,6 +28,9 @@ export function getLogger(logId: string) {
     info(...args: any[]) {
       this.log('info', ...args)
     },
+    warn(...args: any[]) {
+      this.log('warn', ...args)
+    },
     error(...args: any[]) {
       this.log('error', ...args)
     },

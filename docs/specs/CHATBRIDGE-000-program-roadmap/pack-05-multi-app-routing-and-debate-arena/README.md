@@ -1,5 +1,7 @@
 # Pack 05 - Multi-App Routing and Debate Arena
 
+Operational tracking: [`STATUS.md`](./STATUS.md)
+
 ## Phase Fit
 
 - Phase: 5 of 7
@@ -22,11 +24,20 @@ Move from one working flagship app to a governed multi-app platform that can cho
 - [CB-503 - Debate Arena flagship app](./cb-503-debate-arena-flagship-app/feature-spec.md)
 - [CB-504 - Multi-app continuity in a single conversation](./cb-504-multi-app-continuity-in-a-single-conversation/feature-spec.md)
 
+## Single-Agent Order
+
+1. CB-501
+2. CB-502
+3. CB-503
+4. CB-504
+
 ## Exit Criteria
 
 - The host can expose only eligible apps for the current context.
 - Clarify and refusal paths are explicit for ambiguous or unrelated prompts.
 - Debate Arena proves a second non-game educational workflow inside the same platform contract.
+- Multi-app continuity distinguishes active, recent, and completed app sessions
+  without losing the right follow-up context.
 
 ## Risks
 

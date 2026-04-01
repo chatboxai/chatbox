@@ -8,6 +8,8 @@ export const CHATBOX_BUILD_PLATFORM = (process.env.CHATBOX_BUILD_PLATFORM || 'un
   | 'android'
   | 'web'
 
+export const CHATBOX_BUILD_CHANNEL = (process.env.CHATBOX_BUILD_CHANNEL || 'unknown') as 'unknown' | 'google_play'
+
 // api.chatboxai.app
 export const USE_LOCAL_API = process.env.USE_LOCAL_API || ''
 export const USE_BETA_API = process.env.USE_BETA_API || ''

@@ -1,7 +1,7 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Button, Flex, Stack, Text, Transition } from '@mantine/core'
 import { useThrottledCallback } from '@mantine/hooks'
-import type { Session, SessionThreadBrief } from '@shared/types'
+import type { Session, Message as SessionMessage, SessionThreadBrief } from '@shared/types'
 import {
   IconAlignRight,
   IconArrowBarToUp,
@@ -15,7 +15,6 @@ import {
   IconTrash,
 } from '@tabler/icons-react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { throttle } from 'lodash'
 import {
   type FC,
   forwardRef,
@@ -81,12 +80,25 @@ export function clearScrollPositionCache(sessionId: string) {
 export interface MessageListRef {
   scrollToTop: (behavior?: ScrollBehavior) => void
   scrollToBottom: (behavior?: ScrollBehavior) => void
+  setIsNewMessage: (flag: boolean) => void
 }
 
 export interface MessageListProps {
   className?: string
   currentSession: Session
 }
+
+type MessageRenderItem =
+  | {
+      type: 'message'
+      key: string
+      messages: [SessionMessage]
+    }
+  | {
+      type: 'group'
+      key: string
+      messages: [SessionMessage] | [SessionMessage, SessionMessage]
+    }
 
 const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) => {
   const { t } = useTranslation()
@@ -110,8 +122,57 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     return null
   }, [currentMessageList])
 
+  const renderItems = useMemo<MessageRenderItem[]>(() => {
+    let latestUserIndex = -1
+
+    for (let i = currentMessageList.length - 1; i >= 0; i--) {
+      if (currentMessageList[i].role === 'user') {
+        latestUserIndex = i
+        break
+      }
+    }
+
+    const shouldGroupLastTurn =
+      latestUserIndex >= 0 &&
+      (latestUserIndex === currentMessageList.length - 1 ||
+        (latestUserIndex + 1 < currentMessageList.length &&
+          currentMessageList[latestUserIndex + 1].role === 'assistant'))
+
+    const items: MessageRenderItem[] = []
+
+    for (let i = 0; i < currentMessageList.length; i++) {
+      if (shouldGroupLastTurn && i === latestUserIndex) {
+        const groupedMessages: [SessionMessage] | [SessionMessage, SessionMessage] =
+          latestUserIndex + 1 < currentMessageList.length &&
+          currentMessageList[latestUserIndex + 1].role === 'assistant'
+            ? [currentMessageList[i], currentMessageList[i + 1]]
+            : [currentMessageList[i]]
+
+        items.push({
+          type: 'group',
+          key: `group-${groupedMessages.map((message) => message.id).join('-')}`,
+          messages: groupedMessages,
+        })
+        if (groupedMessages.length === 2) {
+          i++
+        }
+        continue
+      }
+
+      items.push({
+        type: 'message',
+        key: currentMessageList[i].id,
+        messages: [currentMessageList[i]],
+      })
+    }
+
+    return items
+  }, [currentMessageList])
+
   const virtuoso = useRef<VirtuosoHandle>(null)
   const messageListRef = useRef<HTMLDivElement>(null)
+  const [messageViewportHeight, setMessageViewportHeight] = useState(0)
+  const [isNewMessage, setIsNewMessage] = useState(false)
 
   const setMessageListElement = useUIStore((s) => s.setMessageListElement)
   const setMessageScrolling = useUIStore((s) => s.setMessageScrolling)
@@ -131,11 +192,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const handleScrollToPrev = useCallback(() => {
     if (messageListRef?.current && virtuoso?.current) {
       const containerRect = messageListRef.current.getBoundingClientRect()
-      for (let i = 0; i < currentMessageList.length; i++) {
-        const msg = currentMessageList[i]
-        if (msg.role !== 'user' && msg.role !== 'assistant') {
-          continue
-        }
+      for (let i = 0; i < renderItems.length; i++) {
+        // 此处原本判断 role 的逻辑已在 renderItems 中处理
         const msgElement = messageListRef.current.querySelector(
           `[data-testid="virtuoso-item-list"] > [data-index="${i}"]`
         )
@@ -144,7 +202,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
           // 找到第一个出现在可视区域顶部的元素，滚动到上一条用户消息
           if (rect.bottom > containerRect.top) {
             for (let j = i - 1; j >= 0; j--) {
-              if (currentMessageList[j].role === 'user') {
+              if (renderItems[j].messages.some((msg) => msg.role === 'user')) {
                 virtuoso.current.scrollToIndex({
                   index: j,
                   align: 'start',
@@ -161,16 +219,12 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
         }
       }
     }
-  }, [currentMessageList, isSmallScreen])
+  }, [renderItems, isSmallScreen])
 
   const handleScrollToNext = useCallback(() => {
     if (messageListRef?.current && virtuoso?.current) {
       const containerRect = messageListRef.current.getBoundingClientRect()
-      for (let i = 0; i < currentMessageList.length; i++) {
-        const msg = currentMessageList[i]
-        if (msg.role !== 'user' && msg.role !== 'assistant') {
-          continue
-        }
+      for (let i = 0; i < renderItems.length; i++) {
         const msgElement = messageListRef.current.querySelector(
           `[data-testid="virtuoso-item-list"] > [data-index="${i}"]`
         )
@@ -178,20 +232,20 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
           const rect = msgElement.getBoundingClientRect()
           // 找到第一个出现在可视区域顶部的元素，滚动到下一条用户消息
           if (rect.bottom > containerRect.top) {
-            for (let j = i + 1; j < currentMessageList.length; j++) {
-              if (currentMessageList[j].role === 'user') {
+            for (let j = i + 1; j < renderItems.length; j++) {
+              if (renderItems[j].messages.some((msg) => msg.role === 'user')) {
                 virtuoso.current.scrollToIndex({ index: j, align: 'start', behavior: 'smooth' })
                 return
               }
             }
             // 没有下一条用户消息了，滚动到底部
-            virtuoso.current.scrollToIndex({ index: currentMessageList.length - 1, align: 'end', behavior: 'smooth' })
+            virtuoso.current.scrollToIndex({ index: renderItems.length - 1, align: 'end', behavior: 'smooth' })
             return
           }
         }
       }
     }
-  }, [currentMessageList])
+  }, [renderItems])
 
   const [atBottom, setAtBottom] = useState(false)
   const [atTop, setAtTop] = useState(false)
@@ -257,11 +311,83 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     setMessageListElement(messageListRef)
   }, [])
 
+  useEffect(() => {
+    const element = messageListRef.current
+    if (!element) {
+      return
+    }
+
+    const updateViewportHeight = () => {
+      setMessageViewportHeight(element.clientHeight)
+    }
+
+    updateViewportHeight()
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateViewportHeight)
+      return () => {
+        window.removeEventListener('resize', updateViewportHeight)
+      }
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateViewportHeight()
+    })
+
+    observer.observe(element)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [])
+
   const platformType = useAtomValue(platformTypeAtom)
+
+  const renderMessageBlock = useCallback(
+    (msg: SessionMessage, options: { isFirstItem: boolean; isLastItem: boolean }) => {
+      return (
+        <Stack key={msg.id} gap={0} pt={msg.role === 'user' ? 4 : 0}>
+          {currentThreadHash[msg.id] && (
+            <ThreadLabel thread={currentThreadHash[msg.id]} sessionId={currentSession.id} />
+          )}
+          <ErrorBoundary name={`message-item`}>
+            {msg.isSummary ? (
+              <SummaryMessage
+                msg={msg}
+                className={options.isFirstItem ? 'pt-4' : options.isLastItem ? '!pb-4' : ''}
+                isLatestSummary={msg.id === latestSummaryMessageId}
+                onDelete={() => removeMessage(currentSession.id, msg.id)}
+                sessionId={currentSession.id}
+              />
+            ) : (
+              <Message
+                id={msg.id}
+                msg={msg}
+                sessionId={currentSession.id}
+                sessionType={currentSession.type || 'chat'}
+                className={options.isFirstItem ? 'pt-4' : options.isLastItem ? '!pb-4' : ''}
+                collapseThreshold={msg.role === 'system' ? 150 : undefined}
+                buttonGroup={options.isLastItem && msg.role === 'assistant' ? 'always' : 'auto'}
+                assistantAvatarKey={currentSession.assistantAvatarKey}
+                sessionPicUrl={currentSession.picUrl}
+              />
+            )}
+          </ErrorBoundary>
+          {currentSession.messageForksHash?.[msg.id] && currentSession.messageForksHash[msg.id].lists.length > 1 && (
+            <Flex justify="flex-end" pr="md" mr="md" className="self-end">
+              <ForkNav sessionId={currentSession.id} msgId={msg.id} forks={currentSession.messageForksHash[msg.id]} />
+            </Flex>
+          )}
+        </Stack>
+      )
+    },
+    [currentSession, currentThreadHash, latestSummaryMessageId]
+  )
 
   useImperativeHandle(ref, () => ({
     scrollToTop: (behavior = 'auto') => virtuoso.current?.scrollTo({ top: 0, behavior }),
     scrollToBottom: (behavior = 'auto') => virtuoso.current?.scrollTo({ top: Infinity, behavior }),
+    setIsNewMessage: (value: boolean) => setIsNewMessage(value),
   }))
 
   return (
@@ -271,7 +397,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
           <Virtuoso
             style={{ scrollbarGutter: 'stable' }}
             className={platformType === 'win32' ? 'scrollbar-custom' : ''}
-            data={currentMessageList}
+            data={renderItems}
             ref={virtuoso}
             followOutput="smooth"
             {...(sessionScrollPositionCache.has(currentSession.id)
@@ -281,56 +407,39 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                   initialScrollTop: sessionScrollPositionCache.get(currentSession.id)?.scrollTop,
                 }
               : {
-                  initialTopMostItemIndex: currentMessageList.length - 1,
+                  initialTopMostItemIndex: renderItems.length - 1,
                 })}
             increaseViewportBy={{ top: 2000, bottom: 2000 }}
-            itemContent={(index, msg) => {
+            itemContent={(index, item) => {
+              const itemClassName = widthFull ? 'w-full' : 'max-w-4xl mx-auto'
+              const isFirstItem = index === 0
+              const isLastItem = index === renderItems.length - 1
+
+              if (item.type === 'group') {
+                return (
+                  <div className={itemClassName}>
+                    <div
+                      className="flex flex-col pt-5"
+                      style={
+                        messageViewportHeight > 0 && isNewMessage
+                          ? { minHeight: `${messageViewportHeight}px` }
+                          : undefined
+                      } // key
+                    >
+                      {item.messages.map((message, messageIndex) =>
+                        renderMessageBlock(message, {
+                          isFirstItem: isFirstItem && messageIndex === 0,
+                          isLastItem: isLastItem && messageIndex === item.messages.length - 1,
+                        })
+                      )}
+                      {/* <div aria-hidden="true" className="flex-1" /> */}
+                    </div>
+                  </div>
+                )
+              }
+
               return (
-                <Stack
-                  key={msg.id}
-                  gap={0}
-                  className={widthFull ? 'w-full' : 'max-w-4xl mx-auto'}
-                  pt={msg.role === 'user' ? 4 : 0}
-                >
-                  {currentThreadHash[msg.id] && (
-                    <ThreadLabel thread={currentThreadHash[msg.id]} sessionId={currentSession.id} />
-                  )}
-                  <ErrorBoundary name={`message-item`}>
-                    {msg.isSummary ? (
-                      <SummaryMessage
-                        msg={msg}
-                        className={index === 0 ? 'pt-4' : index === currentMessageList.length - 1 ? '!pb-4' : ''}
-                        isLatestSummary={msg.id === latestSummaryMessageId}
-                        onDelete={() => removeMessage(currentSession.id, msg.id)}
-                        sessionId={currentSession.id}
-                      />
-                    ) : (
-                      <Message
-                        id={msg.id}
-                        msg={msg}
-                        sessionId={currentSession.id}
-                        sessionType={currentSession.type || 'chat'}
-                        className={index === 0 ? 'pt-4' : index === currentMessageList.length - 1 ? '!pb-4' : ''}
-                        collapseThreshold={msg.role === 'system' ? 150 : undefined}
-                        buttonGroup={
-                          index === currentMessageList.length - 1 && msg.role === 'assistant' ? 'always' : 'auto'
-                        }
-                        assistantAvatarKey={currentSession.assistantAvatarKey}
-                        sessionPicUrl={currentSession.picUrl}
-                      />
-                    )}
-                  </ErrorBoundary>
-                  {currentSession.messageForksHash?.[msg.id] &&
-                    currentSession.messageForksHash[msg.id].lists.length > 1 && (
-                      <Flex justify="flex-end" mt={-16} pr="md" mr="md" className="z-10 self-end">
-                        <ForkNav
-                          sessionId={currentSession.id}
-                          msgId={msg.id}
-                          forks={currentSession.messageForksHash[msg.id]}
-                        />
-                      </Flex>
-                    )}
-                </Stack>
+                <div className={itemClassName}>{renderMessageBlock(item.messages[0], { isFirstItem, isLastItem })}</div>
               )
             }}
             atTopStateChange={setAtTop}
@@ -473,7 +582,7 @@ const ThreadLabel: FC<ThreadLabelProps> = memo(({ thread, sessionId }) => {
   const handleEditThreadName = useCallback(async () => {
     if (!thread.id) return
     await NiceModal.show('thread-name-edit', { sessionId, threadId: thread.id })
-  }, [thread.id])
+  }, [sessionId, thread.id])
 
   const handleContinueThread = useCallback(() => {
     if (!thread.id) return

@@ -85,20 +85,34 @@ export function ModelList({
               px="xs"
               className="border-solid border-0 border-b last:border-b-0 border-chatbox-border-primary"
             >
-              <Stack gap={4} flex="1 1 auto">
-                <Text
-                  component="span"
-                  size="sm"
-                  style={{
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={model.nickname || model.modelId}
-                >
-                  {model.nickname || model.modelId}
-                </Text>
+              <Stack gap={4} flex="1 1 0" miw={0}>
+                <Flex gap="xs" align="center" miw={0}>
+                  <Text
+                    component="span"
+                    size="sm"
+                    flex="1 1 auto"
+                    style={{
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={model.nickname || model.modelId}
+                    c={model.labels?.includes('recommended') ? 'chatbox-brand' : undefined}
+                  >
+                    {model.nickname || model.modelId}
+                  </Text>
+                  {model.labels?.includes('pro') && (
+                    <Badge color="chatbox-brand" size="xs" variant="light">
+                      Pro
+                    </Badge>
+                  )}
+                  {model.labels?.includes('new') && (
+                    <Badge color="teal" size="xs" variant="light">
+                      New
+                    </Badge>
+                  )}
+                </Flex>
 
                 {(model.type !== 'chat' || model.capabilities?.length || model.contextWindow || model.maxOutput) && (
                   <Flex gap="xs" align="center" wrap="wrap">

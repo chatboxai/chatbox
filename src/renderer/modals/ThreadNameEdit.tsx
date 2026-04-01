@@ -46,7 +46,7 @@ const ThreadNameEdit = NiceModal.create((props: { sessionId: string; threadId: s
 
       <AdaptiveModal.Actions>
         <AdaptiveModal.CloseButton onClick={onClose} />
-        <Button onClick={onSave}>{t('save')}</Button>
+        <Button onClick={onSave}>{t('Save')}</Button>
       </AdaptiveModal.Actions>
     </AdaptiveModal>
   )

@@ -1,4 +1,4 @@
-import type { ModelMessage, ToolSet } from 'ai'
+import type { ModelMessage, TextStreamPart, ToolSet } from 'ai'
 import {
   type MessageContentParts,
   type MessageStatus,
@@ -16,6 +16,7 @@ export interface ModelInterface {
   isSupportToolUse(scope?: ToolUseScope): boolean
   isSupportSystemMessage(): boolean
   chat: (messages: ModelMessage[], options: CallChatCompletionOptions) => Promise<StreamTextResult>
+  chatStream: (messages: ModelMessage[], options: ChatStreamOptions) => AsyncGenerator<ModelStreamPart>
   paint: (
     params: {
       prompt: string
@@ -24,7 +25,7 @@ export interface ModelInterface {
       aspectRatio?: string
     },
     signal?: AbortSignal,
-    callback?: (picBase64: string) => void
+    callback?: (picBase64: string) => void | Promise<void>
   ) => Promise<string[]>
 }
 
@@ -58,3 +59,17 @@ export interface ResultChange {
 export type OnResultChangeWithCancel = (data: ResultChange & { cancel?: () => void }) => void
 export type OnResultChange = (data: ResultChange) => void
 export type OnStatusChange = (status: MessageStatus | null) => void
+
+// New types for chatStream() API
+export interface ChatStreamOptions {
+  sessionId?: string
+  signal?: AbortSignal
+  tools?: ToolSet
+  providerOptions?: ProviderOptions
+  maxSteps?: number
+}
+
+export type ModelStatus = MessageStatus
+
+// ModelStreamPart extends AI SDK's TextStreamPart with custom status events
+export type ModelStreamPart<T extends ToolSet = ToolSet> = TextStreamPart<T> | { type: 'status'; status: MessageStatus }

@@ -1,5 +1,7 @@
 # Pack 04 - Completion and App Memory
 
+Operational tracking: [`STATUS.md`](./STATUS.md)
+
 ## Phase Fit
 
 - Phase: 4 of 7
@@ -22,10 +24,19 @@ Turn app completion and model-visible memory into first-class host behavior so l
 - [CB-403 - Active app context injection for later turns](./cb-403-active-app-context-injection-for-later-turns/feature-spec.md)
 - [CB-404 - Degraded completion and recovery UX](./cb-404-degraded-completion-and-recovery-ux/feature-spec.md)
 
+## Single-Agent Order
+
+1. CB-401
+2. CB-402
+3. CB-403
+4. CB-404
+
 ## Exit Criteria
 
 - Completion payloads are explicit and validated.
 - Apps cannot write directly into model-visible memory.
+- Later turns can inject host-owned active or recent app context without raw
+  partner-state leakage.
 - Degraded completion and recovery paths are represented in host behavior.
 
 ## Risks

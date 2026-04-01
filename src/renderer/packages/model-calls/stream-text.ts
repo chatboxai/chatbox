@@ -1,4 +1,5 @@
 import { buildChatBridgeChessReasoningPrompt, wrapChatBridgeHostTools } from '@shared/chatbridge'
+import type { ChatBridgeAppRecordSnapshot } from '@shared/chatbridge/app-records'
 import { getModel } from '@shared/models'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
 import { sequenceMessages } from '@shared/utils/message'
@@ -38,6 +39,7 @@ import fileToolSet from './toolsets/file'
 import { getToolSet } from './toolsets/knowledge-base'
 import websearchToolSet, { parseLinkTool, webSearchTool } from './toolsets/web-search'
 import { createReviewedSingleAppToolSet } from '../chatbridge/single-app-tools'
+import { buildChatBridgeAppContextPrompt } from '../context-management/app-context'
 
 /**
  * 处理搜索结果并返回模型响应的通用函数
@@ -125,8 +127,18 @@ export function prepareToolsForExecution(tools: ToolSet, sessionId?: string): To
   return wrapChatBridgeHostTools(tools, { sessionId })
 }
 
-export function buildAdditionalConversationInfo(messages: Message[], toolSetInstructions: string): string {
-  return [toolSetInstructions, buildChatBridgeChessReasoningPrompt(messages)].filter(Boolean).join('\n\n')
+export function buildAdditionalConversationInfo(
+  messages: Message[],
+  toolSetInstructions: string,
+  appRecords?: ChatBridgeAppRecordSnapshot
+): string {
+  return [
+    toolSetInstructions,
+    buildChatBridgeAppContextPrompt(appRecords),
+    buildChatBridgeChessReasoningPrompt(messages),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 /**
@@ -142,6 +154,7 @@ export async function streamText(
     providerOptions?: ProviderOptions
     knowledgeBase?: Pick<KnowledgeBase, 'id' | 'name'>
     webBrowsing?: boolean
+    appRecords?: ChatBridgeAppRecordSnapshot
   },
   signal?: AbortSignal
 ): Promise<{ result: StreamTextResult; coreMessages: ModelMessage[] }> {
@@ -189,7 +202,7 @@ export async function streamText(
     model.modelId,
     params.messages,
     // 在系统提示中添加工具能力和 ChatBridge 上下文，方便模型理解
-    buildAdditionalConversationInfo(params.messages, toolSetInstructions),
+    buildAdditionalConversationInfo(params.messages, toolSetInstructions, params.appRecords),
     model.isSupportSystemMessage() ? 'system' : 'user'
   )
 

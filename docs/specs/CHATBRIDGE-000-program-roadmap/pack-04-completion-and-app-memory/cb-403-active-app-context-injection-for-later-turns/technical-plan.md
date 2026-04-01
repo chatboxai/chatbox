@@ -13,12 +13,18 @@
 - `src/renderer/packages/context-management/`
 - `src/renderer/packages/model-calls/stream-text.ts`
 - `src/renderer/packages/chatbridge/`
+- `src/shared/chatbridge/live-seeds.ts`
 - Public interfaces/contracts:
 - Active/recent app selection rules
 - Context injection contract for model messages
 - Fallback rules for stale/missing app context
 - Data flow summary:
   User follow-up arrives -> host selects active or relevant recent app summary -> context-management assembles a bounded model context -> assistant responds with app-aware continuity.
+- Implemented data flow:
+  `Session.chatBridgeAppRecords` -> bounded selection in
+  `context-management/app-context.ts` -> system-prompt injection in
+  `stream-text.ts` -> later-turn model response with explicit active/recent or
+  unavailable app context.
 
 ## Architecture Decisions
 
@@ -56,6 +62,10 @@
 - Stale context fallback behavior
 - Integration tests:
   cover the full host/runtime path touched by this story rather than only isolated helpers
+- Implemented test surfaces:
+  `src/renderer/packages/context-management/app-context.test.ts`
+  and
+  `test/integration/chatbridge/scenarios/active-app-context-injection.test.ts`
 - E2E or smoke tests:
   add a focused smoke path if the story changes user-visible app flow or session continuity
 - Edge-case coverage mapping:

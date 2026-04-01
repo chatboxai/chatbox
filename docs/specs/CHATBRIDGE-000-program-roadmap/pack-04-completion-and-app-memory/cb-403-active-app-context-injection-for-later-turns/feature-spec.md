@@ -25,9 +25,9 @@ The assistant needs a disciplined way to incorporate active or recently complete
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Active and recent app context can be selected and injected into later turns in a controlled way.
-- [ ] AC-2: Stale, missing, or superseded app state has a defined fallback behavior.
-- [ ] AC-3: The context-management layer understands app summaries as host-owned inputs.
+- [x] AC-1: Active and recent app context can be selected and injected into later turns in a controlled way.
+- [x] AC-2: Stale, missing, or superseded app state has a defined fallback behavior.
+- [x] AC-3: The context-management layer understands app summaries as host-owned inputs.
 
 ## Edge Cases
 
@@ -58,3 +58,6 @@ The assistant needs a disciplined way to incorporate active or recently complete
 - Tests cover the primary happy path and the important failure mode for this story.
 - Validation passes for the touched scope.
 - Any new visible UI state has approved Pencil evidence before code if applicable.
+- ChatBridge later-turn prompt assembly now reads host-owned app summaries from
+  durable app records instead of scraping raw app-part prose from the message
+  timeline.

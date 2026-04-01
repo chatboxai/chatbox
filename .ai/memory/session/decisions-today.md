@@ -22,3 +22,9 @@
   persisted `null` settings records are rehydrated to defaults and written back
   before main-process bootstrap consumers like Sentry, tray shortcuts, and the
   updater dereference them.
+- 2026-04-01: Moved `disableEnforceFocus` overrides for the main sidebar and
+  thread-history drawer into MUI `ModalProps` so React stops forwarding the
+  prop to DOM nodes while the drawers still allow nested modal input focus.
+- 2026-04-01: Gave the shared `CommandDialog` wrapper a hidden title and
+  description by default so Radix dialog accessibility requirements are met
+  without forcing every caller to wire those fields manually.

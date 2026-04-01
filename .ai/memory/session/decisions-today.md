@@ -14,3 +14,7 @@
   `main`/`origin/main` before replaying a requested story from a stale branch;
   already-merged work is now treated as the baseline and any extra change
   starts as a clean follow-up story/worktree.
+- 2026-04-01: Added a repo-local workspace guard so stale-install worktrees now
+  fail before Vite/TypeScript starts, while wrong-Node shells still fail at the
+  repo engine gate. `pnpm install` now records a worktree-local install stamp
+  in `node_modules/`.

@@ -1,6 +1,7 @@
 import '../setup'
 
 import { describe, expect, it } from 'vitest'
+import { CHATBRIDGE_COMPLETION_SCHEMA_VERSION } from '@shared/chatbridge/completion'
 import { createBridgeHostController } from '@/packages/chatbridge/bridge/host-controller'
 import {
   createChatBridgeAppRecordStore,
@@ -170,9 +171,16 @@ describe('ChatBridge app instance and event domain model', () => {
       bridgeToken: 'bridge-token-1',
       sequence: 3,
       idempotencyKey: 'complete-3',
-      result: {
-        status: 'complete',
-        artifactId: 'artifact-1',
+      completion: {
+        schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+        status: 'success',
+        outcome: {
+          code: 'artifact_ready',
+          data: {
+            artifactId: 'artifact-1',
+          },
+        },
+        suggestedSummary: 'The preview artifact is ready.',
       },
     })
 
@@ -187,9 +195,17 @@ describe('ChatBridge app instance and event domain model', () => {
       completion: {
         status: 'pending',
         payload: {
-          status: 'complete',
-          artifactId: 'artifact-1',
+          schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+          status: 'success',
+          outcome: {
+            code: 'artifact_ready',
+            data: {
+              artifactId: 'artifact-1',
+            },
+          },
+          suggestedSummary: 'The preview artifact is ready.',
         },
+        suggestedSummary: 'The preview artifact is ready.',
       },
       lastEventSequence: 5,
     })
@@ -205,6 +221,10 @@ describe('ChatBridge app instance and event domain model', () => {
     expect(hydrated.instances['app-instance-1']).toMatchObject({
       status: 'complete',
       bridgeSessionId: 'bridge-session-1',
+      completion: {
+        status: 'pending',
+        suggestedSummary: 'The preview artifact is ready.',
+      },
     })
   })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BridgeAppEvent } from './bridge-session'
+import { CHATBRIDGE_COMPLETION_SCHEMA_VERSION } from './completion'
 import {
   applyChatBridgeAppEvent,
   createChatBridgeAppEvent,
@@ -66,9 +67,17 @@ describe('ChatBridge app event domain model', () => {
       sequence: 3,
       createdAt: 1_300,
       nextStatus: 'complete',
-      payload: {
-        draftId: 'draft-1',
-        sceneCount: 3,
+      completion: {
+        schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+        status: 'success',
+        outcome: {
+          code: 'draft_completed',
+          data: {
+            draftId: 'draft-1',
+            sceneCount: 3,
+          },
+        },
+        suggestedSummary: 'The draft completed with three scenes.',
       },
     })
     const completed = applyChatBridgeAppEvent(active.instance, completionEvent)
@@ -87,12 +96,22 @@ describe('ChatBridge app event domain model', () => {
       completion: {
         status: 'pending',
         payload: {
-          draftId: 'draft-1',
-          sceneCount: 3,
+          schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+          status: 'success',
+          outcome: {
+            code: 'draft_completed',
+            data: {
+              draftId: 'draft-1',
+              sceneCount: 3,
+            },
+          },
+          suggestedSummary: 'The draft completed with three scenes.',
         },
+        suggestedSummary: 'The draft completed with three scenes.',
       },
       lastEventSequence: 3,
     })
+    expect(completed.instance.summaryForModel).toBeUndefined()
   })
 
   it('rejects resume transitions for instances that are not resumable', () => {
@@ -183,5 +202,69 @@ describe('ChatBridge app event domain model', () => {
         bridgeSequence: 7,
       },
     })
+  })
+
+  it('normalizes app completion payloads without promoting suggested summaries into model memory', () => {
+    const bridgeEvent: BridgeAppEvent = {
+      kind: 'app.complete',
+      bridgeSessionId: 'bridge-session-9',
+      appInstanceId: 'instance-9',
+      bridgeToken: 'bridge-token-9',
+      sequence: 11,
+      idempotencyKey: 'complete-11',
+      completion: {
+        schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+        status: 'interrupted',
+        outcome: {
+          code: 'draft_saved',
+          data: {
+            draftId: 'draft-11',
+          },
+        },
+        suggestedSummary: 'The student paused with a saved draft.',
+        resumability: {
+          mode: 'resumable',
+          resumeKey: 'draft-11',
+        },
+      },
+    }
+
+    const normalized = normalizeBridgeAppEventToChatBridgeAppEvent(bridgeEvent, {
+      id: 'event-complete-11',
+      sequence: 4,
+      createdAt: 4_000,
+    })
+
+    expect(normalized).toMatchObject({
+      kind: 'completion.recorded',
+      nextStatus: 'complete',
+      completion: bridgeEvent.completion,
+      payload: {
+        bridgeSequence: 11,
+      },
+    })
+    expect(normalized.summaryForModel).toBeUndefined()
+  })
+
+  it('rejects app-authored summaryForModel writes even when a completion payload is present', () => {
+    expect(() =>
+      createChatBridgeAppEvent({
+        id: 'event-complete-illegal',
+        appInstanceId: 'instance-4',
+        kind: 'completion.recorded',
+        actor: 'app',
+        sequence: 4,
+        createdAt: 4_100,
+        nextStatus: 'complete',
+        summaryForModel: 'This should never come from the app.',
+        completion: {
+          schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+          status: 'success',
+          outcome: {
+            code: 'draft_completed',
+          },
+        },
+      })
+    ).toThrow(/summaryForModel/i)
   })
 })

@@ -1,6 +1,7 @@
 import '../setup'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CHATBRIDGE_COMPLETION_SCHEMA_VERSION } from '@shared/chatbridge/completion'
 import { createBridgeHostController } from '@/packages/chatbridge/bridge/host-controller'
 
 type MockPortMessageEvent = {
@@ -182,8 +183,12 @@ describe('ChatBridge launch-scoped bridge handshake', () => {
       bridgeToken: 'bridge-token-1',
       sequence: 3,
       idempotencyKey: 'state-2',
-      result: {
-        status: 'complete',
+      completion: {
+        schemaVersion: CHATBRIDGE_COMPLETION_SCHEMA_VERSION,
+        status: 'success',
+        outcome: {
+          code: 'preview_complete',
+        },
       },
     })
 

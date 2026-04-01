@@ -52,6 +52,10 @@ Capture repeatable patterns that match how this workspace actually works.
   `src/shared/chatbridge/live-seeds.ts` defines the seeded scenarios,
   `src/renderer/dev/chatbridgeSeeds.ts` upserts them into storage, and
   `/dev/chatbridge` is the live entry point for manual verification.
+- Structured ChatBridge app completion should flow through
+  `src/shared/chatbridge/completion.ts`. Apps may emit `success`,
+  `interrupted`, or `failure` payloads plus an optional `suggestedSummary`,
+  but only host-authored events may populate `summaryForModel`.
 
 ## Deployment and Release
 

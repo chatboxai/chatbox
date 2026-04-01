@@ -346,6 +346,16 @@ Apps can propose state updates, but the host decides what becomes durable platfo
 
 Apps should not write directly into `summaryForModel`. Instead, they should emit structured completion payloads and optional suggested summaries, and the host should validate, redact, and normalize that information before it becomes model-visible memory.
 
+The shared completion contract lives in `src/shared/chatbridge/completion.ts` and is intentionally app-agnostic:
+
+- `status`: `success`, `interrupted`, or `failure`
+- `outcome`: machine-readable `code`, optional `label`, and optional structured `data`
+- `resumability`: optional hint about whether the app believes the work is resumable, restartable, or terminal
+- `suggestedSummary`: optional app-authored hint that the host may later redact or ignore
+- `error`: required only for `failure`, carrying structured code/message/details instead of freeform prose
+
+The host event stream should persist the structured completion payload itself and keep `summaryForModel` host-authored only. App-originated events may suggest summaries, but they must not populate model-visible memory directly.
+
 Later-turn prompt assembly should read only the latest host-owned app record and
 inject one of three states into the model path:
 

@@ -4,6 +4,9 @@ import {
   type BridgeReadyEvent,
 } from './bridge-session'
 import {
+  ChatBridgeCompletionPayloadSchema,
+} from './completion'
+import {
   canResumeChatBridgeAppInstance,
   ChatBridgeAppErrorSchema,
   ChatBridgeAppInstanceSchema,
@@ -33,7 +36,7 @@ export type ChatBridgeAppEventKind = z.infer<typeof ChatBridgeAppEventKindSchema
 export const ChatBridgeAppEventActorSchema = z.enum(['host', 'app', 'system'])
 export type ChatBridgeAppEventActor = z.infer<typeof ChatBridgeAppEventActorSchema>
 
-export const ChatBridgeAppEventSchema = z.object({
+const ChatBridgeAppEventShapeSchema = z.object({
   schemaVersion: z.literal(CHATBRIDGE_APP_EVENT_SCHEMA_VERSION),
   id: z.string(),
   appInstanceId: z.string(),
@@ -46,18 +49,57 @@ export const ChatBridgeAppEventSchema = z.object({
   nextStatus: z.enum(['launching', 'ready', 'active', 'complete', 'error', 'cancelled', 'stale']),
   snapshot: z.record(z.string(), z.unknown()).optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
+  completion: ChatBridgeCompletionPayloadSchema.optional(),
   error: ChatBridgeAppErrorSchema.optional(),
   authGrantId: z.string().optional(),
   summaryForModel: z.string().optional(),
 })
 
+function refineChatBridgeAppEvent(
+  value: {
+    kind: ChatBridgeAppEventKind
+    actor: ChatBridgeAppEventActor
+    completion?: unknown
+    summaryForModel?: string
+  },
+  ctx: z.RefinementCtx
+) {
+  if (value.kind === 'completion.recorded' && !value.completion) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['completion'],
+      message: 'Completion events require a structured completion payload.',
+    })
+  }
+
+  if (value.kind !== 'completion.recorded' && value.completion !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['completion'],
+      message: 'Only completion.recorded events may include structured completion payloads.',
+    })
+  }
+
+  if (value.actor === 'app' && value.summaryForModel !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['summaryForModel'],
+      message: 'Apps cannot write summaryForModel directly.',
+    })
+  }
+}
+
+export const ChatBridgeAppEventSchema = ChatBridgeAppEventShapeSchema.superRefine(refineChatBridgeAppEvent)
+
 export type ChatBridgeAppEvent = z.infer<typeof ChatBridgeAppEventSchema>
 
-export const CreateChatBridgeAppEventInputSchema = ChatBridgeAppEventSchema.omit({
+export const CreateChatBridgeAppEventInputSchema = ChatBridgeAppEventShapeSchema.omit({
   schemaVersion: true,
-}).extend({
-  createdAt: z.number().int().optional(),
 })
+  .extend({
+    createdAt: z.number().int().optional(),
+  })
+  .superRefine(refineChatBridgeAppEvent)
 
 export type CreateChatBridgeAppEventInput = z.infer<typeof CreateChatBridgeAppEventInputSchema>
 
@@ -155,11 +197,17 @@ function reject(instance: ChatBridgeAppInstance, reason: ChatBridgeAppEventTrans
 }
 
 function createDefaultError(event: ChatBridgeAppEvent) {
+  const completionFailure =
+    event.kind === 'completion.recorded' && event.completion?.status === 'failure'
+      ? event.completion.error
+      : null
+
   return {
-    code: 'app_error',
-    message: 'App lifecycle event reported an error state.',
+    code: completionFailure?.code ?? 'app_error',
+    message: completionFailure?.message ?? 'App lifecycle event reported an error state.',
     occurredAt: event.createdAt,
-    details: event.payload,
+    recoverable: completionFailure?.recoverable,
+    details: completionFailure?.details ?? event.payload,
   }
 }
 
@@ -218,7 +266,10 @@ export function normalizeBridgeAppEventToChatBridgeAppEvent(
       kind: 'completion.recorded',
       nextStatus: 'complete',
       idempotencyKey: event.idempotencyKey,
-      payload: event.result,
+      payload: {
+        bridgeSequence: event.sequence,
+      },
+      completion: event.completion,
     })
   }
 
@@ -283,8 +334,9 @@ export function applyChatBridgeAppEvent(
     parsedEvent.kind === 'completion.recorded'
       ? {
           ...parsedInstance.completion,
-          payload: parsedEvent.payload,
-          summaryForModel: parsedEvent.summaryForModel ?? parsedInstance.summaryForModel,
+          payload: parsedEvent.completion,
+          suggestedSummary: parsedEvent.completion?.suggestedSummary,
+          summaryForModel: parsedEvent.summaryForModel ?? parsedInstance.completion.summaryForModel,
           status: parsedEvent.summaryForModel ? ('normalized' as const) : parsedInstance.completion.status,
         }
       : parsedInstance.completion

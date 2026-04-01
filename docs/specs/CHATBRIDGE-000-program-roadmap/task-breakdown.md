@@ -10,6 +10,10 @@
 - Treat each phase pack as a planning gate, not an implementation batch.
 - Treat the nested story folders inside each pack as the canonical four-artifact
   planning packets for that phase.
+- Use `progress.md` plus `pack-*/STATUS.md` as the operational control layer for
+  post-Pack-4 execution.
+- Add `status.md` in each active `cb-*` story folder and keep exactly one story
+  in progress at a time once the single-agent rollout begins.
 - Promote a nested packet to a standalone `docs/specs/<story-id>/` folder only
   if the story needs to graduate out of the roadmap and become an active
   implementation track.
@@ -17,6 +21,10 @@
 - Keep security, completion, and state authority ahead of partner breadth.
 - Route any visible UI story through Pencil after per-story spec and technical
   planning.
+- Do not open the next pack until the current pack has all stories at least
+  `validated`, a completed exit checklist, and a short exit memo in `STATUS.md`.
+- If a later pack reveals a missing prerequisite, stop and add a backfill story
+  to the original pack instead of solving it ad hoc in the later pack.
 
 ## Story Pack Alignment
 
@@ -39,7 +47,7 @@
 
 | Task ID | Description | Dependency | Parallelizable | Validation |
 |---|---|---|---|---|
-| P000 | Pack 00: foundation and instrumentation | must-have | partial | bootstrap, env, hosted web deployment, mainline Vercel sync, post-merge verification, release entrypoints, trace, eval, and observability readiness |
+| P000 | Pack 00: foundation and instrumentation | must-have | partial | bootstrap, env, trace, eval, and observability readiness |
 | P001 | Pack 01: reliable chat and history | blocked-by:P000 | no | `pnpm test`, `pnpm check` |
 | P002 | Pack 02: platform contract and bridge security | blocked-by:P001 | no | contract and integration tests for host/app bridge |
 | P003 | Pack 03: single-app invocation and first Chess vertical steps | blocked-by:P002 | no | single-app invocation and initial app embed smoke |

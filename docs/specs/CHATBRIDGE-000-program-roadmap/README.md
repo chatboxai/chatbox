@@ -34,10 +34,6 @@ Critical guidance carried into the pack structure:
 - Define the API contract early because later packs inherit it.
 - Test the full lifecycle: invocation -> UI render -> interaction -> completion -> follow-up.
 - Treat completion signaling as a first-class protocol concern.
-- Make deployment real in Phase 0: a hosted surface, smoke path, and release
-  entrypoints should exist before later packs assume them.
-- Treat post-merge deployment verification as part of Phase 0, not as an
-  optional operator habit.
 - Think like a platform designer so third parties can understand the API.
 
 ## Objective Set
@@ -66,6 +62,16 @@ mirrors only.
 5. [`pack-05-multi-app-routing-and-debate-arena/`](./pack-05-multi-app-routing-and-debate-arena/)
 6. [`pack-06-authenticated-apps-and-story-builder/`](./pack-06-authenticated-apps-and-story-builder/)
 7. [`pack-07-policy-safety-and-partner-dx/`](./pack-07-policy-safety-and-partner-dx/)
+
+## Control Artifacts
+
+Use these files as the operational control layer for the roadmap:
+
+- [`progress.md`](./progress.md) is the single-agent queue, pack ledger, and
+  O1-O5 proof tracker.
+- Each `pack-*/STATUS.md` records the current gate, story order, exit checklist,
+  and pack exit memo.
+- Each active `cb-*/status.md` records story state, blockers, and proof links.
 
 ## Priority Mapping
 
@@ -117,3 +123,10 @@ For active implementation, work directly from that nested story packet or
 promote it into a standalone `docs/specs/<story-id>/` folder if the story
 graduates out of the roadmap. In either case, visible UI stories still require
 the Pencil MCP review gate before UI code.
+
+Post-Pack-4 rollout defaults to a single-agent lane:
+
+- finish Pack 4 with a written exit memo and linked proof before Pack 5 or Pack 6 opens
+- run one story at a time in the order recorded by the relevant `STATUS.md`
+- if a later pack exposes a missing prerequisite, add a backfill story to the
+  original pack instead of patching around it in the later pack

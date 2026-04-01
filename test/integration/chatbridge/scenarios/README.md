@@ -10,3 +10,7 @@ Use this folder for scenario-oriented integration coverage such as:
 
 Each scenario should map back to a story packet or Pack roadmap item so the
 coverage stays intentional.
+
+For the post-Pack-4 single-agent rollout, scenario folders or files should be
+named and organized so the owning story can link them directly from
+`docs/specs/CHATBRIDGE-000-program-roadmap/**/status.md`.

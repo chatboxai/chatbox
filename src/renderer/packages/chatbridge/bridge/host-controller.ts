@@ -18,6 +18,7 @@ export type BridgeTraceEvent =
   | { type: 'host.render.sent'; renderId: string }
   | { type: 'app.event.accepted'; eventKind: BridgeAppEvent['kind'] }
   | { type: 'app.event.rejected'; eventKind: BridgeAppEvent['kind']; reason: BridgeEventValidationReason }
+  | { type: 'app.event.invalid'; rawKind?: string; issues: string[] }
 
 export interface BridgeMessagePortLike {
   onmessage: ((event: { data: unknown }) => void) | null
@@ -48,6 +49,7 @@ type BridgeHostControllerOptions = {
   onTrace?: (trace: BridgeTraceEvent) => void
   onAcceptedAppEvent?: (event: Exclude<BridgeAppEvent, BridgeReadyEvent>) => void
   onRejectedAppEvent?: (event: BridgeAppEvent, reason: BridgeEventValidationReason) => void
+  onInvalidAppEvent?: (rawEvent: unknown, issues: string[]) => void
 }
 
 function defaultMessageChannelFactory(): BridgeMessageChannelLike {
@@ -158,6 +160,21 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
       attachedPort.onmessage = (event) => {
         const parsed = BridgeAppEventSchema.safeParse(event.data)
         if (!parsed.success) {
+          const issues = parsed.error.issues.map((issue) => {
+            const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
+            return `${path}: ${issue.message}`
+          })
+          const rawKind =
+            typeof event.data === 'object' && event.data !== null && 'kind' in event.data
+              ? String((event.data as { kind?: unknown }).kind)
+              : undefined
+
+          options.onInvalidAppEvent?.(event.data, issues)
+          emitTrace({
+            type: 'app.event.invalid',
+            rawKind,
+            issues,
+          })
           return
         }
         handleAppEvent(parsed.data)

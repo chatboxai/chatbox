@@ -1,6 +1,7 @@
 import type { CompactionPoint, Message, Session, SessionSettings, SessionThread } from '@shared/types'
 import { MessageRoleEnum } from '@shared/types/session'
 import { describe, expect, it } from 'vitest'
+import { CHATBRIDGE_APP_CONTEXT_MESSAGE_PREFIX, getChatBridgeAppContextMessageId } from '@/packages/chatbridge/context'
 import {
   buildContextForAI,
   buildContextForSession,
@@ -31,6 +32,52 @@ function createCompactionPoint(
   createdAt: number
 ): CompactionPoint {
   return { summaryMessageId, boundaryMessageId, createdAt }
+}
+
+function createAppMessage(
+  id: string,
+  lifecycle: 'active' | 'complete' | 'stale' | 'error',
+  options?: {
+    appId?: string
+    appName?: string
+    appInstanceId?: string
+    summary?: string
+    summaryForModel?: string
+    includeCompletionPayload?: boolean
+  }
+): Message {
+  const appId = options?.appId ?? 'story-builder'
+  const appName = options?.appName ?? 'Story Builder'
+  const appInstanceId = options?.appInstanceId ?? `${appId}-instance-1`
+
+  return {
+    id,
+    role: MessageRoleEnum.Assistant,
+    contentParts: [
+      {
+        type: 'app',
+        appId,
+        appName,
+        appInstanceId,
+        lifecycle,
+        summary: options?.summary ?? `${appName} lifecycle: ${lifecycle}`,
+        ...(options?.summaryForModel ? { summaryForModel: options.summaryForModel } : {}),
+        ...(options?.includeCompletionPayload
+          ? {
+              values: {
+                chatbridgeCompletion: {
+                  schemaVersion: 1,
+                  status: 'success',
+                  suggestedSummary: {
+                    text: options.summaryForModel ?? `${appName} completed successfully.`,
+                  },
+                },
+              },
+            }
+          : {}),
+      },
+    ],
+  }
 }
 
 describe('buildContextForAI', () => {
@@ -307,6 +354,268 @@ describe('buildContextForAI', () => {
       expect(result[0].model).toBe('gpt-4')
       expect(result[0].timestamp).toBe(1234567890)
       expect(result[1].usage).toEqual({ inputTokens: 100, outputTokens: 50 })
+    })
+
+    it('injects host-approved app context when the relevant app summary falls before the compaction boundary', () => {
+      const appMessage = createAppMessage('app-msg', 'complete', {
+        summary: 'Raw partner completion text.',
+        summaryForModel: 'Host-approved summary for the saved Story Builder draft.',
+      })
+      const boundary = createMessage('m-boundary', 'assistant', 'Boundary')
+      const followUp = createMessage('m-followup', 'user', 'What did Story Builder save?')
+      const summary = createSummaryMessage('summary-1', 'Conversation summary')
+
+      const result = buildContextForAI({
+        messages: [appMessage, boundary, followUp, summary],
+        compactionPoints: [createCompactionPoint('summary-1', 'm-boundary', Date.now())],
+      })
+
+      expect(result[0].id).toBe(
+        getChatBridgeAppContextMessageId({
+          messageId: 'app-msg',
+          appId: 'story-builder',
+          appName: 'Story Builder',
+          appInstanceId: 'story-builder-instance-1',
+          lifecycle: 'complete',
+          summaryForModel: 'Host-approved summary for the saved Story Builder draft.',
+        })
+      )
+      expect(result[0].role).toBe('system')
+      expect(result[0].contentParts[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('Host-approved summary for the saved Story Builder draft.'),
+      })
+      expect(result.map((message) => message.id)).toEqual([
+        getChatBridgeAppContextMessageId({
+          messageId: 'app-msg',
+          appId: 'story-builder',
+          appName: 'Story Builder',
+          appInstanceId: 'story-builder-instance-1',
+          lifecycle: 'complete',
+          summaryForModel: 'Host-approved summary for the saved Story Builder draft.',
+        }),
+        'summary-1',
+        'm-followup',
+      ])
+    })
+
+    it('derives injected app context from structured Debate Arena state after compaction', () => {
+      const debateMessage: Message = {
+        id: 'debate-msg',
+        role: MessageRoleEnum.Assistant,
+        contentParts: [
+          {
+            type: 'app',
+            appId: 'debate-arena',
+            appName: 'Debate Arena',
+            appInstanceId: 'debate-instance-1',
+            lifecycle: 'complete',
+            summary: 'Raw partner completion text.',
+            values: {
+              chatbridgeDebateArena: {
+                schemaVersion: 1,
+                phase: 'complete',
+                motion: 'Uniforms improve classroom focus.',
+                teams: [
+                  {
+                    id: 'team-affirmative',
+                    name: 'Team Cedar',
+                    stance: 'affirmative',
+                  },
+                  {
+                    id: 'team-negative',
+                    name: 'Team River',
+                    stance: 'negative',
+                  },
+                ],
+                result: {
+                  winnerTeamId: 'team-affirmative',
+                  decision: 'The affirmative team grounded each claim in classroom evidence.',
+                },
+              },
+            },
+          },
+        ],
+      }
+      const boundary = createMessage('m-boundary', 'assistant', 'Boundary')
+      const followUp = createMessage('m-followup', 'user', 'What won the debate?')
+      const summary = createSummaryMessage('summary-1', 'Conversation summary')
+
+      const result = buildContextForAI({
+        messages: [debateMessage, boundary, followUp, summary],
+        compactionPoints: [createCompactionPoint('summary-1', 'm-boundary', Date.now())],
+      })
+
+      expect(result[0].id).toBe(
+        getChatBridgeAppContextMessageId({
+          messageId: 'debate-msg',
+          appId: 'debate-arena',
+          appName: 'Debate Arena',
+          appInstanceId: 'debate-instance-1',
+          lifecycle: 'complete',
+          summaryForModel:
+            'Debate Arena completed the debate on "Uniforms improve classroom focus." and selected Team Cedar (Affirmative) as the winner. Decision: The affirmative team grounded each claim in classroom evidence.',
+        })
+      )
+      expect(result[0].contentParts[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('selected Team Cedar (Affirmative) as the winner'),
+      })
+    })
+
+    it('injects an active app context first and keeps one recent completed app context alongside it', () => {
+      const result = buildContextForAI({
+        messages: [
+          createAppMessage('story-complete', 'complete', {
+            appInstanceId: 'story-complete-instance',
+            summaryForModel: 'Story Builder saved the latest draft outline.',
+          }),
+          createAppMessage('debate-complete', 'complete', {
+            appId: 'debate-arena',
+            appName: 'Debate Arena',
+            appInstanceId: 'debate-complete-instance',
+            summaryForModel: 'Debate Arena preserved the completed debate outcome.',
+          }),
+          createAppMessage('story-active', 'active', {
+            appInstanceId: 'story-active-instance',
+            summaryForModel: 'Story Builder still has the active draft open.',
+          }),
+          createMessage('m-boundary', 'assistant', 'Boundary'),
+          createMessage('m-followup', 'user', 'Which app should the assistant prioritize?'),
+          createSummaryMessage('summary-1', 'Conversation summary'),
+        ],
+        compactionPoints: [createCompactionPoint('summary-1', 'm-boundary', Date.now())],
+      })
+
+      expect(result[0].id).toBe(
+        getChatBridgeAppContextMessageId({
+          messageId: 'story-active',
+          appId: 'story-builder',
+          appName: 'Story Builder',
+          appInstanceId: 'story-active-instance',
+          lifecycle: 'active',
+          summaryForModel: 'Story Builder still has the active draft open.',
+        })
+      )
+      expect(result[1].id).toBe(
+        getChatBridgeAppContextMessageId({
+          messageId: 'debate-complete',
+          appId: 'debate-arena',
+          appName: 'Debate Arena',
+          appInstanceId: 'debate-complete-instance',
+          lifecycle: 'complete',
+          summaryForModel: 'Debate Arena preserved the completed debate outcome.',
+        })
+      )
+      expect(result[0].contentParts[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('Priority: Primary active app context'),
+      })
+      expect(result[1].contentParts[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('Priority: Recent completed app context'),
+      })
+    })
+
+    it('does not inject a synthetic app-context message when the selected app message is already in context', () => {
+      const appMessage = createAppMessage('app-active', 'active', {
+        summary: 'Raw app summary',
+        summaryForModel: 'Host-approved active app context.',
+      })
+      const followUp = createMessage('m-followup', 'user', 'Keep going with the draft.')
+
+      const result = buildContextForAI({
+        messages: [appMessage, followUp],
+      })
+
+      expect(result.some((message) => message.id.startsWith(CHATBRIDGE_APP_CONTEXT_MESSAGE_PREFIX))).toBe(false)
+
+      const appPart = result[0].contentParts.find((part) => part.type === 'app')
+      expect(appPart).toMatchObject({
+        type: 'app',
+        summaryForModel: 'Host-approved active app context.',
+      })
+    })
+
+    it('removes superseded host-approved app memory when a newer stale state exists', () => {
+      const activeMessage = createAppMessage('app-active', 'active', {
+        summaryForModel: 'Host-approved active summary that should become stale.',
+        includeCompletionPayload: true,
+      })
+      const staleMessage = createAppMessage('app-stale', 'stale', {
+        appInstanceId: 'story-builder-instance-1',
+        summary: 'Cached app state expired before a fresh checkpoint arrived.',
+      })
+      const followUp = createMessage('m-followup', 'user', 'Can I still trust the old app state?')
+
+      const result = buildContextForAI({
+        messages: [activeMessage, staleMessage, followUp],
+      })
+
+      expect(result.some((message) => message.id.startsWith(CHATBRIDGE_APP_CONTEXT_MESSAGE_PREFIX))).toBe(false)
+
+      const appPart = result[0].contentParts.find((part) => part.type === 'app')
+      expect(appPart).toMatchObject({
+        type: 'app',
+        lifecycle: 'active',
+      })
+      expect(appPart && 'summaryForModel' in appPart ? appPart.summaryForModel : undefined).toBeUndefined()
+      expect(appPart && appPart.type === 'app' ? appPart.values?.chatbridgeCompletion : undefined).toBeUndefined()
+    })
+
+    it('removes superseded structured app memory when a newer stale state exists', () => {
+      const activeMessage: Message = {
+        id: 'debate-active',
+        role: MessageRoleEnum.Assistant,
+        contentParts: [
+          {
+            type: 'app',
+            appId: 'debate-arena',
+            appName: 'Debate Arena',
+            appInstanceId: 'debate-instance-1',
+            lifecycle: 'active',
+            values: {
+              chatbridgeDebateArena: {
+                schemaVersion: 1,
+                phase: 'opening',
+                motion: 'Uniforms improve classroom focus.',
+                teams: [
+                  {
+                    id: 'team-affirmative',
+                    name: 'Team Cedar',
+                    stance: 'affirmative',
+                  },
+                  {
+                    id: 'team-negative',
+                    name: 'Team River',
+                    stance: 'negative',
+                  },
+                ],
+                currentSpeaker: {
+                  name: 'Maya',
+                  teamId: 'team-affirmative',
+                },
+              },
+            },
+          },
+        ],
+      }
+      const staleMessage = createAppMessage('debate-stale', 'stale', {
+        appId: 'debate-arena',
+        appName: 'Debate Arena',
+        appInstanceId: 'debate-instance-1',
+        summary: 'Cached Debate Arena state expired before a fresh checkpoint arrived.',
+      })
+      const followUp = createMessage('m-followup', 'user', 'Can I still trust the old debate state?')
+
+      const result = buildContextForAI({
+        messages: [activeMessage, staleMessage, followUp],
+      })
+
+      expect(result.some((message) => message.id.startsWith(CHATBRIDGE_APP_CONTEXT_MESSAGE_PREFIX))).toBe(false)
+
+      const appPart = result[0].contentParts.find((part) => part.type === 'app')
+      expect(appPart && appPart.type === 'app' ? appPart.values?.chatbridgeDebateArena : undefined).toBeUndefined()
     })
   })
 })

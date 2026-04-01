@@ -1,4 +1,5 @@
 import type { Message, MessageContentParts } from '@shared/types'
+import { getChatBridgeAppSummaryForModel } from '@shared/chatbridge'
 import type { ModelDependencies } from '@shared/types/adapters'
 import type { FilePart, ImagePart, ModelMessage, TextPart } from 'ai'
 import dayjs from 'dayjs'
@@ -66,7 +67,49 @@ async function convertAssistantContentParts(
   contentParts: MessageContentParts,
   dependencies: ModelDependencies
 ): Promise<Array<TextPart | FilePart>> {
-  return await convertContentParts<TextPart | FilePart>(contentParts, 'file', dependencies)
+  return compact(
+    await Promise.all(
+      contentParts.map(async (part): Promise<TextPart | FilePart | null> => {
+        if (part.type === 'text') {
+          return { type: 'text', text: part.text }
+        }
+
+        if (part.type === 'image') {
+          try {
+            const imageData = await dependencies.storage.getImage(part.storageKey)
+            if (!imageData) {
+              console.warn(`Image not found for storage key: ${part.storageKey}`)
+              return null
+            }
+            const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '')
+            const mediaType = imageData.match(/^data:([^;]+)/)?.[1] || 'image/png'
+
+            return {
+              type: 'file',
+              data: base64Data,
+              mediaType,
+            }
+          } catch (error) {
+            console.error(`Failed to get image for storage key ${part.storageKey}:`, error)
+            return null
+          }
+        }
+
+        if (part.type === 'app') {
+          const summaryForModel = getChatBridgeAppSummaryForModel(part)
+          if (!summaryForModel) {
+            return null
+          }
+          return {
+            type: 'text',
+            text: summaryForModel,
+          }
+        }
+
+        return null
+      })
+    )
+  )
 }
 
 export async function convertToModelMessages(

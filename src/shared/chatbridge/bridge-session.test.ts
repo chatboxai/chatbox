@@ -55,6 +55,22 @@ describe('bridge-session contract', () => {
       })
     ).toThrow(/idempotency/i)
   })
+
+  it('requires structured completion payloads for app.complete events', () => {
+    expect(() =>
+      BridgeAppEventSchema.parse({
+        kind: 'app.complete',
+        bridgeSessionId: 'bridge-session-1',
+        appInstanceId: 'app-instance-1',
+        bridgeToken: 'bridge-token-1',
+        sequence: 3,
+        idempotencyKey: 'complete-3',
+        result: {
+          status: 'success',
+        },
+      })
+    ).toThrow(/schemaVersion/i)
+  })
 })
 
 describe('bridge-session validation', () => {
@@ -208,7 +224,11 @@ describe('bridge-session validation', () => {
       sequence: 3,
       idempotencyKey: 'state-2',
       result: {
-        status: 'complete',
+        schemaVersion: 1,
+        status: 'success',
+        outcomeData: {
+          status: 'complete',
+        },
       },
     }, {
       now: () => 10_000,

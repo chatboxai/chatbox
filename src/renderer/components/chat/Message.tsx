@@ -123,6 +123,17 @@ const _Message: FC<Props> = (props) => {
     setQuote(input)
   }, [msg, setQuote])
 
+  const prefillChatBridgePrompt = useCallback(
+    (prompt: string) => {
+      const normalizedPrompt = prompt.trim()
+      if (!normalizedPrompt) {
+        return
+      }
+      setQuote(`${normalizedPrompt}\n\n`)
+    },
+    [setQuote]
+  )
+
   const handleStop = useCallback(() => {
     modifyMessage(sessionId, { ...msg, generating: false }, true)
   }, [sessionId, msg])
@@ -466,7 +477,11 @@ const _Message: FC<Props> = (props) => {
                           </Flex>
                         </Flex>
                       ) : item.type === 'app' ? (
-                        <ChatBridgeMessagePart key={`app-${item.appInstanceId}-${index}`} part={item as MessageAppPart} />
+                        <ChatBridgeMessagePart
+                          key={`app-${item.appInstanceId}-${index}`}
+                          part={item as MessageAppPart}
+                          onPrefillPrompt={prefillChatBridgePrompt}
+                        />
                       ) : item.type === 'image' ? (
                         props.sessionType !== 'picture' && (
                           <div key={`image-${item.storageKey}`} className="mt-2">

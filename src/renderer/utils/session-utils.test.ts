@@ -8,6 +8,7 @@ describe('migrateSession', () => {
       appId: 'story-builder',
       appInstanceId: 'instance-1',
       state: 'complete',
+      summaryForModel: 'Host-approved app memory.',
     }
 
     const session = {
@@ -43,6 +44,7 @@ describe('migrateSession', () => {
       appId: 'story-builder',
       appInstanceId: 'instance-1',
       lifecycle: 'complete',
+      summaryForModel: 'Host-approved app memory.',
     })
     expect(migrated.threads?.[0].messages[0].contentParts[0]).toMatchObject({
       lifecycle: 'complete',

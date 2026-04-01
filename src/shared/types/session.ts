@@ -117,6 +117,7 @@ export const MessageAppPartSchema = z.object({
   appInstanceId: z.string(),
   lifecycle: MessageAppLifecycleSchema,
   summary: z.string().optional(),
+  summaryForModel: z.string().optional(),
   toolCallId: z.string().optional(),
   bridgeSessionId: z.string().optional(),
   snapshot: z.record(z.string(), z.unknown()).optional(),

@@ -11,6 +11,7 @@ import { switchThread } from '@/stores/session/threads'
 import {
   buildAppAwareSessionFixture,
   buildPartialLifecycleSessionFixture,
+  buildRecoveryCheckpointSessionFixture,
 } from '../fixtures/app-aware-session'
 
 function getToolCall(message: { contentParts: Array<{ type: string }> }): MessageToolCallPart {
@@ -152,5 +153,36 @@ describe('ChatBridge app-aware persistence regression coverage', () => {
     expect(markdown).toContain('Tool Call: chatbridge_app_state (state: call)')
     expect(markdown).toContain('Cached app state expired. Resume should stay explicit without inventing a recovered result.')
     expect(markdown).not.toContain('Result:')
+  })
+
+  it('reloads degraded recovery checkpoints without dropping host-owned recovery inputs', async () => {
+    const createdSession = await chatStore.createSession(buildRecoveryCheckpointSessionFixture())
+
+    queryClient.clear()
+    const reloadedSession = await chatStore.getSession(createdSession.id)
+    const recoveryAppPart = getAppPart(reloadedSession!.messages[1])
+
+    expect(recoveryAppPart).toMatchObject({
+      lifecycle: 'error',
+      title: 'Story Builder checkpoint',
+      description: 'The host kept the last safe draft checkpoint in-thread.',
+      statusText: 'Needs recovery',
+      fallbackTitle: 'Recovery available',
+      fallbackText: 'Resume the Story Builder session from the last safe checkpoint.',
+      error: 'Drive auth expired before export finished.',
+      values: {
+        chatbridgeUserGoal: 'Keep writing chapter four, then save the draft back to Drive.',
+        chatbridgeCompletion: {
+          schemaVersion: 1,
+          status: 'interrupted',
+          reason: 'Drive auth expired before export finished.',
+          resumability: {
+            resumable: true,
+            checkpointId: 'draft-42',
+            resumeHint: 'Reconnect Google Drive before resuming export.',
+          },
+        },
+      },
+    })
   })
 })

@@ -14,6 +14,12 @@ interface ChatBridgeShellProps {
   statusLabel: string
   fallbackTitle?: string
   fallbackText?: string
+  goalLabel?: string
+  goalText?: string
+  recoveryLabel?: string
+  recoveryText?: string
+  recoveryFootnote?: string
+  recoveryTone?: 'warning' | 'calm'
   primaryAction?: ChatBridgeShellAction
   secondaryAction?: ChatBridgeShellAction
   children?: ReactNode
@@ -60,6 +66,12 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
     statusLabel,
     fallbackTitle,
     fallbackText,
+    goalLabel,
+    goalText,
+    recoveryLabel,
+    recoveryText,
+    recoveryFootnote,
+    recoveryTone,
     primaryAction,
     secondaryAction,
     children,
@@ -68,7 +80,13 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
 
   const styles = getStateStyles(state)
   const hasInlineFallback = state === 'error' && fallbackText
-  const hasInlineCompletion = state === 'complete'
+  const hasCustomSurfaceContent = Boolean(children) && state !== 'loading' && state !== 'error'
+  const hasInlineCompletion = state === 'complete' && !hasCustomSurfaceContent
+  const hasRecoveryCheckpoint = state === 'error' && recoveryText
+  const recoveryCardClasses =
+    recoveryTone === 'warning'
+      ? 'border-amber-300 bg-amber-50/80 dark:border-amber-700 dark:bg-amber-950/20'
+      : 'border-chatbox-border-primary bg-chatbox-background-secondary'
 
   return (
     <div
@@ -80,6 +98,17 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
         className
       )}
     >
+      {goalText && (
+        <div className="mb-3 rounded-[20px] border border-chatbox-border-primary bg-chatbox-background-secondary p-4">
+          <Text size="xs" fw={700} className="uppercase tracking-[0.06em] text-chatbox-tertiary">
+            {goalLabel || 'Last user goal'}
+          </Text>
+          <Text size="sm" fw={700} className="mt-2 whitespace-pre-wrap text-chatbox-primary">
+            {goalText}
+          </Text>
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <Text size="sm" fw={700} className="text-chatbox-primary">
@@ -114,7 +143,7 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
           {surfaceDescription}
         </Text>
 
-        {state === 'active' && children ? (
+        {hasCustomSurfaceContent ? (
           <div className={cn('mt-4 overflow-hidden rounded-[20px] border p-0', styles.accent)}>{children}</div>
         ) : (
           <div className={cn('mt-4 rounded-[20px] border p-4', styles.accent)}>
@@ -131,7 +160,21 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
         )}
       </div>
 
-      {hasInlineFallback && (
+      {hasRecoveryCheckpoint ? (
+        <div className={cn('mt-3 rounded-[24px] border p-4', recoveryCardClasses)}>
+          <Text size="xs" fw={700} className="uppercase tracking-[0.06em] text-chatbox-tertiary">
+            {recoveryLabel || fallbackTitle || 'Host-owned recovery'}
+          </Text>
+          <Text size="sm" c="dimmed" className="mt-2 whitespace-pre-wrap">
+            {recoveryText}
+          </Text>
+          {recoveryFootnote && (
+            <Text size="xs" c="dimmed" className="mt-3 whitespace-pre-wrap">
+              {recoveryFootnote}
+            </Text>
+          )}
+        </div>
+      ) : hasInlineFallback ? (
         <div className="mt-3 rounded-[24px] border border-amber-300 bg-amber-50/80 p-4 dark:border-amber-700 dark:bg-amber-950/20">
           <Text size="xs" fw={700} className="uppercase tracking-[0.06em] text-amber-700 dark:text-amber-300">
             {fallbackTitle || 'Fallback'}
@@ -143,7 +186,7 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
             {fallbackText}
           </Text>
         </div>
-      )}
+      ) : null}
 
       {hasInlineCompletion && (
         <div className="mt-3 rounded-[24px] border border-emerald-300 bg-emerald-50/80 p-4 dark:border-emerald-700 dark:bg-emerald-950/20">
@@ -162,12 +205,12 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
       {(secondaryAction || primaryAction) && (
         <Flex justify="flex-end" gap="xs" mt="md">
           {secondaryAction && (
-            <Button variant="default" size="xs" onClick={secondaryAction.onClick}>
+            <Button variant="default" size="xs" onClick={secondaryAction.onClick} disabled={secondaryAction.disabled}>
               {secondaryAction.label}
             </Button>
           )}
           {primaryAction && (
-            <Button size="xs" onClick={primaryAction.onClick}>
+            <Button size="xs" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>
               {primaryAction.label}
             </Button>
           )}

@@ -17,6 +17,7 @@ import { cloneMessage, getMessageText, mergeMessages } from '@shared/utils/messa
 import { identity, pickBy } from 'lodash'
 import { createModelDependencies } from '@/adapters'
 import * as appleAppStore from '@/packages/apple_app_store'
+import { applyChatBridgeAppContext } from '@/packages/chatbridge/context'
 import { buildContextForAI } from '@/packages/context-management'
 import {
   buildAttachmentWrapperPrefix,
@@ -410,6 +411,8 @@ export async function genMessageContext(
       keepToolCallRounds: 2,
       sessionSettings: settings,
     })
+  } else {
+    contextMessages = applyChatBridgeAppContext(msgs, msgs)
   }
 
   // Pre-fetch all blob contents in parallel to avoid N+1 sequential fetches

@@ -360,6 +360,146 @@ function createSeededChessAppRecords() {
   }
 }
 
+function createStoryBuilderAppRecords(options: {
+  appInstanceId: string
+  bridgeSessionId: string
+  conversationSessionId: string
+  status: 'active' | 'complete' | 'stale'
+  summaryForModel?: string
+  createdAt: number
+  updatedAt: number
+}) {
+  const baseInstance = createChatBridgeAppInstance({
+    id: options.appInstanceId,
+    appId: APP_ID,
+    appVersion: '1.0.0',
+    bridgeSessionId: options.bridgeSessionId,
+    owner: {
+      authority: 'host',
+      conversationSessionId: options.conversationSessionId,
+      initiatedBy: 'assistant',
+    },
+    resumability: {
+      mode: 'resumable',
+      resumeKey: options.appInstanceId,
+    },
+    createdAt: options.createdAt,
+  })
+
+  const createdEvent = createChatBridgeAppEvent({
+    id: `event-created-${options.appInstanceId}`,
+    appInstanceId: baseInstance.id,
+    kind: 'instance.created',
+    actor: 'host',
+    sequence: 1,
+    createdAt: options.createdAt,
+    bridgeSessionId: options.bridgeSessionId,
+    nextStatus: 'launching',
+    payload: {
+      initiatedBy: 'assistant',
+    },
+  })
+
+  const createdTransition = applyChatBridgeAppEvent(baseInstance, createdEvent)
+  if (!createdTransition.accepted) {
+    throw new Error(`Unable to seed Story Builder created event: ${createdTransition.reason}`)
+  }
+
+  if (options.status === 'stale') {
+    const staleEvent = createChatBridgeAppEvent({
+      id: `event-stale-${options.appInstanceId}`,
+      appInstanceId: baseInstance.id,
+      kind: 'instance.marked-stale',
+      actor: 'host',
+      sequence: 2,
+      createdAt: options.updatedAt,
+      bridgeSessionId: options.bridgeSessionId,
+      nextStatus: 'stale',
+    })
+
+    const staleTransition = applyChatBridgeAppEvent(createdTransition.instance, staleEvent)
+    if (!staleTransition.accepted) {
+      throw new Error(`Unable to seed Story Builder stale event: ${staleTransition.reason}`)
+    }
+
+    return {
+      instances: [staleTransition.instance],
+      events: [createdEvent, staleEvent],
+    }
+  }
+
+  const readyEvent = createChatBridgeAppEvent({
+    id: `event-ready-${options.appInstanceId}`,
+    appInstanceId: baseInstance.id,
+    kind: 'bridge.ready',
+    actor: 'host',
+    sequence: 2,
+    createdAt: options.createdAt + 1,
+    bridgeSessionId: options.bridgeSessionId,
+    nextStatus: 'ready',
+    payload: {
+      source: 'seeded-runtime',
+    },
+  })
+
+  const readyTransition = applyChatBridgeAppEvent(createdTransition.instance, readyEvent)
+  if (!readyTransition.accepted) {
+    throw new Error(`Unable to seed Story Builder ready event: ${readyTransition.reason}`)
+  }
+
+  if (options.status === 'active') {
+    const activeEvent = createChatBridgeAppEvent({
+      id: `event-active-${options.appInstanceId}`,
+      appInstanceId: baseInstance.id,
+      kind: 'state.updated',
+      actor: 'host',
+      sequence: 3,
+      createdAt: options.updatedAt,
+      bridgeSessionId: options.bridgeSessionId,
+      nextStatus: 'active',
+      payload: {
+        route: '/apps/story-builder',
+      },
+      summaryForModel: options.summaryForModel,
+    })
+
+    const activeTransition = applyChatBridgeAppEvent(readyTransition.instance, activeEvent)
+    if (!activeTransition.accepted) {
+      throw new Error(`Unable to seed Story Builder active event: ${activeTransition.reason}`)
+    }
+
+    return {
+      instances: [activeTransition.instance],
+      events: [createdEvent, readyEvent, activeEvent],
+    }
+  }
+
+  const completionEvent = createChatBridgeAppEvent({
+    id: `event-complete-${options.appInstanceId}`,
+    appInstanceId: baseInstance.id,
+    kind: 'completion.recorded',
+    actor: 'host',
+    sequence: 3,
+    createdAt: options.updatedAt,
+    bridgeSessionId: options.bridgeSessionId,
+    nextStatus: 'complete',
+    payload: {
+      route: '/apps/story-builder',
+    },
+    summaryForModel: options.summaryForModel,
+  })
+
+  const completionTransition = applyChatBridgeAppEvent(readyTransition.instance, completionEvent)
+  if (!completionTransition.accepted) {
+    throw new Error(`Unable to seed Story Builder completion event: ${completionTransition.reason}`)
+  }
+
+  return {
+    instances: [completionTransition.instance],
+    events: [createdEvent, readyEvent, completionEvent],
+  }
+}
+
 export function buildAppAwareSessionFixture(): {
   sessionInput: Omit<Session, 'id'>
   historyThread: SessionThread
@@ -420,6 +560,15 @@ export function buildAppAwareSessionFixture(): {
       threadName: 'Story Builder Active',
       messages: [systemMessage, currentUserMessage, currentAssistantMessage],
       threads: [historyThread],
+      chatBridgeAppRecords: createStoryBuilderAppRecords({
+        appInstanceId: 'app-instance-tool-current-assistant',
+        bridgeSessionId: 'bridge-tool-current-assistant',
+        conversationSessionId: 'seeded-story-builder-session',
+        status: 'active',
+        summaryForModel: 'Restored the active story draft and preserved the exportable checkpoint.',
+        createdAt: 3,
+        updatedAt: 3,
+      }),
     },
     historyThread,
     currentMessageIds: [systemMessage.id, currentUserMessage.id, currentAssistantMessage.id],
@@ -452,6 +601,14 @@ export function buildPartialLifecycleSessionFixture(): Omit<Session, 'id'> {
         }
       ),
     ],
+    chatBridgeAppRecords: createStoryBuilderAppRecords({
+      appInstanceId: 'app-instance-tool-partial-assistant',
+      bridgeSessionId: 'bridge-tool-partial-assistant',
+      conversationSessionId: 'seeded-partial-story-builder-session',
+      status: 'stale',
+      createdAt: 2,
+      updatedAt: 2,
+    }),
   }
 }
 
@@ -749,11 +906,13 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
         },
         {
           action: 'Click `E2`, then click `E4`.',
-          expected: 'The board updates to the legal move, the move ledger shows `1. e4`, and the host sync card reflects the new position key.',
+          expected:
+            'The board updates to the legal move, the move ledger shows `1. e4`, and the host sync card reflects the new position key.',
         },
         {
           action: 'Reload the session route or switch away and back to the seeded session.',
-          expected: 'The pawn remains on `E4`; the board does not reset to the opening position because the host persisted the latest chess snapshot.',
+          expected:
+            'The pawn remains on `E4`; the board does not reset to the opening position because the host persisted the latest chess snapshot.',
         },
       ],
       sessionInput: buildChatBridgeChessRuntimeSessionFixture(),

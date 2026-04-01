@@ -40,15 +40,20 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Active app context selection
+  - [x] Active app context selection
 - T002 tests:
-  - [ ] Recent-but-not-active app continuity behavior
+  - [x] Recent-but-not-active app continuity behavior
 - T003 tests:
-  - [ ] Stale context fallback behavior
+  - [x] Stale context fallback behavior
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Deferred Tasks
+
+- None. CB-403 stayed inside the existing prompt-assembly and app-record seams
+  without expanding into multi-app routing or UI changes.

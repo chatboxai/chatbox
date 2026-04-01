@@ -133,6 +133,9 @@ The host should send a signed bootstrap envelope plus a transferred `MessagePort
 - Routes user intent to chat-only behavior or app-aware behavior
 - Injects allowed tool schemas into the orchestration path
 - Tracks active app instances and summaries
+- Selects the latest active or recent normalized app summary before later-turn
+  model calls and fails closed when the latest app state is stale or missing a
+  safe summary
 - Validates all bridge traffic
 - Converts app outcomes into durable chat memory
 - Normalizes partner outputs before they become model-visible summaries
@@ -214,8 +217,8 @@ sequenceDiagram
     App-->>Host: app.state
     User->>Client: Ask follow-up in chat
     Client->>Host: Follow-up question
-    Host->>Store: Read active app summary + state
-    Host->>LLM: Answer with current app context
+    Host->>Store: Read active or recent host-owned app summary
+    Host->>LLM: Answer with bounded app-aware context
     App-->>Host: app.complete
     Host->>Store: Persist summaryForModel + completion payload
     Host-->>Client: Resume natural chat flow
@@ -342,6 +345,15 @@ Apps can propose state updates, but the host decides what becomes durable platfo
 ### Memory normalization
 
 Apps should not write directly into `summaryForModel`. Instead, they should emit structured completion payloads and optional suggested summaries, and the host should validate, redact, and normalize that information before it becomes model-visible memory.
+
+Later-turn prompt assembly should read only the latest host-owned app record and
+inject one of three states into the model path:
+
+- active summary when the newest live app instance has a normalized summary
+- recent summary when the newest relevant app instance is completed and
+  normalized
+- unavailable fallback when the newest app state is stale, errored, cancelled,
+  or missing a safe summary
 
 ## 9. Data Model Snapshot
 

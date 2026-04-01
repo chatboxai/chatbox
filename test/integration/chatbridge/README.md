@@ -63,6 +63,13 @@ CB-302 adds the first live Chess runtime interaction slice:
   mid-game fixture and persisting the updated host-owned board snapshot plus
   validation state through the runtime shell
 
+CB-403 adds the first generic later-turn app-summary continuity slice:
+
+- `scenarios/active-app-context-injection.test.ts`
+  covers active app-summary injection, recent completed-summary selection, and
+  stale fallback messaging through the normal `stream-text` model path using
+  host-owned `chatBridgeAppRecords`
+
 That scenario set is the baseline gate for later ChatBridge packs that add real
 app-aware schema, containers, and lifecycle events. New ChatBridge persistence,
 manifest, or tool-execution changes should extend this suite instead of

@@ -163,6 +163,9 @@ service exists, the story should:
   and the live runtime surface
 - future `src/renderer/components/chatbridge/` and
   `src/renderer/packages/chatbridge/` for renderer-side lifecycle/UI
+- `src/renderer/packages/context-management/app-context.ts` now selects the
+  latest active or recent host-owned app summary from durable app records
+  before later-turn model calls
 - `src/renderer/components/chatbridge/apps/chess/` now holds the native
   board-first Chess runtime that persists moves back through the host-owned
   message part

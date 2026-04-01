@@ -20,6 +20,8 @@ export {
   buildContextForThread,
   getContextMessageIds,
 } from './context-builder'
+export type { ChatBridgeAppContextSelection } from './app-context'
+export { buildChatBridgeAppContextPrompt, resolveChatBridgeAppContext } from './app-context'
 export type {
   ContextTokensCacheKeyParams,
   ContextTokensCacheValue,

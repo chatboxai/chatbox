@@ -5,20 +5,24 @@
 - Story ID: CB-404
 - Story Title: Degraded completion and recovery UX
 - Author: Codex
-- Date: 2026-03-30
+- Date: 2026-04-01
 
 ## Proposed Design
 
 - Components/modules affected:
 - `src/renderer/components/chatbridge/`
 - `src/renderer/components/chat/Message.tsx`
+- `src/shared/chatbridge/`
 - `design/stories/`
 - Public interfaces/contracts:
 - Degraded completion state model
 - User-facing recovery action contract
 - Timeline fallback rendering behavior
+- Live seeded inspection fixture contract
 - Data flow summary:
   Host detects invalid or missing completion -> lifecycle state moves to degraded -> timeline renders host-owned recovery UI -> user can retry, resume, or fall back to chat explanation.
+- Approved Pencil variation:
+  Variation C, `Conversation-First Recovery Rail`, from `docs/specs/CHATBRIDGE-000-program-roadmap/pack-04-completion-and-app-memory/cb-404-degraded-completion-and-recovery-ux/artifacts/pencil/ACBjW.png`
 
 ## Architecture Decisions
 
@@ -37,7 +41,7 @@
 - Response shape:
   Outputs should be normalized into host-owned records or timeline artifacts rather than ad hoc partner payloads.
 - Storage/index changes:
-  This story should update only the specific host/session/runtime records it needs and keep the broader ChatBridge model forward-compatible.
+  This story updates only the specific host/session/runtime records it needs, carries degraded metadata in `MessageAppPart.values`, preserves those fields through hydration, and keeps the broader ChatBridge model forward-compatible.
 
 ## Dependency Plan
 
@@ -54,6 +58,7 @@
 - Invalid/missing completion fallback behavior
 - Renderer state coverage for degraded completion
 - Recovery action accessibility coverage
+- Live seed degraded recovery catalog coverage
 - Integration tests:
   cover the full host/runtime path touched by this story rather than only isolated helpers
 - E2E or smoke tests:
@@ -70,7 +75,7 @@
 - Accessibility implementation plan:
   define keyboard behavior, roles, labels, and readable status/error states for any surfaced UI
 - Visual regression capture plan:
-  capture the key visible states for this story after Pencil approval and before implementation completion
+  use the approved Pencil artifact plus the live seeded `/dev/chatbridge` degraded recovery fixture as the inspect path for post-implementation verification
 
 ## Rollout and Risk Mitigation
 

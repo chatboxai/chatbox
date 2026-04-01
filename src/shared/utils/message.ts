@@ -16,6 +16,11 @@ type MessageContentPartLike = {
   snapshot?: unknown
   values?: unknown
   error?: unknown
+  title?: unknown
+  description?: unknown
+  statusText?: unknown
+  fallbackTitle?: unknown
+  fallbackText?: unknown
 }
 
 const APP_LIFECYCLES = new Set<MessageAppLifecycle>(['launching', 'ready', 'active', 'complete', 'error', 'stale'])
@@ -78,6 +83,11 @@ function normalizeContentParts(contentParts?: MessageContentParts | MessageConte
         ? { values: part.values as Record<string, unknown> }
         : {}),
       ...(typeof part.error === 'string' ? { error: part.error } : {}),
+      ...(typeof part.title === 'string' ? { title: part.title } : {}),
+      ...(typeof part.description === 'string' ? { description: part.description } : {}),
+      ...(typeof part.statusText === 'string' ? { statusText: part.statusText } : {}),
+      ...(typeof part.fallbackTitle === 'string' ? { fallbackTitle: part.fallbackTitle } : {}),
+      ...(typeof part.fallbackText === 'string' ? { fallbackText: part.fallbackText } : {}),
     } satisfies MessageContentParts[number]
   })
 }

@@ -7,6 +7,7 @@ import { createArtifactPreviewRuntimeMarkup } from '@/packages/chatbridge/bridge
 import { getMessageThreadContext } from '@/stores/sessionActions'
 import { getMessageText } from '../../shared/utils/message'
 import { ChatBridgeShell } from './chatbridge/ChatBridgeShell'
+import type { ChatBridgeShellState } from './chatbridge/chatbridge'
 import { getArtifactShellState } from './chatbridge/chatbridge'
 
 const RENDERABLE_CODE_LANGUAGES = ['html'] as const
@@ -94,13 +95,22 @@ export function ArtifactWithButtons(props: {
   const onStopPreview = () => {
     setPreview(false)
   }
-  const descriptions = {
+  const descriptions: Record<ChatBridgeShellState, string> = {
     loading: 'The host wrapper is preparing the generated HTML preview.',
     ready: 'The preview is ready to open from the message without dropping into a raw iframe panel.',
     active: 'The preview is mounted inside the host-owned shell and can be refreshed or dismissed from the thread.',
     complete: 'The preview completed inside the host-owned shell.',
+    degraded: 'The preview is unavailable, so the host is keeping the recovery path bounded inside the same shell.',
     error: 'No renderable HTML was found, so the host shell is presenting the fallback path instead.',
-  } as const
+  }
+  const statusLabels: Record<ChatBridgeShellState, string> = {
+    loading: 'Loading',
+    ready: 'Ready',
+    active: 'Running',
+    complete: 'Complete',
+    degraded: 'Recovery',
+    error: 'Fallback',
+  }
 
   return (
     <ChatBridgeShell
@@ -109,15 +119,7 @@ export function ArtifactWithButtons(props: {
       description={descriptions[shellState]}
       surfaceTitle="Generated HTML preview"
       surfaceDescription="The runtime surface stays inside the host-owned shell so loading, launch, and fallback remain part of the conversation."
-      statusLabel={
-        {
-          loading: 'Loading',
-          ready: 'Ready',
-          active: 'Running',
-          complete: 'Complete',
-          error: 'Fallback',
-        }[shellState]
-      }
+      statusLabel={statusLabels[shellState]}
       fallbackTitle="Fallback"
       fallbackText="The message still keeps its raw markdown content above, but there is no renderable HTML block available for an embedded preview."
       secondaryAction={preview ? { label: t('Close'), onClick: onStopPreview, variant: 'secondary' } : undefined}

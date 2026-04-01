@@ -6,7 +6,7 @@
 - Story Title: Degraded completion and recovery UX
 - Pack: Pack 04 - Completion and App Memory
 - Owner: Codex
-- Date: 2026-03-30
+- Date: 2026-04-01
 
 ## Constraints
 
@@ -45,3 +45,9 @@ Current embedded surface precedent for future host-owned runtime containers.
 - Lane: `standard`
 - Why: this story changes shared contracts, runtime boundaries, or cross-cutting behavior that affects multiple code paths.
 - Required gates: constitution check, feature spec, technical plan, task breakdown, focused TDD during implementation, and Pencil review before UI code.
+
+## Outcome Notes
+
+- The approved UI direction was Variation C from the checked-in Pencil review.
+- Implementation stayed inside the existing `ChatBridgeShell`, `ChatBridgeMessagePart`, shared app-value contracts, and live seed lab seams.
+- No parallel runtime surface or alternate memory channel was introduced; degraded recovery metadata stays host-owned and inline.

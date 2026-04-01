@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildAppAwareSessionFixture,
   buildChatBridgeChessMidGameSessionFixture,
+  buildChatBridgeDegradedCompletionRecoverySessionFixture,
   buildChatBridgeChessRuntimeSessionFixture,
   buildChatBridgeHistoryAndPreviewSessionFixture,
   buildChatBridgeLifecycleTourSessionFixture,
@@ -37,6 +38,23 @@ describe('chatbridge live seed fixtures', () => {
       .map((part) => part.lifecycle)
 
     expect(lifecycles).toEqual(['launching', 'ready', 'active', 'complete', 'stale', 'error'])
+  })
+
+  it('builds a degraded recovery fixture with explicit recovery metadata for each state', () => {
+    const fixture = buildChatBridgeDegradedCompletionRecoverySessionFixture()
+    const appParts = fixture.messages
+      .flatMap((message) => message.contentParts)
+      .filter((part) => part.type === 'app')
+
+    expect(appParts).toHaveLength(3)
+    expect(appParts.map((part) => part.statusText)).toEqual([
+      'Partial completion',
+      'Missing completion',
+      'Invalid completion',
+    ])
+    expect(
+      appParts.map((part) => part.values?.chatbridgeDegradedCompletion && typeof part.values?.chatbridgeDegradedCompletion === 'object')
+    ).toEqual([true, true, true])
   })
 
   it('builds a history plus preview fixture with renderable HTML and stored blobs', () => {
@@ -88,6 +106,7 @@ describe('chatbridge live seed fixtures', () => {
 
     expect(fixtures.map((fixture) => fixture.id)).toEqual([
       'lifecycle-tour',
+      'degraded-completion-recovery',
       'chess-mid-game-board-context',
       'history-and-preview',
       'chess-runtime',

@@ -6,6 +6,7 @@ import { MantineProvider } from '@mantine/core'
 import { render, screen } from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { ChatBridgeShell } from './ChatBridgeShell'
+import type { ChatBridgeShellState } from './chatbridge'
 import { getArtifactShellState } from './chatbridge'
 
 beforeAll(() => {
@@ -24,7 +25,7 @@ beforeAll(() => {
   })
 })
 
-function renderShell(state: 'loading' | 'ready' | 'active' | 'complete' | 'error') {
+function renderShell(state: ChatBridgeShellState) {
   return render(
     <MantineProvider>
       <ChatBridgeShell
@@ -36,6 +37,22 @@ function renderShell(state: 'loading' | 'ready' | 'active' | 'complete' | 'error
         statusLabel={state}
         fallbackTitle="Fallback"
         fallbackText="The shell keeps recovery in the same place."
+        supportPanel={
+          state === 'degraded'
+            ? {
+                eyebrow: 'Trust rail',
+                title: 'What still holds',
+                description: 'The host kept the trusted state visible.',
+                items: [
+                  {
+                    label: 'Validated state remains visible',
+                    description: 'Only trusted state remains in the thread.',
+                    tone: 'safe',
+                  },
+                ],
+              }
+            : undefined
+        }
         primaryAction={{ label: 'Primary' }}
         secondaryAction={{ label: 'Secondary' }}
       >
@@ -67,6 +84,15 @@ describe('ChatBridgeShell', () => {
 
     expect(screen.getByText('The app finished inside the host shell')).toBeTruthy()
     expect(screen.getByText(/no separate summary receipt/i)).toBeTruthy()
+  })
+
+  it('renders the degraded recovery rail inline with trusted-state details', () => {
+    renderShell('degraded')
+
+    expect(screen.getByTestId('chatbridge-shell').getAttribute('data-state')).toBe('degraded')
+    expect(screen.getByText('What still holds')).toBeTruthy()
+    expect(screen.getByText('Validated state remains visible')).toBeTruthy()
+    expect(screen.queryByText('Recovery stays in the same place')).toBeNull()
   })
 })
 

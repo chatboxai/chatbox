@@ -1,3 +1,4 @@
+export * from './degraded-completion'
 export * from './chess'
 export * from './events'
 export * from './instance'

@@ -83,4 +83,46 @@ describe('migrateMessage', () => {
     )
     expect(getMessageText(message)).toBe('Saved the previous draft summary for later follow-up questions.')
   })
+
+  it('preserves host-owned app shell fields during hydration', () => {
+    const migrated = migrateMessage({
+      id: 'msg-5',
+      role: 'assistant',
+      contentParts: [
+        {
+          type: 'app',
+          appId: 'story-builder',
+          appName: 'Story Builder',
+          appInstanceId: 'instance-5',
+          lifecycle: 'error',
+          title: 'Story Builder recovery',
+          description: 'The host kept the degraded ending inline.',
+          statusText: 'Invalid completion',
+          fallbackTitle: 'Invalid completion fallback',
+          fallbackText: 'Malformed completion fields remain blocked from model memory.',
+          values: {
+            chatbridgeDegradedCompletion: {
+              schemaVersion: 1,
+              kind: 'invalid-completion',
+            },
+          },
+        },
+      ],
+    } as never)
+
+    expect(migrated.contentParts[0]).toMatchObject({
+      type: 'app',
+      title: 'Story Builder recovery',
+      description: 'The host kept the degraded ending inline.',
+      statusText: 'Invalid completion',
+      fallbackTitle: 'Invalid completion fallback',
+      fallbackText: 'Malformed completion fields remain blocked from model memory.',
+      values: {
+        chatbridgeDegradedCompletion: {
+          schemaVersion: 1,
+          kind: 'invalid-completion',
+        },
+      },
+    })
+  })
 })

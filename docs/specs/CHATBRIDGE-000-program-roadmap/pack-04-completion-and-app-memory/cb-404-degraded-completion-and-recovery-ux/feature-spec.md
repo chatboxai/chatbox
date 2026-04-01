@@ -5,7 +5,7 @@
 - Story ID: CB-404
 - Story Title: Degraded completion and recovery UX
 - Author: Codex
-- Date: 2026-03-30
+- Date: 2026-04-01
 - Related PRD/phase gate: `CHATBRIDGE-000` / Pack 04 - Completion and App Memory
 
 ## Problem Statement
@@ -25,9 +25,9 @@ Apps will sometimes crash, time out, or omit completion payloads. The host needs
 
 ## Acceptance Criteria
 
-- [ ] AC-1: The host exposes clear degraded completion states and recovery actions.
-- [ ] AC-2: The conversation remains usable when completion is partial, missing, or invalid.
-- [ ] AC-3: Recovery UI follows the Pencil approval workflow before implementation.
+- [x] AC-1: The host exposes clear degraded completion states and recovery actions.
+- [x] AC-2: The conversation remains usable when completion is partial, missing, or invalid.
+- [x] AC-3: Recovery UI follows the Pencil approval workflow before implementation.
 
 ## Edge Cases
 
@@ -60,3 +60,4 @@ Apps will sometimes crash, time out, or omit completion payloads. The host needs
 - Tests cover the primary happy path and the important failure mode for this story.
 - Validation passes for the touched scope.
 - Any new visible UI state has approved Pencil evidence before code if applicable.
+- Live seeded inspection covers partial, missing, and invalid completion recovery states in `/dev/chatbridge`.

@@ -8,6 +8,10 @@ import {
   getChessStatusLabel,
   getChessSummary,
 } from './apps/chess'
+import {
+  CHATBRIDGE_DEGRADED_COMPLETION_SCHEMA_VERSION,
+  writeChatBridgeDegradedCompletionValues,
+} from './degraded-completion'
 import { createChatBridgeAppEvent, applyChatBridgeAppEvent } from './events'
 import { createChatBridgeAppInstance } from './instance'
 import type { Message, Session, SessionThread } from '../types'
@@ -31,6 +35,7 @@ type AppLifecycleMessageOptions = {
   fallbackTitle?: string
   fallbackText?: string
   snapshot?: Record<string, unknown>
+  values?: Record<string, unknown>
 }
 
 export type ChatBridgeLiveSeedAuditStep = {
@@ -107,6 +112,7 @@ export function createAppLifecycleMessage(
         statusText: options.statusText,
         fallbackTitle: options.fallbackTitle,
         fallbackText: options.fallbackText,
+        values: options.values,
         error: options.error,
         snapshot,
       },
@@ -217,6 +223,195 @@ function createHtmlPreviewMessage(id: string, timestamp: number): Message {
   ].join('\n')
 
   return createTextMessage(id, 'assistant', htmlPreviewMarkdown, timestamp)
+}
+
+function createDegradedCompletionValues(options: {
+  kind: 'partial-completion' | 'missing-completion' | 'invalid-completion'
+  statusLabel: string
+  title: string
+  description: string
+  supportTitle: string
+  supportDescription: string
+  supportItems: Array<{
+    label: string
+    description: string
+    tone: 'safe' | 'blocked' | 'warning'
+  }>
+  actions: Array<{
+    id:
+      | 'retry-completion'
+      | 'continue-in-chat'
+      | 'dismiss-runtime'
+      | 'inspect-invalid-fields'
+    label: string
+    variant: 'primary' | 'secondary'
+  }>
+}) {
+  return writeChatBridgeDegradedCompletionValues(undefined, {
+    schemaVersion: CHATBRIDGE_DEGRADED_COMPLETION_SCHEMA_VERSION,
+    kind: options.kind,
+    statusLabel: options.statusLabel,
+    title: options.title,
+    description: options.description,
+    supportPanel: {
+      eyebrow: 'Trust rail',
+      title: options.supportTitle,
+      description: options.supportDescription,
+      items: options.supportItems,
+    },
+    actions: options.actions,
+  })
+}
+
+export function buildChatBridgeDegradedCompletionRecoverySessionFixture(): Omit<Session, 'id'> {
+  return {
+    name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Degraded completion recovery`,
+    type: 'chat',
+    threadName: 'Degraded Recovery',
+    messages: [
+      createTextMessage(
+        'msg-degraded-system',
+        'system',
+        'Keep degraded completion endings explicit, recoverable, and bounded to validated host-owned state.',
+        1
+      ),
+      createTextMessage(
+        'msg-degraded-user',
+        'user',
+        'Show me the degraded completion states and the safe recovery actions the host keeps inline.',
+        2
+      ),
+      createAppLifecycleMessage(
+        'msg-degraded-partial',
+        'assistant',
+        'Story Builder streamed part of the completion, but the host refused to treat the incomplete ending as final output.',
+        {
+          toolCallId: 'tool-degraded-partial',
+          lifecycle: 'error',
+          summary: 'Partial completion stayed bounded inside the host shell.',
+          title: 'Story Builder recovery',
+          description: 'Partial completion stayed inline so the thread can recover without inventing a final result.',
+          statusText: 'Partial completion',
+          fallbackTitle: 'Partial completion fallback',
+          fallbackText: 'Only the validated draft fragment remains available until a safe retry or chat continuation happens.',
+          values: createDegradedCompletionValues({
+            kind: 'partial-completion',
+            statusLabel: 'Partial completion',
+            title: 'Completion stopped after a partial draft',
+            description:
+              'The host captured the validated fragment, blocked the missing tail from model memory, and kept recovery in the same message.',
+            supportTitle: 'What still holds',
+            supportDescription: 'Only the validated fragment and host diagnostics remain trusted.',
+            supportItems: [
+              {
+                label: 'Validated fragment is still visible',
+                description: 'The host can continue from the confirmed partial draft.',
+                tone: 'safe',
+              },
+              {
+                label: 'Missing completion tail stays blocked',
+                description: 'No synthetic ending is promoted as if the app actually finished.',
+                tone: 'blocked',
+              },
+            ],
+            actions: [
+              { id: 'retry-completion', label: 'Retry completion', variant: 'primary' },
+              { id: 'continue-in-chat', label: 'Continue safely', variant: 'secondary' },
+            ],
+          }),
+          timestamp: 3,
+        }
+      ),
+      createAppLifecycleMessage(
+        'msg-degraded-missing',
+        'assistant',
+        'Form Runner finished its runtime step without producing a completion payload, so the host fell back to an explicit recovery state.',
+        {
+          appId: 'form-runner',
+          appName: 'Form Runner',
+          toolCallId: 'tool-degraded-missing',
+          lifecycle: 'error',
+          summary: 'Missing completion payload stayed explicit in the thread.',
+          title: 'Form Runner recovery',
+          description: 'The host kept the missing completion visible instead of pretending the runtime returned a final answer.',
+          statusText: 'Missing completion',
+          fallbackTitle: 'Missing completion fallback',
+          fallbackText: 'The runtime returned no completion payload, so the host kept the next safe action inline.',
+          values: createDegradedCompletionValues({
+            kind: 'missing-completion',
+            statusLabel: 'Missing completion',
+            title: 'Completion payload never arrived',
+            description:
+              'The runtime ended without a valid completion payload. The host preserved the verified state and exposed a bounded next step.',
+            supportTitle: 'Trust rail',
+            supportDescription: 'The conversation can continue safely from the last validated host-owned state.',
+            supportItems: [
+              {
+                label: 'Latest validated state is preserved',
+                description: 'The host retained the last safe checkpoint for follow-up work.',
+                tone: 'safe',
+              },
+              {
+                label: 'Missing payload remains unavailable',
+                description: 'Nothing is inferred or reconstructed from absent runtime output.',
+                tone: 'warning',
+              },
+            ],
+            actions: [
+              { id: 'continue-in-chat', label: 'Continue safely', variant: 'primary' },
+              { id: 'dismiss-runtime', label: 'Dismiss runtime', variant: 'secondary' },
+            ],
+          }),
+          error: 'Completion payload missing from runtime response.',
+          timestamp: 4,
+        }
+      ),
+      createAppLifecycleMessage(
+        'msg-degraded-invalid',
+        'assistant',
+        'Insight Board returned malformed completion fields, so the host quarantined them and kept a bounded inspection path in the thread.',
+        {
+          appId: 'insight-board',
+          appName: 'Insight Board',
+          toolCallId: 'tool-degraded-invalid',
+          lifecycle: 'error',
+          summary: 'Invalid completion fields remained quarantined.',
+          title: 'Insight Board recovery',
+          description: 'Malformed completion fields are blocked from model memory until the host or user chooses a safe follow-up.',
+          statusText: 'Invalid completion',
+          fallbackTitle: 'Invalid completion fallback',
+          fallbackText: 'The runtime responded with malformed completion fields, so the host kept diagnostics inline instead of trusting them.',
+          values: createDegradedCompletionValues({
+            kind: 'invalid-completion',
+            statusLabel: 'Invalid completion',
+            title: 'Completion fields failed validation',
+            description:
+              'The host kept only validated state, quarantined malformed fields, and exposed a safe explanation path instead of leaking broken output.',
+            supportTitle: 'Trust rail',
+            supportDescription: 'Only validated fields remain available to the conversation.',
+            supportItems: [
+              {
+                label: 'Validated state remains available',
+                description: 'The thread can continue from safe host-owned fields.',
+                tone: 'safe',
+              },
+              {
+                label: 'Malformed fields stay quarantined',
+                description: 'Invalid data is blocked from model memory and user-visible summaries.',
+                tone: 'blocked',
+              },
+            ],
+            actions: [
+              { id: 'continue-in-chat', label: 'Continue safely', variant: 'primary' },
+              { id: 'inspect-invalid-fields', label: 'Inspect invalid fields', variant: 'secondary' },
+            ],
+          }),
+          error: 'Completion fields failed schema validation.',
+          timestamp: 5,
+        }
+      ),
+    ],
+  }
 }
 
 function createChessRuntimeMessage(id: string, timestamp: number): Message {
@@ -849,6 +1044,31 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
         },
       ],
       sessionInput: buildChatBridgeLifecycleTourSessionFixture(),
+    },
+    {
+      id: 'degraded-completion-recovery',
+      name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Degraded completion recovery`,
+      description:
+        'Seeds partial, missing, and invalid completion endings so you can verify the host-owned recovery UI, trust rail, and inline action acknowledgements in the live chat timeline.',
+      coverage: ['Degraded completion states', 'Inline recovery actions', 'Trust rail'],
+      auditSteps: [
+        {
+          action: 'Open the seeded degraded recovery session and inspect the three assistant recovery messages.',
+          expected:
+            'Each degraded ending stays inside the host shell with an explicit recovery banner and a separate trust rail instead of collapsing into a generic error card.',
+        },
+        {
+          action: 'On the `Completion payload never arrived` message, click `Continue safely`.',
+          expected:
+            'The same message updates inline to an acknowledgement state, the status badge changes to the requested action, and the selected action becomes disabled.',
+        },
+        {
+          action: 'On the `Completion fields failed validation` message, click `Inspect invalid fields`.',
+          expected:
+            'The message stays in place, the acknowledgement text explains that invalid fields remain quarantined, and no extra summary receipt appears below it.',
+        },
+      ],
+      sessionInput: buildChatBridgeDegradedCompletionRecoverySessionFixture(),
     },
     {
       id: 'chess-mid-game-board-context',

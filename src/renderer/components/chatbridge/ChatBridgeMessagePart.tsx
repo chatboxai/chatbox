@@ -1,5 +1,5 @@
 import type { MessageAppPart } from '@shared/types'
-import { isChatBridgeChessAppId } from '@shared/chatbridge'
+import { applyChatBridgeRecoveryAction, isChatBridgeChessAppId } from '@shared/chatbridge'
 import { ChatBridgeShell } from './ChatBridgeShell'
 import { getMessageAppPartViewModel } from './chatbridge'
 import { ChessRuntime } from './apps/chess/ChessRuntime'
@@ -17,6 +17,32 @@ export function ChatBridgeMessagePart({ part, onUpdatePart, sessionId, messageId
     part.lifecycle === 'active' && isChatBridgeChessAppId(part.appId) ? (
       <ChessRuntime part={part} onUpdatePart={onUpdatePart} sessionId={sessionId} messageId={messageId} />
     ) : undefined
+  const primaryAction = viewModel.recoveryActions?.find((action) => action.variant !== 'secondary')
+  const secondaryAction = viewModel.recoveryActions?.find((action) => action.variant === 'secondary')
+
+  function buildShellAction(action?: typeof primaryAction) {
+    if (!action) {
+      return undefined
+    }
+
+    if (typeof onUpdatePart !== 'function') {
+      return {
+        ...action,
+        disabled: true,
+      }
+    }
+
+    return {
+      ...action,
+      onClick: () => {
+        if (!action.id || action.disabled) {
+          return
+        }
+
+        onUpdatePart(applyChatBridgeRecoveryAction(part, action.id))
+      },
+    }
+  }
 
   return (
     <ChatBridgeShell
@@ -28,6 +54,9 @@ export function ChatBridgeMessagePart({ part, onUpdatePart, sessionId, messageId
       statusLabel={viewModel.statusLabel}
       fallbackTitle={viewModel.fallbackTitle}
       fallbackText={viewModel.fallbackText}
+      supportPanel={viewModel.supportPanel}
+      primaryAction={buildShellAction(primaryAction)}
+      secondaryAction={buildShellAction(secondaryAction)}
     >
       {runtime}
     </ChatBridgeShell>

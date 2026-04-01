@@ -26,7 +26,7 @@
 | T001 | Create the Pencil review packet for degraded completion and recovery states. | must-have | no | Pencil review packet and approval gate |
 | T002 | Model degraded completion states and recovery actions in the host runtime. | blocked-by:T001 | no | Lifecycle tests |
 | T003 | Implement the approved recovery UI in the timeline/app container surface. | blocked-by:T001,T002 | no | Renderer and accessibility tests |
-| T004 | Add retry/resume/fallback regression coverage. | blocked-by:T002,T003 | yes | pnpm test and pnpm check |
+| T004 | Add retry/resume/fallback regression coverage and live seed inspection coverage. | blocked-by:T002,T003 | yes | pnpm test and pnpm check |
 
 Dependency values:
 - `must-have`
@@ -40,15 +40,20 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Invalid/missing completion fallback behavior
+  - [x] Invalid/missing completion fallback behavior
 - T002 tests:
-  - [ ] Renderer state coverage for degraded completion
+  - [x] Renderer state coverage for degraded completion
 - T003 tests:
-  - [ ] Recovery action accessibility coverage
+  - [x] Recovery action accessibility coverage
+- T004 tests:
+  - [x] Live seed degraded recovery catalog coverage
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+Deferred tasks:
+- none

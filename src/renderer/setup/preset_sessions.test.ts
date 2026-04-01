@@ -67,6 +67,7 @@ describe('preset session backfill', () => {
   it('includes the shared ChatBridge live fixtures in the preset bootstrap list', () => {
     expect(getChatBridgePresetSessionBundles('en').map(({ session }) => session.name)).toEqual([
       `${CHATBRIDGE_LIVE_SEED_PREFIX} Lifecycle tour`,
+      `${CHATBRIDGE_LIVE_SEED_PREFIX} Degraded completion recovery`,
       `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess mid-game board context`,
       `${CHATBRIDGE_LIVE_SEED_PREFIX} History + preview`,
       `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess runtime`,

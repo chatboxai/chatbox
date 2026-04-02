@@ -1,4 +1,3 @@
-import { faker } from '@faker-js/faker'
 import {
   Badge,
   Button,
@@ -42,9 +41,67 @@ const MESSAGE_LENGTH_PRESETS: Record<MessageLengthPreset, { min: number; max: nu
   mixed: { min: 1, max: 20 },
 }
 
+const LOREM_WORDS = [
+  'adaptive',
+  'agent',
+  'analysis',
+  'artifact',
+  'checkpoint',
+  'classroom',
+  'context',
+  'continuity',
+  'dialogue',
+  'evidence',
+  'example',
+  'flagship',
+  'host',
+  'insight',
+  'iteration',
+  'launch',
+  'memory',
+  'model',
+  'outcome',
+  'partner',
+  'prompt',
+  'recovery',
+  'routing',
+  'scenario',
+  'session',
+  'signal',
+  'story',
+  'student',
+  'summary',
+  'teacher',
+  'validation',
+  'workspace',
+]
+
+function randomBetween(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min
+}
+
+function randomWord() {
+  return LOREM_WORDS[randomBetween(0, LOREM_WORDS.length - 1)]
+}
+
+function generatePseudoSentence(minWords = 8, maxWords = 16) {
+  const wordCount = randomBetween(minWords, maxWords)
+  const words = Array.from({ length: wordCount }, () => randomWord())
+  const sentence = words.join(' ')
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`
+}
+
+function generatePseudoParagraph(minSentences: number, maxSentences: number) {
+  return Array.from({ length: randomBetween(minSentences, maxSentences) }, () => generatePseudoSentence()).join(' ')
+}
+
+function generatePseudoLines(minLines: number, maxLines: number) {
+  return Array.from({ length: randomBetween(minLines, maxLines) }, () => generatePseudoSentence()).join('\n')
+}
+
 function generateFakeMessage(role: MessageRole, lengthPreset: MessageLengthPreset): GeneratedMessage {
   const { min, max } = MESSAGE_LENGTH_PRESETS[lengthPreset]
-  const text = faker.lorem.lines({ min, max })
+  const text = generatePseudoLines(min, max)
 
   const contentParts: MessageContentParts = [
     {
@@ -73,7 +130,7 @@ function generateConversation(
   const messages: GeneratedMessage[] = []
 
   if (includeSystemPrompt) {
-    const systemText = faker.lorem.paragraph({ min: 2, max: 5 })
+    const systemText = generatePseudoParagraph(2, 5)
     const systemMessage: Message = {
       id: uuidv4(),
       role: 'system',
@@ -102,7 +159,7 @@ function generateToTargetTokens(
   let currentTokens = 0
 
   if (includeSystemPrompt) {
-    const systemText = faker.lorem.paragraph({ min: 2, max: 5 })
+    const systemText = generatePseudoParagraph(2, 5)
     const systemMessage: Message = {
       id: uuidv4(),
       role: 'system',

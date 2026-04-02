@@ -218,6 +218,10 @@ export default defineConfig(({ mode }) => {
         target: 'es2020', // Avoid static initialization blocks for browser compatibility
         sourcemap: isProduction ? 'hidden' : true,
         minify: isProduction ? 'esbuild' : false, // Use esbuild for faster, less memory-intensive minification
+        // After isolating locales, dev tools, tokenizer, markdown, and mermaid into their own chunks,
+        // the remaining largest client bundle sits just under 1.9 MB. Keep the warning high enough to
+        // avoid noise from those intentional boundaries while still surfacing future regressions above them.
+        chunkSizeWarningLimit: 1900,
         rollupOptions: {
           output: {
             entryFileNames: 'js/[name].[hash].js',
@@ -236,16 +240,102 @@ export default defineConfig(({ mode }) => {
             },
             // Optimize chunk splitting to reduce memory usage during build
             manualChunks(id) {
-              if (id.includes('node_modules')) {
-                // Split large vendor chunks
-                if (id.includes('@ai-sdk') || id.includes('ai/')) {
-                  return 'vendor-ai'
+              const normalizedId = id.split(path.sep).join('/')
+
+              if (normalizedId.endsWith('.css')) {
+                return
+              }
+
+              const localeMatch = normalizedId.match(/\/src\/renderer\/i18n\/locales\/([^/]+)\//)
+              if (localeMatch) {
+                return `i18n-${localeMatch[1].replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}`
+              }
+
+              const devRouteMatch = normalizedId.match(/\/src\/renderer\/routes\/dev\/([^/]+)\.tsx$/)
+              if (devRouteMatch) {
+                return `dev-${devRouteMatch[1].replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}`
+              }
+
+              if (normalizedId.includes('/node_modules/')) {
+                if (normalizedId.includes('/node_modules/@faker-js/faker/')) {
+                  return 'vendor-faker'
                 }
-                if (id.includes('@mantine') || id.includes('@tabler')) {
-                  return 'vendor-ui'
+
+                if (normalizedId.includes('/node_modules/js-tiktoken/')) {
+                  return 'vendor-tokenizer'
                 }
-                if (id.includes('mermaid') || id.includes('d3')) {
-                  return 'vendor-charts'
+
+                if (
+                  normalizedId.includes('/node_modules/react-syntax-highlighter/') ||
+                  normalizedId.includes('/node_modules/refractor/') ||
+                  normalizedId.includes('/node_modules/micromark') ||
+                  normalizedId.includes('/node_modules/mdast-util') ||
+                  normalizedId.includes('/node_modules/remark-') ||
+                  normalizedId.includes('/node_modules/rehype-')
+                ) {
+                  return 'vendor-markdown'
+                }
+
+                if (normalizedId.includes('/node_modules/katex/')) {
+                  return 'vendor-math'
+                }
+
+                if (
+                  normalizedId.includes('/node_modules/mermaid/') ||
+                  normalizedId.includes('/node_modules/@mermaid-js/') ||
+                  normalizedId.includes('/node_modules/dagre-d3-es/') ||
+                  normalizedId.includes('/node_modules/roughjs/') ||
+                  normalizedId.includes('/node_modules/khroma/') ||
+                  normalizedId.includes('/node_modules/dompurify/')
+                ) {
+                  return 'vendor-mermaid'
+                }
+
+                if (
+                  normalizedId.includes('/node_modules/cytoscape') ||
+                  normalizedId.includes('/node_modules/layout-base/') ||
+                  normalizedId.includes('/node_modules/cose-base/')
+                ) {
+                  return 'vendor-graph'
+                }
+
+                if (
+                  normalizedId.includes('/node_modules/@ai-sdk/') ||
+                  normalizedId.includes('/node_modules/ai/') ||
+                  normalizedId.includes('/node_modules/@openrouter/ai-sdk-provider/') ||
+                  normalizedId.includes('/node_modules/@modelcontextprotocol/sdk/')
+                ) {
+                  return 'vendor-ai-sdk'
+                }
+
+                if (normalizedId.includes('/node_modules/zod/')) {
+                  return 'vendor-zod'
+                }
+
+                if (
+                  normalizedId.includes('/node_modules/@mantine/') ||
+                  normalizedId.includes('/node_modules/@floating-ui/')
+                ) {
+                  return 'vendor-mantine'
+                }
+
+                if (normalizedId.includes('/node_modules/@tabler/icons-react/')) {
+                  return 'vendor-icons'
+                }
+
+                if (
+                  normalizedId.includes('/node_modules/react-dom/') ||
+                  normalizedId.includes('/node_modules/scheduler/')
+                ) {
+                  return 'vendor-react-dom'
+                }
+
+                if (normalizedId.includes('/node_modules/@mui/')) {
+                  return 'vendor-mui'
+                }
+
+                if (normalizedId.includes('/node_modules/lodash')) {
+                  return 'vendor-lodash'
                 }
               }
             },

@@ -1,4 +1,5 @@
 export * from './app-memory'
+export * from './audit'
 export * from './auth'
 export * from './bridge-session'
 export * from './chess'

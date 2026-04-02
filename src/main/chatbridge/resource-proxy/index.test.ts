@@ -78,6 +78,8 @@ describe('chatbridge resource proxy', () => {
       action: 'drive.readDraft',
       payload: {
         draftId: 'draft-123',
+        selectedText: 'Student paragraph about the opening scene.',
+        accessToken: 'secret-token',
       },
     })
 
@@ -88,10 +90,18 @@ describe('chatbridge resource proxy', () => {
         title: 'Chapter 1 Draft',
       },
       audit: {
+        category: 'resource.action',
         outcome: 'granted',
         permissionId: 'drive.read',
+        capture: {
+          level: 'metadata',
+        },
       },
     })
+    expect(response.audit.details).toEqual(expect.arrayContaining(['draftId: draft-123']))
+    expect(response.audit.redactedKeys).toEqual(expect.arrayContaining(['selectedText', 'accessToken']))
+    expect(JSON.stringify(response.audit)).not.toContain('Student paragraph')
+    expect(JSON.stringify(response.audit)).not.toContain('secret-token')
   })
 
   it('denies unsupported actions and invalid handles with normalized audit entries', async () => {
@@ -202,5 +212,82 @@ describe('chatbridge resource proxy', () => {
         outcome: 'error',
       },
     })
+  })
+
+  it('supports explicitly gated forensic capture without retaining raw credentials', async () => {
+    const broker = createChatBridgeAuthBroker({
+      now: () => 500,
+      createId: () => 'handle-1',
+    })
+    const launch = broker.authorizeAppLaunch({
+      userId: 'student-1',
+      appId: 'story-builder',
+      authMode: 'oauth',
+      grants: [createGrant()],
+      permissionIds: ['drive.read'],
+    })
+
+    const proxy = createChatBridgeResourceProxy({
+      validator: broker,
+      now: () => 600,
+      auditCapture: {
+        level: 'forensic',
+        caseId: 'case-4',
+        approvedBy: 'safety-ops',
+        justification: 'Escalated support review.',
+      },
+    })
+    proxy.registerAction(
+      {
+        appId: 'story-builder',
+        resource: 'drive',
+        action: 'drive.readDraft',
+        permissionId: 'drive.read',
+        description: 'Read a Story Builder draft from Drive.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            draftId: { type: 'string' },
+          },
+          required: ['draftId'],
+        },
+      },
+      ({ payload }) => ({
+        draftId: payload.draftId,
+      })
+    )
+
+    expect(launch.authorized).toBe(true)
+    if (!launch.authorized || !launch.credentialHandle) {
+      return
+    }
+
+    const response = await proxy.execute({
+      schemaVersion: 1,
+      requestId: 'request-5',
+      handleId: launch.credentialHandle.handleId,
+      userId: 'student-1',
+      appId: 'story-builder',
+      resource: 'drive',
+      action: 'drive.readDraft',
+      payload: {
+        draftId: 'draft-123',
+        selectedText: 'Student paragraph about the opening scene.',
+        accessToken: 'secret-token',
+      },
+    })
+
+    expect(response.audit.capture).toEqual({
+      level: 'forensic',
+      caseId: 'case-4',
+      approvedBy: 'safety-ops',
+      justification: 'Escalated support review.',
+    })
+    expect(response.audit.forensicPayload).toMatchObject({
+      draftId: 'draft-123',
+      selectedText: 'Student paragraph about the opening scene.',
+      accessToken: '[redacted]',
+    })
+    expect(response.audit.redactedKeys).toContain('accessToken')
   })
 })

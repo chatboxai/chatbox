@@ -9,6 +9,7 @@ import {
   ChatBridgeResourceProxyResponseSchema,
   type ChatBridgeResourceProxyResponse,
 } from '@shared/chatbridge/resource-proxy'
+import { type ChatBridgeAuditCapture, resolveChatBridgeAuditRecordFields } from '@shared/chatbridge/audit'
 
 export interface ChatBridgeResourceHandleValidator {
   authorizeResourceAccess(input: {
@@ -32,6 +33,7 @@ type CreateChatBridgeResourceProxyOptions = {
   validator: ChatBridgeResourceHandleValidator
   now?: () => number
   onAudit?: (entry: ChatBridgeResourceProxyAuditEntry) => void
+  auditCapture?: ChatBridgeAuditCapture
 }
 
 function createAuditEntry(input: {
@@ -40,9 +42,17 @@ function createAuditEntry(input: {
   outcome: ChatBridgeResourceProxyAuditEntry['outcome']
   loggedAt: number
   details?: string[]
+  capture?: ChatBridgeAuditCapture
 }) {
+  const auditFields = resolveChatBridgeAuditRecordFields({
+    details: input.details,
+    payload: input.request.payload,
+    capture: input.capture,
+  })
+
   return ChatBridgeResourceProxyAuditEntrySchema.parse({
     schemaVersion: CHATBRIDGE_RESOURCE_PROXY_SCHEMA_VERSION,
+    category: 'resource.action',
     requestId: input.request.requestId,
     handleId: input.request.handleId,
     userId: input.request.userId,
@@ -52,7 +62,7 @@ function createAuditEntry(input: {
     permissionId: input.action?.permissionId,
     outcome: input.outcome,
     loggedAt: input.loggedAt,
-    details: input.details ?? [],
+    ...auditFields,
   })
 }
 
@@ -96,6 +106,20 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
           typeof requestInput === 'object' && requestInput !== null && 'action' in requestInput
             ? String((requestInput as { action?: unknown }).action)
             : 'unknown-action'
+        const invalidPayload =
+          typeof requestInput === 'object' &&
+          requestInput !== null &&
+          'payload' in requestInput &&
+          typeof (requestInput as { payload?: unknown }).payload === 'object' &&
+          (requestInput as { payload?: unknown }).payload !== null &&
+          !Array.isArray((requestInput as { payload?: unknown }).payload)
+            ? ((requestInput as { payload: Record<string, unknown> }).payload as Record<string, unknown>)
+            : undefined
+        const auditFields = resolveChatBridgeAuditRecordFields({
+          details: parsedRequest.error.issues.map((issue) => issue.message),
+          payload: invalidPayload,
+          capture: options.auditCapture,
+        })
 
         return ChatBridgeResourceProxyResponseSchema.parse({
           schemaVersion: CHATBRIDGE_RESOURCE_PROXY_SCHEMA_VERSION,
@@ -108,6 +132,7 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
           message: 'Resource proxy request failed validation.',
           audit: {
             schemaVersion: CHATBRIDGE_RESOURCE_PROXY_SCHEMA_VERSION,
+            category: 'resource.action',
             requestId,
             handleId:
               typeof requestInput === 'object' && requestInput !== null && 'handleId' in requestInput
@@ -125,7 +150,7 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
             action,
             outcome: 'error',
             loggedAt: now(),
-            details: parsedRequest.error.issues.map((issue) => issue.message),
+            ...auditFields,
           },
         })
       }
@@ -139,6 +164,7 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
           outcome: 'denied',
           loggedAt: now(),
           details: ['Requested resource action is not registered for this reviewed app.'],
+          capture: options.auditCapture,
         })
         emitAudit(audit)
         return ChatBridgeResourceProxyResponseSchema.parse({
@@ -168,6 +194,7 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
           outcome: 'denied',
           loggedAt: now(),
           details: validation.details,
+          capture: options.auditCapture,
         })
         emitAudit(audit)
         return ChatBridgeResourceProxyResponseSchema.parse({
@@ -193,6 +220,7 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
           action: registered.action,
           outcome: 'granted',
           loggedAt: now(),
+          capture: options.auditCapture,
         })
         emitAudit(audit)
         return ChatBridgeResourceProxyResponseSchema.parse({
@@ -213,6 +241,7 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
           outcome: 'error',
           loggedAt: now(),
           details: [message],
+          capture: options.auditCapture,
         })
         emitAudit(audit)
         return ChatBridgeResourceProxyResponseSchema.parse({

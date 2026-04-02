@@ -1,0 +1,19 @@
+{
+  "storyId": "CB-508",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "failed-as-expected",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/reviewed-app-catalog.test.ts src/shared/chatbridge/live-seeds.test.ts src/renderer/packages/initial_data.test.ts src/renderer/setup/preset_sessions.test.ts test/integration/chatbridge/scenarios/active-reviewed-catalog-transition.test.ts",
+    "failureSummary": [
+      "The default reviewed-app catalog still exposed only chess instead of the active flagship trio.",
+      "Legacy reviewed-app entries were not separated into an explicit retained-reference helper.",
+      "Live-seed and preset-session inspection data still treated the legacy history fixture like a primary smoke path.",
+      "The active catalog transition scenario still rejected Drawing Kit and Weather dashboard routing."
+    ]
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/reviewed-app-catalog.test.ts src/shared/chatbridge/live-seeds.test.ts src/renderer/packages/initial_data.test.ts src/renderer/setup/preset_sessions.test.ts test/integration/chatbridge/scenarios/active-reviewed-catalog-transition.test.ts src/renderer/components/dev/ChatBridgeSeedLab.test.tsx"
+  }
+}

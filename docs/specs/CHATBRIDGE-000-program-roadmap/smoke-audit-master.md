@@ -306,7 +306,7 @@ completion and live product behavior.
 
 ### SA-008: Active flagship catalog transition is docs-only and runtime remains Chess-only
 
-- Status: `confirmed`
+- Status: `fixed-during-audit`
 - Severity: high
 - Area: active reviewed-app catalog and live routing
 - Owning pack: Pack 05
@@ -318,32 +318,33 @@ completion and live product behavior.
   3. Compare route and single-app results against the new active flagship plan.
 - Expected: after the catalog transition, the active runtime should at least expose Chess, Drawing Kit, and Weather as the reviewed flagship set, even if the new apps are not fully implemented yet.
 - Actual:
-  - the default reviewed catalog is still `['chess']`
-  - Drawing Kit and Weather both refuse with `no-confident-match`
-  - Story Builder also refuses, which is now acceptable as a legacy app
-  - Chess still invokes successfully through the old live single-app path
+  - the default reviewed catalog now registers `['chess', 'drawing-kit',
+    'weather-dashboard']`
+  - explicit route decisions can now invoke Drawing Kit and Weather from the
+    active catalog seam
+  - Debate Arena and Story Builder are preserved through explicit
+    legacy-reference helpers instead of the default runtime registry
+  - Chess remains the only live executable reviewed-app tool on the main
+    generation path, which stays correctly parked under SA-002 / `CB-506`
 - Evidence:
   - test or manual surface:
-    - `source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec tsx <<'TS' ... ensureDefaultReviewedAppsRegistered() ... getReviewedAppRouteDecision(...) ... createReviewedSingleAppToolSet(...) ... TS`
-    - output showed:
-      - `catalog [ 'chess' ]`
-      - Drawing Kit: `kind: "refuse"`, `reasonCode: "no-confident-match"`
-      - Weather: `kind: "refuse"`, `reasonCode: "no-confident-match"`
-      - Chess: `kind: "invoke"` plus `toolNames: ["chess_prepare_session"]`
+    - `source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/reviewed-app-catalog.test.ts test/integration/chatbridge/scenarios/active-reviewed-catalog-transition.test.ts`
   - trace id(s):
-    - none for the direct runtime probe
+    - `b54ae68a-7aa2-43a4-ad16-a7064f525bd7`
+      (`chatbridge.eval.chatbridge-active-reviewed-catalog-transition-cb-508-doc-proof`)
   - relevant code path(s):
     - `/private/tmp/chatbox-chessjs-devfix/src/shared/chatbridge/reviewed-app-catalog.ts`
-    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/router/decision.ts`
-    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/single-app-tools.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/test/integration/chatbridge/scenarios/active-reviewed-catalog-transition.test.ts`
 - Notes:
-  - The active product direction is now ahead of runtime truth. Right now the repo says Chess, Drawing Kit, and Weather are the active flagship set, but the runtime still only knows Chess.
+  - `CB-508` closes the catalog-transition gap without claiming the later live
+    invocation/runtime work is complete. The remaining executable launch gap is
+    already tracked separately by SA-002 / `CB-506`.
 - Follow-up story candidate:
-  - `CB-508` - Active reviewed catalog transition and legacy retention
+  - none; continue the queue at `CB-506`
 
 ### SA-009: Trace and scenario coverage still prove the legacy flagship set, not the active one
 
-- Status: `confirmed`
+- Status: `fixed-during-audit`
 - Severity: medium
 - Area: traces, evals, and regression assets
 - Owning pack: Pack 00 and Pack 05
@@ -355,43 +356,36 @@ completion and live product behavior.
   3. Review the scenario names and trace names against the new active flagship plan.
 - Expected: after the active catalog shift, the observable regression suite should either include Drawing Kit and Weather coverage or explicitly mark their absence as a known gap in the active audit.
 - Actual:
-  - the traced suite is still green on the old flagship set
-  - named scenario coverage still includes `debate-arena-lifecycle` and `story-builder-lifecycle`
-  - `CB-007` has now improved trace evidence quality with runtime-target and
-    smoke-support labels plus a checked-in scriptable corpus snapshot
-  - there are still no Drawing Kit or Weather scenarios or trace families, so
-    the active flagship set is still not represented in the regression assets
+  - the regression assets now include a traced active-catalog transition proof
+    through `active-reviewed-catalog-transition.test.ts`
+  - the checked-in eval docs and scenario README now explicitly distinguish
+    active-catalog proof from legacy-reference Story Builder traces
+  - Drawing Kit and Weather runtime/manual-smoke proof still remains queued for
+    `CB-509` and `CB-510`, but that gap is now called out explicitly instead of
+    being masked by legacy-only evidence
 - Evidence:
   - test or manual surface:
-    - traced run: `22` files passed, `46` tests passed
-    - scenario names still include:
-      - `test/integration/chatbridge/scenarios/debate-arena-lifecycle.test.ts`
-      - `test/integration/chatbridge/scenarios/story-builder-lifecycle.test.ts`
-      - `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`
+    - `source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && LANGSMITH_TRACING=true LANGSMITH_PROJECT=chatbox-chatbridge pnpm exec vitest run test/integration/chatbridge/scenarios/active-reviewed-catalog-transition.test.ts`
+    - `test/integration/chatbridge/scenarios/README.md`
+    - `chatbridge/EVALS_AND_OBSERVABILITY.md`
   - trace id(s):
-    - `7020574d-8d43-46d6-8c41-b89522667be7` (`chatbox.trace.smoke`)
-    - recent trace names remained:
-      - `chatbridge.eval.chatbridge-mid-game-board-context`
-      - `chatbridge.eval.chatbridge-single-app-discovery`
-      - `chatbridge.eval.chatbridge-host-tool-contract`
-      - `chatbridge.eval.chatbridge-bridge-handshake`
-      - `chatbridge.eval.chatbridge-app-instance-domain-model`
-      - `chatbridge.eval.chatbridge-reviewed-app-registry`
-      - `chatbridge.eval.chatbridge-persistence-and-shell-artifacts`
+    - `b54ae68a-7aa2-43a4-ad16-a7064f525bd7`
+      (`chatbridge.eval.chatbridge-active-reviewed-catalog-transition-cb-508-doc-proof`)
   - relevant code path(s):
     - `/private/tmp/chatbox-chessjs-devfix/test/integration/chatbridge/scenarios/`
-    - `/private/tmp/chatbox-chessjs-devfix/src/shared/models/tracing.ts`
-    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/adapters/langsmith.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/chatbridge/EVALS_AND_OBSERVABILITY.md`
+    - `/private/tmp/chatbox-chessjs-devfix/test/integration/chatbridge/scenarios/README.md`
 - Notes:
-  - This is now a mismatch between the active roadmap and the regression
-    assets. The suite is more inspectable after `CB-007`, but it still proves
-    the old world until the active flagship stories land.
+  - Legacy Story Builder auth/resource evidence remains intentionally present,
+    but it is now described as legacy-reference coverage instead of active
+    flagship proof.
 - Follow-up story candidate:
-  - `CB-508` - Active reviewed catalog transition and legacy retention
+  - none for the alignment layer; runtime/manual-smoke expansion continues in
+    `CB-509` and `CB-510`
 
 ### SA-010: Seeded manual smoke surfaces still center legacy Story Builder flows and old deep links are brittle
 
-- Status: `confirmed`
+- Status: `fixed-during-audit`
 - Severity: medium
 - Area: manual smoke fixtures and live UI smoke
 - Owning pack: Pack 05
@@ -403,28 +397,31 @@ completion and live product behavior.
   3. Open `http://localhost:1212/session/chatbox-chat-demo-chatbridge-history-and-preview` in the live web surface.
 - Expected: the manual smoke corpus should be moving toward the active flagship set, or at minimum clearly identify legacy fixtures and preserve stable deep links for currently documented smoke paths.
 - Actual:
-  - fixture names still include `History + preview`, whose description explicitly says it seeds a real Story Builder session
-  - there are no Drawing Kit or Weather fixtures
-  - the old `history-and-preview` deep link redirected to `/guide` in the live web smoke pass
-  - the resulting sidebar snapshot showed only one visible ChatBridge seed entry
+  - the seed corpus now classifies fixtures as `active-flagship`,
+    `platform-regression`, or `legacy-reference`
+  - the active/platform fixtures now appear before the legacy
+    `history-and-preview` reference in both live-seed and preset-session
+    inspection order
+  - the `history-and-preview` preset session id remains
+    `chatbox-chat-demo-chatbridge-history-and-preview`, so the documented deep
+    link stays stable even though the fixture is now explicit legacy scope
 - Evidence:
   - test or manual surface:
-    - `source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec tsx <<'TS' ... getChatBridgeLiveSeedFixtures() ... TS`
-    - output included:
-      - `[Seeded] ChatBridge: History + preview :: Seeds a real Story Builder session ...`
-    - Playwright live smoke:
-      - `http://localhost:1212/session/chatbox-chat-demo-chatbridge-history-and-preview`
-      - snapshot file: `.playwright-cli/page-2026-04-02T19-51-46-532Z.yml`
-      - console file: `.playwright-cli/console-2026-04-02T19-51-44-888Z.log`
+    - `source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/live-seeds.test.ts src/renderer/packages/initial_data.test.ts src/renderer/setup/preset_sessions.test.ts src/renderer/components/dev/ChatBridgeSeedLab.test.tsx`
   - trace id(s):
-    - none
+    - `b54ae68a-7aa2-43a4-ad16-a7064f525bd7`
+      (`chatbridge.eval.chatbridge-active-reviewed-catalog-transition-cb-508-doc-proof`)
   - relevant code path(s):
     - `/private/tmp/chatbox-chessjs-devfix/src/shared/chatbridge/live-seeds.ts`
     - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/initial_data.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/dev/ChatBridgeSeedLab.tsx`
 - Notes:
-  - This makes the manual smoke workflow drift-prone right when it should be helping validate the new flagship transition.
+  - There are still no Drawing Kit or Weather fixtures because those runtimes do
+    not exist yet. `CB-508` only closes the corpus-labeling and deep-link
+    stability layer so the later app stories start from honest smoke truth.
 - Follow-up story candidate:
-  - `CB-508` - Active reviewed catalog transition and legacy retention
+  - none for the labeling/deep-link layer; active non-Chess fixtures arrive in
+    `CB-509` and `CB-510`
 
 ## Approved Rebuild Story Queue
 

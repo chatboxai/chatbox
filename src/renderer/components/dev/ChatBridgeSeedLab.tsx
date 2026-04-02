@@ -159,7 +159,7 @@ export default function ChatBridgeSeedLab() {
             [fixtureId]: undefined,
           }))
           setNotice({
-            tone: fixtureId === 'history-and-preview' ? 'info' : 'error',
+            tone: seededSession.fixture.smokeSupport === 'legacy-reference' ? 'info' : 'error',
             text: traceResult.support.message,
           })
         }
@@ -256,6 +256,12 @@ export default function ChatBridgeSeedLab() {
                 {(() => {
                   const fixtureMode = getChatBridgeManualSmokeFixtureMode(fixture.id)
                   const activeTrace = activeTraceRuns[fixture.id]
+                  const roleBadge =
+                    fixture.fixtureRole === 'active-flagship'
+                      ? { color: 'green', label: 'Active flagship' }
+                      : fixture.fixtureRole === 'legacy-reference'
+                        ? { color: 'orange', label: 'Legacy reference' }
+                        : { color: 'blue', label: 'Platform regression' }
 
                   return (
                     <>
@@ -268,6 +274,9 @@ export default function ChatBridgeSeedLab() {
                                 {label}
                               </Badge>
                             ))}
+                            <Badge color={roleBadge.color} variant="light">
+                              {roleBadge.label}
+                            </Badge>
                             <Badge color={fixtureMode.support === 'supported' ? 'teal' : 'orange'} variant="light">
                               {fixtureMode.support === 'supported' ? 'Traceable smoke' : 'Legacy reference'}
                             </Badge>

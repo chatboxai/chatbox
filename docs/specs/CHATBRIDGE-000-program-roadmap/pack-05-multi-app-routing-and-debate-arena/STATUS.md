@@ -2,8 +2,7 @@
 
 - Pack state: validated baseline reopened by the smoke-audit rebuild queue and
   active catalog transition
-- Current story: pending backfill queue starting at `CB-508` after `CB-006`,
-  `CB-007`, and `CB-305`
+- Current story: pending backfill queue starting at `CB-506` after `CB-508`
 - Unlock rule: this pack opens only after Pack 4 has a written exit memo and
   linked proof in `progress.md`
 
@@ -46,7 +45,7 @@ Legacy parked packets that are not part of the active queue:
 | CB-505 | planned | Historical smoke-audit packet for restoring the old Debate Arena and Story Builder flagship catalog; now parked in favor of CB-508. |
 | CB-506 | planned | Smoke-audit backfill to replace the live Chess-only invocation shortcut with a real reviewed-app invoke path while preserving robust Chess prompt handling. |
 | CB-507 | planned | Smoke-audit backfill to make clarify and refusal artifacts a live product surface instead of a test-only seam. |
-| CB-508 | planned | Transition the active flagship catalog to Chess, Drawing Kit, and Weather while retaining Debate Arena and Story Builder as legacy references. |
+| CB-508 | validated | Default reviewed catalog and seed inspection now point to Chess, Drawing Kit, and Weather while Debate Arena and Story Builder stay explicit legacy references. |
 | CB-509 | planned | Build Drawing Kit as the new interactive no-auth flagship app. |
 | CB-510 | planned | Build Weather Dashboard as the new data-backed no-auth flagship app. |
 
@@ -66,11 +65,12 @@ Legacy parked packets that are not part of the active queue:
 
 Pack 05 is validated.
 
-Reviewed-app eligibility and invoke/clarify/refuse routing are now explicit,
-Debate Arena runs as the second flagship app inside the host shell, and
-compaction-time continuity now preserves one primary active app context plus
-one bounded recent-complete context without treating every instance of the same
-app as interchangeable. Pack 06 can open next.
+Historical Pack 05 proof remains checked in, but the reopened rebuild lane now
+targets Chess, Drawing Kit, and Weather as the active flagship set. Eligibility
+and invoke/clarify/refuse routing stay available as validated foundations, and
+`CB-508` now makes the active catalog plus seed corpus explicit before the live
+non-Chess runtime work continues at `CB-506`, `CB-509`, `CB-510`, and
+`CB-507`.
 
 ## Smoke-Audit Reopen Notes
 
@@ -79,6 +79,8 @@ app as interchangeable. Pack 06 can open next.
 - The active flagship catalog changed on 2026-04-02. Debate Arena and Story
   Builder are now legacy references, while Drawing Kit and Weather become the
   active replacement apps.
+- `CB-508` closes the catalog/seed alignment layer of SA-008, SA-009, and
+  SA-010 without claiming the later non-Chess launch/runtime stories are done.
 - Historical Pack 05 proof remains checked in, but do not treat Pack 05 as
-  live-runtime complete again until `CB-508`, `CB-506`, `CB-509`, `CB-510`,
-  and `CB-507` are implemented and validated.
+  live-runtime complete again until `CB-506`, `CB-509`, `CB-510`, and
+  `CB-507` are implemented and validated.

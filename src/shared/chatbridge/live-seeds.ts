@@ -54,10 +54,15 @@ export type ChatBridgeLiveSeedAuditStep = {
   expected: string
 }
 
+export type ChatBridgeLiveSeedFixtureRole = 'active-flagship' | 'legacy-reference' | 'platform-regression'
+export type ChatBridgeLiveSeedSmokeSupport = 'legacy-reference' | 'supported'
+
 export type ChatBridgeLiveSeedFixture = {
   id: string
   name: string
   description: string
+  fixtureRole: ChatBridgeLiveSeedFixtureRole
+  smokeSupport: ChatBridgeLiveSeedSmokeSupport
   coverage: string[]
   auditSteps: ChatBridgeLiveSeedAuditStep[]
   sessionInput: Omit<Session, 'id'>
@@ -71,6 +76,8 @@ export type ChatBridgeLiveSeedInspectionEntry = {
   fixtureId: string
   fixtureName: string
   description: string
+  fixtureRole: ChatBridgeLiveSeedFixtureRole
+  smokeSupport: ChatBridgeLiveSeedSmokeSupport
   coverage: string[]
   auditStepCount: number
   blobEntryCount: number
@@ -1453,6 +1460,8 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
       name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Lifecycle tour`,
       description:
         'Seeds every host-owned lifecycle shell state so you can inspect loading, ready, active, complete, stale, and error handling in the real message timeline.',
+      fixtureRole: 'platform-regression',
+      smokeSupport: 'supported',
       coverage: ['Host shell states', 'Inline completion', 'Stale + error recovery'],
       auditSteps: [
         {
@@ -1471,6 +1480,8 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
       name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Degraded completion recovery`,
       description:
         'Seeds partial, missing, and invalid completion endings so you can verify the host-owned recovery UI, trust rail, and inline action acknowledgements in the live chat timeline.',
+      fixtureRole: 'platform-regression',
+      smokeSupport: 'supported',
       coverage: ['Degraded completion states', 'Inline recovery actions', 'Trust rail'],
       auditSteps: [
         {
@@ -1496,6 +1507,8 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
       name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Platform recovery`,
       description:
         'Seeds timeout, crash, invalid tool call, malformed bridge event, and bridge rejection recoveries so you can inspect the unified host-owned failure model in the live thread.',
+      fixtureRole: 'platform-regression',
+      smokeSupport: 'supported',
       coverage: ['Timeout recovery', 'Crash recovery', 'Invalid tool handling', 'Bridge failure recovery'],
       auditSteps: [
         {
@@ -1521,6 +1534,8 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
       name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess mid-game board context`,
       description:
         'Seeds a live Chess session with a validated host-owned board summary so you can ask a follow-up and confirm the assistant sees bounded mid-game context instead of raw app prose.',
+      fixtureRole: 'active-flagship',
+      smokeSupport: 'supported',
       coverage: ['Chess board context', 'Mid-game follow-up reasoning', 'Host-owned normalized summary'],
       auditSteps: [
         {
@@ -1541,29 +1556,12 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
       sessionInput: buildChatBridgeChessMidGameSessionFixture(),
     },
     {
-      id: 'history-and-preview',
-      name: `${CHATBRIDGE_LIVE_SEED_PREFIX} History + preview`,
-      description:
-        'Seeds a real Story Builder session with thread history, a persisted attachment checkpoint, and a renderable HTML artifact preview you can open and refresh live.',
-      coverage: ['Thread history', 'Attachment presence', 'HTML preview runtime'],
-      auditSteps: [
-        {
-          action: 'Open the seeded session and use the normal thread-history control in the chat UI.',
-          expected: 'The older complete Story Builder thread is still present and explicit.',
-        },
-        {
-          action: 'In the current thread, find the HTML preview message and click `Preview`, then `Refresh`.',
-          expected: 'The runtime opens inside the host shell, and refresh keeps it in the same inline surface.',
-        },
-      ],
-      sessionInput: historyAndPreview.sessionInput,
-      blobEntries: historyAndPreview.blobEntries,
-    },
-    {
       id: 'chess-runtime',
       name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess runtime`,
       description:
         'Seeds a playable chess board in the real host shell so you can verify legal move acceptance, illegal move rejection, and reload continuity against live session storage.',
+      fixtureRole: 'active-flagship',
+      smokeSupport: 'supported',
       coverage: ['Chess runtime', 'Legal + illegal moves', 'Host state persistence'],
       auditSteps: [
         {
@@ -1583,6 +1581,27 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
       ],
       sessionInput: buildChatBridgeChessRuntimeSessionFixture(),
     },
+    {
+      id: 'history-and-preview',
+      name: `${CHATBRIDGE_LIVE_SEED_PREFIX} History + preview`,
+      description:
+        'Seeds a legacy Story Builder reference session with thread history, a persisted attachment checkpoint, and a renderable HTML artifact preview you can open and refresh live.',
+      fixtureRole: 'legacy-reference',
+      smokeSupport: 'legacy-reference',
+      coverage: ['Thread history', 'Attachment presence', 'HTML preview runtime'],
+      auditSteps: [
+        {
+          action: 'Open the seeded session and use the normal thread-history control in the chat UI.',
+          expected: 'The older complete Story Builder thread is still present and explicit.',
+        },
+        {
+          action: 'In the current thread, find the HTML preview message and click `Preview`, then `Refresh`.',
+          expected: 'The runtime opens inside the host shell, and refresh keeps it in the same inline surface.',
+        },
+      ],
+      sessionInput: historyAndPreview.sessionInput,
+      blobEntries: historyAndPreview.blobEntries,
+    },
   ]
 }
 
@@ -1591,6 +1610,8 @@ export function getChatBridgeLiveSeedInspectionEntries(): ChatBridgeLiveSeedInsp
     fixtureId: fixture.id,
     fixtureName: fixture.name,
     description: fixture.description,
+    fixtureRole: fixture.fixtureRole,
+    smokeSupport: fixture.smokeSupport,
     coverage: [...fixture.coverage],
     auditStepCount: fixture.auditSteps.length,
     blobEntryCount: fixture.blobEntries?.length ?? 0,

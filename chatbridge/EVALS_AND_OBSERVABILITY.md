@@ -69,6 +69,8 @@ Use this path:
 
 Important constraints:
 
+- The Seed Lab now classifies fixtures through the checked-in inspection seam:
+  `active-flagship`, `platform-regression`, or `legacy-reference`.
 - Web-only smoke remains unsupported for traced manual smoke because
   `window.electronAPI` is unavailable there and LangSmith access stays
   main-process-owned.
@@ -216,6 +218,11 @@ console.log(JSON.stringify(getChatBridgeSmokeInspectionSnapshot(), null, 2))
 TS
 ```
 
+The returned `liveSeeds` and `presetSessions` entries now include:
+
+- `fixtureRole`
+- `smokeSupport`
+
 ## CB-006 Trace Matrix
 
 | Evidence family | Representative traces | Representative proof surfaces |
@@ -226,9 +233,12 @@ TS
 | auth and resource access | `chatbridge.eval.chatbridge-story-builder-auth-resource` | `story-builder-lifecycle.test.ts` |
 | recovery | `chatbridge.eval.chatbridge-bridge-handshake`, `chatbridge.manual_smoke.chatbridge-lifecycle-tour.<session-id>`, `chatbridge.manual_smoke.chatbridge-degraded-completion-recovery.<session-id>`, `chatbridge.manual_smoke.chatbridge-platform-recovery.<session-id>` | `bridge-session-security.test.ts`, `ChatBridgeSeedLab` |
 | persistence | `chatbridge.eval.chatbridge-persistence-and-shell-artifacts`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>` | `app-aware-persistence.test.ts`, `ChatBridgeSeedLab` |
+| active catalog transition | `chatbridge.eval.chatbridge-active-reviewed-catalog-transition` | `active-reviewed-catalog-transition.test.ts` |
 
 Notes:
 
+- `CB-508` adds a traced active-catalog transition proof so the eval suite no
+  longer presents the legacy flagship set as the only reviewed-app future.
 - Story Builder auth/resource traces remain scenario-only legacy reference
   evidence until the active catalog and runtime queue reaches those later
   rebuild stories.
@@ -238,7 +248,8 @@ Notes:
   bridge-backed path for active runtime and one traced degraded recovery path;
   artifact preview stays on the separate `render-html-preview` seam.
 - Chess is the only active flagship app with traced manual smoke today. Drawing
-  Kit and Weather join this matrix in later Pack 05 stories, not in CB-006.
+  Kit and Weather are now present in the active reviewed catalog, but their
+  runtime/manual-smoke proof lands in later Pack 05 stories, not in CB-508.
 
 ## Starter Scenario Matrix
 

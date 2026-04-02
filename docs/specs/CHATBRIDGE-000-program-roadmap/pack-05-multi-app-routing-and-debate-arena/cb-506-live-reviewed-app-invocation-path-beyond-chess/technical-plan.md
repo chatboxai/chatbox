@@ -39,7 +39,8 @@
 ## Data Model / API Contracts
 
 - Request shape:
-  route decisions should be validated and normalized before invocation.
+  route decisions and single-app fallback heuristics should be validated and
+  normalized before invocation.
 - Response shape:
   invoke outcomes should update host-owned launch and recovery state with clear
   result metadata.
@@ -61,13 +62,15 @@
 
 - Unit tests:
   - reviewed invocation path selection
+  - natural Chess prompt coverage for opening-analysis, raw FEN, PGN, and
+    "best move" prompts
   - explicit invocation failure handling
 - Integration tests:
   prove fresh runtime can launch a non-Chess reviewed app from the live prompt
   path
 - E2E or smoke tests:
-  rerun manual fresh-thread prompts for Debate Arena and Story Builder launch
-  attempts
+  rerun manual fresh-thread prompts for Chess natural-language requests plus
+  the new non-Chess flagship launch attempts
 - Edge-case coverage mapping:
   missing route decisions, duplicate launches, and launch errors should be
   covered explicitly
@@ -91,7 +94,8 @@
 - Feature flags/toggles:
   a narrow host-side toggle is acceptable if smoke proof needs staged rollout
 - Observability checks:
-  trace the invoke path distinctly from clarify/refuse and chat-only fallbacks
+  trace the invoke path distinctly from clarify/refuse and chat-only fallbacks,
+  including when the resolved app remains Chess
 
 ## Validation Commands
 

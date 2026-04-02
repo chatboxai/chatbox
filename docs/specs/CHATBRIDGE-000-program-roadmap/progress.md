@@ -36,7 +36,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 
 | Pack | Control state | Story posture | Exit memo | Notes |
 |---|---|---|---|---|
-| Pack 00 | validated backfill complete | `CB-006` validated backfill | inherited baseline | SA-006 is closed by CB-006; supported desktop manual smoke and representative eval traces now land in `chatbox-chatbridge`, and the queue advances to `CB-305`. |
+| Pack 00 | reopened by smoke audit with one validated backfill | `CB-006` validated and `CB-007` planned | inherited baseline | SA-006 is closed by `CB-006`; the delta pass added `CB-007` for trace evidence quality, trace-family parity, and scriptable smoke inspection before runtime rebuild work continues. |
 | Pack 01 | reopened by smoke audit | `CB-105` planned backfill | inherited baseline | SA-007 reopened console and accessibility hygiene as the final cleanup story. |
 | Pack 02 | historical baseline | inherited `merged` baseline | inherited | Contracts and bridge foundations are assumed ready for post-Pack-4 execution. |
 | Pack 03 | reopened by smoke audit | `CB-305` planned backfill | inherited baseline | SA-005 reopened the real reviewed-app bridge launch seam. |
@@ -52,22 +52,24 @@ story is not listed here, it is either historical baseline or a parked legacy
 packet and should not be picked up next.
 
 1. Pack 00 -> `CB-006`
-2. Pack 03 -> `CB-305`
-3. Pack 05 -> `CB-508`
-4. Pack 05 -> `CB-506`
-5. Pack 05 -> `CB-509`
-6. Pack 05 -> `CB-510`
-7. Pack 05 -> `CB-507`
-8. Pack 01 -> `CB-105`
+2. Pack 00 -> `CB-007`
+3. Pack 03 -> `CB-305`
+4. Pack 05 -> `CB-508`
+5. Pack 05 -> `CB-506`
+6. Pack 05 -> `CB-509`
+7. Pack 05 -> `CB-510`
+8. Pack 05 -> `CB-507`
+9. Pack 01 -> `CB-105`
 
 ## Current Milestone
 
-- Active next gate: `CB-305`
-- Immediate next story after `CB-305`: `CB-508`
-- Status: `CB-006` validated; the smoke-audit rebuild queue remains active
+- Active next gate: `CB-007`
+- Immediate next story after `CB-007`: `CB-305`
+- Status: `CB-006` validated and `CB-007` is now the active Pack 00 follow-on
 - Result: Pack 00 observability proof is restored through the supported
-  desktop Seed Lab smoke flow and named LangSmith eval traces, while later
-  runtime/catalog rebuild work remains queued
+  desktop Seed Lab smoke flow and named LangSmith eval traces, but evidence
+  quality and scriptable smoke inspection still need one more backfill before
+  runtime/catalog rebuild work continues
 
 ## Pack 4 Exit Lock
 
@@ -107,6 +109,8 @@ smoke audit has reopened the program for a focused rebuild.
   the smoke-audit rebuild queue is complete.
 - Backfill stories required by this audit:
   - `CB-006` validated
+  - `CB-006` validated
+  - `CB-007`
   - `CB-305`
   - `CB-508`
   - `CB-506`

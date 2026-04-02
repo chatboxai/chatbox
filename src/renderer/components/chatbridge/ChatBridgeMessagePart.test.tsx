@@ -4,7 +4,11 @@
 
 import { MantineProvider } from '@mantine/core'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { createChatBridgeChessRuntimeSnapshot, writeChatBridgeDegradedCompletionValues } from '@shared/chatbridge'
+import {
+  createChatBridgeChessRuntimeSnapshot,
+  writeChatBridgeDegradedCompletionValues,
+  type ChatBridgeStoryBuilderState,
+} from '@shared/chatbridge'
 import type { MessageAppPart } from '@shared/types'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { ChatBridgeMessagePart } from './ChatBridgeMessagePart'
@@ -93,6 +97,86 @@ function createDegradedPart(): MessageAppPart {
         { id: 'continue-in-chat', label: 'Continue safely', variant: 'secondary' },
       ],
     }),
+  }
+}
+
+function createStoryBuilderState(mode: ChatBridgeStoryBuilderState['mode']): ChatBridgeStoryBuilderState {
+  return {
+    schemaVersion: 1,
+    mode,
+    drive: {
+      provider: 'google-drive',
+      status: 'connected',
+      statusLabel: mode === 'complete' ? 'Drive synced' : 'Drive connected',
+      detail:
+        mode === 'complete'
+          ? 'The completed chapter draft and checkpoint trail are saved in the host-approved Drive folder.'
+          : 'Host-issued Drive access is active for the classroom writing folder.',
+      connectedAs: 'student.writer@example.edu',
+      folderLabel: 'Creative Writing / Chapter 4',
+      lastSyncedLabel: mode === 'complete' ? 'Just now' : '2 minutes ago',
+    },
+    draft: {
+      title: 'Storm Lantern',
+      chapterLabel: 'Chapter 4',
+      summary: 'Mara hides the storm lantern before the flood siren starts and the library doors lock.',
+      excerpt:
+        'Mara tucked the lantern beneath the library desk and counted the sirens again before she dared to breathe.',
+      wordCount: mode === 'complete' ? 1048 : 812,
+      saveState: 'saved',
+      saveLabel: mode === 'complete' ? 'Final draft saved to Drive' : 'Saved to Drive 2 minutes ago',
+      userGoal: 'Finish chapter four and keep the latest checkpoint in Drive.',
+    },
+    checkpoints: [
+      {
+        checkpointId: 'draft-42',
+        label: mode === 'complete' ? 'Final checkpoint' : 'Checkpoint 42',
+        description:
+          mode === 'complete'
+            ? 'Completed chapter pass with resolved lantern reveal.'
+            : 'Latest draft with the lantern reveal and flood siren beat.',
+        savedAtLabel: mode === 'complete' ? 'Just now' : '2 minutes ago',
+        status: 'latest',
+        locationLabel: 'Creative Writing / Chapter 4',
+      },
+    ],
+    callout: {
+      eyebrow: 'Host guidance',
+      title: mode === 'complete' ? 'Completion stays in-thread' : 'Resume stays explicit',
+      description:
+        mode === 'complete'
+          ? 'The draft handoff, checkpoint trail, and next step remain visible in the host shell.'
+          : 'The host can reopen this checkpoint without exposing a raw Drive token to the app runtime.',
+    },
+    completion:
+      mode === 'complete'
+        ? {
+            title: 'Draft returned to chat',
+            description:
+              'The host preserved the completed chapter, Drive save, and revision cue for the next conversation turn.',
+            handoffLabel: 'Ask for revision notes or continue with chapter five.',
+            nextStepLabel: 'Continue the writing session from the final checkpoint if you want another pass.',
+          }
+        : undefined,
+  }
+}
+
+function createStoryBuilderPart(lifecycle: MessageAppPart['lifecycle']): MessageAppPart {
+  const mode = lifecycle === 'complete' ? 'complete' : lifecycle === 'ready' ? 'resume-ready' : 'active'
+
+  return {
+    type: 'app',
+    appId: 'story-builder',
+    appName: 'Story Builder',
+    appInstanceId: 'story-builder-1',
+    lifecycle,
+    title: 'Story Builder',
+    description: 'The host keeps auth, save, resume, and completion visible inside the writing shell.',
+    summary: 'Restored the active story draft and preserved the exportable checkpoint.',
+    statusText: lifecycle === 'complete' ? 'Complete' : lifecycle === 'ready' ? 'Resume ready' : 'Drafting',
+    values: {
+      chatbridgeStoryBuilder: createStoryBuilderState(mode),
+    },
   }
 }
 
@@ -188,5 +272,34 @@ describe('ChatBridgeMessagePart degraded recovery', () => {
         },
       },
     })
+  })
+})
+
+describe('ChatBridgeMessagePart Story Builder surface', () => {
+  it('renders the Story Builder writing desk inside the host shell', () => {
+    render(
+      <MantineProvider>
+        <ChatBridgeMessagePart part={createStoryBuilderPart('active')} />
+      </MantineProvider>
+    )
+
+    expect(screen.getByTestId('chatbridge-shell').getAttribute('data-state')).toBe('active')
+    expect(screen.getByTestId('story-builder-panel')).toBeTruthy()
+    expect(screen.getByText('Storm Lantern')).toBeTruthy()
+    expect(screen.getByText('Drive connected')).toBeTruthy()
+    expect(screen.getByText('Checkpoint 42')).toBeTruthy()
+  })
+
+  it('keeps the completion handoff inline for completed Story Builder sessions', () => {
+    render(
+      <MantineProvider>
+        <ChatBridgeMessagePart part={createStoryBuilderPart('complete')} />
+      </MantineProvider>
+    )
+
+    expect(screen.getByTestId('chatbridge-shell').getAttribute('data-state')).toBe('complete')
+    expect(screen.getByText('Completion handoff')).toBeTruthy()
+    expect(screen.getByText('Draft returned to chat')).toBeTruthy()
+    expect(screen.getByText(/continue with chapter five/i)).toBeTruthy()
   })
 })

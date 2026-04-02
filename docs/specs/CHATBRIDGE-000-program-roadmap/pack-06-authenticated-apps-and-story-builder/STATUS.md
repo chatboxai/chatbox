@@ -1,7 +1,7 @@
 # Pack 06 Status
 
-- Pack state: in_progress
-- Current story: CB-603
+- Pack state: validated
+- Current story: complete; Pack 07 is now the next queued lane
 - Unlock rule: Pack 5 exit proof is already present; continue strictly in Pack 6 story order
 
 ## Story Order
@@ -18,23 +18,30 @@
 | CB-601 | validated | Auth boundary is explicit; proceed to credential-handle lifecycle. |
 | CB-602 | validated | Credential handles are explicit; proceed to host-mediated resource proxy. |
 | CB-604 | validated | Host-mediated resource access is now explicit and auditable; proceed to Story Builder. |
-| CB-603 | in_progress | Prove connect, save, resume, and completion on the now-validated auth and resource seams. |
+| CB-603 | validated | Story Builder now proves host-owned connect/save/resume/completion; Pack 06 can exit and unlock Pack 07. |
 
 ## Exit Checklist
 
 - [x] CB-601 is at least `validated`
 - [x] CB-602 is at least `validated`
 - [x] CB-604 is at least `validated`
-- [ ] CB-603 is at least `validated`
+- [x] CB-603 is at least `validated`
 - [x] Auth boundary proof is linked
 - [x] Credential-handle lifecycle proof is linked
 - [x] Host-mediated resource proxy proof is linked
-- [ ] Story Builder save and resume continuity is linked
-- [ ] Pack-level exit memo is written below
+- [x] Story Builder save and resume continuity is linked
+- [x] Pack-level exit memo is written below
 
 ## Exit Memo
 
-Pending.
+Pack 06 is validated. CB-603 closes the flagship authenticated-app proof by
+putting Story Builder on the same host-owned auth broker, resource proxy,
+save/resume continuity, and completion handoff path that the earlier Pack 6
+foundations established. The renderer now exposes a typed Story Builder writing
+surface inside the ChatBridge shell, seeded fixtures carry that contract
+through local presets, and the story-level lifecycle scenario proves launch,
+Drive read, save, completion handoff, and the expired-auth failure path. Pack 7
+is unlocked.
 
 ## Current Notes
 
@@ -53,5 +60,13 @@ Pending.
   - host-owned resource proxy: `src/main/chatbridge/resource-proxy/index.ts`
   - happy path proof: `test/integration/chatbridge/scenarios/resource-proxy-access.test.ts`
   - failure proof: `src/main/chatbridge/resource-proxy/index.test.ts`
+- CB-603 now has:
+  - shared contract: `src/shared/chatbridge/story-builder.ts`
+  - seeded continuity proof: `src/shared/chatbridge/live-seeds.ts`
+  - renderer surface: `src/renderer/components/chatbridge/apps/story-builder/StoryBuilderPanel.tsx`
+  - shell wiring: `src/renderer/components/chatbridge/apps/surface.tsx`, `src/renderer/components/chatbridge/chatbridge.ts`, `src/renderer/components/chatbridge/ChatBridgeMessagePart.tsx`
+  - happy-path proof: `test/integration/chatbridge/scenarios/story-builder-lifecycle.test.ts`
+  - continuity proof: `test/integration/chatbridge/scenarios/app-aware-persistence.test.ts`
+  - renderer proof: `src/renderer/components/chatbridge/ChatBridgeMessagePart.test.tsx`
 - `pnpm test`, `pnpm lint`, `pnpm build`, and `git diff --check` pass under Node 20.
 - `pnpm check` remains blocked by existing upstream-wide type-contract drift outside Pack 6 surfaces.

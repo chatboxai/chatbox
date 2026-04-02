@@ -1,6 +1,9 @@
 import {
   getChatBridgeChessStatusText,
   isChatBridgeChessAppId,
+  isChatBridgeStoryBuilderAppId,
+  getChatBridgeStoryBuilderModeLabel,
+  getChatBridgeStoryBuilderState,
   normalizeChatBridgeChessRuntimeSnapshot,
   readChatBridgeDegradedCompletion,
   type ChatBridgeRecoveryAction as DegradedRecoveryAction,
@@ -207,6 +210,41 @@ export function getMessageAppPartViewModel(part: MessageAppPart): ChatBridgeShel
         part.error ||
         snapshot.feedback?.message ||
         'The host can still explain the latest chess board state if the live runtime stops responding.',
+    }
+  }
+
+  if (isChatBridgeStoryBuilderAppId(part.appId)) {
+    const storyBuilderState = getChatBridgeStoryBuilderState(part.values?.chatbridgeStoryBuilder)
+
+    if (storyBuilderState) {
+      const draftLabel = `${storyBuilderState.draft.chapterLabel}: ${storyBuilderState.draft.title}`
+      const surfaceDescription =
+        storyBuilderState.mode === 'complete'
+          ? storyBuilderState.completion?.description ||
+            'The host kept the completed draft, checkpoint trail, and next step visible in the thread.'
+          : storyBuilderState.draft.summary
+
+      return {
+        state,
+        title: part.title || 'Story Builder',
+        description:
+          part.description ||
+          {
+            'needs-auth': `Story Builder is waiting on host-managed Drive authorization before it can reopen ${draftLabel}.`,
+            active: `Story Builder is drafting ${draftLabel} inside the host-owned shell.`,
+            'resume-ready': `Story Builder has a resumable checkpoint ready for ${draftLabel}.`,
+            complete: `Story Builder finished ${draftLabel} and handed the draft back to the conversation.`,
+            degraded: `Story Builder paused in a recoverable state while working on ${draftLabel}.`,
+          }[storyBuilderState.mode],
+        surfaceTitle: storyBuilderState.mode === 'complete' ? 'Draft handoff' : 'Writing desk',
+        surfaceDescription,
+        statusLabel: part.statusText || getChatBridgeStoryBuilderModeLabel(storyBuilderState.mode),
+        fallbackTitle: part.fallbackTitle || 'Story Builder fallback',
+        fallbackText:
+          part.fallbackText ||
+          part.error ||
+          'The host can still keep the latest Story Builder checkpoint and recovery path visible in the thread.',
+      }
     }
   }
 

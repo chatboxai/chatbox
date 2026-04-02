@@ -1,6 +1,7 @@
 import type { MessageAppPart } from '@shared/types'
 import { applyChatBridgeRecoveryAction, isChatBridgeChessAppId } from '@shared/chatbridge'
 import { ChatBridgeShell } from './ChatBridgeShell'
+import { getChatBridgeSurfaceContent } from './apps/surface'
 import { getMessageAppPartViewModel } from './chatbridge'
 import { ChessRuntime } from './apps/chess/ChessRuntime'
 
@@ -17,6 +18,7 @@ export function ChatBridgeMessagePart({ part, onUpdatePart, sessionId, messageId
     part.lifecycle === 'active' && isChatBridgeChessAppId(part.appId) ? (
       <ChessRuntime part={part} onUpdatePart={onUpdatePart} sessionId={sessionId} messageId={messageId} />
     ) : undefined
+  const inlineSurface = runtime ?? getChatBridgeSurfaceContent(part)
   const primaryAction = viewModel.recoveryActions?.find((action) => action.variant !== 'secondary')
   const secondaryAction = viewModel.recoveryActions?.find((action) => action.variant === 'secondary')
 
@@ -58,7 +60,7 @@ export function ChatBridgeMessagePart({ part, onUpdatePart, sessionId, messageId
       primaryAction={buildShellAction(primaryAction)}
       secondaryAction={buildShellAction(secondaryAction)}
     >
-      {runtime}
+      {inlineSurface}
     </ChatBridgeShell>
   )
 }

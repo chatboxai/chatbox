@@ -14,6 +14,10 @@ import {
 } from './degraded-completion'
 import { createChatBridgeAppEvent, applyChatBridgeAppEvent } from './events'
 import { createChatBridgeAppInstance } from './instance'
+import {
+  ChatBridgeStoryBuilderStateSchema,
+  type ChatBridgeStoryBuilderMode,
+} from './story-builder'
 import type { Message, Session, SessionThread } from '../types'
 
 type ToolCallState = 'call' | 'result' | 'error'
@@ -223,6 +227,193 @@ function createHtmlPreviewMessage(id: string, timestamp: number): Message {
   ].join('\n')
 
   return createTextMessage(id, 'assistant', htmlPreviewMarkdown, timestamp)
+}
+
+function createStoryBuilderState(options: {
+  mode: ChatBridgeStoryBuilderMode
+  driveStatus: 'needs-auth' | 'connecting' | 'connected' | 'expired'
+  driveStatusLabel: string
+  driveDetail: string
+  chapterLabel: string
+  title: string
+  summary: string
+  excerpt: string
+  wordCount: number
+  saveState: 'saved' | 'saving' | 'attention'
+  saveLabel: string
+  connectedAs?: string
+  folderLabel?: string
+  lastSyncedLabel?: string
+  calloutTitle?: string
+  calloutDescription?: string
+  checkpoints?: Array<{
+    checkpointId: string
+    label: string
+    description: string
+    savedAtLabel: string
+    status: 'latest' | 'saved' | 'attention'
+    locationLabel?: string
+  }>
+  completion?: {
+    title: string
+    description: string
+    handoffLabel?: string
+    nextStepLabel?: string
+  }
+  userGoal?: string
+}) {
+  return ChatBridgeStoryBuilderStateSchema.parse({
+    schemaVersion: 1,
+    mode: options.mode,
+    drive: {
+      provider: 'google-drive',
+      status: options.driveStatus,
+      statusLabel: options.driveStatusLabel,
+      detail: options.driveDetail,
+      connectedAs: options.connectedAs,
+      folderLabel: options.folderLabel,
+      lastSyncedLabel: options.lastSyncedLabel,
+    },
+    draft: {
+      title: options.title,
+      chapterLabel: options.chapterLabel,
+      summary: options.summary,
+      excerpt: options.excerpt,
+      wordCount: options.wordCount,
+      saveState: options.saveState,
+      saveLabel: options.saveLabel,
+      userGoal: options.userGoal,
+    },
+    checkpoints: options.checkpoints ?? [],
+    callout:
+      options.calloutTitle && options.calloutDescription
+        ? {
+            eyebrow: 'Host guidance',
+            title: options.calloutTitle,
+            description: options.calloutDescription,
+          }
+        : undefined,
+    completion: options.completion,
+  })
+}
+
+function createStoryBuilderActiveState() {
+  return createStoryBuilderState({
+    mode: 'active',
+    driveStatus: 'connected',
+    driveStatusLabel: 'Drive connected',
+    driveDetail: 'Host-issued Drive access is active for the classroom writing folder.',
+    connectedAs: 'student.writer@example.edu',
+    folderLabel: 'Creative Writing / Chapter 4',
+    lastSyncedLabel: '2 minutes ago',
+    chapterLabel: 'Chapter 4',
+    title: 'Storm Lantern',
+    summary: 'Mara hides the storm lantern before the flood siren starts and the library doors lock.',
+    excerpt:
+      'Mara tucked the lantern beneath the library desk and counted the sirens again before she dared to breathe.',
+    wordCount: 812,
+    saveState: 'saved',
+    saveLabel: 'Saved to Drive 2 minutes ago',
+    userGoal: 'Finish chapter four and keep the latest checkpoint in Drive.',
+    calloutTitle: 'Resume stays explicit',
+    calloutDescription: 'The host can reopen this checkpoint without exposing a raw Drive token to the app runtime.',
+    checkpoints: [
+      {
+        checkpointId: 'draft-42',
+        label: 'Checkpoint 42',
+        description: 'Latest draft with the lantern reveal and flood siren beat.',
+        savedAtLabel: '2 minutes ago',
+        status: 'latest',
+        locationLabel: 'Creative Writing / Chapter 4',
+      },
+      {
+        checkpointId: 'draft-41',
+        label: 'Checkpoint 41',
+        description: 'Previous chapter pass before the flood siren escalation.',
+        savedAtLabel: 'Yesterday',
+        status: 'saved',
+        locationLabel: 'Creative Writing / Archive',
+      },
+    ],
+  })
+}
+
+function createStoryBuilderResumeReadyState() {
+  return createStoryBuilderState({
+    mode: 'resume-ready',
+    driveStatus: 'connected',
+    driveStatusLabel: 'Checkpoint ready',
+    driveDetail: 'The host already has permission to reopen the latest Drive-backed draft.',
+    connectedAs: 'student.writer@example.edu',
+    folderLabel: 'Creative Writing / Chapter 4',
+    lastSyncedLabel: '12 minutes ago',
+    chapterLabel: 'Chapter 4',
+    title: 'Storm Lantern',
+    summary: 'The latest checkpoint is ready to reopen without leaving the thread.',
+    excerpt:
+      'Mara stopped at the stairwell and read the warning light again before deciding whether to go back for the lantern.',
+    wordCount: 788,
+    saveState: 'saved',
+    saveLabel: 'Checkpoint ready to resume',
+    calloutTitle: 'Resume from the latest safe save',
+    calloutDescription: 'Story Builder can reopen the latest checkpoint immediately from the host shell.',
+    checkpoints: [
+      {
+        checkpointId: 'draft-42',
+        label: 'Checkpoint 42',
+        description: 'Latest Drive-backed draft ready to resume.',
+        savedAtLabel: '12 minutes ago',
+        status: 'latest',
+        locationLabel: 'Creative Writing / Chapter 4',
+      },
+    ],
+  })
+}
+
+function createStoryBuilderCompletionState() {
+  return createStoryBuilderState({
+    mode: 'complete',
+    driveStatus: 'connected',
+    driveStatusLabel: 'Drive synced',
+    driveDetail: 'The finished draft and checkpoint trail are saved in the host-approved Drive folder.',
+    connectedAs: 'student.writer@example.edu',
+    folderLabel: 'Creative Writing / Chapter 4',
+    lastSyncedLabel: 'Just now',
+    chapterLabel: 'Chapter 4',
+    title: 'Storm Lantern',
+    summary: 'The completed chapter draft is back in chat with the latest checkpoint and next revision cue.',
+    excerpt:
+      'When the lights returned, Mara lifted the lantern from beneath the desk and saw her own reflection in the wet brass.',
+    wordCount: 1048,
+    saveState: 'saved',
+    saveLabel: 'Final draft saved to Drive',
+    calloutTitle: 'Completion stays in-thread',
+    calloutDescription: 'The draft handoff, checkpoint trail, and next step remain visible in the host shell.',
+    checkpoints: [
+      {
+        checkpointId: 'draft-43',
+        label: 'Final checkpoint',
+        description: 'Completed chapter pass with resolved lantern reveal.',
+        savedAtLabel: 'Just now',
+        status: 'latest',
+        locationLabel: 'Creative Writing / Chapter 4',
+      },
+      {
+        checkpointId: 'draft-42',
+        label: 'Checkpoint 42',
+        description: 'Latest resumable draft before the final pass.',
+        savedAtLabel: '18 minutes ago',
+        status: 'saved',
+        locationLabel: 'Creative Writing / Chapter 4',
+      },
+    ],
+    completion: {
+      title: 'Draft returned to chat',
+      description: 'The host preserved the completed chapter, Drive save, and revision cue for the next conversation turn.',
+      handoffLabel: 'Ask for revision notes or continue with chapter five.',
+      nextStepLabel: 'Continue the writing session from the final checkpoint if you want another pass.',
+    },
+  })
 }
 
 function createDegradedCompletionValues(options: {
@@ -724,6 +915,9 @@ export function buildAppAwareSessionFixture(): {
       lifecycle: 'active',
       attachmentName: 'story-builder-state.json',
       summary: 'Restored the active story draft and preserved the exportable checkpoint.',
+      values: {
+        chatbridgeStoryBuilder: createStoryBuilderActiveState(),
+      },
       timestamp: 3,
     }
   )
@@ -742,6 +936,9 @@ export function buildAppAwareSessionFixture(): {
           toolCallId: 'tool-history-assistant',
           lifecycle: 'complete',
           summary: 'Saved the previous draft summary for later follow-up questions.',
+          values: {
+            chatbridgeStoryBuilder: createStoryBuilderCompletionState(),
+          },
           timestamp: 2,
         }
       ),
@@ -840,6 +1037,9 @@ export function buildChatBridgeLifecycleTourSessionFixture(): Omit<Session, 'id'
         toolCallId: 'tool-tour-ready',
         lifecycle: 'ready',
         summary: 'Story Builder is staged and waiting for the next action.',
+        values: {
+          chatbridgeStoryBuilder: createStoryBuilderResumeReadyState(),
+        },
         timestamp: 4,
       }),
       createAppLifecycleMessage(
@@ -850,6 +1050,9 @@ export function buildChatBridgeLifecycleTourSessionFixture(): Omit<Session, 'id'
           toolCallId: 'tool-tour-active',
           lifecycle: 'active',
           summary: 'The runtime is live inside the conversation.',
+          values: {
+            chatbridgeStoryBuilder: createStoryBuilderActiveState(),
+          },
           timestamp: 5,
         }
       ),
@@ -861,6 +1064,9 @@ export function buildChatBridgeLifecycleTourSessionFixture(): Omit<Session, 'id'
           toolCallId: 'tool-tour-complete',
           lifecycle: 'complete',
           summary: 'Completion stays inline in the same host shell.',
+          values: {
+            chatbridgeStoryBuilder: createStoryBuilderCompletionState(),
+          },
           timestamp: 6,
         }
       ),

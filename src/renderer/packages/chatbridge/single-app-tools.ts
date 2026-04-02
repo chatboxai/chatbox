@@ -1,19 +1,19 @@
 import type { ToolSet } from 'ai'
 import { z } from 'zod'
+import type { ChatBridgeRouteDecision, ChatBridgeJsonSchema, ChatBridgeToolSchema, ReviewedAppCatalogEntry } from '@shared/chatbridge'
 import {
   CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
   createChatBridgeHostTool,
-} from '@shared/chatbridge/tools'
-import {
-  CHATBRIDGE_CHESS_APP_ID,
-  CHATBRIDGE_CHESS_TOOL_NAME,
   ensureDefaultReviewedAppsRegistered,
-} from '@shared/chatbridge/reviewed-app-catalog'
-import {
   resolveReviewedSingleAppSelection,
   type ReviewedSingleAppSelection,
-} from '@shared/chatbridge/single-app-discovery'
+} from '@shared/chatbridge'
+import { getReviewedAppRouteDecision } from './router/decision'
 import type { Message } from '@shared/types'
+
+const DEFAULT_LIVE_REVIEWED_APP_CONTEXT = {
+  grantedPermissions: ['session.context.read'],
+} as const
 
 const ChessPrepareSessionInputSchema = z.object({
   request: z.string().trim().min(1),
@@ -22,63 +22,219 @@ const ChessPrepareSessionInputSchema = z.object({
 })
 
 type ChessPrepareSessionInput = z.infer<typeof ChessPrepareSessionInputSchema>
+type GenericReviewedAppToolInput = Record<string, unknown>
+type ReviewedAppToolExecutor = (input: GenericReviewedAppToolInput) => Promise<unknown> | unknown
+type ReviewedAppToolExecutors = Record<string, ReviewedAppToolExecutor> & {
+  chess_prepare_session?: (input: ChessPrepareSessionInput) => Promise<unknown> | unknown
+}
 
 type CreateReviewedSingleAppToolSetOptions = {
   messages: Message[]
-  executors?: {
-    chess_prepare_session?: (input: ChessPrepareSessionInput) => Promise<unknown> | unknown
+  contextInput?: unknown
+  executors?: ReviewedAppToolExecutors
+}
+
+type ReviewedSingleAppToolSelectionSource = 'route-decision' | 'natural-chess-fallback' | 'none'
+
+type ReviewedSingleAppToolSetResult = {
+  selection: ReviewedSingleAppSelection
+  tools: ToolSet
+  routeDecision: ChatBridgeRouteDecision
+  selectionSource: ReviewedSingleAppToolSelectionSource
+}
+
+function getLatestUserPrompt(messages: Message[]) {
+  const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')
+  if (!latestUserMessage) {
+    return ''
+  }
+
+  return latestUserMessage.contentParts
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join(' ')
+    .trim()
+}
+
+function deriveCapability(appId: string, toolName: string) {
+  const normalizedAppId = appId.replace(/-/g, '_')
+  const suffix = toolName.startsWith(`${normalizedAppId}_`) ? toolName.slice(normalizedAppId.length + 1) : toolName
+  return suffix.replace(/[_:]/g, '-')
+}
+
+function createInvalidSchemaError(toolName: string, reason: string) {
+  return new Error(`Unsupported reviewed tool schema for "${toolName}": ${reason}`)
+}
+
+function toZodSchema(schema: ChatBridgeJsonSchema, path = 'root'): z.ZodTypeAny {
+  switch (schema.type) {
+    case 'string': {
+      let result = z.string()
+      if (typeof schema.minLength === 'number') {
+        result = result.min(schema.minLength)
+      }
+      if (typeof schema.maxLength === 'number') {
+        result = result.max(schema.maxLength)
+      }
+      return result
+    }
+    case 'number': {
+      let result = z.number()
+      if (typeof schema.minimum === 'number') {
+        result = result.min(schema.minimum)
+      }
+      if (typeof schema.maximum === 'number') {
+        result = result.max(schema.maximum)
+      }
+      return result
+    }
+    case 'integer': {
+      let result = z.number().int()
+      if (typeof schema.minimum === 'number') {
+        result = result.min(schema.minimum)
+      }
+      if (typeof schema.maximum === 'number') {
+        result = result.max(schema.maximum)
+      }
+      return result
+    }
+    case 'boolean':
+      return z.boolean()
+    case 'array': {
+      if (!schema.items) {
+        throw createInvalidSchemaError(path, 'array schema is missing items')
+      }
+
+      let result = z.array(toZodSchema(schema.items, `${path}[]`))
+      if (typeof schema.minItems === 'number') {
+        result = result.min(schema.minItems)
+      }
+      if (typeof schema.maxItems === 'number') {
+        result = result.max(schema.maxItems)
+      }
+      return result
+    }
+    case 'object': {
+      const properties = schema.properties ?? {}
+      const required = new Set(schema.required ?? [])
+      const shape = Object.fromEntries(
+        Object.entries(properties).map(([key, value]) => {
+          const propertySchema = toZodSchema(value, `${path}.${key}`)
+          return [key, required.has(key) ? propertySchema : propertySchema.optional()]
+        })
+      )
+
+      return z.object(shape).strict()
+    }
+    default:
+      throw createInvalidSchemaError(path, `unsupported schema type "${schema.type ?? 'unknown'}"`)
   }
 }
 
-function createChessPrepareSessionTool(
-  execute?: (input: ChessPrepareSessionInput) => Promise<unknown> | unknown
+function createSelectionFromRouteDecision(
+  routeDecision: ChatBridgeRouteDecision,
+  entries: ReviewedAppCatalogEntry[]
+): ReviewedSingleAppSelection | null {
+  if (routeDecision.kind !== 'invoke' || !routeDecision.selectedAppId) {
+    return null
+  }
+
+  const catalogEntry = entries.find((entry) => entry.manifest.appId === routeDecision.selectedAppId)
+  const toolName = catalogEntry?.manifest.toolSchemas[0]?.name
+  if (!catalogEntry || !toolName) {
+    return null
+  }
+
+  const selectedMatch = routeDecision.matches.find((match) => match.appId === routeDecision.selectedAppId)
+
+  return {
+    status: 'matched',
+    appId: catalogEntry.manifest.appId,
+    appName: catalogEntry.manifest.name,
+    toolName,
+    matchedTerms: selectedMatch?.matchedTerms ?? [],
+    promptText: routeDecision.prompt,
+    catalogEntry,
+  }
+}
+
+function createReviewedAppLaunchTool(
+  selection: Extract<ReviewedSingleAppSelection, { status: 'matched' }>,
+  execute?: ReviewedAppToolExecutor
 ) {
+  const toolSchema = selection.catalogEntry.manifest.toolSchemas.find((schema) => schema.name === selection.toolName)
+  if (!toolSchema) {
+    throw new Error(`Reviewed tool "${selection.toolName}" is missing from app "${selection.appId}".`)
+  }
+
+  const inputSchema =
+    selection.toolName === 'chess_prepare_session' ? ChessPrepareSessionInputSchema : toZodSchema(toolSchema.inputSchema, toolSchema.name)
+
   return createChatBridgeHostTool({
-    description:
-      'Prepare the reviewed Chess capability for explicit chess, FEN, PGN, opening, and move-analysis requests.',
-    appId: CHATBRIDGE_CHESS_APP_ID,
+    description: toolSchema.description,
+    appId: selection.appId,
     schemaVersion: CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
     effect: 'read',
     retryClassification: 'safe',
-    inputSchema: ChessPrepareSessionInputSchema,
-    execute: async (input) =>
-      execute?.(input) ?? {
-        appId: CHATBRIDGE_CHESS_APP_ID,
-        appName: 'Chess',
-        capability: 'prepare-session',
-        launchReady: true,
-        summary: 'Prepared the reviewed Chess session request for the host-owned launch path.',
-        request: input.request,
-        fen: input.fen,
-        pgn: input.pgn,
-      },
+    inputSchema,
+    execute: async (input) => {
+      const normalizedInput = input as GenericReviewedAppToolInput
+
+      return (
+        execute?.(normalizedInput) ?? {
+          appId: selection.appId,
+          appName: selection.appName,
+          capability: deriveCapability(selection.appId, selection.toolName),
+          launchReady: true,
+          summary: `Prepared the reviewed ${selection.appName} request for the host-owned launch path.`,
+          ...(typeof normalizedInput.request === 'string' ? { request: normalizedInput.request } : {}),
+          ...(typeof normalizedInput.fen === 'string' ? { fen: normalizedInput.fen } : {}),
+          ...(typeof normalizedInput.pgn === 'string' ? { pgn: normalizedInput.pgn } : {}),
+        }
+      )
+    },
   })
 }
 
-export function createReviewedSingleAppToolSet(options: CreateReviewedSingleAppToolSetOptions): {
-  selection: ReviewedSingleAppSelection
-  tools: ToolSet
-} {
-  const selection = resolveReviewedSingleAppSelection(options.messages, ensureDefaultReviewedAppsRegistered())
-
+function createToolsForSelection(
+  selection: ReviewedSingleAppSelection,
+  executors: ReviewedAppToolExecutors | undefined
+): ToolSet {
   if (selection.status !== 'matched') {
-    return {
-      selection,
-      tools: {},
-    }
-  }
-
-  if (selection.toolName === CHATBRIDGE_CHESS_TOOL_NAME) {
-    return {
-      selection,
-      tools: {
-        [CHATBRIDGE_CHESS_TOOL_NAME]: createChessPrepareSessionTool(options.executors?.chess_prepare_session),
-      },
-    }
+    return {}
   }
 
   return {
-    selection,
-    tools: {},
+    [selection.toolName]: createReviewedAppLaunchTool(selection, executors?.[selection.toolName]),
+  }
+}
+
+export function createReviewedSingleAppToolSet(options: CreateReviewedSingleAppToolSetOptions): ReviewedSingleAppToolSetResult {
+  const entries = ensureDefaultReviewedAppsRegistered()
+  const promptText = getLatestUserPrompt(options.messages)
+  const { decision: routeDecision } = getReviewedAppRouteDecision({
+    promptInput: promptText,
+    contextInput: options.contextInput ?? DEFAULT_LIVE_REVIEWED_APP_CONTEXT,
+    entries,
+  })
+
+  const routeSelection = createSelectionFromRouteDecision(routeDecision, entries)
+  if (routeSelection) {
+    return {
+      selection: routeSelection,
+      tools: createToolsForSelection(routeSelection, options.executors),
+      routeDecision,
+      selectionSource: 'route-decision',
+    }
+  }
+
+  const fallbackSelection = resolveReviewedSingleAppSelection(options.messages, entries)
+  const selectionSource = fallbackSelection.status === 'matched' ? 'natural-chess-fallback' : 'none'
+
+  return {
+    selection: fallbackSelection,
+    tools: createToolsForSelection(fallbackSelection, options.executors),
+    routeDecision,
+    selectionSource,
   }
 }

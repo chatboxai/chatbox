@@ -1,0 +1,18 @@
+{
+  "storyId": "CB-506",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "failed-as-expected",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/single-app-discovery.test.ts src/renderer/packages/chatbridge/single-app-tools.test.ts test/integration/chatbridge/scenarios/live-reviewed-app-invocation.test.ts",
+    "failureSummary": [
+      "Natural Chess prompts with raw FEN or opening-analysis phrasing still resolved as ambiguous instead of routing into Chess.",
+      "The reviewed single-app helper still exposed Chess as the only executable reviewed tool and returned chat-only for explicit Drawing Kit prompts.",
+      "The live streamText path mounted no reviewed Drawing Kit tool, so an explicit non-Chess flagship prompt could not produce a reviewed app launch part."
+    ]
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/single-app-discovery.test.ts src/renderer/packages/chatbridge/single-app-tools.test.ts test/integration/chatbridge/scenarios/live-reviewed-app-invocation.test.ts"
+  }
+}

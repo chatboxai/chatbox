@@ -142,6 +142,8 @@ Every orchestration-heavy ChatBridge story should define at least:
 
 ### ChatBridge lifecycle seams
 
+- live reviewed invoke selection and natural-Chess fallback:
+  `src/renderer/packages/chatbridge/single-app-tools.ts`
 - host bridge runtime:
   `src/renderer/packages/chatbridge/bridge/host-controller.ts`
 - reviewed-app launch normalization:
@@ -158,6 +160,15 @@ Every orchestration-heavy ChatBridge story should define at least:
 Every `getModel(...)` path now returns a LangSmith-wrapped model through
 `src/shared/providers/index.ts`, so chat, stream, and paint calls emit child
 LLM runs even when the caller only adds a parent chain trace.
+
+`CB-506` also adds a reviewed route-decision event from
+`src/renderer/packages/model-calls/stream-text.ts`:
+
+- event name:
+  `chatbridge.routing.reviewed-app-decision`
+- key outputs:
+  `decisionKind`, `selectedAppId`, `selectionStatus`, `selectionSource`,
+  `toolNames`
 
 ## Trace Naming Contract
 
@@ -247,6 +258,13 @@ Notes:
 - CB-305 now makes reviewed-app launch evidence explicit with one traced
   bridge-backed path for active runtime and one traced degraded recovery path;
   artifact preview stays on the separate `render-html-preview` seam.
+- `CB-506` extends that reviewed-app launch evidence to the live invoke path:
+  explicit Drawing Kit prompts now resolve through the reviewed route decision,
+  natural Chess prompts stay on Chess through the narrow fallback seam, and
+  representative proof traces live at
+  `chatbridge.eval.chatbridge-live-reviewed-app-invocation-cb-506-doc-proof-active-drawing`,
+  `chatbridge.eval.chatbridge-live-reviewed-app-invocation-cb-506-doc-proof-natural-chess`,
+  and `chatbridge.eval.chatbridge-live-reviewed-app-invocation-cb-506-doc-proof-failure`.
 - Chess is the only active flagship app with traced manual smoke today. Drawing
   Kit and Weather are now present in the active reviewed catalog, but their
   runtime/manual-smoke proof lands in later Pack 05 stories, not in CB-508.

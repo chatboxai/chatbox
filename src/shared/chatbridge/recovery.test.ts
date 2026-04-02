@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { MessageAppPart } from '../types/session'
 import { getChatBridgeRecoveryState, hasChatBridgeDegradedRecovery } from './recovery'
+import {
+  createChatBridgeTimeoutRecoveryContract,
+  writeChatBridgeRecoveryContractValues,
+} from './recovery-contract'
 
 function createPart(partial: Partial<MessageAppPart>): MessageAppPart {
   return {
@@ -102,5 +106,37 @@ describe('chatbridge recovery normalization', () => {
 
     expect(getChatBridgeRecoveryState(part)).toBeNull()
     expect(hasChatBridgeDegradedRecovery(part)).toBe(false)
+  })
+
+  it('derives explainable follow-up prompts from explicit recovery contracts', () => {
+    const recovery = getChatBridgeRecoveryState(
+      createPart({
+        lifecycle: 'error',
+        values: writeChatBridgeRecoveryContractValues(
+          undefined,
+          createChatBridgeTimeoutRecoveryContract({
+            appId: 'story-builder',
+            appName: 'Story Builder',
+            appInstanceId: 'story-builder-1',
+            bridgeSessionId: 'bridge-timeout',
+            waitedMs: 10_000,
+          })
+        ),
+      })
+    )
+
+    expect(recovery).toMatchObject({
+      label: 'Host-owned recovery',
+      summary: 'Story Builder timed out before the host could trust a live response, so recovery stays explicit in the thread.',
+      actions: [
+        {
+          label: 'Continue safely',
+        },
+        {
+          label: 'Ask for explanation',
+        },
+      ],
+    })
+    expect(recovery?.actions?.[1].prompt).toContain('Explain what interrupted the previous Story Builder run')
   })
 })

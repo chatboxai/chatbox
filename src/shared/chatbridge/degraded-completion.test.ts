@@ -5,6 +5,10 @@ import {
   readChatBridgeDegradedCompletion,
   writeChatBridgeDegradedCompletionValues,
 } from './degraded-completion'
+import {
+  createChatBridgeMalformedBridgeRecoveryContract,
+  writeChatBridgeRecoveryContractValues,
+} from './recovery-contract'
 import { describe, expect, it } from 'vitest'
 
 function createBasePart(overrides: Partial<MessageAppPart> = {}): MessageAppPart {
@@ -92,6 +96,34 @@ describe('degraded completion helpers', () => {
           requestedActionId: 'continue-in-chat',
           statusLabel: 'Continue safely',
         },
+      },
+    })
+  })
+
+  it('maps explicit recovery contracts into degraded completion surfaces', () => {
+    const degraded = readChatBridgeDegradedCompletion(
+      createBasePart({
+        lifecycle: 'error',
+        values: writeChatBridgeRecoveryContractValues(
+          undefined,
+          createChatBridgeMalformedBridgeRecoveryContract({
+            appId: 'story-builder',
+            appInstanceId: 'story-builder-1',
+            bridgeSessionId: 'bridge-1',
+            rawKind: 'app.state',
+            issues: ['snapshot.route: Required'],
+          })
+        ),
+      })
+    )
+
+    expect(degraded).toMatchObject({
+      kind: 'runtime-error',
+      statusLabel: 'Malformed event',
+      title: 'story-builder sent malformed bridge data',
+      actions: [{ id: 'dismiss-runtime' }, { id: 'ask-for-explanation' }],
+      supportPanel: {
+        title: 'What still holds',
       },
     })
   })

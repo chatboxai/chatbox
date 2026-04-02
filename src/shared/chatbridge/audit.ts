@@ -14,6 +14,7 @@ export const ChatBridgeAuditCategorySchema = z.enum([
   'auth.handle',
   'resource.action',
   'lifecycle.completion',
+  'lifecycle.recovery',
 ])
 export type ChatBridgeAuditCategory = z.infer<typeof ChatBridgeAuditCategorySchema>
 

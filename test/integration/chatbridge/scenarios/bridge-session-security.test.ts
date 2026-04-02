@@ -122,6 +122,8 @@ describe('ChatBridge launch-scoped bridge handshake', () => {
   it('rejects replayed app-state events after the bridge is active', async () => {
     const acceptedEvents: string[] = []
     const rejectedReasons: string[] = []
+    const recoveryClasses: string[] = []
+    const recoveryAudits: string[] = []
 
     const controller = createBridgeHostController({
       appId: 'artifact-preview',
@@ -133,6 +135,8 @@ describe('ChatBridge launch-scoped bridge handshake', () => {
       now: () => 10_000,
       onAcceptedAppEvent: (event) => acceptedEvents.push(event.kind),
       onRejectedAppEvent: (_event, reason) => rejectedReasons.push(reason),
+      onRecoveryDecision: (decision) => recoveryClasses.push(decision.failureClass),
+      onRecoveryAudit: (event) => recoveryAudits.push(event.category),
     })
 
     let appPort: MockMessagePort | null = null
@@ -194,5 +198,93 @@ describe('ChatBridge launch-scoped bridge handshake', () => {
 
     expect(acceptedEvents).toEqual(['app.state'])
     expect(rejectedReasons).toEqual(['replayed-sequence', 'duplicate-idempotency-key'])
+    expect(recoveryClasses).toEqual(['bridge-protocol-rejection', 'bridge-protocol-rejection'])
+    expect(recoveryAudits).toEqual(['lifecycle.recovery', 'lifecycle.recovery'])
+  })
+
+  it('fails closed on malformed bridge traffic and launch timeouts with explicit recovery signals', async () => {
+    const recoveryClasses: string[] = []
+    const traces: string[] = []
+
+    const controller = createBridgeHostController({
+      appId: 'artifact-preview',
+      appInstanceId: 'app-instance-timeout',
+      expectedOrigin: 'https://artifact-preview.chatboxai.app',
+      capabilities: ['render-html-preview'],
+      createMessageChannel,
+      createId: createDeterministicIds(['bridge-session-timeout', 'bridge-token-timeout', 'bridge-nonce-timeout']),
+      now: () => 5_000,
+      ttlMs: 500,
+      onRecoveryDecision: (decision) => recoveryClasses.push(decision.failureClass),
+      onTrace: (trace) => traces.push(trace.type),
+    })
+
+    let appPort: MockMessagePort | null = null
+    controller.attach({
+      postMessage(_message, _targetOrigin, transfer) {
+        appPort = transfer?.[0] as MockMessagePort
+      },
+    })
+
+    appPort?.postMessage({
+      kind: 'app.state',
+      bridgeSessionId: 'bridge-session-timeout',
+      appInstanceId: 'app-instance-timeout',
+      bridgeToken: 'bridge-token-timeout',
+      sequence: 1,
+      snapshot: {
+        route: '/preview',
+      },
+    })
+
+    const readyExpectation = expect(controller.waitForReady()).rejects.toThrow(/timed out/i)
+    await vi.advanceTimersByTimeAsync(500)
+    await readyExpectation
+    expect(recoveryClasses).toEqual(['malformed-bridge-event', 'timeout'])
+    expect(traces).toEqual(['session.attached', 'recovery.required', 'app.event.invalid', 'recovery.required'])
+  })
+
+  it('emits an explicit runtime-crash recovery when the app reports app.error', async () => {
+    const recoveryClasses: string[] = []
+
+    const controller = createBridgeHostController({
+      appId: 'artifact-preview',
+      appInstanceId: 'app-instance-crash',
+      expectedOrigin: 'https://artifact-preview.chatboxai.app',
+      capabilities: ['render-html-preview'],
+      createMessageChannel,
+      createId: createDeterministicIds(['bridge-session-crash', 'bridge-token-crash', 'bridge-nonce-crash']),
+      now: () => 20_000,
+      onRecoveryDecision: (decision) => recoveryClasses.push(decision.failureClass),
+    })
+
+    let appPort: MockMessagePort | null = null
+    controller.attach({
+      postMessage(_message, _targetOrigin, transfer) {
+        appPort = transfer?.[0] as MockMessagePort
+      },
+    })
+
+    appPort?.postMessage({
+      kind: 'app.ready',
+      bridgeSessionId: 'bridge-session-crash',
+      appInstanceId: 'app-instance-crash',
+      bridgeToken: 'bridge-token-crash',
+      ackNonce: 'bridge-nonce-crash',
+      sequence: 1,
+    })
+    await controller.waitForReady()
+
+    appPort?.postMessage({
+      kind: 'app.error',
+      bridgeSessionId: 'bridge-session-crash',
+      appInstanceId: 'app-instance-crash',
+      bridgeToken: 'bridge-token-crash',
+      sequence: 2,
+      idempotencyKey: 'error-2',
+      error: 'Worker process exited unexpectedly.',
+    })
+
+    expect(recoveryClasses).toEqual(['runtime-crash'])
   })
 })

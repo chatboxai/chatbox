@@ -11,6 +11,17 @@ import {
   type BridgeReadyEvent,
   type BridgeSessionState,
 } from '@shared/chatbridge/bridge-session'
+import type { ChatBridgeAuditEvent } from '@shared/chatbridge/audit'
+import {
+  createChatBridgeBridgeRejectionRecoveryContract,
+  createChatBridgeMalformedBridgeRecoveryContract,
+  createChatBridgeRecoveryAuditEvent,
+  createChatBridgeRuntimeCrashRecoveryContract,
+  createChatBridgeTimeoutRecoveryContract,
+  type ChatBridgeRecoveryContract,
+  type ChatBridgeRecoveryFailureClass,
+  type ChatBridgeRecoverySource,
+} from '@shared/chatbridge/recovery-contract'
 
 export type BridgeTraceEvent =
   | { type: 'session.attached' }
@@ -19,6 +30,12 @@ export type BridgeTraceEvent =
   | { type: 'app.event.accepted'; eventKind: BridgeAppEvent['kind'] }
   | { type: 'app.event.rejected'; eventKind: BridgeAppEvent['kind']; reason: BridgeEventValidationReason }
   | { type: 'app.event.invalid'; rawKind?: string; issues: string[] }
+  | {
+      type: 'recovery.required'
+      failureClass: ChatBridgeRecoveryFailureClass
+      source: ChatBridgeRecoverySource
+      traceCode: string
+    }
 
 export interface BridgeMessagePortLike {
   onmessage: ((event: { data: unknown }) => void) | null
@@ -50,6 +67,8 @@ type BridgeHostControllerOptions = {
   onAcceptedAppEvent?: (event: Exclude<BridgeAppEvent, BridgeReadyEvent>) => void
   onRejectedAppEvent?: (event: BridgeAppEvent, reason: BridgeEventValidationReason) => void
   onInvalidAppEvent?: (rawEvent: unknown, issues: string[]) => void
+  onRecoveryDecision?: (decision: ChatBridgeRecoveryContract) => void
+  onRecoveryAudit?: (event: ChatBridgeAuditEvent) => void
 }
 
 function defaultMessageChannelFactory(): BridgeMessageChannelLike {
@@ -77,13 +96,77 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
   let isReady = false
   let pendingHtml: string | null = null
   let readyResolver: (() => void) | null = null
+  let readyRejecter: ((error: Error) => void) | null = null
+  let readyTimeout: ReturnType<typeof setTimeout> | null = null
+  let readySettled = false
 
-  const readyPromise = new Promise<void>((resolve) => {
+  const readyPromise = new Promise<void>((resolve, reject) => {
     readyResolver = resolve
+    readyRejecter = reject
   })
 
   function emitTrace(trace: BridgeTraceEvent) {
     options.onTrace?.(trace)
+  }
+
+  function clearReadyTimeout() {
+    if (readyTimeout !== null) {
+      clearTimeout(readyTimeout)
+      readyTimeout = null
+    }
+  }
+
+  function emitRecovery(decision: ChatBridgeRecoveryContract) {
+    options.onRecoveryDecision?.(decision)
+    options.onRecoveryAudit?.(
+      createChatBridgeRecoveryAuditEvent({
+        eventId: crypto.randomUUID(),
+        occurredAt: options.now?.() ?? Date.now(),
+        contract: decision,
+      })
+    )
+    emitTrace({
+      type: 'recovery.required',
+      failureClass: decision.failureClass,
+      source: decision.source,
+      traceCode: decision.observability.traceCode,
+    })
+  }
+
+  function rejectReady(decision: ChatBridgeRecoveryContract) {
+    if (readySettled) {
+      return
+    }
+
+    readySettled = true
+    clearReadyTimeout()
+    emitRecovery(decision)
+    readyRejecter?.(new Error(decision.summary))
+  }
+
+  function scheduleReadyTimeout() {
+    clearReadyTimeout()
+    if (isReady || readySettled) {
+      return
+    }
+
+    const now = options.now?.() ?? Date.now()
+    const delayMs = Math.max(0, envelope.expiresAt - now)
+
+    readyTimeout = setTimeout(() => {
+      if (isReady || readySettled) {
+        return
+      }
+
+      rejectReady(
+        createChatBridgeTimeoutRecoveryContract({
+          appId: options.appId,
+          appInstanceId: options.appInstanceId,
+          bridgeSessionId: envelope.bridgeSessionId,
+          waitedMs: envelope.expiresAt - envelope.issuedAt,
+        })
+      )
+    }, delayMs)
   }
 
   function sendPendingHtml() {
@@ -114,6 +197,13 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
 
       if (!acknowledged.accepted) {
         options.onRejectedAppEvent?.(event, acknowledged.reason)
+        emitRecovery(
+          createChatBridgeBridgeRejectionRecoveryContract({
+            reason: acknowledged.reason,
+            event,
+            appId: options.appId,
+          })
+        )
         emitTrace({
           type: 'app.event.rejected',
           eventKind: event.kind,
@@ -124,6 +214,8 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
 
       session = acknowledged.session
       isReady = true
+      readySettled = true
+      clearReadyTimeout()
       readyResolver?.()
       emitTrace({ type: 'session.ready' })
       sendPendingHtml()
@@ -136,6 +228,13 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
 
     if (!accepted.accepted) {
       options.onRejectedAppEvent?.(event, accepted.reason)
+      emitRecovery(
+        createChatBridgeBridgeRejectionRecoveryContract({
+          reason: accepted.reason,
+          event,
+          appId: options.appId,
+        })
+      )
       emitTrace({
         type: 'app.event.rejected',
         eventKind: event.kind,
@@ -146,6 +245,16 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
 
     session = accepted.session
     options.onAcceptedAppEvent?.(event)
+    if (event.kind === 'app.error') {
+      emitRecovery(
+        createChatBridgeRuntimeCrashRecoveryContract({
+          appId: options.appId,
+          appInstanceId: options.appInstanceId,
+          bridgeSessionId: event.bridgeSessionId,
+          error: event.error,
+        })
+      )
+    }
     emitTrace({
       type: 'app.event.accepted',
       eventKind: event.kind,
@@ -170,6 +279,15 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
               : undefined
 
           options.onInvalidAppEvent?.(event.data, issues)
+          emitRecovery(
+            createChatBridgeMalformedBridgeRecoveryContract({
+              appId: options.appId,
+              appInstanceId: options.appInstanceId,
+              bridgeSessionId: envelope.bridgeSessionId,
+              rawKind,
+              issues,
+            })
+          )
           emitTrace({
             type: 'app.event.invalid',
             rawKind,
@@ -187,6 +305,7 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
 
       targetWindow.postMessage(bootstrapMessage, options.bootstrapTargetOrigin ?? envelope.expectedOrigin, [channel.port2])
       emitTrace({ type: 'session.attached' })
+      scheduleReadyTimeout()
     },
     waitForReady() {
       return readyPromise
@@ -199,6 +318,7 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
       return session
     },
     dispose() {
+      clearReadyTimeout()
       attachedPort?.close()
       attachedPort = null
     },

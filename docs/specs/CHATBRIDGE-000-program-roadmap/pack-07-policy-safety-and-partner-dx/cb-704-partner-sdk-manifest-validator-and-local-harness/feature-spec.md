@@ -25,9 +25,9 @@ Reviewed partners will only build reliably against ChatBridge if the platform gi
 
 ## Acceptance Criteria
 
-- [ ] AC-1: A partner-facing manifest validator and bridge guidance exist.
-- [ ] AC-2: A local or mock host harness supports partner development and debugging.
-- [ ] AC-3: Partner docs reflect the reviewed app contract, auth expectations, and completion semantics.
+- [x] AC-1: A partner-facing manifest validator and bridge guidance exist.
+- [x] AC-2: A local or mock host harness supports partner development and debugging.
+- [x] AC-3: Partner docs reflect the reviewed app contract, auth expectations, and completion semantics.
 
 ## Edge Cases
 

@@ -10,6 +10,7 @@ Files:
 - `INTEGRATION_HARNESS.md`: Pack 0 fixture and mock-harness strategy
 - `EVALS_AND_OBSERVABILITY.md`: Pack 0 eval, trace, and observability baseline
 - `ARCHITECTURE.md`: presentation-friendly target architecture
+- `PARTNER_SDK.md`: Pack 07 reviewed-partner validator and local harness guide
 - `../docs/specs/CHATBRIDGE-000-program-roadmap/`: phased implementation packs
 
 If the original assignment PDF is kept locally, treat it as a supplemental

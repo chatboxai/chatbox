@@ -23,3 +23,10 @@ Current Pack 07 recovery proof lives in:
 - `operator-controls-rollout.test.ts`
   for lifecycle observability records, version kill-switch launch blocking, and
   explicit active-session rollback posture
+
+Current Pack 07 partner-DX proof lives in:
+
+- `partner-sdk-harness.test.ts`
+  for reviewed-partner manifest guidance, launch-scoped harness bootstrap,
+  host-render delivery, replay rejection, and explicit recovery feedback for
+  local partner debugging

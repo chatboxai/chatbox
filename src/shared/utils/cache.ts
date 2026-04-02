@@ -19,12 +19,16 @@ class CrossPlatformStorage {
     this.name = name
   }
 
+  private async getBrowserStore() {
+    const { getLocalforageStore } = await import('./localforage-store')
+    return getLocalforageStore(this.name)
+  }
+
   async getItem(key: string): Promise<string | null> {
     // In renderer process with localforage
-    if (typeof window !== 'undefined' && 'localforage' in window) {
+    if (typeof window !== 'undefined') {
       try {
-        const localforage = (await import('localforage')).default
-        const store = localforage.createInstance({ name: this.name })
+        const store = await this.getBrowserStore()
         return await store.getItem<string>(key)
       } catch (error) {
         console.error('Error accessing localforage:', error)
@@ -38,10 +42,9 @@ class CrossPlatformStorage {
 
   async setItem(key: string, value: string): Promise<void> {
     // In renderer process with localforage
-    if (typeof window !== 'undefined' && 'localforage' in window) {
+    if (typeof window !== 'undefined') {
       try {
-        const localforage = (await import('localforage')).default
-        const store = localforage.createInstance({ name: this.name })
+        const store = await this.getBrowserStore()
         await store.setItem(key, value)
         return
       } catch (error) {
@@ -57,10 +60,9 @@ class CrossPlatformStorage {
 
   async removeItem(key: string): Promise<void> {
     // In renderer process with localforage
-    if (typeof window !== 'undefined' && 'localforage' in window) {
+    if (typeof window !== 'undefined') {
       try {
-        const localforage = (await import('localforage')).default
-        const store = localforage.createInstance({ name: this.name })
+        const store = await this.getBrowserStore()
         await store.removeItem(key)
         return
       } catch (error) {

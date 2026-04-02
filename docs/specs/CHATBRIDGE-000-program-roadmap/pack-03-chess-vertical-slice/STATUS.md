@@ -1,7 +1,8 @@
 # Pack 03 Status
 
-- Control state: historical baseline inherited into the post-Pack-4 rollout
-- Single-agent scope: no active work unless a later pack exposes a Pack 03 backfill
+- Control state: historical baseline reopened by the smoke-audit rebuild queue
+- Single-agent scope: execute bridge-runtime backfill `CB-305` before later
+  live multi-app and authenticated-app repairs
 - Story state model: `planned`, `in_progress`, `code_complete`, `validated`, `merged`
 
 ## Story Ledger
@@ -13,9 +14,10 @@
 | CB-302 | merged | User-reported as done before the single-agent rollout begins. |
 | CB-303 | merged | User-reported as done before the single-agent rollout begins. |
 | CB-304 | merged | User-reported as done before the single-agent rollout begins. |
+| CB-305 | planned | Smoke-audit backfill to make the bridge host controller the real reviewed-app launch seam. |
 
 ## Monitoring Notes
 
-- Pack 03 is the inherited Chess baseline for Pack 4 exit work.
-- If Pack 4 later shows missing Chess lifecycle proof, add a Pack 03 backfill
-  story rather than weakening Pack 4 assumptions silently.
+- Pack 03 is reopened by `smoke-audit-master.md` finding SA-005.
+- `CB-305` should complete before `CB-506` and `CB-605` so later runtime
+  stories build on one real reviewed-app launch seam.

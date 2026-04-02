@@ -23,7 +23,8 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 
 - Begin this rollout only after Pack 4 has a written exit memo and linked proof.
 - Keep exactly one story in progress at a time.
-- Run one pack at a time after Pack 4: Pack 5, then Pack 6, then Pack 7.
+- Historical Pack 05 through Pack 07 closeout remains documented, but any smoke
+  audit finding reopens the queue through backfill stories in the owning pack.
 - If a later pack exposes a missing prerequisite, add a backfill story to the
   original pack instead of patching around it in the later pack.
 - Stabilize ChatBridge runtime work into these boundaries as code lands:
@@ -35,44 +36,32 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 
 | Pack | Control state | Story posture | Exit memo | Notes |
 |---|---|---|---|---|
-| Pack 00 | historical baseline | inherited `merged` baseline | inherited | No retro-audit in this rollout; backfill only if a later pack exposes a gap. |
-| Pack 01 | historical baseline | inherited `merged` baseline | inherited | Treat as an accepted prerequisite to Pack 02 and later work. |
+| Pack 00 | reopened by smoke audit | `CB-006` planned backfill | inherited baseline | SA-006 reopened observability and manual-smoke coverage as the first rebuild story. |
+| Pack 01 | reopened by smoke audit | `CB-105` planned backfill | inherited baseline | SA-007 reopened console and accessibility hygiene as the final cleanup story. |
 | Pack 02 | historical baseline | inherited `merged` baseline | inherited | Contracts and bridge foundations are assumed ready for post-Pack-4 execution. |
-| Pack 03 | historical baseline | inherited `merged` baseline | inherited | Chess lifecycle baseline is assumed ready for Pack 4 exit work. |
+| Pack 03 | reopened by smoke audit | `CB-305` planned backfill | inherited baseline | SA-005 reopened the real reviewed-app bridge launch seam. |
 | Pack 04 | validated | CB-401 through CB-404 validated | written | Exit proof is recorded in `pack-04.../STATUS.md`; Pack 5 and Pack 6 are unlocked. |
-| Pack 05 | validated | CB-501 through CB-504 validated | written | Eligibility, routing, Debate Arena, and bounded multi-app continuity are proven. |
-| Pack 06 | validated | CB-601 through CB-604 validated | written | Story Builder now proves host-owned auth, save/resume continuity, and completion handoff on top of the validated Pack 6 seams. |
+| Pack 05 | reopened by smoke audit and catalog change | `CB-506`, `CB-507`, `CB-508`, `CB-509`, and `CB-510` planned backfills | historical exit memo | Live multi-app runtime still falls short, and the active flagship set now becomes Chess, Drawing Kit, and Weather. |
+| Pack 06 | historical baseline with legacy parked follow-up | `CB-605` planned legacy packet | historical exit memo | Story Builder auth/resource proof remains a legacy reference and is no longer on the active queue. |
 | Pack 07 | validated | CB-701, CB-703, CB-705, CB-702, and CB-704 validated | written | Pack 07 exit is complete; the full-program convergence audit is now validated on this branch via `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`. |
 
 ## Single-Agent Queue
 
-1. Pack 04 -> CB-401
-2. Pack 04 -> CB-402
-3. Pack 04 -> CB-403
-4. Pack 04 -> CB-404
-5. Pack 05 -> CB-501
-6. Pack 05 -> CB-502
-7. Pack 05 -> CB-503
-8. Pack 05 -> CB-504
-9. Pack 06 -> CB-601
-10. Pack 06 -> CB-602
-11. Pack 06 -> CB-604
-12. Pack 06 -> CB-603
-13. Pack 07 -> CB-701
-14. Pack 07 -> CB-703
-15. Pack 07 -> CB-705
-16. Pack 07 -> CB-702
-17. Pack 07 -> CB-704
-18. Program -> full-program convergence audit (`convergence-audit.md`, validated via `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`)
+1. Pack 00 -> CB-006
+2. Pack 03 -> CB-305
+3. Pack 05 -> CB-508
+4. Pack 05 -> CB-506
+5. Pack 05 -> CB-509
+6. Pack 05 -> CB-510
+7. Pack 05 -> CB-507
+8. Pack 01 -> CB-105
 
 ## Current Milestone
 
-- Active next gate: convergence audit closeout
-- Status: validated on this branch through
-  `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`
-- Result: the validated Pack 04 through Pack 07 slices now compose into one
-  representative proof set across Chess, Debate Arena, Story Builder, denial,
-  recovery, and partner DX
+- Active next gate: smoke-audit rebuild queue begins at `CB-006`
+- Status: reopened by `smoke-audit-master.md`
+- Result: historical pack closeout remains documented, but live-runtime smoke
+  findings now govern current execution order until the rebuild queue is empty
 
 ## Pack 4 Exit Lock
 
@@ -94,24 +83,37 @@ Required Pack 4 proof set:
 
 | Objective | Primary proving packs | Current proof state | Representative proof |
 |---|---|---|---|
-| O1 continuous in-thread app UX | Packs 01, 03, 04, 05, 06 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`, `mid-game-board-context.test.ts`, `multi-app-continuity.test.ts`, `story-builder-lifecycle.test.ts` |
-| O2 host-owned lifecycle, routing, and memory | Packs 02, 04, 05, 06 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` |
-| O3 reviewed-partner trust and governance | Packs 02, 05, 07 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`, `operator-controls-rollout.test.ts`, `partner-sdk-harness.test.ts` |
-| O4 authenticated app support without raw credentials | Pack 06 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`, `story-builder-lifecycle.test.ts`, `resource-proxy-access.test.ts` |
-| O5 partner-ready governable platform | Pack 07 | validated | `docs/specs/CHATBRIDGE-000-program-roadmap/convergence-audit.md`, `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` |
+| O1 continuous in-thread app UX | Packs 01, 03, 04, 05 | reopened by smoke audit and catalog change | `smoke-audit-master.md` findings SA-001, SA-002, SA-003, SA-005 plus new Pack 05 app transition stories |
+| O2 host-owned lifecycle, routing, and memory | Packs 02, 04, 05 | reopened by smoke audit and catalog change | `smoke-audit-master.md` findings SA-002, SA-005 plus Drawing Kit / Weather replacement work |
+| O3 reviewed-partner trust and governance | Packs 02, 05, 07 | reopened by smoke audit and catalog change | `smoke-audit-master.md` findings SA-001, SA-002, SA-003 plus active catalog transition story `CB-508` |
+| O4 authenticated app support without raw credentials | Pack 06 | legacy proof parked | Historical Pack 06 proof remains checked in, but Story Builder is now legacy and `CB-605` is not on the active queue. |
+| O5 partner-ready governable platform | Pack 07 | partially validated; observability reopen | `smoke-audit-master.md` finding SA-006 plus historical Pack 07 proof |
 
 ## Program Closeout
 
-The post-Pack-4 single-agent roadmap is now exit-complete for the scoped
-ChatBridge PRD.
+Historical Pack 04 through Pack 07 closeout remains checked in, but the
+smoke audit has reopened the program for a focused rebuild.
 
-- Final product verdict: achieved for the reviewed-app platform defined by
-  Packs 00 through 07.
-- Final convergence proof: `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`
-- Backfill stories required by this audit: none
-- Repo-wide validation note: the previously inherited non-ChatBridge
-  `pnpm check` drift and final eval build warnings are now cleared; the full
-  repo gate is green on the closeout branch.
+- Historical closeout proof remains available in
+  `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` and
+  `convergence-audit.md`.
+- Current product verdict: not ready to re-assert as end-to-end healthy until
+  the smoke-audit rebuild queue is complete.
+- Backfill stories required by this audit:
+  - `CB-006`
+  - `CB-305`
+  - `CB-508`
+  - `CB-506`
+  - `CB-509`
+  - `CB-510`
+  - `CB-507`
+  - `CB-105`
+- Legacy parked packets retained for reference:
+  - `CB-505`
+  - `CB-605`
+- Repo-wide validation note: the repo gate can be green while the live
+  ChatBridge runtime still falls short; use this file and `smoke-audit-master.md`
+  as the current truth for rebuild work.
 
 ## Required Scenario Families
 

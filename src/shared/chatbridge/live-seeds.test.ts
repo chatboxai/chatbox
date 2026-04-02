@@ -131,8 +131,16 @@ describe('chatbridge live seed fixtures', () => {
       'degraded-completion-recovery',
       'platform-recovery',
       'chess-mid-game-board-context',
-      'history-and-preview',
       'chess-runtime',
+      'history-and-preview',
     ])
+    expect(fixtures.find((fixture) => fixture.id === 'chess-runtime')).toMatchObject({
+      fixtureRole: 'active-flagship',
+      smokeSupport: 'supported',
+    })
+    expect(fixtures.find((fixture) => fixture.id === 'history-and-preview')).toMatchObject({
+      fixtureRole: 'legacy-reference',
+      smokeSupport: 'legacy-reference',
+    })
   })
 })

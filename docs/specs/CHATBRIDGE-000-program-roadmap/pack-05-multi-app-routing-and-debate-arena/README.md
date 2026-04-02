@@ -2,45 +2,43 @@
 
 Operational tracking: [`STATUS.md`](./STATUS.md)
 
-## Phase Fit
+## Current Rebuild Posture
 
 - Phase: 5 of 7
 - Primary objectives: O1, O3
-- Unlocks: reviewed-app eligibility resolution, clarify/refuse behavior, a second flagship app, and multi-app conversation continuity
+- Historical baseline remains checked in through CB-501 to CB-504.
+- Active rebuild target after the 2026-04-02 catalog change is Chess, Drawing
+  Kit, and Weather.
 
-## Pack Goal
+## Reopened Goal
 
-Move from one working flagship app to a governed multi-app platform that can choose among reviewed apps safely and explainably.
+Keep the reviewed-app platform explainable and host-owned while transitioning
+the active flagship set away from Debate Arena and Story Builder without losing
+their reference value.
 
-## Entry Gates
+## Active Rebuild Queue
 
-- Completion and app memory behavior are reliable enough to support more than one app.
-- Reviewed app manifests and lifecycle contracts are already established.
+1. [CB-508 - Active reviewed catalog transition and legacy retention](./cb-508-active-reviewed-catalog-transition-and-legacy-retention/feature-spec.md)
+2. [CB-506 - Live reviewed app invocation path beyond Chess](./cb-506-live-reviewed-app-invocation-path-beyond-chess/feature-spec.md)
+3. [CB-509 - Drawing Kit flagship app](./cb-509-drawing-kit-flagship-app/feature-spec.md)
+4. [CB-510 - Weather Dashboard flagship app](./cb-510-weather-dashboard-flagship-app/feature-spec.md)
+5. [CB-507 - Live route clarify refuse artifacts and actions](./cb-507-live-route-clarify-refuse-artifacts-and-actions/feature-spec.md)
 
-## Stories
+Legacy parked packets:
+
+- [CB-505 - Default reviewed app catalog parity for flagship apps](./cb-505-default-reviewed-app-catalog-parity-for-flagship-apps/feature-spec.md)
+
+## Historical Baseline Stories
 
 - [CB-501 - Reviewed app discovery and eligibility filtering](./cb-501-reviewed-app-discovery-and-eligibility-filtering/feature-spec.md)
 - [CB-502 - Route, clarify, or refuse decision path](./cb-502-route-clarify-or-refuse-decision-path/feature-spec.md)
 - [CB-503 - Debate Arena flagship app](./cb-503-debate-arena-flagship-app/feature-spec.md)
 - [CB-504 - Multi-app continuity in a single conversation](./cb-504-multi-app-continuity-in-a-single-conversation/feature-spec.md)
 
-## Single-Agent Order
-
-1. CB-501
-2. CB-502
-3. CB-503
-4. CB-504
-
-## Exit Criteria
-
-- The host can expose only eligible apps for the current context.
-- Clarify and refusal paths are explicit for ambiguous or unrelated prompts.
-- Debate Arena proves a second non-game educational workflow inside the same platform contract.
-- Multi-app continuity distinguishes active, recent, and completed app sessions
-  without losing the right follow-up context.
-
 ## Risks
 
-- Over-routing apps for vague prompts.
-- Losing track of active versus recent app context as more apps appear.
-- Adding a second flagship app before refusal and clarification are disciplined.
+- Letting the active catalog drift away from the checked-in default runtime.
+- Treating legacy Debate Arena or Story Builder proof as if it still satisfied
+  the active flagship roadmap.
+- Shipping Drawing Kit or Weather on top of a stale launch path or stale seed
+  corpus.

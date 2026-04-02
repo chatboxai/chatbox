@@ -44,8 +44,8 @@ flowchart TD
     subgraph PARTNERS["Partner App Ecosystem"]
         IFRAME --> BRIDGE["Typed Bridge Protocol"]
         BRIDGE --> APPA["Chess App"]
-        BRIDGE --> APPB["Debate Arena"]
-        BRIDGE --> APPC["Story Builder"]
+        BRIDGE --> APPB["Drawing Kit"]
+        BRIDGE --> APPC["Weather Dashboard"]
     end
 
     PROXY --> GDRIVE["Google Drive API"]
@@ -158,6 +158,9 @@ The host should send a signed bootstrap envelope plus a transferred `MessagePort
 - Shared lifecycle contract no matter which rendering mode is used
 - Chess now proves the native-hosted path by keeping a renderer-owned legal move
   engine behind the same host-owned app-part and reasoning-context contract
+- The active flagship catalog is Chess, Drawing Kit, and Weather Dashboard.
+  Debate Arena and Story Builder remain checked-in legacy reference
+  implementations rather than active default-runtime targets.
 
 ### Sync and Reconciliation Manager
 
@@ -254,7 +257,11 @@ The host should be the execution coordinator for app tools, even when the app ow
   inject an explicit degraded-state warning instead of pretending the assistant
   can still see the exact position.
 
-## 7. Authentication Flow for Story Builder
+## 7. Legacy Authentication Flow Reference for Story Builder
+
+Story Builder is no longer part of the active flagship queue, but its
+Google Drive auth flow remains the checked-in legacy reference for future
+authenticated reviewed apps.
 
 ```mermaid
 sequenceDiagram
@@ -464,7 +471,7 @@ For a 3-5 minute architecture walkthrough, the simplest narrative is:
 1. Start with the system overview diagram and explain the five layers.
 2. Move to the trust-boundary diagram and explain why reviewed partner apps are still less trusted than the host.
 3. Walk through the invocation lifecycle to show how chat stays aware of the app.
-4. Show the auth sequence for Story Builder to explain how partner auth works without exposing credentials.
+4. Show the legacy Story Builder auth sequence to explain how partner auth works without exposing credentials.
 5. End on the state ownership model and say that this is the key design choice that keeps the experience coherent and safe.
 
 ## 14. Final Technical Position

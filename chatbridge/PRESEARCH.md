@@ -12,7 +12,7 @@ The second major trade-off is between local speed and platform accountability. B
 
 There were also ethical decisions embedded in the architecture. The first was to avoid broad default data sharing. Apps should not automatically see full student conversations just because they are embedded. The second was to preserve educator control. Districts need guardrails, but teachers and classrooms still need meaningful overrides because configurability is part of TutorMeAI's product identity. The third was to make safety operational, not rhetorical. Reviewed apps, kill switches, audit trails, and explicit completion contracts are all ethical choices because they determine how the platform behaves when something goes wrong.
 
-Ultimately, the presearch lands on a clear recommendation: build ChatBridge as an Electron-first, reviewed-partner app platform with host-owned conversation state, strict app boundaries, explicit completion signaling, and teacher-governed access. The flagship app set should be Chess, Debate Arena, and Story Builder with Google Drive authentication. Together, they prove that TutorMeAI can move beyond configurable chat into trusted learning orchestration.
+Ultimately, the presearch lands on a clear recommendation: build ChatBridge as an Electron-first, reviewed-partner app platform with host-owned conversation state, strict app boundaries, explicit completion signaling, and teacher-governed access. The active flagship app set should now be Chess, Drawing Kit, and Weather Dashboard. Debate Arena and Story Builder remain checked-in legacy references, and Story Builder's Google Drive flow remains the authenticated reference pattern if that class of app returns to the active roadmap.
 
 ## Final Recommendation
 
@@ -30,19 +30,19 @@ The headline decisions are:
 - Explicit completion signaling between app and chatbot
 - Backend-authoritative state with client-side cache and replay semantics
 - Launch-scoped bridge authentication for every app instance
-- Story Builder as the authenticated flagship app, using Google Drive first
+- Story Builder's Google Drive auth flow retained as the authenticated legacy reference pattern
 
 The recommended flagship app set is:
 
 - Chess
-- Debate Arena
-- Story Builder
+- Drawing Kit
+- Weather Dashboard
 
 These three apps intentionally cover:
 
 - long-lived game state,
-- policy-sensitive educational workflow,
-- and authenticated creative work with resumable state.
+- interactive visual creation with host-owned checkpoints,
+- and data-backed dashboard rendering through a host-owned external boundary.
 
 ## Current Repo Audit
 
@@ -279,7 +279,7 @@ The platform needs to support three categories of apps:
 - Public external apps with app-level credentials or no auth
 - Authenticated partner apps with user authorization
 
-Story Builder should be the first authenticated app and should use Google Drive first. The host should initiate auth, store and refresh credentials, and hand apps scoped access or credential handles rather than long-lived raw tokens.
+Story Builder remains the authenticated legacy reference app and should continue to use Google Drive as the canonical host-owned auth pattern. It is no longer part of the active flagship catalog, but the host should still initiate auth, store and refresh credentials, and hand apps scoped access or credential handles rather than long-lived raw tokens if authenticated reviewed apps return to the active roadmap.
 
 For the data plane, Story Builder should not call Google Drive with a raw user token from inside the iframe. Instead, the app should call a host-mediated resource layer or partner backend using a scoped credential handle. The host or backend service then performs the Drive action, logs it appropriately, and returns the approved result to the app.
 
@@ -307,13 +307,21 @@ Auditability should not become surveillance by accident. The default logging mod
 
 Chess proves long-lived, bidirectional state. It needs a legal move engine, visible board UI, invalid move handling, mid-game analysis, and an explicit end-of-game completion summary that the chatbot can discuss afterward.
 
-### Debate Arena
+### Drawing Kit
 
-Debate Arena proves structured educational workflow. It needs topic and stance setup, turn-based argument flow, rubric-aware guidance, teacher-configurable moderation or difficulty controls, and a final performance summary that the chatbot can continue discussing.
+Drawing Kit proves an interactive, no-auth creative workflow. It needs an inline drawing surface, bounded host-owned checkpoints, explicit completion or pause state, and a follow-up summary that the chatbot can reference without depending on opaque canvas state.
 
-### Story Builder
+### Weather Dashboard
 
-Story Builder proves authenticated partner workflows. It needs Google Drive auth, project save and resume, draft-aware chatbot assistance, export or persistence of final work, and a completion event that turns the app outcome back into chat context.
+Weather Dashboard proves a no-auth, data-backed reviewed app. It needs a host-owned weather request boundary, a structured inline dashboard, degraded upstream handling, and a summary that later turns can trust without direct app-side network access.
+
+### Legacy Reference: Debate Arena
+
+Debate Arena remains the checked-in example of structured educational workflow. It still shows topic and stance setup, turn-based argument flow, rubric-aware guidance, teacher-configurable moderation or difficulty controls, and a final performance summary that the chatbot can continue discussing.
+
+### Legacy Reference: Story Builder
+
+Story Builder remains the checked-in example of an authenticated partner workflow. It still shows Google Drive auth, project save and resume, draft-aware chatbot assistance, export or persistence of final work, and a completion event that turns the app outcome back into chat context.
 
 ## Build Strategy
 

@@ -33,6 +33,7 @@ Metadata and tags should also identify:
 
 Representative CB-006 traced scenario families now include:
 
+- `active-reviewed-catalog-transition.test.ts`
 - `reviewed-app-registry.test.ts`
 - `app-instance-domain-model.test.ts`
 - `host-coordinated-tool-execution.test.ts`
@@ -42,6 +43,10 @@ Representative CB-006 traced scenario families now include:
 - `bridge-session-security.test.ts`
 - `app-aware-persistence.test.ts`
 - `story-builder-lifecycle.test.ts`
+
+Legacy-reference scenario traces remain allowed when the scenario is explicitly
+historical. Today that includes Story Builder auth/resource coverage while the
+active Pack 05 queue targets Chess, Drawing Kit, and Weather.
 
 Current Pack 07 recovery proof lives in:
 

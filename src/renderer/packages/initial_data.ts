@@ -3,6 +3,8 @@ import {
   getChatBridgeLiveSeedInspectionEntries,
   type ChatBridgeLiveSeedFixture,
   type ChatBridgeLiveSeedInspectionEntry,
+  type ChatBridgeLiveSeedFixtureRole,
+  type ChatBridgeLiveSeedSmokeSupport,
 } from '@shared/chatbridge/live-seeds'
 import { migrateMessage } from '@/utils/message'
 import { ModelProviderEnum, type Session } from '../../shared/types'
@@ -1047,6 +1049,8 @@ export type PresetSessionBundle = {
 export type ChatBridgePresetSessionInspectionEntry = {
   fixtureId: string
   fixtureName: string
+  fixtureRole: ChatBridgeLiveSeedFixtureRole
+  smokeSupport: ChatBridgeLiveSeedSmokeSupport
   sessionId: string
   sessionName: string
   locales: string[]
@@ -1100,6 +1104,8 @@ export function getChatBridgeSmokeInspectionSnapshot(): ChatBridgeSmokeInspectio
       return {
         fixtureId: fixture.fixtureId,
         fixtureName: fixture.fixtureName,
+        fixtureRole: fixture.fixtureRole,
+        smokeSupport: fixture.smokeSupport,
         sessionId: presetBundle?.session.id ?? `chatbox-chat-demo-chatbridge-${fixture.fixtureId}`,
         sessionName: presetBundle?.session.name ?? fixture.fixtureName,
         locales: ['en', 'cn'],

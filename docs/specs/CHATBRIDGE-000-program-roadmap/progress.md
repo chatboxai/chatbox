@@ -41,7 +41,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 | Pack 02 | historical baseline | inherited `merged` baseline | inherited | Contracts and bridge foundations are assumed ready for post-Pack-4 execution. |
 | Pack 03 | validated backfill complete | `CB-305` validated backfill | inherited baseline | SA-005 is closed by CB-305; reviewed host-tool launches now flow through the bridge host controller while artifact preview remains on the separate HTML-preview seam. |
 | Pack 04 | validated | CB-401 through CB-404 validated | written | Exit proof is recorded in `pack-04.../STATUS.md`; Pack 5 and Pack 6 are unlocked. |
-| Pack 05 | reopened by smoke audit and catalog change | `CB-506`, `CB-507`, `CB-508`, `CB-509`, and `CB-510` planned backfills | historical exit memo | Live multi-app runtime still falls short, and the active flagship set now becomes Chess, Drawing Kit, and Weather. |
+| Pack 05 | reopened by smoke audit and catalog change | `CB-508` validated; `CB-506`, `CB-507`, `CB-509`, and `CB-510` planned backfills | historical exit memo | Default reviewed catalog and seed inspection now align to Chess, Drawing Kit, and Weather, but live non-Chess runtime work is still open. |
 | Pack 06 | historical baseline with legacy parked follow-up | `CB-605` planned legacy packet | historical exit memo | Story Builder auth/resource proof remains a legacy reference and is no longer on the active queue. |
 | Pack 07 | validated | CB-701, CB-703, CB-705, CB-702, and CB-704 validated | written | Pack 07 exit is complete; the full-program convergence audit is now validated on this branch via `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`. |
 
@@ -63,13 +63,13 @@ packet and should not be picked up next.
 
 ## Current Milestone
 
-- Active next gate: `CB-508`
-- Immediate next story after `CB-508`: `CB-506`
-- Status: `CB-006`, `CB-007`, and `CB-305` are validated; `CB-508` is now the
-  earliest unresolved queue item
-- Result: Pack 00 now provides explicit runtime-target and smoke-support labels
-  plus scriptable seed/preset inspection, so the queue can resume at the later
-  runtime/catalog rebuild stories
+- Active next gate: `CB-506`
+- Immediate next story after `CB-506`: `CB-509`
+- Status: `CB-006`, `CB-007`, `CB-305`, and `CB-508` are validated; `CB-506`
+  is now the earliest unresolved queue item
+- Result: the active reviewed catalog, seed inspection, and roadmap truth now
+  agree on Chess, Drawing Kit, and Weather, so the queue can continue from the
+  live invocation/runtime stories instead of the catalog reset
 
 ## Pack 4 Exit Lock
 
@@ -111,7 +111,7 @@ smoke audit has reopened the program for a focused rebuild.
   - `CB-006` validated
   - `CB-007` validated
   - `CB-305` validated
-  - `CB-508`
+  - `CB-508` validated
   - `CB-506`
   - `CB-509`
   - `CB-510`

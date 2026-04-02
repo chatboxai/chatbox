@@ -1,4 +1,4 @@
-import type { ChatBridgeLiveSeedFixture } from '@shared/chatbridge/live-seeds'
+import { getChatBridgeLiveSeedFixtures, type ChatBridgeLiveSeedFixture } from '@shared/chatbridge/live-seeds'
 import {
   CHATBRIDGE_LANGSMITH_PROJECT_NAME,
   createChatBridgeTraceMetadata,
@@ -84,76 +84,48 @@ type ActiveRunEntry = {
 const activeManualSmokeRuns = new Map<string, ActiveRunEntry>()
 const MANUAL_SMOKE_RUNTIME_TARGET: ChatBridgeTraceRuntimeTarget = 'desktop-electron'
 
-const manualSmokeFixtureModes: Record<string, ManualSmokeFixtureMode> = {
+const manualSmokeTraceDescriptors: Record<
+  string,
+  Extract<ManualSmokeFixtureMode, { support: 'supported' }>['descriptor']
+> = {
   'lifecycle-tour': {
-    support: 'supported',
-    reasonCode: 'supported',
-    descriptor: {
-      slug: 'chatbridge-lifecycle-tour',
-      primaryFamily: 'reviewed-app-launch',
-      evidenceFamilies: ['recovery'],
-      runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
-      smokeSupport: 'supported',
-      storyId: 'CB-006',
-    },
-    message: 'Supported desktop smoke fixture covering launch shells and recovery states.',
+    slug: 'chatbridge-lifecycle-tour',
+    primaryFamily: 'reviewed-app-launch',
+    evidenceFamilies: ['recovery'],
+    runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+    smokeSupport: 'supported',
+    storyId: 'CB-006',
   },
   'degraded-completion-recovery': {
-    support: 'supported',
-    reasonCode: 'supported',
-    descriptor: {
-      slug: 'chatbridge-degraded-completion-recovery',
-      primaryFamily: 'recovery',
-      runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
-      smokeSupport: 'supported',
-      storyId: 'CB-006',
-    },
-    message: 'Supported desktop smoke fixture covering degraded completion recovery.',
+    slug: 'chatbridge-degraded-completion-recovery',
+    primaryFamily: 'recovery',
+    runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+    smokeSupport: 'supported',
+    storyId: 'CB-006',
   },
   'platform-recovery': {
-    support: 'supported',
-    reasonCode: 'supported',
-    descriptor: {
-      slug: 'chatbridge-platform-recovery',
-      primaryFamily: 'recovery',
-      evidenceFamilies: ['bridge'],
-      runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
-      smokeSupport: 'supported',
-      storyId: 'CB-006',
-    },
-    message: 'Supported desktop smoke fixture covering platform-side failure recovery.',
+    slug: 'chatbridge-platform-recovery',
+    primaryFamily: 'recovery',
+    evidenceFamilies: ['bridge'],
+    runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+    smokeSupport: 'supported',
+    storyId: 'CB-006',
   },
   'chess-mid-game-board-context': {
-    support: 'supported',
-    reasonCode: 'supported',
-    descriptor: {
-      slug: 'chatbridge-chess-mid-game-board-context',
-      primaryFamily: 'reviewed-app-launch',
-      evidenceFamilies: ['board-context'],
-      runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
-      smokeSupport: 'supported',
-      storyId: 'CB-006',
-    },
-    message: 'Supported desktop smoke fixture covering Chess follow-up reasoning context.',
+    slug: 'chatbridge-chess-mid-game-board-context',
+    primaryFamily: 'reviewed-app-launch',
+    evidenceFamilies: ['board-context'],
+    runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+    smokeSupport: 'supported',
+    storyId: 'CB-006',
   },
   'chess-runtime': {
-    support: 'supported',
-    reasonCode: 'supported',
-    descriptor: {
-      slug: 'chatbridge-chess-runtime',
-      primaryFamily: 'reviewed-app-launch',
-      evidenceFamilies: ['persistence'],
-      runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
-      smokeSupport: 'supported',
-      storyId: 'CB-006',
-    },
-    message: 'Supported desktop smoke fixture covering Chess runtime moves and persistence.',
-  },
-  'history-and-preview': {
-    support: 'legacy',
-    reasonCode: 'legacy-reference',
-    message:
-      'Legacy Story Builder reference fixture. It remains available for historical inspection, not active CB-006 smoke evidence.',
+    slug: 'chatbridge-chess-runtime',
+    primaryFamily: 'reviewed-app-launch',
+    evidenceFamilies: ['persistence'],
+    runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+    smokeSupport: 'supported',
+    storyId: 'CB-006',
   },
 }
 
@@ -162,13 +134,40 @@ function getProjectName(payload?: LangSmithStatusPayload) {
 }
 
 export function getChatBridgeManualSmokeFixtureMode(fixtureId: string): ManualSmokeFixtureMode {
-  return (
-    manualSmokeFixtureModes[fixtureId] ?? {
-      support: 'unsupported',
-      reasonCode: 'unsupported-fixture',
-      message: 'Fixture is not part of the supported active smoke path.',
+  const descriptor = manualSmokeTraceDescriptors[fixtureId]
+  if (descriptor) {
+    return {
+      support: 'supported',
+      reasonCode: 'supported',
+      descriptor,
+      message:
+        fixtureId === 'chess-runtime'
+          ? 'Supported desktop smoke fixture covering Chess runtime moves and persistence.'
+          : fixtureId === 'chess-mid-game-board-context'
+            ? 'Supported desktop smoke fixture covering Chess follow-up reasoning context.'
+            : fixtureId === 'platform-recovery'
+              ? 'Supported desktop smoke fixture covering platform-side failure recovery.'
+              : fixtureId === 'degraded-completion-recovery'
+                ? 'Supported desktop smoke fixture covering degraded completion recovery.'
+                : 'Supported desktop smoke fixture covering launch shells and recovery states.',
     }
-  )
+  }
+
+  const fixture = getChatBridgeLiveSeedFixtures().find((entry) => entry.id === fixtureId)
+  if (fixture?.smokeSupport === 'legacy-reference') {
+    return {
+      support: 'legacy',
+      reasonCode: 'legacy-reference',
+      message:
+        'Legacy Story Builder reference fixture. It remains available for historical inspection, not active CB-006 smoke evidence.',
+    }
+  }
+
+  return {
+    support: 'unsupported',
+    reasonCode: 'unsupported-fixture',
+    message: 'Fixture is not part of the supported active smoke path.',
+  }
 }
 
 function createChatBridgeManualSmokeTraceSupport(

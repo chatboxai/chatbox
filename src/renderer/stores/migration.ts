@@ -11,7 +11,6 @@ import {
 import dayjs from 'dayjs'
 import { getDefaultStore } from 'jotai'
 import { difference, intersection, keyBy, uniq, uniqBy } from 'lodash'
-import oldStore from 'store'
 import { v4 as uuidv4 } from 'uuid'
 import {
   artifactSessionCN,
@@ -37,6 +36,45 @@ import { migrationProcessAtom } from './atoms/utilAtoms'
 import { getSessionMeta } from './sessionHelpers'
 
 const log = getLogger('migration')
+
+function getLegacyLocalStorageKeys(): string[] {
+  const keys: string[] = []
+
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (key) {
+      keys.push(key)
+    }
+  }
+
+  return keys
+}
+
+function readLegacyLocalStorageValue<T = unknown>(key: string): T | string | null {
+  const serializedValue = localStorage.getItem(key)
+  if (serializedValue === null) {
+    return null
+  }
+
+  try {
+    return JSON.parse(serializedValue) as T
+  } catch {
+    return serializedValue
+  }
+}
+
+async function migrateLegacyLocalStorageEntries(dataStore: MigrateStore): Promise<boolean> {
+  const keys = getLegacyLocalStorageKeys()
+  if (keys.length === 0) {
+    return false
+  }
+
+  for (const key of keys) {
+    await dataStore.setData(key, readLegacyLocalStorageValue(key))
+  }
+
+  return true
+}
 
 export async function migrate() {
   await migrateStorage()
@@ -285,17 +323,7 @@ async function migrate_4_to_5(dataStore: MigrateStore): Promise<boolean> {
   }
   // 针对网页版，从 store 迁移至 localforage
   // 本质上是从更小的 localStorage 迁移到更大的 IndexedDB，解决容量不够用的问题
-  const keys: string[] = []
-  oldStore.each((value, key) => {
-    keys.push(key)
-  })
-  if (keys.length === 0) {
-    return false
-  }
-  for (const key of keys) {
-    await dataStore.setData(key, oldStore.get(key))
-  }
-  return true
+  return migrateLegacyLocalStorageEntries(dataStore)
 }
 
 async function migrate_5_to_6(dataStore: MigrateStore) {
@@ -317,17 +345,7 @@ async function migrate_6_to_7(dataStore: MigrateStore): Promise<boolean> {
   }
   // 针对mobile端，从 store 迁移至 sqllite
   // 解决容量不够用的问题
-  const keys: string[] = []
-  oldStore.each((value, key) => {
-    keys.push(key)
-  })
-  if (keys.length === 0) {
-    return false
-  }
-  for (const key of keys) {
-    await dataStore.setData(key, oldStore.get(key))
-  }
-  return true
+  return migrateLegacyLocalStorageEntries(dataStore)
 }
 
 // 从所有 sessions 保存在一个 key 迁移到每个 session 保存在一个 key，增加 session 列表的读取性能
@@ -699,7 +717,7 @@ async function migrate_10_to_11(dataStore: MigrateStore) {
   if (platform.type === 'mobile') {
     // 释放 localstorage 空间
     log.info('migrate_10_to_11, remove settings')
-    oldStore.remove(StorageKey.Settings)
+    localStorage.removeItem(StorageKey.Settings)
   }
 
   // 修复之前写入的错误的默认值

@@ -17,6 +17,7 @@
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "^0.0.34",
     "@libsql/client": "^0.15.6",
-    "gray-matter": "^4.0.3"
+    "gray-matter": "^4.0.3",
+    "officeparser": "5.0.0"
   }
 }

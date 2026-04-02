@@ -403,6 +403,39 @@ export async function streamText(
 
     if (model.isSupportToolUse()) {
       const chatBridgeSingleAppTools = createReviewedSingleAppToolSet({ messages })
+      void langsmith
+        .recordEvent({
+          name: 'chatbridge.routing.reviewed-app-decision',
+          runType: 'tool',
+          parentRunId: traceRun.runId,
+          inputs: {
+            prompt: chatBridgeSingleAppTools.routeDecision.prompt,
+          },
+          outputs: {
+            decisionKind: chatBridgeSingleAppTools.routeDecision.kind,
+            reasonCode: chatBridgeSingleAppTools.routeDecision.reasonCode,
+            selectedAppId: chatBridgeSingleAppTools.routeDecision.selectedAppId ?? null,
+            selectionStatus: chatBridgeSingleAppTools.selection.status,
+            selectionSource: chatBridgeSingleAppTools.selectionSource,
+            toolNames: Object.keys(chatBridgeSingleAppTools.tools).sort(),
+          },
+          metadata: {
+            operation: 'chatbridgeReviewedAppRouteDecision',
+            sessionId: sessionId ?? null,
+          },
+          tags: [
+            'chatbox',
+            'renderer',
+            'chatbridge',
+            'routing',
+            `decision:${chatBridgeSingleAppTools.routeDecision.kind}`,
+            `selection-source:${chatBridgeSingleAppTools.selectionSource}`,
+          ],
+        })
+        .catch((error) => {
+          console.debug('Failed to record ChatBridge reviewed route decision trace event.', error)
+        })
+
       if (Object.keys(chatBridgeSingleAppTools.tools).length > 0) {
         tools = {
           ...tools,
@@ -424,6 +457,13 @@ export async function streamText(
       tools,
       traceContext: modelTraceContext,
     })
+
+    if (result.contentParts) {
+      result = {
+        ...result,
+        contentParts: upsertReviewedAppLaunchParts([...infoParts, ...result.contentParts]),
+      }
+    }
 
     await traceRun.end({
       outputs: {

@@ -98,7 +98,7 @@ completion and live product behavior.
 
 ### SA-002: Live prompt-driven app launch path is still Chess-only
 
-- Status: `confirmed`
+- Status: `fixed-during-audit`
 - Severity: high
 - Area: live chat orchestration
 - Owning pack: Pack 03 and Pack 05
@@ -107,23 +107,41 @@ completion and live product behavior.
 - Repro steps:
   1. Inspect `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/model-calls/stream-text.ts`.
   2. Follow the tool construction path into `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/single-app-tools.ts`.
-  3. Confirm that only `CHATBRIDGE_CHESS_TOOL_NAME` ever becomes an executable tool.
+  3. Confirm that reviewed invoke selection now starts from the reviewed route
+     decision and only falls back to a narrow natural-Chess helper when the
+     route result would otherwise clarify.
 - Expected: after Pack 05, reviewed app launch should be mediated through a real multi-app route/clarify/refuse path rather than a Chess-only shortcut.
-- Actual: the live `streamText(...)` path only mounts `createReviewedSingleAppToolSet(...)`, and that tool set only returns an executable tool for Chess.
+- Actual:
+  - the live `streamText(...)` path now records a reviewed route-decision event,
+    mounts a host-owned reviewed tool for explicit Drawing Kit prompts, and
+    normalizes the final returned result through the reviewed launch path
+  - natural Chess prompts such as raw FEN plus "best move" remain launchable
+    through a narrow Chess fallback when the reviewed router would otherwise
+    stop at clarify
+  - reviewed launch failures remain explicit host-tool errors instead of
+    collapsing back into silent chat-only behavior
 - Evidence:
   - test or manual surface:
-    - code inspection of:
-      - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/model-calls/stream-text.ts`
-      - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/single-app-tools.ts`
+    - `src/shared/chatbridge/single-app-discovery.test.ts`
+    - `src/renderer/packages/chatbridge/single-app-tools.test.ts`
+    - `test/integration/chatbridge/scenarios/live-reviewed-app-invocation.test.ts`
   - trace id(s):
-    - `019d4660-5956-7000-8000-006a6c7e96db` (`chatbridge.eval.chatbridge-single-app-discovery`)
+    - `38c2a2bc-c130-45d1-9bb2-34cae03fe574`
+      (`chatbridge.eval.chatbridge-live-reviewed-app-invocation-cb-506-doc-proof-active-drawing`)
+    - `decc2258-ea15-4db5-8355-e4dd1d9f4986`
+      (`chatbridge.eval.chatbridge-live-reviewed-app-invocation-cb-506-doc-proof-natural-chess`)
+    - `a1ad56b1-d843-4e98-9be8-4dc258459dc4`
+      (`chatbridge.eval.chatbridge-live-reviewed-app-invocation-cb-506-doc-proof-failure`)
   - relevant code path(s):
     - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/model-calls/stream-text.ts`
     - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/single-app-tools.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/shared/chatbridge/single-app-discovery.ts`
 - Notes:
-  - Even if routing logic exists elsewhere, the main user-facing generation path is not consuming it.
+  - This gap is now closed for the live invoke seam without claiming that the
+    later Drawing Kit, Weather Dashboard, or clarify/refuse UI stories are
+    already complete.
 - Follow-up story candidate:
-  - `CB-506` - Live reviewed app invocation path beyond Chess
+  - continue the queue at `CB-509`
 
 ### SA-003: Route decisions and clarify/refuse artifacts are effectively test-only seams
 

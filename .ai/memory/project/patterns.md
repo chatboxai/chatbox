@@ -52,6 +52,12 @@ Capture repeatable patterns that match how this workspace actually works.
 - Orchestration-heavy work should establish traces/evals early through
   `.ai/workflows/trace-driven-development.md` instead of waiting for late debug
   cycles.
+- LangSmith is the checked-in trace sink for whole-app AI observability. Keep
+  the API key main-process-owned, use the shared contract in
+  `src/shared/utils/langsmith_adapter.ts`, wire renderer code through
+  `src/renderer/adapters/langsmith.ts`, and prefer parent chain traces around
+  user-visible flows plus child model traces through
+  `src/shared/models/tracing.ts`.
 - Fresh story branches and worktrees should copy the required local `.env*`
   files from the working `main` setup, run `pnpm install` before project
   commands, and keep copied env files untracked.

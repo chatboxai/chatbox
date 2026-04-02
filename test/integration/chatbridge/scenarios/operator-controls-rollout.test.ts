@@ -65,6 +65,7 @@ describe('ChatBridge operator controls and observability rollout', () => {
 
   it('records host lifecycle and recovery events as first-class observability records', async () => {
     let appPort: MockMessagePort | null = null
+    const traceEvents: string[] = []
 
     const controller = createBridgeHostController({
       appId: 'story-builder',
@@ -76,6 +77,16 @@ describe('ChatBridge operator controls and observability rollout', () => {
       createMessageChannel,
       createId: createDeterministicIds(['bridge-session-1', 'bridge-token-1', 'bridge-nonce-1']),
       now: () => 100,
+      traceAdapter: {
+        enabled: true,
+        startRun: async () => ({
+          runId: 'unused',
+          end: async () => {},
+        }),
+        recordEvent: async (event) => {
+          traceEvents.push(event.name)
+        },
+      },
     })
 
     controller.attach({
@@ -114,6 +125,12 @@ describe('ChatBridge operator controls and observability rollout', () => {
       traceCode: 'recovery.runtime-crash',
       status: 'degraded',
     })
+    expect(traceEvents).toEqual([
+      'chatbridge.bridge.session_attached',
+      'chatbridge.bridge.session_ready',
+      'chatbridge.bridge.app_event_accepted',
+      'chatbridge.bridge.recovery_required',
+    ])
   })
 
   it('blocks new launches for disabled versions while leaving active-session posture explicit', () => {

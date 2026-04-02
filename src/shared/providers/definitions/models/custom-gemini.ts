@@ -3,7 +3,7 @@ import type { LanguageModelV3 } from '@ai-sdk/provider'
 import { generateText } from 'ai'
 import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
 import { ApiError } from '../../../models/errors'
-import type { CallChatCompletionOptions } from '../../../models/types'
+import type { CallChatCompletionOptions, PaintOptions } from '../../../models/types'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 import { normalizeGeminiHost } from '../../../utils/llm_utils'
@@ -106,12 +106,7 @@ export default class CustomGemini extends AbstractAISDKModel {
   }
 
   public async paint(
-    params: {
-      prompt: string
-      images?: { imageUrl: string }[]
-      num: number
-      aspectRatio?: string
-    },
+    params: PaintOptions,
     signal?: AbortSignal,
     callback?: (picBase64: string) => void
   ): Promise<string[]> {

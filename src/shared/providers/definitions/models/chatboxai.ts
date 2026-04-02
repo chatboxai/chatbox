@@ -6,7 +6,7 @@ import {
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { streamText } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
-import type { CallChatCompletionOptions, ModelInterface } from '../../../models/types'
+import type { CallChatCompletionOptions, ModelInterface, PaintOptions } from '../../../models/types'
 import { getChatboxAPIOrigin } from '../../../request/chatboxai_pool'
 import type { ChatboxAILicenseDetail, ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
@@ -102,12 +102,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
   }
 
   public async paint(
-    params: {
-      prompt: string
-      images?: { imageUrl: string }[]
-      num: number
-      aspectRatio?: string
-    },
+    params: PaintOptions,
     signal?: AbortSignal,
     callback?: (picBase64: string) => void
   ): Promise<string[]> {
@@ -118,12 +113,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
   }
 
   private async paintWithGemini(
-    params: {
-      prompt: string
-      images?: { imageUrl: string }[]
-      num: number
-      aspectRatio?: string
-    },
+    params: PaintOptions,
     signal?: AbortSignal,
     callback?: (picBase64: string) => void
   ): Promise<string[]> {

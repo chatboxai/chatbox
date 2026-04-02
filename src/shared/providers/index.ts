@@ -1,4 +1,5 @@
 import type { ModelInterface } from '../models/types'
+import { wrapModelWithLangSmith } from '../models/tracing'
 import { enrichModelFromRegistry } from '../model-registry/enrich'
 import { mergeSharedOAuthProviderSettings, resolveEffectiveApiKey } from '../oauth'
 import type { Config, ProviderModelInfo, ProviderSettings, SessionSettings, Settings } from '../types'
@@ -158,7 +159,7 @@ export function getModel(
       effectiveApiKey,
     }
 
-    return providerDefinition.createModel(createConfig)
+    return wrapModelWithLangSmith(providerDefinition.createModel(createConfig), dependencies.langsmith)
   }
 
   // Provider not registered - check if it's a custom provider
@@ -168,20 +169,23 @@ export function getModel(
   if (providerBaseInfo.isCustom) {
     const formattedApiPath = providerSetting.apiPath || providerBaseInfo.defaultSettings?.apiPath || ''
     const effectiveApiKey = resolveEffectiveApiKey(providerSetting, dependencies.platformType || 'desktop')
-    return createCustomProviderModel(
-      {
-        settings,
-        globalSettings,
-        config,
-        dependencies,
-        providerSetting,
-        formattedApiHost,
-        formattedApiPath,
-        model,
-        effectiveApiKey,
-      },
-      providerBaseInfo.type,
-      dependencies
+    return wrapModelWithLangSmith(
+      createCustomProviderModel(
+        {
+          settings,
+          globalSettings,
+          config,
+          dependencies,
+          providerSetting,
+          formattedApiHost,
+          formattedApiPath,
+          model,
+          effectiveApiKey,
+        },
+        providerBaseInfo.type,
+        dependencies
+      ),
+      dependencies.langsmith
     )
   }
 

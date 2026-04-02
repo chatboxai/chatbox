@@ -1,6 +1,7 @@
 import type { CallChatCompletionOptions } from '@shared/models/types'
 import type { ModelDependencies } from '@shared/types/adapters'
 import type { ProviderModelInfo } from '@shared/types/settings'
+import { createNoopLangSmithAdapter } from '@shared/utils/langsmith_adapter'
 import type { SentryScope } from '@shared/utils/sentry_adapter'
 import { describe, expect, it, vi } from 'vitest'
 import OpenAIResponses from './openai-responses'
@@ -30,6 +31,7 @@ function createDependencies(): ModelDependencies {
         })
       ),
     },
+    langsmith: createNoopLangSmithAdapter(),
     getRemoteConfig: vi.fn(),
     platformType: 'desktop',
   }

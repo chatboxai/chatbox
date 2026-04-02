@@ -6,6 +6,7 @@ import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import * as settingActions from '@/stores/settingActions'
 import { apiRequest } from '@/utils/request'
+import { langsmith } from './langsmith'
 import { RendererSentryAdapter } from './sentry'
 
 export async function createModelDependencies(): Promise<ModelDependencies> {
@@ -59,6 +60,7 @@ export async function createModelDependencies(): Promise<ModelDependencies> {
       },
     },
     sentry: new RendererSentryAdapter(),
+    langsmith,
     getRemoteConfig: settingActions.getRemoteConfig,
   }
 }

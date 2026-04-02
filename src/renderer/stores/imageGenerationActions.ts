@@ -1,7 +1,9 @@
 import { getModel } from '@shared/providers'
 import type { ImageGeneration, ImageGenerationModel } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types'
+import { getLangSmithErrorMessage } from '@shared/utils/langsmith_adapter'
 import { createModelDependencies } from '@/adapters'
+import { langsmith } from '@/adapters/langsmith'
 import { getLogger } from '@/lib/utils'
 import { pollImageTask, pollTaskUntilComplete, submitImageGeneration } from '@/packages/remote'
 import platform from '@/platform'
@@ -92,6 +94,23 @@ async function generateImages(recordId: string, params: GenerateImageParams): Pr
   // Create AbortController for this generation
   currentAbortController = new AbortController()
   const signal = currentAbortController.signal
+  const traceRun = await langsmith.startRun({
+    name: 'chatbox.image_generation.remote',
+    runType: 'chain',
+    inputs: {
+      recordId,
+      modelId: params.model.modelId,
+      provider: params.model.provider,
+      num,
+      aspectRatio: params.aspectRatio ?? 'auto',
+      referenceImageCount: params.referenceImages.length,
+      path: 'remote',
+    },
+    metadata: {
+      operation: 'generateImages',
+    },
+    tags: ['chatbox', 'renderer', 'image-generation'],
+  })
 
   try {
     // Update status to generating
@@ -187,10 +206,23 @@ async function generateImages(recordId: string, params: GenerateImageParams): Pr
     }
 
     log.debug('Image generation completed:', recordId, 'urls:', completedUrls.length)
+    await traceRun.end({
+      outputs: {
+        status: completedUrls.length > 0 ? (hasError && completedUrls.length < num ? 'partial' : 'done') : 'error',
+        completedCount: completedUrls.length,
+        failedCount: finalResult.items.filter((item) => item.status === 'failed').length,
+        taskId: submission.task_id,
+      },
+    })
   } catch (err: unknown) {
     // Don't report abort errors as failures
     if (err instanceof Error && err.name === 'AbortError') {
       log.debug('Image generation aborted:', recordId)
+      await traceRun.end({
+        outputs: {
+          status: 'aborted',
+        },
+      })
       return
     }
 
@@ -204,6 +236,9 @@ async function generateImages(recordId: string, params: GenerateImageParams): Pr
     if (updatedRecord) {
       queryClient.setQueryData([IMAGE_GEN_QUERY_KEY, updatedRecord.id], updatedRecord)
     }
+    await traceRun.end({
+      error: getLangSmithErrorMessage(error),
+    })
   } finally {
     currentAbortController = null
   }
@@ -214,6 +249,23 @@ async function generateImagesDirect(recordId: string, params: GenerateImageParam
 
   currentAbortController = new AbortController()
   const signal = currentAbortController.signal
+  const traceRun = await langsmith.startRun({
+    name: 'chatbox.image_generation.direct',
+    runType: 'chain',
+    inputs: {
+      recordId,
+      modelId: params.model.modelId,
+      provider: params.model.provider,
+      num,
+      aspectRatio: params.aspectRatio ?? 'auto',
+      referenceImageCount: params.referenceImages.length,
+      path: 'direct',
+    },
+    metadata: {
+      operation: 'generateImagesDirect',
+    },
+    tags: ['chatbox', 'renderer', 'image-generation'],
+  })
 
   try {
     let currentRecord = await updateRecord(recordId, { status: 'generating' })
@@ -259,6 +311,15 @@ async function generateImagesDirect(recordId: string, params: GenerateImageParam
         images: images.length > 0 ? images : undefined,
         num,
         aspectRatio: params.aspectRatio,
+        traceContext: {
+          name: 'chatbox.image_generation.direct.paint',
+          parentRunId: traceRun.runId,
+          metadata: {
+            recordId,
+            modelId: params.model.modelId,
+          },
+          tags: ['chatbox', 'renderer', 'image-generation'],
+        },
       },
       signal,
       async (picBase64: string) => {
@@ -300,9 +361,20 @@ async function generateImagesDirect(recordId: string, params: GenerateImageParam
     }
 
     log.debug('Direct image generation completed:', recordId, 'images:', resultDataUrls.length)
+    await traceRun.end({
+      outputs: {
+        status: resultDataUrls.length > 0 ? (resultDataUrls.length < num ? 'partial' : 'done') : 'error',
+        imageCount: resultDataUrls.length,
+      },
+    })
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') {
       log.debug('Direct image generation aborted:', recordId)
+      await traceRun.end({
+        outputs: {
+          status: 'aborted',
+        },
+      })
       return
     }
 
@@ -316,6 +388,9 @@ async function generateImagesDirect(recordId: string, params: GenerateImageParam
     if (updatedRecord) {
       queryClient.setQueryData([IMAGE_GEN_QUERY_KEY, updatedRecord.id], updatedRecord)
     }
+    await traceRun.end({
+      error: getLangSmithErrorMessage(error),
+    })
   } finally {
     currentAbortController = null
   }

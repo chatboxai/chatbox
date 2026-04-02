@@ -290,4 +290,82 @@ describe('chatbridge resource proxy', () => {
     })
     expect(response.audit.redactedKeys).toContain('accessToken')
   })
+
+  it('emits LangSmith-ready trace events for granted resource actions', async () => {
+    const traceEvents: Array<{ name: string; metadata?: Record<string, unknown> }> = []
+    const broker = createChatBridgeAuthBroker({
+      now: () => 500,
+      createId: () => 'handle-1',
+    })
+    const launch = broker.authorizeAppLaunch({
+      userId: 'student-1',
+      appId: 'story-builder',
+      authMode: 'oauth',
+      grants: [createGrant()],
+      permissionIds: ['drive.read'],
+    })
+
+    const proxy = createChatBridgeResourceProxy({
+      validator: broker,
+      now: () => 600,
+      traceAdapter: {
+        enabled: true,
+        startRun: async () => ({
+          runId: 'unused',
+          end: async () => {},
+        }),
+        recordEvent: async (event) => {
+          traceEvents.push({
+            name: event.name,
+            metadata: event.metadata,
+          })
+        },
+      },
+    })
+    proxy.registerAction(
+      {
+        appId: 'story-builder',
+        resource: 'drive',
+        action: 'drive.readDraft',
+        permissionId: 'drive.read',
+        description: 'Read a Story Builder draft from Drive.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            draftId: { type: 'string' },
+          },
+          required: ['draftId'],
+        },
+      },
+      ({ payload }) => ({
+        draftId: payload.draftId,
+      })
+    )
+
+    expect(launch.authorized).toBe(true)
+    if (!launch.authorized || !launch.credentialHandle) {
+      return
+    }
+
+    await proxy.execute({
+      schemaVersion: 1,
+      requestId: 'request-6',
+      handleId: launch.credentialHandle.handleId,
+      userId: 'student-1',
+      appId: 'story-builder',
+      resource: 'drive',
+      action: 'drive.readDraft',
+      payload: {
+        draftId: 'draft-123',
+      },
+    })
+
+    expect(traceEvents.map((event) => event.name)).toEqual(['chatbridge.resource_proxy.success'])
+    expect(traceEvents[0]?.metadata).toMatchObject({
+      appId: 'story-builder',
+      resource: 'drive',
+      action: 'drive.readDraft',
+      outcome: 'success',
+    })
+  })
 })

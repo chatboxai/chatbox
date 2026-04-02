@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import type { ModelMessage } from 'ai'
+import { getLangSmithErrorMessage } from '../../../shared/utils/langsmith_adapter'
 import {
   isEpubFilePath,
   isLegacyOfficeFilePath,
@@ -8,6 +9,7 @@ import {
 } from '../../../shared/file-extensions'
 import type { DocumentParserType } from '../../../shared/types/settings'
 import { parseFile } from '../../file-parser'
+import { langsmith } from '../../adapters/langsmith'
 import { getVisionProvider } from '../model-providers'
 import type { DocumentParser, ParserFileMeta } from './types'
 
@@ -78,11 +80,45 @@ export class LocalParser implements DocumentParser {
       ],
     }
 
-    const chatResult = await visionModel.chat([msg], {})
+    const traceRun = await langsmith.startRun({
+      name: 'chatbox.knowledge_base.local_parser.image_ocr',
+      runType: 'chain',
+      inputs: {
+        kbId: this.kbId ?? null,
+        mimeType: meta.mimeType,
+        filename: meta.filename,
+        modelId: visionModel.modelId,
+      },
+      tags: ['chatbox', 'main', 'knowledge-base', 'ocr'],
+    })
+
+    const chatResult = await visionModel
+      .chat([msg], {
+        traceContext: {
+          name: 'chatbox.knowledge_base.local_parser.image_ocr.llm',
+          parentRunId: traceRun.runId,
+          metadata: {
+            kbId: this.kbId ?? null,
+            mimeType: meta.mimeType,
+          },
+          tags: ['knowledge-base', 'ocr'],
+        },
+      })
+      .catch(async (error) => {
+        await traceRun.end({
+          error: getLangSmithErrorMessage(error),
+        })
+        throw error
+      })
     const text = chatResult.contentParts
       .filter((p) => p.type === 'text')
       .map((p: { type: 'text'; text: string }) => p.text)
       .join('')
+    await traceRun.end({
+      outputs: {
+        textPreview: text.slice(0, 240),
+      },
+    })
 
     return text
   }

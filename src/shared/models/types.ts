@@ -7,6 +7,7 @@ import {
   type StreamTextResult,
   type ToolUseScope,
 } from 'src/shared/types'
+import type { LangSmithTraceContext } from 'src/shared/utils/langsmith_adapter'
 import { z } from 'zod'
 
 export interface ModelInterface {
@@ -17,16 +18,15 @@ export interface ModelInterface {
   isSupportSystemMessage(): boolean
   chat: (messages: ModelMessage[], options: CallChatCompletionOptions) => Promise<StreamTextResult>
   chatStream: (messages: ModelMessage[], options: ChatStreamOptions) => AsyncGenerator<ModelStreamPart>
-  paint: (
-    params: {
-      prompt: string
-      images?: { imageUrl: string }[]
-      num: number
-      aspectRatio?: string
-    },
-    signal?: AbortSignal,
-    callback?: (picBase64: string) => void | Promise<void>
-  ) => Promise<string[]>
+  paint: (params: PaintOptions, signal?: AbortSignal, callback?: (picBase64: string) => void | Promise<void>) => Promise<string[]>
+}
+
+export interface PaintOptions {
+  prompt: string
+  images?: { imageUrl: string }[]
+  num: number
+  aspectRatio?: string
+  traceContext?: LangSmithTraceContext
 }
 
 export const CallChatCompletionOptionsSchema = z.object({
@@ -45,6 +45,7 @@ export interface CallChatCompletionOptions<Tools extends ToolSet = ToolSet> {
   tools?: Tools
   providerOptions?: ProviderOptions
   maxSteps?: number
+  traceContext?: LangSmithTraceContext
 }
 
 export interface ResultChange {
@@ -67,6 +68,7 @@ export interface ChatStreamOptions {
   tools?: ToolSet
   providerOptions?: ProviderOptions
   maxSteps?: number
+  traceContext?: LangSmithTraceContext
 }
 
 export type ModelStatus = MessageStatus

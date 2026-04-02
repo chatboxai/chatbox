@@ -10,6 +10,12 @@ const getImageMock = vi.fn()
 const setCurrentGeneratingIdMock = vi.fn()
 const setCurrentRecordIdMock = vi.fn()
 const trackEventMock = vi.fn()
+const traceEndMock = vi.fn()
+const traceStartRunMock = vi.fn(async () => ({
+  runId: 'trace-run-1',
+  end: traceEndMock,
+}))
+const getModelMock = vi.fn()
 
 vi.mock('@/adapters', () => ({
   createModelDependencies: vi.fn(async () => ({
@@ -17,6 +23,16 @@ vi.mock('@/adapters', () => ({
       getImage: getImageMock,
     },
   })),
+}))
+
+vi.mock('@/adapters/langsmith', () => ({
+  langsmith: {
+    startRun: traceStartRunMock,
+  },
+}))
+
+vi.mock('@shared/providers', () => ({
+  getModel: getModelMock,
 }))
 
 vi.mock('@/packages/remote', () => ({
@@ -100,6 +116,9 @@ describe('imageGenerationActions reference image payload', () => {
       ],
     })
     getImageMock.mockResolvedValue('data:image/png;base64,AAAA')
+    getModelMock.mockReturnValue({
+      paint: vi.fn(async () => ['data:image/png;base64,BBBB']),
+    })
   })
 
   it('sends reference images as image_url entries for both URLs and stored images', async () => {
@@ -126,5 +145,23 @@ describe('imageGenerationActions reference image payload', () => {
       'license-key'
     )
     expect(trackEventMock).toHaveBeenCalledWith('generate_image', expect.objectContaining({ has_reference: true }))
+    expect(traceStartRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'chatbox.image_generation.remote',
+        runType: 'chain',
+        inputs: expect.objectContaining({
+          path: 'remote',
+          recordId: 'record-1',
+        }),
+      })
+    )
+    expect(traceEndMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputs: expect.objectContaining({
+          completedCount: 1,
+          status: 'done',
+        }),
+      })
+    )
   })
 })

@@ -2,9 +2,10 @@ import type { ModelInterface } from '@shared/models/types'
 import type { ModelMessage } from 'ai'
 import pMap from 'p-map'
 import { createModelDependencies } from '@/adapters'
+import type { LangSmithTraceContext } from '../../../shared/utils/langsmith_adapter'
 import type { Message } from '../../../shared/types'
 
-export async function imageOCR(ocrModel: ModelInterface, messages: Message[]) {
+export async function imageOCR(ocrModel: ModelInterface, messages: Message[], traceContext?: LangSmithTraceContext) {
   const dependencies = await createModelDependencies()
 
   return await pMap(messages, async (msg) => {
@@ -16,7 +17,7 @@ export async function imageOCR(ocrModel: ModelInterface, messages: Message[]) {
         if (!imageData) {
           return c
         }
-        const ocrResult = await doOCR(ocrModel, imageData)
+        const ocrResult = await doOCR(ocrModel, imageData, traceContext)
         image.ocrResult = ocrResult
         return c
       }
@@ -25,7 +26,7 @@ export async function imageOCR(ocrModel: ModelInterface, messages: Message[]) {
     return msg
   })
 }
-async function doOCR(model: ModelInterface, imageData: string) {
+async function doOCR(model: ModelInterface, imageData: string, traceContext?: LangSmithTraceContext) {
   const msg: ModelMessage = {
     role: 'user',
     content: [
@@ -36,7 +37,9 @@ async function doOCR(model: ModelInterface, imageData: string) {
       { type: 'image' as const, image: imageData },
     ],
   }
-  const chatResult = await model.chat([msg], {})
+  const chatResult = await model.chat([msg], {
+    traceContext,
+  })
   const text = chatResult.contentParts
     .filter((p) => p.type === 'text')
     .map((p) => p.text)

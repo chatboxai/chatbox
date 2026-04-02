@@ -35,6 +35,7 @@ import type {
   CallChatCompletionOptions,
   ChatStreamOptions,
   ModelInterface,
+  PaintOptions,
   ModelStatus,
   ModelStreamPart,
 } from './types'
@@ -258,12 +259,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
   }
 
   public async paint(
-    params: {
-      prompt: string
-      images?: { imageUrl: string }[]
-      num: number
-      aspectRatio?: string
-    },
+    params: PaintOptions,
     signal?: AbortSignal,
     callback?: (picBase64: string) => void | Promise<void>
   ): Promise<string[]> {

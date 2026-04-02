@@ -2,12 +2,14 @@ import { buildChatBridgeChessReasoningPrompt, wrapChatBridgeHostTools } from '@s
 import type { ChatBridgeAppRecordSnapshot } from '@shared/chatbridge/app-records'
 import { getModel } from '@shared/models'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
-import { sequenceMessages } from '@shared/utils/message'
+import { getLangSmithErrorMessage, type LangSmithTraceContext } from '@shared/utils/langsmith_adapter'
+import { getMessageText, sequenceMessages } from '@shared/utils/message'
 import { getModelSettings } from '@shared/utils/model_settings'
 import type { ModelMessage, ToolSet } from 'ai'
 import { t } from 'i18next'
 import { uniqueId } from 'lodash'
 import { createModelDependencies } from '@/adapters'
+import { langsmith } from '@/adapters/langsmith'
 import * as settingActions from '@/stores/settingActions'
 import { settingsStore } from '@/stores/settingsStore'
 import type {
@@ -52,13 +54,14 @@ async function handleSearchResult(
   coreMessages: ModelMessage[],
   controller: AbortController,
   onResultChange: OnResultChange,
-  params: { providerOptions?: ProviderOptions; onStatusChange?: OnStatusChange }
+  params: { providerOptions?: ProviderOptions; onStatusChange?: OnStatusChange; traceContext?: LangSmithTraceContext }
 ) {
   if (!result?.searchResults?.length || result.type === 'none') {
     const chatResult = await model.chat(coreMessages, {
       signal: controller.signal,
       onResultChange,
       onStatusChange: params.onStatusChange,
+      traceContext: params.traceContext,
     })
     return { result: chatResult, coreMessages }
   }
@@ -89,11 +92,25 @@ async function handleSearchResult(
     },
     onStatusChange: params.onStatusChange,
     providerOptions: params.providerOptions,
+    traceContext: params.traceContext
+      ? {
+          ...params.traceContext,
+          name: `${params.traceContext.name ?? 'chatbox.session.generate'}.search_followup`,
+        }
+      : undefined,
   })
   return { result: chatResult, coreMessages }
 }
 
-async function ocrMessages(messages: Message[]) {
+function summarizeMessagesForTrace(messages: Message[]) {
+  return messages.map((message) => ({
+    role: message.role,
+    contentPreview: getMessageText(message).slice(0, 240),
+    contentPartTypes: message.contentParts.map((part) => part.type),
+  }))
+}
+
+async function ocrMessages(messages: Message[], traceContext?: LangSmithTraceContext) {
   const settings = settingsStore.getState().getSettings()
   const hasUserOcrModel = settings.ocrModel?.provider && settings.ocrModel?.model
   const hasLicenseKey = !!settings.licenseKey
@@ -117,7 +134,7 @@ async function ocrMessages(messages: Message[]) {
       const modelSettings = getModelSettings(settings, ModelProviderEnum.ChatboxAI, 'chatbox-ocr-1')
       ocrModel = getModel(modelSettings, settings, { uuid: '123' }, dependencies)
     }
-    await imageOCR(ocrModel, messages)
+    await imageOCR(ocrModel, messages, traceContext)
   } catch (err) {
     throw new OCRError(ocrProviderName, err instanceof Error ? err : new Error(`${err}`))
   }
@@ -171,6 +188,30 @@ export async function streamText(
     contentParts: [],
   }
   let coreMessages: ModelMessage[] = []
+  const traceRun = await langsmith.startRun({
+    name: 'chatbox.session.generate',
+    runType: 'chain',
+    inputs: {
+      sessionId: sessionId ?? null,
+      modelId: model.modelId,
+      knowledgeBaseId: knowledgeBase?.id ?? null,
+      webBrowsing: Boolean(webBrowsing),
+      hasFileOrLink,
+      messages: summarizeMessagesForTrace(params.messages),
+    },
+    metadata: {
+      operation: 'streamText',
+    },
+    tags: ['chatbox', 'renderer', 'chat'],
+  })
+  const modelTraceContext: LangSmithTraceContext = {
+    name: 'chatbox.session.generate.llm',
+    parentRunId: traceRun.runId,
+    metadata: {
+      sessionId: sessionId ?? null,
+    },
+    tags: ['chatbox', 'renderer', 'chat'],
+  }
 
   // for model not support tool use, use prompt engineering to handle knowledge base and web search
   const needFileToolSet = hasFileOrLink && model.isSupportToolUse()
@@ -227,7 +268,14 @@ export async function streamText(
       !model.isSupportVision() &&
       messages.some((m) => m.contentParts.some((c) => c.type === 'image' && !c.ocrResult))
     ) {
-      await ocrMessages(messages)
+      await ocrMessages(messages, {
+        name: 'chatbox.session.generate.ocr',
+        parentRunId: traceRun.runId,
+        metadata: {
+          sessionId: sessionId ?? null,
+        },
+        tags: ['chatbox', 'renderer', 'ocr'],
+      })
       infoParts.push({
         type: 'info',
         text: t('Current model {{modelName}} does not support image input, using OCR to process images', {
@@ -267,7 +315,10 @@ export async function streamText(
           coreMessages,
           controller,
           onResultChange,
-          params
+          {
+            ...params,
+            traceContext: modelTraceContext,
+          }
         )
       }
       // 只有知识库不支持工具调用
@@ -289,7 +340,10 @@ export async function streamText(
           coreMessages,
           controller,
           onResultChange,
-          params
+          {
+            ...params,
+            traceContext: modelTraceContext,
+          }
         )
       }
       // 只有网络搜索不支持工具调用
@@ -310,7 +364,10 @@ export async function streamText(
           coreMessages,
           controller,
           onResultChange,
-          params
+          {
+            ...params,
+            traceContext: modelTraceContext,
+          }
         )
       }
     }
@@ -360,15 +417,35 @@ export async function streamText(
       onStatusChange: params.onStatusChange,
       providerOptions: params.providerOptions,
       tools,
+      traceContext: modelTraceContext,
     })
 
+    await traceRun.end({
+      outputs: {
+        contentPartTypes: Array.from(new Set(result.contentParts?.map((part) => part.type) ?? [])),
+        infoPartCount: infoParts.length,
+        toolCount: Object.keys(tools).length,
+      },
+    })
     return { result, coreMessages }
   } catch (err) {
     console.error(err)
     // if a cancellation is performed, do not throw an exception, otherwise the content will be overwritten.
     if (controller.signal.aborted) {
+      await traceRun.end({
+        outputs: {
+          aborted: true,
+          contentPartTypes: Array.from(new Set(result.contentParts?.map((part) => part.type) ?? [])),
+        },
+      })
       return { result, coreMessages }
     }
+    await traceRun.end({
+      error: getLangSmithErrorMessage(err),
+      metadata: {
+        aborted: false,
+      },
+    })
     throw err
   }
 }

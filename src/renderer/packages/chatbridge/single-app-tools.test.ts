@@ -1,3 +1,5 @@
+import '../../../../test/integration/chatbridge/setup'
+
 import type { ToolExecutionOptions } from 'ai'
 import { describe, expect, it } from 'vitest'
 import { createMessage } from '@shared/types'

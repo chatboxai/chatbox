@@ -39,7 +39,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 | Pack 00 | validated backfills complete | `CB-006` and `CB-007` validated | inherited baseline | SA-006 is closed by `CB-006`, and the delta-pass evidence-quality follow-up is closed by `CB-007` before runtime rebuild work continues. |
 | Pack 01 | reopened by smoke audit | `CB-105` planned backfill | inherited baseline | SA-007 reopened console and accessibility hygiene as the final cleanup story. |
 | Pack 02 | historical baseline | inherited `merged` baseline | inherited | Contracts and bridge foundations are assumed ready for post-Pack-4 execution. |
-| Pack 03 | validated backfill complete | `CB-305` validated backfill | inherited baseline | SA-005 is closed by CB-305; reviewed host-tool launches now flow through the bridge host controller while artifact preview remains on the separate HTML-preview seam. |
+| Pack 03 | validated backfills complete | `CB-305` and `CB-306` validated backfills | inherited baseline | SA-005 is closed by CB-305, and the urgent Chess runtime handoff regression is closed by CB-306; reviewed host-tool launches now flow through the bridge host controller and successful Chess launches become real Chess runtime parts. |
 | Pack 04 | validated | CB-401 through CB-404 validated | written | Exit proof is recorded in `pack-04.../STATUS.md`; Pack 5 and Pack 6 are unlocked. |
 | Pack 05 | reopened by smoke audit and catalog change | `CB-508` and `CB-506` validated; `CB-507`, `CB-509`, and `CB-510` planned backfills | historical exit memo | Default reviewed catalog and seed inspection now align to Chess, Drawing Kit, and Weather, and the live invoke seam is no longer Chess-only, but the flagship app runtimes and clarify/refuse UI are still open. |
 | Pack 06 | historical baseline with legacy parked follow-up | `CB-605` planned legacy packet | historical exit memo | Story Builder auth/resource proof remains a legacy reference and is no longer on the active queue. |
@@ -54,22 +54,24 @@ packet and should not be picked up next.
 1. Pack 00 -> `CB-006`
 2. Pack 00 -> `CB-007`
 3. Pack 03 -> `CB-305`
-4. Pack 05 -> `CB-508`
-5. Pack 05 -> `CB-506`
-6. Pack 05 -> `CB-509`
-7. Pack 05 -> `CB-510`
-8. Pack 05 -> `CB-507`
-9. Pack 01 -> `CB-105`
+4. Pack 03 -> `CB-306`
+5. Pack 05 -> `CB-508`
+6. Pack 05 -> `CB-506`
+7. Pack 05 -> `CB-509`
+8. Pack 05 -> `CB-510`
+9. Pack 05 -> `CB-507`
+10. Pack 01 -> `CB-105`
 
 ## Current Milestone
 
 - Active next gate: `CB-509`
 - Immediate next story after `CB-509`: `CB-510`
-- Status: `CB-006`, `CB-007`, `CB-305`, `CB-508`, and `CB-506` are validated;
-  `CB-509` is now the earliest unresolved queue item
+- Status: `CB-006`, `CB-007`, `CB-305`, `CB-306`, `CB-508`, and `CB-506` are
+  validated; `CB-509` is now the earliest unresolved queue item
 - Result: the active reviewed catalog, seed inspection, and live reviewed
-  invoke path now agree on Chess, Drawing Kit, and Weather, so the queue can
-  move from invoke-path repair to the remaining flagship runtime stories
+  invoke path now agree on Chess, Drawing Kit, and Weather, and the urgent
+  Chess runtime handoff bug no longer blocks app verification. The queue can
+  move from invoke-path repair to the remaining flagship runtime stories.
 
 ## Pack 4 Exit Lock
 
@@ -111,6 +113,7 @@ smoke audit has reopened the program for a focused rebuild.
   - `CB-006` validated
   - `CB-007` validated
   - `CB-305` validated
+  - `CB-306` validated
   - `CB-508` validated
   - `CB-506` validated
   - `CB-509`

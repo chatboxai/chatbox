@@ -1,10 +1,23 @@
+/**
+ * @vitest-environment jsdom
+ */
+
+import '../../../../test/integration/chatbridge/setup'
+
 import {
   createChatBridgeRuntimeCrashRecoveryContract,
   readChatBridgeDegradedCompletion,
 } from '@shared/chatbridge'
-import type { BridgeReadyEvent, BridgeAppEvent } from '@shared/chatbridge/bridge-session'
+import {
+  CHESS_APP_ID,
+  CHESS_APP_NAME,
+  ChessAppSnapshotSchema,
+  createChessAppSnapshotFromGame,
+} from '@shared/chatbridge/apps/chess'
+import type { BridgeAppEvent, BridgeReadyEvent } from '@shared/chatbridge/bridge-session'
 import { CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION } from '@shared/chatbridge/tools'
 import { createMessage, type MessageAppPart, type MessageToolCallPart, type Session } from '@shared/types'
+import { Chess } from 'chess.js'
 import { describe, expect, it } from 'vitest'
 import {
   applyReviewedAppLaunchBootstrapToSession,
@@ -15,7 +28,7 @@ import {
   upsertReviewedAppLaunchParts,
 } from './reviewed-app-launch'
 
-function createReviewedLaunchToolCallPart(): MessageToolCallPart {
+function createChessToolCallPart(): MessageToolCallPart {
   return {
     type: 'tool-call',
     state: 'result',
@@ -56,10 +69,48 @@ function createReviewedLaunchToolCallPart(): MessageToolCallPart {
   }
 }
 
-function createSessionWithLaunchParts(): { session: Session; launchPart: MessageAppPart } {
+function createDrawingToolCallPart(): MessageToolCallPart {
+  return {
+    type: 'tool-call',
+    state: 'result',
+    toolCallId: 'tool-reviewed-launch-drawing-1',
+    toolName: 'drawing_kit_open',
+    args: {
+      request: 'Open Drawing Kit and sketch a quick concept map.',
+    },
+    result: {
+      kind: 'chatbridge.host.tool.record.v1',
+      toolName: 'drawing_kit_open',
+      appId: 'drawing-kit',
+      sessionId: 'session-reviewed-launch-drawing-1',
+      schemaVersion: CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
+      executionAuthority: 'host',
+      effect: 'read',
+      retryClassification: 'safe',
+      invocation: {
+        args: {
+          request: 'Open Drawing Kit and sketch a quick concept map.',
+        },
+      },
+      outcome: {
+        status: 'success',
+        result: {
+          appId: 'drawing-kit',
+          appName: 'Drawing Kit',
+          capability: 'open',
+          launchReady: true,
+          summary: 'Prepared Drawing Kit for the reviewed launch path.',
+          request: 'Open Drawing Kit and sketch a quick concept map.',
+        },
+      },
+    },
+  }
+}
+
+function createSessionWithGenericLaunchPart(): { session: Session; launchPart: MessageAppPart } {
   const assistantMessage = createMessage('assistant')
   assistantMessage.id = 'assistant-reviewed-launch-1'
-  assistantMessage.contentParts = upsertReviewedAppLaunchParts([createReviewedLaunchToolCallPart()])
+  assistantMessage.contentParts = upsertReviewedAppLaunchParts([createDrawingToolCallPart()])
 
   const launchPart = assistantMessage.contentParts.find(
     (part): part is MessageAppPart => part.type === 'app'
@@ -91,67 +142,155 @@ function getLaunchPart(session: Session): MessageAppPart {
 }
 
 describe('reviewed app launch adoption', () => {
-  it('converts successful reviewed host-tool results into launchable app parts', () => {
-    const [toolCall, derivedLaunchPart] = upsertReviewedAppLaunchParts([createReviewedLaunchToolCallPart()])
-    if (derivedLaunchPart?.type !== 'app') {
-      throw new Error('Expected the derived reviewed launch part to be an app part.')
+  it('converts successful chess host-tool results into live chess app parts', () => {
+    const [toolCall, derivedChessPart] = upsertReviewedAppLaunchParts([createChessToolCallPart()])
+    if (derivedChessPart?.type !== 'app') {
+      throw new Error('Expected the derived Chess part to be an app part.')
     }
+
+    const snapshot = ChessAppSnapshotSchema.parse(derivedChessPart.snapshot)
 
     expect(toolCall).toMatchObject({
       type: 'tool-call',
       toolCallId: 'tool-reviewed-launch-1',
     })
-    expect(derivedLaunchPart).toMatchObject({
+    expect(derivedChessPart).toMatchObject({
       type: 'app',
-      appId: 'chess',
-      appName: 'Chess',
-      appInstanceId: 'reviewed-launch:tool-reviewed-launch-1',
-      lifecycle: 'launching',
+      appId: CHESS_APP_ID,
+      appName: CHESS_APP_NAME,
+      appInstanceId: 'chess-launch:tool-reviewed-launch-1',
+      lifecycle: 'active',
       toolCallId: 'tool-reviewed-launch-1',
-      summary: 'Prepared the reviewed Chess session request for the host-owned launch path.',
-      summaryForModel: 'Prepared the reviewed Chess session request for the host-owned launch path.',
-      statusText: 'Launching',
+      statusText: 'White to move',
+      summary: 'Chess board ready. White to move from the loaded position.',
+      summaryForModel: 'Chess board ready. White to move from the loaded position.',
     })
-    expect(readChatBridgeReviewedAppLaunch(derivedLaunchPart.values)).toMatchObject({
+    expect(readChatBridgeReviewedAppLaunch(derivedChessPart.values)).toBeNull()
+    expect(snapshot).toMatchObject({
       appId: 'chess',
-      appName: 'Chess',
-      toolName: 'chess_prepare_session',
-      request: 'Open Chess and analyze this FEN.',
       fen: 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',
+      turn: 'white',
+      status: {
+        phase: 'active',
+      },
     })
   })
 
-  it('preserves an existing bridge-owned launch part when the tool result is normalized again', () => {
-    const existingParts = upsertReviewedAppLaunchParts([createReviewedLaunchToolCallPart()])
-    const existingLaunchPart = existingParts.find((part): part is MessageAppPart => part.type === 'app')
+  it('preserves an existing live chess app part when the tool result is normalized again', () => {
+    const existingParts = upsertReviewedAppLaunchParts([createChessToolCallPart()])
+    const existingChessPart = existingParts.find((part): part is MessageAppPart => part.type === 'app')
 
-    if (!existingLaunchPart) {
-      throw new Error('Expected an existing reviewed launch part.')
+    if (!existingChessPart) {
+      throw new Error('Expected an existing Chess app part.')
     }
 
+    const game = new Chess()
+    const move = game.move({ from: 'e2', to: 'e4' })
+    if (!move) {
+      throw new Error('Expected e4 to be legal.')
+    }
+
+    const updatedSnapshot = createChessAppSnapshotFromGame(game, {
+      lastAction: {
+        kind: 'accepted',
+        message: 'e4 is legal.',
+        move: createChessAppSnapshotFromGame(game).moveHistory[0]!,
+      },
+    })
+
     const rerenderedParts = upsertReviewedAppLaunchParts([
-      createReviewedLaunchToolCallPart(),
+      createChessToolCallPart(),
       {
-        ...existingLaunchPart,
-        lifecycle: 'active',
-        bridgeSessionId: 'bridge-session-reviewed-1',
-        statusText: 'Bridge active',
-        summary: 'Chess bridge runtime is live inside the thread.',
+        ...existingChessPart,
+        snapshot: updatedSnapshot,
+        summary: 'Chess updated to e4. Black to move.',
+        summaryForModel: 'Chess updated to e4. Black to move.',
+        statusText: 'Black to move',
       },
     ])
 
-    const rerenderedLaunchPart = rerenderedParts.find((part): part is MessageAppPart => part.type === 'app')
-    expect(rerenderedLaunchPart).toMatchObject({
-      appInstanceId: existingLaunchPart.appInstanceId,
+    const rerenderedChessPart = rerenderedParts.find((part): part is MessageAppPart => part.type === 'app')
+    expect(rerenderedChessPart).toMatchObject({
+      appInstanceId: existingChessPart.appInstanceId,
       lifecycle: 'active',
-      bridgeSessionId: 'bridge-session-reviewed-1',
-      statusText: 'Bridge active',
-      summary: 'Chess bridge runtime is live inside the thread.',
+      summary: 'Chess updated to e4. Black to move.',
+      statusText: 'Black to move',
+      snapshot: {
+        moveHistory: [
+          {
+            san: 'e4',
+          },
+        ],
+      },
     })
   })
 
-  it('persists bootstrap, ready, active, and recovery state into the host-owned session record', () => {
-    const { session, launchPart } = createSessionWithLaunchParts()
+  it('keeps the generic reviewed-launch shell for non-Chess apps', () => {
+    const [, derivedLaunchPart] = upsertReviewedAppLaunchParts([createDrawingToolCallPart()])
+    if (derivedLaunchPart?.type !== 'app') {
+      throw new Error('Expected the derived launch part to be an app part.')
+    }
+
+    expect(derivedLaunchPart).toMatchObject({
+      type: 'app',
+      appId: 'drawing-kit',
+      appName: 'Drawing Kit',
+      appInstanceId: 'reviewed-launch:tool-reviewed-launch-drawing-1',
+      lifecycle: 'launching',
+      toolCallId: 'tool-reviewed-launch-drawing-1',
+      summary: 'Prepared Drawing Kit for the reviewed launch path.',
+      summaryForModel: 'Prepared Drawing Kit for the reviewed launch path.',
+      statusText: 'Launching',
+    })
+    expect(readChatBridgeReviewedAppLaunch(derivedLaunchPart.values)).toMatchObject({
+      appId: 'drawing-kit',
+      appName: 'Drawing Kit',
+      toolName: 'drawing_kit_open',
+      request: 'Open Drawing Kit and sketch a quick concept map.',
+    })
+  })
+
+  it('fails closed when the reviewed Chess launch payload contains invalid board input', () => {
+    const [, derivedChessPart] = upsertReviewedAppLaunchParts([
+      {
+        ...createChessToolCallPart(),
+        args: {
+          request: 'Open Chess with this broken board state.',
+          fen: 'not-a-valid-fen',
+        },
+        result: {
+          ...(createChessToolCallPart().result as NonNullable<MessageToolCallPart['result']>),
+          outcome: {
+            status: 'success',
+            result: {
+              appId: 'chess',
+              appName: 'Chess',
+              capability: 'prepare-session',
+              launchReady: true,
+              summary: 'Prepared the reviewed Chess session request for the host-owned launch path.',
+              request: 'Open Chess with this broken board state.',
+              fen: 'not-a-valid-fen',
+            },
+          },
+        },
+      },
+    ])
+
+    if (derivedChessPart?.type !== 'app') {
+      throw new Error('Expected the derived Chess part to be an app part.')
+    }
+
+    expect(derivedChessPart).toMatchObject({
+      appId: CHESS_APP_ID,
+      lifecycle: 'error',
+      statusText: 'Input error',
+    })
+    expect(readChatBridgeReviewedAppLaunch(derivedChessPart.values)).toBeNull()
+    expect(derivedChessPart.summary).toContain('Invalid FEN')
+  })
+
+  it('persists bootstrap, ready, active, and recovery state into the host-owned session record for generic reviewed apps', () => {
+    const { session, launchPart } = createSessionWithGenericLaunchPart()
 
     const bootstrapped = applyReviewedAppLaunchBootstrapToSession(session, {
       messageId: 'assistant-reviewed-launch-1',
@@ -170,8 +309,8 @@ describe('reviewed app launch adoption', () => {
     expect(bootstrapped.chatBridgeAppRecords).toMatchObject({
       instances: [
         {
-          id: 'reviewed-launch:tool-reviewed-launch-1',
-          appId: 'chess',
+          id: 'reviewed-launch:tool-reviewed-launch-drawing-1',
+          appId: 'drawing-kit',
           bridgeSessionId: 'bridge-session-reviewed-1',
           status: 'launching',
         },
@@ -186,7 +325,7 @@ describe('reviewed app launch adoption', () => {
     const readyEvent: BridgeReadyEvent = {
       kind: 'app.ready',
       bridgeSessionId: 'bridge-session-reviewed-1',
-      appInstanceId: 'reviewed-launch:tool-reviewed-launch-1',
+      appInstanceId: 'reviewed-launch:tool-reviewed-launch-drawing-1',
       bridgeToken: 'bridge-token-reviewed-1',
       ackNonce: 'bridge-nonce-reviewed-1',
       sequence: 1,
@@ -209,16 +348,16 @@ describe('reviewed app launch adoption', () => {
     const stateEvent: Extract<BridgeAppEvent, { kind: 'app.state' }> = {
       kind: 'app.state',
       bridgeSessionId: 'bridge-session-reviewed-1',
-      appInstanceId: 'reviewed-launch:tool-reviewed-launch-1',
+      appInstanceId: 'reviewed-launch:tool-reviewed-launch-drawing-1',
       bridgeToken: 'bridge-token-reviewed-1',
       sequence: 2,
-      idempotencyKey: 'state-reviewed-launch-2',
+      idempotencyKey: 'state-reviewed-bridge-2',
       snapshot: {
         kind: 'reviewed-app-launch',
         schemaVersion: 1,
-        summary: 'Chess bridge runtime is live inside the host-owned shell.',
+        summary: 'Drawing Kit bridge runtime is live inside the host-owned shell.',
         statusText: 'Bridge active',
-        request: 'Open Chess and analyze this FEN.',
+        request: 'Open Drawing Kit and sketch a quick concept map.',
       },
     }
     const activated = applyReviewedAppLaunchBridgeEventToSession(readied, {
@@ -232,18 +371,18 @@ describe('reviewed app launch adoption', () => {
 
     expect(activePart).toMatchObject({
       lifecycle: 'active',
-      summary: 'Chess bridge runtime is live inside the host-owned shell.',
-      summaryForModel: 'Chess bridge runtime is live inside the host-owned shell.',
+      summary: 'Drawing Kit bridge runtime is live inside the host-owned shell.',
+      summaryForModel: 'Drawing Kit bridge runtime is live inside the host-owned shell.',
       statusText: 'Bridge active',
       snapshot: {
         kind: 'reviewed-app-launch',
-        summary: 'Chess bridge runtime is live inside the host-owned shell.',
+        summary: 'Drawing Kit bridge runtime is live inside the host-owned shell.',
       },
     })
     expect(activated.chatBridgeAppRecords).toMatchObject({
       instances: [
         {
-          id: 'reviewed-launch:tool-reviewed-launch-1',
+          id: 'reviewed-launch:tool-reviewed-launch-drawing-1',
           status: 'active',
           bridgeSessionId: 'bridge-session-reviewed-1',
         },
@@ -259,8 +398,8 @@ describe('reviewed app launch adoption', () => {
       messageId: 'assistant-reviewed-launch-1',
       part: activePart,
       contract: createChatBridgeRuntimeCrashRecoveryContract({
-        appId: 'chess',
-        appName: 'Chess',
+        appId: 'drawing-kit',
+        appName: 'Drawing Kit',
         appInstanceId: activePart.appInstanceId,
         bridgeSessionId: activePart.bridgeSessionId,
         error: 'The reviewed launch runtime crashed.',
@@ -273,7 +412,7 @@ describe('reviewed app launch adoption', () => {
     expect(recoveredPart).toMatchObject({
       lifecycle: 'error',
       statusText: 'Runtime crash',
-      error: 'Chess crashed, but the conversation can continue from preserved host-owned context.',
+      error: 'Drawing Kit crashed, but the conversation can continue from preserved host-owned context.',
     })
     expect(readChatBridgeDegradedCompletion(recoveredPart)).toMatchObject({
       kind: 'runtime-error',
@@ -286,7 +425,7 @@ describe('reviewed app launch adoption', () => {
     expect(recovered.chatBridgeAppRecords).toMatchObject({
       instances: [
         {
-          id: 'reviewed-launch:tool-reviewed-launch-1',
+          id: 'reviewed-launch:tool-reviewed-launch-drawing-1',
           status: 'error',
         },
       ],

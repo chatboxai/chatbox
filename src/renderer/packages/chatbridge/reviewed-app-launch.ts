@@ -9,9 +9,20 @@ import {
   type ChatBridgeHostToolExecutionRecord,
   type ChatBridgeRecoveryContract,
 } from '@shared/chatbridge'
+import {
+  CHESS_APP_ID,
+  CHESS_APP_NAME,
+  createChessAppSnapshotFromGame,
+  createInitialChessAppSnapshot,
+  getChessFallbackText,
+  getChessSummary,
+  type ChessAppSnapshot,
+} from '@shared/chatbridge/apps/chess'
 import type { Message, MessageAppPart, MessageContentParts, MessageToolCallPart, Session } from '@shared/types'
+import { Chess } from 'chess.js'
 import { z } from 'zod'
 import { createChatBridgeAppRecordStore } from './app-records'
+import { buildChessMessageAppPart } from './chess-session-state'
 
 export const CHATBRIDGE_REVIEWED_APP_LAUNCH_SCHEMA_VERSION = 1 as const
 export const CHATBRIDGE_REVIEWED_APP_LAUNCH_VALUES_KEY = 'chatbridgeReviewedAppLaunch' as const
@@ -118,6 +129,46 @@ function createReviewedAppLaunchFromToolRecord(record: ChatBridgeHostToolExecuti
   })
 }
 
+function normalizeReviewedChessFen(fen?: string) {
+  if (!fen) {
+    return undefined
+  }
+
+  const trimmed = fen.trim()
+  if (trimmed.length === 0 || trimmed.toLowerCase() === 'startpos') {
+    return undefined
+  }
+
+  return trimmed
+}
+
+function createChessSnapshotFromLaunch(launch: ChatBridgeReviewedAppLaunch): { snapshot?: ChessAppSnapshot; error?: string } {
+  try {
+    const normalizedFen = normalizeReviewedChessFen(launch.fen)
+    if (normalizedFen) {
+      return {
+        snapshot: createChessAppSnapshotFromGame(new Chess(normalizedFen)),
+      }
+    }
+
+    if (typeof launch.pgn === 'string' && launch.pgn.trim().length > 0) {
+      const game = new Chess()
+      game.loadPgn(launch.pgn.trim())
+      return {
+        snapshot: createChessAppSnapshotFromGame(game),
+      }
+    }
+
+    return {
+      snapshot: createInitialChessAppSnapshot(),
+    }
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'The host could not initialize the Chess board from the provided launch input.',
+    }
+  }
+}
+
 export function readChatBridgeReviewedAppLaunch(values: Record<string, unknown> | undefined) {
   if (!values || typeof values !== 'object') {
     return null
@@ -171,12 +222,67 @@ function buildReviewedAppLaunchPart(
   }
 }
 
+function buildChessLaunchPart(toolCallId: string, launch: ChatBridgeReviewedAppLaunch, existingPart?: MessageAppPart): MessageAppPart {
+  // Once a reviewed launch has been promoted into a real Chess runtime part, keep
+  // the host-owned board state instead of reseeding from the original launch payload.
+  if (existingPart?.appId === CHESS_APP_ID) {
+    return existingPart
+  }
+
+  const seededSnapshot = createChessSnapshotFromLaunch(launch)
+  if (!seededSnapshot.snapshot) {
+    const summary =
+      seededSnapshot.error ??
+      'The host could not start Chess from the provided launch payload, so no board state was promoted as trusted context.'
+
+    return {
+      type: 'app',
+      appId: CHESS_APP_ID,
+      appName: CHESS_APP_NAME,
+      appInstanceId: existingPart?.appInstanceId ?? `chess-launch:${toolCallId}`,
+      lifecycle: 'error',
+      toolCallId,
+      summary,
+      summaryForModel: summary,
+      error: summary,
+      title: existingPart?.title ?? 'Chess board',
+      description:
+        existingPart?.description ??
+        'The host refused to fabricate a Chess board because the provided launch input could not be validated.',
+      statusText: existingPart?.statusText ?? 'Input error',
+      fallbackTitle: existingPart?.fallbackTitle ?? 'Chess fallback',
+      fallbackText:
+        existingPart?.fallbackText ??
+        'Ask for a valid FEN or PGN, or start a new game from the standard opening position.',
+    }
+  }
+
+  return buildChessMessageAppPart(
+    {
+      type: 'app',
+      appId: CHESS_APP_ID,
+      appName: CHESS_APP_NAME,
+      appInstanceId: existingPart?.appInstanceId ?? `chess-launch:${toolCallId}`,
+      lifecycle: 'active',
+      toolCallId,
+      summaryForModel: getChessSummary(seededSnapshot.snapshot),
+      fallbackText: getChessFallbackText(seededSnapshot.snapshot),
+      title: existingPart?.title,
+      description: existingPart?.description,
+      statusText: existingPart?.statusText,
+      fallbackTitle: existingPart?.fallbackTitle,
+      error: existingPart?.error,
+    },
+    seededSnapshot.snapshot
+  )
+}
+
 export function upsertReviewedAppLaunchParts(contentParts: MessageContentParts): MessageContentParts {
-  const existingLaunchParts = new Map(
+  const existingAppParts = new Map(
     contentParts
       .filter((part): part is MessageAppPart => part.type === 'app' && Boolean(part.toolCallId))
       .flatMap((part) => {
-        if (!part.toolCallId || !isChatBridgeReviewedAppLaunchPart(part)) {
+        if (!part.toolCallId) {
           return []
         }
 
@@ -221,7 +327,12 @@ export function upsertReviewedAppLaunchParts(contentParts: MessageContentParts):
       continue
     }
 
-    nextContentParts.push(buildReviewedAppLaunchPart(part.toolCallId, launch, existingLaunchParts.get(part.toolCallId)))
+    const existingPart = existingAppParts.get(part.toolCallId)
+    nextContentParts.push(
+      launch.appId === CHESS_APP_ID
+        ? buildChessLaunchPart(part.toolCallId, launch, existingPart)
+        : buildReviewedAppLaunchPart(part.toolCallId, launch, existingPart)
+    )
   }
 
   return nextContentParts

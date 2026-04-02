@@ -85,6 +85,7 @@ export const ChessAppSnapshotSchema = z.object({
 export type ChessAppSnapshot = z.infer<typeof ChessAppSnapshotSchema>
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
+const STARTING_CHESS_FEN = new Chess().fen()
 const PIECE_NAMES: Record<PieceSymbol, ChessPiece> = {
   p: 'pawn',
   n: 'knight',
@@ -179,6 +180,17 @@ export function getChessSummary(snapshot: ChessAppSnapshot) {
 
   if (snapshot.lastAction.kind === 'rejected') {
     return `Chess rejected the attempted move. ${getTurnLabel(snapshot.turn)} still to move from the current board state.`
+  }
+
+  if (moveCount > 0) {
+    const lastMove = snapshot.moveHistory.at(-1)
+    return lastMove
+      ? `Chess board ready after ${lastMove.san}. ${getTurnLabel(snapshot.turn)} to move.`
+      : `Chess board ready. ${getTurnLabel(snapshot.turn)} to move from the current board state.`
+  }
+
+  if (snapshot.fen !== STARTING_CHESS_FEN) {
+    return `Chess board ready. ${getTurnLabel(snapshot.turn)} to move from the loaded position.`
   }
 
   return `Chess board ready. ${getTurnLabel(snapshot.turn)} to move from the starting position.`

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { MessageAppPart } from '../types/session'
 import { getChatBridgeAppSummaryForModel } from './app-memory'
 import { ChatBridgeCompletionPayloadSchema, type ChatBridgeCompletionPayload } from './completion'
+import { readChatBridgeRecoveryContract } from './recovery-contract'
 
 export const CHATBRIDGE_RECOVERY_SCHEMA_VERSION = 1 as const
 
@@ -96,6 +97,80 @@ function buildExplainPrompt(appLabel: string, userGoal?: string): string {
   return segments.join(' ')
 }
 
+function buildActionPrompt(actionId: string, appLabel: string, userGoal?: string, resumeHint?: string): string {
+  switch (actionId) {
+    case 'resume-from-checkpoint':
+      return buildResumePrompt(appLabel, userGoal, resumeHint)
+    case 'continue-in-chat':
+      return buildFollowUpPrompt(appLabel, userGoal)
+    case 'dismiss-runtime':
+      return [
+        `Dismiss the unavailable ${appLabel} runtime and continue from preserved host-owned context.`,
+        userGoal ? `Original goal: ${userGoal}.` : null,
+        'Do not rely on live runtime state that the host no longer trusts.',
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(' ')
+    case 'inspect-invalid-fields':
+      return [
+        `Explain which ${appLabel} fields or tool inputs failed host validation.`,
+        userGoal ? `Original goal: ${userGoal}.` : null,
+        'Use only validated host-owned diagnostics in the explanation.',
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(' ')
+    case 'retry-completion':
+      return [
+        `Retry the previous ${appLabel} completion from the last validated checkpoint only.`,
+        userGoal ? `Original goal: ${userGoal}.` : null,
+        'Keep any untrusted partial output explicitly out of model memory.',
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(' ')
+    case 'ask-for-explanation':
+    default:
+      return buildExplainPrompt(appLabel, userGoal)
+  }
+}
+
+function buildRecoveryStateFromContract(part: MessageAppPart) {
+  const contract = readChatBridgeRecoveryContract(
+    part.values && typeof part.values === 'object' ? (part.values as Record<string, unknown>) : undefined
+  )
+  if (!contract) {
+    return null
+  }
+
+  const appLabel = getAppLabel(part)
+  const userGoal = getUserGoal(part)
+  const completionPayload = getCompletionPayload(part)
+  const resumeHint =
+    completionPayload && 'resumability' in completionPayload && completionPayload.resumability?.resumeHint
+      ? normalizeWhitespace(completionPayload.resumability.resumeHint)
+      : undefined
+
+  return ChatBridgeRecoveryStateSchema.parse({
+    schemaVersion: CHATBRIDGE_RECOVERY_SCHEMA_VERSION,
+    tone: contract.severity === 'terminal' ? 'warning' : 'calm',
+    label: 'Host-owned recovery',
+    ...(userGoal ? { userGoal } : {}),
+    summary: contract.summary,
+    footnote: contract.fallbackText,
+    actions: contract.actions.map((action) => ({
+      kind:
+        action.id === 'resume-from-checkpoint'
+          ? 'resume_in_chat'
+          : action.id === 'ask-for-explanation' || action.id === 'inspect-invalid-fields'
+            ? 'explain'
+            : action.id === 'continue-in-chat' || action.id === 'dismiss-runtime'
+              ? 'continue_in_chat'
+              : 'ask_follow_up',
+      label: action.label,
+      prompt: buildActionPrompt(action.id, appLabel, userGoal, resumeHint),
+    })),
+  })
+}
+
 function buildDerivedRecoveryState(part: MessageAppPart): ChatBridgeRecoveryState | null {
   const completionPayload = getCompletionPayload(part)
   const degradedCompletionStatus =
@@ -174,6 +249,11 @@ export function getChatBridgeRecoveryState(part: MessageAppPart): ChatBridgeReco
   const parsedExplicit = ChatBridgeRecoveryStateSchema.safeParse(part.values?.chatbridgeRecovery)
   if (parsedExplicit.success) {
     return parsedExplicit.data
+  }
+
+  const contractDerived = buildRecoveryStateFromContract(part)
+  if (contractDerived) {
+    return contractDerived
   }
 
   return buildDerivedRecoveryState(part)

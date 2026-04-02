@@ -1,5 +1,18 @@
 import { z } from 'zod'
 import type { MessageAppPart } from '../types/session'
+import {
+  ChatBridgeRecoveryActionIdSchema,
+  ChatBridgeRecoveryActionSchema,
+  ChatBridgeRecoveryItemSchema,
+  ChatBridgeRecoveryItemToneSchema,
+  ChatBridgeRecoveryPanelSchema,
+  readChatBridgeRecoveryContract,
+  type ChatBridgeRecoveryAction,
+  type ChatBridgeRecoveryActionId,
+  type ChatBridgeRecoveryItem,
+  type ChatBridgeRecoveryItemTone,
+  type ChatBridgeRecoveryPanel,
+} from './recovery-contract'
 
 export const CHATBRIDGE_DEGRADED_COMPLETION_SCHEMA_VERSION = 1 as const
 const CHATBRIDGE_DEGRADED_COMPLETION_VALUES_KEY = 'chatbridgeDegradedCompletion'
@@ -13,45 +26,6 @@ export const ChatBridgeDegradedCompletionKindSchema = z.enum([
 ])
 
 export type ChatBridgeDegradedCompletionKind = z.infer<typeof ChatBridgeDegradedCompletionKindSchema>
-
-export const ChatBridgeRecoveryItemToneSchema = z.enum(['neutral', 'safe', 'warning', 'blocked'])
-export type ChatBridgeRecoveryItemTone = z.infer<typeof ChatBridgeRecoveryItemToneSchema>
-
-export const ChatBridgeRecoveryItemSchema = z.object({
-  label: z.string(),
-  description: z.string().optional(),
-  tone: ChatBridgeRecoveryItemToneSchema.default('neutral'),
-})
-
-export type ChatBridgeRecoveryItem = z.infer<typeof ChatBridgeRecoveryItemSchema>
-
-export const ChatBridgeRecoveryPanelSchema = z.object({
-  eyebrow: z.string().optional(),
-  title: z.string(),
-  description: z.string().optional(),
-  items: z.array(ChatBridgeRecoveryItemSchema).default([]),
-})
-
-export type ChatBridgeRecoveryPanel = z.infer<typeof ChatBridgeRecoveryPanelSchema>
-
-export const ChatBridgeRecoveryActionIdSchema = z.enum([
-  'retry-completion',
-  'continue-in-chat',
-  'dismiss-runtime',
-  'resume-from-checkpoint',
-  'ask-for-explanation',
-  'inspect-invalid-fields',
-])
-
-export type ChatBridgeRecoveryActionId = z.infer<typeof ChatBridgeRecoveryActionIdSchema>
-
-export const ChatBridgeRecoveryActionSchema = z.object({
-  id: ChatBridgeRecoveryActionIdSchema,
-  label: z.string(),
-  variant: z.enum(['primary', 'secondary']).default('secondary'),
-})
-
-export type ChatBridgeRecoveryAction = z.infer<typeof ChatBridgeRecoveryActionSchema>
 
 export const ChatBridgeRecoveryAcknowledgementSchema = z.object({
   requestedActionId: ChatBridgeRecoveryActionIdSchema,
@@ -74,6 +48,37 @@ export const ChatBridgeDegradedCompletionSchema = z.object({
 })
 
 export type ChatBridgeDegradedCompletion = z.infer<typeof ChatBridgeDegradedCompletionSchema>
+
+function toDegradedCompletionKind(failureClass: string): ChatBridgeDegradedCompletionKind {
+  if (failureClass === 'timeout') {
+    return 'stale-checkpoint'
+  }
+  if (failureClass === 'invalid-tool-call') {
+    return 'invalid-completion'
+  }
+  return 'runtime-error'
+}
+
+function createDegradedCompletionFromRecoveryContract(
+  part: Pick<MessageAppPart, 'values' | 'lifecycle' | 'appId' | 'appName' | 'error' | 'fallbackText' | 'statusText'>
+) {
+  const contract = readChatBridgeRecoveryContract(
+    part.values && typeof part.values === 'object' ? (part.values as Record<string, unknown>) : undefined
+  )
+
+  if (!contract) {
+    return null
+  }
+
+  return ChatBridgeDegradedCompletionSchema.parse({
+    kind: toDegradedCompletionKind(contract.failureClass),
+    statusLabel: part.statusText || contract.statusLabel,
+    title: contract.title,
+    description: contract.description,
+    supportPanel: contract.supportPanel,
+    actions: contract.actions,
+  })
+}
 
 function getAppLabel(part: Pick<MessageAppPart, 'appName' | 'appId'>) {
   return part.appName?.trim() || part.appId.trim() || 'App'
@@ -156,6 +161,11 @@ export function parseChatBridgeDegradedCompletion(value: unknown): ChatBridgeDeg
 export function readChatBridgeDegradedCompletion(
   part: Pick<MessageAppPart, 'values' | 'lifecycle' | 'appId' | 'appName' | 'error' | 'fallbackText' | 'statusText'>
 ): ChatBridgeDegradedCompletion | null {
+  const recoveryContract = createDegradedCompletionFromRecoveryContract(part)
+  if (recoveryContract) {
+    return recoveryContract
+  }
+
   const explicit = parseChatBridgeDegradedCompletion(
     part.values && typeof part.values === 'object' ? part.values[CHATBRIDGE_DEGRADED_COMPLETION_VALUES_KEY] : undefined
   )

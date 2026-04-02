@@ -14,3 +14,9 @@ coverage stays intentional.
 For the post-Pack-4 single-agent rollout, scenario folders or files should be
 named and organized so the owning story can link them directly from
 `docs/specs/CHATBRIDGE-000-program-roadmap/**/status.md`.
+
+Current Pack 07 recovery proof lives in:
+
+- `bridge-session-security.test.ts`
+  for malformed bridge traffic, replay rejection, launch timeout, and explicit
+  runtime-crash recovery signals

@@ -3,6 +3,7 @@ import {
   buildAppAwareSessionFixture,
   buildChatBridgeChessMidGameSessionFixture,
   buildChatBridgeDegradedCompletionRecoverySessionFixture,
+  buildChatBridgePlatformRecoverySessionFixture,
   buildChatBridgeChessRuntimeSessionFixture,
   buildChatBridgeHistoryAndPreviewSessionFixture,
   buildChatBridgeLifecycleTourSessionFixture,
@@ -57,6 +58,27 @@ describe('chatbridge live seed fixtures', () => {
     ).toEqual([true, true, true])
   })
 
+  it('builds a platform recovery fixture with explicit host-owned failure contracts', () => {
+    const fixture = buildChatBridgePlatformRecoverySessionFixture()
+    const appParts = fixture.messages
+      .flatMap((message) => message.contentParts)
+      .filter((part) => part.type === 'app')
+
+    expect(appParts).toHaveLength(5)
+    expect(appParts.map((part) => part.statusText)).toEqual([
+      'Timed out',
+      'Runtime crash',
+      'Invalid tool call',
+      'Malformed event',
+      'Bridge rejected',
+    ])
+    expect(
+      appParts.map(
+        (part) => part.values?.chatbridgeRecoveryContract && typeof part.values?.chatbridgeRecoveryContract === 'object'
+      )
+    ).toEqual([true, true, true, true, true])
+  })
+
   it('builds a history plus preview fixture with renderable HTML and stored blobs', () => {
     const fixture = buildChatBridgeHistoryAndPreviewSessionFixture()
     const assistantMessage = fixture.sessionInput.messages.at(-1)
@@ -107,6 +129,7 @@ describe('chatbridge live seed fixtures', () => {
     expect(fixtures.map((fixture) => fixture.id)).toEqual([
       'lifecycle-tour',
       'degraded-completion-recovery',
+      'platform-recovery',
       'chess-mid-game-board-context',
       'history-and-preview',
       'chess-runtime',

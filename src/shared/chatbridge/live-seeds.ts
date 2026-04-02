@@ -15,6 +15,13 @@ import {
 import { createChatBridgeAppEvent, applyChatBridgeAppEvent } from './events'
 import { createChatBridgeAppInstance } from './instance'
 import {
+  createChatBridgeBridgeRejectionRecoveryContract,
+  createChatBridgeMalformedBridgeRecoveryContract,
+  createChatBridgeRuntimeCrashRecoveryContract,
+  createChatBridgeTimeoutRecoveryContract,
+  writeChatBridgeRecoveryContractValues,
+} from './recovery-contract'
+import {
   ChatBridgeStoryBuilderStateSchema,
   type ChatBridgeStoryBuilderMode,
 } from './story-builder'
@@ -454,6 +461,12 @@ function createDegradedCompletionValues(options: {
   })
 }
 
+function createRecoveryContractValues(
+  contract: Parameters<typeof writeChatBridgeRecoveryContractValues>[1]
+) {
+  return writeChatBridgeRecoveryContractValues(undefined, contract)
+}
+
 export function buildChatBridgeDegradedCompletionRecoverySessionFixture(): Omit<Session, 'id'> {
   return {
     name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Degraded completion recovery`,
@@ -599,6 +612,199 @@ export function buildChatBridgeDegradedCompletionRecoverySessionFixture(): Omit<
           }),
           error: 'Completion fields failed schema validation.',
           timestamp: 5,
+        }
+      ),
+    ],
+  }
+}
+
+export function buildChatBridgePlatformRecoverySessionFixture(): Omit<Session, 'id'> {
+  return {
+    name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Platform recovery`,
+    type: 'chat',
+    threadName: 'Platform Recovery',
+    messages: [
+      createTextMessage(
+        'msg-platform-recovery-system',
+        'system',
+        'Keep platform failures explicit, host-owned, and recoverable from the thread instead of hiding them inside generic runtime errors.',
+        1
+      ),
+      createTextMessage(
+        'msg-platform-recovery-user',
+        'user',
+        'Show me how the host handles timeouts, crashes, invalid tool calls, and malformed bridge events.',
+        2
+      ),
+      createAppLifecycleMessage(
+        'msg-platform-timeout',
+        'assistant',
+        'Story Builder did not respond before the host timeout, so the host preserved only the last safe checkpoint and kept recovery inline.',
+        {
+          toolCallId: 'tool-platform-timeout',
+          lifecycle: 'stale',
+          summary: 'Story Builder timed out before resume could be trusted.',
+          title: 'Story Builder recovery',
+          description: 'The host kept the timeout explicit instead of inventing a resumed runtime state.',
+          statusText: 'Timed out',
+          fallbackTitle: 'Timed out',
+          fallbackText: 'Continue in chat from the last validated checkpoint or ask for a bounded explanation before retrying.',
+          values: createRecoveryContractValues(
+            createChatBridgeTimeoutRecoveryContract({
+              appId: 'story-builder',
+              appName: 'Story Builder',
+              appInstanceId: 'story-builder-timeout',
+              bridgeSessionId: 'bridge-story-builder-timeout',
+              waitedMs: 10_000,
+            })
+          ),
+          timestamp: 3,
+        }
+      ),
+      createAppLifecycleMessage(
+        'msg-platform-crash',
+        'assistant',
+        'Debate Arena crashed mid-round, so the host kept only validated round state and a bounded recovery path inside the thread.',
+        {
+          appId: 'debate-arena',
+          appName: 'Debate Arena',
+          toolCallId: 'tool-platform-crash',
+          lifecycle: 'error',
+          summary: 'Debate Arena crashed before the final rebuttal could be trusted.',
+          title: 'Debate Arena recovery',
+          description: 'The host caught the crash and kept the thread usable from preserved host-owned state.',
+          statusText: 'Runtime crash',
+          fallbackTitle: 'Recovery available',
+          fallbackText: 'Continue safely from preserved state or dismiss the failed runtime.',
+          error: 'Worker process exited during round three rebuttal.',
+          values: createRecoveryContractValues(
+            createChatBridgeRuntimeCrashRecoveryContract({
+              appId: 'debate-arena',
+              appName: 'Debate Arena',
+              appInstanceId: 'debate-arena-crash',
+              bridgeSessionId: 'bridge-debate-arena-crash',
+              error: 'Worker process exited during round three rebuttal.',
+              code: 'worker_exit',
+            })
+          ),
+          timestamp: 4,
+        }
+      ),
+      createAppLifecycleMessage(
+        'msg-platform-tool',
+        'assistant',
+        'Story Builder asked the host to save a draft without the required idempotency key, so the host blocked the tool call and kept the validation gap bounded.',
+        {
+          toolCallId: 'tool-platform-tool',
+          lifecycle: 'error',
+          summary: 'The host rejected the invalid save request before it could mutate Drive state.',
+          title: 'Story Builder recovery',
+          description: 'The invalid tool call stayed bounded to host validation output instead of becoming a side effect.',
+          statusText: 'Invalid tool call',
+          fallbackTitle: 'Tool blocked',
+          fallbackText: 'Continue in chat or inspect the bounded validation diagnostics before retrying the save action.',
+          values: createRecoveryContractValues({
+            schemaVersion: 1,
+            failureClass: 'invalid-tool-call',
+            source: 'tool',
+            severity: 'recoverable',
+            title: 'save_story did not pass host validation',
+            description: 'The host refused the tool call, kept the failure bounded, and preserved conversation continuity without executing an unsafe save.',
+            statusLabel: 'Invalid tool call',
+            summary: 'save_story failed host validation, so the request stayed explicit instead of becoming an unsafe side effect.',
+            fallbackTitle: 'Tool blocked',
+            fallbackText: 'Continue in chat or inspect the bounded validation diagnostics before retrying the tool call.',
+            supportPanel: {
+              eyebrow: 'Trust rail',
+              title: 'What still holds',
+              description: 'The host blocked the invalid save request before it could change Drive state.',
+              items: [
+                {
+                  label: 'No side effect was executed',
+                  description: 'Host validation stopped the invalid save before it could mutate external state.',
+                  tone: 'safe',
+                },
+                {
+                  label: 'Rejected inputs remain bounded',
+                  description: 'Only safe validation diagnostics remain visible to the user and operator.',
+                  tone: 'blocked',
+                },
+              ],
+            },
+            actions: [
+              { id: 'continue-in-chat', label: 'Continue safely', variant: 'primary' },
+              { id: 'inspect-invalid-fields', label: 'Inspect invalid fields', variant: 'secondary' },
+            ],
+            observability: {
+              traceCode: 'recovery.invalid-tool-call',
+              auditCategory: 'lifecycle.recovery',
+              outcome: 'missing_idempotency_key',
+              details: ['toolName: save_story', 'outcome: rejected', 'errorCode: missing_idempotency_key'],
+            },
+            correlation: {
+              appId: 'story-builder',
+              toolName: 'save_story',
+            },
+          }),
+          timestamp: 5,
+        }
+      ),
+      createAppLifecycleMessage(
+        'msg-platform-bridge',
+        'assistant',
+        'Chess sent malformed bridge state, so the host rejected the runtime update and kept recovery bounded to trusted context.',
+        {
+          appId: 'chess',
+          appName: 'Chess',
+          toolCallId: 'tool-platform-bridge',
+          lifecycle: 'error',
+          summary: 'Malformed bridge traffic stayed blocked from host-owned state.',
+          title: 'Chess recovery',
+          description: 'The host failed closed on malformed bridge data and kept the thread usable from validated state.',
+          statusText: 'Malformed event',
+          fallbackTitle: 'Runtime blocked',
+          fallbackText: 'Dismiss the runtime or ask for a bounded explanation while the host keeps invalid bridge data quarantined.',
+          values: createRecoveryContractValues(
+            createChatBridgeMalformedBridgeRecoveryContract({
+              appId: 'chess',
+              appName: 'Chess',
+              appInstanceId: 'chess-bridge-invalid',
+              bridgeSessionId: 'bridge-chess-invalid',
+              rawKind: 'app.state',
+              issues: ['snapshot.boardContext: Required', 'idempotencyKey: Required'],
+            })
+          ),
+          timestamp: 6,
+        }
+      ),
+      createAppLifecycleMessage(
+        'msg-platform-reject',
+        'assistant',
+        'A replayed Debate Arena bridge event was rejected, so the host kept the runtime quarantined and preserved safe continuity from the last trusted state.',
+        {
+          appId: 'debate-arena',
+          appName: 'Debate Arena',
+          toolCallId: 'tool-platform-reject',
+          lifecycle: 'error',
+          summary: 'The host rejected a replayed bridge event instead of applying duplicate state.',
+          title: 'Debate Arena recovery',
+          description: 'Bridge-session validation stayed host-owned and fail-closed after the replay attempt.',
+          statusText: 'Bridge rejected',
+          fallbackTitle: 'Runtime rejected',
+          fallbackText: 'Dismiss the runtime or ask for a bounded explanation while the host keeps replayed bridge events out of state.',
+          values: createRecoveryContractValues(
+            createChatBridgeBridgeRejectionRecoveryContract({
+              appId: 'debate-arena',
+              appName: 'Debate Arena',
+              reason: 'replayed-sequence',
+              event: {
+                kind: 'app.state',
+                appInstanceId: 'debate-replayed-state',
+                bridgeSessionId: 'bridge-debate-replayed',
+              },
+            })
+          ),
+          timestamp: 7,
         }
       ),
     ],
@@ -1275,6 +1481,31 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
         },
       ],
       sessionInput: buildChatBridgeDegradedCompletionRecoverySessionFixture(),
+    },
+    {
+      id: 'platform-recovery',
+      name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Platform recovery`,
+      description:
+        'Seeds timeout, crash, invalid tool call, malformed bridge event, and bridge rejection recoveries so you can inspect the unified host-owned failure model in the live thread.',
+      coverage: ['Timeout recovery', 'Crash recovery', 'Invalid tool handling', 'Bridge failure recovery'],
+      auditSteps: [
+        {
+          action: 'Open the seeded Platform recovery session and inspect the five assistant recovery messages.',
+          expected:
+            'Each failure class stays inside the host shell with a bounded recovery banner and trust rail instead of collapsing into a generic error card.',
+        },
+        {
+          action: 'Compare the `Timed out`, `Runtime crash`, `Invalid tool call`, and `Malformed event` badges.',
+          expected:
+            'Each message explains a distinct host-owned failure class with a matching safe next action rather than reusing one generic fallback string.',
+        },
+        {
+          action: 'Open the `save_story did not pass host validation` message and verify the trust rail.',
+          expected:
+            'The trust rail makes it explicit that no side effect executed and that the rejected inputs remain bounded to safe diagnostics.',
+        },
+      ],
+      sessionInput: buildChatBridgePlatformRecoverySessionFixture(),
     },
     {
       id: 'chess-mid-game-board-context',

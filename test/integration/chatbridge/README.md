@@ -70,6 +70,15 @@ CB-403 adds the first generic later-turn app-summary continuity slice:
   stale fallback messaging through the normal `stream-text` model path using
   host-owned `chatBridgeAppRecords`
 
+CB-705 adds the first unified platform-recovery slice:
+
+- `scenarios/bridge-session-security.test.ts`
+  now covers malformed bridge traffic, launch timeout, replay rejection, and
+  explicit runtime-crash recovery signaling through the host controller
+- `src/shared/chatbridge/live-seeds.ts`
+  now publishes the `Platform recovery` seeded session so the new recovery
+  model is inspectable through `/dev/chatbridge` and preset-session backfill
+
 That scenario set is the baseline gate for later ChatBridge packs that add real
 app-aware schema, containers, and lifecycle events. New ChatBridge persistence,
 manifest, or tool-execution changes should extend this suite instead of

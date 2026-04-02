@@ -212,12 +212,11 @@ const ShortcutSettingSchema = z.object({
 
 const ExtensionSettingsSchema = z.object({
   webSearch: z.object({
-    provider: z.enum(['build-in', 'bing', 'tavily']),
+    provider: z.enum(['build-in', 'bing', 'tavily', 'querit']),
     tavilyApiKey: z.string().optional(),
-    tavilySearchDepth: z.enum(['basic', 'advanced']).optional().catch(undefined),
-    tavilyMaxResults: z.number().int().min(1).max(10).optional().catch(undefined),
-    tavilyTimeRange: z.enum(['none', 'day', 'week', 'month', 'year']).optional().catch(undefined),
-    tavilyIncludeRawContent: z.enum(['none', 'text', 'markdown']).optional().catch(undefined),
+    queritApiKey: z.string().optional(),
+    queritMaxResults: z.number().optional(),
+    queritTimeRange: z.string().nullable().optional(),
   }),
   knowledgeBase: z
     .object({

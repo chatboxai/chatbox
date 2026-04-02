@@ -30,3 +30,11 @@ Current Pack 07 partner-DX proof lives in:
   for reviewed-partner manifest guidance, launch-scoped harness bootstrap,
   host-render delivery, replay rejection, and explicit recovery feedback for
   local partner debugging
+
+Current Milestone 4 convergence proof lives in:
+
+- `full-program-convergence.test.ts`
+  for the cross-pack representative sweep across reviewed-app routing, Chess
+  reasoning context, Debate Arena plus Story Builder continuity, Story Builder
+  auth/resource access, policy denial, auth expiry, and partner harness replay
+  rejection

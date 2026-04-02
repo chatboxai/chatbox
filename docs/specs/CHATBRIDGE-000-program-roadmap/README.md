@@ -71,6 +71,9 @@ Use these files as the operational control layer for the roadmap:
   O1-O5 proof tracker.
 - [`convergence-audit.md`](./convergence-audit.md) is the post-Pack-07 gate for
   the final representative flow set and O1-O5 proof closure.
+- `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` is
+  the linked Milestone 4 scenario that closes the representative proof sweep
+  across routing, continuity, auth, policy, recovery, and partner DX.
 - Each `pack-*/STATUS.md` records the current gate, story order, exit checklist,
   and pack exit memo.
 - Each active `cb-*/status.md` records story state, blockers, and proof links.

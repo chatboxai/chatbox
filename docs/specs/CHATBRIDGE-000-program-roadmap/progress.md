@@ -109,8 +109,9 @@ ChatBridge PRD.
   Packs 00 through 07.
 - Final convergence proof: `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`
 - Backfill stories required by this audit: none
-- Remaining repo issue outside ChatBridge scope: inherited unrelated `pnpm check`
-  type drift in existing non-ChatBridge files
+- Repo-wide validation note: the previously inherited non-ChatBridge
+  `pnpm check` drift and final eval build warnings are now cleared; the full
+  repo gate is green on the closeout branch.
 
 ## Required Scenario Families
 

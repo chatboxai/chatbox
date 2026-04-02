@@ -37,6 +37,7 @@ import { ScalableIcon } from '@/components/common/ScalableIcon'
 import SegmentedControl from '@/components/common/SegmentedControl'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { trackingEvent } from '@/packages/event'
+import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { updateSession } from '@/stores/chatStore'
 import { getSessionMeta, mergeSettings } from '@/stores/sessionHelpers'
@@ -298,9 +299,7 @@ const SessionSettingsModal = NiceModal.create(
                       handleImageInputAndSave(
                         file,
                         key,
-                        () =>
-                          setEditingData({ ...editingData, backgroundImage: { type: 'storage-key', storageKey: key } }),
-                        (k, v) => storage.setBlob(k, v)
+                        () => setEditingData({ ...editingData, backgroundImage: { type: 'storage-key', storageKey: key } })
                       )
                     }
                   }}
@@ -330,7 +329,7 @@ const SessionSettingsModal = NiceModal.create(
                       onClick={() => {
                         if (editingData.backgroundImage) {
                           if (editingData.backgroundImage.type === 'storage-key') {
-                            storage.removeItem(editingData.backgroundImage.storageKey)
+                            storage.delBlob(editingData.backgroundImage.storageKey)
                           }
                           setEditingData({ ...editingData, backgroundImage: undefined })
                         }

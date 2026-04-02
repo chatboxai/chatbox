@@ -57,8 +57,7 @@ export function RouteComponent() {
                   handleImageInputAndSave(
                     file,
                     key,
-                    () => setSettings({ userAvatarKey: key }),
-                    (k, v) => storage.setBlob(k, v)
+                    () => setSettings({ userAvatarKey: key })
                   )
                 }
               }}
@@ -96,8 +95,7 @@ export function RouteComponent() {
                   handleImageInputAndSave(
                     file,
                     key,
-                    () => setSettings({ defaultAssistantAvatarKey: key }),
-                    (k, v) => storage.setBlob(k, v)
+                    () => setSettings({ defaultAssistantAvatarKey: key })
                   )
                 }
               }}
@@ -227,8 +225,7 @@ export function RouteComponent() {
                     handleImageInputAndSave(
                       file,
                       key,
-                      () => setSettings({ backgroundImageKey: key }),
-                      (k, v) => storage.setBlob(k, v)
+                      () => setSettings({ backgroundImageKey: key })
                     )
                   }
                 }}

@@ -180,7 +180,7 @@ function Root() {
 
       // Auto-navigate to guide for new users who need setup
       if (!isExceeded && !onboardingCompleted && needsSetup) {
-        router.navigate({ to: '/guide', replace: true })
+        router.navigate({ to: '/guide', replace: true, search: {} })
         return
       }
 
@@ -216,8 +216,12 @@ function Root() {
       const sid = JSON.parse(localStorage.getItem('_currentSessionIdCachedAtom') || '""') as string
       if (sid && startupPage === 'session') {
         router.navigate({
-          to: `/session/${sid}`,
+          to: '/session/$sessionId',
+          params: {
+            sessionId: sid,
+          },
           replace: true,
+          search: {},
         })
       }
     })()
@@ -234,7 +238,7 @@ function Root() {
           const settingsPath = path.substring('/settings'.length)
           navigateToSettings(settingsPath || '/')
         } else {
-          router.navigate({ to: path })
+          router.history.push(path)
         }
       })
     }

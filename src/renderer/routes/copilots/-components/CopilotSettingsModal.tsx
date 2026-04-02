@@ -67,8 +67,7 @@ const CopilotSettingsModal = NiceModal.create(
         key,
         () => {
           updateField('avatar', { type: 'storage-key', storageKey: key })
-        },
-        (k, v) => storage.setBlob(k, v)
+        }
       )
     }
 
@@ -84,8 +83,7 @@ const CopilotSettingsModal = NiceModal.create(
         key,
         () => {
           updateField('backgroundImage', { type: 'storage-key', storageKey: key })
-        },
-        (k, v) => storage.setBlob(k, v)
+        }
       )
     }
 

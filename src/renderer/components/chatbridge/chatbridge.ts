@@ -18,6 +18,7 @@ import {
   parseChessAppSnapshot,
 } from '@shared/chatbridge/apps/chess'
 import type { MessageAppLifecycle, MessageAppPart } from '@shared/types'
+import { isChatBridgeReviewedAppLaunchPart } from '@/packages/chatbridge/reviewed-app-launch'
 
 export type ChatBridgeShellState = 'loading' | 'ready' | 'active' | 'complete' | 'degraded' | 'error'
 
@@ -122,7 +123,7 @@ export function getMessageAppPartViewModel(part: MessageAppPart): ChatBridgeShel
   const shellLabel = part.appName || part.appId
   const appLabel = part.title || shellLabel
 
-  if (isChatBridgeChessAppId(part.appId)) {
+  if (isChatBridgeChessAppId(part.appId) && !isChatBridgeReviewedAppLaunchPart(part)) {
     const persistentSnapshot = ChessAppSnapshotSchema.safeParse(part.snapshot)
     if (persistentSnapshot.success) {
       const snapshot = parseChessAppSnapshot(part.snapshot)

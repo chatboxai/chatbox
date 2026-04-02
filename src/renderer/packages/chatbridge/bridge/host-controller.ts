@@ -70,7 +70,9 @@ type BridgeHostControllerOptions = {
   createId?: () => string
   now?: () => number
   ttlMs?: number
+  traceParentRunId?: string
   onTrace?: (trace: BridgeTraceEvent) => void
+  onReady?: (event: BridgeReadyEvent) => void
   onAcceptedAppEvent?: (event: Exclude<BridgeAppEvent, BridgeReadyEvent>) => void
   onRejectedAppEvent?: (event: BridgeAppEvent, reason: BridgeEventValidationReason) => void
   onInvalidAppEvent?: (rawEvent: unknown, issues: string[]) => void
@@ -123,6 +125,7 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
     void traceAdapter.recordEvent({
       name,
       runType: 'tool',
+      parentRunId: options.traceParentRunId,
       metadata: {
         appId: options.appId,
         appInstanceId: options.appInstanceId,
@@ -299,6 +302,7 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
       isReady = true
       readySettled = true
       clearReadyTimeout()
+      options.onReady?.(event)
       readyResolver?.()
       emitObservabilityEvent({
         eventId: crypto.randomUUID(),

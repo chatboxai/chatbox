@@ -182,7 +182,7 @@ completion and live product behavior.
 
 ### SA-005: Bridge host controller is used for HTML artifact preview, not for ChatBridge app launches
 
-- Status: `confirmed`
+- Status: `fixed-during-audit`
 - Severity: high
 - Area: bridge runtime
 - Owning pack: Pack 02 and Pack 03
@@ -192,19 +192,31 @@ completion and live product behavior.
   1. Search for `createBridgeHostController(...)` in runtime code.
   2. Compare actual usages against expected reviewed-app launch surfaces.
 - Expected: the reviewed embedded-app bridge should be the live runtime seam for app launches and state updates.
-- Actual: the bridge host controller is used in tests, the partner harness, and `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/Artifact.tsx` for HTML preview. It is not the actual launch/runtime path for Story Builder or Debate Arena.
+- Actual:
+  - reviewed host-tool launches are now normalized into real ChatBridge `app`
+    parts and rendered through
+    `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.tsx`
+  - the reviewed launch surface starts the bridge host controller, persists
+    bootstrap/ready/state/recovery through host-owned session records, and
+    leaves `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/Artifact.tsx`
+    on the explicit HTML-preview seam only
 - Evidence:
   - test or manual surface:
-    - `rg -n "createBridgeHostController\\(" src test`
+    - `source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/renderer/packages/chatbridge/reviewed-app-launch.test.ts src/renderer/packages/chatbridge/bridge/reviewed-app-runtime.test.ts src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.test.tsx src/renderer/components/Artifact.test.tsx test/integration/chatbridge/scenarios/reviewed-app-bridge-launch.test.ts`
   - trace id(s):
-    - `019d4660-05b0-7000-8000-047ebfe7755a` (`chatbridge.eval.chatbridge-bridge-handshake`)
+    - `deef96de-e657-465f-b7f8-8aef3914cd9a` (`chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-active`)
+    - `bf430aef-39d3-4199-8526-9b456090778b` (`chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-recovery`)
   - relevant code path(s):
     - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/bridge/host-controller.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/reviewed-app-launch.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.tsx`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/model-calls/stream-text.ts`
     - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/Artifact.tsx`
 - Notes:
-  - This explains why bridge-session tests can pass while live flagship app launches still behave like seeded cards instead of true embedded runtimes.
+  - This audit gap is now closed for the reviewed-app launch seam without
+    claiming later Pack 05 catalog or route-UI work is finished.
 - Follow-up story candidate:
-  - `CB-305` - Bridge host controller adoption for reviewed app launches
+  - none; continue the queue at `CB-508`
 
 ### SA-006: Trace coverage is real but partial, and the web smoke surface produces no LangSmith runs
 

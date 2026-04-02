@@ -1,0 +1,237 @@
+import { CHATBRIDGE_LANGSMITH_PROJECT_NAME } from '@shared/models/tracing'
+import type { LangSmithRunHandle } from '@shared/utils/langsmith_adapter'
+import type { MessageAppPart } from '@shared/types'
+import { useEffect, useMemo, useRef } from 'react'
+import { langsmith } from '@/adapters/langsmith'
+import { createBridgeHostController } from '@/packages/chatbridge/bridge/host-controller'
+import { createReviewedAppLaunchRuntimeMarkup } from '@/packages/chatbridge/bridge/reviewed-app-runtime'
+import {
+  createChatBridgeRuntimeCrashRecoveryContract,
+  type BridgeAppEvent,
+  type BridgeReadyEvent,
+} from '@shared/chatbridge'
+import {
+  persistReviewedAppLaunchBootstrap,
+  persistReviewedAppLaunchBridgeEvent,
+  persistReviewedAppLaunchBridgeReady,
+  persistReviewedAppLaunchRecovery,
+  readChatBridgeReviewedAppLaunch,
+} from '@/packages/chatbridge/reviewed-app-launch'
+
+interface ReviewedAppLaunchSurfaceProps {
+  part: MessageAppPart
+  sessionId?: string
+  messageId?: string
+}
+
+export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: ReviewedAppLaunchSurfaceProps) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const controllerRef = useRef<ReturnType<typeof createBridgeHostController> | null>(null)
+  const launchRunRef = useRef<LangSmithRunHandle | null>(null)
+  const launchRunFinishedRef = useRef(false)
+  const launch = readChatBridgeReviewedAppLaunch(part.values)
+
+  const runtimeUrl = useMemo(() => {
+    if (!launch) {
+      return null
+    }
+
+    const html = createReviewedAppLaunchRuntimeMarkup(launch)
+    return URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+  }, [launch])
+
+  const expectedOrigin = useMemo(() => window.location.origin || 'null', [])
+  const bootstrapTargetOrigin = expectedOrigin === 'null' ? '*' : expectedOrigin
+
+  async function finishLaunchRun(result?: Parameters<LangSmithRunHandle['end']>[0]) {
+    if (!launchRunRef.current || launchRunFinishedRef.current) {
+      return
+    }
+
+    launchRunFinishedRef.current = true
+    const activeRun = launchRunRef.current
+    launchRunRef.current = null
+    await activeRun.end(result)
+  }
+
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.dispose()
+      controllerRef.current = null
+      if (runtimeUrl) {
+        URL.revokeObjectURL(runtimeUrl)
+      }
+      void finishLaunchRun({
+        outputs: {
+          status: 'disposed',
+          appInstanceId: part.appInstanceId,
+        },
+      })
+    }
+  }, [part.appInstanceId, runtimeUrl])
+
+  if (!launch || !runtimeUrl || part.lifecycle === 'error' || part.lifecycle === 'stale' || part.lifecycle === 'complete') {
+    return null
+  }
+
+  const persistBootstrap = async (bridgeSessionId: string) => {
+    if (!sessionId || !messageId) {
+      return
+    }
+
+    await persistReviewedAppLaunchBootstrap({
+      sessionId,
+      messageId,
+      part,
+      bridgeSessionId,
+    })
+  }
+
+  const persistReady = async (event: BridgeReadyEvent) => {
+    if (!sessionId || !messageId) {
+      return
+    }
+
+    await persistReviewedAppLaunchBridgeReady({
+      sessionId,
+      messageId,
+      part,
+      event,
+    })
+  }
+
+  const persistAcceptedEvent = async (event: Exclude<BridgeAppEvent, BridgeReadyEvent>) => {
+    if (!sessionId || !messageId) {
+      return
+    }
+
+    await persistReviewedAppLaunchBridgeEvent({
+      sessionId,
+      messageId,
+      part,
+      event,
+    })
+  }
+
+  const persistRecovery = async (contract: Parameters<typeof persistReviewedAppLaunchRecovery>[0]['contract']) => {
+    if (!sessionId || !messageId) {
+      return
+    }
+
+    await persistReviewedAppLaunchRecovery({
+      sessionId,
+      messageId,
+      part,
+      contract,
+    })
+  }
+
+  const handleLoad = () => {
+    const targetWindow = iframeRef.current?.contentWindow
+    if (!targetWindow) {
+      void persistRecovery(
+        createChatBridgeRuntimeCrashRecoveryContract({
+          appId: part.appId,
+          appName: part.appName,
+          appInstanceId: part.appInstanceId,
+          bridgeSessionId: part.bridgeSessionId,
+          error: 'The reviewed app launch iframe never exposed a runtime window.',
+        })
+      )
+      return
+    }
+
+    void (async () => {
+      controllerRef.current?.dispose()
+      controllerRef.current = null
+
+      let traceParentRunId: string | undefined
+      try {
+        const run = await langsmith.startRun({
+          name: 'chatbridge.runtime.reviewed-app-launch',
+          projectName: CHATBRIDGE_LANGSMITH_PROJECT_NAME,
+          runType: 'chain',
+          inputs: {
+            sessionId: sessionId ?? null,
+            messageId: messageId ?? null,
+            appId: part.appId,
+            appName: part.appName ?? launch.appName,
+            appInstanceId: part.appInstanceId,
+            toolName: launch.toolName,
+            request: launch.request ?? null,
+            capability: launch.capability ?? null,
+          },
+          metadata: {
+            operation: 'reviewed-app-bridge-launch',
+            storyId: 'CB-305',
+            uiEntry: launch.uiEntry ?? null,
+          },
+          tags: ['chatbridge', 'renderer', 'bridge', 'reviewed-app-launch', 'cb-305'],
+        })
+        launchRunRef.current = run
+        launchRunFinishedRef.current = false
+        traceParentRunId = run.runId
+      } catch {
+        traceParentRunId = undefined
+      }
+
+      const controller = createBridgeHostController({
+        appId: part.appId,
+        appName: part.appName ?? launch.appName,
+        appVersion: launch.appVersion,
+        appInstanceId: part.appInstanceId,
+        expectedOrigin,
+        bootstrapTargetOrigin,
+        capabilities: ['launch-reviewed-app'],
+        traceAdapter: langsmith,
+        traceParentRunId,
+        onReady: (event) => {
+          void persistReady(event)
+        },
+        onAcceptedAppEvent: (event) => {
+          void persistAcceptedEvent(event)
+          if (event.kind === 'app.state') {
+            void finishLaunchRun({
+              outputs: {
+                status: 'active',
+                appId: part.appId,
+                appInstanceId: part.appInstanceId,
+                bridgeSessionId: event.bridgeSessionId,
+              },
+            })
+          }
+        },
+        onRecoveryDecision: (contract) => {
+          void persistRecovery(contract)
+          void finishLaunchRun({
+            error: contract.summary,
+            metadata: {
+              traceCode: contract.observability.traceCode,
+            },
+          })
+        },
+      })
+
+      await persistBootstrap(controller.getSession().envelope.bridgeSessionId)
+      controller.attach(targetWindow as unknown as Parameters<typeof controller.attach>[0])
+      controllerRef.current = controller
+
+      void controller.waitForReady().catch((error) => {
+        void finishLaunchRun({
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+    })()
+  }
+
+  return (
+    <iframe
+      ref={iframeRef}
+      src={runtimeUrl}
+      title={`${launch.appName} reviewed app runtime`}
+      sandbox="allow-scripts allow-forms"
+      className="w-full min-h-[260px] border-none"
+      onLoad={handleLoad}
+    />
+  )
+}

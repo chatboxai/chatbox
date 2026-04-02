@@ -1,0 +1,10 @@
+{
+  "storyId": "CB-305",
+  "status": "reviewed",
+  "refactorApplied": true,
+  "qualityNotes": [
+    "The reviewed-app launch seam stays narrow: launch-reviewed-app uses the bridge runtime while artifact preview remains on the separate render-html-preview capability.",
+    "Host-owned persistence and degraded recovery are normalized before rendering, which prevents reviewed launches from collapsing back into synthetic seeded shells.",
+    "No src/renderer/packages/initial_data.ts refresh was needed because CB-305 changes runtime wiring and proof coverage, not the seeded example dataset."
+  ]
+}

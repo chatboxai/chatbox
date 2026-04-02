@@ -1,0 +1,17 @@
+{
+  "storyId": "CB-305",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "failed-as-expected",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/renderer/packages/chatbridge/reviewed-app-launch.test.ts src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.test.tsx src/renderer/components/Artifact.test.tsx test/integration/chatbridge/scenarios/reviewed-app-bridge-launch.test.ts",
+    "failureSummary": [
+      "Missing renderer reviewed-app launch adapter module.",
+      "Missing reviewed app bridge launch surface component."
+    ]
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/renderer/packages/chatbridge/reviewed-app-launch.test.ts src/renderer/packages/chatbridge/bridge/reviewed-app-runtime.test.ts src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.test.tsx src/renderer/components/Artifact.test.tsx test/integration/chatbridge/scenarios/reviewed-app-bridge-launch.test.ts"
+  }
+}

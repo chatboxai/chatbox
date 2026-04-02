@@ -140,6 +140,10 @@ Every orchestration-heavy ChatBridge story should define at least:
 
 - host bridge runtime:
   `src/renderer/packages/chatbridge/bridge/host-controller.ts`
+- reviewed-app launch normalization:
+  `src/renderer/packages/chatbridge/reviewed-app-launch.ts`
+- reviewed-app bridge launch surface:
+  `src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.tsx`
 - auth broker:
   `src/main/chatbridge/auth-broker/index.ts`
 - resource proxy:
@@ -168,7 +172,7 @@ The shared naming and metadata builder lives in
 |---|---|---|
 | catalog and baseline registry | `chatbridge.eval.chatbridge-reviewed-app-registry`, `chatbridge.eval.chatbridge-app-instance-domain-model` | `reviewed-app-registry.test.ts`, `app-instance-domain-model.test.ts` |
 | routing | `chatbridge.eval.chatbridge-routing-artifacts` | `route-decision-artifacts.test.ts` |
-| reviewed-app launch | `chatbridge.eval.chatbridge-single-app-discovery`, `chatbridge.eval.chatbridge-host-tool-contract`, `chatbridge.eval.chatbridge-mid-game-board-context`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>` | `single-app-tool-discovery-and-invocation.test.ts`, `host-coordinated-tool-execution.test.ts`, `mid-game-board-context.test.ts`, `ChatBridgeSeedLab` |
+| reviewed-app launch | `chatbridge.eval.chatbridge-single-app-discovery`, `chatbridge.eval.chatbridge-host-tool-contract`, `chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-active`, `chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-recovery`, `chatbridge.eval.chatbridge-mid-game-board-context`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>` | `single-app-tool-discovery-and-invocation.test.ts`, `host-coordinated-tool-execution.test.ts`, `reviewed-app-bridge-launch.test.ts`, `ReviewedAppLaunchSurface.tsx`, `mid-game-board-context.test.ts`, `ChatBridgeSeedLab` |
 | auth and resource access | `chatbridge.eval.chatbridge-story-builder-auth-resource` | `story-builder-lifecycle.test.ts` |
 | recovery | `chatbridge.eval.chatbridge-bridge-handshake`, `chatbridge.manual_smoke.chatbridge-lifecycle-tour.<session-id>`, `chatbridge.manual_smoke.chatbridge-degraded-completion-recovery.<session-id>`, `chatbridge.manual_smoke.chatbridge-platform-recovery.<session-id>` | `bridge-session-security.test.ts`, `ChatBridgeSeedLab` |
 | persistence | `chatbridge.eval.chatbridge-persistence-and-shell-artifacts`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>` | `app-aware-persistence.test.ts`, `ChatBridgeSeedLab` |
@@ -178,6 +182,9 @@ Notes:
 - Story Builder auth/resource traces remain scenario-only legacy reference
   evidence until the active catalog and runtime queue reaches those later
   rebuild stories.
+- CB-305 now makes reviewed-app launch evidence explicit with one traced
+  bridge-backed path for active runtime and one traced degraded recovery path;
+  artifact preview stays on the separate `render-html-preview` seam.
 - Chess is the only active flagship app with traced manual smoke today. Drawing
   Kit and Weather join this matrix in later Pack 05 stories, not in CB-006.
 

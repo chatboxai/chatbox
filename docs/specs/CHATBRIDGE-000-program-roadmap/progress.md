@@ -125,6 +125,26 @@ smoke audit has reopened the program for a focused rebuild.
   ChatBridge runtime still falls short; use this file and `smoke-audit-master.md`
   as the current truth for rebuild work.
 
+## Post-Queue Initiative
+
+If the active rebuild queue closes and the team wants to continue toward a
+Ghostfolio-style agent architecture, the next initiative packet is:
+
+- `docs/specs/CHATBRIDGE-001-post-rebuild-agent-productization/`
+
+That packet intentionally prioritizes:
+
+1. unified execution governor
+2. backend-authoritative state and reconciliation
+3. operator/admin/feedback productization
+4. architecture and runtime truth sync
+
+And intentionally defers to the end:
+
+5. policy and refusal layer
+6. verification, confidence, and provenance layer
+7. high-risk action workflow
+
 ## Required Scenario Families
 
 Keep representative proof under `test/integration/chatbridge/` for:

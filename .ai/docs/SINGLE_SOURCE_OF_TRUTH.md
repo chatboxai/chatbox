@@ -78,6 +78,10 @@
   `pnpm build`, and their direct `start`/`build` variants) now fail fast on
   wrong-Node shells through the repo engine constraints and on stale installs
   through `scripts/workspace-guard.mjs`, before Vite or TypeScript starts.
+- For orchestration-heavy stories, trace-driven development means
+  LangSmith-backed scenario/thread evidence for representative behaviors and
+  edge cases. A few raw spans are not enough; the important flows should be
+  reproducible through named traced scenarios or supported manual smoke runs.
 - Passing the baseline command suite is necessary but not sufficient for
   production readiness. For bundling, packaging, or deploy-surface changes,
   also verify compiled output loads, risky runtime dependencies are externalized

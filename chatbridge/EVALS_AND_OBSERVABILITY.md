@@ -11,6 +11,12 @@ ChatBridge stories that change routing, tool execution, embedded app lifecycle,
 completion, auth, or recovery should establish observable lifecycle seams and a
 small eval set before broad implementation.
 
+In practice, trace-driven development for ChatBridge means the important
+behaviors and edge cases leave inspectable LangSmith evidence. A story is not
+"trace-driven" merely because it emits a few spans; engineers should be able to
+find named scenario or manual-smoke runs for the representative success,
+failure, degraded, and continuity paths.
+
 ## Current Repo Observability Seams
 
 ### Runtime error and telemetry hooks
@@ -124,6 +130,11 @@ Every orchestration-heavy ChatBridge story should define at least:
 2. malformed or invalid input path
 3. timeout/crash/degraded path
 4. one continuity/follow-up path when the story touches app state or memory
+
+These scenarios should be wired so at least one supported environment can emit
+named LangSmith proof runs for them. Checked-in tests may stay runnable with
+tracing disabled by default, but the story is not trace-driven-complete until
+the scenario harness can produce real traces when `LANGSMITH_TRACING=true`.
 
 ## Current Trace Coverage
 

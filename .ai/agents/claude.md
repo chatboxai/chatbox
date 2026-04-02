@@ -35,6 +35,10 @@ files reference.
 - Run `agent-preflight` before non-trivial edits.
 - Use `.ai/workflows/story-lookup.md` before meaningful implementation.
 - Use `.ai/workflows/story-sizing.md` to classify the task.
+- For model/orchestration/app-runtime/auth-heavy work, run
+  `.ai/workflows/trace-driven-development.md`. Here, trace-driven development
+  means LangSmith-backed scenario/thread evidence for representative behaviors
+  and edge cases, not just adding trace hooks.
 - For UI-affecting stories, run `.ai/workflows/pencil-ui-design.md` after the
   story spec, technical plan, and `design-brief.md` exist, and stop for user
   approval before code.

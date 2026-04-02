@@ -114,8 +114,12 @@ Load context in this order before making non-trivial changes:
   `.ai/skills/spec-driven-development.md` and write the relevant artifacts under
   `docs/specs/<story-id>/`.
 - For model/orchestration/app-runtime/auth-heavy work, run
-  `.ai/workflows/trace-driven-development.md` so traces, evals, and observable
-  lifecycle seams exist before broad implementation.
+  `.ai/workflows/trace-driven-development.md`. In this repo, "trace-driven
+  development" means LangSmith-backed trace threads plus representative
+  scenario coverage for the important behaviors and edge cases, not merely
+  adding ad hoc spans. The story should define and prove traced happy-path,
+  malformed/error, degraded/timeout, and continuity scenarios before broad
+  implementation is treated as done.
 - When a story changes inspectable ChatBridge shell, lifecycle, history, or
   HTML-preview behavior, update the live seed catalog in
   `src/shared/chatbridge/live-seeds.ts`, the dev seeding helper in

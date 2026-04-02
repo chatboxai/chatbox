@@ -1,7 +1,7 @@
 # Pack 06 Status
 
-- Pack state: validated
-- Current story: complete; Pack 07 is now the next queued lane
+- Pack state: validated baseline reopened by the smoke-audit rebuild queue
+- Current story: pending backfill `CB-605` after `CB-305` and `CB-506`
 - Unlock rule: Pack 5 exit proof is already present; continue strictly in Pack 6 story order
 
 ## Story Order
@@ -10,6 +10,7 @@
 2. CB-602
 3. CB-604
 4. CB-603
+5. CB-605
 
 ## Story Ledger
 
@@ -19,6 +20,7 @@
 | CB-602 | validated | Credential handles are explicit; proceed to host-mediated resource proxy. |
 | CB-604 | validated | Host-mediated resource access is now explicit and auditable; proceed to Story Builder. |
 | CB-603 | validated | Story Builder now proves host-owned connect/save/resume/completion; Pack 06 can exit and unlock Pack 07. |
+| CB-605 | planned | Smoke-audit backfill to make Story Builder live runtime actually use the validated auth broker and resource proxy. |
 
 ## Exit Checklist
 
@@ -42,6 +44,12 @@ surface inside the ChatBridge shell, seeded fixtures carry that contract
 through local presets, and the story-level lifecycle scenario proves launch,
 Drive read, save, completion handoff, and the expired-auth failure path. Pack 7
 is unlocked.
+
+## Smoke-Audit Reopen Notes
+
+- `smoke-audit-master.md` reopened Pack 06 through finding SA-004.
+- Historical Pack 06 proof remains checked in, but do not treat Pack 06 as
+  live-runtime complete again until `CB-605` is implemented and validated.
 
 ## Current Notes
 

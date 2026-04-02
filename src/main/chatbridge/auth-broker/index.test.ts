@@ -190,4 +190,41 @@ describe('chatbridge auth broker', () => {
       code: 'missing-handle',
     })
   })
+
+  it('emits host-owned audit events alongside trace events', () => {
+    const audits: { outcome: string; details: string[]; capture: { level: string } }[] = []
+    const broker = createChatBridgeAuthBroker({
+      now: () => 500,
+      createId: () => 'handle-1',
+      onAudit: (event) => audits.push(event),
+    })
+
+    const issued = broker.issueHandle({
+      grant: createGrant(),
+      permissionIds: ['drive.read'],
+    })
+
+    expect(issued.ok).toBe(true)
+    broker.validateHandle({
+      handleId: 'missing-handle',
+      userId: 'student-1',
+      appId: 'story-builder',
+      permissionIds: ['drive.read'],
+    })
+
+    expect(audits).toHaveLength(2)
+    expect(audits[0]).toMatchObject({
+      outcome: 'issued',
+      capture: {
+        level: 'metadata',
+      },
+    })
+    expect(audits[1]).toMatchObject({
+      outcome: 'validation-failed',
+      capture: {
+        level: 'metadata',
+      },
+    })
+    expect(JSON.stringify(audits)).not.toContain('accessToken')
+  })
 })

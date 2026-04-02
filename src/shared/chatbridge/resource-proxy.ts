@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ChatBridgeAuditCaptureSchema } from './audit'
 import { ChatBridgeJsonSchemaSchema } from './manifest'
 
 export const CHATBRIDGE_RESOURCE_PROXY_SCHEMA_VERSION = 1 as const
@@ -34,6 +35,7 @@ export type ChatBridgeResourceProxyAuditOutcome = z.infer<typeof ChatBridgeResou
 export const ChatBridgeResourceProxyAuditEntrySchema = z
   .object({
     schemaVersion: z.literal(CHATBRIDGE_RESOURCE_PROXY_SCHEMA_VERSION),
+    category: z.literal('resource.action').default('resource.action'),
     requestId: z.string().trim().min(1),
     handleId: z.string().trim().min(1),
     userId: z.string().trim().min(1),
@@ -44,8 +46,28 @@ export const ChatBridgeResourceProxyAuditEntrySchema = z
     outcome: ChatBridgeResourceProxyAuditOutcomeSchema,
     loggedAt: z.number().int().nonnegative(),
     details: z.array(z.string().trim().min(1)).default([]),
+    redactedKeys: z.array(z.string().trim().min(1)).default([]),
+    capture: ChatBridgeAuditCaptureSchema.default({ level: 'metadata' }),
+    forensicPayload: z.record(z.string(), z.unknown()).optional(),
   })
   .strict()
+  .superRefine((value, ctx) => {
+    if (value.capture.level === 'metadata' && value.forensicPayload !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['forensicPayload'],
+        message: 'forensicPayload is only allowed when forensic capture is enabled.',
+      })
+    }
+
+    if (value.capture.level === 'forensic' && value.forensicPayload === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['forensicPayload'],
+        message: 'forensicPayload is required when forensic capture is enabled.',
+      })
+    }
+  })
 export type ChatBridgeResourceProxyAuditEntry = z.infer<typeof ChatBridgeResourceProxyAuditEntrySchema>
 
 export const ChatBridgeResourceProxyErrorCodeSchema = z.enum([

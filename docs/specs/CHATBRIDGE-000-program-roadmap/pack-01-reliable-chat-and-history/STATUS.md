@@ -1,7 +1,8 @@
 # Pack 01 Status
 
 - Control state: historical baseline reopened by the smoke-audit rebuild queue
-- Single-agent scope: keep Pack 01 dormant until the final hygiene pass `CB-105`
+- Single-agent scope: keep Pack 01 dormant until the final hygiene pass
+  `CB-105`, queue position 8 of 8
 - Story state model: `planned`, `in_progress`, `code_complete`, `validated`, `merged`
 
 ## Story Ledger

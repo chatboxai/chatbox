@@ -29,6 +29,21 @@ artifact preview behavior in the actual app instead of only through Vitest
 fixtures. Relevant ChatBridge stories should keep this seed surface current in
 the same diff as the behavior change.
 
+## Pack 07 Partner Harness Surface
+
+Pack 07 now adds a reviewed-partner conformance slice on top of the earlier
+host-side fixtures:
+
+- shared validator: `src/shared/chatbridge/partner-validator.ts`
+- local mock harness: `test/integration/chatbridge/mocks/partner-harness.ts`
+- conformance scenario:
+  `test/integration/chatbridge/scenarios/partner-sdk-harness.test.ts`
+- partner-facing guide: `chatbridge/PARTNER_SDK.md`
+
+Use this slice when validating that a reviewed partner manifest matches the
+current host support matrix and that the runtime can satisfy the launch-scoped
+bridge, auth, and completion expectations before platform review.
+
 ## Current Repo Harness Assets
 
 ### Existing integration test substrate

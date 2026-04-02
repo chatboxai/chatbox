@@ -40,15 +40,15 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Validator success/failure behavior
+  - [x] Validator success/failure behavior
 - T002 tests:
-  - [ ] Mock host harness flow coverage
+  - [x] Mock host harness flow coverage
 - T003 tests:
-  - [ ] Partner sample app conformance tests
+  - [x] Partner sample app conformance tests
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
 - [ ] Deferred tasks documented with rationale

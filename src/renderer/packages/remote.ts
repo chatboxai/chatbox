@@ -6,6 +6,7 @@ import { authInfoStore } from '@/stores/authInfoStore'
 import { CHATBOX_BUILD_CHANNEL, USE_BETA_API, USE_BETA_CHATBOX, USE_LOCAL_API, USE_LOCAL_CHATBOX } from '@/variables'
 import * as chatboxaiAPI from '../../shared/request/chatboxai_pool'
 import { createAfetch, createPlatformAuthenticatedAfetch, uploadFile } from '../../shared/request/request'
+import { canUseChatboxCloudBrowserApis } from './chatbox-cloud-runtime'
 import {
   type ChatboxAILicenseDetail,
   type Config,
@@ -18,9 +19,22 @@ import {
 import { getOS } from './navigator'
 
 const log = getLogger('remote-api')
+const skippedPreviewEndpoints = new Set<string>()
 
 let _afetch: ReturnType<typeof createAfetch> | null = null
 let afetchPromise: Promise<ReturnType<typeof createAfetch>> | null = null
+
+function isUnsupportedPreviewChatboxCloud(endpoint: string) {
+  const supported = canUseChatboxCloudBrowserApis()
+  if (!supported && !skippedPreviewEndpoints.has(endpoint)) {
+    skippedPreviewEndpoints.add(endpoint)
+    log.warn('Skipping Chatbox cloud request on unsupported web host.', {
+      endpoint,
+      hostname: typeof window === 'undefined' ? null : window.location?.hostname ?? null,
+    })
+  }
+  return !supported
+}
 
 async function initAfetch(): Promise<ReturnType<typeof createAfetch>> {
   if (afetchPromise) return afetchPromise
@@ -110,7 +124,11 @@ export function getChatboxOrigin() {
   }
 }
 
-const getChatboxHeaders = async () => {
+const getChatboxHeaders = async (): Promise<Record<string, string>> => {
+  if (!canUseChatboxCloudBrowserApis()) {
+    return {}
+  }
+
   return {
     'CHATBOX-PLATFORM': await platform.getPlatform(),
     'CHATBOX-PLATFORM-TYPE': platform.type,
@@ -125,6 +143,9 @@ const getChatboxHeaders = async () => {
 export async function checkNeedUpdate(version: string, os: string, config: Config, settings: Settings) {
   type Response = {
     need_update?: boolean
+  }
+  if (isUnsupportedPreviewChatboxCloud('chatbox_need_update')) {
+    return false
   }
   // const res = await ofetch<Response>(`${RELEASE_ORIGIN}/chatbox_need_update/${version}`, {
   const res = await ofetch<Response>(`${getAPIOrigin()}/chatbox_need_update/${version}`, {
@@ -165,6 +186,9 @@ export async function listCopilotTags(lang: string) {
   type Response = {
     data: string[]
   }
+  if (isUnsupportedPreviewChatboxCloud('system_copilots.tags')) {
+    return []
+  }
   const res = await ofetch<Response>(`${getAPIOrigin()}/api/system_copilots/tags/${lang}`, {
     method: 'GET',
     retry: 3,
@@ -184,6 +208,12 @@ export async function listCopilotsByCursor(
   type Response = {
     data: CopilotDetail[]
     next_cursor: string | null
+  }
+  if (isUnsupportedPreviewChatboxCloud('system_copilots.list')) {
+    return {
+      data: [],
+      next_cursor: null,
+    }
   }
   const res = await ofetch<Response>(`${getAPIOrigin()}/api/system_copilots/list`, {
     method: 'POST',
@@ -233,6 +263,9 @@ export async function getRemoteConfig(config: keyof RemoteConfig) {
   type Response = {
     data: Pick<RemoteConfig, typeof config>
   }
+  if (isUnsupportedPreviewChatboxCloud(`remote_config.${config}`)) {
+    return {} as Pick<RemoteConfig, typeof config>
+  }
   const res = await ofetch<Response>(`${getAPIOrigin()}/api/remote_config/${config}`, {
     retry: 3,
     headers: await getChatboxHeaders(),
@@ -248,6 +281,9 @@ export interface DialogConfig {
 export async function getDialogConfig(params: { uuid: string; language: string; version: string }) {
   type Response = {
     data: null | DialogConfig
+  }
+  if (isUnsupportedPreviewChatboxCloud('dialog_config')) {
+    return null
   }
   const res = await ofetch<Response>(`${getAPIOrigin()}/api/dialog_config`, {
     method: 'POST',
@@ -575,6 +611,12 @@ const ModelManifestResponseSchema = z.object({
 })
 
 export async function getModelManifest(params: { aiProvider: ModelProvider; licenseKey?: string; language?: string }) {
+  if (isUnsupportedPreviewChatboxCloud('model_manifest')) {
+    return {
+      groupName: 'preview-web-shell',
+      models: [],
+    }
+  }
   const afetch = await getAfetch()
   const res = await afetch(
     `${getAPIOrigin()}/api/model_manifest`,

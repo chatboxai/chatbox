@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/react'
+import { shouldEnableChatboxBrowserTelemetry } from '@/packages/chatbox-cloud-runtime'
 import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET, NODE_ENV } from '@/variables'
 import { initSettingsStore } from '@/stores/settingsStore'
 import platform from '../platform'
@@ -7,6 +8,10 @@ void (async () => {
   try {
     const settings = await initSettingsStore()
     if (!settings.allowReportingAndTracking) {
+      return
+    }
+
+    if (!shouldEnableChatboxBrowserTelemetry()) {
       return
     }
 

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Message from '@/components/chat/Message'
 import Mark from '@/components/common/Mark'
+import { useBlurActiveElementOnOpen } from '@/components/common/overlay-focus'
 import { BlockCodeCollapsedStateProvider } from '@/components/Markdown'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
@@ -34,6 +35,8 @@ export default function SearchDialog(props: Props) {
   const ref = useRef<HTMLInputElement>(null)
 
   const currentSessionId = useAtomValue(currentSessionIdAtom)
+
+  useBlurActiveElementOnOpen(open)
 
   useEffect(() => {
     if (open) {

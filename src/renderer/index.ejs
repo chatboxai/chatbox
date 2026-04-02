@@ -30,32 +30,42 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
     <title>Chatbox</title>
-    <!-- Google tag (gtag.js) -->
-    <script
-      async
-      src="https://www.googletagmanager.com/gtag/js?id=G-B365F44W6E"
-    ></script>
-    <script
-      defer
-      data-domain="app.chatboxai.app"
-      src="https://plausible.midway.run/js/script.local.hash.js"
-    ></script>
     <script>
-      window.plausible =
-        window.plausible ||
-        function () {
-          (window.plausible.q = window.plausible.q || []).push(arguments);
+      (function () {
+        var officialWebHosts = new Set(["chatboxai.app", "beta.chatboxai.app"]);
+        var protocol = window.location.protocol;
+        var hostname = (window.location.hostname || "").toLowerCase();
+        var isBrowserShell = protocol === "http:" || protocol === "https:";
+        var enableBrowserTelemetry = !isBrowserShell || officialWebHosts.has(hostname);
+
+        window.__CHATBOX_ENABLE_BROWSER_TELEMETRY__ = enableBrowserTelemetry;
+        window.plausible =
+          window.plausible ||
+          function () {
+            (window.plausible.q = window.plausible.q || []).push(arguments);
+          };
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function () {
+          window.dataLayer.push(arguments);
         };
-    </script>
 
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() {
-        dataLayer.push(arguments);
-      }
-      gtag("js", new Date());
+        if (!enableBrowserTelemetry) {
+          return;
+        }
 
-      // gtag('config', 'G-B365F44W6E');
+        var gtagScript = document.createElement("script");
+        gtagScript.async = true;
+        gtagScript.src = "https://www.googletagmanager.com/gtag/js?id=G-B365F44W6E";
+        document.head.appendChild(gtagScript);
+
+        var plausibleScript = document.createElement("script");
+        plausibleScript.defer = true;
+        plausibleScript.src = "https://plausible.midway.run/js/script.local.hash.js";
+        plausibleScript.setAttribute("data-domain", isBrowserShell ? "web.chatboxai.app" : "app.chatboxai.app");
+        document.head.appendChild(plausibleScript);
+
+        window.gtag("js", new Date());
+      })();
     </script>
     <script>
       var initialTheme = localStorage.getItem("initial-theme");

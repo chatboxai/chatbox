@@ -56,7 +56,7 @@ const StorageKey = {
 let localforageData: Record<string, string> = {}
 let ipcFileData: Record<string, string> = {}
 let sqliteData: Record<string, string> = {} // Mobile SQLite database
-let localStorageData: Record<string, string> = {} // Mobile SQLite database
+let localStorageData: Record<string, string> = {} // Legacy browser localStorage data
 
 // Helper function to create old storage mock based on storage type
 // This ensures old storage mocks match the actual storage implementations
@@ -203,12 +203,20 @@ global.window = {
 } as never
 
 global.localStorage = {
-  getItem: vi.fn(() => null),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  clear: vi.fn(),
-  key: vi.fn(),
-  length: 0,
+  getItem: vi.fn((key: string) => localStorageData[key] ?? null),
+  setItem: vi.fn((key: string, value: string) => {
+    localStorageData[key] = value
+  }),
+  removeItem: vi.fn((key: string) => {
+    delete localStorageData[key]
+  }),
+  clear: vi.fn(() => {
+    localStorageData = {}
+  }),
+  key: vi.fn((index: number) => Object.keys(localStorageData)[index] ?? null),
+  get length() {
+    return Object.keys(localStorageData).length
+  },
 }
 
 // Platform implementations will be dynamically imported
@@ -219,6 +227,24 @@ let currentPlatform: Platform
 let desktopPlatform: Platform
 let mobilePlatform: Platform
 let webPlatform: Platform
+
+function createInMemoryDataStore(initialData: Record<string, unknown> = {}) {
+  const data = { ...initialData }
+
+  return {
+    data,
+    store: {
+      getData: async <T>(key: string, defaultValue: T): Promise<T> => (key in data ? (data[key] as T) : defaultValue),
+      setData: async <T>(key: string, value: T): Promise<void> => {
+        data[key] = value
+      },
+      setAll: async (nextData: Record<string, unknown>): Promise<void> => {
+        Object.assign(data, nextData)
+      },
+      setBlob: async (): Promise<void> => {},
+    },
+  }
+}
 
 // Mock @/platform to return our platform instance
 vi.mock('@/platform', () => ({
@@ -330,14 +356,6 @@ vi.mock('jotai', () => ({
     set: vi.fn(),
     get: vi.fn(() => []),
   })),
-}))
-
-vi.mock('store', () => ({
-  default: {
-    each: vi.fn(),
-    get: vi.fn(),
-    remove: vi.fn(),
-  },
 }))
 
 vi.mock('@/packages/initial_data', () => ({
@@ -958,5 +976,24 @@ describe('migrateStorage test', () => {
       { id: 'seed-en', name: 'Seed EN' },
     ])
     expect(initData).not.toHaveBeenCalled()
+  })
+
+  it('should clear legacy mobile settings from localStorage during the 10 to 11 upgrade', async () => {
+    currentPlatform = mobilePlatform
+
+    localStorageData[StorageKey.Settings] = JSON.stringify({ theme: 'dark', fontSize: 16 })
+
+    const { data, store } = createInMemoryDataStore({
+      [StorageKey.ConfigVersion]: 10,
+      [StorageKey.Settings]: { theme: 'dark', fontSize: 16 },
+      [StorageKey.ChatSessionsList]: [],
+    })
+
+    const migration = await import('./migration')
+    await migration.migrateOnData(store, false)
+
+    expect(localStorageData[StorageKey.Settings]).toBeUndefined()
+    expect(data[StorageKey.Settings]).toEqual({ theme: 'dark', fontSize: 14 })
+    expect(data[StorageKey.ConfigVersion]).toBe(15)
   })
 })

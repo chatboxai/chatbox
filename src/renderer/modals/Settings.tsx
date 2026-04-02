@@ -6,7 +6,7 @@ import {
   createRoute,
   createRouter,
   RouterProvider,
-  useLocation,
+  useRouterState,
 } from '@tanstack/react-router'
 import clsx from 'clsx'
 import { type FC, useCallback, useEffect } from 'react'
@@ -35,28 +35,31 @@ import { RouteComponent as SettingsWebSearchRouteComponent } from '@/routes/sett
 
 export type SettingsModalProps = {}
 
+type RootSearchState = {
+  settings?: string
+  copilotId?: string
+  copilot?: string
+}
+
 export const SettingsModal: FC<SettingsModalProps> = (props) => {
   const { t } = useTranslation()
-  const location = useLocation()
+  const location = useRouterState({ select: (state) => state.location })
+  const search = location.search as RootSearchState
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
 
   useEffect(() => {
-    if (location.search.settings) {
-      settingsModalHistory.replace(location.search.settings)
+    if (search.settings) {
+      settingsModalHistory.replace(search.settings)
     }
-  }, [location.search.settings])
+  }, [search.settings])
 
   const onClose = useCallback(() => {
-    const { settings: _, ...otherSearch } = router.state.location.search
-    router.navigate({
-      to: router.state.location.pathname,
-      search: otherSearch,
-    })
+    router.history.back()
   }, [])
 
   return (
     <Modal
-      opened={!!location.search.settings}
+      opened={!!search.settings}
       onClose={onClose}
       // size="1200"
       fullScreen={true}
@@ -108,16 +111,17 @@ export const SettingsModal: FC<SettingsModalProps> = (props) => {
 export default SettingsModal
 
 export function navigateToSettings(path?: string) {
+  const settingsPath = `/settings${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`
+
   if (window.matchMedia(`(max-width:${getThemeDesign('light', 16, 'en').breakpoints?.values?.sm || 640}px)`).matches) {
-    router.navigate({
-      to: `/settings${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`,
-    })
+    router.history.push(settingsPath)
   } else {
     router.navigate({
-      to: router.state.location.pathname,
-      search: {
-        settings: `/settings${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`,
-      },
+      to: '/',
+      search: (prev: RootSearchState) => ({
+        ...prev,
+        settings: settingsPath,
+      }),
       mask: {
         to: '/settings',
       },

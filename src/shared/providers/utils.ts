@@ -18,7 +18,7 @@ export function createCustomProviderModel(
     case ModelProviderType.Claude:
       return new CustomClaude(
         {
-          apiKey: providerSetting.apiKey || '',
+          apiKey: config.effectiveApiKey || '',
           apiHost: formattedApiHost,
           model,
           temperature: settings.temperature,
@@ -31,7 +31,7 @@ export function createCustomProviderModel(
     case ModelProviderType.Gemini:
       return new CustomGemini(
         {
-          apiKey: providerSetting.apiKey || '',
+          apiKey: config.effectiveApiKey || '',
           apiHost: formattedApiHost,
           model,
           temperature: settings.temperature,
@@ -44,7 +44,7 @@ export function createCustomProviderModel(
     case ModelProviderType.OpenAIResponses:
       return new CustomOpenAIResponses(
         {
-          apiKey: providerSetting.apiKey || '',
+          apiKey: config.effectiveApiKey || '',
           apiHost: formattedApiHost,
           apiPath: formattedApiPath,
           model,
@@ -60,7 +60,7 @@ export function createCustomProviderModel(
     default:
       return new CustomOpenAI(
         {
-          apiKey: providerSetting.apiKey || '',
+          apiKey: config.effectiveApiKey || '',
           apiHost: formattedApiHost,
           apiPath: formattedApiPath,
           model,

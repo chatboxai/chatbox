@@ -25,6 +25,7 @@ export enum ModelProviderEnum {
   Qwen = 'qwen',
   QwenPortal = 'qwen-portal',
   Custom = 'custom',
+  Qiniu = 'qiniu',
 }
 
 export enum ModelProviderType {

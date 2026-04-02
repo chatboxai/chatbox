@@ -4,7 +4,7 @@
 - pack: Pack 03 - Chess Vertical Slice
 - single-agent order: backfill 2 of 8
 - blocked by: CB-006
-- unblocks: CB-506, CB-605
+- unblocks: CB-508
 - implementation surfaces:
   - `src/renderer/packages/chatbridge/bridge/host-controller.ts`
   - `src/renderer/components/chatbridge/apps/surface.tsx`
@@ -27,4 +27,5 @@
 - notes:
   - Opened from `smoke-audit-master.md` finding SA-005.
   - This story restores the real reviewed-app launch seam before broader
-    multi-app and authenticated-app rebuild work continues.
+    multi-app rebuild work continues.
+  - Do not skip directly to Pack 05 implementation without closing this seam.

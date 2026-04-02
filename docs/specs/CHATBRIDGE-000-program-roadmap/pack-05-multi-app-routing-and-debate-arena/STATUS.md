@@ -7,7 +7,22 @@
 - Unlock rule: this pack opens only after Pack 4 has a written exit memo and
   linked proof in `progress.md`
 
-## Story Order
+## Active Rebuild Queue
+
+Use this queue for implementation order inside the reopened Pack 05 rebuild
+lane. Do not infer execution order from the historical story numbers.
+
+1. `CB-508`
+2. `CB-506`
+3. `CB-509`
+4. `CB-510`
+5. `CB-507`
+
+Legacy parked packets that are not part of the active queue:
+
+- `CB-505`
+
+## Historical Story Order
 
 1. CB-501
 2. CB-502
@@ -60,7 +75,7 @@ app as interchangeable. Pack 06 can open next.
 ## Smoke-Audit Reopen Notes
 
 - `smoke-audit-master.md` reopened Pack 05 through findings SA-001, SA-002,
-  and SA-003.
+  SA-003, SA-008, SA-009, and SA-010.
 - The active flagship catalog changed on 2026-04-02. Debate Arena and Story
   Builder are now legacy references, while Drawing Kit and Weather become the
   active replacement apps.

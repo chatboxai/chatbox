@@ -3,8 +3,8 @@
 - status: planned
 - pack: Pack 05 - Multi-App Routing and Debate Arena
 - single-agent order: backfill 5 of 8
-- blocked by: CB-508, CB-506
-- unblocks: CB-507
+- blocked by: CB-506
+- unblocks: CB-510
 - implementation surfaces:
   - `src/shared/chatbridge/`
   - `src/renderer/components/chatbridge/apps/`
@@ -28,3 +28,4 @@
 - notes:
   - Opened from the active catalog change on 2026-04-02.
   - This story requires Pencil approval before UI implementation.
+  - Treat this as the first new flagship app build in the active queue.

@@ -3,8 +3,8 @@
 - status: planned
 - pack: Pack 05 - Multi-App Routing and Debate Arena
 - single-agent order: backfill 7 of 8
-- blocked by: CB-505, CB-506
-- unblocks: cleaner multi-app manual smoke
+- blocked by: CB-510
+- unblocks: CB-105
 - implementation surfaces:
   - `src/shared/chatbridge/routing.ts`
   - `src/renderer/packages/chatbridge/router/decision.ts`
@@ -30,3 +30,4 @@
   - Opened from `smoke-audit-master.md` finding SA-003.
   - This story requires Pencil approval before UI implementation because it
     introduces user-visible route artifacts.
+  - `CB-505` is legacy and not part of the active dependency chain.

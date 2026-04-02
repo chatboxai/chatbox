@@ -4,7 +4,7 @@
 - pack: Pack 00 - Foundation and Instrumentation
 - single-agent order: backfill 1 of 8
 - blocked by: none
-- unblocks: CB-305, CB-506, CB-605
+- unblocks: CB-305
 - implementation surfaces:
   - `src/main/adapters/langsmith.ts`
   - `src/renderer/adapters/langsmith.ts`
@@ -27,3 +27,4 @@
   - Opened from `smoke-audit-master.md` finding SA-006.
   - This story should establish the observability spine before deeper runtime
     rebuild work starts.
+  - Treat this as the only valid queue entry point for the reopened program.

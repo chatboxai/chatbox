@@ -3,8 +3,8 @@
 - status: planned
 - pack: Pack 05 - Multi-App Routing and Debate Arena
 - single-agent order: backfill 3 of 8
-- blocked by: CB-006, CB-305
-- unblocks: CB-506, CB-509, CB-510, CB-507
+- blocked by: CB-305
+- unblocks: CB-506
 - implementation surfaces:
   - `docs/specs/CHATBRIDGE-000-program-roadmap/`
   - `chatbridge/PRESEARCH.md`
@@ -30,3 +30,5 @@
   - Opened from the product-direction change on 2026-04-02.
   - This story should land before new flagship app implementation so the queue
     stops targeting legacy apps.
+  - Debate Arena and Story Builder remain legacy references and are not active
+    queue dependencies.

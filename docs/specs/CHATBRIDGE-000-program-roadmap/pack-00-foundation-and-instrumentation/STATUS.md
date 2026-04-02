@@ -1,7 +1,7 @@
 # Pack 00 Status
 
 - Control state: historical baseline reopened by the smoke-audit rebuild queue
-- Single-agent scope: execute CB-006 before deeper runtime backfills
+- Single-agent scope: execute `CB-006` first; it is queue position 1 of 8
 - Story state model: `planned`, `in_progress`, `code_complete`, `validated`, `merged`
 
 ## Story Ledger

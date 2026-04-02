@@ -45,20 +45,25 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 | Pack 06 | historical baseline with legacy parked follow-up | `CB-605` planned legacy packet | historical exit memo | Story Builder auth/resource proof remains a legacy reference and is no longer on the active queue. |
 | Pack 07 | validated | CB-701, CB-703, CB-705, CB-702, and CB-704 validated | written | Pack 07 exit is complete; the full-program convergence audit is now validated on this branch via `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`. |
 
-## Single-Agent Queue
+## Active Single-Agent Queue
 
-1. Pack 00 -> CB-006
-2. Pack 03 -> CB-305
-3. Pack 05 -> CB-508
-4. Pack 05 -> CB-506
-5. Pack 05 -> CB-509
-6. Pack 05 -> CB-510
-7. Pack 05 -> CB-507
-8. Pack 01 -> CB-105
+Treat this list as the only execution order for the reopened rebuild lane. If a
+story is not listed here, it is either historical baseline or a parked legacy
+packet and should not be picked up next.
+
+1. Pack 00 -> `CB-006`
+2. Pack 03 -> `CB-305`
+3. Pack 05 -> `CB-508`
+4. Pack 05 -> `CB-506`
+5. Pack 05 -> `CB-509`
+6. Pack 05 -> `CB-510`
+7. Pack 05 -> `CB-507`
+8. Pack 01 -> `CB-105`
 
 ## Current Milestone
 
 - Active next gate: smoke-audit rebuild queue begins at `CB-006`
+- Immediate next story after `CB-006`: `CB-305`
 - Status: reopened by `smoke-audit-master.md`
 - Result: historical pack closeout remains documented, but live-runtime smoke
   findings now govern current execution order until the rebuild queue is empty

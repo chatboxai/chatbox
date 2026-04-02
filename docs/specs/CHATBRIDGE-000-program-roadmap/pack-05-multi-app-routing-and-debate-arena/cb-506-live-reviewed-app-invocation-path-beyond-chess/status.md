@@ -3,8 +3,8 @@
 - status: planned
 - pack: Pack 05 - Multi-App Routing and Debate Arena
 - single-agent order: backfill 4 of 8
-- blocked by: CB-305, CB-505
-- unblocks: CB-507, CB-605
+- blocked by: CB-508
+- unblocks: CB-509
 - implementation surfaces:
   - `src/renderer/packages/model-calls/stream-text.ts`
   - `src/renderer/packages/chatbridge/single-app-tools.ts`
@@ -29,3 +29,4 @@
   - Opened from `smoke-audit-master.md` finding SA-002.
   - This story replaces the live Chess-only shortcut after catalog parity and
     bridge runtime adoption are in place.
+  - `CB-505` is legacy and should not be treated as an active prerequisite.

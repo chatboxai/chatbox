@@ -1,6 +1,31 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelInterface } from './types'
-import { wrapModelWithLangSmith } from './tracing'
+import { createLangSmithConversationMetadata, wrapModelWithLangSmith } from './tracing'
+
+describe('createLangSmithConversationMetadata', () => {
+  it('adds LangSmith thread keys and falls back thread_id to the session when needed', () => {
+    expect(
+      createLangSmithConversationMetadata(
+        {
+          sessionId: 'session-1',
+          messageId: 'message-1',
+        },
+        {
+          operation: 'streamText',
+        }
+      )
+    ).toEqual({
+      operation: 'streamText',
+      sessionId: 'session-1',
+      session_id: 'session-1',
+      threadId: 'session-1',
+      thread_id: 'session-1',
+      conversation_id: 'session-1',
+      messageId: 'message-1',
+      message_id: 'message-1',
+    })
+  })
+})
 
 describe('wrapModelWithLangSmith', () => {
   it('wraps chat calls in llm runs and preserves parent correlation when provided', async () => {

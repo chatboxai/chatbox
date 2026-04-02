@@ -20,6 +20,7 @@ export async function generateText(
   messages: Message[],
   traceOptions?: {
     name?: string
+    parentRunId?: string
     metadata?: Record<string, unknown>
     tags?: string[]
   }
@@ -27,6 +28,7 @@ export async function generateText(
   const traceRun = await langsmith.startRun({
     name: traceOptions?.name ?? 'chatbox.generate_text',
     runType: 'chain',
+    parentRunId: traceOptions?.parentRunId,
     inputs: {
       modelId: model.modelId,
       messages: summarizeMessages(messages),

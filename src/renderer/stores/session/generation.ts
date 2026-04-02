@@ -152,6 +152,7 @@ export async function generate(
   // Get the message list where target message is located (may be historical messages), get target message index
   let messages = session.messages
   let targetMsgIx = messages.findIndex((m) => m.id === targetMsg.id)
+  let threadId = session.id
   if (targetMsgIx <= 0) {
     if (!session.threads) {
       return
@@ -160,6 +161,7 @@ export async function generate(
       messages = t.messages
       targetMsgIx = messages.findIndex((m) => m.id === targetMsg.id)
       if (targetMsgIx > 0) {
+        threadId = t.id
         break
       }
     }
@@ -209,6 +211,8 @@ export async function generate(
 
         const { result } = await streamText(model, {
           sessionId: session.id,
+          threadId,
+          targetMessageId: targetMsg.id,
           messages: promptMsgs,
           appRecords: session.chatBridgeAppRecords,
           onResultChangeWithCancel: modifyMessageCache,

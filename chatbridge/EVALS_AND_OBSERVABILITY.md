@@ -104,6 +104,18 @@ Important constraints:
 - `toolCallId` when applicable
 - `completionId` or idempotency key for state-changing events
 
+For LangSmith thread views specifically, Chatbox now emits the supported
+snake_case thread metadata on chat runs as well:
+
+- `session_id`
+- `thread_id`
+- `conversation_id`
+- `message_id`
+
+These thread keys must exist on the parent chat turn and every child run inside
+that turn, otherwise LangSmith thread filtering and per-thread cost/token
+aggregation become incomplete.
+
 ## Eval Baseline
 
 Every orchestration-heavy ChatBridge story should define at least:
@@ -160,6 +172,14 @@ Every orchestration-heavy ChatBridge story should define at least:
 Every `getModel(...)` path now returns a LangSmith-wrapped model through
 `src/shared/providers/index.ts`, so chat, stream, and paint calls emit child
 LLM runs even when the caller only adds a parent chain trace.
+
+`streamText(...)` now also propagates Chatbox conversation identifiers into the
+LangSmith thread metadata contract for both the parent chain run and all child
+LLM/planner runs:
+
+- root conversations use `session.id` as the LangSmith `thread_id`
+- branched thread conversations use the concrete `SessionThread.id`
+- the active assistant message id is recorded as `message_id`
 
 `CB-506` also adds a reviewed route-decision event from
 `src/renderer/packages/model-calls/stream-text.ts`:

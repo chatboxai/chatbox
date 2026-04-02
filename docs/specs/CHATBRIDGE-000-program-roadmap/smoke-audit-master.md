@@ -88,7 +88,7 @@ completion and live product behavior.
 - Notes:
   - This means the scoped multi-app product is not actually available to a new user in the default runtime, even though it is modeled in tests and docs.
 - Follow-up story candidate:
-  - `CB-505` - Default reviewed app catalog parity for flagship apps
+  - `CB-508` - Active reviewed catalog transition and legacy retention
 
 ### SA-002: Live prompt-driven app launch path is still Chess-only
 
@@ -174,6 +174,8 @@ completion and live product behavior.
     - `/private/tmp/chatbox-chessjs-devfix/test/integration/chatbridge/scenarios/story-builder-lifecycle.test.ts`
 - Notes:
   - Story Builder cards render in seeded sessions, but the actual auth/save/resume mechanics are not wired as a live conversation feature.
+  - After the 2026-04-02 active catalog change, this finding is parked as a
+    legacy-app issue unless Story Builder returns to the active flagship set.
 - Follow-up story candidate:
   - `CB-605` - Story Builder runtime auth and resource proxy integration
 
@@ -276,15 +278,22 @@ completion and live product behavior.
 ## Approved Rebuild Story Queue
 
 The smoke audit reopened ChatBridge for a focused rebuild sequence. These are
-the canonical backfill stories and their execution order:
+the canonical active backfill stories and their execution order after the
+2026-04-02 flagship catalog change:
 
 1. `CB-006` - traceable ChatBridge manual smoke harness and coverage expansion
 2. `CB-305` - bridge host controller adoption for reviewed app launches
-3. `CB-505` - default reviewed app catalog parity for flagship apps
+3. `CB-508` - active reviewed catalog transition and legacy retention
 4. `CB-506` - live reviewed app invocation path beyond Chess
-5. `CB-507` - live route clarify refuse artifacts and actions
-6. `CB-605` - Story Builder runtime auth and resource proxy integration
-7. `CB-105` - ChatBridge session console and accessibility hygiene
+5. `CB-509` - Drawing Kit flagship app
+6. `CB-510` - Weather Dashboard flagship app
+7. `CB-507` - live route clarify refuse artifacts and actions
+8. `CB-105` - ChatBridge session console and accessibility hygiene
+
+Legacy parked follow-up packets:
+
+- `CB-505` - old flagship catalog parity packet for Debate Arena and Story Builder
+- `CB-605` - Story Builder runtime auth and resource proxy integration
 
 Use the checked-in story packets under `docs/specs/CHATBRIDGE-000-program-roadmap/`
 for implementation. Do not fix these findings directly from this ledger without

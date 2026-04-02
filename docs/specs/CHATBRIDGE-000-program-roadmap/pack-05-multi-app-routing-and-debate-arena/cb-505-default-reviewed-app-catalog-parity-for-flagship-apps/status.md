@@ -2,7 +2,7 @@
 
 - status: planned
 - pack: Pack 05 - Multi-App Routing and Debate Arena
-- single-agent order: backfill 3 of 7
+- single-agent order: parked legacy packet
 - blocked by: CB-006
 - unblocks: CB-506, CB-507
 - implementation surfaces:
@@ -27,5 +27,6 @@
   - AC-3 planned
 - notes:
   - Opened from `smoke-audit-master.md` finding SA-001.
-  - This story restores runtime catalog truth before the live invocation path
-    is rebuilt.
+  - This packet is now parked in favor of `CB-508`, which transitions the
+    active flagship catalog to Chess, Drawing Kit, and Weather while keeping
+    Debate Arena and Story Builder as legacy references.

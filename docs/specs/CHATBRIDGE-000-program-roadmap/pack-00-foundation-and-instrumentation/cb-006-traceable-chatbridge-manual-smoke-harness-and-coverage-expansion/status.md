@@ -2,7 +2,7 @@
 
 - status: planned
 - pack: Pack 00 - Foundation and Instrumentation
-- single-agent order: backfill 1 of 7
+- single-agent order: backfill 1 of 8
 - blocked by: none
 - unblocks: CB-305, CB-506, CB-605
 - implementation surfaces:

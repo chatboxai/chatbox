@@ -1,7 +1,8 @@
 # Pack 05 Status
 
-- Pack state: validated baseline reopened by the smoke-audit rebuild queue
-- Current story: pending backfill queue starting at `CB-505` after `CB-006`
+- Pack state: validated baseline reopened by the smoke-audit rebuild queue and
+  active catalog transition
+- Current story: pending backfill queue starting at `CB-508` after `CB-006`
   and `CB-305`
 - Unlock rule: this pack opens only after Pack 4 has a written exit memo and
   linked proof in `progress.md`
@@ -15,6 +16,9 @@
 5. CB-505
 6. CB-506
 7. CB-507
+8. CB-508
+9. CB-509
+10. CB-510
 
 ## Story Ledger
 
@@ -22,11 +26,14 @@
 |---|---|---|
 | CB-501 | validated | Reviewed-app eligibility is now explicit and router-facing with explainable exclusion reasons. |
 | CB-502 | validated | Explicit invoke/clarify/refuse decisions now render through host-owned timeline artifacts. |
-| CB-503 | validated | Debate Arena now runs inside the host shell with structured result and continuity proof. |
-| CB-504 | validated | Multi-app continuity now keeps one primary active context plus one bounded recent-complete context without cross-instance bleed. |
-| CB-505 | planned | Smoke-audit backfill to restore default reviewed catalog parity for the scoped flagship apps. |
+| CB-503 | validated | Debate Arena is a validated historical baseline and now serves as a legacy reference after the flagship catalog change. |
+| CB-504 | validated | Multi-app continuity remains a validated baseline, but it should be re-proven against the new active flagship set. |
+| CB-505 | planned | Historical smoke-audit packet for restoring the old Debate Arena and Story Builder flagship catalog; now parked in favor of CB-508. |
 | CB-506 | planned | Smoke-audit backfill to replace the live Chess-only invocation shortcut with a real reviewed-app invoke path. |
 | CB-507 | planned | Smoke-audit backfill to make clarify and refusal artifacts a live product surface instead of a test-only seam. |
+| CB-508 | planned | Transition the active flagship catalog to Chess, Drawing Kit, and Weather while retaining Debate Arena and Story Builder as legacy references. |
+| CB-509 | planned | Build Drawing Kit as the new interactive no-auth flagship app. |
+| CB-510 | planned | Build Weather Dashboard as the new data-backed no-auth flagship app. |
 
 ## Exit Checklist
 
@@ -54,6 +61,9 @@ app as interchangeable. Pack 06 can open next.
 
 - `smoke-audit-master.md` reopened Pack 05 through findings SA-001, SA-002,
   and SA-003.
+- The active flagship catalog changed on 2026-04-02. Debate Arena and Story
+  Builder are now legacy references, while Drawing Kit and Weather become the
+  active replacement apps.
 - Historical Pack 05 proof remains checked in, but do not treat Pack 05 as
-  live-runtime complete again until `CB-505`, `CB-506`, and `CB-507` are
-  implemented and validated.
+  live-runtime complete again until `CB-508`, `CB-506`, `CB-509`, `CB-510`,
+  and `CB-507` are implemented and validated.

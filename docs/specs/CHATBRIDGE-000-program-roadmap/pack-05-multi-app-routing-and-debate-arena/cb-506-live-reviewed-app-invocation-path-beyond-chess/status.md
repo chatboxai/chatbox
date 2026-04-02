@@ -2,7 +2,7 @@
 
 - status: planned
 - pack: Pack 05 - Multi-App Routing and Debate Arena
-- single-agent order: backfill 4 of 7
+- single-agent order: backfill 4 of 8
 - blocked by: CB-305, CB-505
 - unblocks: CB-507, CB-605
 - implementation surfaces:

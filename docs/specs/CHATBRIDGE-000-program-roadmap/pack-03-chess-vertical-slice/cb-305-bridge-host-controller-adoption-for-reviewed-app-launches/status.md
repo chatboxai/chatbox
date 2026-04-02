@@ -2,7 +2,7 @@
 
 - status: planned
 - pack: Pack 03 - Chess Vertical Slice
-- single-agent order: backfill 2 of 7
+- single-agent order: backfill 2 of 8
 - blocked by: CB-006
 - unblocks: CB-506, CB-605
 - implementation surfaces:

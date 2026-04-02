@@ -2,7 +2,7 @@
 
 - status: planned
 - pack: Pack 06 - Authenticated Apps and Story Builder
-- single-agent order: backfill 6 of 7
+- single-agent order: parked legacy packet
 - blocked by: CB-305, CB-506
 - unblocks: full live Story Builder smoke and authenticated-app proof
 - implementation surfaces:
@@ -28,5 +28,7 @@
   - AC-3 planned
 - notes:
   - Opened from `smoke-audit-master.md` finding SA-004.
-  - This story is the Pack 06 rebuild that makes Story Builder live-runtime
-    proof honest instead of relying on seeded shells alone.
+  - Story Builder is now considered a legacy reference app after the
+    2026-04-02 active catalog change.
+  - Keep this packet for future reactivation work, but it is no longer on the
+    active flagship queue unless product direction changes again.

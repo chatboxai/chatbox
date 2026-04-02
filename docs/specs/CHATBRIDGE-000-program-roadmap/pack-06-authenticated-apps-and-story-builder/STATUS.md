@@ -1,7 +1,8 @@
 # Pack 06 Status
 
-- Pack state: validated baseline reopened by the smoke-audit rebuild queue
-- Current story: pending backfill `CB-605` after `CB-305` and `CB-506`
+- Pack state: validated historical baseline with legacy-only follow-up parked
+- Current story: no active work; `CB-605` stays parked unless Story Builder is
+  restored to the active flagship catalog
 - Unlock rule: Pack 5 exit proof is already present; continue strictly in Pack 6 story order
 
 ## Story Order
@@ -19,8 +20,8 @@
 | CB-601 | validated | Auth boundary is explicit; proceed to credential-handle lifecycle. |
 | CB-602 | validated | Credential handles are explicit; proceed to host-mediated resource proxy. |
 | CB-604 | validated | Host-mediated resource access is now explicit and auditable; proceed to Story Builder. |
-| CB-603 | validated | Story Builder now proves host-owned connect/save/resume/completion; Pack 06 can exit and unlock Pack 07. |
-| CB-605 | planned | Smoke-audit backfill to make Story Builder live runtime actually use the validated auth broker and resource proxy. |
+| CB-603 | validated | Story Builder is a validated historical baseline and now serves as a legacy reference after the flagship catalog change. |
+| CB-605 | planned | Legacy-only backfill for Story Builder runtime auth/resource honesty if the app returns to the active catalog later. |
 
 ## Exit Checklist
 
@@ -48,8 +49,10 @@ is unlocked.
 ## Smoke-Audit Reopen Notes
 
 - `smoke-audit-master.md` reopened Pack 06 through finding SA-004.
-- Historical Pack 06 proof remains checked in, but do not treat Pack 06 as
-  live-runtime complete again until `CB-605` is implemented and validated.
+- The active flagship catalog changed on 2026-04-02, so Story Builder is now a
+  legacy reference app rather than an active rebuild target.
+- Historical Pack 06 proof remains checked in, and `CB-605` stays available as
+  a legacy reactivation packet if Story Builder returns to the active roadmap.
 
 ## Current Notes
 

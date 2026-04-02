@@ -2,8 +2,8 @@
 
 - Pack state: validated baseline reopened by the smoke-audit rebuild queue and
   active catalog transition
-- Current story: pending backfill queue starting at `CB-508` after `CB-006`
-  and `CB-305`
+- Current story: pending backfill queue starting at `CB-508` after `CB-006`,
+  `CB-007`, and `CB-305`
 - Unlock rule: this pack opens only after Pack 4 has a written exit memo and
   linked proof in `progress.md`
 
@@ -44,7 +44,7 @@ Legacy parked packets that are not part of the active queue:
 | CB-503 | validated | Debate Arena is a validated historical baseline and now serves as a legacy reference after the flagship catalog change. |
 | CB-504 | validated | Multi-app continuity remains a validated baseline, but it should be re-proven against the new active flagship set. |
 | CB-505 | planned | Historical smoke-audit packet for restoring the old Debate Arena and Story Builder flagship catalog; now parked in favor of CB-508. |
-| CB-506 | planned | Smoke-audit backfill to replace the live Chess-only invocation shortcut with a real reviewed-app invoke path. |
+| CB-506 | planned | Smoke-audit backfill to replace the live Chess-only invocation shortcut with a real reviewed-app invoke path while preserving robust Chess prompt handling. |
 | CB-507 | planned | Smoke-audit backfill to make clarify and refusal artifacts a live product surface instead of a test-only seam. |
 | CB-508 | planned | Transition the active flagship catalog to Chess, Drawing Kit, and Weather while retaining Debate Arena and Story Builder as legacy references. |
 | CB-509 | planned | Build Drawing Kit as the new interactive no-auth flagship app. |

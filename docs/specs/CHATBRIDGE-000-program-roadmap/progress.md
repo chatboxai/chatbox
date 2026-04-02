@@ -36,7 +36,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 
 | Pack | Control state | Story posture | Exit memo | Notes |
 |---|---|---|---|---|
-| Pack 00 | validated backfill complete | `CB-006` validated backfill | inherited baseline | SA-006 is closed by CB-006; supported desktop manual smoke and representative eval traces now land in `chatbox-chatbridge`, and the queue advances to `CB-305`. |
+| Pack 00 | reopened by smoke audit with one validated backfill | `CB-006` validated and `CB-007` planned | inherited baseline | SA-006 is closed by `CB-006`; the delta pass added `CB-007` for trace evidence quality, trace-family parity, and scriptable smoke inspection before runtime rebuild work continues. |
 | Pack 01 | reopened by smoke audit | `CB-105` planned backfill | inherited baseline | SA-007 reopened console and accessibility hygiene as the final cleanup story. |
 | Pack 02 | historical baseline | inherited `merged` baseline | inherited | Contracts and bridge foundations are assumed ready for post-Pack-4 execution. |
 | Pack 03 | validated backfill complete | `CB-305` validated backfill | inherited baseline | SA-005 is closed by CB-305; reviewed host-tool launches now flow through the bridge host controller while artifact preview remains on the separate HTML-preview seam. |
@@ -52,22 +52,24 @@ story is not listed here, it is either historical baseline or a parked legacy
 packet and should not be picked up next.
 
 1. Pack 00 -> `CB-006`
-2. Pack 03 -> `CB-305`
-3. Pack 05 -> `CB-508`
-4. Pack 05 -> `CB-506`
-5. Pack 05 -> `CB-509`
-6. Pack 05 -> `CB-510`
-7. Pack 05 -> `CB-507`
-8. Pack 01 -> `CB-105`
+2. Pack 00 -> `CB-007`
+3. Pack 03 -> `CB-305`
+4. Pack 05 -> `CB-508`
+5. Pack 05 -> `CB-506`
+6. Pack 05 -> `CB-509`
+7. Pack 05 -> `CB-510`
+8. Pack 05 -> `CB-507`
+9. Pack 01 -> `CB-105`
 
 ## Current Milestone
 
-- Active next gate: `CB-508`
-- Immediate next story after `CB-508`: `CB-506`
-- Status: `CB-305` validated; the smoke-audit rebuild queue remains active
+- Active next gate: `CB-007`
+- Immediate next story after `CB-007`: `CB-508`
+- Status: `CB-305` validated; `CB-007` is now the earliest unresolved queue item
 - Result: Pack 03 reviewed-app launches now use the bridge host controller as
-  the real runtime seam, with explicit active and degraded LangSmith proof,
-  while the later Pack 05 catalog/runtime rebuild work remains queued
+  the real runtime seam with explicit active and degraded LangSmith proof, but
+  the Pack 00 evidence-quality backfill still remains open before the queue
+  resumes at the later runtime/catalog rebuild stories
 
 ## Pack 4 Exit Lock
 
@@ -108,6 +110,8 @@ smoke audit has reopened the program for a focused rebuild.
 - Backfill stories required by this audit:
   - `CB-006` validated
   - `CB-305` validated
+  - `CB-007`
+  - `CB-305` validated
   - `CB-508`
   - `CB-506`
   - `CB-509`
@@ -120,6 +124,26 @@ smoke audit has reopened the program for a focused rebuild.
 - Repo-wide validation note: the repo gate can be green while the live
   ChatBridge runtime still falls short; use this file and `smoke-audit-master.md`
   as the current truth for rebuild work.
+
+## Post-Queue Initiative
+
+If the active rebuild queue closes and the team wants to continue toward a
+Ghostfolio-style agent architecture, the next initiative packet is:
+
+- `docs/specs/CHATBRIDGE-001-post-rebuild-agent-productization/`
+
+That packet intentionally prioritizes:
+
+1. unified execution governor
+2. backend-authoritative state and reconciliation
+3. operator/admin/feedback productization
+4. architecture and runtime truth sync
+
+And intentionally defers to the end:
+
+5. policy and refusal layer
+6. verification, confidence, and provenance layer
+7. high-risk action workflow
 
 ## Required Scenario Families
 

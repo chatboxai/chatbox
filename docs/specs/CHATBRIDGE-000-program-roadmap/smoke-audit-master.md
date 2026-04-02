@@ -15,6 +15,11 @@ Use this ledger for:
 - likely owning pack and story
 - follow-up story candidates
 
+The post-queue initiative packet that picks up after the current rebuild lane
+is:
+
+- `docs/specs/CHATBRIDGE-001-post-rebuild-agent-productization/`
+
 Do not treat a passing automated test as proof that the user-visible flow is
 healthy. This ledger is specifically for closing the gap between story
 completion and live product behavior.
@@ -421,13 +426,14 @@ the canonical active backfill stories and their execution order after the
 2026-04-02 flagship catalog change:
 
 1. `CB-006` - traceable ChatBridge manual smoke harness and coverage expansion
-2. `CB-305` - bridge host controller adoption for reviewed app launches
-3. `CB-508` - active reviewed catalog transition and legacy retention
-4. `CB-506` - live reviewed app invocation path beyond Chess
-5. `CB-509` - Drawing Kit flagship app
-6. `CB-510` - Weather Dashboard flagship app
-7. `CB-507` - live route clarify refuse artifacts and actions
-8. `CB-105` - ChatBridge session console and accessibility hygiene
+2. `CB-007` - trace evidence quality and scriptable smoke inspection
+3. `CB-305` - bridge host controller adoption for reviewed app launches
+4. `CB-508` - active reviewed catalog transition and legacy retention
+5. `CB-506` - live reviewed app invocation path beyond Chess
+6. `CB-509` - Drawing Kit flagship app
+7. `CB-510` - Weather Dashboard flagship app
+8. `CB-507` - live route clarify refuse artifacts and actions
+9. `CB-105` - ChatBridge session console and accessibility hygiene
 
 Legacy parked follow-up packets:
 

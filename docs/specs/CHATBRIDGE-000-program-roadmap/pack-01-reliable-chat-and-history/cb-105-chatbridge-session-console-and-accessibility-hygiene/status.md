@@ -2,7 +2,7 @@
 
 - status: planned
 - pack: Pack 01 - Reliable Chat and History
-- single-agent order: backfill 8 of 8
+- single-agent order: backfill 9 of 9
 - blocked by: CB-507
 - unblocks: queue complete
 - implementation surfaces:

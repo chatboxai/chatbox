@@ -2,9 +2,9 @@
 
 - status: validated
 - pack: Pack 00 - Foundation and Instrumentation
-- single-agent order: backfill 1 of 8
+- single-agent order: backfill 1 of 9
 - blocked by: none
-- unblocks: CB-305
+- unblocks: CB-007
 - implementation surfaces:
   - `src/shared/models/tracing.ts`
   - `src/main/adapters/langsmith.ts`
@@ -76,3 +76,8 @@
   - No `src/renderer/packages/initial_data.ts` refresh was required because
     CB-006 only changes tracing, dev tooling, and documentation around existing
     ChatBridge seeded fixtures.
+  - This story should establish the observability spine before deeper runtime
+    rebuild work starts.
+  - Treat this as the only valid queue entry point for the reopened program.
+  - Follow-on evidence-quality hardening now lives in `CB-007` so `CB-006`
+    can stay focused on the initial supported smoke path.

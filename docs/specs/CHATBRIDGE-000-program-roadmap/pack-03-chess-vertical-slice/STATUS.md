@@ -1,8 +1,8 @@
 # Pack 03 Status
 
 - Control state: Pack 03 backfill validated; reviewed-app bridge launch seam restored
-- Single-agent scope: execute bridge-runtime backfill `CB-305` second, after
-  `CB-006`, before later live multi-app repairs
+- Single-agent scope: execute bridge-runtime backfill `CB-305` third, after
+  `CB-006` and `CB-007`, before later live multi-app repairs
 - Story state model: `planned`, `in_progress`, `code_complete`, `validated`, `merged`
 
 ## Story Ledger
@@ -21,4 +21,5 @@
 - Pack 03 was reopened by `smoke-audit-master.md` finding SA-005.
 - `CB-305` now closes that seam with traced happy-path and degraded proof
   under `chatbox-chatbridge`.
-- Queue advancement after Pack 03 is now `CB-508`.
+- Pack 03 is no longer the blocking seam for later runtime stories; the
+  remaining earlier queue blocker now sits in Pack 00 as `CB-007`.

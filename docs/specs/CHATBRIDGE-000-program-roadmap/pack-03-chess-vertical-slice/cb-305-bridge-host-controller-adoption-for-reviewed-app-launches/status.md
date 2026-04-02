@@ -2,8 +2,8 @@
 
 - status: validated
 - pack: Pack 03 - Chess Vertical Slice
-- single-agent order: backfill 2 of 8
-- blocked by: CB-006
+- single-agent order: backfill 3 of 9
+- blocked by: CB-007
 - unblocks: CB-508
 - implementation surfaces:
   - `src/renderer/packages/chatbridge/reviewed-app-launch.ts`

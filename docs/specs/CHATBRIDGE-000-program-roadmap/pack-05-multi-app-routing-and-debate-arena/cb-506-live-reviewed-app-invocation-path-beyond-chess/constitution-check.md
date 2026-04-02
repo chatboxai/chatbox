@@ -29,6 +29,7 @@
 
 - Likely surface: `src/renderer/packages/model-calls/stream-text.ts`
 - Likely surface: `src/renderer/packages/chatbridge/single-app-tools.ts`
+- Likely surface: `src/shared/chatbridge/single-app-discovery.ts`
 - Likely surface: `src/renderer/packages/chatbridge/router/`
 - Likely surface: `src/renderer/components/chatbridge/`
 - Likely surface: `test/integration/chatbridge/scenarios/`
@@ -39,9 +40,12 @@
    Current live generation seam that still needs repair.
 2. `src/renderer/packages/chatbridge/router/decision.ts`
    Reviewed route-decision precedent the live invoke path should consume.
-3. `src/renderer/packages/chatbridge/bridge/host-controller.ts`
+3. `src/shared/chatbridge/single-app-discovery.ts`
+   Current Chess-intent heuristic seam that now also needs stronger natural
+   Chess prompt coverage.
+4. `src/renderer/packages/chatbridge/bridge/host-controller.ts`
    Host-owned runtime launch/control seam to use instead of one-off shortcuts.
-4. `test/integration/chatbridge/scenarios/route-decision-artifacts.test.ts`
+5. `test/integration/chatbridge/scenarios/route-decision-artifacts.test.ts`
    Existing decision proof that should become runtime-relevant after this
    rebuild.
 

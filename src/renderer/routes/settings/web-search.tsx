@@ -1,4 +1,5 @@
 import { Button, Flex, PasswordInput, Select, Stack, Text, Title, Tooltip } from '@mantine/core'
+import type { Settings } from '@shared/types'
 import { createFileRoute } from '@tanstack/react-router'
 import { ofetch } from 'ofetch'
 import { useState } from 'react'
@@ -16,6 +17,9 @@ export function RouteComponent() {
   const { t } = useTranslation()
   const setSettings = useSettingsStore((state) => state.setSettings)
   const extension = useSettingsStore((state) => state.extension)
+  type TavilySearchDepth = NonNullable<Settings['extension']['webSearch']['tavilySearchDepth']>
+  type TavilyTimeRange = NonNullable<Settings['extension']['webSearch']['tavilyTimeRange']>
+  type TavilyIncludeRawContent = NonNullable<Settings['extension']['webSearch']['tavilyIncludeRawContent']>
 
   const [checkingTavily, setCheckingTavily] = useState(false)
   const [tavilyAvaliable, setTavilyAvaliable] = useState<boolean>()
@@ -193,7 +197,7 @@ export function RouteComponent() {
                       ...extension,
                       webSearch: {
                         ...extension.webSearch,
-                        tavilySearchDepth: e,
+                        tavilySearchDepth: e as TavilySearchDepth,
                       },
                     },
                   })
@@ -266,7 +270,7 @@ export function RouteComponent() {
                       ...extension,
                       webSearch: {
                         ...extension.webSearch,
-                        tavilyTimeRange: e,
+                        tavilyTimeRange: e as TavilyTimeRange,
                       },
                     },
                   })
@@ -298,7 +302,7 @@ export function RouteComponent() {
                       ...extension,
                       webSearch: {
                         ...extension.webSearch,
-                        tavilyIncludeRawContent: e,
+                        tavilyIncludeRawContent: e as TavilyIncludeRawContent,
                       },
                     },
                   })

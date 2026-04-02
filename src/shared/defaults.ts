@@ -125,6 +125,10 @@ export function settings(): Settings {
       webSearch: {
         provider: 'build-in',
         tavilyApiKey: '',
+        tavilySearchDepth: 'basic',
+        tavilyMaxResults: 5,
+        tavilyTimeRange: 'none',
+        tavilyIncludeRawContent: 'none',
         queritApiKey: '',
         queritMaxResults: 5,
         queritTimeRange: 'none',

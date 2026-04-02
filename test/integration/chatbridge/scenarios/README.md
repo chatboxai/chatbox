@@ -20,3 +20,6 @@ Current Pack 07 recovery proof lives in:
 - `bridge-session-security.test.ts`
   for malformed bridge traffic, replay rejection, launch timeout, and explicit
   runtime-crash recovery signals
+- `operator-controls-rollout.test.ts`
+  for lifecycle observability records, version kill-switch launch blocking, and
+  explicit active-session rollback posture

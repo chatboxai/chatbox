@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearReviewedAppRegistry, defineReviewedApps } from '@shared/chatbridge/registry'
 import type { ReviewedAppCatalogEntry } from '@shared/chatbridge/manifest'
+import { applyChatBridgeAppKillSwitch, clearChatBridgeObservabilityState } from '@shared/chatbridge/observability'
 import { getReviewedAppRouterCatalog } from './candidates'
 
 function createReviewedAppCatalogEntry(overrides: Partial<ReviewedAppCatalogEntry> = {}): ReviewedAppCatalogEntry {
@@ -80,6 +81,7 @@ function createReviewedAppCatalogEntry(overrides: Partial<ReviewedAppCatalogEntr
 describe('ChatBridge router candidates', () => {
   beforeEach(() => {
     clearReviewedAppRegistry()
+    clearChatBridgeObservabilityState()
   })
 
   it('exposes only eligible reviewed apps to router callers and keeps excluded decisions for debugging', () => {
@@ -141,5 +143,43 @@ describe('ChatBridge router candidates', () => {
     expect(result.context).toBeNull()
     expect(result.candidates).toEqual([])
     expect(result.excluded[0]?.reasons[0]?.code).toBe('invalid-context')
+  })
+
+  it('keeps disabled app versions out of the router candidate list and preserves exclusion reasons', () => {
+    const storyBuilder = createReviewedAppCatalogEntry({
+      manifest: {
+        ...createReviewedAppCatalogEntry().manifest,
+        safetyMetadata: {
+          reviewed: true,
+          sandbox: 'hosted-iframe',
+          handlesStudentData: true,
+          requiresTeacherApproval: false,
+        },
+        tenantAvailability: {
+          default: 'enabled',
+          allow: [],
+          deny: [],
+        },
+      },
+    })
+    defineReviewedApps([storyBuilder])
+    applyChatBridgeAppKillSwitch({
+      controlId: 'control-story-builder',
+      appId: 'story-builder',
+      version: '1.2.3',
+      reason: 'Rollback after partner regression.',
+      disabledAt: 150,
+      disabledBy: 'ops-oncall',
+      activeSessionBehavior: 'allow-to-complete',
+    })
+
+    const result = getReviewedAppRouterCatalog({
+      tenantId: 'k12-demo',
+      teacherApproved: true,
+      grantedPermissions: ['drive.read'],
+    })
+
+    expect(result.candidates).toEqual([])
+    expect(result.excluded[0]?.reasons.map((reason) => reason.code)).toContain('app-version-disabled')
   })
 })

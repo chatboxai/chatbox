@@ -26,10 +26,10 @@
 
 | Task ID | Description | Dependency | Parallelizable | Validation |
 |---|---|---|---|---|
-| T001 | Add failing tests that prove the live generation path is still Chess-only and should launch a reviewed non-Chess app. | must-have | no | Focused failing tests |
-| T002 | Replace the Chess-only execution shortcut with a reviewed invoke path that consumes route decisions and host-owned launch control. | blocked-by:T001 | no | Runtime and integration tests |
+| T001 | Add failing tests that prove the live generation path is still Chess-only, misses natural Chess prompts, and should launch a reviewed non-Chess app. | must-have | no | Focused failing tests |
+| T002 | Replace the Chess-only execution shortcut with a reviewed invoke path that consumes route decisions, preserves robust Chess intent handling, and uses host-owned launch control. | blocked-by:T001 | no | Runtime and integration tests |
 | T003 | Add explicit launch-failure and trace coverage for the new invoke path. | blocked-by:T002 | yes | Failure-path tests and trace evidence |
-| T004 | Re-run fresh-thread manual smoke prompts for non-Chess launch behavior. | blocked-by:T002,T003 | no | Manual smoke notes |
+| T004 | Re-run fresh-thread manual smoke prompts for natural Chess requests and non-Chess launch behavior. | blocked-by:T002,T003 | no | Manual smoke notes |
 
 Dependency values:
 - `must-have`
@@ -44,8 +44,10 @@ Parallelizable values:
 
 - T001 tests:
   - [ ] Fresh runtime non-Chess app launch currently fails for the wrong reason
+  - [ ] Natural Chess prompts still fall through to chat-only or ambiguous outcomes
 - T002 tests:
   - [ ] Live prompt path invokes a non-Chess reviewed app
+  - [ ] Live prompt path still routes natural Chess prompts into Chess
 - T003 tests:
   - [ ] Launch failures are explicit and traced
 - T004 tests:

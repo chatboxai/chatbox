@@ -29,6 +29,8 @@ evidence.
 - [CB-003 - Evals, tracing, and observability foundation](./cb-003-evals-tracing-and-observability-foundation/feature-spec.md)
 - [CB-004 - Web deployment and release infrastructure baseline](./cb-004-web-deployment-and-release-infrastructure-baseline/feature-spec.md)
 - [CB-005 - Mainline Vercel sync and post-merge verification](./cb-005-mainline-vercel-sync-and-post-merge-verification/feature-spec.md)
+- [CB-006 - Traceable ChatBridge manual smoke harness and coverage expansion](./cb-006-traceable-chatbridge-manual-smoke-harness-and-coverage-expansion/feature-spec.md)
+- [CB-007 - Trace evidence quality and scriptable smoke inspection](./cb-007-trace-evidence-quality-and-scriptable-smoke-inspection/feature-spec.md)
 
 ## Exit Criteria
 
@@ -43,6 +45,9 @@ evidence.
 - Provider/app integration fixtures exist for development and tests.
 - Trace, eval, and observability hooks exist early enough to support
   trace-driven development in later packs.
+- The supported manual smoke path is not only traceable, but also returns
+  usable evidence with distinct trace families and scriptable inspection
+  surfaces.
 - The core Pack 0 artifacts exist in `chatbridge/` and the starter ChatBridge
   integration test home exists under `test/integration/chatbridge/`.
 

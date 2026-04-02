@@ -27,6 +27,9 @@ tool set that only turns Chess into an executable app launch.
 
 - As a user, I want the live chat runtime to launch the right reviewed app
   beyond Chess when my prompt matches that app.
+- As a Chess user, I want normal Chess prompts like opening analysis, raw FEN,
+  or "best move" requests to still route into the Chess runtime when Chess is
+  the only reviewed app available.
 - As the host, I want prompt-driven app invocation to consume the reviewed-app
   route decision instead of bypassing multi-app orchestration.
 
@@ -39,6 +42,9 @@ tool set that only turns Chess into an executable app launch.
   setup.
 - [ ] AC-3: Invocation failures remain explicit and traceable, and do not fall
   back to silent chat-only behavior when the host intended to launch an app.
+- [ ] AC-4: Common Chess prompts such as opening analysis, raw FEN/PGN input,
+  and direct "best move" requests do not fall through to chat-only behavior
+  when Chess is the only eligible reviewed app.
 
 ## Edge Cases
 
@@ -46,6 +52,8 @@ tool set that only turns Chess into an executable app launch.
   explicit host decision.
 - Boundary values: repeated prompt attempts and active-session continuity must
   not reintroduce the Chess-only shortcut.
+- Boundary values: natural Chess phrasing must not be treated as chat-only just
+  because the prompt omits the literal token `chess`.
 - Invalid/malformed data: malformed route decisions must fail closed before any
   launch attempt starts.
 - External-service failures: launch failures must remain explicit even when the
@@ -77,6 +85,8 @@ tool set that only turns Chess into an executable app launch.
 ## Done Definition
 
 - The live prompt-driven app launch path is no longer Chess-only.
+- Natural Chess prompts still invoke Chess correctly while the path expands
+  beyond Chess.
 - At least one non-Chess reviewed flagship app launches from a fresh runtime
   path without seed-only setup.
 - Invocation failures are explicit and traceable.

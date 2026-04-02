@@ -151,7 +151,7 @@ export default function ChatBridgeSeedLab() {
           }))
           setNotice({
             tone: 'success',
-            text: `Started traced manual smoke for ${seededSession.fixture.name}. Trace ID: ${traceResult.run.runId}.`,
+            text: `Started traced manual smoke for ${seededSession.fixture.name}. Run label: ${traceResult.traceLabel}. Trace ID: ${traceResult.traceId}.`,
           })
         } else {
           setActiveTraceRuns((current) => ({

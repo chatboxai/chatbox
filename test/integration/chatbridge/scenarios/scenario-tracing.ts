@@ -26,6 +26,8 @@ export async function runChatBridgeScenarioTrace<T>(
   const traceDescriptor: ChatBridgeTraceDescriptor = {
     ...descriptor,
     surface: 'eval',
+    runtimeTarget: 'integration-vitest',
+    smokeSupport: 'scenario-only',
   }
   const run = await scenarioTraceAdapter.startRun({
     name: createChatBridgeTraceName(traceDescriptor),

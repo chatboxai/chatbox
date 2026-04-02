@@ -1,0 +1,18 @@
+{
+  "storyId": "CB-007",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "failed-as-expected",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run test/integration/chatbridge/scenarios/scenario-tracing.test.ts src/renderer/dev/chatbridgeManualSmoke.test.ts src/renderer/packages/initial_data.test.ts",
+    "failureSummary": [
+      "Scenario traces were missing runtime-target and smoke-support metadata/tags.",
+      "Legacy manual-smoke fixtures still resolved to langsmith-disabled instead of an explicit legacy-reference outcome.",
+      "getChatBridgeSmokeInspectionSnapshot() did not exist."
+    ]
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run test/integration/chatbridge/scenarios/scenario-tracing.test.ts src/renderer/dev/chatbridgeManualSmoke.test.ts src/renderer/components/dev/ChatBridgeSeedLab.test.tsx src/shared/chatbridge/live-seeds.test.ts src/renderer/packages/initial_data.test.ts"
+  }
+}

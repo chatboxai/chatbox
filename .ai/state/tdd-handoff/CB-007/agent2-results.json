@@ -1,0 +1,20 @@
+{
+  "storyId": "CB-007",
+  "status": "green",
+  "implementationFiles": [
+    "src/shared/models/tracing.ts",
+    "src/renderer/dev/chatbridgeManualSmoke.ts",
+    "src/renderer/components/dev/ChatBridgeSeedLab.tsx",
+    "test/integration/chatbridge/scenarios/scenario-tracing.ts",
+    "src/shared/chatbridge/live-seeds.ts",
+    "src/renderer/packages/initial_data.ts",
+    "chatbridge/EVALS_AND_OBSERVABILITY.md",
+    "test/integration/chatbridge/scenarios/README.md"
+  ],
+  "notes": [
+    "ChatBridge parent traces now emit runtime-target and smoke-support metadata/tags alongside the existing family contract.",
+    "The manual smoke helper returns an explicit trace handoff for supported runs and reason-coded non-traceable outcomes for legacy or unavailable paths.",
+    "The current live-seed and preset-session corpus is now scriptably inspectable through a pure snapshot helper without renderer-storage access."
+  ],
+  "focusedGreenCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run test/integration/chatbridge/scenarios/scenario-tracing.test.ts src/renderer/dev/chatbridgeManualSmoke.test.ts src/renderer/components/dev/ChatBridgeSeedLab.test.tsx src/shared/chatbridge/live-seeds.test.ts src/renderer/packages/initial_data.test.ts"
+}

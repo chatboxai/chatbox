@@ -25,6 +25,12 @@ Naming prefixes:
 - scenario evals: `chatbridge.eval.<slug>`
 - desktop manual smoke: `chatbridge.manual_smoke.<slug>.<session-id>`
 
+Metadata and tags should also identify:
+
+- scenario family through `primaryFamily` and `evidenceFamilies`
+- runtime target through `runtimeTarget` and `runtime-target:<value>`
+- smoke support state through `smokeSupport` and `smoke-support:<value>`
+
 Representative CB-006 traced scenario families now include:
 
 - `reviewed-app-registry.test.ts`
@@ -60,3 +66,8 @@ Current Milestone 4 convergence proof lives in:
   reasoning context, Debate Arena plus Story Builder continuity, Story Builder
   auth/resource access, policy denial, auth expiry, and partner harness replay
   rejection
+
+For scriptable audit support outside the scenario runner, inspect the current
+seed/preset corpus through
+`src/renderer/packages/initial_data.ts` ->
+`getChatBridgeSmokeInspectionSnapshot()` instead of booting renderer storage.

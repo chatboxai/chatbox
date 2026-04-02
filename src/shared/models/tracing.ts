@@ -27,6 +27,8 @@ export type ChatBridgeTraceEvidenceFamily =
   | 'routing'
 
 export type ChatBridgeTraceSurface = 'eval' | 'manual_smoke'
+export type ChatBridgeTraceRuntimeTarget = 'desktop-electron' | 'integration-vitest'
+export type ChatBridgeTraceSmokeSupport = 'legacy-reference' | 'scenario-only' | 'supported'
 
 export interface ChatBridgeTraceDescriptor {
   slug: string
@@ -35,6 +37,8 @@ export interface ChatBridgeTraceDescriptor {
   evidenceFamilies?: ChatBridgeTraceEvidenceFamily[]
   storyId?: string
   legacy?: boolean
+  runtimeTarget?: ChatBridgeTraceRuntimeTarget
+  smokeSupport?: ChatBridgeTraceSmokeSupport
 }
 
 const TRACE_WRAPPED_MODEL_SYMBOL = Symbol.for('chatbox.langsmith.traced-model')
@@ -49,6 +53,22 @@ function sanitizeTraceSegment(value: string) {
 
 function dedupeTraceFamilies(descriptor: ChatBridgeTraceDescriptor) {
   return Array.from(new Set([descriptor.primaryFamily, ...(descriptor.evidenceFamilies ?? [])]))
+}
+
+function resolveTraceRuntimeTarget(descriptor: ChatBridgeTraceDescriptor): ChatBridgeTraceRuntimeTarget {
+  return descriptor.runtimeTarget ?? (descriptor.surface === 'eval' ? 'integration-vitest' : 'desktop-electron')
+}
+
+function resolveTraceSmokeSupport(descriptor: ChatBridgeTraceDescriptor): ChatBridgeTraceSmokeSupport {
+  if (descriptor.smokeSupport) {
+    return descriptor.smokeSupport
+  }
+
+  if (descriptor.surface === 'eval') {
+    return 'scenario-only'
+  }
+
+  return descriptor.legacy ? 'legacy-reference' : 'supported'
 }
 
 export function createChatBridgeTraceName(descriptor: ChatBridgeTraceDescriptor, uniqueSuffix?: string) {
@@ -69,6 +89,8 @@ export function createChatBridgeTraceMetadata(
     evidenceFamilies: dedupeTraceFamilies(descriptor),
     storyId: descriptor.storyId ?? 'CB-006',
     legacy: descriptor.legacy ?? false,
+    runtimeTarget: resolveTraceRuntimeTarget(descriptor),
+    smokeSupport: resolveTraceSmokeSupport(descriptor),
     ...metadata,
   }
 }
@@ -81,6 +103,8 @@ export function createChatBridgeTraceTags(descriptor: ChatBridgeTraceDescriptor,
       ...dedupeTraceFamilies(descriptor),
       descriptor.legacy ? 'legacy' : 'active',
       descriptor.storyId?.toLowerCase() ?? 'cb-006',
+      `runtime-target:${resolveTraceRuntimeTarget(descriptor)}`,
+      `smoke-support:${resolveTraceSmokeSupport(descriptor)}`,
       ...tags,
     ])
   )

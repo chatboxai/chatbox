@@ -1,4 +1,9 @@
-import { getChatBridgeLiveSeedFixtures, type ChatBridgeLiveSeedFixture } from '@shared/chatbridge/live-seeds'
+import {
+  getChatBridgeLiveSeedFixtures,
+  getChatBridgeLiveSeedInspectionEntries,
+  type ChatBridgeLiveSeedFixture,
+  type ChatBridgeLiveSeedInspectionEntry,
+} from '@shared/chatbridge/live-seeds'
 import { migrateMessage } from '@/utils/message'
 import { ModelProviderEnum, type Session } from '../../shared/types'
 
@@ -1035,7 +1040,25 @@ type PresetSessionBlobEntry = NonNullable<ChatBridgeLiveSeedFixture['blobEntries
 
 export type PresetSessionBundle = {
   session: Session
+  fixtureId?: string
   blobEntries?: PresetSessionBlobEntry[]
+}
+
+export type ChatBridgePresetSessionInspectionEntry = {
+  fixtureId: string
+  fixtureName: string
+  sessionId: string
+  sessionName: string
+  locales: string[]
+  messageCount: number
+  threadCount: number
+  blobEntryCount: number
+}
+
+export type ChatBridgeSmokeInspectionSnapshot = {
+  schemaVersion: 1
+  liveSeeds: ChatBridgeLiveSeedInspectionEntry[]
+  presetSessions: ChatBridgePresetSessionInspectionEntry[]
 }
 
 function createPresetSessionBundle(session: Session): PresetSessionBundle {
@@ -1044,6 +1067,7 @@ function createPresetSessionBundle(session: Session): PresetSessionBundle {
 
 function createChatBridgePresetSessionBundles(): PresetSessionBundle[] {
   return getChatBridgeLiveSeedFixtures().map((fixture) => ({
+    fixtureId: fixture.id,
     session: {
       id: `chatbox-chat-demo-chatbridge-${fixture.id}`,
       ...structuredClone(fixture.sessionInput),
@@ -1058,6 +1082,34 @@ function createChatBridgePresetSessionBundles(): PresetSessionBundle[] {
 
 const chatBridgePresetSessionBundlesForEN = createChatBridgePresetSessionBundles()
 const chatBridgePresetSessionBundlesForCN = createChatBridgePresetSessionBundles()
+
+export function getChatBridgeSmokeInspectionSnapshot(): ChatBridgeSmokeInspectionSnapshot {
+  const liveSeeds = getChatBridgeLiveSeedInspectionEntries()
+  const presetBundlesByFixtureId = new Map(
+    chatBridgePresetSessionBundlesForEN
+      .filter((bundle): bundle is PresetSessionBundle & { fixtureId: string } => Boolean(bundle.fixtureId))
+      .map((bundle) => [bundle.fixtureId, bundle])
+  )
+
+  return {
+    schemaVersion: 1,
+    liveSeeds,
+    presetSessions: liveSeeds.map((fixture) => {
+      const presetBundle = presetBundlesByFixtureId.get(fixture.fixtureId)
+
+      return {
+        fixtureId: fixture.fixtureId,
+        fixtureName: fixture.fixtureName,
+        sessionId: presetBundle?.session.id ?? `chatbox-chat-demo-chatbridge-${fixture.fixtureId}`,
+        sessionName: presetBundle?.session.name ?? fixture.fixtureName,
+        locales: ['en', 'cn'],
+        messageCount: presetBundle?.session.messages.length ?? 0,
+        threadCount: presetBundle?.session.threads?.length ?? 0,
+        blobEntryCount: presetBundle?.blobEntries?.length ?? 0,
+      }
+    }),
+  }
+}
 
 export const defaultPresetSessionBundlesForEN: PresetSessionBundle[] = [
   createPresetSessionBundle(imageCreatorSessionForEN),

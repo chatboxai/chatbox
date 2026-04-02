@@ -1,0 +1,18 @@
+{
+  "storyId": "CB-007",
+  "stage": "agent1",
+  "status": "tests-authored",
+  "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run test/integration/chatbridge/scenarios/scenario-tracing.test.ts src/renderer/dev/chatbridgeManualSmoke.test.ts src/renderer/components/dev/ChatBridgeSeedLab.test.tsx src/shared/chatbridge/live-seeds.test.ts src/renderer/packages/initial_data.test.ts",
+  "testFiles": [
+    "test/integration/chatbridge/scenarios/scenario-tracing.test.ts",
+    "src/renderer/dev/chatbridgeManualSmoke.test.ts",
+    "src/renderer/components/dev/ChatBridgeSeedLab.test.tsx",
+    "src/shared/chatbridge/live-seeds.test.ts",
+    "src/renderer/packages/initial_data.test.ts"
+  ],
+  "notes": [
+    "Red guard confirmed trace metadata and tags were missing explicit runtime-target and smoke-support labels.",
+    "Legacy manual-smoke fixtures were still returning a misleading langsmith-disabled outcome instead of an explicit non-traceable reason.",
+    "The checked-in seed and preset corpus had no exported pure inspection snapshot."
+  ]
+}

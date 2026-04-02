@@ -44,7 +44,7 @@ LangSmith API access remains main-process-owned. Renderer code talks to the
 main sink through IPC-backed adapters, and tests default to a noop sink unless
 `LANGSMITH_TRACING=true` is set explicitly.
 
-## CB-006 Supported Manual Smoke Path
+## CB-006 and CB-007 Supported Manual Smoke Path
 
 The supported traced manual smoke path for the rebuild queue is now the desktop
 ChatBridge Seed Lab, not the web-only smoke surface.
@@ -61,9 +61,11 @@ Use this path:
    - `chess-mid-game-board-context`
    - `chess-runtime`
 4. Perform the listed audit steps in the seeded thread.
-5. Click `Mark Passed` or `Mark Failed`, then copy the trace ID from the card or
-   success banner.
-6. Inspect the run in project `chatbox-chatbridge` by trace ID.
+5. Capture the returned run label and trace ID from the notice or active trace
+   card. If the path is not traceable, the Seed Lab now returns an explicit
+   non-traceable reason instead of silently failing.
+6. Click `Mark Passed` or `Mark Failed`.
+7. Inspect the run in project `chatbox-chatbridge` by trace ID.
 
 Important constraints:
 
@@ -166,6 +168,54 @@ The shared naming and metadata builder lives in
 `src/shared/models/tracing.ts`, and scenario wrappers live in
 `test/integration/chatbridge/scenarios/scenario-tracing.ts`.
 
+## Trace Metadata And Tags
+
+Every ChatBridge parent trace should now expose these fields through metadata,
+tags, or both:
+
+- `primaryFamily` and `evidenceFamilies`
+- `runtimeTarget`
+- `smokeSupport`
+- `surface`
+- `storyId`
+
+The current shared contract emits:
+
+- metadata:
+  `runtimeTarget: desktop-electron | integration-vitest`
+- metadata:
+  `smokeSupport: supported | scenario-only | legacy-reference`
+- tags:
+  `runtime-target:<value>`
+- tags:
+  `smoke-support:<value>`
+
+This is what `CB-007` hardened so audit passes can separate supported desktop
+smoke, scenario-only evidence, and legacy references without guessing from the
+trace name alone.
+
+## Scriptable Smoke Inspection
+
+Use the checked-in pure helpers instead of renderer storage or ad hoc shell
+probing when you need the current seed/preset corpus:
+
+- live-seed fixture summary:
+  `src/shared/chatbridge/live-seeds.ts` ->
+  `getChatBridgeLiveSeedInspectionEntries()`
+- combined live-seed plus preset-session snapshot:
+  `src/renderer/packages/initial_data.ts` ->
+  `getChatBridgeSmokeInspectionSnapshot()`
+
+The combined snapshot is intentionally pure and does not initialize renderer
+storage. A repeatable probe looks like this:
+
+```bash
+source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec tsx <<'TS'
+import { getChatBridgeSmokeInspectionSnapshot } from './src/renderer/packages/initial_data'
+console.log(JSON.stringify(getChatBridgeSmokeInspectionSnapshot(), null, 2))
+TS
+```
+
 ## CB-006 Trace Matrix
 
 | Evidence family | Representative traces | Representative proof surfaces |
@@ -182,6 +232,8 @@ Notes:
 - Story Builder auth/resource traces remain scenario-only legacy reference
   evidence until the active catalog and runtime queue reaches those later
   rebuild stories.
+- `CB-007` hardened the same matrix with explicit runtime-target and
+  smoke-support labels plus a scriptable seed/preset inspection seam.
 - CB-305 now makes reviewed-app launch evidence explicit with one traced
   bridge-backed path for active runtime and one traced degraded recovery path;
   artifact preview stays on the separate `render-html-preview` seam.

@@ -59,6 +59,8 @@ describe('chatbridge manual smoke tracing', () => {
     await expect(getChatBridgeManualSmokeTraceSupport()).resolves.toMatchObject({
       enabled: false,
       reasonCode: 'renderer-ipc-unavailable',
+      runtimeTarget: 'desktop-electron',
+      supportState: 'supported',
     })
   })
 
@@ -80,6 +82,13 @@ describe('chatbridge manual smoke tracing', () => {
 
     expect(started).toMatchObject({
       status: 'started',
+      traceId: 'manual-run-1',
+      traceLabel: expect.stringContaining('chatbridge.manual_smoke.chatbridge-chess-runtime'),
+      support: {
+        enabled: true,
+        runtimeTarget: 'desktop-electron',
+        supportState: 'supported',
+      },
       run: {
         fixtureId: 'chess-runtime',
         runId: 'manual-run-1',
@@ -94,6 +103,11 @@ describe('chatbridge manual smoke tracing', () => {
           fixtureId: 'chess-runtime',
           sessionId: 'seeded-session-42',
         }),
+        metadata: expect.objectContaining({
+          runtimeTarget: 'desktop-electron',
+          smokeSupport: 'supported',
+        }),
+        tags: expect.arrayContaining(['runtime-target:desktop-electron', 'smoke-support:supported']),
       })
     )
 
@@ -106,5 +120,26 @@ describe('chatbridge manual smoke tracing', () => {
         }),
       })
     )
+  })
+
+  it('returns an explicit unsupported smoke result for legacy reference fixtures', async () => {
+    const fixture = getChatBridgeLiveSeedFixtures().find((candidate) => candidate.id === 'history-and-preview')
+    expect(fixture).toBeTruthy()
+    if (!fixture) {
+      return
+    }
+
+    await expect(startChatBridgeManualSmokeTrace(fixture, 'seeded-session-legacy')).resolves.toMatchObject({
+      status: 'unsupported',
+      traceId: null,
+      traceLabel: null,
+      support: {
+        enabled: false,
+        runtimeTarget: 'desktop-electron',
+        supportState: 'legacy-reference',
+        reasonCode: 'legacy-reference',
+      },
+    })
+    expect(mocks.startRun).not.toHaveBeenCalled()
   })
 })

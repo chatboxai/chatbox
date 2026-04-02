@@ -55,10 +55,9 @@ import { useProviders } from '@/hooks/useProviders'
 import { useSaveBlob } from '@/hooks/useSaveBlob'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
+import { isAutoCompactionEnabled, isCompactionInProgress } from '@/packages/context-management/compaction'
 import {
   getContextMessageIds,
-  isAutoCompactionEnabled,
-  isCompactionInProgress,
   useContextTokens,
 } from '@/packages/context-management'
 import { trackingEvent } from '@/packages/event'

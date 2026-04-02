@@ -12,7 +12,7 @@ import { useAtomValue } from 'jotai'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useCopied } from '@/hooks/useCopied'
-import { runCompactionWithUIState } from '@/packages/context-management'
+import { runCompactionWithUIState } from '@/packages/context-management/compaction'
 import { compactionUIStateMapAtom, setCompactionUIState } from '@/stores/atoms'
 import { ScalableIcon } from '../common/ScalableIcon'
 

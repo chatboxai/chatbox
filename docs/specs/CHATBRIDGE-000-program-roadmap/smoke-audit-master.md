@@ -15,6 +15,11 @@ Use this ledger for:
 - likely owning pack and story
 - follow-up story candidates
 
+The post-queue initiative packet that picks up after the current rebuild lane
+is:
+
+- `docs/specs/CHATBRIDGE-001-post-rebuild-agent-productization/`
+
 Do not treat a passing automated test as proof that the user-visible flow is
 healthy. This ledger is specifically for closing the gap between story
 completion and live product behavior.

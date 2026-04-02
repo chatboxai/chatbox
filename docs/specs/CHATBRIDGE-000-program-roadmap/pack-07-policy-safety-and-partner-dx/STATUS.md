@@ -1,8 +1,8 @@
 # Pack 07 Status
 
-- Pack state: queued
-- Current story: CB-701
-- Unlock rule: Packs 5 and 6 now have written exit memos and linked proof; start with CB-701
+- Pack state: in_progress
+- Current story: CB-703
+- Unlock rule: Pack 07 is active; keep the single-agent order and do not open later stories before the current one reaches `validated`
 
 ## Story Order
 
@@ -16,15 +16,15 @@
 
 | Story | State | Next requirement |
 |---|---|---|
-| CB-701 | planned | Pack 7 is unlocked; begin here next. |
-| CB-703 | planned | Start after CB-701 reaches `validated`. |
+| CB-701 | validated | Policy precedence is explicit and fail-closed; proceed to privacy-aware audit. |
+| CB-703 | planned | Start here next and build on the explicit policy decision contract. |
 | CB-705 | planned | Start after CB-703 reaches `validated`. |
 | CB-702 | planned | Start after CB-705 reaches `validated`. |
 | CB-704 | planned | Start after CB-702 reaches `validated`. |
 
 ## Exit Checklist
 
-- [ ] CB-701 is at least `validated`
+- [x] CB-701 is at least `validated`
 - [ ] CB-703 is at least `validated`
 - [ ] CB-705 is at least `validated`
 - [ ] CB-702 is at least `validated`
@@ -39,3 +39,14 @@
 ## Exit Memo
 
 Pending.
+
+## Current Notes
+
+- CB-701 is validated on this branch with:
+  - shared policy contract: `src/shared/chatbridge/policy.ts`
+  - eligibility integration: `src/shared/chatbridge/eligibility.ts`
+  - export surface: `src/shared/chatbridge/index.ts`
+  - happy-path proof: `test/integration/chatbridge/scenarios/policy-precedence-routing.test.ts`
+  - failure proof: `src/shared/chatbridge/policy.test.ts`
+- `pnpm test`, `pnpm lint`, `pnpm build`, and `git diff --check` pass under Node 20.
+- `pnpm check` remains blocked by existing upstream-wide type-contract drift outside the Pack 07 policy surfaces.

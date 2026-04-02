@@ -42,7 +42,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 | Pack 04 | validated | CB-401 through CB-404 validated | written | Exit proof is recorded in `pack-04.../STATUS.md`; Pack 5 and Pack 6 are unlocked. |
 | Pack 05 | validated | CB-501 through CB-504 validated | written | Eligibility, routing, Debate Arena, and bounded multi-app continuity are proven. |
 | Pack 06 | validated | CB-601 through CB-604 validated | written | Story Builder now proves host-owned auth, save/resume continuity, and completion handoff on top of the validated Pack 6 seams. |
-| Pack 07 | queued | unlocked; begin with CB-701 | pending | Governance and convergence are now the active next lane after Pack 6 exit. |
+| Pack 07 | in_progress | CB-701 validated; continue with CB-703 next | pending | Policy precedence is now enforced at eligibility time; privacy-aware audit is the next single-agent story. |
 
 ## Single-Agent Queue
 
@@ -86,7 +86,7 @@ Required Pack 4 proof set:
 |---|---|---|---|
 | O1 continuous in-thread app UX | Packs 01, 03, 04, 05 | partial | Pack 6 authenticated-app proof and final convergence scenarios |
 | O2 host-owned lifecycle, routing, and memory | Packs 02, 04, 05, 06 | strong partial | Final convergence audit across Chess, Debate Arena, and Story Builder |
-| O3 reviewed-partner trust and governance | Packs 02, 05, 07 | partial | policy enforcement, privacy-aware audit, kill switches |
+| O3 reviewed-partner trust and governance | Packs 02, 05, 07 | stronger partial | privacy-aware audit and kill-switch proof |
 | O4 authenticated app support without raw credentials | Pack 06 | validated | Final convergence audit only |
 | O5 partner-ready governable platform | Pack 07 | queued | recovery model, operator controls, validator/harness, final audited proof set |
 

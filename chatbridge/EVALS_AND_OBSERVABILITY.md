@@ -44,6 +44,36 @@ LangSmith API access remains main-process-owned. Renderer code talks to the
 main sink through IPC-backed adapters, and tests default to a noop sink unless
 `LANGSMITH_TRACING=true` is set explicitly.
 
+## CB-006 Supported Manual Smoke Path
+
+The supported traced manual smoke path for the rebuild queue is now the desktop
+ChatBridge Seed Lab, not the web-only smoke surface.
+
+Use this path:
+
+1. Start the desktop app with `LANGSMITH_API_KEY` present and
+   `LANGSMITH_TRACING=true`.
+2. Open `ChatBridge Seed Lab`.
+3. Use `Reseed & Open` on one of the supported fixture cards:
+   - `lifecycle-tour`
+   - `degraded-completion-recovery`
+   - `platform-recovery`
+   - `chess-mid-game-board-context`
+   - `chess-runtime`
+4. Perform the listed audit steps in the seeded thread.
+5. Click `Mark Passed` or `Mark Failed`, then copy the trace ID from the card or
+   success banner.
+6. Inspect the run in project `chatbox-chatbridge` by trace ID.
+
+Important constraints:
+
+- Web-only smoke remains unsupported for traced manual smoke because
+  `window.electronAPI` is unavailable there and LangSmith access stays
+  main-process-owned.
+- `history-and-preview` remains a legacy Story Builder reference fixture. It is
+  available for historical inspection, but it is not active flagship smoke
+  evidence.
+
 ## What Later ChatBridge Stories Must Make Observable
 
 ### Required lifecycle checkpoints
@@ -121,16 +151,35 @@ Every `getModel(...)` path now returns a LangSmith-wrapped model through
 `src/shared/providers/index.ts`, so chat, stream, and paint calls emit child
 LLM runs even when the caller only adds a parent chain trace.
 
-## Live Smoke Proof
+## Trace Naming Contract
 
-As of the current implementation, LangSmith live traces are landing in project
-`chatbox-chatbridge`. A manual smoke trace emitted from this repo landed as:
+- scenario evals:
+  `chatbridge.eval.<slug>`
+- desktop manual smoke:
+  `chatbridge.manual_smoke.<slug>.<session-id>`
 
-- trace name: `chatbox.trace.smoke`
-- trace id: `7020574d-8d43-46d6-8c41-b89522667be7`
+The shared naming and metadata builder lives in
+`src/shared/models/tracing.ts`, and scenario wrappers live in
+`test/integration/chatbridge/scenarios/scenario-tracing.ts`.
 
-That smoke trace used the same main-process sink and shared model wrapper that
-the application now uses for runtime traces.
+## CB-006 Trace Matrix
+
+| Evidence family | Representative traces | Representative proof surfaces |
+|---|---|---|
+| catalog and baseline registry | `chatbridge.eval.chatbridge-reviewed-app-registry`, `chatbridge.eval.chatbridge-app-instance-domain-model` | `reviewed-app-registry.test.ts`, `app-instance-domain-model.test.ts` |
+| routing | `chatbridge.eval.chatbridge-routing-artifacts` | `route-decision-artifacts.test.ts` |
+| reviewed-app launch | `chatbridge.eval.chatbridge-single-app-discovery`, `chatbridge.eval.chatbridge-host-tool-contract`, `chatbridge.eval.chatbridge-mid-game-board-context`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>` | `single-app-tool-discovery-and-invocation.test.ts`, `host-coordinated-tool-execution.test.ts`, `mid-game-board-context.test.ts`, `ChatBridgeSeedLab` |
+| auth and resource access | `chatbridge.eval.chatbridge-story-builder-auth-resource` | `story-builder-lifecycle.test.ts` |
+| recovery | `chatbridge.eval.chatbridge-bridge-handshake`, `chatbridge.manual_smoke.chatbridge-lifecycle-tour.<session-id>`, `chatbridge.manual_smoke.chatbridge-degraded-completion-recovery.<session-id>`, `chatbridge.manual_smoke.chatbridge-platform-recovery.<session-id>` | `bridge-session-security.test.ts`, `ChatBridgeSeedLab` |
+| persistence | `chatbridge.eval.chatbridge-persistence-and-shell-artifacts`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>` | `app-aware-persistence.test.ts`, `ChatBridgeSeedLab` |
+
+Notes:
+
+- Story Builder auth/resource traces remain scenario-only legacy reference
+  evidence until the active catalog and runtime queue reaches those later
+  rebuild stories.
+- Chess is the only active flagship app with traced manual smoke today. Drawing
+  Kit and Weather join this matrix in later Pack 05 stories, not in CB-006.
 
 ## Starter Scenario Matrix
 
@@ -209,9 +258,10 @@ when a story changes:
 
 - LangSmith is now wired across the main user-facing app flows, but there is
   still no checked-in dashboard or alerting layer built on top of those traces.
-- Trace coverage is strongest for model/runtime seams and major lifecycle
-  transitions. If future work adds new network-heavy settings flows, background
-  jobs, or partner onboarding commands, those should explicitly add parent
-  chain traces instead of relying only on wrapped model child runs.
+- Web-only manual smoke remains intentionally non-traced until a host-owned
+  traced bridge exists for that runtime surface.
+- Trace coverage is now explicit for the representative rebuild families above,
+  but future work should keep extending the matrix when new flagship apps or
+  recovery seams land.
 - Privacy rules still apply: traces should continue using the existing
   sanitization and redaction helpers rather than logging arbitrary raw payloads.

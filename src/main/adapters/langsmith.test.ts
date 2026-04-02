@@ -25,12 +25,7 @@ class FakeRunTree {
     this.postRunCalls += 1
   }
 
-  async end(
-    outputs?: Record<string, unknown>,
-    error?: string,
-    _endTime?: number,
-    metadata?: Record<string, unknown>
-  ) {
+  async end(outputs?: Record<string, unknown>, error?: string, _endTime?: number, metadata?: Record<string, unknown>) {
     this.endedWith = { outputs, error, metadata }
   }
 
@@ -88,6 +83,11 @@ describe('main LangSmith adapter', () => {
       },
     })
 
+    expect(adapter.getStatus()).toMatchObject({
+      enabled: true,
+      projectName: 'chatbox-test',
+      reason: 'enabled',
+    })
     expect(FakeRunTree.instances).toHaveLength(2)
     expect(FakeRunTree.instances[0]?.config).toMatchObject({
       id: parent.runId,
@@ -144,6 +144,11 @@ describe('main LangSmith adapter', () => {
       },
     })
 
+    expect(adapter.getStatus()).toMatchObject({
+      enabled: false,
+      projectName: 'chatbox-chatbridge',
+      reason: 'tracing-disabled',
+    })
     expect(FakeRunTree.instances).toHaveLength(0)
     expect(run.runId).toBeTruthy()
   })

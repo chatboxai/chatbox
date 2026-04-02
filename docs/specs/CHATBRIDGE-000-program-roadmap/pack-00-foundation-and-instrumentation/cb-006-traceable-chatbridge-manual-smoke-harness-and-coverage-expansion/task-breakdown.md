@@ -24,10 +24,10 @@
 
 | Task ID | Description | Dependency | Parallelizable | Validation |
 |---|---|---|---|---|
-| T001 | Define the supported traceable smoke workflow and coverage matrix for the rebuilt ChatBridge runtime. | must-have | no | checked-in docs |
-| T002 | Add or refine the runtime/helper seams needed so supported manual smoke flows emit LangSmith traces reliably. | blocked-by:T001 | no | targeted tests and smoke proof |
-| T003 | Expand scenario trace coverage and naming so major rebuild families leave distinct evidence. | blocked-by:T001,T002 | yes | traced scenario suite |
-| T004 | Update the smoke ledger and observability docs with the new trace collection procedure. | blocked-by:T001,T002,T003 | yes | docs review |
+| T001 | Define the supported traceable smoke workflow and coverage matrix for the rebuilt ChatBridge runtime. | must-have | no | complete: `chatbridge/EVALS_AND_OBSERVABILITY.md` and `test/integration/chatbridge/scenarios/README.md` now publish the supported workflow and matrix |
+| T002 | Add or refine the runtime/helper seams needed so supported manual smoke flows emit LangSmith traces reliably. | blocked-by:T001 | no | complete: `src/renderer/dev/chatbridgeManualSmoke.ts` and `src/renderer/components/dev/ChatBridgeSeedLab.tsx` emit named manual-smoke traces with explicit support gating |
+| T003 | Expand scenario trace coverage and naming so major rebuild families leave distinct evidence. | blocked-by:T001,T002 | yes | complete: `test/integration/chatbridge/scenarios/scenario-tracing.ts` and representative scenario files emit named eval traces |
+| T004 | Update the smoke ledger and observability docs with the new trace collection procedure. | blocked-by:T001,T002,T003 | yes | complete: story status, Pack 00 control docs, and `smoke-audit-master.md` record the trace procedure and proof set |
 
 Dependency values:
 - `must-have`
@@ -41,15 +41,15 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Coverage matrix documented against current scenario families
+  - [x] Coverage matrix documented against current scenario families
 - T002 tests:
-  - [ ] Supported smoke path emits parent traces
+  - [x] Supported smoke path emits parent traces
 - T003 tests:
-  - [ ] Scenario trace families are emitted and inspectable
+  - [x] Scenario trace families are emitted and inspectable
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale

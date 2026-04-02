@@ -36,7 +36,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 
 | Pack | Control state | Story posture | Exit memo | Notes |
 |---|---|---|---|---|
-| Pack 00 | reopened by smoke audit | `CB-006` planned backfill | inherited baseline | SA-006 reopened observability and manual-smoke coverage as the first rebuild story. |
+| Pack 00 | validated backfill complete | `CB-006` validated backfill | inherited baseline | SA-006 is closed by CB-006; supported desktop manual smoke and representative eval traces now land in `chatbox-chatbridge`, and the queue advances to `CB-305`. |
 | Pack 01 | reopened by smoke audit | `CB-105` planned backfill | inherited baseline | SA-007 reopened console and accessibility hygiene as the final cleanup story. |
 | Pack 02 | historical baseline | inherited `merged` baseline | inherited | Contracts and bridge foundations are assumed ready for post-Pack-4 execution. |
 | Pack 03 | reopened by smoke audit | `CB-305` planned backfill | inherited baseline | SA-005 reopened the real reviewed-app bridge launch seam. |
@@ -62,11 +62,12 @@ packet and should not be picked up next.
 
 ## Current Milestone
 
-- Active next gate: smoke-audit rebuild queue begins at `CB-006`
-- Immediate next story after `CB-006`: `CB-305`
-- Status: reopened by `smoke-audit-master.md`
-- Result: historical pack closeout remains documented, but live-runtime smoke
-  findings now govern current execution order until the rebuild queue is empty
+- Active next gate: `CB-305`
+- Immediate next story after `CB-305`: `CB-508`
+- Status: `CB-006` validated; the smoke-audit rebuild queue remains active
+- Result: Pack 00 observability proof is restored through the supported
+  desktop Seed Lab smoke flow and named LangSmith eval traces, while later
+  runtime/catalog rebuild work remains queued
 
 ## Pack 4 Exit Lock
 
@@ -92,7 +93,7 @@ Required Pack 4 proof set:
 | O2 host-owned lifecycle, routing, and memory | Packs 02, 04, 05 | reopened by smoke audit and catalog change | `smoke-audit-master.md` findings SA-002, SA-005 plus Drawing Kit / Weather replacement work |
 | O3 reviewed-partner trust and governance | Packs 02, 05, 07 | reopened by smoke audit and catalog change | `smoke-audit-master.md` findings SA-001, SA-002, SA-003 plus active catalog transition story `CB-508` |
 | O4 authenticated app support without raw credentials | Pack 06 | legacy proof parked | Historical Pack 06 proof remains checked in, but Story Builder is now legacy and `CB-605` is not on the active queue. |
-| O5 partner-ready governable platform | Pack 07 | partially validated; observability reopen | `smoke-audit-master.md` finding SA-006 plus historical Pack 07 proof |
+| O5 partner-ready governable platform | Pack 07 | observability backfill revalidated; runtime rebuild remains open | `smoke-audit-master.md` finding SA-006 closed by CB-006 plus historical Pack 07 proof |
 
 ## Program Closeout
 
@@ -105,7 +106,7 @@ smoke audit has reopened the program for a focused rebuild.
 - Current product verdict: not ready to re-assert as end-to-end healthy until
   the smoke-audit rebuild queue is complete.
 - Backfill stories required by this audit:
-  - `CB-006`
+  - `CB-006` validated
   - `CB-305`
   - `CB-508`
   - `CB-506`

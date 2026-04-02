@@ -138,8 +138,9 @@ The Pack 04 through Pack 07 proofs now compose into one governed product:
   flagship apps.
 
 This audit did not expose a missing prerequisite that requires a backfill
-story. The remaining known repo issue is the unrelated inherited `pnpm check`
-type drift outside ChatBridge; it does not change the scoped product verdict.
+story. The previously inherited repo-wide `pnpm check` drift outside
+ChatBridge has now been cleared, so the scoped product verdict and the broader
+repo validation gate are both green.
 
 ## Working Rule
 

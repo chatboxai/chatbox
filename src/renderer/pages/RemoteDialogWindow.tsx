@@ -2,6 +2,7 @@ import { Box, Button, Dialog, DialogActions, DialogContent, DialogContentText } 
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import Markdown from '@/components/Markdown'
+import { useBlurActiveElementOnOpen } from '@/components/common/overlay-focus'
 import { trackingEvent } from '@/packages/event'
 import platform from '@/platform'
 import { settingsStore } from '@/stores/settingsStore'
@@ -13,6 +14,8 @@ export default function RemoteDialogWindow() {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [dialogConfig, setDialogConfig] = useState<remote.DialogConfig | null>(null)
+
+  useBlurActiveElementOnOpen(open)
 
   const checkRemoteDialog = async () => {
     const config = await platform.getConfig()

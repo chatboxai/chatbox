@@ -49,6 +49,7 @@ describe('ChatBridge single-app discovery', () => {
     'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3 What is the best move here?',
     '1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 Continue from this PGN and suggest the plan.',
     'Give me opening analysis for the Italian Game after 1. e4 e5 2. Nf3 Nc6 3. Bc4.',
+    'No, I mean use the Chess app tool and show me the board.',
   ])('keeps natural Chess prompts on the reviewed Chess path: %s', (prompt) => {
     const selection = resolveReviewedSingleAppSelection([createMessage('user', prompt)], getDefaultReviewedAppCatalogEntries())
 

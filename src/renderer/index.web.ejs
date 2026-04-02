@@ -8,16 +8,41 @@
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="chatbox" />
     <title>Chatbox网页版</title>
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-B365F44W6E"></script>
     <script>
-      window.dataLayer = window.dataLayer || []
-      function gtag() {
-        dataLayer.push(arguments)
-      }
-      gtag('js', new Date())
+      ;(() => {
+        const officialWebHosts = new Set(['chatboxai.app', 'beta.chatboxai.app'])
+        const hostname = (window.location.hostname || '').toLowerCase()
+        const enableBrowserTelemetry = officialWebHosts.has(hostname)
+
+        window.__CHATBOX_ENABLE_BROWSER_TELEMETRY__ = enableBrowserTelemetry
+        window.plausible =
+          window.plausible ||
+          function () {
+            ;(window.plausible.q = window.plausible.q || []).push(arguments)
+          }
+        window.dataLayer = window.dataLayer || []
+        window.gtag = function () {
+          window.dataLayer.push(arguments)
+        }
+
+        if (!enableBrowserTelemetry) {
+          return
+        }
+
+        const gtagScript = document.createElement('script')
+        gtagScript.async = true
+        gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-B365F44W6E'
+        document.head.appendChild(gtagScript)
+
+        const plausibleScript = document.createElement('script')
+        plausibleScript.defer = true
+        plausibleScript.src = 'https://plausible.midway.run/js/script.js'
+        plausibleScript.setAttribute('data-domain', 'web.chatboxai.app')
+        document.head.appendChild(plausibleScript)
+
+        window.gtag('js', new Date())
+      })()
     </script>
-    <script defer data-domain="web.chatboxai.app" src="https://plausible.midway.run/js/script.js"></script>
   </head>
   <body>
     <div id="root">

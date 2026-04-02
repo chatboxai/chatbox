@@ -441,6 +441,41 @@ completion and live product behavior.
   - none for the labeling/deep-link layer; active non-Chess fixtures arrive in
     `CB-509` and `CB-510`
 
+### SA-011: Explicit Chess tool requests could still render the generic reviewed-launch shell and time out before showing a board
+
+- Status: `fixed-during-audit`
+- Severity: high
+- Area: Chess reviewed-runtime handoff
+- Owning pack: Pack 03
+- Likely owning story: `CB-306`
+- Environment: live prompt-driven Chess repro and focused runtime regression tests
+- Repro steps:
+  1. Ask for Chess analysis in plain chat, then explicitly correct the assistant with `No, I mean use the chess app tool`.
+  2. Observe the reviewed launch card that says the host is launching Chess.
+  3. Try to continue from the rendered surface.
+- Expected: an explicit Chess-tool request should route to Chess, show the real Chess runtime board inline, and keep the board visible even if later bridge events fail.
+- Actual:
+  - the prompt could still spend time in plain chat before calling the Chess tool
+  - successful Chess host-tool results normalized into the generic reviewed-launch shell instead of a real Chess runtime part
+  - the generic shell could then degrade into `chess did not respond before the host timeout`, leaving the user without a visible board
+- Evidence:
+  - test or manual surface:
+    - focused repro from the live chat surface using the explicit `use the chess app tool` correction
+    - `source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/single-app-discovery.test.ts src/renderer/packages/chatbridge/reviewed-app-launch.test.ts test/integration/chatbridge/scenarios/chess-reviewed-runtime-handoff.test.tsx`
+  - trace id(s):
+    - traced scenario emitted under `chatbridge.eval.chatbridge-chess-reviewed-runtime-handoff`
+  - relevant code path(s):
+    - `/private/tmp/chatbox-chessjs-devfix/src/shared/chatbridge/single-app-discovery.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/reviewed-app-launch.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/shared/chatbridge/apps/chess.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/chatbridge/ChatBridgeMessagePart.tsx`
+- Notes:
+  - `CB-306` intentionally fixes the Chess-specific runtime handoff without
+    claiming the broader multi-app invoke path is solved. `CB-506` remains open
+    for the active reviewed catalog beyond this urgent regression.
+- Follow-up story candidate:
+  - none; continue the queue at `CB-506`
+
 ## Approved Rebuild Story Queue
 
 The smoke audit reopened ChatBridge for a focused rebuild sequence. These are
@@ -450,12 +485,13 @@ the canonical active backfill stories and their execution order after the
 1. `CB-006` - traceable ChatBridge manual smoke harness and coverage expansion
 2. `CB-007` - trace evidence quality and scriptable smoke inspection
 3. `CB-305` - bridge host controller adoption for reviewed app launches
-4. `CB-508` - active reviewed catalog transition and legacy retention
-5. `CB-506` - live reviewed app invocation path beyond Chess
-6. `CB-509` - Drawing Kit flagship app
-7. `CB-510` - Weather Dashboard flagship app
-8. `CB-507` - live route clarify refuse artifacts and actions
-9. `CB-105` - ChatBridge session console and accessibility hygiene
+4. `CB-306` - deterministic Chess invocation and runtime handoff
+5. `CB-508` - active reviewed catalog transition and legacy retention
+6. `CB-506` - live reviewed app invocation path beyond Chess
+7. `CB-509` - Drawing Kit flagship app
+8. `CB-510` - Weather Dashboard flagship app
+9. `CB-507` - live route clarify refuse artifacts and actions
+10. `CB-105` - ChatBridge session console and accessibility hygiene
 
 Legacy parked follow-up packets:
 

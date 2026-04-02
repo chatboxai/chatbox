@@ -19,15 +19,14 @@ function createReviewedLaunchToolCallPart(): MessageToolCallPart {
     type: 'tool-call',
     state: 'result',
     toolCallId: 'tool-reviewed-launch-bridge-1',
-    toolName: 'chess_prepare_session',
+    toolName: 'drawing_kit_open',
     args: {
-      request: 'Open Chess and analyze this FEN.',
-      fen: 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',
+      request: 'Open Drawing Kit and sketch a quick concept map.',
     },
     result: {
       kind: 'chatbridge.host.tool.record.v1',
-      toolName: 'chess_prepare_session',
-      appId: 'chess',
+      toolName: 'drawing_kit_open',
+      appId: 'drawing-kit',
       sessionId: 'session-reviewed-bridge-1',
       schemaVersion: CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
       executionAuthority: 'host',
@@ -35,20 +34,18 @@ function createReviewedLaunchToolCallPart(): MessageToolCallPart {
       retryClassification: 'safe',
       invocation: {
         args: {
-          request: 'Open Chess and analyze this FEN.',
-          fen: 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',
+          request: 'Open Drawing Kit and sketch a quick concept map.',
         },
       },
       outcome: {
         status: 'success',
         result: {
-          appId: 'chess',
-          appName: 'Chess',
-          capability: 'prepare-session',
+          appId: 'drawing-kit',
+          appName: 'Drawing Kit',
+          capability: 'open',
           launchReady: true,
-          summary: 'Prepared the reviewed Chess session request for the host-owned launch path.',
-          request: 'Open Chess and analyze this FEN.',
-          fen: 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',
+          summary: 'Prepared Drawing Kit for the reviewed launch path.',
+          request: 'Open Drawing Kit and sketch a quick concept map.',
         },
       },
     },
@@ -110,8 +107,8 @@ describe('ChatBridge reviewed app bridge launch adoption', () => {
       async () => {
         const { session, launchPart } = createSessionWithLaunchPart()
         const harness = createChatBridgePartnerHarness({
-          appId: 'chess',
-          appName: 'Chess',
+          appId: 'drawing-kit',
+          appName: 'Drawing Kit',
           appVersion: '0.1.0',
           appInstanceId: launchPart.appInstanceId,
           expectedOrigin: 'https://apps.example.com',
@@ -164,9 +161,9 @@ describe('ChatBridge reviewed app bridge launch adoption', () => {
           snapshot: {
             kind: 'reviewed-app-launch',
             schemaVersion: 1,
-            summary: 'Chess bridge runtime is live inside the host-owned shell.',
+            summary: 'Drawing Kit bridge runtime is live inside the host-owned shell.',
             statusText: 'Bridge active',
-            request: 'Open Chess and analyze this FEN.',
+            request: 'Open Drawing Kit and sketch a quick concept map.',
           },
         })
 
@@ -183,9 +180,9 @@ describe('ChatBridge reviewed app bridge launch adoption', () => {
             snapshot: {
               kind: 'reviewed-app-launch',
               schemaVersion: 1,
-              summary: 'Chess bridge runtime is live inside the host-owned shell.',
+              summary: 'Drawing Kit bridge runtime is live inside the host-owned shell.',
               statusText: 'Bridge active',
-              request: 'Open Chess and analyze this FEN.',
+              request: 'Open Drawing Kit and sketch a quick concept map.',
             },
           },
           now: () => 12_000,
@@ -195,7 +192,7 @@ describe('ChatBridge reviewed app bridge launch adoption', () => {
         expect(getLaunchPart(nextSession)).toMatchObject({
           lifecycle: 'active',
           bridgeSessionId: 'bridge-session-reviewed-1',
-          summary: 'Chess bridge runtime is live inside the host-owned shell.',
+          summary: 'Drawing Kit bridge runtime is live inside the host-owned shell.',
           snapshot: {
             kind: 'reviewed-app-launch',
           },
@@ -231,8 +228,8 @@ describe('ChatBridge reviewed app bridge launch adoption', () => {
           messageId: 'assistant-reviewed-bridge-1',
           part: getLaunchPart(bootstrapped),
           contract: createChatBridgeTimeoutRecoveryContract({
-            appId: 'chess',
-            appName: 'Chess',
+            appId: 'drawing-kit',
+            appName: 'Drawing Kit',
             appInstanceId: launchPart.appInstanceId,
             bridgeSessionId: 'bridge-session-reviewed-timeout-1',
             waitedMs: 5_000,
@@ -243,10 +240,11 @@ describe('ChatBridge reviewed app bridge launch adoption', () => {
 
         const recoveredPart = getLaunchPart(recovered)
         expect(recoveredPart).toMatchObject({
-          appId: 'chess',
+          appId: 'drawing-kit',
           lifecycle: 'error',
           statusText: 'Timed out',
-          error: 'Chess timed out before the host could trust a live response, so recovery stays explicit in the thread.',
+          error:
+            'Drawing Kit timed out before the host could trust a live response, so recovery stays explicit in the thread.',
         })
         expect(readChatBridgeDegradedCompletion(recoveredPart)).toMatchObject({
           kind: 'stale-checkpoint',

@@ -4,6 +4,7 @@ import type { ModelMessage } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CallChatCompletionOptions, ModelInterface } from '@shared/models/types'
 import type { Message, MessageAppPart, MessageContentParts, StreamTextResult } from '@shared/types'
+import { readChatBridgeReviewedAppLaunch } from '@/packages/chatbridge/reviewed-app-launch'
 
 const langsmithMocks = vi.hoisted(() => ({
   end: vi.fn(async () => undefined),
@@ -181,11 +182,13 @@ describe('ChatBridge live reviewed app invocation path', () => {
 
       expect(chat).toHaveBeenCalledOnce()
       expect(Object.keys(chat.mock.calls[0]?.[1]?.tools ?? {})).toEqual(['chess_prepare_session'])
-      expect(findAppPart(result.result.contentParts)).toMatchObject({
+      const chessPart = findAppPart(result.result.contentParts)
+      expect(chessPart).toMatchObject({
         appId: 'chess',
         appName: 'Chess',
-        lifecycle: 'launching',
+        lifecycle: 'active',
       })
+      expect(chessPart ? readChatBridgeReviewedAppLaunch(chessPart.values) : null).toBeNull()
       expect(langsmithMocks.recordEvent).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'chatbridge.routing.reviewed-app-decision',

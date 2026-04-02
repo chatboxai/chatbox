@@ -1,6 +1,7 @@
 import { Drawer as MantineDrawer, Modal as MantineModal } from '@mantine/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 import { useEffect, useId } from 'react'
+import { useBlurActiveElementOnOpen } from '../common/overlay-focus'
 
 // Global overlay stack management
 export const overlayStackAtom = atom<string[]>([])
@@ -10,6 +11,8 @@ export const useOverlayManager = (opened?: boolean) => {
   const id = useId()
   const stack = useAtomValue(overlayStackAtom)
   const setStack = useSetAtom(overlayStackAtom)
+
+  useBlurActiveElementOnOpen(Boolean(opened))
 
   useEffect(() => {
     if (opened) {

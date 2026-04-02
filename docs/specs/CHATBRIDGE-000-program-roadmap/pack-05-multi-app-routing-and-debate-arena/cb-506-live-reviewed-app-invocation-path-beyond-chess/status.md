@@ -2,7 +2,7 @@
 
 - status: validated
 - pack: Pack 05 - Multi-App Routing and Debate Arena
-- single-agent order: backfill 5 of 9
+- single-agent order: backfill 6 of 10
 - blocked by: CB-508
 - unblocks: CB-509
 - implementation surfaces:
@@ -50,6 +50,9 @@
     Drawing Kit while leaving Weather Dashboard for the later Pack 05 work.
   - `CB-507` still owns clarify/refuse renderer UI; `CB-506` only repairs the
     invoke path and the traceable failure contract.
+  - `CB-306` separately closed the urgent Chess-specific runtime-handoff bug,
+    so this story closes the broader invoke path without re-solving the same
+    shell regression.
   - No `src/renderer/packages/initial_data.ts` refresh was required because
     this story changes runtime routing and host-tool wiring, not seeded example
     content.

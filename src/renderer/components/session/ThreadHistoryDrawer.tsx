@@ -6,6 +6,7 @@ import { IconDots, IconEdit, IconSwitch, IconTrash, IconX } from '@tabler/icons-
 import { useAtom, useAtomValue } from 'jotai'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useBlurActiveElementOnOpen } from '@/components/common/overlay-focus'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { currentSessionIdAtom, showThreadHistoryDrawerAtom } from '@/stores/atoms'
 import { scrollToIndex } from '@/stores/scrollActions'
@@ -20,6 +21,7 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
   const { t } = useTranslation()
   const language = useLanguage()
   const [showDrawer, setShowDrawer] = useAtom(showThreadHistoryDrawerAtom)
+  useBlurActiveElementOnOpen(Boolean(showDrawer))
 
   const currentMessageList = useMemo(() => getAllMessageList(session), [session])
 

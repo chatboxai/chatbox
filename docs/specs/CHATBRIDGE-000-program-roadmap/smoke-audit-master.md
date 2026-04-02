@@ -275,6 +275,124 @@ completion and live product behavior.
 - Follow-up story candidate:
   - `CB-105` - ChatBridge session console and accessibility hygiene
 
+### SA-008: Active flagship catalog transition is docs-only and runtime remains Chess-only
+
+- Status: `confirmed`
+- Severity: high
+- Area: active reviewed-app catalog and live routing
+- Owning pack: Pack 05
+- Likely owning story: `CB-508`
+- Environment: clean worktree `/private/tmp/chatbox-chessjs-devfix`, second-pass runtime probe after the 2026-04-02 catalog change
+- Repro steps:
+  1. Inspect `/private/tmp/chatbox-chessjs-devfix/src/shared/chatbridge/reviewed-app-catalog.ts`.
+  2. Run a route probe with a valid host context for Drawing Kit, Weather, Story Builder, and Chess.
+  3. Compare route and single-app results against the new active flagship plan.
+- Expected: after the catalog transition, the active runtime should at least expose Chess, Drawing Kit, and Weather as the reviewed flagship set, even if the new apps are not fully implemented yet.
+- Actual:
+  - the default reviewed catalog is still `['chess']`
+  - Drawing Kit and Weather both refuse with `no-confident-match`
+  - Story Builder also refuses, which is now acceptable as a legacy app
+  - Chess still invokes successfully through the old live single-app path
+- Evidence:
+  - test or manual surface:
+    - `source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec tsx <<'TS' ... ensureDefaultReviewedAppsRegistered() ... getReviewedAppRouteDecision(...) ... createReviewedSingleAppToolSet(...) ... TS`
+    - output showed:
+      - `catalog [ 'chess' ]`
+      - Drawing Kit: `kind: "refuse"`, `reasonCode: "no-confident-match"`
+      - Weather: `kind: "refuse"`, `reasonCode: "no-confident-match"`
+      - Chess: `kind: "invoke"` plus `toolNames: ["chess_prepare_session"]`
+  - trace id(s):
+    - none for the direct runtime probe
+  - relevant code path(s):
+    - `/private/tmp/chatbox-chessjs-devfix/src/shared/chatbridge/reviewed-app-catalog.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/router/decision.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/single-app-tools.ts`
+- Notes:
+  - The active product direction is now ahead of runtime truth. Right now the repo says Chess, Drawing Kit, and Weather are the active flagship set, but the runtime still only knows Chess.
+- Follow-up story candidate:
+  - `CB-508` - Active reviewed catalog transition and legacy retention
+
+### SA-009: Trace and scenario coverage still prove the legacy flagship set, not the active one
+
+- Status: `confirmed`
+- Severity: medium
+- Area: traces, evals, and regression assets
+- Owning pack: Pack 00 and Pack 05
+- Likely owning story: `CB-006`
+- Environment: traced second-pass scenario suite and LangSmith trace inspection
+- Repro steps:
+  1. Run `LANGSMITH_TRACING=true LANGSMITH_PROJECT=chatbox-chatbridge pnpm exec vitest run test/integration/chatbridge/scenarios --reporter=verbose`.
+  2. Inspect recent traces with `langsmith trace list --project chatbox-chatbridge --limit 20 --format json`.
+  3. Review the scenario names and trace names against the new active flagship plan.
+- Expected: after the active catalog shift, the observable regression suite should either include Drawing Kit and Weather coverage or explicitly mark their absence as a known gap in the active audit.
+- Actual:
+  - the traced suite is still green on the old flagship set
+  - named scenario coverage still includes `debate-arena-lifecycle` and `story-builder-lifecycle`
+  - there are still no Drawing Kit or Weather scenarios or trace families
+  - recent LangSmith names are unchanged from the earlier audit and remain centered on the old runtime seams
+- Evidence:
+  - test or manual surface:
+    - traced run: `22` files passed, `46` tests passed
+    - scenario names still include:
+      - `test/integration/chatbridge/scenarios/debate-arena-lifecycle.test.ts`
+      - `test/integration/chatbridge/scenarios/story-builder-lifecycle.test.ts`
+      - `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`
+  - trace id(s):
+    - `7020574d-8d43-46d6-8c41-b89522667be7` (`chatbox.trace.smoke`)
+    - recent trace names remained:
+      - `chatbridge.eval.chatbridge-mid-game-board-context`
+      - `chatbridge.eval.chatbridge-single-app-discovery`
+      - `chatbridge.eval.chatbridge-host-tool-contract`
+      - `chatbridge.eval.chatbridge-bridge-handshake`
+      - `chatbridge.eval.chatbridge-app-instance-domain-model`
+      - `chatbridge.eval.chatbridge-reviewed-app-registry`
+      - `chatbridge.eval.chatbridge-persistence-and-shell-artifacts`
+  - relevant code path(s):
+    - `/private/tmp/chatbox-chessjs-devfix/test/integration/chatbridge/scenarios/`
+    - `/private/tmp/chatbox-chessjs-devfix/src/shared/models/tracing.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/adapters/langsmith.ts`
+- Notes:
+  - This is now a mismatch between the active roadmap and the regression assets. The suite is useful, but it still proves the old world.
+- Follow-up story candidate:
+  - `CB-006` - Traceable ChatBridge manual smoke harness and coverage expansion
+
+### SA-010: Seeded manual smoke surfaces still center legacy Story Builder flows and old deep links are brittle
+
+- Status: `confirmed`
+- Severity: medium
+- Area: manual smoke fixtures and live UI smoke
+- Owning pack: Pack 05
+- Likely owning story: `CB-508`
+- Environment: seed fixture inspection and live browser smoke on `http://localhost:1212`
+- Repro steps:
+  1. Inspect `/private/tmp/chatbox-chessjs-devfix/src/shared/chatbridge/live-seeds.ts`.
+  2. List the seed fixtures through `getChatBridgeLiveSeedFixtures()`.
+  3. Open `http://localhost:1212/session/chatbox-chat-demo-chatbridge-history-and-preview` in the live web surface.
+- Expected: the manual smoke corpus should be moving toward the active flagship set, or at minimum clearly identify legacy fixtures and preserve stable deep links for currently documented smoke paths.
+- Actual:
+  - fixture names still include `History + preview`, whose description explicitly says it seeds a real Story Builder session
+  - there are no Drawing Kit or Weather fixtures
+  - the old `history-and-preview` deep link redirected to `/guide` in the live web smoke pass
+  - the resulting sidebar snapshot showed only one visible ChatBridge seed entry
+- Evidence:
+  - test or manual surface:
+    - `source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec tsx <<'TS' ... getChatBridgeLiveSeedFixtures() ... TS`
+    - output included:
+      - `[Seeded] ChatBridge: History + preview :: Seeds a real Story Builder session ...`
+    - Playwright live smoke:
+      - `http://localhost:1212/session/chatbox-chat-demo-chatbridge-history-and-preview`
+      - snapshot file: `.playwright-cli/page-2026-04-02T19-51-46-532Z.yml`
+      - console file: `.playwright-cli/console-2026-04-02T19-51-44-888Z.log`
+  - trace id(s):
+    - none
+  - relevant code path(s):
+    - `/private/tmp/chatbox-chessjs-devfix/src/shared/chatbridge/live-seeds.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/initial_data.ts`
+- Notes:
+  - This makes the manual smoke workflow drift-prone right when it should be helping validate the new flagship transition.
+- Follow-up story candidate:
+  - `CB-508` - Active reviewed catalog transition and legacy retention
+
 ## Approved Rebuild Story Queue
 
 The smoke audit reopened ChatBridge for a focused rebuild sequence. These are
@@ -352,3 +470,28 @@ from either manual execution, a traced scenario run, or both.
     - seeded Chess runtime session
     - seeded History + preview session
     - seeded Degraded completion recovery session
+
+### 2026-04-02 second audit pass after active catalog change
+
+- Branch: `codex/chatbridge-smoke-audit-pass2`
+- Worktree: `/private/tmp/chatbox-chessjs-devfix`
+- Objective: verify whether the new active flagship direction is represented in
+  runtime, traces, and manual smoke after `CB-508`, `CB-509`, and `CB-510`
+  were added as planning packets
+- Notes:
+  - Traced scenario run completed again:
+    - `LANGSMITH_TRACING=true LANGSMITH_PROJECT=chatbox-chatbridge pnpm exec vitest run test/integration/chatbridge/scenarios --reporter=verbose`
+    - outcome: `22` files passed, `46` tests passed
+  - Runtime route probe completed with a valid host context:
+    - catalog still only exposed `chess`
+    - Drawing Kit and Weather refused as `no-confident-match`
+    - Chess still invoked through the legacy single-app launch path
+  - Seed fixture inspection completed:
+    - manual smoke corpus still includes legacy Story Builder fixtures
+    - no Drawing Kit or Weather fixture exists yet
+  - Live web smoke completed on:
+    - `/dev/chatbridge`
+    - `session/chatbox-chat-demo-chatbridge-history-and-preview`
+  - Live UI outcome:
+    - old `history-and-preview` deep link redirected to `/guide`
+    - sidebar snapshot exposed only one visible ChatBridge seed entry

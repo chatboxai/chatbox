@@ -8,16 +8,16 @@ import {
   NetworkError,
 } from '@shared/models/errors'
 import { createMessage, type Message, ModelProviderEnum } from '@shared/types'
-import { countMessageWords } from '@shared/utils/message'
 import { createModelDependencies } from '@/adapters'
 import { runCompactionWithUIState } from '@/packages/context-management'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
-import { estimateTokensFromMessages } from '@/packages/token'
 import platform from '@/platform'
 import * as chatStore from '../chatStore'
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
 import { uiStore } from '../uiStore'
+import { generate } from './generation'
+import { insertMessage, modifyMessage } from './message-crud'
 
 /**
  * Get session-level web browsing setting
@@ -32,77 +32,7 @@ function getSessionWebBrowsing(sessionId: string, provider: string | undefined):
   return provider === ModelProviderEnum.ChatboxAI
 }
 
-/**
- * 在当前主题的最后插入一条消息。
- * @param sessionId
- * @param msg
- */
-export async function insertMessage(sessionId: string, msg: Message) {
-  const session = await chatStore.getSession(sessionId)
-  if (!session) {
-    return
-  }
-  msg.wordCount = countMessageWords(msg)
-  msg.tokenCount = estimateTokensFromMessages([msg])
-  return await chatStore.insertMessage(session.id, msg)
-}
-
-/**
- * 在某条消息后面插入新消息。如果消息在历史主题中，也能支持插入
- * @param sessionId
- * @param msg
- * @param afterMsgId
- */
-export async function insertMessageAfter(sessionId: string, msg: Message, afterMsgId: string) {
-  const session = await chatStore.getSession(sessionId)
-  if (!session) {
-    return
-  }
-  msg.wordCount = countMessageWords(msg)
-  msg.tokenCount = estimateTokensFromMessages([msg])
-
-  await chatStore.insertMessage(sessionId, msg, afterMsgId)
-}
-
-/**
- * 根据 id 修改消息。如果消息在历史主题中，也能支持修改
- * @param sessionId
- * @param updated
- * @param refreshCounting
- */
-export async function modifyMessage(
-  sessionId: string,
-  updated: Message,
-  refreshCounting?: boolean,
-  updateOnlyCache?: boolean
-) {
-  const session = await chatStore.getSession(sessionId)
-  if (!session) {
-    return
-  }
-  if (refreshCounting) {
-    updated.wordCount = countMessageWords(updated)
-    updated.tokenCount = estimateTokensFromMessages([updated])
-    updated.tokenCountMap = undefined
-  }
-
-  // 更新消息时间戳
-  updated.timestamp = Date.now()
-  if (updateOnlyCache) {
-    await chatStore.updateMessageCache(sessionId, updated.id, updated)
-  } else {
-    await chatStore.updateMessage(sessionId, updated.id, updated)
-  }
-}
-
-/**
- * 在会话中删除消息。如果消息存在于历史主题中，也能支持删除
- * @param sessionId
- * @param messageId
- */
-export async function removeMessage(sessionId: string, messageId: string) {
-  await chatStore.removeMessage(sessionId, messageId)
-}
+export { insertMessage, insertMessageAfter, modifyMessage, removeMessage } from './message-crud'
 
 /**
  * 在会话中发送新用户消息，并根据需要生成回复
@@ -112,10 +42,6 @@ export async function submitNewUserMessage(
   sessionId: string,
   params: { newUserMsg: Message; needGenerating: boolean; onUserMessageReady?: () => void }
 ) {
-  // Import generate lazily to avoid circular dependency
-  // generate will be moved to generation.ts in US-006, then this import will change
-  const { generate } = await import('../sessionActions.js')
-
   const session = await chatStore.getSession(sessionId)
   const settings = await chatStore.getSessionSettings(sessionId)
   if (!session || !settings) {

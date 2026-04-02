@@ -36,7 +36,7 @@ import * as chatStore from '../chatStore'
 import { settingsStore } from '../settingsStore'
 import { uiStore } from '../uiStore'
 import { createNewFork, findMessageLocation } from './forks'
-import { insertMessageAfter, modifyMessage } from './messages'
+import { insertMessageAfter, modifyMessage } from './message-crud'
 
 /**
  * Get session-level web browsing setting

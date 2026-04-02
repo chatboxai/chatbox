@@ -216,4 +216,114 @@ describe('reviewed app eligibility', () => {
     expect(result.decisions[0].eligible).toBe(false)
     expect(result.decisions[0].reasons[0]?.code).toBe('invalid-context')
   })
+
+  it('applies tenant, teacher, and classroom policy precedence before exposing candidates', () => {
+    const storyBuilder = createReviewedAppCatalogEntry({
+      manifest: {
+        ...createReviewedAppCatalogEntry().manifest,
+        safetyMetadata: {
+          reviewed: true,
+          sandbox: 'hosted-iframe',
+          handlesStudentData: true,
+          requiresTeacherApproval: false,
+        },
+        tenantAvailability: {
+          default: 'enabled',
+          allow: [],
+          deny: [],
+        },
+      },
+    })
+    const debateArena = createReviewedAppCatalogEntry({
+      manifest: {
+        ...createReviewedAppCatalogEntry().manifest,
+        appId: 'debate-arena',
+        name: 'Debate Arena',
+        uiEntry: 'https://apps.example.com/debate-arena',
+        authMode: 'none',
+        permissions: [],
+        safetyMetadata: {
+          reviewed: true,
+          sandbox: 'hosted-iframe',
+          handlesStudentData: false,
+          requiresTeacherApproval: false,
+        },
+        tenantAvailability: {
+          default: 'enabled',
+          allow: [],
+          deny: [],
+        },
+        toolSchemas: [
+          {
+            name: 'debate_arena_open',
+            description: 'Launch a reviewed debate round.',
+            schemaVersion: 1,
+            inputSchema: {
+              type: 'object',
+              properties: {},
+            },
+          },
+        ],
+      },
+    })
+
+    const result = resolveReviewedAppEligibility([storyBuilder, debateArena], {
+      tenantId: 'k12-demo',
+      teacherId: 'teacher-7',
+      classroomId: 'room-9a',
+      teacherApproved: true,
+      grantedPermissions: ['drive.read'],
+      policySnapshot: {
+        schemaVersion: 1,
+        tenantId: 'k12-demo',
+        fetchedAt: 100,
+        expiresAt: 9_999_999_999_999,
+        tenant: {
+          allowAppIds: ['story-builder', 'debate-arena'],
+          denyAppIds: [],
+        },
+        teacher: {
+          teacherId: 'teacher-7',
+          rules: {
+            allowAppIds: ['story-builder'],
+            denyAppIds: [],
+          },
+        },
+        classroom: {
+          classroomId: 'room-9a',
+          rules: {
+            allowAppIds: ['story-builder'],
+            denyAppIds: [],
+          },
+        },
+      },
+    })
+
+    expect(result.candidates.map((candidate) => candidate.entry.manifest.appId)).toEqual(['story-builder'])
+    expect(result.decisions[1]).toMatchObject({
+      eligible: false,
+    })
+    expect(result.decisions[1]?.reasons.map((reason) => reason.code)).toContain('policy-not-allowed')
+  })
+
+  it('fails closed for new activations when the policy snapshot is stale', () => {
+    const result = resolveReviewedAppEligibility([createReviewedAppCatalogEntry()], {
+      tenantId: 'k12-demo',
+      teacherApproved: true,
+      grantedPermissions: ['drive.read'],
+      policySnapshot: {
+        schemaVersion: 1,
+        tenantId: 'k12-demo',
+        fetchedAt: 100,
+        expiresAt: 101,
+        tenant: {
+          allowAppIds: ['story-builder'],
+          denyAppIds: [],
+        },
+      },
+    })
+
+    expect(result.candidates).toEqual([])
+    expect(result.decisions[0]?.reasons.map((reason) => reason.code)).toContain('policy-stale')
+  })
 })

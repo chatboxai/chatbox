@@ -1,5 +1,6 @@
 import { ZodError, z } from 'zod'
 import { ReviewedAppCatalogEntrySchema, type ReviewedAppCatalogEntry } from './manifest'
+import { ChatBridgePolicySnapshotSchema, evaluateChatBridgePolicyForApp } from './policy'
 
 const HOST_CONTEXT_PATTERN = /^[a-z0-9._:-]+$/i
 
@@ -33,6 +34,7 @@ export const ChatBridgeEligibilityContextSchema = z
     additionalContextTokens: z.array(z.string().trim().regex(HOST_CONTEXT_PATTERN)).default([]),
     teacherApproved: z.boolean().default(false),
     grantedPermissions: z.array(z.string().trim().min(1)).default([]),
+    policySnapshot: ChatBridgePolicySnapshotSchema.optional(),
   })
   .strict()
 
@@ -44,6 +46,9 @@ export const ChatBridgeEligibilityReasonCodeSchema = z.enum([
   'context-not-allowed',
   'teacher-approval-required',
   'required-permissions-missing',
+  'policy-stale',
+  'policy-denied',
+  'policy-not-allowed',
 ])
 
 export type ChatBridgeEligibilityReasonCode = z.infer<typeof ChatBridgeEligibilityReasonCodeSchema>
@@ -166,6 +171,11 @@ export function evaluateReviewedAppEligibility(
         entry.manifest.tenantAvailability.allow
       )
     )
+  }
+
+  const policyDecision = evaluateChatBridgePolicyForApp(entry.manifest.appId, context)
+  for (const policyReason of policyDecision.reasons) {
+    reasons.push(createReason(policyReason.code, policyReason.message, policyReason.details))
   }
 
   return {

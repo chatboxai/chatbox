@@ -42,7 +42,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 | Pack 04 | validated | CB-401 through CB-404 validated | written | Exit proof is recorded in `pack-04.../STATUS.md`; Pack 5 and Pack 6 are unlocked. |
 | Pack 05 | validated | CB-501 through CB-504 validated | written | Eligibility, routing, Debate Arena, and bounded multi-app continuity are proven. |
 | Pack 06 | validated | CB-601 through CB-604 validated | written | Story Builder now proves host-owned auth, save/resume continuity, and completion handoff on top of the validated Pack 6 seams. |
-| Pack 07 | validated | CB-701, CB-703, CB-705, CB-702, and CB-704 validated | written | Pack 07 exit is complete; move to the full-program convergence audit next. |
+| Pack 07 | validated | CB-701, CB-703, CB-705, CB-702, and CB-704 validated | written | Pack 07 exit is complete; the full-program convergence audit is now validated on this branch via `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`. |
 
 ## Single-Agent Queue
 
@@ -63,13 +63,16 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 15. Pack 07 -> CB-705
 16. Pack 07 -> CB-702
 17. Pack 07 -> CB-704
-18. Program -> full-program convergence audit (`convergence-audit.md`)
+18. Program -> full-program convergence audit (`convergence-audit.md`, validated via `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`)
 
 ## Current Milestone
 
-- Active next gate: [`convergence-audit.md`](./convergence-audit.md)
-- Goal: turn the validated Pack 04-07 slices into one final representative
-  proof set across Chess, Debate Arena, Story Builder, denial, and recovery
+- Active next gate: convergence audit closeout
+- Status: validated on this branch through
+  `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`
+- Result: the validated Pack 04 through Pack 07 slices now compose into one
+  representative proof set across Chess, Debate Arena, Story Builder, denial,
+  recovery, and partner DX
 
 ## Pack 4 Exit Lock
 
@@ -89,13 +92,25 @@ Required Pack 4 proof set:
 
 ## Objective Proof Matrix
 
-| Objective | Primary proving packs | Current proof state | Evidence still required |
+| Objective | Primary proving packs | Current proof state | Representative proof |
 |---|---|---|---|
-| O1 continuous in-thread app UX | Packs 01, 03, 04, 05 | partial | Pack 6 authenticated-app proof and final convergence scenarios |
-| O2 host-owned lifecycle, routing, and memory | Packs 02, 04, 05, 06 | strong partial | Final convergence audit across Chess, Debate Arena, and Story Builder |
-| O3 reviewed-partner trust and governance | Packs 02, 05, 07 | validated | Final convergence audit only |
-| O4 authenticated app support without raw credentials | Pack 06 | validated | Final convergence audit only |
-| O5 partner-ready governable platform | Pack 07 | validated | Final convergence audit only |
+| O1 continuous in-thread app UX | Packs 01, 03, 04, 05, 06 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`, `mid-game-board-context.test.ts`, `multi-app-continuity.test.ts`, `story-builder-lifecycle.test.ts` |
+| O2 host-owned lifecycle, routing, and memory | Packs 02, 04, 05, 06 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` |
+| O3 reviewed-partner trust and governance | Packs 02, 05, 07 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`, `operator-controls-rollout.test.ts`, `partner-sdk-harness.test.ts` |
+| O4 authenticated app support without raw credentials | Pack 06 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`, `story-builder-lifecycle.test.ts`, `resource-proxy-access.test.ts` |
+| O5 partner-ready governable platform | Pack 07 | validated | `docs/specs/CHATBRIDGE-000-program-roadmap/convergence-audit.md`, `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` |
+
+## Program Closeout
+
+The post-Pack-4 single-agent roadmap is now exit-complete for the scoped
+ChatBridge PRD.
+
+- Final product verdict: achieved for the reviewed-app platform defined by
+  Packs 00 through 07.
+- Final convergence proof: `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`
+- Backfill stories required by this audit: none
+- Remaining repo issue outside ChatBridge scope: inherited unrelated `pnpm check`
+  type drift in existing non-ChatBridge files
 
 ## Required Scenario Families
 

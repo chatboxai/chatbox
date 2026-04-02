@@ -91,21 +91,55 @@ Primary existing evidence:
 
 ## O1-O5 Proof Matrix
 
-| Objective | Convergence requirement | Existing pack proof | Remaining convergence proof |
-|---|---|---|---|
-| O1 continuous in-thread app UX | show all three flagship apps preserving thread continuity | Packs 03, 04, 05, 06 | one representative cross-app continuity sweep |
-| O2 host-owned lifecycle, routing, and memory | show routing, completion, and later-turn memory all stay host-owned | Packs 02, 04, 05, 06 | one audit scenario linking launch -> completion -> follow-up across multiple apps |
-| O3 reviewed-partner trust and governance | show policy, recovery, observability, and validator outputs all reinforce the reviewed model | Packs 02, 05, 07 | one denial/recovery/partner-DX sweep |
-| O4 authenticated app support without raw credentials | show Story Builder auth and resource access stay host-mediated end to end | Pack 06 | one audit scenario that includes approval, save, resume, and expiry/denial behavior |
-| O5 partner-ready governable platform | show Pack 07 governance plus the flagship apps behave as a coherent platform | Pack 07 | final linked objective memo in `progress.md` |
+| Objective | Convergence requirement | Existing pack proof | Convergence status | Representative evidence |
+|---|---|---|---|---|
+| O1 continuous in-thread app UX | show all three flagship apps preserving thread continuity | Packs 03, 04, 05, 06 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` plus the existing Chess, Debate Arena, and Story Builder lifecycle scenarios |
+| O2 host-owned lifecycle, routing, and memory | show routing, completion, and later-turn memory all stay host-owned | Packs 02, 04, 05, 06 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` |
+| O3 reviewed-partner trust and governance | show policy, recovery, observability, and validator outputs all reinforce the reviewed model | Packs 02, 05, 07 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` plus `operator-controls-rollout.test.ts` and `partner-sdk-harness.test.ts` |
+| O4 authenticated app support without raw credentials | show Story Builder auth and resource access stay host-mediated end to end | Pack 06 | validated | `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` plus `story-builder-lifecycle.test.ts` |
+| O5 partner-ready governable platform | show Pack 07 governance plus the flagship apps behave as a coherent platform | Pack 07 | validated | `progress.md` final proof matrix and `test/integration/chatbridge/scenarios/full-program-convergence.test.ts` |
 
 ## Required Deliverables
 
-- a convergence scenario plan under `test/integration/chatbridge/scenarios/`
-- at least one representative convergence scenario that spans multiple packs
-- an updated `progress.md` objective matrix with final proof links
-- a short final program memo stating whether the current repo achieves the
+- [x] a convergence scenario plan under `test/integration/chatbridge/scenarios/`
+- [x] at least one representative convergence scenario that spans multiple packs
+- [x] an updated `progress.md` objective matrix with final proof links
+- [x] a short final program memo stating whether the current repo achieves the
   scoped PRD outcome or which backfill stories remain
+
+## Implemented Convergence Evidence
+
+The representative cross-pack proof now lives in:
+
+- `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`
+
+That scenario intentionally composes:
+
+1. reviewed-app routing across Chess, Debate Arena, and Story Builder
+2. Chess mid-game reasoning grounded in host-owned board context
+3. Debate Arena plus Story Builder later-turn continuity after compaction
+4. Story Builder auth, Drive read/save, and completion handoff through the
+   host-owned broker and resource proxy
+5. policy denial, kill-switch posture, auth expiry, and partner harness replay
+   rejection under the same host-owned recovery model
+
+## Final Program Memo
+
+As of April 1, 2026, this repo satisfies the scoped ChatBridge PRD outcome for
+the reviewed-app platform defined by Packs 00 through 07.
+
+The Pack 04 through Pack 07 proofs now compose into one governed product:
+
+- Chess proves in-thread live runtime and bounded reasoning context.
+- Debate Arena proves reviewed multi-app routing and structured completion.
+- Story Builder proves host-owned auth, mediated resource access, save/resume,
+  and completion handoff.
+- Pack 07 proves policy, observability, recovery, and partner DX around those
+  flagship apps.
+
+This audit did not expose a missing prerequisite that requires a backfill
+story. The remaining known repo issue is the unrelated inherited `pnpm check`
+type drift outside ChatBridge; it does not change the scoped product verdict.
 
 ## Working Rule
 

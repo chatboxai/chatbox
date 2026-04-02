@@ -1,9 +1,8 @@
 # Pack 07 Status
 
 - Pack state: queued
-- Current story: locked until Packs 5 and 6 both complete
-- Unlock rule: this pack opens only after Pack 5 and Pack 6 each have written
-  exit memos and linked proof
+- Current story: CB-701
+- Unlock rule: Packs 5 and 6 now have written exit memos and linked proof; start with CB-701
 
 ## Story Order
 
@@ -17,7 +16,7 @@
 
 | Story | State | Next requirement |
 |---|---|---|
-| CB-701 | planned | Start after Pack 5 and Pack 6 exits unlock Pack 7. |
+| CB-701 | planned | Pack 7 is unlocked; begin here next. |
 | CB-703 | planned | Start after CB-701 reaches `validated`. |
 | CB-705 | planned | Start after CB-703 reaches `validated`. |
 | CB-702 | planned | Start after CB-705 reaches `validated`. |

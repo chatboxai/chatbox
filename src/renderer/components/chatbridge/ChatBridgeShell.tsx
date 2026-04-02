@@ -127,7 +127,7 @@ export function ChatBridgeShell(props: ChatBridgeShellProps) {
         {surfaceDescription}
       </Text>
 
-      {state === 'active' && children ? (
+      {children ? (
         <div className={cn('mt-4 overflow-hidden rounded-[20px] border p-0', styles.accent)}>{children}</div>
       ) : (
         <div className={cn('mt-4 rounded-[20px] border p-4', styles.accent)}>

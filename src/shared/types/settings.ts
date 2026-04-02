@@ -215,6 +215,8 @@ const ExtensionSettingsSchema = z.object({
     provider: z.enum(['build-in', 'bing', 'tavily', 'querit']),
     tavilyApiKey: z.string().optional(),
     queritApiKey: z.string().optional(),
+    queritMaxResults: z.number().optional(),
+    queritTimeRange: z.string().nullable().optional(),
   }),
   knowledgeBase: z
     .object({

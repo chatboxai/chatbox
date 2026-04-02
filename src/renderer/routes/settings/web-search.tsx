@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import platform from '@/platform'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
 
 export const Route = createFileRoute('/settings/web-search')({
   component: RouteComponent,
@@ -19,7 +20,7 @@ export function RouteComponent() {
   const [checkingTavily, setCheckingTavily] = useState(false)
   const [tavilyAvaliable, setTavilyAvaliable] = useState<boolean>()
   const [checkingQuerit, setCheckingQuerit] = useState(false)
-  const [queritAvaliable, setQueritAvaliable] = useState<boolean>()
+  const [queritAvailable, setQueritAvailable] = useState<boolean>()
   const checkTavily = async () => {
     if (extension.webSearch.tavilyApiKey) {
       setCheckingTavily(true)
@@ -49,9 +50,9 @@ export function RouteComponent() {
   const checkQuerit = async () => {
     if (extension.webSearch.queritApiKey) {
       setCheckingQuerit(true)
-      setQueritAvaliable(undefined)
+      setQueritAvailable(undefined)
       try {
-        await ofetch('https://api.querit.ai/v1/search', {
+        await ofetch(QUERIT_SEARCH_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -61,9 +62,9 @@ export function RouteComponent() {
             query: 'Chatbox',
           },
         })
-        setQueritAvaliable(true)
+        setQueritAvailable(true)
       } catch (e) {
-        setQueritAvaliable(false)
+        setQueritAvailable(false)
       } finally {
         setCheckingQuerit(false)
       }
@@ -318,7 +319,7 @@ export function RouteComponent() {
               maw={320}
               value={extension.webSearch.queritApiKey}
               onChange={(e) => {
-                setQueritAvaliable(undefined)
+                setQueritAvailable(undefined)
                 setSettings({
                   extension: {
                     ...extension,
@@ -330,15 +331,15 @@ export function RouteComponent() {
                 })
               }}
               placeholder={t('Enter your Querit API Key') || 'Enter your Querit API Key'}
-              error={queritAvaliable === false}
+              error={queritAvailable === false}
             />
             <Button color="chatbox-gray" variant="light" onClick={checkQuerit} loading={checkingQuerit}>
               {t('Check')}
             </Button>
           </Flex>
 
-          {typeof queritAvaliable === 'boolean' ? (
-            queritAvaliable ? (
+          {typeof queritAvailable === 'boolean' ? (
+            queritAvailable ? (
               <Text size="xs" c="chatbox-success">
                 {t('Connection successful!')}
               </Text>

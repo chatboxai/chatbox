@@ -1,9 +1,16 @@
+import type { SearchResult } from '@shared/types'
 import { ofetch } from 'ofetch'
 import WebSearch from './base'
-import { SearchResult } from 'src/shared/types'
+
+export const QUERIT_SEARCH_URL = 'https://api.querit.ai/v1/search'
+
+interface QueritRequestBody {
+  query: string
+  count: number
+  filters?: { timeRange: { date: string } }
+}
 
 export class QueritSearch extends WebSearch {
-  private readonly QUERIT_SEARCH_URL = 'https://api.querit.ai/v1/search'
   private apiKey: string
   private maxResults: number
   private timeRange: string | null
@@ -17,12 +24,12 @@ export class QueritSearch extends WebSearch {
 
   async search(query: string, signal?: AbortSignal): Promise<SearchResult> {
     try {
-      const requestBody: any = { query, count: this.maxResults }
+      const requestBody: QueritRequestBody = { query, count: this.maxResults }
       if (this.timeRange) {
         requestBody.filters = { timeRange: { date: this.timeRange } }
       }
 
-      const response = await ofetch(this.QUERIT_SEARCH_URL, {
+      const response = await ofetch(QUERIT_SEARCH_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

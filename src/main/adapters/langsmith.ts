@@ -9,10 +9,16 @@ import {
   type LangSmithRunStartInput,
   type LangSmithRunType,
 } from '../../shared/utils/langsmith_adapter'
+import { CHATBRIDGE_LANGSMITH_PROJECT_NAME } from '../../shared/models/tracing'
 
 type LangSmithRunTreeLike = {
   postRun(): Promise<void>
-  end(outputs?: Record<string, unknown>, error?: string, endTime?: number, metadata?: Record<string, unknown>): Promise<void>
+  end(
+    outputs?: Record<string, unknown>,
+    error?: string,
+    endTime?: number,
+    metadata?: Record<string, unknown>
+  ): Promise<void>
   patchRun(options?: { excludeInputs?: boolean }): Promise<void>
 }
 
@@ -26,20 +32,61 @@ type CreateMainLangSmithAdapterOptions = {
   createRunTree?: (config: ConstructorParameters<typeof RunTree>[0]) => LangSmithRunTreeLike
 }
 
-type MainLangSmithAdapter = LangSmithAdapter & {
-  endRun(runId: string, result?: LangSmithRunEndInput): Promise<void>
+type MainLangSmithStatus = {
+  enabled: boolean
+  projectName: string
+  reason: 'enabled' | 'missing-api-key' | 'tracing-disabled'
 }
 
-function resolveTracingEnabled(options: CreateMainLangSmithAdapterOptions) {
+type MainLangSmithAdapter = LangSmithAdapter & {
+  endRun(runId: string, result?: LangSmithRunEndInput): Promise<void>
+  getStatus(): MainLangSmithStatus
+}
+
+function resolveProjectName(projectName?: string) {
+  return projectName ?? process.env.LANGSMITH_PROJECT ?? CHATBRIDGE_LANGSMITH_PROJECT_NAME
+}
+
+function resolveTracingStatus(options: CreateMainLangSmithAdapterOptions): MainLangSmithStatus {
+  const projectName = resolveProjectName(options.projectName)
+
   if (typeof options.tracingEnabled === 'boolean') {
-    return options.tracingEnabled
+    return {
+      enabled: options.tracingEnabled,
+      projectName,
+      reason: options.tracingEnabled ? 'enabled' : 'tracing-disabled',
+    }
   }
 
   if (process.env.NODE_ENV === 'test' && process.env.LANGSMITH_TRACING !== 'true') {
-    return false
+    return {
+      enabled: false,
+      projectName,
+      reason: 'tracing-disabled',
+    }
   }
 
-  return Boolean(options.apiKey ?? process.env.LANGSMITH_API_KEY) && process.env.LANGSMITH_TRACING !== 'false'
+  if (!Boolean(options.apiKey ?? process.env.LANGSMITH_API_KEY)) {
+    return {
+      enabled: false,
+      projectName,
+      reason: 'missing-api-key',
+    }
+  }
+
+  if (process.env.LANGSMITH_TRACING === 'false') {
+    return {
+      enabled: false,
+      projectName,
+      reason: 'tracing-disabled',
+    }
+  }
+
+  return {
+    enabled: true,
+    projectName,
+    reason: 'enabled',
+  }
 }
 
 function createLangSmithClient(options: CreateMainLangSmithAdapterOptions) {
@@ -66,7 +113,7 @@ function buildRunConfig(
     id: runId,
     name: input.name,
     run_type: (input.runType ?? 'chain') as LangSmithRunType,
-    project_name: input.projectName ?? options.projectName ?? process.env.LANGSMITH_PROJECT ?? 'chatbox-chatbridge',
+    project_name: input.projectName ?? resolveProjectName(options.projectName),
     client,
     inputs: sanitizeLangSmithRecord(input.inputs),
     metadata: sanitizeLangSmithRecord(input.metadata),
@@ -76,17 +123,22 @@ function buildRunConfig(
 }
 
 export function createMainLangSmithAdapter(options: CreateMainLangSmithAdapterOptions = {}): MainLangSmithAdapter {
-  const enabled = resolveTracingEnabled(options)
-  if (!enabled) {
+  const status = resolveTracingStatus(options)
+
+  if (!status.enabled) {
     const noop = createNoopLangSmithAdapter()
     return {
       ...noop,
       async endRun(_runId, _result) {},
+      getStatus() {
+        return status
+      },
     }
   }
 
   const client = createLangSmithClient(options)
-  const createRunTree = options.createRunTree ?? ((config: ConstructorParameters<typeof RunTree>[0]) => new RunTree(config))
+  const createRunTree =
+    options.createRunTree ?? ((config: ConstructorParameters<typeof RunTree>[0]) => new RunTree(config))
   const createId = options.createId ?? (() => crypto.randomUUID())
   const activeRuns = new Map<string, LangSmithRunTreeLike>()
 
@@ -96,13 +148,18 @@ export function createMainLangSmithAdapter(options: CreateMainLangSmithAdapterOp
       return
     }
 
-    await run.end(sanitizeLangSmithRecord(result.outputs), result.error, undefined, sanitizeLangSmithRecord(result.metadata))
+    await run.end(
+      sanitizeLangSmithRecord(result.outputs),
+      result.error,
+      undefined,
+      sanitizeLangSmithRecord(result.metadata)
+    )
     await run.patchRun()
     activeRuns.delete(runId)
   }
 
   const adapter: MainLangSmithAdapter = {
-    enabled,
+    enabled: status.enabled,
     async startRun(input): Promise<LangSmithRunHandle> {
       const config = buildRunConfig(input, options, client, createId, activeRuns)
       const runTree = createRunTree(config)
@@ -127,6 +184,9 @@ export function createMainLangSmithAdapter(options: CreateMainLangSmithAdapterOp
         metadata: input.metadata,
       })
     },
+    getStatus() {
+      return status
+    },
   }
 
   return adapter
@@ -135,6 +195,8 @@ export function createMainLangSmithAdapter(options: CreateMainLangSmithAdapterOp
 export const langsmith = createMainLangSmithAdapter()
 
 export function registerLangSmithIpcHandlers(adapter: MainLangSmithAdapter = langsmith) {
+  ipcMain.handle('langsmith:get-status', async () => adapter.getStatus())
+
   ipcMain.handle('langsmith:start-run', async (_event, input: LangSmithRunStartInput) => {
     const run = await adapter.startRun(input)
     return {

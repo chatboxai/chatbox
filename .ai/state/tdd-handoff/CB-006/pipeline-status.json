@@ -1,0 +1,13 @@
+{
+  "storyId": "CB-006",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "not-recorded",
+    "reason": "Single-agent execution added focused coverage and implementation together; no preserved failing transcript exists for the new tests."
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/main/adapters/langsmith.test.ts src/renderer/dev/chatbridgeManualSmoke.test.ts src/renderer/components/dev/ChatBridgeSeedLab.test.tsx test/integration/chatbridge/scenarios/scenario-tracing.test.ts test/integration/chatbridge/scenarios/reviewed-app-registry.test.ts test/integration/chatbridge/scenarios/host-coordinated-tool-execution.test.ts test/integration/chatbridge/scenarios/app-instance-domain-model.test.ts test/integration/chatbridge/scenarios/single-app-tool-discovery-and-invocation.test.ts test/integration/chatbridge/scenarios/mid-game-board-context.test.ts test/integration/chatbridge/scenarios/app-aware-persistence.test.ts test/integration/chatbridge/scenarios/route-decision-artifacts.test.ts test/integration/chatbridge/scenarios/bridge-session-security.test.ts test/integration/chatbridge/scenarios/story-builder-lifecycle.test.ts"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "storyId": "CB-006",
+  "status": "green",
+  "implementationFiles": [
+    "src/shared/models/tracing.ts",
+    "src/main/adapters/langsmith.ts",
+    "src/renderer/dev/chatbridgeManualSmoke.ts",
+    "src/renderer/components/dev/ChatBridgeSeedLab.tsx",
+    "test/integration/chatbridge/scenarios/scenario-tracing.ts",
+    "chatbridge/EVALS_AND_OBSERVABILITY.md",
+    "test/integration/chatbridge/scenarios/README.md"
+  ],
+  "notes": [
+    "Added one supported desktop Seed Lab manual-smoke workflow that emits named parent traces and exposes explicit unsupported reasons elsewhere.",
+    "Expanded shared ChatBridge trace naming, metadata, and tags so manual smoke and scenario evidence land in one project with one contract.",
+    "Wrapped representative scenario families in a reusable eval trace helper instead of leaving trace coverage implicit or file-specific."
+  ],
+  "focusedGreenCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/main/adapters/langsmith.test.ts src/renderer/dev/chatbridgeManualSmoke.test.ts src/renderer/components/dev/ChatBridgeSeedLab.test.tsx test/integration/chatbridge/scenarios/scenario-tracing.test.ts test/integration/chatbridge/scenarios/reviewed-app-registry.test.ts test/integration/chatbridge/scenarios/host-coordinated-tool-execution.test.ts test/integration/chatbridge/scenarios/app-instance-domain-model.test.ts test/integration/chatbridge/scenarios/single-app-tool-discovery-and-invocation.test.ts test/integration/chatbridge/scenarios/mid-game-board-context.test.ts test/integration/chatbridge/scenarios/app-aware-persistence.test.ts test/integration/chatbridge/scenarios/route-decision-artifacts.test.ts test/integration/chatbridge/scenarios/bridge-session-security.test.ts test/integration/chatbridge/scenarios/story-builder-lifecycle.test.ts"
+}

@@ -1,18 +1,23 @@
+import { Alert, Badge, Button, Card, Container, Group, Paper, Stack, Text, Title } from '@mantine/core'
 import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Container,
-  Group,
-  Paper,
-  Stack,
-  Text,
-  Title,
-} from '@mantine/core'
-import { IconAlertTriangle, IconFlask2, IconPlayerPlay, IconRefresh, IconTrash } from '@tabler/icons-react'
-import { useMemo, useState } from 'react'
+  IconAlertTriangle,
+  IconCopy,
+  IconFlask2,
+  IconInfoCircle,
+  IconPlayerPlay,
+  IconRefresh,
+  IconTrash,
+} from '@tabler/icons-react'
+import { useEffect, useMemo, useState } from 'react'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
+import {
+  finishChatBridgeManualSmokeTrace,
+  getChatBridgeManualSmokeFixtureMode,
+  getChatBridgeManualSmokeTraceSupport,
+  startChatBridgeManualSmokeTrace,
+  type ChatBridgeManualSmokeActiveRun,
+  type ChatBridgeManualSmokeTraceSupport,
+} from '@/dev/chatbridgeManualSmoke'
 import {
   clearChatBridgeLiveSeedSessions,
   getExistingChatBridgeSeedSessions,
@@ -21,19 +26,33 @@ import {
 import { useSessionList } from '@/stores/chatStore'
 import { switchCurrentSession } from '@/stores/session/crud'
 
-type NoticeState =
-  | {
-      tone: 'success' | 'error'
-      text: string
-    }
-  | null
+type NoticeState = {
+  tone: 'error' | 'info' | 'success'
+  text: string
+} | null
 
 export default function ChatBridgeSeedLab() {
   const { sessionMetaList, refetch } = useSessionList()
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [notice, setNotice] = useState<NoticeState>(null)
+  const [traceSupport, setTraceSupport] = useState<ChatBridgeManualSmokeTraceSupport | null>(null)
+  const [activeTraceRuns, setActiveTraceRuns] = useState<Record<string, ChatBridgeManualSmokeActiveRun | undefined>>({})
 
   const fixtures = useMemo(() => getExistingChatBridgeSeedSessions(sessionMetaList), [sessionMetaList])
+
+  useEffect(() => {
+    let disposed = false
+
+    void getChatBridgeManualSmokeTraceSupport().then((support) => {
+      if (!disposed) {
+        setTraceSupport(support)
+      }
+    })
+
+    return () => {
+      disposed = true
+    }
+  }, [])
 
   const handleReseedAll = async () => {
     setBusyAction('seed-all')
@@ -77,6 +96,39 @@ export default function ChatBridgeSeedLab() {
     }
   }
 
+  const handleCopyTraceId = async (runId: string) => {
+    if (!navigator.clipboard?.writeText) {
+      setNotice({
+        tone: 'info',
+        text: `Trace ID ${runId} is visible in the card, but clipboard access is unavailable in this runtime.`,
+      })
+      return
+    }
+
+    await navigator.clipboard.writeText(runId)
+    setNotice({
+      tone: 'success',
+      text: `Copied trace ID ${runId}.`,
+    })
+  }
+
+  const handleCompleteTrace = async (fixtureId: string, outcome: 'failed' | 'passed') => {
+    const activeTrace = activeTraceRuns[fixtureId]
+    if (!activeTrace) {
+      return
+    }
+
+    await finishChatBridgeManualSmokeTrace(activeTrace.runId, outcome)
+    setActiveTraceRuns((current) => ({
+      ...current,
+      [fixtureId]: undefined,
+    }))
+    setNotice({
+      tone: outcome === 'passed' ? 'success' : 'info',
+      text: `Recorded ${outcome} manual smoke outcome for ${activeTrace.fixtureName} as trace ${activeTrace.runId}.`,
+    })
+  }
+
   const handleReseedAndOpen = async (fixtureId: string) => {
     setBusyAction(`seed-${fixtureId}`)
     setNotice(null)
@@ -85,7 +137,32 @@ export default function ChatBridgeSeedLab() {
       const [seededSession] = await reseedChatBridgeLiveSeedSessions([fixtureId])
       await refetch()
       if (seededSession) {
+        const currentTrace = activeTraceRuns[fixtureId]
+        if (currentTrace) {
+          await finishChatBridgeManualSmokeTrace(currentTrace.runId, 'superseded')
+        }
         switchCurrentSession(seededSession.sessionId)
+
+        const traceResult = await startChatBridgeManualSmokeTrace(seededSession.fixture, seededSession.sessionId)
+        if (traceResult.status === 'started') {
+          setActiveTraceRuns((current) => ({
+            ...current,
+            [fixtureId]: traceResult.run,
+          }))
+          setNotice({
+            tone: 'success',
+            text: `Started traced manual smoke for ${seededSession.fixture.name}. Trace ID: ${traceResult.run.runId}.`,
+          })
+        } else {
+          setActiveTraceRuns((current) => ({
+            ...current,
+            [fixtureId]: undefined,
+          }))
+          setNotice({
+            tone: fixtureId === 'history-and-preview' ? 'info' : 'error',
+            text: traceResult.support.message,
+          })
+        }
       }
     } catch (error) {
       setNotice({
@@ -120,11 +197,20 @@ export default function ChatBridgeSeedLab() {
               1. Click <code>Seed All Sessions</code> after a relevant ChatBridge change.
             </Text>
             <Text size="sm" c="dimmed">
-              2. Open the seeded sessions from the normal sidebar or use <code>Reseed &amp; Open</code> below.
+              2. Use <code>Reseed &amp; Open</code> on a supported fixture to start a traced desktop manual smoke run.
             </Text>
             <Text size="sm" c="dimmed">
-              3. Follow the scenario audit steps on each card. The workflow docs are updated so future relevant stories
-              must keep this lab current.
+              3. Complete the audit steps, then record <code>Mark Passed</code> or <code>Mark Failed</code> so the run
+              remains inspectable in LangSmith by trace ID.
+            </Text>
+          </Stack>
+        </Paper>
+
+        <Paper withBorder radius="md" p="md">
+          <Stack gap="xs">
+            <Text fw={600}>Trace support</Text>
+            <Text size="sm" c={traceSupport?.enabled ? 'green' : 'dimmed'}>
+              {traceSupport?.message ?? 'Checking desktop LangSmith trace support…'}
             </Text>
           </Stack>
         </Paper>
@@ -149,8 +235,15 @@ export default function ChatBridgeSeedLab() {
 
         {notice && (
           <Alert
-            color={notice.tone === 'success' ? 'green' : 'red'}
-            icon={<ScalableIcon icon={notice.tone === 'success' ? IconFlask2 : IconAlertTriangle} size={16} />}
+            color={notice.tone === 'success' ? 'green' : notice.tone === 'error' ? 'red' : 'blue'}
+            icon={
+              <ScalableIcon
+                icon={
+                  notice.tone === 'success' ? IconFlask2 : notice.tone === 'error' ? IconAlertTriangle : IconInfoCircle
+                }
+                size={16}
+              />
+            }
           >
             {notice.text}
           </Alert>
@@ -160,61 +253,110 @@ export default function ChatBridgeSeedLab() {
           {fixtures.map(({ fixture, existing }) => (
             <Card key={fixture.id} withBorder shadow="xs" radius="md" p="lg">
               <Stack gap="md">
-                <Group justify="space-between" align="start">
-                  <div style={{ flex: 1 }}>
-                    <Group gap="xs" mb="xs">
-                      <Text fw={600}>{fixture.name}</Text>
-                      {fixture.coverage.map((label) => (
-                        <Badge key={label} variant="light" color="gray">
-                          {label}
+                {(() => {
+                  const fixtureMode = getChatBridgeManualSmokeFixtureMode(fixture.id)
+                  const activeTrace = activeTraceRuns[fixture.id]
+
+                  return (
+                    <>
+                      <Group justify="space-between" align="start">
+                        <div style={{ flex: 1 }}>
+                          <Group gap="xs" mb="xs">
+                            <Text fw={600}>{fixture.name}</Text>
+                            {fixture.coverage.map((label) => (
+                              <Badge key={label} variant="light" color="gray">
+                                {label}
+                              </Badge>
+                            ))}
+                            <Badge color={fixtureMode.support === 'supported' ? 'teal' : 'orange'} variant="light">
+                              {fixtureMode.support === 'supported' ? 'Traceable smoke' : 'Legacy reference'}
+                            </Badge>
+                          </Group>
+                          <Text size="sm" c="dimmed">
+                            {fixture.description}
+                          </Text>
+                          <Text size="sm" c="dimmed" mt={4}>
+                            {fixtureMode.message}
+                          </Text>
+                        </div>
+                        <Badge color={existing ? 'green' : 'gray'} variant="light">
+                          {existing ? 'Seeded in live app' : 'Not seeded'}
                         </Badge>
-                      ))}
-                    </Group>
-                    <Text size="sm" c="dimmed">
-                      {fixture.description}
-                    </Text>
-                  </div>
-                  <Badge color={existing ? 'green' : 'gray'} variant="light">
-                    {existing ? 'Seeded in live app' : 'Not seeded'}
-                  </Badge>
-                </Group>
+                      </Group>
 
-                <Paper radius="md" p="md" bg="var(--mantine-color-gray-0)">
-                  <Stack gap="xs">
-                    <Text fw={600} size="sm">
-                      Audit this session
-                    </Text>
-                    {fixture.auditSteps.map((step) => (
-                      <div key={step.action}>
-                        <Text size="sm" fw={500}>
-                          {step.action}
-                        </Text>
-                        <Text size="sm" c="dimmed">
-                          {step.expected}
-                        </Text>
-                      </div>
-                    ))}
-                  </Stack>
-                </Paper>
+                      <Paper radius="md" p="md" bg="var(--mantine-color-gray-0)">
+                        <Stack gap="xs">
+                          <Text fw={600} size="sm">
+                            Audit this session
+                          </Text>
+                          {fixture.auditSteps.map((step) => (
+                            <div key={step.action}>
+                              <Text size="sm" fw={500}>
+                                {step.action}
+                              </Text>
+                              <Text size="sm" c="dimmed">
+                                {step.expected}
+                              </Text>
+                            </div>
+                          ))}
+                        </Stack>
+                      </Paper>
 
-                <Group gap="sm">
-                  <Button
-                    leftSection={<ScalableIcon icon={IconRefresh} size={16} />}
-                    loading={busyAction === `seed-${fixture.id}`}
-                    onClick={() => void handleReseedAndOpen(fixture.id)}
-                  >
-                    Reseed &amp; Open
-                  </Button>
-                  {existing && (
-                    <Button
-                      variant="light"
-                      leftSection={<ScalableIcon icon={IconPlayerPlay} size={16} />}
-                      onClick={() => switchCurrentSession(existing.id)}
-                    >
-                      Open Seeded Session
-                    </Button>
-                  )}
-                </Group>
+                      <Group gap="sm">
+                        <Button
+                          leftSection={<ScalableIcon icon={IconRefresh} size={16} />}
+                          loading={busyAction === `seed-${fixture.id}`}
+                          onClick={() => void handleReseedAndOpen(fixture.id)}
+                        >
+                          Reseed &amp; Open
+                        </Button>
+                        {existing && (
+                          <Button
+                            variant="light"
+                            leftSection={<ScalableIcon icon={IconPlayerPlay} size={16} />}
+                            onClick={() => switchCurrentSession(existing.id)}
+                          >
+                            Open Seeded Session
+                          </Button>
+                        )}
+                      </Group>
+
+                      {activeTrace && (
+                        <Paper radius="md" p="md" bg="var(--mantine-color-blue-0)">
+                          <Stack gap="xs">
+                            <Text fw={600} size="sm">
+                              Active manual smoke trace
+                            </Text>
+                            <Text size="sm" c="dimmed">
+                              {activeTrace.traceName}
+                            </Text>
+                            <Text size="sm">Trace ID: {activeTrace.runId}</Text>
+                            <Text size="sm">Project: {activeTrace.projectName}</Text>
+                            <Group gap="sm">
+                              <Button
+                                variant="light"
+                                leftSection={<ScalableIcon icon={IconCopy} size={16} />}
+                                onClick={() => void handleCopyTraceId(activeTrace.runId)}
+                              >
+                                Copy Trace ID
+                              </Button>
+                              <Button color="green" onClick={() => void handleCompleteTrace(fixture.id, 'passed')}>
+                                Mark Passed
+                              </Button>
+                              <Button
+                                color="red"
+                                variant="light"
+                                onClick={() => void handleCompleteTrace(fixture.id, 'failed')}
+                              >
+                                Mark Failed
+                              </Button>
+                            </Group>
+                          </Stack>
+                        </Paper>
+                      )}
+                    </>
+                  )
+                })()}
               </Stack>
             </Card>
           ))}

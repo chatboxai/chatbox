@@ -6,9 +6,85 @@ import {
   type LangSmithTraceContext,
 } from '../utils/langsmith_adapter'
 import type { StreamTextResult } from '../types'
-import type { CallChatCompletionOptions, ChatStreamOptions, ModelInterface, ModelStreamPart, PaintOptions } from './types'
+import type {
+  CallChatCompletionOptions,
+  ChatStreamOptions,
+  ModelInterface,
+  ModelStreamPart,
+  PaintOptions,
+} from './types'
+
+export const CHATBRIDGE_LANGSMITH_PROJECT_NAME = 'chatbox-chatbridge'
+
+export type ChatBridgeTraceEvidenceFamily =
+  | 'auth-resource'
+  | 'board-context'
+  | 'bridge'
+  | 'catalog'
+  | 'persistence'
+  | 'recovery'
+  | 'reviewed-app-launch'
+  | 'routing'
+
+export type ChatBridgeTraceSurface = 'eval' | 'manual_smoke'
+
+export interface ChatBridgeTraceDescriptor {
+  slug: string
+  surface: ChatBridgeTraceSurface
+  primaryFamily: ChatBridgeTraceEvidenceFamily
+  evidenceFamilies?: ChatBridgeTraceEvidenceFamily[]
+  storyId?: string
+  legacy?: boolean
+}
 
 const TRACE_WRAPPED_MODEL_SYMBOL = Symbol.for('chatbox.langsmith.traced-model')
+
+function sanitizeTraceSegment(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function dedupeTraceFamilies(descriptor: ChatBridgeTraceDescriptor) {
+  return Array.from(new Set([descriptor.primaryFamily, ...(descriptor.evidenceFamilies ?? [])]))
+}
+
+export function createChatBridgeTraceName(descriptor: ChatBridgeTraceDescriptor, uniqueSuffix?: string) {
+  const prefix = descriptor.surface === 'eval' ? 'chatbridge.eval' : 'chatbridge.manual_smoke'
+  const suffix = uniqueSuffix ? `.${sanitizeTraceSegment(uniqueSuffix)}` : ''
+
+  return `${prefix}.${sanitizeTraceSegment(descriptor.slug)}${suffix}`
+}
+
+export function createChatBridgeTraceMetadata(
+  descriptor: ChatBridgeTraceDescriptor,
+  metadata: Record<string, unknown> = {}
+) {
+  return {
+    product: 'chatbridge',
+    surface: descriptor.surface,
+    primaryFamily: descriptor.primaryFamily,
+    evidenceFamilies: dedupeTraceFamilies(descriptor),
+    storyId: descriptor.storyId ?? 'CB-006',
+    legacy: descriptor.legacy ?? false,
+    ...metadata,
+  }
+}
+
+export function createChatBridgeTraceTags(descriptor: ChatBridgeTraceDescriptor, tags: string[] = []) {
+  return Array.from(
+    new Set([
+      'chatbridge',
+      descriptor.surface === 'eval' ? 'eval' : 'manual-smoke',
+      ...dedupeTraceFamilies(descriptor),
+      descriptor.legacy ? 'legacy' : 'active',
+      descriptor.storyId?.toLowerCase() ?? 'cb-006',
+      ...tags,
+    ])
+  )
+}
 
 function summarizeMessageContent(content: ModelMessage['content']) {
   if (typeof content === 'string') {
@@ -59,10 +135,7 @@ function summarizeProviderOptions(providerOptions: CallChatCompletionOptions['pr
   }
 
   return Object.fromEntries(
-    Object.entries(providerOptions).map(([providerName, options]) => [
-      providerName,
-      Object.keys(options ?? {}).sort(),
-    ])
+    Object.entries(providerOptions).map(([providerName, options]) => [providerName, Object.keys(options ?? {}).sort()])
   )
 }
 
@@ -92,7 +165,11 @@ function summarizePaintParams(params: PaintOptions) {
   }
 }
 
-function resolveTraceName(model: ModelInterface, operation: 'chat' | 'chatStream' | 'paint', context?: LangSmithTraceContext) {
+function resolveTraceName(
+  model: ModelInterface,
+  operation: 'chat' | 'chatStream' | 'paint',
+  context?: LangSmithTraceContext
+) {
   if (context?.name) {
     return context.name
   }
@@ -123,7 +200,10 @@ function buildChatInputs(messages: ModelMessage[], options: CallChatCompletionOp
   }
 }
 
-export function wrapModelWithLangSmith(model: ModelInterface, adapter: LangSmithAdapter = createNoopLangSmithAdapter()) {
+export function wrapModelWithLangSmith(
+  model: ModelInterface,
+  adapter: LangSmithAdapter = createNoopLangSmithAdapter()
+) {
   if (!adapter.enabled || (model as unknown as Record<PropertyKey, unknown>)[TRACE_WRAPPED_MODEL_SYMBOL]) {
     return model
   }
@@ -180,7 +260,9 @@ export function wrapModelWithLangSmith(model: ModelInterface, adapter: LangSmith
           const partTypes = new Set<string>()
 
           try {
-            for await (const chunk of target.chatStream.call(target, messages, options) as AsyncGenerator<ModelStreamPart<T>>) {
+            for await (const chunk of target.chatStream.call(target, messages, options) as AsyncGenerator<
+              ModelStreamPart<T>
+            >) {
               partTypes.add(chunk.type)
               if (chunk.type === 'text-delta') {
                 textDeltas.push(chunk.text)

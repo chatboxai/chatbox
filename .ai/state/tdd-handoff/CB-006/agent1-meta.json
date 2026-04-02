@@ -1,0 +1,20 @@
+{
+  "storyId": "CB-006",
+  "status": "green-authored",
+  "testFiles": [
+    "src/main/adapters/langsmith.test.ts",
+    "src/renderer/dev/chatbridgeManualSmoke.test.ts",
+    "src/renderer/components/dev/ChatBridgeSeedLab.test.tsx",
+    "test/integration/chatbridge/scenarios/scenario-tracing.test.ts"
+  ],
+  "contract": [
+    "the main-process LangSmith seam exposes an explicit runtime support status for desktop manual smoke checks",
+    "the /dev/chatbridge seed lab can start, surface, and finish named manual-smoke traces for supported fixtures",
+    "unsupported runtimes and legacy-only fixtures fail explicitly instead of pretending trace capture is available",
+    "representative ChatBridge scenario families emit named eval traces under the shared chatbox-chatbridge project"
+  ],
+  "redGuard": {
+    "result": "not-recorded",
+    "reason": "CB-006 was completed in a single-agent pass; focused coverage was added and then driven green without a preserved pre-implementation failure transcript."
+  }
+}

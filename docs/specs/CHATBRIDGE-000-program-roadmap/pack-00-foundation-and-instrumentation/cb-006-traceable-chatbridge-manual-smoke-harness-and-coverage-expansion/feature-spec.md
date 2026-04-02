@@ -33,11 +33,11 @@ when we are trying to diagnose end-to-end failures.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: A supported manual ChatBridge smoke path emits LangSmith traces for
+- [x] AC-1: A supported manual ChatBridge smoke path emits LangSmith traces for
   flagship reviewed-app flows instead of relying on ad hoc local inspection.
-- [ ] AC-2: The trace matrix explicitly covers routing, reviewed-app launch,
+- [x] AC-2: The trace matrix explicitly covers routing, reviewed-app launch,
   Story Builder auth/resource access, recovery, and persistence flows.
-- [ ] AC-3: The smoke audit workflow documents how to collect trace ids and map
+- [x] AC-3: The smoke audit workflow documents how to collect trace ids and map
   them back to findings without bespoke repo knowledge.
 
 ## Edge Cases

@@ -1,0 +1,10 @@
+{
+  "storyId": "CB-006",
+  "status": "reviewed",
+  "refactorApplied": false,
+  "qualityNotes": [
+    "The implementation stays inside CB-006 by tightening observability seams and dev tooling rather than fixing later runtime bugs or changing the active catalog.",
+    "Manual smoke support is intentionally desktop-only and explicit, which prevents the web smoke surface from over-claiming traceability.",
+    "Legacy Story Builder evidence remains traceable in the scenario suite, but the active flagship path is intentionally limited to Chess until later queue items land."
+  ]
+}

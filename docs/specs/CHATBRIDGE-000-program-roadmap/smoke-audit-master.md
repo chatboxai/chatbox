@@ -23,7 +23,8 @@ completion and live product behavior.
 
 - Runtime surface: ChatBridge inside Chatbox
 - Packs in scope: Pack 03 through Pack 07
-- Key apps in scope: Chess, Debate Arena, Story Builder
+- Key apps in scope: Chess, Drawing Kit, Weather
+- Legacy reference apps still present in historical traces: Debate Arena, Story Builder
 - Verification modes:
   - scenario test runs
   - seeded-session manual checks
@@ -207,7 +208,7 @@ completion and live product behavior.
 
 ### SA-006: Trace coverage is real but partial, and the web smoke surface produces no LangSmith runs
 
-- Status: `confirmed`
+- Status: `fixed-during-audit`
 - Severity: medium
 - Area: observability
 - Owning pack: Pack 00 and Pack 07
@@ -219,33 +220,41 @@ completion and live product behavior.
   3. Inspect `/private/tmp/chatbox-chessjs-devfix/src/renderer/adapters/langsmith.ts`.
 - Expected: a broad ChatBridge smoke audit should yield traces across most flagship scenario families and the live UI path used for manual smoke.
 - Actual:
-  - the scenario run emitted traces for only a subset of scenario families:
-    - `chatbridge.eval.chatbridge-reviewed-app-registry`
-    - `chatbridge.eval.chatbridge-app-instance-domain-model`
-    - `chatbridge.eval.chatbridge-bridge-handshake`
-    - `chatbridge.eval.chatbridge-host-tool-contract`
-    - `chatbridge.eval.chatbridge-single-app-discovery`
-    - `chatbridge.eval.chatbridge-mid-game-board-context`
-    - `chatbridge.eval.chatbridge-persistence-and-shell-artifacts`
-  - the live web smoke surface cannot emit LangSmith runs because the renderer adapter is only enabled when `window.electronAPI.invoke` exists.
+  - the supported manual smoke path is now the desktop `/dev/chatbridge` Seed
+    Lab path, and it emits named `chatbridge.manual_smoke.*` parent traces for
+    supported active fixtures
+  - the scenario trace matrix now leaves named evidence for catalog, routing,
+    reviewed-app launch, recovery, persistence, and legacy auth/resource
+    families under the shared `chatbox-chatbridge` project
+  - the live web smoke surface remains intentionally non-traceable and is now
+    documented as unsupported instead of silently appearing equivalent to the
+    desktop path
 - Evidence:
   - test or manual surface:
-    - traced run: `22` files passed, `46` tests passed
-    - recent trace names from LangSmith list showed only the subset above plus `chatbox.trace.smoke`
+    - `src/renderer/components/dev/ChatBridgeSeedLab.tsx`
+    - `src/renderer/dev/chatbridgeManualSmoke.ts`
+    - `chatbridge/EVALS_AND_OBSERVABILITY.md`
+    - traced targeted scenario runs for routing and Story Builder legacy auth/resource
   - trace id(s):
-    - `7020574d-8d43-46d6-8c41-b89522667be7` (`chatbox.trace.smoke`)
-    - `019d4660-723a-7000-8000-020a63a07686` (`chatbridge.eval.chatbridge-mid-game-board-context`)
+    - `bdb26275-763b-4d6f-a1e7-ffc952502e79` (`chatbridge.manual_smoke.chatbridge-chess-runtime.cb-006-doc-proof`)
+    - `c08c1858-9964-4b66-9af3-58f79c739ef2` (`chatbridge.eval.chatbridge-routing-artifacts`)
+    - `10ffa943-3bc4-43eb-88ec-7d0996d3dcff` (`chatbridge.eval.chatbridge-story-builder-auth-resource`)
+    - `019d465f-b37c-7000-8000-03766cea7e83` (`chatbridge.eval.chatbridge-reviewed-app-registry`)
     - `019d4660-5956-7000-8000-006a6c7e96db` (`chatbridge.eval.chatbridge-single-app-discovery`)
-    - `019d4660-2c13-7000-8000-06b7456acecf` (`chatbridge.eval.chatbridge-host-tool-contract`)
+    - `019d4660-723a-7000-8000-020a63a07686` (`chatbridge.eval.chatbridge-mid-game-board-context`)
+    - `019d465f-8f90-7000-8000-0670371055f9` (`chatbridge.eval.chatbridge-persistence-and-shell-artifacts`)
     - `019d4660-05b0-7000-8000-047ebfe7755a` (`chatbridge.eval.chatbridge-bridge-handshake`)
   - relevant code path(s):
-    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/adapters/langsmith.ts`
     - `/private/tmp/chatbox-chessjs-devfix/src/main/adapters/langsmith.ts`
     - `/private/tmp/chatbox-chessjs-devfix/src/shared/models/tracing.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/dev/chatbridgeManualSmoke.ts`
+    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/dev/ChatBridgeSeedLab.tsx`
 - Notes:
-  - This is good enough to debug some core seams, but not strong enough to claim full end-to-end observability for the actual manual smoke path.
+  - CB-006 fixes the observability/manual-smoke gap without pretending the
+    active catalog transition is already complete; Drawing Kit and Weather
+    remain later stories.
 - Follow-up story candidate:
-  - `CB-006` - Traceable ChatBridge manual smoke harness and coverage expansion
+  - none; continue the queue at `CB-305`
 
 ### SA-007: ChatBridge sessions currently trigger renderer console issues during live smoke
 

@@ -35,11 +35,11 @@ as the real embedded-app launch seam.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Live reviewed-app launch surfaces use the bridge host controller
+- [x] AC-1: Live reviewed-app launch surfaces use the bridge host controller
   instead of preview-only or seeded-only runtime shells.
-- [ ] AC-2: Bridge-driven app lifecycle events update host-owned state for the
+- [x] AC-2: Bridge-driven app lifecycle events update host-owned state for the
   launched reviewed app and keep preview-only artifact behavior separate.
-- [ ] AC-3: The live launch path has regression coverage proving the bridge
+- [x] AC-3: The live launch path has regression coverage proving the bridge
   controller is the runtime seam for reviewed apps rather than an unused helper.
 
 ## Edge Cases

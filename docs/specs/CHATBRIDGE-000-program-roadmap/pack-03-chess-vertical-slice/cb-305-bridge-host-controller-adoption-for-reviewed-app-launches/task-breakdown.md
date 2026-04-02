@@ -43,17 +43,20 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Current launch seam is captured and preview-only behavior is isolated
+  - [x] Current launch seam is captured and preview-only behavior is isolated
 - T002 tests:
-  - [ ] Reviewed app launches through the bridge host controller
+  - [x] Reviewed app launches through the bridge host controller
 - T003 tests:
-  - [ ] HTML preview remains intact and separate
+  - [x] HTML preview remains intact and separate
 - T004 tests:
-  - [ ] Smoke harness emits a bridge launch trace for the adopted path
+  - [x] Traced reviewed-app bridge launch proof exists for both active runtime
+    and degraded recovery paths
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale: none inside CB-305; later
+  catalog, route, and auth work remains on the existing queue as out-of-scope
+  follow-up stories

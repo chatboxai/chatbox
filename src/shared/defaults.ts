@@ -129,6 +129,9 @@ export function settings(): Settings {
         tavilyMaxResults: 5,
         tavilyTimeRange: 'none',
         tavilyIncludeRawContent: 'none',
+        queritApiKey: '',
+        queritMaxResults: 5,
+        queritTimeRange: 'none',
       },
       knowledgeBase: {
         models: {

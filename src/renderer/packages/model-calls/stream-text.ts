@@ -42,6 +42,7 @@ import { getToolSet } from './toolsets/knowledge-base'
 import websearchToolSet, { parseLinkTool, webSearchTool } from './toolsets/web-search'
 import { createReviewedSingleAppToolSet } from '../chatbridge/single-app-tools'
 import { buildChatBridgeAppContextPrompt } from '../context-management/app-context'
+import { upsertReviewedAppLaunchParts } from '../chatbridge/reviewed-app-launch'
 
 /**
  * 处理搜索结果并返回模型响应的通用函数
@@ -258,7 +259,11 @@ export async function streamText(
     params.onResultChangeWithCancel({ cancel }) // 这里先传递 cancel 方法
     const onResultChange: OnResultChange = (data) => {
       if (data.contentParts) {
-        result = { ...result, ...data, contentParts: [...infoParts, ...data.contentParts] }
+        result = {
+          ...result,
+          ...data,
+          contentParts: upsertReviewedAppLaunchParts([...infoParts, ...data.contentParts]),
+        }
       } else {
         result = { ...result, ...data }
       }

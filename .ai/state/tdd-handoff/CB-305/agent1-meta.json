@@ -1,0 +1,17 @@
+{
+  "storyId": "CB-305",
+  "stage": "agent1",
+  "status": "tests-authored",
+  "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/renderer/packages/chatbridge/reviewed-app-launch.test.ts src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.test.tsx src/renderer/components/Artifact.test.tsx test/integration/chatbridge/scenarios/reviewed-app-bridge-launch.test.ts",
+  "testFiles": [
+    "src/renderer/packages/chatbridge/reviewed-app-launch.test.ts",
+    "src/renderer/packages/chatbridge/bridge/reviewed-app-runtime.test.ts",
+    "src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.test.tsx",
+    "src/renderer/components/Artifact.test.tsx",
+    "test/integration/chatbridge/scenarios/reviewed-app-bridge-launch.test.ts"
+  ],
+  "notes": [
+    "Red guard confirms the reviewed-app bridge launch adapter and surface do not exist yet.",
+    "Artifact preview regression coverage already passes and should remain isolated on the render-html-preview seam."
+  ]
+}

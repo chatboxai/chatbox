@@ -3,7 +3,7 @@ import { ChatBridgeCompletionPayloadSchema } from './completion'
 
 export const CHATBRIDGE_PROTOCOL_VERSION = 'chatbridge-bridge-v1' as const
 
-export const BridgeSessionCapabilitySchema = z.enum(['render-html-preview'])
+export const BridgeSessionCapabilitySchema = z.enum(['render-html-preview', 'launch-reviewed-app'])
 export type BridgeSessionCapability = z.infer<typeof BridgeSessionCapabilitySchema>
 
 export const BridgeBootstrapEnvelopeSchema = z.object({

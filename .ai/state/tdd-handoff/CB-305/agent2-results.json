@@ -1,0 +1,21 @@
+{
+  "storyId": "CB-305",
+  "status": "green",
+  "implementationFiles": [
+    "src/renderer/packages/chatbridge/reviewed-app-launch.ts",
+    "src/renderer/packages/chatbridge/bridge/reviewed-app-runtime.ts",
+    "src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.tsx",
+    "src/renderer/packages/chatbridge/bridge/host-controller.ts",
+    "src/renderer/packages/model-calls/stream-text.ts",
+    "src/renderer/components/chatbridge/apps/surface.tsx",
+    "src/renderer/components/chatbridge/chatbridge.ts",
+    "src/renderer/components/chatbridge/ChatBridgeMessagePart.tsx",
+    "src/shared/chatbridge/bridge-session.ts"
+  ],
+  "notes": [
+    "Reviewed host-tool results are now normalized into live ChatBridge app parts instead of stopping at tool-call output.",
+    "The reviewed launch surface starts the bridge host controller, persists ready/state/recovery into host-owned session records, and emits traceable reviewed-app launch proof.",
+    "Artifact preview remains isolated on the explicit render-html-preview path with dedicated regression coverage."
+  ],
+  "focusedGreenCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/renderer/packages/chatbridge/reviewed-app-launch.test.ts src/renderer/packages/chatbridge/bridge/reviewed-app-runtime.test.ts src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.test.tsx src/renderer/components/Artifact.test.tsx test/integration/chatbridge/scenarios/reviewed-app-bridge-launch.test.ts"
+}

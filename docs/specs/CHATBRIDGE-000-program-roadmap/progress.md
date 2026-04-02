@@ -39,7 +39,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 | Pack 00 | reopened by smoke audit with one validated backfill | `CB-006` validated and `CB-007` planned | inherited baseline | SA-006 is closed by `CB-006`; the delta pass added `CB-007` for trace evidence quality, trace-family parity, and scriptable smoke inspection before runtime rebuild work continues. |
 | Pack 01 | reopened by smoke audit | `CB-105` planned backfill | inherited baseline | SA-007 reopened console and accessibility hygiene as the final cleanup story. |
 | Pack 02 | historical baseline | inherited `merged` baseline | inherited | Contracts and bridge foundations are assumed ready for post-Pack-4 execution. |
-| Pack 03 | reopened by smoke audit | `CB-305` planned backfill | inherited baseline | SA-005 reopened the real reviewed-app bridge launch seam. |
+| Pack 03 | validated backfill complete | `CB-305` validated backfill | inherited baseline | SA-005 is closed by CB-305; reviewed host-tool launches now flow through the bridge host controller while artifact preview remains on the separate HTML-preview seam. |
 | Pack 04 | validated | CB-401 through CB-404 validated | written | Exit proof is recorded in `pack-04.../STATUS.md`; Pack 5 and Pack 6 are unlocked. |
 | Pack 05 | reopened by smoke audit and catalog change | `CB-506`, `CB-507`, `CB-508`, `CB-509`, and `CB-510` planned backfills | historical exit memo | Live multi-app runtime still falls short, and the active flagship set now becomes Chess, Drawing Kit, and Weather. |
 | Pack 06 | historical baseline with legacy parked follow-up | `CB-605` planned legacy packet | historical exit memo | Story Builder auth/resource proof remains a legacy reference and is no longer on the active queue. |
@@ -64,12 +64,12 @@ packet and should not be picked up next.
 ## Current Milestone
 
 - Active next gate: `CB-007`
-- Immediate next story after `CB-007`: `CB-305`
-- Status: `CB-006` validated and `CB-007` is now the active Pack 00 follow-on
-- Result: Pack 00 observability proof is restored through the supported
-  desktop Seed Lab smoke flow and named LangSmith eval traces, but evidence
-  quality and scriptable smoke inspection still need one more backfill before
-  runtime/catalog rebuild work continues
+- Immediate next story after `CB-007`: `CB-508`
+- Status: `CB-305` validated; `CB-007` is now the earliest unresolved queue item
+- Result: Pack 03 reviewed-app launches now use the bridge host controller as
+  the real runtime seam with explicit active and degraded LangSmith proof, but
+  the Pack 00 evidence-quality backfill still remains open before the queue
+  resumes at the later runtime/catalog rebuild stories
 
 ## Pack 4 Exit Lock
 
@@ -109,9 +109,9 @@ smoke audit has reopened the program for a focused rebuild.
   the smoke-audit rebuild queue is complete.
 - Backfill stories required by this audit:
   - `CB-006` validated
-  - `CB-006` validated
+  - `CB-305` validated
   - `CB-007`
-  - `CB-305`
+  - `CB-305` validated
   - `CB-508`
   - `CB-506`
   - `CB-509`

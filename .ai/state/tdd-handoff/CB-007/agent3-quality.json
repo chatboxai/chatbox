@@ -1,0 +1,10 @@
+{
+  "storyId": "CB-007",
+  "status": "reviewed",
+  "refactorApplied": true,
+  "qualityNotes": [
+    "The trace contract stayed additive: existing trace names remain stable while runtime-target and smoke-support labels make audit comparisons queryable.",
+    "Unsupported manual-smoke states are now explicit and fixture-aware instead of overloading langsmith-disabled for every failure mode.",
+    "No seeded example refresh was required because CB-007 adds a pure inspection seam and trace evidence labels, not new fixtures."
+  ]
+}

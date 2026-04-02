@@ -22,10 +22,21 @@ const mocks = vi.hoisted(() => ({
   getChatBridgeManualSmokeTraceSupport: vi.fn(async () => ({
     enabled: true,
     projectName: 'chatbox-chatbridge',
+    runtimeTarget: 'desktop-electron',
+    supportState: 'supported',
     reasonCode: 'enabled',
   })),
   startChatBridgeManualSmokeTrace: vi.fn(async () => ({
     status: 'started',
+    support: {
+      enabled: true,
+      projectName: 'chatbox-chatbridge',
+      runtimeTarget: 'desktop-electron',
+      supportState: 'supported',
+      reasonCode: 'enabled',
+    },
+    traceId: 'manual-run-1',
+    traceLabel: 'chatbridge.manual_smoke.lifecycle-tour.seeded-session-1',
     run: {
       fixtureId: 'lifecycle-tour',
       runId: 'manual-run-1',

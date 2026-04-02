@@ -43,7 +43,10 @@ describe('chatbridge scenario tracing helper', () => {
         runType: 'chain',
         metadata: expect.objectContaining({
           primaryFamily: 'routing',
+          runtimeTarget: 'integration-vitest',
+          smokeSupport: 'scenario-only',
         }),
+        tags: expect.arrayContaining(['routing', 'runtime-target:integration-vitest', 'smoke-support:scenario-only']),
       })
     )
     expect(mocks.end).toHaveBeenCalledWith(

@@ -36,7 +36,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 
 | Pack | Control state | Story posture | Exit memo | Notes |
 |---|---|---|---|---|
-| Pack 00 | reopened by smoke audit with one validated backfill | `CB-006` validated and `CB-007` planned | inherited baseline | SA-006 is closed by `CB-006`; the delta pass added `CB-007` for trace evidence quality, trace-family parity, and scriptable smoke inspection before runtime rebuild work continues. |
+| Pack 00 | validated backfills complete | `CB-006` and `CB-007` validated | inherited baseline | SA-006 is closed by `CB-006`, and the delta-pass evidence-quality follow-up is closed by `CB-007` before runtime rebuild work continues. |
 | Pack 01 | reopened by smoke audit | `CB-105` planned backfill | inherited baseline | SA-007 reopened console and accessibility hygiene as the final cleanup story. |
 | Pack 02 | historical baseline | inherited `merged` baseline | inherited | Contracts and bridge foundations are assumed ready for post-Pack-4 execution. |
 | Pack 03 | validated backfill complete | `CB-305` validated backfill | inherited baseline | SA-005 is closed by CB-305; reviewed host-tool launches now flow through the bridge host controller while artifact preview remains on the separate HTML-preview seam. |
@@ -63,13 +63,13 @@ packet and should not be picked up next.
 
 ## Current Milestone
 
-- Active next gate: `CB-007`
-- Immediate next story after `CB-007`: `CB-508`
-- Status: `CB-305` validated; `CB-007` is now the earliest unresolved queue item
-- Result: Pack 03 reviewed-app launches now use the bridge host controller as
-  the real runtime seam with explicit active and degraded LangSmith proof, but
-  the Pack 00 evidence-quality backfill still remains open before the queue
-  resumes at the later runtime/catalog rebuild stories
+- Active next gate: `CB-508`
+- Immediate next story after `CB-508`: `CB-506`
+- Status: `CB-006`, `CB-007`, and `CB-305` are validated; `CB-508` is now the
+  earliest unresolved queue item
+- Result: Pack 00 now provides explicit runtime-target and smoke-support labels
+  plus scriptable seed/preset inspection, so the queue can resume at the later
+  runtime/catalog rebuild stories
 
 ## Pack 4 Exit Lock
 
@@ -95,7 +95,7 @@ Required Pack 4 proof set:
 | O2 host-owned lifecycle, routing, and memory | Packs 02, 04, 05 | reopened by smoke audit and catalog change | `smoke-audit-master.md` findings SA-002, SA-005 plus Drawing Kit / Weather replacement work |
 | O3 reviewed-partner trust and governance | Packs 02, 05, 07 | reopened by smoke audit and catalog change | `smoke-audit-master.md` findings SA-001, SA-002, SA-003 plus active catalog transition story `CB-508` |
 | O4 authenticated app support without raw credentials | Pack 06 | legacy proof parked | Historical Pack 06 proof remains checked in, but Story Builder is now legacy and `CB-605` is not on the active queue. |
-| O5 partner-ready governable platform | Pack 07 | observability backfill revalidated; runtime rebuild remains open | `smoke-audit-master.md` finding SA-006 closed by CB-006 plus historical Pack 07 proof |
+| O5 partner-ready governable platform | Pack 07 | observability backfill revalidated; runtime rebuild remains open | `smoke-audit-master.md` finding SA-006 closed by CB-006, evidence-quality follow-on closed by CB-007, plus historical Pack 07 proof |
 
 ## Program Closeout
 
@@ -109,8 +109,7 @@ smoke audit has reopened the program for a focused rebuild.
   the smoke-audit rebuild queue is complete.
 - Backfill stories required by this audit:
   - `CB-006` validated
-  - `CB-305` validated
-  - `CB-007`
+  - `CB-007` validated
   - `CB-305` validated
   - `CB-508`
   - `CB-506`

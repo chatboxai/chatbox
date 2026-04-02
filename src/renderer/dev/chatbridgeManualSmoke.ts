@@ -4,6 +4,7 @@ import {
   createChatBridgeTraceMetadata,
   createChatBridgeTraceName,
   createChatBridgeTraceTags,
+  type ChatBridgeTraceRuntimeTarget,
   type ChatBridgeTraceDescriptor,
 } from '@shared/models/tracing'
 import type { LangSmithRunHandle } from '@shared/utils/langsmith_adapter'
@@ -27,11 +28,26 @@ type ManualSmokeFixtureMode =
       reasonCode: 'legacy-reference'
       message: string
     }
+  | {
+      support: 'unsupported'
+      reasonCode: 'unsupported-fixture'
+      message: string
+    }
+
+type ChatBridgeManualSmokeSupportState = 'legacy-reference' | 'supported' | 'unsupported-fixture'
 
 export type ChatBridgeManualSmokeTraceSupport = {
   enabled: boolean
   projectName: string
-  reasonCode: 'enabled' | 'langsmith-disabled' | 'renderer-ipc-unavailable' | 'status-unavailable'
+  runtimeTarget: ChatBridgeTraceRuntimeTarget
+  supportState: ChatBridgeManualSmokeSupportState
+  reasonCode:
+    | 'enabled'
+    | 'langsmith-disabled'
+    | 'legacy-reference'
+    | 'renderer-ipc-unavailable'
+    | 'status-unavailable'
+    | 'unsupported-fixture'
   message: string
 }
 
@@ -45,14 +61,19 @@ export type ChatBridgeManualSmokeActiveRun = {
   startedAt: string
 }
 
-type ChatBridgeManualSmokeStartResult =
+export type ChatBridgeManualSmokeStartResult =
   | {
       status: 'started'
+      support: ChatBridgeManualSmokeTraceSupport
+      traceId: string
+      traceLabel: string
       run: ChatBridgeManualSmokeActiveRun
     }
   | {
       status: 'unsupported'
       support: ChatBridgeManualSmokeTraceSupport
+      traceId: null
+      traceLabel: null
     }
 
 type ActiveRunEntry = {
@@ -61,6 +82,7 @@ type ActiveRunEntry = {
 }
 
 const activeManualSmokeRuns = new Map<string, ActiveRunEntry>()
+const MANUAL_SMOKE_RUNTIME_TARGET: ChatBridgeTraceRuntimeTarget = 'desktop-electron'
 
 const manualSmokeFixtureModes: Record<string, ManualSmokeFixtureMode> = {
   'lifecycle-tour': {
@@ -70,6 +92,8 @@ const manualSmokeFixtureModes: Record<string, ManualSmokeFixtureMode> = {
       slug: 'chatbridge-lifecycle-tour',
       primaryFamily: 'reviewed-app-launch',
       evidenceFamilies: ['recovery'],
+      runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+      smokeSupport: 'supported',
       storyId: 'CB-006',
     },
     message: 'Supported desktop smoke fixture covering launch shells and recovery states.',
@@ -80,6 +104,8 @@ const manualSmokeFixtureModes: Record<string, ManualSmokeFixtureMode> = {
     descriptor: {
       slug: 'chatbridge-degraded-completion-recovery',
       primaryFamily: 'recovery',
+      runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+      smokeSupport: 'supported',
       storyId: 'CB-006',
     },
     message: 'Supported desktop smoke fixture covering degraded completion recovery.',
@@ -91,6 +117,8 @@ const manualSmokeFixtureModes: Record<string, ManualSmokeFixtureMode> = {
       slug: 'chatbridge-platform-recovery',
       primaryFamily: 'recovery',
       evidenceFamilies: ['bridge'],
+      runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+      smokeSupport: 'supported',
       storyId: 'CB-006',
     },
     message: 'Supported desktop smoke fixture covering platform-side failure recovery.',
@@ -102,6 +130,8 @@ const manualSmokeFixtureModes: Record<string, ManualSmokeFixtureMode> = {
       slug: 'chatbridge-chess-mid-game-board-context',
       primaryFamily: 'reviewed-app-launch',
       evidenceFamilies: ['board-context'],
+      runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+      smokeSupport: 'supported',
       storyId: 'CB-006',
     },
     message: 'Supported desktop smoke fixture covering Chess follow-up reasoning context.',
@@ -113,6 +143,8 @@ const manualSmokeFixtureModes: Record<string, ManualSmokeFixtureMode> = {
       slug: 'chatbridge-chess-runtime',
       primaryFamily: 'reviewed-app-launch',
       evidenceFamilies: ['persistence'],
+      runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+      smokeSupport: 'supported',
       storyId: 'CB-006',
     },
     message: 'Supported desktop smoke fixture covering Chess runtime moves and persistence.',
@@ -132,48 +164,65 @@ function getProjectName(payload?: LangSmithStatusPayload) {
 export function getChatBridgeManualSmokeFixtureMode(fixtureId: string): ManualSmokeFixtureMode {
   return (
     manualSmokeFixtureModes[fixtureId] ?? {
-      support: 'legacy',
-      reasonCode: 'legacy-reference',
+      support: 'unsupported',
+      reasonCode: 'unsupported-fixture',
       message: 'Fixture is not part of the supported active smoke path.',
     }
   )
 }
 
+function createChatBridgeManualSmokeTraceSupport(
+  overrides: Omit<ChatBridgeManualSmokeTraceSupport, 'projectName' | 'runtimeTarget'> & {
+    projectName?: string
+  }
+): ChatBridgeManualSmokeTraceSupport {
+  return {
+    projectName: overrides.projectName ?? CHATBRIDGE_LANGSMITH_PROJECT_NAME,
+    runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+    enabled: overrides.enabled,
+    supportState: overrides.supportState,
+    reasonCode: overrides.reasonCode,
+    message: overrides.message,
+  }
+}
+
 export async function getChatBridgeManualSmokeTraceSupport(): Promise<ChatBridgeManualSmokeTraceSupport> {
   if (typeof window === 'undefined' || typeof window.electronAPI?.invoke !== 'function') {
-    return {
+    return createChatBridgeManualSmokeTraceSupport({
       enabled: false,
-      projectName: CHATBRIDGE_LANGSMITH_PROJECT_NAME,
+      supportState: 'supported',
       reasonCode: 'renderer-ipc-unavailable',
       message: 'Trace capture requires the desktop Electron runtime because LangSmith access stays main-process-owned.',
-    }
+    })
   }
 
   try {
     const status = (await window.electronAPI.invoke('langsmith:get-status')) as LangSmithStatusPayload
     if (!status.enabled) {
-      return {
+      return createChatBridgeManualSmokeTraceSupport({
         enabled: false,
         projectName: getProjectName(status),
+        supportState: 'supported',
         reasonCode: 'langsmith-disabled',
         message:
           'LangSmith tracing is disabled in the desktop runtime. Set LANGSMITH_API_KEY and LANGSMITH_TRACING=true before running the traced smoke flow.',
-      }
+      })
     }
 
-    return {
+    return createChatBridgeManualSmokeTraceSupport({
       enabled: true,
       projectName: getProjectName(status),
+      supportState: 'supported',
       reasonCode: 'enabled',
       message: `Desktop manual smoke traces will land in the ${getProjectName(status)} project.`,
-    }
+    })
   } catch {
-    return {
+    return createChatBridgeManualSmokeTraceSupport({
       enabled: false,
-      projectName: CHATBRIDGE_LANGSMITH_PROJECT_NAME,
+      supportState: 'supported',
       reasonCode: 'status-unavailable',
       message: 'LangSmith trace status is unavailable from the desktop bridge.',
-    }
+    })
   }
 }
 
@@ -185,12 +234,14 @@ export async function startChatBridgeManualSmokeTrace(
   if (fixtureMode.support !== 'supported') {
     return {
       status: 'unsupported',
-      support: {
+      traceId: null,
+      traceLabel: null,
+      support: createChatBridgeManualSmokeTraceSupport({
         enabled: false,
-        projectName: CHATBRIDGE_LANGSMITH_PROJECT_NAME,
-        reasonCode: 'langsmith-disabled',
+        supportState: fixtureMode.reasonCode,
+        reasonCode: fixtureMode.reasonCode,
         message: fixtureMode.message,
-      },
+      }),
     }
   }
 
@@ -198,6 +249,8 @@ export async function startChatBridgeManualSmokeTrace(
   if (!traceSupport.enabled) {
     return {
       status: 'unsupported',
+      traceId: null,
+      traceLabel: null,
       support: traceSupport,
     }
   }
@@ -246,6 +299,9 @@ export async function startChatBridgeManualSmokeTrace(
 
   return {
     status: 'started',
+    support: traceSupport,
+    traceId: runHandle.runId,
+    traceLabel: traceName,
     run: activeRun,
   }
 }

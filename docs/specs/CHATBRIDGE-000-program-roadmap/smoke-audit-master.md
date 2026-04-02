@@ -270,6 +270,9 @@ completion and live product behavior.
   - CB-006 fixes the observability/manual-smoke gap without pretending the
     active catalog transition is already complete; Drawing Kit and Weather
     remain later stories.
+  - CB-007 later hardened the same seams with runtime-target and smoke-support
+    labels plus a scriptable seed/preset inspection helper, without reopening
+    the now-supported desktop smoke path.
 - Follow-up story candidate:
   - none; continue the queue at `CB-305`
 
@@ -344,7 +347,7 @@ completion and live product behavior.
 - Severity: medium
 - Area: traces, evals, and regression assets
 - Owning pack: Pack 00 and Pack 05
-- Likely owning story: `CB-006`
+- Likely owning story: `CB-508`
 - Environment: traced second-pass scenario suite and LangSmith trace inspection
 - Repro steps:
   1. Run `LANGSMITH_TRACING=true LANGSMITH_PROJECT=chatbox-chatbridge pnpm exec vitest run test/integration/chatbridge/scenarios --reporter=verbose`.
@@ -354,8 +357,10 @@ completion and live product behavior.
 - Actual:
   - the traced suite is still green on the old flagship set
   - named scenario coverage still includes `debate-arena-lifecycle` and `story-builder-lifecycle`
-  - there are still no Drawing Kit or Weather scenarios or trace families
-  - recent LangSmith names are unchanged from the earlier audit and remain centered on the old runtime seams
+  - `CB-007` has now improved trace evidence quality with runtime-target and
+    smoke-support labels plus a checked-in scriptable corpus snapshot
+  - there are still no Drawing Kit or Weather scenarios or trace families, so
+    the active flagship set is still not represented in the regression assets
 - Evidence:
   - test or manual surface:
     - traced run: `22` files passed, `46` tests passed
@@ -378,9 +383,11 @@ completion and live product behavior.
     - `/private/tmp/chatbox-chessjs-devfix/src/shared/models/tracing.ts`
     - `/private/tmp/chatbox-chessjs-devfix/src/renderer/adapters/langsmith.ts`
 - Notes:
-  - This is now a mismatch between the active roadmap and the regression assets. The suite is useful, but it still proves the old world.
+  - This is now a mismatch between the active roadmap and the regression
+    assets. The suite is more inspectable after `CB-007`, but it still proves
+    the old world until the active flagship stories land.
 - Follow-up story candidate:
-  - `CB-006` - Traceable ChatBridge manual smoke harness and coverage expansion
+  - `CB-508` - Active reviewed catalog transition and legacy retention
 
 ### SA-010: Seeded manual smoke surfaces still center legacy Story Builder flows and old deep links are brittle
 
@@ -522,3 +529,25 @@ from either manual execution, a traced scenario run, or both.
   - Live UI outcome:
     - old `history-and-preview` deep link redirected to `/guide`
     - sidebar snapshot exposed only one visible ChatBridge seed entry
+
+### 2026-04-02 evidence-quality validation after CB-007
+
+- Branch: `codex/cb-007-trace-evidence-quality`
+- Worktree: `/private/tmp/chatbox-chessjs-devfix`
+- Objective: harden trace metadata/tag quality, normalize the manual smoke
+  trace handoff, and add a scriptable seed/preset inspection seam
+- Notes:
+  - Focused red/green coverage completed for:
+    - `test/integration/chatbridge/scenarios/scenario-tracing.test.ts`
+    - `src/renderer/dev/chatbridgeManualSmoke.test.ts`
+    - `src/renderer/components/dev/ChatBridgeSeedLab.test.tsx`
+    - `src/shared/chatbridge/live-seeds.test.ts`
+    - `src/renderer/packages/initial_data.test.ts`
+  - Representative proof traces:
+    - `chatbridge.manual_smoke.chatbridge-chess-runtime.cb-007-doc-proof`
+      -> `55c99c6f-9854-4a11-babd-5ef0f2cb3b18`
+    - `chatbridge.eval.chatbridge-routing-artifacts.cb-007-doc-proof`
+      -> `92297c7b-8721-4927-a0b6-956d4ef835a7`
+  - Scriptable inspection probe now returns schema version `1` plus the stable
+    live-seed fixture ids and preset session ids from
+    `getChatBridgeSmokeInspectionSnapshot()`

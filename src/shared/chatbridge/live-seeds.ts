@@ -67,6 +67,15 @@ export type ChatBridgeLiveSeedFixture = {
   }>
 }
 
+export type ChatBridgeLiveSeedInspectionEntry = {
+  fixtureId: string
+  fixtureName: string
+  description: string
+  coverage: string[]
+  auditStepCount: number
+  blobEntryCount: number
+}
+
 const APP_ID = 'story-builder'
 const APP_NAME = 'Story Builder'
 export const CHATBRIDGE_LIVE_SEED_PREFIX = '[Seeded] ChatBridge:'
@@ -1575,4 +1584,15 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
       sessionInput: buildChatBridgeChessRuntimeSessionFixture(),
     },
   ]
+}
+
+export function getChatBridgeLiveSeedInspectionEntries(): ChatBridgeLiveSeedInspectionEntry[] {
+  return getChatBridgeLiveSeedFixtures().map((fixture) => ({
+    fixtureId: fixture.id,
+    fixtureName: fixture.name,
+    description: fixture.description,
+    coverage: [...fixture.coverage],
+    auditStepCount: fixture.auditSteps.length,
+    blobEntryCount: fixture.blobEntries?.length ?? 0,
+  }))
 }

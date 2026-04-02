@@ -48,7 +48,7 @@ vi.mock('@/stores/scrollActions', () => ({
   scrollToIndex: vi.fn(),
 }))
 
-vi.mock('@/stores/sessionActions', () => ({
+vi.mock('@/stores/session/threads', () => ({
   removeCurrentThread: vi.fn(),
   removeThread: vi.fn(),
   switchThread: vi.fn(),
@@ -64,7 +64,14 @@ vi.mock('@/stores/settingsStore', () => ({
 }))
 
 vi.mock('@/variables', () => ({
-  CHATBOX_BUILD_PLATFORM: 'web',
+  CHATBOX_BUILD_TARGET: 'unknown' as const,
+  CHATBOX_BUILD_PLATFORM: 'web' as const,
+  CHATBOX_BUILD_CHANNEL: 'unknown' as const,
+  USE_LOCAL_API: '',
+  USE_BETA_API: '',
+  USE_LOCAL_CHATBOX: '',
+  USE_BETA_CHATBOX: '',
+  NODE_ENV: 'test',
 }))
 
 vi.mock('../ActionMenu', () => ({

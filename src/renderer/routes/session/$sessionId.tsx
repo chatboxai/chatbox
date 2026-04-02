@@ -14,7 +14,8 @@ import * as remote from '@/packages/remote'
 import { updateSession as updateSessionStore, useSession } from '@/stores/chatStore'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
-import { modifyMessage, removeCurrentThread, startNewThread, submitNewUserMessage } from '@/stores/sessionActions'
+import { modifyMessage, submitNewUserMessage } from '@/stores/session/messages'
+import { removeCurrentThread, startNewThread } from '@/stores/session/threads'
 import { getAllMessageList } from '@/stores/sessionHelpers'
 
 export const Route = createFileRoute('/session/$sessionId')({

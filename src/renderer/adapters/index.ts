@@ -20,6 +20,7 @@ export async function createModelDependencies(): Promise<ModelDependencies> {
   const afetch = createAfetch(platformInfo)
 
   return {
+    platformType: platformInfo.type,
     storage: {
       async saveImage(folder: string, dataUrl: string): Promise<string> {
         const storageKey = StorageKeyGenerator.picture(folder)

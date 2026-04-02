@@ -10,9 +10,11 @@ export class BaseError extends Error {
 export class ApiError extends BaseError {
   public code = 10001
   public responseBody: string | undefined
-  constructor(message: string, responseBody?: string) {
+  public statusCode: number | undefined
+  constructor(message: string, responseBody?: string, statusCode?: number) {
     super('API Error: ' + message)
     this.responseBody = responseBody
+    this.statusCode = statusCode
   }
 }
 

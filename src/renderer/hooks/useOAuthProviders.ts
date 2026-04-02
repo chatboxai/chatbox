@@ -1,8 +1,6 @@
-// No-op OAuth providers hook for open-source edition
+import type { OAuthProviderInfo } from '@shared/oauth'
 
-export function useOAuthProviders() {
-  return {
-    oauthProviders: [] as never[],
-    isLoading: false,
-  }
+// No-op OAuth providers hook for open-source edition
+export function useOAuthProviders(): OAuthProviderInfo[] {
+  return []
 }

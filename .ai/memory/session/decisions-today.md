@@ -32,3 +32,8 @@
   fail before Vite/TypeScript starts, while wrong-Node shells still fail at the
   repo engine gate. `pnpm install` now records a worktree-local install stamp
   in `node_modules/`.
+- 2026-04-01: Reconciled the next repo-wide `pnpm check` drift slice by
+  restoring Tavily settings literals, image-generation record fields, provider
+  registry config fields, renderer adapter `platformType`, and OSS OAuth hook
+  signatures so the current open-source call sites match the upstream shared
+  contracts again.

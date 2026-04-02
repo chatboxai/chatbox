@@ -1,8 +1,10 @@
 import * as Sentry from '@sentry/react'
 import { getModel } from '@shared/models'
 import { ApiError, NetworkError } from '@shared/models/errors'
+import { getLangSmithErrorMessage } from '@shared/utils/langsmith_adapter'
 import type { Language, Message, ModelProvider, SessionSettings, Settings } from '@shared/types'
 import { createModelDependencies } from '@/adapters'
+import { langsmith } from '@/adapters/langsmith'
 import { languageNameMap } from '@/i18n/locales'
 import { generateText } from '@/packages/model-calls'
 import { convertToModelMessages } from '@/packages/model-calls/message-utils'
@@ -42,7 +44,13 @@ export async function generateSummary(options: SummaryGeneratorOptions): Promise
     const model = getModel(settings, globalSettings, configs, dependencies)
 
     const promptMessages = promptFormat.summarizeConversation(messages, languageName)
-    const result = await generateText(model, promptMessages)
+    const result = await generateText(model, promptMessages, {
+      name: 'chatbox.summary.generate',
+      metadata: {
+        messageCount: messages.length,
+      },
+      tags: ['summary'],
+    })
 
     const summary =
       result.contentParts
@@ -144,18 +152,42 @@ export async function generateSummaryWithStream(options: StreamingSummaryOptions
 
     const promptMessages = promptFormat.summarizeConversation(messages, languageName)
     const coreMessages = await convertToModelMessages(promptMessages, { modelSupportVision: model.isSupportVision() })
-
-    const result = await model.chat(coreMessages, {
-      onResultChange: (data) => {
-        if (data.contentParts && onStreamUpdate) {
-          const newText = data.contentParts
-            .filter((c) => c.type === 'text')
-            .map((c) => c.text)
-            .join('')
-          onStreamUpdate(newText)
-        }
+    const traceRun = await langsmith.startRun({
+      name: 'chatbox.summary.generate_stream',
+      runType: 'chain',
+      inputs: {
+        messageCount: messages.length,
+        modelId: model.modelId,
       },
+      tags: ['chatbox', 'renderer', 'summary'],
     })
+
+    const result = await model
+      .chat(coreMessages, {
+        onResultChange: (data) => {
+          if (data.contentParts && onStreamUpdate) {
+            const newText = data.contentParts
+              .filter((c) => c.type === 'text')
+              .map((c) => c.text)
+              .join('')
+            onStreamUpdate(newText)
+          }
+        },
+        traceContext: {
+          name: 'chatbox.summary.generate_stream.llm',
+          parentRunId: traceRun.runId,
+          metadata: {
+            messageCount: messages.length,
+          },
+          tags: ['summary'],
+        },
+      })
+      .catch(async (error) => {
+        await traceRun.end({
+          error: getLangSmithErrorMessage(error),
+        })
+        throw error
+      })
 
     const summary =
       result.contentParts
@@ -164,6 +196,11 @@ export async function generateSummaryWithStream(options: StreamingSummaryOptions
         .join('') ?? ''
 
     const cleanedSummary = summary.replace(/<think>.*?<\/think>/gs, '').trim()
+    await traceRun.end({
+      outputs: {
+        summaryPreview: cleanedSummary.slice(0, 240),
+      },
+    })
 
     return { success: true, summary: cleanedSummary }
   } catch (e: unknown) {

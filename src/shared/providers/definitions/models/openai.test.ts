@@ -2,6 +2,7 @@
 // The createTestServer utility was removed in AI SDK v6
 import type { ModelDependencies } from 'src/shared/types/adapters'
 import type { ProviderModelInfo } from 'src/shared/types/settings'
+import { createNoopLangSmithAdapter } from 'src/shared/utils/langsmith_adapter'
 import type { SentryScope } from 'src/shared/utils/sentry_adapter'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import OpenAI from './openai'
@@ -35,6 +36,7 @@ describe.skip('OpenAI Adapter', () => {
         withScope: vi.fn((callback: (scope: SentryScope) => void) => callback({ setTag: vi.fn(), setExtra: vi.fn() })),
         captureException: vi.fn(),
       },
+      langsmith: createNoopLangSmithAdapter(),
       getRemoteConfig: vi.fn().mockReturnValue({ setting_chatboxai_first: false }),
     }
   })

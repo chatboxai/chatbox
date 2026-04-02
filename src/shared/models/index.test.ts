@@ -3,6 +3,7 @@ import { getModel } from 'src/shared/providers'
 import OpenAIResponses from 'src/shared/providers/definitions/models/openai-responses'
 import { ModelProviderEnum, type SessionSettings, type Settings } from 'src/shared/types'
 import type { ModelDependencies } from 'src/shared/types/adapters'
+import { createNoopLangSmithAdapter } from 'src/shared/utils/langsmith_adapter'
 import type { SentryScope } from 'src/shared/utils/sentry_adapter'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -24,6 +25,7 @@ const mockDependencies: ModelDependencies = {
     captureException: vi.fn(),
     withScope: vi.fn((callback: (scope: SentryScope) => void) => callback(mockScope)),
   },
+  langsmith: createNoopLangSmithAdapter(),
   getRemoteConfig: vi.fn(),
 }
 

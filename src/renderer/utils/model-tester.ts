@@ -74,7 +74,13 @@ export async function testModelCapabilities(options: TestModelOptions): Promise<
 
 async function testBasicRequest(modelInstance: ModelInterface, state: ModelTestState): Promise<ModelTestState> {
   try {
-    await modelInstance.chat([{ role: 'user', content: 'Hi' }], { onResultChange: undefined })
+    await modelInstance.chat([{ role: 'user', content: 'Hi' }], {
+      onResultChange: undefined,
+      traceContext: {
+        name: 'chatbox.model_tester.basic_request',
+        tags: ['model-tester'],
+      },
+    })
 
     return { ...state, basicTest: { status: 'success' } }
   } catch (e: unknown) {
@@ -101,7 +107,13 @@ async function testVisionRequest(modelInstance: ModelInterface, state: ModelTest
           ],
         },
       ],
-      { onResultChange: () => {} }
+      {
+        onResultChange: () => {},
+        traceContext: {
+          name: 'chatbox.model_tester.vision_request',
+          tags: ['model-tester', 'vision'],
+        },
+      }
     )
     return {
       ...state,
@@ -132,6 +144,10 @@ async function testToolUseRequest(modelInstance: ModelInterface, state: ModelTes
       },
       onResultChange: () => {},
       maxSteps: 1,
+      traceContext: {
+        name: 'chatbox.model_tester.tool_request',
+        tags: ['model-tester', 'tools'],
+      },
     })
     return { ...state, toolTest: { status: 'success' } }
   } catch (e: unknown) {

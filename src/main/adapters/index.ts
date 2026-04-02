@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { createAfetch } from '../../shared/request/request'
 import type { ApiRequestOptions, ModelDependencies } from '../../shared/types/adapters'
+import { langsmith } from './langsmith'
 import { sentry } from './sentry'
 
 export async function createModelDependencies(): Promise<ModelDependencies> {
@@ -59,6 +60,7 @@ export async function createModelDependencies(): Promise<ModelDependencies> {
       },
     },
     sentry,
+    langsmith,
     getRemoteConfig: () => {
       // Main层的远程配置，暂时不需要用到
       throw new Error('Not implemented')

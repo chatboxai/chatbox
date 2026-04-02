@@ -10,6 +10,7 @@ import {
   type ChatBridgeResourceProxyResponse,
 } from '@shared/chatbridge/resource-proxy'
 import { type ChatBridgeAuditCapture, resolveChatBridgeAuditRecordFields } from '@shared/chatbridge/audit'
+import { createNoopLangSmithAdapter, type LangSmithAdapter } from '@shared/utils/langsmith_adapter'
 
 export interface ChatBridgeResourceHandleValidator {
   authorizeResourceAccess(input: {
@@ -34,6 +35,7 @@ type CreateChatBridgeResourceProxyOptions = {
   now?: () => number
   onAudit?: (entry: ChatBridgeResourceProxyAuditEntry) => void
   auditCapture?: ChatBridgeAuditCapture
+  traceAdapter?: LangSmithAdapter
 }
 
 function createAuditEntry(input: {
@@ -73,9 +75,19 @@ function createActionKey(appId: string, resource: string, action: string) {
 export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceProxyOptions) {
   const now = () => options.now?.() ?? Date.now()
   const actionRegistry = new Map<string, { action: ChatBridgeRegisteredResourceAction; handler: ChatBridgeResourceHandler }>()
+  const traceAdapter = options.traceAdapter ?? createNoopLangSmithAdapter()
 
   function emitAudit(entry: ChatBridgeResourceProxyAuditEntry) {
     options.onAudit?.(entry)
+  }
+
+  function emitTraceEvent(name: string, metadata: Record<string, unknown>) {
+    void traceAdapter.recordEvent({
+      name,
+      runType: 'tool',
+      metadata,
+      tags: ['chatbridge', 'resource-proxy'],
+    })
   }
 
   return {
@@ -167,6 +179,13 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
           capture: options.auditCapture,
         })
         emitAudit(audit)
+        emitTraceEvent('chatbridge.resource_proxy.denied', {
+          appId: request.appId,
+          resource: request.resource,
+          action: request.action,
+          outcome: 'unsupported-action',
+          requestId: request.requestId,
+        })
         return ChatBridgeResourceProxyResponseSchema.parse({
           schemaVersion: CHATBRIDGE_RESOURCE_PROXY_SCHEMA_VERSION,
           requestId: request.requestId,
@@ -197,6 +216,13 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
           capture: options.auditCapture,
         })
         emitAudit(audit)
+        emitTraceEvent('chatbridge.resource_proxy.denied', {
+          appId: request.appId,
+          resource: request.resource,
+          action: request.action,
+          outcome: validation.code,
+          requestId: request.requestId,
+        })
         return ChatBridgeResourceProxyResponseSchema.parse({
           schemaVersion: CHATBRIDGE_RESOURCE_PROXY_SCHEMA_VERSION,
           requestId: request.requestId,
@@ -223,6 +249,13 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
           capture: options.auditCapture,
         })
         emitAudit(audit)
+        emitTraceEvent('chatbridge.resource_proxy.success', {
+          appId: request.appId,
+          resource: request.resource,
+          action: request.action,
+          outcome: 'success',
+          requestId: request.requestId,
+        })
         return ChatBridgeResourceProxyResponseSchema.parse({
           schemaVersion: CHATBRIDGE_RESOURCE_PROXY_SCHEMA_VERSION,
           requestId: request.requestId,
@@ -244,6 +277,13 @@ export function createChatBridgeResourceProxy(options: CreateChatBridgeResourceP
           capture: options.auditCapture,
         })
         emitAudit(audit)
+        emitTraceEvent('chatbridge.resource_proxy.error', {
+          appId: request.appId,
+          resource: request.resource,
+          action: request.action,
+          outcome: 'handler-error',
+          requestId: request.requestId,
+        })
         return ChatBridgeResourceProxyResponseSchema.parse({
           schemaVersion: CHATBRIDGE_RESOURCE_PROXY_SCHEMA_VERSION,
           requestId: request.requestId,

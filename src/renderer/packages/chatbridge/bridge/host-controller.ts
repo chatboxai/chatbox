@@ -26,6 +26,7 @@ import {
   type ChatBridgeRecoveryFailureClass,
   type ChatBridgeRecoverySource,
 } from '@shared/chatbridge/recovery-contract'
+import { createNoopLangSmithAdapter, type LangSmithAdapter } from '@shared/utils/langsmith_adapter'
 
 export type BridgeTraceEvent =
   | { type: 'session.attached' }
@@ -76,6 +77,7 @@ type BridgeHostControllerOptions = {
   onRecoveryDecision?: (decision: ChatBridgeRecoveryContract) => void
   onRecoveryAudit?: (event: ChatBridgeAuditEvent) => void
   onObservabilityEvent?: (event: ChatBridgeObservabilityEvent) => void
+  traceAdapter?: LangSmithAdapter
 }
 
 function defaultMessageChannelFactory(): BridgeMessageChannelLike {
@@ -84,6 +86,7 @@ function defaultMessageChannelFactory(): BridgeMessageChannelLike {
 }
 
 export function createBridgeHostController(options: BridgeHostControllerOptions) {
+  const traceAdapter = options.traceAdapter ?? createNoopLangSmithAdapter()
   const { session: initialSession, envelope } = createBridgeSession(
     {
       appId: options.appId,
@@ -114,6 +117,20 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
 
   function emitTrace(trace: BridgeTraceEvent) {
     options.onTrace?.(trace)
+  }
+
+  function emitTraceEvent(name: string, metadata: Record<string, unknown>) {
+    void traceAdapter.recordEvent({
+      name,
+      runType: 'tool',
+      metadata: {
+        appId: options.appId,
+        appInstanceId: options.appInstanceId,
+        bridgeSessionId: envelope.bridgeSessionId,
+        ...metadata,
+      },
+      tags: ['chatbridge', 'bridge'],
+    })
   }
 
   function emitObservabilityEvent(
@@ -163,6 +180,11 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
     })
     emitTrace({
       type: 'recovery.required',
+      failureClass: decision.failureClass,
+      source: decision.source,
+      traceCode: decision.observability.traceCode,
+    })
+    emitTraceEvent('chatbridge.bridge.recovery_required', {
       failureClass: decision.failureClass,
       source: decision.source,
       traceCode: decision.observability.traceCode,
@@ -232,6 +254,9 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
       type: 'host.render.sent',
       renderId: renderMessage.renderId,
     })
+    emitTraceEvent('chatbridge.bridge.host_render_sent', {
+      renderId: renderMessage.renderId,
+    })
   }
 
   function handleAppEvent(event: BridgeAppEvent) {
@@ -263,6 +288,10 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
           eventKind: event.kind,
           reason: acknowledged.reason,
         })
+        emitTraceEvent('chatbridge.bridge.app_event_rejected', {
+          eventKind: event.kind,
+          reason: acknowledged.reason,
+        })
         return
       }
 
@@ -280,6 +309,9 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
         summary: `${options.appName ?? options.appId} completed the bridge handshake.`,
       })
       emitTrace({ type: 'session.ready' })
+      emitTraceEvent('chatbridge.bridge.session_ready', {
+        eventKind: event.kind,
+      })
       sendPendingHtml()
       return
     }
@@ -311,6 +343,10 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
         eventKind: event.kind,
         reason: accepted.reason,
       })
+      emitTraceEvent('chatbridge.bridge.app_event_rejected', {
+        eventKind: event.kind,
+        reason: accepted.reason,
+      })
       return
     }
 
@@ -326,6 +362,13 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
       details: event.kind === 'app.complete' ? ['completion accepted'] : [],
     })
     if (event.kind === 'app.error') {
+      emitTrace({
+        type: 'app.event.accepted',
+        eventKind: event.kind,
+      })
+      emitTraceEvent('chatbridge.bridge.app_event_accepted', {
+        eventKind: event.kind,
+      })
       emitRecovery(
         createChatBridgeRuntimeCrashRecoveryContract({
           appId: options.appId,
@@ -334,9 +377,13 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
           error: event.error,
         })
       )
+      return
     }
     emitTrace({
       type: 'app.event.accepted',
+      eventKind: event.kind,
+    })
+    emitTraceEvent('chatbridge.bridge.app_event_accepted', {
       eventKind: event.kind,
     })
   }
@@ -349,9 +396,9 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
       attachedPort.onmessage = (event) => {
         const parsed = BridgeAppEventSchema.safeParse(event.data)
         if (!parsed.success) {
-        const issues = parsed.error.issues.map((issue) => {
-          const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
-          return `${path}: ${issue.message}`
+          const issues = parsed.error.issues.map((issue) => {
+            const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
+            return `${path}: ${issue.message}`
           })
           const rawKind =
             typeof event.data === 'object' && event.data !== null && 'kind' in event.data
@@ -382,6 +429,10 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
             rawKind,
             issues,
           })
+          emitTraceEvent('chatbridge.bridge.app_event_invalid', {
+            rawKind: rawKind ?? 'unknown',
+            issueCount: issues.length,
+          })
           return
         }
         handleAppEvent(parsed.data)
@@ -402,6 +453,9 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
         summary: `${options.appName ?? options.appId} attached a reviewed bridge session.`,
       })
       emitTrace({ type: 'session.attached' })
+      emitTraceEvent('chatbridge.bridge.session_attached', {
+        expectedOrigin: envelope.expectedOrigin,
+      })
       scheduleReadyTimeout()
     },
     waitForReady() {

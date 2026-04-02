@@ -1,4 +1,5 @@
 import type { SentryAdapter } from '../utils/sentry_adapter'
+import type { LangSmithAdapter } from '../utils/langsmith_adapter'
 
 export interface ApiRequestOptions {
   url: string
@@ -29,5 +30,6 @@ export interface ModelDependencies {
   request: RequestAdapter
   storage: StorageAdapter
   sentry: SentryAdapter
+  langsmith: LangSmithAdapter
   getRemoteConfig(): any
 }

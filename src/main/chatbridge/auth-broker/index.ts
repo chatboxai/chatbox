@@ -13,6 +13,7 @@ import {
 } from '@shared/chatbridge/auth'
 import { type ChatBridgeAuditCapture, type ChatBridgeAuditEvent, createChatBridgeAuditEvent } from '@shared/chatbridge/audit'
 import type { ChatBridgeAuthMode } from '@shared/chatbridge/manifest'
+import { createNoopLangSmithAdapter, type LangSmithAdapter } from '@shared/utils/langsmith_adapter'
 
 export type ChatBridgeAuthBrokerTraceEvent =
   | { type: 'handle.issued'; handleId: string; grantId: string; appId: string; userId: string }
@@ -54,6 +55,7 @@ type CreateChatBridgeAuthBrokerOptions = {
   onTrace?: (event: ChatBridgeAuthBrokerTraceEvent) => void
   onAudit?: (event: ChatBridgeAuditEvent) => void
   auditCapture?: ChatBridgeAuditCapture
+  traceAdapter?: LangSmithAdapter
 }
 
 type IssueHandleInput = {
@@ -119,6 +121,7 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
   const ttlMs = options.ttlMs ?? 10 * 60_000
   const createId = options.createId ?? defaultCreateId
   const handles = new Map<string, ChatBridgeCredentialHandle>()
+  const traceAdapter = options.traceAdapter ?? createNoopLangSmithAdapter()
 
   function emitTrace(event: ChatBridgeAuthBrokerTraceEvent) {
     options.onTrace?.(event)
@@ -126,6 +129,15 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
 
   function emitAudit(event: ChatBridgeAuditEvent) {
     options.onAudit?.(event)
+  }
+
+  function emitTraceEvent(name: string, metadata: Record<string, unknown>) {
+    void traceAdapter.recordEvent({
+      name,
+      runType: 'tool',
+      metadata,
+      tags: ['chatbridge', 'auth-broker'],
+    })
   }
 
   function createAuditEventId(handleId: string, outcome: string) {
@@ -203,6 +215,13 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
       appId: handle.appId,
       userId: handle.userId,
     })
+    emitTraceEvent('chatbridge.auth.handle.issued', {
+      handleId: handle.handleId,
+      grantId: handle.grantId,
+      appId: handle.appId,
+      userId: handle.userId,
+      permissionCount: handle.permissionIds.length,
+    })
     auditHandleEvent({
       handleId: handle.handleId,
       outcome: 'issued',
@@ -226,6 +245,10 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
     const existingHandle = getHandle(handleId)
     if (!existingHandle) {
       emitTrace({ type: 'handle.validation.failed', handleId, code: 'missing-handle' })
+      emitTraceEvent('chatbridge.auth.handle.validation_failed', {
+        handleId,
+        code: 'missing-handle',
+      })
       auditHandleEvent({
         handleId,
         outcome: 'validation-failed',
@@ -239,6 +262,12 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
 
     if (existingHandle.status === 'revoked') {
       emitTrace({ type: 'handle.validation.failed', handleId, code: 'revoked-handle' })
+      emitTraceEvent('chatbridge.auth.handle.validation_failed', {
+        handleId,
+        code: 'revoked-handle',
+        appId: existingHandle.appId,
+        userId: existingHandle.userId,
+      })
       auditHandleEvent({
         handleId,
         outcome: 'validation-failed',
@@ -259,6 +288,12 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
       })
       storeHandle(expiredHandle)
       emitTrace({ type: 'handle.validation.failed', handleId, code: 'expired-handle' })
+      emitTraceEvent('chatbridge.auth.handle.validation_failed', {
+        handleId,
+        code: 'expired-handle',
+        appId: expiredHandle.appId,
+        userId: expiredHandle.userId,
+      })
       auditHandleEvent({
         handleId,
         outcome: 'validation-failed',
@@ -308,6 +343,10 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
     const existingHandle = getHandle(handleId)
     if (!existingHandle) {
       emitTrace({ type: 'handle.validation.failed', handleId, code: 'missing-handle' })
+      emitTraceEvent('chatbridge.auth.handle.validation_failed', {
+        handleId,
+        code: 'missing-handle',
+      })
       auditHandleEvent({
         handleId,
         outcome: 'validation-failed',
@@ -359,6 +398,12 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
         details: ['Credential handle was not found.'],
       } as const
       emitTrace({ type: 'handle.validation.failed', handleId: input.handleId, code: result.code })
+      emitTraceEvent('chatbridge.auth.handle.validation_failed', {
+        handleId: input.handleId,
+        code: result.code,
+        appId: input.appId,
+        userId: input.userId,
+      })
       auditHandleEvent({
         handleId: input.handleId,
         outcome: 'validation-failed',
@@ -381,6 +426,12 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
         handle: existingHandle,
       } as const
       emitTrace({ type: 'handle.validation.failed', handleId: input.handleId, code: result.code })
+      emitTraceEvent('chatbridge.auth.handle.validation_failed', {
+        handleId: input.handleId,
+        code: result.code,
+        appId: existingHandle.appId,
+        userId: existingHandle.userId,
+      })
       auditHandleEvent({
         handleId: input.handleId,
         outcome: 'validation-failed',
@@ -407,6 +458,12 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
         handle: expiredHandle,
       } as const
       emitTrace({ type: 'handle.validation.failed', handleId: input.handleId, code: result.code })
+      emitTraceEvent('chatbridge.auth.handle.validation_failed', {
+        handleId: input.handleId,
+        code: result.code,
+        appId: expiredHandle.appId,
+        userId: expiredHandle.userId,
+      })
       auditHandleEvent({
         handleId: input.handleId,
         outcome: 'validation-failed',
@@ -428,6 +485,12 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
         handle: existingHandle,
       } as const
       emitTrace({ type: 'handle.validation.failed', handleId: input.handleId, code: result.code })
+      emitTraceEvent('chatbridge.auth.handle.validation_failed', {
+        handleId: input.handleId,
+        code: result.code,
+        appId: existingHandle.appId,
+        userId: existingHandle.userId,
+      })
       auditHandleEvent({
         handleId: input.handleId,
         outcome: 'validation-failed',
@@ -449,6 +512,12 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
         handle: existingHandle,
       } as const
       emitTrace({ type: 'handle.validation.failed', handleId: input.handleId, code: result.code })
+      emitTraceEvent('chatbridge.auth.handle.validation_failed', {
+        handleId: input.handleId,
+        code: result.code,
+        appId: existingHandle.appId,
+        userId: existingHandle.userId,
+      })
       auditHandleEvent({
         handleId: input.handleId,
         outcome: 'validation-failed',
@@ -472,6 +541,12 @@ export function createChatBridgeAuthBroker(options: CreateChatBridgeAuthBrokerOp
         handle: existingHandle,
       } as const
       emitTrace({ type: 'handle.validation.failed', handleId: input.handleId, code: result.code })
+      emitTraceEvent('chatbridge.auth.handle.validation_failed', {
+        handleId: input.handleId,
+        code: result.code,
+        appId: existingHandle.appId,
+        userId: existingHandle.userId,
+      })
       auditHandleEvent({
         handleId: input.handleId,
         outcome: 'validation-failed',

@@ -305,6 +305,7 @@
     "es-toolkit": "^1.43.0",
     "fs-extra": "^11.1.1",
     "iconv-lite": "^0.6.3",
+    "langsmith": "^0.5.16",
     "linkedom": "^0.18.5",
     "lodash": "^4.17.21",
     "ofetch": "^1.0.1",

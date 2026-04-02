@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { Platform } from '../../../src/renderer/platform/interfaces'
 import { createAfetch } from '../../../src/shared/request/request'
 import type { ModelDependencies } from '../../../src/shared/types/adapters'
+import { createNoopLangSmithAdapter } from '../../../src/shared/utils/langsmith_adapter'
 import type { SentryAdapter } from '../../../src/shared/utils/sentry_adapter'
 
 export async function createMockModelDependencies(
@@ -50,6 +51,7 @@ export async function createMockModelDependencies(
       },
     },
     sentry: testSentry,
+    langsmith: createNoopLangSmithAdapter(),
     getRemoteConfig: () => ({}),
   }
 }

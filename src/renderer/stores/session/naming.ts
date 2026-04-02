@@ -58,7 +58,14 @@ async function _generateName(sessionId: string, modifyName: (sessionId: string, 
       promptFormat.nameConversation(
         session.messages.filter((m) => m.role !== 'system').slice(0, 4),
         languageNameMap[settings.language]
-      )
+      ),
+      {
+        name: 'chatbox.session.naming',
+        metadata: {
+          sessionId,
+        },
+        tags: ['session-naming'],
+      }
     )
     let name =
       result.contentParts

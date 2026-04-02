@@ -227,4 +227,48 @@ describe('chatbridge auth broker', () => {
     })
     expect(JSON.stringify(audits)).not.toContain('accessToken')
   })
+
+  it('emits LangSmith-ready trace events for handle lifecycle boundaries', () => {
+    const traceEvents: Array<{ name: string; metadata?: Record<string, unknown> }> = []
+    const broker = createChatBridgeAuthBroker({
+      now: () => 500,
+      createId: () => 'handle-1',
+      traceAdapter: {
+        enabled: true,
+        startRun: async () => ({
+          runId: 'unused',
+          end: async () => {},
+        }),
+        recordEvent: async (event) => {
+          traceEvents.push({
+            name: event.name,
+            metadata: event.metadata,
+          })
+        },
+      },
+    })
+
+    const issued = broker.issueHandle({
+      grant: createGrant(),
+      permissionIds: ['drive.read'],
+    })
+
+    expect(issued.ok).toBe(true)
+
+    broker.validateHandle({
+      handleId: 'missing-handle',
+      userId: 'student-1',
+      appId: 'story-builder',
+      permissionIds: ['drive.read'],
+    })
+
+    expect(traceEvents.map((event) => event.name)).toEqual([
+      'chatbridge.auth.handle.issued',
+      'chatbridge.auth.handle.validation_failed',
+    ])
+    expect(traceEvents[0]?.metadata).toMatchObject({
+      appId: 'story-builder',
+      userId: 'student-1',
+    })
+  })
 })

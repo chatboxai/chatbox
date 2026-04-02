@@ -29,6 +29,21 @@ small eval set before broad implementation.
 - mock sentry adapter:
   `test/integration/mocks/sentry.ts`
 
+### LangSmith tracing seam
+
+- shared LangSmith contract and sanitization:
+  `src/shared/utils/langsmith_adapter.ts`
+- shared model wrapper for `chat`, `chatStream`, and `paint`:
+  `src/shared/models/tracing.ts`
+- main-process LangSmith sink and IPC bridge:
+  `src/main/adapters/langsmith.ts`
+- renderer IPC-backed adapter:
+  `src/renderer/adapters/langsmith.ts`
+
+LangSmith API access remains main-process-owned. Renderer code talks to the
+main sink through IPC-backed adapters, and tests default to a noop sink unless
+`LANGSMITH_TRACING=true` is set explicitly.
+
 ## What Later ChatBridge Stories Must Make Observable
 
 ### Required lifecycle checkpoints
@@ -63,6 +78,59 @@ Every orchestration-heavy ChatBridge story should define at least:
 2. malformed or invalid input path
 3. timeout/crash/degraded path
 4. one continuity/follow-up path when the story touches app state or memory
+
+## Current Trace Coverage
+
+### Top-level app flows
+
+- session text generation:
+  `src/renderer/packages/model-calls/stream-text.ts`
+- non-streaming text generation helper:
+  `src/renderer/packages/model-calls/index.ts`
+- OCR preprocessing:
+  `src/renderer/packages/model-calls/preprocess.ts`
+- summary generation:
+  `src/renderer/packages/context-management/summary-generator.ts`
+- session naming:
+  `src/renderer/stores/session/naming.ts`
+- model capability tests from settings:
+  `src/renderer/utils/model-tester.ts`
+- image generation:
+  `src/renderer/packages/model-calls/generate-image.ts`
+  and
+  `src/renderer/stores/imageGenerationActions.ts`
+- provider model discovery in settings:
+  `src/renderer/packages/model-setting-utils/registry-setting-util.ts`
+  and
+  `src/renderer/packages/model-setting-utils/custom-provider-setting-util.ts`
+- local knowledge-base OCR parsing:
+  `src/main/knowledge-base/parsers/local-parser.ts`
+
+### ChatBridge lifecycle seams
+
+- host bridge runtime:
+  `src/renderer/packages/chatbridge/bridge/host-controller.ts`
+- auth broker:
+  `src/main/chatbridge/auth-broker/index.ts`
+- resource proxy:
+  `src/main/chatbridge/resource-proxy/index.ts`
+
+### Model-level child traces
+
+Every `getModel(...)` path now returns a LangSmith-wrapped model through
+`src/shared/providers/index.ts`, so chat, stream, and paint calls emit child
+LLM runs even when the caller only adds a parent chain trace.
+
+## Live Smoke Proof
+
+As of the current implementation, LangSmith live traces are landing in project
+`chatbox-chatbridge`. A manual smoke trace emitted from this repo landed as:
+
+- trace name: `chatbox.trace.smoke`
+- trace id: `7020574d-8d43-46d6-8c41-b89522667be7`
+
+That smoke trace used the same main-process sink and shared model wrapper that
+the application now uses for runtime traces.
 
 ## Starter Scenario Matrix
 
@@ -137,10 +205,13 @@ when a story changes:
 - reusable mock observability sink for integration tests when later stories need
   assertion on emitted lifecycle events
 
-## Known Gaps
+## Remaining Gaps
 
-- there is no ChatBridge-specific event schema checked in yet
-- there is no dedicated lifecycle trace sink beyond the existing app telemetry
-  seams
-- later implementation stories will need to define concrete event payloads, but
-  they should do so on top of this baseline rather than starting over
+- LangSmith is now wired across the main user-facing app flows, but there is
+  still no checked-in dashboard or alerting layer built on top of those traces.
+- Trace coverage is strongest for model/runtime seams and major lifecycle
+  transitions. If future work adds new network-heavy settings flows, background
+  jobs, or partner onboarding commands, those should explicitly add parent
+  chain traces instead of relying only on wrapped model child runs.
+- Privacy rules still apply: traces should continue using the existing
+  sanitization and redaction helpers rather than logging arbitrary raw payloads.

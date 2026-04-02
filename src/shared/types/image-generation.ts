@@ -21,6 +21,8 @@ export const ImageGenerationSchema = z.object({
   model: ImageGenerationModelSchema,
   dalleStyle: z.enum(['vivid', 'natural']).optional(),
   imageGenerateNum: z.number().optional(),
+  taskId: z.string().optional(),
+  aspectRatio: z.string().optional(),
   status: ImageGenerationStatusSchema,
   parentIds: z.array(z.string()).optional(), // for tracking iteration DAG (multiple parents possible)
   error: z.string().optional(),

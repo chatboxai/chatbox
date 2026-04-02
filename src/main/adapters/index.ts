@@ -18,6 +18,7 @@ export async function createModelDependencies(): Promise<ModelDependencies> {
   const afetch = createAfetch(platformInfo)
 
   return {
+    platformType: platformInfo.type,
     storage: {
       async saveImage(folder: string, dataUrl: string): Promise<string> {
         // 将图片写入 /tmp 目录下的临时文件

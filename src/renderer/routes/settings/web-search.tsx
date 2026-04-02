@@ -17,6 +17,9 @@ export function RouteComponent() {
   const setSettings = useSettingsStore((state) => state.setSettings)
   const extension = useSettingsStore((state) => state.extension)
   type WebSearchProvider = Settings['extension']['webSearch']['provider']
+  type TavilySearchDepth = NonNullable<Settings['extension']['webSearch']['tavilySearchDepth']>
+  type TavilyTimeRange = NonNullable<Settings['extension']['webSearch']['tavilyTimeRange']>
+  type TavilyIncludeRawContent = NonNullable<Settings['extension']['webSearch']['tavilyIncludeRawContent']>
 
   const [checkingTavily, setCheckingTavily] = useState(false)
   const [tavilyAvaliable, setTavilyAvaliable] = useState<boolean>()
@@ -168,7 +171,7 @@ export function RouteComponent() {
                       ...extension,
                       webSearch: {
                         ...extension.webSearch,
-                        tavilySearchDepth: e,
+                        tavilySearchDepth: e as TavilySearchDepth,
                       },
                     },
                   })
@@ -241,7 +244,7 @@ export function RouteComponent() {
                       ...extension,
                       webSearch: {
                         ...extension.webSearch,
-                        tavilyTimeRange: e,
+                        tavilyTimeRange: e as TavilyTimeRange,
                       },
                     },
                   })
@@ -273,7 +276,7 @@ export function RouteComponent() {
                       ...extension,
                       webSearch: {
                         ...extension.webSearch,
-                        tavilyIncludeRawContent: e,
+                        tavilyIncludeRawContent: e as TavilyIncludeRawContent,
                       },
                     },
                   })

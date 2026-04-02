@@ -1,3 +1,4 @@
+import { resolveEffectiveApiKey } from '@shared/oauth'
 import { getProviderDefinition } from '@shared/providers'
 import type { ModelProvider, ProviderBaseInfo, ProviderModelInfo, ProviderSettings, SessionType } from '@shared/types'
 import { createModelDependencies } from '@/adapters'
@@ -49,6 +50,7 @@ export default class RegistrySettingUtil extends BaseConfig implements ModelSett
       formattedApiHost: settings.apiHost || definition.defaultSettings?.apiHost || '',
       formattedApiPath: settings.apiPath || definition.defaultSettings?.apiPath || '',
       model,
+      effectiveApiKey: resolveEffectiveApiKey(settings, dependencies.platformType || 'desktop'),
     })
 
     if ('listModels' in modelInstance && typeof modelInstance.listModels === 'function') {

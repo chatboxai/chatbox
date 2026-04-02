@@ -106,9 +106,7 @@ export async function copyAndSwitchSession(source: SessionMeta) {
 export function switchCurrentSession(sessionId: string) {
   const store = getDefaultStore()
   store.set(atoms.currentSessionIdAtom, sessionId)
-  router.navigate({
-    to: `/session/${sessionId}`,
-  })
+  router.history.push(`/session/${sessionId}`)
   scrollActions.clearAutoScroll()
 }
 

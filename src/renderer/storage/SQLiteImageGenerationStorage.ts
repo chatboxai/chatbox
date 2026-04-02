@@ -43,6 +43,8 @@ export class SQLiteImageGenerationStorage implements ImageGenerationStorage {
         model_id TEXT NOT NULL,
         dalle_style TEXT,
         image_generate_num INTEGER,
+        task_id TEXT,
+        aspect_ratio TEXT,
         status TEXT NOT NULL,
         parent_id TEXT,
         error TEXT,
@@ -54,6 +56,17 @@ export class SQLiteImageGenerationStorage implements ImageGenerationStorage {
       CREATE INDEX IF NOT EXISTS idx_image_generation_created_at 
       ON image_generation(created_at DESC)
     `)
+
+    await this.ensureColumn('image_generation', 'task_id', 'TEXT')
+    await this.ensureColumn('image_generation', 'aspect_ratio', 'TEXT')
+  }
+
+  private async ensureColumn(tableName: string, columnName: string, definition: string): Promise<void> {
+    const result = await this.database.query(`PRAGMA table_info(${tableName})`)
+    const hasColumn = result.values?.some((row) => row.name === columnName)
+    if (!hasColumn) {
+      await this.database.execute(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`)
+    }
   }
 
   private recordToRow(record: ImageGeneration): Record<string, unknown> {
@@ -67,6 +80,8 @@ export class SQLiteImageGenerationStorage implements ImageGenerationStorage {
       model_id: record.model.modelId,
       dalle_style: record.dalleStyle || null,
       image_generate_num: record.imageGenerateNum || null,
+      task_id: record.taskId || null,
+      aspect_ratio: record.aspectRatio || null,
       status: record.status,
       parent_id: record.parentIds?.length ? JSON.stringify(record.parentIds) : null,
       error: record.error || null,
@@ -87,6 +102,8 @@ export class SQLiteImageGenerationStorage implements ImageGenerationStorage {
       },
       dalleStyle: row.dalle_style as 'vivid' | 'natural' | undefined,
       imageGenerateNum: row.image_generate_num as number | undefined,
+      taskId: row.task_id as string | undefined,
+      aspectRatio: row.aspect_ratio as string | undefined,
       status: row.status as ImageGeneration['status'],
       parentIds: row.parent_id ? JSON.parse(row.parent_id as string) : undefined,
       error: row.error as string | undefined,
@@ -100,8 +117,8 @@ export class SQLiteImageGenerationStorage implements ImageGenerationStorage {
 
     await this.database.run(
       `INSERT INTO image_generation 
-       (id, prompt, reference_images, generated_images, created_at, model_provider, model_id, dalle_style, image_generate_num, status, parent_id, error, error_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, prompt, reference_images, generated_images, created_at, model_provider, model_id, dalle_style, image_generate_num, task_id, aspect_ratio, status, parent_id, error, error_code)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.prompt,
@@ -112,6 +129,8 @@ export class SQLiteImageGenerationStorage implements ImageGenerationStorage {
         row.model_id,
         row.dalle_style,
         row.image_generate_num,
+        row.task_id,
+        row.aspect_ratio,
         row.status,
         row.parent_id,
         row.error,
@@ -132,7 +151,7 @@ export class SQLiteImageGenerationStorage implements ImageGenerationStorage {
       `UPDATE image_generation SET
        prompt = ?, reference_images = ?, generated_images = ?, created_at = ?,
        model_provider = ?, model_id = ?, dalle_style = ?, image_generate_num = ?,
-       status = ?, parent_id = ?, error = ?, error_code = ?
+       task_id = ?, aspect_ratio = ?, status = ?, parent_id = ?, error = ?, error_code = ?
        WHERE id = ?`,
       [
         row.prompt,
@@ -143,6 +162,8 @@ export class SQLiteImageGenerationStorage implements ImageGenerationStorage {
         row.model_id,
         row.dalle_style,
         row.image_generate_num,
+        row.task_id,
+        row.aspect_ratio,
         row.status,
         row.parent_id,
         row.error,

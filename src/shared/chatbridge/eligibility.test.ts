@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { ReviewedAppCatalogEntry } from './manifest'
 import { evaluateReviewedAppEligibility, resolveReviewedAppEligibility } from './eligibility'
+import { applyChatBridgeAppKillSwitch, clearChatBridgeObservabilityState } from './observability'
 
 function createReviewedAppCatalogEntry(overrides: Partial<ReviewedAppCatalogEntry> = {}): ReviewedAppCatalogEntry {
   const base: ReviewedAppCatalogEntry = {
@@ -77,6 +78,10 @@ function createReviewedAppCatalogEntry(overrides: Partial<ReviewedAppCatalogEntr
 }
 
 describe('reviewed app eligibility', () => {
+  beforeEach(() => {
+    clearChatBridgeObservabilityState()
+  })
+
   it('returns only reviewed apps whose host context matches availability and approval requirements', () => {
     const storyBuilder = createReviewedAppCatalogEntry()
     const mathLab = createReviewedAppCatalogEntry({
@@ -325,5 +330,44 @@ describe('reviewed app eligibility', () => {
 
     expect(result.candidates).toEqual([])
     expect(result.decisions[0]?.reasons.map((reason) => reason.code)).toContain('policy-stale')
+  })
+
+  it('fails closed when operator controls disable an app version at runtime', () => {
+    const entry = createReviewedAppCatalogEntry({
+      manifest: {
+        ...createReviewedAppCatalogEntry().manifest,
+        safetyMetadata: {
+          reviewed: true,
+          sandbox: 'hosted-iframe',
+          handlesStudentData: true,
+          requiresTeacherApproval: false,
+        },
+        tenantAvailability: {
+          default: 'enabled',
+          allow: [],
+          deny: [],
+        },
+      },
+    })
+
+    applyChatBridgeAppKillSwitch({
+      controlId: 'control-story-builder',
+      appId: 'story-builder',
+      version: '1.2.3',
+      reason: 'Rollback after partner regression.',
+      disabledAt: 150,
+      disabledBy: 'ops-oncall',
+      activeSessionBehavior: 'allow-to-complete',
+    })
+
+    const decision = evaluateReviewedAppEligibility(entry, {
+      tenantId: 'k12-demo',
+      teacherApproved: true,
+      grantedPermissions: ['drive.read'],
+      additionalContextTokens: [],
+    })
+
+    expect(decision.eligible).toBe(false)
+    expect(decision.reasons.map((reason) => reason.code)).toContain('app-version-disabled')
   })
 })

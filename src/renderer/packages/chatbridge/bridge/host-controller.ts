@@ -13,6 +13,10 @@ import {
 } from '@shared/chatbridge/bridge-session'
 import type { ChatBridgeAuditEvent } from '@shared/chatbridge/audit'
 import {
+  recordChatBridgeObservabilityEvent,
+  type ChatBridgeObservabilityEvent,
+} from '@shared/chatbridge/observability'
+import {
   createChatBridgeBridgeRejectionRecoveryContract,
   createChatBridgeMalformedBridgeRecoveryContract,
   createChatBridgeRecoveryAuditEvent,
@@ -55,6 +59,8 @@ export interface BridgeTargetWindowLike {
 
 type BridgeHostControllerOptions = {
   appId: string
+  appName?: string
+  appVersion?: string
   appInstanceId: string
   expectedOrigin: string
   bootstrapTargetOrigin?: string
@@ -69,6 +75,7 @@ type BridgeHostControllerOptions = {
   onInvalidAppEvent?: (rawEvent: unknown, issues: string[]) => void
   onRecoveryDecision?: (decision: ChatBridgeRecoveryContract) => void
   onRecoveryAudit?: (event: ChatBridgeAuditEvent) => void
+  onObservabilityEvent?: (event: ChatBridgeObservabilityEvent) => void
 }
 
 function defaultMessageChannelFactory(): BridgeMessageChannelLike {
@@ -109,6 +116,25 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
     options.onTrace?.(trace)
   }
 
+  function emitObservabilityEvent(
+    input: Omit<
+      ChatBridgeObservabilityEvent,
+      'schemaVersion' | 'appId' | 'appName' | 'version' | 'appInstanceId' | 'bridgeSessionId' | 'details'
+    > & {
+      details?: string[]
+    }
+  ) {
+    const event = recordChatBridgeObservabilityEvent({
+      ...input,
+      appId: options.appId,
+      ...(options.appName ? { appName: options.appName } : {}),
+      ...(options.appVersion ? { version: options.appVersion } : {}),
+      appInstanceId: options.appInstanceId,
+      bridgeSessionId: envelope.bridgeSessionId,
+    })
+    options.onObservabilityEvent?.(event)
+  }
+
   function clearReadyTimeout() {
     if (readyTimeout !== null) {
       clearTimeout(readyTimeout)
@@ -125,6 +151,16 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
         contract: decision,
       })
     )
+    emitObservabilityEvent({
+      eventId: crypto.randomUUID(),
+      occurredAt: options.now?.() ?? Date.now(),
+      kind: 'recovery-required',
+      severity: decision.severity === 'terminal' ? 'error' : 'warn',
+      status: 'degraded',
+      traceCode: decision.observability.traceCode,
+      summary: decision.summary,
+      details: decision.observability.details,
+    })
     emitTrace({
       type: 'recovery.required',
       failureClass: decision.failureClass,
@@ -183,6 +219,15 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
     })
 
     attachedPort.postMessage(renderMessage)
+    emitObservabilityEvent({
+      eventId: crypto.randomUUID(),
+      occurredAt: options.now?.() ?? Date.now(),
+      kind: 'host-render-sent',
+      severity: 'info',
+      status: 'healthy',
+      summary: `${options.appName ?? options.appId} received a host render update.`,
+      details: [`renderId: ${renderMessage.renderId}`],
+    })
     emitTrace({
       type: 'host.render.sent',
       renderId: renderMessage.renderId,
@@ -197,6 +242,15 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
 
       if (!acknowledged.accepted) {
         options.onRejectedAppEvent?.(event, acknowledged.reason)
+        emitObservabilityEvent({
+          eventId: crypto.randomUUID(),
+          occurredAt: options.now?.() ?? Date.now(),
+          kind: 'app-event-rejected',
+          severity: 'error',
+          status: 'degraded',
+          summary: `${options.appName ?? options.appId} sent an app.ready event that failed bridge validation.`,
+          details: [`reason: ${acknowledged.reason}`],
+        })
         emitRecovery(
           createChatBridgeBridgeRejectionRecoveryContract({
             reason: acknowledged.reason,
@@ -217,6 +271,14 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
       readySettled = true
       clearReadyTimeout()
       readyResolver?.()
+      emitObservabilityEvent({
+        eventId: crypto.randomUUID(),
+        occurredAt: options.now?.() ?? Date.now(),
+        kind: 'session-ready',
+        severity: 'info',
+        status: 'healthy',
+        summary: `${options.appName ?? options.appId} completed the bridge handshake.`,
+      })
       emitTrace({ type: 'session.ready' })
       sendPendingHtml()
       return
@@ -228,6 +290,15 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
 
     if (!accepted.accepted) {
       options.onRejectedAppEvent?.(event, accepted.reason)
+      emitObservabilityEvent({
+        eventId: crypto.randomUUID(),
+        occurredAt: options.now?.() ?? Date.now(),
+        kind: 'app-event-rejected',
+        severity: 'error',
+        status: 'degraded',
+        summary: `${options.appName ?? options.appId} sent ${event.kind}, but the host rejected it.`,
+        details: [`reason: ${accepted.reason}`],
+      })
       emitRecovery(
         createChatBridgeBridgeRejectionRecoveryContract({
           reason: accepted.reason,
@@ -245,6 +316,15 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
 
     session = accepted.session
     options.onAcceptedAppEvent?.(event)
+    emitObservabilityEvent({
+      eventId: crypto.randomUUID(),
+      occurredAt: options.now?.() ?? Date.now(),
+      kind: 'app-event-accepted',
+      severity: event.kind === 'app.error' ? 'warn' : 'info',
+      status: event.kind === 'app.error' ? 'degraded' : 'healthy',
+      summary: `${options.appName ?? options.appId} sent ${event.kind} and the host accepted it.`,
+      details: event.kind === 'app.complete' ? ['completion accepted'] : [],
+    })
     if (event.kind === 'app.error') {
       emitRecovery(
         createChatBridgeRuntimeCrashRecoveryContract({
@@ -269,9 +349,9 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
       attachedPort.onmessage = (event) => {
         const parsed = BridgeAppEventSchema.safeParse(event.data)
         if (!parsed.success) {
-          const issues = parsed.error.issues.map((issue) => {
-            const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
-            return `${path}: ${issue.message}`
+        const issues = parsed.error.issues.map((issue) => {
+          const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
+          return `${path}: ${issue.message}`
           })
           const rawKind =
             typeof event.data === 'object' && event.data !== null && 'kind' in event.data
@@ -279,6 +359,15 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
               : undefined
 
           options.onInvalidAppEvent?.(event.data, issues)
+          emitObservabilityEvent({
+            eventId: crypto.randomUUID(),
+            occurredAt: options.now?.() ?? Date.now(),
+            kind: 'app-event-invalid',
+            severity: 'error',
+            status: 'degraded',
+            summary: `${options.appName ?? options.appId} sent malformed bridge traffic.`,
+            details: issues,
+          })
           emitRecovery(
             createChatBridgeMalformedBridgeRecoveryContract({
               appId: options.appId,
@@ -304,6 +393,14 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
       })
 
       targetWindow.postMessage(bootstrapMessage, options.bootstrapTargetOrigin ?? envelope.expectedOrigin, [channel.port2])
+      emitObservabilityEvent({
+        eventId: crypto.randomUUID(),
+        occurredAt: options.now?.() ?? Date.now(),
+        kind: 'session-attached',
+        severity: 'info',
+        status: 'healthy',
+        summary: `${options.appName ?? options.appId} attached a reviewed bridge session.`,
+      })
       emitTrace({ type: 'session.attached' })
       scheduleReadyTimeout()
     },

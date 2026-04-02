@@ -40,15 +40,20 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Health event emission coverage
+  - [x] Health event emission coverage
 - T002 tests:
-  - [ ] Kill-switch behavior for new launches
+  - [x] Kill-switch behavior for new launches
 - T003 tests:
-  - [ ] Disablement behavior for active sessions
+  - [x] Disablement behavior for active sessions
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+Deferred tasks:
+
+- none; the story remains intentionally scoped to contracts, runtime gating, and
+  observability without expanding into an operator dashboard UI.

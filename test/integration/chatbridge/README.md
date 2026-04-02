@@ -79,6 +79,13 @@ CB-705 adds the first unified platform-recovery slice:
   now publishes the `Platform recovery` seeded session so the new recovery
   model is inspectable through `/dev/chatbridge` and preset-session backfill
 
+CB-702 adds the first operator-control and lifecycle-observability slice:
+
+- `scenarios/operator-controls-rollout.test.ts`
+  covers normalized lifecycle event recording, per-app health derivation,
+  version-scoped disablement, and explicit active-session posture for
+  operator-triggered kill switches
+
 That scenario set is the baseline gate for later ChatBridge packs that add real
 app-aware schema, containers, and lifecycle events. New ChatBridge persistence,
 manifest, or tool-execution changes should extend this suite instead of

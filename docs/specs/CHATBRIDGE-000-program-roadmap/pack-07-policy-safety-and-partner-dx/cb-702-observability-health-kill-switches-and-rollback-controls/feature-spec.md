@@ -25,9 +25,9 @@ A partner platform needs operational control: per-app health, versioned disablem
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Per-app health and lifecycle events are observable.
-- [ ] AC-2: The platform can disable an app or version safely at runtime.
-- [ ] AC-3: Rollback and disablement behavior is explicit for active versus new sessions.
+- [x] AC-1: Per-app health and lifecycle events are observable.
+- [x] AC-2: The platform can disable an app or version safely at runtime.
+- [x] AC-3: Rollback and disablement behavior is explicit for active versus new sessions.
 
 ## Edge Cases
 

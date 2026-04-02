@@ -1,5 +1,6 @@
 import { ZodError, z } from 'zod'
 import { ReviewedAppCatalogEntrySchema, type ReviewedAppCatalogEntry } from './manifest'
+import { evaluateReviewedAppLaunchControl } from './observability'
 import { ChatBridgePolicySnapshotSchema, evaluateChatBridgePolicyForApp } from './policy'
 
 const HOST_CONTEXT_PATTERN = /^[a-z0-9._:-]+$/i
@@ -46,6 +47,8 @@ export const ChatBridgeEligibilityReasonCodeSchema = z.enum([
   'context-not-allowed',
   'teacher-approval-required',
   'required-permissions-missing',
+  'app-disabled',
+  'app-version-disabled',
   'policy-stale',
   'policy-denied',
   'policy-not-allowed',
@@ -169,6 +172,21 @@ export function evaluateReviewedAppEligibility(
         'context-not-allowed',
         'App availability defaults to disabled and no allowed host context matched the current request.',
         entry.manifest.tenantAvailability.allow
+      )
+    )
+  }
+
+  const launchControl = evaluateReviewedAppLaunchControl(entry)
+  if (!launchControl.allowed && launchControl.killSwitch) {
+    const reasonCode = launchControl.reasonCode === 'app-disabled' ? 'app-disabled' : 'app-version-disabled'
+    reasons.push(
+      createReason(
+        reasonCode,
+        launchControl.summary,
+        [
+          `reason: ${launchControl.killSwitch.reason}`,
+          `activeSessions: ${launchControl.killSwitch.activeSessionBehavior}`,
+        ]
       )
     )
   }

@@ -25,6 +25,8 @@
   `validated`, a completed exit checklist, and a short exit memo in `STATUS.md`.
 - If a later pack reveals a missing prerequisite, stop and add a backfill story
   to the original pack instead of solving it ad hoc in the later pack.
+- After Pack 07 exits, move into `convergence-audit.md` before claiming the
+  scoped PRD outcome is complete.
 
 ## Story Pack Alignment
 
@@ -55,6 +57,7 @@
 | P005 | Pack 05: multi-app routing and Debate Arena | blocked-by:P004 | partial | routing, refusal, and second-app lifecycle tests |
 | P006 | Pack 06: authenticated apps and Story Builder | blocked-by:P004 | partial | auth broker, handle, and Drive proxy tests |
 | P007 | Pack 07: error handling, safety, and partner DX | blocked-by:P005,P006 | partial | policy, audit, error recovery, observability, and validator coverage |
+| P008 | Milestone 4: full-program convergence and PRD audit | blocked-by:P007 | no | representative flagship flows and final O1-O5 proof matrix |
 
 Dependency values:
 
@@ -91,6 +94,9 @@ Parallelizable values:
 - P007 tests:
   policy precedence, audit minimization, kill switches, partner manifest and
   bridge tooling
+- P008 tests:
+  flagship end-to-end convergence across Chess, Debate Arena, Story Builder,
+  plus denial, recovery, and objective-proof linkage
 
 ## Completion Criteria
 

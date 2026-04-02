@@ -69,6 +69,8 @@ Use these files as the operational control layer for the roadmap:
 
 - [`progress.md`](./progress.md) is the single-agent queue, pack ledger, and
   O1-O5 proof tracker.
+- [`convergence-audit.md`](./convergence-audit.md) is the post-Pack-07 gate for
+  the final representative flow set and O1-O5 proof closure.
 - Each `pack-*/STATUS.md` records the current gate, story order, exit checklist,
   and pack exit memo.
 - Each active `cb-*/status.md` records story state, blockers, and proof links.

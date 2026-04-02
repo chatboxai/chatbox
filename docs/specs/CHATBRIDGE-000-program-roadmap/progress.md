@@ -63,6 +63,13 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 15. Pack 07 -> CB-705
 16. Pack 07 -> CB-702
 17. Pack 07 -> CB-704
+18. Program -> full-program convergence audit (`convergence-audit.md`)
+
+## Current Milestone
+
+- Active next gate: [`convergence-audit.md`](./convergence-audit.md)
+- Goal: turn the validated Pack 04-07 slices into one final representative
+  proof set across Chess, Debate Arena, Story Builder, denial, and recovery
 
 ## Pack 4 Exit Lock
 

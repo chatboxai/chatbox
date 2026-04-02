@@ -8,6 +8,7 @@ import { getLogger } from '@/lib/utils'
 import { mcpController } from '@/packages/mcp/controller'
 import * as remote from '../packages/remote'
 import platform from '../platform'
+import { authInfoStore } from './authInfoStore'
 import { settingsStore, useSettingsStore } from './settingsStore'
 
 const log = getLogger('premium-actions')
@@ -73,7 +74,6 @@ export async function deactivate(clearLoginState = true) {
 
   // 如果是login方式激活的，同时清除登录状态（除非是在切换license）
   if (clearLoginState && settings.licenseActivationMethod === 'login') {
-    const { authInfoStore } = await import('./authInfoStore')
     authInfoStore.getState().clearPlatformTokens()
   }
 
@@ -119,7 +119,6 @@ export async function activate(
 
   // 互斥逻辑：manual方式激活时，清除login状态
   if (method === 'manual') {
-    const { authInfoStore } = await import('./authInfoStore')
     authInfoStore.getState().clearPlatformTokens()
     log.info('🔓 Cleared login tokens due to manual license activation')
   }

@@ -58,6 +58,9 @@ interface Props {
   sessionId: string
   sessionType: SessionType
   msg: Message
+  floatedChatBridgeAppInstanceId?: string
+  floatedChatBridgeTrayMinimized?: boolean
+  onOpenFloatedChatBridgeApp?: () => void
   className?: string
   collapseThreshold?: number // 文本长度阀值, 超过这个长度则会被折叠
   buttonGroup?: 'auto' | 'always' | 'none' // 按钮组显示策略, auto: 只在 hover 时显示; always: 总是显示; none: 不显示
@@ -70,6 +73,9 @@ const _Message: FC<Props> = (props) => {
   const {
     sessionId,
     msg,
+    floatedChatBridgeAppInstanceId,
+    floatedChatBridgeTrayMinimized = false,
+    onOpenFloatedChatBridgeApp,
     className,
     collapseThreshold,
     buttonGroup = 'auto',
@@ -469,6 +475,13 @@ const _Message: FC<Props> = (props) => {
                         <ChatBridgeMessagePart
                           key={`app-${item.appInstanceId}-${index}`}
                           part={item as MessageAppPart}
+                          presentation={
+                            floatedChatBridgeAppInstanceId && floatedChatBridgeAppInstanceId === item.appInstanceId
+                              ? 'anchor'
+                              : 'inline'
+                          }
+                          floatingTrayMinimized={floatedChatBridgeTrayMinimized}
+                          onOpenFloatingShell={onOpenFloatedChatBridgeApp}
                           onUpdatePart={(nextPart) => {
                             const nextContentParts = msg.contentParts.map((contentPart, contentPartIndex) =>
                               contentPartIndex === index ? nextPart : contentPart

@@ -221,6 +221,23 @@ describe('ChatBridgeMessagePart chess runtime', () => {
     })
   })
 
+  it('renders a compact anchor when the runtime is floated into the session tray', () => {
+    render(
+      <MantineProvider>
+        <ChatBridgeMessagePart
+          part={createChessPart()}
+          presentation="anchor"
+          onOpenFloatingShell={vi.fn()}
+          floatingTrayMinimized
+        />
+      </MantineProvider>
+    )
+
+    expect(screen.getByTestId('chatbridge-anchor')).toBeTruthy()
+    expect(screen.getByText('Restore app')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /g1, white knight/i })).toBeNull()
+  })
+
   it('keeps the board state stable and emits rejected feedback for an illegal move', () => {
     const onUpdatePart = vi.fn()
 

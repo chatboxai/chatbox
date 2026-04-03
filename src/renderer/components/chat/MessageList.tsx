@@ -86,6 +86,9 @@ export interface MessageListRef {
 export interface MessageListProps {
   className?: string
   currentSession: Session
+  floatedChatBridgeAppInstanceId?: string
+  floatedChatBridgeTrayMinimized?: boolean
+  onOpenFloatedChatBridgeApp?: () => void
 }
 
 type MessageRenderItem =
@@ -105,7 +108,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const isSmallScreen = useIsSmallScreen()
   const widthFull = useUIStore((s) => s.widthFull)
 
-  const { currentSession } = props
+  const { currentSession, floatedChatBridgeAppInstanceId, floatedChatBridgeTrayMinimized, onOpenFloatedChatBridgeApp } = props
 
   const currentThreadHash = useMemo(
     () => currentSession && getCurrentThreadHistoryHash(currentSession),
@@ -365,6 +368,9 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                 msg={msg}
                 sessionId={currentSession.id}
                 sessionType={currentSession.type || 'chat'}
+                floatedChatBridgeAppInstanceId={floatedChatBridgeAppInstanceId}
+                floatedChatBridgeTrayMinimized={floatedChatBridgeTrayMinimized}
+                onOpenFloatedChatBridgeApp={onOpenFloatedChatBridgeApp}
                 className={options.isFirstItem ? 'pt-4' : options.isLastItem ? '!pb-4' : ''}
                 collapseThreshold={msg.role === 'system' ? 150 : undefined}
                 buttonGroup={options.isLastItem && msg.role === 'assistant' ? 'always' : 'auto'}
@@ -381,7 +387,14 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
         </Stack>
       )
     },
-    [currentSession, currentThreadHash, latestSummaryMessageId]
+    [
+      currentSession,
+      currentThreadHash,
+      floatedChatBridgeAppInstanceId,
+      floatedChatBridgeTrayMinimized,
+      latestSummaryMessageId,
+      onOpenFloatedChatBridgeApp,
+    ]
   )
 
   useImperativeHandle(ref, () => ({

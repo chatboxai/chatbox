@@ -45,6 +45,13 @@ export const uiStore = createStore(
         widthFull: false, // Stored UI preference
         showCopilotsInNewSession: false,
         sidebarWidth: null as number | null, // Custom sidebar width, null means use default
+        chatBridgeFloatingShellMap: {} as Record<
+          string,
+          {
+            appInstanceId: string
+            minimized: boolean
+          }
+        >,
       },
       (set, get) => ({
         addToast: (content: string, duration?: number) => {
@@ -203,6 +210,49 @@ export const uiStore = createStore(
         setSidebarWidth: (sidebarWidth: number | null) => {
           set({ sidebarWidth })
         },
+
+        setChatBridgeFloatingShellState: (sessionId: string, appInstanceId: string, minimized = false) => {
+          set((state) => ({
+            chatBridgeFloatingShellMap: {
+              ...state.chatBridgeFloatingShellMap,
+              [sessionId]: {
+                appInstanceId,
+                minimized,
+              },
+            },
+          }))
+        },
+
+        setChatBridgeFloatingShellMinimized: (sessionId: string, minimized: boolean) => {
+          set((state) => {
+            const current = state.chatBridgeFloatingShellMap[sessionId]
+            if (!current) {
+              return state
+            }
+
+            return {
+              chatBridgeFloatingShellMap: {
+                ...state.chatBridgeFloatingShellMap,
+                [sessionId]: {
+                  ...current,
+                  minimized,
+                },
+              },
+            }
+          })
+        },
+
+        clearChatBridgeFloatingShellState: (sessionId: string) => {
+          set((state) => {
+            if (!state.chatBridgeFloatingShellMap[sessionId]) {
+              return state
+            }
+
+            const chatBridgeFloatingShellMap = { ...state.chatBridgeFloatingShellMap }
+            delete chatBridgeFloatingShellMap[sessionId]
+            return { chatBridgeFloatingShellMap }
+          })
+        },
       })
     ),
     {
@@ -213,6 +263,7 @@ export const uiStore = createStore(
         showCopilotsInNewSession: state.showCopilotsInNewSession,
         sidebarWidth: state.sidebarWidth,
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
+        chatBridgeFloatingShellMap: state.chatBridgeFloatingShellMap,
       }),
       storage: safeStorage,
     }

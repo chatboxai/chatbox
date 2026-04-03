@@ -1,0 +1,17 @@
+{
+  "storyId": "I001-01",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "failed-as-expected",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm vitest run src/renderer/packages/chatbridge/runtime/execution-governor.test.ts test/integration/chatbridge/scenarios/execution-governor-entrypoint.test.ts",
+    "failureSummary": [
+      "The new unit seam had no implementation yet, so execution-governor.test.ts failed immediately because ./execution-governor did not exist.",
+      "The first scenario pass also exposed an important runtime contract detail: natural Chess fallback can still carry a clarify route decision while selecting Chess for execution, so the governor contract had to preserve that distinction instead of flattening everything into invoke."
+    ]
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm vitest run src/renderer/packages/chatbridge/runtime/execution-governor.test.ts test/integration/chatbridge/scenarios/execution-governor-entrypoint.test.ts src/renderer/packages/model-calls/stream-text.test.ts"
+  }
+}

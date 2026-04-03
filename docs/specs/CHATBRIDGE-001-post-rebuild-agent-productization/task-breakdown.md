@@ -36,6 +36,11 @@
 6. I006 Verification, confidence, and provenance layer
 7. I007 High-risk action workflow
 
+## Active Story Queue
+
+- I001 validated so far:
+  - `I001-01` Renderer execution governor entrypoint and reviewed-route adoption
+
 ## TDD Mapping
 
 - I001 tests:

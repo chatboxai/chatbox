@@ -91,3 +91,9 @@ Current Pack 05 live route-artifact proof lives in:
 - `src/renderer/packages/chatbridge/router/actions.test.ts`
   for host-owned clarify actions, reviewed-launch reuse, and stale replay
   rejection
+
+Current `CHATBRIDGE-001 / I001` governor proof lives in:
+
+- `execution-governor-entrypoint.test.ts`
+  for the extracted renderer execution-governor seam covering explicit invoke,
+  natural Chess fallback, and live clarify/refuse artifact injection

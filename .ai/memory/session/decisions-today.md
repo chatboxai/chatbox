@@ -10,3 +10,6 @@
   workflow: spec and technical plan first, then a design brief, targeted design
   research, 2 or 3 prompt-based directions, autonomous scoring, and a recorded
   design decision before implementation.
+- 2026-04-02: Restricted the floating ChatBridge app tray to actual runtime
+  parts and excluded clarify/refuse route artifacts so a later routing receipt
+  cannot displace an already-active Chess tray.

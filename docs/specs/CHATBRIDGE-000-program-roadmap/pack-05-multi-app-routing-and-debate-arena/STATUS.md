@@ -21,6 +21,10 @@ Legacy parked packets that are not part of the active queue:
 
 - `CB-505`
 
+Planned extension packets after the rebuild queue:
+
+- `CB-511`
+
 ## Historical Story Order
 
 1. CB-501
@@ -33,6 +37,7 @@ Legacy parked packets that are not part of the active queue:
 8. CB-508
 9. CB-509
 10. CB-510
+11. CB-511
 
 ## Story Ledger
 
@@ -48,6 +53,7 @@ Legacy parked packets that are not part of the active queue:
 | CB-508 | validated | Default reviewed catalog and seed inspection now point to Chess, Drawing Kit, and Weather while Debate Arena and Story Builder stay explicit legacy references. |
 | CB-509 | validated | Drawing Kit now ships as the approved doodle-game flagship runtime with bounded checkpoints, traced follow-up/recovery proof, and a supported `drawing-kit-doodle-dare` seed/manual-smoke fixture. |
 | CB-510 | validated | Weather Dashboard now launches through a host-owned weather boundary, supports traced refresh/degraded states, and ships a supported `weather-dashboard` seed/manual-smoke fixture. |
+| CB-511 | planned | Post-flagship extension packet for tiered app-state context, chat-issued app commands, app-linked screenshots, and reviewed-runtime command parity. |
 
 ## Exit Checklist
 

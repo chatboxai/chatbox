@@ -28,6 +28,10 @@ Legacy parked packets:
 
 - [CB-505 - Default reviewed app catalog parity for flagship apps](./cb-505-default-reviewed-app-catalog-parity-for-flagship-apps/feature-spec.md)
 
+Forward-looking extension packets:
+
+- [CB-511 - Native stateful chat-app integration](./cb-511-native-stateful-chat-app-integration/feature-spec.md)
+
 ## Historical Baseline Stories
 
 - [CB-501 - Reviewed app discovery and eligibility filtering](./cb-501-reviewed-app-discovery-and-eligibility-filtering/feature-spec.md)
@@ -42,3 +46,5 @@ Legacy parked packets:
   the active flagship roadmap.
 - Shipping Drawing Kit or Weather on top of a stale launch path or stale seed
   corpus.
+- Treating `summaryForModel` alone as the final product shape instead of the
+  minimum safe continuity layer for richer native app-state integration.

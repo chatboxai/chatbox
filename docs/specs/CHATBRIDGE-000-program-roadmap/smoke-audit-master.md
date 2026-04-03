@@ -145,33 +145,50 @@ completion and live product behavior.
 
 ### SA-003: Route decisions and clarify/refuse artifacts are effectively test-only seams
 
-- Status: `confirmed`
+- Status: `fixed-during-audit`
 - Severity: high
 - Area: route UX
 - Owning pack: Pack 05
 - Likely owning story: `CB-507`
-- Environment: clean worktree `/private/tmp/chatbox-chessjs-devfix`
+- Environment: isolated worktree `/private/tmp/chatbox-cb-507`
 - Repro steps:
   1. Search for runtime use of `getReviewedAppRouteDecision(...)` and `createReviewedAppRouteArtifact(...)`.
   2. Search for renderer use of `chatbridgeRouteDecision`.
   3. Confirm that the route artifact contract is exercised in tests but not rendered through a decision-specific live UI.
 - Expected: ambiguous and chat-only cases should surface a live clarify/refuse artifact with actionable next steps in the chat UI.
-- Actual: route decision creation is exercised in tests, but renderer code does not have a dedicated route-decision surface. `chatbridgeRouteDecision` is only parsed in shared code and never rendered as a decision-specific UI with choices.
+- Actual:
+  - the live `streamText(...)` path now injects clarify or refusal route
+    artifacts into the assistant timeline whenever the reviewed route stays out
+    of direct invoke
+  - route receipts now render through a dedicated inline
+    `ChatBridgeRouteArtifact` surface with explicit clarify choices, chat-only
+    acknowledgement, refusal reasoning, and replay-safe resolved state
+  - clarify choices reuse the existing reviewed launch adoption path and stale
+    replays are rejected instead of launching another app
 - Evidence:
   - test or manual surface:
-    - `rg -n "createReviewedAppRouteArtifact|getReviewedAppRouteDecision|chatbridgeRouteDecision" src test`
-    - result shows runtime use concentrated in tests, not the live message-rendering path
+    - `src/renderer/packages/model-calls/stream-text.test.ts`
+    - `src/renderer/packages/chatbridge/router/actions.test.ts`
+    - `src/renderer/components/chatbridge/ChatBridgeMessagePart.test.tsx`
+    - `test/integration/chatbridge/scenarios/route-decision-live-artifacts.test.ts`
   - trace id(s):
-    - none specific to a live route artifact
+    - `ae3f678e-5089-483b-b5e8-8076b5a79dcc`
+      (`chatbridge.eval.chatbridge-route-decision-live-artifacts.cb-507-doc-proof-clarify`)
+    - `efaa4331-7dc9-4984-a459-c6d0bad10b5f`
+      (`chatbridge.eval.chatbridge-route-decision-live-artifacts.cb-507-doc-proof-refuse`)
   - relevant code path(s):
-    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/chatbridge/router/decision.ts`
-    - `/private/tmp/chatbox-chessjs-devfix/src/shared/chatbridge/routing.ts`
-    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/chatbridge/ChatBridgeMessagePart.tsx`
-    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/chatbridge/apps/surface.tsx`
+    - `src/renderer/packages/model-calls/stream-text.ts`
+    - `src/shared/chatbridge/routing.ts`
+    - `src/renderer/packages/chatbridge/router/actions.ts`
+    - `src/renderer/components/chatbridge/ChatBridgeMessagePart.tsx`
+    - `src/renderer/components/chatbridge/ChatBridgeRouteArtifact.tsx`
+    - `src/renderer/components/chat/Message.tsx`
 - Notes:
-  - This is a core reason Pack 05 can look complete in tests while still feeling missing in a fresh user flow.
+  - This gap is now closed for the active flagship runtime path. Ambiguous and
+    chat-only prompts no longer disappear into plain assistant text or
+    test-only helpers.
 - Follow-up story candidate:
-  - `CB-507` - Live route clarify refuse artifacts and actions
+  - none; continue the queue at `CB-105`
 
 ### SA-004: Auth broker and resource proxy are not wired into the live runtime
 

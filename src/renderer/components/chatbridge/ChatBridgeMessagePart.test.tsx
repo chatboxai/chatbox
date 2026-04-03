@@ -3,13 +3,14 @@
  */
 
 import { MantineProvider } from '@mantine/core'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import {
+  createChatBridgeRouteMessagePart,
   createChatBridgeChessRuntimeSnapshot,
   writeChatBridgeDegradedCompletionValues,
   type ChatBridgeStoryBuilderState,
 } from '@shared/chatbridge'
-import type { MessageAppPart } from '@shared/types'
+import type { MessageAppPart, MessageContentParts } from '@shared/types'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { ChatBridgeMessagePart } from './ChatBridgeMessagePart'
 
@@ -42,6 +43,12 @@ vi.mock('@/router', () => ({
         search: {},
       },
     },
+  },
+}))
+
+vi.mock('@/adapters/langsmith', () => ({
+  langsmith: {
+    recordEvent: vi.fn(async () => undefined),
   },
 }))
 
@@ -180,6 +187,50 @@ function createStoryBuilderPart(lifecycle: MessageAppPart['lifecycle']): Message
   }
 }
 
+function createClarifyRoutePart(): MessageAppPart {
+  return createChatBridgeRouteMessagePart({
+    schemaVersion: 2,
+    hostRuntime: 'desktop-electron',
+    kind: 'clarify',
+    reasonCode: 'ambiguous-match',
+    prompt: 'Help me sketch a weather-themed poster.',
+    summary: 'This request could fit Drawing Kit or Weather Dashboard, so the host is asking before launching anything.',
+    selectedAppId: 'drawing-kit',
+    matches: [
+      {
+        appId: 'drawing-kit',
+        appName: 'Drawing Kit',
+        matchedContexts: [],
+        matchedTerms: ['sketch', 'poster'],
+        score: 7,
+        exactAppMatch: false,
+        exactToolMatch: false,
+      },
+      {
+        appId: 'weather-dashboard',
+        appName: 'Weather Dashboard',
+        matchedContexts: [],
+        matchedTerms: ['weather'],
+        score: 4,
+        exactAppMatch: false,
+        exactToolMatch: false,
+      },
+    ],
+  })
+}
+
+function createRefuseRoutePart(): MessageAppPart {
+  return createChatBridgeRouteMessagePart({
+    schemaVersion: 2,
+    hostRuntime: 'desktop-electron',
+    kind: 'refuse',
+    reasonCode: 'no-confident-match',
+    prompt: 'What should I cook for dinner tonight?',
+    summary: 'No reviewed app is a confident fit for this request, so the host will keep helping in chat instead of forcing a launch.',
+    matches: [],
+  })
+}
+
 describe('ChatBridgeMessagePart chess runtime', () => {
   it('renders the playable chess board inside the active host shell', () => {
     render(
@@ -307,6 +358,77 @@ describe('ChatBridgeMessagePart degraded recovery', () => {
         },
       },
     })
+  })
+})
+
+describe('ChatBridgeMessagePart route artifacts', () => {
+  it('renders live clarify choices inline inside the host shell', () => {
+    render(
+      <MantineProvider>
+        <ChatBridgeMessagePart part={createClarifyRoutePart()} />
+      </MantineProvider>
+    )
+
+    expect(screen.getByTestId('chatbridge-shell').getAttribute('data-state')).toBe('ready')
+    expect(screen.getByTestId('chatbridge-route-artifact')).toBeTruthy()
+    expect(screen.getByText('Ambiguous reviewed app match')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Launch Drawing Kit' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Launch Weather Dashboard' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Continue in chat' })).toBeTruthy()
+  })
+
+  it('routes a clarify click back through host-owned message content mutation', async () => {
+    const part = createClarifyRoutePart()
+    const contentPartUpdates: MessageContentParts[] = []
+
+    render(
+      <MantineProvider>
+        <ChatBridgeMessagePart
+          part={part}
+          onUpdateMessageContentParts={async (updater) => {
+            contentPartUpdates.push(await updater([part]))
+          }}
+        />
+      </MantineProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Drawing Kit' }))
+
+    await waitFor(() => {
+      expect(contentPartUpdates).toHaveLength(1)
+    })
+    expect(contentPartUpdates[0]?.[0]).toMatchObject({
+      type: 'app',
+      title: 'Opening Drawing Kit',
+      values: {
+        chatbridgeRouteArtifactState: {
+          status: 'launch-requested',
+          selectedAppId: 'drawing-kit',
+        },
+      },
+    })
+    expect(contentPartUpdates[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'app',
+          appId: 'drawing-kit',
+          lifecycle: 'launching',
+        }),
+      ])
+    )
+  })
+
+  it('renders an explicit chat-only refusal receipt', () => {
+    render(
+      <MantineProvider>
+        <ChatBridgeMessagePart part={createRefuseRoutePart()} />
+      </MantineProvider>
+    )
+
+    expect(screen.getByTestId('chatbridge-shell').getAttribute('data-state')).toBe('ready')
+    expect(screen.getByText('Keep helping in chat')).toBeTruthy()
+    expect(screen.getAllByText(/No reviewed app is a confident fit/i)).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Continue in chat' })).toBeNull()
   })
 })
 

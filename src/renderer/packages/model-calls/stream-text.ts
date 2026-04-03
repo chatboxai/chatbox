@@ -44,6 +44,7 @@ import websearchToolSet, { parseLinkTool, webSearchTool } from './toolsets/web-s
 import { createReviewedSingleAppToolSet } from '../chatbridge/single-app-tools'
 import { buildChatBridgeAppContextPrompt } from '../context-management/app-context'
 import { upsertReviewedAppLaunchParts } from '../chatbridge/reviewed-app-launch'
+import { createReviewedAppRouteArtifact } from '../chatbridge/router/decision'
 
 /**
  * 处理搜索结果并返回模型响应的通用函数
@@ -110,6 +111,20 @@ function summarizeMessagesForTrace(messages: Message[]) {
     contentPreview: getMessageText(message).slice(0, 240),
     contentPartTypes: message.contentParts.map((part) => part.type),
   }))
+}
+
+function normalizeResultContentParts(
+  infoParts: MessageInfoPart[],
+  contentParts: StreamTextResult['contentParts'],
+  options: {
+    reviewedRouteArtifact?: Message['contentParts'][number]
+  } = {}
+) {
+  return upsertReviewedAppLaunchParts([
+    ...infoParts,
+    ...(options.reviewedRouteArtifact ? [options.reviewedRouteArtifact] : []),
+    ...(contentParts ?? []),
+  ])
 }
 
 async function ocrMessages(messages: Message[], traceContext?: LangSmithTraceContext) {
@@ -265,6 +280,7 @@ export async function streamText(
   // 2. sequence messages to fix the order, prevent model API 400 errors
   const messages = sequenceMessages(params.messages)
   const infoParts: MessageInfoPart[] = []
+  let reviewedRouteArtifact: Message['contentParts'][number] | undefined
   try {
     params.onResultChangeWithCancel({ cancel }) // 这里先传递 cancel 方法
     const onResultChange: OnResultChange = (data) => {
@@ -272,7 +288,9 @@ export async function streamText(
         result = {
           ...result,
           ...data,
-          contentParts: upsertReviewedAppLaunchParts([...infoParts, ...data.contentParts]),
+          contentParts: normalizeResultContentParts(infoParts, data.contentParts, {
+            reviewedRouteArtifact,
+          }),
         }
       } else {
         result = { ...result, ...data }
@@ -424,6 +442,11 @@ export async function streamText(
 
     if (model.isSupportToolUse()) {
       const chatBridgeSingleAppTools = createReviewedSingleAppToolSet({ messages })
+      reviewedRouteArtifact =
+        Object.keys(chatBridgeSingleAppTools.tools).length === 0 &&
+        (chatBridgeSingleAppTools.routeDecision.kind === 'clarify' || chatBridgeSingleAppTools.routeDecision.kind === 'refuse')
+          ? createReviewedAppRouteArtifact(chatBridgeSingleAppTools.routeDecision)
+          : undefined
       void langsmith
         .recordEvent({
           name: 'chatbridge.routing.reviewed-app-decision',
@@ -439,6 +462,8 @@ export async function streamText(
             selectionStatus: chatBridgeSingleAppTools.selection.status,
             selectionSource: chatBridgeSingleAppTools.selectionSource,
             toolNames: Object.keys(chatBridgeSingleAppTools.tools).sort(),
+            artifactInserted: Boolean(reviewedRouteArtifact),
+            artifactKind: reviewedRouteArtifact ? chatBridgeSingleAppTools.routeDecision.kind : null,
           },
           metadata: {
             ...correlationMetadata,
@@ -482,7 +507,9 @@ export async function streamText(
     if (result.contentParts) {
       result = {
         ...result,
-        contentParts: upsertReviewedAppLaunchParts([...infoParts, ...result.contentParts]),
+        contentParts: normalizeResultContentParts(infoParts, result.contentParts, {
+          reviewedRouteArtifact,
+        }),
       }
     }
 

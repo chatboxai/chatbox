@@ -44,6 +44,8 @@ const STOP_WORDS = new Set([
 ])
 
 export const CHATBRIDGE_ROUTE_DECISION_SCHEMA_VERSION = 2 as const
+export const CHATBRIDGE_ROUTE_ARTIFACT_STATE_SCHEMA_VERSION = 1 as const
+export const CHATBRIDGE_ROUTE_ARTIFACT_STATE_VALUES_KEY = 'chatbridgeRouteArtifactState' as const
 
 export const ChatBridgeRouteDecisionKindSchema = z.enum(['invoke', 'clarify', 'refuse'])
 export type ChatBridgeRouteDecisionKind = z.infer<typeof ChatBridgeRouteDecisionKindSchema>
@@ -58,6 +60,32 @@ export const ChatBridgeRouteDecisionReasonCodeSchema = z.enum([
   'invalid-prompt',
 ])
 export type ChatBridgeRouteDecisionReasonCode = z.infer<typeof ChatBridgeRouteDecisionReasonCodeSchema>
+
+export const ChatBridgeRouteArtifactStatusSchema = z.enum([
+  'pending',
+  'launch-requested',
+  'chat-only',
+  'launch-failed',
+])
+
+export type ChatBridgeRouteArtifactStatus = z.infer<typeof ChatBridgeRouteArtifactStatusSchema>
+
+export const ChatBridgeRouteArtifactStateSchema = z
+  .object({
+    schemaVersion: z
+      .literal(CHATBRIDGE_ROUTE_ARTIFACT_STATE_SCHEMA_VERSION)
+      .default(CHATBRIDGE_ROUTE_ARTIFACT_STATE_SCHEMA_VERSION),
+    status: ChatBridgeRouteArtifactStatusSchema,
+    selectedAppId: z.string().min(1).optional(),
+    selectedAppName: z.string().min(1).optional(),
+    statusLabel: z.string().min(1).optional(),
+    title: z.string().min(1).optional(),
+    description: z.string().min(1).optional(),
+    errorMessage: z.string().min(1).optional(),
+  })
+  .strict()
+
+export type ChatBridgeRouteArtifactState = z.infer<typeof ChatBridgeRouteArtifactStateSchema>
 
 export const ChatBridgeRouteCandidateMatchSchema = z
   .object({
@@ -390,11 +418,43 @@ export function getChatBridgeRouteDecision(
   return parsed.success ? parsed.data : null
 }
 
+export function readChatBridgeRouteArtifactState(values: Record<string, unknown> | undefined) {
+  const parsed = ChatBridgeRouteArtifactStateSchema.safeParse(values?.[CHATBRIDGE_ROUTE_ARTIFACT_STATE_VALUES_KEY])
+  return parsed.success ? parsed.data : null
+}
+
+export function getChatBridgeRouteArtifactState(
+  part: Pick<MessageAppPart, 'values'>
+): ChatBridgeRouteArtifactState | null {
+  return readChatBridgeRouteArtifactState(
+    part.values && typeof part.values === 'object' ? (part.values as Record<string, unknown>) : undefined
+  )
+}
+
+export function writeChatBridgeRouteArtifactStateValues(
+  values: Record<string, unknown> | undefined,
+  state: ChatBridgeRouteArtifactState
+) {
+  return {
+    ...(values || {}),
+    [CHATBRIDGE_ROUTE_ARTIFACT_STATE_VALUES_KEY]: ChatBridgeRouteArtifactStateSchema.parse(state),
+  }
+}
+
 export function createChatBridgeRouteMessagePart(decision: ChatBridgeRouteDecision): MessageAppPart {
   const selected = getSelectedMatch(decision.matches, decision.selectedAppId)
   const appId = selected?.appId ?? 'chatbridge-router'
   const appName = selected?.appName ?? 'ChatBridge'
   const isRuntimeUnsupported = decision.reasonCode === 'runtime-unsupported'
+  const routeArtifactValues = writeChatBridgeRouteArtifactStateValues(
+    {
+      chatbridgeRouteDecision: decision,
+    },
+    {
+      schemaVersion: CHATBRIDGE_ROUTE_ARTIFACT_STATE_SCHEMA_VERSION,
+      status: 'pending',
+    }
+  )
 
   if (isRuntimeUnsupported) {
     const supportedHostRuntimes = decision.runtimeBlock?.supportedHostRuntimes ?? ['desktop-electron']
@@ -416,9 +476,7 @@ export function createChatBridgeRouteMessagePart(decision: ChatBridgeRouteDecisi
       statusText: decision.hostRuntime === 'web-browser' ? 'Desktop only' : 'Unavailable',
       fallbackTitle: 'Supported runtime required',
       fallbackText: `Current runtime: ${getChatBridgeHostRuntimeLabel(decision.hostRuntime)}. Supported runtimes: ${supportedRuntimeSummary}. The host kept the request in chat instead of attempting a broken launch.`,
-      values: {
-        chatbridgeRouteDecision: decision,
-      },
+      values: routeArtifactValues,
     }
   }
 
@@ -440,8 +498,6 @@ export function createChatBridgeRouteMessagePart(decision: ChatBridgeRouteDecisi
     summary: decision.summary,
     title,
     statusText,
-    values: {
-      chatbridgeRouteDecision: decision,
-    },
+    values: routeArtifactValues,
   }
 }

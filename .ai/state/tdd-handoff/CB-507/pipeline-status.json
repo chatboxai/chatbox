@@ -1,0 +1,17 @@
+{
+  "storyId": "CB-507",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "failed-as-expected",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm test -- src/renderer/packages/chatbridge/router/actions.test.ts src/renderer/packages/model-calls/index.test.ts src/renderer/packages/model-calls/stream-text.test.ts src/renderer/components/chatbridge/ChatBridgeMessagePart.test.tsx test/integration/chatbridge/scenarios/route-decision-live-artifacts.test.ts",
+    "failureSummary": [
+      "The clarify-launch assertion in actions.test.ts used toMatchObject(expect.arrayContaining(...)) against heterogeneous content parts, so the matcher failed even though the route receipt, tool-call part, and reviewed launch part were correct.",
+      "index.test.ts timed out under the broader Vitest run because importing model-calls/index.ts also loaded the heavy stream-text and generate-image re-export graph for a generateText-only tracing test."
+    ]
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm test -- src/renderer/packages/chatbridge/router/actions.test.ts src/renderer/packages/model-calls/index.test.ts src/renderer/packages/model-calls/stream-text.test.ts src/renderer/components/chatbridge/ChatBridgeMessagePart.test.tsx test/integration/chatbridge/scenarios/route-decision-live-artifacts.test.ts"
+  }
+}

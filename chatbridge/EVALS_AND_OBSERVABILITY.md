@@ -174,6 +174,12 @@ the scenario harness can produce real traces when `LANGSMITH_TRACING=true`.
 
 - live reviewed invoke selection and natural-Chess fallback:
   `src/renderer/packages/chatbridge/single-app-tools.ts`
+- live route artifact injection and receipt state:
+  `src/shared/chatbridge/routing.ts`
+- live route clarify/refuse action handling:
+  `src/renderer/packages/chatbridge/router/actions.ts`
+- live route artifact renderer:
+  `src/renderer/components/chatbridge/ChatBridgeRouteArtifact.tsx`
 - host bridge runtime:
   `src/renderer/packages/chatbridge/bridge/host-controller.ts`
 - reviewed-app launch normalization:
@@ -211,6 +217,16 @@ LLM/planner runs:
 - key outputs:
   `decisionKind`, `selectedAppId`, `selectionStatus`, `selectionSource`,
   `toolNames`
+
+`CB-507` adds the live clarify/refuse route-receipt surface and the explicit
+selection event:
+
+- live artifact scenario proof:
+  `test/integration/chatbridge/scenarios/route-decision-live-artifacts.test.ts`
+- renderer interaction event:
+  `chatbridge.routing.clarify-selection`
+- key route receipt states:
+  `pending`, `chat-only`, `launch-requested`, `launch-failed`
 
 `CB-510` also adds the dedicated Weather Dashboard runtime and host-owned
 weather fetch boundary:

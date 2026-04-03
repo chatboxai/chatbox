@@ -1,5 +1,7 @@
 import {
   getChatBridgeChessStatusText,
+  getChatBridgeRouteArtifactState,
+  getChatBridgeRouteDecision,
   isChatBridgeChessAppId,
   isChatBridgeStoryBuilderAppId,
   getChatBridgeStoryBuilderModeLabel,
@@ -122,6 +124,61 @@ export function getMessageAppPartViewModel(part: MessageAppPart): ChatBridgeShel
   const state = degradedCompletion ? 'degraded' : getChatBridgeShellStateFromLifecycle(part.lifecycle)
   const shellLabel = part.appName || part.appId
   const appLabel = part.title || shellLabel
+  const routeDecision = getChatBridgeRouteDecision(part)
+  const routeState = routeDecision ? getChatBridgeRouteArtifactState(part) : null
+
+  if (routeDecision) {
+    const routeShellState: ChatBridgeShellState =
+      routeState?.status === 'launch-requested'
+        ? 'loading'
+        : routeState?.status === 'launch-failed' || routeDecision.reasonCode === 'runtime-unsupported'
+          ? 'error'
+          : 'ready'
+
+    const title =
+      routeState?.title ||
+      part.title ||
+      (routeDecision.kind === 'clarify'
+        ? 'Choose the next step'
+        : routeDecision.reasonCode === 'runtime-unsupported'
+          ? `${part.appName || 'This reviewed app'} is unavailable here`
+          : 'Keep this in chat')
+    const description =
+      routeState?.description ||
+      part.description ||
+      (routeDecision.kind === 'clarify'
+        ? 'The host paused before launching a reviewed app and kept the decision explicit in the timeline.'
+        : 'The host kept the reviewed route decision explicit and did not launch an app.')
+    const statusLabel =
+      routeState?.statusLabel ||
+      part.statusText ||
+      (routeDecision.kind === 'clarify'
+        ? 'Clarify'
+        : routeDecision.reasonCode === 'runtime-unsupported'
+          ? 'Unavailable'
+          : 'Chat only')
+
+    return {
+      state: routeShellState,
+      title,
+      description,
+      surfaceTitle:
+        routeDecision.kind === 'clarify'
+          ? 'Route choices'
+          : routeDecision.reasonCode === 'runtime-unsupported'
+            ? 'Runtime support'
+            : 'Route receipt',
+      surfaceDescription:
+        routeDecision.kind === 'clarify'
+          ? routeDecision.summary
+          : routeDecision.reasonCode === 'runtime-unsupported'
+            ? part.fallbackText || routeDecision.summary
+            : routeDecision.summary,
+      statusLabel,
+      fallbackTitle: part.fallbackTitle,
+      fallbackText: part.fallbackText || routeState?.errorMessage,
+    }
+  }
 
   if (isChatBridgeChessAppId(part.appId) && !isChatBridgeReviewedAppLaunchPart(part)) {
     const persistentSnapshot = ChessAppSnapshotSchema.safeParse(part.snapshot)

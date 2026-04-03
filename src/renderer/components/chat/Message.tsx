@@ -2,7 +2,7 @@ import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, type ActionIconProps, Flex, Image as Img, Loader, Text, Tooltip as Tooltip1 } from '@mantine/core'
 import { Grid, Typography, useTheme } from '@mui/material'
 import Box from '@mui/material/Box'
-import type { Message, MessageAppPart, MessagePicture, MessageToolCallPart, SessionType } from '@shared/types'
+import type { Message, MessageAppPart, MessageContentParts, MessagePicture, MessageToolCallPart, SessionType } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import {
   IconArrowDown,
@@ -487,6 +487,17 @@ const _Message: FC<Props> = (props) => {
                               contentPartIndex === index ? nextPart : contentPart
                             )
                             void modifyMessage(
+                              sessionId,
+                              {
+                                ...msg,
+                                contentParts: nextContentParts,
+                              },
+                              true
+                            )
+                          }}
+                          onUpdateMessageContentParts={async (updater) => {
+                            const nextContentParts = await updater(msg.contentParts as MessageContentParts)
+                            await modifyMessage(
                               sessionId,
                               {
                                 ...msg,

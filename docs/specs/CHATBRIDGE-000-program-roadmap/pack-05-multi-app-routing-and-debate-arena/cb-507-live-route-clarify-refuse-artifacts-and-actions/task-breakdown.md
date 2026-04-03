@@ -41,17 +41,17 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Clarify/refusal artifact states are documented before code
+  - [x] Clarify/refusal artifact states are documented before code
 - T002 tests:
-  - [ ] Ambiguous prompt renders a clarify artifact in live runtime
+  - [x] Ambiguous prompt renders a clarify artifact in live runtime
 - T003 tests:
-  - [ ] Clarify action launches through host-owned state
+  - [x] Clarify action launches through host-owned state
 - T004 tests:
-  - [ ] Refusal, stale actions, and reload persistence remain correct
+  - [x] Refusal, stale actions, and reload persistence remain correct
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
 - [ ] Deferred tasks documented with rationale

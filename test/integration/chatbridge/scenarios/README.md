@@ -40,6 +40,7 @@ Representative CB-006 traced scenario families now include:
 - `single-app-tool-discovery-and-invocation.test.ts`
 - `mid-game-board-context.test.ts`
 - `route-decision-artifacts.test.ts`
+- `route-decision-live-artifacts.test.ts`
 - `bridge-session-security.test.ts`
 - `app-aware-persistence.test.ts`
 - `story-builder-lifecycle.test.ts`
@@ -82,3 +83,11 @@ For scriptable audit support outside the scenario runner, inspect the current
 seed/preset corpus through
 `src/renderer/packages/initial_data.ts` ->
 `getChatBridgeSmokeInspectionSnapshot()` instead of booting renderer storage.
+
+Current Pack 05 live route-artifact proof lives in:
+
+- `route-decision-live-artifacts.test.ts`
+  for live clarify/refuse artifact injection in the assistant timeline
+- `src/renderer/packages/chatbridge/router/actions.test.ts`
+  for host-owned clarify actions, reviewed-launch reuse, and stale replay
+  rejection

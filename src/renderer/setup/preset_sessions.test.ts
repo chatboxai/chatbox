@@ -71,6 +71,7 @@ describe('preset session backfill', () => {
       `${CHATBRIDGE_LIVE_SEED_PREFIX} Platform recovery`,
       `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess mid-game board context`,
       `${CHATBRIDGE_LIVE_SEED_PREFIX} Drawing Kit doodle dare`,
+      `${CHATBRIDGE_LIVE_SEED_PREFIX} Weather dashboard`,
       `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess runtime`,
       `${CHATBRIDGE_LIVE_SEED_PREFIX} History + preview`,
     ])

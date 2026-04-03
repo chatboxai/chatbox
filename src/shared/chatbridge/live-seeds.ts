@@ -17,6 +17,12 @@ import {
   type DrawingKitAppSnapshot,
 } from './apps/drawing-kit'
 import {
+  WEATHER_DASHBOARD_APP_ID,
+  WEATHER_DASHBOARD_APP_NAME,
+  createWeatherDashboardLoadingSnapshot,
+  type WeatherDashboardSnapshot,
+} from './apps/weather-dashboard'
+import {
   CHATBRIDGE_DEGRADED_COMPLETION_SCHEMA_VERSION,
   writeChatBridgeDegradedCompletionValues,
 } from './degraded-completion'
@@ -1063,6 +1069,97 @@ function createDrawingKitRuntimeMessage(id: string, timestamp: number, snapshot:
   }
 }
 
+function createWeatherDashboardRuntimeMessage(id: string, timestamp: number, snapshot: WeatherDashboardSnapshot): Message {
+  const request = snapshot.request ?? 'Open Weather Dashboard for Chicago and show the forecast.'
+  const location = snapshot.locationQuery ?? 'Chicago'
+  const toolCallId = 'tool-weather-dashboard-seeded'
+  const appInstanceId = `reviewed-launch:${toolCallId}`
+  const bridgeSessionId = 'bridge-weather-dashboard-seeded'
+  const launchSummary = 'Prepared the reviewed Weather Dashboard request for the host-owned launch path.'
+
+  return {
+    id,
+    role: 'assistant',
+    timestamp,
+    contentParts: [
+      {
+        type: 'text',
+        text: 'Weather Dashboard is ready in-thread. Inspect the current conditions, refresh the host-owned snapshot, and confirm the later summary stays weather-bounded.',
+      },
+      {
+        type: 'app',
+        appId: WEATHER_DASHBOARD_APP_ID,
+        appName: WEATHER_DASHBOARD_APP_NAME,
+        appInstanceId,
+        lifecycle: 'ready',
+        summary: snapshot.summary,
+        summaryForModel: snapshot.summary,
+        toolCallId,
+        bridgeSessionId,
+        title: WEATHER_DASHBOARD_APP_NAME,
+        description:
+          'The host is preparing Weather Dashboard inline so current conditions, short forecast data, and stale-state recovery stay inside the reviewed shell.',
+        statusText: snapshot.statusText,
+        fallbackTitle: 'Weather Dashboard fallback',
+        fallbackText:
+          'If live weather cannot load, the host keeps the latest safe snapshot or an explicit unavailable-state explanation in this thread.',
+        snapshot,
+        values: writeChatBridgeReviewedAppLaunchValues(undefined, {
+          schemaVersion: 1,
+          appId: WEATHER_DASHBOARD_APP_ID,
+          appName: WEATHER_DASHBOARD_APP_NAME,
+          appVersion: '0.1.0',
+          toolName: 'weather_dashboard_open',
+          capability: 'open',
+          summary: launchSummary,
+          request,
+          location,
+          uiEntry: 'https://apps.example.com/weather-dashboard',
+          origin: 'https://apps.example.com',
+        }),
+      },
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId,
+        toolName: 'weather_dashboard_open',
+        args: {
+          request,
+          location,
+        },
+        result: {
+          kind: 'chatbridge.host.tool.record.v1',
+          toolName: 'weather_dashboard_open',
+          appId: WEATHER_DASHBOARD_APP_ID,
+          sessionId: 'seeded-weather-dashboard-session',
+          schemaVersion: CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
+          executionAuthority: 'host',
+          effect: 'read',
+          retryClassification: 'safe',
+          invocation: {
+            args: {
+              request,
+              location,
+            },
+          },
+          outcome: {
+            status: 'success',
+            result: {
+              appId: WEATHER_DASHBOARD_APP_ID,
+              appName: WEATHER_DASHBOARD_APP_NAME,
+              capability: 'open',
+              launchReady: true,
+              summary: launchSummary,
+              request,
+              location,
+            },
+          },
+        },
+      },
+    ],
+  }
+}
+
 function createSeededDrawingKitAppRecords(snapshot: DrawingKitAppSnapshot) {
   const appInstanceId = 'reviewed-launch:tool-drawing-kit-seeded'
   const bridgeSessionId = 'bridge-drawing-kit-seeded'
@@ -1120,6 +1217,71 @@ function createSeededDrawingKitAppRecords(snapshot: DrawingKitAppSnapshot) {
   const readyTransition = applyChatBridgeAppEvent(createdTransition.instance, readyEvent)
   if (!readyTransition.accepted) {
     throw new Error(`Unable to seed Drawing Kit ready event: ${readyTransition.reason}`)
+  }
+
+  return {
+    instances: [readyTransition.instance],
+    events: [createdEvent, readyEvent],
+  }
+}
+
+function createSeededWeatherDashboardAppRecords(snapshot: WeatherDashboardSnapshot) {
+  const appInstanceId = 'reviewed-launch:tool-weather-dashboard-seeded'
+  const bridgeSessionId = 'bridge-weather-dashboard-seeded'
+  const baseInstance = createChatBridgeAppInstance({
+    id: appInstanceId,
+    appId: WEATHER_DASHBOARD_APP_ID,
+    appVersion: '1.0.0',
+    bridgeSessionId,
+    owner: {
+      authority: 'host',
+      conversationSessionId: 'seeded-weather-dashboard-session',
+      initiatedBy: 'assistant',
+    },
+    resumability: {
+      mode: 'restartable',
+      reason: 'The host can relaunch Weather Dashboard from the preserved weather request.',
+    },
+    createdAt: 3,
+  })
+
+  const createdEvent = createChatBridgeAppEvent({
+    id: 'event-weather-created',
+    appInstanceId: baseInstance.id,
+    kind: 'instance.created',
+    actor: 'host',
+    sequence: 1,
+    createdAt: 3,
+    bridgeSessionId,
+    nextStatus: 'launching',
+    payload: {
+      initiatedBy: 'assistant',
+    },
+  })
+
+  const createdTransition = applyChatBridgeAppEvent(baseInstance, createdEvent)
+  if (!createdTransition.accepted) {
+    throw new Error(`Unable to seed Weather Dashboard created event: ${createdTransition.reason}`)
+  }
+
+  const readyEvent = createChatBridgeAppEvent({
+    id: 'event-weather-ready',
+    appInstanceId: baseInstance.id,
+    kind: 'bridge.ready',
+    actor: 'host',
+    sequence: 2,
+    createdAt: 4,
+    bridgeSessionId,
+    nextStatus: 'ready',
+    snapshot,
+    payload: {
+      source: 'seeded-runtime',
+    },
+  })
+
+  const readyTransition = applyChatBridgeAppEvent(createdTransition.instance, readyEvent)
+  if (!readyTransition.accepted) {
+    throw new Error(`Unable to seed Weather Dashboard ready event: ${readyTransition.reason}`)
   }
 
   return {
@@ -1617,6 +1779,33 @@ export function buildChatBridgeDrawingKitDoodleDareSessionFixture(): Omit<Sessio
   }
 }
 
+export function buildChatBridgeWeatherDashboardSessionFixture(): Omit<Session, 'id'> {
+  const request = 'Open Weather Dashboard for Chicago and show the forecast.'
+  const snapshot = createWeatherDashboardLoadingSnapshot({
+    request,
+    locationQuery: 'Chicago',
+    units: 'imperial',
+    updatedAt: 3,
+  })
+
+  return {
+    name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Weather dashboard`,
+    type: 'chat',
+    threadName: 'Weather Dashboard',
+    messages: [
+      createTextMessage(
+        'msg-weather-system',
+        'system',
+        'Keep weather follow-up grounded in the host-owned snapshot, freshness state, and short forecast summary rather than raw provider payloads.',
+        1
+      ),
+      createTextMessage('msg-weather-user', 'user', request, 2),
+      createWeatherDashboardRuntimeMessage('msg-weather-assistant', 3, snapshot),
+    ],
+    chatBridgeAppRecords: createSeededWeatherDashboardAppRecords(snapshot),
+  }
+}
+
 export function buildChatBridgeChessRuntimeSessionFixture(): Omit<Session, 'id'> {
   return {
     name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess runtime`,
@@ -1771,6 +1960,33 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
         },
       ],
       sessionInput: buildChatBridgeDrawingKitDoodleDareSessionFixture(),
+    },
+    {
+      id: 'weather-dashboard',
+      name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Weather dashboard`,
+      description:
+        'Seeds the reviewed Weather Dashboard launch so you can verify the host-owned weather snapshot, refresh flow, and inline continuity summary inside the normal chat shell.',
+      fixtureRole: 'active-flagship',
+      smokeSupport: 'supported',
+      coverage: ['Weather runtime', 'Host-owned weather fetch', 'Refresh continuity'],
+      auditSteps: [
+        {
+          action: 'Open the seeded Weather Dashboard session and wait for the initial host-owned weather snapshot to load.',
+          expected:
+            'The dashboard renders inline with current conditions, a short forecast, and an explicit host-status card instead of a plain text fallback.',
+        },
+        {
+          action: 'Click `Refresh weather` after the first snapshot loads.',
+          expected:
+            'The same inline dashboard remains mounted, the host status updates, and the refreshed or cached snapshot stays visible without spawning a separate receipt.',
+        },
+        {
+          action: 'Ask a follow-up such as `Summarize the weather you just showed me.` in the same thread.',
+          expected:
+            'Later chat stays grounded in the host-owned weather summary and does not invent provider details that were never rendered or normalized.',
+        },
+      ],
+      sessionInput: buildChatBridgeWeatherDashboardSessionFixture(),
     },
     {
       id: 'chess-runtime',

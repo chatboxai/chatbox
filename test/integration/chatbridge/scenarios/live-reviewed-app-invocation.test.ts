@@ -162,6 +162,50 @@ describe('ChatBridge live reviewed app invocation path', () => {
       )
     }))
 
+  it('preserves the normalized weather location on the live reviewed Weather launch path', () =>
+    traceScenario('preserves the normalized weather location on the live reviewed Weather launch path', async () => {
+      const prompt = 'Open Weather Dashboard for Chicago and show the forecast.'
+      const { chat, model } = createToolCallingModelStub(() => ({
+        toolName: 'weather_dashboard_open',
+        args: {
+          request: prompt,
+          location: 'Chicago',
+        },
+      }))
+
+      const result = await streamText(model, {
+        sessionId: 'session-cb-510-weather',
+        messages: [createTextMessage('msg-weather-user', 'user', prompt, 1)],
+        onResultChangeWithCancel: vi.fn(),
+      })
+
+      expect(chat).toHaveBeenCalledOnce()
+      expect(Object.keys(chat.mock.calls[0]?.[1]?.tools ?? {})).toEqual(['weather_dashboard_open'])
+      const weatherPart = findAppPart(result.result.contentParts)
+      expect(weatherPart).toMatchObject({
+        appId: 'weather-dashboard',
+        appName: 'Weather Dashboard',
+        lifecycle: 'launching',
+      })
+      expect(weatherPart ? readChatBridgeReviewedAppLaunch(weatherPart.values) : null).toMatchObject({
+        appId: 'weather-dashboard',
+        toolName: 'weather_dashboard_open',
+        location: 'Chicago',
+      })
+      expect(langsmithMocks.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'chatbridge.routing.reviewed-app-decision',
+          parentRunId: 'renderer-run-1',
+          outputs: expect.objectContaining({
+            decisionKind: 'invoke',
+            selectedAppId: 'weather-dashboard',
+            selectionSource: 'route-decision',
+            toolNames: ['weather_dashboard_open'],
+          }),
+        })
+      )
+    }))
+
   it('keeps natural Chess prompts on the live reviewed Chess launch path', () =>
     traceScenario('keeps natural Chess prompts on the live reviewed Chess launch path', async () => {
       const fen = 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3'

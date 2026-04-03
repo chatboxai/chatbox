@@ -108,6 +108,47 @@ function createDrawingKitLaunchToolCallPart(): MessageToolCallPart {
   }
 }
 
+function createWeatherDashboardLaunchToolCallPart(): MessageToolCallPart {
+  return {
+    type: 'tool-call',
+    state: 'result',
+    toolCallId: 'tool-reviewed-launch-weather-1',
+    toolName: 'weather_dashboard_open',
+    args: {
+      request: 'Open Weather Dashboard for Chicago and show the forecast.',
+      location: 'Chicago',
+    },
+    result: {
+      kind: 'chatbridge.host.tool.record.v1',
+      toolName: 'weather_dashboard_open',
+      appId: 'weather-dashboard',
+      sessionId: 'session-reviewed-launch-weather-1',
+      schemaVersion: CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
+      executionAuthority: 'host',
+      effect: 'read',
+      retryClassification: 'safe',
+      invocation: {
+        args: {
+          request: 'Open Weather Dashboard for Chicago and show the forecast.',
+          location: 'Chicago',
+        },
+      },
+      outcome: {
+        status: 'success',
+        result: {
+          appId: 'weather-dashboard',
+          appName: 'Weather Dashboard',
+          capability: 'open',
+          launchReady: true,
+          summary: 'Prepared the reviewed Weather Dashboard request for the host-owned launch path.',
+          request: 'Open Weather Dashboard for Chicago and show the forecast.',
+          location: 'Chicago',
+        },
+      },
+    },
+  }
+}
+
 function createSessionWithGenericLaunchPart(): { session: Session; launchPart: MessageAppPart } {
   const assistantMessage = createMessage('assistant')
   assistantMessage.id = 'assistant-reviewed-launch-1'
@@ -248,6 +289,27 @@ describe('reviewed app launch adoption', () => {
       appName: 'Drawing Kit',
       toolName: 'drawing_kit_open',
       request: 'Open Drawing Kit and start a sticky-note doodle dare.',
+    })
+  })
+
+  it('preserves weather location hints on the generic reviewed launch shell', () => {
+    const [, derivedLaunchPart] = upsertReviewedAppLaunchParts([createWeatherDashboardLaunchToolCallPart()])
+    if (derivedLaunchPart?.type !== 'app') {
+      throw new Error('Expected the derived weather launch part to be an app part.')
+    }
+
+    expect(derivedLaunchPart).toMatchObject({
+      type: 'app',
+      appId: 'weather-dashboard',
+      appName: 'Weather Dashboard',
+      lifecycle: 'launching',
+      statusText: 'Launching',
+    })
+    expect(readChatBridgeReviewedAppLaunch(derivedLaunchPart.values)).toMatchObject({
+      appId: 'weather-dashboard',
+      toolName: 'weather_dashboard_open',
+      request: 'Open Weather Dashboard for Chicago and show the forecast.',
+      location: 'Chicago',
     })
   })
 

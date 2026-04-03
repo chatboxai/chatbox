@@ -159,6 +159,43 @@ describe('chatbridge manual smoke tracing', () => {
     await expect(finishChatBridgeManualSmokeTrace('manual-run-1', 'passed')).resolves.toBe(true)
   })
 
+  it('marks the Weather Dashboard fixture as a supported CB-510 smoke path', async () => {
+    expect(getChatBridgeManualSmokeFixtureMode('weather-dashboard')).toMatchObject({
+      support: 'supported',
+      descriptor: expect.objectContaining({
+        slug: 'chatbridge-weather-dashboard',
+        storyId: 'CB-510',
+      }),
+    })
+
+    const fixture = getChatBridgeLiveSeedFixtures().find((candidate) => candidate.id === 'weather-dashboard')
+    expect(fixture).toBeTruthy()
+    if (!fixture) {
+      return
+    }
+
+    await expect(startChatBridgeManualSmokeTrace(fixture, 'seeded-session-weather')).resolves.toMatchObject({
+      status: 'started',
+      traceId: 'manual-run-1',
+      traceLabel: expect.stringContaining('chatbridge.manual_smoke.chatbridge-weather-dashboard'),
+      run: {
+        fixtureId: 'weather-dashboard',
+      },
+    })
+
+    expect(mocks.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          fixtureId: 'weather-dashboard',
+          storyId: 'CB-510',
+        }),
+        tags: expect.arrayContaining(['cb-510', 'seed-lab']),
+      })
+    )
+
+    await expect(finishChatBridgeManualSmokeTrace('manual-run-1', 'passed')).resolves.toBe(true)
+  })
+
   it('returns an explicit unsupported smoke result for legacy reference fixtures', async () => {
     const fixture = getChatBridgeLiveSeedFixtures().find((candidate) => candidate.id === 'history-and-preview')
     expect(fixture).toBeTruthy()

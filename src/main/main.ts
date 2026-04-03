@@ -21,6 +21,7 @@ import type { ShortcutSetting } from 'src/shared/types'
 import * as analystic from './analystic-node'
 import { AppUpdater } from './app-updater'
 import { registerLangSmithIpcHandlers } from './adapters/langsmith'
+import { registerChatBridgeWeatherIpcHandlers } from './chatbridge/weather'
 import * as autoLauncher from './autoLauncher'
 import { handleDeepLink } from './deeplinks'
 import { parseFile } from './file-parser'
@@ -46,6 +47,7 @@ const knowledgeBaseInitPromise = import('./knowledge-base/index.js')
   })
 
 registerLangSmithIpcHandlers()
+registerChatBridgeWeatherIpcHandlers()
 
 // 这行代码是解决 Windows 通知的标题和图标不正确的问题，标题会错误显示成 electron.app.Chatbox
 // 参考：https://stackoverflow.com/questions/65859634/notification-from-electron-shows-electron-app-electron

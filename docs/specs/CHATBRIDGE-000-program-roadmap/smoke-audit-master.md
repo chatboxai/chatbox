@@ -397,12 +397,12 @@ completion and live product behavior.
   - Legacy Story Builder auth/resource evidence remains intentionally present,
     but it is now described as legacy-reference coverage instead of active
     flagship proof.
-  - Post-`CB-509`, Drawing Kit now has traced follow-up/recovery proof plus a
-    supported desktop manual-smoke trace; Weather remains the only active
-    flagship still waiting on later runtime/manual-smoke coverage.
+  - Post-`CB-509` and `CB-510`, Drawing Kit and Weather now both have traced
+    runtime/manual-smoke proof; the remaining active Pack 05 product gap is
+    the live clarify/refuse UI tracked separately by SA-003 / `CB-507`.
 - Follow-up story candidate:
-  - none for the alignment layer; runtime/manual-smoke expansion continues in
-    `CB-509` and `CB-510`
+  - none for the alignment layer; active-runtime/manual-smoke expansion is now
+    closed and the queue moves to `CB-507`
 
 ### SA-010: Seeded manual smoke surfaces still center legacy Story Builder flows and old deep links are brittle
 
@@ -437,13 +437,12 @@ completion and live product behavior.
     - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/initial_data.ts`
     - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/dev/ChatBridgeSeedLab.tsx`
 - Notes:
-  - Post-`CB-509`, the active seed corpus now includes the supported
-    `drawing-kit-doodle-dare` flagship fixture and the matching preset session.
-    Weather remains the only active non-Chess fixture still pending later Pack
-    05 runtime work.
+  - Post-`CB-509` and `CB-510`, the active seed corpus now includes the
+    supported `drawing-kit-doodle-dare` and `weather-dashboard` flagship
+    fixtures plus their matching preset sessions.
 - Follow-up story candidate:
-  - none for the labeling/deep-link layer; active non-Chess fixtures arrive in
-    `CB-509` and `CB-510`
+  - none for the labeling/deep-link layer; the remaining Pack 05 work is the
+    clarify/refuse UI tracked by `CB-507`
 
 ### SA-011: Explicit Chess tool requests could still render the generic reviewed-launch shell and time out before showing a board
 
@@ -534,6 +533,15 @@ from either manual execution, a traced scenario run, or both.
   Evidence:
   - live UI verification in `http://localhost:1212/session/chatbox-chat-demo-chatbridge-degraded-completion-recovery`
   - `Continue safely` updated the message state inline and disabled the selected action
+
+- Weather Dashboard launches inline, refreshes through the host-owned weather
+  boundary, and preserves a follow-up summary for later chat turns.
+  Evidence:
+  - `test/integration/chatbridge/scenarios/weather-dashboard-flagship.test.ts`
+  - trace ids:
+    - `8643edea-e549-4438-82ac-3e5db49d0314`
+    - `51c19c3d-e03d-4ca0-b4a3-6dad545b2823`
+    - `565aeb0a-522f-48df-ad93-b4a6737e3cdf`
 
 - Core contract-level ChatBridge scenario suite is green under tracing.
   Evidence:

@@ -2,10 +2,11 @@
  * @vitest-environment jsdom
  */
 
+import { MantineProvider } from '@mantine/core'
 import { fireEvent, render, waitFor } from '@testing-library/react'
 import type { BridgeReadyEvent } from '@shared/chatbridge/bridge-session'
 import type { MessageAppPart, Session } from '@shared/types'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
   const controller = {
@@ -36,6 +37,52 @@ const mocks = vi.hoisted(() => {
       }
 
       return baseSession
+    }),
+    invoke: vi.fn(async (channel: string) => {
+      if (channel === 'chatbridge-weather:get-dashboard') {
+        return {
+          snapshot: {
+            schemaVersion: 1,
+            appId: 'weather-dashboard',
+            request: 'Open Weather Dashboard for Chicago and show the forecast.',
+            locationQuery: 'Chicago',
+            locationName: 'Chicago, Illinois, United States',
+            timezone: 'America/Chicago',
+            units: 'imperial',
+            status: 'ready',
+            statusText: 'Live weather',
+            summary:
+              'Weather Dashboard is active for Chicago, Illinois, United States. Current conditions are 72°F and Mostly clear.',
+            headline: '72°F and Mostly clear',
+            dataStateLabel: 'Fresh host snapshot',
+            lastUpdatedLabel: 'Updated 2:15 PM CDT',
+            sourceLabel: 'Host weather boundary',
+            cacheStatus: 'miss',
+            refreshHint: 'Refresh weather to recheck the host-owned upstream snapshot.',
+            updatedAt: 1717000000000,
+            current: {
+              temperature: 72,
+              apparentTemperature: 70,
+              weatherCode: 1,
+              conditionLabel: 'Mostly clear',
+              windSpeed: 9,
+            },
+            forecast: [
+              {
+                dateKey: '2026-04-02',
+                dayLabel: 'Thu',
+                high: 74,
+                low: 58,
+                weatherCode: 1,
+                conditionLabel: 'Mostly clear',
+                precipitationChance: 10,
+              },
+            ],
+          },
+        }
+      }
+
+      throw new Error(`Unexpected channel: ${channel}`)
     }),
   }
 })
@@ -88,7 +135,54 @@ function createReviewedLaunchPart(): MessageAppPart {
   }
 }
 
+function createWeatherReviewedLaunchPart(): MessageAppPart {
+  return {
+    type: 'app',
+    appId: 'weather-dashboard',
+    appName: 'Weather Dashboard',
+    appInstanceId: 'reviewed-launch:tool-reviewed-launch-weather-1',
+    lifecycle: 'launching',
+    toolCallId: 'tool-reviewed-launch-weather-1',
+    summary: 'Prepared the reviewed Weather Dashboard request for the host-owned launch path.',
+    summaryForModel: 'Prepared the reviewed Weather Dashboard request for the host-owned launch path.',
+    title: 'Weather Dashboard launch',
+    description: 'The host is launching Weather Dashboard through the reviewed runtime.',
+    statusText: 'Launching',
+    fallbackTitle: 'Weather Dashboard fallback',
+    fallbackText: 'The host will keep Weather Dashboard launch and recovery in this thread if live weather cannot load.',
+    values: {
+      chatbridgeReviewedAppLaunch: {
+        schemaVersion: 1,
+        appId: 'weather-dashboard',
+        appName: 'Weather Dashboard',
+        appVersion: '0.1.0',
+        toolName: 'weather_dashboard_open',
+        capability: 'open',
+        summary: 'Prepared the reviewed Weather Dashboard request for the host-owned launch path.',
+        request: 'Open Weather Dashboard for Chicago and show the forecast.',
+        location: 'Chicago',
+      },
+    },
+  }
+}
+
 describe('ReviewedAppLaunchSurface', () => {
+  beforeAll(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     Object.defineProperty(globalThis.URL, 'createObjectURL', {
@@ -101,15 +195,24 @@ describe('ReviewedAppLaunchSurface', () => {
       configurable: true,
       writable: true,
     })
+    Object.defineProperty(window, 'electronAPI', {
+      value: {
+        invoke: mocks.invoke,
+      },
+      configurable: true,
+      writable: true,
+    })
   })
 
   it('boots a reviewed app launch through the bridge controller instead of the seeded chess runtime', async () => {
     const { container, queryByRole } = render(
-      <ReviewedAppLaunchSurface
-        part={createReviewedLaunchPart()}
-        sessionId="session-reviewed-launch-1"
-        messageId="assistant-reviewed-launch-1"
-      />
+      <MantineProvider>
+        <ReviewedAppLaunchSurface
+          part={createReviewedLaunchPart()}
+          sessionId="session-reviewed-launch-1"
+          messageId="assistant-reviewed-launch-1"
+        />
+      </MantineProvider>
     )
 
     expect(queryByRole('button', { name: /g1, white knight/i })).toBeNull()
@@ -180,5 +283,33 @@ describe('ReviewedAppLaunchSurface', () => {
     await waitFor(() => {
       expect(mocks.updateSessionWithMessages).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('renders Weather Dashboard through the dedicated host-owned weather surface', async () => {
+    const { container, getByRole, findByText } = render(
+      <MantineProvider>
+        <ReviewedAppLaunchSurface
+          part={createWeatherReviewedLaunchPart()}
+          sessionId="session-reviewed-launch-weather-1"
+          messageId="assistant-reviewed-launch-weather-1"
+        />
+      </MantineProvider>
+    )
+
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(getByRole('button', { name: /refresh weather/i })).toBeTruthy()
+    await findByText('Chicago, Illinois, United States')
+
+    await waitFor(() => {
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        'chatbridge-weather:get-dashboard',
+        expect.objectContaining({
+          request: 'Open Weather Dashboard for Chicago and show the forecast.',
+          location: 'Chicago',
+          refresh: false,
+        })
+      )
+    })
+    expect(mocks.createBridgeHostController).not.toHaveBeenCalled()
   })
 })

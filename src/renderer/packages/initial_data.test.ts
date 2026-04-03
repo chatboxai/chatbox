@@ -12,6 +12,7 @@ describe('chatbridge smoke inspection snapshot', () => {
       'platform-recovery',
       'chess-mid-game-board-context',
       'drawing-kit-doodle-dare',
+      'weather-dashboard',
       'chess-runtime',
       'history-and-preview',
     ])
@@ -21,6 +22,7 @@ describe('chatbridge smoke inspection snapshot', () => {
       'platform-recovery',
       'chess-mid-game-board-context',
       'drawing-kit-doodle-dare',
+      'weather-dashboard',
       'chess-runtime',
       'history-and-preview',
     ])
@@ -31,6 +33,10 @@ describe('chatbridge smoke inspection snapshot', () => {
       smokeSupport: 'supported',
     })
     expect(snapshot.presetSessions.find((session) => session.fixtureId === 'drawing-kit-doodle-dare')).toMatchObject({
+      fixtureRole: 'active-flagship',
+      smokeSupport: 'supported',
+    })
+    expect(snapshot.presetSessions.find((session) => session.fixtureId === 'weather-dashboard')).toMatchObject({
       fixtureRole: 'active-flagship',
       smokeSupport: 'supported',
     })

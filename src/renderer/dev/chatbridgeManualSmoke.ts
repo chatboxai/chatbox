@@ -127,6 +127,14 @@ const manualSmokeTraceDescriptors: Record<
     smokeSupport: 'supported',
     storyId: 'CB-509',
   },
+  'weather-dashboard': {
+    slug: 'chatbridge-weather-dashboard',
+    primaryFamily: 'reviewed-app-launch',
+    evidenceFamilies: ['persistence', 'recovery'],
+    runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+    smokeSupport: 'supported',
+    storyId: 'CB-510',
+  },
   'chess-runtime': {
     slug: 'chatbridge-chess-runtime',
     primaryFamily: 'reviewed-app-launch',
@@ -155,6 +163,8 @@ export function getChatBridgeManualSmokeFixtureMode(fixtureId: string): ManualSm
             ? 'Supported desktop smoke fixture covering Chess follow-up reasoning context.'
             : fixtureId === 'drawing-kit-doodle-dare'
               ? 'Supported desktop smoke fixture covering the Drawing Kit doodle game, checkpoint continuity, and follow-up chat.'
+            : fixtureId === 'weather-dashboard'
+              ? 'Supported desktop smoke fixture covering the Weather Dashboard launch, refresh path, and host-owned follow-up summary.'
             : fixtureId === 'platform-recovery'
               ? 'Supported desktop smoke fixture covering platform-side failure recovery.'
               : fixtureId === 'degraded-completion-recovery'

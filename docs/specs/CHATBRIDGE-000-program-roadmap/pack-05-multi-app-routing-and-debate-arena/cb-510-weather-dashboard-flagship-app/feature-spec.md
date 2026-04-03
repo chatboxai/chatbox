@@ -66,8 +66,8 @@ structured dashboard in-thread and uses a host-owned external API boundary.
 ## UI Requirements
 
 - This story has visible UI scope.
-- Produce Pencil variations for the inline dashboard, refresh controls, and
-  degraded states before implementation.
+- Use the checked-in autonomous UI design workflow for the inline dashboard,
+  refresh controls, and degraded states before implementation.
 - The dashboard must render cleanly in the chat shell and remain accessible.
 
 ## Out of Scope
@@ -80,7 +80,8 @@ structured dashboard in-thread and uses a host-owned external API boundary.
 
 - Weather Dashboard launches inline and renders structured weather data through
   a host-owned external API boundary.
-- The app has approved Pencil evidence before UI code.
+- The app has a recorded design brief, research pass, and design decision
+  before UI code.
 - Tests cover launch, data fetch, refresh, degraded upstream behavior, and
   follow-up chat continuity.
 - Validation passes for the touched scope.

@@ -12,6 +12,7 @@ export const ChatBridgeReviewedAppLaunchSchema = z.object({
   capability: z.string().trim().min(1).optional(),
   summary: z.string().trim().min(1),
   request: z.string().trim().min(1).optional(),
+  location: z.string().trim().min(1).optional(),
   fen: z.string().trim().min(1).optional(),
   pgn: z.string().trim().min(1).optional(),
   uiEntry: z.string().trim().min(1).optional(),

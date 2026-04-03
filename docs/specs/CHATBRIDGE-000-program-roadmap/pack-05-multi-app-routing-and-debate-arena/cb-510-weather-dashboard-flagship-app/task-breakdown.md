@@ -8,7 +8,8 @@
 ## Execution Notes
 
 - Keep the external data boundary host-owned from the start.
-- Complete Pencil approval before UI code.
+- Complete the autonomous UI design brief, research, and decision record before
+  UI code.
 - Treat degraded upstream behavior as part of the product, not as an afterthought.
 
 ## Story Pack Alignment
@@ -23,7 +24,7 @@
 
 | Task ID | Description | Dependency | Parallelizable | Validation |
 |---|---|---|---|---|
-| T001 | Produce the Pencil review packet for the inline weather dashboard, refresh controls, and degraded states. | must-have | no | Pencil review packet and approval gate |
+| T001 | Produce the autonomous UI design packet for the inline weather dashboard, refresh controls, and degraded states. | must-have | no | `design-brief.md`, `design-research.md`, and `design-decision.md` |
 | T002 | Define the host-owned weather request, response, and cache/degraded contracts. | blocked-by:T001 | no | Shared contract tests |
 | T003 | Implement the host weather data boundary and inline dashboard runtime surface. | blocked-by:T002 | no | Runtime and integration tests |
 | T004 | Add refresh, degraded upstream, follow-up chat, and smoke-trace coverage. | blocked-by:T002,T003 | yes | pnpm test and manual smoke verification |
@@ -40,7 +41,7 @@ Parallelizable values:
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Approved visible states are documented before UI code
+  - [ ] Visible states are documented and scored before UI code
 - T002 tests:
   - [ ] Weather request and response contracts fail before implementation
 - T003 tests:

@@ -56,6 +56,9 @@ Current Pack 07 recovery proof lives in:
 - `drawing-kit-flagship.test.ts`
   for Drawing Kit checkpoint continuity, follow-up app-context injection, and
   runtime-crash fallback that preserves the last trusted doodle checkpoint
+- `weather-dashboard-flagship.test.ts`
+  for Weather Dashboard follow-up app-context injection, host-owned refresh,
+  and degraded stale-snapshot fallback when upstream weather refresh fails
 - `operator-controls-rollout.test.ts`
   for lifecycle observability records, version kill-switch launch blocking, and
   explicit active-session rollback posture

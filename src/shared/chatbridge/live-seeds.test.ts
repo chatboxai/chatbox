@@ -4,6 +4,7 @@ import {
   buildChatBridgeChessMidGameSessionFixture,
   buildChatBridgeDegradedCompletionRecoverySessionFixture,
   buildChatBridgeDrawingKitDoodleDareSessionFixture,
+  buildChatBridgeWeatherDashboardSessionFixture,
   buildChatBridgePlatformRecoverySessionFixture,
   buildChatBridgeChessRuntimeSessionFixture,
   buildChatBridgeHistoryAndPreviewSessionFixture,
@@ -144,6 +145,27 @@ describe('chatbridge live seed fixtures', () => {
     expect(fixture.chatBridgeAppRecords?.events).toHaveLength(2)
   })
 
+  it('builds a Weather Dashboard fixture with a ready reviewed launch surface and restartable continuity', () => {
+    const fixture = buildChatBridgeWeatherDashboardSessionFixture()
+    const assistantMessage = fixture.messages.find((message) => message.id === 'msg-weather-assistant')
+    const appPart = assistantMessage?.contentParts.find((part) => part.type === 'app')
+
+    expect(appPart && appPart.type === 'app' ? appPart.appId : undefined).toBe('weather-dashboard')
+    expect(appPart && appPart.type === 'app' ? appPart.lifecycle : undefined).toBe('ready')
+    expect(appPart && appPart.type === 'app' ? appPart.values : undefined).toMatchObject({
+      chatbridgeReviewedAppLaunch: {
+        appId: 'weather-dashboard',
+        toolName: 'weather_dashboard_open',
+        location: 'Chicago',
+      },
+    })
+    expect(fixture.chatBridgeAppRecords?.instances[0]).toMatchObject({
+      appId: 'weather-dashboard',
+      status: 'ready',
+    })
+    expect(fixture.chatBridgeAppRecords?.events).toHaveLength(2)
+  })
+
   it('publishes the live seed catalog with stable scenario ids', () => {
     const fixtures = getChatBridgeLiveSeedFixtures()
 
@@ -153,10 +175,15 @@ describe('chatbridge live seed fixtures', () => {
       'platform-recovery',
       'chess-mid-game-board-context',
       'drawing-kit-doodle-dare',
+      'weather-dashboard',
       'chess-runtime',
       'history-and-preview',
     ])
     expect(fixtures.find((fixture) => fixture.id === 'drawing-kit-doodle-dare')).toMatchObject({
+      fixtureRole: 'active-flagship',
+      smokeSupport: 'supported',
+    })
+    expect(fixtures.find((fixture) => fixture.id === 'weather-dashboard')).toMatchObject({
       fixtureRole: 'active-flagship',
       smokeSupport: 'supported',
     })

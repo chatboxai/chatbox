@@ -59,6 +59,8 @@ Use this path:
    - `degraded-completion-recovery`
    - `platform-recovery`
    - `chess-mid-game-board-context`
+   - `drawing-kit-doodle-dare`
+   - `weather-dashboard`
    - `chess-runtime`
 4. Perform the listed audit steps in the seeded thread.
 5. Capture the returned run label and trace ID from the notice or active trace
@@ -150,6 +152,10 @@ Every orchestration-heavy ChatBridge story should define at least:
   `src/renderer/packages/chatbridge/reviewed-app-launch.ts`
 - reviewed-app bridge launch surface:
   `src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.tsx`
+- dedicated weather dashboard launch surface:
+  `src/renderer/components/chatbridge/apps/weather/WeatherDashboardLaunchSurface.tsx`
+- host-owned weather data boundary:
+  `src/main/chatbridge/weather/index.ts`
 - auth broker:
   `src/main/chatbridge/auth-broker/index.ts`
 - resource proxy:
@@ -169,6 +175,15 @@ LLM runs even when the caller only adds a parent chain trace.
 - key outputs:
   `decisionKind`, `selectedAppId`, `selectionStatus`, `selectionSource`,
   `toolNames`
+
+`CB-510` also adds the dedicated Weather Dashboard runtime and host-owned
+weather fetch boundary:
+
+- runtime trace name:
+  `chatbridge.runtime.weather-dashboard`
+- key weather events:
+  `chatbridge.weather.fetch`, `chatbridge.weather.cache-hit`,
+  `chatbridge.weather.degraded`
 
 ## Trace Naming Contract
 
@@ -240,7 +255,7 @@ The returned `liveSeeds` and `presetSessions` entries now include:
 |---|---|---|
 | catalog and baseline registry | `chatbridge.eval.chatbridge-reviewed-app-registry`, `chatbridge.eval.chatbridge-app-instance-domain-model` | `reviewed-app-registry.test.ts`, `app-instance-domain-model.test.ts` |
 | routing | `chatbridge.eval.chatbridge-routing-artifacts` | `route-decision-artifacts.test.ts` |
-| reviewed-app launch | `chatbridge.eval.chatbridge-single-app-discovery`, `chatbridge.eval.chatbridge-host-tool-contract`, `chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-active`, `chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-recovery`, `chatbridge.eval.chatbridge-mid-game-board-context`, `chatbridge.eval.chatbridge-drawing-kit-flagship.cb-509-doc-proof-follow-up`, `chatbridge.eval.chatbridge-drawing-kit-flagship.cb-509-doc-proof-recovery`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>`, `chatbridge.manual_smoke.chatbridge-drawing-kit-doodle-dare.<session-id>` | `single-app-tool-discovery-and-invocation.test.ts`, `host-coordinated-tool-execution.test.ts`, `reviewed-app-bridge-launch.test.ts`, `ReviewedAppLaunchSurface.tsx`, `mid-game-board-context.test.ts`, `drawing-kit-flagship.test.ts`, `ChatBridgeSeedLab` |
+| reviewed-app launch | `chatbridge.eval.chatbridge-single-app-discovery`, `chatbridge.eval.chatbridge-host-tool-contract`, `chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-active`, `chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-recovery`, `chatbridge.eval.chatbridge-mid-game-board-context`, `chatbridge.eval.chatbridge-drawing-kit-flagship.cb-509-doc-proof-follow-up`, `chatbridge.eval.chatbridge-drawing-kit-flagship.cb-509-doc-proof-recovery`, `chatbridge.eval.chatbridge-weather-dashboard-flagship.cb-510-doc-proof-follow-up`, `chatbridge.eval.chatbridge-weather-dashboard-flagship.cb-510-doc-proof-recovery`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>`, `chatbridge.manual_smoke.chatbridge-drawing-kit-doodle-dare.<session-id>`, `chatbridge.manual_smoke.chatbridge-weather-dashboard.<session-id>` | `single-app-tool-discovery-and-invocation.test.ts`, `host-coordinated-tool-execution.test.ts`, `reviewed-app-bridge-launch.test.ts`, `ReviewedAppLaunchSurface.tsx`, `mid-game-board-context.test.ts`, `drawing-kit-flagship.test.ts`, `weather-dashboard-flagship.test.ts`, `WeatherDashboardLaunchSurface.tsx`, `ChatBridgeSeedLab` |
 | auth and resource access | `chatbridge.eval.chatbridge-story-builder-auth-resource` | `story-builder-lifecycle.test.ts` |
 | recovery | `chatbridge.eval.chatbridge-bridge-handshake`, `chatbridge.manual_smoke.chatbridge-lifecycle-tour.<session-id>`, `chatbridge.manual_smoke.chatbridge-degraded-completion-recovery.<session-id>`, `chatbridge.manual_smoke.chatbridge-platform-recovery.<session-id>` | `bridge-session-security.test.ts`, `ChatBridgeSeedLab` |
 | persistence | `chatbridge.eval.chatbridge-persistence-and-shell-artifacts`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>` | `app-aware-persistence.test.ts`, `ChatBridgeSeedLab` |
@@ -258,6 +273,9 @@ Notes:
 - CB-305 now makes reviewed-app launch evidence explicit with one traced
   bridge-backed path for active runtime and one traced degraded recovery path;
   artifact preview stays on the separate `render-html-preview` seam.
+- CB-510 extends that same reviewed-app launch evidence to the host-owned
+  Weather Dashboard runtime, including traced follow-up continuity,
+  degraded refresh proof, and a supported desktop manual-smoke trace.
 - `CB-506` extends that reviewed-app launch evidence to the live invoke path:
   explicit Drawing Kit prompts now resolve through the reviewed route decision,
   natural Chess prompts stay on Chess through the narrow fallback seam, and

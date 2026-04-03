@@ -91,16 +91,6 @@ function createReviewedLaunchPart(): MessageAppPart {
 describe('ReviewedAppLaunchSurface', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    Object.defineProperty(globalThis.URL, 'createObjectURL', {
-      value: vi.fn(() => 'blob:reviewed-runtime'),
-      configurable: true,
-      writable: true,
-    })
-    Object.defineProperty(globalThis.URL, 'revokeObjectURL', {
-      value: vi.fn(),
-      configurable: true,
-      writable: true,
-    })
   })
 
   it('boots a reviewed app launch through the bridge controller instead of the seeded chess runtime', async () => {
@@ -119,6 +109,7 @@ describe('ReviewedAppLaunchSurface', () => {
     if (!iframe) {
       return
     }
+    expect(iframe.getAttribute('srcdoc')).toContain('Chess runtime')
 
     Object.defineProperty(iframe, 'contentWindow', {
       value: window,
@@ -128,15 +119,16 @@ describe('ReviewedAppLaunchSurface', () => {
     fireEvent.load(iframe)
 
     await waitFor(() => {
-      expect(mocks.createBridgeHostController).toHaveBeenCalledWith(
-        expect.objectContaining({
-          appId: 'chess',
-          appName: 'Chess',
-          appInstanceId: 'reviewed-launch:tool-reviewed-launch-1',
-          capabilities: ['launch-reviewed-app'],
-          traceParentRunId: 'launch-trace-reviewed-1',
-        })
-      )
+        expect(mocks.createBridgeHostController).toHaveBeenCalledWith(
+          expect.objectContaining({
+            appId: 'chess',
+            appName: 'Chess',
+            appInstanceId: 'reviewed-launch:tool-reviewed-launch-1',
+            bootstrapTargetOrigin: '*',
+            capabilities: ['launch-reviewed-app'],
+            traceParentRunId: 'launch-trace-reviewed-1',
+          })
+        )
     })
 
     const firstControllerCall = mocks.createBridgeHostController.mock.calls[0] as unknown as [unknown] | undefined

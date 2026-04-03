@@ -258,6 +258,9 @@ export async function generate(
           {
             message: userMessage,
             num: settings.imageGenerateNum || 1,
+            sessionId: session.id,
+            threadId,
+            messageId: targetMsg.id,
           },
           async (picBase64) => {
             const storageKey = StorageKeyGenerator.picture(`${session.id}:${targetMsg.id}`)

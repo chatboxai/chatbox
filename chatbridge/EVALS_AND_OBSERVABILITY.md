@@ -43,12 +43,15 @@ failure, degraded, and continuity paths.
   `src/shared/models/tracing.ts`
 - main-process LangSmith sink and IPC bridge:
   `src/main/adapters/langsmith.ts`
-- renderer IPC-backed adapter:
+- renderer runtime adapter:
   `src/renderer/adapters/langsmith.ts`
+- Vercel web bridge handlers for browser builds:
+  `api/langsmith/*.ts`
 
-LangSmith API access remains main-process-owned. Renderer code talks to the
-main sink through IPC-backed adapters, and tests default to a noop sink unless
-`LANGSMITH_TRACING=true` is set explicitly.
+LangSmith secrets remain server-owned. Desktop renderer code talks to the main
+sink through IPC, while web builds proxy the same sanitized run payloads
+through same-origin `/api/langsmith/*` handlers on Vercel. Tests default to a
+noop sink unless `LANGSMITH_TRACING=true` is set explicitly.
 
 ## CB-006 and CB-007 Supported Manual Smoke Path
 
@@ -77,9 +80,11 @@ Important constraints:
 
 - The Seed Lab now classifies fixtures through the checked-in inspection seam:
   `active-flagship`, `platform-regression`, or `legacy-reference`.
-- Web-only smoke remains unsupported for traced manual smoke because
-  `window.electronAPI` is unavailable there and LangSmith access stays
-  main-process-owned.
+- Ordinary web-runtime chats are now traced through the Vercel
+  `/api/langsmith/*` bridge when the deployment has `LANGSMITH_API_KEY` and
+  `LANGSMITH_TRACING=true` configured.
+- Web-only smoke remains unsupported for the Seed Lab manual-smoke flow because
+  that tooling still depends on desktop-only `window.electronAPI` controls.
 - `history-and-preview` remains a legacy Story Builder reference fixture. It is
   available for historical inspection, but it is not active flagship smoke
   evidence.

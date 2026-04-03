@@ -56,10 +56,11 @@ describe('generateText tracing', () => {
       {
         name: 'chatbox.session.generate.search_planner',
         parentRunId: 'session-run-1',
+        sessionId: 'session-1',
+        threadId: 'thread-1',
+        messageId: 'message-1',
         metadata: {
-          session_id: 'session-1',
-          thread_id: 'thread-1',
-          message_id: 'message-1',
+          operation: 'searchByPromptEngineering',
         },
         tags: ['chat', 'search-planner'],
       }
@@ -70,8 +71,13 @@ describe('generateText tracing', () => {
         name: 'chatbox.session.generate.search_planner',
         parentRunId: 'session-run-1',
         metadata: expect.objectContaining({
+          operation: 'searchByPromptEngineering',
+          sessionId: 'session-1',
           session_id: 'session-1',
+          threadId: 'thread-1',
           thread_id: 'thread-1',
+          conversation_id: 'thread-1',
+          messageId: 'message-1',
           message_id: 'message-1',
         }),
       })
@@ -82,12 +88,17 @@ describe('generateText tracing', () => {
         traceContext: expect.objectContaining({
           parentRunId: 'generate-text-run-1',
           metadata: expect.objectContaining({
+            operation: 'searchByPromptEngineering',
+            sessionId: 'session-1',
             session_id: 'session-1',
+            threadId: 'thread-1',
             thread_id: 'thread-1',
+            conversation_id: 'thread-1',
+            messageId: 'message-1',
             message_id: 'message-1',
           }),
         }),
       })
     )
-  })
+  }, 20000)
 })

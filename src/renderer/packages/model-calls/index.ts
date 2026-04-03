@@ -1,3 +1,7 @@
+import {
+  createLangSmithConversationMetadata,
+  type LangSmithConversationMetadataInput,
+} from '@shared/models/tracing'
 import type { ModelInterface } from '@shared/models/types'
 import type { Message } from '@shared/types'
 import { getLangSmithErrorMessage, type LangSmithTraceContext } from '@shared/utils/langsmith_adapter'
@@ -18,13 +22,21 @@ function summarizeMessages(messages: Message[]) {
 export async function generateText(
   model: ModelInterface,
   messages: Message[],
-  traceOptions?: {
+  traceOptions?: LangSmithConversationMetadataInput & {
     name?: string
     parentRunId?: string
     metadata?: Record<string, unknown>
     tags?: string[]
   }
 ) {
+  const traceMetadata = createLangSmithConversationMetadata(
+    {
+      sessionId: traceOptions?.sessionId,
+      threadId: traceOptions?.threadId,
+      messageId: traceOptions?.messageId,
+    },
+    traceOptions?.metadata
+  )
   const traceRun = await langsmith.startRun({
     name: traceOptions?.name ?? 'chatbox.generate_text',
     runType: 'chain',
@@ -33,7 +45,7 @@ export async function generateText(
       modelId: model.modelId,
       messages: summarizeMessages(messages),
     },
-    metadata: traceOptions?.metadata,
+    metadata: traceMetadata,
     tags: ['chatbox', 'renderer', ...(traceOptions?.tags ?? [])],
   })
 
@@ -42,7 +54,7 @@ export async function generateText(
       traceContext: {
         name: `${traceOptions?.name ?? 'chatbox.generate_text'}.llm`,
         parentRunId: traceRun.runId,
-        metadata: traceOptions?.metadata,
+        metadata: traceMetadata,
         tags: traceOptions?.tags,
       } satisfies LangSmithTraceContext,
     })

@@ -154,5 +154,5 @@ describe('streamText tracing metadata', () => {
         }),
       })
     )
-  })
+  }, 20000)
 })

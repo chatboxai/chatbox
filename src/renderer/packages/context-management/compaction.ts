@@ -177,6 +177,9 @@ async function runCompactionWithStreaming(sessionId: string): Promise<Compaction
     const summaryResult = await generateSummaryWithStream({
       messages: currentContext,
       sessionSettings: session.settings,
+      sessionId,
+      threadId: sessionId,
+      messageId: currentContext.at(-1)?.id,
       onStreamUpdate: (text) => {
         setCompactionUIState(sessionId, { streamingText: text })
       },

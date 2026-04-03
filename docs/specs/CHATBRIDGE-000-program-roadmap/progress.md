@@ -137,6 +137,10 @@ Ghostfolio-style agent architecture, the next initiative packet is:
 
 - `docs/specs/CHATBRIDGE-001-post-rebuild-agent-productization/`
 
+Execution has now started there through the first bounded validated story:
+
+- `I001-01` Renderer execution governor entrypoint and reviewed-route adoption
+
 That packet intentionally prioritizes:
 
 1. unified execution governor

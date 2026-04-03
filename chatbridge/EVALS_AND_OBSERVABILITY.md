@@ -228,6 +228,17 @@ selection event:
 - key route receipt states:
   `pending`, `chat-only`, `launch-requested`, `launch-failed`
 
+`I001-01` adds the first post-rebuild renderer execution-governor seam:
+
+- runtime seam:
+  `src/renderer/packages/chatbridge/runtime/execution-governor.ts`
+- story-owned scenario proof:
+  `test/integration/chatbridge/scenarios/execution-governor-entrypoint.test.ts`
+- representative trace proof:
+  - `chatbridge.eval.chatbridge-execution-governor-entrypoint.doc-proof-invoke`
+  - `chatbridge.eval.chatbridge-execution-governor-entrypoint.doc-proof-clarify`
+  - `chatbridge.eval.chatbridge-execution-governor-entrypoint.doc-proof-refuse`
+
 `CB-510` also adds the dedicated Weather Dashboard runtime and host-owned
 weather fetch boundary:
 

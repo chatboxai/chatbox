@@ -41,10 +41,12 @@ import {
 import fileToolSet from './toolsets/file'
 import { getToolSet } from './toolsets/knowledge-base'
 import websearchToolSet, { parseLinkTool, webSearchTool } from './toolsets/web-search'
-import { createReviewedSingleAppToolSet } from '../chatbridge/single-app-tools'
 import { buildChatBridgeAppContextPrompt } from '../context-management/app-context'
-import { upsertReviewedAppLaunchParts } from '../chatbridge/reviewed-app-launch'
-import { createReviewedAppRouteArtifact } from '../chatbridge/router/decision'
+import {
+  normalizeChatBridgeExecutionGovernorContentParts,
+  prepareChatBridgeExecutionGovernor,
+} from '../chatbridge/runtime/execution-governor'
+export { prepareToolsForExecution } from '../chatbridge/runtime/execution-governor'
 
 /**
  * 处理搜索结果并返回模型响应的通用函数
@@ -120,11 +122,7 @@ function normalizeResultContentParts(
     reviewedRouteArtifact?: Message['contentParts'][number]
   } = {}
 ) {
-  return upsertReviewedAppLaunchParts([
-    ...infoParts,
-    ...(options.reviewedRouteArtifact ? [options.reviewedRouteArtifact] : []),
-    ...(contentParts ?? []),
-  ])
+  return normalizeChatBridgeExecutionGovernorContentParts(infoParts, contentParts ?? [], options)
 }
 
 async function ocrMessages(messages: Message[], traceContext?: LangSmithTraceContext) {
@@ -155,10 +153,6 @@ async function ocrMessages(messages: Message[], traceContext?: LangSmithTraceCon
   } catch (err) {
     throw new OCRError(ocrProviderName, err instanceof Error ? err : new Error(`${err}`))
   }
-}
-
-export function prepareToolsForExecution(tools: ToolSet, sessionId?: string): ToolSet {
-  return wrapChatBridgeHostTools(tools, { sessionId })
 }
 
 export function buildAdditionalConversationInfo(
@@ -440,57 +434,17 @@ export async function streamText(
       }
     }
 
-    if (model.isSupportToolUse()) {
-      const chatBridgeSingleAppTools = createReviewedSingleAppToolSet({ messages })
-      reviewedRouteArtifact =
-        Object.keys(chatBridgeSingleAppTools.tools).length === 0 &&
-        (chatBridgeSingleAppTools.routeDecision.kind === 'clarify' || chatBridgeSingleAppTools.routeDecision.kind === 'refuse')
-          ? createReviewedAppRouteArtifact(chatBridgeSingleAppTools.routeDecision)
-          : undefined
-      void langsmith
-        .recordEvent({
-          name: 'chatbridge.routing.reviewed-app-decision',
-          runType: 'tool',
-          parentRunId: traceRun.runId,
-          inputs: {
-            prompt: chatBridgeSingleAppTools.routeDecision.prompt,
-          },
-          outputs: {
-            decisionKind: chatBridgeSingleAppTools.routeDecision.kind,
-            reasonCode: chatBridgeSingleAppTools.routeDecision.reasonCode,
-            selectedAppId: chatBridgeSingleAppTools.routeDecision.selectedAppId ?? null,
-            selectionStatus: chatBridgeSingleAppTools.selection.status,
-            selectionSource: chatBridgeSingleAppTools.selectionSource,
-            toolNames: Object.keys(chatBridgeSingleAppTools.tools).sort(),
-            artifactInserted: Boolean(reviewedRouteArtifact),
-            artifactKind: reviewedRouteArtifact ? chatBridgeSingleAppTools.routeDecision.kind : null,
-          },
-          metadata: {
-            ...correlationMetadata,
-            operation: 'chatbridgeReviewedAppRouteDecision',
-          },
-          tags: [
-            'chatbox',
-            'renderer',
-            'chatbridge',
-            'routing',
-            `decision:${chatBridgeSingleAppTools.routeDecision.kind}`,
-            `selection-source:${chatBridgeSingleAppTools.selectionSource}`,
-          ],
-        })
-        .catch((error) => {
-          console.debug('Failed to record ChatBridge reviewed route decision trace event.', error)
-        })
-
-      if (Object.keys(chatBridgeSingleAppTools.tools).length > 0) {
-        tools = {
-          ...tools,
-          ...chatBridgeSingleAppTools.tools,
-        }
-      }
-    }
-
-    tools = prepareToolsForExecution(tools, sessionId)
+    const governor = prepareChatBridgeExecutionGovernor({
+      messages,
+      baseTools: tools,
+      modelSupportsToolUse: model.isSupportToolUse(),
+      sessionId,
+      traceAdapter: langsmith,
+      traceParentRunId: traceRun.runId,
+      correlationMetadata,
+    })
+    tools = governor.tools
+    reviewedRouteArtifact = governor.reviewedRouteArtifact
 
     console.debug('tools', tools)
 

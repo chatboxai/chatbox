@@ -1,6 +1,7 @@
 import type { ToolExecutionOptions, ToolSet } from 'ai'
 import { z } from 'zod'
 import type {
+  ChatBridgeExecutionGovernorSelectionSource,
   ChatBridgeHostRuntime,
   ChatBridgeRouteDecision,
   ChatBridgeJsonSchema,
@@ -44,13 +45,11 @@ type CreateReviewedSingleAppToolSetOptions = {
   entries?: ReviewedAppCatalogEntry[]
 }
 
-type ReviewedSingleAppToolSelectionSource = 'route-decision' | 'natural-chess-fallback' | 'none'
-
 type ReviewedSingleAppToolSetResult = {
   selection: ReviewedSingleAppSelection
   tools: ToolSet
   routeDecision: ChatBridgeRouteDecision
-  selectionSource: ReviewedSingleAppToolSelectionSource
+  selectionSource: ChatBridgeExecutionGovernorSelectionSource
 }
 
 function resolvePlatformHostRuntime(): ChatBridgeHostRuntime {

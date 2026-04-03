@@ -61,12 +61,7 @@ export const ChatBridgeRouteDecisionReasonCodeSchema = z.enum([
 ])
 export type ChatBridgeRouteDecisionReasonCode = z.infer<typeof ChatBridgeRouteDecisionReasonCodeSchema>
 
-export const ChatBridgeRouteArtifactStatusSchema = z.enum([
-  'pending',
-  'launch-requested',
-  'chat-only',
-  'launch-failed',
-])
+export const ChatBridgeRouteArtifactStatusSchema = z.enum(['pending', 'launch-requested', 'chat-only', 'launch-failed'])
 
 export type ChatBridgeRouteArtifactStatus = z.infer<typeof ChatBridgeRouteArtifactStatusSchema>
 
@@ -148,13 +143,7 @@ function tokenize(value: string): string[] {
 }
 
 function createPhraseVariants(...values: Array<string | undefined>): string[] {
-  return Array.from(
-    new Set(
-      values
-        .map((value) => (value ? normalizeForSearch(value) : ''))
-        .filter(Boolean)
-    )
-  )
+  return Array.from(new Set(values.map((value) => (value ? normalizeForSearch(value) : '')).filter(Boolean)))
 }
 
 function matchesPhrase(prompt: string, phrases: string[]): boolean {
@@ -209,7 +198,10 @@ function scoreReviewedAppCandidate(
     score += weight
   }
 
-  const appPhrases = createPhraseVariants(candidate.entry.manifest.name, candidate.entry.manifest.appId.replace(/-/g, ' '))
+  const appPhrases = createPhraseVariants(
+    candidate.entry.manifest.name,
+    candidate.entry.manifest.appId.replace(/-/g, ' ')
+  )
   const toolPhrases = candidate.entry.manifest.toolSchemas.flatMap((tool) =>
     createPhraseVariants(tool.name.replace(/[_:-]/g, ' '), tool.title, tool.description)
   )
@@ -261,7 +253,10 @@ function getSelectedMatch(
   return matches.find((match) => match.appId === selectedAppId) ?? null
 }
 
-function buildClarifySummary(selected: ChatBridgeRouteCandidateMatch, alternates: ChatBridgeRouteCandidateMatch[]): string {
+function buildClarifySummary(
+  selected: ChatBridgeRouteCandidateMatch,
+  alternates: ChatBridgeRouteCandidateMatch[]
+): string {
   if (alternates.length === 0) {
     return `This request may fit ${selected.appName}, but the host wants confirmation before launching a reviewed app.`
   }
@@ -358,7 +353,7 @@ export function resolveReviewedAppRouteDecision(
       prompt,
       summary: `${topCombinedMatch.appName} matches this request, but it only launches in ${supportedLabel} right now.`,
       selectedAppId: topCombinedMatch.appId,
-      matches: combinedMatches,
+      matches: combinedRelevantMatches,
       runtimeBlock,
     }
   }
@@ -378,7 +373,7 @@ export function resolveReviewedAppRouteDecision(
         candidates.length === 0
           ? 'No reviewed apps are currently eligible for this host context, so the request stays in chat.'
           : 'No reviewed app is a confident fit for this request, so the host will keep helping in chat instead of forcing a launch.',
-      matches: eligibleMatches,
+      matches: relevantEligibleMatches,
     }
   }
 
@@ -394,7 +389,7 @@ export function resolveReviewedAppRouteDecision(
       prompt,
       summary: `The host found a clear reviewed-app match and can open ${topMatch.appName} without guessing.`,
       selectedAppId: topMatch.appId,
-      matches: eligibleMatches,
+      matches: relevantEligibleMatches,
     }
   }
 
@@ -407,13 +402,11 @@ export function resolveReviewedAppRouteDecision(
     prompt,
     summary: buildClarifySummary(topMatch, alternates),
     selectedAppId: topMatch.appId,
-    matches: eligibleMatches,
+    matches: relevantEligibleMatches,
   }
 }
 
-export function getChatBridgeRouteDecision(
-  part: Pick<MessageAppPart, 'values'>
-): ChatBridgeRouteDecision | null {
+export function getChatBridgeRouteDecision(part: Pick<MessageAppPart, 'values'>): ChatBridgeRouteDecision | null {
   const parsed = ChatBridgeRouteDecisionSchema.safeParse(part.values?.chatbridgeRouteDecision)
   return parsed.success ? parsed.data : null
 }
@@ -486,8 +479,7 @@ export function createChatBridgeRouteMessagePart(decision: ChatBridgeRouteDecisi
       : decision.kind === 'clarify'
         ? 'Choose the next step'
         : 'Keep this in chat'
-  const statusText =
-    decision.kind === 'invoke' ? 'Launch app' : decision.kind === 'clarify' ? 'Clarify' : 'Chat only'
+  const statusText = decision.kind === 'invoke' ? 'Launch app' : decision.kind === 'clarify' ? 'Clarify' : 'Chat only'
 
   return {
     type: 'app',

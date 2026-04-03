@@ -33,16 +33,56 @@ function createTextMessage(id: string, role: Message['role'], text: string, time
   }
 }
 
+function createActiveChessMessage(id: string, timestamp: number): Message {
+  return {
+    id,
+    role: 'assistant',
+    timestamp,
+    contentParts: [
+      {
+        type: 'app',
+        appId: 'chess',
+        appName: 'Chess',
+        appInstanceId: 'chess-runtime-1',
+        lifecycle: 'active',
+        title: 'Chess board',
+        description: 'The live Chess runtime stays pinned in the tray while chat continues.',
+        summary: 'Updated to Ng5. Black to move from the current board.',
+        summaryForModel: 'Updated to Ng5. Black to move from the current board.',
+        statusText: 'Black to move',
+        snapshot: {
+          boardContext: {
+            schemaVersion: 1,
+            fen: 'r1bqk2r/ppp2ppp/2np4/4p1N1/2B1P3/2NP4/PPP2PPP/R1BQK2R b KQkq - 1 7',
+            sideToMove: 'black',
+            fullmoveNumber: 7,
+            legalMovesCount: 32,
+            positionStatus: 'in_progress',
+            lastMove: {
+              san: 'Ng5',
+            },
+            summary: 'Black to move after Ng5 from the active host-owned board.',
+          },
+        },
+      },
+    ],
+  }
+}
+
 function getLatestUserPrompt(messages: ModelMessage[]) {
   const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')
   if (!latestUserMessage) {
     return ''
   }
 
-  return typeof latestUserMessage.content === 'string' ? latestUserMessage.content : JSON.stringify(latestUserMessage.content)
+  return typeof latestUserMessage.content === 'string'
+    ? latestUserMessage.content
+    : JSON.stringify(latestUserMessage.content)
 }
 
-function createToolCallingModelStub(selectTool: (prompt: string) => { toolName: string; args: Record<string, unknown> }) {
+function createToolCallingModelStub(
+  selectTool: (prompt: string) => { toolName: string; args: Record<string, unknown> }
+) {
   const chat = vi.fn(
     async (messages: ModelMessage[], options: CallChatCompletionOptions): Promise<StreamTextResult> => {
       const prompt = getLatestUserPrompt(messages)
@@ -203,6 +243,36 @@ describe('ChatBridge execution governor entrypoint', () => {
             selectedAppId: 'chess',
             selectionSource: 'natural-chess-fallback',
             toolNames: ['chess_prepare_session'],
+          }),
+        })
+      )
+    }))
+
+  it('keeps active Chess follow-ups in chat instead of surfacing a confirmation artifact', () =>
+    traceScenario('keeps active Chess follow-ups in chat instead of surfacing a confirmation artifact', async () => {
+      const prompt = 'The board updated to Ng5. What move should Black play next?'
+      const { chat, model } = createChatOnlyModelStub()
+
+      const result = await streamText(model, {
+        sessionId: 'session-i001-01-active-chess-follow-up',
+        messages: [
+          createActiveChessMessage('msg-chess-active', 1),
+          createTextMessage('msg-follow-up-user', 'user', prompt, 2),
+        ],
+        onResultChangeWithCancel: vi.fn(),
+      })
+
+      expect(chat).toHaveBeenCalledOnce()
+      expect(result.result.contentParts).toEqual([{ type: 'text', text: 'host response' }])
+      expect(langsmithMocks.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'chatbridge.routing.reviewed-app-decision',
+          outputs: expect.objectContaining({
+            decisionKind: 'clarify',
+            selectedAppId: 'chess',
+            selectionSource: 'none',
+            toolNames: [],
+            artifactInserted: false,
           }),
         })
       )

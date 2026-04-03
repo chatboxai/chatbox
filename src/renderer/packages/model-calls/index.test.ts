@@ -27,6 +27,14 @@ vi.mock('./message-utils', () => ({
   ),
 }))
 
+vi.mock('./stream-text', () => ({
+  streamText: vi.fn(),
+}))
+
+vi.mock('./generate-image', () => ({
+  generateImage: vi.fn(),
+}))
+
 describe('generateText tracing', () => {
   beforeEach(() => {
     Object.defineProperty(globalThis, 'localStorage', {

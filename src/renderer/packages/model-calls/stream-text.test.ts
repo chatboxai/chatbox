@@ -1,7 +1,9 @@
 import type { ModelMessage } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ChatBridgeRouteDecision } from '@shared/chatbridge'
 import type { CallChatCompletionOptions, ModelInterface } from '@shared/models/types'
 import type { Message, StreamTextResult } from '@shared/types'
+import { createReviewedSingleAppToolSet } from '../chatbridge/single-app-tools'
 
 const traceEndMock = vi.fn(async () => undefined)
 const traceStartRunMock = vi.fn(async () => ({
@@ -59,13 +61,17 @@ vi.mock('./toolsets/web-search', () => ({
 vi.mock('../chatbridge/single-app-tools', () => ({
   createReviewedSingleAppToolSet: vi.fn(() => ({
     routeDecision: {
+      schemaVersion: 2,
+      hostRuntime: 'desktop-electron',
       prompt: '',
-      kind: 'skip',
-      reasonCode: 'no-match',
-      selectedAppId: null,
+      kind: 'refuse',
+      reasonCode: 'no-confident-match',
+      summary: 'No reviewed app is a confident fit.',
+      matches: [],
     },
     selection: {
-      status: 'not-selected',
+      status: 'chat-only',
+      promptText: '',
     },
     selectionSource: 'none',
     tools: {},
@@ -102,6 +108,60 @@ function createModelStub() {
     chat,
     model,
   }
+}
+
+function createToolUseModelStub() {
+  const { chat, model } = createModelStub()
+
+  return {
+    chat,
+    model: {
+      ...model,
+      isSupportToolUse: () => true,
+    } satisfies ModelInterface,
+  }
+}
+
+function createRouteDecision(
+  kind: 'clarify' | 'refuse',
+  overrides: Partial<ChatBridgeRouteDecision> = {}
+): ChatBridgeRouteDecision {
+  return {
+    schemaVersion: 2,
+    hostRuntime: 'desktop-electron',
+    kind,
+    reasonCode: kind === 'clarify' ? 'ambiguous-match' : 'no-confident-match',
+    prompt: 'Help me with this',
+    summary:
+      kind === 'clarify'
+        ? 'This request could fit Drawing Kit or Weather Dashboard, so the host is asking before launching anything.'
+        : 'No reviewed app is a confident fit, so the host will keep helping in chat instead.',
+    selectedAppId: kind === 'clarify' ? 'drawing-kit' : undefined,
+    matches:
+      kind === 'clarify'
+        ? [
+            {
+              appId: 'drawing-kit',
+              appName: 'Drawing Kit',
+              matchedContexts: [],
+              matchedTerms: ['draw'],
+              score: 6,
+              exactAppMatch: false,
+              exactToolMatch: false,
+            },
+            {
+              appId: 'weather-dashboard',
+              appName: 'Weather Dashboard',
+              matchedContexts: [],
+              matchedTerms: ['show'],
+              score: 4,
+              exactAppMatch: false,
+              exactToolMatch: false,
+            },
+          ]
+        : [],
+    ...overrides,
+  } as ChatBridgeRouteDecision
 }
 
 describe('streamText tracing metadata', () => {
@@ -155,4 +215,106 @@ describe('streamText tracing metadata', () => {
       })
     )
   }, 20000)
+
+  it('injects a live clarify route artifact when the reviewed router needs confirmation', async () => {
+    vi.mocked(createReviewedSingleAppToolSet).mockReturnValue({
+      routeDecision: createRouteDecision('clarify'),
+      selection: {
+        status: 'chat-only',
+        promptText: 'Help me with this',
+      },
+      selectionSource: 'none',
+      tools: {},
+    })
+    const { streamText } = await import('./stream-text')
+    const { model } = createToolUseModelStub()
+
+    const result = await streamText(model, {
+      sessionId: 'session-route-clarify',
+      messages: [
+        {
+          id: 'user-clarify-1',
+          role: 'user',
+          timestamp: 1,
+          contentParts: [{ type: 'text', text: 'Help me with this' }],
+        },
+      ],
+      onResultChangeWithCancel: vi.fn(),
+    })
+
+    expect(result.result.contentParts[0]).toMatchObject({
+      type: 'app',
+      title: 'Choose the next step',
+      values: {
+        chatbridgeRouteDecision: {
+          kind: 'clarify',
+        },
+        chatbridgeRouteArtifactState: {
+          status: 'pending',
+        },
+      },
+    })
+    expect(traceRecordEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'chatbridge.routing.reviewed-app-decision',
+        outputs: expect.objectContaining({
+          decisionKind: 'clarify',
+          artifactInserted: true,
+          artifactKind: 'clarify',
+        }),
+      })
+    )
+  })
+
+  it('injects a live refusal route artifact when the reviewed router keeps the request in chat', async () => {
+    vi.mocked(createReviewedSingleAppToolSet).mockReturnValue({
+      routeDecision: createRouteDecision('refuse', {
+        prompt: 'What should I cook for dinner tonight?',
+      }),
+      selection: {
+        status: 'chat-only',
+        promptText: 'What should I cook for dinner tonight?',
+      },
+      selectionSource: 'none',
+      tools: {},
+    })
+    const { streamText } = await import('./stream-text')
+    const { model } = createToolUseModelStub()
+
+    const result = await streamText(model, {
+      sessionId: 'session-route-refuse',
+      messages: [
+        {
+          id: 'user-refuse-1',
+          role: 'user',
+          timestamp: 1,
+          contentParts: [{ type: 'text', text: 'What should I cook for dinner tonight?' }],
+        },
+      ],
+      onResultChangeWithCancel: vi.fn(),
+    })
+
+    expect(result.result.contentParts[0]).toMatchObject({
+      type: 'app',
+      title: 'Keep this in chat',
+      values: {
+        chatbridgeRouteDecision: {
+          kind: 'refuse',
+        },
+        chatbridgeRouteArtifactState: {
+          status: 'pending',
+        },
+      },
+    })
+    expect(traceRecordEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'chatbridge.routing.reviewed-app-decision',
+        outputs: expect.objectContaining({
+          decisionKind: 'refuse',
+          artifactInserted: true,
+          artifactKind: 'refuse',
+        }),
+      })
+    )
+  })
 })

@@ -1,4 +1,4 @@
-import type { ToolSet } from 'ai'
+import type { ToolExecutionOptions, ToolSet } from 'ai'
 import { z } from 'zod'
 import type {
   ChatBridgeHostRuntime,
@@ -12,13 +12,15 @@ import {
   ChatBridgeHostRuntimeSchema,
   createChatBridgeHostTool,
   ensureDefaultReviewedAppsRegistered,
+  isChatBridgeHostToolExecutionRecord,
   isReviewedAppSupportedOnHostRuntime,
   resolveReviewedSingleAppSelection,
+  wrapChatBridgeHostTools,
   type ReviewedSingleAppSelection,
 } from '@shared/chatbridge'
-import { getReviewedAppRouteDecision } from './router/decision'
 import type { Message } from '@shared/types'
 import platform from '@/platform'
+import { getReviewedAppRouteDecision } from './router/decision'
 
 const DEFAULT_LIVE_REVIEWED_APP_PERMISSIONS = ['session.context.read', 'weather.read'] as const
 
@@ -31,7 +33,7 @@ const ChessPrepareSessionInputSchema = z.object({
 type ChessPrepareSessionInput = z.infer<typeof ChessPrepareSessionInputSchema>
 type GenericReviewedAppToolInput = Record<string, unknown>
 type ReviewedAppToolExecutor = (input: GenericReviewedAppToolInput) => Promise<unknown> | unknown
-type ReviewedAppToolExecutors = Record<string, ReviewedAppToolExecutor> & {
+export type ReviewedAppToolExecutors = Record<string, ReviewedAppToolExecutor> & {
   chess_prepare_session?: (input: ChessPrepareSessionInput) => Promise<unknown> | unknown
 }
 
@@ -251,6 +253,52 @@ function createToolsForSelection(
   return {
     [selection.toolName]: createReviewedAppLaunchTool(selection, executors?.[selection.toolName]),
   }
+}
+
+export function createReviewedToolsForSelection(
+  selection: ReviewedSingleAppSelection,
+  executors?: ReviewedAppToolExecutors
+): ToolSet {
+  return createToolsForSelection(selection, executors)
+}
+
+export function buildReviewedSelectionInput(
+  selection: Extract<ReviewedSingleAppSelection, { status: 'matched' }>
+): GenericReviewedAppToolInput {
+  return {
+    request: selection.promptText,
+  }
+}
+
+export async function executeReviewedSelection(options: {
+  selection: Extract<ReviewedSingleAppSelection, { status: 'matched' }>
+  sessionId?: string
+  executors?: ReviewedAppToolExecutors
+  input?: GenericReviewedAppToolInput
+  executionOptions?: ToolExecutionOptions
+}) {
+  const tools = wrapChatBridgeHostTools(createReviewedToolsForSelection(options.selection, options.executors), {
+    sessionId: options.sessionId,
+  })
+  const tool = tools[options.selection.toolName]
+  const execute = tool?.execute
+  if (typeof execute !== 'function') {
+    throw new Error(`Reviewed tool "${options.selection.toolName}" is unavailable for "${options.selection.appId}".`)
+  }
+
+  const result = await execute(
+    options.input ?? buildReviewedSelectionInput(options.selection),
+    options.executionOptions ?? {
+      toolCallId: `${options.selection.appId}-route-selection`,
+      messages: [],
+    }
+  )
+
+  if (!isChatBridgeHostToolExecutionRecord(result)) {
+    throw new Error(`Reviewed tool "${options.selection.toolName}" did not return a host execution record.`)
+  }
+
+  return result
 }
 
 export function createReviewedSingleAppToolSet(options: CreateReviewedSingleAppToolSetOptions): ReviewedSingleAppToolSetResult {

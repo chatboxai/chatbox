@@ -41,7 +41,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 | Pack 02 | historical baseline | inherited `merged` baseline | inherited | Contracts and bridge foundations are assumed ready for post-Pack-4 execution. |
 | Pack 03 | validated backfills complete | `CB-305` and `CB-306` validated backfills | inherited baseline | SA-005 is closed by CB-305, and the urgent Chess runtime handoff regression is closed by CB-306; reviewed host-tool launches now flow through the bridge host controller and successful Chess launches become real Chess runtime parts. |
 | Pack 04 | validated | CB-401 through CB-404 validated | written | Exit proof is recorded in `pack-04.../STATUS.md`; Pack 5 and Pack 6 are unlocked. |
-| Pack 05 | reopened by smoke audit and catalog change | `CB-508`, `CB-506`, `CB-509`, and `CB-510` validated; `CB-507` planned backfill | historical exit memo | Default reviewed catalog, seed inspection, live invoke, Drawing Kit, and Weather now align around the active flagship set; clarify/refuse remains the open Pack 05 rebuild work. |
+| Pack 05 | validated backfills complete | `CB-508`, `CB-506`, `CB-509`, `CB-510`, and `CB-507` validated | historical exit memo | Default reviewed catalog, seed inspection, live invoke, Drawing Kit, Weather, and live clarify/refuse route receipts now align around the active flagship set. |
 | Pack 06 | historical baseline with legacy parked follow-up | `CB-605` planned legacy packet | historical exit memo | Story Builder auth/resource proof remains a legacy reference and is no longer on the active queue. |
 | Pack 07 | validated | CB-701, CB-703, CB-705, CB-702, and CB-704 validated | written | Pack 07 exit is complete; the full-program convergence audit is now validated on this branch via `test/integration/chatbridge/scenarios/full-program-convergence.test.ts`. |
 
@@ -65,15 +65,15 @@ packet and should not be picked up next.
 
 ## Current Milestone
 
-- Active next gate: `CB-507` implementation and validation
-- Immediate next story after `CB-507`: `CB-105`
+- Active next gate: `CB-105`
+- Immediate next story after `CB-105`: queue complete unless new smoke-audit
+  backfills are opened
 - Status: `CB-006`, `CB-007`, `CB-305`, `CB-306`, `CB-508`, `CB-506`,
-  `CB-106`, `CB-509`, and `CB-510` are validated or merged; `CB-507` is the
-  active next story.
+  `CB-106`, `CB-509`, `CB-510`, and `CB-507` are validated or merged; `CB-105`
+  is the remaining active queue item.
 - Result: the active reviewed catalog, invoke path, session-level split runtime
-  shell, Drawing Kit runtime, and Weather runtime/manual-smoke proof now agree
-  on Chess, Drawing Kit, and Weather, so the queue can move to the remaining
-  clarify/refuse UI backfill.
+  shell, Drawing Kit runtime, Weather runtime/manual-smoke proof, and live
+  clarify/refuse route receipts now agree on Chess, Drawing Kit, and Weather.
 
 ## Pack 4 Exit Lock
 
@@ -120,7 +120,7 @@ smoke audit has reopened the program for a focused rebuild.
   - `CB-506` validated
   - `CB-509` validated
   - `CB-510` validated
-  - `CB-507`
+  - `CB-507` validated
   - `CB-105`
 - Legacy parked packets retained for reference:
   - `CB-505`

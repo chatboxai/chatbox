@@ -1,9 +1,10 @@
 import { Button, Text } from '@mantine/core'
-import type { MessageAppPart } from '@shared/types'
-import { applyChatBridgeRecoveryAction, isChatBridgeChessAppId } from '@shared/chatbridge'
+import type { MessageAppPart, MessageContentParts } from '@shared/types'
+import { applyChatBridgeRecoveryAction, getChatBridgeRouteDecision, isChatBridgeChessAppId } from '@shared/chatbridge'
 import { isChatBridgeReviewedAppLaunchPart } from '@/packages/chatbridge/reviewed-app-launch'
 import { cn } from '@/lib/utils'
 import { ChatBridgeShell } from './ChatBridgeShell'
+import { ChatBridgeRouteArtifact } from './ChatBridgeRouteArtifact'
 import { getChatBridgeSurfaceContent } from './apps/surface'
 import { getMessageAppPartViewModel } from './chatbridge'
 import { ChessRuntime } from './apps/chess/ChessRuntime'
@@ -11,6 +12,9 @@ import { ChessRuntime } from './apps/chess/ChessRuntime'
 interface ChatBridgeMessagePartProps {
   part: MessageAppPart
   onUpdatePart?: (nextPart: MessageAppPart) => void
+  onUpdateMessageContentParts?: (
+    updater: (current: MessageContentParts) => Promise<MessageContentParts> | MessageContentParts
+  ) => Promise<void>
   sessionId?: string
   messageId?: string
   presentation?: 'inline' | 'anchor' | 'tray'
@@ -41,6 +45,7 @@ function getAnchorBadgeClasses(state: ReturnType<typeof getMessageAppPartViewMod
 export function ChatBridgeMessagePart({
   part,
   onUpdatePart,
+  onUpdateMessageContentParts,
   sessionId,
   messageId,
   presentation = 'inline',
@@ -49,11 +54,24 @@ export function ChatBridgeMessagePart({
 }: ChatBridgeMessagePartProps) {
   const viewModel = getMessageAppPartViewModel(part)
   const isReviewedLaunchPart = isChatBridgeReviewedAppLaunchPart(part)
+  const routeDecision = !isReviewedLaunchPart ? getChatBridgeRouteDecision(part) : null
   const runtime =
     part.lifecycle === 'active' && isChatBridgeChessAppId(part.appId) && !isReviewedLaunchPart ? (
       <ChessRuntime part={part} onUpdatePart={onUpdatePart} sessionId={sessionId} messageId={messageId} />
     ) : undefined
-  const inlineSurface = runtime ?? getChatBridgeSurfaceContent({ part, sessionId, messageId })
+  const inlineSurface =
+    runtime ??
+    (routeDecision ? (
+      <ChatBridgeRouteArtifact
+        part={part}
+        decision={routeDecision}
+        sessionId={sessionId}
+        messageId={messageId}
+        onUpdateMessageContentParts={onUpdateMessageContentParts}
+      />
+    ) : (
+      getChatBridgeSurfaceContent({ part, sessionId, messageId })
+    ))
   const primaryAction = viewModel.recoveryActions?.find((action) => action.variant !== 'secondary')
   const secondaryAction = viewModel.recoveryActions?.find((action) => action.variant === 'secondary')
 

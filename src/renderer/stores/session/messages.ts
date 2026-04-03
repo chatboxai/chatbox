@@ -11,6 +11,7 @@ import { createMessage, type Message, ModelProviderEnum } from '@shared/types'
 import { createModelDependencies } from '@/adapters'
 import { runCompactionWithUIState } from '@/packages/context-management'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
+import { interceptWeatherDashboardTurn } from '@/packages/weather-dashboard/host-routing'
 import platform from '@/platform'
 import * as chatStore from '../chatStore'
 import * as settingActions from '../settingActions'
@@ -66,6 +67,14 @@ export async function submitNewUserMessage(
 
   // 先在聊天列表中插入发送的用户消息
   await insertMessage(sessionId, newUserMsg)
+
+  if (needGenerating && (session.type === 'chat' || session.type === undefined)) {
+    const weatherDashboardMessage = interceptWeatherDashboardTurn(session.messages, newUserMsg)
+    if (weatherDashboardMessage) {
+      await insertMessage(sessionId, weatherDashboardMessage)
+      return
+    }
+  }
 
   const globalSettings = settingsStore.getState().getSettings()
   const isPro = settingActions.isPro()

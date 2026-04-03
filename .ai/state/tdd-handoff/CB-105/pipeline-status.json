@@ -1,0 +1,18 @@
+{
+  "storyId": "CB-105",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "failed-as-expected",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/renderer/components/common/Avatar.test.tsx src/renderer/components/common/overlay-focus.test.tsx src/renderer/Sidebar.test.tsx src/renderer/components/session/ThreadHistoryDrawer.test.tsx",
+    "failureSummary": [
+      "The focused overlay helper contract was missing: overlay-focus.ts did not export a scoped close-time blur helper, so the new helper-level test failed immediately.",
+      "Sidebar and ThreadHistoryDrawer close paths did not release focus before hiding their subtree, so the new shell hygiene tests observed no focus-release call on close.",
+      "The new Avatar regression test also needed the standard Mantine matchMedia stub before it could exercise the actual sessionType prop leak in jsdom."
+    ]
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/renderer/components/chat/Message.chatbridge.test.tsx src/renderer/components/common/Avatar.test.tsx src/renderer/components/common/overlay-focus.test.tsx src/renderer/Sidebar.test.tsx src/renderer/components/session/ThreadHistoryDrawer.test.tsx"
+  }
+}

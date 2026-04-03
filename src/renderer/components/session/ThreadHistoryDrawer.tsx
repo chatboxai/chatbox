@@ -4,9 +4,9 @@ import SwipeableDrawer from '@mui/material/SwipeableDrawer'
 import type { Session, SessionThreadBrief } from '@shared/types'
 import { IconDots, IconEdit, IconSwitch, IconTrash, IconX } from '@tabler/icons-react'
 import { useAtom, useAtomValue } from 'jotai'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useBlurActiveElementOnOpen } from '@/components/common/overlay-focus'
+import { blurActiveElementWithin, useBlurActiveElementOnOpen } from '@/components/common/overlay-focus'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { currentSessionIdAtom, showThreadHistoryDrawerAtom } from '@/stores/atoms'
 import { scrollToIndex } from '@/stores/scrollActions'
@@ -21,7 +21,13 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
   const { t } = useTranslation()
   const language = useLanguage()
   const [showDrawer, setShowDrawer] = useAtom(showThreadHistoryDrawerAtom)
+  const drawerContentRef = useRef<HTMLDivElement>(null)
   useBlurActiveElementOnOpen(Boolean(showDrawer))
+
+  const closeDrawer = useCallback(() => {
+    blurActiveElementWithin(drawerContentRef.current)
+    setShowDrawer(false)
+  }, [setShowDrawer])
 
   const currentMessageList = useMemo(() => getAllMessageList(session), [session])
 
@@ -41,17 +47,17 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
       if (msgIndex >= 0) {
         scrollToIndex(msgIndex, 'start', 'smooth')
       }
-      setShowDrawer(false)
+      closeDrawer()
     },
-    [threadList, setShowDrawer, currentMessageList]
+    [closeDrawer, threadList, currentMessageList]
   )
 
   const handleSwitchThread = useCallback(
     (threadId: string) => {
       void switchThreadAction(session.id, threadId)
-      setShowDrawer(false)
+      closeDrawer()
     },
-    [session.id, setShowDrawer]
+    [closeDrawer, session.id]
   )
 
   return (
@@ -59,7 +65,7 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
       anchor={language === 'ar' ? 'left' : 'right'}
       variant="temporary"
       open={!!showDrawer}
-      onClose={() => setShowDrawer(false)}
+      onClose={closeDrawer}
       onOpen={() => setShowDrawer(true)}
       title={t('Thread History') || ''}
       ModalProps={{
@@ -76,26 +82,28 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
       }
       disableSwipeToOpen={CHATBOX_BUILD_PLATFORM !== 'ios'} // 只在iOS设备上启用SwipeToOpen
     >
-      <Flex align="center" justify="space-between" className="px-sm py-xs">
-        <Text size="md" fw={600}>
-          {t('Thread History')}
-        </Text>
-        <ActionIcon variant="transparent" color="chatbox-primary" onClick={() => setShowDrawer(false)}>
-          <ScalableIcon icon={IconX} size={20} />
-        </ActionIcon>
-      </Flex>
-      <ScrollArea className="flex-1">
-        {threadList.map((thread, index) => (
-          <ThreadItem
-            key={thread.id}
-            thread={thread}
-            goto={gotoThreadMessage}
-            showHistoryDrawer={showDrawer}
-            switchThread={handleSwitchThread}
-            lastOne={index === threadList.length - 1}
-          />
-        ))}
-      </ScrollArea>
+      <div ref={drawerContentRef} className="flex h-full flex-col">
+        <Flex align="center" justify="space-between" className="px-sm py-xs">
+          <Text size="md" fw={600}>
+            {t('Thread History')}
+          </Text>
+          <ActionIcon variant="transparent" color="chatbox-primary" onClick={closeDrawer}>
+            <ScalableIcon icon={IconX} size={20} />
+          </ActionIcon>
+        </Flex>
+        <ScrollArea className="flex-1">
+          {threadList.map((thread, index) => (
+            <ThreadItem
+              key={thread.id}
+              thread={thread}
+              goto={gotoThreadMessage}
+              showHistoryDrawer={showDrawer}
+              switchThread={handleSwitchThread}
+              lastOne={index === threadList.length - 1}
+            />
+          ))}
+        </ScrollArea>
+      </div>
     </SwipeableDrawer>
   )
 }

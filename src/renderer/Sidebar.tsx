@@ -14,6 +14,7 @@ import clsx from 'clsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Divider from './components/common/Divider'
+import { blurActiveElementWithin } from './components/common/overlay-focus'
 import { ScalableIcon } from './components/common/ScalableIcon'
 import ThemeSwitchButton from './components/dev/ThemeSwitchButton'
 import SessionList from './components/session/SessionList'
@@ -39,6 +40,7 @@ export default function Sidebar() {
   const setSidebarWidth = useUIStore((s) => s.setSidebarWidth)
 
   const sessionListViewportRef = useRef<HTMLDivElement>(null)
+  const sidebarContentRef = useRef<HTMLDivElement>(null)
 
   const sidebarWidth = useSidebarWidth()
 
@@ -50,22 +52,27 @@ export default function Sidebar() {
 
   const { needRoomForMacWindowControls } = useNeedRoomForMacWinControls()
 
+  const closeSidebar = useCallback(() => {
+    blurActiveElementWithin(sidebarContentRef.current)
+    setShowSidebar(false)
+  }, [setShowSidebar])
+
   const handleCreateNewSession = useCallback(() => {
     navigate({ to: `/` })
 
     if (isSmallScreen) {
-      setShowSidebar(false)
+      closeSidebar()
     }
     trackingEvent('create_new_conversation', { event_category: 'user' })
-  }, [navigate, setShowSidebar, isSmallScreen])
+  }, [closeSidebar, navigate, isSmallScreen])
 
   const handleCreateNewPictureSession = useCallback(() => {
     navigate({ to: '/image-creator' })
     if (isSmallScreen) {
-      setShowSidebar(false)
+      closeSidebar()
     }
     trackingEvent('open_image_creator', { event_category: 'user' })
-  }, [isSmallScreen, setShowSidebar, navigate])
+  }, [closeSidebar, isSmallScreen, navigate])
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -107,7 +114,7 @@ export default function Sidebar() {
       anchor={language === 'ar' ? 'right' : 'left'}
       variant={isSmallScreen ? 'temporary' : 'persistent'}
       open={showSidebar}
-      onClose={() => setShowSidebar(false)}
+      onClose={closeSidebar}
       onOpen={() => setShowSidebar(true)}
       ModalProps={{
         keepMounted: true, // Better open performance on mobile.
@@ -128,6 +135,7 @@ export default function Sidebar() {
       disableSwipeToOpen={CHATBOX_BUILD_PLATFORM !== 'ios'} // 只在iOS设备上启用SwipeToOpen
     >
       <Stack
+        ref={sidebarContentRef}
         h="100%"
         gap={0}
         pt="var(--mobile-safe-area-inset-top, 0px)"
@@ -152,7 +160,7 @@ export default function Sidebar() {
           </Flex>
 
           <Tooltip label={t('Collapse')} openDelay={1000} withArrow>
-            <ActionIcon variant="subtle" color="chatbox-tertiary" size={20} onClick={() => setShowSidebar(false)}>
+            <ActionIcon variant="subtle" color="chatbox-tertiary" size={20} onClick={closeSidebar}>
               <IconLayoutSidebarLeftCollapse />
             </ActionIcon>
           </Tooltip>
@@ -177,30 +185,30 @@ export default function Sidebar() {
             className="rounded"
             label={t('My Copilots')}
             leftSection={<ScalableIcon icon={IconMessageChatbot} size={20} />}
-            onClick={() => {
-              navigate({
-                to: '/copilots',
-              })
-              if (isSmallScreen) {
-                setShowSidebar(false)
-              }
-            }}
-            variant="light"
-            p="xs"
+              onClick={() => {
+                navigate({
+                  to: '/copilots',
+                })
+                if (isSmallScreen) {
+                  closeSidebar()
+                }
+              }}
+              variant="light"
+              p="xs"
           />
           <NavLink
             c="chatbox-secondary"
             className="rounded"
             label={t('Settings')}
             leftSection={<ScalableIcon icon={IconSettingsFilled} size={20} />}
-            onClick={() => {
-              navigateToSettings()
-              if (isSmallScreen) {
-                setShowSidebar(false)
-              }
-            }}
-            variant="light"
-            p="xs"
+              onClick={() => {
+                navigateToSettings()
+                if (isSmallScreen) {
+                  closeSidebar()
+                }
+              }}
+              variant="light"
+              p="xs"
           />
           {FORCE_ENABLE_DEV_PAGES && (
             <NavLink
@@ -213,7 +221,7 @@ export default function Sidebar() {
                   to: '/dev',
                 })
                 if (isSmallScreen) {
-                  setShowSidebar(false)
+                  closeSidebar()
                 }
               }}
               variant="light"
@@ -237,7 +245,7 @@ export default function Sidebar() {
                 to: '/about',
               })
               if (isSmallScreen) {
-                setShowSidebar(false)
+                closeSidebar()
               }
             }}
             variant="light"

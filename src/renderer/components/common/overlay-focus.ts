@@ -1,5 +1,22 @@
 import { type RefObject, useLayoutEffect } from 'react'
 
+export function blurActiveElementWithin(target?: HTMLElement | null) {
+  if (typeof document === 'undefined') {
+    return
+  }
+
+  const activeElement = document.activeElement
+  if (!(activeElement instanceof HTMLElement)) {
+    return
+  }
+
+  if (target && !target.contains(activeElement)) {
+    return
+  }
+
+  activeElement.blur()
+}
+
 export function handoffFocusToOverlay(target?: HTMLElement | null) {
   if (typeof document === 'undefined') {
     return
@@ -11,7 +28,7 @@ export function handoffFocusToOverlay(target?: HTMLElement | null) {
       return
     }
 
-    activeElement.blur()
+    blurActiveElementWithin()
   }
 
   if (target && typeof target.focus === 'function') {

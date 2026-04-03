@@ -12,7 +12,7 @@ export type SystemAvatarProps = {
   sessionType?: 'chat' | 'picture'
 } & PolymorphicComponentProps<'div', AvatarProps>
 
-export const SystemAvatar: FC<SystemAvatarProps> = ({ size = 'md', className, ...avatarProps }) => {
+export const SystemAvatar: FC<SystemAvatarProps> = ({ size = 'md', sessionType: _sessionType, className, ...avatarProps }) => {
   const realSize = typeof size === 'number' ? size : { xs: 18, sm: 20, md: 28, lg: 32, xl: 36 }[size]
   const iconSize = Math.ceil(realSize / 2) + 2
 

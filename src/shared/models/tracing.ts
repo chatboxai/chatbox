@@ -33,7 +33,7 @@ export type ChatBridgeTraceEvidenceFamily =
   | 'routing'
 
 export type ChatBridgeTraceSurface = 'eval' | 'manual_smoke'
-export type ChatBridgeTraceRuntimeTarget = 'desktop-electron' | 'integration-vitest'
+export type ChatBridgeTraceRuntimeTarget = 'desktop-electron' | 'web-browser' | 'integration-vitest'
 export type ChatBridgeTraceSmokeSupport = 'legacy-reference' | 'scenario-only' | 'supported'
 
 export interface ChatBridgeTraceDescriptor {

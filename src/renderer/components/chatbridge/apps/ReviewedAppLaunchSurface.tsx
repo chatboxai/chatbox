@@ -32,17 +32,16 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
   const launchRunFinishedRef = useRef(false)
   const launch = readChatBridgeReviewedAppLaunch(part.values)
 
-  const runtimeUrl = useMemo(() => {
+  const runtimeMarkup = useMemo(() => {
     if (!launch) {
       return null
     }
 
-    const html = createReviewedAppLaunchRuntimeMarkup(launch, part.snapshot)
-    return URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+    return createReviewedAppLaunchRuntimeMarkup(launch, part.snapshot)
   }, [launch, part.snapshot])
 
   const expectedOrigin = useMemo(() => window.location.origin || 'null', [])
-  const bootstrapTargetOrigin = expectedOrigin === 'null' ? '*' : expectedOrigin
+  const bootstrapTargetOrigin = '*'
 
   async function finishLaunchRun(result?: Parameters<LangSmithRunHandle['end']>[0]) {
     if (!launchRunRef.current || launchRunFinishedRef.current) {
@@ -59,9 +58,6 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
     return () => {
       controllerRef.current?.dispose()
       controllerRef.current = null
-      if (runtimeUrl) {
-        URL.revokeObjectURL(runtimeUrl)
-      }
       void finishLaunchRun({
         outputs: {
           status: 'disposed',
@@ -69,9 +65,15 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
         },
       })
     }
-  }, [part.appInstanceId, runtimeUrl])
+  }, [part.appInstanceId])
 
-  if (!launch || !runtimeUrl || part.lifecycle === 'error' || part.lifecycle === 'stale' || part.lifecycle === 'complete') {
+  if (
+    !launch ||
+    !runtimeMarkup ||
+    part.lifecycle === 'error' ||
+    part.lifecycle === 'stale' ||
+    part.lifecycle === 'complete'
+  ) {
     return null
   }
 
@@ -234,7 +236,7 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
   return (
     <iframe
       ref={iframeRef}
-      src={runtimeUrl}
+      srcDoc={runtimeMarkup}
       title={`${launch.appName} reviewed app runtime`}
       sandbox="allow-scripts allow-forms"
       className="w-full min-h-[260px] border-none"

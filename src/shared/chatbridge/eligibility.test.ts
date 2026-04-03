@@ -49,6 +49,11 @@ function createReviewedAppCatalogEntry(overrides: Partial<ReviewedAppCatalogEntr
         handlesStudentData: true,
         requiresTeacherApproval: true,
       },
+      launchSurfaces: {
+        'desktop-electron': {
+          sandbox: 'hosted-iframe',
+        },
+      },
       tenantAvailability: {
         default: 'disabled',
         allow: ['tenant:k12-demo'],
@@ -206,6 +211,23 @@ describe('reviewed app eligibility', () => {
     expect(result.reasons.map((reason) => reason.code)).toEqual([
       'teacher-approval-required',
       'required-permissions-missing',
+    ])
+  })
+
+  it('fails closed when the current host runtime does not support the reviewed app launch surface', () => {
+    const result = evaluateReviewedAppEligibility(createReviewedAppCatalogEntry(), {
+      tenantId: 'k12-demo',
+      teacherApproved: true,
+      grantedPermissions: ['drive.read'],
+      additionalContextTokens: [],
+      hostRuntime: 'web-browser',
+    })
+
+    expect(result.eligible).toBe(false)
+    expect(result.reasons.map((reason) => reason.code)).toContain('runtime-unsupported')
+    expect(result.reasons.find((reason) => reason.code === 'runtime-unsupported')?.details).toEqual([
+      'current runtime: Web browser',
+      'supported runtimes: Desktop app',
     ])
   })
 

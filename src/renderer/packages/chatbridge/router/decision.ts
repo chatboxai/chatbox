@@ -21,7 +21,10 @@ export function getReviewedAppRouteDecision(options: {
 
   return {
     catalog,
-    decision: resolveReviewedAppRouteDecision(catalog.candidates, options.promptInput),
+    decision: resolveReviewedAppRouteDecision(catalog.candidates, options.promptInput, {
+      excluded: catalog.excluded,
+      hostRuntime: catalog.context?.hostRuntime,
+    }),
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ReviewedAppRouterCandidate } from './eligibility'
+import type { ReviewedAppEligibilityDecision, ReviewedAppRouterCandidate } from './eligibility'
 import type { ReviewedAppCatalogEntry } from './manifest'
 import { createChatBridgeRouteMessagePart, resolveReviewedAppRouteDecision } from './routing'
 
@@ -52,6 +52,11 @@ function createCandidate(overrides: {
           handlesStudentData: true,
           requiresTeacherApproval: true,
         },
+        launchSurfaces: {
+          'desktop-electron': {
+            sandbox: 'hosted-iframe',
+          },
+        },
         tenantAvailability: {
           default: 'enabled',
           allow: [],
@@ -89,7 +94,10 @@ describe('resolveReviewedAppRouteDecision', () => {
   it('returns invoke when the user explicitly names a reviewed app', () => {
     const decision = resolveReviewedAppRouteDecision(
       [createCandidate()],
-      'Open Story Builder and continue the chapter draft.'
+      'Open Story Builder and continue the chapter draft.',
+      {
+        hostRuntime: 'desktop-electron',
+      }
     )
 
     expect(decision.kind).toBe('invoke')
@@ -131,7 +139,10 @@ describe('resolveReviewedAppRouteDecision', () => {
           },
         }),
       ],
-      'Help me draft an opening statement and rebuttal for class.'
+      'Help me draft an opening statement and rebuttal for class.',
+      {
+        hostRuntime: 'desktop-electron',
+      }
     )
 
     expect(decision.kind).toBe('clarify')
@@ -143,7 +154,10 @@ describe('resolveReviewedAppRouteDecision', () => {
   it('returns refuse when no reviewed app is a confident fit', () => {
     const decision = resolveReviewedAppRouteDecision(
       [createCandidate()],
-      'What should I cook for dinner tonight?'
+      'What should I cook for dinner tonight?',
+      {
+        hostRuntime: 'desktop-electron',
+      }
     )
 
     expect(decision.kind).toBe('refuse')
@@ -154,7 +168,10 @@ describe('resolveReviewedAppRouteDecision', () => {
   it('can build a host-owned message artifact from the routing decision', () => {
     const decision = resolveReviewedAppRouteDecision(
       [createCandidate()],
-      'Maybe Story Builder can help with this outline.'
+      'Maybe Story Builder can help with this outline.',
+      {
+        hostRuntime: 'desktop-electron',
+      }
     )
 
     const part = createChatBridgeRouteMessagePart(decision)
@@ -166,5 +183,41 @@ describe('resolveReviewedAppRouteDecision', () => {
       prompt: decision.prompt,
     })
     expect(part.statusText).toBe('Launch app')
+  })
+
+  it('returns a runtime-unsupported refusal when the top reviewed-app match is blocked on the current host runtime', () => {
+    const storyBuilder = createCandidate()
+    const blockedDecision: ReviewedAppEligibilityDecision = {
+      entry: storyBuilder.entry,
+      eligible: false,
+      matchedContexts: [],
+      reasons: [
+        {
+          code: 'runtime-unsupported',
+          message: 'Story Builder is not available in the current host runtime.',
+          details: ['current runtime: Web browser', 'supported runtimes: Desktop app'],
+        },
+      ],
+    }
+
+    const decision = resolveReviewedAppRouteDecision([], 'Open Story Builder and continue the outline draft.', {
+      excluded: [blockedDecision],
+      hostRuntime: 'web-browser',
+    })
+    const part = createChatBridgeRouteMessagePart(decision)
+
+    expect(decision).toMatchObject({
+      kind: 'refuse',
+      reasonCode: 'runtime-unsupported',
+      selectedAppId: 'story-builder',
+      runtimeBlock: {
+        hostRuntime: 'web-browser',
+        supportedHostRuntimes: ['desktop-electron'],
+      },
+    })
+    expect(part.lifecycle).toBe('error')
+    expect(part.statusText).toBe('Desktop only')
+    expect(part.fallbackText).toContain('Current runtime: Web browser')
+    expect(part.fallbackText).toContain('Supported runtimes: Desktop app')
   })
 })

@@ -9,15 +9,15 @@ ChatBridge needs to satisfy four architectural goals at the same time:
 - Keep the chat experience continuous while apps appear, update, and complete inside the thread.
 - Preserve TutorMeAI's trust model for K-12 through reviewed partners, scoped permissions, and teacher-governed access.
 - Support different classes of apps, including no-auth, public external, and authenticated partner experiences.
-- Stay Electron-first so the existing repo remains the main client shell rather than becoming a throwaway prototype.
+- Keep the checked-in client shell authoritative across both supported host runtimes: privileged desktop-electron and constrained web-browser.
 
 ## 2. System Overview
 
 ```mermaid
 flowchart TD
-    U["Student / Teacher"] --> EC["TutorMeAI Electron Client"]
+    U["Student / Teacher"] --> EC["TutorMeAI Client Shell"]
 
-    subgraph CLIENT["Electron Client"]
+    subgraph CLIENT["Desktop or Web Client"]
         EC --> CHAT["Chat UI + Streaming Renderer"]
         EC --> HOST["ChatBridge Host Runtime"]
         HOST --> ROUTER["Intent Router + App Orchestrator"]
@@ -27,6 +27,7 @@ flowchart TD
         HOST --> POLICYCACHE["Cached Policy + App Config"]
         EMBED --> NATIVE["Native Internal App Surface"]
         EMBED --> IFRAME["Sandboxed Partner Iframe Surface"]
+        EMBED --> BLOCKED["Explain-disabled Desktop-only Surface"]
     end
 
     subgraph PLATFORM["Platform Services"]
@@ -54,13 +55,41 @@ flowchart TD
 
 ### Why this shape
 
-- The Electron client stays in charge of the user experience.
+- The client shell stays in charge of the user experience on both desktop and web.
 - The host runtime becomes the policy and lifecycle brain of the app platform.
 - Platform services own the parts that must be centralized: registry, policy, auth, persistence, auditability, and health.
 - Partner apps remain isolated from both the raw desktop environment and the full conversation by default.
 - Local cache exists for responsiveness, but the backend remains authoritative for durable state.
 
-## 3. Trust Boundaries
+## 3. Supported Host Runtimes
+
+ChatBridge now treats host runtime as an explicit contract rather than an implicit Electron-only assumption.
+
+### Runtime targets
+
+- `desktop-electron`
+  - full privileged host runtime
+  - may use native-shell or hosted-iframe reviewed app launch surfaces
+  - remains the only runtime for Electron-bound auth broker, resource proxy, and manual smoke seams
+
+- `web-browser`
+  - no Electron IPC or main-process assumptions
+  - may only launch reviewed apps that explicitly declare a web-safe surface
+  - unsupported desktop-only features remain discoverable but must fail closed with an in-thread explanation
+
+### Current reviewed app support matrix
+
+- Chess: desktop-electron, web-browser
+- Drawing Kit: desktop-electron, web-browser
+- Weather Dashboard: desktop-electron, web-browser
+- Story Builder: desktop-electron only
+- Debate Arena: desktop-electron only legacy reference
+
+### Runtime rule
+
+If a reviewed app does not explicitly declare support for `web-browser`, the web host must not expose a launch tool or attempt a best-effort launch. The route should instead emit an explain-disabled app part that keeps the request in chat while telling the user that desktop is required.
+
+## 4. Trust Boundaries
 
 ```mermaid
 flowchart TD
@@ -117,7 +146,7 @@ Bridge security should be tied to the app session, not just the app origin. Ever
 
 The host should send a signed bootstrap envelope plus a transferred `MessagePort`, require a nonce-based acknowledgment, and only accept subsequent messages on that bound port. Every state-changing event should also carry an idempotency key so replayed or duplicated events can be rejected safely.
 
-## 4. Core Runtime Components
+## 5. Core Runtime Components
 
 ### Electron Client
 
@@ -130,6 +159,7 @@ The host should send a signed bootstrap envelope plus a transferred `MessagePort
 ### ChatBridge Host Runtime
 
 - Resolves app eligibility for the current user, tenant, teacher, and classroom
+- Resolves app eligibility against the current host runtime before any reviewed app becomes invocable
 - Routes user intent to chat-only behavior or app-aware behavior
 - Injects allowed tool schemas into the orchestration path
 - Tracks active app instances and summaries
@@ -155,6 +185,7 @@ The host should send a signed bootstrap envelope plus a transferred `MessagePort
 
 - Native React-hosted apps for internal surfaces
 - Sandboxed iframe apps for reviewed partners
+- Explain-disabled shells for runtime-blocked reviewed apps
 - Shared lifecycle contract no matter which rendering mode is used
 - Chess now proves the native-hosted path by keeping a renderer-owned legal move
   engine behind the same host-owned app-part and reasoning-context contract
@@ -170,7 +201,7 @@ The host should send a signed bootstrap envelope plus a transferred `MessagePort
 - Replays only unacknowledged operations after reconnect
 - Prevents stale local cache from overwriting committed server state
 
-## 5. App Registration and Discovery
+## 6. App Registration and Discovery
 
 ```mermaid
 sequenceDiagram
@@ -193,9 +224,10 @@ sequenceDiagram
 - Partner apps do not self-register live in production without review.
 - Tool schemas are validated and normalized by the host before any model sees them.
 - Availability is decided per context, not globally.
+- Runtime support is decided per host target, not inferred from a single legacy sandbox flag.
 - App and host protocol versions must be checked before activation; mismatched versions should fail closed.
 
-## 6. App Invocation Lifecycle
+## 7. App Invocation Lifecycle
 
 ```mermaid
 sequenceDiagram

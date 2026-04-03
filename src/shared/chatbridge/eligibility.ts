@@ -1,5 +1,12 @@
 import { ZodError, z } from 'zod'
-import { ReviewedAppCatalogEntrySchema, type ReviewedAppCatalogEntry } from './manifest'
+import {
+  ChatBridgeHostRuntimeSchema,
+  ReviewedAppCatalogEntrySchema,
+  getChatBridgeHostRuntimeLabel,
+  getReviewedAppSupportedHostRuntimes,
+  isReviewedAppSupportedOnHostRuntime,
+  type ReviewedAppCatalogEntry,
+} from './manifest'
 import { evaluateReviewedAppLaunchControl } from './observability'
 import { ChatBridgePolicySnapshotSchema, evaluateChatBridgePolicyForApp } from './policy'
 
@@ -35,11 +42,13 @@ export const ChatBridgeEligibilityContextSchema = z
     additionalContextTokens: z.array(z.string().trim().regex(HOST_CONTEXT_PATTERN)).default([]),
     teacherApproved: z.boolean().default(false),
     grantedPermissions: z.array(z.string().trim().min(1)).default([]),
+    hostRuntime: ChatBridgeHostRuntimeSchema.default('desktop-electron'),
     policySnapshot: ChatBridgePolicySnapshotSchema.optional(),
   })
   .strict()
 
-export type ChatBridgeEligibilityContext = z.infer<typeof ChatBridgeEligibilityContextSchema>
+export type ChatBridgeEligibilityContextInput = z.input<typeof ChatBridgeEligibilityContextSchema>
+export type ChatBridgeEligibilityContext = z.output<typeof ChatBridgeEligibilityContextSchema>
 
 export const ChatBridgeEligibilityReasonCodeSchema = z.enum([
   'invalid-context',
@@ -47,6 +56,7 @@ export const ChatBridgeEligibilityReasonCodeSchema = z.enum([
   'context-not-allowed',
   'teacher-approval-required',
   'required-permissions-missing',
+  'runtime-unsupported',
   'app-disabled',
   'app-version-disabled',
   'policy-stale',
@@ -132,14 +142,30 @@ function getMissingRequiredPermissions(
 
 export function evaluateReviewedAppEligibility(
   entry: ReviewedAppCatalogEntry,
-  context: ChatBridgeEligibilityContext
+  context: ChatBridgeEligibilityContextInput
 ): ReviewedAppEligibilityDecision {
-  const contextTokens = getChatBridgeEligibilityContextTokens(context)
+  const normalizedContext = ChatBridgeEligibilityContextSchema.parse(context)
+  const contextTokens = getChatBridgeEligibilityContextTokens(normalizedContext)
   const activeContextTokens = new Set(contextTokens)
   const matchedContexts = getMatchedContexts(entry, activeContextTokens)
   const deniedContexts = entry.manifest.tenantAvailability.deny.filter((contextToken) => activeContextTokens.has(contextToken))
-  const missingRequiredPermissions = getMissingRequiredPermissions(entry, new Set(context.grantedPermissions))
+  const missingRequiredPermissions = getMissingRequiredPermissions(entry, new Set(normalizedContext.grantedPermissions))
   const reasons: ChatBridgeEligibilityReason[] = []
+  const supportedHostRuntimes = getReviewedAppSupportedHostRuntimes(entry)
+
+  if (!isReviewedAppSupportedOnHostRuntime(entry, normalizedContext.hostRuntime)) {
+    const supportedRuntimeLabels = supportedHostRuntimes.map((runtime) => getChatBridgeHostRuntimeLabel(runtime))
+    reasons.push(
+      createReason(
+        'runtime-unsupported',
+        `${entry.manifest.name} is not available in the current host runtime.`,
+        [
+          `current runtime: ${getChatBridgeHostRuntimeLabel(normalizedContext.hostRuntime)}`,
+          `supported runtimes: ${supportedRuntimeLabels.join(', ') || 'none'}`,
+        ]
+      )
+    )
+  }
 
   if (deniedContexts.length > 0) {
     reasons.push(
@@ -147,7 +173,7 @@ export function evaluateReviewedAppEligibility(
     )
   }
 
-  if (entry.manifest.safetyMetadata.requiresTeacherApproval && !context.teacherApproved) {
+  if (entry.manifest.safetyMetadata.requiresTeacherApproval && !normalizedContext.teacherApproved) {
     reasons.push(
       createReason(
         'teacher-approval-required',
@@ -191,7 +217,7 @@ export function evaluateReviewedAppEligibility(
     )
   }
 
-  const policyDecision = evaluateChatBridgePolicyForApp(entry.manifest.appId, context)
+  const policyDecision = evaluateChatBridgePolicyForApp(entry.manifest.appId, normalizedContext)
   for (const policyReason of policyDecision.reasons) {
     reasons.push(createReason(policyReason.code, policyReason.message, policyReason.details))
   }

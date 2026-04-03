@@ -8,6 +8,8 @@ import type { ModelInterface } from '../../../shared/models/types'
 import { webSearchExecutor } from '../web-search'
 import { generateText } from '.'
 
+type SearchPlannerTraceOptions = Parameters<typeof generateText>[2]
+
 /**
  * Extracts and parses JSON from a model response result to find search actions
  * @param result The model response result containing content parts
@@ -38,7 +40,12 @@ function extractSearchActionFromResult<T = any>(result: {
   return null
 }
 
-export async function searchByPromptEngineering(model: ModelInterface, messages: Message[], signal?: AbortSignal) {
+export async function searchByPromptEngineering(
+  model: ModelInterface,
+  messages: Message[],
+  signal?: AbortSignal,
+  traceOptions?: SearchPlannerTraceOptions
+) {
   const language = settingActions.getLanguage()
   const systemPrompt = promptFormat.contructSearchAction(language)
   const result = await generateText(
@@ -50,7 +57,16 @@ export async function searchByPromptEngineering(model: ModelInterface, messages:
         contentParts: [{ type: 'text', text: systemPrompt }],
       },
       ...messages,
-    ])
+    ]),
+    {
+      name: 'chatbox.session.generate.web_search_planner',
+      parentRunId: traceOptions?.parentRunId,
+      metadata: {
+        ...traceOptions?.metadata,
+        operation: 'searchByPromptEngineering',
+      },
+      tags: ['chat', 'search-planner', 'web-search', ...(traceOptions?.tags ?? [])],
+    }
   )
 
   const searchAction = extractSearchActionFromResult<{
@@ -69,7 +85,8 @@ export async function searchByPromptEngineering(model: ModelInterface, messages:
 export async function knowledgeBaseSearchByPromptEngineering(
   model: ModelInterface,
   messages: Message[],
-  knowledgeBaseId: number
+  knowledgeBaseId: number,
+  traceOptions?: SearchPlannerTraceOptions
 ) {
   const language = settingActions.getLanguage()
   const systemPrompt = promptFormat.constructKnowledgeBaseSearchAction(language)
@@ -82,7 +99,16 @@ export async function knowledgeBaseSearchByPromptEngineering(
         contentParts: [{ type: 'text', text: systemPrompt }],
       },
       ...messages,
-    ])
+    ]),
+    {
+      name: 'chatbox.session.generate.knowledge_base_planner',
+      parentRunId: traceOptions?.parentRunId,
+      metadata: {
+        ...traceOptions?.metadata,
+        operation: 'knowledgeBaseSearchByPromptEngineering',
+      },
+      tags: ['chat', 'knowledge-base', 'search-planner', ...(traceOptions?.tags ?? [])],
+    }
   )
 
   const searchAction = await extractSearchActionFromResult<{
@@ -103,7 +129,8 @@ export async function combinedSearchByPromptEngineering(
   model: ModelInterface,
   messages: Message[],
   knowledgeBaseId?: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  traceOptions?: SearchPlannerTraceOptions
 ) {
   const language = settingActions.getLanguage()
   const systemPrompt = promptFormat.constructCombinedSearchAction(language, !!knowledgeBaseId)
@@ -116,7 +143,16 @@ export async function combinedSearchByPromptEngineering(
         contentParts: [{ type: 'text', text: systemPrompt }],
       },
       ...messages,
-    ])
+    ]),
+    {
+      name: 'chatbox.session.generate.combined_search_planner',
+      parentRunId: traceOptions?.parentRunId,
+      metadata: {
+        ...traceOptions?.metadata,
+        operation: 'combinedSearchByPromptEngineering',
+      },
+      tags: ['chat', 'search-planner', 'combined-search', ...(traceOptions?.tags ?? [])],
+    }
   )
 
   const searchAction = await extractSearchActionFromResult<{

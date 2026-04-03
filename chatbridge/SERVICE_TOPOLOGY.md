@@ -10,6 +10,26 @@ infrastructure.
 Today this repository is primarily a client application with desktop and web
 build surfaces.
 
+## ChatBridge Runtime Support Contract
+
+ChatBridge now models host runtime explicitly instead of assuming every reviewed
+app launch is Electron-capable.
+
+### Supported host runtimes
+
+1. `desktop-electron`
+   - full privileged shell
+   - may use native-shell and hosted-iframe reviewed app launch surfaces
+   - remains the only runtime for auth-broker, resource-proxy, and manual-smoke
+     seams
+
+2. `web-browser`
+   - renderer-only shell with no `window.electronAPI` dependency
+   - may only invoke reviewed apps that explicitly declare a web-safe launch
+     surface
+   - desktop-only features stay visible through explain-disabled app parts
+     rather than hidden or best-effort launched
+
 ### Current layers
 
 1. Electron main process
@@ -71,6 +91,8 @@ backend-authoritative services.
 - lifecycle state machine
 - bridge validation
 - tool coordination
+- host-runtime gating so web never treats a desktop-only reviewed app as
+  launchable
 - context injection and completion normalization
 - host-owned reasoning-context reduction for active app state before it reaches
   the model path
@@ -92,6 +114,8 @@ Less trusted than the host.
 
 - native first-party app surfaces when explicitly built in-repo
 - sandboxed partner app surfaces for reviewed third-party applications
+- explain-disabled runtime shells when a reviewed app is known but unsupported
+  on the current host target
 
 ## Local Development Versus Future Hosted Authority
 
@@ -103,6 +127,8 @@ Less trusted than the host.
   instead of depending on unavailable backend services.
 - `USE_LOCAL_API=true` currently means "use the local Chatbox API origin," not
   "there is already a ChatBridge control plane running locally."
+- Web runtime validation should prove browser-safe behavior with scenario/eval
+  coverage; desktop manual smoke remains desktop-only.
 
 ### Future hosted authority assumptions
 
@@ -156,8 +182,9 @@ service exists, the story should:
 
 - future `src/main/chatbridge/` for privileged host-runtime concerns
 - `src/shared/chatbridge/` now exists for shared execution-contract types and
-  host-owned tool normalization helpers; later packs can extend it with
-  manifest, bridge-session, lifecycle, and reasoning-context contracts
+  host-owned tool normalization helpers; it now also carries explicit
+  host-runtime support and launch-surface contracts so renderer and desktop
+  flows fail closed consistently
 - `src/shared/chatbridge/chess.ts` now carries the host-owned Chess snapshot,
   legal-move, and board-summary helper contract used by both seeded fixtures
   and the live runtime surface
@@ -169,6 +196,9 @@ service exists, the story should:
 - `src/renderer/components/chatbridge/apps/chess/` now holds the native
   board-first Chess runtime that persists moves back through the host-owned
   message part
+- `src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.tsx` is the
+  browser-safe reviewed-app launch shell for hosted-iframe surfaces on both
+  desktop and web
 
 ### Backend-facing adapters to introduce before full services
 

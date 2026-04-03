@@ -1,19 +1,26 @@
 import type { ToolSet } from 'ai'
 import { z } from 'zod'
-import type { ChatBridgeRouteDecision, ChatBridgeJsonSchema, ChatBridgeToolSchema, ReviewedAppCatalogEntry } from '@shared/chatbridge'
+import type {
+  ChatBridgeHostRuntime,
+  ChatBridgeRouteDecision,
+  ChatBridgeJsonSchema,
+  ChatBridgeToolSchema,
+  ReviewedAppCatalogEntry,
+} from '@shared/chatbridge'
 import {
   CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
+  ChatBridgeHostRuntimeSchema,
   createChatBridgeHostTool,
   ensureDefaultReviewedAppsRegistered,
+  isReviewedAppSupportedOnHostRuntime,
   resolveReviewedSingleAppSelection,
   type ReviewedSingleAppSelection,
 } from '@shared/chatbridge'
 import { getReviewedAppRouteDecision } from './router/decision'
 import type { Message } from '@shared/types'
+import platform from '@/platform'
 
-const DEFAULT_LIVE_REVIEWED_APP_CONTEXT = {
-  grantedPermissions: ['session.context.read', 'weather.read'],
-} as const
+const DEFAULT_LIVE_REVIEWED_APP_PERMISSIONS = ['session.context.read', 'weather.read'] as const
 
 const ChessPrepareSessionInputSchema = z.object({
   request: z.string().trim().min(1),
@@ -32,6 +39,7 @@ type CreateReviewedSingleAppToolSetOptions = {
   messages: Message[]
   contextInput?: unknown
   executors?: ReviewedAppToolExecutors
+  entries?: ReviewedAppCatalogEntry[]
 }
 
 type ReviewedSingleAppToolSelectionSource = 'route-decision' | 'natural-chess-fallback' | 'none'
@@ -41,6 +49,41 @@ type ReviewedSingleAppToolSetResult = {
   tools: ToolSet
   routeDecision: ChatBridgeRouteDecision
   selectionSource: ReviewedSingleAppToolSelectionSource
+}
+
+function resolvePlatformHostRuntime(): ChatBridgeHostRuntime {
+  return platform.type === 'desktop' ? 'desktop-electron' : 'web-browser'
+}
+
+function createDefaultLiveReviewedAppContext() {
+  return {
+    grantedPermissions: [...DEFAULT_LIVE_REVIEWED_APP_PERMISSIONS],
+    hostRuntime: resolvePlatformHostRuntime(),
+  }
+}
+
+function mergeReviewedAppContextInput(contextInput: unknown) {
+  const defaultContext = createDefaultLiveReviewedAppContext()
+
+  if (!contextInput || typeof contextInput !== 'object' || Array.isArray(contextInput)) {
+    return contextInput ?? defaultContext
+  }
+
+  return {
+    ...defaultContext,
+    ...contextInput,
+  }
+}
+
+function resolveHostRuntimeFromContextInput(contextInput: unknown): ChatBridgeHostRuntime {
+  if (contextInput && typeof contextInput === 'object' && !Array.isArray(contextInput)) {
+    const parsedRuntime = ChatBridgeHostRuntimeSchema.safeParse((contextInput as { hostRuntime?: unknown }).hostRuntime)
+    if (parsedRuntime.success) {
+      return parsedRuntime.data
+    }
+  }
+
+  return resolvePlatformHostRuntime()
 }
 
 function getLatestUserPrompt(messages: Message[]) {
@@ -211,11 +254,13 @@ function createToolsForSelection(
 }
 
 export function createReviewedSingleAppToolSet(options: CreateReviewedSingleAppToolSetOptions): ReviewedSingleAppToolSetResult {
-  const entries = ensureDefaultReviewedAppsRegistered()
+  const entries = options.entries ?? ensureDefaultReviewedAppsRegistered()
   const promptText = getLatestUserPrompt(options.messages)
+  const contextInput = mergeReviewedAppContextInput(options.contextInput)
+  const hostRuntime = resolveHostRuntimeFromContextInput(contextInput)
   const { decision: routeDecision } = getReviewedAppRouteDecision({
     promptInput: promptText,
-    contextInput: options.contextInput ?? DEFAULT_LIVE_REVIEWED_APP_CONTEXT,
+    contextInput,
     entries,
   })
 
@@ -229,7 +274,8 @@ export function createReviewedSingleAppToolSet(options: CreateReviewedSingleAppT
     }
   }
 
-  const fallbackSelection = resolveReviewedSingleAppSelection(options.messages, entries)
+  const runtimeSupportedEntries = entries.filter((entry) => isReviewedAppSupportedOnHostRuntime(entry, hostRuntime))
+  const fallbackSelection = resolveReviewedSingleAppSelection(options.messages, runtimeSupportedEntries)
   const selectionSource = fallbackSelection.status === 'matched' ? 'natural-chess-fallback' : 'none'
 
   return {

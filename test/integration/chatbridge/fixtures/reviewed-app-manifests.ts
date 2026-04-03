@@ -48,6 +48,11 @@ export function createReviewedAppCatalogEntryFixture(
         handlesStudentData: true,
         requiresTeacherApproval: true,
       },
+      launchSurfaces: {
+        'desktop-electron': {
+          sandbox: 'hosted-iframe',
+        },
+      },
       tenantAvailability: {
         default: 'disabled',
         allow: ['tenant:k12-demo'],

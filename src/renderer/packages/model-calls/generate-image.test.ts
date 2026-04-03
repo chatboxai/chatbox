@@ -49,6 +49,9 @@ describe('generateImage tracing', () => {
       {
         message,
         num: 1,
+        sessionId: 'session-9',
+        threadId: 'thread-4',
+        messageId: 'message-3',
       }
     )
 
@@ -58,9 +61,18 @@ describe('generateImage tracing', () => {
         name: 'chatbox.image_generation.generate',
         runType: 'chain',
         inputs: expect.objectContaining({
+          sessionId: 'session-9',
+          threadId: 'thread-4',
+          messageId: 'message-3',
           modelId: 'image-model-1',
           num: 1,
           referenceImageCount: 1,
+        }),
+        metadata: expect.objectContaining({
+          session_id: 'session-9',
+          thread_id: 'thread-4',
+          conversation_id: 'thread-4',
+          message_id: 'message-3',
         }),
       })
     )
@@ -69,6 +81,12 @@ describe('generateImage tracing', () => {
         traceContext: expect.objectContaining({
           parentRunId: 'image-trace-run-1',
           name: 'chatbox.image_generation.generate.paint',
+          metadata: expect.objectContaining({
+            session_id: 'session-9',
+            thread_id: 'thread-4',
+            conversation_id: 'thread-4',
+            message_id: 'message-3',
+          }),
         }),
       }),
       undefined,

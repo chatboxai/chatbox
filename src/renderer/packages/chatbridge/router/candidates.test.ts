@@ -50,6 +50,11 @@ function createReviewedAppCatalogEntry(overrides: Partial<ReviewedAppCatalogEntr
         handlesStudentData: true,
         requiresTeacherApproval: true,
       },
+      launchSurfaces: {
+        'desktop-electron': {
+          sandbox: 'hosted-iframe',
+        },
+      },
       tenantAvailability: {
         default: 'disabled',
         allow: ['tenant:k12-demo'],
@@ -181,5 +186,36 @@ describe('ChatBridge router candidates', () => {
 
     expect(result.candidates).toEqual([])
     expect(result.excluded[0]?.reasons.map((reason) => reason.code)).toContain('app-version-disabled')
+  })
+
+  it('keeps desktop-only reviewed apps out of the web router candidate list and preserves the runtime exclusion reason', () => {
+    const storyBuilder = createReviewedAppCatalogEntry({
+      manifest: {
+        ...createReviewedAppCatalogEntry().manifest,
+        tenantAvailability: {
+          default: 'enabled',
+          allow: [],
+          deny: [],
+        },
+        safetyMetadata: {
+          reviewed: true,
+          sandbox: 'hosted-iframe',
+          handlesStudentData: true,
+          requiresTeacherApproval: false,
+        },
+      },
+    })
+    defineReviewedApps([storyBuilder])
+
+    const result = getReviewedAppRouterCatalog({
+      tenantId: 'k12-demo',
+      teacherApproved: true,
+      grantedPermissions: ['drive.read'],
+      hostRuntime: 'web-browser',
+    })
+
+    expect(result.candidates).toEqual([])
+    expect(result.excluded[0]?.entry.manifest.appId).toBe('story-builder')
+    expect(result.excluded[0]?.reasons.map((reason) => reason.code)).toContain('runtime-unsupported')
   })
 })

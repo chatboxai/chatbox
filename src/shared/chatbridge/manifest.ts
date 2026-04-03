@@ -51,6 +51,13 @@ export const CHATBRIDGE_AUTH_MODES = [...ChatBridgeAuthModeSchema.options]
 export const ChatBridgePermissionAccessSchema = z.enum(['read', 'write', 'execute'])
 export type ChatBridgePermissionAccess = z.infer<typeof ChatBridgePermissionAccessSchema>
 
+export const ChatBridgeHostRuntimeSchema = z.enum(['desktop-electron', 'web-browser'])
+export type ChatBridgeHostRuntime = z.infer<typeof ChatBridgeHostRuntimeSchema>
+export const CHATBRIDGE_HOST_RUNTIMES = [...ChatBridgeHostRuntimeSchema.options]
+
+export const ChatBridgeLaunchSandboxSchema = z.enum(['hosted-iframe', 'native-shell'])
+export type ChatBridgeLaunchSandbox = z.infer<typeof ChatBridgeLaunchSandboxSchema>
+
 export const ChatBridgePermissionSchema = z
   .object({
     id: z.string().trim().regex(PERMISSION_ID_PATTERN),
@@ -223,12 +230,36 @@ export type ChatBridgeTimeouts = z.infer<typeof ChatBridgeTimeoutsSchema>
 export const ChatBridgeSafetyMetadataSchema = z
   .object({
     reviewed: z.literal(true),
-    sandbox: z.enum(['hosted-iframe', 'native-shell']),
+    sandbox: ChatBridgeLaunchSandboxSchema,
     handlesStudentData: z.boolean(),
     requiresTeacherApproval: z.boolean().default(false),
   })
   .strict()
 export type ChatBridgeSafetyMetadata = z.infer<typeof ChatBridgeSafetyMetadataSchema>
+
+export const ChatBridgeReviewedAppLaunchSurfaceSchema = z
+  .object({
+    sandbox: ChatBridgeLaunchSandboxSchema,
+  })
+  .strict()
+export type ChatBridgeReviewedAppLaunchSurface = z.infer<typeof ChatBridgeReviewedAppLaunchSurfaceSchema>
+
+export const ChatBridgeReviewedAppLaunchSurfacesSchema = z
+  .object({
+    'desktop-electron': ChatBridgeReviewedAppLaunchSurfaceSchema.optional(),
+    'web-browser': ChatBridgeReviewedAppLaunchSurfaceSchema.optional(),
+  })
+  .strict()
+  .superRefine((launchSurfaces, ctx) => {
+    if (!launchSurfaces['desktop-electron'] && !launchSurfaces['web-browser']) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'At least one host runtime launch surface must be declared.',
+        path: [],
+      })
+    }
+  })
+export type ChatBridgeReviewedAppLaunchSurfaces = z.infer<typeof ChatBridgeReviewedAppLaunchSurfacesSchema>
 
 export const ChatBridgeTenantAvailabilitySchema = z
   .object({
@@ -275,6 +306,7 @@ export const ReviewedAppManifestSchema = z
     completionModes: z.array(ChatBridgeCompletionModeSchema).min(1),
     timeouts: ChatBridgeTimeoutsSchema,
     safetyMetadata: ChatBridgeSafetyMetadataSchema,
+    launchSurfaces: ChatBridgeReviewedAppLaunchSurfacesSchema.optional(),
     tenantAvailability: ChatBridgeTenantAvailabilitySchema,
     healthcheck: ChatBridgeHealthcheckSchema.optional(),
   })
@@ -333,3 +365,49 @@ export const ReviewedAppCatalogEntrySchema = z
   })
   .strict()
 export type ReviewedAppCatalogEntry = z.infer<typeof ReviewedAppCatalogEntrySchema>
+
+type ReviewedAppManifestLike = ReviewedAppManifest | ReviewedAppCatalogEntry
+
+function resolveReviewedAppManifest(input: ReviewedAppManifestLike): ReviewedAppManifest {
+  return 'manifest' in input ? input.manifest : input
+}
+
+export function getReviewedAppLaunchSurface(
+  input: ReviewedAppManifestLike,
+  hostRuntime: ChatBridgeHostRuntime
+): ChatBridgeReviewedAppLaunchSurface | null {
+  const manifest = resolveReviewedAppManifest(input)
+
+  if (manifest.launchSurfaces) {
+    return manifest.launchSurfaces[hostRuntime] ?? null
+  }
+
+  if (hostRuntime === 'desktop-electron') {
+    return {
+      sandbox: manifest.safetyMetadata.sandbox,
+    }
+  }
+
+  return null
+}
+
+export function getReviewedAppSupportedHostRuntimes(input: ReviewedAppManifestLike): ChatBridgeHostRuntime[] {
+  const manifest = resolveReviewedAppManifest(input)
+
+  if (manifest.launchSurfaces) {
+    return CHATBRIDGE_HOST_RUNTIMES.filter((runtime) => Boolean(manifest.launchSurfaces?.[runtime]))
+  }
+
+  return ['desktop-electron']
+}
+
+export function isReviewedAppSupportedOnHostRuntime(
+  input: ReviewedAppManifestLike,
+  hostRuntime: ChatBridgeHostRuntime
+): boolean {
+  return getReviewedAppLaunchSurface(input, hostRuntime) !== null
+}
+
+export function getChatBridgeHostRuntimeLabel(hostRuntime: ChatBridgeHostRuntime): string {
+  return hostRuntime === 'web-browser' ? 'Web browser' : 'Desktop app'
+}

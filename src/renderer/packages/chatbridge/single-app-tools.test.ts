@@ -3,6 +3,7 @@ import '../../../../test/integration/chatbridge/setup'
 import type { ToolExecutionOptions } from 'ai'
 import { describe, expect, it } from 'vitest'
 import { createMessage } from '@shared/types'
+import type { ReviewedAppCatalogEntry } from '@shared/chatbridge'
 import { prepareToolsForExecution } from '@/packages/model-calls/stream-text'
 import { createReviewedSingleAppToolSet } from './single-app-tools'
 
@@ -10,6 +11,71 @@ function getExecutionOptions(toolCallId: string): ToolExecutionOptions {
   return {
     toolCallId,
     messages: [],
+  }
+}
+
+function createDesktopOnlyStoryBuilderEntry(): ReviewedAppCatalogEntry {
+  return {
+    manifest: {
+      appId: 'story-builder',
+      name: 'Story Builder',
+      version: '1.2.3',
+      protocolVersion: 1,
+      origin: 'https://apps.example.com',
+      uiEntry: 'https://apps.example.com/story-builder',
+      authMode: 'oauth',
+      permissions: [
+        {
+          id: 'drive.read',
+          resource: 'drive',
+          access: 'read',
+          required: true,
+          purpose: 'Resume a reviewed draft from Drive.',
+        },
+      ],
+      toolSchemas: [
+        {
+          name: 'story_builder_resume',
+          description: 'Resume the latest reviewed draft.',
+          schemaVersion: 1,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              request: { type: 'string' },
+            },
+          },
+        },
+      ],
+      supportedEvents: ['host.init', 'app.ready', 'app.state', 'app.complete', 'app.requestAuth'],
+      completionModes: ['summary', 'handoff'],
+      timeouts: {
+        launchMs: 15_000,
+        idleMs: 120_000,
+        completionMs: 10_000,
+      },
+      safetyMetadata: {
+        reviewed: true,
+        sandbox: 'hosted-iframe',
+        handlesStudentData: true,
+        requiresTeacherApproval: false,
+      },
+      launchSurfaces: {
+        'desktop-electron': {
+          sandbox: 'hosted-iframe',
+        },
+      },
+      tenantAvailability: {
+        default: 'enabled',
+        allow: [],
+        deny: [],
+      },
+    },
+    approval: {
+      status: 'approved',
+      reviewedAt: 1_711_930_000_000,
+      reviewedBy: 'platform-review',
+      catalogVersion: 3,
+    },
   }
 }
 
@@ -215,5 +281,26 @@ describe('ChatBridge reviewed single-app tools', () => {
         },
       },
     })
+  })
+
+  it('keeps desktop-only reviewed apps discoverable in routing while refusing to expose launch tools on web runtime', () => {
+    const { selection, tools, routeDecision } = createReviewedSingleAppToolSet({
+      messages: [createMessage('user', 'Open Story Builder and continue my outline draft.')],
+      entries: [createDesktopOnlyStoryBuilderEntry()],
+      contextInput: {
+        hostRuntime: 'web-browser',
+        teacherApproved: true,
+        grantedPermissions: ['drive.read'],
+      },
+    })
+
+    expect(routeDecision).toMatchObject({
+      kind: 'refuse',
+      reasonCode: 'runtime-unsupported',
+      selectedAppId: 'story-builder',
+      hostRuntime: 'web-browser',
+    })
+    expect(selection.status).toBe('chat-only')
+    expect(tools).toEqual({})
   })
 })

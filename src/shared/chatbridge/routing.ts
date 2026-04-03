@@ -1,9 +1,17 @@
 import { z } from 'zod'
 import type { MessageAppPart } from '../types/session'
 import {
+  ReviewedAppEligibilityDecisionSchema,
   ReviewedAppRouterCandidateSchema,
+  type ReviewedAppEligibilityDecision,
   type ReviewedAppRouterCandidate,
 } from './eligibility'
+import {
+  ChatBridgeHostRuntimeSchema,
+  getChatBridgeHostRuntimeLabel,
+  getReviewedAppSupportedHostRuntimes,
+  type ChatBridgeHostRuntime,
+} from './manifest'
 
 const MIN_MATCHED_TERM_LENGTH = 3
 const MIN_RELEVANT_ROUTE_SCORE = 2
@@ -35,7 +43,7 @@ const STOP_WORDS = new Set([
   'with',
 ])
 
-export const CHATBRIDGE_ROUTE_DECISION_SCHEMA_VERSION = 1 as const
+export const CHATBRIDGE_ROUTE_DECISION_SCHEMA_VERSION = 2 as const
 
 export const ChatBridgeRouteDecisionKindSchema = z.enum(['invoke', 'clarify', 'refuse'])
 export type ChatBridgeRouteDecisionKind = z.infer<typeof ChatBridgeRouteDecisionKindSchema>
@@ -44,6 +52,7 @@ export const ChatBridgeRouteDecisionReasonCodeSchema = z.enum([
   'explicit-app-match',
   'needs-confirmation',
   'ambiguous-match',
+  'runtime-unsupported',
   'no-eligible-apps',
   'no-confident-match',
   'invalid-prompt',
@@ -64,15 +73,25 @@ export const ChatBridgeRouteCandidateMatchSchema = z
 
 export type ChatBridgeRouteCandidateMatch = z.infer<typeof ChatBridgeRouteCandidateMatchSchema>
 
+export const ChatBridgeRouteRuntimeBlockSchema = z
+  .object({
+    hostRuntime: ChatBridgeHostRuntimeSchema,
+    supportedHostRuntimes: z.array(ChatBridgeHostRuntimeSchema).min(1),
+  })
+  .strict()
+export type ChatBridgeRouteRuntimeBlock = z.infer<typeof ChatBridgeRouteRuntimeBlockSchema>
+
 export const ChatBridgeRouteDecisionSchema = z
   .object({
     schemaVersion: z.literal(CHATBRIDGE_ROUTE_DECISION_SCHEMA_VERSION),
+    hostRuntime: ChatBridgeHostRuntimeSchema,
     kind: ChatBridgeRouteDecisionKindSchema,
     reasonCode: ChatBridgeRouteDecisionReasonCodeSchema,
     prompt: z.string().min(1),
     summary: z.string().min(1),
     selectedAppId: z.string().min(1).optional(),
     matches: z.array(ChatBridgeRouteCandidateMatchSchema).max(3).default([]),
+    runtimeBlock: ChatBridgeRouteRuntimeBlockSchema.optional(),
   })
   .strict()
 
@@ -188,7 +207,7 @@ function scoreReviewedAppCandidate(
   }
 }
 
-function sortMatches(matches: ChatBridgeRouteCandidateMatch[]): ChatBridgeRouteCandidateMatch[] {
+function sortMatches<T extends ChatBridgeRouteCandidateMatch>(matches: T[]): T[] {
   return [...matches].sort((left, right) => {
     if (right.score !== left.score) {
       return right.score - left.score
@@ -228,15 +247,46 @@ function buildClarifySummary(selected: ChatBridgeRouteCandidateMatch, alternates
   return `This request could fit ${selected.appName} or ${formattedAlternates}, so the host is asking before launching anything.`
 }
 
+type ScoredRouteMatch = ChatBridgeRouteCandidateMatch & {
+  runtimeUnsupported?: boolean
+  supportedHostRuntimes?: ChatBridgeHostRuntime[]
+}
+
+function getRuntimeUnsupportedMatch(
+  prompt: string,
+  promptTokens: string[],
+  decision: ReviewedAppEligibilityDecision
+): ScoredRouteMatch | null {
+  const runtimeUnsupported = decision.reasons.some((reason) => reason.code === 'runtime-unsupported')
+  if (!runtimeUnsupported) {
+    return null
+  }
+
+  return {
+    ...scoreReviewedAppCandidate(prompt, promptTokens, {
+      entry: decision.entry,
+      matchedContexts: decision.matchedContexts,
+    }),
+    runtimeUnsupported: true,
+    supportedHostRuntimes: getReviewedAppSupportedHostRuntimes(decision.entry),
+  }
+}
+
 export function resolveReviewedAppRouteDecision(
   candidates: ReviewedAppRouterCandidate[],
-  promptInput: unknown
+  promptInput: unknown,
+  options: {
+    excluded?: ReviewedAppEligibilityDecision[]
+    hostRuntime?: ChatBridgeHostRuntime
+  } = {}
 ): ChatBridgeRouteDecision {
   const prompt = typeof promptInput === 'string' ? normalizeWhitespace(promptInput) : ''
+  const hostRuntime = options.hostRuntime ?? 'desktop-electron'
 
   if (!prompt) {
     return {
       schemaVersion: CHATBRIDGE_ROUTE_DECISION_SCHEMA_VERSION,
+      hostRuntime,
       kind: 'refuse',
       reasonCode: 'invalid-prompt',
       prompt: 'The user request was empty or invalid.',
@@ -245,34 +295,62 @@ export function resolveReviewedAppRouteDecision(
     }
   }
 
-  if (candidates.length === 0) {
+  const promptTokens = tokenize(prompt)
+  const eligibleMatches = sortMatches(
+    candidates.map((candidate) => scoreReviewedAppCandidate(prompt, promptTokens, candidate))
+  ).slice(0, 3)
+  const runtimeUnsupportedMatches = sortMatches(
+    (options.excluded ?? [])
+      .map((decision) => getRuntimeUnsupportedMatch(prompt, promptTokens, decision))
+      .filter((match): match is ScoredRouteMatch => match !== null)
+  ).slice(0, 3)
+  const combinedMatches: ScoredRouteMatch[] = sortMatches<ScoredRouteMatch>([
+    ...eligibleMatches,
+    ...runtimeUnsupportedMatches,
+  ]).slice(0, 3)
+  const combinedRelevantMatches = combinedMatches.filter((match) => match.score >= MIN_RELEVANT_ROUTE_SCORE)
+  const topCombinedMatch = combinedRelevantMatches[0]
+
+  if (topCombinedMatch?.runtimeUnsupported) {
+    const runtimeBlock: ChatBridgeRouteRuntimeBlock = {
+      hostRuntime,
+      supportedHostRuntimes: topCombinedMatch.supportedHostRuntimes ?? ['desktop-electron'],
+    }
+    const supportedLabels = runtimeBlock.supportedHostRuntimes.map((runtime) => getChatBridgeHostRuntimeLabel(runtime))
+    const supportedLabel =
+      supportedLabels.length === 1
+        ? supportedLabels[0]
+        : `${supportedLabels.slice(0, -1).join(', ')} or ${supportedLabels[supportedLabels.length - 1]}`
+
     return {
       schemaVersion: CHATBRIDGE_ROUTE_DECISION_SCHEMA_VERSION,
+      hostRuntime,
       kind: 'refuse',
-      reasonCode: 'no-eligible-apps',
+      reasonCode: 'runtime-unsupported',
       prompt,
-      summary: 'No reviewed apps are currently eligible for this host context, so the request stays in chat.',
-      matches: [],
+      summary: `${topCombinedMatch.appName} matches this request, but it only launches in ${supportedLabel} right now.`,
+      selectedAppId: topCombinedMatch.appId,
+      matches: combinedMatches,
+      runtimeBlock,
     }
   }
 
-  const promptTokens = tokenize(prompt)
-  const matches = sortMatches(candidates.map((candidate) => scoreReviewedAppCandidate(prompt, promptTokens, candidate))).slice(
-    0,
-    3
-  )
-  const relevantMatches = matches.filter((match) => match.score >= MIN_RELEVANT_ROUTE_SCORE)
-  const topMatch = relevantMatches[0]
-  const secondMatch = relevantMatches[1]
+  const relevantEligibleMatches = eligibleMatches.filter((match) => match.score >= MIN_RELEVANT_ROUTE_SCORE)
+  const topMatch = relevantEligibleMatches[0]
+  const secondMatch = relevantEligibleMatches[1]
 
   if (!topMatch) {
     return {
       schemaVersion: CHATBRIDGE_ROUTE_DECISION_SCHEMA_VERSION,
+      hostRuntime,
       kind: 'refuse',
-      reasonCode: 'no-confident-match',
+      reasonCode: candidates.length === 0 ? 'no-eligible-apps' : 'no-confident-match',
       prompt,
-      summary: 'No reviewed app is a confident fit for this request, so the host will keep helping in chat instead of forcing a launch.',
-      matches,
+      summary:
+        candidates.length === 0
+          ? 'No reviewed apps are currently eligible for this host context, so the request stays in chat.'
+          : 'No reviewed app is a confident fit for this request, so the host will keep helping in chat instead of forcing a launch.',
+      matches: eligibleMatches,
     }
   }
 
@@ -282,24 +360,26 @@ export function resolveReviewedAppRouteDecision(
   if (topMatchIsExplicit && topMatchClearlyAhead) {
     return {
       schemaVersion: CHATBRIDGE_ROUTE_DECISION_SCHEMA_VERSION,
+      hostRuntime,
       kind: 'invoke',
       reasonCode: 'explicit-app-match',
       prompt,
       summary: `The host found a clear reviewed-app match and can open ${topMatch.appName} without guessing.`,
       selectedAppId: topMatch.appId,
-      matches,
+      matches: eligibleMatches,
     }
   }
 
-  const alternates = secondMatch ? relevantMatches.slice(1, 3) : []
+  const alternates = secondMatch ? relevantEligibleMatches.slice(1, 3) : []
   return {
     schemaVersion: CHATBRIDGE_ROUTE_DECISION_SCHEMA_VERSION,
+    hostRuntime,
     kind: 'clarify',
     reasonCode: secondMatch ? 'ambiguous-match' : 'needs-confirmation',
     prompt,
     summary: buildClarifySummary(topMatch, alternates),
     selectedAppId: topMatch.appId,
-    matches,
+    matches: eligibleMatches,
   }
 }
 
@@ -314,6 +394,34 @@ export function createChatBridgeRouteMessagePart(decision: ChatBridgeRouteDecisi
   const selected = getSelectedMatch(decision.matches, decision.selectedAppId)
   const appId = selected?.appId ?? 'chatbridge-router'
   const appName = selected?.appName ?? 'ChatBridge'
+  const isRuntimeUnsupported = decision.reasonCode === 'runtime-unsupported'
+
+  if (isRuntimeUnsupported) {
+    const supportedHostRuntimes = decision.runtimeBlock?.supportedHostRuntimes ?? ['desktop-electron']
+    const supportedRuntimeLabels = supportedHostRuntimes.map((runtime) => getChatBridgeHostRuntimeLabel(runtime))
+    const supportedRuntimeSummary =
+      supportedRuntimeLabels.length === 1
+        ? supportedRuntimeLabels[0]
+        : `${supportedRuntimeLabels.slice(0, -1).join(', ')} or ${supportedRuntimeLabels[supportedRuntimeLabels.length - 1]}`
+
+    return {
+      type: 'app',
+      appId,
+      appName,
+      appInstanceId: `route:${decision.reasonCode}:${appId}`,
+      lifecycle: 'error',
+      summary: decision.summary,
+      title: `${appName} is unavailable here`,
+      description: `${appName} matches this request, but this ${getChatBridgeHostRuntimeLabel(decision.hostRuntime).toLowerCase()} host cannot launch it yet.`,
+      statusText: decision.hostRuntime === 'web-browser' ? 'Desktop only' : 'Unavailable',
+      fallbackTitle: 'Supported runtime required',
+      fallbackText: `Current runtime: ${getChatBridgeHostRuntimeLabel(decision.hostRuntime)}. Supported runtimes: ${supportedRuntimeSummary}. The host kept the request in chat instead of attempting a broken launch.`,
+      values: {
+        chatbridgeRouteDecision: decision,
+      },
+    }
+  }
+
   const title =
     decision.kind === 'invoke'
       ? `${appName} is ready`

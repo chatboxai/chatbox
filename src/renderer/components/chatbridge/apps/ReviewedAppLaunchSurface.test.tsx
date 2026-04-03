@@ -185,16 +185,6 @@ describe('ReviewedAppLaunchSurface', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    Object.defineProperty(globalThis.URL, 'createObjectURL', {
-      value: vi.fn(() => 'blob:reviewed-runtime'),
-      configurable: true,
-      writable: true,
-    })
-    Object.defineProperty(globalThis.URL, 'revokeObjectURL', {
-      value: vi.fn(),
-      configurable: true,
-      writable: true,
-    })
     Object.defineProperty(window, 'electronAPI', {
       value: {
         invoke: mocks.invoke,
@@ -222,6 +212,7 @@ describe('ReviewedAppLaunchSurface', () => {
     if (!iframe) {
       return
     }
+    expect(iframe.getAttribute('srcdoc')).toContain('Reviewed app bridge launch')
 
     Object.defineProperty(iframe, 'contentWindow', {
       value: window,
@@ -236,6 +227,7 @@ describe('ReviewedAppLaunchSurface', () => {
           appId: 'chess',
           appName: 'Chess',
           appInstanceId: 'reviewed-launch:tool-reviewed-launch-1',
+          bootstrapTargetOrigin: '*',
           capabilities: ['launch-reviewed-app'],
           traceParentRunId: 'launch-trace-reviewed-1',
         })

@@ -145,4 +145,41 @@ describe('ChatBridge route decision artifacts', () => {
       })
       expect(artifact.title).toBe('Keep this in chat')
     }))
+
+  it('creates a blocked artifact when the matched reviewed app only supports desktop runtime', () =>
+    traceScenario('creates a blocked artifact when the matched reviewed app only supports desktop runtime', () => {
+      defineReviewedApps([
+        createReviewedAppCatalogEntryFixture({
+          manifest: {
+            appId: 'story-builder',
+            name: 'Story Builder',
+            tenantAvailability: {
+              default: 'enabled',
+              allow: [],
+              deny: [],
+            },
+          },
+        }),
+      ])
+
+      const result = getReviewedAppRouteDecision({
+        promptInput: 'Open Story Builder and continue my outline draft.',
+        contextInput: {
+          tenantId: 'k12-demo',
+          teacherApproved: true,
+          grantedPermissions: ['drive.read'],
+          hostRuntime: 'web-browser',
+        },
+      })
+      const artifact = createReviewedAppRouteArtifact(result.decision)
+
+      expect(result.decision).toMatchObject({
+        kind: 'refuse',
+        reasonCode: 'runtime-unsupported',
+        selectedAppId: 'story-builder',
+      })
+      expect(artifact.lifecycle).toBe('error')
+      expect(artifact.statusText).toBe('Desktop only')
+      expect(artifact.fallbackText).toContain('Supported runtimes: Desktop app')
+    }))
 })

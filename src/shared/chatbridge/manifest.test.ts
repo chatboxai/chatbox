@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { ReviewedAppCatalogEntrySchema } from './manifest'
+import {
+  ReviewedAppCatalogEntrySchema,
+  getReviewedAppLaunchSurface,
+  getReviewedAppSupportedHostRuntimes,
+} from './manifest'
 
 function createReviewedAppCatalogEntry() {
   return {
@@ -53,6 +57,11 @@ function createReviewedAppCatalogEntry() {
         handlesStudentData: true,
         requiresTeacherApproval: true,
       },
+      launchSurfaces: {
+        'desktop-electron': {
+          sandbox: 'hosted-iframe',
+        },
+      },
       tenantAvailability: {
         default: 'disabled',
         allow: ['tenant:k12-demo', 'classroom:creative-writing'],
@@ -88,6 +97,11 @@ describe('ReviewedAppCatalogEntrySchema', () => {
       reviewedBy: 'platform-review',
       catalogVersion: 3,
     })
+    expect(getReviewedAppLaunchSurface(parsed, 'desktop-electron')).toEqual({
+      sandbox: 'hosted-iframe',
+    })
+    expect(getReviewedAppLaunchSurface(parsed, 'web-browser')).toBeNull()
+    expect(getReviewedAppSupportedHostRuntimes(parsed)).toEqual(['desktop-electron'])
   })
 
   it('rejects uiEntry values that do not match the declared origin', () => {

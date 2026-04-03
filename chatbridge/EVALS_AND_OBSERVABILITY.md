@@ -11,6 +11,12 @@ ChatBridge stories that change routing, tool execution, embedded app lifecycle,
 completion, auth, or recovery should establish observable lifecycle seams and a
 small eval set before broad implementation.
 
+In practice, trace-driven development for ChatBridge means the important
+behaviors and edge cases leave inspectable LangSmith evidence. A story is not
+"trace-driven" merely because it emits a few spans; engineers should be able to
+find named scenario or manual-smoke runs for the representative success,
+failure, degraded, and continuity paths.
+
 ## Current Repo Observability Seams
 
 ### Runtime error and telemetry hooks
@@ -37,12 +43,15 @@ small eval set before broad implementation.
   `src/shared/models/tracing.ts`
 - main-process LangSmith sink and IPC bridge:
   `src/main/adapters/langsmith.ts`
-- renderer IPC-backed adapter:
+- renderer runtime adapter:
   `src/renderer/adapters/langsmith.ts`
+- Vercel web bridge handlers for browser builds:
+  `api/langsmith/*.ts`
 
-LangSmith API access remains main-process-owned. Renderer code talks to the
-main sink through IPC-backed adapters, and tests default to a noop sink unless
-`LANGSMITH_TRACING=true` is set explicitly.
+LangSmith secrets remain server-owned. Desktop renderer code talks to the main
+sink through IPC, while web builds proxy the same sanitized run payloads
+through same-origin `/api/langsmith/*` handlers on Vercel. Tests default to a
+noop sink unless `LANGSMITH_TRACING=true` is set explicitly.
 
 ## CB-006 and CB-007 Supported Manual Smoke Path
 
@@ -73,9 +82,11 @@ Important constraints:
 
 - The Seed Lab now classifies fixtures through the checked-in inspection seam:
   `active-flagship`, `platform-regression`, or `legacy-reference`.
-- Web-only smoke remains unsupported for traced manual smoke because
-  `window.electronAPI` is unavailable there and LangSmith access stays
-  main-process-owned.
+- Ordinary web-runtime chats are now traced through the Vercel
+  `/api/langsmith/*` bridge when the deployment has `LANGSMITH_API_KEY` and
+  `LANGSMITH_TRACING=true` configured.
+- Web-only smoke remains unsupported for the Seed Lab manual-smoke flow because
+  that tooling still depends on desktop-only `window.electronAPI` controls.
 - `history-and-preview` remains a legacy Story Builder reference fixture. It is
   available for historical inspection, but it is not active flagship smoke
   evidence.
@@ -106,6 +117,18 @@ Important constraints:
 - `toolCallId` when applicable
 - `completionId` or idempotency key for state-changing events
 
+For LangSmith thread views specifically, Chatbox now emits the supported
+snake_case thread metadata on chat runs as well:
+
+- `session_id`
+- `thread_id`
+- `conversation_id`
+- `message_id`
+
+These thread keys must exist on the parent chat turn and every child run inside
+that turn, otherwise LangSmith thread filtering and per-thread cost/token
+aggregation become incomplete.
+
 ## Eval Baseline
 
 Every orchestration-heavy ChatBridge story should define at least:
@@ -114,6 +137,11 @@ Every orchestration-heavy ChatBridge story should define at least:
 2. malformed or invalid input path
 3. timeout/crash/degraded path
 4. one continuity/follow-up path when the story touches app state or memory
+
+These scenarios should be wired so at least one supported environment can emit
+named LangSmith proof runs for them. Checked-in tests may stay runnable with
+tracing disabled by default, but the story is not trace-driven-complete until
+the scenario harness can produce real traces when `LANGSMITH_TRACING=true`.
 
 ## Current Trace Coverage
 
@@ -166,6 +194,14 @@ Every orchestration-heavy ChatBridge story should define at least:
 Every `getModel(...)` path now returns a LangSmith-wrapped model through
 `src/shared/providers/index.ts`, so chat, stream, and paint calls emit child
 LLM runs even when the caller only adds a parent chain trace.
+
+`streamText(...)` now also propagates Chatbox conversation identifiers into the
+LangSmith thread metadata contract for both the parent chain run and all child
+LLM/planner runs:
+
+- root conversations use `session.id` as the LangSmith `thread_id`
+- branched thread conversations use the concrete `SessionThread.id`
+- the active assistant message id is recorded as `message_id`
 
 `CB-506` also adds a reviewed route-decision event from
 `src/renderer/packages/model-calls/stream-text.ts`:

@@ -2,6 +2,7 @@ import { buildChatBridgeChessReasoningPrompt, wrapChatBridgeHostTools } from '@s
 import type { ChatBridgeAppRecordSnapshot } from '@shared/chatbridge/app-records'
 import { getModel } from '@shared/models'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
+import { createLangSmithConversationMetadata } from '@shared/models/tracing'
 import { getLangSmithErrorMessage, type LangSmithTraceContext } from '@shared/utils/langsmith_adapter'
 import { getMessageText, sequenceMessages } from '@shared/utils/message'
 import { getModelSettings } from '@shared/utils/model_settings'
@@ -166,6 +167,8 @@ export async function streamText(
   model: ModelInterface,
   params: {
     sessionId?: string
+    threadId?: string
+    targetMessageId?: string
     messages: Message[]
     onResultChangeWithCancel: OnResultChangeWithCancel
     onStatusChange?: OnStatusChange
@@ -189,28 +192,35 @@ export async function streamText(
     contentParts: [],
   }
   let coreMessages: ModelMessage[] = []
+  const correlationMetadata = createLangSmithConversationMetadata({
+    sessionId: sessionId ?? null,
+    threadId: params.threadId ?? null,
+    messageId: params.targetMessageId ?? null,
+  })
+  const traceMetadata = {
+    ...correlationMetadata,
+    operation: 'streamText',
+  }
   const traceRun = await langsmith.startRun({
     name: 'chatbox.session.generate',
     runType: 'chain',
     inputs: {
       sessionId: sessionId ?? null,
+      threadId: params.threadId ?? sessionId ?? null,
+      messageId: params.targetMessageId ?? null,
       modelId: model.modelId,
       knowledgeBaseId: knowledgeBase?.id ?? null,
       webBrowsing: Boolean(webBrowsing),
       hasFileOrLink,
       messages: summarizeMessagesForTrace(params.messages),
     },
-    metadata: {
-      operation: 'streamText',
-    },
+    metadata: traceMetadata,
     tags: ['chatbox', 'renderer', 'chat'],
   })
   const modelTraceContext: LangSmithTraceContext = {
     name: 'chatbox.session.generate.llm',
     parentRunId: traceRun.runId,
-    metadata: {
-      sessionId: sessionId ?? null,
-    },
+    metadata: traceMetadata,
     tags: ['chatbox', 'renderer', 'chat'],
   }
 
@@ -276,9 +286,7 @@ export async function streamText(
       await ocrMessages(messages, {
         name: 'chatbox.session.generate.ocr',
         parentRunId: traceRun.runId,
-        metadata: {
-          sessionId: sessionId ?? null,
-        },
+        metadata: traceMetadata,
         tags: ['chatbox', 'renderer', 'ocr'],
       })
       infoParts.push({
@@ -309,7 +317,12 @@ export async function streamText(
           model,
           params.messages,
           knowledgeBase.id,
-          controller.signal
+          controller.signal,
+          {
+            parentRunId: traceRun.runId,
+            metadata: correlationMetadata,
+            tags: ['chatbox', 'renderer', 'chat'],
+          }
         )
         const toolName = callResult.type === 'knowledge_base' ? 'query_knowledge_base' : 'web_search'
         return handleSearchResult(
@@ -335,7 +348,11 @@ export async function streamText(
         //   }),
         // })
 
-        const callResult = await knowledgeBaseSearchByPromptEngineering(model, params.messages, knowledgeBase.id)
+        const callResult = await knowledgeBaseSearchByPromptEngineering(model, params.messages, knowledgeBase.id, {
+          parentRunId: traceRun.runId,
+          metadata: correlationMetadata,
+          tags: ['chatbox', 'renderer', 'chat'],
+        })
 
         return handleSearchResult(
           callResult || { query: '', searchResults: [] },
@@ -360,7 +377,11 @@ export async function streamText(
         //   }),
         // })
 
-        const callResult = await searchByPromptEngineering(model, params.messages, controller.signal)
+        const callResult = await searchByPromptEngineering(model, params.messages, controller.signal, {
+          parentRunId: traceRun.runId,
+          metadata: correlationMetadata,
+          tags: ['chatbox', 'renderer', 'chat'],
+        })
         return handleSearchResult(
           callResult || { query: '', searchResults: [] },
           'web_search',
@@ -420,8 +441,8 @@ export async function streamText(
             toolNames: Object.keys(chatBridgeSingleAppTools.tools).sort(),
           },
           metadata: {
+            ...correlationMetadata,
             operation: 'chatbridgeReviewedAppRouteDecision',
-            sessionId: sessionId ?? null,
           },
           tags: [
             'chatbox',

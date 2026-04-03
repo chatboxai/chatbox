@@ -101,6 +101,14 @@ const REVIEWED_APP_CATALOG_DESCRIPTORS: ReviewedAppCatalogDescriptor[] = [
           handlesStudentData: false,
           requiresTeacherApproval: false,
         },
+        launchSurfaces: {
+          'desktop-electron': {
+            sandbox: 'native-shell',
+          },
+          'web-browser': {
+            sandbox: 'native-shell',
+          },
+        },
         tenantAvailability: {
           default: 'enabled',
           allow: [],
@@ -182,6 +190,14 @@ const REVIEWED_APP_CATALOG_DESCRIPTORS: ReviewedAppCatalogDescriptor[] = [
           sandbox: 'native-shell',
           handlesStudentData: false,
           requiresTeacherApproval: false,
+        },
+        launchSurfaces: {
+          'desktop-electron': {
+            sandbox: 'hosted-iframe',
+          },
+          'web-browser': {
+            sandbox: 'hosted-iframe',
+          },
         },
         tenantAvailability: {
           default: 'enabled',
@@ -270,6 +286,14 @@ const REVIEWED_APP_CATALOG_DESCRIPTORS: ReviewedAppCatalogDescriptor[] = [
           handlesStudentData: false,
           requiresTeacherApproval: false,
         },
+        launchSurfaces: {
+          'desktop-electron': {
+            sandbox: 'hosted-iframe',
+          },
+          'web-browser': {
+            sandbox: 'hosted-iframe',
+          },
+        },
         tenantAvailability: {
           default: 'enabled',
           allow: [],
@@ -340,6 +364,11 @@ const REVIEWED_APP_CATALOG_DESCRIPTORS: ReviewedAppCatalogDescriptor[] = [
           sandbox: 'native-shell',
           handlesStudentData: false,
           requiresTeacherApproval: false,
+        },
+        launchSurfaces: {
+          'desktop-electron': {
+            sandbox: 'hosted-iframe',
+          },
         },
         tenantAvailability: {
           default: 'disabled',
@@ -422,6 +451,11 @@ const REVIEWED_APP_CATALOG_DESCRIPTORS: ReviewedAppCatalogDescriptor[] = [
           sandbox: 'hosted-iframe',
           handlesStudentData: true,
           requiresTeacherApproval: true,
+        },
+        launchSurfaces: {
+          'desktop-electron': {
+            sandbox: 'hosted-iframe',
+          },
         },
         tenantAvailability: {
           default: 'disabled',

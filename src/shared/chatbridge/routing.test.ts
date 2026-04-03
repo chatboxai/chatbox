@@ -3,11 +3,13 @@ import type { ReviewedAppEligibilityDecision, ReviewedAppRouterCandidate } from 
 import type { ReviewedAppCatalogEntry } from './manifest'
 import { createChatBridgeRouteMessagePart, resolveReviewedAppRouteDecision } from './routing'
 
-function createCandidate(overrides: {
-  manifest?: Partial<ReviewedAppCatalogEntry['manifest']>
-  approval?: Partial<ReviewedAppCatalogEntry['approval']>
-  matchedContexts?: string[]
-} = {}): ReviewedAppRouterCandidate {
+function createCandidate(
+  overrides: {
+    manifest?: Partial<ReviewedAppCatalogEntry['manifest']>
+    approval?: Partial<ReviewedAppCatalogEntry['approval']>
+    matchedContexts?: string[]
+  } = {}
+): ReviewedAppRouterCandidate {
   const base: ReviewedAppRouterCandidate = {
     entry: {
       manifest: {
@@ -152,17 +154,83 @@ describe('resolveReviewedAppRouteDecision', () => {
   })
 
   it('returns refuse when no reviewed app is a confident fit', () => {
+    const decision = resolveReviewedAppRouteDecision([createCandidate()], 'What should I cook for dinner tonight?', {
+      hostRuntime: 'desktop-electron',
+    })
+
+    expect(decision.kind).toBe('refuse')
+    expect(decision.reasonCode).toBe('no-confident-match')
+    expect(decision.selectedAppId).toBeUndefined()
+  })
+
+  it('keeps zero-score alternates out of clarify matches', () => {
     const decision = resolveReviewedAppRouteDecision(
-      [createCandidate()],
-      'What should I cook for dinner tonight?',
+      [
+        createCandidate({
+          manifest: {
+            appId: 'debate-arena',
+            name: 'Debate Arena',
+            uiEntry: 'https://apps.example.com/debate-arena',
+            authMode: 'none',
+            permissions: [],
+            toolSchemas: [
+              {
+                name: 'debate_arena_round',
+                title: 'Debate Arena round',
+                description: 'Open a debate round, draft claims, rebuttals, and opening statements.',
+                schemaVersion: 1,
+                inputSchema: {
+                  type: 'object',
+                  properties: {},
+                },
+              },
+            ],
+            supportedEvents: ['host.init', 'app.ready', 'app.state', 'app.complete'],
+            safetyMetadata: {
+              reviewed: true,
+              sandbox: 'hosted-iframe',
+              handlesStudentData: false,
+              requiresTeacherApproval: false,
+            },
+          },
+        }),
+        createCandidate({
+          manifest: {
+            appId: 'weather-dashboard',
+            name: 'Weather Dashboard',
+            uiEntry: 'https://apps.example.com/weather-dashboard',
+            authMode: 'none',
+            permissions: [],
+            toolSchemas: [
+              {
+                name: 'weather_dashboard_open',
+                title: 'Open Weather Dashboard',
+                description: 'Show forecast changes, current conditions, and weather alerts.',
+                schemaVersion: 1,
+                inputSchema: {
+                  type: 'object',
+                  properties: {},
+                },
+              },
+            ],
+            supportedEvents: ['host.init', 'app.ready', 'app.state', 'app.complete'],
+            safetyMetadata: {
+              reviewed: true,
+              sandbox: 'hosted-iframe',
+              handlesStudentData: false,
+              requiresTeacherApproval: false,
+            },
+          },
+        }),
+      ],
+      'Help me draft an opening statement and rebuttal for class.',
       {
         hostRuntime: 'desktop-electron',
       }
     )
 
-    expect(decision.kind).toBe('refuse')
-    expect(decision.reasonCode).toBe('no-confident-match')
-    expect(decision.selectedAppId).toBeUndefined()
+    expect(decision.kind).toBe('clarify')
+    expect(decision.matches.map((match) => match.appId)).toEqual(['debate-arena'])
   })
 
   it('can build a host-owned message artifact from the routing decision', () => {

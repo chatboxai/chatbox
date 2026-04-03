@@ -337,19 +337,10 @@ export async function streamText(
           }
         )
         const toolName = callResult.type === 'knowledge_base' ? 'query_knowledge_base' : 'web_search'
-        return handleSearchResult(
-          callResult,
-          toolName,
-          model,
-          messages,
-          coreMessages,
-          controller,
-          onResultChange,
-          {
-            ...params,
-            traceContext: modelTraceContext,
-          }
-        )
+        return handleSearchResult(callResult, toolName, model, messages, coreMessages, controller, onResultChange, {
+          ...params,
+          traceContext: modelTraceContext,
+        })
       }
       // 只有知识库不支持工具调用
       else if (kbNotSupported) {
@@ -435,7 +426,7 @@ export async function streamText(
     }
 
     const governor = prepareChatBridgeExecutionGovernor({
-      messages,
+      messages: params.messages,
       baseTools: tools,
       modelSupportsToolUse: model.isSupportToolUse(),
       sessionId,

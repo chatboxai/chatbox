@@ -81,6 +81,7 @@ export function prepareChatBridgeExecutionGovernor(
   const reviewedToolSet = createReviewedSingleAppToolSet({ messages: options.messages })
   const toolNames = Object.keys(reviewedToolSet.tools).sort()
   const reviewedRouteArtifact =
+    !reviewedToolSet.suppressRouteArtifact &&
     toolNames.length === 0 &&
     (reviewedToolSet.routeDecision.kind === 'clarify' || reviewedToolSet.routeDecision.kind === 'refuse')
       ? createReviewedAppRouteArtifact(reviewedToolSet.routeDecision)

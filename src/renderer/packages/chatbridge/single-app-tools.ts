@@ -16,6 +16,7 @@ import {
   isChatBridgeHostToolExecutionRecord,
   isReviewedAppSupportedOnHostRuntime,
   resolveReviewedSingleAppSelection,
+  selectChatBridgeAppContexts,
   wrapChatBridgeHostTools,
   type ReviewedSingleAppSelection,
 } from '@shared/chatbridge'
@@ -50,6 +51,7 @@ type ReviewedSingleAppToolSetResult = {
   tools: ToolSet
   routeDecision: ChatBridgeRouteDecision
   selectionSource: ChatBridgeExecutionGovernorSelectionSource
+  suppressRouteArtifact?: boolean
 }
 
 function resolvePlatformHostRuntime(): ChatBridgeHostRuntime {
@@ -212,7 +214,9 @@ function createReviewedAppLaunchTool(
   }
 
   const inputSchema =
-    selection.toolName === 'chess_prepare_session' ? ChessPrepareSessionInputSchema : toZodSchema(toolSchema.inputSchema, toolSchema.name)
+    selection.toolName === 'chess_prepare_session'
+      ? ChessPrepareSessionInputSchema
+      : toZodSchema(toolSchema.inputSchema, toolSchema.name)
 
   return createChatBridgeHostTool({
     description: toolSchema.description,
@@ -252,6 +256,16 @@ function createToolsForSelection(
   return {
     [selection.toolName]: createReviewedAppLaunchTool(selection, executors?.[selection.toolName]),
   }
+}
+
+function shouldSuppressActiveAppRouteArtifact(messages: Message[], routeDecision: ChatBridgeRouteDecision): boolean {
+  if (routeDecision.kind !== 'clarify' || !routeDecision.selectedAppId) {
+    return false
+  }
+
+  return selectChatBridgeAppContexts(messages).some(
+    (selection) => selection.lifecycle === 'active' && selection.appId === routeDecision.selectedAppId
+  )
 }
 
 export function createReviewedToolsForSelection(
@@ -300,7 +314,9 @@ export async function executeReviewedSelection(options: {
   return result
 }
 
-export function createReviewedSingleAppToolSet(options: CreateReviewedSingleAppToolSetOptions): ReviewedSingleAppToolSetResult {
+export function createReviewedSingleAppToolSet(
+  options: CreateReviewedSingleAppToolSetOptions
+): ReviewedSingleAppToolSetResult {
   const entries = options.entries ?? ensureDefaultReviewedAppsRegistered()
   const promptText = getLatestUserPrompt(options.messages)
   const contextInput = mergeReviewedAppContextInput(options.contextInput)
@@ -324,11 +340,14 @@ export function createReviewedSingleAppToolSet(options: CreateReviewedSingleAppT
   const runtimeSupportedEntries = entries.filter((entry) => isReviewedAppSupportedOnHostRuntime(entry, hostRuntime))
   const fallbackSelection = resolveReviewedSingleAppSelection(options.messages, runtimeSupportedEntries)
   const selectionSource = fallbackSelection.status === 'matched' ? 'natural-chess-fallback' : 'none'
+  const suppressRouteArtifact =
+    fallbackSelection.status !== 'matched' && shouldSuppressActiveAppRouteArtifact(options.messages, routeDecision)
 
   return {
     selection: fallbackSelection,
     tools: createToolsForSelection(fallbackSelection, options.executors),
     routeDecision,
     selectionSource,
+    suppressRouteArtifact,
   }
 }

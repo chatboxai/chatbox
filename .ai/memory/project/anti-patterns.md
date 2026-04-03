@@ -72,3 +72,13 @@ Capture failures so they are not repeated.
   hide hierarchy and tone problems until late.
 - **Prevention rule**: Record copy fidelity explicitly in the design decision
   and upgrade to draft copy when the story materially changes content.
+
+- **Problem**: Letting bare `gh pr create` or `gh pr merge` decide the target
+  repository in a forked clone
+- **Example**: Opening PRs against `chatboxai/chatbox` because branch metadata
+  or prior PR associations pointed `gh` at `upstream`
+- **Why it failed**: It created maintainer-facing spam and bypassed the fork as
+  the intended writable integration surface.
+- **Prevention rule**: Resolve the canonical PR repo from `origin`, set the
+  local `gh` default to that fork, and pass `--repo` explicitly during
+  finalization unless the user requests an upstream route.

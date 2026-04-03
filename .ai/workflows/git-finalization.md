@@ -43,7 +43,14 @@ If any of these are false, stop and return to
 git fetch --all --prune
 git status -sb
 git branch -vv
+TARGET_REPO="$(scripts/git/gh-origin-target.sh repo)"
+TARGET_HEAD="$(scripts/git/gh-origin-target.sh head)"
+scripts/git/gh-origin-target.sh ensure-default >/dev/null
 ```
+
+Treat `TARGET_REPO` as the canonical GitHub destination for this clone. Unless
+the user explicitly asks otherwise, it must resolve from the writable `origin`
+remote, not `upstream`.
 
 ## Step 3: Isolate the Story Diff If Needed
 
@@ -88,18 +95,18 @@ If staging or commit fails, stop and route to
 ## Step 5: Push and Open or Update the PR
 
 ```bash
-git push
-gh pr status
+git push -u origin HEAD
+gh pr status --repo "$TARGET_REPO"
 ```
 
 If no PR exists:
 
 ```bash
-gh pr create --fill
+gh pr create --repo "$TARGET_REPO" --base main --head "$TARGET_HEAD" --fill
 ```
 
 If a PR already exists, update it as needed and confirm the correct base
-branch.
+branch and that the PR lives in `TARGET_REPO`.
 
 If push or PR creation fails, stop and route to
 `.ai/workflows/finalization-recovery.md`.
@@ -124,7 +131,7 @@ After the combined completion gate is issued, no pause is requested, and checks
 are passing, merge with a normal merge commit by default:
 
 ```bash
-gh pr merge --merge --delete-branch
+gh pr merge --repo "$TARGET_REPO" --merge --delete-branch
 ```
 
 Use squash or rebase only when the user explicitly asks for it.
@@ -163,6 +170,7 @@ Return a concise update with:
 - branch name
 - commit SHA
 - target remote
+- canonical PR repo
 - PR URL/status
 - merge status
 - post-merge Vercel verification status: `passed`, `failed`, or `not applicable`

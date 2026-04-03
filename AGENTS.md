@@ -94,6 +94,9 @@ harness still matches the actual repo layout and commands.
   Preserve other in-progress changes, isolate the current story in the safest
   clean branch/worktree available, re-run the required validation on that
   isolated diff, and continue through the full GitHub flow.
+- In this fork-based clone, GitHub finalization must target the writable fork
+  at `origin` by default. Do not open, update, or merge PRs against
+  `upstream`/`chatboxai` unless the user explicitly asks for that route.
 - Once the requested work is complete and validated, default to the full GitHub
   flow automatically: commit, push, open or update a PR, merge to `main`, sync
   local `main`, and clean up the story branch unless the user explicitly asks

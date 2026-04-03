@@ -24,7 +24,7 @@ import {
 } from '@shared/chatbridge/apps/chess'
 import type { MessageAppPart } from '@shared/types'
 import { Chess, type Piece, type Square } from 'chess.js'
-import { useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { buildChessMessageAppPart, persistChessSnapshot } from '@/packages/chatbridge/chess-session-state'
 
@@ -67,6 +67,16 @@ const PIECE_NAMES: Record<Piece['type'], string> = {
   q: 'queen',
   k: 'king',
 }
+
+const WHITE_PIECE_STYLE = {
+  color: '#f8fafc',
+  textShadow: '0 1px 1px rgba(15, 23, 42, 0.9), 0 0 2px rgba(15, 23, 42, 0.55)',
+} satisfies CSSProperties
+
+const BLACK_PIECE_STYLE = {
+  color: '#111827',
+  textShadow: '0 1px 0 rgba(248, 250, 252, 0.18)',
+} satisfies CSSProperties
 
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1)
@@ -173,6 +183,10 @@ function getSquareAriaLabel(snapshot: ChessAppSnapshot, square: string) {
   }
 
   return `${square} ${piece.color} ${piece.piece}`
+}
+
+function getPieceGlyphStyle(color: 'white' | 'black' | 'w' | 'b') {
+  return color === 'white' || color === 'w' ? WHITE_PIECE_STYLE : BLACK_PIECE_STYLE
 }
 
 function readChessSnapshot(part: MessageAppPart): ChessAppSnapshot {
@@ -341,7 +355,9 @@ function LegacyChessRuntime({ part, onUpdatePart }: ChessRuntimeProps) {
                   disabled={interactionsDisabled}
                 >
                   {piece ? (
-                    <span aria-hidden="true">{PIECE_GLYPHS[piece.color][piece.type]}</span>
+                    <span aria-hidden="true" style={getPieceGlyphStyle(piece.color)}>
+                      {PIECE_GLYPHS[piece.color][piece.type]}
+                    </span>
                   ) : isLegalTarget ? (
                     <span
                       aria-hidden="true"
@@ -600,7 +616,10 @@ function PersistentChessRuntime({ part, sessionId, messageId, onUpdatePart }: Ch
                         <span
                           aria-hidden="true"
                           className="text-[1.85rem] leading-none sm:text-[2.1rem]"
-                          style={{ fontFamily: PIECE_FONT_FAMILY }}
+                          style={{
+                            ...getPieceGlyphStyle(piece.color),
+                            fontFamily: PIECE_FONT_FAMILY,
+                          }}
                         >
                           {piece.glyph}
                         </span>

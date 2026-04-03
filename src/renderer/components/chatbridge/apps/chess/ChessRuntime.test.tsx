@@ -43,6 +43,20 @@ describe('ChessRuntime', () => {
     expect(screen.getByLabelText('d8 black queen').textContent).toContain('\u265B')
   })
 
+  it('keeps piece styling tied to piece color instead of square color', () => {
+    renderRuntime()
+
+    const whiteQueenGlyph = screen.getByLabelText('d1 white queen').querySelector('span[aria-hidden="true"]')
+    const blackQueenGlyph = screen.getByLabelText('d8 black queen').querySelector('span[aria-hidden="true"]')
+
+    if (!(whiteQueenGlyph instanceof HTMLElement) || !(blackQueenGlyph instanceof HTMLElement)) {
+      throw new Error('Expected chess piece glyph elements to render.')
+    }
+
+    expect(whiteQueenGlyph.style.color).toBe('rgb(248, 250, 252)')
+    expect(blackQueenGlyph.style.color).toBe('rgb(17, 24, 39)')
+  })
+
   it('persists a legal move after selecting a source and destination square', async () => {
     renderRuntime()
 

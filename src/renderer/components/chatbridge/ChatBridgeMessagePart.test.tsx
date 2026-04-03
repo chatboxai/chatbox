@@ -193,6 +193,24 @@ describe('ChatBridgeMessagePart chess runtime', () => {
     expect(screen.getByText('Select a piece, then choose a legal destination square.')).toBeTruthy()
   })
 
+  it('renders legacy runtime pieces with stable white and black glyph colors', () => {
+    render(
+      <MantineProvider>
+        <ChatBridgeMessagePart part={createChessPart()} />
+      </MantineProvider>
+    )
+
+    const whiteQueenGlyph = screen.getByRole('button', { name: /d1, white queen/i }).querySelector('span[aria-hidden="true"]')
+    const blackQueenGlyph = screen.getByRole('button', { name: /d8, black queen/i }).querySelector('span[aria-hidden="true"]')
+
+    if (!(whiteQueenGlyph instanceof HTMLElement) || !(blackQueenGlyph instanceof HTMLElement)) {
+      throw new Error('Expected chess piece glyph elements to render.')
+    }
+
+    expect(whiteQueenGlyph.style.color).toBe('rgb(248, 250, 252)')
+    expect(blackQueenGlyph.style.color).toBe('rgb(17, 24, 39)')
+  })
+
   it('emits a structured host update when a legal move is played', () => {
     const onUpdatePart = vi.fn()
 

@@ -53,7 +53,7 @@ describe('ChatBridge reviewed single-app tools', () => {
   })
 
   it('creates the approved Drawing Kit host tool and executes it through the host contract', async () => {
-    const prompt = 'Open Drawing Kit and let me sketch a quick concept map.'
+    const prompt = 'Open Drawing Kit and start a sticky-note doodle dare.'
     const { selection, tools } = createReviewedSingleAppToolSet({
       messages: [createMessage('user', prompt)],
     })
@@ -146,7 +146,7 @@ describe('ChatBridge reviewed single-app tools', () => {
   })
 
   it('normalizes Drawing Kit invocation failures into host-visible errors', async () => {
-    const prompt = 'Open Drawing Kit and sketch a board-state concept map.'
+    const prompt = 'Open Drawing Kit and start a snack-stack doodle dare.'
     const { tools } = createReviewedSingleAppToolSet({
       messages: [createMessage('user', prompt)],
       executors: {

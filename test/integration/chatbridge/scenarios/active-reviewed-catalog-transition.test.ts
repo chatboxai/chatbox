@@ -62,7 +62,7 @@ describe('ChatBridge active reviewed catalog transition', () => {
 
         const drawingDecision = resolveReviewedAppRouteDecision(
           candidates,
-          'Open Drawing Kit and let me sketch a quick concept map.'
+          'Open Drawing Kit and start a sticky-note doodle dare.'
         )
         const weatherDecision = resolveReviewedAppRouteDecision(
           candidates,

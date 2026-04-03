@@ -6,6 +6,7 @@ import '../../../../test/integration/chatbridge/setup'
 
 import {
   createChatBridgeRuntimeCrashRecoveryContract,
+  createDrawingKitAppSnapshot,
   readChatBridgeDegradedCompletion,
 } from '@shared/chatbridge'
 import {
@@ -69,14 +70,14 @@ function createChessToolCallPart(): MessageToolCallPart {
   }
 }
 
-function createDrawingToolCallPart(): MessageToolCallPart {
+function createDrawingKitLaunchToolCallPart(): MessageToolCallPart {
   return {
     type: 'tool-call',
     state: 'result',
     toolCallId: 'tool-reviewed-launch-drawing-1',
     toolName: 'drawing_kit_open',
     args: {
-      request: 'Open Drawing Kit and sketch a quick concept map.',
+      request: 'Open Drawing Kit and start a sticky-note doodle dare.',
     },
     result: {
       kind: 'chatbridge.host.tool.record.v1',
@@ -89,7 +90,7 @@ function createDrawingToolCallPart(): MessageToolCallPart {
       retryClassification: 'safe',
       invocation: {
         args: {
-          request: 'Open Drawing Kit and sketch a quick concept map.',
+          request: 'Open Drawing Kit and start a sticky-note doodle dare.',
         },
       },
       outcome: {
@@ -99,8 +100,8 @@ function createDrawingToolCallPart(): MessageToolCallPart {
           appName: 'Drawing Kit',
           capability: 'open',
           launchReady: true,
-          summary: 'Prepared Drawing Kit for the reviewed launch path.',
-          request: 'Open Drawing Kit and sketch a quick concept map.',
+          summary: 'Prepared the reviewed Drawing Kit request for the host-owned launch path.',
+          request: 'Open Drawing Kit and start a sticky-note doodle dare.',
         },
       },
     },
@@ -110,7 +111,7 @@ function createDrawingToolCallPart(): MessageToolCallPart {
 function createSessionWithGenericLaunchPart(): { session: Session; launchPart: MessageAppPart } {
   const assistantMessage = createMessage('assistant')
   assistantMessage.id = 'assistant-reviewed-launch-1'
-  assistantMessage.contentParts = upsertReviewedAppLaunchParts([createDrawingToolCallPart()])
+  assistantMessage.contentParts = upsertReviewedAppLaunchParts([createDrawingKitLaunchToolCallPart()])
 
   const launchPart = assistantMessage.contentParts.find(
     (part): part is MessageAppPart => part.type === 'app'
@@ -130,8 +131,8 @@ function createSessionWithGenericLaunchPart(): { session: Session; launchPart: M
   }
 }
 
-function getLaunchPart(session: Session): MessageAppPart {
-  const message = session.messages.find((candidate) => candidate.id === 'assistant-reviewed-launch-1')
+function getLaunchPart(session: Session, messageId = 'assistant-reviewed-launch-1'): MessageAppPart {
+  const message = session.messages.find((candidate) => candidate.id === messageId)
   const launchPart = message?.contentParts.find((part): part is MessageAppPart => part.type === 'app')
 
   if (!launchPart) {
@@ -226,7 +227,7 @@ describe('reviewed app launch adoption', () => {
   })
 
   it('keeps the generic reviewed-launch shell for non-Chess apps', () => {
-    const [, derivedLaunchPart] = upsertReviewedAppLaunchParts([createDrawingToolCallPart()])
+    const [, derivedLaunchPart] = upsertReviewedAppLaunchParts([createDrawingKitLaunchToolCallPart()])
     if (derivedLaunchPart?.type !== 'app') {
       throw new Error('Expected the derived launch part to be an app part.')
     }
@@ -238,15 +239,15 @@ describe('reviewed app launch adoption', () => {
       appInstanceId: 'reviewed-launch:tool-reviewed-launch-drawing-1',
       lifecycle: 'launching',
       toolCallId: 'tool-reviewed-launch-drawing-1',
-      summary: 'Prepared Drawing Kit for the reviewed launch path.',
-      summaryForModel: 'Prepared Drawing Kit for the reviewed launch path.',
+      summary: 'Prepared the reviewed Drawing Kit request for the host-owned launch path.',
+      summaryForModel: 'Prepared the reviewed Drawing Kit request for the host-owned launch path.',
       statusText: 'Launching',
     })
     expect(readChatBridgeReviewedAppLaunch(derivedLaunchPart.values)).toMatchObject({
       appId: 'drawing-kit',
       appName: 'Drawing Kit',
       toolName: 'drawing_kit_open',
-      request: 'Open Drawing Kit and sketch a quick concept map.',
+      request: 'Open Drawing Kit and start a sticky-note doodle dare.',
     })
   })
 
@@ -357,7 +358,7 @@ describe('reviewed app launch adoption', () => {
         schemaVersion: 1,
         summary: 'Drawing Kit bridge runtime is live inside the host-owned shell.',
         statusText: 'Bridge active',
-        request: 'Open Drawing Kit and sketch a quick concept map.',
+        request: 'Open Drawing Kit and start a sticky-note doodle dare.',
       },
     }
     const activated = applyReviewedAppLaunchBridgeEventToSession(readied, {
@@ -436,5 +437,148 @@ describe('reviewed app launch adoption', () => {
         { kind: 'error.recorded' },
       ],
     })
+  })
+
+  it('keeps bounded Drawing Kit checkpoints and completion handoff inside the launch session record', () => {
+    const assistantMessage = createMessage('assistant')
+    assistantMessage.id = 'assistant-reviewed-launch-drawing-1'
+    assistantMessage.contentParts = upsertReviewedAppLaunchParts([createDrawingKitLaunchToolCallPart()])
+
+    const launchPart = assistantMessage.contentParts.find((part): part is MessageAppPart => part.type === 'app')
+    if (!launchPart) {
+      throw new Error('Expected a reviewed Drawing Kit launch part.')
+    }
+
+    const session: Session = {
+      id: 'session-reviewed-launch-drawing-1',
+      name: 'Reviewed Drawing launch session',
+      messages: [assistantMessage],
+      settings: {},
+    }
+
+    const bootstrapped = applyReviewedAppLaunchBootstrapToSession(session, {
+      messageId: 'assistant-reviewed-launch-drawing-1',
+      part: launchPart,
+      bridgeSessionId: 'bridge-session-reviewed-drawing-1',
+      now: () => 20_000,
+      createId: () => 'event-created-reviewed-drawing-1',
+    })
+
+    const bootstrappedPart = getLaunchPart(bootstrapped, 'assistant-reviewed-launch-drawing-1')
+    const readied = applyReviewedAppLaunchBridgeReadyToSession(bootstrapped, {
+      messageId: 'assistant-reviewed-launch-drawing-1',
+      part: bootstrappedPart,
+      event: {
+        kind: 'app.ready',
+        bridgeSessionId: 'bridge-session-reviewed-drawing-1',
+        appInstanceId: 'reviewed-launch:tool-reviewed-launch-drawing-1',
+        bridgeToken: 'bridge-token-reviewed-drawing-1',
+        ackNonce: 'bridge-nonce-reviewed-drawing-1',
+        sequence: 1,
+      },
+      now: () => 21_000,
+      createId: () => 'event-ready-reviewed-drawing-1',
+    })
+
+    const checkpointSnapshot = createDrawingKitAppSnapshot({
+      request: 'Open Drawing Kit and start a sticky-note doodle dare.',
+      roundLabel: 'Dare 05',
+      roundPrompt: 'Draw the weirdest sandwich.',
+      rewardLabel: 'Llama sticker',
+      caption: 'Triple pickle sandwich',
+      selectedTool: 'spray',
+      status: 'checkpointed',
+      strokeCount: 6,
+      stickerCount: 3,
+      checkpointId: 'drawing-kit-4200',
+      lastUpdatedAt: 22_000,
+      previewMarks: [
+        {
+          kind: 'line',
+          tool: 'spray',
+          color: '#ff8a4c',
+          width: 3,
+          points: [
+            { x: 0.2, y: 0.2 },
+            { x: 0.5, y: 0.4 },
+          ],
+        },
+      ],
+    })
+
+    const activated = applyReviewedAppLaunchBridgeEventToSession(readied, {
+      messageId: 'assistant-reviewed-launch-drawing-1',
+      part: getLaunchPart(readied, 'assistant-reviewed-launch-drawing-1'),
+      event: {
+        kind: 'app.state',
+        bridgeSessionId: 'bridge-session-reviewed-drawing-1',
+        appInstanceId: 'reviewed-launch:tool-reviewed-launch-drawing-1',
+        bridgeToken: 'bridge-token-reviewed-drawing-1',
+        sequence: 2,
+        idempotencyKey: 'state-reviewed-drawing-2',
+        snapshot: checkpointSnapshot,
+      },
+      now: () => 22_000,
+      createId: () => 'event-state-reviewed-drawing-1',
+    })
+    const activePart = getLaunchPart(activated, 'assistant-reviewed-launch-drawing-1')
+
+    expect(activePart).toMatchObject({
+      appId: 'drawing-kit',
+      lifecycle: 'active',
+      summary: checkpointSnapshot.summary,
+      statusText: checkpointSnapshot.statusText,
+      snapshot: {
+        appId: 'drawing-kit',
+        checkpointId: 'drawing-kit-4200',
+        caption: 'Triple pickle sandwich',
+      },
+    })
+
+    const completed = applyReviewedAppLaunchBridgeEventToSession(activated, {
+        messageId: 'assistant-reviewed-launch-drawing-1',
+        part: activePart,
+        event: {
+          kind: 'app.complete',
+          bridgeSessionId: 'bridge-session-reviewed-drawing-1',
+          appInstanceId: 'reviewed-launch:tool-reviewed-launch-drawing-1',
+          bridgeToken: 'bridge-token-reviewed-drawing-1',
+          sequence: 3,
+          idempotencyKey: 'complete-reviewed-drawing-3',
+          completion: {
+            schemaVersion: 1,
+            status: 'success',
+            suggestedSummary: {
+              text: 'Drawing Kit round complete. Triple pickle sandwich and the llama sticker are saved for follow-up chat.',
+            },
+            resumability: {
+              resumable: true,
+              checkpointId: 'drawing-kit-4200',
+              resumeHint: 'Play again reopens Dare 05 from checkpoint drawing-kit-4200.',
+            },
+          },
+        },
+        now: () => 23_000,
+        createId: () => 'event-complete-reviewed-drawing-1',
+      })
+
+    const completedPart = getLaunchPart(completed, 'assistant-reviewed-launch-drawing-1')
+    expect(completedPart).toMatchObject({
+      lifecycle: 'complete',
+      summary: 'Drawing Kit round complete. Triple pickle sandwich and the llama sticker are saved for follow-up chat.',
+      summaryForModel:
+        'Drawing Kit round complete. Triple pickle sandwich and the llama sticker are saved for follow-up chat.',
+      snapshot: {
+        checkpointId: 'drawing-kit-4200',
+        caption: 'Triple pickle sandwich',
+      },
+    })
+    expect(completed.chatBridgeAppRecords?.events).toHaveLength(4)
+    expect(completed.chatBridgeAppRecords?.events.map((event) => event.kind)).toEqual([
+      'instance.created',
+      'bridge.ready',
+      'state.updated',
+      'completion.recorded',
+    ])
   })
 })

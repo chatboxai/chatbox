@@ -1,4 +1,5 @@
 import { CHATBRIDGE_LANGSMITH_PROJECT_NAME } from '@shared/models/tracing'
+import { DRAWING_KIT_APP_ID } from '@shared/chatbridge'
 import type { LangSmithRunHandle } from '@shared/utils/langsmith_adapter'
 import type { MessageAppPart } from '@shared/types'
 import { useEffect, useMemo, useRef } from 'react'
@@ -30,12 +31,18 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
   const launchRunRef = useRef<LangSmithRunHandle | null>(null)
   const launchRunFinishedRef = useRef(false)
   const launch = readChatBridgeReviewedAppLaunch(part.values)
-  const runtimeMarkup = launch ? createReviewedAppLaunchRuntimeMarkup(launch) : null
+
+  const runtimeUrl = useMemo(() => {
+    if (!launch) {
+      return null
+    }
+
+    const html = createReviewedAppLaunchRuntimeMarkup(launch, part.snapshot)
+    return URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+  }, [launch, part.snapshot])
 
   const expectedOrigin = useMemo(() => window.location.origin || 'null', [])
-  // Sandboxed srcDoc iframes have an opaque origin, so the bootstrap postMessage
-  // must target '*' even though the runtime still validates the parent origin.
-  const bootstrapTargetOrigin = '*'
+  const bootstrapTargetOrigin = expectedOrigin === 'null' ? '*' : expectedOrigin
 
   async function finishLaunchRun(result?: Parameters<LangSmithRunHandle['end']>[0]) {
     if (!launchRunRef.current || launchRunFinishedRef.current) {
@@ -52,6 +59,9 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
     return () => {
       controllerRef.current?.dispose()
       controllerRef.current = null
+      if (runtimeUrl) {
+        URL.revokeObjectURL(runtimeUrl)
+      }
       void finishLaunchRun({
         outputs: {
           status: 'disposed',
@@ -59,9 +69,9 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
         },
       })
     }
-  }, [part.appInstanceId])
+  }, [part.appInstanceId, runtimeUrl])
 
-  if (!launch || !runtimeMarkup || part.lifecycle === 'error' || part.lifecycle === 'stale' || part.lifecycle === 'complete') {
+  if (!launch || !runtimeUrl || part.lifecycle === 'error' || part.lifecycle === 'stale' || part.lifecycle === 'complete') {
     return null
   }
 
@@ -154,10 +164,16 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
           },
           metadata: {
             operation: 'reviewed-app-bridge-launch',
-            storyId: 'CB-305',
+            storyId: part.appId === DRAWING_KIT_APP_ID ? 'CB-509' : 'CB-305',
             uiEntry: launch.uiEntry ?? null,
           },
-          tags: ['chatbridge', 'renderer', 'bridge', 'reviewed-app-launch', 'cb-305'],
+          tags: [
+            'chatbridge',
+            'renderer',
+            'bridge',
+            'reviewed-app-launch',
+            part.appId === DRAWING_KIT_APP_ID ? 'cb-509' : 'cb-305',
+          ],
         })
         launchRunRef.current = run
         launchRunFinishedRef.current = false
@@ -218,7 +234,7 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
   return (
     <iframe
       ref={iframeRef}
-      srcDoc={runtimeMarkup}
+      src={runtimeUrl}
       title={`${launch.appName} reviewed app runtime`}
       sandbox="allow-scripts allow-forms"
       className="w-full min-h-[260px] border-none"

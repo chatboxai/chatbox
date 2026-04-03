@@ -53,6 +53,9 @@ Current Pack 07 recovery proof lives in:
 - `bridge-session-security.test.ts`
   for malformed bridge traffic, replay rejection, launch timeout, and explicit
   runtime-crash recovery signals
+- `drawing-kit-flagship.test.ts`
+  for Drawing Kit checkpoint continuity, follow-up app-context injection, and
+  runtime-crash fallback that preserves the last trusted doodle checkpoint
 - `operator-controls-rollout.test.ts`
   for lifecycle observability records, version kill-switch launch blocking, and
   explicit active-session rollback posture

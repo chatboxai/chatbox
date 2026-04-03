@@ -119,6 +119,14 @@ const manualSmokeTraceDescriptors: Record<
     smokeSupport: 'supported',
     storyId: 'CB-006',
   },
+  'drawing-kit-doodle-dare': {
+    slug: 'chatbridge-drawing-kit-doodle-dare',
+    primaryFamily: 'reviewed-app-launch',
+    evidenceFamilies: ['persistence'],
+    runtimeTarget: MANUAL_SMOKE_RUNTIME_TARGET,
+    smokeSupport: 'supported',
+    storyId: 'CB-509',
+  },
   'chess-runtime': {
     slug: 'chatbridge-chess-runtime',
     primaryFamily: 'reviewed-app-launch',
@@ -145,6 +153,8 @@ export function getChatBridgeManualSmokeFixtureMode(fixtureId: string): ManualSm
           ? 'Supported desktop smoke fixture covering Chess runtime moves and persistence.'
           : fixtureId === 'chess-mid-game-board-context'
             ? 'Supported desktop smoke fixture covering Chess follow-up reasoning context.'
+            : fixtureId === 'drawing-kit-doodle-dare'
+              ? 'Supported desktop smoke fixture covering the Drawing Kit doodle game, checkpoint continuity, and follow-up chat.'
             : fixtureId === 'platform-recovery'
               ? 'Supported desktop smoke fixture covering platform-side failure recovery.'
               : fixtureId === 'degraded-completion-recovery'

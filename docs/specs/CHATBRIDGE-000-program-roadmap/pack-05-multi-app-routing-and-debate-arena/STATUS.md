@@ -2,7 +2,8 @@
 
 - Pack state: validated baseline reopened by the smoke-audit rebuild queue and
   active catalog transition
-- Current story: pending backfill queue continuing at `CB-509` after `CB-506`
+- Current story: `CB-509` is validated and `CB-510` is now the next active
+  queue item
 - Unlock rule: this pack opens only after Pack 4 has a written exit memo and
   linked proof in `progress.md`
 
@@ -46,7 +47,7 @@ Legacy parked packets that are not part of the active queue:
 | CB-506 | validated | Live reviewed invocation now consumes the reviewed route decision, can launch Drawing Kit from the default runtime path, and preserves natural Chess prompt handling plus explicit launch-failure evidence. |
 | CB-507 | planned | Smoke-audit backfill to make clarify and refusal artifacts a live product surface instead of a test-only seam. |
 | CB-508 | validated | Default reviewed catalog and seed inspection now point to Chess, Drawing Kit, and Weather while Debate Arena and Story Builder stay explicit legacy references. |
-| CB-509 | planned | Build Drawing Kit as the new interactive no-auth flagship app. |
+| CB-509 | validated | Drawing Kit now ships as the approved doodle-game flagship runtime with bounded checkpoints, traced follow-up/recovery proof, and a supported `drawing-kit-doodle-dare` seed/manual-smoke fixture. |
 | CB-510 | planned | Build Weather Dashboard as the new data-backed no-auth flagship app. |
 
 ## Exit Checklist
@@ -68,9 +69,10 @@ Pack 05 is validated.
 Historical Pack 05 proof remains checked in, but the reopened rebuild lane now
 targets Chess, Drawing Kit, and Weather as the active flagship set. Eligibility
 and invoke/clarify/refuse routing stay available as validated foundations, and
-`CB-508` plus `CB-506` now make the active catalog, natural-Chess fallback,
-and default live invoke path explicit before the remaining app-runtime and
-clarify/refuse work continues at `CB-509`, `CB-510`, and `CB-507`.
+`CB-508`, `CB-506`, and `CB-509` now make the active catalog, natural-Chess
+fallback, default live invoke path, and first non-Chess flagship runtime
+explicit before the remaining Weather and clarify/refuse work continues at
+`CB-510` and `CB-507`.
 
 ## Smoke-Audit Reopen Notes
 
@@ -84,6 +86,10 @@ clarify/refuse work continues at `CB-509`, `CB-510`, and `CB-507`.
 - `CB-506` closes SA-002 by removing the live Chess-only invoke shortcut and
   proving explicit Drawing Kit launch, natural Chess fallback, and explicit
   launch-failure handling through the reviewed host-tool seam.
+- `CB-509` closes the Drawing Kit portion of the later Pack 05 runtime gap by
+  shipping the doodle-game runtime, bounded checkpoint contract, traced
+  follow-up and recovery proof, and a supported active-flagship manual-smoke
+  fixture.
 - Historical Pack 05 proof remains checked in, but do not treat Pack 05 as
-  live-runtime complete again until `CB-509`, `CB-510`, and `CB-507` are
-  implemented and validated.
+  live-runtime complete again until `CB-510` and `CB-507` are implemented and
+  validated.

@@ -144,7 +144,7 @@ const REVIEWED_APP_CATALOG_DESCRIPTORS: ReviewedAppCatalogDescriptor[] = [
           {
             name: CHATBRIDGE_DRAWING_KIT_TOOL_NAME,
             title: 'Open Drawing Kit',
-            description: 'Launch Drawing Kit to sketch, annotate, doodle, or diagram directly inside the thread.',
+            description: 'Launch Drawing Kit to play a sticky-note doodle dare directly inside the thread.',
             schemaVersion: 1,
             inputSchema: {
               type: 'object',

@@ -397,6 +397,9 @@ completion and live product behavior.
   - Legacy Story Builder auth/resource evidence remains intentionally present,
     but it is now described as legacy-reference coverage instead of active
     flagship proof.
+  - Post-`CB-509`, Drawing Kit now has traced follow-up/recovery proof plus a
+    supported desktop manual-smoke trace; Weather remains the only active
+    flagship still waiting on later runtime/manual-smoke coverage.
 - Follow-up story candidate:
   - none for the alignment layer; runtime/manual-smoke expansion continues in
     `CB-509` and `CB-510`
@@ -434,9 +437,10 @@ completion and live product behavior.
     - `/private/tmp/chatbox-chessjs-devfix/src/renderer/packages/initial_data.ts`
     - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/dev/ChatBridgeSeedLab.tsx`
 - Notes:
-  - There are still no Drawing Kit or Weather fixtures because those runtimes do
-    not exist yet. `CB-508` only closes the corpus-labeling and deep-link
-    stability layer so the later app stories start from honest smoke truth.
+  - Post-`CB-509`, the active seed corpus now includes the supported
+    `drawing-kit-doodle-dare` flagship fixture and the matching preset session.
+    Weather remains the only active non-Chess fixture still pending later Pack
+    05 runtime work.
 - Follow-up story candidate:
   - none for the labeling/deep-link layer; active non-Chess fixtures arrive in
     `CB-509` and `CB-510`

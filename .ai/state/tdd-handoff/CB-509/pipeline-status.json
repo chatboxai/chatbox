@@ -1,0 +1,18 @@
+{
+  "storyId": "CB-509",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "failed-as-expected",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/apps/drawing-kit.test.ts src/renderer/packages/chatbridge/reviewed-app-launch.test.ts src/renderer/packages/chatbridge/bridge/reviewed-app-runtime.test.ts src/shared/chatbridge/live-seeds.test.ts src/renderer/dev/chatbridgeManualSmoke.test.ts test/integration/chatbridge/scenarios/drawing-kit-flagship.test.ts",
+    "failureSummary": [
+      "Drawing Kit had no shared bounded snapshot/checkpoint contract for host-owned continuity.",
+      "The active seed/manual-smoke corpus had no supported Drawing Kit flagship fixture or CB-509 trace descriptor.",
+      "No traced follow-up or degraded scenario proved that later chat used a host-owned Drawing Kit summary instead of raw canvas state."
+    ]
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/apps/drawing-kit.test.ts src/renderer/packages/chatbridge/reviewed-app-launch.test.ts src/renderer/packages/chatbridge/bridge/reviewed-app-runtime.test.ts src/shared/chatbridge/live-seeds.test.ts src/renderer/dev/chatbridgeManualSmoke.test.ts src/renderer/packages/initial_data.test.ts src/renderer/packages/chatbridge/single-app-tools.test.ts test/integration/chatbridge/scenarios/active-reviewed-catalog-transition.test.ts test/integration/chatbridge/scenarios/live-reviewed-app-invocation.test.ts test/integration/chatbridge/scenarios/drawing-kit-flagship.test.ts"
+  }
+}

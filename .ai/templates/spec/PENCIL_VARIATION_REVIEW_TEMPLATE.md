@@ -1,5 +1,9 @@
 # Pencil Variation Review Template
 
+Legacy note: use this template only for historical Pencil story packets. The
+active UI workflow uses `design-brief.md`, `design-research.md`, and
+`design-decision.md` instead.
+
 ## Metadata
 
 - Story ID:
@@ -11,7 +15,6 @@
 
 - Feature spec:
 - Technical plan:
-- Design brief:
 
 ## Pencil Prerequisites
 
@@ -41,42 +44,30 @@
 ## Variations
 
 ### Variation A
-
 - Name:
 - Fidelity level: wireframe / design-grade / implementation-grade
-- Brief interpretation:
-- Copy fidelity: placeholder / draft / implementation-ready / N/A
 - Summary:
-- Strengths:
-- Failure modes or misses against the brief:
+- Tradeoffs:
 - Screenshot reference:
 
 ### Variation B
-
 - Name:
 - Fidelity level: wireframe / design-grade / implementation-grade
-- Brief interpretation:
-- Copy fidelity: placeholder / draft / implementation-ready / N/A
 - Summary:
-- Strengths:
-- Failure modes or misses against the brief:
+- Tradeoffs:
 - Screenshot reference:
 
 ### Variation C
-
 - Name:
 - Fidelity level: wireframe / design-grade / implementation-grade
-- Brief interpretation:
-- Copy fidelity: placeholder / draft / implementation-ready / N/A
 - Summary:
-- Strengths:
-- Failure modes or misses against the brief:
+- Tradeoffs:
 - Screenshot reference:
 
 ## Recommendation
 
 - Recommended option:
-- Why it best matches the design brief:
+- Why:
 
 ## User Feedback
 
@@ -85,7 +76,6 @@
 
 ## Approval
 
-- Approved design brief:
 - Selected option:
 - Requested tweaks:
 - Approval status: pending / approved / rework

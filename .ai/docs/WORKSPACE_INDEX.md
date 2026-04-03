@@ -10,35 +10,37 @@ Use this as the quick map for where truth lives.
 4. Claude-native entry: `.claude/CLAUDE.md`
 5. Claude compatibility mirror: `.ai/agents/claude.md`
 6. Repo overview: `README.md`
-7. UI design flow: `.ai/docs/PENCIL_UI_WORKFLOW.md`
-8. Pencil design-system standard: `.ai/docs/PENCIL_DESIGN_SYSTEM_STANDARD.md`
-9. UI design brief template: `.ai/templates/spec/UI_DESIGN_BRIEF_TEMPLATE.md`
-10. Pencil local reference bundle: `.ai/reference/pencil/README.md`
-11. Trace-driven workflow for orchestration-heavy work:
+7. UI design contract: `.ai/docs/UI_DESIGN_WORKFLOW.md`
+8. UI design workflow: `.ai/workflows/autonomous-ui-design.md`
+9. Trace-driven workflow for orchestration-heavy work:
     `.ai/workflows/trace-driven-development.md`
-12. Post-merge hosted deploy verification:
-    `.ai/workflows/vercel-post-merge-verification.md`
+10. Product shaping workflow for new products and significant features:
+    `.ai/workflows/product-building.md`
+11. BrainLift research workflow for source-backed story shaping:
+    `.ai/workflows/brainlift-research.md`
+12. Legacy Pencil references for historical `.pen` artifacts only:
+    `.ai/docs/PENCIL_UI_WORKFLOW.md`, `.ai/docs/PENCIL_DESIGN_SYSTEM_STANDARD.md`,
+    `.ai/reference/pencil/README.md`
 
 ## Product Docs
 
-13. App overview and setup: `README.md`
-14. Contributor and PR shape: `.github/PULL_REQUEST_TEMPLATE.md`
-15. User-facing and reference docs: `docs/` and `doc/`
+10. App overview and setup: `README.md`
+11. Contributor and PR shape: `.github/PULL_REQUEST_TEMPLATE.md`
+12. User-facing and reference docs: `docs/` and `doc/`
 
 ## Code and Tests
 
-16. Electron main process: `src/main/`
-17. Renderer app: `src/renderer/`
-18. Shared contracts and helpers: `src/shared/`
-19. Tests: `test/` and `src/__tests__/`
-20. Scripts and utilities: `scripts/`, `script/`, and `.erb/scripts/`
-21. Recommended UI story assets when present:
-    `docs/specs/<story-id>/design-brief.md`, `design/system/`, and
-    `design/stories/`
+13. Electron main process: `src/main/`
+14. Renderer app: `src/renderer/`
+15. Shared contracts and helpers: `src/shared/`
+16. Tests: `test/` and `src/__tests__/`
+17. Scripts and utilities: `scripts/`, `script/`, and `.erb/scripts/`
+18. Recommended UI story artifacts: `docs/specs/<story-id>/design-brief.md`,
+    `design-research.md`, and `design-decision.md`
 
 ## Harness Memory
 
-22. Durable architecture log: `.ai/memory/project/architecture.md`
-23. Durable implementation patterns: `.ai/memory/project/patterns.md`
-24. Durable anti-patterns: `.ai/memory/project/anti-patterns.md`
-25. Current working context: `.ai/memory/session/active-context.md`
+19. Durable architecture log: `.ai/memory/project/architecture.md`
+20. Durable implementation patterns: `.ai/memory/project/patterns.md`
+21. Durable anti-patterns: `.ai/memory/project/anti-patterns.md`
+22. Current working context: `.ai/memory/session/active-context.md`

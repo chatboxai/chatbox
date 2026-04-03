@@ -4,9 +4,16 @@
 
 Use this skill to keep larger stories spec-anchored and test-driven.
 
+If the request is not yet story-ready, do the upstream shaping work first:
+
+- use `.ai/workflows/product-building.md` for new products, new verticals, or
+  significant features with open scope
+- use `.ai/workflows/brainlift-research.md` when the decision needs defended
+  research before the spec can stabilize
+
 Reference playbook:
 - `.ai/docs/research/spec-driven-tdd-playbook.md`
-- `.ai/docs/PENCIL_UI_WORKFLOW.md` for UI work
+- `.ai/docs/UI_DESIGN_WORKFLOW.md` for UI work
 
 ## Non-Negotiable Rules
 
@@ -25,11 +32,6 @@ For standard-lane feature work, create or update:
 2. Feature spec
 3. Technical plan
 4. Task breakdown
-
-For visible UI scope, extend the story packet with:
-
-5. `design-brief.md`
-6. `pencil-review.md`
 
 Recommended location:
 - `docs/specs/<story-id>/`
@@ -66,15 +68,18 @@ Then run `.ai/workflows/tdd-pipeline.md` manually:
 For UI scope:
 
 - keep the normal feature spec and technical plan
-- add `design-brief.md` before Pencil variations start
-- use `.ai/workflows/pencil-ui-design.md` for visual exploration
-- use `PENCIL_VARIATION_REVIEW_TEMPLATE.md` to record the review packet
-- wait for approval before implementation
+- use `.ai/workflows/autonomous-ui-design.md` for the design brief, research,
+  and decision pass
+- use `UI_DESIGN_BRIEF_TEMPLATE.md`, `UI_DESIGN_RESEARCH_TEMPLATE.md`, and
+  `UI_DESIGN_DECISION_TEMPLATE.md` as needed
+- record the chosen direction before implementation rather than pausing for
+  manual approval
 
 Separate:
 - **Behavior layer**: test-driven state, events, validation, conditional
   rendering, accessibility behavior.
-- **Visual layer**: Pencil-driven design-system work, composition, and review.
+- **Visual layer**: prompt-driven design intent, research, option scoring, and
+  implementation of the recorded decision.
 
 ## Done Criteria
 

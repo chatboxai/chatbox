@@ -8,4 +8,5 @@
   1. Preserve the boundary between `.ai/` and product code.
   2. Keep validation commands and docs aligned with the root workspace.
   3. Record only durable Chatbox-specific guidance.
-  4. Route UI design through Pencil review before implementation.
+  4. Route UI design through autonomous brief, research, and decision artifacts
+     before implementation.

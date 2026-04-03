@@ -18,21 +18,6 @@ Capture repeatable patterns that match how this workspace actually works.
 - Smaller colocated tests: `src/__tests__/`
 - Product docs: `README.md`, `docs/`, `doc/`
 
-## Engineering Posture
-
-- Treat shipped Chatbox code as production code, not demo code.
-- Do not merge mocks, stubs, placeholder implementations, or hardcoded sample
-  data where real runtime integrations should exist.
-- TODO comments are not an acceptable substitute for missing implementation in
-  merged production code.
-- Prefer clear module boundaries and colocated feature code/tests.
-- Prefer explicit code over clever code, and keep abstractions proportional to
-  the actual problem.
-- For authenticated agent endpoints, derive identity from JWT or request
-  context, not ad hoc database lookups.
-- Keep tool logic pure where possible and use framework DI at the application
-  boundaries.
-
 ## Testing and Validation
 
 - Tests use Vitest.
@@ -43,94 +28,18 @@ Capture repeatable patterns that match how this workspace actually works.
   - `pnpm check`
   - `pnpm lint`
   - `pnpm build`
-- Green unit tests are necessary but not sufficient for production readiness.
-- Bundling, packaging, and deploy-surface changes should also verify compiled
-  output loads without missing-module failures.
-- Those higher-risk changes should also verify risky runtime dependencies are
-  marked as externals when needed and that generated production package
-  metadata includes required runtime dependencies.
 - Orchestration-heavy work should establish traces/evals early through
   `.ai/workflows/trace-driven-development.md` instead of waiting for late debug
   cycles.
-- LangSmith is the checked-in trace sink for whole-app AI observability. Keep
-  the API key main-process-owned, use the shared contract in
-  `src/shared/utils/langsmith_adapter.ts`, wire renderer code through
-  `src/renderer/adapters/langsmith.ts`, and prefer parent chain traces around
-  user-visible flows plus child model traces through
-  `src/shared/models/tracing.ts`.
 - Fresh story branches and worktrees should copy the required local `.env*`
   files from the working `main` setup, run `pnpm install` before project
   commands, and keep copied env files untracked.
-- `pnpm install` records a worktree-local install stamp in `node_modules/`, and
-  the main workflow entrypoints now fail fast on wrong-Node shells via the repo
-  engine constraints plus on stale dependency inputs via
-  `scripts/workspace-guard.mjs`.
 - Non-trivial implementation stories should start on fresh `codex/` branches;
   if the current tree is already dirty with another story, isolate the new work
   in a clean worktree rather than sharing the dirty tree.
-- When multiple story branches are active, verify the requested story's status
-  on `main` and `origin/main` before replaying it. If the story is already
-  merged there, treat that merge as the baseline and branch any additional work
-  as a clean follow-up instead of duplicating it on a stale parallel branch.
 - Story completion defaults to the full GitHub flow: commit, push, PR, merge to
   `main`, sync local `main`, and branch cleanup unless the user explicitly
   pauses or chooses a different merge path.
-- Reviews should explain concrete tradeoffs, provide an opinionated
-  recommendation, include file/line references for issues, and describe fix
-  options in terms of effort, risk, impact, and maintenance burden.
-- Final handoff packets should include a plain-language explainer of what
-  changed plus concrete inspection and testing guidance. UI stories should name
-  the route or component path, the click path or entry state, and the expected
-  visible outcome.
-- Inspectable ChatBridge behavior should stay wired to the live seed lab:
-  `src/shared/chatbridge/live-seeds.ts` defines the seeded scenarios,
-  `src/renderer/dev/chatbridgeSeeds.ts` upserts them into storage, and
-  `/dev/chatbridge` is the live entry point for manual verification.
-- Structured ChatBridge app completion should flow through
-  `src/shared/chatbridge/completion.ts`. Apps may emit `success`,
-  `interrupted`, or `failure` payloads plus an optional `suggestedSummary`,
-  but only host-authored events may populate `summaryForModel`.
-
-## Deployment and Release
-
-- The current hosted web-shell baseline is Vercel with checked-in config in
-  `vercel.json`.
-- The current Vercel project is `chatbox-web`.
-- `main` pushes now deploy the hosted web shell through
-  `.github/workflows/vercel-main-sync.yml`.
-- Mainline deployment is driven by `scripts/deploy-vercel-production.sh`.
-- Vercel deploy automation should capture the exact deployment URL from
-  `vercel deploy` stdout and treat stderr as human-readable logs/errors; do not
-  scrape URLs back out of terminal logs.
-- Post-merge hosted verification is driven by
-  `scripts/verify-vercel-deployment.sh` and uses the Vercel CLI directly.
-- `vercel.json` disables Vercel Git auto-deploy for `main` so GitHub Actions is
-  the single checked-in production deploy trigger.
-- The canonical web deploy path is `pnpm build:web`, outputting to
-  `release/app/dist/renderer`.
-- Web smoke verification should use `pnpm serve:web` and
-  `GET /healthz.json`.
-- Hosted preview verification should use `vercel inspect <preview-url> --wait`
-  and a logged-in browser session when Vercel deployment protection blocks
-  anonymous HTTP checks.
-- Hosted `main` verification should use the `Vercel Main Sync` workflow plus
-  Vercel CLI `inspect` and `/healthz.json` verification after merge.
-- When user-facing verification is possible, prefer browser-first checks with
-  exact URLs, click paths, and explicit pass/fail signals over terminal-only
-  assertions.
-- If a story changes a checked-in deploy surface or other deployed user-facing
-  behavior, do not close it until deployment and post-deploy verification are
-  complete.
-- Deploy-surface closeout should tell the user exactly what to open and inspect
-  on the hosted version after merge, not only report merge and workflow status.
-- Provider secrets such as `OPENAI_API_KEY` should live only in untracked local
-  `.env*` files and Vercel project envs, not in tracked config.
-- OpenAI-backed live integration tests may use `OPENAI_API_KEY` as the shared
-  fallback secret, while `TEST_OPENAI_API_KEY` and
-  `TEST_OPENAI_RESPONSES_API_KEY` remain optional explicit overrides.
-- Desktop packaging and publish flows remain rooted in `electron-builder.yml`.
-- Root `release-*.sh` files are the checked-in entrypoints for release and
-  deploy commands referenced by `package.json`.
 
 ## Documentation Pattern
 
@@ -145,34 +54,21 @@ Capture repeatable patterns that match how this workspace actually works.
 
 ## UI Workflow Pattern
 
-- UI stories keep normal feature-spec and technical-plan artifacts and add
-  `docs/specs/<story-id>/design-brief.md` before Pencil variations begin.
-- Pencil stories begin by syncing the official docs locally under
-  `.ai/reference/pencil/`.
-- Design briefs should define audience, desired feeling, design language,
-  system direction, layout metaphor, and copy direction before variation work
-  starts.
-- Visual exploration happens in Pencil after spec/plan and before code.
-- Existing UI stories should import the current code surface into Pencil before
-  variations are proposed.
-- The shared Pencil design-library foundation lives at
-  `design/system/design-system.lib.pen`.
-- Story authors should review the local `.pen` schema snapshot before
-  hand-editing `.pen` files.
-- Story-specific Pencil work should live at `design/stories/<story-id>.pen`.
-- UI stories should produce 2 or 3 variations and wait for user approval before
-  implementation.
-- `design-grade` UI reviews should use real draft copy when the story changes
-  content; otherwise the review should mark copy fidelity honestly.
-- Design-system maturity should be labeled honestly using
-  `.ai/docs/PENCIL_DESIGN_SYSTEM_STANDARD.md`.
-- The current Chatbox foundation is a first-pass comprehensive library: shared
-  primitives, forms, chrome, content patterns, and layout shells should extend
-  `design/system/design-system.lib.pen` before story work invents new shapes.
-- When UI stories change shared tokens, Pencil variables should be synced with
-  the corresponding code-side variables or token files.
-- Approved variation details should be recorded in
-  `docs/specs/<story-id>/pencil-review.md` alongside the approved
-  `design-brief.md` path.
-- Approved Pencil artifacts should stay in the repo workspace so design and code
-  can stay in sync and be versioned together.
+- UI stories keep normal feature-spec and technical-plan artifacts.
+- UI stories write `design-brief.md` before design direction is locked.
+- Visual exploration happens through prompt-based directions after spec/plan and
+  before code.
+- Existing UI stories inspect the current code surface and closest repo
+  exemplars before generating new directions.
+- Design research is repo-first and becomes source-backed when the repo does
+  not already exemplify the relevant surface or user journey.
+- UI stories should produce 2 or 3 materially different directions, score them
+  autonomously, and record the winner before implementation.
+- The active design evidence for UI stories lives in `design-brief.md`,
+  `design-research.md`, and `design-decision.md`.
+- The codebase itself is the primary design-system foundation: shared tokens,
+  components, states, and layout patterns should be reused before story work
+  invents new visual language.
+- When UI stories change shared tokens or component contracts, the design
+  decision should call out those changes explicitly so code and story docs do
+  not drift silently.

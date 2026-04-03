@@ -35,13 +35,11 @@ Read relevant internal docs first:
 6. `README.md`
 7. relevant repo docs for the affected surface
 8. `package.json`
-9. for UI work: `.ai/docs/PENCIL_UI_WORKFLOW.md`
-10. for UI work: existing `design/**/*.pen` assets when they exist
-11. for UI work: `.ai/skills/pencil-ui-design.md`
-12. for UI work: existing `docs/specs/**/design-brief.md` artifacts when the
-    story is a continuation or exemplar hunt
-13. for UI work: the current code surface that may need to be imported into
-    Pencil first
+9. for UI work: `.ai/docs/UI_DESIGN_WORKFLOW.md`
+10. for UI work: `.ai/templates/spec/UI_DESIGN_BRIEF_TEMPLATE.md`
+11. for UI work: existing story design docs and the current code surface
+12. for UI work: legacy `design/**` or `.pen` assets only when maintaining a
+    historical story
 
 Capture reusable patterns and constraints from local docs.
 
@@ -59,6 +57,8 @@ Minimum external lookup output:
 
 - at least 1-2 relevant external sources when the task depends on behavior not
   already well exemplified in the repo
+- for UI work, external lookup is required when the repo does not already
+  exemplify the relevant surface, audience, or interaction pattern
 - concrete takeaways tied to the task
 
 ## Step 4: Publish the Lookup Brief
@@ -69,10 +69,9 @@ Deliver a concise lookup brief before coding:
 2. local findings
 3. external findings, when required
 4. implementation implications
-5. initial design-intent implications for UI work when applicable
-6. risks or open questions
-7. initial test strategy
-8. sizing recommendation
+5. risks or open questions
+6. initial test strategy
+7. sizing recommendation
 
 ## Exit Criteria
 

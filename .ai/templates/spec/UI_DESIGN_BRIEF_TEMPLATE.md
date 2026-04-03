@@ -66,7 +66,7 @@
 - Implementation constraints:
 - Explicit no-go decisions:
 
-## Pencil Prompt Inputs
+## Design Prompt Inputs
 
 - Prompt phrase 1:
 - Prompt phrase 2:

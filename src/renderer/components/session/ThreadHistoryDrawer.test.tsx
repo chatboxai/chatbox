@@ -9,6 +9,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   setShowDrawer: vi.fn(),
   swipeableDrawerProps: vi.fn(),
+  blurActiveElementWithin: vi.fn(),
 }))
 
 vi.mock('@mui/material/SwipeableDrawer', () => ({
@@ -22,6 +23,11 @@ vi.mock('@ebay/nice-modal-react', () => ({
   default: {
     show: vi.fn(),
   },
+}))
+
+vi.mock('@/components/common/overlay-focus', () => ({
+  blurActiveElementWithin: mocks.blurActiveElementWithin,
+  useBlurActiveElementOnOpen: vi.fn(),
 }))
 
 vi.mock('jotai', () => ({
@@ -126,5 +132,21 @@ describe('ThreadHistoryDrawer modal props', () => {
       keepMounted: true,
       disableEnforceFocus: true,
     })
+  })
+
+  it('releases focus before hiding the thread history drawer', () => {
+    const { container } = render(
+      <MantineProvider>
+        <ThreadHistoryDrawer session={{ id: 'session-1' } as never} />
+      </MantineProvider>
+    )
+
+    const closeButton = container.querySelector('button')
+    expect(closeButton).toBeTruthy()
+
+    closeButton?.click()
+
+    expect(mocks.blurActiveElementWithin).toHaveBeenCalledTimes(1)
+    expect(mocks.setShowDrawer).toHaveBeenCalledWith(false)
   })
 })

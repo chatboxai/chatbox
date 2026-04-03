@@ -37,7 +37,7 @@ the story changes routing, auth, lifecycle, or recovery behavior.
 | Pack | Control state | Story posture | Exit memo | Notes |
 |---|---|---|---|---|
 | Pack 00 | validated backfills complete | `CB-006` and `CB-007` validated | inherited baseline | SA-006 is closed by `CB-006`, and the delta-pass evidence-quality follow-up is closed by `CB-007` before runtime rebuild work continues. |
-| Pack 01 | reopened by smoke audit and shell redesign | `CB-106` merged; `CB-105` planned backfill | inherited baseline | SA-007 still tracks hygiene, and the approved split-tray shell now keeps active runtimes outside scrollback before the remaining flagship runtime work lands. |
+| Pack 01 | validated backfills complete | `CB-106` merged; `CB-105` validated backfill | inherited baseline | SA-007 is closed by `CB-105`, and the approved split-tray shell plus the final hygiene pass now leave Pack 01 complete for the active rebuild queue. |
 | Pack 02 | historical baseline | inherited `merged` baseline | inherited | Contracts and bridge foundations are assumed ready for post-Pack-4 execution. |
 | Pack 03 | validated backfills complete | `CB-305` and `CB-306` validated backfills | inherited baseline | SA-005 is closed by CB-305, and the urgent Chess runtime handoff regression is closed by CB-306; reviewed host-tool launches now flow through the bridge host controller and successful Chess launches become real Chess runtime parts. |
 | Pack 04 | validated | CB-401 through CB-404 validated | written | Exit proof is recorded in `pack-04.../STATUS.md`; Pack 5 and Pack 6 are unlocked. |
@@ -65,15 +65,16 @@ packet and should not be picked up next.
 
 ## Current Milestone
 
-- Active next gate: `CB-105`
-- Immediate next story after `CB-105`: queue complete unless new smoke-audit
-  backfills are opened
+- Active next gate: none; the reopened rebuild queue is complete on this branch
+- Immediate next story after `CB-105`: none unless new smoke-audit backfills
+  are opened
 - Status: `CB-006`, `CB-007`, `CB-305`, `CB-306`, `CB-508`, `CB-506`,
-  `CB-106`, `CB-509`, `CB-510`, and `CB-507` are validated or merged; `CB-105`
-  is the remaining active queue item.
+  `CB-106`, `CB-509`, `CB-510`, `CB-507`, and `CB-105` are now validated or
+  merged on this branch.
 - Result: the active reviewed catalog, invoke path, session-level split runtime
-  shell, Drawing Kit runtime, Weather runtime/manual-smoke proof, and live
-  clarify/refuse route receipts now agree on Chess, Drawing Kit, and Weather.
+  shell, Drawing Kit runtime, Weather runtime/manual-smoke proof, live
+  clarify/refuse route receipts, and the final Pack 01 console/accessibility
+  hygiene pass now agree around the active flagship direction.
 
 ## Pack 4 Exit Lock
 
@@ -121,7 +122,7 @@ smoke audit has reopened the program for a focused rebuild.
   - `CB-509` validated
   - `CB-510` validated
   - `CB-507` validated
-  - `CB-105`
+  - `CB-105` validated
 - Legacy parked packets retained for reference:
   - `CB-505`
   - `CB-605`

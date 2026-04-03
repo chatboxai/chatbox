@@ -3,7 +3,7 @@
  */
 
 import { MantineProvider } from '@mantine/core'
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   setShowSidebar: vi.fn(),
   setSidebarWidth: vi.fn(),
   swipeableDrawerProps: vi.fn(),
+  blurActiveElementWithin: vi.fn(),
+  isSmallScreen: false,
 }))
 
 vi.mock('@mui/material/SwipeableDrawer', () => ({
@@ -44,6 +46,10 @@ vi.mock('./components/dev/ThemeSwitchButton', () => ({
   default: () => <button type="button">Theme</button>,
 }))
 
+vi.mock('./components/common/overlay-focus', () => ({
+  blurActiveElementWithin: mocks.blurActiveElementWithin,
+}))
+
 vi.mock('./components/session/SessionList', () => ({
   default: () => <div data-testid="session-list" />,
 }))
@@ -59,7 +65,7 @@ vi.mock('./hooks/useNeedRoomForWinControls', () => ({
 }))
 
 vi.mock('./hooks/useScreenChange', () => ({
-  useIsSmallScreen: () => false,
+  useIsSmallScreen: () => mocks.isSmallScreen,
   useSidebarWidth: () => 280,
 }))
 
@@ -126,6 +132,7 @@ describe('Sidebar drawer modal props', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.isSmallScreen = false
   })
 
   it('passes focus-trap controls through ModalProps instead of leaking them to the DOM', () => {
@@ -145,5 +152,20 @@ describe('Sidebar drawer modal props', () => {
       keepMounted: true,
       disableEnforceFocus: true,
     })
+  })
+
+  it('releases focus before hiding the sidebar from a small-screen action', () => {
+    mocks.isSmallScreen = true
+
+    render(
+      <MantineProvider>
+        <Sidebar />
+      </MantineProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'New Chat' }))
+
+    expect(mocks.blurActiveElementWithin).toHaveBeenCalledTimes(1)
+    expect(mocks.setShowSidebar).toHaveBeenCalledWith(false)
   })
 })

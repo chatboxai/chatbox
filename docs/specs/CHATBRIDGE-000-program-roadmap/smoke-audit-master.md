@@ -313,7 +313,7 @@ completion and live product behavior.
 
 ### SA-007: ChatBridge sessions currently trigger renderer console issues during live smoke
 
-- Status: `confirmed`
+- Status: `fixed-during-audit`
 - Severity: low
 - Area: UI quality and console hygiene
 - Owning pack: cross-pack
@@ -324,20 +324,29 @@ completion and live product behavior.
   2. Inspect the generated console log under `.playwright-cli/console-*.log`.
 - Expected: live smoke sessions should render without React prop warnings or accessibility warnings unrelated to the scenario under test.
 - Actual:
-  - React warning for unknown DOM prop `sessionType`
-  - accessibility warning about `aria-hidden` while focus remains inside the subtree
+  - `SystemAvatar` now strips `sessionType` before props reach the DOM-backed
+    Mantine avatar surface
+  - sidebar and thread-history drawer close flows now release focus before the
+    hidden subtree transition happens
 - Evidence:
   - test or manual surface:
-    - `/private/tmp/chatbox-chessjs-devfix/.playwright-cli/console-2026-04-02T19-19-22-730Z.log`
+    - `src/renderer/components/common/Avatar.test.tsx`
+    - `src/renderer/components/common/overlay-focus.test.tsx`
+    - `src/renderer/Sidebar.test.tsx`
+    - `src/renderer/components/session/ThreadHistoryDrawer.test.tsx`
   - trace id(s):
     - none
   - relevant code path(s):
-    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/common/Avatar.tsx`
-    - `/private/tmp/chatbox-chessjs-devfix/src/renderer/components/chat/Message.tsx`
+    - `src/renderer/components/common/Avatar.tsx`
+    - `src/renderer/components/common/overlay-focus.ts`
+    - `src/renderer/Sidebar.tsx`
+    - `src/renderer/components/session/ThreadHistoryDrawer.tsx`
 - Notes:
-  - These are not the biggest ChatBridge functional blockers, but they pollute manual QA and make real runtime issues harder to isolate.
+  - These warnings were low-severity compared with the runtime rebuild work, but
+    closing them materially improves smoke-console signal and shell
+    accessibility hygiene.
 - Follow-up story candidate:
-  - `CB-105` - ChatBridge session console and accessibility hygiene
+  - none; the active rebuild queue is complete unless new backfills are opened
 
 ### SA-008: Active flagship catalog transition is docs-only and runtime remains Chess-only
 

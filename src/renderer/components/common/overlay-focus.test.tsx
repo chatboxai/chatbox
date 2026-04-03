@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { handoffFocusToOverlay } from './overlay-focus'
+import { blurActiveElementWithin, handoffFocusToOverlay } from './overlay-focus'
 
 describe('overlay focus handoff', () => {
   it('blurs the previously focused element and focuses the overlay target', () => {
@@ -37,5 +37,28 @@ describe('overlay focus handoff', () => {
     handoffFocusToOverlay(overlay)
 
     expect(document.activeElement).toBe(inside)
+  })
+
+  it('only blurs focus when the active element is inside the target subtree', () => {
+    document.body.innerHTML = `
+      <div id="outside">
+        <button id="outside-button">Outside</button>
+      </div>
+      <div id="overlay">
+        <button id="inside-button">Inside</button>
+      </div>
+    `
+
+    const overlay = document.getElementById('overlay') as HTMLDivElement
+    const inside = document.getElementById('inside-button') as HTMLButtonElement
+    const outside = document.getElementById('outside-button') as HTMLButtonElement
+
+    inside.focus()
+    blurActiveElementWithin(overlay)
+    expect(document.activeElement).toBe(document.body)
+
+    outside.focus()
+    blurActiveElementWithin(overlay)
+    expect(document.activeElement).toBe(outside)
   })
 })

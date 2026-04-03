@@ -31,15 +31,15 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] Existing warning-producing render path captured
+  - [x] Existing warning-producing render path captured
 - T002 tests:
-  - [ ] Invalid DOM prop no longer forwarded
+  - [x] Invalid DOM prop no longer forwarded
 - T003 tests:
-  - [ ] Focus transition avoids hidden focused subtree
+  - [x] Focus transition avoids hidden focused subtree
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale

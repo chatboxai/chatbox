@@ -13,6 +13,7 @@ import {
   CHESS_APP_ID,
   CHESS_APP_NAME,
   ChessAppSnapshotSchema,
+  DEFAULT_CHESS_AI_CONFIG,
   createChessAppSnapshotFromGame,
 } from '@shared/chatbridge/apps/chess'
 import type { BridgeAppEvent, BridgeReadyEvent } from '@shared/chatbridge/bridge-session'
@@ -64,6 +65,44 @@ function createChessToolCallPart(): MessageToolCallPart {
           summary: 'Prepared the reviewed Chess session request for the host-owned launch path.',
           request: 'Open Chess and analyze this FEN.',
           fen: 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',
+        },
+      },
+    },
+  }
+}
+
+function createChessNewGameToolCallPart(): MessageToolCallPart {
+  return {
+    type: 'tool-call',
+    state: 'result',
+    toolCallId: 'tool-reviewed-launch-new-game-1',
+    toolName: 'chess_prepare_session',
+    args: {
+      request: 'Open Chess and let me play a new game.',
+    },
+    result: {
+      kind: 'chatbridge.host.tool.record.v1',
+      toolName: 'chess_prepare_session',
+      appId: 'chess',
+      sessionId: 'session-reviewed-launch-new-game-1',
+      schemaVersion: CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
+      executionAuthority: 'host',
+      effect: 'read',
+      retryClassification: 'safe',
+      invocation: {
+        args: {
+          request: 'Open Chess and let me play a new game.',
+        },
+      },
+      outcome: {
+        status: 'success',
+        result: {
+          appId: 'chess',
+          appName: 'Chess',
+          capability: 'prepare-session',
+          launchReady: true,
+          summary: 'Prepared the reviewed Chess session request for the host-owned launch path.',
+          request: 'Open Chess and let me play a new game.',
         },
       },
     },
@@ -216,6 +255,27 @@ describe('reviewed app launch adoption', () => {
         phase: 'active',
       },
     })
+    expect(snapshot.ai).toBeUndefined()
+  })
+
+  it('defaults a new reviewed chess game into white-vs-black AI mode', () => {
+    const [, derivedChessPart] = upsertReviewedAppLaunchParts([createChessNewGameToolCallPart()])
+    if (derivedChessPart?.type !== 'app') {
+      throw new Error('Expected the derived Chess part to be an app part.')
+    }
+
+    const snapshot = ChessAppSnapshotSchema.parse(derivedChessPart.snapshot)
+
+    expect(derivedChessPart).toMatchObject({
+      type: 'app',
+      appId: CHESS_APP_ID,
+      appName: CHESS_APP_NAME,
+      appInstanceId: 'chess-launch:tool-reviewed-launch-new-game-1',
+      lifecycle: 'active',
+      summary: 'Chess board ready. White to move from the starting position.',
+      statusText: 'White to move',
+    })
+    expect(snapshot.ai).toEqual(DEFAULT_CHESS_AI_CONFIG)
   })
 
   it('preserves an existing live chess app part when the tool result is normalized again', () => {

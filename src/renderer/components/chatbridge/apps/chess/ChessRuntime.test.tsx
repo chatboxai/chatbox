@@ -4,7 +4,7 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createInitialChessAppSnapshot } from '@shared/chatbridge/apps/chess'
+import { DEFAULT_CHESS_AI_CONFIG, createInitialChessAppSnapshot } from '@shared/chatbridge/apps/chess'
 import type { MessageAppPart } from '@shared/types'
 import { ChessRuntime } from './ChessRuntime'
 
@@ -24,7 +24,9 @@ function renderRuntime(partOverrides: Partial<MessageAppPart> = {}) {
     appInstanceId: 'chess-instance-1',
     lifecycle: 'active',
     bridgeSessionId: 'bridge-chess-1',
-    snapshot: createInitialChessAppSnapshot(1_000),
+    snapshot: createInitialChessAppSnapshot(1_000, {
+      ai: DEFAULT_CHESS_AI_CONFIG,
+    }),
     ...partOverrides,
   }
 
@@ -57,7 +59,7 @@ describe('ChessRuntime', () => {
     expect(blackQueenGlyph.style.color).toBe('rgb(17, 24, 39)')
   })
 
-  it('persists a legal move after selecting a source and destination square', async () => {
+  it('persists a legal move together with the default black AI reply', async () => {
     renderRuntime()
 
     fireEvent.click(screen.getByLabelText('e2 white pawn'))
@@ -72,11 +74,22 @@ describe('ChessRuntime', () => {
         sessionId: 'session-1',
         messageId: 'msg-1',
         snapshot: expect.objectContaining({
-          turn: 'black',
+          turn: 'white',
+          ai: DEFAULT_CHESS_AI_CONFIG,
+          moveHistory: expect.arrayContaining([
+            expect.objectContaining({
+              san: 'e4',
+              color: 'white',
+            }),
+            expect.objectContaining({
+              color: 'black',
+            }),
+          ]),
           lastAction: expect.objectContaining({
             kind: 'accepted',
+            message: expect.stringContaining('Black replied'),
             move: expect.objectContaining({
-              san: 'e4',
+              color: 'black',
             }),
           }),
         }),

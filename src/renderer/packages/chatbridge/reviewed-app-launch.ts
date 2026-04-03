@@ -18,6 +18,7 @@ import {
 import {
   CHESS_APP_ID,
   CHESS_APP_NAME,
+  DEFAULT_CHESS_AI_CONFIG,
   createChessAppSnapshotFromGame,
   createInitialChessAppSnapshot,
   getChessFallbackText,
@@ -156,7 +157,9 @@ function createChessSnapshotFromLaunch(launch: ChatBridgeReviewedAppLaunch): { s
     }
 
     return {
-      snapshot: createInitialChessAppSnapshot(),
+      snapshot: createInitialChessAppSnapshot(Date.now(), {
+        ai: DEFAULT_CHESS_AI_CONFIG,
+      }),
     }
   } catch (error) {
     return {

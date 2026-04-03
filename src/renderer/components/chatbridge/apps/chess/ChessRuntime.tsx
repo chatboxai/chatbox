@@ -15,11 +15,13 @@ import {
   createChessMoveState,
   createInitialChessAppSnapshot,
   createRejectedChessSnapshot,
+  getChessAiConfig,
   getChessPieceAtSquare,
   getChessStatusLabel,
   getChessSummary,
   getTurnLabel,
   parseChessAppSnapshot,
+  selectChessAiMove,
   type ChessAppSnapshot,
 } from '@shared/chatbridge/apps/chess'
 import type { MessageAppPart } from '@shared/types'
@@ -195,6 +197,73 @@ function readChessSnapshot(part: MessageAppPart): ChessAppSnapshot {
   } catch {
     return createInitialChessAppSnapshot()
   }
+}
+
+function createAcceptedSnapshotWithOptionalAiReply(
+  snapshot: ChessAppSnapshot,
+  game: Chess,
+  move: NonNullable<ReturnType<Chess['move']>>,
+  at: number
+) {
+  const aiConfig = getChessAiConfig(snapshot)
+
+  if (!aiConfig) {
+    return createChessAppSnapshotFromGame(game, {
+      lastUpdatedAt: at,
+      lastAction: {
+        kind: 'accepted',
+        message: `Accepted ${move.san}. ${getTurnLabel(game.turn() === 'w' ? 'white' : 'black')} to move.`,
+        move: createChessMoveState(move, snapshot.moveHistory.length + 1, at),
+      },
+    })
+  }
+
+  const aiChoice = selectChessAiMove(game, aiConfig)
+  if (!aiChoice) {
+    return createChessAppSnapshotFromGame(game, {
+      lastUpdatedAt: at,
+      ai: aiConfig,
+      lastAction: {
+        kind: 'accepted',
+        message: `Accepted ${move.san}. ${getTurnLabel(game.turn() === 'w' ? 'white' : 'black')} to move.`,
+        move: createChessMoveState(move, snapshot.moveHistory.length + 1, at),
+      },
+    })
+  }
+
+  const aiAppliedMove = game.move({
+    from: aiChoice.from,
+    to: aiChoice.to,
+    ...(aiChoice.promotion ? { promotion: aiChoice.promotion } : {}),
+  })
+
+  if (!aiAppliedMove) {
+    return createChessAppSnapshotFromGame(game, {
+      lastUpdatedAt: at,
+      ai: aiConfig,
+      lastAction: {
+        kind: 'accepted',
+        message: `Accepted ${move.san}. ${getTurnLabel(game.turn() === 'w' ? 'white' : 'black')} to move.`,
+        move: createChessMoveState(move, snapshot.moveHistory.length + 1, at),
+      },
+    })
+  }
+
+  const aiTimestamp = at + 1
+  const baseSnapshot = createChessAppSnapshotFromGame(game, {
+    lastUpdatedAt: aiTimestamp,
+    ai: aiConfig,
+  })
+
+  return createChessAppSnapshotFromGame(game, {
+    lastUpdatedAt: aiTimestamp,
+    ai: aiConfig,
+    lastAction: {
+      kind: 'accepted',
+      message: `Accepted ${move.san}. ${getTurnLabel(aiConfig.opponentColor)} replied ${aiAppliedMove.san}. ${getChessStatusLabel(baseSnapshot)}.`,
+      move: createChessMoveState(aiAppliedMove, snapshot.moveHistory.length + 2, aiTimestamp),
+    },
+  })
 }
 
 function LegacyChessRuntime({ part, onUpdatePart }: ChessRuntimeProps) {
@@ -534,15 +603,7 @@ function PersistentChessRuntime({ part, sessionId, messageId, onUpdatePart }: Ch
     }
 
     const now = Date.now()
-    const moveState = createChessMoveState(attemptedMove, snapshot.moveHistory.length + 1, now)
-    const nextSnapshot = createChessAppSnapshotFromGame(nextGame, {
-      lastUpdatedAt: now,
-      lastAction: {
-        kind: 'accepted',
-        message: `Accepted ${attemptedMove.san}. ${getTurnLabel(nextGame.turn() === 'w' ? 'white' : 'black')} to move.`,
-        move: moveState,
-      },
-    })
+    const nextSnapshot = createAcceptedSnapshotWithOptionalAiReply(snapshot, nextGame, attemptedMove, now)
 
     await commitSnapshot(nextSnapshot)
   }

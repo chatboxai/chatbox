@@ -11,6 +11,17 @@ export type ChessColor = z.infer<typeof ChessColorSchema>
 export const ChessPieceSchema = z.enum(['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'])
 export type ChessPiece = z.infer<typeof ChessPieceSchema>
 
+export const ChessAiDifficultySchema = z.enum(['easy-medium'])
+export type ChessAiDifficulty = z.infer<typeof ChessAiDifficultySchema>
+
+export const ChessAiConfigSchema = z.object({
+  enabled: z.boolean(),
+  playerColor: ChessColorSchema,
+  opponentColor: ChessColorSchema,
+  difficulty: ChessAiDifficultySchema,
+})
+export type ChessAiConfig = z.infer<typeof ChessAiConfigSchema>
+
 export const ChessSquareStateSchema = z.object({
   square: z.string(),
   color: ChessColorSchema,
@@ -80,6 +91,7 @@ export const ChessAppSnapshotSchema = z.object({
   status: ChessGameStatusSchema,
   lastAction: ChessActionStateSchema,
   lastUpdatedAt: z.number().int(),
+  ai: ChessAiConfigSchema.optional(),
 })
 
 export type ChessAppSnapshot = z.infer<typeof ChessAppSnapshotSchema>
@@ -112,6 +124,33 @@ const PIECE_GLYPHS: Record<ChessColor, Record<ChessPiece, string>> = {
     knight: '\u265E',
     pawn: '\u265F',
   },
+}
+
+const PIECE_VALUES: Record<PieceSymbol, number> = {
+  p: 100,
+  n: 320,
+  b: 330,
+  r: 500,
+  q: 900,
+  k: 0,
+}
+
+const PRIMARY_CENTER_SQUARES = new Set(['d4', 'e4', 'd5', 'e5'])
+const EXTENDED_CENTER_SQUARES = new Set(['c3', 'd3', 'e3', 'f3', 'c4', 'f4', 'c5', 'f5', 'c6', 'd6', 'e6', 'f6'])
+const CHECKMATE_SCORE = 100_000
+
+export const DEFAULT_CHESS_AI_CONFIG: ChessAiConfig = {
+  enabled: true,
+  playerColor: 'white',
+  opponentColor: 'black',
+  difficulty: 'easy-medium',
+}
+
+export type ChessAiMoveChoice = {
+  san: string
+  from: string
+  to: string
+  promotion?: PieceSymbol
 }
 
 function normalizeColor(color: Color): ChessColor {
@@ -147,6 +186,10 @@ function getStatusReason(game: Chess) {
 
 export function getTurnLabel(color: ChessColor) {
   return color === 'white' ? 'White' : 'Black'
+}
+
+function toEngineColor(color: ChessColor): Color {
+  return color === 'white' ? 'w' : 'b'
 }
 
 export function getChessStatusLabel(snapshot: ChessAppSnapshot) {
@@ -228,8 +271,14 @@ export function getChessFallbackText(snapshot?: ChessAppSnapshot | null) {
   return 'The host can fall back to the latest legal board state without dropping the chess session out of the thread.'
 }
 
-export function createInitialChessAppSnapshot(updatedAt = Date.now()): ChessAppSnapshot {
+export function createInitialChessAppSnapshot(
+  updatedAt = Date.now(),
+  options: {
+    ai?: ChessAiConfig | null
+  } = {}
+): ChessAppSnapshot {
   return createChessAppSnapshotFromGame(new Chess(), {
+    ai: options.ai,
     lastUpdatedAt: updatedAt,
     lastAction: {
       kind: 'idle',
@@ -243,6 +292,7 @@ export function createChessAppSnapshotFromGame(
   options: {
     lastUpdatedAt?: number
     lastAction?: ChessActionState
+    ai?: ChessAiConfig | null
   } = {}
 ): ChessAppSnapshot {
   const board: ChessSquareState[] = []
@@ -309,6 +359,7 @@ export function createChessAppSnapshotFromGame(
         message: 'Waiting for the next legal move.',
       } satisfies ChessActionState),
     lastUpdatedAt: options.lastUpdatedAt ?? Date.now(),
+    ...(options.ai ? { ai: ChessAiConfigSchema.parse(options.ai) } : {}),
   })
 }
 
@@ -318,6 +369,180 @@ export function parseChessAppSnapshot(snapshot: unknown): ChessAppSnapshot {
 
 export function getChessPieceAtSquare(snapshot: ChessAppSnapshot, square: string) {
   return snapshot.board.find((piece) => piece.square === square) ?? null
+}
+
+export function getChessAiConfig(snapshot: ChessAppSnapshot) {
+  const parsed = ChessAiConfigSchema.safeParse(snapshot.ai)
+  return parsed.success && parsed.data.enabled ? parsed.data : null
+}
+
+export function shouldChessAiReply(game: Chess, aiConfig: ChessAiConfig | null | undefined) {
+  if (!aiConfig?.enabled || game.isGameOver()) {
+    return false
+  }
+
+  return normalizeColor(game.turn()) === aiConfig.opponentColor
+}
+
+function evaluateSquareControl(square: string) {
+  if (PRIMARY_CENTER_SQUARES.has(square)) {
+    return 18
+  }
+
+  if (EXTENDED_CENTER_SQUARES.has(square)) {
+    return 8
+  }
+
+  return 0
+}
+
+function evaluateChessBoard(game: Chess, aiColor: ChessColor) {
+  const aiTurn = toEngineColor(aiColor)
+
+  if (game.isCheckmate()) {
+    return game.turn() === aiTurn ? -CHECKMATE_SCORE : CHECKMATE_SCORE
+  }
+
+  if (game.isDraw() || game.isStalemate() || game.isInsufficientMaterial()) {
+    return 0
+  }
+
+  let score = 0
+
+  game.board().forEach((rank, rankIndex) => {
+    rank.forEach((piece, fileIndex) => {
+      if (!piece) {
+        return
+      }
+
+      const pieceSign = piece.color === aiTurn ? 1 : -1
+      const pieceValue = PIECE_VALUES[piece.type]
+      const square = `${FILES[fileIndex]}${8 - rankIndex}`
+      const squareControl = evaluateSquareControl(square)
+
+      score += pieceSign * pieceValue
+      score += pieceSign * squareControl
+
+      if (piece.type === 'n' || piece.type === 'b') {
+        score += pieceSign * 6
+      }
+
+      if (piece.type === 'p') {
+        score += pieceSign * (piece.color === 'w' ? 8 - Number(square[1]) : Number(square[1]) - 1)
+      }
+    })
+  })
+
+  const mobility = game.moves().length
+  score += (game.turn() === aiTurn ? 1 : -1) * mobility * 2
+
+  if (game.inCheck()) {
+    score += game.turn() === aiTurn ? -35 : 35
+  }
+
+  return score
+}
+
+function scoreChessAiMove(game: Chess, move: Move, aiConfig: ChessAiConfig) {
+  const appliedMove = game.move({
+    from: move.from,
+    to: move.to,
+    ...(move.promotion ? { promotion: move.promotion } : {}),
+  })
+
+  if (!appliedMove) {
+    return Number.NEGATIVE_INFINITY
+  }
+
+  let score = evaluateChessBoard(game, aiConfig.opponentColor)
+
+  if (!game.isGameOver()) {
+    const replies = game.moves({ verbose: true })
+    if (replies.length > 0) {
+      let opponentBestReply = Number.POSITIVE_INFINITY
+
+      for (const reply of replies) {
+        const appliedReply = game.move({
+          from: reply.from,
+          to: reply.to,
+          ...(reply.promotion ? { promotion: reply.promotion } : {}),
+        })
+        if (!appliedReply) {
+          continue
+        }
+
+        opponentBestReply = Math.min(opponentBestReply, evaluateChessBoard(game, aiConfig.opponentColor))
+        game.undo()
+      }
+
+      if (Number.isFinite(opponentBestReply)) {
+        score = opponentBestReply
+      }
+    }
+  }
+
+  let preference = 0
+
+  if (appliedMove.captured) {
+    preference += PIECE_VALUES[appliedMove.captured] * 2
+  }
+
+  if (appliedMove.promotion) {
+    preference += PIECE_VALUES[appliedMove.promotion] + 40
+  }
+
+  if (appliedMove.san.includes('+')) {
+    preference += 30
+  }
+
+  preference += evaluateSquareControl(appliedMove.to)
+
+  if (appliedMove.piece === 'n' || appliedMove.piece === 'b') {
+    preference += 10
+  }
+
+  if (appliedMove.piece === 'p' && (appliedMove.from[1] === '7' || appliedMove.from[1] === '2')) {
+    preference += 6
+  }
+
+  game.undo()
+
+  return score + preference / 100
+}
+
+export function selectChessAiMove(game: Chess, aiConfig: ChessAiConfig): ChessAiMoveChoice | null {
+  if (!shouldChessAiReply(game, aiConfig)) {
+    return null
+  }
+
+  const legalMoves = game.moves({ verbose: true })
+  if (legalMoves.length === 0) {
+    return null
+  }
+
+  const sortedMoves = [...legalMoves].sort((left, right) => left.san.localeCompare(right.san))
+  let bestMove: Move | null = null
+  let bestScore = Number.NEGATIVE_INFINITY
+
+  for (const move of sortedMoves) {
+    const moveScore = scoreChessAiMove(game, move, aiConfig)
+
+    if (moveScore > bestScore) {
+      bestMove = move
+      bestScore = moveScore
+    }
+  }
+
+  if (!bestMove) {
+    return null
+  }
+
+  return {
+    san: bestMove.san,
+    from: bestMove.from,
+    to: bestMove.to,
+    ...(bestMove.promotion ? { promotion: bestMove.promotion } : {}),
+  }
 }
 
 export function createChessMoveState(move: Move, moveNumber: number, at: number): ChessMoveState {

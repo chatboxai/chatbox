@@ -2,6 +2,7 @@ import { normalizeChatBridgeChessRuntimeSnapshot } from './chess'
 import {
   CHESS_APP_ID,
   CHESS_APP_NAME,
+  DEFAULT_CHESS_AI_CONFIG,
   createInitialChessAppSnapshot,
   getChessDescription,
   getChessFallbackText,
@@ -844,7 +845,9 @@ export function buildChatBridgePlatformRecoverySessionFixture(): Omit<Session, '
 }
 
 function createChessRuntimeMessage(id: string, timestamp: number): Message {
-  const snapshot = createInitialChessAppSnapshot(timestamp)
+  const snapshot = createInitialChessAppSnapshot(timestamp, {
+    ai: DEFAULT_CHESS_AI_CONFIG,
+  })
   const appInstanceId = 'chess-instance-seeded-runtime'
   const bridgeSessionId = 'bridge-chess-seeded-runtime'
 
@@ -855,7 +858,7 @@ function createChessRuntimeMessage(id: string, timestamp: number): Message {
     contentParts: [
       {
         type: 'text',
-        text: 'The chess runtime is live in-thread. Try an illegal move first, then a legal opening move, and confirm the host keeps the latest position on reload.',
+        text: 'The chess runtime is live in-thread. You play White by default, Black replies automatically, and the host keeps the latest board state on reload.',
       },
       {
         type: 'app',
@@ -897,7 +900,9 @@ function createChessRuntimeMessage(id: string, timestamp: number): Message {
 }
 
 function createSeededChessAppRecords() {
-  const snapshot = createInitialChessAppSnapshot(3)
+  const snapshot = createInitialChessAppSnapshot(3, {
+    ai: DEFAULT_CHESS_AI_CONFIG,
+  })
   const baseInstance = createChatBridgeAppInstance({
     id: 'chess-instance-seeded-runtime',
     appId: CHESS_APP_ID,

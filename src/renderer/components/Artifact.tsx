@@ -76,6 +76,7 @@ export function ArtifactWithButtons(props: {
   const [bridgeError, setBridgeError] = useState(false)
   const hasRenderableHtml = htmlCode.trim().length > 0
   const shellState = getArtifactShellState({ generating, preview, hasRenderableHtml, bridgeError })
+  const inlinePreviewHeightClass = 'h-[460px] md:h-[560px] xl:h-[640px]'
 
   useEffect(() => {
     if (!preview) {
@@ -133,7 +134,12 @@ export function ArtifactWithButtons(props: {
       }
     >
       {preview && hasRenderableHtml && !bridgeError ? (
-        <Artifact htmlCode={htmlCode} reloadSign={reloadSign} onBridgeError={() => setBridgeError(true)} />
+        <Artifact
+          htmlCode={htmlCode}
+          reloadSign={reloadSign}
+          className={inlinePreviewHeightClass}
+          onBridgeError={() => setBridgeError(true)}
+        />
       ) : null}
     </ChatBridgeShell>
   )
@@ -206,7 +212,7 @@ export function Artifact(props: {
   return (
     <iframe
       key={reloadSign}
-      className={cn('w-full', 'border-none', 'h-[400px]', className)}
+      className={cn('w-full', 'border-none', 'min-h-[400px]', className)}
       sandbox="allow-scripts allow-forms"
       src={runtimeUrl}
       ref={ref}

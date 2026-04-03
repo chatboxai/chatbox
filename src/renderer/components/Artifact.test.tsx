@@ -73,4 +73,13 @@ describe('Artifact preview bridge surface', () => {
     expect(mocks.controller.attach).toHaveBeenCalledTimes(1)
     expect(mocks.controller.renderHtml).toHaveBeenCalledWith('<html><body><h1>Preview</h1></body></html>')
   })
+
+  it('keeps a baseline minimum height while allowing a taller host shell height', () => {
+    const { container } = render(<Artifact htmlCode="<html><body><h1>Preview</h1></body></html>" className="h-[560px]" />)
+
+    const iframe = container.querySelector('iframe')
+    expect(iframe).toBeTruthy()
+    expect(iframe?.className).toContain('min-h-[400px]')
+    expect(iframe?.className).toContain('h-[560px]')
+  })
 })

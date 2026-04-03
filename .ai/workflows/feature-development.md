@@ -59,7 +59,10 @@ If the work is multi-file, contract-changing, or likely to branch in scope:
 If the task changes model orchestration, routing, tool execution, app lifecycle,
 completion, auth brokerage, or similar runtime coordination:
 - run `.ai/workflows/trace-driven-development.md`
-- define the trace and eval boundary before broad implementation
+- define the LangSmith trace matrix, scenario set, and thread/correlation
+  contract before broad implementation
+- do not treat the story as trace-driven-complete until representative
+  happy-path and edge/degraded scenarios are traceable through named runs
 
 ### Step 0.9: Run Autonomous UI Design for UI Stories
 If the task changes visible UI and is not already implementing an existing

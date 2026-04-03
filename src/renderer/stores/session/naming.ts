@@ -61,8 +61,11 @@ async function _generateName(sessionId: string, modifyName: (sessionId: string, 
       ),
       {
         name: 'chatbox.session.naming',
+        sessionId,
+        threadId: sessionId,
+        messageId: session.messages.findLast((message) => message.role !== 'system')?.id,
         metadata: {
-          sessionId,
+          operation: 'sessionNaming',
         },
         tags: ['session-naming'],
       }

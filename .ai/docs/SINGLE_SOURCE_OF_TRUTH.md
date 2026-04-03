@@ -60,8 +60,26 @@
 - Keep durable repo truths in `.ai/memory/project/`.
 - Keep current-task notes in `.ai/memory/session/`.
 - Align harness guidance with commands that actually exist in `package.json`.
+- The main local workflow entrypoints (`pnpm dev`, `pnpm test`, `pnpm check`,
+  `pnpm build`, and their direct `start`/`build` variants) now fail fast on
+  wrong-Node shells through the repo engine constraints and on stale installs
+  through `scripts/workspace-guard.mjs`, before Vite or TypeScript starts.
+- For orchestration-heavy stories, trace-driven development means
+  LangSmith-backed scenario/thread evidence for representative behaviors and
+  edge cases. A few raw spans are not enough; the important flows should be
+  reproducible through named traced scenarios or supported manual smoke runs.
+- Passing the baseline command suite is necessary but not sufficient for
+  production readiness. For bundling, packaging, or deploy-surface changes,
+  also verify compiled output loads, risky runtime dependencies are externalized
+  correctly when needed, and generated production package metadata includes the
+  dependencies the runtime surface requires.
+- Prefer explicit, DRY, well-tested code over cleverness, and treat deliberate
+  edge-case handling as part of done.
+- For authenticated agent endpoints, derive user identity from JWT or request
+  context rather than ad hoc database lookups. Keep tool logic pure where
+  possible and use framework DI at the boundaries.
 - For UI-affecting stories, do not skip the design brief, design research, and
-  autonomous decision record.
+  autonomous direction or decision record.
 - For completed stories, do not skip seeded example refresh checks in
   `src/renderer/packages/initial_data.ts`; if no refresh is required, handoff
   must state that explicitly.

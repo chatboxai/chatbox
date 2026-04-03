@@ -39,8 +39,18 @@ Then use as needed:
   `.ai/skills/spec-driven-development.md` and the templates under
   `.ai/templates/spec/`.
 - For model/orchestration/app-runtime/auth-heavy work, run
-  `.ai/workflows/trace-driven-development.md` so traces, evals, and observable
-  lifecycle seams are established early.
+  `.ai/workflows/trace-driven-development.md`. In this workspace that means
+  defining a LangSmith trace matrix for the important behaviors and edge cases,
+  wiring representative traced scenarios/manual smoke paths, and using those
+  traces as part of the story proof rather than treating instrumentation as an
+  afterthought.
+- When a story changes inspectable ChatBridge shell, lifecycle, history, or
+  HTML-preview behavior, update `src/shared/chatbridge/live-seeds.ts`,
+  `src/renderer/packages/initial_data.ts`,
+  `src/renderer/setup/preset_sessions.ts`,
+  `src/renderer/dev/chatbridgeSeeds.ts`, and the `/dev/chatbridge` lab so the
+  change stays seedable in both the default app bootstrap and the live audit
+  flow.
 - For UI-affecting work, keep spec and implementation planning in the normal
   story flow, then route design through
   `.ai/workflows/autonomous-ui-design.md`.

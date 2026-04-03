@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/react'
 import { getModel } from '@shared/models'
+import { createLangSmithConversationMetadata } from '@shared/models/tracing'
 import { ApiError, NetworkError } from '@shared/models/errors'
 import { getLangSmithErrorMessage } from '@shared/utils/langsmith_adapter'
 import type { Language, Message, ModelProvider, SessionSettings, Settings } from '@shared/types'
@@ -17,6 +18,9 @@ export interface SummaryGeneratorOptions {
   messages: Message[]
   language?: Language
   sessionSettings?: SessionSettings
+  sessionId?: string
+  threadId?: string
+  messageId?: string
 }
 
 export interface SummaryResult {
@@ -46,7 +50,11 @@ export async function generateSummary(options: SummaryGeneratorOptions): Promise
     const promptMessages = promptFormat.summarizeConversation(messages, languageName)
     const result = await generateText(model, promptMessages, {
       name: 'chatbox.summary.generate',
+      sessionId: options.sessionId,
+      threadId: options.threadId,
+      messageId: options.messageId,
       metadata: {
+        operation: 'generateSummary',
         messageCount: messages.length,
       },
       tags: ['summary'],
@@ -152,13 +160,28 @@ export async function generateSummaryWithStream(options: StreamingSummaryOptions
 
     const promptMessages = promptFormat.summarizeConversation(messages, languageName)
     const coreMessages = await convertToModelMessages(promptMessages, { modelSupportVision: model.isSupportVision() })
+    const traceMetadata = createLangSmithConversationMetadata(
+      {
+        sessionId: options.sessionId,
+        threadId: options.threadId,
+        messageId: options.messageId,
+      },
+      {
+        messageCount: messages.length,
+        operation: 'generateSummaryWithStream',
+      }
+    )
     const traceRun = await langsmith.startRun({
       name: 'chatbox.summary.generate_stream',
       runType: 'chain',
       inputs: {
+        sessionId: options.sessionId ?? null,
+        threadId: options.threadId ?? options.sessionId ?? null,
+        messageId: options.messageId ?? null,
         messageCount: messages.length,
         modelId: model.modelId,
       },
+      metadata: traceMetadata,
       tags: ['chatbox', 'renderer', 'summary'],
     })
 
@@ -176,9 +199,7 @@ export async function generateSummaryWithStream(options: StreamingSummaryOptions
         traceContext: {
           name: 'chatbox.summary.generate_stream.llm',
           parentRunId: traceRun.runId,
-          metadata: {
-            messageCount: messages.length,
-          },
+          metadata: traceMetadata,
           tags: ['summary'],
         },
       })

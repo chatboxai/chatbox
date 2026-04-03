@@ -16,6 +16,12 @@ import type {
 
 export const CHATBRIDGE_LANGSMITH_PROJECT_NAME = 'chatbox-chatbridge'
 
+export interface LangSmithConversationMetadataInput {
+  sessionId?: string | null
+  threadId?: string | null
+  messageId?: string | null
+}
+
 export type ChatBridgeTraceEvidenceFamily =
   | 'auth-resource'
   | 'board-context'
@@ -42,6 +48,27 @@ export interface ChatBridgeTraceDescriptor {
 }
 
 const TRACE_WRAPPED_MODEL_SYMBOL = Symbol.for('chatbox.langsmith.traced-model')
+
+function normalizeTraceIdentifier(value?: string | null) {
+  const normalized = value?.trim()
+  return normalized ? normalized : undefined
+}
+
+export function createLangSmithConversationMetadata(
+  input: LangSmithConversationMetadataInput,
+  metadata: Record<string, unknown> = {}
+) {
+  const sessionId = normalizeTraceIdentifier(input.sessionId)
+  const threadId = normalizeTraceIdentifier(input.threadId) ?? sessionId
+  const messageId = normalizeTraceIdentifier(input.messageId)
+
+  return {
+    ...metadata,
+    ...(sessionId ? { sessionId, session_id: sessionId } : {}),
+    ...(threadId ? { threadId, thread_id: threadId, conversation_id: threadId } : {}),
+    ...(messageId ? { messageId, message_id: messageId } : {}),
+  }
+}
 
 function sanitizeTraceSegment(value: string) {
   return value

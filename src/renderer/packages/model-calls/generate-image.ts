@@ -1,3 +1,4 @@
+import { createLangSmithConversationMetadata } from '@shared/models/tracing'
 import type { ModelInterface } from '@shared/models/types'
 import type { Message } from '@shared/types'
 import { getLangSmithErrorMessage } from '@shared/utils/langsmith_adapter'
@@ -10,22 +11,36 @@ export async function generateImage(
   params: {
     message: Message // 图片并不关注session context，只需要上一条用户消息
     num: number
+    sessionId?: string
+    threadId?: string
+    messageId?: string
   },
   callback?: (picBase64: string) => void
 ) {
   const prompt = getMessageText(params.message)
+  const traceMetadata = createLangSmithConversationMetadata(
+    {
+      sessionId: params.sessionId,
+      threadId: params.threadId,
+      messageId: params.messageId,
+    },
+    {
+      operation: 'generateImage',
+    }
+  )
   const traceRun = await langsmith.startRun({
     name: 'chatbox.image_generation.generate',
     runType: 'chain',
     inputs: {
+      sessionId: params.sessionId ?? null,
+      threadId: params.threadId ?? params.sessionId ?? null,
+      messageId: params.messageId ?? null,
       modelId: model.modelId,
       messagePreview: prompt.slice(0, 240),
       num: params.num,
       referenceImageCount: params.message.contentParts.filter((part) => part.type === 'image').length,
     },
-    metadata: {
-      operation: 'generateImage',
-    },
+    metadata: traceMetadata,
     tags: ['chatbox', 'renderer', 'image-generation'],
   })
 
@@ -46,6 +61,7 @@ export async function generateImage(
           name: 'chatbox.image_generation.generate.paint',
           parentRunId: traceRun.runId,
           metadata: {
+            ...traceMetadata,
             modelId: model.modelId,
           },
           tags: ['chatbox', 'renderer', 'image-generation'],

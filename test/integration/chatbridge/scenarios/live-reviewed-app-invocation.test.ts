@@ -127,7 +127,7 @@ describe('ChatBridge live reviewed app invocation path', () => {
 
   it('launches an eligible non-Chess reviewed app from the live prompt path', () =>
     traceScenario('launches an eligible non-Chess reviewed app from the live prompt path', async () => {
-      const prompt = 'Open Drawing Kit and let me sketch a quick concept map.'
+      const prompt = 'Open Drawing Kit and start a sticky-note doodle dare.'
       const { chat, model } = createToolCallingModelStub(() => ({
         toolName: 'drawing_kit_open',
         args: {

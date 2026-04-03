@@ -1,13 +1,19 @@
 import {
   CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
+  CHATBRIDGE_REVIEWED_APP_LAUNCH_SCHEMA_VERSION,
+  CHATBRIDGE_REVIEWED_APP_LAUNCH_VALUES_KEY,
+  ChatBridgeReviewedAppLaunchSchema,
   ensureDefaultReviewedAppsRegistered,
   getReviewedApp,
   isChatBridgeHostToolExecutionRecord,
+  readChatBridgeReviewedAppLaunch,
   writeChatBridgeRecoveryContractValues,
+  writeChatBridgeReviewedAppLaunchValues,
   type BridgeAppEvent,
   type BridgeReadyEvent,
   type ChatBridgeHostToolExecutionRecord,
   type ChatBridgeRecoveryContract,
+  type ChatBridgeReviewedAppLaunch,
 } from '@shared/chatbridge'
 import {
   CHESS_APP_ID,
@@ -24,8 +30,13 @@ import { z } from 'zod'
 import { createChatBridgeAppRecordStore } from './app-records'
 import { buildChessMessageAppPart } from './chess-session-state'
 
-export const CHATBRIDGE_REVIEWED_APP_LAUNCH_SCHEMA_VERSION = 1 as const
-export const CHATBRIDGE_REVIEWED_APP_LAUNCH_VALUES_KEY = 'chatbridgeReviewedAppLaunch' as const
+export {
+  CHATBRIDGE_REVIEWED_APP_LAUNCH_SCHEMA_VERSION,
+  CHATBRIDGE_REVIEWED_APP_LAUNCH_VALUES_KEY,
+  readChatBridgeReviewedAppLaunch,
+  writeChatBridgeReviewedAppLaunchValues,
+}
+export type { ChatBridgeReviewedAppLaunch }
 
 const ReviewedAppLaunchResultSchema = z.object({
   appId: z.string().trim().min(1),
@@ -37,23 +48,6 @@ const ReviewedAppLaunchResultSchema = z.object({
   fen: z.string().trim().min(1).optional(),
   pgn: z.string().trim().min(1).optional(),
 })
-
-const ChatBridgeReviewedAppLaunchSchema = z.object({
-  schemaVersion: z.literal(CHATBRIDGE_REVIEWED_APP_LAUNCH_SCHEMA_VERSION),
-  appId: z.string().trim().min(1),
-  appName: z.string().trim().min(1),
-  appVersion: z.string().trim().min(1),
-  toolName: z.string().trim().min(1),
-  capability: z.string().trim().min(1).optional(),
-  summary: z.string().trim().min(1),
-  request: z.string().trim().min(1).optional(),
-  fen: z.string().trim().min(1).optional(),
-  pgn: z.string().trim().min(1).optional(),
-  uiEntry: z.string().trim().min(1).optional(),
-  origin: z.string().trim().min(1).optional(),
-})
-
-export type ChatBridgeReviewedAppLaunch = z.infer<typeof ChatBridgeReviewedAppLaunchSchema>
 
 type SessionMutationOptions = {
   now?: () => number
@@ -168,26 +162,6 @@ function createChessSnapshotFromLaunch(launch: ChatBridgeReviewedAppLaunch): { s
     }
   }
 }
-
-export function readChatBridgeReviewedAppLaunch(values: Record<string, unknown> | undefined) {
-  if (!values || typeof values !== 'object') {
-    return null
-  }
-
-  const parsed = ChatBridgeReviewedAppLaunchSchema.safeParse(values[CHATBRIDGE_REVIEWED_APP_LAUNCH_VALUES_KEY])
-  return parsed.success ? parsed.data : null
-}
-
-export function writeChatBridgeReviewedAppLaunchValues(
-  values: Record<string, unknown> | undefined,
-  launch: ChatBridgeReviewedAppLaunch
-) {
-  return {
-    ...(values || {}),
-    [CHATBRIDGE_REVIEWED_APP_LAUNCH_VALUES_KEY]: ChatBridgeReviewedAppLaunchSchema.parse(launch),
-  }
-}
-
 export function isChatBridgeReviewedAppLaunchPart(part: Pick<MessageAppPart, 'values'>) {
   return readChatBridgeReviewedAppLaunch(part.values) !== null
 }
@@ -210,10 +184,10 @@ function buildReviewedAppLaunchPart(
     ...(existingPart?.snapshot ? { snapshot: existingPart.snapshot } : {}),
     values: writeChatBridgeReviewedAppLaunchValues(existingPart?.values, launch),
     ...(existingPart?.error ? { error: existingPart.error } : {}),
-    title: existingPart?.title ?? `${launch.appName} launch`,
+    title: existingPart?.title ?? launch.appName,
     description:
       existingPart?.description ??
-      `The host is launching ${launch.appName} through the reviewed bridge runtime.`,
+      `The host is preparing ${launch.appName} through the reviewed bridge runtime.`,
     statusText: existingPart?.statusText ?? 'Launching',
     fallbackTitle: existingPart?.fallbackTitle ?? `${launch.appName} fallback`,
     fallbackText:
@@ -475,10 +449,8 @@ export function applyReviewedAppLaunchBootstrapToSession(
     lifecycle: 'launching',
     summary: part.summary ?? launch.summary,
     summaryForModel: part.summaryForModel ?? launch.summary,
-    title: part.title ?? `${launch.appName} launch`,
-    description:
-      part.description ??
-      `The host is launching ${launch.appName} through the reviewed bridge runtime.`,
+    title: launch.appName,
+    description: `The host is preparing ${launch.appName} through the reviewed bridge runtime.`,
     statusText: 'Launching',
   }))
 
@@ -515,9 +487,8 @@ export function applyReviewedAppLaunchBridgeReadyToSession(
       lifecycle: 'ready',
       summary: part.summary ?? launch.summary,
       summaryForModel: part.summaryForModel ?? launch.summary,
-      description:
-        part.description ??
-        `${launch.appName} completed the reviewed bridge handshake and is ready inside the host-owned shell.`,
+      title: launch.appName,
+      description: `${launch.appName} completed the reviewed bridge handshake and is ready inside the host-owned shell.`,
       statusText: 'Ready',
       error: undefined,
     })
@@ -556,9 +527,8 @@ export function applyReviewedAppLaunchBridgeEventToSession(
           summary,
           summaryForModel: summary,
           snapshot: input.event.snapshot,
-          description:
-            part.description ??
-            `${launch.appName} is active inside the reviewed bridge runtime and remains part of the thread.`,
+          title: launch.appName,
+          description: `${launch.appName} is active inside the reviewed bridge runtime and remains part of the thread.`,
           statusText: getBridgeSnapshotStatusText(input.event.snapshot) ?? 'Running',
           error: undefined,
         }
@@ -573,9 +543,8 @@ export function applyReviewedAppLaunchBridgeEventToSession(
           bridgeSessionId: input.event.bridgeSessionId,
           summary,
           summaryForModel: summary,
-          description:
-            part.description ??
-            `${launch.appName} completed inside the reviewed bridge runtime and stayed in the thread.`,
+          title: launch.appName,
+          description: `${launch.appName} completed inside the reviewed bridge runtime and stayed in the thread.`,
           statusText: 'Complete',
         }
       }

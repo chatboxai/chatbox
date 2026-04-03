@@ -9,6 +9,14 @@ import {
   getChessSummary,
 } from './apps/chess'
 import {
+  DRAWING_KIT_APP_ID,
+  DRAWING_KIT_APP_NAME,
+  createInitialDrawingKitAppSnapshot,
+  getDrawingKitFallbackText,
+  getDrawingKitStatusLabel,
+  type DrawingKitAppSnapshot,
+} from './apps/drawing-kit'
+import {
   CHATBRIDGE_DEGRADED_COMPLETION_SCHEMA_VERSION,
   writeChatBridgeDegradedCompletionValues,
 } from './degraded-completion'
@@ -21,10 +29,12 @@ import {
   createChatBridgeTimeoutRecoveryContract,
   writeChatBridgeRecoveryContractValues,
 } from './recovery-contract'
+import { writeChatBridgeReviewedAppLaunchValues } from './reviewed-app-launch'
 import {
   ChatBridgeStoryBuilderStateSchema,
   type ChatBridgeStoryBuilderMode,
 } from './story-builder'
+import { CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION } from './tools'
 import type { Message, Session, SessionThread } from '../types'
 
 type ToolCallState = 'call' | 'result' | 'error'
@@ -968,6 +978,156 @@ function createSeededChessAppRecords() {
   }
 }
 
+function createDrawingKitRuntimeMessage(id: string, timestamp: number, snapshot: DrawingKitAppSnapshot): Message {
+  const request = snapshot.request ?? 'Open Drawing Kit and start a sticky-note doodle dare.'
+  const toolCallId = 'tool-drawing-kit-seeded'
+  const appInstanceId = `reviewed-launch:${toolCallId}`
+  const bridgeSessionId = 'bridge-drawing-kit-seeded'
+  const launchSummary = 'Prepared the reviewed Drawing Kit doodle dare for the host-owned launch path.'
+
+  return {
+    id,
+    role: 'assistant',
+    timestamp,
+    contentParts: [
+      {
+        type: 'text',
+        text: 'Drawing Kit is ready in-thread. Add a squiggle, drop a sticker, bank the round, then ask chat what it remembers.',
+      },
+      {
+        type: 'app',
+        appId: DRAWING_KIT_APP_ID,
+        appName: DRAWING_KIT_APP_NAME,
+        appInstanceId,
+        lifecycle: 'ready',
+        summary: snapshot.summary,
+        summaryForModel: snapshot.summary,
+        toolCallId,
+        bridgeSessionId,
+        title: 'Drawing Kit',
+        description:
+          'The host kept the doodle dare inline so you can sketch, bank a checkpoint, and carry the bounded round summary into later chat.',
+        statusText: getDrawingKitStatusLabel(snapshot),
+        fallbackTitle: 'Drawing Kit fallback',
+        fallbackText: getDrawingKitFallbackText(snapshot),
+        snapshot,
+        values: writeChatBridgeReviewedAppLaunchValues(undefined, {
+          schemaVersion: 1,
+          appId: DRAWING_KIT_APP_ID,
+          appName: DRAWING_KIT_APP_NAME,
+          appVersion: '0.1.0',
+          toolName: 'drawing_kit_open',
+          capability: 'open',
+          summary: launchSummary,
+          request,
+          uiEntry: 'https://apps.example.com/drawing-kit',
+          origin: 'https://apps.example.com',
+        }),
+      },
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId,
+        toolName: 'drawing_kit_open',
+        args: {
+          request,
+        },
+        result: {
+          kind: 'chatbridge.host.tool.record.v1',
+          toolName: 'drawing_kit_open',
+          appId: DRAWING_KIT_APP_ID,
+          sessionId: 'seeded-drawing-kit-session',
+          schemaVersion: CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
+          executionAuthority: 'host',
+          effect: 'read',
+          retryClassification: 'safe',
+          invocation: {
+            args: {
+              request,
+            },
+          },
+          outcome: {
+            status: 'success',
+            result: {
+              appId: DRAWING_KIT_APP_ID,
+              appName: DRAWING_KIT_APP_NAME,
+              capability: 'open',
+              launchReady: true,
+              summary: launchSummary,
+              request,
+            },
+          },
+        },
+      },
+    ],
+  }
+}
+
+function createSeededDrawingKitAppRecords(snapshot: DrawingKitAppSnapshot) {
+  const appInstanceId = 'reviewed-launch:tool-drawing-kit-seeded'
+  const bridgeSessionId = 'bridge-drawing-kit-seeded'
+  const baseInstance = createChatBridgeAppInstance({
+    id: appInstanceId,
+    appId: DRAWING_KIT_APP_ID,
+    appVersion: '1.0.0',
+    bridgeSessionId,
+    owner: {
+      authority: 'host',
+      conversationSessionId: 'seeded-drawing-kit-session',
+      initiatedBy: 'assistant',
+    },
+    resumability: {
+      mode: 'resumable',
+      resumeKey: appInstanceId,
+    },
+    createdAt: 3,
+  })
+
+  const createdEvent = createChatBridgeAppEvent({
+    id: 'event-drawing-created',
+    appInstanceId: baseInstance.id,
+    kind: 'instance.created',
+    actor: 'host',
+    sequence: 1,
+    createdAt: 3,
+    bridgeSessionId,
+    nextStatus: 'launching',
+    payload: {
+      initiatedBy: 'assistant',
+    },
+  })
+
+  const createdTransition = applyChatBridgeAppEvent(baseInstance, createdEvent)
+  if (!createdTransition.accepted) {
+    throw new Error(`Unable to seed Drawing Kit created event: ${createdTransition.reason}`)
+  }
+
+  const readyEvent = createChatBridgeAppEvent({
+    id: 'event-drawing-ready',
+    appInstanceId: baseInstance.id,
+    kind: 'bridge.ready',
+    actor: 'host',
+    sequence: 2,
+    createdAt: 4,
+    bridgeSessionId,
+    nextStatus: 'ready',
+    snapshot,
+    payload: {
+      source: 'seeded-runtime',
+    },
+  })
+
+  const readyTransition = applyChatBridgeAppEvent(createdTransition.instance, readyEvent)
+  if (!readyTransition.accepted) {
+    throw new Error(`Unable to seed Drawing Kit ready event: ${readyTransition.reason}`)
+  }
+
+  return {
+    instances: [readyTransition.instance],
+    events: [createdEvent, readyEvent],
+  }
+}
+
 function createStoryBuilderAppRecords(options: {
   appInstanceId: string
   bridgeSessionId: string
@@ -1427,6 +1587,36 @@ export function buildChatBridgeChessMidGameSessionFixture(): Omit<Session, 'id'>
   }
 }
 
+export function buildChatBridgeDrawingKitDoodleDareSessionFixture(): Omit<Session, 'id'> {
+  const request = 'Open Drawing Kit and start a sticky-note doodle dare.'
+  const snapshot = createInitialDrawingKitAppSnapshot({
+    request,
+    updatedAt: 3,
+  })
+
+  return {
+    name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Drawing Kit doodle dare`,
+    type: 'chat',
+    threadName: 'Drawing Kit Doodle Dare',
+    messages: [
+      createTextMessage(
+        'msg-drawing-system',
+        'system',
+        'Keep Drawing Kit follow-up grounded in the host-owned doodle summary, checkpoint id, and sticker reward instead of raw stroke telemetry.',
+        1
+      ),
+      createTextMessage(
+        'msg-drawing-user',
+        'user',
+        'Open Drawing Kit and give me a doodle round I can play inside the thread.',
+        2
+      ),
+      createDrawingKitRuntimeMessage('msg-drawing-assistant', 3, snapshot),
+    ],
+    chatBridgeAppRecords: createSeededDrawingKitAppRecords(snapshot),
+  }
+}
+
 export function buildChatBridgeChessRuntimeSessionFixture(): Omit<Session, 'id'> {
   return {
     name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Chess runtime`,
@@ -1554,6 +1744,33 @@ export function getChatBridgeLiveSeedFixtures(): ChatBridgeLiveSeedFixture[] {
         },
       ],
       sessionInput: buildChatBridgeChessMidGameSessionFixture(),
+    },
+    {
+      id: 'drawing-kit-doodle-dare',
+      name: `${CHATBRIDGE_LIVE_SEED_PREFIX} Drawing Kit doodle dare`,
+      description:
+        'Seeds the approved Drawing Kit doodle game so you can sketch inline, bank a checkpoint, and verify later chat stays grounded in the host-owned round summary.',
+      fixtureRole: 'active-flagship',
+      smokeSupport: 'supported',
+      coverage: ['Drawing Kit runtime', 'Checkpoint continuity', 'Follow-up chat'],
+      auditSteps: [
+        {
+          action: 'Open the seeded Drawing Kit session and confirm the doodle runtime appears inline with the round prompt and tool rail.',
+          expected:
+            'The round opens inside the host shell as a playful doodle game, not a detached artifact preview or static placeholder.',
+        },
+        {
+          action: 'Use `Add squiggle` or the canvas, then click `Drop sticker` and `Bank this round`.',
+          expected:
+            'The status, checkpoint panel, and host-owned summary update inline while keeping only bounded checkpoint details visible.',
+        },
+        {
+          action: 'Ask a follow-up such as `What did I just draw?` in the same thread after banking or locking the round.',
+          expected:
+            'The reply references the host-owned caption, prompt, checkpoint, or sticker reward instead of inventing details from raw canvas marks.',
+        },
+      ],
+      sessionInput: buildChatBridgeDrawingKitDoodleDareSessionFixture(),
     },
     {
       id: 'chess-runtime',

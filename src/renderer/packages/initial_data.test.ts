@@ -11,6 +11,7 @@ describe('chatbridge smoke inspection snapshot', () => {
       'degraded-completion-recovery',
       'platform-recovery',
       'chess-mid-game-board-context',
+      'drawing-kit-doodle-dare',
       'chess-runtime',
       'history-and-preview',
     ])
@@ -19,12 +20,17 @@ describe('chatbridge smoke inspection snapshot', () => {
       'degraded-completion-recovery',
       'platform-recovery',
       'chess-mid-game-board-context',
+      'drawing-kit-doodle-dare',
       'chess-runtime',
       'history-and-preview',
     ])
     expect(snapshot.presetSessions.every((session) => session.locales.includes('en'))).toBe(true)
     expect(snapshot.presetSessions.every((session) => session.locales.includes('cn'))).toBe(true)
     expect(snapshot.liveSeeds.find((fixture) => fixture.fixtureId === 'chess-runtime')).toMatchObject({
+      fixtureRole: 'active-flagship',
+      smokeSupport: 'supported',
+    })
+    expect(snapshot.presetSessions.find((session) => session.fixtureId === 'drawing-kit-doodle-dare')).toMatchObject({
       fixtureRole: 'active-flagship',
       smokeSupport: 'supported',
     })

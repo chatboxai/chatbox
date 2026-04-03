@@ -122,6 +122,43 @@ describe('chatbridge manual smoke tracing', () => {
     )
   })
 
+  it('marks the Drawing Kit doodle fixture as a supported CB-509 smoke path', async () => {
+    expect(getChatBridgeManualSmokeFixtureMode('drawing-kit-doodle-dare')).toMatchObject({
+      support: 'supported',
+      descriptor: expect.objectContaining({
+        slug: 'chatbridge-drawing-kit-doodle-dare',
+        storyId: 'CB-509',
+      }),
+    })
+
+    const fixture = getChatBridgeLiveSeedFixtures().find((candidate) => candidate.id === 'drawing-kit-doodle-dare')
+    expect(fixture).toBeTruthy()
+    if (!fixture) {
+      return
+    }
+
+    await expect(startChatBridgeManualSmokeTrace(fixture, 'seeded-session-drawing')).resolves.toMatchObject({
+      status: 'started',
+      traceId: 'manual-run-1',
+      traceLabel: expect.stringContaining('chatbridge.manual_smoke.chatbridge-drawing-kit-doodle-dare'),
+      run: {
+        fixtureId: 'drawing-kit-doodle-dare',
+      },
+    })
+
+    expect(mocks.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          fixtureId: 'drawing-kit-doodle-dare',
+          storyId: 'CB-509',
+        }),
+        tags: expect.arrayContaining(['cb-509', 'seed-lab']),
+      })
+    )
+
+    await expect(finishChatBridgeManualSmokeTrace('manual-run-1', 'passed')).resolves.toBe(true)
+  })
+
   it('returns an explicit unsupported smoke result for legacy reference fixtures', async () => {
     const fixture = getChatBridgeLiveSeedFixtures().find((candidate) => candidate.id === 'history-and-preview')
     expect(fixture).toBeTruthy()

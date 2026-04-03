@@ -1,7 +1,7 @@
 # Design ↔ Code
 
 - Source: https://docs.pencil.dev/design-and-code/design-to-code
-- Fetched: 2026-03-30T17:59:42.279173+00:00
+- Fetched: 2026-04-02T23:18:43.741466+00:00
 - Last updated on docs site: March 23, 2026
 
 > Extracted snapshot from docs.pencil.dev for local Pencil reference.

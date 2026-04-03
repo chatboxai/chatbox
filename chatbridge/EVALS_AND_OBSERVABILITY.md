@@ -240,7 +240,7 @@ The returned `liveSeeds` and `presetSessions` entries now include:
 |---|---|---|
 | catalog and baseline registry | `chatbridge.eval.chatbridge-reviewed-app-registry`, `chatbridge.eval.chatbridge-app-instance-domain-model` | `reviewed-app-registry.test.ts`, `app-instance-domain-model.test.ts` |
 | routing | `chatbridge.eval.chatbridge-routing-artifacts` | `route-decision-artifacts.test.ts` |
-| reviewed-app launch | `chatbridge.eval.chatbridge-single-app-discovery`, `chatbridge.eval.chatbridge-host-tool-contract`, `chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-active`, `chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-recovery`, `chatbridge.eval.chatbridge-mid-game-board-context`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>` | `single-app-tool-discovery-and-invocation.test.ts`, `host-coordinated-tool-execution.test.ts`, `reviewed-app-bridge-launch.test.ts`, `ReviewedAppLaunchSurface.tsx`, `mid-game-board-context.test.ts`, `ChatBridgeSeedLab` |
+| reviewed-app launch | `chatbridge.eval.chatbridge-single-app-discovery`, `chatbridge.eval.chatbridge-host-tool-contract`, `chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-active`, `chatbridge.eval.chatbridge-reviewed-app-bridge-launch.cb-305-doc-proof-recovery`, `chatbridge.eval.chatbridge-mid-game-board-context`, `chatbridge.eval.chatbridge-drawing-kit-flagship.cb-509-doc-proof-follow-up`, `chatbridge.eval.chatbridge-drawing-kit-flagship.cb-509-doc-proof-recovery`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>`, `chatbridge.manual_smoke.chatbridge-drawing-kit-doodle-dare.<session-id>` | `single-app-tool-discovery-and-invocation.test.ts`, `host-coordinated-tool-execution.test.ts`, `reviewed-app-bridge-launch.test.ts`, `ReviewedAppLaunchSurface.tsx`, `mid-game-board-context.test.ts`, `drawing-kit-flagship.test.ts`, `ChatBridgeSeedLab` |
 | auth and resource access | `chatbridge.eval.chatbridge-story-builder-auth-resource` | `story-builder-lifecycle.test.ts` |
 | recovery | `chatbridge.eval.chatbridge-bridge-handshake`, `chatbridge.manual_smoke.chatbridge-lifecycle-tour.<session-id>`, `chatbridge.manual_smoke.chatbridge-degraded-completion-recovery.<session-id>`, `chatbridge.manual_smoke.chatbridge-platform-recovery.<session-id>` | `bridge-session-security.test.ts`, `ChatBridgeSeedLab` |
 | persistence | `chatbridge.eval.chatbridge-persistence-and-shell-artifacts`, `chatbridge.manual_smoke.chatbridge-chess-runtime.<session-id>` | `app-aware-persistence.test.ts`, `ChatBridgeSeedLab` |
@@ -265,9 +265,13 @@ Notes:
   `chatbridge.eval.chatbridge-live-reviewed-app-invocation-cb-506-doc-proof-active-drawing`,
   `chatbridge.eval.chatbridge-live-reviewed-app-invocation-cb-506-doc-proof-natural-chess`,
   and `chatbridge.eval.chatbridge-live-reviewed-app-invocation-cb-506-doc-proof-failure`.
-- Chess is the only active flagship app with traced manual smoke today. Drawing
-  Kit and Weather are now present in the active reviewed catalog, but their
-  runtime/manual-smoke proof lands in later Pack 05 stories, not in CB-508.
+- `CB-509` adds the first non-Chess flagship runtime proof: Drawing Kit now
+  has traced follow-up and crash-recovery evals in
+  `drawing-kit-flagship.test.ts`, plus a supported desktop manual-smoke path
+  through the `drawing-kit-doodle-dare` seed fixture in `ChatBridgeSeedLab`.
+- Chess and Drawing Kit are now the active flagship apps with traced manual
+  smoke. Weather remains the only active flagship still waiting on runtime and
+  manual-smoke proof in the later Pack 05 queue.
 
 ## Starter Scenario Matrix
 

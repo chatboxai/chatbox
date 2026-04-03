@@ -3,6 +3,7 @@ import {
   buildAppAwareSessionFixture,
   buildChatBridgeChessMidGameSessionFixture,
   buildChatBridgeDegradedCompletionRecoverySessionFixture,
+  buildChatBridgeDrawingKitDoodleDareSessionFixture,
   buildChatBridgePlatformRecoverySessionFixture,
   buildChatBridgeChessRuntimeSessionFixture,
   buildChatBridgeHistoryAndPreviewSessionFixture,
@@ -123,6 +124,26 @@ describe('chatbridge live seed fixtures', () => {
     expect(fixture.chatBridgeAppRecords?.events).toHaveLength(3)
   })
 
+  it('builds a Drawing Kit doodle dare fixture with a ready reviewed launch surface and seeded continuity', () => {
+    const fixture = buildChatBridgeDrawingKitDoodleDareSessionFixture()
+    const assistantMessage = fixture.messages.find((message) => message.id === 'msg-drawing-assistant')
+    const appPart = assistantMessage?.contentParts.find((part) => part.type === 'app')
+
+    expect(appPart && appPart.type === 'app' ? appPart.appId : undefined).toBe('drawing-kit')
+    expect(appPart && appPart.type === 'app' ? appPart.lifecycle : undefined).toBe('ready')
+    expect(appPart && appPart.type === 'app' ? appPart.values : undefined).toMatchObject({
+      chatbridgeReviewedAppLaunch: {
+        appId: 'drawing-kit',
+        toolName: 'drawing_kit_open',
+      },
+    })
+    expect(fixture.chatBridgeAppRecords?.instances[0]).toMatchObject({
+      appId: 'drawing-kit',
+      status: 'ready',
+    })
+    expect(fixture.chatBridgeAppRecords?.events).toHaveLength(2)
+  })
+
   it('publishes the live seed catalog with stable scenario ids', () => {
     const fixtures = getChatBridgeLiveSeedFixtures()
 
@@ -131,9 +152,14 @@ describe('chatbridge live seed fixtures', () => {
       'degraded-completion-recovery',
       'platform-recovery',
       'chess-mid-game-board-context',
+      'drawing-kit-doodle-dare',
       'chess-runtime',
       'history-and-preview',
     ])
+    expect(fixtures.find((fixture) => fixture.id === 'drawing-kit-doodle-dare')).toMatchObject({
+      fixtureRole: 'active-flagship',
+      smokeSupport: 'supported',
+    })
     expect(fixtures.find((fixture) => fixture.id === 'chess-runtime')).toMatchObject({
       fixtureRole: 'active-flagship',
       smokeSupport: 'supported',

@@ -154,8 +154,8 @@ const EVENT_RULES: Record<ChatBridgeAppEventKind, EventRule> = {
     to: ['active'],
   },
   'tool.called': {
-    from: ['active'],
-    to: ['active'],
+    from: ['ready', 'active', 'complete'],
+    to: ['ready', 'active', 'complete'],
   },
   'auth.requested': {
     from: ['ready', 'active'],

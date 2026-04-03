@@ -38,6 +38,15 @@ export const BridgeHostRenderMessageSchema = z.object({
 
 export type BridgeHostRenderMessage = z.infer<typeof BridgeHostRenderMessageSchema>
 
+export const BridgeHostSyncContextMessageSchema = z.object({
+  kind: z.literal('host.syncContext'),
+  bridgeSessionId: z.string(),
+  appInstanceId: z.string(),
+  snapshot: z.record(z.string(), z.unknown()),
+})
+
+export type BridgeHostSyncContextMessage = z.infer<typeof BridgeHostSyncContextMessageSchema>
+
 const BridgeAppEventBaseSchema = z.object({
   bridgeSessionId: z.string(),
   appInstanceId: z.string(),

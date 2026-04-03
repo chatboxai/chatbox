@@ -54,7 +54,7 @@ describe('ChatBridge host tool contract', () => {
     })
   })
 
-  it('rejects side-effecting tools that omit an idempotency key', async () => {
+  it('rejects side-effecting tools that omit an idempotency key when no tool call id is available', async () => {
     const execute = vi.fn(async () => ({ saved: true }))
 
     const toolSet = wrapChatBridgeHostTools({
@@ -72,7 +72,7 @@ describe('ChatBridge host tool contract', () => {
       }),
     })
 
-    const result = await toolSet.save_story.execute?.({ title: 'Act I' }, getExecutionOptions('tool-save-story-missing-idem'))
+    const result = await toolSet.save_story.execute?.({ title: 'Act I' }, {} as ToolExecutionOptions)
 
     expect(execute).not.toHaveBeenCalled()
     expect(result).toMatchObject({
@@ -160,6 +160,42 @@ describe('ChatBridge host tool contract', () => {
           },
           savedAt: '2026-03-31T12:00:00.000Z',
         },
+      },
+    })
+  })
+
+  it('derives the idempotency key from the tool call id for side-effecting host tools', async () => {
+    const execute = vi.fn(async () => ({ saved: true }))
+
+    const toolSet = wrapChatBridgeHostTools({
+      save_story: createChatBridgeHostTool({
+        description: 'Persist the story draft.',
+        appId: 'story-builder',
+        schemaVersion: CHATBRIDGE_HOST_TOOL_SCHEMA_VERSION,
+        effect: 'side-effect',
+        retryClassification: 'safe',
+        inputSchema: z.object({
+          title: z.string(),
+          idempotencyKey: z.string().optional(),
+        }),
+        execute,
+      }),
+    })
+
+    const result = await toolSet.save_story.execute?.(
+      {
+        title: 'Act I',
+      },
+      getExecutionOptions('tool-save-story-derived-idem')
+    )
+
+    expect(execute).toHaveBeenCalledOnce()
+    expect(result).toMatchObject({
+      invocation: {
+        idempotencyKey: 'tool-save-story-derived-idem',
+      },
+      outcome: {
+        status: 'success',
       },
     })
   })

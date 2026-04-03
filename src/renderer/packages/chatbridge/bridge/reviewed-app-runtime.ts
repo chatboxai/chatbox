@@ -215,6 +215,33 @@ function createGenericReviewedAppLaunchRuntimeMarkup(launch: ChatBridgeReviewedA
 
           bridgePort = event.ports[0];
           bridgePort.start && bridgePort.start();
+          bridgePort.onmessage = (portEvent) => {
+            const message = portEvent.data;
+            if (!message || message.kind !== 'host.syncContext') {
+              return;
+            }
+            if (
+              message.bridgeSessionId !== currentEnvelope.bridgeSessionId ||
+              message.appInstanceId !== currentEnvelope.appInstanceId ||
+              !message.snapshot ||
+              typeof message.snapshot !== 'object' ||
+              Array.isArray(message.snapshot)
+            ) {
+              return;
+            }
+
+            state.snapshot = clone(message.snapshot);
+            state.marks = clone(Array.isArray(message.snapshot.previewMarks) ? message.snapshot.previewMarks : []);
+            if (
+              message.snapshot.status === 'checkpointed' ||
+              message.snapshot.status === 'complete' ||
+              message.snapshot.status === 'blank'
+            ) {
+              state.bankedSnapshot = clone(message.snapshot);
+            }
+            state.pointerStroke = null;
+            render();
+          };
 
           bridgePort.postMessage({
             kind: 'app.ready',

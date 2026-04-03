@@ -69,6 +69,23 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
     }
   }, [part.appInstanceId])
 
+  useEffect(() => {
+    if (part.appId !== DRAWING_KIT_APP_ID) {
+      return
+    }
+
+    const snapshot =
+      part.snapshot && typeof part.snapshot === 'object' && !Array.isArray(part.snapshot)
+        ? (part.snapshot as Record<string, unknown>)
+        : null
+
+    if (!snapshot) {
+      return
+    }
+
+    controllerRef.current?.syncContext(snapshot)
+  }, [part.appId, part.snapshot])
+
   if (!launch || part.lifecycle === 'error' || part.lifecycle === 'stale' || part.lifecycle === 'complete') {
     return null
   }

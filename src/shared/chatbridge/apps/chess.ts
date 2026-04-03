@@ -85,6 +85,7 @@ export const ChessAppSnapshotSchema = z.object({
 export type ChessAppSnapshot = z.infer<typeof ChessAppSnapshotSchema>
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
+const RANKS = [8, 7, 6, 5, 4, 3, 2, 1] as const
 const STARTING_CHESS_FEN = new Chess().fen()
 const PIECE_NAMES: Record<PieceSymbol, ChessPiece> = {
   p: 'pawn',
@@ -124,6 +125,23 @@ function normalizePiece(piece: PieceSymbol): ChessPiece {
 
 function getPieceGlyph(color: ChessColor, piece: ChessPiece) {
   return PIECE_GLYPHS[color][piece]
+}
+
+function escapeSvgText(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function encodeSvgDataUrl(svg: string) {
+  const encoded =
+    typeof Buffer !== 'undefined'
+      ? Buffer.from(svg, 'utf8').toString('base64')
+      : btoa(unescape(encodeURIComponent(svg)))
+
+  return `data:image/svg+xml;base64,${encoded}`
 }
 
 function getStatusReason(game: Chess) {
@@ -355,4 +373,68 @@ export function createRejectedChessSnapshot(
     },
     lastUpdatedAt: options.lastUpdatedAt ?? Date.now(),
   })
+}
+
+export function createChessScreenshotDataUrl(snapshot: ChessAppSnapshot) {
+  const squareSize = 72
+  const boardSize = squareSize * 8
+  const width = boardSize + 96
+  const height = boardSize + 140
+
+  const pieceBySquare = new Map(snapshot.board.map((piece) => [piece.square, piece]))
+  const latestMove =
+    snapshot.lastAction.kind === 'accepted'
+      ? new Set([snapshot.lastAction.move.from, snapshot.lastAction.move.to])
+      : new Set<string>()
+
+  const squares = RANKS.flatMap((rank, rankIndex) =>
+    FILES.map((file, fileIndex) => {
+      const square = `${file}${rank}`
+      const piece = pieceBySquare.get(square)
+      const x = 48 + fileIndex * squareSize
+      const y = 48 + rankIndex * squareSize
+      const light = (rankIndex + fileIndex) % 2 === 0
+      const highlighted = latestMove.has(square)
+
+      return [
+        `<rect x="${x}" y="${y}" width="${squareSize}" height="${squareSize}" rx="10" fill="${
+          light ? '#f4e7d3' : '#9b6a4d'
+        }" ${highlighted ? 'stroke="#38bdf8" stroke-width="4"' : ''} />`,
+        piece
+          ? `<text x="${x + squareSize / 2}" y="${y + squareSize / 2 + 16}" text-anchor="middle" font-size="42" font-family="Noto Sans Symbols 2, Segoe UI Symbol, serif" fill="${
+              piece.color === 'white' ? '#f8fafc' : '#111827'
+            }">${piece.glyph}</text>`
+          : '',
+      ].join('')
+    })
+  ).join('')
+
+  const fileLabels = FILES.map(
+    (file, index) =>
+      `<text x="${48 + index * squareSize + squareSize / 2}" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="#6b7280">${file}</text>`
+  ).join('')
+  const rankLabels = RANKS.map(
+    (rank, index) =>
+      `<text x="24" y="${48 + index * squareSize + squareSize / 2 + 6}" text-anchor="middle" font-size="16" font-weight="700" fill="#6b7280">${rank}</text>`
+  ).join('')
+  const status = escapeSvgText(getChessStatusLabel(snapshot))
+  const summary = escapeSvgText(getChessSummary(snapshot))
+  const footer = escapeSvgText(
+    snapshot.moveHistory.length > 0
+      ? `Latest move: ${snapshot.moveHistory.at(-1)?.san ?? 'n/a'}`
+      : 'Opening position ready'
+  )
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="${width}" height="${height}" rx="30" fill="#18181b" />
+    <text x="48" y="28" font-size="20" font-weight="700" fill="#fafaf9">Chess</text>
+    <text x="${width - 48}" y="28" text-anchor="end" font-size="16" fill="#bae6fd">${status}</text>
+    ${fileLabels}
+    ${rankLabels}
+    ${squares}
+    <text x="48" y="${height - 54}" font-size="16" fill="#e7e5e4">${summary}</text>
+    <text x="48" y="${height - 26}" font-size="14" fill="#a8a29e">${footer}</text>
+  </svg>`
+
+  return encodeSvgDataUrl(svg)
 }

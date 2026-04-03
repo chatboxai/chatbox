@@ -1,5 +1,6 @@
 import type { Message, MessageContentParts } from '@shared/types'
 import { getChatBridgeAppSummaryForModel } from '@shared/chatbridge'
+import { buildChatBridgeAppStateDigest, formatChatBridgeAppStateDigest, getLatestChatBridgeAppScreenshot } from '@shared/chatbridge'
 import type { ModelDependencies } from '@shared/types/adapters'
 import type { FilePart, ImagePart, ModelMessage, TextPart } from 'ai'
 import dayjs from 'dayjs'
@@ -67,49 +68,71 @@ async function convertAssistantContentParts(
   contentParts: MessageContentParts,
   dependencies: ModelDependencies
 ): Promise<Array<TextPart | FilePart>> {
-  return compact(
-    await Promise.all(
-      contentParts.map(async (part): Promise<TextPart | FilePart | null> => {
-        if (part.type === 'text') {
-          return { type: 'text', text: part.text }
+  const results: Array<TextPart | FilePart> = []
+
+  for (const part of contentParts) {
+    if (part.type === 'text') {
+      results.push({ type: 'text', text: part.text })
+      continue
+    }
+
+    if (part.type === 'image') {
+      try {
+        const imageData = await dependencies.storage.getImage(part.storageKey)
+        if (!imageData) {
+          console.warn(`Image not found for storage key: ${part.storageKey}`)
+          continue
         }
+        const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '')
+        const mediaType = imageData.match(/^data:([^;]+)/)?.[1] || 'image/png'
 
-        if (part.type === 'image') {
-          try {
-            const imageData = await dependencies.storage.getImage(part.storageKey)
-            if (!imageData) {
-              console.warn(`Image not found for storage key: ${part.storageKey}`)
-              return null
-            }
-            const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '')
-            const mediaType = imageData.match(/^data:([^;]+)/)?.[1] || 'image/png'
+        results.push({
+          type: 'file',
+          data: base64Data,
+          mediaType,
+        })
+      } catch (error) {
+        console.error(`Failed to get image for storage key ${part.storageKey}:`, error)
+      }
+      continue
+    }
 
-            return {
-              type: 'file',
-              data: base64Data,
-              mediaType,
-            }
-          } catch (error) {
-            console.error(`Failed to get image for storage key ${part.storageKey}:`, error)
-            return null
+    if (part.type === 'app') {
+      const summaryForModel = getChatBridgeAppSummaryForModel(part)
+      const digest = formatChatBridgeAppStateDigest(buildChatBridgeAppStateDigest(part))
+      const latestScreenshot = getLatestChatBridgeAppScreenshot(part.values)
+      const text = [summaryForModel, digest].filter(Boolean).join('\n')
+
+      if (text) {
+        results.push({
+          type: 'text',
+          text,
+        })
+      }
+
+      if (latestScreenshot) {
+        try {
+          const imageData = await dependencies.storage.getImage(latestScreenshot.storageKey)
+          if (!imageData) {
+            console.warn(`Image not found for storage key: ${latestScreenshot.storageKey}`)
+            continue
           }
+
+          const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '')
+          const mediaType = imageData.match(/^data:([^;]+)/)?.[1] || 'image/png'
+          results.push({
+            type: 'file',
+            data: base64Data,
+            mediaType,
+          })
+        } catch (error) {
+          console.error(`Failed to get image for storage key ${latestScreenshot.storageKey}:`, error)
         }
+      }
+    }
+  }
 
-        if (part.type === 'app') {
-          const summaryForModel = getChatBridgeAppSummaryForModel(part)
-          if (!summaryForModel) {
-            return null
-          }
-          return {
-            type: 'text',
-            text: summaryForModel,
-          }
-        }
-
-        return null
-      })
-    )
-  )
+  return results
 }
 
 export async function convertToModelMessages(

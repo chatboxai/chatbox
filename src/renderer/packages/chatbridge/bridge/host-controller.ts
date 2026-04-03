@@ -4,6 +4,7 @@ import {
   type BridgeEventValidationReason,
   BridgeHostBootstrapMessageSchema,
   BridgeHostRenderMessageSchema,
+  BridgeHostSyncContextMessageSchema,
   type BridgeSessionCapability,
   acknowledgeBridgeSession,
   acceptBridgeAppEvent,
@@ -107,6 +108,7 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
   let attachedPort: BridgeMessagePortLike | null = null
   let isReady = false
   let pendingHtml: string | null = null
+  let pendingSnapshot: Record<string, unknown> | null = null
   let readyResolver: (() => void) | null = null
   let readyRejecter: ((error: Error) => void) | null = null
   let readyTimeout: ReturnType<typeof setTimeout> | null = null
@@ -262,6 +264,33 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
     })
   }
 
+  function sendPendingSnapshot() {
+    if (!attachedPort || !isReady || pendingSnapshot === null) {
+      return
+    }
+
+    const syncMessage = BridgeHostSyncContextMessageSchema.parse({
+      kind: 'host.syncContext',
+      bridgeSessionId: envelope.bridgeSessionId,
+      appInstanceId: envelope.appInstanceId,
+      snapshot: pendingSnapshot,
+    })
+
+    attachedPort.postMessage(syncMessage)
+    emitObservabilityEvent({
+      eventId: crypto.randomUUID(),
+      occurredAt: options.now?.() ?? Date.now(),
+      kind: 'host-render-sent',
+      severity: 'info',
+      status: 'healthy',
+      summary: `${options.appName ?? options.appId} received a host-owned state sync.`,
+      details: ['message: host.syncContext'],
+    })
+    emitTraceEvent('chatbridge.bridge.host_sync_context_sent', {
+      appId: options.appId,
+    })
+  }
+
   function handleAppEvent(event: BridgeAppEvent) {
     if (event.kind === 'app.ready') {
       const acknowledged = acknowledgeBridgeSession(session, event, {
@@ -317,6 +346,7 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
         eventKind: event.kind,
       })
       sendPendingHtml()
+      sendPendingSnapshot()
       return
     }
 
@@ -468,6 +498,10 @@ export function createBridgeHostController(options: BridgeHostControllerOptions)
     renderHtml(html: string) {
       pendingHtml = html
       sendPendingHtml()
+    },
+    syncContext(snapshot: Record<string, unknown>) {
+      pendingSnapshot = snapshot
+      sendPendingSnapshot()
     },
     getSession() {
       return session

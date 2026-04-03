@@ -42,8 +42,10 @@ import fileToolSet from './toolsets/file'
 import { getToolSet } from './toolsets/knowledge-base'
 import websearchToolSet, { parseLinkTool, webSearchTool } from './toolsets/web-search'
 import { createReviewedSingleAppToolSet } from '../chatbridge/single-app-tools'
+import { createActiveChatBridgeToolSet, upsertChatBridgeActiveAppArtifacts } from '../chatbridge/active-app-tools'
 import { buildChatBridgeAppContextPrompt } from '../context-management/app-context'
 import { upsertReviewedAppLaunchParts } from '../chatbridge/reviewed-app-launch'
+import { buildChatBridgeSelectedAppContextPrompt } from '@shared/chatbridge'
 
 /**
  * 处理搜索结果并返回模型响应的通用函数
@@ -151,9 +153,10 @@ export function buildAdditionalConversationInfo(
   toolSetInstructions: string,
   appRecords?: ChatBridgeAppRecordSnapshot
 ): string {
+  const selectedAppContextPrompt = buildChatBridgeSelectedAppContextPrompt(messages)
   return [
     toolSetInstructions,
-    buildChatBridgeAppContextPrompt(appRecords),
+    selectedAppContextPrompt ?? buildChatBridgeAppContextPrompt(appRecords),
     buildChatBridgeChessReasoningPrompt(messages),
   ]
     .filter(Boolean)
@@ -463,6 +466,17 @@ export async function streamText(
           ...chatBridgeSingleAppTools.tools,
         }
       }
+
+      const activeAppTools = createActiveChatBridgeToolSet({
+        messages,
+        sessionId,
+      })
+      if (Object.keys(activeAppTools.tools).length > 0) {
+        tools = {
+          ...tools,
+          ...activeAppTools.tools,
+        }
+      }
     }
 
     tools = prepareToolsForExecution(tools, sessionId)
@@ -482,7 +496,9 @@ export async function streamText(
     if (result.contentParts) {
       result = {
         ...result,
-        contentParts: upsertReviewedAppLaunchParts([...infoParts, ...result.contentParts]),
+        contentParts: upsertChatBridgeActiveAppArtifacts(
+          upsertReviewedAppLaunchParts([...infoParts, ...result.contentParts])
+        ),
       }
     }
 

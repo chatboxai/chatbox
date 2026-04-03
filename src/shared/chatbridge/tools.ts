@@ -34,7 +34,10 @@ export interface ChatBridgeHostToolMetadata<TSchema extends z.ZodTypeAny = z.Zod
 export interface ChatBridgeHostToolDefinition<TSchema extends z.ZodTypeAny>
   extends Omit<ChatBridgeHostToolMetadata<TSchema>, 'executionAuthority'> {
   description: string
-  execute: (input: z.infer<TSchema>, context: { abortSignal?: AbortSignal }) => Promise<unknown> | unknown
+  execute: (
+    input: z.infer<TSchema>,
+    context: { abortSignal?: AbortSignal; toolCallId?: string; messages?: unknown[] }
+  ) => Promise<unknown> | unknown
 }
 
 export interface ChatBridgeHostToolExecutionRecord {
@@ -65,7 +68,10 @@ export interface ChatBridgeHostToolPartUpdate {
 
 type ChatBridgeHostToolLike = {
   description?: string
-  execute?: (input: unknown, context: { abortSignal?: AbortSignal }) => Promise<unknown> | unknown
+  execute?: (
+    input: unknown,
+    context: { abortSignal?: AbortSignal; toolCallId?: string; messages?: unknown[] }
+  ) => Promise<unknown> | unknown
   [CHATBRIDGE_HOST_TOOL_METADATA]?: ChatBridgeHostToolMetadata
 }
 
@@ -276,7 +282,10 @@ export function wrapChatBridgeHostTools(
 
     wrappedTools[toolName] = {
       ...toolLike,
-      execute: async (rawArgs: unknown, context: { abortSignal?: AbortSignal } = {}) => {
+      execute: async (
+        rawArgs: unknown,
+        context: { abortSignal?: AbortSignal; toolCallId?: string; messages?: unknown[] } = {}
+      ) => {
         if (!supportedSchemaVersions.includes(metadata.schemaVersion)) {
           return createExecutionRecord({
             toolName,
@@ -311,7 +320,9 @@ export function wrapChatBridgeHostTools(
         }
 
         const parsedArgs = parsed.data
-        const idempotencyKey = getIdempotencyKey(parsedArgs, metadata.idempotencyKeyField ?? 'idempotencyKey')
+        const idempotencyKey =
+          getIdempotencyKey(parsedArgs, metadata.idempotencyKeyField ?? 'idempotencyKey') ??
+          (typeof context.toolCallId === 'string' && context.toolCallId.trim().length > 0 ? context.toolCallId : undefined)
         if (metadata.effect === 'side-effect' && !idempotencyKey) {
           return createExecutionRecord({
             toolName,

@@ -7,6 +7,14 @@ import { combine, persist } from 'zustand/middleware'
 import platform from '@/platform'
 import { safeStorage } from './safeStorage'
 
+function readInitialTheme(): 'light' | 'dark' {
+  try {
+    return globalThis.localStorage?.getItem('initial-theme') === 'dark' ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
 // UI store for managing UI-related state
 // 不能使用immer middleware，会导致RefObject出问题
 export const uiStore = createStore(
@@ -15,7 +23,7 @@ export const uiStore = createStore(
       {
         toasts: [] as Toast[],
         quote: '',
-        realTheme: localStorage.getItem('initial-theme') === 'dark' ? 'dark' : ('light' as 'light' | 'dark'),
+        realTheme: readInitialTheme(),
         messageListElement: null as RefObject<HTMLDivElement> | null,
         messageScrolling: null as RefObject<VirtuosoHandle> | null,
         messageScrollingAtTop: false,

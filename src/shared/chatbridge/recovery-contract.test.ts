@@ -1,3 +1,4 @@
+import type { ToolExecutionOptions } from 'ai'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import {
@@ -32,7 +33,7 @@ describe('chatbridge recovery contract', () => {
       }),
     })
 
-    const result = await toolSet.save_story.execute?.({ title: 'Chapter Four' }, { toolCallId: 'tool-save', messages: [] })
+    const result = await toolSet.save_story.execute?.({ title: 'Chapter Four' }, {} as ToolExecutionOptions)
     expect(result).toBeTruthy()
 
     const contract = getChatBridgeRecoveryContractFromToolExecutionRecord(result as never)

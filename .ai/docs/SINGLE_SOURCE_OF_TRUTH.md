@@ -49,7 +49,8 @@
 - **Branch rule**: start non-trivial work on a fresh `codex/` branch, carry
   over required local `.env*` files into new branches/worktrees, and run
   `pnpm install` before project commands so missing local `node_modules` is
-  treated as setup, not as a story regression
+  treated as setup, not as a story regression. In this clone, PR creation and
+  merge default to the writable fork at `origin`, not `upstream`.
 - **Helper-script rule**: workflow docs may reference optional helper scripts;
   if this repo does not contain them, follow the manual workflow equivalent.
 

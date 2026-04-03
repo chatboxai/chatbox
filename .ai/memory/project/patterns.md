@@ -50,6 +50,9 @@ Capture repeatable patterns that match how this workspace actually works.
 - Story completion defaults to the full GitHub flow: commit, push, PR, merge to
   `main`, sync local `main`, and branch cleanup unless the user explicitly
   pauses or chooses a different merge path.
+- In this fork-based clone, finalization resolves the canonical GitHub repo from
+  `origin` and uses that fork for PR creation and merge by default. `upstream`
+  is read-only context unless the user explicitly requests an upstream PR.
 
 ## Documentation Pattern
 

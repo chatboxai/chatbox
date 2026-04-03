@@ -57,6 +57,7 @@ the user audit:
 - current branch
 - target base branch
 - writable remote
+- canonical PR repo resolved from `origin`
 - current GitHub state: `local-only`, `pushed-without-PR`, `open PR`, or
   `merged`
 - proposed commit message

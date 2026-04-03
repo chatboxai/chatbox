@@ -1,5 +1,5 @@
 import { CHATBRIDGE_LANGSMITH_PROJECT_NAME } from '@shared/models/tracing'
-import { DRAWING_KIT_APP_ID } from '@shared/chatbridge'
+import { DRAWING_KIT_APP_ID, WEATHER_DASHBOARD_APP_ID } from '@shared/chatbridge'
 import type { LangSmithRunHandle } from '@shared/utils/langsmith_adapter'
 import type { MessageAppPart } from '@shared/types'
 import { useEffect, useMemo, useRef } from 'react'
@@ -18,6 +18,7 @@ import {
   persistReviewedAppLaunchRecovery,
   readChatBridgeReviewedAppLaunch,
 } from '@/packages/chatbridge/reviewed-app-launch'
+import { WeatherDashboardLaunchSurface } from './weather/WeatherDashboardLaunchSurface'
 
 interface ReviewedAppLaunchSurfaceProps {
   part: MessageAppPart
@@ -31,14 +32,15 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
   const launchRunRef = useRef<LangSmithRunHandle | null>(null)
   const launchRunFinishedRef = useRef(false)
   const launch = readChatBridgeReviewedAppLaunch(part.values)
+  const isWeatherDashboard = part.appId === WEATHER_DASHBOARD_APP_ID
 
   const runtimeMarkup = useMemo(() => {
-    if (!launch) {
+    if (!launch || isWeatherDashboard) {
       return null
     }
 
     return createReviewedAppLaunchRuntimeMarkup(launch, part.snapshot)
-  }, [launch, part.snapshot])
+  }, [isWeatherDashboard, launch, part.snapshot])
 
   const expectedOrigin = useMemo(() => window.location.origin || 'null', [])
   const bootstrapTargetOrigin = '*'
@@ -67,13 +69,15 @@ export function ReviewedAppLaunchSurface({ part, sessionId, messageId }: Reviewe
     }
   }, [part.appInstanceId])
 
-  if (
-    !launch ||
-    !runtimeMarkup ||
-    part.lifecycle === 'error' ||
-    part.lifecycle === 'stale' ||
-    part.lifecycle === 'complete'
-  ) {
+  if (!launch || part.lifecycle === 'error' || part.lifecycle === 'stale' || part.lifecycle === 'complete') {
+    return null
+  }
+
+  if (isWeatherDashboard) {
+    return <WeatherDashboardLaunchSurface part={part} launch={launch} sessionId={sessionId} messageId={messageId} />
+  }
+
+  if (!runtimeMarkup) {
     return null
   }
 

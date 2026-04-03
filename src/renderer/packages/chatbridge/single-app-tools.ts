@@ -20,7 +20,7 @@ import { getReviewedAppRouteDecision } from './router/decision'
 import type { Message } from '@shared/types'
 import platform from '@/platform'
 
-const DEFAULT_LIVE_REVIEWED_APP_PERMISSIONS = ['session.context.read'] as const
+const DEFAULT_LIVE_REVIEWED_APP_PERMISSIONS = ['session.context.read', 'weather.read'] as const
 
 const ChessPrepareSessionInputSchema = z.object({
   request: z.string().trim().min(1),
@@ -231,6 +231,7 @@ function createReviewedAppLaunchTool(
           launchReady: true,
           summary: `Prepared the reviewed ${selection.appName} request for the host-owned launch path.`,
           ...(typeof normalizedInput.request === 'string' ? { request: normalizedInput.request } : {}),
+          ...(typeof normalizedInput.location === 'string' ? { location: normalizedInput.location } : {}),
           ...(typeof normalizedInput.fen === 'string' ? { fen: normalizedInput.fen } : {}),
           ...(typeof normalizedInput.pgn === 'string' ? { pgn: normalizedInput.pgn } : {}),
         }

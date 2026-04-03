@@ -2,8 +2,7 @@
 
 - Pack state: validated baseline reopened by the smoke-audit rebuild queue and
   active catalog transition
-- Current story: `CB-509` is validated and `CB-510` is now the next active
-  queue item
+- Current story: `CB-510` is validated and `CB-507` is the next queued item
 - Unlock rule: this pack opens only after Pack 4 has a written exit memo and
   linked proof in `progress.md`
 
@@ -48,7 +47,7 @@ Legacy parked packets that are not part of the active queue:
 | CB-507 | planned | Smoke-audit backfill to make clarify and refusal artifacts a live product surface instead of a test-only seam. |
 | CB-508 | validated | Default reviewed catalog and seed inspection now point to Chess, Drawing Kit, and Weather while Debate Arena and Story Builder stay explicit legacy references. |
 | CB-509 | validated | Drawing Kit now ships as the approved doodle-game flagship runtime with bounded checkpoints, traced follow-up/recovery proof, and a supported `drawing-kit-doodle-dare` seed/manual-smoke fixture. |
-| CB-510 | planned | Build Weather Dashboard as the new data-backed no-auth flagship app. |
+| CB-510 | validated | Weather Dashboard now launches through a host-owned weather boundary, supports traced refresh/degraded states, and ships a supported `weather-dashboard` seed/manual-smoke fixture. |
 
 ## Exit Checklist
 
@@ -69,10 +68,10 @@ Pack 05 is validated.
 Historical Pack 05 proof remains checked in, but the reopened rebuild lane now
 targets Chess, Drawing Kit, and Weather as the active flagship set. Eligibility
 and invoke/clarify/refuse routing stay available as validated foundations, and
-`CB-508`, `CB-506`, and `CB-509` now make the active catalog, natural-Chess
-fallback, default live invoke path, and first non-Chess flagship runtime
-explicit before the remaining Weather and clarify/refuse work continues at
-`CB-510` and `CB-507`.
+`CB-508`, `CB-506`, `CB-509`, and `CB-510` now make the active catalog,
+natural-Chess fallback, default live invoke path, Drawing Kit runtime, and
+Weather runtime explicit before the remaining clarify/refuse UI work continues
+at `CB-507`.
 
 ## Smoke-Audit Reopen Notes
 
@@ -90,6 +89,10 @@ explicit before the remaining Weather and clarify/refuse work continues at
   shipping the doodle-game runtime, bounded checkpoint contract, traced
   follow-up and recovery proof, and a supported active-flagship manual-smoke
   fixture.
+- `CB-510` closes the Weather runtime/manual-smoke gap by shipping the
+  host-owned weather boundary, dedicated inline dashboard surface, traced
+  follow-up plus degraded proof, and a supported `weather-dashboard`
+  desktop manual-smoke fixture.
 - Historical Pack 05 proof remains checked in, but do not treat Pack 05 as
-  live-runtime complete again until `CB-510` and `CB-507` are implemented and
+  live-runtime complete again until planned `CB-507` is implemented and
   validated.

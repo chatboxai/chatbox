@@ -45,6 +45,7 @@ const ReviewedAppLaunchResultSchema = z.object({
   launchReady: z.boolean(),
   summary: z.string().trim().min(1),
   request: z.string().trim().min(1).optional(),
+  location: z.string().trim().min(1).optional(),
   fen: z.string().trim().min(1).optional(),
   pgn: z.string().trim().min(1).optional(),
 })
@@ -116,6 +117,7 @@ function createReviewedAppLaunchFromToolRecord(record: ChatBridgeHostToolExecuti
     capability: result.capability,
     summary: result.summary,
     request: result.request,
+    location: result.location ?? readString(asRecord(record.invocation.args)?.location),
     fen: result.fen,
     pgn: result.pgn,
     uiEntry: catalogEntry?.manifest.uiEntry,

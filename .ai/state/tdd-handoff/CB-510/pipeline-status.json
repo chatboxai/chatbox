@@ -1,0 +1,18 @@
+{
+  "storyId": "CB-510",
+  "stage": "agent3",
+  "status": "green-reviewed",
+  "redGuard": {
+    "result": "failed-as-expected",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/apps/weather-dashboard.test.ts src/main/chatbridge/weather/index.test.ts src/shared/chatbridge/live-seeds.test.ts src/renderer/packages/initial_data.test.ts src/renderer/dev/chatbridgeManualSmoke.test.ts src/renderer/packages/chatbridge/reviewed-app-launch.test.ts src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.test.tsx src/renderer/packages/chatbridge/single-app-tools.test.ts test/integration/chatbridge/scenarios/live-reviewed-app-invocation.test.ts test/integration/chatbridge/scenarios/weather-dashboard-flagship.test.ts",
+    "failureSummary": [
+      "Weather Dashboard was filtered out of the live reviewed-app route because the default host context did not grant the host-owned weather.read capability.",
+      "The dedicated Weather launch surface test failed under jsdom because the new Mantine-based weather UI needed the same provider and matchMedia harness the repo uses elsewhere.",
+      "The preset-session bootstrap assertions still reflected the pre-Weather seed corpus and missed the new weather-dashboard preset."
+    ]
+  },
+  "greenGuard": {
+    "result": "passed",
+    "focusedCommand": "source ~/.nvm/nvm.sh && nvm use 20 >/dev/null && pnpm exec vitest run src/shared/chatbridge/apps/weather-dashboard.test.ts src/main/chatbridge/weather/index.test.ts src/shared/chatbridge/live-seeds.test.ts src/renderer/packages/initial_data.test.ts src/renderer/setup/preset_sessions.test.ts src/renderer/dev/chatbridgeManualSmoke.test.ts src/renderer/packages/chatbridge/reviewed-app-launch.test.ts src/renderer/components/chatbridge/apps/ReviewedAppLaunchSurface.test.tsx src/renderer/packages/chatbridge/single-app-tools.test.ts test/integration/chatbridge/scenarios/live-reviewed-app-invocation.test.ts test/integration/chatbridge/scenarios/weather-dashboard-flagship.test.ts"
+  }
+}

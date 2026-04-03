@@ -155,6 +155,45 @@ describe('ChatBridge reviewed single-app tools', () => {
     })
   })
 
+  it('creates the approved Weather Dashboard host tool and preserves the location hint through the host contract', async () => {
+    const prompt = 'Open Weather Dashboard for Chicago and show the forecast.'
+    const { selection, tools } = createReviewedSingleAppToolSet({
+      messages: [createMessage('user', prompt)],
+    })
+
+    expect(selection).toMatchObject({
+      status: 'matched',
+      appId: 'weather-dashboard',
+      toolName: 'weather_dashboard_open',
+    })
+    expect(Object.keys(tools)).toEqual(['weather_dashboard_open'])
+
+    const preparedTools = prepareToolsForExecution(tools, 'session-cb-510')
+    const result = await preparedTools.weather_dashboard_open.execute?.(
+      {
+        request: prompt,
+        location: 'Chicago',
+      },
+      getExecutionOptions('tool-weather-success')
+    )
+
+    expect(result).toMatchObject({
+      kind: 'chatbridge.host.tool.record.v1',
+      appId: 'weather-dashboard',
+      toolName: 'weather_dashboard_open',
+      executionAuthority: 'host',
+      outcome: {
+        status: 'success',
+        result: {
+          appId: 'weather-dashboard',
+          appName: 'Weather Dashboard',
+          launchReady: true,
+          location: 'Chicago',
+        },
+      },
+    })
+  })
+
   it('fails closed when the Chess tool receives malformed args', async () => {
     const { tools } = createReviewedSingleAppToolSet({
       messages: [createMessage('user', 'Analyze this chess position.')],

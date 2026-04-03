@@ -6,34 +6,7 @@
 - 2026-03-30: Standardized harness validation guidance around the real root
   commands in this repo: `pnpm test`, `pnpm check`, `pnpm lint`, `pnpm build`,
   and `git diff --check`.
-- 2026-03-30: Replaced the internal harness-owned UI design docs/templates with
-  a Pencil-first workflow: spec and technical plan first, then 2 or 3 Pencil
-  variations from a shared design-system foundation, explicit user approval, and
-  only then implementation.
-- 2026-03-31: Standardized parallel-story handling so agents must check
-  `main`/`origin/main` before replaying a requested story from a stale branch;
-  already-merged work is now treated as the baseline and any extra change
-  starts as a clean follow-up story/worktree.
-- 2026-04-01: Stabilized ChatBridge chess local web development by explicitly
-  prebundling `chess.js` in the renderer `optimizeDeps` contract and locking it
-  with a focused regression test, so cold `pnpm dev:web` starts do not throw a
-  missing-module overlay before the dependency optimizer catches up.
-- 2026-04-01: Normalized desktop `getSettings()` reads at the store boundary so
-  persisted `null` settings records are rehydrated to defaults and written back
-  before main-process bootstrap consumers like Sentry, tray shortcuts, and the
-  updater dereference them.
-- 2026-04-01: Moved `disableEnforceFocus` overrides for the main sidebar and
-  thread-history drawer into MUI `ModalProps` so React stops forwarding the
-  prop to DOM nodes while the drawers still allow nested modal input focus.
-- 2026-04-01: Gave the shared `CommandDialog` wrapper a hidden title and
-  description by default so Radix dialog accessibility requirements are met
-  without forcing every caller to wire those fields manually.
-- 2026-04-01: Added a repo-local workspace guard so stale-install worktrees now
-  fail before Vite/TypeScript starts, while wrong-Node shells still fail at the
-  repo engine gate. `pnpm install` now records a worktree-local install stamp
-  in `node_modules/`.
-- 2026-04-01: Reconciled the next repo-wide `pnpm check` drift slice by
-  restoring Tavily settings literals, image-generation record fields, provider
-  registry config fields, renderer adapter `platformType`, and OSS OAuth hook
-  signatures so the current open-source call sites match the upstream shared
-  contracts again.
+- 2026-04-02: Replaced the active Pencil gate with an autonomous UI design
+  workflow: spec and technical plan first, then a design brief, targeted design
+  research, 2 or 3 prompt-based directions, autonomous scoring, and a recorded
+  design decision before implementation.

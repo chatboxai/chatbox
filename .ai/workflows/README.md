@@ -5,7 +5,8 @@ This folder contains the repeatable playbooks the harness uses to route work.
 ## Major Workflow Groups
 
 - discovery and sizing: `story-lookup.md`, `story-sizing.md`
-- UI design: `pencil-ui-design.md` with `design-brief.md` plus Pencil review
+- research and shaping: `brainlift-research.md`, `product-building.md`
+- UI design: `autonomous-ui-design.md`
 - implementation: `feature-development.md`, `bug-fixes.md`, `tdd-pipeline.md`
 - review and quality: `security-review.md`, `performance-optimization.md`
 - completion: `story-handoff.md`, `git-finalization.md`,

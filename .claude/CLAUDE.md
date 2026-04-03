@@ -18,14 +18,14 @@ For deeper context when needed:
 - `.ai/memory/project/patterns.md`
 - `.ai/memory/project/anti-patterns.md`
 - `.ai/memory/session/active-context.md`
-- `.ai/docs/PENCIL_UI_WORKFLOW.md` for UI stories
+- `.ai/docs/UI_DESIGN_WORKFLOW.md` for UI stories
 
 ## Workspace Layout
 
 ```text
 .ai/           Helper harness only - workflows, templates, memory, references
-design/        Checked-in Pencil design system and story canvases
-docs/specs/    Story specs, review packets, and implementation evidence
+design/        Legacy checked-in design evidence when historical assets exist
+docs/specs/    Story specs, design briefs, decision docs, and implementation evidence
 src/           Product source code
 test/          Tests
 AGENTS.md      Primary checked-in rulebook
@@ -70,13 +70,12 @@ git diff --check
 
 When a story changes visible UI:
 
-1. Keep feature spec and technical planning in the normal story flow.
-2. Add `docs/specs/<story-id>/design-brief.md` before Pencil variations begin.
-3. Use `.ai/workflows/pencil-ui-design.md`.
-4. Treat Pencil MCP as the default design bridge.
-5. Produce 2 or 3 variations from the shared design-system foundation when
-   relevant.
-6. Stop for explicit approval before implementing UI code.
+1. Keep spec writing and technical planning in the normal story flow.
+2. Use `.ai/workflows/autonomous-ui-design.md`.
+3. Write `design-brief.md` and gather repo-grounded design research.
+4. Produce 2 or 3 prompt-based directions and score them autonomously.
+5. Record the chosen direction and proceed without pausing for design approval
+   unless the user explicitly asks for it.
 
 ## Workflow Routing
 
@@ -87,7 +86,7 @@ When a story changes visible UI:
 | Performance | `.ai/workflows/performance-optimization.md` |
 | Security | `.ai/workflows/security-review.md` |
 | Deployment | `.ai/workflows/deployment-setup.md` |
-| UI design and review | `.ai/workflows/pencil-ui-design.md` |
+| UI design and review | `.ai/workflows/autonomous-ui-design.md` |
 | TDD coordination | `.ai/workflows/tdd-pipeline.md` |
 | Git finalization | `.ai/workflows/git-finalization.md` |
 
@@ -109,5 +108,7 @@ When a story changes visible UI:
 - Renderer app: `src/renderer/`
 - Shared contracts and helpers: `src/shared/`
 - Tests: `test/` and `src/__tests__/`
-- Pencil design system: `design/system/design-system.lib.pen`
-- Pencil story canvases: `design/stories/`
+- UI design artifacts: `docs/specs/<story-id>/design-brief.md`,
+  `design-research.md`, `design-decision.md`
+- Legacy Pencil assets may exist under `design/`, but they are not the default
+  workflow for new UI stories.

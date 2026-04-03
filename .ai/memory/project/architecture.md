@@ -47,90 +47,28 @@ Record durable workspace decisions here.
   grounded in `package.json`.
 
 - **ADR-ID**: ADR-0004
-- **Date**: 2026-03-30
-- **Context**: UI work needs earlier visual review and clearer user approval
-  than a code-first workflow provides.
+- **Date**: 2026-04-02
+- **Context**: UI work needs earlier design clarity than a code-first workflow
+  provides, but the Pencil approval gate adds manual pauses and tool-specific
+  dependencies that are not required for most stories.
 - **Decision**: Keep feature spec and technical planning in the normal story
-  flow, then route visual exploration through Pencil with a shared
-  `design-system.lib.pen` foundation, 2 or 3 variations, code-import grounding
-  for existing UI, and an explicit approval gate before implementation.
-- **Alternatives Considered**: Keep harness-owned design docs and templates as
-  the main UI design layer; continue doing design exploration in code.
-- **Consequences**: UI stories now pause for design approval, `.pen` artifacts
-  become first-class story evidence, and the old internal design-doc layer is no
-  longer the primary UI workflow.
+  flow, then route visible UI through a design brief, repo-grounded and
+  source-backed research when needed, 2 or 3 prompt-based directions, and an
+  autonomous design decision record before implementation.
+- **Alternatives Considered**: Keep Pencil as the default design lane; return to
+  code-first exploration with no dedicated design artifacts.
+- **Consequences**: UI stories no longer pause for default human design
+  approval, story docs become the primary design evidence, and the design lane
+  stays grounded in repo conventions plus explicit research.
 
 - **ADR-ID**: ADR-0005
-- **Date**: 2026-03-30
-- **Context**: Early Pencil story work was too dependent on ad hoc geometry
-  because the shared library was only a starter set.
-- **Decision**: Treat `design/system/design-system.lib.pen` as a maintained
-  first-pass comprehensive foundation aligned to Chatbox tokens and renderer
-  patterns, covering shared primitives, forms, app chrome, content patterns,
-  and layout shells.
-- **Alternatives Considered**: Keep a minimal starter library and rebuild
-  foundational components inside each story canvas.
-- **Consequences**: Future UI stories should extend the shared library before
-  adding one-off components, and review packets must call out any new gap rather
-  than silently working around it.
-
-- **ADR-ID**: ADR-0006
-- **Date**: 2026-03-31
-- **Context**: Phase 0 originally documented deployment assumptions without
-  creating a real hosted surface or runnable release entrypoints.
-- **Decision**: Standardize the current hosted web-shell baseline on the
-  checked-in Vercel config (`vercel.json`) and keep desktop publishing rooted in
-  `electron-builder.yml` plus the restored root `release-*.sh` wrappers.
-- **Alternatives Considered**: Keep deployment as docs-only; invent a separate
-  backend service deployment stack before the backend exists.
-- **Consequences**: Phase 0 now has a real deployable host shell and smoke
-  path, while future ChatBridge backend services remain explicit later-pack
-  work.
-
-- **ADR-ID**: ADR-0007
-- **Date**: 2026-03-31
-- **Context**: The hosted web shell had a manual Vercel production path, but
-  merge completion stopped before any automatic post-merge deployment
-  verification.
-- **Decision**: Standardize `main` production sync on a checked-in GitHub
-  Actions workflow (`.github/workflows/vercel-main-sync.yml`) backed by
-  checked-in deploy and verify scripts, and disable Vercel Git auto-deploy for
-  `main` so the repo-owned workflow is the single production source of truth.
-- **Alternatives Considered**: Leave production deploy manual; rely on Vercel
-  dashboard auto-deploys and undocumented post-merge checks.
-- **Consequences**: Hosted-shell stories now have a post-merge Vercel CLI
-  verification phase, and merge-to-`main` is no longer the last operational
-  checkpoint for deployment-surface changes.
-
-- **ADR-ID**: ADR-0008
-- **Date**: 2026-04-01
-- **Context**: The Pencil-first workflow already blocked UI implementation
-  until design approval, but stories could still start from vague prompts and
-  generic placeholder copy.
-- **Decision**: Require `docs/specs/<story-id>/design-brief.md` before Pencil
-  variations begin so every visible UI story defines audience, feeling, design
-  language, system direction, layout metaphor, and copy direction. Design-grade
-  review packets must also record copy fidelity explicitly.
-- **Alternatives Considered**: Keep the design-intent work implicit inside the
-  feature spec; rely on the Pencil review packet alone to infer direction.
-- **Consequences**: UI story packets gain a first-class design brief artifact,
-  variation reviews have a clearer rubric, and content-heavy screens cannot
-  pass design review on placeholder copy alone.
-
-- **ADR-ID**: ADR-0009
-- **Date**: 2026-04-01
-- **Context**: Several failures could still escape the normal green path and
-  only surface when compiled output actually loaded in the renderer or deployed
-  environment.
-- **Decision**: Treat Chatbox as production software by default: no mocks,
-  stubs, placeholder implementations, or TODO-driven gaps in shipped code;
-  require explicit post-green runtime-readiness checks for bundling and
-  packaging changes; prefer browser-first verification for deployed user-facing
-  behavior; keep repo code/docs as the source of truth; derive authenticated
-  agent identity from JWT/request context; and keep tool logic pure with DI at
-  framework edges.
-- **Alternatives Considered**: Continue treating baseline tests/build as the
-  main finish signal; allow ad hoc runtime data paths and identity lookups.
-- **Consequences**: Stories now carry stricter production-readiness gates and
-  clearer review expectations, but hidden runtime and deploy-time regressions
-  should surface earlier and be easier to reason about.
+- **Date**: 2026-04-02
+- **Context**: The active UI workflow should anchor itself in durable repo
+  patterns instead of a tool-specific design library.
+- **Decision**: Treat the existing codebase, shared tokens, and adjacent UI
+  surfaces as the primary design-system foundation. Use design briefs and design
+  decisions to extend that foundation intentionally.
+- **Alternatives Considered**: Keep a `.pen` library as the canonical shared UI
+  source of truth; let each story invent its own design language in prompts.
+- **Consequences**: UI design work starts by inspecting current code patterns,
+  and design docs must call out any intentional departures from those patterns.

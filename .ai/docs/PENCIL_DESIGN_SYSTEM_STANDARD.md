@@ -1,5 +1,8 @@
 # Pencil Design System Standard
 
+Legacy note: this document now applies only when maintaining historical `.pen`
+assets. The active UI workflow is `.ai/docs/UI_DESIGN_WORKFLOW.md`.
+
 Use this document to decide whether the Pencil foundation is still a starter
 library or is truly comprehensive.
 

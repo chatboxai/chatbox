@@ -25,56 +25,35 @@ Then use as needed:
   `codex/` branch for non-trivial work before edits.
 - If the current worktree is already dirty from another story or agent, move
   the new work into a clean worktree instead of sharing the dirty tree.
-- Before replaying a requested story from a stale branch, verify whether that
-  story is already merged on `main` or `origin/main`. If it is, treat that
-  merge as the baseline and start any additional correction from the latest
-  base branch instead of duplicating the old story on a parallel branch.
 - When a story starts in a fresh branch or worktree, copy the required local
   `.env*` files from the working `main` setup or previous story worktree, then
   run `pnpm install` before project commands. Keep copied env files untracked.
 - Keep `.ai/` aligned with the real repo layout and commands.
 - For behavior changes, use `.ai/workflows/tdd-pipeline.md`.
+- For broad or ambiguous new product and major-feature work, run
+  `.ai/workflows/product-building.md` before locking per-story implementation.
+- For standard-lane stories that still need source-backed synthesis or a
+  defended recommendation after lookup, run
+  `.ai/workflows/brainlift-research.md`.
 - For larger or ambiguous feature work, use
   `.ai/skills/spec-driven-development.md` and the templates under
   `.ai/templates/spec/`.
 - For model/orchestration/app-runtime/auth-heavy work, run
   `.ai/workflows/trace-driven-development.md` so traces, evals, and observable
   lifecycle seams are established early.
-- When a story changes inspectable ChatBridge shell, lifecycle, history, or
-  HTML-preview behavior, update `src/shared/chatbridge/live-seeds.ts`,
-  `src/renderer/packages/initial_data.ts`,
-  `src/renderer/setup/preset_sessions.ts`,
-  `src/renderer/dev/chatbridgeSeeds.ts`, and the `/dev/chatbridge` lab so the
-  change stays seedable in both the default app bootstrap and the live audit
-  flow.
 - For UI-affecting work, keep spec and implementation planning in the normal
-  story flow, require `docs/specs/<story-id>/design-brief.md`, then route
-  visual exploration through `.ai/workflows/pencil-ui-design.md`.
-- For Pencil work, sync the official Pencil docs locally and review the synced
-  `.pen` schema/design-system references before touching `.pen` files.
-- For Pencil work, treat Pencil MCP as the default bridge. Verify Pencil in
-  `/mcp` and use MCP-backed design operations instead of probing for a direct
-  shell `pencil` command as the normal path.
-- Do not implement new or changed UI before the user reviews Pencil variations
-  and explicitly approves or requests tweaks.
+  story flow, then route design through
+  `.ai/workflows/autonomous-ui-design.md`.
+- For UI work, require `design-brief.md` plus a recorded design decision before
+  code, and require source-backed design research when the repo does not
+  already exemplify the relevant surface or pattern.
+- Do not stop for human design approval by default; the autonomous design lane
+  should choose and record a direction unless the user explicitly asks to
+  review design before code.
 - Story finish: use `.ai/workflows/story-handoff.md`; unless the user
   explicitly asks to pause or choose a different merge path, continue through
   `.ai/workflows/git-finalization.md` automatically after the completion gate,
   and treat the story as incomplete until it is merged to `main` on GitHub.
-- For every completed story, refresh the seeded visual example data in
-  `src/renderer/packages/initial_data.ts` or call out `N/A` explicitly in the
-  completion handoff.
-- The completion gate must include a plain-language story explainer covering
-  what changed, where it changed, and how the user should inspect and test it.
-  For UI changes, include the route or entry path, the visible expected result,
-  and the proof artifact when available.
-- For ChatBridge stories that change inspectable behavior, also state whether
-  the `/dev/chatbridge` seed lab was updated and which seeded session the user
-  should reseed/open for live verification.
-- For stories that touch the hosted web shell or deployment contract, merge is
-  followed by `.ai/workflows/vercel-post-merge-verification.md`; treat the
-  story as operationally incomplete until the `Vercel Main Sync` workflow
-  passes or an explicit blocker is recorded.
 - Shared dirty worktrees are not a finish blocker. Preserve unrelated WIP,
   isolate the story diff in a clean branch/worktree, rerun the required
   validation there, and continue through finalization unless safe
@@ -83,12 +62,14 @@ Then use as needed:
 ## Route By Task Type
 
 - Feature implementation -> `.ai/workflows/feature-development.md`
+- Product shaping or significant feature definition ->
+  `.ai/workflows/product-building.md`
+- Research-backed decision shaping -> `.ai/workflows/brainlift-research.md`
 - Bug fix -> `.ai/workflows/bug-fixes.md`
 - Performance -> `.ai/workflows/performance-optimization.md`
 - Security review -> `.ai/workflows/security-review.md`
 - Deployment or release wiring -> `.ai/workflows/deployment-setup.md`
-- Post-merge Vercel verification -> `.ai/workflows/vercel-post-merge-verification.md`
-- Pencil UI design and review -> `.ai/workflows/pencil-ui-design.md`
+- Autonomous UI design and review -> `.ai/workflows/autonomous-ui-design.md`
 - TDD coordination -> `.ai/workflows/tdd-pipeline.md`
 - Git finalization -> `.ai/workflows/git-finalization.md`
 - Recovery after failed finalization -> `.ai/workflows/finalization-recovery.md`
@@ -98,8 +79,6 @@ Then use as needed:
 - Product code, package manifests, and tests live at the repo root.
 - Primary code areas are `src/main/`, `src/renderer/`, `src/shared/`, and
   `test/`.
-- UI story packets use the normal feature-spec and technical-plan artifacts,
-  plus `design-brief.md` and `pencil-review.md` when visible UI scope exists.
 - Root validation commands are:
   - `pnpm test`
   - `pnpm check`

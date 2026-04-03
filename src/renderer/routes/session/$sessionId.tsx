@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
+import { FloatingChatBridgeRuntimeShell } from '@/components/chatbridge/FloatingChatBridgeRuntimeShell'
+import { resolveChatBridgeFloatingRuntimeTarget } from '@/components/chatbridge/floating-runtime'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox from '@/components/InputBox/InputBox'
 import Header from '@/components/layout/Header'
@@ -17,6 +19,7 @@ import * as scrollActions from '@/stores/scrollActions'
 import { modifyMessage, submitNewUserMessage } from '@/stores/session/messages'
 import { removeCurrentThread, startNewThread } from '@/stores/session/threads'
 import { getAllMessageList } from '@/stores/sessionHelpers'
+import { useUIStore } from '@/stores/uiStore'
 
 export const Route = createFileRoute('/session/$sessionId')({
   component: RouteComponent,
@@ -29,10 +32,18 @@ function RouteComponent() {
   const { session: currentSession, isFetching } = useSession(currentSessionId)
   const setLastUsedChatModel = useStore(lastUsedModelStore, (state) => state.setChatModel)
   const setLastUsedPictureModel = useStore(lastUsedModelStore, (state) => state.setPictureModel)
+  const floatingShellState = useUIStore((state) => state.chatBridgeFloatingShellMap[currentSessionId])
+  const setFloatingShellState = useUIStore((state) => state.setChatBridgeFloatingShellState)
+  const setFloatingShellMinimized = useUIStore((state) => state.setChatBridgeFloatingShellMinimized)
+  const clearFloatingShellState = useUIStore((state) => state.clearChatBridgeFloatingShellState)
 
   const currentMessageList = useMemo(() => (currentSession ? getAllMessageList(currentSession) : []), [currentSession])
   const lastGeneratingMessage = useMemo(
     () => currentMessageList.find((m: Message) => m.generating),
+    [currentMessageList]
+  )
+  const floatingRuntimeTarget = useMemo(
+    () => resolveChatBridgeFloatingRuntimeTarget(currentMessageList),
     [currentMessageList]
   )
 
@@ -47,6 +58,25 @@ function RouteComponent() {
       scrollActions.scrollToBottom('auto') // 每次启动时自动滚动到底部
     }, 200)
   }, [])
+
+  useEffect(() => {
+    if (!floatingRuntimeTarget) {
+      clearFloatingShellState(currentSessionId)
+      return
+    }
+
+    if (floatingShellState?.appInstanceId === floatingRuntimeTarget.part.appInstanceId) {
+      return
+    }
+
+    setFloatingShellState(currentSessionId, floatingRuntimeTarget.part.appInstanceId, false)
+  }, [
+    clearFloatingShellState,
+    currentSessionId,
+    floatingRuntimeTarget,
+    floatingShellState?.appInstanceId,
+    setFloatingShellState,
+  ])
 
   // currentSession变化时（包括session settings变化），存下当前的settings作为新Session的默认值
   useEffect(() => {
@@ -166,12 +196,56 @@ function RouteComponent() {
     }
   }, [currentSession?.settings?.provider, currentSession?.settings?.modelId])
 
+  const handleJumpToFloatingRuntimeSource = useCallback(() => {
+    if (!floatingRuntimeTarget) {
+      return
+    }
+
+    const sourceElement = document.getElementById(floatingRuntimeTarget.messageId)
+    sourceElement?.scrollIntoView({
+      block: 'center',
+      behavior: 'smooth',
+    })
+  }, [floatingRuntimeTarget])
+
+  const handleOpenFloatingRuntime = useCallback(() => {
+    if (!floatingRuntimeTarget) {
+      return
+    }
+
+    setFloatingShellState(currentSessionId, floatingRuntimeTarget.part.appInstanceId, false)
+  }, [currentSessionId, floatingRuntimeTarget, setFloatingShellState])
+
+  const floatingRuntimeShell =
+    floatingRuntimeTarget &&
+    floatingShellState?.appInstanceId === floatingRuntimeTarget.part.appInstanceId ? (
+      <FloatingChatBridgeRuntimeShell
+        sessionId={currentSessionId}
+        messageId={floatingRuntimeTarget.messageId}
+        part={floatingRuntimeTarget.part}
+        minimized={floatingShellState.minimized}
+        onMinimizeChange={(nextMinimized) => setFloatingShellMinimized(currentSessionId, nextMinimized)}
+        onJumpToSource={handleJumpToFloatingRuntimeSource}
+      />
+    ) : null
+
   return currentSession ? (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       <Header session={currentSession} />
 
-      {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
-      <MessageList ref={messageListRef} key={`message-list${currentSessionId}`} currentSession={currentSession} />
+      <div className="min-h-0 flex-1">
+        {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
+        <MessageList
+          ref={messageListRef}
+          key={`message-list${currentSessionId}`}
+          currentSession={currentSession}
+          floatedChatBridgeAppInstanceId={floatingRuntimeTarget?.part.appInstanceId}
+          floatedChatBridgeTrayMinimized={floatingShellState?.minimized ?? false}
+          onOpenFloatedChatBridgeApp={handleOpenFloatingRuntime}
+        />
+      </div>
+
+      {floatingRuntimeShell}
 
       {/* <ScrollButtons /> */}
       <ErrorBoundary name="session-inputbox">

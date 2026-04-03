@@ -189,6 +189,48 @@ describe('Message chatbridge rendering', () => {
     expect(vi.mocked(modifyMessage).mock.calls[0][2]).toBe(true)
   })
 
+  it('collapses the active app into a compact anchor when the session tray owns the runtime', () => {
+    const snapshot = createChatBridgeChessRuntimeSnapshot()
+    const msg: Message = {
+      id: 'assistant-chess-anchor-1',
+      role: 'assistant',
+      contentParts: [
+        {
+          type: 'app',
+          appId: 'chess',
+          appName: 'Chess',
+          appInstanceId: 'chess-instance-anchor',
+          lifecycle: 'active',
+          title: 'Chess runtime',
+          description: 'Moves validate inside the board first, then emit a structured host update for the same conversation block.',
+          summary: snapshot.boardContext.summary,
+          statusText: 'White to move',
+          snapshot,
+        },
+      ],
+      timestamp: Date.now(),
+    }
+
+    render(
+      <MantineProvider>
+        <MessageComponent
+          sessionId="session-1"
+          sessionType="chat"
+          msg={msg}
+          buttonGroup="none"
+          assistantAvatarKey=""
+          floatedChatBridgeAppInstanceId="chess-instance-anchor"
+          floatedChatBridgeTrayMinimized={false}
+          onOpenFloatedChatBridgeApp={vi.fn()}
+        />
+      </MantineProvider>
+    )
+
+    expect(screen.getByTestId('chatbridge-anchor')).toBeTruthy()
+    expect(screen.getByText('Focus app')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /g1, white knight/i })).toBeNull()
+  })
+
   it('persists degraded recovery acknowledgements through the existing message update path', () => {
     const msg: Message = {
       id: 'assistant-degraded-runtime-1',

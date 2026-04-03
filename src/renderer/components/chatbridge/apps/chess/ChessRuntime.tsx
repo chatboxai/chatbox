@@ -542,7 +542,7 @@ function PersistentChessRuntime({ part, sessionId, messageId, onUpdatePart }: Ch
             {saving ? 'Syncing host state' : 'Host-owned runtime'}
           </span>
         </div>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-chatbox-tertiary">Variation A</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-chatbox-tertiary">Host-owned board</span>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(16rem,0.9fr)]">

@@ -1,0 +1,4306 @@
+{
+  "version": "2.9",
+  "children": [
+    {
+      "type": "text",
+      "id": "system_context",
+      "x": 0,
+      "y": 0,
+      "fill": "$color.text.secondary",
+      "textGrowth": "fixed-width-height",
+      "width": 1320,
+      "height": 48,
+      "content": "Chatbox Pencil foundation library aligned to src/renderer/static/globals.css and the current renderer patterns in MiniButton, SessionItem, ActionMenu, AdaptiveModal, SegmentedControl, Divider, and Page.",
+      "lineHeight": 1.4,
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontWeight": "normal"
+    },
+    {
+      "type": "text",
+      "id": "system_status",
+      "x": 0,
+      "y": 54,
+      "fill": "$color.text.secondary",
+      "textGrowth": "fixed-width-height",
+      "width": 1320,
+      "height": 40,
+      "content": "This first-pass comprehensive library is organized in canvas sections: buttons and primitives, forms and states, app chrome, content patterns, overlay shells, and layout templates. Future stories should extend these primitives instead of sketching new one-off geometry.",
+      "lineHeight": 1.4,
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontWeight": "normal"
+    },
+    {
+      "type": "text",
+      "id": "section-primitives_heading",
+      "x": 0,
+      "y": 108,
+      "fill": "$color.text.primary",
+      "content": "Buttons and primitives",
+      "fontFamily": "Inter",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700"
+    },
+    {
+      "type": "text",
+      "id": "section-primitives_note",
+      "x": 0,
+      "y": 134,
+      "fill": "$color.text.tertiary",
+      "textGrowth": "fixed-width-height",
+      "width": 760,
+      "height": 20,
+      "content": "Core actions, pills, dividers, avatars, and small shared building blocks.",
+      "fontFamily": "Inter",
+      "fontSize": "$type.caption",
+      "fontWeight": "normal"
+    },
+    {
+      "type": "text",
+      "id": "section-forms_heading",
+      "x": 0,
+      "y": 272,
+      "fill": "$color.text.primary",
+      "content": "Forms and states",
+      "fontFamily": "Inter",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700"
+    },
+    {
+      "type": "text",
+      "id": "section-forms_note",
+      "x": 0,
+      "y": 298,
+      "fill": "$color.text.tertiary",
+      "textGrowth": "fixed-width-height",
+      "width": 760,
+      "height": 20,
+      "content": "Field metadata, inputs, selectors, and common interaction states.",
+      "fontFamily": "Inter",
+      "fontSize": "$type.caption",
+      "fontWeight": "normal"
+    },
+    {
+      "type": "text",
+      "id": "section-chrome_heading",
+      "x": 1100,
+      "y": 108,
+      "fill": "$color.text.primary",
+      "content": "App chrome and navigation",
+      "fontFamily": "Inter",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700"
+    },
+    {
+      "type": "text",
+      "id": "section-chrome_note",
+      "x": 1100,
+      "y": 134,
+      "fill": "$color.text.tertiary",
+      "textGrowth": "fixed-width-height",
+      "width": 720,
+      "height": 20,
+      "content": "Headers, toolbars, nav rows, session rows, sidebars, and menus.",
+      "fontFamily": "Inter",
+      "fontSize": "$type.caption",
+      "fontWeight": "normal"
+    },
+    {
+      "type": "text",
+      "id": "section-content_heading",
+      "x": 0,
+      "y": 640,
+      "fill": "$color.text.primary",
+      "content": "Content patterns",
+      "fontFamily": "Inter",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700"
+    },
+    {
+      "type": "text",
+      "id": "section-content_note",
+      "x": 0,
+      "y": 666,
+      "fill": "$color.text.tertiary",
+      "textGrowth": "fixed-width-height",
+      "width": 760,
+      "height": 20,
+      "content": "Cards, rows, metrics, destinations, notices, and empty states.",
+      "fontFamily": "Inter",
+      "fontSize": "$type.caption",
+      "fontWeight": "normal"
+    },
+    {
+      "type": "text",
+      "id": "section-overlays_heading",
+      "x": 1400,
+      "y": 390,
+      "fill": "$color.text.primary",
+      "content": "Overlay shells",
+      "fontFamily": "Inter",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700"
+    },
+    {
+      "type": "text",
+      "id": "section-overlays_note",
+      "x": 1400,
+      "y": 416,
+      "fill": "$color.text.tertiary",
+      "textGrowth": "fixed-width-height",
+      "width": 520,
+      "height": 20,
+      "content": "Desktop modal, mobile sheet, and shared dialog body patterns.",
+      "fontFamily": "Inter",
+      "fontSize": "$type.caption",
+      "fontWeight": "normal"
+    },
+    {
+      "type": "text",
+      "id": "section-layouts_heading",
+      "x": 0,
+      "y": 1184,
+      "fill": "$color.text.primary",
+      "content": "Layout templates",
+      "fontFamily": "Inter",
+      "fontSize": "$type.subtitle",
+      "fontWeight": "700"
+    },
+    {
+      "type": "text",
+      "id": "section-layouts_note",
+      "x": 0,
+      "y": 1210,
+      "fill": "$color.text.tertiary",
+      "textGrowth": "fixed-width-height",
+      "width": 900,
+      "height": 20,
+      "content": "Page shells, multi-column layouts, split panes, and settings stacks.",
+      "fontFamily": "Inter",
+      "fontSize": "$type.caption",
+      "fontWeight": "normal"
+    },
+    {
+      "type": "frame",
+      "id": "ds_field_label_stack",
+      "x": 740,
+      "y": 200,
+      "name": "Field Label Stack",
+      "reusable": true,
+      "width": 220,
+      "height": 42,
+      "layout": "vertical",
+      "gap": "$space.3xs",
+      "children": [
+        {
+          "type": "text",
+          "id": "field-label-stack_label",
+          "fill": "$color.text.primary",
+          "content": "Field label",
+          "fontFamily": "Inter",
+          "fontSize": "$type.label",
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "field-label-stack_helper",
+          "fill": "$color.text.tertiary",
+          "textGrowth": "fixed-width",
+          "width": 220,
+          "content": "Short helper text or context note.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_button_primary",
+      "x": 0,
+      "y": 140,
+      "name": "Button Primary",
+      "reusable": true,
+      "width": 180,
+      "height": 40,
+      "fill": "$color.fill.brand",
+      "cornerRadius": "$radius.md",
+      "gap": "$space.xs",
+      "padding": [
+        "$space.xs",
+        "$space.md"
+      ],
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "icon_font",
+          "id": "button-primary_icon",
+          "width": 0,
+          "height": 0,
+          "iconFontName": "arrow-right",
+          "iconFontFamily": "lucide",
+          "fill": "$color.text.inverse"
+        },
+        {
+          "type": "text",
+          "id": "button-primary_label",
+          "fill": "$color.text.inverse",
+          "content": "Continue",
+          "fontFamily": "Inter",
+          "fontSize": "$type.label",
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "id": "ds_button_secondary",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_button_primary",
+      "name": "Button Secondary",
+      "x": 200,
+      "y": 140,
+      "fill": "$color.surface",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "descendants": {
+        "button-primary_icon": {
+          "fill": "$color.text.primary",
+          "x": 63.5,
+          "y": 20
+        },
+        "button-primary_label": {
+          "content": "Cancel",
+          "fill": "$color.text.primary",
+          "x": 71.5,
+          "y": 12
+        }
+      }
+    },
+    {
+      "id": "ds_button_destructive",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_button_primary",
+      "name": "Button Destructive",
+      "x": 400,
+      "y": 140,
+      "fill": "$color.surface.error.soft",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.error"
+      },
+      "descendants": {
+        "button-primary_icon": {
+          "iconFontName": "trash-2",
+          "fill": "$color.text.error",
+          "x": 65.5,
+          "y": 20
+        },
+        "button-primary_label": {
+          "content": "Delete",
+          "fill": "$color.text.error",
+          "x": 73.5,
+          "y": 12
+        }
+      }
+    },
+    {
+      "id": "ds_button_disabled",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_button_secondary",
+      "name": "Button Disabled",
+      "x": 600,
+      "y": 140,
+      "opacity": 0.6,
+      "descendants": {
+        "button-primary_icon": {
+          "fill": "$color.text.disabled",
+          "x": 48.5,
+          "y": 20
+        },
+        "button-primary_label": {
+          "content": "Unavailable",
+          "fill": "$color.text.disabled",
+          "x": 56.5,
+          "y": 12
+        }
+      }
+    },
+    {
+      "id": "ds_button_loading",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_button_primary",
+      "name": "Button Loading",
+      "x": 800,
+      "y": 140,
+      "descendants": {
+        "button-primary_icon": {
+          "iconFontName": "loader-circle",
+          "x": 52.5,
+          "y": 20
+        },
+        "button-primary_label": {
+          "content": "Working...",
+          "x": 60.5,
+          "y": 12
+        }
+      }
+    },
+    {
+      "id": "ds_button_primary_pressed",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_button_primary",
+      "name": "Button Primary Pressed",
+      "x": 1000,
+      "y": 140,
+      "fill": "$color.fill.brand.pressed",
+      "descendants": {
+        "button-primary_icon": {
+          "x": 60,
+          "y": 20
+        },
+        "button-primary_label": {
+          "content": "Pressed",
+          "x": 68,
+          "y": 12
+        }
+      }
+    },
+    {
+      "type": "frame",
+      "id": "ds_icon_button",
+      "x": 0,
+      "y": 206,
+      "name": "Icon Button",
+      "reusable": true,
+      "width": 32,
+      "height": 32,
+      "fill": "$color.transparent",
+      "cornerRadius": "$radius.sm",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "icon_font",
+          "id": "icon-button_icon",
+          "width": 0,
+          "height": 0,
+          "iconFontName": "settings-2",
+          "iconFontFamily": "lucide",
+          "fill": "$color.text.secondary"
+        }
+      ]
+    },
+    {
+      "id": "ds_icon_button_hover",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_icon_button",
+      "name": "Icon Button Hover",
+      "x": 48,
+      "y": 206,
+      "fill": "$color.surface.gray.soft",
+      "descendants": {
+        "icon-button_icon": {
+          "x": 16,
+          "y": 16
+        }
+      }
+    },
+    {
+      "type": "frame",
+      "id": "ds_badge",
+      "x": 104,
+      "y": 208,
+      "name": "Badge",
+      "reusable": true,
+      "width": 128,
+      "height": 28,
+      "fill": "$color.surface.warning.soft",
+      "cornerRadius": "$radius.pill",
+      "padding": [
+        "$space.xxs",
+        "$space.sm"
+      ],
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "text",
+          "id": "badge_label",
+          "fill": "$color.text.warning",
+          "content": "Safety check",
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_action_chip",
+      "x": 248,
+      "y": 206,
+      "name": "Action Chip",
+      "reusable": true,
+      "width": 176,
+      "height": 32,
+      "fill": "$color.surface.selected",
+      "cornerRadius": "$radius.pill",
+      "gap": "$space.xxs",
+      "padding": [
+        "$space.xxs",
+        "$space.md"
+      ],
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "icon_font",
+          "id": "action-chip_icon",
+          "width": 0,
+          "height": 0,
+          "iconFontName": "sparkles",
+          "iconFontFamily": "lucide",
+          "fill": "$color.text.brand"
+        },
+        {
+          "type": "text",
+          "id": "action-chip_label",
+          "fill": "$color.text.brand",
+          "content": "Quick action",
+          "fontFamily": "Inter",
+          "fontSize": "$type.label",
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "rectangle",
+      "id": "ds_divider_horizontal",
+      "x": 448,
+      "y": 222,
+      "name": "Divider Horizontal",
+      "reusable": true,
+      "fill": "$color.border.default",
+      "width": 220,
+      "height": 1
+    },
+    {
+      "type": "rectangle",
+      "id": "ds_divider_vertical",
+      "x": 688,
+      "y": 184,
+      "name": "Divider Vertical",
+      "reusable": true,
+      "fill": "$color.border.default",
+      "width": 1,
+      "height": 72
+    },
+    {
+      "type": "frame",
+      "id": "ds_avatar",
+      "x": 710,
+      "y": 198,
+      "name": "Avatar",
+      "reusable": true,
+      "width": 40,
+      "height": 40,
+      "fill": "$color.surface.selected",
+      "cornerRadius": "$radius.pill",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "text",
+          "id": "avatar_initial",
+          "fill": "$color.text.brand",
+          "content": "A",
+          "fontFamily": "Inter",
+          "fontSize": "$type.label",
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_text_input",
+      "x": 0,
+      "y": 300,
+      "name": "Text Input",
+      "reusable": true,
+      "width": 320,
+      "height": 82,
+      "layout": "vertical",
+      "gap": "$space.xxs",
+      "children": [
+        {
+          "type": "text",
+          "id": "text-input_label",
+          "fill": "$color.text.primary",
+          "content": "Display name",
+          "fontFamily": "Inter",
+          "fontSize": "$type.label",
+          "fontWeight": "600"
+        },
+        {
+          "type": "frame",
+          "id": "text-input_surface",
+          "width": 320,
+          "height": 40,
+          "fill": "$color.canvas",
+          "cornerRadius": "$radius.md",
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.default"
+          },
+          "padding": [
+            "$space.xs",
+            "$space.md"
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "text-input_value",
+              "fill": "$color.text.tertiary",
+              "content": "Placeholder or current value",
+              "fontFamily": "Inter",
+              "fontSize": "$type.body",
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "text-input_helper",
+          "fill": "$color.text.tertiary",
+          "textGrowth": "fixed-width",
+          "width": 320,
+          "content": "Explain what this field controls.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "id": "ds_text_input_focus",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_text_input",
+      "name": "Text Input Focus",
+      "x": 340,
+      "y": 300,
+      "descendants": {
+        "text-input_label": {
+          "fill": "$color.text.brand"
+        },
+        "text-input_surface": {
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.brand"
+          },
+          "y": 20
+        },
+        "text-input_value": {
+          "fill": "$color.text.primary",
+          "x": 16,
+          "y": 11
+        },
+        "text-input_helper": {
+          "y": 64
+        }
+      }
+    },
+    {
+      "id": "ds_text_input_error",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_text_input",
+      "name": "Text Input Error",
+      "x": 680,
+      "y": 300,
+      "descendants": {
+        "text-input_surface": {
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.error"
+          },
+          "y": 20
+        },
+        "text-input_value": {
+          "fill": "$color.text.primary",
+          "x": 16,
+          "y": 11
+        },
+        "text-input_helper": {
+          "content": "Use a valid value before continuing.",
+          "fill": "$color.text.error",
+          "y": 64
+        }
+      }
+    },
+    {
+      "type": "frame",
+      "id": "ds_select_field",
+      "x": 0,
+      "y": 398,
+      "name": "Select Field",
+      "reusable": true,
+      "width": 320,
+      "height": 82,
+      "layout": "vertical",
+      "gap": "$space.xxs",
+      "children": [
+        {
+          "type": "text",
+          "id": "select-field_label",
+          "fill": "$color.text.primary",
+          "content": "Default provider",
+          "fontFamily": "Inter",
+          "fontSize": "$type.label",
+          "fontWeight": "600"
+        },
+        {
+          "type": "frame",
+          "id": "select-field_surface",
+          "width": 320,
+          "height": 40,
+          "fill": "$color.canvas",
+          "cornerRadius": "$radius.md",
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.default"
+          },
+          "padding": [
+            "$space.xs",
+            "$space.md"
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "select-field_value",
+              "fill": "$color.text.primary",
+              "content": "ChatboxAI",
+              "fontFamily": "Inter",
+              "fontSize": "$type.body",
+              "fontWeight": "normal"
+            },
+            {
+              "type": "icon_font",
+              "id": "select-field_icon",
+              "width": 0,
+              "height": 0,
+              "iconFontName": "chevron-down",
+              "iconFontFamily": "lucide",
+              "fill": "$color.text.tertiary"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "select-field_helper",
+          "fill": "$color.text.tertiary",
+          "textGrowth": "fixed-width",
+          "width": 320,
+          "content": "Pick a default for new sessions.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_textarea",
+      "x": 340,
+      "y": 398,
+      "name": "Textarea",
+      "reusable": true,
+      "width": 320,
+      "height": 140,
+      "layout": "vertical",
+      "gap": "$space.xxs",
+      "children": [
+        {
+          "type": "text",
+          "id": "textarea_label",
+          "fill": "$color.text.primary",
+          "content": "System prompt",
+          "fontFamily": "Inter",
+          "fontSize": "$type.label",
+          "fontWeight": "600"
+        },
+        {
+          "type": "frame",
+          "id": "textarea_surface",
+          "width": 320,
+          "height": 98,
+          "fill": "$color.canvas",
+          "cornerRadius": "$radius.md",
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.default"
+          },
+          "layout": "none",
+          "children": [
+            {
+              "type": "text",
+              "id": "textarea_value",
+              "x": 16,
+              "y": 14,
+              "fill": "$color.text.secondary",
+              "textGrowth": "fixed-width-height",
+              "width": 288,
+              "height": 68,
+              "content": "Give the assistant a reliable operating context and any guardrails that should persist across the session.",
+              "lineHeight": 1.45,
+              "fontFamily": "Inter",
+              "fontSize": "$type.body",
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "textarea_helper",
+          "fill": "$color.text.tertiary",
+          "textGrowth": "fixed-width",
+          "width": 320,
+          "content": "Longer settings or notes live well here.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_checkbox",
+      "x": 680,
+      "y": 406,
+      "name": "Checkbox",
+      "reusable": true,
+      "width": 220,
+      "height": 36,
+      "gap": "$space.sm",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "checkbox_box",
+          "width": 20,
+          "height": 20,
+          "fill": "$color.canvas",
+          "cornerRadius": "$radius.sm",
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.default"
+          },
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "checkbox_icon",
+              "width": 14,
+              "height": 14,
+              "iconFontName": "check",
+              "iconFontFamily": "lucide",
+              "fill": "$color.transparent"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "checkbox_label",
+          "fill": "$color.text.primary",
+          "content": "Remember this preference",
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "id": "ds_checkbox_checked",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_checkbox",
+      "name": "Checkbox Checked",
+      "x": 920,
+      "y": 406,
+      "descendants": {
+        "checkbox_box": {
+          "fill": "$color.fill.brand",
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.brand"
+          },
+          "y": 8
+        },
+        "checkbox_icon": {
+          "fill": "$color.text.inverse",
+          "x": 3,
+          "y": 3
+        },
+        "checkbox_label": {
+          "x": 32,
+          "y": 9
+        }
+      }
+    },
+    {
+      "type": "frame",
+      "id": "ds_radio",
+      "x": 680,
+      "y": 456,
+      "name": "Radio",
+      "reusable": true,
+      "width": 220,
+      "height": 36,
+      "gap": "$space.sm",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "radio_circle",
+          "width": 20,
+          "height": 20,
+          "fill": "$color.canvas",
+          "cornerRadius": "$radius.pill",
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.default"
+          },
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "ellipse",
+              "id": "radio_dot",
+              "fill": "$color.transparent",
+              "width": 10,
+              "height": 10
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "radio_label",
+          "fill": "$color.text.primary",
+          "content": "Open in current tab",
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "id": "ds_radio_selected",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_radio",
+      "name": "Radio Selected",
+      "x": 920,
+      "y": 456,
+      "descendants": {
+        "radio_circle": {
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.brand"
+          },
+          "y": 8
+        },
+        "radio_dot": {
+          "fill": "$color.fill.brand",
+          "x": 5,
+          "y": 5
+        },
+        "radio_label": {
+          "x": 32,
+          "y": 9
+        }
+      }
+    },
+    {
+      "type": "frame",
+      "id": "ds_switch",
+      "x": 680,
+      "y": 512,
+      "name": "Switch",
+      "reusable": true,
+      "width": 240,
+      "height": 36,
+      "justifyContent": "space_between",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "text",
+          "id": "switch_label",
+          "fill": "$color.text.primary",
+          "content": "Web browsing",
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "switch_track",
+          "width": 44,
+          "height": 24,
+          "fill": "$color.surface.muted",
+          "cornerRadius": "$radius.pill",
+          "layout": "none",
+          "children": [
+            {
+              "type": "ellipse",
+              "id": "switch_knob",
+              "x": 2,
+              "y": 2,
+              "fill": "$color.canvas",
+              "width": 20,
+              "height": 20
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ds_switch_on",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_switch",
+      "name": "Switch On",
+      "x": 920,
+      "y": 512,
+      "descendants": {
+        "switch_label": {
+          "y": 9
+        },
+        "switch_track": {
+          "fill": "$color.fill.brand",
+          "x": 196,
+          "y": 6
+        },
+        "switch_knob": {
+          "x": 22
+        }
+      }
+    },
+    {
+      "type": "frame",
+      "id": "ds_segmented_control",
+      "x": 680,
+      "y": 568,
+      "name": "Segmented Control",
+      "reusable": true,
+      "width": 360,
+      "height": 40,
+      "fill": "$color.surface",
+      "cornerRadius": "$radius.md",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "children": [
+        {
+          "type": "frame",
+          "id": "segmented-control_left",
+          "width": 120,
+          "height": 40,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "segmented-control_left-label",
+              "fill": "$color.text.secondary",
+              "content": "General",
+              "fontFamily": "Inter",
+              "fontSize": "$type.label",
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "segmented-control_center",
+          "width": 120,
+          "height": 40,
+          "fill": "$color.surface.selected",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "segmented-control_center-label",
+              "fill": "$color.text.brand",
+              "content": "Advanced",
+              "fontFamily": "Inter",
+              "fontSize": "$type.label",
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "segmented-control_right",
+          "width": 120,
+          "height": 40,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "segmented-control_right-label",
+              "fill": "$color.text.secondary",
+              "content": "Privacy",
+              "fontFamily": "Inter",
+              "fontSize": "$type.label",
+              "fontWeight": "600"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_page_header",
+      "x": 1100,
+      "y": 140,
+      "name": "Page Header",
+      "reusable": true,
+      "width": 560,
+      "height": 56,
+      "fill": "$color.canvas",
+      "stroke": {
+        "thickness": {
+          "bottom": 1
+        },
+        "fill": "$color.border.default"
+      },
+      "gap": "$space.sm",
+      "padding": [
+        "$space.xs",
+        "$space.md"
+      ],
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "page-header_leading-slot",
+          "slot": [
+            "ds_icon_button",
+            "ds_badge"
+          ],
+          "width": 40,
+          "height": 40
+        },
+        {
+          "type": "text",
+          "id": "page-header_title",
+          "fill": "$color.text.primary",
+          "textGrowth": "fixed-width",
+          "width": 300,
+          "content": "Settings",
+          "fontFamily": "Inter",
+          "fontSize": "$type.title",
+          "fontWeight": "700"
+        },
+        {
+          "type": "frame",
+          "id": "page-header_actions-slot",
+          "slot": [
+            "ds_button_secondary",
+            "ds_button_primary",
+            "ds_icon_button",
+            "ds_segmented_control"
+          ],
+          "width": 176,
+          "height": 40,
+          "gap": "$space.xs",
+          "justifyContent": "end",
+          "alignItems": "center"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_toolbar_shell",
+      "x": 1100,
+      "y": 220,
+      "name": "Toolbar Shell",
+      "reusable": true,
+      "width": 560,
+      "height": 44,
+      "fill": "$color.canvas",
+      "cornerRadius": "$radius.md",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "padding": [
+        "$space.xs",
+        "$space.sm"
+      ],
+      "justifyContent": "space_between",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "toolbar-shell_left-slot",
+          "slot": [
+            "ds_badge",
+            "ds_action_chip",
+            "ds_segmented_control"
+          ],
+          "width": 160,
+          "height": 28,
+          "gap": "$space.xs",
+          "alignItems": "center"
+        },
+        {
+          "type": "frame",
+          "id": "toolbar-shell_center-slot",
+          "slot": [
+            "ds_badge",
+            "ds_action_chip"
+          ],
+          "width": 160,
+          "height": 28,
+          "justifyContent": "center",
+          "alignItems": "center"
+        },
+        {
+          "type": "frame",
+          "id": "toolbar-shell_right-slot",
+          "slot": [
+            "ds_icon_button",
+            "ds_button_secondary",
+            "ds_button_primary"
+          ],
+          "width": 160,
+          "height": 28,
+          "gap": "$space.xs",
+          "justifyContent": "end",
+          "alignItems": "center"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_nav_item",
+      "x": 1100,
+      "y": 292,
+      "name": "Nav Item",
+      "reusable": true,
+      "width": 260,
+      "height": 40,
+      "fill": "$color.transparent",
+      "cornerRadius": "$radius.sm",
+      "padding": [
+        "$space.xs",
+        "$space.sm"
+      ],
+      "justifyContent": "space_between",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "nav-item_lead",
+          "width": 20,
+          "height": 20,
+          "fill": "$color.surface.selected",
+          "cornerRadius": "$radius.sm"
+        },
+        {
+          "type": "text",
+          "id": "nav-item_label",
+          "fill": "$color.text.primary",
+          "content": "Messages",
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "nav-item_meta",
+          "fill": "$color.text.tertiary",
+          "content": "Cmd K",
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "id": "ds_nav_item_selected",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_nav_item",
+      "name": "Nav Item Selected",
+      "x": 1376,
+      "y": 292,
+      "fill": "$color.surface.selected",
+      "descendants": {
+        "nav-item_lead": {
+          "x": 12,
+          "y": 10
+        },
+        "nav-item_label": {
+          "fill": "$color.text.brand",
+          "x": 83,
+          "y": 11
+        },
+        "nav-item_meta": {
+          "fill": "$color.text.brand",
+          "x": 209,
+          "y": 12.5
+        }
+      }
+    },
+    {
+      "type": "frame",
+      "id": "ds_session_row",
+      "x": 1100,
+      "y": 344,
+      "name": "Session Row",
+      "reusable": true,
+      "width": 260,
+      "height": 44,
+      "fill": "$color.transparent",
+      "cornerRadius": "$radius.sm",
+      "padding": [
+        "$space.xs",
+        "$space.sm"
+      ],
+      "justifyContent": "space_between",
+      "alignItems": "center",
+      "children": [
+        {
+          "id": "session-row_avatar",
+          "type": "ref",
+          "ref": "ds_avatar",
+          "x": 12,
+          "y": 2,
+          "descendants": {
+            "avatar_initial": {
+              "x": 15,
+              "y": 12
+            }
+          }
+        },
+        {
+          "type": "text",
+          "id": "session-row_label",
+          "fill": "$color.text.primary",
+          "content": "Project assistant",
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        },
+        {
+          "id": "session-row_action",
+          "type": "ref",
+          "ref": "ds_icon_button",
+          "x": 216,
+          "y": 6,
+          "descendants": {
+            "icon-button_icon": {
+              "iconFontName": "ellipsis",
+              "x": 16,
+              "y": 16
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ds_session_row_selected",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_session_row",
+      "name": "Session Row Selected",
+      "x": 1376,
+      "y": 344,
+      "fill": "$color.surface.selected",
+      "descendants": {
+        "session-row_avatar": {
+          "x": 12,
+          "y": 2
+        },
+        "session-row_avatar/avatar_initial": {
+          "x": 15,
+          "y": 12
+        },
+        "session-row_label": {
+          "fill": "$color.text.brand",
+          "x": 75,
+          "y": 13
+        },
+        "session-row_action": {
+          "x": 216,
+          "y": 6
+        },
+        "session-row_action/icon-button_icon": {
+          "fill": "$color.text.brand",
+          "x": 16,
+          "y": 16
+        }
+      }
+    },
+    {
+      "type": "frame",
+      "id": "ds_sidebar_shell",
+      "x": 1100,
+      "y": 420,
+      "name": "Sidebar Shell",
+      "reusable": true,
+      "width": 280,
+      "height": 520,
+      "fill": "$color.surface",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "layout": "vertical",
+      "gap": "$space.sm",
+      "padding": "$space.md",
+      "children": [
+        {
+          "type": "text",
+          "id": "sidebar-shell_title",
+          "fill": "$color.text.primary",
+          "content": "Workspace",
+          "fontFamily": "Inter",
+          "fontSize": "$type.subtitle",
+          "fontWeight": "700"
+        },
+        {
+          "type": "frame",
+          "id": "sidebar-shell_nav-slot",
+          "slot": [
+            "ds_nav_item",
+            "ds_nav_item_selected",
+            "ds_session_row",
+            "ds_session_row_selected"
+          ],
+          "width": 248,
+          "height": 392,
+          "layout": "vertical",
+          "gap": "$space.xs"
+        },
+        {
+          "type": "frame",
+          "id": "sidebar-shell_footer-slot",
+          "slot": [
+            "ds_badge",
+            "ds_action_chip",
+            "ds_button_secondary"
+          ],
+          "width": 248,
+          "height": 60,
+          "layout": "vertical",
+          "gap": "$space.xs"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_menu_item",
+      "x": 1660,
+      "y": 320,
+      "name": "Menu Item",
+      "reusable": true,
+      "width": 220,
+      "height": 36,
+      "fill": "$color.transparent",
+      "cornerRadius": "$radius.sm",
+      "gap": "$space.sm",
+      "padding": [
+        "$space.xs",
+        "$space.sm"
+      ],
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "icon_font",
+          "id": "menu-item_icon",
+          "width": 0,
+          "height": 0,
+          "iconFontName": "pencil-line",
+          "iconFontFamily": "lucide",
+          "fill": "$color.text.secondary"
+        },
+        {
+          "type": "text",
+          "id": "menu-item_label",
+          "fill": "$color.text.primary",
+          "content": "Edit",
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "id": "ds_menu_item_danger",
+      "type": "ref",
+      "reusable": true,
+      "ref": "ds_menu_item",
+      "name": "Menu Item Danger",
+      "x": 1660,
+      "y": 366,
+      "descendants": {
+        "menu-item_icon": {
+          "iconFontName": "trash-2",
+          "fill": "$color.text.error",
+          "x": 12,
+          "y": 18
+        },
+        "menu-item_label": {
+          "content": "Delete",
+          "fill": "$color.text.error",
+          "x": 24,
+          "y": 9
+        }
+      }
+    },
+    {
+      "type": "frame",
+      "id": "ds_menu_shell",
+      "x": 1660,
+      "y": 140,
+      "name": "Menu Shell",
+      "reusable": true,
+      "width": 240,
+      "height": 156,
+      "fill": "$color.canvas",
+      "cornerRadius": "$radius.lg",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$color.overlay",
+        "offset": {
+          "x": 0,
+          "y": 12
+        },
+        "blur": 24
+      },
+      "layout": "vertical",
+      "gap": "$space.xxs",
+      "padding": "$space.xs",
+      "children": [
+        {
+          "id": "menu-shell_item-one",
+          "type": "ref",
+          "ref": "ds_menu_item",
+          "x": 8,
+          "y": 8,
+          "descendants": {
+            "menu-item_icon": {
+              "x": 12,
+              "y": 18
+            },
+            "menu-item_label": {
+              "x": 24,
+              "y": 9
+            }
+          }
+        },
+        {
+          "id": "menu-shell_item-two",
+          "type": "ref",
+          "ref": "ds_menu_item",
+          "x": 8,
+          "y": 48,
+          "descendants": {
+            "menu-item_icon": {
+              "iconFontName": "copy",
+              "x": 12,
+              "y": 18
+            },
+            "menu-item_label": {
+              "content": "Duplicate",
+              "x": 24,
+              "y": 9
+            }
+          }
+        },
+        {
+          "id": "menu-shell_divider",
+          "type": "ref",
+          "ref": "ds_divider_horizontal",
+          "x": 8,
+          "y": 88
+        },
+        {
+          "id": "menu-shell_item-danger",
+          "type": "ref",
+          "ref": "ds_menu_item_danger",
+          "x": 8,
+          "y": 93,
+          "descendants": {
+            "menu-item_icon": {
+              "x": 12,
+              "y": 18
+            },
+            "menu-item_label": {
+              "x": 24,
+              "y": 9
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_section_card",
+      "x": 0,
+      "y": 680,
+      "name": "Section Card",
+      "reusable": true,
+      "width": 360,
+      "height": 260,
+      "fill": "$color.surface",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "layout": "vertical",
+      "gap": "$space.sm",
+      "padding": "$space.xl",
+      "children": [
+        {
+          "type": "text",
+          "id": "section-card_eyebrow",
+          "fill": "$color.text.tertiary",
+          "content": "SECTION",
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "700",
+          "letterSpacing": 1
+        },
+        {
+          "type": "text",
+          "id": "section-card_title",
+          "fill": "$color.text.primary",
+          "content": "Section title",
+          "fontFamily": "Inter",
+          "fontSize": "$type.title",
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "section-card_body",
+          "fill": "$color.text.secondary",
+          "textGrowth": "fixed-width",
+          "width": 312,
+          "content": "Use this for grouped settings, support sections, or any area that needs a clear title and a small stack of follow-on content.",
+          "lineHeight": 1.45,
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "section-card_content-slot",
+          "slot": [
+            "ds_list_row",
+            "ds_table_row",
+            "ds_action_chip",
+            "ds_badge",
+            "ds_notice_banner"
+          ],
+          "width": 312,
+          "height": 88,
+          "layout": "vertical",
+          "gap": "$space.xs"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_list_row",
+      "x": 380,
+      "y": 680,
+      "name": "List Row",
+      "reusable": true,
+      "width": 360,
+      "height": 76,
+      "fill": "$color.canvas",
+      "cornerRadius": "$radius.lg",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "gap": "$space.md",
+      "padding": "$space.md",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "list-row_lead",
+          "width": 28,
+          "height": 28,
+          "fill": "$color.surface.selected",
+          "cornerRadius": "$radius.md"
+        },
+        {
+          "type": "frame",
+          "id": "list-row_content",
+          "width": 220,
+          "height": 44,
+          "layout": "vertical",
+          "gap": "$space.3xs",
+          "children": [
+            {
+              "type": "text",
+              "id": "list-row_title",
+              "fill": "$color.text.primary",
+              "content": "Community Discord",
+              "fontFamily": "Inter",
+              "fontSize": "$type.body",
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "list-row_subtitle",
+              "fill": "$color.text.tertiary",
+              "textGrowth": "fixed-width",
+              "width": 220,
+              "content": "Fast answers, product updates, and team support.",
+              "lineHeight": 1.4,
+              "fontFamily": "Inter",
+              "fontSize": "$type.caption",
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "list-row_meta",
+          "fill": "$color.text.brand",
+          "content": "Open",
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_table_row",
+      "x": 380,
+      "y": 772,
+      "name": "Table Row",
+      "reusable": true,
+      "width": 360,
+      "height": 48,
+      "fill": "$color.canvas",
+      "cornerRadius": "$radius.md",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "padding": [
+        "$space.xs",
+        "$space.md"
+      ],
+      "justifyContent": "space_between",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "text",
+          "id": "table-row_column-one",
+          "fill": "$color.text.tertiary",
+          "content": "Provider",
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "table-row_column-two",
+          "fill": "$color.text.primary",
+          "content": "Connected",
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "table-row_column-three",
+          "fill": "$color.text.success",
+          "content": "Synced",
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_stat_tile",
+      "x": 760,
+      "y": 680,
+      "name": "Stat Tile",
+      "reusable": true,
+      "width": 220,
+      "height": 152,
+      "fill": "$color.surface.selected",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "layout": "vertical",
+      "gap": "$space.xs",
+      "padding": "$space.xl",
+      "children": [
+        {
+          "type": "text",
+          "id": "stat-tile_value",
+          "fill": "$color.text.primary",
+          "content": "12",
+          "fontFamily": "Inter",
+          "fontSize": 40,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "stat-tile_title",
+          "fill": "$color.text.primary",
+          "content": "Connected tools",
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "stat-tile_body",
+          "fill": "$color.text.secondary",
+          "textGrowth": "fixed-width",
+          "width": 172,
+          "content": "Compact metric tiles work best for fast scanning and lightweight status updates.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_resource_tile",
+      "x": 1000,
+      "y": 680,
+      "name": "Resource Tile",
+      "reusable": true,
+      "width": 300,
+      "height": 176,
+      "fill": "$color.canvas",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "layout": "vertical",
+      "gap": "$space.xs",
+      "padding": "$space.xl",
+      "children": [
+        {
+          "type": "text",
+          "id": "resource-tile_eyebrow",
+          "fill": "$color.text.tertiary",
+          "content": "RESOURCE",
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "700",
+          "letterSpacing": 1
+        },
+        {
+          "type": "text",
+          "id": "resource-tile_title",
+          "fill": "$color.text.primary",
+          "content": "Documentation",
+          "fontFamily": "Inter",
+          "fontSize": "$type.title",
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "resource-tile_body",
+          "fill": "$color.text.secondary",
+          "textGrowth": "fixed-width",
+          "width": 252,
+          "content": "For richer destinations that need stronger hierarchy than a simple list row.",
+          "lineHeight": 1.45,
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        },
+        {
+          "id": "resource-tile_footer-chip",
+          "type": "ref",
+          "ref": "ds_action_chip",
+          "x": 24,
+          "y": 158,
+          "descendants": {
+            "action-chip_icon": {
+              "iconFontName": "book-open",
+              "x": 52,
+              "y": 16
+            },
+            "action-chip_label": {
+              "content": "Read more",
+              "x": 56,
+              "y": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_notice_banner",
+      "x": 1320,
+      "y": 680,
+      "name": "Notice Banner",
+      "reusable": true,
+      "width": 600,
+      "height": 160,
+      "fill": "$color.surface.warning.soft",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.warning"
+      },
+      "gap": "$space.md",
+      "padding": "$space.xl",
+      "children": [
+        {
+          "type": "frame",
+          "id": "notice-banner_icon-wrap",
+          "width": 36,
+          "height": 36,
+          "fill": "$color.canvas",
+          "cornerRadius": "$radius.md",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "notice-banner_icon",
+              "width": 0,
+              "height": 0,
+              "iconFontName": "triangle-alert",
+              "iconFontFamily": "lucide",
+              "fill": "$color.text.warning"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "notice-banner_content",
+          "width": 500,
+          "height": 112,
+          "layout": "vertical",
+          "gap": "$space.xxs",
+          "children": [
+            {
+              "type": "text",
+              "id": "notice-banner_eyebrow",
+              "fill": "$color.text.warning",
+              "content": "NOTICE",
+              "fontFamily": "Inter",
+              "fontSize": "$type.caption",
+              "fontWeight": "700",
+              "letterSpacing": 1
+            },
+            {
+              "type": "text",
+              "id": "notice-banner_title",
+              "fill": "$color.text.primary",
+              "content": "Important trust message",
+              "fontFamily": "Inter",
+              "fontSize": "$type.subtitle",
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "notice-banner_body",
+              "fill": "$color.text.secondary",
+              "textGrowth": "fixed-width",
+              "width": 500,
+              "content": "Use a banner for warnings, migrations, or support notices that should stand out without feeling destructive.",
+              "lineHeight": 1.45,
+              "fontFamily": "Inter",
+              "fontSize": "$type.body",
+              "fontWeight": "normal"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_empty_state",
+      "x": 0,
+      "y": 960,
+      "name": "Empty State",
+      "reusable": true,
+      "width": 360,
+      "height": 236,
+      "fill": "$color.surface",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "layout": "vertical",
+      "gap": "$space.sm",
+      "padding": [
+        "$space.xxl",
+        "$space.xl"
+      ],
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "empty-state_illustration",
+          "width": 56,
+          "height": 56,
+          "fill": "$color.surface.selected",
+          "cornerRadius": "$radius.lg",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "empty-state_icon",
+              "width": 24,
+              "height": 24,
+              "iconFontName": "inbox",
+              "iconFontFamily": "lucide",
+              "fill": "$color.text.brand"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "empty-state_title",
+          "fill": "$color.text.primary",
+          "content": "Nothing here yet",
+          "fontFamily": "Inter",
+          "fontSize": "$type.title",
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "empty-state_body",
+          "fill": "$color.text.secondary",
+          "textGrowth": "fixed-width",
+          "width": 296,
+          "content": "Use an empty state when a surface would otherwise feel blank and directionless.",
+          "lineHeight": 1.45,
+          "textAlign": "center",
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "empty-state_action-slot",
+          "slot": [
+            "ds_button_primary",
+            "ds_button_secondary",
+            "ds_action_chip"
+          ],
+          "width": 296,
+          "height": 40,
+          "gap": "$space.xs",
+          "justifyContent": "center",
+          "alignItems": "center"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_modal_shell",
+      "x": 1400,
+      "y": 420,
+      "name": "Modal Shell",
+      "reusable": true,
+      "width": 520,
+      "height": 420,
+      "fill": "$color.canvas",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$color.overlay",
+        "offset": {
+          "x": 0,
+          "y": 18
+        },
+        "blur": 36
+      },
+      "layout": "vertical",
+      "gap": "$space.md",
+      "padding": "$space.lg",
+      "children": [
+        {
+          "type": "frame",
+          "id": "modal-shell_header",
+          "width": 480,
+          "height": 40,
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "modal-shell_title",
+              "fill": "$color.text.primary",
+              "content": "Modal title",
+              "fontFamily": "Inter",
+              "fontSize": "$type.title",
+              "fontWeight": "700"
+            },
+            {
+              "id": "modal-shell_close",
+              "type": "ref",
+              "ref": "ds_icon_button",
+              "x": 448,
+              "y": 4,
+              "descendants": {
+                "icon-button_icon": {
+                  "iconFontName": "x",
+                  "x": 16,
+                  "y": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "modal-shell_body-slot",
+          "slot": [
+            "ds_dialog_body",
+            "ds_textarea",
+            "ds_notice_banner",
+            "ds_empty_state"
+          ],
+          "width": 480,
+          "height": 280,
+          "fill": "$color.surface",
+          "cornerRadius": "$radius.lg",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": "$space.md"
+        },
+        {
+          "type": "frame",
+          "id": "modal-shell_actions-slot",
+          "slot": [
+            "ds_button_secondary",
+            "ds_button_primary",
+            "ds_button_destructive"
+          ],
+          "width": 480,
+          "height": 40,
+          "gap": "$space.xs",
+          "justifyContent": "end",
+          "alignItems": "center"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_bottom_sheet_shell",
+      "x": 1400,
+      "y": 860,
+      "name": "Bottom Sheet Shell",
+      "reusable": true,
+      "width": 420,
+      "height": 320,
+      "fill": "$color.canvas",
+      "cornerRadius": [
+        24,
+        24,
+        0,
+        0
+      ],
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$color.overlay",
+        "offset": {
+          "x": 0,
+          "y": -8
+        },
+        "blur": 24
+      },
+      "layout": "vertical",
+      "gap": "$space.sm",
+      "padding": [
+        "$space.sm",
+        "$space.lg",
+        "$space.lg",
+        "$space.lg"
+      ],
+      "children": [
+        {
+          "type": "rectangle",
+          "cornerRadius": "$radius.pill",
+          "id": "bottom-sheet_handle",
+          "fill": "$color.surface.muted",
+          "width": 48,
+          "height": 6
+        },
+        {
+          "type": "text",
+          "id": "bottom-sheet_title",
+          "fill": "$color.text.primary",
+          "content": "Sheet title",
+          "fontFamily": "Inter",
+          "fontSize": "$type.subtitle",
+          "fontWeight": "700"
+        },
+        {
+          "type": "frame",
+          "id": "bottom-sheet_body-slot",
+          "slot": [
+            "ds_dialog_body",
+            "ds_notice_banner",
+            "ds_textarea",
+            "ds_empty_state"
+          ],
+          "width": 380,
+          "height": 224,
+          "fill": "$color.surface",
+          "cornerRadius": "$radius.lg",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": "$space.md"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_dialog_body",
+      "x": 1400,
+      "y": 1204,
+      "name": "Dialog Body",
+      "reusable": true,
+      "width": 460,
+      "height": 240,
+      "layout": "vertical",
+      "gap": "$space.sm",
+      "children": [
+        {
+          "type": "text",
+          "id": "dialog-body_title",
+          "fill": "$color.text.primary",
+          "content": "Confirm the change",
+          "fontFamily": "Inter",
+          "fontSize": "$type.subtitle",
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "dialog-body_body",
+          "fill": "$color.text.secondary",
+          "textGrowth": "fixed-width",
+          "width": 460,
+          "content": "Use this layout for alert dialogs, destructive confirmations, and short approval flows.",
+          "lineHeight": 1.45,
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "dialog-body_content-slot",
+          "slot": [
+            "ds_notice_banner",
+            "ds_textarea",
+            "ds_text_input",
+            "ds_select_field"
+          ],
+          "width": 460,
+          "height": 112,
+          "layout": "vertical",
+          "gap": "$space.sm"
+        },
+        {
+          "type": "frame",
+          "id": "dialog-body_actions-slot",
+          "slot": [
+            "ds_button_secondary",
+            "ds_button_primary",
+            "ds_button_destructive"
+          ],
+          "width": 460,
+          "height": 40,
+          "gap": "$space.xs",
+          "justifyContent": "end",
+          "alignItems": "center"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_page_shell",
+      "x": 0,
+      "y": 1220,
+      "name": "Page Shell",
+      "reusable": true,
+      "width": 1040,
+      "height": 820,
+      "fill": "$color.canvas",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "page-shell_header-slot",
+          "slot": [
+            "ds_page_header",
+            "ds_toolbar_shell"
+          ],
+          "width": 1040,
+          "height": 56
+        },
+        {
+          "type": "frame",
+          "id": "page-shell_content-slot",
+          "slot": [
+            "ds_settings_form_shell",
+            "ds_two_column_shell",
+            "ds_split_pane_shell",
+            "ds_section_card",
+            "ds_notice_banner",
+            "ds_empty_state"
+          ],
+          "width": 1040,
+          "height": 764,
+          "layout": "vertical",
+          "gap": "$space.md",
+          "padding": "$space.xl"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_two_column_shell",
+      "x": 1080,
+      "y": 1220,
+      "name": "Two Column Shell",
+      "reusable": true,
+      "width": 600,
+      "height": 360,
+      "fill": "$color.canvas",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "gap": "$space.md",
+      "padding": "$space.md",
+      "children": [
+        {
+          "type": "frame",
+          "id": "two-column_left-slot",
+          "slot": [
+            "ds_section_card",
+            "ds_notice_banner",
+            "ds_resource_tile",
+            "ds_settings_form_shell"
+          ],
+          "width": 276,
+          "height": 328,
+          "fill": "$color.surface",
+          "cornerRadius": "$radius.lg",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": "$space.md"
+        },
+        {
+          "type": "frame",
+          "id": "two-column_right-slot",
+          "slot": [
+            "ds_section_card",
+            "ds_stat_tile",
+            "ds_resource_tile",
+            "ds_empty_state"
+          ],
+          "width": 276,
+          "height": 328,
+          "fill": "$color.surface.selected",
+          "cornerRadius": "$radius.lg",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": "$space.md"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_split_pane_shell",
+      "x": 1080,
+      "y": 1600,
+      "name": "Split Pane Shell",
+      "reusable": true,
+      "width": 720,
+      "height": 360,
+      "fill": "$color.canvas",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "gap": "$space.md",
+      "padding": "$space.md",
+      "children": [
+        {
+          "type": "frame",
+          "id": "split-pane_sidebar-slot",
+          "slot": [
+            "ds_sidebar_shell",
+            "ds_section_card",
+            "ds_notice_banner"
+          ],
+          "width": 232,
+          "height": 328,
+          "fill": "$color.surface",
+          "cornerRadius": "$radius.lg",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": "$space.md"
+        },
+        {
+          "type": "frame",
+          "id": "split-pane_content-slot",
+          "slot": [
+            "ds_settings_form_shell",
+            "ds_resource_tile",
+            "ds_empty_state",
+            "ds_notice_banner"
+          ],
+          "width": 440,
+          "height": 328,
+          "fill": "$color.canvas",
+          "cornerRadius": "$radius.lg",
+          "layout": "vertical",
+          "gap": "$space.sm",
+          "padding": "$space.md"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds_settings_form_shell",
+      "x": 0,
+      "y": 2060,
+      "name": "Settings Form Shell",
+      "reusable": true,
+      "width": 720,
+      "height": 420,
+      "fill": "$color.surface",
+      "cornerRadius": "$radius.xl",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "layout": "vertical",
+      "gap": "$space.md",
+      "padding": "$space.xl",
+      "children": [
+        {
+          "type": "text",
+          "id": "settings-form_eyebrow",
+          "fill": "$color.text.tertiary",
+          "content": "SETTINGS",
+          "fontFamily": "Inter",
+          "fontSize": "$type.caption",
+          "fontWeight": "700",
+          "letterSpacing": 1
+        },
+        {
+          "type": "text",
+          "id": "settings-form_title",
+          "fill": "$color.text.primary",
+          "content": "Configure the experience",
+          "fontFamily": "Inter",
+          "fontSize": "$type.title",
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "settings-form_body",
+          "fill": "$color.text.secondary",
+          "textGrowth": "fixed-width",
+          "width": 672,
+          "content": "Use the form shell for stacked controls, clear explanatory copy, and explicit save or cancel actions.",
+          "lineHeight": 1.45,
+          "fontFamily": "Inter",
+          "fontSize": "$type.body",
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "settings-form_fields-slot",
+          "slot": [
+            "ds_text_input",
+            "ds_select_field",
+            "ds_textarea",
+            "ds_checkbox",
+            "ds_radio",
+            "ds_switch"
+          ],
+          "width": 672,
+          "height": 200,
+          "layout": "vertical",
+          "gap": "$space.sm"
+        },
+        {
+          "type": "frame",
+          "id": "settings-form_actions-slot",
+          "slot": [
+            "ds_button_secondary",
+            "ds_button_primary",
+            "ds_button_loading"
+          ],
+          "width": 672,
+          "height": 40,
+          "gap": "$space.xs",
+          "justifyContent": "end",
+          "alignItems": "center"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "acwPw",
+      "x": 2040,
+      "y": 0,
+      "name": "CB-106 Variation A - Sticky Dock",
+      "width": 1280,
+      "height": 960,
+      "fill": "$color.canvas",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "text",
+          "id": "Ra2tn",
+          "x": 32,
+          "y": 24,
+          "name": "labelA",
+          "fill": "$color.text.primary",
+          "content": "Variation A · Sticky Dock",
+          "fontFamily": "Inter",
+          "fontSize": 20,
+          "fontWeight": "700"
+        },
+        {
+          "type": "frame",
+          "id": "NzLWV",
+          "x": 32,
+          "y": 72,
+          "name": "shellA",
+          "width": 1216,
+          "height": 840,
+          "fill": "$color.surface.gray.soft",
+          "cornerRadius": "$radius.xl",
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.default"
+          },
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "unYkb",
+              "x": 0,
+              "y": 0,
+              "name": "sidebarA",
+              "width": 236,
+              "height": 840,
+              "fill": "$color.surface",
+              "cornerRadius": [
+                24,
+                0,
+                0,
+                24
+              ],
+              "layout": "vertical",
+              "gap": "$space.sm",
+              "padding": "$space.lg",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "VGaKj",
+                  "name": "sidebarTitleA",
+                  "fill": "$color.text.primary",
+                  "content": "Active session",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "BGqTA",
+                  "name": "sidebarHintA",
+                  "fill": "$color.text.secondary",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "The conversation keeps the history. The live app stays docked below.",
+                  "lineHeight": 1.45,
+                  "fontFamily": "Inter",
+                  "fontSize": 14,
+                  "fontWeight": "normal"
+                },
+                {
+                  "id": "Rv5Cr",
+                  "type": "ref",
+                  "ref": "ds_session_row_selected",
+                  "width": "fill_container",
+                  "name": "rowA1",
+                  "descendants": {
+                    "session-row_avatar/avatar_initial": {
+                      "content": "C"
+                    },
+                    "session-row_label": {
+                      "content": "Chess · Midgame"
+                    }
+                  }
+                },
+                {
+                  "id": "nUcFU",
+                  "type": "ref",
+                  "ref": "ds_session_row",
+                  "width": "fill_container",
+                  "name": "rowA2",
+                  "descendants": {
+                    "session-row_avatar/avatar_initial": {
+                      "content": "N"
+                    },
+                    "session-row_label": {
+                      "content": "Writing notes"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "lcSd0",
+              "x": 260,
+              "y": 0,
+              "name": "mainA",
+              "width": 956,
+              "height": 840,
+              "fill": "$color.canvas",
+              "cornerRadius": [
+                0,
+                24,
+                24,
+                0
+              ],
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "vM3Il",
+                  "x": 28,
+                  "y": 24,
+                  "name": "statusA",
+                  "width": 900,
+                  "height": 44,
+                  "fill": "$color.canvas",
+                  "cornerRadius": "$radius.md",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color.border.default"
+                  },
+                  "layout": "none",
+                  "children": [
+                    {
+                      "id": "6B3LH",
+                      "type": "ref",
+                      "ref": "ds_badge",
+                      "x": 14,
+                      "y": 8,
+                      "name": "badgeA",
+                      "descendants": {
+                        "badge_label": {
+                          "content": "Docked runtime"
+                        }
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "id": "SkDbo",
+                      "x": 168,
+                      "y": 12,
+                      "name": "headerA",
+                      "fill": "$color.text.primary",
+                      "content": "Chat can continue while the board stays visible.",
+                      "fontFamily": "Inter",
+                      "fontSize": 16,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "bOVCK",
+                  "x": 28,
+                  "y": 88,
+                  "name": "threadA",
+                  "width": 900,
+                  "height": 470,
+                  "fill": "$color.surface",
+                  "cornerRadius": "$radius.xl",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color.border.default"
+                  },
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "h88f1",
+                      "x": 28,
+                      "y": 28,
+                      "name": "assistantA",
+                      "width": 500,
+                      "height": 116,
+                      "fill": "$color.canvas",
+                      "cornerRadius": "$radius.lg",
+                      "layout": "vertical",
+                      "gap": "$space.xs",
+                      "padding": "$space.md",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "fWHWx",
+                          "name": "assistantATitle",
+                          "fill": "$color.text.tertiary",
+                          "content": "Assistant",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "WiGng",
+                          "name": "assistantABody",
+                          "fill": "$color.text.primary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Use the chess app tool and keep it in view while I ask follow-up moves.",
+                          "lineHeight": 1.45,
+                          "fontFamily": "Inter",
+                          "fontSize": 15,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ytRLh",
+                      "x": 426,
+                      "y": 174,
+                      "name": "userA",
+                      "width": 446,
+                      "height": 92,
+                      "fill": "$color.surface.selected",
+                      "cornerRadius": "$radius.lg",
+                      "layout": "vertical",
+                      "gap": "$space.xxs",
+                      "padding": "$space.md",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "glMjM",
+                          "name": "userABody",
+                          "fill": "$color.text.primary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Play e4 and explain the pressure on f7.",
+                          "lineHeight": 1.45,
+                          "fontFamily": "Inter",
+                          "fontSize": 15,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "nhYeV",
+                      "x": 28,
+                      "y": 302,
+                      "name": "anchorA",
+                      "width": 420,
+                      "height": 112,
+                      "fill": "$color.canvas",
+                      "cornerRadius": "$radius.lg",
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color.border.default"
+                      },
+                      "layout": "vertical",
+                      "gap": "$space.xxs",
+                      "padding": "$space.md",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "3YVtL",
+                          "name": "anchorATitle",
+                          "fill": "$color.text.primary",
+                          "content": "Chess runtime anchor",
+                          "fontFamily": "Inter",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "GcKi7",
+                          "name": "anchorABody",
+                          "fill": "$color.text.secondary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "The thread keeps the source message, launch status, and recovery actions while the active board is floated near the composer.",
+                          "lineHeight": 1.45,
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "sm1P9",
+                  "x": 28,
+                  "y": 582,
+                  "name": "dockA",
+                  "width": 900,
+                  "height": 220,
+                  "fill": "$color.canvas",
+                  "cornerRadius": "$radius.xl",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color.border.brand"
+                  },
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "oYAde",
+                      "x": 24,
+                      "y": 18,
+                      "name": "dockAHeading",
+                      "fill": "$color.text.primary",
+                      "content": "Active app · Chess board",
+                      "fontFamily": "Inter",
+                      "fontSize": 18,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ys2K2",
+                      "x": 24,
+                      "y": 54,
+                      "name": "boardA",
+                      "width": 476,
+                      "height": 142,
+                      "fill": "$color.surface.gray.soft",
+                      "cornerRadius": "$radius.lg",
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color.border.default"
+                      },
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "UQbeQ",
+                          "x": 20,
+                          "y": 54,
+                          "name": "boardALabel",
+                          "fill": "$color.text.secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 436,
+                          "content": "Live runtime viewport stays here while chat continues below.",
+                          "lineHeight": 1.45,
+                          "fontFamily": "Inter",
+                          "fontSize": 16,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "8aV3m",
+                      "type": "ref",
+                      "ref": "ds_action_chip",
+                      "x": 540,
+                      "y": 22,
+                      "name": "chipA",
+                      "descendants": {
+                        "action-chip_icon": {
+                          "iconFontName": "arrow-up-right"
+                        },
+                        "action-chip_label": {
+                          "content": "Return to source"
+                        }
+                      }
+                    },
+                    {
+                      "id": "JqSPI",
+                      "type": "ref",
+                      "ref": "ds_button_secondary",
+                      "x": 540,
+                      "y": 150,
+                      "width": 154,
+                      "name": "secondaryA",
+                      "descendants": {
+                        "button-primary_icon": {
+                          "enabled": false
+                        },
+                        "button-primary_label": {
+                          "content": "Minimize"
+                        }
+                      }
+                    },
+                    {
+                      "id": "fdCSI",
+                      "type": "ref",
+                      "ref": "ds_button_primary",
+                      "x": 714,
+                      "y": 150,
+                      "width": 162,
+                      "name": "primaryA",
+                      "descendants": {
+                        "button-primary_icon": {
+                          "enabled": false
+                        },
+                        "button-primary_label": {
+                          "content": "Keep docked"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "pwdzm",
+      "x": 3360,
+      "y": 0,
+      "name": "CB-106 Variation B - Split Tray",
+      "width": 1280,
+      "height": 960,
+      "fill": "$color.canvas",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "text",
+          "id": "9vh9o",
+          "x": 32,
+          "y": 24,
+          "name": "labelB",
+          "fill": "$color.text.primary",
+          "content": "Variation B · Split Tray",
+          "fontFamily": "Inter",
+          "fontSize": 20,
+          "fontWeight": "700"
+        },
+        {
+          "type": "frame",
+          "id": "C19cZ",
+          "x": 32,
+          "y": 72,
+          "name": "shellB",
+          "width": 1216,
+          "height": 840,
+          "fill": "$color.surface.gray.soft",
+          "cornerRadius": "$radius.xl",
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.default"
+          },
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "zxQ87",
+              "x": 28,
+              "y": 24,
+              "name": "topBarB",
+              "width": 1160,
+              "height": 52,
+              "fill": "$color.canvas",
+              "cornerRadius": "$radius.md",
+              "stroke": {
+                "thickness": 1,
+                "fill": "$color.border.default"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "id": "phk3I",
+                  "type": "ref",
+                  "ref": "ds_badge",
+                  "x": 16,
+                  "y": 12,
+                  "name": "chipB",
+                  "descendants": {
+                    "badge_label": {
+                      "content": "Split tray mode"
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "id": "OfKtL",
+                  "x": 182,
+                  "y": 16,
+                  "name": "headerB",
+                  "fill": "$color.text.primary",
+                  "content": "The app lives in a dedicated lower rail while the thread keeps scrolling above.",
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "o5cXa",
+              "x": 28,
+              "y": 96,
+              "name": "threadB",
+              "width": 1160,
+              "height": 334,
+              "fill": "$color.surface",
+              "cornerRadius": "$radius.xl",
+              "stroke": {
+                "thickness": 1,
+                "fill": "$color.border.default"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ts0xW",
+                  "x": 28,
+                  "y": 28,
+                  "name": "assistantB",
+                  "width": 560,
+                  "height": 108,
+                  "fill": "$color.canvas",
+                  "cornerRadius": "$radius.lg",
+                  "layout": "vertical",
+                  "gap": "$space.xs",
+                  "padding": "$space.md",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "aso6s",
+                      "name": "assistantBBody",
+                      "fill": "$color.text.primary",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "The thread stays readable, but the runtime is promoted into a dedicated control tray below.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "L7XyJ",
+                  "x": 650,
+                  "y": 166,
+                  "name": "userB",
+                  "width": 482,
+                  "height": 88,
+                  "fill": "$color.surface.selected",
+                  "cornerRadius": "$radius.lg",
+                  "layout": "vertical",
+                  "gap": "$space.xxs",
+                  "padding": "$space.md",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "eCeQa",
+                      "name": "userBBody",
+                      "fill": "$color.text.primary",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Keep the board open while I change plans from attack to defense.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "FmC41",
+                  "x": 28,
+                  "y": 270,
+                  "name": "anchorRibbonB",
+                  "width": 1104,
+                  "height": 40,
+                  "fill": "$color.canvas",
+                  "cornerRadius": "$radius.md",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color.border.default"
+                  },
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "TJb23",
+                      "x": 18,
+                      "y": 11,
+                      "name": "anchorRibbonTextB",
+                      "fill": "$color.text.secondary",
+                      "content": "Source message stays in the thread with status, traceability, and restore actions.",
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "KlHVC",
+              "x": 28,
+              "y": 454,
+              "name": "trayB",
+              "width": 1160,
+              "height": 330,
+              "fill": "$color.canvas",
+              "cornerRadius": "$radius.xl",
+              "stroke": {
+                "thickness": 1,
+                "fill": "$color.border.brand"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "CFfiR",
+                  "x": 20,
+                  "y": 20,
+                  "name": "trayLeftB",
+                  "width": 322,
+                  "height": 290,
+                  "fill": "$color.surface",
+                  "cornerRadius": "$radius.lg",
+                  "layout": "vertical",
+                  "gap": "$space.sm",
+                  "padding": "$space.lg",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "d0doK",
+                      "name": "trayLeftTitleB",
+                      "fill": "$color.text.primary",
+                      "content": "Runtime control rail",
+                      "fontFamily": "Inter",
+                      "fontSize": 22,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "eaNck",
+                      "name": "trayLeftBodyB",
+                      "fill": "$color.text.secondary",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Best when the app needs richer controls, richer status, or fast back-and-forth command changes.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "id": "oTYs1",
+                      "type": "ref",
+                      "ref": "ds_action_chip",
+                      "width": "fit_content",
+                      "name": "railChipB",
+                      "descendants": {
+                        "action-chip_icon": {
+                          "iconFontName": "arrow-up-right"
+                        },
+                        "action-chip_label": {
+                          "content": "Return to thread"
+                        }
+                      }
+                    },
+                    {
+                      "id": "gGhkZ",
+                      "type": "ref",
+                      "ref": "ds_button_secondary",
+                      "width": "fill_container",
+                      "name": "railButtonB",
+                      "descendants": {
+                        "button-primary_icon": {
+                          "enabled": false
+                        },
+                        "button-primary_label": {
+                          "content": "Minimize tray"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "2J5a7",
+                  "x": 366,
+                  "y": 20,
+                  "name": "trayBoardB",
+                  "width": 774,
+                  "height": 290,
+                  "fill": "$color.surface.gray.soft",
+                  "cornerRadius": "$radius.lg",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color.border.default"
+                  },
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "R2cvq",
+                      "x": 24,
+                      "y": 20,
+                      "name": "trayBoardTitleB",
+                      "fill": "$color.text.primary",
+                      "content": "Active app viewport",
+                      "fontFamily": "Inter",
+                      "fontSize": 18,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "fZoDV",
+                      "x": 24,
+                      "y": 112,
+                      "name": "trayBoardBodyB",
+                      "fill": "$color.text.secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 724,
+                      "content": "The board or dashboard gets more vertical room, while the thread above can keep moving without hiding the live app.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "Inter",
+                      "fontSize": 16,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "id": "wmuNf",
+                      "type": "ref",
+                      "ref": "ds_button_primary",
+                      "x": 588,
+                      "y": 228,
+                      "width": 162,
+                      "name": "trayPrimaryB",
+                      "descendants": {
+                        "button-primary_icon": {
+                          "enabled": false
+                        },
+                        "button-primary_label": {
+                          "content": "Stay active"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "PYPHV",
+      "x": 4680,
+      "y": 0,
+      "name": "CB-106 Variation C - Focus Bubble",
+      "width": 1280,
+      "height": 960,
+      "fill": "$color.canvas",
+      "stroke": {
+        "thickness": 1,
+        "fill": "$color.border.default"
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "text",
+          "id": "WimXM",
+          "x": 32,
+          "y": 24,
+          "name": "labelC",
+          "fill": "$color.text.primary",
+          "content": "Variation C · Focus Bubble",
+          "fontFamily": "Inter",
+          "fontSize": 20,
+          "fontWeight": "700"
+        },
+        {
+          "type": "frame",
+          "id": "Ay1Mp",
+          "x": 32,
+          "y": 72,
+          "name": "shellC",
+          "width": 1216,
+          "height": 840,
+          "fill": "$color.surface.gray.soft",
+          "cornerRadius": "$radius.xl",
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color.border.default"
+          },
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "yR5FM",
+              "x": 28,
+              "y": 24,
+              "name": "topBarC",
+              "width": 1160,
+              "height": 52,
+              "fill": "$color.canvas",
+              "cornerRadius": "$radius.md",
+              "stroke": {
+                "thickness": 1,
+                "fill": "$color.border.default"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "id": "gWEw7",
+                  "type": "ref",
+                  "ref": "ds_badge",
+                  "x": 16,
+                  "y": 12,
+                  "name": "chipC",
+                  "descendants": {
+                    "badge_label": {
+                      "content": "Peek mode"
+                    }
+                  }
+                },
+                {
+                  "type": "text",
+                  "id": "cO1EW",
+                  "x": 156,
+                  "y": 16,
+                  "name": "headerC",
+                  "fill": "$color.text.primary",
+                  "content": "The active app collapses to a lighter floating bubble until you need full focus again.",
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "e4s17",
+              "x": 28,
+              "y": 96,
+              "name": "threadC",
+              "width": 1160,
+              "height": 650,
+              "fill": "$color.surface",
+              "cornerRadius": "$radius.xl",
+              "stroke": {
+                "thickness": 1,
+                "fill": "$color.border.default"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "e3uVD",
+                  "x": 28,
+                  "y": 28,
+                  "name": "assistantC",
+                  "width": 540,
+                  "height": 108,
+                  "fill": "$color.canvas",
+                  "cornerRadius": "$radius.lg",
+                  "layout": "vertical",
+                  "gap": "$space.xs",
+                  "padding": "$space.md",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "67Bys",
+                      "name": "assistantCBody",
+                      "fill": "$color.text.primary",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Good for lighter apps: the runtime stays one glance away instead of occupying the full lower rail.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "61aFx",
+                  "x": 700,
+                  "y": 170,
+                  "name": "userC",
+                  "width": 432,
+                  "height": 88,
+                  "fill": "$color.surface.selected",
+                  "cornerRadius": "$radius.lg",
+                  "layout": "vertical",
+                  "gap": "$space.xxs",
+                  "padding": "$space.md",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "rnhsF",
+                      "name": "userCBody",
+                      "fill": "$color.text.primary",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Keep weather nearby, but don’t let it dominate the whole workspace.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "TANQR",
+                  "x": 28,
+                  "y": 564,
+                  "name": "anchorC",
+                  "width": 420,
+                  "height": 56,
+                  "fill": "$color.canvas",
+                  "cornerRadius": "$radius.md",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color.border.default"
+                  },
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "z3ton",
+                      "x": 18,
+                      "y": 18,
+                      "name": "anchorCText",
+                      "fill": "$color.text.secondary",
+                      "content": "Message anchor keeps the source thread durable.",
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "S7Cqb",
+              "x": 28,
+              "y": 770,
+              "name": "composerC",
+              "width": 1160,
+              "height": 42,
+              "fill": "$color.canvas",
+              "cornerRadius": "$radius.md",
+              "stroke": {
+                "thickness": 1,
+                "fill": "$color.border.default"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "SuUsM",
+                  "x": 18,
+                  "y": 12,
+                  "name": "composerCText",
+                  "fill": "$color.text.tertiary",
+                  "content": "Continue chatting without losing the active app.",
+                  "fontFamily": "Inter",
+                  "fontSize": 15,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "B40J2",
+              "x": 520,
+              "y": 430,
+              "name": "phoneFrameC",
+              "width": 238,
+              "height": 334,
+              "fill": "$color.canvas",
+              "cornerRadius": "$radius.xl",
+              "stroke": {
+                "thickness": 1,
+                "fill": "$color.border.default"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "PaNa2",
+                  "x": 14,
+                  "y": 14,
+                  "name": "phoneTopC",
+                  "width": 210,
+                  "height": 146,
+                  "fill": "$color.surface",
+                  "cornerRadius": "$radius.lg",
+                  "layout": "none"
+                },
+                {
+                  "type": "frame",
+                  "id": "6m7g3",
+                  "x": 14,
+                  "y": 166,
+                  "name": "phoneSheetC",
+                  "width": 210,
+                  "height": 154,
+                  "fill": "$color.surface.gray.soft",
+                  "cornerRadius": [
+                    20,
+                    20,
+                    0,
+                    0
+                  ],
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color.border.default"
+                  },
+                  "layout": "vertical",
+                  "gap": "$space.xs",
+                  "padding": "$space.md",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "wRTtC",
+                      "name": "phoneSheetTitleC",
+                      "fill": "$color.text.primary",
+                      "content": "Mobile bottom sheet",
+                      "fontFamily": "Inter",
+                      "fontSize": 16,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "bp2TA",
+                      "name": "phoneSheetBodyC",
+                      "fill": "$color.text.secondary",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Small screens turn the floating runtime into an anchored sheet above the composer.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "OaD6j",
+              "x": 820,
+              "y": 470,
+              "name": "bubbleC",
+              "width": 340,
+              "height": 252,
+              "fill": "$color.canvas",
+              "cornerRadius": "$radius.xl",
+              "stroke": {
+                "thickness": 1,
+                "fill": "$color.border.brand"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "4sCFX",
+                  "x": 20,
+                  "y": 18,
+                  "name": "bubbleTitleC",
+                  "fill": "$color.text.primary",
+                  "content": "Active app bubble",
+                  "fontFamily": "Inter",
+                  "fontSize": 18,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "frame",
+                  "id": "GUYTg",
+                  "x": 20,
+                  "y": 54,
+                  "name": "bubbleBoardC",
+                  "width": 300,
+                  "height": 118,
+                  "fill": "$color.surface.gray.soft",
+                  "cornerRadius": "$radius.lg",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color.border.default"
+                  },
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "PvNC3",
+                      "x": 18,
+                      "y": 34,
+                      "name": "bubbleBoardTextC",
+                      "fill": "$color.text.secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 264,
+                      "content": "A lighter runtime shell that expands only when needed.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "id": "oP3kx",
+                  "type": "ref",
+                  "ref": "ds_action_chip",
+                  "x": 20,
+                  "y": 192,
+                  "name": "chipExpandC",
+                  "descendants": {
+                    "action-chip_icon": {
+                      "iconFontName": "maximize-2"
+                    },
+                    "action-chip_label": {
+                      "content": "Expand"
+                    }
+                  }
+                },
+                {
+                  "id": "N0nKO",
+                  "type": "ref",
+                  "ref": "ds_button_secondary",
+                  "x": 198,
+                  "y": 196,
+                  "width": 122,
+                  "name": "buttonHideC",
+                  "descendants": {
+                    "button-primary_icon": {
+                      "enabled": false
+                    },
+                    "button-primary_label": {
+                      "content": "Hide"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "themes": {
+    "mode": [
+      "light",
+      "dark"
+    ]
+  },
+  "variables": {
+    "color.transparent": {
+      "type": "color",
+      "value": "#00000000"
+    },
+    "color.canvas": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FFFFFF",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#242424",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.surface": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#F1F3F5",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#3B3B3B",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.surface.hover": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#F8F9FA",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#1F1F1F",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.surface.muted": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#DEE2E6",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#424242",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.surface.selected": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#E9F5FF",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#15324D",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.surface.gray.soft": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#F3F5F7",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#343A40",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.surface.success.soft": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#EAFBF5",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#124134",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.surface.warning.soft": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FFF5D6",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#4B3A12",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.surface.error.soft": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FFECEC",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#4C1919",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.text.primary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#212529",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#FFFFFF",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.text.secondary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#495057",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#CED4DA",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.text.tertiary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#868E96",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#828282",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.text.disabled": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#ADB5BD",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#696969",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.text.inverse": {
+      "type": "color",
+      "value": "#FFFFFF"
+    },
+    "color.text.brand": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#228BE6",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#4DABF7",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.text.success": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#12B886",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#63E6BE",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.text.warning": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FAB005",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#FFE066",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.text.error": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FA5252",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#F03E3E",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.border.default": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#DEE2E6",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#495057",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.border.muted": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#CED4DA",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#868E96",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.border.brand": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#228BE6",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#1971C2",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.border.success": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#12B886",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#63E6BE",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.border.warning": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FAB005",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#FFE066",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.border.error": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FA5252",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#F03E3E",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.fill.brand": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#228BE6",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#1971C2",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.fill.brand.hover": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#1C7ED6",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#1864AB",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.fill.brand.pressed": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#1971C2",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#14538D",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.fill.gray": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#868E96",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#343A40",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.fill.error": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FA5252",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#E03131",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "color.overlay": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#0000001F",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#00000052",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "space.3xs": {
+      "type": "number",
+      "value": 2
+    },
+    "space.xxs": {
+      "type": "number",
+      "value": 4
+    },
+    "space.xs": {
+      "type": "number",
+      "value": 8
+    },
+    "space.sm": {
+      "type": "number",
+      "value": 12
+    },
+    "space.md": {
+      "type": "number",
+      "value": 16
+    },
+    "space.lg": {
+      "type": "number",
+      "value": 20
+    },
+    "space.xl": {
+      "type": "number",
+      "value": 24
+    },
+    "space.xxl": {
+      "type": "number",
+      "value": 32
+    },
+    "radius.none": {
+      "type": "number",
+      "value": 0
+    },
+    "radius.xs": {
+      "type": "number",
+      "value": 2
+    },
+    "radius.sm": {
+      "type": "number",
+      "value": 4
+    },
+    "radius.md": {
+      "type": "number",
+      "value": 8
+    },
+    "radius.lg": {
+      "type": "number",
+      "value": 16
+    },
+    "radius.xl": {
+      "type": "number",
+      "value": 24
+    },
+    "radius.xxl": {
+      "type": "number",
+      "value": 32
+    },
+    "radius.pill": {
+      "type": "number",
+      "value": 999
+    },
+    "type.caption": {
+      "type": "number",
+      "value": 12
+    },
+    "type.label": {
+      "type": "number",
+      "value": 13
+    },
+    "type.body": {
+      "type": "number",
+      "value": 15
+    },
+    "type.subtitle": {
+      "type": "number",
+      "value": 18
+    },
+    "type.title": {
+      "type": "number",
+      "value": 24
+    },
+    "type.hero": {
+      "type": "number",
+      "value": 32
+    },
+    "size.icon.sm": {
+      "type": "number",
+      "value": 16
+    },
+    "size.icon.md": {
+      "type": "number",
+      "value": 20
+    },
+    "size.control.sm": {
+      "type": "number",
+      "value": 32
+    },
+    "size.control.md": {
+      "type": "number",
+      "value": 36
+    },
+    "size.control.lg": {
+      "type": "number",
+      "value": 40
+    },
+    "size.control.xl": {
+      "type": "number",
+      "value": 44
+    }
+  }
+}

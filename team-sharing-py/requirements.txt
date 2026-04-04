@@ -1,0 +1,4 @@
+fastapi
+httpx
+starlette
+aiomysql

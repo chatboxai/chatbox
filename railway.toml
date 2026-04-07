@@ -1,0 +1,10 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["src/**", "server/**", "apps/**", "Dockerfile", "railway.toml", "package.json", "pnpm-lock.yaml", "release/**", "patches/**", "*.config.*", "electron.vite.config.ts", "vite.web.config.ts"]
+
+[deploy]
+startCommand = "sh -c 'cd server && npx prisma migrate deploy && npx ts-node prisma/seed.ts && node dist/index.js'"
+healthcheckPath = "/api/health"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

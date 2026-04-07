@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
+import { ChatBridgeFrame } from '@/components/ChatBridgeFrame'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox from '@/components/InputBox/InputBox'
 import Header from '@/components/layout/Header'
@@ -16,6 +17,7 @@ import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
 import { modifyMessage, removeCurrentThread, startNewThread, submitNewUserMessage } from '@/stores/sessionActions'
 import { getAllMessageList } from '@/stores/sessionHelpers'
+import { chatBridgeStore } from '@/stores/chatBridgeStore'
 
 export const Route = createFileRoute('/session/$sessionId')({
   component: RouteComponent,
@@ -155,6 +157,11 @@ function RouteComponent() {
     return true
   }, [currentSession, lastGeneratingMessage])
 
+  const hasActiveApps = useStore(
+    chatBridgeStore,
+    (s) => Object.keys(s.sessions[currentSessionId]?.apps ?? {}).length > 0
+  )
+
   const model = useMemo(() => {
     if (!currentSession?.settings?.modelId || !currentSession?.settings?.provider) {
       return undefined
@@ -166,29 +173,35 @@ function RouteComponent() {
   }, [currentSession?.settings?.provider, currentSession?.settings?.modelId])
 
   return currentSession ? (
-    <div className="flex flex-col h-full">
-      <Header session={currentSession} />
+    <div className="flex h-full overflow-hidden">
+      {/* Main chat column */}
+      <div className="flex flex-col flex-1 min-w-0">
+        <Header session={currentSession} />
 
-      {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
-      <MessageList ref={messageListRef} key={`message-list${currentSessionId}`} currentSession={currentSession} />
+        {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
+        <MessageList ref={messageListRef} key={`message-list${currentSessionId}`} currentSession={currentSession} />
 
-      {/* <ScrollButtons /> */}
-      <ErrorBoundary name="session-inputbox">
-        <InputBox
-          key={`input-box${currentSession.id}`}
-          sessionId={currentSession.id}
-          sessionType={currentSession.type}
-          model={model}
-          onStartNewThread={onStartNewThread}
-          onRollbackThread={onRollbackThread}
-          onSelectModel={onSelectModel}
-          onClickSessionSettings={onClickSessionSettings}
-          generating={!!lastGeneratingMessage}
-          onSubmit={onSubmit}
-          onStopGenerating={onStopGenerating}
-        />
-      </ErrorBoundary>
-      <ThreadHistoryDrawer session={currentSession} />
+        {/* <ScrollButtons /> */}
+        <ErrorBoundary name="session-inputbox">
+          <InputBox
+            key={`input-box${currentSession.id}`}
+            sessionId={currentSession.id}
+            sessionType={currentSession.type}
+            model={model}
+            onStartNewThread={onStartNewThread}
+            onRollbackThread={onRollbackThread}
+            onSelectModel={onSelectModel}
+            onClickSessionSettings={onClickSessionSettings}
+            generating={!!lastGeneratingMessage}
+            onSubmit={onSubmit}
+            onStopGenerating={onStopGenerating}
+          />
+        </ErrorBoundary>
+        <ThreadHistoryDrawer session={currentSession} />
+      </div>
+
+      {/* ChatBridge side panel — only rendered when an app is active */}
+      {hasActiveApps && <ChatBridgeFrame sessionId={currentSessionId} />}
     </div>
   ) : (
     !isFetching && (

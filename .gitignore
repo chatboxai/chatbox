@@ -60,6 +60,7 @@ typings/
 # dotenv environment variables file
 .env
 .env.test
+.env.local
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -188,3 +189,9 @@ storybook-static
 .gstack/
 .worktrees/
 .claude/worktrees/
+
+# Chatbridge
+.claude/tracking
+firebase-debug.log
+.mcp.json
+.playwright-mcp/

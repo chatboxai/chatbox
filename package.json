@@ -32,7 +32,7 @@
     "dev:local": "cross-env USE_LOCAL_API=true pnpm start",
     "dev:web": "cross-env DEV_WEB_ONLY=true CHATBOX_BUILD_PLATFORM=web pnpm start",
     "dev:debug": "cross-env MAIN_ARGS=\"--inspect=5858\" pnpm start",
-    "start": "electron-vite dev",
+    "start": "cd server && node dist/index.js",
     "start:main": "cross-env NODE_ENV=development electronmon -r ts-node/register/transpile-only .",
     "start:preload": "electron-vite build --preload --watch",
     "start:renderer": "electron-vite",
@@ -57,7 +57,10 @@
     "mobile:android": "pnpm run mobile:sync:android && npx cap open android",
     "mobile:assets": "npx capacitor-assets generate --ios --android",
     "prepare": "node -e \"try { require('husky') } catch(e) { process.exit(0) }\" && husky || true",
-    "translate": "i18next && node script/translate.mjs"
+    "translate": "i18next && node script/translate.mjs",
+    "build:apps": "npm run build --prefix apps/chess && npm run build --prefix apps/weather && npm run build --prefix apps/spotify",
+    "build:server": "npm run build --prefix server",
+    "build:all": "pnpm build:web && npm run build:apps && npm run build:server"
   },
   "repository": {
     "type": "git",

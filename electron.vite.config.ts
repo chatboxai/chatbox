@@ -98,7 +98,7 @@ export default defineConfig(({ mode }) => {
                 title: 'Main Process Dependency Analysis',
               }),
             ]
-          : [externalizeDepsPlugin()]),
+          : []),
         process.env.SENTRY_AUTH_TOKEN
           ? sentryVitePlugin({
               authToken: process.env.SENTRY_AUTH_TOKEN,

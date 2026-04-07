@@ -36,6 +36,7 @@ import { settingsStore } from '../settingsStore'
 import { uiStore } from '../uiStore'
 import { createNewFork, findMessageLocation } from './forks'
 import { insertMessageAfter, modifyMessage } from './messages'
+import { chatBridgeStore } from '../chatBridgeStore'
 
 /**
  * Get session-level web browsing setting
@@ -168,6 +169,80 @@ export async function generate(
   }
 
   try {
+    // === CHATBRIDGE INTERCEPTION ===
+    if (chatBridgeStore.getState().isActive(sessionId)) {
+      const lastUserMsg = messages.slice(0, targetMsgIx).findLast((m) => m.role === 'user')
+      const content = lastUserMsg?.contentParts.find((p) => p.type === 'text')?.text ?? ''
+
+      if (!content) {
+        console.warn('[ChatBridge] No user message content found — falling through to normal pipeline')
+      } else {
+        const wsClient = chatBridgeStore.getState().getWsClient()
+        const appContext = chatBridgeStore.getState().getAppContext(sessionId)
+
+        if (!wsClient) {
+          throw new Error('[ChatBridge] WebSocket client not initialized. Activate an app first.')
+        }
+
+        let streamedText = ''
+
+        await new Promise<void>((outerResolve, outerReject) => {
+          void wsClient
+            .sendUserMessage(
+              {
+                conversationId: sessionId,
+                content,
+                appContext: appContext as Record<string, unknown>,
+              },
+              {
+                onToken: (token) => {
+                  streamedText += token
+                  targetMsg = {
+                    ...targetMsg,
+                    contentParts: [{ type: 'text' as const, text: streamedText }],
+                  }
+                  void modifyMessage(sessionId, targetMsg, false, true)
+                },
+                onToolCall: async ({ toolCallId, toolName, params }) => {
+                  const activeAppName = chatBridgeStore.getState().getActiveApp(sessionId)
+                  const invoker = chatBridgeStore.getState().getToolInvoker(sessionId)
+                  if (!invoker) {
+                    console.error('[ChatBridge] No tool invoker — iframe not ready', { toolCallId, toolName })
+                    wsClient.sendToolResult(toolCallId, { error: 'App not ready' })
+                    if (activeAppName) chatBridgeStore.getState().recordFailure(sessionId, activeAppName)
+                    return
+                  }
+                  try {
+                    const result = await invoker(toolCallId, toolName, params)
+                    wsClient.sendToolResult(toolCallId, result)
+                    if (activeAppName) chatBridgeStore.getState().resetFailures(sessionId, activeAppName)
+                  } catch (err) {
+                    console.error('[ChatBridge] Tool invocation failed:', err)
+                    wsClient.sendToolResult(toolCallId, { error: err instanceof Error ? err.message : 'Tool invocation failed' })
+                    if (activeAppName) chatBridgeStore.getState().recordFailure(sessionId, activeAppName)
+                  }
+                },
+                onDone: () => {
+                  targetMsg = { ...targetMsg, generating: false, cancel: undefined, status: [] }
+                  void modifyMessage(sessionId, targetMsg, true)
+                  outerResolve()
+                },
+                onError: (msg) => {
+                  targetMsg = { ...targetMsg, generating: false, cancel: undefined, status: [], error: msg }
+                  void modifyMessage(sessionId, targetMsg, true)
+                  outerReject(new Error(msg))
+                },
+              }
+            )
+            .catch(outerReject)
+        })
+
+        appleAppStore.tickAfterMessageGenerated()
+        return
+      }
+    }
+    // === END CHATBRIDGE INTERCEPTION ===
+
     const dependencies = await createModelDependencies()
     const model = getModel(settings, globalSettings, configs, dependencies)
     const sessionKnowledgeBaseMap = uiStore.getState().sessionKnowledgeBaseMap

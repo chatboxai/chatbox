@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  passwordHash  String         @map("password_hash")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  conversations Conversation[]
+  oauthTokens   OAuthToken[]
+}
+
+model AppRegistration {
+  id           String   @id @default(uuid())
+  name         String
+  url          String
+  description  String
+  toolSchemas  Json     @map("tool_schemas")
+  status       String   @default("pending")
+  timeout      Int      @default(10000)
+  authRequired Boolean  @default(false) @map("auth_required")
+  authProvider String?  @map("auth_provider")
+  createdAt    DateTime @default(now()) @map("created_at")
+}
+
+model OAuthToken {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  provider     String
+  accessToken  String    @map("access_token")
+  refreshToken String?   @map("refresh_token")
+  expiresAt    DateTime? @map("expires_at")
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, provider])
+}
+
+model Conversation {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  title     String    @default("New conversation")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  user      User      @relation(fields: [userId], references: [id])
+  messages  Message[]
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String       @map("conversation_id")
+  role           String
+  content        String?
+  toolCallId     String?      @map("tool_call_id")
+  toolName       String?      @map("tool_name")
+  toolParams     Json?        @map("tool_params")
+  appContext     Json?        @map("app_context")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, createdAt])
+}

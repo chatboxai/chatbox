@@ -48,6 +48,7 @@ import SettingsModal, { navigateToSettings } from '@/modals/Settings'
 import { prefetchModelRegistry } from '@/packages/model-registry'
 import { getOS } from '@/packages/navigator'
 import * as remote from '@/packages/remote'
+import { ChatBridgeLogin } from '@/pages/ChatBridgeLogin'
 import PictureDialog from '@/pages/PictureDialog'
 import RemoteDialogWindow from '@/pages/RemoteDialogWindow'
 import SearchDialog from '@/pages/SearchDialog'
@@ -62,6 +63,7 @@ import * as premiumActions from '@/stores/premiumActions'
 import * as settingActions from '@/stores/settingActions'
 import { initSettingsStore, settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
+import { useAuthStore } from '@/stores/authStore'
 import { CHATBOX_BUILD_CHANNEL, CHATBOX_BUILD_PLATFORM } from '@/variables'
 import { blobToDataUrl } from './image-creator/-components/constants'
 
@@ -250,6 +252,16 @@ function Root() {
       document.documentElement.removeAttribute('data-need-room-for-mac-controls')
     }
   }, [needRoomForMacWindowControls])
+
+  const { isAuthenticated, isLoading: authLoading } = useAuthStore()
+
+  if (authLoading) {
+    return <div className="flex items-center justify-center h-full w-full text-sm opacity-40">Loading...</div>
+  }
+
+  if (!isAuthenticated) {
+    return <ChatBridgeLogin />
+  }
 
   return (
     <Box className="box-border App relative" spellCheck={spellCheck} dir={language === 'ar' ? 'rtl' : 'ltr'}>

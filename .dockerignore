@@ -1,0 +1,16 @@
+.git
+node_modules
+release/app/node_modules
+apps/chess/node_modules
+apps/weather/node_modules
+apps/spotify/node_modules
+server/node_modules
+dist
+out
+release/build
+*.log
+.env
+.env.*
+.DS_Store
+coverage
+.nyc_output

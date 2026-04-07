@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head><title>ChatBridge Test App</title></head>
+<body>
+<h2>Test App</h2>
+<div id="status">Loading...</div>
+<div id="log"></div>
+<script>
+  let invocationCount = 0
+  const log = (msg) => {
+    document.getElementById('log').innerHTML += `<p>${msg}</p>`
+    console.log('[TestApp]', msg)
+  }
+
+  document.getElementById('status').textContent = 'Ready'
+  log('Sending ready signal')
+  window.parent.postMessage({ type: 'ready' }, '*')
+
+  window.parent.postMessage({
+    type: 'register_tools',
+    schemas: [{
+      name: 'dummy_action',
+      description: 'A test tool that always succeeds. Call this when the user asks to use the test app or perform a dummy action.',
+      parameters: { type: 'object', properties: { message: { type: 'string', description: 'A message to echo back' } } }
+    }]
+  }, '*')
+  log('Registered tools: dummy_action')
+
+  window.addEventListener('message', (event) => {
+    if (event.data?.type === 'tool_invoke') {
+      const { toolCallId, toolName, params } = event.data
+      invocationCount++
+      log(`Tool invoked: ${toolName} (#${invocationCount}) params=${JSON.stringify(params)}`)
+
+      setTimeout(() => {
+        window.parent.postMessage({
+          type: 'tool_result',
+          toolCallId,
+          result: { success: true, invocationCount, echo: params.message || 'no message', response: `Test response #${invocationCount}` }
+        }, '*')
+        log(`Sent tool_result for ${toolCallId}`)
+
+        window.parent.postMessage({
+          type: 'state_update',
+          state: { invocationCount, lastAction: toolName, lastParams: params }
+        }, '*')
+
+        if (invocationCount >= 3) {
+          window.parent.postMessage({
+            type: 'completion',
+            result: { totalInvocations: invocationCount, message: 'Test app completed after 3 invocations' }
+          }, '*')
+          log('Sent completion signal')
+        }
+      }, 200)
+    }
+  })
+</script>
+</body>
+</html>

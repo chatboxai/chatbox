@@ -3,7 +3,9 @@ import type { Message } from '@shared/types'
 import { useAtomValue } from 'jotai'
 import { Loader } from 'lucide-react'
 import { Trans, useTranslation } from 'react-i18next'
+import { buildChatboxUrl } from '@/packages/remote'
 import * as atoms from '@/stores/atoms'
+import * as settingActions from '@/stores/settingActions'
 import LinkTargetBlank from '../common/Link'
 
 export default function MessageStatuses(props: { statuses: Message['status'] }) {
@@ -43,7 +45,11 @@ function MessageStatus(props: { status: NonNullable<Message['status']>[number] }
               i18nKey="Due to local processing limitations, <Link>Chatbox AI Service</Link> is recommended for enhanced document processing capabilities and better results."
               components={{
                 Link: (
-                  <LinkTargetBlank href="https://chatboxai.app/redirect_app/advanced_file_processing?utm_source=app&utm_content=msg_local_limitation"></LinkTargetBlank>
+                  <LinkTargetBlank
+                    href={buildChatboxUrl(
+                      `/redirect_app/advanced_file_processing/${settingActions.getLanguage()}?utm_source=app&utm_content=msg_local_limitation`
+                    )}
+                  ></LinkTargetBlank>
                 ),
               }}
             />
@@ -71,7 +77,11 @@ function MessageStatus(props: { status: NonNullable<Message['status']>[number] }
               i18nKey="Due to local processing limitations, <Link>Chatbox AI Service</Link> is recommended to enhance webpage parsing capabilities, especially for dynamic pages."
               components={{
                 Link: (
-                  <LinkTargetBlank href="https://chatboxai.app/redirect_app/advanced_url_processing?utm_source=app&utm_content=msg_local_limitation"></LinkTargetBlank>
+                  <LinkTargetBlank
+                    href={buildChatboxUrl(
+                      `/redirect_app/advanced_url_processing/${settingActions.getLanguage()}?utm_source=app&utm_content=msg_local_limitation`
+                    )}
+                  ></LinkTargetBlank>
                 ),
               }}
             />

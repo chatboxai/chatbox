@@ -9,6 +9,60 @@ interface PlatformInfo {
   version: string
 }
 
+function getRequestOrigin(url: RequestInfo | URL): string {
+  if (url instanceof Request) {
+    return new URL(url.url).origin
+  }
+  return new URL(url).origin
+}
+
+function toError(e: unknown): Error {
+  return e instanceof Error ? e : new Error(String(e))
+}
+
+/**
+ * Returns true if `e` represents a caller-initiated abort. Used to short-circuit
+ * retry logic — retrying a request the caller already cancelled is wasted work
+ * and surfaces a confusing NetworkError instead of the original AbortError.
+ */
+function isAbortError(e: unknown, signal?: AbortSignal | null): boolean {
+  if (signal?.aborted) return true
+  return e instanceof DOMException && e.name === 'AbortError'
+}
+
+/**
+ * Detect if a response body is an HTML page (e.g., nginx/cloudflare error pages for 502/503/504).
+ * These should not be shown directly to users.
+ */
+function isHtmlResponse(text: string): boolean {
+  const trimmed = text.trimStart().toLowerCase()
+  return trimmed.startsWith('<!doctype') || trimmed.startsWith('<html')
+}
+
+const httpStatusMessages: Record<number, string> = {
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  408: 'Request Timeout',
+  429: 'Too Many Requests',
+  500: 'Internal Server Error',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
+  504: 'Gateway Timeout',
+}
+
+/**
+ * Sanitize response body for error messages.
+ * Replaces HTML error pages with a short status description.
+ */
+function sanitizeResponseBody(status: number, response: string): string {
+  if (response && isHtmlResponse(response)) {
+    return httpStatusMessages[status] || `HTTP Error`
+  }
+  return response
+}
+
 export function createAfetch(platformInfo: PlatformInfo) {
   return async function afetch(
     url: RequestInfo | URL,
@@ -37,7 +91,10 @@ export function createAfetch(platformInfo: PlatformInfo) {
         const res = await fetch(url, init)
         // 状态码不在 200～299 之间，一般是接口报错了，这里也需要抛错后重试
         if (!res.ok) {
-          const response = await res.text().catch((e) => '')
+          const response = await res.text().catch((e: unknown) => {
+            console.error('[afetch] Failed to read error response body:', e)
+            return ''
+          })
           if (options.parseChatboxRemoteError) {
             const errorCodeName = parseJsonOrEmpty(response)?.error?.code
             const chatboxAIError = ChatboxAIAPIError.fromCodeName(response, errorCodeName)
@@ -45,20 +102,22 @@ export function createAfetch(platformInfo: PlatformInfo) {
               throw chatboxAIError
             }
           }
-          throw new ApiError(`Status Code ${res.status}, ${response}`)
+          throw new ApiError(
+            `Status Code ${res.status}, ${sanitizeResponseBody(res.status, response)}`,
+            response || undefined,
+            res.status
+          )
         }
         return res
       } catch (e) {
+        if (isAbortError(e, init?.signal)) {
+          throw e
+        }
         if (e instanceof BaseError) {
           requestError = e
         } else {
-          const err = e as Error
-          let origin: string
-          if (url instanceof Request) {
-            origin = new URL(url.url).origin
-          } else {
-            origin = new URL(url).origin
-          }
+          const err = toError(e)
+          const origin = getRequestOrigin(url)
           requestError = new NetworkError(err.message, origin)
         }
         await new Promise((resolve) => setTimeout(resolve, 500))
@@ -164,7 +223,7 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
 
         // 检查 401 Unauthorized
         if (res.status === 401) {
-          console.log('🔄 Access token expired, refreshing...')
+          console.debug('🔄 Access token expired, refreshing...')
 
           // 防止并发刷新：如果已有刷新请求，等待它完成
           if (!refreshPromise) {
@@ -175,9 +234,9 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
                   throw new ApiError('No refresh token available')
                 }
 
-                console.log('🔑 Refreshing access token with refresh token...')
+                console.debug('🔑 Refreshing access token with refresh token...')
                 const newTokens = await refreshTokens(currentTokens.refreshToken)
-                console.log('✅ Token refreshed successfully')
+                console.debug('✅ Token refreshed successfully')
                 return newTokens
               } catch (error) {
                 console.error('❌ Failed to refresh token:', error)
@@ -199,11 +258,14 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
             headers: buildHeaders(newTokens.accessToken),
           }
 
-          console.log('🔄 Retrying request with new token...')
+          console.debug('🔄 Retrying request with new token...')
           const retryRes = await fetch(url, init)
 
           if (!retryRes.ok) {
-            const response = await retryRes.text().catch(() => '')
+            const response = await retryRes.text().catch((e: unknown) => {
+              console.error('[authenticatedAfetch] Failed to read retry error response body:', e)
+              return ''
+            })
             if (options.parseChatboxRemoteError) {
               const errorCodeName = parseJsonOrEmpty(response)?.error?.code
               const chatboxAIError = ChatboxAIAPIError.fromCodeName(response, errorCodeName)
@@ -211,7 +273,11 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
                 throw chatboxAIError
               }
             }
-            throw new ApiError(`Status Code ${retryRes.status}, ${response}`)
+            throw new ApiError(
+              `Status Code ${retryRes.status}, ${sanitizeResponseBody(retryRes.status, response)}`,
+              response || undefined,
+              retryRes.status
+            )
           }
 
           return retryRes
@@ -219,7 +285,10 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
 
         // 其他错误状态码
         if (!res.ok) {
-          const response = await res.text().catch(() => '')
+          const response = await res.text().catch((e: unknown) => {
+            console.error('[authenticatedAfetch] Failed to read error response body:', e)
+            return ''
+          })
           if (options.parseChatboxRemoteError) {
             const errorCodeName = parseJsonOrEmpty(response)?.error?.code
             const chatboxAIError = ChatboxAIAPIError.fromCodeName(response, errorCodeName)
@@ -227,21 +296,23 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
               throw chatboxAIError
             }
           }
-          throw new ApiError(`Status Code ${res.status}, ${response}`)
+          throw new ApiError(
+            `Status Code ${res.status}, ${sanitizeResponseBody(res.status, response)}`,
+            response || undefined,
+            res.status
+          )
         }
 
         return res
       } catch (e) {
+        if (isAbortError(e, init?.signal)) {
+          throw e
+        }
         if (e instanceof BaseError) {
           requestError = e
         } else {
-          const err = e as Error
-          let origin: string
-          if (url instanceof Request) {
-            origin = new URL(url.url).origin
-          } else {
-            origin = new URL(url).origin
-          }
+          const err = toError(e)
+          const origin = getRequestOrigin(url)
           requestError = new NetworkError(err.message, origin)
         }
         await new Promise((resolve) => setTimeout(resolve, 500))

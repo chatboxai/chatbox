@@ -1,4 +1,5 @@
 import { ActionIcon, Box, Code, Collapse, Group, Paper, Stack, Text, UnstyledButton } from '@mantine/core'
+import { ChatboxAIAPIError } from '@shared/models/errors'
 import { type Message, type MessageReasoningPart, type MessageToolCallPart } from '@shared/types'
 import {
   IconBulb,
@@ -19,13 +20,57 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
-import { type FC, useCallback, useRef, useState } from 'react'
+import { type FC, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ChatboxAIErrorMessage } from '@/components/common/ChatboxAIErrorMessage'
+import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { formatElapsedTime, useThinkingTimer } from '@/hooks/useThinkingTimer'
 import { getToolName } from '@/packages/tools'
 import type { SearchResultItem } from '@/packages/web-search'
-import { ScalableIcon } from '../common/ScalableIcon'
+
+// ─── Tool Error Result ──────────────────────────────────────────────
+
+function extractToolError(part: MessageToolCallPart): { errorCode?: number; errorText?: string } {
+  if (part.state !== 'error') return {}
+  const result = part.result as { error?: unknown; errorCode?: unknown } | undefined
+  const errorCode = typeof result?.errorCode === 'number' ? result.errorCode : undefined
+  const errorText = typeof result?.error === 'string' ? result.error : undefined
+  return { errorCode, errorText }
+}
+
+const ToolCallErrorDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
+  const { t } = useTranslation()
+  const { errorCode, errorText } = extractToolError(part)
+  // Only render the rich i18n message if the code is one we know about — unknown
+  // codes (e.g. NetworkError, generic ApiError) would render as null and silently
+  // hide the underlying error text.
+  if (errorCode && ChatboxAIAPIError.getDetail(errorCode)) {
+    return (
+      <Text size="sm" c="chatbox-error" component="div">
+        <ChatboxAIErrorMessage errorCode={errorCode} trackingSource="msg_tool_error" />
+      </Text>
+    )
+  }
+  return (
+    <Text size="sm" c="chatbox-error">
+      {errorText || t('Tool call failed')}
+    </Text>
+  )
+}
+
+/**
+ * Tracks an `expanded` boolean that auto-expands when `isError` flips to true,
+ * while still letting the user manually toggle. Initial value matches `isError`
+ * to avoid a one-frame collapse-then-expand flash on parts that mount as errors.
+ */
+function useAutoExpandOnError(isError: boolean): [boolean, (next: boolean | ((prev: boolean) => boolean)) => void] {
+  const [expanded, setExpanded] = useState(isError)
+  useEffect(() => {
+    if (isError) setExpanded(true)
+  }, [isError])
+  return [expanded, setExpanded]
+}
 
 // ─── Tool Icon Mapping ──────────────────────────────────────────────
 
@@ -200,8 +245,6 @@ function extractSearchQueries(parts: MessageToolCallPart[]): string[] {
 
 export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }) => {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
-
   const allResults = parts.flatMap((part) => extractSearchResults(part))
   const queries = extractSearchQueries(parts)
   const hasLoading = parts.some((p) => p.state === 'call')
@@ -213,6 +256,8 @@ export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }
     resultCount > 0 ? t('{{count}} results', { count: resultCount }) : noResults ? t('Search unsuccessful') : undefined
 
   const isFailState = hasError || noResults
+  const [expanded, setExpanded] = useAutoExpandOnError(hasError)
+  const errorPart = hasError ? parts.find((p) => p.state === 'error') : undefined
   const bgColor = isFailState
     ? 'var(--chatbox-background-gray-secondary)'
     : expanded
@@ -222,7 +267,11 @@ export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }
 
   return (
     <Stack gap={4} mb={4}>
-      <UnstyledButton onClick={resultCount > 0 || queries.length > 0 ? () => setExpanded((prev) => !prev) : undefined}>
+      <UnstyledButton
+        onClick={
+          resultCount > 0 || queries.length > 0 || hasError ? () => setExpanded((prev) => !prev) : undefined
+        }
+      >
         <Group
           gap={4}
           px={8}
@@ -282,6 +331,15 @@ export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }
           ))}
         </div>
       )}
+      {expanded && errorPart && (
+        <Box
+          ml={4}
+          pl="sm"
+          style={{ borderLeft: '1px solid var(--chatbox-tint-error)' }}
+        >
+          <ToolCallErrorDetails part={errorPart} />
+        </Box>
+      )}
     </Stack>
   )
 }
@@ -289,9 +347,9 @@ export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }
 // ─── Parse Link ─────────────────────────────────────────────────────
 
 const ParseLinkUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
-  const [expanded, setExpanded] = useState(false)
   const isLoading = part.state === 'call'
   const isError = part.state === 'error'
+  const [expanded, setExpanded] = useAutoExpandOnError(isError)
   const result = part.result as Record<string, unknown> | undefined
   const title = (result?.title as string) || ''
   const content = (result?.content as string) || ''
@@ -347,12 +405,12 @@ const ParseLinkUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
           )}
         </Group>
       </UnstyledButton>
-      {expanded && content && (
+      {expanded && (isError || content) && (
         <Box
           mt={4}
           pl="sm"
           style={{
-            borderLeft: '1px solid var(--chatbox-tint-placeholder)',
+            borderLeft: `1px solid ${isError ? 'var(--chatbox-tint-error)' : 'var(--chatbox-tint-placeholder)'}`,
             maxHeight: 400,
             overflowY: 'auto',
             marginLeft: 7,
@@ -363,9 +421,13 @@ const ParseLinkUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
               {url}
             </Text>
           )}
-          <Text size="sm" c="chatbox-tertiary" style={{ whiteSpace: 'pre-line', lineHeight: 1.5 }}>
-            {content}
-          </Text>
+          {isError ? (
+            <ToolCallErrorDetails part={part} />
+          ) : (
+            <Text size="sm" c="chatbox-tertiary" style={{ whiteSpace: 'pre-line', lineHeight: 1.5 }}>
+              {content}
+            </Text>
+          )}
         </Box>
       )}
     </Stack>
@@ -376,7 +438,8 @@ const ParseLinkUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
 
 const GeneralToolCallUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
+  const isError = part.state === 'error'
+  const [expanded, setExpanded] = useAutoExpandOnError(isError)
 
   return (
     <Stack gap={6} mb="xs">
@@ -386,7 +449,7 @@ const GeneralToolCallUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
           ml={4}
           pl="sm"
           style={{
-            borderLeft: `2px solid ${part.state === 'error' ? 'var(--chatbox-tint-error)' : 'var(--chatbox-tint-success)'}`,
+            borderLeft: `2px solid ${isError ? 'var(--chatbox-tint-error)' : 'var(--chatbox-tint-success)'}`,
           }}
         >
           <Stack gap="xs">
@@ -396,13 +459,22 @@ const GeneralToolCallUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
               </Text>
               <Code block>{JSON.stringify(part.args, null, 2)}</Code>
             </Box>
-            {!!part.result && (
+            {isError ? (
               <Box>
                 <Text size="xs" c="chatbox-tertiary" fw={500} mb={2}>
-                  {t('Result')}
+                  {t('Error')}
                 </Text>
-                <Code block>{JSON.stringify(part.result, null, 2)}</Code>
+                <ToolCallErrorDetails part={part} />
               </Box>
+            ) : (
+              !!part.result && (
+                <Box>
+                  <Text size="xs" c="chatbox-tertiary" fw={500} mb={2}>
+                    {t('Result')}
+                  </Text>
+                  <Code block>{JSON.stringify(part.result, null, 2)}</Code>
+                </Box>
+              )
             )}
           </Stack>
         </Box>

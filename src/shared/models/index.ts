@@ -22,6 +22,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.Perplexity]: 'Perplexity API',
   [ModelProviderEnum.XAI]: 'xAI API',
   [ModelProviderEnum.OpenRouter]: 'OpenRouter API',
+  [ModelProviderEnum.Bedrock]: 'AWS Bedrock',
   [ModelProviderEnum.Custom]: 'Custom Provider',
 }
 
@@ -100,6 +101,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.Groq,
     label: aiProviderNameHash[ModelProviderEnum.Groq],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.Bedrock,
+    label: aiProviderNameHash[ModelProviderEnum.Bedrock],
     disabled: false,
   },
   {

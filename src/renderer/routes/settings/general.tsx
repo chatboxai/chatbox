@@ -299,52 +299,134 @@ const ImportExportDataSection = () => {
   const { t } = useTranslation()
 
   const [importTips, setImportTips] = useState('')
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
   const [exportItems, setExportItems] = useState<ExportDataItem[]>([
     ExportDataItem.Setting,
     ExportDataItem.Conversations,
     ExportDataItem.Copilot,
   ])
 
+  const isLoading = isExporting || isImporting
+
   const onExport = async () => {
-    const data = await storage.getAll()
-    delete data[StorageKey.Configs] // 不导出 uuid
-    ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // 不导出license认证数据
-    ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // 不导出license设备数据，导入数据的新设备也应该计入设备数
-    if (!exportItems.includes(ExportDataItem.Key)) {
-      delete (data[StorageKey.Settings] as Settings).licenseKey
-      data[StorageKey.Settings].providers = mapValues(
-        (data[StorageKey.Settings] as Settings).providers,
-        (provider: ProviderInfo) => {
-          delete provider.apiKey
-          return provider
+    if (isLoading) return
+
+    setIsExporting(true)
+    try {
+      const date = new Date()
+      const dateStr = dayjs(date).format('YYYY-M-D')
+
+      const streamingDataGenerator = async function* () {
+        yield '{'
+
+        let isFirstItem = true
+
+        // 导出metadata
+        if (!isFirstItem) yield ','
+        yield `"__exported_items":${JSON.stringify(exportItems)}`
+        isFirstItem = false
+
+        if (!isFirstItem) yield ','
+        yield `"__exported_at":"${date.toISOString()}"`
+
+        // 获取所有存储的keys
+        try {
+          const allKeys = await storage.getAllKeys()
+
+          for (const key of allKeys) {
+            let shouldExport = false
+
+            // 判断是否需要导出这个key
+            if (key === StorageKey.Settings && exportItems.includes(ExportDataItem.Setting)) {
+              shouldExport = true
+            } else if (key.startsWith('session:') && exportItems.includes(ExportDataItem.Conversations)) {
+              shouldExport = true
+            } else if (key === StorageKey.MyCopilots && exportItems.includes(ExportDataItem.Copilot)) {
+              shouldExport = true
+            } else if (key === StorageKey.ChatSessionsList && exportItems.includes(ExportDataItem.Conversations)) {
+              shouldExport = true
+            } else if (key === StorageKey.ChatSessionSettings && exportItems.includes(ExportDataItem.Conversations)) {
+              shouldExport = true
+            } else if (
+              key === StorageKey.PictureSessionSettings &&
+              exportItems.includes(ExportDataItem.Conversations)
+            ) {
+              shouldExport = true
+            } else if (key === StorageKey.ConfigVersion) {
+              shouldExport = true
+            }
+
+            // 跳过不需要导出的key
+            if (key === StorageKey.Configs) {
+              shouldExport = false // 不导出 uuid
+            }
+
+            if (shouldExport) {
+              try {
+                const value = await storage.getItem(key, null)
+                if (value !== null) {
+                  // 对settings进行特殊处理，清理敏感数据
+                  if (key === StorageKey.Settings) {
+                    const cleanedSettings = { ...(value as Settings) }
+                    cleanedSettings.licenseDetail = undefined
+                    cleanedSettings.licenseInstances = undefined
+
+                    if (!exportItems.includes(ExportDataItem.Key)) {
+                      delete cleanedSettings.licenseKey
+                      if (cleanedSettings.providers) {
+                        cleanedSettings.providers = mapValues(cleanedSettings.providers, (provider: ProviderInfo) => {
+                          const cleanedProvider = { ...provider }
+                          delete cleanedProvider.apiKey
+                          delete cleanedProvider.accessKey
+                          delete cleanedProvider.secretKey
+                          delete cleanedProvider.sessionToken
+                          return cleanedProvider
+                        }) as unknown as { [key: string]: ProviderInfo }
+                      }
+                    }
+
+                    yield ','
+                    yield `"${key}":${JSON.stringify(cleanedSettings)}`
+                  } else {
+                    yield ','
+                    yield `"${key}":${JSON.stringify(value)}`
+                  }
+                }
+              } catch (error) {
+                console.warn(`Failed to export key ${key}:`, error)
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Failed to get storage keys:', error)
         }
-      )
+
+        yield '}'
+      }
+
+      await platform.exporter.exportStreamingJson(`chatbox-exported-data-${dateStr}.json`, streamingDataGenerator)
+    } catch (error) {
+      console.error('Export failed:', error)
+    } finally {
+      setIsExporting(false)
     }
-    if (!exportItems.includes(ExportDataItem.Setting)) {
-      delete data[StorageKey.Settings]
-    }
-    if (!exportItems.includes(ExportDataItem.Conversations)) {
-      delete data[StorageKey.ChatSessions]
-    }
-    if (!exportItems.includes(ExportDataItem.Copilot)) {
-      delete data[StorageKey.MyCopilots]
-    }
-    const date = new Date()
-    data['__exported_items'] = exportItems
-    data['__exported_at'] = date.toISOString()
-    const dateStr = dayjs(date).format('YYYY-M-D')
-    platform.exporter.exportTextFile(`chatbox-exported-data-${dateStr}.json`, JSON.stringify(data))
   }
 
   const onImport = (file: File | null) => {
+    if (isLoading) return
+
     const errTip = t('Import failed, unsupported data format')
     if (!file) {
       return
     }
+
+    setIsImporting(true)
+    setImportTips('')
+
     const reader = new FileReader()
     reader.onload = (event) => {
       void (async () => {
-        setImportTips('')
         try {
           const result = event.target?.result
           if (typeof result !== 'string') {
@@ -393,13 +475,14 @@ const ImportExportDataSection = () => {
           platform.relaunch() // 重启应用以生效
         } catch (err) {
           setImportTips(errTip)
-
+          setIsImporting(false)
           throw err
         }
       })()
     }
     reader.onerror = (event) => {
       setImportTips(errTip)
+      setIsImporting(false)
       const err = event.target?.error
       if (!err) {
         throw new Error('FileReader error but no error message')
@@ -445,6 +528,7 @@ const ImportExportDataSection = () => {
             key={value}
             checked={exportItems.includes(value)}
             label={label}
+            disabled={isLoading}
             onChange={(e) => {
               const checked = e.currentTarget.checked
               if (checked && !exportItems.includes(value)) {
@@ -455,8 +539,8 @@ const ImportExportDataSection = () => {
             }}
           />
         ))}
-        <Button className="self-start" onClick={onExport}>
-          {t('Export Selected Data')}
+        <Button className="self-start" onClick={onExport} disabled={isLoading} loading={isExporting}>
+          {isExporting ? t('Exporting...') : t('Export Selected Data')}
         </Button>
       </Stack>
 
@@ -478,10 +562,10 @@ const ImportExportDataSection = () => {
             icon={<IconInfoCircle />}
           ></Alert>
         )}
-        <FileButton accept="application/json" onChange={onImport}>
+        <FileButton accept="application/json" onChange={onImport} disabled={isLoading}>
           {(props) => (
-            <Button {...props} className="self-start">
-              {t('Import and Restore')}
+            <Button {...props} className="self-start" disabled={isLoading} loading={isImporting}>
+              {isImporting ? t('Importing...') : t('Import and Restore')}
             </Button>
           )}
         </FileButton>

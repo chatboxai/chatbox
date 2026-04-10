@@ -115,6 +115,7 @@ export async function activate(
   options?: { pageName?: string }
 ) {
   const pageName = options?.pageName ?? JK_PAGE_NAMES.SETTING_PAGE
+  const shouldTrackKeyVerifyEvent = method !== 'login'
   const settings = settingsStore.getState()
 
   // 互斥逻辑：manual方式激活时，清除login状态
@@ -136,12 +137,14 @@ export async function activate(
     instanceName: await platform.getInstanceName(),
   })
   if (!result.valid) {
-    trackJkClickEvent(JK_EVENTS.KEY_VERIFY_FAILED, {
-      pageName,
-      content: result.error || 'activation_failed',
-      contentType: 'Chatbox AI',
-      props: { content_add_info: { content: 'Chatbox AI' } },
-    })
+    if (shouldTrackKeyVerifyEvent) {
+      trackJkClickEvent(JK_EVENTS.KEY_VERIFY_FAILED, {
+        pageName,
+        content: result.error || 'activation_failed',
+        contentType: 'Chatbox AI',
+        props: { content_add_info: { content: 'Chatbox AI' } },
+      })
+    }
     return result
   }
   // 获取 license 详情
@@ -149,12 +152,14 @@ export async function activate(
   // 如果获取详情返回错误（如过期、额度用尽），返回错误码
   if (licenseDetailResponse.error) {
     const error = licenseDetailResponse.error.code || 'license_error'
-    trackJkClickEvent(JK_EVENTS.KEY_VERIFY_FAILED, {
-      pageName,
-      content: error,
-      contentType: 'Chatbox AI',
-      props: { content_add_info: { content: 'Chatbox AI' } },
-    })
+    if (shouldTrackKeyVerifyEvent) {
+      trackJkClickEvent(JK_EVENTS.KEY_VERIFY_FAILED, {
+        pageName,
+        content: error,
+        contentType: 'Chatbox AI',
+        props: { content_add_info: { content: 'Chatbox AI' } },
+      })
+    }
     return {
       valid: false,
       error,
@@ -172,12 +177,14 @@ export async function activate(
     // 同步更新手动激活的 license key 显示值（用于设置页面输入框回显）
     ...(method === 'manual' ? { memorizedManualLicenseKey: licenseKey } : {}),
   }))
-  trackJkClickEvent(JK_EVENTS.KEY_VERIFY_SUCCESS, {
-    pageName,
-    content: licenseKey,
-    contentType: 'Chatbox AI',
-    props: { content_add_info: { content: 'Chatbox AI' } },
-  })
+  if (shouldTrackKeyVerifyEvent) {
+    trackJkClickEvent(JK_EVENTS.KEY_VERIFY_SUCCESS, {
+      pageName,
+      content: licenseKey,
+      contentType: 'Chatbox AI',
+      props: { content_add_info: { content: 'Chatbox AI' } },
+    })
+  }
   log.info(`✅ Activated license key: ${licenseKey.slice(0, 8)}****`)
   return result
 }

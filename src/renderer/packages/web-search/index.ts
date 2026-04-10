@@ -7,7 +7,9 @@ import type WebSearch from './base'
 import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
 import { ChatboxSearch } from './chatbox-search'
+import { QueritSearch } from './querit'
 import { TavilySearch } from './tavily'
+import { BochaSearch } from './bocha'
 
 const MAX_CONTEXT_ITEMS = 10
 
@@ -49,6 +51,24 @@ function getSearchProviders() {
           settings.webSearch.tavilyIncludeRawContent
         )
       )
+      break
+    case 'querit':
+      if (!settings.webSearch.queritApiKey) {
+        throw ChatboxAIAPIError.fromCodeName('querit_api_key_required', 'querit_api_key_required')
+      }
+      selectedProviders.push(
+        new QueritSearch(
+          settings.webSearch.queritApiKey,
+          settings.webSearch.queritMaxResults,
+          settings.webSearch.queritTimeRange
+        )
+      )
+      break
+    case 'bocha':
+      if (!settings.webSearch.bochaApiKey) {
+        throw ChatboxAIAPIError.fromCodeName('bocha_api_key_required', 'bocha_api_key_required')
+      }
+      selectedProviders.push(new BochaSearch(settings.webSearch.bochaApiKey))
       break
     default:
       throw new Error(`Unsupported search provider: ${provider}`)
@@ -113,6 +133,21 @@ export const webSearchExecutor = async (
     getFreshValue: () => _searchRelatedResults(query, abortSignal),
   })
   return { query, searchResults }
+}
+
+/**
+ * Single source of truth: which configured providers offer the parse_link tool.
+ * Keep in sync with the provider classes' `supportsParseLink` flags.
+ */
+export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily'])
+
+/**
+ * Returns the first configured search provider that supports parseLink.
+ * Throws the underlying provider error (e.g. missing API key) — caller decides how to handle.
+ */
+export function getParseLinkProvider(): WebSearch | null {
+  const providers = getSearchProviders()
+  return providers.find((p) => p.supportsParseLink) ?? null
 }
 
 export type { SearchResultItem }

@@ -1,35 +1,35 @@
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 
-import en from './locales/en/translation.json'
-import zhHans from './locales/zh-Hans/translation.json'
-import zhHant from './locales/zh-Hant/translation.json'
-import ja from './locales/ja/translation.json'
-import ko from './locales/ko/translation.json'
-import ru from './locales/ru/translation.json'
-import de from './locales/de/translation.json'
-import fr from './locales/fr/translation.json'
-import ptPT from './locales/pt-PT/translation.json'
-import itIT from './locales/it-IT/translation.json'
-import es from './locales/es/translation.json'
-import ar from './locales/ar/translation.json'
-import sv from './locales/sv/translation.json'
-import nbNO from './locales/nb-NO/translation.json'
-
+import { authErrorOverrides } from './auth-error-overrides'
+import changelogEn from './changelogs/changelog_en'
 import changelogZhHans from './changelogs/changelog_zh_Hans'
 import changelogZhHant from './changelogs/changelog_zh_Hant'
-import changelogEn from './changelogs/changelog_en'
+import ar from './locales/ar/translation.json'
+import de from './locales/de/translation.json'
+import en from './locales/en/translation.json'
+import es from './locales/es/translation.json'
+import fr from './locales/fr/translation.json'
+import itIT from './locales/it-IT/translation.json'
+import ja from './locales/ja/translation.json'
+import ko from './locales/ko/translation.json'
+import nbNO from './locales/nb-NO/translation.json'
+import ptPT from './locales/pt-PT/translation.json'
+import ru from './locales/ru/translation.json'
+import sv from './locales/sv/translation.json'
+import zhHans from './locales/zh-Hans/translation.json'
+import zhHant from './locales/zh-Hant/translation.json'
 
 i18n.use(initReactI18next).init({
   resources: {
     'zh-Hans': {
-      translation: zhHans,
+      translation: { ...zhHans, ...authErrorOverrides['zh-Hans'] },
     },
     'zh-Hant': {
-      translation: zhHant,
+      translation: { ...zhHant, ...authErrorOverrides['zh-Hant'] },
     },
     en: {
-      translation: en,
+      translation: { ...en, ...authErrorOverrides.en },
     },
     ja: {
       translation: ja,

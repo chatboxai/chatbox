@@ -110,6 +110,10 @@ export function getChatboxOrigin() {
   }
 }
 
+export function buildChatboxUrl(path: string) {
+  return new URL(path, getChatboxOrigin()).toString()
+}
+
 const getChatboxHeaders = async () => {
   return {
     'CHATBOX-PLATFORM': await platform.getPlatform(),
@@ -393,7 +397,11 @@ export async function uploadAndCreateUserFile(licenseKey: string, file: File) {
   return storageKey
 }
 
-export async function parseUserLinkPro(params: { licenseKey: string; url: string }) {
+export async function parseUserLinkPro(params: {
+  licenseKey: string
+  url: string
+  abortSignal?: AbortSignal
+}) {
   type Response = {
     data: {
       uuid: string
@@ -401,20 +409,23 @@ export async function parseUserLinkPro(params: { licenseKey: string; url: string
       content: string
     }
   }
+  const { licenseKey, url, abortSignal } = params
   const afetch = await getAfetch()
   const res = await afetch(
     `${getAPIOrigin()}/api/links/parse`,
     {
       method: 'POST',
       headers: {
-        Authorization: params.licenseKey,
+        Authorization: licenseKey,
         'Content-Type': 'application/json',
         ...(await getChatboxHeaders()),
       },
       body: JSON.stringify({
-        ...params,
+        licenseKey,
+        url,
         returnContent: true,
       }),
+      signal: abortSignal,
     },
     {
       parseChatboxRemoteError: true,
@@ -422,7 +433,7 @@ export async function parseUserLinkPro(params: { licenseKey: string; url: string
     }
   )
   const json: Response = await res.json()
-  const storageKey = `parseUrl-${params.url}_${json['data']['uuid']}.txt`
+  const storageKey = `parseUrl-${url}_${json['data']['uuid']}.txt`
   if (json['data']['content']) {
     await platform.setStoreBlob(storageKey, json['data']['content'])
   }
@@ -683,6 +694,94 @@ export async function requestLoginTicketId() {
   )
   const json: Response = await res.json()
   return json.data.ticket_id
+}
+
+export async function sendEmailLoginCode(params: { email: string; lang?: string }) {
+  type Response = {
+    data: {
+      result: string
+    }
+  }
+  const afetch = await getAfetch()
+  const res = await afetch(
+    `${getChatboxOrigin()}/api/auth/send_email_login_code`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await getChatboxHeaders()),
+      },
+      body: JSON.stringify({
+        email: params.email,
+        lang: params.lang,
+      }),
+    },
+    {
+      parseChatboxRemoteError: true,
+      retry: 2,
+    }
+  )
+  const json: Response = await res.json()
+  return json.data.result
+}
+
+export async function loginOrSignupWithEmailCode(params: { email: string; code: string }) {
+  type Response = {
+    data: {
+      access_token: string
+      refresh_token: string
+    }
+    success: boolean
+  }
+  const afetch = await getAfetch()
+  const res = await afetch(
+    `${getChatboxOrigin()}/api/auth/login_or_signup_with_email_code`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await getChatboxHeaders()),
+      },
+      body: JSON.stringify({
+        email: params.email,
+        code: params.code,
+      }),
+    },
+    {
+      parseChatboxRemoteError: true,
+      retry: 1,
+    }
+  )
+  const json: Response = await res.json()
+  return {
+    accessToken: json.data.access_token,
+    refreshToken: json.data.refresh_token,
+  }
+}
+
+export async function getWebAuthToken(): Promise<string> {
+  type Response = {
+    data: {
+      web_auth_token: string
+    }
+    success: boolean
+  }
+  const afetch = await getAuthenticatedAfetch()
+  const res = await afetch(
+    `${getChatboxOrigin()}/api/auth/web_auth_token/generate`,
+    {
+      method: 'POST',
+      headers: {
+        ...(await getChatboxHeaders()),
+      },
+    },
+    {
+      parseChatboxRemoteError: true,
+      retry: 2,
+    }
+  )
+  const json: Response = await res.json()
+  return json.data.web_auth_token
 }
 
 export async function checkLoginStatus(ticketId: string) {

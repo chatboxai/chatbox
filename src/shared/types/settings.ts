@@ -70,6 +70,12 @@ export const ProviderSettingsSchema = z.object({
   deploymentName: z.string().optional().catch(undefined),
   dalleDeploymentName: z.string().optional().catch(undefined),
   apiVersion: z.string().optional().catch(undefined),
+
+  // credentials (e.g. AWS Bedrock)
+  accessKey: z.string().optional().catch(undefined),
+  secretKey: z.string().optional().catch(undefined),
+  sessionToken: z.string().optional().catch(undefined),
+  region: z.string().optional().catch(undefined),
 })
 
 const BuiltinProviderBaseInfoSchema = z.object({
@@ -114,7 +120,8 @@ const OpenAIParamsSchema = z.object({
 
 const GoogleParamsSchema = z.object({
   thinkingConfig: z.object({
-    thinkingBudget: z.number().catch(1024),
+    thinkingBudget: z.number().optional().catch(undefined),
+    thinkingLevel: z.enum(['minimal', 'low', 'medium', 'high']).optional().catch(undefined),
     includeThoughts: z.boolean().catch(true),
   }),
 })
@@ -212,8 +219,12 @@ const ShortcutSettingSchema = z.object({
 
 const ExtensionSettingsSchema = z.object({
   webSearch: z.object({
-    provider: z.enum(['build-in', 'bing', 'tavily']),
+    provider: z.enum(['build-in', 'bing', 'tavily', 'bocha', 'querit']).catch('build-in'),
     tavilyApiKey: z.string().optional(),
+    bochaApiKey: z.string().optional(),
+    queritApiKey: z.string().optional(),
+    queritMaxResults: z.number().optional(),
+    queritTimeRange: z.string().nullable().optional(),
   }),
   knowledgeBase: z
     .object({

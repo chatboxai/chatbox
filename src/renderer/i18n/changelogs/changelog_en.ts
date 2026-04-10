@@ -1,4 +1,21 @@
 const changelog = `
+## v1.20.1 - 2026.04.09
+1. Added verification code login support
+2. Added AWS Bedrock provider support
+3. Added BoCha and Querit.ai web search providers
+4. Added Tavily parse_link tool for richer web search results
+5. Added translate button for raw error messages
+6. Upgraded Mermaid with Venn diagram support
+7. Adjusted input box font size
+8. Fixed conversation history losing tool-call parts
+9. Fixed input content lost when max context message count is 0
+10. Fixed title bar disappearing when all chats are cleared
+11. Fixed Gemini 3 models thinking mode configuration
+12. Fixed macOS input focus causing empty bottom margin
+13. Fixed Android large file export auto-rename
+14. Fixed message navigation button scrolling
+15. Removed deprecated Gemini OAuth support
+
 ## v1.20.0 - 2026.03.30
 1. New chat bubble mode for a more natural conversation experience
 2. Unified model list that automatically fetches the latest model information from all providers

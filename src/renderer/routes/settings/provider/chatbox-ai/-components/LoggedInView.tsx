@@ -1,11 +1,14 @@
 import { Alert, Button, Flex, Menu, Paper, Select, Stack, Text, Title, UnstyledButton } from '@mantine/core'
 import { IconArrowRight, IconDots, IconExclamationCircle, IconExternalLink, IconLogout } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
-import { forwardRef, useCallback, useEffect, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { trackJkClickEvent } from '@/analytics/jk'
+import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { trackingEvent } from '@/packages/event'
-import { getLicenseDetailRealtime, getUserProfile, listLicensesByUser } from '@/packages/remote'
+import { openLinkWithAuth } from '@/packages/openLinkWithAuth'
+import { buildChatboxUrl, getLicenseDetailRealtime, getUserProfile, listLicensesByUser } from '@/packages/remote'
 import platform from '@/platform'
 import * as premiumActions from '@/stores/premiumActions'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
@@ -30,6 +33,10 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
     const [displayLicenseKey, setDisplayLicenseKey] = useState<string | null>(null) // 用于显示在Select中的key，即使激活失败也保留
     const [activationError, setActivationError] = useState<string | null>(null)
     const [switchingLicense, setSwitchingLicense] = useState(false)
+    const [pendingExternalAction, setPendingExternalAction] = useState<
+      'manage-license' | 'get-more' | 'claim-free-plan' | 'view-more-plans' | null
+    >(null)
+    const pendingExternalActionRef = useRef(false)
 
     // 使用TanStack Query获取数据，不持久化
     const { data: userProfile, error: profileError } = useQuery({
@@ -69,6 +76,22 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
     const licenseDetailError =
       licenseDetailResponse?.error || (queryError as any)?.data?.error || (queryError as any)?.error
 
+    const handleOpenAuthLink = useCallback(
+      async (action: 'manage-license' | 'get-more' | 'claim-free-plan' | 'view-more-plans', url: string) => {
+        if (pendingExternalActionRef.current) return
+
+        pendingExternalActionRef.current = true
+        setPendingExternalAction(action)
+        try {
+          await openLinkWithAuth(url)
+        } finally {
+          pendingExternalActionRef.current = false
+          setPendingExternalAction(null)
+        }
+      },
+      []
+    )
+
     // 自动激活逻辑
     useEffect(() => {
       if (!userProfile || licenses.length === 0) return
@@ -85,13 +108,11 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
 
         if (isLastSelectedValid) {
           // 有有效的历史记录，自动激活
-          console.log('📌 Auto-selecting from history:', lastSelected.substring(0, 8) + '****')
           setDisplayLicenseKey(lastSelected) // 先设置显示的key
           premiumActions
             .activate(lastSelected, 'login')
             .then((result) => {
               if (!result.valid) {
-                console.log('🔄 Activate license error:', result.error)
                 setActivationError(result.error)
                 setSelectedLicenseKey(null)
               } else {
@@ -116,7 +137,6 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
           premiumActions
             .activate(onlyLicense, 'login')
             .then((result) => {
-              console.log('🔄 Activate license result:', result)
               if (!result.valid) {
                 setActivationError(result.error)
                 setSelectedLicenseKey(null)
@@ -135,7 +155,6 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
             onShowLicenseSelectionModal({
               licenses,
               onConfirm: (licenseKey: string) => {
-                console.log('✅ User selected license:', licenseKey.substring(0, 8) + '****')
                 // 保存用户选择
                 settingsStore.setState({
                   lastSelectedLicenseByUser: {
@@ -148,7 +167,6 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
                 premiumActions
                   .activate(licenseKey, 'login')
                   .then((result) => {
-                    console.log('🔄 Activate license result:', result)
                     if (!result.valid) {
                       setActivationError(result.error)
                       setSelectedLicenseKey(null)
@@ -176,7 +194,6 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
                   premiumActions
                     .activate(firstLicense, 'login')
                     .then((result) => {
-                      console.log('🔄 Activate license result:', result)
                       if (!result.valid) {
                         setActivationError(result.error)
                         setSelectedLicenseKey(null)
@@ -206,7 +223,6 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
               premiumActions
                 .activate(firstLicense, 'login')
                 .then((result) => {
-                  console.log('🔄 Activate license result:', result)
                   if (!result.valid) {
                     setActivationError(result.error)
                     setSelectedLicenseKey(null)
@@ -240,7 +256,6 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
       async (newKey: string) => {
         if (!userProfile || switchingLicense) return
 
-        console.log('🔄 User switching license to:', newKey.substring(0, 8) + '****')
         setSwitchingLicense(true)
         setActivationError(null)
         setDisplayLicenseKey(newKey) // 先设置显示的key
@@ -260,9 +275,10 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
           } else {
             setSelectedLicenseKey(newKey)
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('Failed to switch license:', error)
-          setActivationError(error?.message || 'Failed to switch license. Please try again.')
+          const errorMsg = error instanceof Error ? error.message : 'Failed to switch license. Please try again.'
+          setActivationError(errorMsg)
           setSelectedLicenseKey(null)
         } finally {
           setSwitchingLicense(false)
@@ -445,9 +461,9 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
           {/* Activation Error Alert - Outside Paper */}
           {activationError && (
             <Alert variant="light" color="red" p="sm">
-              <Flex gap="xs" align="center" c="chatbox-primary">
+              <Flex gap="xs" align="center" c={activationError === 'not_found' ? 'chatbox-error' : 'chatbox-primary'}>
                 <ScalableIcon icon={IconExclamationCircle} className="flex-shrink-0" />
-                <Text>
+                <Text c={activationError === 'not_found' ? 'chatbox-error' : undefined}>
                   {activationError === 'not_found'
                     ? t('License not found, please check your license key')
                     : activationError === 'expired'
@@ -457,16 +473,32 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
                         : t('Failed to activate license, please check your license key and network connection')}
                 </Text>
 
-                <a
-                  href={`https://chatboxai.app/redirect_app/manage_license/${language}/?utm_source=app&utm_content=provider_cb_login_activate_error`}
-                  target="_blank"
-                  className="ml-auto flex flex-row items-center gap-xxs"
+                <UnstyledButton
+                  onClick={() =>
+                    void handleOpenAuthLink(
+                      'manage-license',
+                      buildChatboxUrl(
+                        `/redirect_app/manage_license/${language}/?utm_source=app&utm_content=provider_cb_login_activate_error`
+                      )
+                    )
+                  }
+                  disabled={pendingExternalAction !== null}
+                  className={`ml-auto flex flex-row items-center gap-xxs${activationError === 'not_found' ? ' text-chatbox-tint-error underline decoration-chatbox-tint-error' : ''}`}
+                  style={{ opacity: pendingExternalAction === 'manage-license' ? 0.6 : 1 }}
                 >
-                  <Text span fw={600} className="whitespace-nowrap">
-                    {t('Manage License')}
+                  <Text
+                    span
+                    fw={600}
+                    className="whitespace-nowrap"
+                    c={activationError === 'not_found' ? 'chatbox-error' : undefined}
+                  >
+                    {pendingExternalAction === 'manage-license' ? t('Loading...') : t('Manage License')}
                   </Text>
-                  <ScalableIcon icon={IconArrowRight} />
-                </a>
+                  <ScalableIcon
+                    icon={IconArrowRight}
+                    color={activationError === 'not_found' ? 'var(--chatbox-tint-error)' : undefined}
+                  />
+                </UnstyledButton>
               </Flex>
             </Alert>
           )}
@@ -483,32 +515,71 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
                   <ScalableIcon icon={IconExclamationCircle} className="flex-shrink-0" />
                   <Text>{t('You have no more Chatbox AI quota left this month.')}</Text>
 
-                  <a
-                    href={`https://chatboxai.app/redirect_app/manage_license/${language}/?utm_source=app&utm_content=provider_cb_login_no_quota`}
-                    target="_blank"
+                  <UnstyledButton
+                    onClick={() =>
+                      void handleOpenAuthLink(
+                        'get-more',
+                        buildChatboxUrl(
+                          `/redirect_app/manage_license/${language}/?utm_source=app&utm_content=provider_cb_login_no_quota`
+                        )
+                      )
+                    }
+                    disabled={pendingExternalAction !== null}
                     className="ml-auto flex flex-row items-center gap-xxs"
+                    style={{ opacity: pendingExternalAction === 'get-more' ? 0.6 : 1 }}
                   >
                     <Text span fw={600} className="whitespace-nowrap">
-                      {t('get more')}
+                      {pendingExternalAction === 'get-more' ? t('Loading...') : t('get more')}
                     </Text>
                     <ScalableIcon icon={IconArrowRight} />
-                  </a>
+                  </UnstyledButton>
                 </Flex>
               </Alert>
             )}
 
-          {/* View More Plans Button */}
-          <Button
-            variant="outline"
-            onClick={() => {
-              platform.openLink(
-                'https://chatboxai.app/redirect_app/view_more_plans?utm_source=app&utm_content=provider_cb_login_more_plans'
-              )
-              trackingEvent('click_view_more_plans_button', { event_category: 'user' })
-            }}
-          >
-            {t('View More Plans')}
-          </Button>
+          {/* Action Buttons */}
+          <Flex gap="xs" align="center">
+            {licenses.length === 0 && (
+              <Button
+                variant="filled"
+                flex={1}
+                onClick={() => {
+                  trackJkClickEvent(JK_EVENTS.FREE_LICENSE_CLAIM_CLICK, {
+                    pageName: JK_PAGE_NAMES.SETTING_PAGE,
+                    content: 'settings_chatboxai',
+                  })
+                  void handleOpenAuthLink(
+                    'claim-free-plan',
+                    buildChatboxUrl(
+                      `/redirect_app/claim_free_plan/${language}/?utm_source=app&utm_content=provider_cb_login_claim_free`
+                    )
+                  )
+                  trackingEvent('click_claim_free_plan_button', { event_category: 'user' })
+                }}
+                loading={pendingExternalAction === 'claim-free-plan'}
+                disabled={pendingExternalAction !== null}
+              >
+                {t('Claim Free Plan')}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              flex={1}
+              onClick={() => {
+                void handleOpenAuthLink(
+                  'view-more-plans',
+                  buildChatboxUrl(
+                    `/redirect_app/view_more_plans/${language}/?utm_source=app&utm_content=provider_cb_login_more_plans`
+                  )
+                )
+                trackingEvent('click_view_more_plans_button', { event_category: 'user' })
+              }}
+              loading={pendingExternalAction === 'view-more-plans'}
+              disabled={pendingExternalAction !== null}
+            >
+              {t('View More Plans')}
+            </Button>
+          </Flex>
         </Stack>
       </Stack>
     )

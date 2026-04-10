@@ -22,6 +22,12 @@ import {
   type Session,
   type SessionSettings,
 } from '@shared/types'
+import {
+  type GoogleThinkingLevel,
+  getDefaultGoogleThinkingLevel,
+  getGoogleThinkingMode,
+  getSupportedGoogleThinkingLevels,
+} from '@shared/utils/google-thinking'
 import { IconInfoCircle, IconTrash, IconUpload } from '@tabler/icons-react'
 import { pick } from 'lodash'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -492,6 +498,70 @@ function ThinkingBudgetConfig({
   )
 }
 
+interface ThinkingLevelConfigProps {
+  currentLevel: GoogleThinkingLevel
+  supportedLevels: GoogleThinkingLevel[]
+  onLevelChange: (thinkingLevel: GoogleThinkingLevel) => void
+  tooltipText: string
+}
+
+function ThinkingLevelConfig({ currentLevel, supportedLevels, onLevelChange, tooltipText }: ThinkingLevelConfigProps) {
+  const { t } = useTranslation()
+
+  const thinkingLevelOptions = useMemo(
+    () =>
+      supportedLevels.map((level) => ({
+        label:
+          level === 'minimal'
+            ? t('Minimal')
+            : level === 'low'
+              ? t('Low')
+              : level === 'medium'
+                ? t('Medium')
+                : t('High'),
+        value: level,
+      })),
+    [supportedLevels, t]
+  )
+
+  const handleThinkingLevelChange = useCallback(
+    (value: string) => {
+      onLevelChange(value as GoogleThinkingLevel)
+    },
+    [onLevelChange]
+  )
+
+  return (
+    <Stack gap="md" style={{ minWidth: 0 }}>
+      <Flex align="center" gap="xs">
+        <Text size="sm" fw="600">
+          {t('Thinking Level')}
+        </Text>
+        <Tooltip
+          label={tooltipText}
+          withArrow={true}
+          maw={320}
+          className="!whitespace-normal"
+          zIndex={3000}
+          events={{ hover: true, focus: true, touch: true }}
+        >
+          <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
+        </Tooltip>
+      </Flex>
+
+      <div style={{ minWidth: 0, overflowX: 'auto' }}>
+        <SegmentedControl
+          key={`thinking-level-control:${supportedLevels.join(',')}`}
+          value={currentLevel}
+          onChange={handleThinkingLevelChange}
+          data={thinkingLevelOptions}
+          fullWidth={false}
+        />
+      </div>
+    </Stack>
+  )
+}
+
 function ClaudeProviderConfig({
   settings,
   onSettingsChange,
@@ -602,9 +672,12 @@ function GoogleProviderConfig({
   onSettingsChange: (data: Session['settings']) => void
 }) {
   const { t } = useTranslation()
+  const modelId = settings?.modelId || ''
   const providerOptions = settings?.providerOptions?.google
+  const thinkingMode = getGoogleThinkingMode(modelId)
+  const supportedLevels = useMemo(() => getSupportedGoogleThinkingLevels(modelId), [modelId])
 
-  const handleConfigChange = (config: { budgetTokens: number; enabled: boolean }) => {
+  const handleBudgetConfigChange = (config: { budgetTokens: number; enabled: boolean }) => {
     onSettingsChange({
       providerOptions: {
         google: { thinkingConfig: { thinkingBudget: config.budgetTokens, includeThoughts: config.enabled } },
@@ -612,12 +685,52 @@ function GoogleProviderConfig({
     })
   }
 
+  const handleLevelChange = useCallback(
+    (thinkingLevel: GoogleThinkingLevel) => {
+      onSettingsChange({
+        providerOptions: {
+          google: { thinkingConfig: { thinkingLevel, includeThoughts: true } },
+        },
+      })
+    },
+    [onSettingsChange]
+  )
+
+  const currentThinkingLevel = useMemo(() => {
+    const thinkingLevel = providerOptions?.thinkingConfig?.thinkingLevel
+
+    if (supportedLevels.length === 0) {
+      return undefined
+    }
+
+    if (thinkingLevel && supportedLevels.includes(thinkingLevel)) {
+      return thinkingLevel
+    }
+
+    return getDefaultGoogleThinkingLevel(modelId)
+  }, [modelId, providerOptions?.thinkingConfig?.thinkingLevel, supportedLevels])
+
+  if (thinkingMode === 'level' && currentThinkingLevel) {
+    return (
+      <ThinkingLevelConfig
+        currentLevel={currentThinkingLevel}
+        supportedLevels={supportedLevels}
+        onLevelChange={handleLevelChange}
+        tooltipText={t('Thinking Level only works for Gemini 3 models')}
+      />
+    )
+  }
+
+  if (thinkingMode !== 'budget') {
+    return null
+  }
+
   return (
     <ThinkingBudgetConfig
       currentBudgetTokens={providerOptions?.thinkingConfig?.thinkingBudget || 0}
       isEnabled={(providerOptions?.thinkingConfig?.thinkingBudget || 0) > 0}
-      onConfigChange={handleConfigChange}
-      tooltipText={t('Thinking Budget only works for 2.0 or later models')}
+      onConfigChange={handleBudgetConfigChange}
+      tooltipText={t('Thinking Budget only works for Gemini 2.5 models')}
       minValue={0}
       maxValue={10000}
     />

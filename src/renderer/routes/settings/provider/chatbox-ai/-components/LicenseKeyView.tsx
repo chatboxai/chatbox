@@ -8,9 +8,10 @@ import {
   IconHelp,
 } from '@tabler/icons-react'
 import { forwardRef } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { trackingEvent } from '@/packages/event'
+import { buildChatboxUrl } from '@/packages/remote'
 import platform from '@/platform'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { LicenseDetailCard } from './LicenseDetailCard'
@@ -71,7 +72,9 @@ export const LicenseKeyView = forwardRef<HTMLDivElement, LicenseKeyViewProps>(({
               component="a"
               c="chatbox-brand"
               className="!underline"
-              href={`https://chatboxai.app/redirect_app/how_to_use_license/${language}?utm_source=app&utm_content=provider_cb_key_howtouse`}
+              href={buildChatboxUrl(
+                `/redirect_app/how_to_use_license/${language}?utm_source=app&utm_content=provider_cb_key_howtouse`
+              )}
               target="_blank"
             >
               {t('How to use?')}
@@ -96,7 +99,9 @@ export const LicenseKeyView = forwardRef<HTMLDivElement, LicenseKeyViewProps>(({
             component="a"
             c="chatbox-brand"
             className="!underline"
-            href={`https://chatboxai.app/redirect_app/how_to_use_license/${language}?utm_source=app&utm_content=provider_cb_key_howtouse`}
+            href={buildChatboxUrl(
+              `/redirect_app/how_to_use_license/${language}?utm_source=app&utm_content=provider_cb_key_howtouse`
+            )}
             target="_blank"
           >
             {t('How to use?')}
@@ -152,40 +157,55 @@ export const LicenseKeyView = forwardRef<HTMLDivElement, LicenseKeyViewProps>(({
 
         {(activateError || licenseDetailError) && (
           <Alert variant="light" color="red" p="sm">
-            <Flex gap="xs" align="center" c="chatbox-primary">
-              <ScalableIcon icon={IconExclamationCircle} className="flex-shrink-0" />
-              <Text>
-                {(() => {
-                  const errorCode = licenseDetailError?.code || activateError
-                  switch (errorCode) {
-                    case 'not_found':
-                    case 'license_not_found':
-                      return t('License not found, please check your license key')
-                    case 'expired':
-                    case 'expired_license':
-                      return t('License expired, please check your license key')
-                    case 'reached_activation_limit':
-                      return t('This license key has reached the activation limit.')
-                    case 'quota_exceeded':
-                    case 'token_quota_exhausted':
-                      return t('You have no more Chatbox AI quota left this month.')
-                    default:
-                      return t('Failed to activate license, please check your license key and network connection')
-                  }
-                })()}
-              </Text>
+            {(() => {
+              const errorCode = licenseDetailError?.code || activateError
+              const isLicenseNotFound = ['not_found', 'license_not_found'].includes(errorCode || '')
+              return (
+                <Flex gap="xs" align="center" c={isLicenseNotFound ? 'chatbox-error' : 'chatbox-primary'}>
+                  <ScalableIcon icon={IconExclamationCircle} className="flex-shrink-0" />
+                  <Text c={isLicenseNotFound ? 'chatbox-error' : undefined}>
+                    {(() => {
+                      switch (errorCode) {
+                        case 'not_found':
+                        case 'license_not_found':
+                          return t('License not found, please check your license key')
+                        case 'expired':
+                        case 'expired_license':
+                          return t('License expired, please check your license key')
+                        case 'reached_activation_limit':
+                          return t('This license key has reached the activation limit.')
+                        case 'quota_exceeded':
+                        case 'token_quota_exhausted':
+                          return t('You have no more Chatbox AI quota left this month.')
+                        default:
+                          return t('Failed to activate license, please check your license key and network connection')
+                      }
+                    })()}
+                  </Text>
 
-              <a
-                href={`https://chatboxai.app/redirect_app/manage_license/${language}?utm_source=app&utm_content=provider_cb_key_activate_error`}
-                target="_blank"
-                className="ml-auto flex flex-row items-center gap-xxs"
-              >
-                <Text span fw={600} className="whitespace-nowrap">
-                  {t('Manage License')}
-                </Text>
-                <ScalableIcon icon={IconArrowRight} />
-              </a>
-            </Flex>
+                  <a
+                    href={buildChatboxUrl(
+                      `/redirect_app/manage_license/${language}?utm_source=app&utm_content=provider_cb_key_activate_error`
+                    )}
+                    target="_blank"
+                    className={`ml-auto flex flex-row items-center gap-xxs${isLicenseNotFound ? ' text-chatbox-tint-error underline decoration-chatbox-tint-error' : ''}`}
+                  >
+                    <Text
+                      span
+                      fw={600}
+                      className="whitespace-nowrap"
+                      c={isLicenseNotFound ? 'chatbox-error' : undefined}
+                    >
+                      {t('Manage License')}
+                    </Text>
+                    <ScalableIcon
+                      icon={IconArrowRight}
+                      color={isLicenseNotFound ? 'var(--chatbox-tint-error)' : undefined}
+                    />
+                  </a>
+                </Flex>
+              )
+            })()}
           </Alert>
         )}
 
@@ -207,7 +227,9 @@ export const LicenseKeyView = forwardRef<HTMLDivElement, LicenseKeyViewProps>(({
                     <Text>{t('You have no more Chatbox AI quota left this month.')}</Text>
 
                     <a
-                      href={`https://chatboxai.app/redirect_app/manage_license/${language}/${memorizedManualLicenseKey}?utm_source=app&utm_content=provider_cb_key_no_quota`}
+                      href={buildChatboxUrl(
+                        `/redirect_app/manage_license/${language}/${memorizedManualLicenseKey}?utm_source=app&utm_content=provider_cb_key_no_quota`
+                      )}
                       target="_blank"
                       className="ml-auto flex flex-row items-center gap-xxs"
                     >
@@ -226,7 +248,9 @@ export const LicenseKeyView = forwardRef<HTMLDivElement, LicenseKeyViewProps>(({
                 flex={1}
                 onClick={() => {
                   platform.openLink(
-                    `https://chatboxai.app/redirect_app/manage_license/${language}?utm_source=app&utm_content=provider_cb_key_manage_license`
+                    buildChatboxUrl(
+                      `/redirect_app/manage_license/${language}?utm_source=app&utm_content=provider_cb_key_manage_license`
+                    )
                   )
                   trackingEvent('click_manage_license_button', { event_category: 'user' })
                 }}
@@ -238,7 +262,9 @@ export const LicenseKeyView = forwardRef<HTMLDivElement, LicenseKeyViewProps>(({
                 flex={1}
                 onClick={() => {
                   platform.openLink(
-                    'https://chatboxai.app/redirect_app/view_more_plans?utm_source=app&utm_content=provider_cb_key_more_plans'
+                    buildChatboxUrl(
+                      `/redirect_app/view_more_plans/${language}?utm_source=app&utm_content=provider_cb_key_more_plans`
+                    )
                   )
                   trackingEvent('click_view_more_plans_button', { event_category: 'user' })
                 }}
@@ -280,7 +306,9 @@ export const LicenseKeyView = forwardRef<HTMLDivElement, LicenseKeyViewProps>(({
                 flex={1}
                 onClick={() => {
                   platform.openLink(
-                    `https://chatboxai.app/redirect_app/get_license?utm_source=app&utm_content=provider_cb_key_get_license`
+                    buildChatboxUrl(
+                      `/redirect_app/get_license/${language}?utm_source=app&utm_content=provider_cb_key_get_license`
+                    )
                   )
                   trackingEvent('click_get_license_button', { event_category: 'user' })
                 }}
@@ -292,7 +320,9 @@ export const LicenseKeyView = forwardRef<HTMLDivElement, LicenseKeyViewProps>(({
                 flex={1}
                 onClick={() => {
                   platform.openLink(
-                    `https://chatboxai.app/redirect_app/manage_license/${language}?utm_source=app&utm_content=provider_cb_key_retrieve`
+                    buildChatboxUrl(
+                      `/redirect_app/manage_license/${language}?utm_source=app&utm_content=provider_cb_key_retrieve`
+                    )
                   )
                   trackingEvent('click_retrieve_license_button', { event_category: 'user' })
                 }}

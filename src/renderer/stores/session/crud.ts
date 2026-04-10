@@ -184,6 +184,13 @@ async function clearSessionList(keepNum: number) {
     }
     return sessions.filter((s) => !deleted?.some((d) => d.id === s.id))
   })
+
+  // Navigate to home if the current session was deleted
+  const store = getDefaultStore()
+  const currentSessionId = store.get(atoms.currentSessionIdAtom)
+  if (currentSessionId && deleted.some((d) => d.id === currentSessionId)) {
+    router.navigate({ to: '/', replace: true })
+  }
 }
 
 /**

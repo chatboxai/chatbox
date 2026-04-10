@@ -1,7 +1,18 @@
-import { Anchor, Box, Button, Container, Divider, Flex, Image, Popover, Stack, Text, Title } from '@mantine/core'
+import {
+  Anchor,
+  Box,
+  Button,
+  Container,
+  Divider,
+  Flex,
+  Image,
+  Popover,
+  Stack,
+  Text,
+  Title,
+} from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import {
-  IconAlertTriangle,
   IconChevronRight,
   IconClipboard,
   IconFileText,
@@ -20,6 +31,7 @@ import BrandWechat from '@/components/icons/BrandWechat'
 import Page from '@/components/layout/Page'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import useVersion from '@/hooks/useVersion'
+import { buildChatboxUrl } from '@/packages/remote'
 import platform from '@/platform'
 import iconPNG from '@/static/icon.png'
 import IMG_WECHAT_QRCODE from '@/static/wechat_qrcode.png'
@@ -52,7 +64,7 @@ function RouteComponent() {
                   variant="default"
                   radius="xl"
                   className="flex-shrink-0"
-                  onClick={() => platform.openLink(`https://chatboxai.app/redirect_app/check_update/${language}`)}
+                  onClick={() => platform.openLink(buildChatboxUrl(`/redirect_app/check_update/${language}`))}
                 >
                   {t('Check Update')}
                 </Button>
@@ -83,20 +95,6 @@ function RouteComponent() {
             </Stack>
           </Flex>
 
-          {_i18n.language === 'zh-Hans' ? (
-            <Stack gap="xs" p="md" className="rounded-lg bg-chatbox-background-warning-secondary">
-              <Flex align="center" gap="xxs" c="chatbox-error">
-                <ScalableIcon icon={IconAlertTriangle} size={24} className="!text-inherit" />
-                <Title order={5}>正版提示</Title>
-              </Flex>
-              <Text>
-                近期出现了附带 Chatbox 的所谓一键本地部署 DeepSeek 的付费捆绑软件安装包。
-                Chatbox客户端本身是开源免费软件，只在官网(chatboxai.app)销售托管AI服务。
-                如果发现上当受骗，请尽快在对应支付平台如微信、支付宝申请退款。
-              </Text>
-            </Stack>
-          ) : null}
-
           <List>
             <ListItem
               icon={<BrandGithub className="w-full h-full" />}
@@ -123,7 +121,7 @@ function RouteComponent() {
             <ListItem
               icon={<IconHome className="w-full h-full" />}
               title={t('Homepage')}
-              link={`https://chatboxai.app/redirect_app/homepage/${language}`}
+              link={buildChatboxUrl(`/redirect_app/homepage/${language}`)}
             />
             <ListItem
               icon={<IconClipboard className="w-full h-full" />}
@@ -133,7 +131,7 @@ function RouteComponent() {
             <ListItem
               icon={<IconPencil className="w-full h-full" />}
               title={t('Feedback')}
-              link={`https://chatboxai.app/redirect_app/feedback/${language}`}
+              link={buildChatboxUrl(`/redirect_app/feedback/${language}`)}
             />
             <ListItem
               icon={<IconFileText className="w-full h-full" />}
@@ -240,3 +238,4 @@ function ListItem({
     </Flex>
   )
 }
+

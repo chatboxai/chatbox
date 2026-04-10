@@ -1,15 +1,13 @@
+import type { ComponentProps } from 'react'
 import { SegmentedControl as MantineSegmentedControl } from '@mantine/core'
 
-export default function SegmentedControl({
-  value,
-  onChange,
-  data,
-  ...props
-}: {
+type SegmentedControlProps = Omit<ComponentProps<typeof MantineSegmentedControl>, 'value' | 'onChange' | 'data'> & {
   value: string
   onChange: (value: string) => void
   data: { label: string; value: string }[]
-}) {
+}
+
+export default function SegmentedControl({ value, onChange, data, ...props }: SegmentedControlProps) {
   return (
     <MantineSegmentedControl
       value={value}

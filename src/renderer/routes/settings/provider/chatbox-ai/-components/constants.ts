@@ -1,6 +1,5 @@
-// Login polling configuration
-export const LOGIN_POLLING_INTERVAL = 1000
-export const LOGIN_POLLING_TIMEOUT = 3 * 60 * 1000
+// Email code resend configuration
+export const EMAIL_CODE_RESEND_SECONDS = 60
 
 // View transition configuration
 export const VIEW_TRANSITION_DURATION = 300

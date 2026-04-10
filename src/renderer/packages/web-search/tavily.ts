@@ -1,79 +1,84 @@
+import { ChatboxAIAPIError } from '@shared/models/errors'
 import type { SearchResult } from '@shared/types'
 import { ofetch } from 'ofetch'
-import WebSearch from './base'
+import WebSearch, { type ParseLinkResult } from './base'
 
 export class TavilySearch extends WebSearch {
-  private readonly TAVILY_SEARCH_URL = 'https://api.tavily.com/search'
-
   private apiKey: string
-  private searchDepth: string
-  private maxResults: number
-  private timeRange: string | null
-  private includeRawContent: string | null
 
-  constructor(
-    apiKey: string,
-    searchDepth: string = 'basic',
-    maxResults: number = 5,
-    timeRange: string | null = null,
-    includeRawContent: string | null = null
-  ) {
+  override supportsParseLink = true
+
+  constructor(apiKey: string) {
     super()
     this.apiKey = apiKey
-    this.searchDepth = searchDepth
-    this.maxResults = maxResults
-    this.timeRange = timeRange === 'none' ? null : timeRange
-    this.includeRawContent = includeRawContent === 'none' ? null : includeRawContent
   }
 
   async search(query: string, signal?: AbortSignal): Promise<SearchResult> {
     try {
-      const requestBody = this.buildRequestBody(query)
-      const response = await ofetch(this.TAVILY_SEARCH_URL, {
+      const response = await ofetch('https://api.tavily.com/search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.apiKey}`,
         },
-        body: requestBody,
+        body: {
+          query,
+          search_depth: 'basic',
+          include_domains: [],
+          exclude_domains: [],
+        },
         signal,
       })
 
-      const items = (response.results || []).map((result: any) => ({
-        title: result.title,
-        link: result.url,
-        snippet: result.content,
-        rawContent: result.raw_content,
-      }))
+      const items = (response.results || []).map(
+        (result: { title: string; url: string; content: string }) => ({
+          title: result.title,
+          link: result.url,
+          snippet: result.content,
+        })
+      )
 
       return { items }
     } catch (error) {
       console.error('Tavily search error:', error)
-      return { items: [] }
+      throw error
     }
   }
 
-  private buildRequestBody(query: string): any {
-    const requestBody: any = {
-      query,
-      search_depth: this.searchDepth,
-      max_results: this.maxResults,
-      include_domains: [],
-      exclude_domains: [],
+  async parseLink(url: string, signal?: AbortSignal): Promise<ParseLinkResult> {
+    const response = await ofetch('https://api.tavily.com/extract', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: {
+        urls: [url],
+      },
+      signal,
+    })
+
+    const result = response.results?.[0]
+    if (!result) {
+      const failedUrl = response.failed_results?.[0]?.url ?? url
+      const technical = `Tavily extract API returned no results for ${failedUrl}`
+      throw ChatboxAIAPIError.fromCodeName(technical, 'parse_link_failed') ?? new Error(technical)
     }
 
-    if (!this.isNullOrNone(this.timeRange)) {
-      requestBody.time_range = this.timeRange
+    // Tavily Extract API does not return a `title` field — only `url` and `raw_content`.
+    // Fall back to the URL hostname so consumers always get a non-empty label.
+    // See https://docs.tavily.com/documentation/api-reference/endpoint/extract
+    const resultUrl = typeof result.url === 'string' && result.url.trim() ? result.url : url
+    let fallbackTitle = resultUrl
+    try {
+      const hostname = new URL(resultUrl).hostname
+      if (hostname) fallbackTitle = hostname
+    } catch {}
+
+    return {
+      url: resultUrl,
+      title: fallbackTitle,
+      content: result.raw_content || '',
     }
-
-    if (!this.isNullOrNone(this.includeRawContent)) {
-      requestBody.include_raw_content = this.includeRawContent
-    }
-
-    return requestBody
-  }
-
-  private isNullOrNone(value: string | null): boolean {
-    return value === null || value === 'none'
   }
 }

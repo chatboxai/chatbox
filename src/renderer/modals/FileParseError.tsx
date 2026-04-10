@@ -8,7 +8,9 @@ import LinkTargetBlank from '@/components/common/Link'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { navigateToSettings } from '@/modals/Settings'
 import { trackingEvent } from '@/packages/event'
+import { buildChatboxUrl } from '@/packages/remote'
 import platform from '@/platform'
+import * as settingActions from '@/stores/settingActions'
 
 interface FileParseErrorProps {
   errorCode: string
@@ -48,7 +50,9 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
               className="cursor-pointer underline font-semibold text-blue-600 hover:text-blue-700"
               onClick={() => {
                 platform.openLink(
-                  'https://chatboxai.app/redirect_app/view_more_plans?utm_source=app&utm_content=file_parse_error'
+                  buildChatboxUrl(
+                    `/redirect_app/view_more_plans/${settingActions.getLanguage()}?utm_source=app&utm_content=file_parse_error`
+                  )
                 )
                 trackingEvent('click_view_more_plans_button_from_file_parse_error', {
                   event_category: 'user',
@@ -67,10 +71,18 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
           ),
           LinkToHomePage: <LinkTargetBlank href="https://chatboxai.app" />,
           LinkToAdvancedFileProcessing: (
-            <LinkTargetBlank href="https://chatboxai.app/redirect_app/advanced_file_processing?utm_source=app&utm_content=file_parse_error" />
+            <LinkTargetBlank
+              href={buildChatboxUrl(
+                `/redirect_app/advanced_file_processing/${settingActions.getLanguage()}?utm_source=app&utm_content=file_parse_error`
+              )}
+            />
           ),
           LinkToAdvancedUrlProcessing: (
-            <LinkTargetBlank href="https://chatboxai.app/redirect_app/advanced_url_processing?utm_source=app&utm_content=file_parse_error" />
+            <LinkTargetBlank
+              href={buildChatboxUrl(
+                `/redirect_app/advanced_url_processing/${settingActions.getLanguage()}?utm_source=app&utm_content=file_parse_error`
+              )}
+            />
           ),
         }}
       />

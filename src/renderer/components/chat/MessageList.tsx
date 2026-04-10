@@ -200,7 +200,22 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
         if (msgElement) {
           const rect = msgElement.getBoundingClientRect()
           // 找到第一个出现在可视区域顶部的元素，滚动到上一条用户消息
-          if (rect.bottom > containerRect.top) {
+          // +2 tolerance: smooth scroll + virtuoso height estimation can leave
+          // the previous element's bottom a sub-pixel into the viewport,
+          // causing the anchor to land one item too early.
+          if (rect.bottom > containerRect.top + 2) {
+            // If the current element's top is scrolled above the viewport and it
+            // contains a user message (e.g. a long assistant response in a group),
+            // scroll to the top of THIS element first to bring the question back.
+            if (rect.top < containerRect.top - 2 && renderItems[i].messages.some((msg) => msg.role === 'user')) {
+              virtuoso.current.scrollToIndex({
+                index: i,
+                align: 'start',
+                offset: isSmallScreen ? -28 : 0,
+                behavior: 'smooth',
+              })
+              return
+            }
             for (let j = i - 1; j >= 0; j--) {
               if (renderItems[j].messages.some((msg) => msg.role === 'user')) {
                 virtuoso.current.scrollToIndex({
@@ -231,7 +246,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
         if (msgElement) {
           const rect = msgElement.getBoundingClientRect()
           // 找到第一个出现在可视区域顶部的元素，滚动到下一条用户消息
-          if (rect.bottom > containerRect.top) {
+          // +2 tolerance: see handleScrollToPrev comment
+          if (rect.bottom > containerRect.top + 2) {
             for (let j = i + 1; j < renderItems.length; j++) {
               if (renderItems[j].messages.some((msg) => msg.role === 'user')) {
                 virtuoso.current.scrollToIndex({ index: j, align: 'start', behavior: 'smooth' })

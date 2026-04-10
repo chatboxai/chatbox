@@ -34,11 +34,26 @@ export function buildImportedProviderSettingsUpdate(params: {
     ModelProviderType.OpenAI
   const uniqueModels = dedupeModels(importedConfig, existingProvider)
 
+  const credentialFields: Record<string, string> = {}
+  if ('accessKey' in importedConfig && importedConfig.accessKey) {
+    credentialFields.accessKey = importedConfig.accessKey as string
+  }
+  if ('secretKey' in importedConfig && importedConfig.secretKey) {
+    credentialFields.secretKey = importedConfig.secretKey as string
+  }
+  if ('sessionToken' in importedConfig && importedConfig.sessionToken) {
+    credentialFields.sessionToken = importedConfig.sessionToken as string
+  }
+  if ('region' in importedConfig && importedConfig.region) {
+    credentialFields.region = importedConfig.region as string
+  }
+
   const providerSettings = {
     ...providers?.[providerId],
     apiHost,
     apiPath,
     apiKey,
+    ...credentialFields,
     models: uniqueModels,
   }
 

@@ -1,9 +1,11 @@
-import { Alert, Flex, Progress, Stack, Text } from '@mantine/core'
-import { IconAlertTriangle, IconArrowRight, IconExternalLink } from '@tabler/icons-react'
-import { useTranslation } from 'react-i18next'
+import { Alert, Flex, Progress, Stack, Text, UnstyledButton } from '@mantine/core'
 import type { ChatboxAILicenseDetail } from '@shared/types'
+import { IconAlertTriangle, IconArrowRight, IconExternalLink } from '@tabler/icons-react'
+import { useCallback, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
-import platform from '@/platform'
+import { openLinkWithAuth } from '@/packages/openLinkWithAuth'
+import { buildChatboxUrl } from '@/packages/remote'
 import { formatUsage } from '@/utils/format'
 
 interface LicenseDetailCardProps {
@@ -14,6 +16,8 @@ interface LicenseDetailCardProps {
 
 export function LicenseDetailCard({ licenseDetail, language, utmContent }: LicenseDetailCardProps) {
   const { t } = useTranslation()
+  const [pendingAction, setPendingAction] = useState<'renew-license' | 'view-details' | null>(null)
+  const pendingActionRef = useRef(false)
 
   // Check if user is trial-only (plan token_limit is 0, but trial has token_limit)
   const planDetail = licenseDetail.unified_token_usage_details?.find((detail) => detail.type === 'plan')
@@ -22,6 +26,18 @@ export function LicenseDetailCard({ licenseDetail, language, utmContent }: Licen
   const quotaLimit = isTrialOnly ? trialDetail?.token_limit || 0 : planDetail?.token_limit || 0
 
   const isExpired = licenseDetail.token_expire_time ? new Date(licenseDetail.token_expire_time) < new Date() : false
+  const handleOpenAuthLink = useCallback(async (action: 'renew-license' | 'view-details', url: string) => {
+    if (pendingActionRef.current) return
+
+    pendingActionRef.current = true
+    setPendingAction(action)
+    try {
+      await openLinkWithAuth(url)
+    } finally {
+      pendingActionRef.current = false
+      setPendingAction(null)
+    }
+  }, [])
 
   return (
     <Stack gap="lg">
@@ -30,16 +46,24 @@ export function LicenseDetailCard({ licenseDetail, language, utmContent }: Licen
           <Flex gap="xs" align="center" c="chatbox-primary">
             <ScalableIcon icon={IconAlertTriangle} className="flex-shrink-0" />
             <Text>{t('Your license has expired. You can continue using your quota pack.')}</Text>
-            <a
-              href={`https://chatboxai.app/redirect_app/manage_license/${language}/?utm_source=app&utm_content=${utmContent}_expired`}
-              target="_blank"
+            <UnstyledButton
+              onClick={() =>
+                void handleOpenAuthLink(
+                  'renew-license',
+                  buildChatboxUrl(
+                    `/redirect_app/manage_license/${language}/?utm_source=app&utm_content=${utmContent}_expired`
+                  )
+                )
+              }
+              disabled={pendingAction !== null}
               className="ml-auto flex flex-row items-center gap-xxs"
+              style={{ opacity: pendingAction === 'renew-license' ? 0.6 : 1 }}
             >
               <Text span fw={600} className="whitespace-nowrap">
-                {t('Renew License')}
+                {pendingAction === 'renew-license' ? t('Loading...') : t('Renew License')}
               </Text>
               <ScalableIcon icon={IconArrowRight} />
-            </a>
+            </UnstyledButton>
           </Flex>
         </Alert>
       )}
@@ -55,20 +79,22 @@ export function LicenseDetailCard({ licenseDetail, language, utmContent }: Licen
                 2
               )}
             </Text>
-            <Text
-              size="xs"
-              c="chatbox-brand"
-              fw="400"
-              className="cursor-pointer whitespace-nowrap"
+            <UnstyledButton
               onClick={() =>
-                platform.openLink(
-                  `https://chatboxai.app/redirect_app/manage_license/${language}/?utm_source=app&utm_content=${utmContent}`
+                void handleOpenAuthLink(
+                  'view-details',
+                  buildChatboxUrl(`/redirect_app/manage_license/${language}/?utm_source=app&utm_content=${utmContent}`)
                 )
               }
+              disabled={pendingAction !== null}
+              className="whitespace-nowrap"
+              style={{ opacity: pendingAction === 'view-details' ? 0.6 : 1 }}
             >
-              {t('View Details')}
-              <ScalableIcon icon={IconExternalLink} size={12} />
-            </Text>
+              <Text size="xs" c="chatbox-brand" fw="400" span>
+                {pendingAction === 'view-details' ? t('Loading...') : t('View Details')}
+                <ScalableIcon icon={IconExternalLink} size={12} />
+              </Text>
+            </UnstyledButton>
           </Flex>
         </Flex>
         <Progress value={licenseDetail.remaining_quota_unified * 100} />

@@ -917,6 +917,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             <Flex align="flex-end" gap={4}>
               <Textarea
                 unstyled={true}
+                styles={{ input: { fontSize: 14 } }}
                 classNames={{
                   root: 'flex-1',
                   wrapper: 'flex-1',

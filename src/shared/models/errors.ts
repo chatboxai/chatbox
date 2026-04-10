@@ -275,6 +275,23 @@ export class ChatboxAIAPIError extends BaseError {
       i18nKey:
         'This file type requires a document parser. Please go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and enable Chatbox AI document parsing.',
     },
+    bocha_api_key_required: {
+      name: 'bocha_api_key_required',
+      code: 20035,
+      i18nKey:
+        'You have selected BoCha as the search provider, but an API key has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.',
+    },
+    parse_link_failed: {
+      name: 'parse_link_failed',
+      code: 20037,
+      i18nKey: 'Failed to read webpage content. Please try again later or use a different URL.',
+    },
+    parse_link_not_supported: {
+      name: 'parse_link_not_supported',
+      code: 20038,
+      i18nKey:
+        'The current search provider does not support reading webpages. Please <OpenExtensionSettingButton>choose a different search provider</OpenExtensionSettingButton> that supports this capability.',
+    },
   }
   static fromCodeName(response: string, codeName: string) {
     if (!codeName) {

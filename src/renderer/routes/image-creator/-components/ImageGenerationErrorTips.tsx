@@ -1,12 +1,14 @@
 import { Button, Flex, Paper, Text } from '@mantine/core'
 import { ChatboxAIAPIError } from '@shared/models/errors'
 import type { ImageGeneration } from '@shared/types'
-import { IconRefresh, IconX } from '@tabler/icons-react'
+import { IconRefresh, IconSettings, IconX } from '@tabler/icons-react'
 import { Trans, useTranslation } from 'react-i18next'
 import LinkTargetBlank from '@/components/common/Link'
 import { navigateToSettings } from '@/modals/Settings'
 import { trackingEvent } from '@/packages/event'
+import { buildChatboxUrl } from '@/packages/remote'
 import platform from '@/platform'
+import * as settingActions from '@/stores/settingActions'
 
 export interface ImageGenerationErrorTipsProps {
   record: ImageGeneration
@@ -19,6 +21,8 @@ export function ImageGenerationErrorTips({ record, onRetry, isRetrying }: ImageG
 
   const chatboxAIErrorDetail = record.errorCode ? ChatboxAIAPIError.getDetail(record.errorCode) : null
   const showDetailedError = !chatboxAIErrorDetail
+  const isLicenseError =
+    chatboxAIErrorDetail && ['license_not_found', 'expired_license'].includes(chatboxAIErrorDetail.name)
 
   return (
     <Paper
@@ -58,7 +62,9 @@ export function ImageGenerationErrorTips({ record, onRetry, isRetrying }: ImageG
                     c="chatbox-brand"
                     onClick={() => {
                       platform.openLink(
-                        'https://chatboxai.app/redirect_app/view_more_plans?utm_source=app&utm_content=image_creator_upgrade_required'
+                        buildChatboxUrl(
+                          `/redirect_app/view_more_plans/${settingActions.getLanguage()}?utm_source=app&utm_content=image_creator_upgrade_required`
+                        )
                       )
                       trackingEvent('click_view_more_plans_button_from_image_creator', {
                         event_category: 'user',
@@ -82,17 +88,30 @@ export function ImageGenerationErrorTips({ record, onRetry, isRetrying }: ImageG
           </Text>
         )}
 
-        <Button
-          variant="light"
-          color="chatbox-error"
-          leftSection={<IconRefresh size={16} />}
-          onClick={onRetry}
-          disabled={isRetrying}
-          loading={isRetrying}
-          radius="md"
-        >
-          {t('Retry')}
-        </Button>
+        <Flex gap="sm">
+          {isLicenseError && (
+            <Button
+              variant="light"
+              color="gray"
+              leftSection={<IconSettings size={16} />}
+              onClick={() => navigateToSettings()}
+              radius="md"
+            >
+              {t('Settings')}
+            </Button>
+          )}
+          <Button
+            variant="light"
+            color="chatbox-error"
+            leftSection={<IconRefresh size={16} />}
+            onClick={onRetry}
+            disabled={isRetrying}
+            loading={isRetrying}
+            radius="md"
+          >
+            {t('Retry')}
+          </Button>
+        </Flex>
       </Flex>
     </Paper>
   )

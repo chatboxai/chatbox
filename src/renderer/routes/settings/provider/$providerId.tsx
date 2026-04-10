@@ -95,11 +95,6 @@ const OAUTH_PROVIDER_FALLBACKS: Record<string, OAuthProviderInfo> = {
     name: 'Claude',
     flowType: 'code-paste',
   },
-  gemini: {
-    providerId: 'gemini',
-    name: 'Gemini',
-    flowType: 'callback',
-  },
   'github-copilot': {
     providerId: 'github-copilot',
     name: 'GitHub Copilot',
@@ -658,47 +653,50 @@ function ProviderSettings({ providerId }: { providerId: string }) {
         )}
 
         {/* API Key */}
-        {!isOAuthOnlyProvider && ![ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio, ''].includes(baseInfo.id) && (
-          <Stack gap="xxs" style={isOAuthActive ? { opacity: 0.5 } : undefined}>
-            <Flex gap="xs" align="center">
-              <Text span fw="600">
-                {t('API Key')}
-              </Text>
-              {isOAuthActive && (
-                <Text span size="xs" c="chatbox-tertiary">
-                  ({t('Using OAuth')})
+        {!isOAuthOnlyProvider &&
+          ![ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio, ModelProviderEnum.Bedrock, ''].includes(
+            baseInfo.id
+          ) && (
+            <Stack gap="xxs" style={isOAuthActive ? { opacity: 0.5 } : undefined}>
+              <Flex gap="xs" align="center">
+                <Text span fw="600">
+                  {t('API Key')}
                 </Text>
-              )}
-            </Flex>
-            <Flex gap="xs" align="center">
-              <PasswordInput
-                flex={1}
-                value={providerSettings?.apiKey || ''}
-                onChange={handleApiKeyChange}
-                disabled={isOAuthActive}
-              />
-              <Tooltip
-                disabled={!!providerSettings?.apiKey && displayModels.length > 0}
-                label={
-                  !providerSettings?.apiKey
-                    ? t('API Key is required to check connection')
-                    : displayModels.length === 0
-                      ? t('Add at least one model to check connection')
-                      : null
-                }
-              >
-                <Button
-                  size="sm"
-                  disabled={isOAuthActive || !providerSettings?.apiKey || displayModels.length === 0}
-                  loading={modelTestResult?.testing || false}
-                  onClick={() => setShowTestModelSelector(true)}
+                {isOAuthActive && (
+                  <Text span size="xs" c="chatbox-tertiary">
+                    ({t('Using OAuth')})
+                  </Text>
+                )}
+              </Flex>
+              <Flex gap="xs" align="center">
+                <PasswordInput
+                  flex={1}
+                  value={providerSettings?.apiKey || ''}
+                  onChange={handleApiKeyChange}
+                  disabled={isOAuthActive}
+                />
+                <Tooltip
+                  disabled={!!providerSettings?.apiKey && displayModels.length > 0}
+                  label={
+                    !providerSettings?.apiKey
+                      ? t('API Key is required to check connection')
+                      : displayModels.length === 0
+                        ? t('Add at least one model to check connection')
+                        : null
+                  }
                 >
-                  {t('Check')}
-                </Button>
-              </Tooltip>
-            </Flex>
-          </Stack>
-        )}
+                  <Button
+                    size="sm"
+                    disabled={isOAuthActive || !providerSettings?.apiKey || displayModels.length === 0}
+                    loading={modelTestResult?.testing || false}
+                    onClick={() => setShowTestModelSelector(true)}
+                  >
+                    {t('Check')}
+                  </Button>
+                </Tooltip>
+              </Flex>
+            </Stack>
+          )}
 
         {/* API Host */}
         {BUILTIN_API_HOST_PROVIDERS.has(baseInfo.id) && (
@@ -847,6 +845,89 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                 />
               </Flex>
             </Stack>
+          </>
+        )}
+
+        {/* AWS Bedrock Credentials */}
+        {baseInfo.id === ModelProviderEnum.Bedrock && (
+          <>
+            <Stack gap="xxs">
+              <Text span fw="600">
+                {t('AWS Access Key ID')}
+              </Text>
+              <PasswordInput
+                flex={1}
+                value={providerSettings?.accessKey || ''}
+                placeholder="AKIAIOSFODNN7EXAMPLE"
+                onChange={(e) =>
+                  setProviderSettings({
+                    accessKey: e.currentTarget.value,
+                  })
+                }
+              />
+            </Stack>
+
+            <Stack gap="xxs">
+              <Text span fw="600">
+                {t('AWS Secret Access Key')}
+              </Text>
+              <PasswordInput
+                flex={1}
+                value={providerSettings?.secretKey || ''}
+                placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                onChange={(e) =>
+                  setProviderSettings({
+                    secretKey: e.currentTarget.value,
+                  })
+                }
+              />
+            </Stack>
+
+            <Stack gap="xxs">
+              <Text span fw="600">
+                {t('AWS Region')}
+              </Text>
+              <TextInput
+                flex={1}
+                value={providerSettings?.region || ''}
+                placeholder="us-east-1"
+                onChange={(e) =>
+                  setProviderSettings({
+                    region: e.currentTarget.value,
+                  })
+                }
+              />
+            </Stack>
+
+            <Flex gap="xs" align="center">
+              <Tooltip
+                disabled={
+                  !!providerSettings?.accessKey &&
+                  !!providerSettings?.secretKey &&
+                  displayModels.length > 0
+                }
+                label={
+                  !providerSettings?.accessKey || !providerSettings?.secretKey
+                    ? t('AWS Access Key ID and Secret Access Key are required to check connection')
+                    : displayModels.length === 0
+                      ? t('Add at least one model to check connection')
+                      : null
+                }
+              >
+                <Button
+                  size="sm"
+                  disabled={
+                    !providerSettings?.accessKey ||
+                    !providerSettings?.secretKey ||
+                    displayModels.length === 0
+                  }
+                  loading={modelTestResult?.testing || false}
+                  onClick={() => setShowTestModelSelector(true)}
+                >
+                  {t('Check')}
+                </Button>
+              </Tooltip>
+            </Flex>
           </>
         )}
 

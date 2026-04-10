@@ -1,15 +1,42 @@
-import { useQuery } from '@tanstack/react-query'
-import { debounce } from 'lodash'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { checkLoginStatus, getChatboxOrigin, requestLoginTicketId } from '@/packages/remote'
-import platform from '@/platform'
-import { LOGIN_POLLING_INTERVAL, LOGIN_POLLING_TIMEOUT } from './constants'
+import { loginOrSignupWithEmailCode, sendEmailLoginCode } from '@/packages/remote'
+import { EMAIL_CODE_RESEND_SECONDS } from './constants'
+import { getLoginCodeVerificationErrorMessage } from './loginErrorMessage'
 import type { LoginState } from './types'
 
 interface UseLoginParams {
   language: string
   onLoginSuccess: (tokens: { accessToken: string; refreshToken: string }) => Promise<void>
+}
+
+function getReadableErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof Error)) {
+    return fallback
+  }
+
+  const directMessage = error.message?.trim()
+  if (!directMessage) {
+    return fallback
+  }
+
+  const jsonMatch = directMessage.match(/\{[\s\S]*\}$/)
+  if (!jsonMatch) {
+    return directMessage
+  }
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]) as {
+      error?: {
+        detail?: string
+        title?: string
+      }
+    }
+
+    return parsed.error?.detail || parsed.error?.title || directMessage
+  } catch {
+    return directMessage
+  }
 }
 
 const getLanguagePath = (language: string) => {
@@ -19,146 +46,179 @@ const getLanguagePath = (language: string) => {
 export function useLogin({ language, onLoginSuccess }: UseLoginParams) {
   const { t } = useTranslation()
 
+  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
   const [loginState, setLoginState] = useState<LoginState>('idle')
-  const [ticketId, setTicketId] = useState<string>('')
   const [loginError, setLoginError] = useState<string>('')
-  const pollingStartTime = useRef<number>(0)
-  const loginSuccessHandled = useRef<boolean>(false)
-  const [loginUrl, setLoginUrl] = useState<string>('')
+  const [countdown, setCountdown] = useState(0)
+  const [hasEnteredCodeStep, setHasEnteredCodeStep] = useState(false)
+  const requestEpochRef = useRef(0)
 
-  const _handleLogin = useCallback(async () => {
-    try {
-      setLoginState('requesting')
-      setLoginError('')
-      loginSuccessHandled.current = false
+  const invalidatePendingRequests = useCallback(() => {
+    requestEpochRef.current += 1
+  }, [])
 
-      const ticket = await requestLoginTicketId()
-      setTicketId(ticket)
+  const updateEmail = useCallback(
+    (nextEmail: string) => {
+      setEmail(nextEmail)
 
-      const url = `${getChatboxOrigin()}/${getLanguagePath(language)}/authorize?ticket_id=${ticket}`
-      setLoginUrl(url)
-
-      // 对于 web 平台，不自动打开链接，让用户自己点击
-      if (platform.type !== 'web') {
-        console.log('Opening browser for login:', url)
-        platform.openLink(url)
+      if (hasEnteredCodeStep && countdown <= 0) {
+        setCode('')
+        setLoginError('')
+        setLoginState('idle')
+        setHasEnteredCodeStep(false)
       }
-
-      setLoginState('polling')
-      pollingStartTime.current = Date.now()
-    } catch (error: any) {
-      console.error('Failed to request login ticket:', error)
-      setLoginError(error?.message || 'Failed to start login process')
-      setLoginState('error')
-    }
-  }, [language, setLoginState])
-
-  const handleLogin = useMemo(() => debounce(_handleLogin, 500, { leading: true, trailing: false }), [_handleLogin])
-
-  const { data: loginStatus, refetch } = useQuery({
-    queryKey: ['login-status', ticketId],
-    queryFn: async () => {
-      return await checkLoginStatus(ticketId)
     },
-    enabled: loginState === 'polling' && !!ticketId,
-    refetchInterval: LOGIN_POLLING_INTERVAL,
-    refetchIntervalInBackground: true, // 后台也继续轮询
-    retry: false,
-  })
-
-  // 移动端从后台回到前台立即检查登录状态
-  useEffect(() => {
-    if (platform.type !== 'mobile' || loginState !== 'polling') {
-      return
-    }
-
-    let listener: any
-    const setupListener = async () => {
-      try {
-        const { App } = await import('@capacitor/app')
-        listener = await App.addListener('appStateChange', (state: { isActive: boolean }) => {
-          if (state.isActive && loginState === 'polling') {
-            // console.log('📱 App returned to foreground, checking login status...')
-            refetch()
-          }
-        })
-      } catch (error) {
-        console.warn('Failed to setup app state listener:', error)
-      }
-    }
-
-    setupListener()
-
-    return () => {
-      if (listener) {
-        listener.remove()
-      }
-    }
-  }, [loginState, refetch])
+    [countdown, hasEnteredCodeStep]
+  )
 
   useEffect(() => {
-    if (loginStatus && loginState === 'polling') {
-      if (loginStatus.status === 'success') {
-        if (!loginStatus.accessToken || !loginStatus.refreshToken) {
-          console.error('❌ Login success but tokens missing!')
-          setLoginError(t('Login successful but tokens not received from server') || 'Unknown error')
-          setLoginState('error')
-          return
-        }
+    if (countdown <= 0) return
 
-        // Prevent duplicate processing
-        if (loginSuccessHandled.current) {
-          return
-        }
-        loginSuccessHandled.current = true
+    const timer = setTimeout(() => {
+      setCountdown((prev) => prev - 1)
+    }, 1000)
 
-        if (platform.type === 'mobile') {
-          import('@capacitor/browser')
-            .then(({ Browser }) => {
-              Browser.close()
-            })
-            .catch((error) => {
-              console.warn('Failed to close browser:', error)
-            })
-        }
+    return () => clearTimeout(timer)
+  }, [countdown])
 
-        setLoginState('success')
+  const sendCode = useCallback(async () => {
+    const requestEpoch = requestEpochRef.current
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail) {
+      setLoginError(t('Please enter your email address') || 'Please enter your email address')
+      setLoginState('error')
+      return false
+    }
 
-        onLoginSuccess({
-          accessToken: loginStatus.accessToken,
-          refreshToken: loginStatus.refreshToken,
-        }).catch((error) => {
-          console.error('❌ Failed to save tokens:', error)
-          setLoginError(t('Failed to save login tokens') || 'Unknown error')
-          setLoginState('error')
-        })
-      } else if (loginStatus.status === 'rejected') {
-        setLoginError(t('Authorization was rejected. Please try again if you want to login.') || 'Unknown error')
-        setLoginState('error')
-        setTicketId('')
+    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)
+    if (!isValidEmail) {
+      setLoginError(t('Please enter a valid email address') || 'Please enter a valid email address')
+      setLoginState('error')
+      return false
+    }
+
+    try {
+      setLoginState('sending_code')
+      setLoginError('')
+      setCode('')
+
+      const result = await sendEmailLoginCode({
+        email: trimmedEmail,
+        lang: getLanguagePath(language),
+      })
+
+      if (requestEpoch !== requestEpochRef.current) {
+        return false
       }
-    }
-  }, [loginStatus, loginState, setLoginState, onLoginSuccess])
 
-  useEffect(() => {
-    if (loginState === 'polling') {
-      const checkTimeout = setInterval(() => {
-        const elapsed = Date.now() - pollingStartTime.current
-        if (elapsed > LOGIN_POLLING_TIMEOUT) {
-          setLoginError(t('Login timeout. Please try again.') || '')
-          setLoginState('timeout')
-          setTicketId('')
-        }
-      }, 1000)
+      if (result !== 'sent') {
+        throw new Error('Failed to send login code')
+      }
 
-      return () => clearInterval(checkTimeout)
+      setLoginState('code_sent')
+      setHasEnteredCodeStep(true)
+      setCountdown(EMAIL_CODE_RESEND_SECONDS)
+      return true
+    } catch (error: unknown) {
+      if (requestEpoch !== requestEpochRef.current) {
+        return false
+      }
+
+      console.error('Failed to send login code:', error)
+      const errorMsg = getReadableErrorMessage(error, t('Failed to send login code'))
+      setLoginError(errorMsg)
+      setLoginState('error')
+      return false
     }
-  }, [loginState, setLoginState])
+  }, [email, language, t])
+
+  const verifyCode = useCallback(async () => {
+    const requestEpoch = requestEpochRef.current
+    const trimmedEmail = email.trim()
+    const trimmedCode = code.trim()
+
+    if (!trimmedEmail) {
+      setLoginError(t('Please enter your email address') || 'Please enter your email address')
+      setLoginState('error')
+      return false
+    }
+
+    if (trimmedCode.length !== 6) {
+      setLoginError(t('Please enter the 6-digit verification code') || 'Please enter the 6-digit verification code')
+      setLoginState('error')
+      return false
+    }
+
+    try {
+      setLoginState('verifying_code')
+      setLoginError('')
+
+      const tokens = await loginOrSignupWithEmailCode({
+        email: trimmedEmail,
+        code: trimmedCode,
+      })
+
+      if (requestEpoch !== requestEpochRef.current) {
+        return false
+      }
+
+      await onLoginSuccess(tokens)
+
+      if (requestEpoch !== requestEpochRef.current) {
+        return false
+      }
+
+      setLoginState('success')
+      return true
+    } catch (error: unknown) {
+      if (requestEpoch !== requestEpochRef.current) {
+        return false
+      }
+
+      console.error('Failed to verify login code:', error)
+      const errorMsg = getLoginCodeVerificationErrorMessage(error, t)
+      setLoginError(errorMsg)
+      setLoginState('error')
+      return false
+    }
+  }, [code, email, onLoginSuccess, t])
+
+  const reset = useCallback(() => {
+    invalidatePendingRequests()
+    setCode('')
+    setLoginError('')
+    setLoginState('idle')
+    setCountdown(0)
+    setHasEnteredCodeStep(false)
+  }, [invalidatePendingRequests])
+
+  const canSendCode = useMemo(() => {
+    return Boolean(email.trim()) && countdown === 0 && loginState !== 'sending_code' && loginState !== 'verifying_code'
+  }, [countdown, email, loginState])
+
+  const canVerifyCode = useMemo(() => {
+    return (
+      Boolean(email.trim()) &&
+      code.trim().length === 6 &&
+      loginState !== 'sending_code' &&
+      loginState !== 'verifying_code'
+    )
+  }, [code, email, loginState])
 
   return {
-    handleLogin,
+    email,
+    setEmail: updateEmail,
+    code,
+    setCode,
     loginError,
-    loginUrl,
     loginState,
+    countdown,
+    hasEnteredCodeStep,
+    canSendCode,
+    canVerifyCode,
+    sendCode,
+    verifyCode,
+    reset,
   }
 }

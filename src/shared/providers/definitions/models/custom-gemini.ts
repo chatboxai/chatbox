@@ -6,6 +6,7 @@ import { ApiError } from '../../../models/errors'
 import type { CallChatCompletionOptions } from '../../../models/types'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
+import { normalizeGoogleThinkingConfig } from '../../../utils/google-thinking'
 import { normalizeGeminiHost } from '../../../utils/llm_utils'
 
 const GEMINI_IMAGE_MODELS = [
@@ -74,7 +75,10 @@ export default class CustomGemini extends AbstractAISDKModel {
         ...providerParams,
         ...(options.providerOptions?.google || {}),
         thinkingConfig: {
-          ...(options.providerOptions?.google?.thinkingConfig || {}),
+          ...(normalizeGoogleThinkingConfig(
+            this.options.model.modelId,
+            options.providerOptions?.google?.thinkingConfig
+          ) || {}),
           includeThoughts: true,
         },
       }

@@ -1,3 +1,4 @@
+import { BaseError } from '@shared/models/errors'
 import type { ModelStreamPart } from '@shared/models/types'
 import type {
   Message,
@@ -106,6 +107,7 @@ export async function processStreamChunk(
         existing.state = 'error'
         existing.result = {
           error: chunk.error instanceof Error ? chunk.error.message : String(chunk.error),
+          errorCode: chunk.error instanceof BaseError ? chunk.error.code : undefined,
           input: chunk.input,
           toolName: chunk.toolName,
         }

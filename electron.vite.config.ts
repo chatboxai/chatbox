@@ -1,8 +1,8 @@
+import path, { resolve } from 'node:path'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
-import path, { resolve } from 'path'
 import { visualizer } from 'rollup-plugin-visualizer'
 import type { Plugin } from 'vite'
 import packageJson from './release/app/package.json'
@@ -57,6 +57,24 @@ export function replacePlausibleDomain(): Plugin {
 }
 
 /**
+ * Vite plugin to inject platform-appropriate viewport meta content.
+ * Desktop builds omit `height=device-height` and `viewport-fit=cover` which trigger
+ * Chromium's Virtual Keyboard API on macOS, causing an empty bottom margin on input focus.
+ * See: https://github.com/chatboxai/chatbox/issues/2023
+ */
+export function injectViewportContent(isDesktop: boolean): Plugin {
+  const content = isDesktop
+    ? 'width=device-width, initial-scale=1, user-scalable=no'
+    : 'height=device-height, width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover'
+  return {
+    name: 'inject-viewport-content',
+    transformIndexHtml(html) {
+      return html.replace('%VIEWPORT_CONTENT%', content)
+    },
+  }
+}
+
+/**
  * Vite plugin to replace dvh units with vh units
  * This replaces the webpack string-replace-loader functionality
  */
@@ -86,6 +104,8 @@ if (inferredDist) {
 export default defineConfig(({ mode }) => {
   const isProduction = mode === 'production'
   const isWeb = process.env.CHATBOX_BUILD_PLATFORM === 'web'
+  const isMobile = process.env.CHATBOX_BUILD_TARGET === 'mobile_app'
+  const isDesktop = !isWeb && !isMobile
 
   return {
     main: {
@@ -134,6 +154,7 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           '@': path.resolve(__dirname, './src/renderer'),
+          '@shared': path.resolve(__dirname, './src/shared'),
           'src/shared': path.resolve(__dirname, './src/shared'),
         },
       },
@@ -145,6 +166,8 @@ export default defineConfig(({ mode }) => {
         'process.env.CHATBOX_BUILD_CHANNEL': JSON.stringify(process.env.CHATBOX_BUILD_CHANNEL || 'unknown'),
         'process.env.USE_LOCAL_API': JSON.stringify(process.env.USE_LOCAL_API || ''),
         'process.env.USE_BETA_API': JSON.stringify(process.env.USE_BETA_API || ''),
+        'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
+        'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
       },
     },
     preload: {
@@ -166,6 +189,7 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           '@': path.resolve(__dirname, './src/renderer'),
+          '@shared': path.resolve(__dirname, './src/shared'),
           'src/shared': path.resolve(__dirname, './src/shared'),
         },
       },
@@ -186,6 +210,7 @@ export default defineConfig(({ mode }) => {
         }),
         react({}),
         dvhToVh(),
+        injectViewportContent(isDesktop),
         isWeb ? injectBaseTag() : undefined,
         injectReleaseDate(),
         isWeb ? replacePlausibleDomain() : undefined,
@@ -234,15 +259,22 @@ export default defineConfig(({ mode }) => {
             },
             // Optimize chunk splitting to reduce memory usage during build
             manualChunks(id) {
-              if (id.includes('node_modules')) {
+              const normalizedId = id.split(path.sep).join('/')
+              const isNodeModulePackage = (pkg: string) => normalizedId.includes(`/node_modules/${pkg}/`)
+
+              if (normalizedId.includes('/node_modules/')) {
                 // Split large vendor chunks
-                if (id.includes('@ai-sdk') || id.includes('ai/')) {
+                if (isNodeModulePackage('@ai-sdk') || isNodeModulePackage('ai')) {
                   return 'vendor-ai'
                 }
-                if (id.includes('@mantine') || id.includes('@tabler')) {
+                if (isNodeModulePackage('@mantine') || isNodeModulePackage('@tabler')) {
                   return 'vendor-ui'
                 }
-                if (id.includes('mermaid') || id.includes('d3')) {
+                if (
+                  isNodeModulePackage('mermaid') ||
+                  isNodeModulePackage('d3') ||
+                  /\/node_modules\/d3-[^/]+\//.test(normalizedId)
+                ) {
                   return 'vendor-charts'
                 }
               }
@@ -257,8 +289,7 @@ export default defineConfig(({ mode }) => {
         postcss: './postcss.config.cjs',
       },
       server: {
-        port: 1212,
-        strictPort: true,
+        port: Number(process.env.DEV_PORT) || 1212,
       },
       define: {
         'process.type': '"renderer"',
@@ -268,6 +299,8 @@ export default defineConfig(({ mode }) => {
         'process.env.CHATBOX_BUILD_CHANNEL': JSON.stringify(process.env.CHATBOX_BUILD_CHANNEL || 'unknown'),
         'process.env.USE_LOCAL_API': JSON.stringify(process.env.USE_LOCAL_API || ''),
         'process.env.USE_BETA_API': JSON.stringify(process.env.USE_BETA_API || ''),
+        'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
+        'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
       },
       optimizeDeps: {
         include: ['mermaid'],

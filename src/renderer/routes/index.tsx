@@ -21,8 +21,8 @@ import { useMyCopilots, useRemoteCopilotsByCursor } from '@/hooks/useCopilots'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { navigateToSettings } from '@/modals/Settings'
+import { openLinkWithAuth } from '@/packages/openLinkWithAuth'
 import * as remote from '@/packages/remote'
-import platform from '@/platform'
 import { router } from '@/router'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { createSession as createSessionStore } from '@/stores/chatStore'
@@ -62,6 +62,8 @@ function Index() {
     id: 'new',
     ...initEmptyChatSession(),
   })
+  const [pendingWelcomeAction, setPendingWelcomeAction] = useState<'claim-free-plan' | 'view-more-plans' | null>(null)
+  const pendingWelcomeActionRef = useRef(false)
 
   const { providers } = useProviders()
   const language = useLanguage()
@@ -321,13 +323,24 @@ function Index() {
                         fw={600}
                         flex="0 1 auto"
                         onClick={() => {
+                          if (pendingWelcomeActionRef.current) return
+
+                          pendingWelcomeActionRef.current = true
                           trackJkClickEvent(JK_EVENTS.FREE_LICENSE_CLAIM_CLICK, {
                             pageName: JK_PAGE_NAMES.CHAT_PAGE,
                           })
-                          platform.openLink(
-                            `https://chatboxai.app/redirect_app/claim_free_plan/${language}/?utm_source=app&utm_content=provider_cb_login_claim_free`
-                          )
+                          setPendingWelcomeAction('claim-free-plan')
+                          openLinkWithAuth(
+                            remote.buildChatboxUrl(
+                              `/redirect_app/claim_free_plan/${language}/?utm_source=app&utm_content=provider_cb_login_claim_free`
+                            )
+                          ).finally(() => {
+                            pendingWelcomeActionRef.current = false
+                            setPendingWelcomeAction(null)
+                          })
                         }}
+                        loading={pendingWelcomeAction === 'claim-free-plan'}
+                        disabled={pendingWelcomeAction !== null}
                       >
                         {t('Claim Free Plan')}
                       </Button>
@@ -339,10 +352,21 @@ function Index() {
                         fw={400}
                         flex="0 1 auto"
                         onClick={() => {
-                          platform.openLink(
-                            `https://chatboxai.app/redirect_app/view_more_plans/${language}/?utm_source=app&utm_content=provider_cb_login_more_plans`
-                          )
+                          if (pendingWelcomeActionRef.current) return
+
+                          pendingWelcomeActionRef.current = true
+                          setPendingWelcomeAction('view-more-plans')
+                          openLinkWithAuth(
+                            remote.buildChatboxUrl(
+                              `/redirect_app/view_more_plans/${language}/?utm_source=app&utm_content=provider_cb_login_more_plans`
+                            )
+                          ).finally(() => {
+                            pendingWelcomeActionRef.current = false
+                            setPendingWelcomeAction(null)
+                          })
                         }}
+                        loading={pendingWelcomeAction === 'view-more-plans'}
+                        disabled={pendingWelcomeAction !== null}
                       >
                         {t('View More Plans')}
                       </Button>

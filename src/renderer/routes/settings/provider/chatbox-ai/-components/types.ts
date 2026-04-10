@@ -1,6 +1,6 @@
 export type ViewMode = 'login' | 'licenseKey'
 
-export type LoginState = 'idle' | 'requesting' | 'polling' | 'success' | 'error' | 'timeout'
+export type LoginState = 'idle' | 'sending_code' | 'code_sent' | 'verifying_code' | 'success' | 'error'
 
 export interface AuthTokens {
   accessToken: string

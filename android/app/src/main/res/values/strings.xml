@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">chatbox</string>
+    <string name="title_activity_main">chatbox</string>
+    <string name="package_name">app.chatboxai.chatbox</string>
+    <string name="custom_url_scheme">app.chatboxai.chatbox</string>
+</resources>

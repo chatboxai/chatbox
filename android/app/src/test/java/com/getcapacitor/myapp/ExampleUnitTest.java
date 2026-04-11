@@ -1,4 +1,4 @@
-package com.getcapacitor.myapp;
+package app.chatboxai.chatbox;
 
 import static org.junit.Assert.*;
 

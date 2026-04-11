@@ -149,20 +149,23 @@ export class MobileStreamableHTTPTransport implements Transport {
   }
 
   /**
-   * Collect and concatenate all `data:` lines from one SSE event block.
-   * Multiple data lines are concatenated without a separator (SSE spec §9.2.6).
+   * Collect all `data:` lines from one SSE event block and join them with '\n'.
+   * Handles both `data: value` (with space) and `data:value` (without space),
+   * matching the full SSE wire format (W3C EventSource spec §9.2.6).
+   * Multiple data lines within one event block are joined with '\n' per spec.
    */
   private _extractSseData(eventBlock: string): string {
-    let data = ''
+    const chunks: string[] = []
     for (const line of eventBlock.split('\n')) {
-      if (line.startsWith('data: ')) {
-        data += line.slice(6)
+      if (line.startsWith('data:')) {
+        const value = line.slice(5)
+        chunks.push(value.startsWith(' ') ? value.slice(1) : value)
       } else if (line === 'data') {
-        // bare "data" field with no value — counts as empty string
-        data += ''
+        // bare "data" field with no value — counts as empty string per spec
+        chunks.push('')
       }
     }
-    return data
+    return chunks.join('\n')
   }
 
   private _parseJsonMessage(text: string): void {
@@ -187,18 +190,20 @@ export class MobileStreamableHTTPTransport implements Transport {
     this._getStreamAbortController = abortController
     const signal = abortController.signal
 
-    const stream = createNativeReadableStream({
-      url: this.url,
-      method: 'GET',
-      headers: this._buildHeaders({ Accept: 'text/event-stream' }),
-    })
-
-    const reader = stream.getReader()
-    const decoder = new TextDecoder()
-    // Buffer for partial SSE events across chunk boundaries
-    let buffer = ''
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
 
     try {
+      const stream = createNativeReadableStream({
+        url: this.url,
+        method: 'GET',
+        headers: this._buildHeaders({ Accept: 'text/event-stream' }),
+      })
+
+      reader = stream.getReader()
+      const decoder = new TextDecoder()
+      // Buffer for partial SSE events across chunk boundaries
+      let buffer = ''
+
       while (!signal.aborted) {
         const { done, value } = await reader.read()
         if (done) break
@@ -220,7 +225,7 @@ export class MobileStreamableHTTPTransport implements Transport {
       }
     } finally {
       try {
-        reader.releaseLock()
+        reader?.releaseLock()
       } catch {
         // Ignore errors from releasing an already-released lock
       }

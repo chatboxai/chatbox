@@ -41,8 +41,14 @@ export interface DeviceFlowStartResult {
 }
 
 // IPC channel names used by the OAuth flow (desktop-only).
-// Stubs are provided here so the renderer compiles in OSS builds;
-// actual handlers only exist in the Electron main process.
+//
+// OSS DESIGN NOTE: The ipcMain.handle() registrations for these channels exist
+// only in the private/commercial edition of the Electron main process.
+// In the open-source build this file is a stub: the renderer already gates
+// every invocation behind `if (platform.type === 'desktop' && isDesktop())`
+// checks (see src/renderer/hooks/useOAuth.ts), so these channels are never
+// invoked on web or mobile. The constants are exported here so the renderer
+// can compile and reference them without importing from the main process.
 export const OAuthIpcChannels = {
   LOGIN: 'oauth:login',
   START_LOGIN: 'oauth:start-login',

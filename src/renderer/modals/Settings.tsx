@@ -108,7 +108,7 @@ export const SettingsModal: FC<SettingsModalProps> = (props) => {
 export default SettingsModal
 
 export function navigateToSettings(path?: string) {
-  if (window.matchMedia(`(max-width:${getThemeDesign('light', 16, 'en').breakpoints?.values?.sm || 640}px)`).matches) {
+  if (window.matchMedia(`(max-width:${getThemeDesign('light', 'en').breakpoints?.values?.sm || 640}px)`).matches) {
     router.navigate({
       to: `/settings${path ? (path.startsWith('/') ? path : `/${path}`) : ''}`,
     })

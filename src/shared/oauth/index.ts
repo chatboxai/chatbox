@@ -11,6 +11,48 @@ export interface OAuthProviderInfo {
   flowType: 'callback' | 'code-paste' | 'device-code'
 }
 
+export interface OAuthCredentials {
+  accessToken: string
+  refreshToken?: string
+  expiresAt?: number
+  tokenType?: string
+}
+
+export interface OAuthResult {
+  success: boolean
+  error?: string
+  credentials?: OAuthCredentials
+}
+
+export interface OAuthStartResult {
+  success: boolean
+  error?: string
+  authUrl?: string
+}
+
+export interface DeviceFlowStartResult {
+  success: boolean
+  error?: string
+  deviceCode?: string
+  userCode?: string
+  verificationUri?: string
+  expiresIn?: number
+  interval?: number
+}
+
+// IPC channel names used by the OAuth flow (desktop-only).
+// Stubs are provided here so the renderer compiles in OSS builds;
+// actual handlers only exist in the Electron main process.
+export const OAuthIpcChannels = {
+  LOGIN: 'oauth:login',
+  START_LOGIN: 'oauth:start-login',
+  EXCHANGE_CODE: 'oauth:exchange-code',
+  START_DEVICE_FLOW: 'oauth:start-device-flow',
+  WAIT_DEVICE_TOKEN: 'oauth:wait-device-token',
+  REFRESH: 'oauth:refresh',
+  CANCEL: 'oauth:cancel',
+} as const
+
 export function mergeSharedOAuthProviderSettings(
   providerId: string,
   providers: Record<string, ProviderSettings> | undefined

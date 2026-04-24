@@ -25,6 +25,7 @@ export enum ModelProviderEnum {
   Perplexity = 'perplexity',
   XAI = 'xAI',
   OpenRouter = 'openrouter',
+  FuturMix = 'futurmix',
   Bedrock = 'bedrock',
   Custom = 'custom',
 }

@@ -7,6 +7,7 @@ import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import { AssistantAvatar, SystemAvatar, UserAvatar } from '@/components/common/Avatar'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { generateMoreInNewFork, modifyMessage } from '@/stores/sessionActions'
+import { isKeyboardEventComposing } from '@/utils'
 
 const MessageEdit = NiceModal.create((props: { sessionId: string; msg: Message; hideSaveAndResend?: boolean }) => {
   const modal = useModal()
@@ -200,6 +201,10 @@ const MessageEditModal = ({
     if (!msg) {
       return
     }
+    if (isKeyboardEventComposing(event)) {
+      return
+    }
+
     const ctrlOrCmd = event.ctrlKey || event.metaKey
     const shift = event.shiftKey
 

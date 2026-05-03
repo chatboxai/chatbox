@@ -9,17 +9,16 @@ import {
   Stack,
   Text,
   Textarea,
-  Tooltip,
   UnstyledButton,
 } from '@mantine/core'
 import type { ImageGeneration } from '@shared/types'
 import { ModelProviderEnum, ModelProviderType } from '@shared/types'
 import {
+  IconArrowUp,
   IconAspectRatio,
   IconChevronRight,
   IconHistory,
   IconPhoto,
-  IconArrowUp,
   IconPlus,
   IconSparkles,
 } from '@tabler/icons-react'
@@ -46,6 +45,7 @@ import {
 import { queryClient } from '@/stores/queryClient'
 import { settingsStore } from '@/stores/settingsStore'
 import * as toastActions from '@/stores/toastActions'
+import { isKeyboardEventComposing } from '@/utils'
 import {
   CHATBOXAI_IMAGE_MODEL_IDS,
   GEMINI_IMAGE_MODEL_IDS,
@@ -639,6 +639,10 @@ function ImageCreatorPage() {
                         },
                       }}
                       onKeyDown={(e) => {
+                        if (isKeyboardEventComposing(e)) {
+                          return
+                        }
+
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault()
                           void handleSubmit()

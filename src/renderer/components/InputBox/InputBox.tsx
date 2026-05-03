@@ -76,7 +76,7 @@ import * as chatStore from '@/stores/chatStore'
 import { useSession, useSessionSettings } from '@/stores/chatStore'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
-import { delay } from '@/utils'
+import { delay, isKeyboardEventComposing } from '@/utils'
 import { featureFlags } from '@/utils/feature-flags'
 import { trackEvent } from '@/utils/track'
 import {
@@ -542,6 +542,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
 
     const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (isKeyboardEventComposing(event)) {
+        return
+      }
+
       const isPressedHash: Record<ShortcutSendValue, boolean> = {
         '': false,
         Enter: event.keyCode === 13 && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey,

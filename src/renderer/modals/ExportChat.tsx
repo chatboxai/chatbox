@@ -42,7 +42,9 @@ const ExportChat = NiceModal.create(() => {
       <Stack gap="md" p="sm">
         <div className="rounded-md border border-solid border-chatbox-border-warning bg-chatbox-background-warning-secondary px-sm py-xs">
           <Text size="sm" c="chatbox-warning" className="leading-snug">
-            {t('Exports are for viewing only. Use Settings → Backup if you need a backup you can restore.')}
+            {format === 'JSON'
+              ? t('JSON format preserves all conversation data and can be imported back.')
+              : t('Exports are for viewing only. Use Settings → Backup if you need a backup you can restore.')}
           </Text>
         </div>
         <AdaptiveSelect
@@ -59,7 +61,7 @@ const ExportChat = NiceModal.create(() => {
         <AdaptiveSelect
           label={t('Format')}
           classNames={{ dropdown: 'pointer-events-auto' }}
-          data={['Markdown', 'TXT', 'HTML']}
+          data={['JSON', 'Markdown', 'TXT', 'HTML']}
           value={format}
           onChange={(e) => e && setFormat(e as ExportChatFormat)}
         />

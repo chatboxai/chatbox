@@ -5,6 +5,17 @@ import type { ProviderSettings } from '../types'
  * These stubs keep the provider pipeline working without it.
  */
 
+// OAuth IPC channel names (stub for open-source edition)
+export const OAuthIpcChannels = {
+  LOGIN: 'oauth:login',
+  START_LOGIN: 'oauth:start-login',
+  EXCHANGE_CODE: 'oauth:exchange-code',
+  START_DEVICE_FLOW: 'oauth:start-device-flow',
+  WAIT_DEVICE_TOKEN: 'oauth:wait-device-token',
+  REFRESH: 'oauth:refresh',
+  CANCEL: 'oauth:cancel',
+} as const
+
 export interface OAuthProviderInfo {
   providerId: string
   name: string

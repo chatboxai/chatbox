@@ -22,6 +22,7 @@ import * as localParser from '@/packages/local-parser'
 import * as remote from '@/packages/remote'
 import { estimateTokens, getTokenizerType } from '@/packages/token'
 import platform from '@/platform'
+import { router } from '@/router'
 import storage from '@/storage'
 import { StorageKey, StorageKeyGenerator } from '@/storage/StoreStorage'
 import { updateSessionList } from '@/stores/chatStore'
@@ -630,16 +631,19 @@ export async function importSessionFromJson(file: File): Promise<ImportSessionRe
     // Save session
     await storage.setItemNow(StorageKeyGenerator.session(newSession.id), newSession)
 
-    // Update session list using the proper function to trigger UI refresh
+    // Update session list: add to END of list, sortSessions will reverse it to top
     await updateSessionList((list) => {
       const newMeta: SessionMeta = {
         id: newSession.id,
         name: newSession.name,
         type: newSession.type,
-        starred: newSession.starred,
+        starred: newSession.starred || false,
       }
-      return [newMeta, ...list]
+      return [...list, newMeta] // 放在末尾，sortSessions 会把它反转到最前面
     })
+
+    // Navigate to the newly imported session
+    router.navigate({ to: '/session/$sessionId', params: { sessionId: newSession.id } })
 
     return { success: true, session: newSession }
   } catch (e) {

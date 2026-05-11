@@ -306,6 +306,7 @@
   "Export": "Export",
   "Export application logs for troubleshooting. These logs may be requested by support to help diagnose issues.": "Export application logs for troubleshooting. These logs may be requested by support to help diagnose issues.",
   "Export Chat": "Export Chat",
+  "Import Chat": "Import Chat",
   "Export failed": "Export failed",
   "Export Logs": "Export Logs",
   "Export Selected Data": "Export Selected Data",

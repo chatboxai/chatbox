@@ -352,6 +352,7 @@
   "Export": "导出",
   "Export application logs for troubleshooting. These logs may be requested by support to help diagnose issues.": "导出应用日志用于故障排除。支持团队可能会要求提供这些日志以帮助诊断问题。",
   "Export Chat": "导出聊天记录",
+  "Import Chat": "导入聊天记录",
   "Export failed": "导出失败",
   "Export Logs": "导出日志",
   "Export Selected Data": "导出勾选数据",

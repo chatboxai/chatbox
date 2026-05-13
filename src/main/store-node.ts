@@ -229,8 +229,21 @@ export async function getStoreBlob(key: string) {
 
 export async function setStoreBlob(key: string, value: string) {
   const filename = path.resolve(app.getPath('userData'), 'chatbox-blobs', sanitizeFilename(key))
-  await fs.ensureDir(path.dirname(filename))
-  return fs.writeFile(filename, value, { encoding: 'utf-8' })
+  try {
+    await fs.ensureDir(path.dirname(filename))
+    return await fs.writeFile(filename, value, { encoding: 'utf-8' })
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code
+    logger.error(`setStoreBlob failed for key="${key}" (code=${code}):`, err)
+    if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') {
+      throw new Error(
+        `Cannot write attachment cache to "${path.dirname(filename)}": permission denied. ` +
+          `Check that the chatbox userData directory is writable.`,
+        { cause: err }
+      )
+    }
+    throw err
+  }
 }
 
 export async function delStoreBlob(key: string) {
@@ -239,7 +252,17 @@ export async function delStoreBlob(key: string) {
   if (!exists) {
     return
   }
-  await fs.remove(filename)
+  try {
+    await fs.remove(filename)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code
+    if (code === 'ENOENT') {
+      // Race: file vanished between pathExists() and remove(). Safe to ignore.
+      return
+    }
+    logger.error(`delStoreBlob failed for key="${key}" (code=${code}):`, err)
+    throw err
+  }
 }
 
 export async function listStoreBlobKeys() {

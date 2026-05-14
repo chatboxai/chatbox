@@ -393,6 +393,10 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   autoCompaction: z.boolean().default(true),
   compactionThreshold: z.number().min(0.4).max(0.9).default(0.6),
 
+  // Parallel output settings
+  parallelOutputCount: z.number().int().min(2).max(5).default(3),
+  parallelOutputInterval: z.number().min(0).max(60).default(0),
+
   autoLaunch: z.boolean().default(false),
   autoUpdate: z.boolean().default(true), // 是否自动检查更新
   betaUpdate: z.boolean().default(false), // 是否自动检查 beta 更新

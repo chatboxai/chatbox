@@ -215,6 +215,9 @@ export const MessageSchema = z.object({
   tokenCalculatedAt: TokenCalculatedAtSchema,
   updatedAt: z.number().optional(),
   isSummary: z.boolean().optional(), // Marks message as a compaction summary
+  // Parallel output markers
+  parallelOutputId: z.string().optional(), // Groups messages from same parallel output
+  parallelOutputIndex: z.number().optional(), // Index within parallel output group
 })
 
 // Compaction point schema (for context management)

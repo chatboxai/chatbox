@@ -35,7 +35,167 @@ import * as chatStore from '../chatStore'
 import { settingsStore } from '../settingsStore'
 import { uiStore } from '../uiStore'
 import { createNewFork, findMessageLocation } from './forks'
-import { insertMessageAfter, modifyMessage } from './messages'
+import { insertMessage, insertMessageAfter, modifyMessage, removeMessage } from './messages'
+
+/**
+ * Generate multiple responses in parallel (actually sequential to avoid rate limits)
+ * Messages are inserted into session but marked with parallelOutput metadata
+ * Key: Each generation removes previous parallel messages from session first,
+ * then re-inserts them after generation, so each gets the same context.
+ */
+export async function generateParallelOutput(
+  sessionId: string,
+  contextMessages: Message[],
+  config: { count: number; interval: number }
+): Promise<void> {
+  const { count, interval } = config
+
+  // Get the last user message as parent
+  const lastUserMessage = contextMessages[contextMessages.length - 1]
+  if (!lastUserMessage) return
+  const parentMessageId = lastUserMessage.id
+
+  // Generate a unique parallel output ID
+  const parallelOutputId = `parallel-${Date.now()}`
+
+  // Initialize parallel output state in uiStore
+  uiStore.getState().startParallelOutput(sessionId, parentMessageId, count)
+
+  // Store completed messages temporarily (removed from session during generation)
+  const completedMessages: Message[] = []
+
+  // Sequential generation
+  for (let i = 0; i < count; i++) {
+    // Check if parallel output was cancelled
+    const currentState = uiStore.getState().getParallelOutputState(sessionId)
+    if (!currentState) {
+      // Re-insert any messages that were removed
+      for (const msg of completedMessages) {
+        await insertMessage(sessionId, msg)
+      }
+      return
+    }
+
+    // Update slot to generating
+    uiStore.getState().updateParallelSlot(sessionId, i, { status: 'generating' })
+
+    // Remove previously completed parallel messages from session
+    // so the next generation sees the same context (just the user message)
+    for (const msg of completedMessages) {
+      await removeMessage(sessionId, msg.id)
+    }
+
+    // Create new assistant message
+    const assistantMsg = createMessage('assistant', '')
+    assistantMsg.generating = true
+    assistantMsg.parallelOutputId = parallelOutputId
+    assistantMsg.parallelOutputIndex = i
+
+    // Insert into session for generate() to work
+    await insertMessage(sessionId, assistantMsg)
+
+    try {
+      // Generate - this will see the same context as the first time
+      await generate(sessionId, assistantMsg, { operationType: 'send_message' })
+
+      // Get the completed message from session (it has the full content)
+      // Note: generate() updates the message in session, not the passed object
+      const session = await chatStore.getSession(sessionId)
+      const completedMsg = session?.messages.find((m) => m.id === assistantMsg.id)
+      if (!completedMsg) {
+        console.error('[ParallelOutput] Message not found after generation', {
+          sessionId,
+          messageId: assistantMsg.id,
+          sessionMessages: session?.messages.map(m => ({ id: m.id, role: m.role, generating: m.generating }))
+        })
+        throw new Error('Message not found after generation')
+      }
+      console.log('[ParallelOutput] Generation completed', {
+        index: i,
+        messageId: completedMsg.id,
+        contentPartsLength: completedMsg.contentParts?.length,
+        hasContent: completedMsg.contentParts?.some(p => p.type === 'text' && p.text)
+      })
+      completedMessages.push(completedMsg)
+
+      // Update slot status
+      uiStore.getState().updateParallelSlot(sessionId, i, {
+        message: completedMsg,
+        status: 'completed',
+      })
+    } catch (error) {
+      // Remove the failed message
+      await removeMessage(sessionId, assistantMsg.id)
+      // Update slot with error
+      uiStore.getState().updateParallelSlot(sessionId, i, {
+        status: 'error',
+        error: (error as Error)?.message || 'Generation failed',
+      })
+      // Re-insert completed messages
+      for (const msg of completedMessages) {
+        await insertMessage(sessionId, msg)
+      }
+      return
+    }
+
+    // Wait for interval before next generation
+    if (i < count - 1 && interval > 0) {
+      await new Promise((resolve) => setTimeout(resolve, interval * 1000))
+    }
+  }
+
+  // Re-insert all completed messages back into session
+  for (const msg of completedMessages) {
+    const session = await chatStore.getSession(sessionId)
+    if (session && !session.messages.find((m) => m.id === msg.id)) {
+      await insertMessage(sessionId, msg)
+    }
+  }
+}
+
+/**
+ * Accept a parallel output slot and convert it to a normal message
+ * Removes other unselected messages from the session
+ */
+export async function acceptParallelOutputSlot(
+  sessionId: string,
+  slotIndex: number
+): Promise<void> {
+  const state = uiStore.getState().getParallelOutputState(sessionId)
+  if (!state) return
+
+  const selectedSlot = state.slots[slotIndex]
+  if (!selectedSlot?.message) return
+
+  // Get the selected message ID
+  const selectedMessageId = selectedSlot.message.id
+
+  // Remove other parallel output messages from session
+  for (let i = 0; i < state.slots.length; i++) {
+    if (i !== slotIndex) {
+      const slot = state.slots[i]
+      if (slot.message?.id) {
+        await removeMessage(sessionId, slot.message.id)
+      }
+    }
+  }
+
+  // Clear the parallel output markers from the selected message
+  const session = await chatStore.getSession(sessionId)
+  if (session) {
+    const selectedMsg = session.messages.find((m) => m.id === selectedMessageId)
+    if (selectedMsg) {
+      await modifyMessage(sessionId, {
+        ...selectedMsg,
+        parallelOutputId: undefined,
+        parallelOutputIndex: undefined,
+      })
+    }
+  }
+
+  // Clear parallel output state
+  uiStore.getState().cancelParallelOutput(sessionId)
+}
 
 /**
  * Get session-level web browsing setting

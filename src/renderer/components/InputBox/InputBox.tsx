@@ -31,6 +31,7 @@ import {
   IconFilePencil,
   IconFolder,
   IconHammer,
+  IconLayersSubtract,
   IconLink,
   IconPhoto,
   IconPlayerStopFilled,
@@ -174,6 +175,12 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const sessionWebBrowsingMap = useUIStore((s) => s.sessionWebBrowsingMap)
     const setSessionWebBrowsing = useUIStore((s) => s.setSessionWebBrowsing)
     const updateCurrentWebBrowsingDisplay = useUIStore((s) => s.updateCurrentWebBrowsingDisplay)
+
+    // Parallel output mode
+    const inputBoxParallelMode = useUIStore((s) => s.inputBoxParallelMode)
+    const setInputBoxParallelMode = useUIStore((s) => s.setInputBoxParallelMode)
+    const parallelOutputCount = useSettingsStore((s) => s.parallelOutputCount ?? 3)
+
     // Get session-specific value, or use default based on provider (ChatboxAI defaults to true)
     const webBrowsingMode = useMemo(() => {
       const sessionValue = sessionWebBrowsingMap[currentSessionId || 'new']
@@ -1116,6 +1123,30 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                         webBrowsingMode ? 'text-[var(--chatbox-tint-brand)]' : 'text-[var(--chatbox-tint-secondary)]'
                       }
                     />
+                  </UnstyledButton>
+                </Tooltip>
+
+                {/* Parallel Output Toggle */}
+                <Tooltip label={inputBoxParallelMode ? t('Parallel Output') + ` (${parallelOutputCount}x)` : t('Parallel Output')} position="top" withArrow disabled={isSmallScreen}>
+                  <UnstyledButton
+                    onClick={() => {
+                      setInputBoxParallelMode(!inputBoxParallelMode)
+                      dom.focusMessageInput()
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
+                  >
+                    <IconLayersSubtract
+                      size={toolbarIconSize}
+                      strokeWidth={1.8}
+                      className={
+                        inputBoxParallelMode ? 'text-[var(--chatbox-tint-brand)]' : 'text-[var(--chatbox-tint-secondary)]'
+                      }
+                    />
+                    {inputBoxParallelMode && (
+                      <Text size="xs" className="text-[var(--chatbox-tint-brand)]">
+                        {parallelOutputCount}x
+                      </Text>
+                    )}
                   </UnstyledButton>
                 </Tooltip>
 

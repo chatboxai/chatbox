@@ -100,6 +100,9 @@ export function settings(): Settings {
     autoCompaction: true,
     compactionThreshold: 0.6,
 
+    parallelOutputCount: 3,
+    parallelOutputInterval: 0,
+
     autoLaunch: false,
     autoUpdate: true,
     betaUpdate: false,

@@ -9,6 +9,9 @@ import {
   type TokenCountMap,
 } from './types/session'
 import type { DocumentParserConfig, DocumentParserType } from './types/settings'
+import type { ParallelOutputState, ParallelSlot, ParallelOutputConfig } from './types/parallel'
+
+export type { ParallelOutputState, ParallelSlot, ParallelOutputConfig }
 
 export type Updater<T extends object> = Partial<T> | UpdaterFn<T>
 export type UpdaterFn<T extends object> = (data: T | null | undefined) => T

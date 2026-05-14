@@ -1,5 +1,5 @@
 import { arrayMove } from '@dnd-kit/sortable'
-import { copyMessagesWithMapping, copyThreads, type Session, type SessionMeta } from '@shared/types'
+import { copyMessagesWithMapping, copyThreads, type Message, type Session, type SessionMeta } from '@shared/types'
 import { getDefaultStore } from 'jotai'
 import { omit } from 'lodash'
 import { router } from '@/router'
@@ -219,3 +219,31 @@ export async function clear(sessionId: string) {
 
 // Re-export copySession for use by threads.ts (moveThreadToConversations)
 export { copySession as _copySession }
+
+/**
+ * Create a new session from existing messages (for branch functionality)
+ * Copies messages with new IDs and creates a fresh session
+ */
+export async function createSessionFromMessages(
+  messages: Message[],
+  options?: { title?: string }
+): Promise<Session> {
+  const sourceSession = messages.length > 0 ? (await chatStore.getSession(messages[0].id.split('-')[0])) : null
+
+  // Create new messages with new IDs
+  const { messages: newMessages } = copyMessagesWithMapping(messages)
+
+  const now = Date.now()
+  const newSession: Omit<Session, 'id'> = {
+    type: 'chat',
+    name: options?.title || '',
+    messages: newMessages,
+    threads: [],
+    createdAt: now,
+    updatedAt: now,
+    settings: sourceSession?.settings,
+  }
+
+  const session = await chatStore.createSession(newSession)
+  return session
+}

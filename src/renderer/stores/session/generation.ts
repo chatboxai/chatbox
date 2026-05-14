@@ -58,6 +58,14 @@ export async function generateParallelOutput(
   // Generate a unique parallel output ID
   const parallelOutputId = `parallel-${Date.now()}`
 
+  console.log('[ParallelOutput] Starting parallel output', {
+    sessionId,
+    contextMsgCount: contextMessages.length,
+    count,
+    lastUserMsgId: parentMessageId,
+    parallelOutputId,
+  })
+
   // Initialize parallel output state in uiStore
   uiStore.getState().startParallelOutput(sessionId, parentMessageId, count)
 
@@ -66,9 +74,12 @@ export async function generateParallelOutput(
 
   // Sequential generation
   for (let i = 0; i < count; i++) {
+    console.log(`[ParallelOutput] === Iteration ${i}/${count} ===`)
+
     // Check if parallel output was cancelled
     const currentState = uiStore.getState().getParallelOutputState(sessionId)
     if (!currentState) {
+      console.log(`[ParallelOutput] State cleared for session ${sessionId}, aborting at i=${i}`)
       // Re-insert any messages that were removed
       for (const msg of completedMessages) {
         await insertMessage(sessionId, msg)
@@ -82,6 +93,7 @@ export async function generateParallelOutput(
     // Remove previously completed parallel messages from session
     // so the next generation sees the same context (just the user message)
     for (const msg of completedMessages) {
+      console.log(`[ParallelOutput] Removing previous completed msg: ${msg.id}`)
       await removeMessage(sessionId, msg.id)
     }
 
@@ -91,8 +103,16 @@ export async function generateParallelOutput(
     assistantMsg.parallelOutputId = parallelOutputId
     assistantMsg.parallelOutputIndex = i
 
+    console.log(`[ParallelOutput] Created assistantMsg-${i}, id: ${assistantMsg.id}`)
+
     // Insert into session for generate() to work
     await insertMessage(sessionId, assistantMsg)
+
+    // Verify the message was inserted
+    const sessionAfterInsert = await chatStore.getSession(sessionId)
+    const msgCount = sessionAfterInsert?.messages.length ?? 0
+    const msgIds = sessionAfterInsert?.messages.map(m => ({ id: m.id, role: m.role, generating: m.generating })) ?? []
+    console.log(`[ParallelOutput] After insert, session has ${msgCount} messages:`, msgIds)
 
     try {
       // Generate - this will see the same context as the first time
@@ -113,6 +133,7 @@ export async function generateParallelOutput(
       console.log('[ParallelOutput] Generation completed', {
         index: i,
         messageId: completedMsg.id,
+        generating: completedMsg.generating,
         contentPartsLength: completedMsg.contentParts?.length,
         hasContent: completedMsg.contentParts?.some(p => p.type === 'text' && p.text)
       })
@@ -124,6 +145,7 @@ export async function generateParallelOutput(
         status: 'completed',
       })
     } catch (error) {
+      console.error(`[ParallelOutput] Error in iteration ${i}:`, error)
       // Remove the failed message
       await removeMessage(sessionId, assistantMsg.id)
       // Update slot with error
@@ -144,6 +166,7 @@ export async function generateParallelOutput(
     }
   }
 
+  console.log('[ParallelOutput] All generations done, re-inserting completed messages')
   // Re-insert all completed messages back into session
   for (const msg of completedMessages) {
     const session = await chatStore.getSession(sessionId)
@@ -311,8 +334,16 @@ export async function generate(
   // Get the message list where target message is located (may be historical messages), get target message index
   let messages = session.messages
   let targetMsgIx = messages.findIndex((m) => m.id === targetMsg.id)
+  console.log('[generate] targetMsgIx check:', {
+    targetMsgId: targetMsg.id,
+    targetMsgIx,
+    totalMessages: messages.length,
+    messageIds: messages.map(m => ({ id: m.id, role: m.role })),
+    hasThreads: !!session.threads,
+  })
   if (targetMsgIx <= 0) {
     if (!session.threads) {
+      console.log('[generate] EARLY RETURN: targetMsgIx <= 0 and no threads')
       return
     }
     for (const t of session.threads) {
@@ -323,6 +354,7 @@ export async function generate(
       }
     }
     if (targetMsgIx <= 0) {
+      console.log('[generate] EARLY RETURN: targetMsgIx <= 0 even after searching threads')
       return
     }
   }

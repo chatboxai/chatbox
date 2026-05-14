@@ -143,7 +143,9 @@ function RouteComponent() {
 
         // Get context messages for parallel generation
         const session = await import('@/stores/chatStore').then((m) => m.getSession(currentSession.id))
-        if (!session) return
+        if (!session) {
+          return
+        }
         const contextMessages = session.messages
 
         // Start parallel output
@@ -217,7 +219,7 @@ function RouteComponent() {
       <ErrorBoundary name="session-inputbox">
         {/* Parallel Output View - above InputBox */}
         {parallelOutputState && (
-          <div className="max-w-4xl mx-auto px-4 pb-2">
+          <div className="overflow-x-auto px-4 pb-2">
             <ParallelOutputView state={parallelOutputState} onAccept={handleAcceptParallelSlot} />
           </div>
         )}

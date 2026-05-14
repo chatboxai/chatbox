@@ -76,7 +76,7 @@ import { compactionUIStateMapAtom } from '@/stores/atoms/compactionAtoms'
 import * as chatStore from '@/stores/chatStore'
 import { useSession, useSessionSettings } from '@/stores/chatStore'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
-import { useUIStore } from '@/stores/uiStore'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 import { delay } from '@/utils'
 import { featureFlags } from '@/utils/feature-flags'
 import { trackEvent } from '@/utils/track'
@@ -465,7 +465,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     const closeSelectModelErrorTipCb = useRef<NodeJS.Timeout>()
     const handleSubmit = async (needGenerating = true) => {
+      console.log('[handleSubmit] called, needGenerating:', needGenerating, 'inputBoxParallelMode:', uiStore.getState().inputBoxParallelMode)
       if (disableSubmit || generating || isSubmitting || isPreprocessing) {
+        console.log('[handleSubmit] blocked:', { disableSubmit, generating, isSubmitting, isPreprocessing })
         return
       }
 
@@ -489,6 +491,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
       setIsSubmitting(true)
       try {
+        console.log('[handleSubmit] submitting message, calling onSubmit...')
         // Use the already constructed message
         if (!preConstructedMessage.message) {
           console.error('No constructed message available')
@@ -1130,7 +1133,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 <Tooltip label={inputBoxParallelMode ? t('Parallel Output') + ` (${parallelOutputCount}x)` : t('Parallel Output')} position="top" withArrow disabled={isSmallScreen}>
                   <UnstyledButton
                     onClick={() => {
-                      setInputBoxParallelMode(!inputBoxParallelMode)
+                      const newMode = !inputBoxParallelMode
+                      console.log('[ParallelToggle] Setting parallel mode to:', newMode)
+                      setInputBoxParallelMode(newMode)
                       dom.focusMessageInput()
                     }}
                     className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"

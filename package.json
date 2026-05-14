@@ -15,6 +15,7 @@
     "build:main": "electron-vite build",
     "build:preload": "electron-vite build",
     "build:renderer": "electron-vite build",
+    "deploy:local": "powershell -ExecutionPolicy Bypass -File deploy-to-local.ps1",
     "build:web": "cross-env CHATBOX_BUILD_PLATFORM=web electron-vite build && pnpm run delete-sourcemaps",
     "delete-sourcemaps": "ts-node ./.erb/scripts/delete-source-maps-runner.js",
     "postinstall": "node .erb/scripts/postinstall.cjs",

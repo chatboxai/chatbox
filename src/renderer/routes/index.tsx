@@ -26,7 +26,9 @@ import * as remote from '@/packages/remote'
 import { router } from '@/router'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { createSession as createSessionStore } from '@/stores/chatStore'
-import { submitNewUserMessage, switchCurrentSession } from '@/stores/sessionActions'
+import { generateParallelOutput, insertMessage, submitNewUserMessage, switchCurrentSession } from '@/stores/sessionActions'
+import { settingsStore } from '@/stores/settingsStore'
+import { uiStore } from '@/stores/uiStore'
 import { initEmptyChatSession } from '@/stores/sessionHelpers'
 import { useLanguage, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -185,6 +187,27 @@ function Index() {
       }
 
       switchCurrentSession(newSession.id)
+
+      // Check if parallel output mode is enabled
+      const parallelMode = uiStore.getState().inputBoxParallelMode
+      if (parallelMode && needGenerating) {
+        const globalSettings = settingsStore.getState().getSettings()
+        const parallelCount = globalSettings.parallelOutputCount ?? 3
+        const parallelInterval = globalSettings.parallelOutputInterval ?? 0
+
+        onUserMessageReady?.()
+        await insertMessage(newSession.id, constructedMessage)
+
+        // Build context directly from initial session messages + inserted user message
+        const contextMessages = [...(session.messages || []), constructedMessage]
+        void generateParallelOutput(newSession.id, contextMessages, {
+          count: parallelCount,
+          interval: parallelInterval,
+        })
+
+        uiStore.getState().setInputBoxParallelMode(false)
+        return
+      }
 
       void submitNewUserMessage(newSession.id, {
         newUserMsg: constructedMessage,

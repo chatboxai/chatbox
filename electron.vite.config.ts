@@ -204,7 +204,7 @@ export default defineConfig(({ mode }) => {
       plugins: [
         TanStackRouterVite({
           target: 'react',
-          autoCodeSplitting: true,
+          autoCodeSplitting: false,
           routesDirectory: './src/renderer/routes',
           generatedRouteTree: './src/renderer/routeTree.gen.ts',
         }),

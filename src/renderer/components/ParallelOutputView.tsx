@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import type { Message, ParallelSlot, ParallelOutputState } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
-import Markdown from '@/components/Markdown'
+import Markdown, { BlockCodeCollapsedStateProvider } from '@/components/Markdown'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { getSession } from '@/stores/chatStore'
@@ -45,10 +45,11 @@ export function ParallelOutputView({ state, onAccept }: ParallelOutputViewProps)
     <Box className="my-2 w-full">
       <Flex
         gap="md"
+        wrap="nowrap"
         className={cn(
-          isSmallScreen ? 'flex-col' : 'overflow-x-auto pb-2'
+          isSmallScreen ? 'flex-col' : 'pb-2'
         )}
-        style={!isSmallScreen ? { minWidth: 0 } : undefined}
+        style={!isSmallScreen ? { overflow: 'auto hidden', minWidth: 0 } : undefined}
       >
         {state.slots.map((slot) => (
           <ParallelSlotCard
@@ -79,17 +80,6 @@ function ParallelSlotCard({ slot, actualMessage, isSelected, isSmallScreen, onAc
   const { status, error, index } = slot
   const messageText = actualMessage ? getMessageText(actualMessage) : ''
   const isGenerating = actualMessage?.generating ?? (status === 'generating')
-
-  // Debug log
-  console.log('[ParallelSlotCard]', {
-    index,
-    status,
-    hasActualMessage: !!actualMessage,
-    messageTextLength: messageText.length,
-    isGenerating,
-    slotMessageId: slot.message?.id,
-    actualMessageId: actualMessage?.id,
-  })
 
   return (
     <Box
@@ -157,9 +147,11 @@ function ParallelSlotCard({ slot, actualMessage, isSelected, isSmallScreen, onAc
           </Text>
         )}
         {(isGenerating || status === 'completed') && messageText && (
-          <Markdown generating={isGenerating}>
-            {messageText}
-          </Markdown>
+          <BlockCodeCollapsedStateProvider defaultCollapsed={false}>
+            <Markdown generating={isGenerating}>
+              {messageText}
+            </Markdown>
+          </BlockCodeCollapsedStateProvider>
         )}
         {status === 'error' && (
           <Text c="red" size="sm">

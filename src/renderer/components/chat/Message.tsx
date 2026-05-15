@@ -10,6 +10,7 @@ import {
   IconCode,
   IconCopy,
   IconDotsVertical,
+  IconGitFork,
   IconInfoCircle,
   IconMessageReport,
   IconPencil,
@@ -42,7 +43,7 @@ import { getSession } from '@/stores/chatStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import '../../static/Block.css'
-import { generateMore, modifyMessage, regenerateInNewFork, removeMessage } from '@/stores/sessionActions'
+import { generateMore, modifyMessage, regenerateInNewFork, removeMessage, createSessionFromMessages, switchCurrentSession, findMessageLocation } from '@/stores/sessionActions'
 import * as toastActions from '@/stores/toastActions'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { isContainRenderableCode, MessageArtifact } from '../Artifact'
@@ -177,6 +178,26 @@ const _Message: FC<Props> = (props) => {
   const onViewMessageJson = useCallback(async () => {
     await NiceModal.show('json-viewer', { title: t('Message Raw JSON'), data: msg })
   }, [msg, t])
+
+  const handleCreateBranch = useCallback(async () => {
+    const session = await getSession(sessionId)
+    if (!session) return
+
+    // Find the location of current message
+    const location = findMessageLocation(session, msg.id)
+    if (!location) return
+
+    // Get all messages up to and including the current message
+    const messagesToKeep = location.list.slice(0, location.index + 1)
+
+    // Create new session with these messages
+    const newSession = await createSessionFromMessages(messagesToKeep, {
+      title: session.name ? `${session.name} (${t('Branch')})` : undefined,
+    })
+
+    // Switch to the new session
+    switchCurrentSession(newSession.id)
+  }, [sessionId, msg.id, t])
 
   if (shouldThrowError) {
     throw new Error('Manual error triggered from Message component for testing ErrorBoundary')
@@ -586,6 +607,9 @@ const _Message: FC<Props> = (props) => {
         )}
         {!msg.generating && props.sessionType === 'picture' && msg.role === 'assistant' && (
           <MessageActionIcon icon={IconPhotoPlus} tooltip={t('Generate More Images Below')} onClick={onGenerateMore} />
+        )}
+        {!msg.generating && (
+          <MessageActionIcon icon={IconGitFork} tooltip={t('Create Branch')} onClick={handleCreateBranch} />
         )}
         <ActionMenu
           items={actionMenuItems}

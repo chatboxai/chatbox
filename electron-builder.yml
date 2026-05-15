@@ -48,7 +48,7 @@ win:
         - arm64
   verifyUpdateCodeSignature: false
   artifactName: ${productName}-${version}-Setup.${ext}
-  sign: ./custom_win_sign.js
+  sign: null
   signingHashAlgorithms:
     - sha256
 

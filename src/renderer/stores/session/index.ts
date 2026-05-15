@@ -31,10 +31,12 @@ export { exportSessionChat } from './export'
 export { createNewFork, deleteFork, expandFork, findMessageLocation, switchFork } from './forks'
 // Generation operations (8 functions)
 export {
+  acceptParallelOutputSlot,
   createLoadingPictures,
   generate,
   generateMore,
   generateMoreInNewFork,
+  generateParallelOutput,
   genMessageContext,
   getMessageThreadContext,
   getSessionWebBrowsing,

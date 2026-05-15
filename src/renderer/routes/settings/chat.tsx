@@ -1,4 +1,4 @@
-import { Box, Button, FileButton, Flex, Slider, Stack, Switch, Text, Textarea, Title, Tooltip } from '@mantine/core'
+import { Box, Button, FileButton, Flex, NumberInput, Slider, Stack, Switch, Text, Textarea, Title, Tooltip } from '@mantine/core'
 import { chatSessionSettings, getDefaultPrompt } from '@shared/defaults'
 import { IconInfoCircle } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
@@ -445,6 +445,42 @@ export function RouteComponent() {
               })
             }
           />
+        </Stack>
+
+        {/* Parallel Output Settings */}
+        <Stack gap="sm">
+          <Text c="chatbox-tertiary">{t('Parallel Output')}</Text>
+          <Text size="xs" c="chatbox-tertiary">
+            {t('Generate multiple responses for comparison and select the best one.')}
+          </Text>
+
+          <Flex align="center" gap="md">
+            <Text size="sm" className="flex-shrink-0">
+              {t('Parallel output count')}
+            </Text>
+            <NumberInput
+              value={settings.parallelOutputCount ?? 3}
+              onChange={(value) => setSettings({ parallelOutputCount: Number(value) || 3 })}
+              min={2}
+              max={5}
+              step={1}
+              w={80}
+            />
+          </Flex>
+
+          <Flex align="center" gap="md">
+            <Text size="sm" className="flex-shrink-0">
+              {t('Parallel output interval (seconds)')}
+            </Text>
+            <NumberInput
+              value={settings.parallelOutputInterval ?? 0}
+              onChange={(value) => setSettings({ parallelOutputInterval: Number(value) || 0 })}
+              min={0}
+              max={60}
+              step={1}
+              w={80}
+            />
+          </Flex>
         </Stack>
       </Stack>
 

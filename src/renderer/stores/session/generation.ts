@@ -35,7 +35,190 @@ import * as chatStore from '../chatStore'
 import { settingsStore } from '../settingsStore'
 import { uiStore } from '../uiStore'
 import { createNewFork, findMessageLocation } from './forks'
-import { insertMessageAfter, modifyMessage } from './messages'
+import { insertMessage, insertMessageAfter, modifyMessage, removeMessage } from './messages'
+
+/**
+ * Generate multiple responses in parallel (actually sequential to avoid rate limits)
+ * Messages are inserted into session but marked with parallelOutput metadata
+ * Key: Each generation removes previous parallel messages from session first,
+ * then re-inserts them after generation, so each gets the same context.
+ */
+export async function generateParallelOutput(
+  sessionId: string,
+  contextMessages: Message[],
+  config: { count: number; interval: number }
+): Promise<void> {
+  const { count, interval } = config
+
+  // Get the last user message as parent
+  const lastUserMessage = contextMessages[contextMessages.length - 1]
+  if (!lastUserMessage) return
+  const parentMessageId = lastUserMessage.id
+
+  // Generate a unique parallel output ID
+  const parallelOutputId = `parallel-${Date.now()}`
+
+  console.log('[ParallelOutput] Starting parallel output', {
+    sessionId,
+    contextMsgCount: contextMessages.length,
+    count,
+    lastUserMsgId: parentMessageId,
+    parallelOutputId,
+  })
+
+  // Initialize parallel output state in uiStore
+  uiStore.getState().startParallelOutput(sessionId, parentMessageId, count)
+
+  // Store completed messages temporarily (removed from session during generation)
+  const completedMessages: Message[] = []
+
+  // Sequential generation
+  for (let i = 0; i < count; i++) {
+    console.log(`[ParallelOutput] === Iteration ${i}/${count} ===`)
+
+    // Check if parallel output was cancelled
+    const currentState = uiStore.getState().getParallelOutputState(sessionId)
+    if (!currentState) {
+      console.log(`[ParallelOutput] State cleared for session ${sessionId}, aborting at i=${i}`)
+      // Re-insert any messages that were removed
+      for (const msg of completedMessages) {
+        await insertMessage(sessionId, msg)
+      }
+      return
+    }
+
+    // Update slot to generating
+    uiStore.getState().updateParallelSlot(sessionId, i, { status: 'generating' })
+
+    // Remove previously completed parallel messages from session
+    // so the next generation sees the same context (just the user message)
+    for (const msg of completedMessages) {
+      console.log(`[ParallelOutput] Removing previous completed msg: ${msg.id}`)
+      await removeMessage(sessionId, msg.id)
+    }
+
+    // Create new assistant message
+    const assistantMsg = createMessage('assistant', '')
+    assistantMsg.generating = true
+    assistantMsg.parallelOutputId = parallelOutputId
+    assistantMsg.parallelOutputIndex = i
+
+    console.log(`[ParallelOutput] Created assistantMsg-${i}, id: ${assistantMsg.id}`)
+
+    // Insert into session for generate() to work
+    await insertMessage(sessionId, assistantMsg)
+
+    // Verify the message was inserted
+    const sessionAfterInsert = await chatStore.getSession(sessionId)
+    const msgCount = sessionAfterInsert?.messages.length ?? 0
+    const msgIds = sessionAfterInsert?.messages.map(m => ({ id: m.id, role: m.role, generating: m.generating })) ?? []
+    console.log(`[ParallelOutput] After insert, session has ${msgCount} messages:`, msgIds)
+
+    try {
+      // Generate - this will see the same context as the first time
+      await generate(sessionId, assistantMsg, { operationType: 'send_message' })
+
+      // Get the completed message from session (it has the full content)
+      // Note: generate() updates the message in session, not the passed object
+      const session = await chatStore.getSession(sessionId)
+      const completedMsg = session?.messages.find((m) => m.id === assistantMsg.id)
+      if (!completedMsg) {
+        console.error('[ParallelOutput] Message not found after generation', {
+          sessionId,
+          messageId: assistantMsg.id,
+          sessionMessages: session?.messages.map(m => ({ id: m.id, role: m.role, generating: m.generating }))
+        })
+        throw new Error('Message not found after generation')
+      }
+      console.log('[ParallelOutput] Generation completed', {
+        index: i,
+        messageId: completedMsg.id,
+        generating: completedMsg.generating,
+        contentPartsLength: completedMsg.contentParts?.length,
+        hasContent: completedMsg.contentParts?.some(p => p.type === 'text' && p.text)
+      })
+      completedMessages.push(completedMsg)
+
+      // Update slot status
+      uiStore.getState().updateParallelSlot(sessionId, i, {
+        message: completedMsg,
+        status: 'completed',
+      })
+    } catch (error) {
+      console.error(`[ParallelOutput] Error in iteration ${i}:`, error)
+      // Remove the failed message
+      await removeMessage(sessionId, assistantMsg.id)
+      // Update slot with error
+      uiStore.getState().updateParallelSlot(sessionId, i, {
+        status: 'error',
+        error: (error as Error)?.message || 'Generation failed',
+      })
+      // Re-insert completed messages
+      for (const msg of completedMessages) {
+        await insertMessage(sessionId, msg)
+      }
+      return
+    }
+
+    // Wait for interval before next generation
+    if (i < count - 1 && interval > 0) {
+      await new Promise((resolve) => setTimeout(resolve, interval * 1000))
+    }
+  }
+
+  console.log('[ParallelOutput] All generations done, re-inserting completed messages')
+  // Re-insert all completed messages back into session
+  for (const msg of completedMessages) {
+    const session = await chatStore.getSession(sessionId)
+    if (session && !session.messages.find((m) => m.id === msg.id)) {
+      await insertMessage(sessionId, msg)
+    }
+  }
+}
+
+/**
+ * Accept a parallel output slot and convert it to a normal message
+ * Removes other unselected messages from the session
+ */
+export async function acceptParallelOutputSlot(
+  sessionId: string,
+  slotIndex: number
+): Promise<void> {
+  const state = uiStore.getState().getParallelOutputState(sessionId)
+  if (!state) return
+
+  const selectedSlot = state.slots[slotIndex]
+  if (!selectedSlot?.message) return
+
+  // Get the selected message ID
+  const selectedMessageId = selectedSlot.message.id
+
+  // Remove other parallel output messages from session
+  for (let i = 0; i < state.slots.length; i++) {
+    if (i !== slotIndex) {
+      const slot = state.slots[i]
+      if (slot.message?.id) {
+        await removeMessage(sessionId, slot.message.id)
+      }
+    }
+  }
+
+  // Clear the parallel output markers from the selected message
+  const session = await chatStore.getSession(sessionId)
+  if (session) {
+    const selectedMsg = session.messages.find((m) => m.id === selectedMessageId)
+    if (selectedMsg) {
+      await modifyMessage(sessionId, {
+        ...selectedMsg,
+        parallelOutputId: undefined,
+        parallelOutputIndex: undefined,
+      })
+    }
+  }
+
+  // Clear parallel output state
+  uiStore.getState().cancelParallelOutput(sessionId)
+}
 
 /**
  * Get session-level web browsing setting
@@ -151,8 +334,16 @@ export async function generate(
   // Get the message list where target message is located (may be historical messages), get target message index
   let messages = session.messages
   let targetMsgIx = messages.findIndex((m) => m.id === targetMsg.id)
+  console.log('[generate] targetMsgIx check:', {
+    targetMsgId: targetMsg.id,
+    targetMsgIx,
+    totalMessages: messages.length,
+    messageIds: messages.map(m => ({ id: m.id, role: m.role })),
+    hasThreads: !!session.threads,
+  })
   if (targetMsgIx <= 0) {
     if (!session.threads) {
+      console.log('[generate] EARLY RETURN: targetMsgIx <= 0 and no threads')
       return
     }
     for (const t of session.threads) {
@@ -163,6 +354,7 @@ export async function generate(
       }
     }
     if (targetMsgIx <= 0) {
+      console.log('[generate] EARLY RETURN: targetMsgIx <= 0 even after searching threads')
       return
     }
   }

@@ -31,6 +31,7 @@ import {
   IconFilePencil,
   IconFolder,
   IconHammer,
+  IconLayersSubtract,
   IconLink,
   IconPhoto,
   IconPlayerStopFilled,
@@ -75,7 +76,7 @@ import { compactionUIStateMapAtom } from '@/stores/atoms/compactionAtoms'
 import * as chatStore from '@/stores/chatStore'
 import { useSession, useSessionSettings } from '@/stores/chatStore'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
-import { useUIStore } from '@/stores/uiStore'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 import { delay } from '@/utils'
 import { featureFlags } from '@/utils/feature-flags'
 import { trackEvent } from '@/utils/track'
@@ -174,6 +175,12 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const sessionWebBrowsingMap = useUIStore((s) => s.sessionWebBrowsingMap)
     const setSessionWebBrowsing = useUIStore((s) => s.setSessionWebBrowsing)
     const updateCurrentWebBrowsingDisplay = useUIStore((s) => s.updateCurrentWebBrowsingDisplay)
+
+    // Parallel output mode
+    const inputBoxParallelMode = useUIStore((s) => s.inputBoxParallelMode)
+    const setInputBoxParallelMode = useUIStore((s) => s.setInputBoxParallelMode)
+    const parallelOutputCount = useSettingsStore((s) => s.parallelOutputCount ?? 3)
+
     // Get session-specific value, or use default based on provider (ChatboxAI defaults to true)
     const webBrowsingMode = useMemo(() => {
       const sessionValue = sessionWebBrowsingMap[currentSessionId || 'new']
@@ -458,7 +465,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     const closeSelectModelErrorTipCb = useRef<NodeJS.Timeout>()
     const handleSubmit = async (needGenerating = true) => {
+      console.log('[handleSubmit] called, needGenerating:', needGenerating, 'inputBoxParallelMode:', uiStore.getState().inputBoxParallelMode)
       if (disableSubmit || generating || isSubmitting || isPreprocessing) {
+        console.log('[handleSubmit] blocked:', { disableSubmit, generating, isSubmitting, isPreprocessing })
         return
       }
 
@@ -482,6 +491,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
       setIsSubmitting(true)
       try {
+        console.log('[handleSubmit] submitting message, calling onSubmit...')
         // Use the already constructed message
         if (!preConstructedMessage.message) {
           console.error('No constructed message available')
@@ -1116,6 +1126,32 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                         webBrowsingMode ? 'text-[var(--chatbox-tint-brand)]' : 'text-[var(--chatbox-tint-secondary)]'
                       }
                     />
+                  </UnstyledButton>
+                </Tooltip>
+
+                {/* Parallel Output Toggle */}
+                <Tooltip label={inputBoxParallelMode ? t('Parallel Output') + ` (${parallelOutputCount}x)` : t('Parallel Output')} position="top" withArrow disabled={isSmallScreen}>
+                  <UnstyledButton
+                    onClick={() => {
+                      const newMode = !inputBoxParallelMode
+                      console.log('[ParallelToggle] Setting parallel mode to:', newMode)
+                      setInputBoxParallelMode(newMode)
+                      dom.focusMessageInput()
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
+                  >
+                    <IconLayersSubtract
+                      size={toolbarIconSize}
+                      strokeWidth={1.8}
+                      className={
+                        inputBoxParallelMode ? 'text-[var(--chatbox-tint-brand)]' : 'text-[var(--chatbox-tint-secondary)]'
+                      }
+                    />
+                    {inputBoxParallelMode && (
+                      <Text size="xs" className="text-[var(--chatbox-tint-brand)]">
+                        {parallelOutputCount}x
+                      </Text>
+                    )}
                   </UnstyledButton>
                 </Tooltip>
 

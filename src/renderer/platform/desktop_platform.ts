@@ -152,7 +152,12 @@ export default class DesktopPlatform implements Platform {
   }
   public async getAllStoreKeys(): Promise<string[]> {
     const keys = await store.keys()
-    const ipcKeys: string[] = await this.ipc.invoke('getAllStoreKeys')
+    let ipcKeys: string[] = []
+    try {
+      ipcKeys = await this.ipc.invoke('getAllStoreKeys')
+    } catch (e) {
+      log.warn('getAllStoreKeys IPC failed', e)
+    }
     return [...keys, ...ipcKeys]
   }
   public async setAllStoreValues(data: { [key: string]: any }): Promise<void> {

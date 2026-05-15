@@ -3,7 +3,7 @@
   "productName": "xyz.chatboxapp.ce",
   "version": "0.0.1",
   "engines": {
-    "node": ">=20.0.0 <23.0.0",
+    "node": ">=20.0.0",
     "pnpm": ">=10.17.0"
   },
   "private": true,

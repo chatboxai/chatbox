@@ -7,6 +7,13 @@ import * as defaults from '../shared/defaults'
 import type { Config, Settings } from '../shared/types'
 import { getLogger } from './util'
 
+// 强制使用旧版 userData 路径以兼容已有对话历史数据
+// 打包后 app.getName() 会读取 productName "Chatbox" 而非 package.json 的 name，导致 userData 指向 Chatbox/
+// 但旧数据在 xyz.chatboxapp.app/ 下，所以显式覆盖
+if (process.platform === 'win32') {
+  app.setPath('userData', path.resolve(app.getPath('appData'), 'xyz.chatboxapp.app'))
+}
+
 const logger = getLogger('store-node')
 
 const configPath = path.resolve(app.getPath('userData'), 'config.json')

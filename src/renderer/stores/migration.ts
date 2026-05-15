@@ -48,6 +48,9 @@ export async function migrate() {
     },
     true
   )
+  // 无论 configVersion 如何，都尝试恢复孤立的历史会话
+  // 注意：这里不 await，避免 IndexedDB 挂起阻塞 UI 渲染
+  initData().catch((e) => log.warn('initData background failed:', e))
 }
 
 type MigrateStore = {

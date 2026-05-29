@@ -25,6 +25,7 @@ export enum ModelProviderEnum {
   Perplexity = 'perplexity',
   XAI = 'xAI',
   OpenRouter = 'openrouter',
+  OrcaRouter = 'orcarouter',
   Bedrock = 'bedrock',
   Custom = 'custom',
 }

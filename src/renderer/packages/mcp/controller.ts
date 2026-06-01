@@ -1,9 +1,11 @@
 import { experimental_createMCPClient as createMCPClient } from '@ai-sdk/mcp'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { Capacitor } from '@capacitor/core'
 import type { ToolSet } from 'ai'
 import Emittery from 'emittery'
 import { isEqual } from 'lodash'
 import { IPCStdioTransport } from './ipc-stdio-transport'
+import { MobileStreamableHTTPTransport } from './mobile-http-transport'
 import type { MCPServerConfig, MCPServerStatus } from './types'
 
 type TransportConfig = MCPServerConfig['transport']
@@ -11,6 +13,10 @@ type MCPClient = Awaited<ReturnType<typeof createMCPClient>>
 
 async function createClient(transportConfig: TransportConfig, name = 'chatbox-mcp-client'): Promise<MCPClient> {
   if (transportConfig.type === 'stdio') {
+    // stdio transport requires Electron IPC — not available on mobile/web platforms
+    if (!window.electronAPI) {
+      throw new Error('stdio MCP servers are only supported on the desktop app.')
+    }
     const transport = await IPCStdioTransport.create(transportConfig)
     let errorMessage = ''
     try {
@@ -32,6 +38,21 @@ async function createClient(transportConfig: TransportConfig, name = 'chatbox-mc
     }
   }
   if (transportConfig.type === 'http') {
+    // On Capacitor (Android/iOS) the WebView enforces CORS, so we use a native
+    // HTTP transport that routes requests through the OS networking stack.
+    if (Capacitor.isNativePlatform()) {
+      const transport = new MobileStreamableHTTPTransport(
+        transportConfig.url,
+        transportConfig.headers
+      )
+      return await createMCPClient({
+        name,
+        transport,
+        onUncaughtError(error: unknown) {
+          console.error('mcp:client:onUncaughtError', error)
+        },
+      })
+    }
     try {
       const transport = new StreamableHTTPClientTransport(new URL(transportConfig.url), {
         requestInit: { headers: transportConfig.headers },

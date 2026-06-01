@@ -24,7 +24,6 @@ export const switchTheme = async (theme: Theme) => {
 
 export default function useAppTheme() {
   const theme = useSettingsStore((state) => state.theme)
-  const fontSize = useSettingsStore((state) => state.fontSize)
   const realTheme = useUIStore((state) => state.realTheme)
   const language = useLanguage()
 
@@ -51,13 +50,13 @@ export default function useAppTheme() {
   }, [realTheme])
 
   const themeObj = useMemo(
-    () => createTheme(getThemeDesign(realTheme, fontSize, language)),
-    [realTheme, fontSize, language]
+    () => createTheme(getThemeDesign(realTheme, language)),
+    [realTheme, language]
   )
   return themeObj
 }
 
-export function getThemeDesign(realTheme: 'light' | 'dark', fontSize: number, language: Language): ThemeOptions {
+export function getThemeDesign(realTheme: 'light' | 'dark', language: Language): ThemeOptions {
   return {
     palette: {
       mode: realTheme,
@@ -89,7 +88,9 @@ export function getThemeDesign(realTheme: 'light' | 'dark', fontSize: number, la
             fontFamily: 'Cairo, Arial, sans-serif',
           }
         : {}),
-      fontSize: (fontSize * 14) / 16,
+      // Use 14 as the MUI base font size (MUI default), matching the official mobile build.
+      // The user's custom font preference is applied separately via --chatbox-msg-font-size CSS var.
+      fontSize: 14,
     },
     direction: language === 'ar' ? 'rtl' : 'ltr',
     breakpoints: {

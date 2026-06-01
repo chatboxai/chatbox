@@ -11,6 +11,54 @@ export interface OAuthProviderInfo {
   flowType: 'callback' | 'code-paste' | 'device-code'
 }
 
+export interface OAuthCredentials {
+  accessToken: string
+  refreshToken?: string
+  expiresAt?: number
+  tokenType?: string
+}
+
+export interface OAuthResult {
+  success: boolean
+  error?: string
+  credentials?: OAuthCredentials
+}
+
+export interface OAuthStartResult {
+  success: boolean
+  error?: string
+  authUrl?: string
+}
+
+export interface DeviceFlowStartResult {
+  success: boolean
+  error?: string
+  deviceCode?: string
+  userCode?: string
+  verificationUri?: string
+  expiresIn?: number
+  interval?: number
+}
+
+// IPC channel names used by the OAuth flow (desktop-only).
+//
+// OSS DESIGN NOTE: The ipcMain.handle() registrations for these channels exist
+// only in the private/commercial edition of the Electron main process.
+// In the open-source build this file is a stub: the renderer already gates
+// every invocation behind `if (platform.type === 'desktop' && isDesktop())`
+// checks (see src/renderer/hooks/useOAuth.ts), so these channels are never
+// invoked on web or mobile. The constants are exported here so the renderer
+// can compile and reference them without importing from the main process.
+export const OAuthIpcChannels = {
+  LOGIN: 'oauth:login',
+  START_LOGIN: 'oauth:start-login',
+  EXCHANGE_CODE: 'oauth:exchange-code',
+  START_DEVICE_FLOW: 'oauth:start-device-flow',
+  WAIT_DEVICE_TOKEN: 'oauth:wait-device-token',
+  REFRESH: 'oauth:refresh',
+  CANCEL: 'oauth:cancel',
+} as const
+
 export function mergeSharedOAuthProviderSettings(
   providerId: string,
   providers: Record<string, ProviderSettings> | undefined

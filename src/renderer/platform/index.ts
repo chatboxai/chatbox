@@ -1,6 +1,7 @@
-import { CHATBOX_BUILD_TARGET } from '@/variables'
+import { Capacitor } from '@capacitor/core'
 import DesktopPlatform from './desktop_platform'
 import type { Platform } from './interfaces'
+import MobilePlatform from './mobile_platform'
 import TestPlatform from './test_platform'
 import WebPlatform from './web_platform'
 
@@ -11,9 +12,12 @@ function initPlatform(): Platform {
   }
   if (typeof window !== 'undefined' && window.electronAPI) {
     return new DesktopPlatform(window.electronAPI)
-  } else {
-    return new WebPlatform()
   }
+  // Capacitor 原生运行时（Android / iOS）
+  if (Capacitor.isNativePlatform()) {
+    return new MobilePlatform()
+  }
+  return new WebPlatform()
 }
 
 export default initPlatform()

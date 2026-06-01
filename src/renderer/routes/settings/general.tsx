@@ -98,7 +98,7 @@ export function RouteComponent() {
 
         {/* Font Size */}
         <Stack>
-          <Text>{t('Font Size')}</Text>
+          <Text>{t('Chat Font Size')}</Text>
           <LazySlider
             step={1}
             min={10}
@@ -113,6 +113,28 @@ export function RouteComponent() {
             onChange={(val) =>
               setSettings({
                 fontSize: val,
+              })
+            }
+          />
+        </Stack>
+
+        {/* Input Box Font Size */}
+        <Stack>
+          <Text>{t('Input Box Font Size')}</Text>
+          <LazySlider
+            step={1}
+            min={10}
+            max={22}
+            maw={320}
+            marks={[
+              {
+                value: 14,
+              },
+            ]}
+            value={settings.inputBoxFontSize}
+            onChange={(val) =>
+              setSettings({
+                inputBoxFontSize: val,
               })
             }
           />

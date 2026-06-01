@@ -81,6 +81,7 @@ export function settings(): Settings {
     theme: Theme.System,
     language: 'en',
     fontSize: 14,
+    inputBoxFontSize: 14,
     spellCheck: true,
 
     defaultPrompt: getDefaultPrompt(),

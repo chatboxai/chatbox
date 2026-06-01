@@ -74,6 +74,7 @@ export const userAvatarKeyAtom = focusAtom(settingsAtom, (optic) => optic.prop('
 export const defaultAssistantAvatarKeyAtom = focusAtom(settingsAtom, (optic) => optic.prop('defaultAssistantAvatarKey'))
 export const themeAtom = focusAtom(settingsAtom, (optic) => optic.prop('theme'))
 export const fontSizeAtom = focusAtom(settingsAtom, (optic) => optic.prop('fontSize'))
+export const inputBoxFontSizeAtom = focusAtom(settingsAtom, (optic) => optic.prop('inputBoxFontSize'))
 export const spellCheckAtom = focusAtom(settingsAtom, (optic) => optic.prop('spellCheck'))
 export const allowReportingAndTrackingAtom = focusAtom(settingsAtom, (optic) => optic.prop('allowReportingAndTracking'))
 export const enableMarkdownRenderingAtom = focusAtom(settingsAtom, (optic) => optic.prop('enableMarkdownRendering'))

@@ -1,11 +1,13 @@
 import { getDefaultStore } from 'jotai'
 import { useEffect } from 'react'
+import { overlayStackAtom } from '@/components/layout/Overlay'
 import { navigateToSettings } from '@/modals/settings-navigation'
 import { router } from '@/router'
 import { uiStore } from '@/stores/uiStore'
 import { getOS } from '../packages/navigator'
 import platform from '../platform'
 import { currentSessionIdAtom } from '../stores/atoms'
+import { getMessageListViewportHeight } from '../stores/scrollActions'
 import { switchToIndex, switchToNext } from '../stores/session/crud'
 import { startNewThread } from '../stores/session/threads'
 import { settingsStore } from '../stores/settingsStore'
@@ -38,6 +40,39 @@ function isShortcutPressed(e: KeyboardEvent, shortcut: string) {
 function getRouteSessionId() {
   const sessionRouteMatch = router.state.location.pathname.match(/^\/session\/([^/]+)/)
   return sessionRouteMatch?.[1] ? decodeURIComponent(sessionRouteMatch[1]) : null
+}
+
+function isEditableElement(el: Element) {
+  return (el instanceof HTMLElement && el.isContentEditable) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)
+}
+
+// PageUp/PageDown are native paging keys inside focused controls and overlays, so only take
+// them over when the press is aimed at the chat itself: on a session route, with no
+// modal/drawer/search dialog open, and with focus on the body, the (empty) message input, or
+// the message list. Everything else (settings inputs, the message edit textarea, menus, ...)
+// keeps its native behaviour.
+function shouldPageMessageList(target: EventTarget | null) {
+  if (!getRouteSessionId()) {
+    return false
+  }
+  if (uiStore.getState().openSearchDialog || getDefaultStore().get(overlayStackAtom).length > 0) {
+    return false
+  }
+  if (!(target instanceof Element) || target === document.body) {
+    return true
+  }
+  if (target.closest('[role="dialog"]')) {
+    return false
+  }
+  if (target.id === dom.messageInputID) {
+    // The input box is focused most of the time. While it holds a draft the keys keep their native
+    // meaning (page the caret, extend the selection); once it is empty they page the list instead.
+    return target instanceof HTMLTextAreaElement && target.value.length === 0
+  }
+  if (isEditableElement(target)) {
+    return false
+  }
+  return uiStore.getState().messageListElement?.current?.contains(target) ?? false
 }
 
 export default function useShortcut() {
@@ -129,6 +164,25 @@ export default function useShortcut() {
     if (e.key === ',' && ctrlKey) {
       e.preventDefault()
       navigateToSettings()
+      return
+    }
+
+    // PageUp / PageDown: scroll the conversation message list up / down by a page.
+    // The input box is usually focused, so the browser won't scroll the (unfocused) Virtuoso
+    // container on its own; drive it explicitly here.
+    if ((e.code === 'PageUp' || e.code === 'PageDown') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!shouldPageMessageList(e.target)) {
+        return
+      }
+      const virtuoso = uiStore.getState().messageScrolling?.current
+      const viewport = getMessageListViewportHeight()
+      if (!virtuoso || !viewport) {
+        return
+      }
+      e.preventDefault()
+      const step = viewport * 0.9 // one page, keeping ~10% overlap for reading continuity
+      // Instant jump (matches native PageUp/PageDown); 'smooth' is sluggish for a full page and queues up on rapid presses
+      virtuoso.scrollBy({ top: e.code === 'PageDown' ? step : -step, behavior: 'auto' })
       return
     }
   }

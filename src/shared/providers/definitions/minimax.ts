@@ -25,19 +25,13 @@ function createMiniMaxProvider(config: {
       apiHost: config.apiHost,
       models: [
         {
-          modelId: 'MiniMax-M2.5',
+          modelId: 'MiniMax-M3',
         },
         {
-          modelId: 'MiniMax-M2.5-highspeed',
+          modelId: 'MiniMax-M2.7',
         },
         {
-          modelId: 'MiniMax-M2.1',
-        },
-        {
-          modelId: 'MiniMax-M2.1-highspeed',
-        },
-        {
-          modelId: 'MiniMax-M2',
+          modelId: 'MiniMax-M2.7-highspeed',
         },
       ],
     },

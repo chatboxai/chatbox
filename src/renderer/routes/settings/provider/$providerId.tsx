@@ -853,35 +853,73 @@ function ProviderSettings({ providerId }: { providerId: string }) {
           <>
             <Stack gap="xxs">
               <Text span fw="600">
-                {t('AWS Access Key ID')}
+                {t('Authentication')}
               </Text>
-              <PasswordInput
-                flex={1}
-                value={providerSettings?.accessKey || ''}
-                placeholder="AKIAIOSFODNN7EXAMPLE"
-                onChange={(e) =>
+              <SegmentedControl
+                value={providerSettings?.activeAuthMode === 'iam' ? 'iam' : 'apikey'}
+                onChange={(value) =>
                   setProviderSettings({
-                    accessKey: e.currentTarget.value,
+                    activeAuthMode: value as 'apikey' | 'iam',
                   })
                 }
+                data={[
+                  { label: t('Bedrock API Key'), value: 'apikey' },
+                  { label: t('IAM Credentials'), value: 'iam' },
+                ]}
               />
             </Stack>
 
-            <Stack gap="xxs">
-              <Text span fw="600">
-                {t('AWS Secret Access Key')}
-              </Text>
-              <PasswordInput
-                flex={1}
-                value={providerSettings?.secretKey || ''}
-                placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-                onChange={(e) =>
-                  setProviderSettings({
-                    secretKey: e.currentTarget.value,
-                  })
-                }
-              />
-            </Stack>
+            {providerSettings?.activeAuthMode === 'iam' ? (
+              <>
+                <Stack gap="xxs">
+                  <Text span fw="600">
+                    {t('AWS Access Key ID')}
+                  </Text>
+                  <PasswordInput
+                    flex={1}
+                    value={providerSettings?.accessKey || ''}
+                    placeholder="AKIAIOSFODNN7EXAMPLE"
+                    onChange={(e) =>
+                      setProviderSettings({
+                        accessKey: e.currentTarget.value,
+                      })
+                    }
+                  />
+                </Stack>
+
+                <Stack gap="xxs">
+                  <Text span fw="600">
+                    {t('AWS Secret Access Key')}
+                  </Text>
+                  <PasswordInput
+                    flex={1}
+                    value={providerSettings?.secretKey || ''}
+                    placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                    onChange={(e) =>
+                      setProviderSettings({
+                        secretKey: e.currentTarget.value,
+                      })
+                    }
+                  />
+                </Stack>
+              </>
+            ) : (
+              <Stack gap="xxs">
+                <Text span fw="600">
+                  {t('API Key')}
+                </Text>
+                <PasswordInput
+                  flex={1}
+                  value={providerSettings?.apiKey || ''}
+                  placeholder="bedrock-api-key"
+                  onChange={(e) =>
+                    setProviderSettings({
+                      apiKey: e.currentTarget.value,
+                    })
+                  }
+                />
+              </Stack>
+            )}
 
             <Stack gap="xxs">
               <Text span fw="600">
@@ -902,23 +940,31 @@ function ProviderSettings({ providerId }: { providerId: string }) {
             <Flex gap="xs" align="center">
               <Tooltip
                 disabled={
-                  !!providerSettings?.accessKey &&
-                  !!providerSettings?.secretKey &&
+                  (providerSettings?.activeAuthMode === 'iam'
+                    ? !!providerSettings?.accessKey && !!providerSettings?.secretKey
+                    : !!providerSettings?.apiKey) &&
                   displayModels.length > 0
                 }
                 label={
-                  !providerSettings?.accessKey || !providerSettings?.secretKey
-                    ? t('AWS Access Key ID and Secret Access Key are required to check connection')
-                    : displayModels.length === 0
-                      ? t('Add at least one model to check connection')
-                      : null
+                  providerSettings?.activeAuthMode === 'iam'
+                    ? !providerSettings?.accessKey || !providerSettings?.secretKey
+                      ? t('AWS Access Key ID and Secret Access Key are required to check connection')
+                      : displayModels.length === 0
+                        ? t('Add at least one model to check connection')
+                        : null
+                    : !providerSettings?.apiKey
+                      ? t('API Key is required to check connection')
+                      : displayModels.length === 0
+                        ? t('Add at least one model to check connection')
+                        : null
                 }
               >
                 <Button
                   size="sm"
                   disabled={
-                    !providerSettings?.accessKey ||
-                    !providerSettings?.secretKey ||
+                    (providerSettings?.activeAuthMode === 'iam'
+                      ? !providerSettings?.accessKey || !providerSettings?.secretKey
+                      : !providerSettings?.apiKey) ||
                     displayModels.length === 0
                   }
                   loading={modelTestResult?.testing || false}

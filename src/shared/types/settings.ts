@@ -62,8 +62,8 @@ export const ProviderSettingsSchema = z.object({
 
   // oauth
   oauth: OAuthCredentialsSchema.optional().catch(undefined),
-  /** Which auth method is active: 'apikey' (default) or 'oauth' */
-  activeAuthMode: z.enum(['apikey', 'oauth']).optional().catch(undefined),
+  /** Which auth method is active: 'apikey' (default), 'oauth', or 'iam' (AWS) */
+  activeAuthMode: z.enum(['apikey', 'oauth', 'iam']).optional().catch(undefined),
 
   // azure
   endpoint: z.string().optional().catch(undefined),

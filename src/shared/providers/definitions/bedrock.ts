@@ -50,6 +50,7 @@ export const bedrockProvider = defineProvider({
   createModel: (config) => {
     return new Bedrock(
       {
+        apiKey: (config as any).effectiveApiKey || config.providerSetting.apiKey || '',
         accessKey: config.providerSetting.accessKey || '',
         secretKey: config.providerSetting.secretKey || '',
         sessionToken: config.providerSetting.sessionToken,

@@ -27,6 +27,7 @@ export enum ModelProviderEnum {
   OpenRouter = 'openrouter',
   Bedrock = 'bedrock',
   Custom = 'custom',
+  Qiniu = 'qiniu',
 }
 
 export enum ModelProviderType {

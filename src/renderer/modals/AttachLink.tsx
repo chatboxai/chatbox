@@ -3,6 +3,7 @@ import { Button, Textarea } from '@mantine/core'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
+import { isKeyboardEventComposing } from '@/utils'
 
 const AttachLink = NiceModal.create(() => {
   const modal = useModal()
@@ -25,6 +26,10 @@ const AttachLink = NiceModal.create(() => {
     setInput(e.target.value)
   }
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isKeyboardEventComposing(event)) {
+      return
+    }
+
     const ctrlOrCmd = event.ctrlKey || event.metaKey
     // ctrl + enter 提交
     if (event.keyCode === 13 && ctrlOrCmd) {

@@ -14,6 +14,7 @@ import { currentSessionIdAtom } from '@/stores/atoms'
 import { useSession } from '@/stores/chatStore'
 import { searchSessions } from '@/stores/sessionHelpers'
 import { useUIStore } from '@/stores/uiStore'
+import { isKeyboardEventComposing } from '@/utils'
 import * as scrollActions from '../stores/scrollActions'
 import { switchCurrentSession } from '../stores/sessionActions'
 
@@ -65,6 +66,10 @@ export default function SearchDialog(props: Props) {
     ref.current?.select() // 搜索后全选输入框，方便删除回退
   }
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isKeyboardEventComposing(e)) {
+      return
+    }
+
     if (globalOnly && e.key === 'Enter' && searchInput.trim()) {
       e.preventDefault()
       onSearchClick('global')

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { isKeyboardEventComposing } from '@/utils'
 
 export interface ExpandableSearchProps {
   onSearch: (term: string) => void
@@ -26,7 +27,11 @@ export function ExpandableSearch({ onSearch }: ExpandableSearchProps) {
     setValue(e.currentTarget.value)
   }
 
-  const handleKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isKeyboardEventComposing(e)) {
+      return
+    }
+
     if (e.key === 'Enter') {
       handleSearch()
     }
@@ -60,7 +65,7 @@ export function ExpandableSearch({ onSearch }: ExpandableSearchProps) {
               placeholder={t('Search copilots...') ?? ''}
               value={value}
               onChange={handleChange}
-              onKeyUp={handleKeyUp}
+              onKeyDown={handleKeyDown}
               onBlur={handleBlur}
               size="xs"
               w={isSmallScreen ? 160 : 200}

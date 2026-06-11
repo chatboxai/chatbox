@@ -69,6 +69,7 @@ Web Search 采用抽象基类模式（`src/renderer/packages/web-search/base.ts`
 | Tavily | `tavily.ts` | ✓ | ✓（调用 `/extract`） | 高质量 AI 搜索，需用户自备 API Key |
 | BoCha | `bocha.ts` | ✓ | ✗ | 国内搜索 API |
 | Querit | `querit.ts` | ✓ | ✗ | 多源聚合搜索 |
+| Kagi | `kagi.ts` | ✓ | ✓（调用 `/extract`） | 高质量搜索与内容提取，需用户自备 API Key |
 
 每个供应商通过 `supportsParseLink` 实例标志声明自己是否实现了 `parseLink`。基类默认返回 `false`，需要的子类用 `override supportsParseLink = true` 显式声明。
 
@@ -134,6 +135,7 @@ Web Search 采用抽象基类模式（`src/renderer/packages/web-search/base.ts`
 |--------|---------|---------|
 | `build-in` (Chatbox AI) | 检查 `licenseKey` → 调用 `remote.parseUserLinkPro` | 缺 license 抛 `chatbox_search_license_key_required`（后端不限制 tier，任意 license 均可调用） |
 | `tavily` | `getParseLinkProvider().parseLink()` → Tavily `/extract` API | 缺 API key 抛 `tavily_api_key_required`；提取空抛 `parse_link_failed` |
+| `kagi` | `getParseLinkProvider().parseLink()` → Kagi `/extract` API | 缺 API key 抛 `kagi_api_key_required`；提取空抛 `parse_link_failed` |
 | 其他（`bing` / `bocha` / `querit`） | 不会注入 `parse_link`，模型看不到此工具 | — |
 
 错误抛出采用 AI/用户双层结构：`Error.message`（传给 `ChatboxAIAPIError` 构造器的第一参数）携带技术原因供 AI 推理（例如 "Tavily extract API returned no results for {url}"），`detail.i18nKey` 则给用户渲染本地化的友好提示。

@@ -9,6 +9,7 @@ import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
 import { BochaSearch } from './bocha'
 import { ChatboxSearch } from './chatbox-search'
+import { KagiSearch } from './kagi'
 import { QueritSearch } from './querit'
 import { TavilySearch } from './tavily'
 
@@ -62,6 +63,12 @@ function getSearchProviders() {
           settings.webSearch.queritTimeRange
         )
       )
+      break
+    case 'kagi':
+      if (!settings.webSearch.kagiApiKey) {
+        throw ChatboxAIAPIError.fromCodeName('kagi_api_key_required', 'kagi_api_key_required')
+      }
+      selectedProviders.push(new KagiSearch(settings.webSearch.kagiApiKey))
       break
     default:
       throw new Error(`Unsupported search provider: ${provider}`)
@@ -131,7 +138,7 @@ export const webSearchExecutor = async (
  * Single source of truth: which configured providers offer the parse_link tool.
  * Keep in sync with the provider classes' `supportsParseLink` flags.
  */
-export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily'])
+export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily', 'kagi'])
 
 /**
  * Returns the first configured search provider that supports parseLink.

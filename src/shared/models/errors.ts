@@ -292,6 +292,12 @@ export class ChatboxAIAPIError extends BaseError {
       i18nKey:
         'You have selected BoCha as the search provider, but an API key has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.',
     },
+    kagi_api_key_required: {
+      name: 'kagi_api_key_required',
+      code: 20036,
+      i18nKey:
+        'You have selected Kagi as the search provider, but an API key has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.',
+    },
     parse_link_failed: {
       name: 'parse_link_failed',
       code: 20037,

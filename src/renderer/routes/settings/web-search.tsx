@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import { BochaSearch } from '@/packages/web-search/bocha'
+import { KagiSearch } from '@/packages/web-search/kagi'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
 import platform from '@/platform'
 import { trackJkClickEvent } from '@/analytics/jk'
@@ -93,6 +94,23 @@ export function RouteComponent() {
     }
   }
 
+  const [checkingKagi, setCheckingKagi] = useState(false)
+  const [kagiAvailable, setKagiAvailable] = useState<boolean>()
+  const checkKagi = async () => {
+    if (extension.webSearch.kagiApiKey) {
+      setCheckingKagi(true)
+      setKagiAvailable(undefined)
+      try {
+        await new KagiSearch(extension.webSearch.kagiApiKey).search('Chatbox')
+        setKagiAvailable(true)
+      } catch (e) {
+        setKagiAvailable(false)
+      } finally {
+        setCheckingKagi(false)
+      }
+    }
+  }
+
   return (
     <Stack p="md" gap="xxl">
       <Title order={5}>{t('Web Search')}</Title>
@@ -105,6 +123,7 @@ export function RouteComponent() {
           { value: 'tavily', label: 'Tavily' },
           { value: 'bocha', label: 'BoCha' },
           { value: 'querit', label: 'Querit' },
+          { value: 'kagi', label: 'Kagi' },
         ]}
         value={extension.webSearch.provider}
         onChange={(e) =>
@@ -114,7 +133,7 @@ export function RouteComponent() {
               ...extension,
               webSearch: {
                 ...extension.webSearch,
-                provider: e as 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit',
+                provider: e as 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'kagi',
               },
             },
           })
@@ -209,6 +228,62 @@ export function RouteComponent() {
             px={0}
             className="self-start"
             onClick={() => platform.openLink('https://app.tavily.com?utm_source=chatbox')}
+          >
+            {t('Get API Key')}
+          </Button>
+        </Stack>
+      )}
+      {/* Kagi API Key */}
+      {extension.webSearch.provider === 'kagi' && (
+        <Stack gap="xs">
+          <Text fw="600">{t('Kagi API Key')}</Text>
+          <Flex align="center" gap="xs">
+            <PasswordInput
+              flex={1}
+              maw={320}
+              value={extension.webSearch.kagiApiKey}
+              onChange={(e) => {
+                setKagiAvailable(undefined)
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      kagiApiKey: e.currentTarget.value,
+                    },
+                  },
+                })
+              }}
+              error={kagiAvailable === false}
+            />
+            <Button
+              color="blue"
+              variant="light"
+              onClick={checkKagi}
+              loading={checkingKagi}
+              disabled={!extension.webSearch.kagiApiKey?.trim()}
+            >
+              {t('Check')}
+            </Button>
+          </Flex>
+
+          {typeof kagiAvailable === 'boolean' ? (
+            kagiAvailable ? (
+              <Text size="xs" c="chatbox-success">
+                {t('Connection successful!')}
+              </Text>
+            ) : (
+              <Text size="xs" c="chatbox-error">
+                {t('API key invalid!')}
+              </Text>
+            )
+          ) : null}
+          <Button
+            variant="transparent"
+            size="compact-xs"
+            px={0}
+            className="self-start"
+            onClick={() => platform.openLink('https://kagi.com/api/keys')}
           >
             {t('Get API Key')}
           </Button>

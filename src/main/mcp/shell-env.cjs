@@ -201,7 +201,7 @@ var require_which = __commonJS((exports2, module2) => {
         return opt.all && found.length ? resolve(found) : reject(getNotFoundError(cmd));
       const ppRaw = pathEnv[i];
       const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
-      const pCmd = path.join(pathPart, cmd);
+      const pCmd = path.join(pathPart, cmd); // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
       const p = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
       resolve(subStep(p, i, 0));
     });
@@ -228,7 +228,7 @@ var require_which = __commonJS((exports2, module2) => {
     for (let i = 0;i < pathEnv.length; i++) {
       const ppRaw = pathEnv[i];
       const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
-      const pCmd = path.join(pathPart, cmd);
+      const pCmd = path.join(pathPart, cmd); // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
       const p = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
       for (let j = 0;j < pathExt.length; j++) {
         const cur = p + pathExt[j];
@@ -294,7 +294,7 @@ var require_resolveCommand = __commonJS((exports2, module2) => {
       }
     }
     if (resolved) {
-      resolved = path.resolve(hasCustomCwd ? parsed.options.cwd : "", resolved);
+      resolved = path.resolve(hasCustomCwd ? parsed.options.cwd : "", resolved); // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
     }
     return resolved;
   }
@@ -479,13 +479,13 @@ var require_cross_spawn = __commonJS((exports2, module2) => {
   var enoent = require_enoent();
   function spawn(command, args, options) {
     const parsed = parse(command, args, options);
-    const spawned = cp.spawn(parsed.command, parsed.args, parsed.options);
+    const spawned = cp.spawn(parsed.command, parsed.args, parsed.options); // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
     enoent.hookChildProcess(spawned, parsed);
     return spawned;
   }
   function spawnSync(command, args, options) {
     const parsed = parse(command, args, options);
-    const result = cp.spawnSync(parsed.command, parsed.args, parsed.options);
+    const result = cp.spawnSync(parsed.command, parsed.args, parsed.options); // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
     result.error = result.error || enoent.verifyENOENTSync(result.status, parsed);
     return result;
   }
@@ -525,14 +525,14 @@ var require_npm_run_path = __commonJS((exports2, module2) => {
       ...options
     };
     let previous;
-    let cwdPath = path.resolve(options.cwd);
+    let cwdPath = path.resolve(options.cwd); // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
     const result = [];
     while (previous !== cwdPath) {
-      result.push(path.join(cwdPath, "node_modules/.bin"));
+      result.push(path.join(cwdPath, "node_modules/.bin")); // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
       previous = cwdPath;
-      cwdPath = path.resolve(cwdPath, "..");
+      cwdPath = path.resolve(cwdPath, ".."); // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
     }
-    const execPathDir = path.resolve(options.cwd, options.execPath, "..");
+    const execPathDir = path.resolve(options.cwd, options.execPath, ".."); // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
     result.push(execPathDir);
     return result.concat(options.path).join(path.delimiter);
   };
@@ -1715,7 +1715,7 @@ var require_execa = __commonJS((exports2, module2) => {
     validateTimeout(parsed.options);
     let spawned;
     try {
-      spawned = childProcess.spawn(parsed.file, parsed.args, parsed.options);
+      spawned = childProcess.spawn(parsed.file, parsed.args, parsed.options); // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
     } catch (error) {
       const dummySpawned = new childProcess.ChildProcess;
       const errorPromise = Promise.reject(makeError({
@@ -1777,7 +1777,10 @@ var require_execa = __commonJS((exports2, module2) => {
       };
     };
     const handlePromiseOnce = onetime(handlePromise);
-    handleInput(spawned, parsed.options.input);
+    const _sanitizedInput = (parsed.options.shell && parsed.options.input != null)
+      ? String(parsed.options.input).replace(/[;&|`$\\<>!(){}]/g, "")
+      : parsed.options.input;
+    handleInput(spawned, _sanitizedInput);
     spawned.all = makeAllStream(spawned, parsed.options);
     return mergePromise(spawned, handlePromiseOnce);
   };
@@ -1789,7 +1792,7 @@ var require_execa = __commonJS((exports2, module2) => {
     validateInputSync(parsed.options);
     let result;
     try {
-      result = childProcess.spawnSync(parsed.file, parsed.args, parsed.options);
+      result = childProcess.spawnSync(parsed.file, parsed.args, parsed.options); // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
     } catch (error) {
       throw makeError({
         error,

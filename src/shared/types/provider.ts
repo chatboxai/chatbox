@@ -28,6 +28,7 @@ export enum ModelProviderEnum {
   Bedrock = 'bedrock',
   VercelAIGateway = 'vercel-ai-gateway',
   Custom = 'custom',
+  Kevoryn = 'kevoryn',
 }
 
 export enum ModelProviderType {

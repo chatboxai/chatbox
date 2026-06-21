@@ -151,6 +151,17 @@ export function settings(): Settings {
       enabledSkillNames: [],
       translationEnabled: true,
     },
+    sync: {
+      enabled: false,
+      provider: 'webdav',
+      webdav: {
+        url: '',
+        username: '',
+        password: '',
+        syncPassword: '',
+      },
+      lastSyncedAt: undefined,
+    },
   }
 }
 

@@ -3,6 +3,7 @@ import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
 import type { ImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type { SessionMetaStorage } from '@/storage/SessionMetaStorage'
 import type { TaskSessionStorage } from '@/storage/TaskSessionStorage'
+import type { WebDAVRequest, WebDAVResponse } from '../packages/sync/types'
 import type { KnowledgeBaseController } from './knowledge-base/interface'
 import type { SessionAttachmentRagController } from './session-attachment-rag/interface'
 
@@ -78,6 +79,9 @@ export interface Platform extends Storage {
   clearLogs(): Promise<void> // 清空日志
 
   ensureAutoLaunch(enable: boolean): Promise<void>
+
+  // WebDAV sync transport (Desktop/Mobile only)
+  webdavRequest?(request: WebDAVRequest, baseUrl: string): Promise<WebDAVResponse>
 
   parseFileLocally(file: File): Promise<{ key?: string; isSupported: boolean }>
   getLocalFilePath(file: File): string

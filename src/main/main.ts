@@ -14,13 +14,14 @@ import './legacy-database-migration'
  */
 
 import fs from 'node:fs'
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme, session, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme, net, session, shell, Tray } from 'electron'
 import electronDebug from 'electron-debug'
 import log from 'electron-log/main'
 import os from 'os'
 import path from 'path'
 // @ts-expect-error - source-map-support doesn't have type definitions
 import * as sourceMapSupport from 'source-map-support'
+import { executeWebDAVRequest, type WebDAVRequest } from 'src/shared/sync-webdav'
 import type { ShortcutSetting } from 'src/shared/types'
 import * as analystic from './analystic-node'
 import { AppUpdater } from './app-updater'
@@ -761,6 +762,11 @@ ipcMain.handle('ensureAutoLaunch', (event, enable: boolean) => {
     return
   }
   return autoLauncher.ensure(enable)
+})
+
+ipcMain.handle('webdav:request', async (_event, request: WebDAVRequest) => {
+  const webdavBaseUrl = getSettings().sync.webdav.url
+  return executeWebDAVRequest(webdavBaseUrl, request, (input, init) => net.fetch(String(input), init))
 })
 
 ipcMain.handle('parseFileLocally', async (event, dataJSON: string) => {

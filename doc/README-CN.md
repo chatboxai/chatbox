@@ -170,6 +170,7 @@
     -   Français (French)
     -   Deutsch (German)
     -   Русский (Russian)
+    -   فارسی (Persian)
 
 -   **更多...**  
     :sparkles: 不断增强体验，加入新功能！

@@ -3,6 +3,7 @@ import { useLayoutEffect, useMemo } from 'react'
 import { settingsStore, useLanguage, useSettingsStore } from '@/stores/settingsStore'
 import { uiStore, useUIStore } from '@/stores/uiStore'
 import { type Language, Theme } from '../../shared/types'
+import { isRtlLanguage } from '../i18n/rtl'
 import platform from '../platform'
 import DesktopPlatform from '../platform/desktop_platform'
 
@@ -80,14 +81,14 @@ export function getThemeDesign(realTheme: 'light' | 'dark', language: Language):
     typography: {
       // In Chinese and Japanese the characters are usually larger,
       // so a smaller fontsize may be appropriate.
-      ...(language === 'ar'
+      ...(isRtlLanguage(language)
         ? {
             fontFamily: 'Cairo, Arial, sans-serif',
           }
         : {}),
       fontSize: 14,
     },
-    direction: language === 'ar' ? 'rtl' : 'ltr',
+    direction: isRtlLanguage(language) ? 'rtl' : 'ltr',
     breakpoints: {
       values: {
         xs: 0,

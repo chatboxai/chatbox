@@ -19,6 +19,7 @@ const SUPPORTED_LOCALES = new Set([
   'es',
   'it-IT',
   'ar',
+  'fa',
   'nb-NO',
   'sv',
 ])

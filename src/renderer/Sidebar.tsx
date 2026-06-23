@@ -31,6 +31,7 @@ import platform from './platform'
 import { featureFlags } from './utils/feature-flags'
 import icon from './static/icon.png'
 import { settingsStore, useLanguage } from './stores/settingsStore'
+import { isRtlLanguage } from './i18n/rtl'
 import { taskSessionStore } from './stores/taskSessionStore'
 import { useUIStore } from './stores/uiStore'
 import { installUpdate, useUpdateStore } from './stores/updateStore'
@@ -104,7 +105,7 @@ export default function Sidebar() {
     if (!isResizing) return
 
     const handleMouseMove = (e: MouseEvent) => {
-      const isRTL = language === 'ar'
+      const isRTL = isRtlLanguage(language)
       const deltaX = isRTL ? resizeStartX.current - e.clientX : e.clientX - resizeStartX.current
       const newWidth = Math.max(200, Math.min(500, resizeStartWidth.current + deltaX))
       setSidebarWidth(newWidth)
@@ -125,7 +126,7 @@ export default function Sidebar() {
 
   return (
     <SwipeableDrawer
-      anchor={language === 'ar' ? 'right' : 'left'}
+      anchor={isRtlLanguage(language) ? 'right' : 'left'}
       variant={isSmallScreen ? 'temporary' : 'persistent'}
       open={showSidebar}
       onClose={() => setShowSidebar(false)}
@@ -143,9 +144,9 @@ export default function Sidebar() {
           maxWidth: '75vw',
         },
       }}
-      SlideProps={language === 'ar' ? { direction: 'left' } : undefined}
+      SlideProps={isRtlLanguage(language) ? { direction: 'left' } : undefined}
       PaperProps={
-        language === 'ar' ? { sx: { direction: 'rtl', overflowY: 'initial' } } : { sx: { overflowY: 'initial' } }
+        isRtlLanguage(language) ? { sx: { direction: 'rtl', overflowY: 'initial' } } : { sx: { overflowY: 'initial' } }
       }
       disableSwipeToOpen={CHATBOX_BUILD_PLATFORM !== 'ios'} // 只在iOS设备上启用SwipeToOpen
     >
@@ -350,7 +351,7 @@ export default function Sidebar() {
             onMouseDown={handleResizeStart}
             className={clsx(
               `sidebar-resizer absolute top-0 bottom-0 w-1 cursor-col-resize z-[1] bg-chatbox-border-primary opacity-0 hover:opacity-70 transition-opacity duration-200`,
-              language === 'ar' ? '-left-1' : '-right-1'
+              isRtlLanguage(language) ? '-left-1' : '-right-1'
             )}
           />
         )}

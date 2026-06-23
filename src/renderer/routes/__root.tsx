@@ -65,6 +65,7 @@ import { initOnboardingStore, onboardingStore } from '@/stores/onboardingStore'
 import * as premiumActions from '@/stores/premiumActions'
 import * as settingActions from '@/stores/settingActions'
 import { initSettingsStore, settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
+import { isRtlLanguage } from '@/i18n/rtl'
 import { getTaskSession } from '@/stores/taskSessionStore'
 import { useUIStore } from '@/stores/uiStore'
 import { CHATBOX_BUILD_CHANNEL, CHATBOX_BUILD_PLATFORM } from '@/variables'
@@ -320,7 +321,7 @@ function Root() {
   }, [needRoomForMacWindowControls])
 
   return (
-    <Box className="box-border App relative" spellCheck={spellCheck} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+    <Box className="box-border App relative" spellCheck={spellCheck} dir={isRtlLanguage(language) ? 'rtl' : 'ltr'}>
       <BackgroundImageOverlay />
       {platform.type === 'desktop' && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
       <Grid container className="h-full relative z-[1]">
@@ -330,7 +331,7 @@ function Root() {
           sx={{
             flexGrow: 1,
             ...(showSidebar
-              ? language === 'ar'
+              ? isRtlLanguage(language)
                 ? { paddingRight: { sm: `${sidebarWidth}px` } }
                 : { paddingLeft: { sm: `${sidebarWidth}px` } }
               : {}),

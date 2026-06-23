@@ -13,6 +13,7 @@ const ACCEPT_LANGUAGE_BY_APP_LANGUAGE: Record<Language, string> = {
   'pt-PT': 'pt-PT,pt;q=0.9,en;q=0.8',
   es: 'es-ES,es;q=0.9,en;q=0.8',
   ar: 'ar,ar-SA;q=0.9,en;q=0.8',
+  fa: 'fa-IR,fa;q=0.9,en;q=0.8',
   'it-IT': 'it-IT,it;q=0.9,en;q=0.8',
   sv: 'sv-SE,sv;q=0.9,en;q=0.8',
   'nb-NO': 'nb-NO,nb;q=0.9,no;q=0.8,en;q=0.7',

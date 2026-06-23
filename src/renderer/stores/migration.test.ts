@@ -298,6 +298,8 @@ vi.mock('../platform/storages', () => ({
 vi.mock('../../shared/defaults', () => ({
   settings: vi.fn(() => ({})),
   SystemProviders: vi.fn(() => []),
+  SESSION_MANAGER_ID: '__chatbox_session_manager__',
+  RESERVED_SESSION_IDS: new Set(['__chatbox_session_manager__']),
 }))
 
 vi.mock('../lib/utils', () => ({
@@ -417,8 +419,8 @@ describe('migrateStorage test', () => {
     const migration = await import('@/stores/migration')
     await migration._migrateStorageForTest()
 
-    // Should set current version (15) to IPC file storage (Desktop platform)
-    expect(ipcFileData[StorageKey.ConfigVersion]).toBe(JSON.stringify(15))
+    // Should set current version to IPC file storage (Desktop platform)
+    expect(ipcFileData[StorageKey.ConfigVersion]).toBe(JSON.stringify(migration.CurrentVersion))
     expect(initData).toHaveBeenCalled()
   })
 
@@ -868,5 +870,142 @@ describe('migrateStorage test', () => {
     expect(localforageData['session:old-session']).toBeUndefined()
 
     expect(initData).not.toHaveBeenCalled()
+  })
+})
+
+describe('migrate 14→15→16 (session meta DB + session groups)', () => {
+  type MigrateStore = {
+    getData: <T>(key: string, defaultValue: T) => Promise<T>
+    setData: <T>(key: string, value: T) => Promise<void>
+    setAll: (data: Record<string, unknown>) => Promise<void>
+  }
+
+  function makeMockStore(initial: Record<string, unknown> = {}): {
+    store: MigrateStore
+    data: Record<string, unknown>
+  } {
+    const data: Record<string, unknown> = { ...initial }
+    const store: MigrateStore = {
+      getData: async <T>(k: string, def: T) => (k in data ? (data[k] as T) : def),
+      setData: async <T>(k: string, v: T) => {
+        data[k] = v
+      },
+      setAll: async (d) => {
+        Object.assign(data, d)
+      },
+    }
+    return { store, data }
+  }
+
+  function makeFakeMetaStore() {
+    const records: Array<Record<string, unknown>> = []
+    return {
+      records,
+      initialize: vi.fn(async () => {}),
+      getTotal: vi.fn(async () => records.length),
+      createMany: vi.fn(async (recs: Array<Record<string, unknown>>) => {
+        records.push(...recs)
+      }),
+      create: vi.fn(async (r: Record<string, unknown>) => {
+        records.push(r)
+      }),
+      getById: vi.fn(async (id: string) => records.find((r) => r.id === id) ?? null),
+      update: vi.fn(async () => null),
+    }
+  }
+
+  let fakeMeta: ReturnType<typeof makeFakeMetaStore>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fakeMeta = makeFakeMetaStore()
+    // 14→15 (legacy list → meta DB) and 15→16 (groups + self-heal backfill) call
+    // platform.getSessionMetaStorage(); inject an in-memory fake so tests need no IndexedDB.
+    vi.spyOn(currentPlatform, 'getSessionMetaStorage').mockReturnValue(
+      fakeMeta as unknown as ReturnType<Platform['getSessionMetaStorage']>
+    )
+  })
+
+  it('chains an empty v14 store up to v16 with session-groups-list = []', async () => {
+    const { store, data } = makeMockStore({ configVersion: 14 })
+    const migration = await import('./migration.js')
+    await migration.migrateOnData(store, false)
+
+    expect(data['session-groups-list']).toEqual([])
+    expect(data.configVersion).toBe(16)
+  })
+
+  it('migrates a legacy v14 session list into the meta DB and reaches v16', async () => {
+    const { store, data } = makeMockStore({
+      configVersion: 14,
+      'chat-sessions-list': [{ id: 's1', name: 'one' }],
+    })
+    const migration = await import('./migration.js')
+    await migration.migrateOnData(store, false)
+
+    expect(fakeMeta.records.map((r) => r.id)).toContain('s1')
+    expect(data['session-groups-list']).toEqual([])
+    expect(data.configVersion).toBe(16)
+  })
+
+  it('fork-v15 self-heal: backfills the legacy list into the meta DB preserving groupId', async () => {
+    // Real fork data sits at "15": metas still in chat-sessions-list WITH groupId, meta DB empty.
+    const { store, data } = makeMockStore({
+      configVersion: 15,
+      'session-groups-list': [
+        { id: 'group:x', name: 'X', parentId: null, sortIndex: 0, createdAt: 1, updatedAt: 1 },
+      ],
+      'chat-sessions-list': [
+        { id: 's1', name: 'grouped', groupId: 'group:x' },
+        { id: 's2', name: 'loose' },
+      ],
+    })
+    const migration = await import('./migration.js')
+    await migration.migrateOnData(store, false)
+
+    const s1 = fakeMeta.records.find((r) => r.id === 's1')
+    expect(s1?.groupId).toBe('group:x')
+    expect(fakeMeta.records.map((r) => r.id)).toEqual(expect.arrayContaining(['s1', 's2']))
+    expect(data.configVersion).toBe(16)
+  })
+
+  it('does not backfill when the meta DB is already populated (idempotent)', async () => {
+    const { store, data } = makeMockStore({
+      configVersion: 15,
+      'session-groups-list': [],
+      'chat-sessions-list': [{ id: 's1', name: 'one', groupId: 'group:x' }],
+    })
+    // Simulate an upstream-v15 user whose metas already live in the DB.
+    fakeMeta.records.push({ id: 's1', name: 'one' })
+    const migration = await import('./migration.js')
+    await migration.migrateOnData(store, false)
+
+    expect(fakeMeta.createMany).not.toHaveBeenCalled()
+    expect(data.configVersion).toBe(16)
+  })
+
+  it('preserves an existing non-empty session-groups-list', async () => {
+    const existing = [{ id: 'group:x', name: 'A', parentId: null, sortIndex: 0, createdAt: 1, updatedAt: 1 }]
+    const { store, data } = makeMockStore({
+      configVersion: 15,
+      'session-groups-list': existing,
+    })
+    const migration = await import('./migration.js')
+    await migration.migrateOnData(store, false)
+
+    expect(data['session-groups-list']).toEqual(existing)
+    expect(data.configVersion).toBe(16)
+  })
+
+  it('chains from configVersion 12 up to 16', async () => {
+    const { store, data } = makeMockStore({
+      configVersion: 12,
+      'chat-sessions-list': [], // keeps migrate_13_to_14 a no-op
+    })
+    const migration = await import('./migration.js')
+    await migration.migrateOnData(store, false)
+
+    expect(data.configVersion).toBe(16)
+    expect(data['session-groups-list']).toEqual([])
   })
 })

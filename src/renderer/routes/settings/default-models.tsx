@@ -1,5 +1,5 @@
 /** biome-ignore-all lint/style/noNonNullAssertion: <todo> */
-import { Flex, Stack, Text, Title } from '@mantine/core'
+import { Flex, NumberInput, Stack, Text, Title } from '@mantine/core'
 import { SystemProviders } from '@shared/defaults'
 import { IconSelector } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
@@ -94,6 +94,62 @@ export function RouteComponent() {
 
         <Text c="chatbox-tertiary" size="xs">
           {t('Chatbox will automatically use this model to rename threads.')}
+        </Text>
+      </Stack>
+
+      <Stack gap="xs">
+        <Text fw={600}>{t('Default Summary Model')}</Text>
+
+        <ModelSelector
+          position="bottom-start"
+          width={320}
+          showAuto={true}
+          autoText={t('Auto (Use Chat Model)')!}
+          selectedProviderId={settings.defaultSummaryModel?.provider}
+          selectedModelId={settings.defaultSummaryModel?.model}
+          searchPosition="top"
+          onSelect={(provider, model) =>
+            setSettings({
+              defaultSummaryModel:
+                provider && model
+                  ? {
+                      provider,
+                      model,
+                    }
+                  : undefined,
+            })
+          }
+        >
+          <ModelSelectContent
+            autoText={t('Auto (Use Chat Model)')!}
+            provider={settings.defaultSummaryModel?.provider}
+            model={settings.defaultSummaryModel?.model}
+          />
+        </ModelSelector>
+
+        <Text c="chatbox-tertiary" size="xs">
+          {t('Chatbox will use this model to generate session summaries.')}
+        </Text>
+      </Stack>
+
+      <Stack gap="xs">
+        <Text fw={600}>{t('Summary Concurrency')}</Text>
+        <NumberInput
+          w={320}
+          min={1}
+          max={50}
+          step={1}
+          clampBehavior="strict"
+          value={settings.summaryConcurrency ?? 10}
+          onChange={(v) => {
+            const n = typeof v === 'number' ? v : Number.parseInt(String(v), 10)
+            setSettings({ summaryConcurrency: Number.isFinite(n) ? Math.min(50, Math.max(1, n)) : undefined })
+          }}
+        />
+        <Text c="chatbox-tertiary" size="xs">
+          {t(
+            'How many session summaries the AI manager generates in parallel. On repeated failures it automatically falls back to 3, then 1.'
+          )}
         </Text>
       </Stack>
 

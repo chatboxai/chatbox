@@ -13,13 +13,16 @@ import {
 } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import clsx from 'clsx'
+import { useAtomValue } from 'jotai'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Divider from './components/common/Divider'
 import { ScalableIcon } from './components/common/ScalableIcon'
 import SessionAttachmentRagDevPane from './components/dev/SessionAttachmentRagDevPane'
 import ThemeSwitchButton from './components/dev/ThemeSwitchButton'
-import SessionList from './components/session/SessionList'
+import GroupedSessionList from './components/session/GroupedSessionList'
+import GroupRail from './components/session/GroupRail'
+import ManagerSessionPin from './components/session/ManagerSessionPin'
 import TaskSessionList from './components/session/TaskSessionList'
 import { FORCE_ENABLE_DEV_PAGES } from './dev/devToolsConfig'
 import useNeedRoomForMacWinControls from './hooks/useNeedRoomForWinControls'
@@ -28,12 +31,13 @@ import useVersion from './hooks/useVersion'
 import { navigateToSettings } from './modals/Settings'
 import { trackingEvent } from './packages/event'
 import platform from './platform'
-import { featureFlags } from './utils/feature-flags'
 import icon from './static/icon.png'
+import { currentSidebarGroupIdAtom } from './stores/atoms/uiAtoms'
 import { settingsStore, useLanguage } from './stores/settingsStore'
 import { taskSessionStore } from './stores/taskSessionStore'
 import { useUIStore } from './stores/uiStore'
 import { installUpdate, useUpdateStore } from './stores/updateStore'
+import { featureFlags } from './utils/feature-flags'
 import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
 
 export default function Sidebar() {
@@ -46,6 +50,7 @@ export default function Sidebar() {
   const setSidebarWidth = useUIStore((s) => s.setSidebarWidth)
   const sidebarMode = useUIStore((s) => s.sidebarMode)
   const setSidebarMode = useUIStore((s) => s.setSidebarMode)
+  const currentSidebarGroupId = useAtomValue(currentSidebarGroupIdAtom)
 
   const sessionListViewportRef = useRef<HTMLDivElement>(null)
 
@@ -63,13 +68,13 @@ export default function Sidebar() {
   const { needRoomForMacWindowControls } = useNeedRoomForMacWinControls()
 
   const handleCreateNewSession = useCallback(() => {
-    navigate({ to: `/` })
+    navigate({ to: '/', search: { groupId: currentSidebarGroupId ?? undefined } })
 
     if (isSmallScreen) {
       setShowSidebar(false)
     }
     trackingEvent('create_new_conversation', { event_category: 'user' })
-  }, [navigate, setShowSidebar, isSmallScreen])
+  }, [navigate, setShowSidebar, isSmallScreen, currentSidebarGroupId])
 
   const handleCreateNewPictureSession = useCallback(() => {
     navigate({ to: '/image-creator' })
@@ -216,7 +221,15 @@ export default function Sidebar() {
         {sidebarMode === 'task' && featureFlags.taskMode ? (
           <TaskSessionList />
         ) : (
-          <SessionList sessionListViewportRef={sessionListViewportRef} />
+          <>
+            <Flex flex={1} style={{ minHeight: 0 }}>
+              <GroupRail />
+              <GroupedSessionList sessionListViewportRef={sessionListViewportRef} />
+            </Flex>
+            <Box px="xs" pb={4}>
+              <ManagerSessionPin />
+            </Box>
+          </>
         )}
 
         <SidebarUpdateBanner />

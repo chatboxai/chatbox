@@ -1,46 +1,78 @@
-import { describe, expect, it } from 'vitest'
-
+import { SESSION_MANAGER_ID } from '@shared/defaults'
 import type { SessionMeta } from '@shared/types'
+import { describe, expect, it } from 'vitest'
 import { sortSessionRecords } from '@/storage/SessionMetaStorage'
+import { createSessionMetaRecordsFromLegacyList, isSystemSession, sortSessions } from './session-utils'
 
-import { createSessionMetaRecordsFromLegacyList, sortSessions } from './session-utils'
+const meta = (overrides: Partial<SessionMeta> & { system?: boolean } = {}): SessionMeta =>
+  ({
+    id: overrides.id ?? 'sess-normal',
+    name: overrides.name ?? 'normal',
+    ...overrides,
+  }) as SessionMeta
+
+describe('isSystemSession', () => {
+  it('returns true when id matches SESSION_MANAGER_ID', () => {
+    expect(isSystemSession({ id: SESSION_MANAGER_ID })).toBe(true)
+  })
+
+  it('returns true when system flag is set', () => {
+    expect(isSystemSession({ id: 'a-uuid', system: true })).toBe(true)
+  })
+
+  it('returns false for a normal uuid without system flag', () => {
+    expect(isSystemSession({ id: '550e8400-e29b-41d4-a716-446655440000' })).toBe(false)
+  })
+
+  it('returns false when neither reserved id nor system flag is present', () => {
+    expect(isSystemSession({ id: 'plain' })).toBe(false)
+  })
+})
 
 describe('sortSessions', () => {
   it('returns empty array for empty input', () => {
     expect(sortSessions([])).toEqual([])
   })
 
-  it('reverses regular sessions (newest first)', () => {
-    const s1 = { id: 's1' } as unknown as SessionMeta
-    const s2 = { id: 's2' } as unknown as SessionMeta
-    const s3 = { id: 's3' } as unknown as SessionMeta
-
-    expect(sortSessions([s1, s2, s3])).toEqual([s3, s2, s1])
+  it('drops sessions whose id is in RESERVED_SESSION_IDS', () => {
+    const result = sortSessions([meta({ id: SESSION_MANAGER_ID, name: 'manager' }), meta({ id: 'a', name: 'a' })])
+    expect(result.map((s) => s.id)).toEqual(['a'])
   })
 
-  it('puts starred sessions first', () => {
-    const a = { id: 'a', starred: true } as unknown as SessionMeta
-    const b = { id: 'b' } as unknown as SessionMeta
-    const c = { id: 'c', starred: true } as unknown as SessionMeta
-
-    expect(sortSessions([b, a, c])).toEqual([a, c, b])
+  it('drops sessions with system: true', () => {
+    const result = sortSessions([meta({ id: 'sys-1', name: 'sys', system: true }), meta({ id: 'a', name: 'a' })])
+    expect(result.map((s) => s.id)).toEqual(['a'])
   })
 
-  it('filters out hidden sessions', () => {
-    const visible = { id: 'visible' } as unknown as SessionMeta
-    const hidden = { id: 'hidden', hidden: true } as unknown as SessionMeta
+  it('still drops hidden sessions', () => {
+    const result = sortSessions([meta({ id: 'h', hidden: true }), meta({ id: 'a' })])
+    expect(result.map((s) => s.id)).toEqual(['a'])
+  })
 
-    expect(sortSessions([visible, hidden])).toEqual([visible])
+  it('keeps starred sessions pinned at the front in original order', () => {
+    const result = sortSessions([
+      meta({ id: 'p1', starred: true }),
+      meta({ id: 'n1' }),
+      meta({ id: 'p2', starred: true }),
+      meta({ id: 'n2' }),
+    ])
+    expect(result.map((s) => s.id)).toEqual(['p1', 'p2', 'n2', 'n1'])
+  })
+
+  it('reverses normal sessions', () => {
+    const result = sortSessions([meta({ id: 'a' }), meta({ id: 'b' }), meta({ id: 'c' })])
+    expect(result.map((s) => s.id)).toEqual(['c', 'b', 'a'])
   })
 
   it('handles mixed pinned + regular + hidden sessions', () => {
-    const p1 = { id: 'p1', starred: true } as unknown as SessionMeta
-    const r1 = { id: 'r1' } as unknown as SessionMeta
-    const h1 = { id: 'h1', hidden: true } as unknown as SessionMeta
-    const r2 = { id: 'r2' } as unknown as SessionMeta
-    const p2 = { id: 'p2', starred: true } as unknown as SessionMeta
-
-    expect(sortSessions([r1, p1, h1, r2, p2])).toEqual([p1, p2, r2, r1])
+    const result = sortSessions([
+      meta({ id: 'r1' }),
+      meta({ id: 'p1', starred: true }),
+      meta({ id: 'h1', hidden: true }),
+      meta({ id: 'r2' }),
+      meta({ id: 'p2', starred: true }),
+    ])
+    expect(result.map((s) => s.id)).toEqual(['p1', 'p2', 'r2', 'r1'])
   })
 })
 
@@ -67,5 +99,12 @@ describe('createSessionMetaRecordsFromLegacyList', () => {
       'social',
       'travel',
     ])
+  })
+
+  it('preserves groupId / system / sortIndex on the produced records', () => {
+    const grouped = { id: 'g1', name: 'Grouped', groupId: 'group:abc', sortIndex: 2 } as SessionMeta
+    const records = createSessionMetaRecordsFromLegacyList([grouped], 10_000)
+    expect(records[0].groupId).toBe('group:abc')
+    expect(records[0].sortIndex).toBe(2)
   })
 })

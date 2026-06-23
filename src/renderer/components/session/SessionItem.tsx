@@ -1,7 +1,16 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Flex, Text } from '@mantine/core'
 import type { SessionMeta } from '@shared/types'
-import { IconCopy, IconDots, IconEdit, IconStar, IconStarFilled, IconTrash } from '@tabler/icons-react'
+import {
+  IconCopy,
+  IconDots,
+  IconEdit,
+  IconFileDescription,
+  IconFolderSymlink,
+  IconStar,
+  IconStarFilled,
+  IconTrash,
+} from '@tabler/icons-react'
 import clsx from 'clsx'
 import { memo, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -21,10 +30,13 @@ import { ScalableIcon } from '../common/ScalableIcon'
 export interface Props {
   session: SessionMeta
   selected: boolean
+  isOverlay?: boolean
+  /** In the virtual Starred view, hide move/copy/delete — only un-star removes a session from there. */
+  restricted?: boolean
 }
 
 function SessionItem(props: Props) {
-  const { session, selected } = props
+  const { session, selected, isOverlay = false, restricted = false } = props
   const { t } = useTranslation()
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const onClick = () => {
@@ -51,13 +63,35 @@ function SessionItem(props: Props) {
           })
         },
       },
+      ...((restricted
+        ? []
+        : [
+            {
+              text: t('Move to group…'),
+              icon: IconFolderSymlink,
+              onClick: () => {
+                void NiceModal.show('move-session-to-group', { sessionId: session.id })
+              },
+            },
+          ]) as ActionMenuItemProps[]),
       {
-        text: t('Copy'),
-        icon: IconCopy,
+        text: t('View Summary'),
+        icon: IconFileDescription,
         onClick: () => {
-          copyAndSwitchSession(session)
+          void NiceModal.show('session-summary', { sessionId: session.id })
         },
       },
+      ...((restricted
+        ? []
+        : [
+            {
+              text: t('Copy'),
+              icon: IconCopy,
+              onClick: () => {
+                copyAndSwitchSession(session)
+              },
+            },
+          ]) as ActionMenuItemProps[]),
       {
         text: session.starred ? t('Unstar') : t('Star'),
         icon: session.starred ? IconStarFilled : IconStar,
@@ -65,33 +99,37 @@ function SessionItem(props: Props) {
           void updateSessionStore(session.id, { starred: !session.starred })
         },
       },
-      { divider: true },
-      {
-        doubleCheck: true,
-        text: t('Delete'),
-        icon: IconTrash,
-        disabled: deleting,
-        onClick: async () => {
-          if (deletingRef.current) {
-            return
-          }
-          deletingRef.current = true
-          setDeleting(true)
-          try {
-            await deleteSessionStore(session.id)
-            // Only navigate if deleting the currently selected session
-            if (selected) {
-              router.navigate({ to: '/', replace: true })
-            }
-          } catch (error) {
-            console.error('Failed to delete session:', error)
-            deletingRef.current = false
-            setDeleting(false)
-          }
-        },
-      },
+      ...((restricted
+        ? []
+        : [
+            { divider: true },
+            {
+              doubleCheck: true,
+              text: t('Delete'),
+              icon: IconTrash,
+              disabled: deleting,
+              onClick: async () => {
+                if (deletingRef.current) {
+                  return
+                }
+                deletingRef.current = true
+                setDeleting(true)
+                try {
+                  await deleteSessionStore(session.id)
+                  // Only navigate if deleting the currently selected session
+                  if (selected) {
+                    router.navigate({ to: '/', replace: true })
+                  }
+                } catch (error) {
+                  console.error('Failed to delete session:', error)
+                  deletingRef.current = false
+                  setDeleting(false)
+                }
+              },
+            },
+          ]) as ActionMenuItemProps[]),
     ],
-    [session, selected, t, deleting]
+    [session, selected, t, deleting, restricted]
   )
 
   return (
@@ -103,7 +141,8 @@ function SessionItem(props: Props) {
           ? ''
           : selected
             ? 'bg-chatbox-background-brand-secondary'
-            : 'hover:bg-chatbox-background-gray-secondary'
+            : 'hover:bg-chatbox-background-gray-secondary',
+        isOverlay && 'shadow-md opacity-90 bg-chatbox-background-primary'
       )}
       mx="xs"
       px="xs"

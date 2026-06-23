@@ -15,11 +15,15 @@ export enum StorageKey {
   ChatSessionSettings = 'chat-session-settings',
   PictureSessionSettings = 'picture-session-settings',
   AuthInfo = 'authInfo',
+  SessionGroupsList = 'session-groups-list',
 }
 
 export const StorageKeyGenerator = {
   session(id: string) {
     return `session:${id}`
+  },
+  summary(sessionId: string) {
+    return `summary:${sessionId}`
   },
   picture(category: string) {
     return `picture:${category}:${uuidv4()}`

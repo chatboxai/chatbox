@@ -136,6 +136,8 @@ export function updateSessionListData(updater: (items: SessionMetaRecord[]) => S
       pageParams: [0],
     }
   })
+  // Keep the file-explorer per-group views in sync with any optimistic global-list change.
+  invalidateSessionLists()
 }
 
 /** Re-read the first session list page from DB and update cache. Use for bulk operations only. */
@@ -145,6 +147,76 @@ export async function refreshSessionListCache() {
     pages: [firstPage],
     pageParams: [0],
   })
+  invalidateSessionLists()
+}
+
+// MARK: group-scoped session list (file-explorer view)
+
+const UNGROUPED_QUERY_KEY = '__ungrouped__'
+
+/** Query key for one group's paginated sessions (groupId null = ungrouped root). */
+export const groupSessionsQueryKey = (groupId: string | null) =>
+  ['chat-sessions-list', 'group', groupId ?? UNGROUPED_QUERY_KEY] as const
+
+async function _listSessionsByGroupPage(groupId: string | null, cursor: number | null): Promise<SessionMetaPage> {
+  const metaStorage = await getMetaStorage()
+  return await metaStorage.getPageByGroup(groupId, cursor)
+}
+
+function groupSessionsQueryOptions(groupId: string | null) {
+  return {
+    queryKey: groupSessionsQueryKey(groupId),
+    queryFn: ({ pageParam }: { pageParam: number | null }) => _listSessionsByGroupPage(groupId, pageParam),
+    getNextPageParam: (lastPage: SessionMetaPage) => lastPage.nextCursor,
+    initialPageParam: null as number | null,
+    staleTime: Infinity,
+  }
+}
+
+/** Real-paginated sessions for one group (null = ungrouped root) — the file-explorer main panel. */
+export function useSessionListByGroup(groupId: string | null) {
+  const result = useInfiniteQuery(groupSessionsQueryOptions(groupId))
+  const sessionMetaList = useMemo(() => result.data?.pages.flatMap((p) => p.items), [result.data])
+  return {
+    sessionMetaList,
+    total: result.data?.pages[0]?.total ?? 0,
+    refetch: result.refetch,
+    fetchNextPage: result.fetchNextPage,
+    hasNextPage: result.hasNextPage,
+    isFetchingNextPage: result.isFetchingNextPage,
+    isLoading: result.isLoading,
+  }
+}
+
+/** Direct-session count for a group (null = ungrouped) — used for tree/rail badges. */
+export function useGroupSessionCount(groupId: string | null) {
+  const { data } = useQuery({
+    queryKey: ['chat-sessions-list', 'group-count', groupId ?? UNGROUPED_QUERY_KEY],
+    queryFn: async () => (await getMetaStorage()).getTotalByGroup(groupId),
+    staleTime: Infinity,
+  })
+  return data ?? 0
+}
+
+/** All starred sessions across groups, newest first — backs the virtual "Starred" pseudo-group. */
+export function useStarredSessions() {
+  const { data } = useQuery({
+    queryKey: ['chat-sessions-list', 'starred'],
+    queryFn: async () => {
+      const all = await (await getMetaStorage()).getAll()
+      return all.filter((s) => s.starred)
+    },
+    staleTime: Infinity,
+  })
+  return { sessionMetaList: data, total: data?.length ?? 0 }
+}
+
+/** Refresh the per-group explorer queries (group lists + counts + starred) after a session mutation.
+ * The global infinite list keeps its own optimistic updates, so it is intentionally left untouched. */
+export function invalidateSessionLists() {
+  void queryClient.invalidateQueries({ queryKey: ['chat-sessions-list', 'group'] })
+  void queryClient.invalidateQueries({ queryKey: ['chat-sessions-list', 'group-count'] })
+  void queryClient.invalidateQueries({ queryKey: ['chat-sessions-list', 'starred'] })
 }
 
 // MARK: session operations
@@ -677,6 +749,40 @@ function cleanupEmptyForkBranches(
   }
 
   return { messages: resultMessages, messageForksHash: resultHash }
+}
+
+// MARK: system-managed sessions
+
+// Ensure the persistent system-managed AI Manager session exists.
+// Idempotent: parallel/repeat invocations always yield exactly one stored session
+// (storage.setItemNow overwrites the same key; updateSessionList dedupes by id).
+// We read directly from storage rather than via getSession() to bypass the
+// react-query cache, which keeps `null` results around indefinitely (staleTime: Infinity).
+export async function ensureManagerSession(): Promise<void> {
+  const storageKey = StorageKeyGenerator.session(defaults.SESSION_MANAGER_ID)
+  const existing = await storage.getItem<Session | null>(storageKey, null)
+  if (existing) {
+    return
+  }
+  const session: Session = {
+    id: defaults.SESSION_MANAGER_ID,
+    name: 'AI Manager',
+    type: 'chat',
+    system: true,
+    hidden: true, // keep it out of the standard session list (upstream filters by `hidden`); surfaced via a dedicated entry
+    messages: [],
+    settings: {},
+  }
+  await storage.setItemNow(storageKey, session)
+  const metaStorage = await getMetaStorage()
+  const existingMeta = await metaStorage.getById(defaults.SESSION_MANAGER_ID)
+  if (!existingMeta) {
+    await metaStorage.create({
+      ...getSessionMeta(session),
+      sortOrder: Date.now(),
+      createdAt: Date.now(),
+    })
+  }
 }
 
 // MARK: data recovery operations

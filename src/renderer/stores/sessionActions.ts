@@ -5,6 +5,7 @@ export {
   clearConversationList,
   copyAndSwitchSession,
   createEmpty,
+  reorderSessionInGroup,
   reorderSessions,
   switchCurrentSession,
   switchToIndex,
@@ -24,6 +25,8 @@ export {
   getSessionWebBrowsing,
   regenerateInNewFork,
 } from './session/generation'
+// Re-export group operations from session/groups.ts
+export { moveSessionToGroup, reorderChildGroups, reorderGroups, reorderWithinGroup } from './session/groups'
 // Re-export message operations from session/messages.ts
 export {
   insertMessage,
@@ -40,6 +43,9 @@ export {
   scheduleGenerateThreadName,
 } from './session/naming'
 export { createLoadingPictures } from './session/pictures'
+export type { SessionSummary, SummaryReadResult } from './session/summary'
+// Re-export summary operations from session/summary.ts
+export { deleteSessionSummary, generateSessionSummary, getSessionSummary } from './session/summary'
 // Re-export thread operations from session/threads.ts
 export {
   compressAndCreateThread,

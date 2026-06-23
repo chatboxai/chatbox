@@ -258,6 +258,17 @@ export const SessionThreadSchema = z.object({
   compactionPoints: z.array(CompactionPointSchema).optional(),
 })
 
+export const SessionGroupSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  parentId: z.string().nullable(),
+  sortIndex: z.number(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  color: z.string().optional(),
+  icon: z.string().optional(),
+})
+
 // Image source schema
 export const ImageSourceSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('url'), url: z.string() }),
@@ -280,6 +291,10 @@ export const SessionSchema = z.object({
   threadName: z.string().optional(),
   messageForksHash: z.record(z.string(), MessageForkSchema).optional(),
   compactionPoints: z.array(CompactionPointSchema).optional(),
+  groupId: z.string().optional(),
+  system: z.boolean().optional(),
+  sortIndex: z.number().optional(),
+  summaryPrompt: z.string().optional(),
 })
 
 export const SessionMetaSchema = SessionSchema.pick({
@@ -291,6 +306,9 @@ export const SessionMetaSchema = SessionSchema.pick({
   picUrl: true,
   backgroundImage: true,
   type: true,
+  groupId: true,
+  system: true,
+  sortIndex: true,
 })
 
 export const SessionMetaRecordSchema = SessionMetaSchema.extend({
@@ -341,3 +359,4 @@ export type SessionMetaRecord = z.infer<typeof SessionMetaRecordSchema>
 export type SessionMetaPage = z.infer<typeof SessionMetaPageSchema>
 export type SessionThread = z.infer<typeof SessionThreadSchema>
 export type SessionThreadBrief = z.infer<typeof SessionThreadBriefSchema>
+export type SessionGroup = z.infer<typeof SessionGroupSchema>

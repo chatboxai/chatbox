@@ -316,6 +316,13 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
     })
     .optional()
     .catch(undefined),
+  defaultSummaryModel: z
+    .object({
+      provider: z.string(),
+      model: z.string(),
+    })
+    .optional()
+    .catch(undefined),
   searchTermConstructionModel: z
     .object({
       provider: z.string(),
@@ -330,6 +337,15 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
     })
     .optional()
     .catch(undefined),
+
+  // Default summary prompt used by the per-session summary modal when a
+  // session does not specify its own. Empty / undefined means use the
+  // built-in default exported from src/renderer/stores/session/summary.ts.
+  defaultSessionSummaryPrompt: z.string().optional().catch(undefined),
+
+  // How many session summaries the AI-manager `bulk_get_summaries` tool generates
+  // in parallel. On repeated failures it falls back 10 -> 3 -> 1. Default 10 when unset.
+  summaryConcurrency: z.number().int().min(1).max(50).optional().catch(undefined),
 
   // chatboxai
   licenseKey: z.string().optional(),

@@ -3,6 +3,24 @@ import type { SessionMetaPage, SessionMetaRecord } from '@shared/types'
 const DB_NAME = 'chatbox-session-meta'
 const STORE_NAME = 'records'
 const DEFAULT_PAGE_SIZE = 50
+const DB_VERSION = 2
+const GROUP_INDEX = 'byGroup'
+
+// Records carry an internal `groupKey` (= groupId ?? '') so a [groupKey, sortOrder] compound index
+// can range-query by group. IndexedDB skips records whose indexed key path is `undefined`, so a raw
+// `groupId` index would lose all ungrouped sessions — the '' sentinel keeps them queryable.
+const UNGROUPED_KEY = ''
+type StoredMetaRecord = SessionMetaRecord & { groupKey: string }
+
+function toStored(record: SessionMetaRecord): StoredMetaRecord {
+  return { ...record, groupKey: record.groupId ?? UNGROUPED_KEY }
+}
+
+/** Drop the internal `groupKey` index field so callers only ever see a clean SessionMetaRecord. */
+function fromStored(record: SessionMetaRecord & { groupKey?: string }): SessionMetaRecord {
+  const { groupKey: _groupKey, ...rest } = record
+  return rest
+}
 
 export interface SessionMetaStorage {
   initialize(): Promise<void>
@@ -14,7 +32,14 @@ export interface SessionMetaStorage {
   deleteMany(ids: string[]): Promise<void>
   getAll(): Promise<SessionMetaRecord[]>
   getPage(cursor: number, limit?: number): Promise<SessionMetaPage>
+  /**
+   * Real keyset-paginated read of one group's sessions (groupId null = ungrouped), newest first by
+   * sortOrder. `cursor` is the previous page's last sortOrder (null = first page); reads only `limit`
+   * records from the index, never the whole group.
+   */
+  getPageByGroup(groupId: string | null, cursor: number | null, limit?: number): Promise<SessionMetaPage>
   getTotal(): Promise<number>
+  getTotalByGroup(groupId: string | null): Promise<number>
   clear(): Promise<void>
 }
 
@@ -46,7 +71,7 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
 
   private openDatabase(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, 1)
+      const request = indexedDB.open(DB_NAME, DB_VERSION)
 
       request.onerror = () => reject(request.error)
 
@@ -55,12 +80,30 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
         resolve()
       }
 
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' })
+      request.onupgradeneeded = () => {
+        const db = request.result
+        const tx = request.transaction
+        let store: IDBObjectStore
+        if (db.objectStoreNames.contains(STORE_NAME)) {
+          if (!tx) return
+          store = tx.objectStore(STORE_NAME)
+        } else {
+          store = db.createObjectStore(STORE_NAME, { keyPath: 'id' })
           store.createIndex('sortOrder', 'sortOrder', { unique: false })
           store.createIndex('createdAt', 'createdAt', { unique: false })
+        }
+        if (!store.indexNames.contains(GROUP_INDEX)) {
+          store.createIndex(GROUP_INDEX, ['groupKey', 'sortOrder'], { unique: false })
+          // Backfill `groupKey` on any pre-existing records so they enter the new index.
+          const cursorReq = store.openCursor()
+          cursorReq.onsuccess = () => {
+            const cursor = cursorReq.result
+            if (!cursor) return
+            const rec = cursor.value as SessionMetaRecord & { groupKey?: string }
+            const gk = rec.groupId ?? UNGROUPED_KEY
+            if (rec.groupKey !== gk) cursor.update({ ...rec, groupKey: gk })
+            cursor.continue()
+          }
         }
       }
     })
@@ -76,7 +119,7 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     await this.initialize()
     return new Promise((resolve, reject) => {
       const store = this.getStore('readwrite')
-      const request = store.add(record)
+      const request = store.add(toStored(record))
       request.onsuccess = () => resolve()
       request.onerror = () => reject(request.error)
     })
@@ -92,7 +135,7 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
       for (const record of records) {
-        store.put(record)
+        store.put(toStored(record))
       }
     })
   }
@@ -102,7 +145,7 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     const existing = await this.getById(id)
     if (!existing) return null
 
-    const updated = { ...existing, ...updates }
+    const updated = toStored({ ...existing, ...updates })
     return new Promise((resolve, reject) => {
       const store = this.getStore('readwrite')
       const request = store.put(updated)
@@ -116,7 +159,7 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     return new Promise((resolve, reject) => {
       const store = this.getStore('readonly')
       const request = store.get(id)
-      request.onsuccess = () => resolve(request.result || null)
+      request.onsuccess = () => resolve(request.result ? fromStored(request.result) : null)
       request.onerror = () => reject(request.error)
     })
   }
@@ -152,7 +195,7 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
       const store = this.getStore('readonly')
       const request = store.getAll()
       request.onsuccess = () => {
-        const records = request.result as SessionMetaRecord[]
+        const records = (request.result as Array<SessionMetaRecord & { groupKey?: string }>).map(fromStored)
         resolve(sortSessionRecords(records))
       }
       request.onerror = () => reject(request.error)
@@ -167,11 +210,56 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     return { items, nextCursor, total: all.length }
   }
 
+  async getPageByGroup(
+    groupId: string | null,
+    cursor: number | null = null,
+    limit: number = DEFAULT_PAGE_SIZE
+  ): Promise<SessionMetaPage> {
+    await this.initialize()
+    const groupKey = groupId ?? UNGROUPED_KEY
+    // `[groupKey, []]` sorts after every `[groupKey, <number>]` (arrays > numbers in IDB key order),
+    // so it is the open upper bound for "all records in this group".
+    const range =
+      cursor === null
+        ? IDBKeyRange.bound([groupKey], [groupKey, []])
+        : IDBKeyRange.bound([groupKey], [groupKey, cursor], false, true)
+    const items = await new Promise<SessionMetaRecord[]>((resolve, reject) => {
+      const out: SessionMetaRecord[] = []
+      const index = this.getStore('readonly').index(GROUP_INDEX)
+      const req = index.openCursor(range, 'prev')
+      req.onsuccess = () => {
+        const c = req.result
+        if (!c || out.length >= limit) {
+          resolve(out)
+          return
+        }
+        const rec = c.value as SessionMetaRecord & { groupKey?: string }
+        if (!rec.hidden) out.push(fromStored(rec))
+        c.continue()
+      }
+      req.onerror = () => reject(req.error)
+    })
+    const nextCursor = items.length >= limit ? (items[items.length - 1]?.sortOrder ?? null) : null
+    const total = await this.getTotalByGroup(groupId)
+    return { items, nextCursor, total }
+  }
+
   async getTotal(): Promise<number> {
     await this.initialize()
     return new Promise((resolve, reject) => {
       const store = this.getStore('readonly')
       const request = store.count()
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+  }
+
+  async getTotalByGroup(groupId: string | null): Promise<number> {
+    await this.initialize()
+    const groupKey = groupId ?? UNGROUPED_KEY
+    return new Promise((resolve, reject) => {
+      const index = this.getStore('readonly').index(GROUP_INDEX)
+      const request = index.count(IDBKeyRange.bound([groupKey], [groupKey, []]))
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })

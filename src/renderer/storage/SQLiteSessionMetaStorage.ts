@@ -1,7 +1,7 @@
 import {
   CapacitorSQLite,
-  SQLiteConnection,
   type capSQLiteSet,
+  SQLiteConnection,
   type SQLiteDBConnection,
 } from '@capacitor-community/sqlite'
 import type { SessionMetaPage, SessionMetaRecord } from '@shared/types'
@@ -72,14 +72,27 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         pic_url TEXT,
         background_image TEXT,
         type TEXT,
+        group_id TEXT,
         sort_order REAL NOT NULL,
         created_at INTEGER NOT NULL
       )
     `)
 
+    // Add group_id to pre-existing tables (SQLite has no ADD COLUMN IF NOT EXISTS).
+    try {
+      await this.database.execute('ALTER TABLE session_meta ADD COLUMN group_id TEXT')
+    } catch {
+      // column already exists
+    }
+
     await this.database.execute(`
       CREATE INDEX IF NOT EXISTS idx_session_meta_sort_order
       ON session_meta(sort_order DESC)
+    `)
+
+    await this.database.execute(`
+      CREATE INDEX IF NOT EXISTS idx_session_meta_group
+      ON session_meta(group_id, sort_order DESC)
     `)
   }
 
@@ -93,6 +106,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
       pic_url: record.picUrl || null,
       background_image: record.backgroundImage ? JSON.stringify(record.backgroundImage) : null,
       type: record.type || null,
+      group_id: record.groupId || null,
       sort_order: record.sortOrder,
       created_at: record.createdAt,
     }
@@ -108,6 +122,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
       picUrl: (row.pic_url as string) || undefined,
       backgroundImage: parseBackgroundImage(row.background_image as string),
       type: (row.type as SessionMetaRecord['type']) || undefined,
+      groupId: (row.group_id as string) || undefined,
       sortOrder: row.sort_order as number,
       createdAt: row.created_at as number,
     }
@@ -118,8 +133,8 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     const row = this.recordToRow(record)
     await this.database.run(
       `INSERT INTO session_meta
-       (id, name, starred, hidden, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, name, starred, hidden, assistant_avatar_key, pic_url, background_image, type, group_id, sort_order, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.name,
@@ -129,6 +144,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         row.pic_url,
         row.background_image,
         row.type,
+        row.group_id,
         row.sort_order,
         row.created_at,
       ]
@@ -140,8 +156,8 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     if (records.length === 0) return
 
     const statement = `INSERT OR REPLACE INTO session_meta
-      (id, name, starred, hidden, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, name, starred, hidden, assistant_avatar_key, pic_url, background_image, type, group_id, sort_order, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     const set: capSQLiteSet[] = records.map((record) => {
       const row = this.recordToRow(record)
       return {
@@ -155,6 +171,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
           row.pic_url,
           row.background_image,
           row.type,
+          row.group_id,
           row.sort_order,
           row.created_at,
         ],
@@ -175,7 +192,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     await this.database.run(
       `UPDATE session_meta SET
        name = ?, starred = ?, hidden = ?, assistant_avatar_key = ?, pic_url = ?,
-       background_image = ?, type = ?, sort_order = ?, created_at = ?
+       background_image = ?, type = ?, group_id = ?, sort_order = ?, created_at = ?
        WHERE id = ?`,
       [
         row.name,
@@ -185,6 +202,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         row.pic_url,
         row.background_image,
         row.type,
+        row.group_id,
         row.sort_order,
         row.created_at,
         id,
@@ -235,9 +253,42 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     return { items, nextCursor, total }
   }
 
+  async getPageByGroup(
+    groupId: string | null,
+    cursor: number | null = null,
+    limit: number = 50
+  ): Promise<SessionMetaPage> {
+    await this.initialize()
+    const groupClause = groupId === null ? 'group_id IS NULL' : 'group_id = ?'
+    const params: unknown[] = groupId === null ? [] : [groupId]
+    let sql = `SELECT * FROM session_meta WHERE hidden = 0 AND ${groupClause}`
+    if (cursor !== null) {
+      sql += ' AND sort_order < ?'
+      params.push(cursor)
+    }
+    sql += ' ORDER BY sort_order DESC LIMIT ?'
+    params.push(limit)
+    const result = await this.database.query(sql, params)
+    const items = (result.values || []).map((row) => this.rowToRecord(row))
+    const total = await this.getTotalByGroup(groupId)
+    const nextCursor = items.length === limit ? (items[items.length - 1]?.sortOrder ?? null) : null
+    return { items, nextCursor, total }
+  }
+
   async getTotal(): Promise<number> {
     await this.initialize()
     const result = await this.database.query('SELECT COUNT(*) as total FROM session_meta WHERE hidden = 0')
+    return (result.values?.[0]?.total as number) || 0
+  }
+
+  async getTotalByGroup(groupId: string | null): Promise<number> {
+    await this.initialize()
+    const groupClause = groupId === null ? 'group_id IS NULL' : 'group_id = ?'
+    const params: unknown[] = groupId === null ? [] : [groupId]
+    const result = await this.database.query(
+      `SELECT COUNT(*) as total FROM session_meta WHERE hidden = 0 AND ${groupClause}`,
+      params
+    )
     return (result.values?.[0]?.total as number) || 0
   }
 

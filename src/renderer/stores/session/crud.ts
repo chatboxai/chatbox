@@ -4,11 +4,12 @@ import {
   copyThreadsWithMapping,
   type Session,
   type SessionMeta,
+  type SessionMetaRecord,
 } from '@shared/types'
 import { getDefaultStore } from 'jotai'
 import { omit } from 'lodash'
-import { router } from '@/router'
 import platform from '@/platform'
+import { router } from '@/router'
 import { sortSessionRecords } from '@/storage/SessionMetaStorage'
 import * as atoms from '../atoms'
 import * as chatStore from '../chatStore'
@@ -171,6 +172,30 @@ export async function reorderSessions(oldIndex: number, newIndex: number) {
     )
     return sortSessionRecords(updated)
   })
+}
+
+/**
+ * Reorder a session within a single group's panel using fractional sortOrder.
+ * `groupSessions` is the group's currently displayed list (sorted by sortOrder desc).
+ */
+export async function reorderSessionInGroup(groupSessions: SessionMetaRecord[], oldIndex: number, newIndex: number) {
+  const moved = groupSessions[oldIndex]
+  if (!moved || oldIndex === newIndex) return
+  const reordered = [...groupSessions]
+  reordered.splice(oldIndex, 1)
+  reordered.splice(newIndex, 0, moved)
+  const before = reordered[newIndex - 1] // higher sortOrder (list is sortOrder desc)
+  const after = reordered[newIndex + 1] // lower sortOrder
+  let newSortOrder: number
+  if (!before && !after) return
+  if (!before) newSortOrder = after.sortOrder + 1000
+  else if (!after) newSortOrder = before.sortOrder - 1000
+  else newSortOrder = (before.sortOrder + after.sortOrder) / 2
+  const metaStorage = await chatStore.getMetaStorage()
+  await metaStorage.update(moved.id, { sortOrder: newSortOrder })
+  chatStore.updateSessionListData((items) =>
+    sortSessionRecords(items.map((s) => (s.id === moved.id ? { ...s, sortOrder: newSortOrder } : s)))
+  )
 }
 
 /**

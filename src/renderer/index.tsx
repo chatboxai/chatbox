@@ -43,6 +43,7 @@ import './setup/jk_analytics_init'
 // 引入保护代码
 import './setup/protect'
 import { QueryClientProvider } from '@tanstack/react-query'
+import { ensureManagerSession } from './stores/chatStore'
 import { initSessionAttachmentRagMaintenance } from './setup/session_attachment_rag_maintenance'
 import { initLastUsedModelStore } from './stores/lastUsedModelStore'
 import { initOnboardingStore } from './stores/onboardingStore'
@@ -74,6 +75,15 @@ async function initializeApp() {
     log.info('migrate done')
   } catch (e) {
     log.error('migrate error', e)
+    Sentry.captureException(e as Error)
+  }
+
+  // Ensure the persistent system-managed AI Manager session exists post-migration.
+  // Idempotent — safe to call on every launch.
+  try {
+    await ensureManagerSession()
+  } catch (e) {
+    log.error('ensureManagerSession error', e)
     Sentry.captureException(e as Error)
   }
 

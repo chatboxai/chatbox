@@ -58,7 +58,7 @@ type MigrateStore = {
   setBlob?: (key: string, value: string) => Promise<void>
 }
 
-export const CurrentVersion = 15
+export const CurrentVersion = 16
 
 async function doMigrateStorage(oldStorage: Storage) {
   // 找到老版本的数据，说明是升级，执行数据迁移操作
@@ -205,6 +205,7 @@ export async function migrateOnData(dataStore: MigrateStore, canRelaunch = true)
     migrate_12_to_13,
     migrate_13_to_14,
     migrate_14_to_15,
+    migrate_15_to_16,
   ]
 
   for (; configVersion < CurrentVersion; configVersion++) {
@@ -822,5 +823,37 @@ async function migrate_14_to_15(dataStore: MigrateStore) {
   await sessionMetaStorage.createMany(records)
 
   log.info(`migrate_14_to_15, migrated ${records.length} session meta records to DB`)
+  return false
+}
+
+// Fork: bridge the migration-version collision. Upstream and this fork both shipped a
+// CurrentVersion of 15 with DIFFERENT 14->15 migrations (upstream = legacy list -> meta DB;
+// fork = init session-groups-list). Real fork data sits at "15" meaning metas are still in the
+// legacy ChatSessionsList WITH groupId. This step (a) ensures the groups list exists and
+// (b) self-heals by backfilling the meta DB from the legacy list when the DB is still empty,
+// preserving groupId/system/sortIndex (createSessionMetaRecordsFromLegacyList spreads ...session).
+// Idempotent: a true upstream-v15 user already has a populated meta DB, so the backfill is skipped.
+async function migrate_15_to_16(dataStore: MigrateStore) {
+  const existingGroups = await dataStore.getData<unknown>(StorageKey.SessionGroupsList, null)
+  if (existingGroups === null) {
+    await dataStore.setData(StorageKey.SessionGroupsList, [])
+    log.info('migrate_15_to_16, initialized session-groups-list')
+  }
+
+  const sessionMetaStorage = platform.getSessionMetaStorage()
+  await sessionMetaStorage.initialize()
+  const total = await sessionMetaStorage.getTotal()
+  if (total > 0) {
+    log.info('migrate_15_to_16, session meta DB already populated, skip backfill')
+    return false
+  }
+
+  const chatSessionList = await dataStore.getData<SessionMeta[]>(StorageKey.ChatSessionsList, [])
+  if (chatSessionList.length === 0) {
+    return false
+  }
+  const records = createSessionMetaRecordsFromLegacyList(chatSessionList)
+  await sessionMetaStorage.createMany(records)
+  log.info(`migrate_15_to_16, backfilled ${records.length} session meta records (groupId preserved)`)
   return false
 }

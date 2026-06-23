@@ -136,6 +136,7 @@ const SessionSettingsModal = NiceModal.create(
             ...(s ?? {}),
             ...getSessionMeta(editingData),
             settings: editingData.settings,
+            summaryPrompt: editingData.summaryPrompt,
           } as Session
 
           return applySessionChanges(merged)
@@ -243,6 +244,27 @@ const SessionSettingsModal = NiceModal.create(
                 input: { touchAction: 'manipulation' },
               }}
             />
+
+            {isChatSession(session) && (
+              <Textarea
+                label={t('Summary prompt')}
+                description={t('Used by the session summary modal. Leave blank to use the global default.')}
+                placeholder={t('Leave blank to use the global default summary prompt.') || ''}
+                autosize
+                minRows={2}
+                maxRows={10}
+                value={editingData.summaryPrompt ?? ''}
+                onChange={(event) =>
+                  setEditingData({ ...editingData, summaryPrompt: event.target.value || undefined })
+                }
+                classNames={{
+                  input: '!text-chatbox-tint-primary',
+                }}
+                styles={{
+                  input: { touchAction: 'manipulation' },
+                }}
+              />
+            )}
 
             <Stack gap="xs">
               <Flex align="center" justify="space-between">

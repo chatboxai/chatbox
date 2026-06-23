@@ -1,3 +1,4 @@
+import { RESERVED_SESSION_IDS } from '@shared/defaults'
 import type { Session, SessionMeta, SessionMetaRecord } from '@shared/types'
 import { mapValues } from 'lodash'
 import { migrateMessage } from '../../shared/utils/message'
@@ -26,12 +27,19 @@ export function migrateSession(session: Session): Session {
   }
 }
 
+export function isSystemSession(session: Pick<SessionMeta, 'id'> & { system?: boolean }): boolean {
+  return Boolean(session.system) || RESERVED_SESSION_IDS.has(session.id)
+}
+
 export function sortSessions(sessions: SessionMeta[]): SessionMeta[] {
   const reversed: SessionMeta[] = []
   const pinned: SessionMeta[] = []
   for (const sess of sessions) {
     // Skip hidden sessions (e.g., migrated picture sessions)
     if (sess.hidden) {
+      continue
+    }
+    if (isSystemSession(sess)) {
       continue
     }
     if (sess.starred) {

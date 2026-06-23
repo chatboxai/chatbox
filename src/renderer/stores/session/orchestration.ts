@@ -175,6 +175,7 @@ export async function orchestrateGeneration(
     promptMsgs = updatedMsgs
 
     const { tools, instructions } = await buildToolsForSession(model, {
+      sessionId,
       webBrowsing,
       knowledgeBase,
       messages: promptMsgs,

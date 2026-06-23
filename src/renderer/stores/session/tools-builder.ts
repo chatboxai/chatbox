@@ -12,6 +12,8 @@ import { getToolSetDescription, parseLinkTool, webSearchTool } from '@/packages/
 import { skillsController } from '@/packages/skills/controller'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import * as settingActions from '@/stores/settingActions'
+import NiceModal from '@ebay/nice-modal-react'
+import { SESSION_MANAGER_ID } from '@shared/defaults'
 
 export interface BuildToolsOptions {
   webBrowsing: boolean
@@ -19,6 +21,8 @@ export interface BuildToolsOptions {
   messages: Message[]
   sandboxEnabled?: boolean
   enabledSkillNames?: string[]
+  /** When set to the reserved AI-manager session id, expose the session-management toolset. */
+  sessionId?: string
 }
 
 export interface BuildToolsResult {
@@ -211,6 +215,19 @@ export async function buildToolsForSession(
         })
       }
     }
+  }
+
+  // Reserved AI-manager session: expose the session-management toolset (list/move/rename/group
+  // operations + summaries). Re-homed here after upstream removed stream-text.ts (its former host).
+  // Lazy-imported so this module doesn't pull the renderer-only chatStore at load time (keeps the
+  // tool-builder importable in node test env).
+  if (options.sessionId === SESSION_MANAGER_ID) {
+    const { buildSessionManagerToolset } = await import('@/packages/model-calls/toolsets/session-manager')
+    const sessionManagerToolset = buildSessionManagerToolset({
+      confirmDangerous: (action) => NiceModal.show('confirm-dangerous-action', action) as Promise<boolean>,
+    })
+    instructions += sessionManagerToolset.description
+    tools = { ...tools, ...sessionManagerToolset.tools }
   }
 
   return { tools, instructions }

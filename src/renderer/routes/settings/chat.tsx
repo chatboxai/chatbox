@@ -13,6 +13,7 @@ import SliderWithInput from '@/components/common/SliderWithInput'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
 import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
+import { DEFAULT_SESSION_SUMMARY_PROMPT } from '@/stores/session/summary'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
 
@@ -260,6 +261,39 @@ export function RouteComponent() {
             />
           </Flex>
         </Stack>
+      </Stack>
+      <Divider />
+
+      {/* Default Summary Prompt */}
+      <Stack gap="md">
+        <Stack gap="xxs">
+          <Text fw="600">{t('Default summary prompt')}</Text>
+          <Text size="xs" c="chatbox-tertiary">
+            {t('Empty = use built-in default. Per-session settings can override this.')}
+          </Text>
+        </Stack>
+        <Textarea
+          value={settings.defaultSessionSummaryPrompt ?? ''}
+          autosize
+          minRows={3}
+          maxRows={14}
+          placeholder={`${DEFAULT_SESSION_SUMMARY_PROMPT.slice(0, 100)}…`}
+          onChange={(e) =>
+            setSettings({
+              defaultSessionSummaryPrompt: e.currentTarget.value || undefined,
+            })
+          }
+        />
+        <Button
+          variant="subtle"
+          color="chatbox-gray"
+          onClick={() => setSettings({ defaultSessionSummaryPrompt: undefined })}
+          px={3}
+          py={6}
+          className=" self-start"
+        >
+          {t('Reset to Default')}
+        </Button>
       </Stack>
       <Divider />
 

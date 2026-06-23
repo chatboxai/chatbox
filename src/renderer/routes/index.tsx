@@ -38,6 +38,7 @@ export const Route = createFileRoute('/')({
       copilotId: z.string().optional(),
       copilot: z.string().optional(),
       settings: z.string().optional(),
+      groupId: z.string().optional(),
     })
   ),
 })
@@ -47,6 +48,7 @@ function Index() {
   const isSmallScreen = useIsSmallScreen()
   const messageLayout = useSettingsStore((s) => s.messageLayout)
   const [tempMessageLayout, setTempMessageLayout] = useState<'left' | 'bubble' | undefined>(undefined)
+  const { groupId } = Route.useSearch()
 
   const setSettings = useSettingsStore((s) => s.setSettings)
   const newSessionState = useUIStore((s) => s.newSessionState)
@@ -159,6 +161,7 @@ function Index() {
         messages: session.messages,
         copilotId: session.copilotId,
         settings: session.settings,
+        groupId,
       })
 
       if (session.copilotId) {
@@ -198,6 +201,7 @@ function Index() {
       sessionWebBrowsingMap,
       setSessionWebBrowsing,
       clearSessionWebBrowsing,
+      groupId,
     ]
   )
 

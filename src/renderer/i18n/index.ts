@@ -7,6 +7,7 @@ import changelogZhHans from './changelogs/changelog_zh_Hans'
 import changelogZhHant from './changelogs/changelog_zh_Hant'
 import ar from './locales/ar/translation.json'
 import de from './locales/de/translation.json'
+import fa from './locales/fa/translation.json'
 import en from './locales/en/translation.json'
 import es from './locales/es/translation.json'
 import fr from './locales/fr/translation.json'
@@ -54,6 +55,9 @@ i18n.use(initReactI18next).init({
     },
     ar: {
       translation: ar,
+    },
+    fa: {
+      translation: fa,
     },
     'it-IT': {
       translation: itIT,

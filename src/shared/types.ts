@@ -49,6 +49,7 @@ export type Language =
   | 'pt-PT'
   | 'es'
   | 'ar'
+  | 'fa'
   | 'it-IT'
   | 'sv'
   | 'nb-NO'

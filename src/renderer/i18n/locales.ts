@@ -12,6 +12,7 @@ export const languageNameMap: Record<Language, string> = {
   'pt-PT': 'Português', // Portuguese
   es: 'Español', // Spanish
   ar: 'العربية', // Arabic
+  fa: 'فارسی', // Persian
   'it-IT': 'Italiano', // Italian
   sv: 'Svenska', // Swedish 瑞典语
   'nb-NO': 'Norsk', // Norwegian 挪威语

@@ -84,7 +84,7 @@ const instruction = process.argv[2] || ''
 
 try {
   await pMap(
-    ['en', 'ar', 'de', 'es', 'fr', 'it-IT', 'ja', 'ko', 'nb-NO', 'pt-PT', 'ru', 'sv', 'zh-Hans', 'zh-Hant'],
+    ['en', 'ar', 'de', 'es', 'fa', 'fr', 'it-IT', 'ja', 'ko', 'nb-NO', 'pt-PT', 'ru', 'sv', 'zh-Hans', 'zh-Hant'],
     async (locale) => {
       try {
         await translateFile(locale, instruction)

@@ -29,6 +29,7 @@ import './definitions/chatglm'
 import './definitions/github-copilot'
 import './definitions/bedrock'
 import './definitions/vercel-ai-gateway'
+import './definitions/chinallm'
 import {
   clearProviderRegistry,
   defineProvider,

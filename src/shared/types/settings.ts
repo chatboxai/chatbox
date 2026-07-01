@@ -41,6 +41,7 @@ export const ProviderModelInfoSchema = z.object({
     .array(z.enum(['vision', 'reasoning', 'tool_use', 'web_search']))
     .optional()
     .catch([]),
+  capabilitiesOverride: z.boolean().optional().catch(undefined),
   contextWindow: z.number().optional().catch(undefined),
   maxOutput: z.number().optional().catch(undefined),
 })

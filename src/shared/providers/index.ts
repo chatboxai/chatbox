@@ -1,7 +1,7 @@
-import type { ModelInterface } from '../models/types'
 import { enrichModelFromRegistry } from '../model-registry/enrich'
+import type { ModelInterface } from '../models/types'
 import { mergeSharedOAuthProviderSettings, resolveEffectiveApiKey } from '../oauth'
-import type { Config, ProviderModelInfo, ProviderSettings, SessionSettings, Settings } from '../types'
+import type { Config, ProviderModelInfo, SessionSettings, Settings } from '../types'
 import type { ModelDependencies } from '../types/adapters'
 // ChatboxAI must be imported first to ensure it appears at the top of provider lists
 // Import order determines display order in UI (side-effect registration into Map)
@@ -98,7 +98,8 @@ export function getProviderSettings(setting: SessionSettings, globalSettings: Se
 function getModelConfig(settings: SessionSettings, globalSettings: Settings, provider: string): ProviderModelInfo {
   const providerSetting = globalSettings.providers?.[provider] || {}
 
-  let model = providerSetting.models?.find((m) => m.modelId === settings.modelId)
+  const userSavedModel = providerSetting.models?.find((m) => m.modelId === settings.modelId)
+  let model = userSavedModel
   if (!model) {
     model = getSystemProviders()
       .find((p) => p.id === provider)

@@ -19,6 +19,7 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
   const [modelId, setModelId] = useState(props.model?.modelId || '')
   const [nickname, setNickname] = useState(props.model?.nickname || '')
   const [capabilities, setCapabilities] = useState(props.model?.capabilities || [])
+  const [capabilitiesOverride, setCapabilitiesOverride] = useState(props.model?.capabilitiesOverride || false)
   const [type, setType] = useState<ProviderModelInfo['type']>(props.model?.type || 'chat')
   const [contextWindow, setContextWindow] = useState<number | undefined>(props.model?.contextWindow)
   const [maxOutput, setMaxOutput] = useState<number | undefined>(props.model?.maxOutput)
@@ -37,6 +38,7 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
     setModelId(props.model?.modelId || '')
     setNickname(props.model?.nickname || '')
     setCapabilities(props.model?.capabilities || [])
+    setCapabilitiesOverride(props.model?.capabilitiesOverride || false)
     setType(props.model?.type || 'chat')
     setContextWindow(props.model?.contextWindow)
     setMaxOutput(props.model?.maxOutput)
@@ -60,9 +62,11 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
 
         // Auto-enable capabilities based on test results
         if (state.visionTest?.status === 'success') {
+          setCapabilitiesOverride(true)
           setCapabilities((prev = []) => (prev.includes('vision') ? prev : [...prev, 'vision']))
         }
         if (state.toolTest?.status === 'success') {
+          setCapabilitiesOverride(true)
           setCapabilities((prev = []) => (prev.includes('tool_use') ? prev : [...prev, 'tool_use']))
         }
       },
@@ -80,6 +84,7 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
       type,
       nickname: nickname || undefined,
       capabilities,
+      capabilitiesOverride: capabilitiesOverride || undefined,
       contextWindow,
       maxOutput,
     })
@@ -148,6 +153,7 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
                 checked={capabilities?.includes('vision')}
                 onChange={(e) => {
                   const checked = e.currentTarget.checked
+                  setCapabilitiesOverride(true)
                   if (checked) {
                     setCapabilities([...(capabilities || []), 'vision'])
                   } else {
@@ -161,6 +167,7 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
                 checked={capabilities?.includes('reasoning')}
                 onChange={(e) => {
                   const checked = e.currentTarget.checked
+                  setCapabilitiesOverride(true)
                   if (checked) {
                     setCapabilities([...(capabilities || []), 'reasoning'])
                   } else {
@@ -174,6 +181,7 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
                 checked={capabilities?.includes('tool_use')}
                 onChange={(e) => {
                   const checked = e.currentTarget.checked
+                  setCapabilitiesOverride(true)
                   if (checked) {
                     setCapabilities([...(capabilities || []), 'tool_use'])
                   } else {

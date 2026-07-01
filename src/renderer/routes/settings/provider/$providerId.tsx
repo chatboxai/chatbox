@@ -326,13 +326,13 @@ function ProviderSettings({ providerId }: { providerId: string }) {
       return
     }
 
-    if (displayModels?.find((m) => m.modelId === newModel.modelId)) {
+    if (rawModels?.find((m) => m.modelId === newModel.modelId)) {
       addToast(t('already existed'))
       return
     }
 
     setProviderSettings({
-      models: [...displayModels, newModel],
+      models: [...rawModels, newModel],
     })
   }
 
@@ -343,13 +343,13 @@ function ProviderSettings({ providerId }: { providerId: string }) {
     }
 
     setProviderSettings({
-      models: displayModels.map((m) => (m.modelId === newModel.modelId ? newModel : m)),
+      models: rawModels.map((m) => (m.modelId === newModel.modelId ? newModel : m)),
     })
   }
 
   const deleteModel = (modelId: string) => {
     setProviderSettings({
-      models: displayModels.filter((m) => m.modelId !== modelId),
+      models: rawModels.filter((m) => m.modelId !== modelId),
     })
   }
 
@@ -460,9 +460,13 @@ function ProviderSettings({ providerId }: { providerId: string }) {
       if (visionSupported) capabilitiesToAdd.push('vision')
       if (toolUseSupported) capabilitiesToAdd.push('tool_use')
       setProviderSettings({
-        models: displayModels.map((m) =>
+        models: rawModels.map((m) =>
           m.modelId === model.modelId
-            ? { ...m, capabilities: uniq([...(m.capabilities || []), ...capabilitiesToAdd]) }
+            ? {
+                ...m,
+                capabilities: uniq([...(model.capabilities || []), ...capabilitiesToAdd]),
+                capabilitiesOverride: true,
+              }
             : m
         ),
       })
@@ -992,10 +996,8 @@ function ProviderSettings({ providerId }: { providerId: string }) {
             showActions={true}
             showSearch={true}
             displayedModelIds={displayModels.map((m) => m.modelId)}
-            onAddModel={(model) => setProviderSettings({ models: [...displayModels, model] })}
-            onRemoveModel={(modelId) =>
-              setProviderSettings({ models: displayModels.filter((m) => m.modelId !== modelId) })
-            }
+            onAddModel={(model) => setProviderSettings({ models: [...rawModels, model] })}
+            onRemoveModel={(modelId) => setProviderSettings({ models: rawModels.filter((m) => m.modelId !== modelId) })}
           />
         </AdaptiveModal>
 

@@ -69,6 +69,7 @@ export function findModelInRegistry(modelId: string, registry: ProviderModelRegi
  * - capabilities, contextWindow, maxOutput: registry data OVERWRITES existing values by default
  *   (these are factual data, registry is more authoritative and up-to-date)
  * - when a model has capabilitiesOverride, existing capabilities are treated as user overrides
+ * - when a model has contextWindowOverride or maxOutputOverride, those numeric limits are treated as user overrides
  * - nickname: only filled when missing (user may have customized it)
  * - type: only filled when missing
  */
@@ -83,6 +84,10 @@ export function enrichModelFromRegistry<T extends { modelId: string; [key: strin
   const meta = findModelInRegistry(model.modelId, providerRegistry)
   if (!meta) return model
   const shouldPreserveCapabilities = model.capabilitiesOverride === true && model.capabilities !== undefined
+  const shouldPreserveContextWindow =
+    model.contextWindowOverride === true && typeof model.contextWindow === 'number' && model.contextWindow > 0
+  const shouldPreserveMaxOutput =
+    model.maxOutputOverride === true && typeof model.maxOutput === 'number' && model.maxOutput > 0
 
   return {
     ...model,
@@ -91,8 +96,12 @@ export function enrichModelFromRegistry<T extends { modelId: string; [key: strin
       : meta.capabilities.length > 0
         ? [...meta.capabilities]
         : model.capabilities,
-    contextWindow: meta.contextWindow > 0 ? meta.contextWindow : model.contextWindow,
-    maxOutput: meta.maxOutput > 0 ? meta.maxOutput : model.maxOutput,
+    contextWindow: shouldPreserveContextWindow
+      ? model.contextWindow
+      : meta.contextWindow > 0
+        ? meta.contextWindow
+        : model.contextWindow,
+    maxOutput: shouldPreserveMaxOutput ? model.maxOutput : meta.maxOutput > 0 ? meta.maxOutput : model.maxOutput,
     nickname: model.nickname || meta.name,
     type: model.type || meta.type,
   }

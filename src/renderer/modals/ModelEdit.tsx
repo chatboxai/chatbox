@@ -22,7 +22,9 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
   const [capabilitiesOverride, setCapabilitiesOverride] = useState(props.model?.capabilitiesOverride || false)
   const [type, setType] = useState<ProviderModelInfo['type']>(props.model?.type || 'chat')
   const [contextWindow, setContextWindow] = useState<number | undefined>(props.model?.contextWindow)
+  const [contextWindowOverride, setContextWindowOverride] = useState(props.model?.contextWindowOverride || false)
   const [maxOutput, setMaxOutput] = useState<number | undefined>(props.model?.maxOutput)
+  const [maxOutputOverride, setMaxOutputOverride] = useState(props.model?.maxOutputOverride || false)
   const [testState, setTestState] = useState<ModelTestState>({
     testing: false,
   })
@@ -41,7 +43,9 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
     setCapabilitiesOverride(props.model?.capabilitiesOverride || false)
     setType(props.model?.type || 'chat')
     setContextWindow(props.model?.contextWindow)
+    setContextWindowOverride(props.model?.contextWindowOverride || false)
     setMaxOutput(props.model?.maxOutput)
+    setMaxOutputOverride(props.model?.maxOutputOverride || false)
     setTestState({ testing: false })
   }, [props])
 
@@ -86,7 +90,9 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
       capabilities,
       capabilitiesOverride: capabilitiesOverride || undefined,
       contextWindow,
+      contextWindowOverride: (contextWindowOverride && contextWindow !== undefined) || undefined,
       maxOutput,
+      maxOutputOverride: (maxOutputOverride && maxOutput !== undefined) || undefined,
     })
     modal.hide()
   }
@@ -202,7 +208,15 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
               <NumberInput
                 placeholder={String(t('e.g. 128000'))}
                 value={contextWindow}
-                onChange={(value) => setContextWindow(typeof value === 'number' ? value : undefined)}
+                onChange={(value) => {
+                  if (typeof value === 'number') {
+                    setContextWindowOverride(true)
+                    setContextWindow(value)
+                  } else {
+                    setContextWindowOverride(false)
+                    setContextWindow(undefined)
+                  }
+                }}
                 min={1}
                 max={10_000_000}
                 step={1000}
@@ -215,7 +229,15 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
               <NumberInput
                 placeholder={String(t('e.g. 4096'))}
                 value={maxOutput}
-                onChange={(value) => setMaxOutput(typeof value === 'number' ? value : undefined)}
+                onChange={(value) => {
+                  if (typeof value === 'number') {
+                    setMaxOutputOverride(true)
+                    setMaxOutput(value)
+                  } else {
+                    setMaxOutputOverride(false)
+                    setMaxOutput(undefined)
+                  }
+                }}
                 min={1}
                 max={1_000_000}
                 step={100}

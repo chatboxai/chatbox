@@ -71,6 +71,42 @@ describe('enrichModelsFromRegistry', () => {
     expect(model.maxOutput).toBe(32_000)
   })
 
+  it('keeps explicit context and output limits when marked as overrides', () => {
+    const [model] = enrichModelsFromRegistry(
+      [
+        {
+          modelId: 'known-model',
+          contextWindow: 1_050_000,
+          contextWindowOverride: true,
+          maxOutput: 128_000,
+          maxOutputOverride: true,
+        },
+      ],
+      'test'
+    )
+
+    expect(model.contextWindow).toBe(1_050_000)
+    expect(model.maxOutput).toBe(128_000)
+  })
+
+  it('ignores non-positive numeric overrides', () => {
+    const [model] = enrichModelsFromRegistry(
+      [
+        {
+          modelId: 'known-model',
+          contextWindow: 0,
+          contextWindowOverride: true,
+          maxOutput: -1,
+          maxOutputOverride: true,
+        },
+      ],
+      'test'
+    )
+
+    expect(model.contextWindow).toBe(200_000)
+    expect(model.maxOutput).toBe(32_000)
+  })
+
   it('does not treat saved capabilities as an override without the override marker', () => {
     const [model] = enrichModelsFromRegistry(
       [

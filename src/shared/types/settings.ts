@@ -43,7 +43,9 @@ export const ProviderModelInfoSchema = z.object({
     .catch([]),
   capabilitiesOverride: z.boolean().optional().catch(undefined),
   contextWindow: z.number().optional().catch(undefined),
+  contextWindowOverride: z.boolean().optional().catch(undefined),
   maxOutput: z.number().optional().catch(undefined),
+  maxOutputOverride: z.boolean().optional().catch(undefined),
 })
 
 export const OAuthCredentialsSchema = z.object({

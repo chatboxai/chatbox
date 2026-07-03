@@ -350,7 +350,8 @@ async function createWindow() {
       // Defense in depth on top of this: contextIsolation, the preload IPC
       // channel allowlist (src/shared/ipc-channels.ts), denying in-page
       // navigation (setWindowOpenHandler below), and the
-      // Content-Security-Policy applied in onHeadersReceived.
+      // Content-Security-Policy (build-time <meta> tag in production, see
+      // electron.vite.config.ts; onHeadersReceived header in dev).
       webSecurity: true,
       allowRunningInsecureContent: false,
       // Pin secure defaults explicitly so a future Electron upgrade cannot
@@ -427,20 +428,28 @@ async function createWindow() {
   // https://www.computerhope.com/jargon/m/menubar.htm
   mainWindow.setMenuBarVisibility(false)
 
-  // Content-Security-Policy.
-  // Cross-origin provider/API traffic goes through the main-process net proxy
-  // (src/main/net-proxy.ts), so connect-src no longer needs arbitrary hosts —
-  // only same-origin, data:/blob:, and the Vite dev server HMR websocket.
-  // img-src/media-src stay broad because rendered markdown can reference
-  // remote images/avatars (plain element loads, not CORS-gated). The
-  // script/object/base/frame restrictions block injected remote <script src>
-  // or <object>. 'unsafe-inline'/'unsafe-eval' are required by the bundler,
-  // Vite HMR (dev), and some UI libraries; dropping 'unsafe-eval' from
-  // packaged builds is tracked separately (FABLE_REVIEW SEC-8).
+  // Content-Security-Policy — header delivery, which only reaches documents
+  // served over HTTP (the Vite dev server). The packaged app loads the
+  // renderer via loadFile() (file://), where injected response headers never
+  // apply; its CSP is a <meta> tag injected at build time instead — see
+  // injectDesktopProdCsp() in electron.vite.config.ts and KEEP THE TWO IN
+  // SYNC. Cross-origin provider/API traffic goes through the main-process
+  // net proxy (src/main/net-proxy.ts), so connect-src no longer needs
+  // arbitrary hosts — only same-origin, data:/blob:, and the dev HMR
+  // websocket. img-src/media-src stay broad because rendered markdown can
+  // reference remote images/avatars (plain element loads, not CORS-gated).
+  // The script/object/base/frame restrictions block injected remote
+  // <script src> or <object>. 'unsafe-eval' is dev-only (Vite HMR /
+  // react-refresh); production uses 'wasm-unsafe-eval' instead, which
+  // shiki's oniguruma WebAssembly engine (code highlighting) needs, while
+  // eval()/new Function stay blocked (FABLE_REVIEW SEC-8).
   const devConnectSrc = app.isPackaged ? [] : ['ws://localhost:1212', 'http://localhost:1212']
+  const scriptSrc = app.isPackaged
+    ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'"
+    : "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
   const cspDirectives = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    scriptSrc,
     "style-src 'self' 'unsafe-inline'",
     'img-src * data: blob:',
     "font-src 'self' data:",

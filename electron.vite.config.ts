@@ -62,6 +62,56 @@ export function injectViewportContent(isDesktop: boolean): Plugin {
 }
 
 /**
+ * Vite plugin to inject the production Content-Security-Policy as a <meta>
+ * tag at build time (desktop builds only).
+ *
+ * Why a meta tag: the packaged app loads the renderer via loadFile()
+ * (file://), and the onHeadersReceived CSP header in src/main/main.ts never
+ * applies there — file: responses carry no HTTP headers, so without this tag
+ * the packaged renderer runs with NO CSP at all. Dev mode is served over
+ * http://localhost:1212 and gets the (eval-permitting, HMR-compatible) header
+ * CSP instead; this plugin is build-only so the two never overlap.
+ *
+ * Keep these directives in sync with the packaged-variant header CSP in
+ * src/main/main.ts. Differences from the header version:
+ * - no frame-ancestors: not enforceable via <meta> (Chromium ignores it with
+ *   a console warning); the top-level BrowserWindow cannot be framed anyway.
+ * - script-src uses 'wasm-unsafe-eval' (not 'unsafe-eval'): shiki's oniguruma
+ *   WebAssembly engine needs wasm compilation, but eval()/new Function stay
+ *   blocked (FABLE_REVIEW SEC-8).
+ *
+ * Web/mobile builds are excluded: they have no main-process net proxy and
+ * must fetch provider APIs directly, which "connect-src 'self'" would block.
+ */
+export function injectDesktopProdCsp(): Plugin {
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    'img-src * data: blob:',
+    "font-src 'self' data:",
+    'media-src * data: blob:',
+    "connect-src 'self' data: blob:",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+  ].join('; ')
+  return {
+    name: 'inject-desktop-prod-csp',
+    apply: 'build',
+    transformIndexHtml() {
+      return [
+        {
+          tag: 'meta',
+          attrs: { 'http-equiv': 'Content-Security-Policy', content: csp },
+          injectTo: 'head-prepend',
+        },
+      ]
+    },
+  }
+}
+
+/**
  * Vite plugin to replace dvh units with vh units
  * This replaces the webpack string-replace-loader functionality
  */
@@ -173,6 +223,10 @@ export default defineConfig(({ mode }) => {
         injectViewportContent(isDesktop),
         isWeb ? injectBaseTag() : undefined,
         injectReleaseDate(),
+        // Must come after the other head-prepend plugins: the last prepended
+        // tag ends up first in <head>, and the CSP meta must precede every
+        // script so all of them are governed by it.
+        isDesktop ? injectDesktopProdCsp() : undefined,
         visualizer({
           filename: 'release/app/dist/renderer/stats.html',
           open: false,

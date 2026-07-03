@@ -826,7 +826,7 @@ export function ChatConfig({
           width={96}
           value={settings?.maxTokens}
           onChange={(v) => onSettingsChange({ maxTokens: typeof v === 'number' ? v : undefined })}
-          min={0}
+          min={settings?.provider === ModelProviderEnum.Perplexity ? 16 : 0}
           step={1024}
           allowDecimal={false}
           placeholder={t('Not set') || ''}

@@ -84,7 +84,7 @@
     "@ai-sdk/mistral": "^3.0.4",
     "@ai-sdk/openai": "^3.0.53",
     "@ai-sdk/openai-compatible": "^2.0.3",
-    "@ai-sdk/perplexity": "^3.0.3",
+    "@ai-sdk/perplexity": ">=3.0.42 <4.0.0",
     "@ai-sdk/provider": "^3.0.1",
     "@babel/core": "^7.28.0",
     "@babel/plugin-transform-class-static-block": "^7.27.1",

@@ -23,6 +23,10 @@ const log = getLogger('index')
 // 按需加载 polyfill
 import './setup/load_polyfill'
 
+// SEC-3: route cross-origin fetches through the main-process net proxy
+// (desktop only). Must be installed before any provider/network call.
+import './setup/net_proxy_fetch'
+
 // 全局错误处理
 import './setup/global_error_handler'
 

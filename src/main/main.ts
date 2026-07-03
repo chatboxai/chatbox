@@ -28,6 +28,7 @@ import { parseFile } from './file-parser'
 import Locale from './locales'
 import * as mcpIpc from './mcp/ipc-stdio-transport'
 import MenuBuilder from './menu'
+import { registerNetProxyHandlers } from './net-proxy'
 import { registerOAuthHandlers } from './oauth'
 import { openExternalSafe } from './open-external'
 import * as proxy from './proxy'
@@ -341,18 +342,16 @@ async function createWindow() {
     icon: getAssetPath('icon.png'),
     webPreferences: {
       spellcheck: true,
-      // SECURITY: webSecurity is intentionally disabled because the renderer
-      // makes provider API requests (OpenAI, Anthropic, Ollama, user-configured
-      // custom hosts, etc.) via `fetch()` directly from the page. Those third
-      // party APIs do not return CORS headers, so enabling the same-origin
-      // policy would break every AI provider call. The residual XSS risk is
-      // mitigated by: contextIsolation, the preload IPC channel allowlist
-      // (src/shared/ipc-channels.ts), denying in-page navigation
-      // (setWindowOpenHandler below), and the Content-Security-Policy applied in
-      // onHeadersReceived. Properly re-enabling this requires routing all
-      // provider requests through the main process (no CORS) — tracked as a
-      // dedicated follow-up.
-      webSecurity: false,
+      // SECURITY: webSecurity stays enabled. Cross-origin provider API
+      // requests (OpenAI, Anthropic, Ollama, user-configured custom hosts,
+      // etc.) don't send CORS headers, so the renderer cannot call them
+      // directly — its global fetch forwards them to the main-process proxy
+      // instead (src/main/net-proxy.ts + src/renderer/setup/net_proxy_fetch.ts).
+      // Defense in depth on top of this: contextIsolation, the preload IPC
+      // channel allowlist (src/shared/ipc-channels.ts), denying in-page
+      // navigation (setWindowOpenHandler below), and the
+      // Content-Security-Policy applied in onHeadersReceived.
+      webSecurity: true,
       allowRunningInsecureContent: false,
       // Pin secure defaults explicitly so a future Electron upgrade cannot
       // silently regress them.
@@ -429,13 +428,16 @@ async function createWindow() {
   mainWindow.setMenuBarVisibility(false)
 
   // Content-Security-Policy.
-  // The app calls user-configured AI provider hosts (and loads remote avatars /
-  // images) directly from the renderer, so connect-src and img-src must stay
-  // broad. The valuable restriction here is on script/object/base/frame: an
-  // injected remote <script src> or <object> is blocked, shrinking the
-  // XSS-to-exfiltration surface that webSecurity:false would otherwise leave
-  // wide open. 'unsafe-inline'/'unsafe-eval' are required by the bundler,
-  // Vite HMR (dev), and some UI libraries.
+  // Cross-origin provider/API traffic goes through the main-process net proxy
+  // (src/main/net-proxy.ts), so connect-src no longer needs arbitrary hosts —
+  // only same-origin, data:/blob:, and the Vite dev server HMR websocket.
+  // img-src/media-src stay broad because rendered markdown can reference
+  // remote images/avatars (plain element loads, not CORS-gated). The
+  // script/object/base/frame restrictions block injected remote <script src>
+  // or <object>. 'unsafe-inline'/'unsafe-eval' are required by the bundler,
+  // Vite HMR (dev), and some UI libraries; dropping 'unsafe-eval' from
+  // packaged builds is tracked separately (FABLE_REVIEW SEC-8).
+  const devConnectSrc = app.isPackaged ? [] : ['ws://localhost:1212', 'http://localhost:1212']
   const cspDirectives = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
@@ -443,13 +445,23 @@ async function createWindow() {
     'img-src * data: blob:',
     "font-src 'self' data:",
     'media-src * data: blob:',
-    // Allow arbitrary provider hosts, localhost, and dev HMR websockets.
-    'connect-src * data: blob:',
+    ["connect-src 'self' data: blob:", ...devConnectSrc].join(' '),
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'none'",
   ].join('; ')
+  // Chromium treats file:// documents as same-origin with all file: URLs, so
+  // even with webSecurity enabled a compromised renderer could read arbitrary
+  // local files via fetch()/XHR in the packaged (loadFile) build. Block
+  // programmatic file: subresource requests; static asset loads (scripts,
+  // styles, images, fonts) are typed differently and keep working.
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const isProgrammaticFileRead =
+      details.url.startsWith('file:') && (details.resourceType === 'xhr' || details.resourceType === 'other')
+    callback({ cancel: isProgrammaticFileRead })
+  })
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -899,3 +911,4 @@ ipcMain.handle('window:is-maximized', () => {
 registerSandboxHandlers()
 registerSkillsHandlers()
 registerOAuthHandlers()
+registerNetProxyHandlers()

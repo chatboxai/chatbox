@@ -842,9 +842,6 @@ importers:
       long:
         specifier: 5.3.2
         version: 5.3.2
-      node-fetch:
-        specifier: 2.7.0
-        version: 2.7.0(encoding@0.1.13)
       ofetch:
         specifier: ^1.0.1
         version: 1.5.1
@@ -863,21 +860,12 @@ importers:
       tar:
         specifier: ^7.5.16
         version: 7.5.16
-      tr46:
-        specifier: 0.0.3
-        version: 0.0.3
       type-is:
         specifier: ^2.0.1
         version: 2.0.1
       uuid:
         specifier: ^9.0.0
         version: 9.0.1
-      webidl-conversions:
-        specifier: 3.0.1
-        version: 3.0.1
-      whatwg-url:
-        specifier: 5.0.0
-        version: 5.0.0
       yauzl:
         specifier: ^3.2.0
         version: 3.2.0

@@ -15,6 +15,7 @@
 const { execSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
+const patchMastraRag = require('./patch-mastra-rag.cjs')
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
@@ -67,6 +68,10 @@ exports.default = async function ensureAppDeps(context) {
       console.log(`[ensure-app-deps] Removed dev-only package: ${pkg}`)
     }
   }
+
+  // Strip the never-used zeroentropy client so node-fetch@2 (CVE) neither
+  // ships nor loads — see patch-mastra-rag.cjs [SEC-5].
+  patchMastraRag(appDir)
 
   console.log('[ensure-app-deps] Done.')
 }

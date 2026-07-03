@@ -8,6 +8,8 @@ Future development after `1.0.1-beta` should be recorded here until the next bet
 
 ### Security And Stability
 
+- Re-enabled Chromium's same-origin policy (`webSecurity`) in the app window — the largest remaining renderer hardening item. AI-provider and other cross-origin requests are now routed through a main-process streaming fetch proxy (with abort and user-proxy support) instead of being fetched directly from the page, so an injected script can no longer exfiltrate data to arbitrary hosts from the renderer. The Content-Security-Policy `connect-src` was tightened from `*` to same-origin accordingly.
+- Blocked programmatic reads of local files from the app window (fetch/XHR to `file://`) — Chromium would otherwise allow them from the packaged app's `file://` context even with the same-origin policy on. Static app assets are unaffected.
 - Upgraded Electron from 35 (end-of-support) to 42 (Chromium 148, Node 24), restoring Chromium security-patch coverage for the app shell.
 - Fixed a config-encryption regression the Electron upgrade would otherwise have introduced: on Electron 42 the OS-keychain check reports unavailable until the app is ready, so the config store is now initialized after readiness. Without this, `config.json` (which holds provider API keys) would silently be written unencrypted — and an existing encrypted config would have been wiped on first launch.
 - External links opened from the app (rendered markdown, `openLink`, in-page navigation) are now restricted to `http:`, `https:`, and `mailto:` URLs; other schemes are blocked and logged.

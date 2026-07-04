@@ -26,12 +26,13 @@ _Last updated 2026-07-02 (branch `dev`). Findings below are the original snapsho
 
 - **P2/Phase-4 — quick UX wins ✅ (2026-07-04):** §9.1 a11y labels — every icon-only control now has an `aria-label` (sidebar collapse, small-screen settings/about, the sidebar-expand/menu button in `Header.tsx`/`Page.tsx`/`task/$taskId.tsx`, all composer icon-row buttons, the send/stop button, the dev theme switch) · §9.3 — the token counter is now a labelled real `<button>` (was a clickable `Flex` div); hover-menu targets (attachment/MCP/KB) got aria-labels rather than Tooltips since their 100ms-hover dropdowns already self-describe and a Tooltip would race them · §9.9 — `atomFamily` migrated from deprecated `jotai/utils` to the `jotai-family` package (2 families, drop-in), boot deprecation warning gone. Verified via live a11y-tree audit (0 unnamed buttons, desktop + mobile), menus/token-popover still open, `qa:ci` gates green, biome baseline ratcheted 824 → 819.
 
+- **P2 — §6.3 tool-error unification ✅ (2026-07-04):** all toolsets now report infrastructure failures by throwing; the AI SDK v6 turns throws into `tool-error` parts, forwards the message to the model, and continues the loop. `normalizeToolSetErrors` in `tools-builder.ts` is the assembly-boundary safety net (non-Error throws wrapped, returned `Error` values — the legacy MCP pattern that serialized to `{}` — converted to throws, aborts untouched). MCP controller's return-err hack removed (stale pre-v6 comment); sandbox/file/KB error strings and skills `{error}` guards became throws; script exit≠0 and abort-cancel stay structured results. Persisted error shape unified to `{error: string, errorCode?, input, toolName}` in both `stream-chunk-processor.ts` and `abstract-ai-sdk.ts` (which previously persisted stack traces and an object shape the UI couldn't render). See `ARCHITECTURE_NOTES.md`.
+
 **Open — recommended order:**
 
-1. **P2:** §6.3 tool-error unification.
-2. **Low / opportunistic:** §6.4 `noFloatingPromises` burndown · §8.2 Sentry-shim shrink · §8.1 remaining dep audit · §8.5 error-mapper rename · §8.6 `biome-ignore-all` narrowing.
-3. **P3 / with redesign:** InputBox split · MUI→Mantine · settings responsiveness · features F1/F2/F4.
-4. **Product decision:** SEC-6 (mobile SQLite encryption) resolves for free if mobile is dropped.
+1. **Low / opportunistic:** §6.4 `noFloatingPromises` burndown · §8.2 Sentry-shim shrink · §8.1 remaining dep audit · §8.5 error-mapper rename · §8.6 `biome-ignore-all` narrowing.
+2. **P3 / with redesign:** InputBox split · MUI→Mantine · settings responsiveness · features F1/F2/F4.
+3. **Product decision:** SEC-6 (mobile SQLite encryption) resolves for free if mobile is dropped.
 
 ---
 
@@ -119,7 +120,7 @@ Ordered by severity. "Known/tracked" = already in `.ai/` notes.
 
 1. **Un-gate window creation from KB init** ([STAB-1]) — biggest startup-robustness win, small diff in `main.ts`.
 2. **Add typed guards around IPC `JSON.parse` boundaries** ([STAB-2] ✅) and consider zod-validating high-value channel payloads (`skills:*`, `mcp:stdio-transport:create`, `sandbox:*`) in the main process — the preload allowlist controls *which* channels are callable, not *what* is sent. (The `JSON.parse` guard shipped; the zod payload validation is still open.)
-3. **Unify the tool-error shape.** Known gap (`.ai/ARCHITECTURE_NOTES.md`): MCP returns caught errors as values, skills return `{success, stderr, exitCode}`, web/file tools throw or return error objects. A single `{ok, value|error}` envelope in `tools-builder.ts` wrappers would simplify `stream-chunk-processor.ts` and make model-visible errors consistent.
+3. ✅ **DONE (2026-07-04, throw-based channel instead of the value envelope)** — **Unify the tool-error shape.** Known gap (`.ai/ARCHITECTURE_NOTES.md`): MCP returns caught errors as values, skills return `{success, stderr, exitCode}`, web/file tools throw or return error objects. A single `{ok, value|error}` envelope in `tools-builder.ts` wrappers would simplify `stream-chunk-processor.ts` and make model-visible errors consistent. (Resolution: unified on *throws* rather than returned envelopes — the AI SDK v6 forwards thrown tool errors to the model and continues the loop, and only the throw path drives the UI's red error state; returned envelopes would have rendered as green successes. See §0 and `ARCHITECTURE_NOTES.md`.)
 4. **Burn down the 53 `noFloatingPromises` diagnostics** — these are the classic source of "nothing happened and nothing logged" bugs. Prioritize `src/renderer/stores/` and main-process files.
 5. **Raise coverage on the named high-risk targets** from `.ai/STATE.md`: `src/main/store-node.ts` (backup/restore/encryption edge cases are exactly where data loss lives), KB/session-attachment RAG main paths, `InputBox.tsx`, `MessageList.tsx`, session CRUD.
 6. ✅ **DONE (2026-07-02)** — **Watchdog for `skills:execute-script` and sandbox child leaks:** the skills timeout resolved the promise but the killed child's streams were abandoned. Now resolves on the child's `close` event, escalates SIGTERM→SIGKILL after a 3s grace, and clears its timers on settle. (Sandbox `execCommand` already had close-event accounting.)
@@ -202,7 +203,7 @@ Ordered roughly by value-to-effort. All are local-first-compatible (no hosted se
 |---|---|---|
 | ✅ **P0 — DONE** | SEC-4 (openExternal allowlist) · PROD-1 (remove EdgeOne) · STAB-1 (un-gate window from KB init) · DOC-1 (stale docs) | Shipped 2026-07-02. |
 | ✅ **P1 — DONE** | ✅ SEC-1 (MCP spawn constraint) · ✅ dead deps + dead upstream code (§8.1–8.2, partial — Sentry shim + 3-dep audit open) · ✅ biome ratchet (§8.3) · ✅ SEC-2 (Electron 35 → 42) | SEC-2 shipped 2026-07-02; win-package smoke deferred (see §0). |
-| **P2 — next cycle** | ✅ SEC-3 (main-process provider proxy → `webSecurity: true`, shipped 2026-07-03 — see §0) · ✅ SEC-8 (prod CSP via build-time meta tag, shipped 2026-07-03 — see §0) · ✅ SEC-5 (node-fetch@2 stripped at pack time, shipped 2026-07-03 — see §0) · tool-error unification (§6.3) · ✅ a11y labels (§9.1, shipped 2026-07-04 with §9.3/§9.9 — see §0) | Security P2 items all done; §6.3 is ≤1 session. |
+| ✅ **P2 — DONE** | ✅ SEC-3 (main-process provider proxy → `webSecurity: true`, 2026-07-03) · ✅ SEC-8 (prod CSP via build-time meta tag, 2026-07-03) · ✅ SEC-5 (node-fetch@2 stripped at pack time, 2026-07-03) · ✅ tool-error unification (§6.3, 2026-07-04) · ✅ a11y labels (§9.1, 2026-07-04 with §9.3/§9.9) | All P2 items shipped — see §0. |
 | **P3 — with redesign** | InputBox split · MUI→Mantine · settings responsiveness · features F1/F2/F4 | Ride along with the already-planned chat-surface redesign. |
 
 ---

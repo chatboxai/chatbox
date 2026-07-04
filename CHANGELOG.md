@@ -21,6 +21,7 @@ Future development after `1.0.1-beta` should be recorded here until the next bet
 - Malformed JSON sent to the internal store, shortcut-config, and proxy handlers now returns a clear error instead of an opaque failure through the IPC bridge.
 - Device-name lookup on macOS no longer briefly blocks the main process (moved from a synchronous to an asynchronous subprocess call).
 - A skill script that ignores the 30-second timeout is now force-terminated (SIGTERM then SIGKILL) and reaped instead of being left running, and its result is finalized only after the process fully exits.
+- Tool failures now surface consistently across all integrations (MCP, web search, knowledge base, file reading, sandbox, skills): the model receives a clear error message it can react to, and the chat UI shows the failed-tool state. Previously, a failed MCP tool call rendered as a successful call with an empty result, several tools reported errors as ordinary-looking text, and stack traces were persisted into chat history.
 
 ### Local-First Cleanup
 

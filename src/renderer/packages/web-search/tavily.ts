@@ -1,4 +1,4 @@
-import { WorkspAIceAIAPIError } from '@shared/models/errors'
+import { CodedError } from '@shared/models/errors'
 import type { SearchResult } from '@shared/types'
 import { ofetch } from 'ofetch'
 import WebSearch, { type ParseLinkResult } from './base'
@@ -60,7 +60,7 @@ export class TavilySearch extends WebSearch {
     if (!result) {
       const failedUrl = response.failed_results?.[0]?.url ?? url
       const technical = `Tavily extract API returned no results for ${failedUrl}`
-      throw WorkspAIceAIAPIError.fromCodeName(technical, 'parse_link_failed') ?? new Error(technical)
+      throw CodedError.fromCodeName(technical, 'parse_link_failed') ?? new Error(technical)
     }
 
     // Tavily Extract API does not return a `title` field — only `url` and `raw_content`.

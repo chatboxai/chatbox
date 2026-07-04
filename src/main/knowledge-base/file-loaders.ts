@@ -5,7 +5,7 @@ import {
   KNOWLEDGE_BASE_MAX_PARSED_CONTENT_SIZE,
   KNOWLEDGE_BASE_PARSED_CONTENT_TOO_LARGE_ERROR,
 } from '../../shared/knowledge-base'
-import { WorkspAIceAIAPIError } from '../../shared/models/errors'
+import { CodedError } from '../../shared/models/errors'
 import { rerank } from '../../shared/models/rerank'
 import type { DocumentParserConfig } from '../../shared/types/settings'
 import { sentry } from '../adapters/sentry'
@@ -33,8 +33,8 @@ function parseErrorMessage(errorMessage: string): string {
       const errorCode = parsed.error?.code
 
       // Try to get i18nKey from the shared error map.
-      if (errorCode && WorkspAIceAIAPIError.codeNameMap[errorCode]) {
-        return WorkspAIceAIAPIError.codeNameMap[errorCode].i18nKey
+      if (errorCode && CodedError.codeNameMap[errorCode]) {
+        return CodedError.codeNameMap[errorCode].i18nKey
       }
 
       // Fallback to detail or title

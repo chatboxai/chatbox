@@ -29,7 +29,7 @@ import type {
   StreamTextResult,
 } from '../types'
 import type { ModelDependencies } from '../types/adapters'
-import { ApiError, BaseError, WorkspAIceAIAPIError } from './errors'
+import { ApiError, BaseError, CodedError } from './errors'
 import type {
   CallChatCompletionOptions,
   ChatStreamOptions,
@@ -186,7 +186,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     try {
       return await this._callChatCompletion(messages, options)
     } catch (e) {
-      if (e instanceof WorkspAIceAIAPIError) {
+      if (e instanceof CodedError) {
         throw e
       }
       // 如果当前模型不支持图片输入，抛出对应的错误
@@ -194,7 +194,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         e instanceof ApiError &&
         e.message.includes('Invalid content type. image_url is only supported by certain models.')
       ) {
-        throw WorkspAIceAIAPIError.fromCodeName('model_not_support_image', 'model_not_support_image_2')
+        throw CodedError.fromCodeName('model_not_support_image', 'model_not_support_image_2')
       }
 
       throw e
@@ -606,7 +606,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     if (error instanceof ApiError) {
       throw error
     }
-    if (error instanceof WorkspAIceAIAPIError) {
+    if (error instanceof CodedError) {
       throw error
     }
     throw new ApiError(`Error from ${this.name}${context}: ${error}`)

@@ -1,6 +1,6 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { Tooltip, Typography } from '@mui/material'
-import { WorkspAIceAIAPIError } from '@shared/models/errors'
+import { CodedError } from '@shared/models/errors'
 import type { SessionAttachmentIndexingStage } from '@shared/types'
 import { AlertCircle, CheckCircle, Eye, Link, Link2, Loader2, RotateCw, Trash2 } from 'lucide-react'
 import type { MouseEvent } from 'react'
@@ -40,7 +40,7 @@ function getTranslatedErrorMessage(errorCode: string | undefined, t: (key: strin
   if (errorCode === SESSION_ATTACHMENT_RAG_REQUIRES_TOOL_USE_MODEL_ERROR) {
     return t('Large file Q&A requires a model with tool use support. Switch to a compatible model or remove this file.')
   }
-  const errorDetail = WorkspAIceAIAPIError.codeNameMap[errorCode]
+  const errorDetail = CodedError.codeNameMap[errorCode]
   if (errorDetail) {
     // 使用 i18nKey 进行翻译，去掉其中的 HTML 标签以便在 Tooltip 中显示纯文本
     const translated = t(errorDetail.i18nKey)

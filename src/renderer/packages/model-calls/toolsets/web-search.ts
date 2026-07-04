@@ -1,4 +1,4 @@
-import { WorkspAIceAIAPIError } from '@shared/models/errors'
+import { CodedError } from '@shared/models/errors'
 import { tool } from 'ai'
 import z from 'zod'
 import { getParseLinkProvider, webSearchExecutor } from '@/packages/web-search'
@@ -55,12 +55,12 @@ export const parseLinkTool = tool({
     const provider = getParseLinkProvider()
     if (!provider) {
       const technical = `parse_link is not supported by the configured search provider "${searchProvider}"`
-      throw WorkspAIceAIAPIError.fromCodeName(technical, 'parse_link_not_supported') ?? new Error(technical)
+      throw CodedError.fromCodeName(technical, 'parse_link_not_supported') ?? new Error(technical)
     }
     const result = await provider.parseLink(input.url, abortSignal)
     if (!result) {
       const technical = `parse_link returned no result for URL ${input.url} (provider: ${searchProvider})`
-      throw WorkspAIceAIAPIError.fromCodeName(technical, 'parse_link_failed') ?? new Error(technical)
+      throw CodedError.fromCodeName(technical, 'parse_link_failed') ?? new Error(technical)
     }
     const truncatedContent = result.content.slice(0, normalizedMaxLength)
     return {

@@ -4,9 +4,9 @@ import {
   AIProviderNoImplementedPaintError,
   ApiError,
   BaseError,
+  CodedError,
   NetworkError,
   OCRError,
-  WorkspAIceAIAPIError,
 } from './errors'
 
 describe('BaseError', () => {
@@ -80,14 +80,14 @@ describe('OCRError', () => {
   })
 })
 
-describe('WorkspAIceAIAPIError', () => {
+describe('CodedError', () => {
   it('constructor sets detail and code from detail', () => {
     const detail = {
       name: 'custom_error',
       code: 29999,
       i18nKey: 'custom.i18n.key',
     }
-    const error = new WorkspAIceAIAPIError('service failed', detail, 'req-123')
+    const error = new CodedError('service failed', detail, 'req-123')
 
     expect(error.message).toBe('service failed')
     expect(error.detail).toEqual(detail)
@@ -95,10 +95,10 @@ describe('WorkspAIceAIAPIError', () => {
     expect(error.requestId).toBe('req-123')
   })
 
-  it('fromCodeName returns WorkspAIceAIAPIError for known local/provider codename', () => {
-    const error = WorkspAIceAIAPIError.fromCodeName('rate limited', 'rate_limit_exceeded', 'req-123')
+  it('fromCodeName returns CodedError for known local/provider codename', () => {
+    const error = CodedError.fromCodeName('rate limited', 'rate_limit_exceeded', 'req-123')
 
-    expect(error).toBeInstanceOf(WorkspAIceAIAPIError)
+    expect(error).toBeInstanceOf(CodedError)
     expect(error?.message).toBe('rate limited')
     expect(error?.code).toBe(20005)
     expect(error?.detail.name).toBe('rate_limit_exceeded')
@@ -106,19 +106,19 @@ describe('WorkspAIceAIAPIError', () => {
   })
 
   it('fromCodeName returns null for unknown codename', () => {
-    const error = WorkspAIceAIAPIError.fromCodeName('failed', 'not_a_real_codename')
+    const error = CodedError.fromCodeName('failed', 'not_a_real_codename')
 
     expect(error).toBeNull()
   })
 
   it('fromCodeName returns null for empty codename', () => {
-    const error = WorkspAIceAIAPIError.fromCodeName('failed', '')
+    const error = CodedError.fromCodeName('failed', '')
 
     expect(error).toBeNull()
   })
 
   it('getDetail returns detail for known code', () => {
-    const detail = WorkspAIceAIAPIError.getDetail(20005)
+    const detail = CodedError.getDetail(20005)
 
     expect(detail).not.toBeNull()
     expect(detail?.name).toBe('rate_limit_exceeded')
@@ -127,20 +127,20 @@ describe('WorkspAIceAIAPIError', () => {
   })
 
   it('getDetail returns null for unknown code', () => {
-    const detail = WorkspAIceAIAPIError.getDetail(99999)
+    const detail = CodedError.getDetail(99999)
 
     expect(detail).toBeNull()
   })
 
   it('getDetail returns null for 0 or falsy code', () => {
-    expect(WorkspAIceAIAPIError.getDetail(0)).toBeNull()
-    expect(WorkspAIceAIAPIError.getDetail(Number.NaN)).toBeNull()
+    expect(CodedError.getDetail(0)).toBeNull()
+    expect(CodedError.getDetail(Number.NaN)).toBeNull()
   })
 })
 
 describe('Error inheritance', () => {
   it('all exported errors are instanceof Error and BaseError', () => {
-    const workspaiceDetail = WorkspAIceAIAPIError.getDetail(20005)
+    const workspaiceDetail = CodedError.getDetail(20005)
     expect(workspaiceDetail).not.toBeNull()
     if (!workspaiceDetail) {
       throw new Error('Expected local provider error detail')
@@ -153,7 +153,7 @@ describe('Error inheritance', () => {
       new AIProviderNoImplementedPaintError('ProviderA'),
       new AIProviderNoImplementedChatError('ProviderB'),
       new OCRError('ocr-provider', new Error('ocr failed')),
-      new WorkspAIceAIAPIError('workspaice', workspaiceDetail),
+      new CodedError('workspaice', workspaiceDetail),
     ]
 
     for (const error of errors) {

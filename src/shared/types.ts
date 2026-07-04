@@ -142,8 +142,6 @@ export interface SessionAttachmentRagMaintenanceResult {
   orphanDeletedIds: number[]
 }
 
-export type WorkspAIceAIModel = 'workspaiceai-3.5' | 'workspaiceai-4' | string
-
 export function copyMessage(source: Message): Message {
   return {
     ...source,

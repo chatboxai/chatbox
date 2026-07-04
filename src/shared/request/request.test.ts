@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ApiError, WorkspAIceAIAPIError } from '../models/errors'
+import type { ApiError, CodedError } from '../models/errors'
 import { createAfetch } from './request'
 
 const platformInfo = {
@@ -41,7 +41,7 @@ describe('createAfetch', () => {
     ).rejects.toMatchObject({
       code: 20005,
       requestId: 'req-from-body',
-    } satisfies Partial<WorkspAIceAIAPIError>)
+    } satisfies Partial<CodedError>)
   })
 
   it('stores request id from response headers on generic API errors', async () => {

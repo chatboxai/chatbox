@@ -56,8 +56,8 @@ export class OCRError extends BaseError {
 
 // Legacy shared error-code mapper. Keep entries local-first; do not add hosted
 // account, billing, or hosted-service errors.
-export class WorkspAIceAIAPIError extends BaseError {
-  static codeNameMap: { [codename: string]: WorkspAIceAIAPIErrorDetail } = {
+export class CodedError extends BaseError {
+  static codeNameMap: { [codename: string]: CodedErrorDetail } = {
     rate_limit_exceeded: {
       name: 'rate_limit_exceeded',
       code: 20005,
@@ -234,8 +234,8 @@ export class WorkspAIceAIAPIError extends BaseError {
     if (!codeName) {
       return null
     }
-    if (WorkspAIceAIAPIError.codeNameMap[codeName]) {
-      return new WorkspAIceAIAPIError(response, WorkspAIceAIAPIError.codeNameMap[codeName], requestId)
+    if (CodedError.codeNameMap[codeName]) {
+      return new CodedError(response, CodedError.codeNameMap[codeName], requestId)
     }
     return null
   }
@@ -244,28 +244,28 @@ export class WorkspAIceAIAPIError extends BaseError {
       return null
     }
     if (preferredCodeName) {
-      const preferred = WorkspAIceAIAPIError.codeNameMap[preferredCodeName]
+      const preferred = CodedError.codeNameMap[preferredCodeName]
       if (preferred && preferred.code === code) {
         return preferred
       }
     }
-    for (const name in WorkspAIceAIAPIError.codeNameMap) {
-      if (WorkspAIceAIAPIError.codeNameMap[name].code === code) {
-        return WorkspAIceAIAPIError.codeNameMap[name]
+    for (const name in CodedError.codeNameMap) {
+      if (CodedError.codeNameMap[name].code === code) {
+        return CodedError.codeNameMap[name]
       }
     }
     return null
   }
 
-  public detail: WorkspAIceAIAPIErrorDetail
-  constructor(message: string, detail: WorkspAIceAIAPIErrorDetail, requestId?: string) {
+  public detail: CodedErrorDetail
+  constructor(message: string, detail: CodedErrorDetail, requestId?: string) {
     super(message, { requestId })
     this.detail = detail
     this.code = detail.code
   }
 }
 
-interface WorkspAIceAIAPIErrorDetail {
+interface CodedErrorDetail {
   name: string
   code: number
   i18nKey: string

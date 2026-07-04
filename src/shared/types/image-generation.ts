@@ -26,7 +26,7 @@ export const ImageGenerationSchema = z.object({
   status: ImageGenerationStatusSchema,
   parentIds: z.array(z.string()).optional(), // for tracking iteration DAG (multiple parents possible)
   error: z.string().optional(),
-  // 数字 code 来自 WorkspAIceAI API 错误；字符串 code 来自异步生图 item.error_code。
+  // Numeric codes come from CodedError; string codes come from async image generation item.error_code.
   errorCode: z.union([z.number(), z.string()]).optional(),
   // 异步生图失败时后端返回的 item.uuid，用于排查具体失败图片。
   errorItemUuid: z.string().optional(),

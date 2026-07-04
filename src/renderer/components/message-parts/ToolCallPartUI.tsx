@@ -1,5 +1,5 @@
 import { ActionIcon, Box, Code, Collapse, Group, Paper, Stack, Text, UnstyledButton } from '@mantine/core'
-import { WorkspAIceAIAPIError } from '@shared/models/errors'
+import { CodedError } from '@shared/models/errors'
 import type { Message, MessageReasoningPart, MessageToolCallPart } from '@shared/types'
 import {
   IconBulb,
@@ -22,8 +22,8 @@ import {
 import clsx from 'clsx'
 import { type FC, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CodedErrorMessage } from '@/components/common/CodedErrorMessage'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
-import { WorkspAIceAIErrorMessage } from '@/components/common/WorkspAIceAIErrorMessage'
 import { formatElapsedTime, useThinkingTimer } from '@/hooks/useThinkingTimer'
 import { getToolName } from '@/packages/tools'
 import type { SearchResultItem } from '@/packages/web-search'
@@ -44,10 +44,10 @@ const ToolCallErrorDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   // Only render the rich i18n message if the code is one we know about — unknown
   // codes (e.g. NetworkError, generic ApiError) would render as null and silently
   // hide the underlying error text.
-  if (errorCode && WorkspAIceAIAPIError.getDetail(errorCode)) {
+  if (errorCode && CodedError.getDetail(errorCode)) {
     return (
       <Text size="sm" c="workspaice-error" component="div">
-        <WorkspAIceAIErrorMessage errorCode={errorCode} trackingSource="msg_tool_error" />
+        <CodedErrorMessage errorCode={errorCode} trackingSource="msg_tool_error" />
       </Text>
     )
   }

@@ -1,5 +1,5 @@
 import { buildContext } from '@shared/context'
-import { OCRError, WorkspAIceAIAPIError } from '@shared/models/errors'
+import { CodedError, OCRError } from '@shared/models/errors'
 import type { ChatStreamOptions, ModelStreamPart } from '@shared/models/types'
 import { type Message, type MessageContentParts, ModelProviderEnum } from '@shared/types'
 import { getMessageText, sequenceMessages } from '@shared/utils/message'
@@ -166,7 +166,7 @@ export async function orchestrateGeneration(
     ) {
       const ocrResult = getOCRModel(globalSettings, configs, dependencies)
       if (!ocrResult) {
-        throw WorkspAIceAIAPIError.fromCodeName('model_not_support_image_2', 'model_not_support_image_2')
+        throw CodedError.fromCodeName('model_not_support_image_2', 'model_not_support_image_2')
       }
       try {
         await ocrImagesInMessages(promptMsgs, ocrResult.model)

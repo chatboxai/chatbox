@@ -1,4 +1,4 @@
-import { ApiError, BaseError, NetworkError, WorkspAIceAIAPIError } from '../models/errors'
+import { ApiError, BaseError, CodedError, NetworkError } from '../models/errors'
 import { parseJsonOrEmpty } from '../utils/json_utils'
 import { isWorkspAIceAPI } from './workspaiceai_pool'
 
@@ -123,7 +123,7 @@ export function createAfetch(platformInfo: PlatformInfo) {
           const requestId = getWorkspAIceRequestId(response, res.headers)
           if (options.parseWorkspAIceRemoteError) {
             const errorCodeName = getWorkspAIceErrorCode(response)
-            const workspaiceAIError = WorkspAIceAIAPIError.fromCodeName(response, errorCodeName || '', requestId)
+            const workspaiceAIError = CodedError.fromCodeName(response, errorCodeName || '', requestId)
             if (workspaiceAIError) {
               throw workspaiceAIError
             }
@@ -296,7 +296,7 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
             const requestId = getWorkspAIceRequestId(response, retryRes.headers)
             if (options.parseWorkspAIceRemoteError) {
               const errorCodeName = getWorkspAIceErrorCode(response)
-              const workspaiceAIError = WorkspAIceAIAPIError.fromCodeName(response, errorCodeName || '', requestId)
+              const workspaiceAIError = CodedError.fromCodeName(response, errorCodeName || '', requestId)
               if (workspaiceAIError) {
                 throw workspaiceAIError
               }
@@ -321,7 +321,7 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
           const requestId = getWorkspAIceRequestId(response, res.headers)
           if (options.parseWorkspAIceRemoteError) {
             const errorCodeName = getWorkspAIceErrorCode(response)
-            const workspaiceAIError = WorkspAIceAIAPIError.fromCodeName(response, errorCodeName || '', requestId)
+            const workspaiceAIError = CodedError.fromCodeName(response, errorCodeName || '', requestId)
             if (workspaiceAIError) {
               throw workspaiceAIError
             }

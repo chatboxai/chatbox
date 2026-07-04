@@ -1,4 +1,4 @@
-import { WorkspAIceAIAPIError } from '@shared/models/errors'
+import { CodedError } from '@shared/models/errors'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getLicenseKeyMock = vi.fn()
@@ -78,7 +78,7 @@ describe('parseLinkTool', () => {
     })
 
     it('propagates underlying provider errors (e.g. missing API key)', async () => {
-      const apiKeyError = WorkspAIceAIAPIError.fromCodeName('tavily_api_key_required', 'tavily_api_key_required')
+      const apiKeyError = CodedError.fromCodeName('tavily_api_key_required', 'tavily_api_key_required')
       getParseLinkProviderMock.mockImplementation(() => {
         throw apiKeyError
       })

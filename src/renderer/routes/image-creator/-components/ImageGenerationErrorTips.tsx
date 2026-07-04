@@ -1,5 +1,5 @@
 import { ActionIcon, Button, Flex, Paper, Text, Tooltip } from '@mantine/core'
-import { WorkspAIceAIAPIError } from '@shared/models/errors'
+import { CodedError } from '@shared/models/errors'
 import type { ImageGeneration } from '@shared/types'
 import { IconCheck, IconCopy, IconRefresh, IconX } from '@tabler/icons-react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -37,16 +37,13 @@ function ImageGenerationTaskErrorMessage({ errorCode }: { errorCode: ImageGenera
 export function ImageGenerationErrorTips({ record, onRetry, isRetrying }: ImageGenerationErrorTipsProps) {
   const { t } = useTranslation()
 
-  const workspaiceAIErrorDetail =
-    typeof record.errorCode === 'number' ? WorkspAIceAIAPIError.getDetail(record.errorCode) : null
+  const codedErrorDetail = typeof record.errorCode === 'number' ? CodedError.getDetail(record.errorCode) : null
   const imageGenerationTaskErrorCode = isImageGenerationTaskErrorCode(record.errorCode) ? record.errorCode : undefined
   const errorDebugInfo = [
     record.errorItemUuid ? `UUID: ${record.errorItemUuid}` : undefined,
     record.taskId ? `Task ID: ${record.taskId}` : undefined,
   ].filter((item): item is string => !!item)
-  const showErrorDebugInfo = Boolean(
-    (workspaiceAIErrorDetail || imageGenerationTaskErrorCode) && errorDebugInfo.length > 0
-  )
+  const showErrorDebugInfo = Boolean((codedErrorDetail || imageGenerationTaskErrorCode) && errorDebugInfo.length > 0)
   const { copied, copy } = useCopied(errorDebugInfo.join('\n'))
 
   return (
@@ -64,10 +61,10 @@ export function ImageGenerationErrorTips({ record, onRetry, isRetrying }: ImageG
           {t('Generation Failed')}
         </Text>
 
-        {workspaiceAIErrorDetail ? (
+        {codedErrorDetail ? (
           <Text size="sm" c="dimmed" ta="center" maw={400}>
             <Trans
-              i18nKey={workspaiceAIErrorDetail.i18nKey}
+              i18nKey={codedErrorDetail.i18nKey}
               values={{
                 model: record.model.modelId,
               }}

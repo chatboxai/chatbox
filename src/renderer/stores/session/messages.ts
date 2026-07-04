@@ -1,10 +1,4 @@
-import {
-  AIProviderNoImplementedPaintError,
-  ApiError,
-  BaseError,
-  NetworkError,
-  WorkspAIceAIAPIError,
-} from '@shared/models/errors'
+import { AIProviderNoImplementedPaintError, ApiError, BaseError, CodedError, NetworkError } from '@shared/models/errors'
 import { createMessage, type Message } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { createModel } from '@/adapters'
@@ -245,7 +239,7 @@ export async function submitNewUserMessage(
     // 桌面版&手机端总是支持联网问答，不再需要检查模型是否支持
     const model = await createModel(settings)
     if (webBrowsing && platform.type === 'web' && !model.isSupportToolUse()) {
-      throw WorkspAIceAIAPIError.fromCodeName('model_not_support_web_browsing_2', 'model_not_support_web_browsing_2')
+      throw CodedError.fromCodeName('model_not_support_web_browsing_2', 'model_not_support_web_browsing_2')
     }
 
     // Files and links are now preprocessed in InputBox with storage keys, so no need to process them here

@@ -3,7 +3,7 @@ import type { SearchResultItem } from '@shared/types'
 import { truncate } from 'lodash'
 import platform from '@/platform'
 import { getExtensionSettings, getLanguage } from '@/stores/settingActions'
-import { WorkspAIceAIAPIError } from '../../../shared/models/errors'
+import { CodedError } from '../../../shared/models/errors'
 import type WebSearch from './base'
 import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
@@ -30,19 +30,19 @@ function getSearchProviders() {
       break
     case 'tavily':
       if (!settings.webSearch.tavilyApiKey) {
-        throw WorkspAIceAIAPIError.fromCodeName('tavily_api_key_required', 'tavily_api_key_required')
+        throw CodedError.fromCodeName('tavily_api_key_required', 'tavily_api_key_required')
       }
       selectedProviders.push(new TavilySearch(settings.webSearch.tavilyApiKey))
       break
     case 'bocha':
       if (!settings.webSearch.bochaApiKey) {
-        throw WorkspAIceAIAPIError.fromCodeName('bocha_api_key_required', 'bocha_api_key_required')
+        throw CodedError.fromCodeName('bocha_api_key_required', 'bocha_api_key_required')
       }
       selectedProviders.push(new BochaSearch(settings.webSearch.bochaApiKey))
       break
     case 'querit':
       if (!settings.webSearch.queritApiKey) {
-        throw WorkspAIceAIAPIError.fromCodeName('querit_api_key_required', 'querit_api_key_required')
+        throw CodedError.fromCodeName('querit_api_key_required', 'querit_api_key_required')
       }
       selectedProviders.push(
         new QueritSearch(

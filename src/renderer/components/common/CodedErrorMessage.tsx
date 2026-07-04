@@ -1,10 +1,10 @@
 import { Link } from '@mui/material'
-import { WorkspAIceAIAPIError } from '@shared/models/errors'
+import { CodedError } from '@shared/models/errors'
 import type { FC } from 'react'
 import { Trans } from 'react-i18next'
 import { navigateToSettings } from '@/modals/Settings'
 
-interface WorkspAIceAIErrorMessageProps {
+interface CodedErrorMessageProps {
   errorCode: number
   /** Optional model name for `{{model}}` interpolation in i18n keys. */
   model?: string
@@ -15,12 +15,12 @@ interface WorkspAIceAIErrorMessageProps {
 const SUPPORTED_WEB_BROWSING_MODELS = 'gemini-2.0-flash(API), perplexity API'
 
 /**
- * Renders a localized message for a known WorkspAIceAIAPIError code, with action
+ * Renders a localized message for a known CodedError code, with action
  * links (open settings, switch search provider, upgrade plan). Returns `null`
  * for unknown codes so callers can fall back to a generic message.
  */
-export const WorkspAIceAIErrorMessage: FC<WorkspAIceAIErrorMessageProps> = ({ errorCode, model }) => {
-  const detail = WorkspAIceAIAPIError.getDetail(errorCode)
+export const CodedErrorMessage: FC<CodedErrorMessageProps> = ({ errorCode, model }) => {
+  const detail = CodedError.getDetail(errorCode)
   if (!detail) return null
 
   return (

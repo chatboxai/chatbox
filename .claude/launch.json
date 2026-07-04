@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "workspaice-dev-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "WORKSPAICE_E2E_USER_DATA_DIR=/private/tmp/claude-501/-Users-ivandmpk-Workspace-workspaice/9595b3d0-21f6-428f-8855-0dbe08ede1e4/scratchpad/e2e-userdata PATH=\"/opt/homebrew/opt/node@22/bin:$PATH\" pnpm dev:web"
+      ],
+      "port": 1212
+    }
+  ]
+}

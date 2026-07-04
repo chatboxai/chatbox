@@ -67,6 +67,7 @@ export default function Header(props: { session: Session }) {
               size={isSmallScreen ? 24 : 20}
               color={isSmallScreen ? 'workspaice-secondary' : 'workspaice-tertiary'}
               mr="xs"
+              aria-label={isSmallScreen ? t('Menu') : t('Expand')}
               onClick={() => setShowSidebar(!showSidebar)}
             >
               {isSmallScreen ? <IconMenu2 /> : <IconLayoutSidebarLeftExpand />}
@@ -103,6 +104,7 @@ export default function Header(props: { session: Session }) {
               color="workspaice-tertiary"
               size={isSmallScreen ? 20 : 16}
               ml={4}
+              aria-label={t('Customize settings for the current conversation')}
               onClick={editCurrentSession}
             >
               <ScalableIcon icon={IconPencil} size={14} />

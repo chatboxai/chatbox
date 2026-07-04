@@ -489,6 +489,7 @@ function TaskChat({ session }: { session: NonNullable<ReturnType<typeof useTaskS
               size={isSmallScreen ? 24 : 20}
               color={isSmallScreen ? 'workspaice-secondary' : 'workspaice-tertiary'}
               mr="xs"
+              aria-label={isSmallScreen ? t('Menu') : t('Expand')}
               onClick={() => setShowSidebar(!showSidebar)}
             >
               {isSmallScreen ? <IconMenu2 /> : <IconLayoutSidebarLeftExpand />}

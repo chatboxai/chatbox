@@ -1314,6 +1314,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 variant="filled"
                 color={generating ? 'dark' : 'workspaice-brand'}
                 radius="xl"
+                aria-label={generating ? t('Stop generating') : t('Send')}
                 onClick={generating ? onStopGenerating : () => handleSubmit()}
                 className={cn(
                   'shrink-0 mb-1',
@@ -1576,7 +1577,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 {featureFlags.mcp && (
                   <MCPMenu>
                     {(enabledTools) => (
-                      <UnstyledButton className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors">
+                      <UnstyledButton
+                        aria-label={t('Tools')}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors"
+                      >
                         <IconHammer
                           size={toolbarIconSize}
                           strokeWidth={1.8}
@@ -1598,7 +1602,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
                 {featureFlags.knowledgeBase && !isSmallScreen && (
                   <KnowledgeBaseMenu currentKnowledgeBaseId={knowledgeBase?.id} onSelect={handleKnowledgeBaseSelect}>
-                    <UnstyledButton className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors">
+                    <UnstyledButton
+                      aria-label={t('Knowledge Base')}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors"
+                    >
                       <IconVocabulary
                         size={toolbarIconSize}
                         strokeWidth={1.8}
@@ -1614,6 +1621,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
                 <Tooltip label={t('Web Search')} position="top" withArrow disabled={isSmallScreen}>
                   <UnstyledButton
+                    aria-label={t('Web Search')}
                     onClick={() => {
                       setWebBrowsingMode(!webBrowsingMode)
                       dom.focusMessageInput()
@@ -1636,6 +1644,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   (showRollbackThreadButton ? (
                     <Tooltip label={t('Rollback Thread')} position="top" withArrow>
                       <UnstyledButton
+                        aria-label={t('Rollback Thread')}
                         onClick={rollbackThread}
                         className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors"
                       >
@@ -1649,6 +1658,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   ) : (
                     <Tooltip label={t('New Thread')} position="top" withArrow>
                       <UnstyledButton
+                        aria-label={t('New Thread')}
                         onClick={startNewThread}
                         disabled={!onStartNewThread}
                         className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors disabled:opacity-50"
@@ -1665,6 +1675,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 {!isSmallScreen && (
                   <Tooltip label={t('Conversation Settings')} position="top" withArrow>
                     <UnstyledButton
+                      aria-label={t('Conversation Settings')}
                       onClick={onClickSessionSettings}
                       disabled={!onClickSessionSettings}
                       className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors disabled:opacity-50"
@@ -1691,7 +1702,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     }}
                   >
                     <Menu.Target>
-                      <UnstyledButton className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors">
+                      <UnstyledButton
+                        aria-label={t('Settings')}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors"
+                      >
                         <IconSettings
                           size={toolbarIconSize}
                           strokeWidth={1.8}
@@ -1732,10 +1746,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   contextWindowKnown={contextWindowKnown}
                   onAutoCompactionChange={sessionId && !isNewSession ? handleAutoCompactionChange : undefined}
                 >
-                  <Flex
-                    align="center"
-                    gap="2"
-                    className={`shrink-0 text-xs cursor-pointer hover:text-workspaice-tint-secondary transition-colors px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] ${
+                  <UnstyledButton
+                    aria-label={t('Estimated Token Usage')}
+                    className={`flex items-center gap-0.5 shrink-0 text-xs cursor-pointer hover:text-workspaice-tint-secondary transition-colors px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] ${
                       tokenPercentage && tokenPercentage > 80 ? 'text-red-500' : 'text-workspaice-tint-tertiary'
                     }`}
                   >
@@ -1746,7 +1759,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                       {formatNumber(totalTokens)}
                       {tokenPercentage !== null && tokenPercentage > 10 && ` (${tokenPercentage}%)`}
                     </Text>
-                  </Flex>
+                  </UnstyledButton>
                 </TokenCountMenu>
 
                 {/* Model Selector */}
@@ -1871,7 +1884,10 @@ const AttachmentMenu: React.FC<{
       }}
     >
       <Menu.Target>
-        <UnstyledButton className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors">
+        <UnstyledButton
+          aria-label={t('Add Attachment')}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors"
+        >
           <IconCirclePlus
             size={toolbarIconSize}
             strokeWidth={1.8}

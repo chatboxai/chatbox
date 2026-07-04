@@ -194,7 +194,13 @@ export default function Sidebar() {
           </Flex>
 
           <Tooltip label={t('Collapse')} openDelay={1000} withArrow>
-            <ActionIcon variant="subtle" color="workspaice-tertiary" size={20} onClick={() => setShowSidebar(false)}>
+            <ActionIcon
+              variant="subtle"
+              color="workspaice-tertiary"
+              size={20}
+              aria-label={t('Collapse')}
+              onClick={() => setShowSidebar(false)}
+            >
               <IconLayoutSidebarLeftCollapse />
             </ActionIcon>
           </Tooltip>
@@ -272,6 +278,7 @@ export default function Sidebar() {
                 variant="transparent"
                 color="workspaice-secondary"
                 size={24}
+                aria-label={t('Settings')}
                 onClick={() => {
                   navigateToSettings()
                   setShowSidebar(false)
@@ -374,12 +381,14 @@ function SmallScreenAboutIcon({
   navigate: ReturnType<typeof useNavigate>
   setShowSidebar: (v: boolean) => void
 }) {
+  const { t } = useTranslation()
   return (
     <Box className="relative">
       <ActionIcon
         variant="transparent"
         color="workspaice-secondary"
         size={24}
+        aria-label={t('About')}
         onClick={() => {
           navigate({ to: '/about' })
           setShowSidebar(false)

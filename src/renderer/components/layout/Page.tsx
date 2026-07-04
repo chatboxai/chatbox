@@ -2,6 +2,7 @@ import { ActionIcon, Box, Flex, Title } from '@mantine/core'
 import { IconLayoutSidebarLeftExpand, IconMenu2 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import type { FC } from 'react'
+import { useTranslation } from 'react-i18next'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useUIStore } from '@/stores/uiStore'
@@ -19,6 +20,7 @@ export const Page: FC<PageProps> = ({ children, title, left, right }) => {
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const isSmallScreen = useIsSmallScreen()
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
+  const { t } = useTranslation()
   return (
     <div className="flex flex-col h-full">
       <Flex
@@ -36,6 +38,7 @@ export const Page: FC<PageProps> = ({ children, title, left, right }) => {
                 size={isSmallScreen ? 24 : 20}
                 color={isSmallScreen ? 'workspaice-secondary' : 'workspaice-tertiary'}
                 mr="xs"
+                aria-label={isSmallScreen ? t('Menu') : t('Expand')}
                 onClick={() => setShowSidebar(!showSidebar)}
               >
                 {isSmallScreen ? <IconMenu2 /> : <IconLayoutSidebarLeftExpand />}

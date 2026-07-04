@@ -29,9 +29,15 @@ Future development after `1.0.1-beta` should be recorded here until the next bet
 - Removed the dead telemetry plumbing (`trackEvent`/`trackGenerateEvent`) — all tracking was already a no-op stub; nothing was ever sent.
 - Dropped four unused dependencies (`react-router-dom`, `swr`, `javascript-obfuscator`, `web-vitals`) and the CRA-era `reportWebVitals` scaffold.
 
+### Accessibility
+
+- Every icon-only button now exposes a proper accessible name for screen readers and assistive tech (previously announced as an unnamed "button"): the sidebar collapse and expand/menu controls on all pages, the small-screen settings and about buttons, the composer's attachment, tools, knowledge-base, web-search, thread, and settings buttons, the token-usage counter, and the send/stop button.
+- The composer's token-usage counter is now a real, keyboard-focusable button instead of a clickable text element.
+
 ### Maintenance
 
 - Removed nine dead webpack/CRA-era build scripts from `.erb/scripts` and ratcheted the repo-wide Biome diagnostic baseline down to 0 errors / 824 warnings.
+- Migrated the two `atomFamily` stores from jotai's deprecated built-in (slated for removal in jotai v3) to the `jotai-family` package — the deprecation warning no longer fires at startup. Dropped a set of unused imports along the way (Biome baseline now 0 errors / 819 warnings).
 
 ### Chat Organization
 

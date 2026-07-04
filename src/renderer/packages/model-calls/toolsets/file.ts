@@ -85,7 +85,9 @@ const readFileTool = tool({
   ) => {
     const fileContent = await readFileContentFromKey(input.fileKey)
     if (fileContent === null) {
-      return 'File not found or inaccessible. Ensure the fileKey is the correct identifier within <FILE_KEY> tags.'
+      throw new Error(
+        'File not found or inaccessible. Ensure the fileKey is the correct identifier within <FILE_KEY> tags.'
+      )
     }
     const lines = fileContent.split('\n')
     const lineOffset = input.lineOffset ?? 0
@@ -141,7 +143,9 @@ const searchFileTool = tool({
   ) => {
     const fileContent = await readFileContentFromKey(input.fileKey)
     if (fileContent === null) {
-      return 'File not found or inaccessible. Ensure the fileKey is the correct identifier within <FILE_KEY> tags.'
+      throw new Error(
+        'File not found or inaccessible. Ensure the fileKey is the correct identifier within <FILE_KEY> tags.'
+      )
     }
     const lines = fileContent.split('\n')
     const results: Array<{ lineNumber: number; lineContent: string; context: string[] }> = []

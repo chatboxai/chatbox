@@ -68,11 +68,14 @@ describe('file conversation tools', () => {
     expect(result.totalMatches).toBe(2)
   })
 
-  it('returns a safe error message for inaccessible keys', async () => {
-    await expect(readFile({ fileKey: 'missing' }, executeOptions)).resolves.toBe(
+  it('throws a safe error message for inaccessible keys', async () => {
+    // Tool infrastructure failures throw — the AI SDK forwards the message to the
+    // model as a tool-error part (FABLE §6.3). The message must stay free of
+    // internal details (no paths, no store internals).
+    await expect(readFile({ fileKey: 'missing' }, executeOptions)).rejects.toThrow(
       'File not found or inaccessible. Ensure the fileKey is the correct identifier within <FILE_KEY> tags.'
     )
-    await expect(searchFile({ fileKey: 'missing', query: 'needle' }, executeOptions)).resolves.toBe(
+    await expect(searchFile({ fileKey: 'missing', query: 'needle' }, executeOptions)).rejects.toThrow(
       'File not found or inaccessible. Ensure the fileKey is the correct identifier within <FILE_KEY> tags.'
     )
   })

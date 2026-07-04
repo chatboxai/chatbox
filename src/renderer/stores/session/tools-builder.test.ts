@@ -3,7 +3,7 @@ import type { Message } from '@shared/types'
 import type { SkillInfo } from '@shared/types/skills'
 import { describe, expect, it, vi } from 'vitest'
 import { getToolSet as getSessionAttachmentRagToolSet } from '@/packages/model-calls/toolsets/session-attachment-rag'
-import { buildToolsForSession, generateSkillsXml } from '@/stores/session/tools-builder'
+import { buildToolsForSession, generateSkillsXml, normalizeToolSetErrors } from '@/stores/session/tools-builder'
 
 const mockSettings = vi.hoisted(() => ({
   provider: 'bing',
@@ -184,6 +184,71 @@ describe('buildToolsForSession session attachment RAG', () => {
 
     expect(result.instructions).not.toContain('session_attachment_rag')
     expect(result.tools).not.toHaveProperty('query_session_attachment')
+  })
+})
+
+describe('normalizeToolSetErrors', () => {
+  type AnyToolSet = Parameters<typeof normalizeToolSetErrors>[0]
+  const callOptions = { toolCallId: 'tc1', messages: [] } as never
+
+  it('passes successful results through unchanged', async () => {
+    const tools = normalizeToolSetErrors({
+      ok_tool: { execute: () => Promise.resolve({ value: 42 }) },
+    } as unknown as AnyToolSet)
+
+    await expect(tools.ok_tool.execute?.({}, callOptions)).resolves.toEqual({ value: 42 })
+  })
+
+  it('rethrows Error throws unchanged', async () => {
+    const boom = new Error('backend unavailable')
+    const tools = normalizeToolSetErrors({
+      failing_tool: {
+        execute: () => Promise.reject(boom),
+      },
+    } as unknown as AnyToolSet)
+
+    await expect(tools.failing_tool.execute?.({}, callOptions)).rejects.toBe(boom)
+  })
+
+  it('wraps non-Error throws into an Error naming the tool', async () => {
+    const tools = normalizeToolSetErrors({
+      stringy_tool: {
+        execute: () => Promise.reject('plain string failure'),
+      },
+    } as unknown as AnyToolSet)
+
+    await expect(tools.stringy_tool.execute?.({}, callOptions)).rejects.toThrow(
+      'Tool "stringy_tool" failed: plain string failure'
+    )
+  })
+
+  it('converts returned Error instances into throws (legacy MCP return-err pattern)', async () => {
+    const returned = new Error('mcp server exploded')
+    const tools = normalizeToolSetErrors({
+      mcp__srv__tool: { execute: () => Promise.resolve(returned) },
+    } as unknown as AnyToolSet)
+
+    await expect(tools.mcp__srv__tool.execute?.({}, callOptions)).rejects.toBe(returned)
+  })
+
+  it('lets AbortError pass through untouched', async () => {
+    const abort = new DOMException('Aborted', 'AbortError')
+    const tools = normalizeToolSetErrors({
+      slow_tool: {
+        execute: () => Promise.reject(abort),
+      },
+    } as unknown as AnyToolSet)
+
+    await expect(tools.slow_tool.execute?.({}, callOptions)).rejects.toBe(abort)
+  })
+
+  it('leaves tools without execute untouched', () => {
+    const providerExecuted = { description: 'runs provider-side' }
+    const tools = normalizeToolSetErrors({
+      provider_tool: providerExecuted,
+    } as unknown as AnyToolSet)
+
+    expect(tools.provider_tool).toBe(providerExecuted)
   })
 })
 

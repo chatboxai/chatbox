@@ -199,22 +199,16 @@ export const mcpController = {
   },
 
   getAvailableTools(): ToolSet {
+    // Execution errors are left to throw: the AI SDK (v5+) converts a throwing
+    // tool into a `tool-error` stream part and continues the step loop, and
+    // `normalizeToolSetErrors` in tools-builder.ts is the shared safety net.
+    // (An older SDK needed errors returned as values; returning an Error object
+    // serializes to `{}` in the tool result, so the model saw nothing useful.)
     const toolSet: ToolSet = {}
     for (const { instance, config } of this.servers.values()) {
       const mcpTools = instance.getAvailableTools()
       for (const [toolName, tool] of Object.entries(mcpTools)) {
-        const rawExecute = tool.execute?.bind(tool)
-        toolSet[normalizeToolName(config.name, toolName)] = {
-          ...tool,
-          execute: async (args, options) => {
-            try {
-              return await rawExecute?.(args, options)
-            } catch (err) {
-              // 返回而非抛出，否则会导致流程中断
-              return err
-            }
-          },
-        }
+        toolSet[normalizeToolName(config.name, toolName)] = tool
       }
     }
     return toolSet

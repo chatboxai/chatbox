@@ -75,7 +75,7 @@ const sandbox_bash = tool({
   }),
   execute: async (input: { command: string; timeout?: number }, { abortSignal }: { abortSignal?: AbortSignal }) => {
     if (!platform.sandboxExec) {
-      return 'Sandbox not available on this platform'
+      throw new Error('Sandbox not available on this platform')
     }
     try {
       const timeout = input.timeout ?? DEFAULT_BASH_TIMEOUT
@@ -83,9 +83,10 @@ const sandbox_bash = tool({
       return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
+        // Cancellation is a result, not an error — the stream is being torn down.
         return { stdout: '', stderr: '[Command cancelled]', exitCode: 130 }
       }
-      return `Error executing command: ${error instanceof Error ? error.message : String(error)}`
+      throw error
     }
   },
 })
@@ -97,17 +98,13 @@ const sandbox_read = tool({
   }),
   execute: async (input: { file_path: string }, _context: { abortSignal?: AbortSignal }) => {
     if (!platform.sandboxRead) {
-      return 'Sandbox not available on this platform'
+      throw new Error('Sandbox not available on this platform')
     }
-    try {
-      const result = await platform.sandboxRead({ filePath: input.file_path })
-      if (!result.success) {
-        return `Error reading file: ${result.error}`
-      }
-      return { content: result.content ?? '' }
-    } catch (error) {
-      return `Error reading file: ${error instanceof Error ? error.message : String(error)}`
+    const result = await platform.sandboxRead({ filePath: input.file_path })
+    if (!result.success) {
+      throw new Error(`Error reading file: ${result.error}`)
     }
+    return { content: result.content ?? '' }
   },
 })
 
@@ -119,17 +116,13 @@ const sandbox_write = tool({
   }),
   execute: async (input: { file_path: string; content: string }, _context: { abortSignal?: AbortSignal }) => {
     if (!platform.sandboxWrite) {
-      return 'Sandbox not available on this platform'
+      throw new Error('Sandbox not available on this platform')
     }
-    try {
-      const result = await platform.sandboxWrite({ filePath: input.file_path, content: input.content })
-      if (!result.success) {
-        return `Error writing file: ${result.error}`
-      }
-      return `Successfully wrote to ${input.file_path}`
-    } catch (error) {
-      return `Error writing file: ${error instanceof Error ? error.message : String(error)}`
+    const result = await platform.sandboxWrite({ filePath: input.file_path, content: input.content })
+    if (!result.success) {
+      throw new Error(`Error writing file: ${result.error}`)
     }
+    return `Successfully wrote to ${input.file_path}`
   },
 })
 
@@ -145,21 +138,17 @@ const sandbox_edit = tool({
     _context: { abortSignal?: AbortSignal }
   ) => {
     if (!platform.sandboxEdit) {
-      return 'Sandbox not available on this platform'
+      throw new Error('Sandbox not available on this platform')
     }
-    try {
-      const result = await platform.sandboxEdit({
-        filePath: input.file_path,
-        search: input.old_text,
-        replace: input.new_text,
-      })
-      if (!result.success) {
-        return `Error editing file: ${result.error}`
-      }
-      return `Successfully edited ${input.file_path}`
-    } catch (error) {
-      return `Error editing file: ${error instanceof Error ? error.message : String(error)}`
+    const result = await platform.sandboxEdit({
+      filePath: input.file_path,
+      search: input.old_text,
+      replace: input.new_text,
+    })
+    if (!result.success) {
+      throw new Error(`Error editing file: ${result.error}`)
     }
+    return `Successfully edited ${input.file_path}`
   },
 })
 
@@ -175,21 +164,17 @@ const sandbox_grep = tool({
     _context: { abortSignal?: AbortSignal }
   ) => {
     if (!platform.sandboxGrep) {
-      return 'Sandbox not available on this platform'
+      throw new Error('Sandbox not available on this platform')
     }
-    try {
-      const result = await platform.sandboxGrep({
-        pattern: input.pattern,
-        dirPath: input.path,
-        include: input.include,
-      })
-      if (!result.success) {
-        return `Error searching: ${result.error}`
-      }
-      return { content: result.content ?? '' }
-    } catch (error) {
-      return `Error searching: ${error instanceof Error ? error.message : String(error)}`
+    const result = await platform.sandboxGrep({
+      pattern: input.pattern,
+      dirPath: input.path,
+      include: input.include,
+    })
+    if (!result.success) {
+      throw new Error(`Error searching: ${result.error}`)
     }
+    return { content: result.content ?? '' }
   },
 })
 
@@ -200,17 +185,13 @@ const sandbox_ls = tool({
   }),
   execute: async (input: { path?: string }, _context: { abortSignal?: AbortSignal }) => {
     if (!platform.sandboxLs) {
-      return 'Sandbox not available on this platform'
+      throw new Error('Sandbox not available on this platform')
     }
-    try {
-      const result = await platform.sandboxLs({ dirPath: input.path || '.' })
-      if (!result.success) {
-        return `Error listing directory: ${result.error}`
-      }
-      return { content: result.content ?? '' }
-    } catch (error) {
-      return `Error listing directory: ${error instanceof Error ? error.message : String(error)}`
+    const result = await platform.sandboxLs({ dirPath: input.path || '.' })
+    if (!result.success) {
+      throw new Error(`Error listing directory: ${result.error}`)
     }
+    return { content: result.content ?? '' }
   },
 })
 
@@ -222,17 +203,13 @@ const sandbox_find = tool({
   }),
   execute: async (input: { pattern?: string; path?: string }, _context: { abortSignal?: AbortSignal }) => {
     if (!platform.sandboxFind) {
-      return 'Sandbox not available on this platform'
+      throw new Error('Sandbox not available on this platform')
     }
-    try {
-      const result = await platform.sandboxFind({ dirPath: input.path || '.', pattern: input.pattern })
-      if (!result.success) {
-        return `Error finding files: ${result.error}`
-      }
-      return { content: result.content ?? '' }
-    } catch (error) {
-      return `Error finding files: ${error instanceof Error ? error.message : String(error)}`
+    const result = await platform.sandboxFind({ dirPath: input.path || '.', pattern: input.pattern })
+    if (!result.success) {
+      throw new Error(`Error finding files: ${result.error}`)
     }
+    return { content: result.content ?? '' }
   },
 })
 

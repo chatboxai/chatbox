@@ -29,7 +29,7 @@ import type {
   StreamTextResult,
 } from '../types'
 import type { ModelDependencies } from '../types/adapters'
-import { ApiError, WorkspAIceAIAPIError } from './errors'
+import { ApiError, BaseError, WorkspAIceAIAPIError } from './errors'
 import type {
   CallChatCompletionOptions,
   ChatStreamOptions,
@@ -421,18 +421,13 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     options: CallChatCompletionOptions
   ): void {
     for (const toolError of toolErrors) {
-      const serializedError =
-        toolError.error instanceof Error
-          ? {
-              name: toolError.error.name,
-              message: toolError.error.message,
-              stack: toolError.error.stack,
-            }
-          : toolError.error
+      // Same persisted shape as stream-chunk-processor.ts (error: string,
+      // errorCode?: number) — the UI's tool-error rendering expects it.
       const mappedResult: ToolExecutionResult = {
         toolCallId: toolError.toolCallId,
         result: {
-          error: serializedError,
+          error: toolError.error instanceof Error ? toolError.error.message : String(toolError.error),
+          errorCode: toolError.error instanceof BaseError ? toolError.error.code : undefined,
           input: toolError.input,
           toolName: toolError.toolName,
         },

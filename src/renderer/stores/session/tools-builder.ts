@@ -30,6 +30,47 @@ function escapeXml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+/**
+ * Normalizes tool failures onto a single channel: a thrown Error.
+ *
+ * Every toolset added below reports infrastructure failures by throwing; the AI SDK
+ * turns a throw into a `tool-error` stream part, forwards the message to the model,
+ * and continues the step loop. This wrapper is the safety net at the assembly
+ * boundary for tools that don't follow the convention (e.g. third-party MCP tools):
+ * non-Error throws are wrapped, and returned Error instances — which would otherwise
+ * JSON-serialize to `{}` in the tool result the model sees — are converted to throws.
+ * Aborts pass through untouched so cancellation keeps its existing semantics.
+ */
+export function normalizeToolSetErrors(tools: ToolSet): ToolSet {
+  const wrapped: ToolSet = {}
+  for (const [name, t] of Object.entries(tools)) {
+    const execute = t.execute?.bind(t)
+    if (!execute) {
+      wrapped[name] = t
+      continue
+    }
+    wrapped[name] = {
+      ...t,
+      execute: async (args, options) => {
+        let result: unknown
+        try {
+          result = await execute(args, options)
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            throw err
+          }
+          throw err instanceof Error ? err : new Error(`Tool "${name}" failed: ${String(err)}`)
+        }
+        if (result instanceof Error) {
+          throw result
+        }
+        return result
+      },
+    }
+  }
+  return wrapped
+}
+
 function getSessionAttachmentRagIds(messages: Message[]): number[] {
   return Array.from(
     new Set(
@@ -178,11 +219,11 @@ export async function buildToolsForSession(
           }),
           execute: async (input: { name: string }) => {
             if (!enabledSkillNames.includes(input.name)) {
-              return { error: `Skill "${input.name}" is not enabled for this session.` }
+              throw new Error(`Skill "${input.name}" is not enabled for this session.`)
             }
             const result = await skillsController.loadSkill(input.name)
             if (!result) {
-              return { error: `Skill "${input.name}" not found or could not be loaded.` }
+              throw new Error(`Skill "${input.name}" not found or could not be loaded.`)
             }
             return { instructions: result.body }
           },
@@ -198,13 +239,10 @@ export async function buildToolsForSession(
           }),
           execute: async (input: { skill_name: string; script_name: string; arguments?: string[] }) => {
             if (!enabledSkillNames.includes(input.skill_name)) {
-              return {
-                success: false,
-                stdout: '',
-                stderr: `Skill "${input.skill_name}" is not enabled.`,
-                exitCode: null,
-              }
+              throw new Error(`Skill "${input.skill_name}" is not enabled for this session.`)
             }
+            // A script that ran but exited non-zero is a result ({success, stdout,
+            // stderr, exitCode}), not an error — the model needs the output detail.
             const result = await skillsController.executeScript(input.skill_name, input.script_name, input.arguments)
             return result
           },
@@ -213,5 +251,5 @@ export async function buildToolsForSession(
     }
   }
 
-  return { tools, instructions }
+  return { tools: normalizeToolSetErrors(tools), instructions }
 }

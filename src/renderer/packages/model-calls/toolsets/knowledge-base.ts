@@ -25,7 +25,7 @@ export function getFilesMetaTool(knowledgeBaseId: number) {
     }),
     execute: async (input: { fileIds: number[] }) => {
       if (!input.fileIds || input.fileIds.length === 0) {
-        return 'Please provide an array of file IDs.'
+        throw new Error('Please provide an array of file IDs.')
       }
       const knowledgeBaseController = platform.getKnowledgeBaseController()
       return await knowledgeBaseController.getFilesMeta(knowledgeBaseId, input.fileIds)
@@ -48,7 +48,7 @@ export function readFileChunksTool(knowledgeBaseId: number) {
     }),
     execute: async (input: { chunks: Array<{ fileId: number; chunkIndex: number }> }) => {
       if (!input.chunks || input.chunks.length === 0) {
-        return 'Please provide an array of chunks to read.'
+        throw new Error('Please provide an array of chunks to read.')
       }
       const knowledgeBaseController = platform.getKnowledgeBaseController()
       return await knowledgeBaseController.readFileChunks(knowledgeBaseId, input.chunks)

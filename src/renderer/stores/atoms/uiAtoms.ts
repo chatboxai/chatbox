@@ -1,10 +1,6 @@
 import { atom } from 'jotai'
-import { atomFamily, atomWithStorage } from 'jotai/utils'
-import type React from 'react'
-import type { RefObject } from 'react'
-import type { VirtuosoHandle } from 'react-virtuoso'
-import platform from '@/platform'
-import type { KnowledgeBase, MessagePicture, Toast } from '../../../shared/types'
+import { atomWithStorage } from 'jotai/utils'
+import { atomFamily } from 'jotai-family'
 import type { PreConstructedMessageState } from '../../types/input-box'
 
 // Input box related state

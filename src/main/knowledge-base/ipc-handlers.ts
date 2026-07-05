@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import type { FileMeta } from 'src/shared/types'
 import { KNOWLEDGE_BASE_MAX_FILE_SIZE } from '../../shared/knowledge-base'
-import { sentry } from '../adapters/sentry'
+import { sentry } from '../../shared/sentry-shim'
 import { getLogger } from '../util'
 import { getDatabase, getVectorStore, parseSQLiteTimestamp, withTransaction } from './db'
 import { readChunks, searchKnowledgeBase } from './file-loaders'

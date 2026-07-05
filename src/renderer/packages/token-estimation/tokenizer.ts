@@ -5,10 +5,10 @@
  * It supports both the default tiktoken-based tokenizer and DeepSeek-specific tokenization.
  */
 
+import * as Sentry from '@shared/sentry-shim'
 import { Tiktoken } from 'js-tiktoken/lite'
 // @ts-ignore
 import cl100k_base from 'js-tiktoken/ranks/cl100k_base'
-import * as Sentry from '@/adapters/sentry_shim'
 import type { TokenizerType } from './types'
 
 // ============================================================================

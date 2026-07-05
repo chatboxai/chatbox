@@ -13,10 +13,6 @@ function createDependencies() {
       saveImage: vi.fn(),
       getImage: vi.fn(),
     },
-    sentry: {
-      captureException: vi.fn(),
-      withScope: vi.fn(),
-    },
     platformType: 'desktop',
   }
 

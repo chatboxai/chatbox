@@ -1,4 +1,4 @@
-import * as Sentry from '@/adapters/sentry_shim'
+import * as Sentry from '@shared/sentry-shim'
 import { countWord as sharedCountWord } from '../../shared/utils/word_count'
 
 /**

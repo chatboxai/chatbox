@@ -1,7 +1,7 @@
 import { ApiError, NetworkError } from '@shared/models/errors'
+import * as Sentry from '@shared/sentry-shim'
 import type { ModelProvider, TaskSession } from '@shared/types'
 import { createModel } from '@/adapters'
-import * as Sentry from '@/adapters/sentry_shim'
 import { languageNameMap } from '@/i18n/locales'
 import { generateText } from '@/packages/model-calls'
 import * as promptFormat from '@/packages/prompts'

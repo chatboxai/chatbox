@@ -1,4 +1,4 @@
-import * as Sentry from '@/adapters/sentry_shim'
+import * as Sentry from '@shared/sentry-shim'
 import type { Message, MessageFile, MessageLink } from '../../shared/types'
 import { TOKEN_CACHE_KEYS, type TokenCacheKey } from '../../shared/types/session'
 import { getMessageText, isEmptyMessage } from '../../shared/utils/message'

@@ -1,4 +1,4 @@
-import { sentry } from '../adapters/sentry'
+import { sentry } from '../../shared/sentry-shim'
 import { getLogger } from '../util'
 import { initializeDatabase } from './db'
 import { startWorkerLoop } from './file-loaders'

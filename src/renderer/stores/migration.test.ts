@@ -322,7 +322,7 @@ vi.mock('@/platform/web_platform', () => ({
   default: vi.fn(),
 }))
 
-vi.mock('@/adapters/sentry_shim', () => ({
+vi.mock('@shared/sentry-shim', () => ({
   getCurrentScope: () => ({
     setTag: vi.fn(),
   }),

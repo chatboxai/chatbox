@@ -3,8 +3,8 @@ import path from 'node:path'
 import { type Client, createClient } from '@libsql/client'
 import { LibSQLVector } from '@mastra/libsql'
 import { app } from 'electron'
+import { sentry } from '../../shared/sentry-shim'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
-import { sentry } from '../adapters/sentry'
 import { getLogger } from '../util'
 
 const log = getLogger('session-attachment-rag:db')

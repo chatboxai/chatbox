@@ -1,5 +1,5 @@
+import { sentry } from '../../shared/sentry-shim'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
-import { sentry } from '../adapters/sentry'
 import { getLogger } from '../util'
 import { initializeDatabase } from './db'
 import { startWorkerLoop } from './file-loaders'

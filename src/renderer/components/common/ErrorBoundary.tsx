@@ -1,5 +1,4 @@
 import React from 'react'
-import * as Sentry from '@/adapters/sentry_shim'
 import { getLogger } from '../../lib/utils'
 import { router } from '../../router'
 
@@ -11,47 +10,36 @@ interface ErrorBoundaryProps {
   name?: string
 }
 
+interface ErrorBoundaryState {
+  error: Error | null
+}
+
 /**
  * ErrorBoundary component that catches render errors and shows a fallback UI.
  */
-export function ErrorBoundary({ children, fallback: CustomFallback, name = 'ErrorBoundary' }: ErrorBoundaryProps) {
-  return (
-    <Sentry.ErrorBoundary
-      fallback={(fallbackProps) => {
-        const { error, resetError } = fallbackProps
-        const errorObj = error instanceof Error ? error : new Error(String(error))
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null }
 
-        // Log error locally
-        log.error(`${name} caught an error:`, errorObj)
+  static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
+    return { error: error instanceof Error ? error : new Error(String(error)) }
+  }
 
-        // Use custom fallback if provided, otherwise use default
-        if (CustomFallback) {
-          return <CustomFallback error={errorObj} retry={resetError} />
-        }
+  componentDidCatch(error: Error, info: React.ErrorInfo): void {
+    log.error(`${this.props.name ?? 'ErrorBoundary'} caught an error:`, error, info?.componentStack ?? '')
+  }
 
-        return <DefaultErrorFallback error={errorObj} retry={resetError} />
-      }}
-      beforeCapture={(scope, error, componentStack) => {
-        // Add custom context to Sentry
-        scope.setTag('errorBoundary', name)
-        scope.setLevel('error')
+  retry = (): void => {
+    this.setState({ error: null })
+  }
 
-        // Add component stack information if available
-        if (typeof componentStack === 'string' && componentStack) {
-          scope.setContext('react', {
-            componentStack,
-            errorBoundary: name,
-          })
-        }
-
-        // Log error details locally
-        log.error(`${name} caught an error:`, error, componentStack)
-      }}
-      showDialog={false}
-    >
-      {children}
-    </Sentry.ErrorBoundary>
-  )
+  render(): React.ReactNode {
+    const { error } = this.state
+    if (error) {
+      const Fallback = this.props.fallback ?? DefaultErrorFallback
+      return <Fallback error={error} retry={this.retry} />
+    }
+    return this.props.children
+  }
 }
 
 interface DefaultErrorFallbackProps {

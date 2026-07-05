@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { Client } from '@libsql/client'
 import { LibSQLVector } from '@mastra/libsql'
 import { app } from 'electron'
-import { sentry } from '../adapters/sentry'
+import { sentry } from '../../shared/sentry-shim'
 import { getLogger } from '../util'
 
 const log = getLogger('knowledge-base:db')

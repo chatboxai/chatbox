@@ -13,10 +13,6 @@ const dependencies: ModelDependencies = {
     saveImage: vi.fn(),
     getImage: vi.fn(),
   },
-  sentry: {
-    withScope: vi.fn(),
-    captureException: vi.fn(),
-  },
 }
 
 function sseResponse(events: unknown[]): Response {

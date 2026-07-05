@@ -1,7 +1,6 @@
 import type { CallChatCompletionOptions } from '@shared/models/types'
 import type { ModelDependencies } from '@shared/types/adapters'
 import type { ProviderModelInfo } from '@shared/types/settings'
-import type { SentryScope } from '@shared/utils/sentry_adapter'
 import { describe, expect, it, vi } from 'vitest'
 import OpenAIResponses from './openai-responses'
 
@@ -20,15 +19,6 @@ function createDependencies(): ModelDependencies {
     storage: {
       saveImage: vi.fn(),
       getImage: vi.fn(),
-    },
-    sentry: {
-      captureException: vi.fn(),
-      withScope: vi.fn((callback: (scope: SentryScope) => void) =>
-        callback({
-          setTag: vi.fn(),
-          setExtra: vi.fn(),
-        })
-      ),
     },
     platformType: 'desktop',
   }

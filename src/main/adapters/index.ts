@@ -8,7 +8,6 @@ import { createAfetch } from '../../shared/request/request'
 import type { SessionSettings } from '../../shared/types'
 import type { ApiRequestOptions, ModelDependencies } from '../../shared/types/adapters'
 import { getConfig, getSettings } from '../store-node'
-import { sentry } from './sentry'
 
 export async function createModelDependencies(): Promise<ModelDependencies> {
   // Main层的平台信息
@@ -61,7 +60,6 @@ export async function createModelDependencies(): Promise<ModelDependencies> {
         return response
       },
     },
-    sentry,
   }
 }
 

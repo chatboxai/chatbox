@@ -1,7 +1,7 @@
 import { ApiError, NetworkError } from '@shared/models/errors'
+import * as Sentry from '@shared/sentry-shim'
 import type { Language, Message, ModelProvider, SessionSettings, Settings } from '@shared/types'
 import { createModel } from '@/adapters'
-import * as Sentry from '@/adapters/sentry_shim'
 import { languageNameMap } from '@/i18n/locales'
 import { generateText } from '@/packages/model-calls'
 import { convertToModelMessages } from '@/packages/model-calls/message-utils'

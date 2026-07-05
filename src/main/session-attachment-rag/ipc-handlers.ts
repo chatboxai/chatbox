@@ -3,8 +3,8 @@ import { embedMany } from 'ai'
 import { ipcMain } from 'electron'
 import { isSessionAttachmentRagSupportedFilePath } from '../../shared/file-extensions'
 import { rerank } from '../../shared/models/rerank'
+import { sentry } from '../../shared/sentry-shim'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
-import { sentry } from '../adapters/sentry'
 import { getLogger } from '../util'
 import {
   cleanupOrphanAttachments,

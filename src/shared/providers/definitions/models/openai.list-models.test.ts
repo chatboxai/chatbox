@@ -1,13 +1,7 @@
 import type { ProviderModelInfo } from 'src/shared/types'
 import type { ModelDependencies } from 'src/shared/types/adapters'
-import type { SentryScope } from 'src/shared/utils/sentry_adapter'
 import { describe, expect, it, vi } from 'vitest'
 import OpenAI from './openai'
-
-const mockScope: SentryScope = {
-  setTag: vi.fn(),
-  setExtra: vi.fn(),
-}
 
 function createDependencies(): ModelDependencies {
   return {
@@ -18,10 +12,6 @@ function createDependencies(): ModelDependencies {
     storage: {
       saveImage: vi.fn(),
       getImage: vi.fn(),
-    },
-    sentry: {
-      captureException: vi.fn(),
-      withScope: vi.fn((callback: (scope: SentryScope) => void) => callback(mockScope)),
     },
     platformType: 'desktop',
     oauth: {

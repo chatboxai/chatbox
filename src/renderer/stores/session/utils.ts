@@ -1,7 +1,7 @@
 import { AIProviderNoImplementedPaintError, ApiError, BaseError, NetworkError, OCRError } from '@shared/models/errors'
+import * as Sentry from '@shared/sentry-shim'
 import type { Message, Session, SessionSettings, SessionType, Settings } from '@shared/types'
 import { identity, pickBy } from 'lodash'
-import * as Sentry from '@/adapters/sentry_shim'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
 import { uiStore } from '../uiStore'
 

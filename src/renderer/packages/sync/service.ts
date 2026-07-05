@@ -121,6 +121,23 @@ async function ensureWebDAVCollections(settings: Settings, platform: SyncPlatfor
   }
 }
 
+async function downloadWebDAVSnapshot(settings: Settings, platform: SyncPlatform): Promise<SyncSnapshot | undefined> {
+  const webdav = getWebDAVSettings(settings)
+  const response = await requestWebDAV(platform, webdav.url, {
+    url: snapshotUrl(settings),
+    method: 'GET',
+    headers: authHeaders(settings),
+  })
+
+  if (response.status === 404) {
+    return undefined
+  }
+  assertSuccess(response, 'Download WebDAV sync snapshot', [200])
+
+  const envelope = JSON.parse(response.body) as SyncCryptoEnvelope
+  return parseSyncSnapshot(await decryptJsonEnvelope(envelope, webdav.syncPassword))
+}
+
 export async function testWebDAVConnection(settings: Settings, deps: Pick<WebDAVSyncDeps, 'platform'>): Promise<void> {
   const webdav = getWebDAVSettings(settings)
   await ensureWebDAVCollections(settings, deps.platform)
@@ -148,12 +165,30 @@ export async function uploadWebDAVSnapshot(
     deps.platform.getDeviceName?.() ?? Promise.resolve('Unknown device'),
   ])
   const lastSyncedAt = new Date((deps.now ?? Date.now)()).toISOString()
-  const snapshot = createSyncSnapshot({
+  const localSnapshot = createSyncSnapshot({
     sessions,
     metas,
     deviceName,
     exportedAt: lastSyncedAt,
   })
+  const remoteSnapshot = await downloadWebDAVSnapshot(settings, deps.platform)
+  const mergeResult = remoteSnapshot
+    ? mergeRemoteSnapshot({
+        localSessions: localSnapshot.sessions,
+        localMetas: localSnapshot.metas,
+        remote: remoteSnapshot,
+        now: (deps.now ?? Date.now)(),
+        createId: deps.createId,
+      })
+    : undefined
+  const snapshot = mergeResult
+    ? createSyncSnapshot({
+        sessions: [...localSnapshot.sessions, ...mergeResult.sessionsToSave],
+        metas: [...localSnapshot.metas, ...mergeResult.metasToSave],
+        deviceName,
+        exportedAt: lastSyncedAt,
+      })
+    : localSnapshot
   const envelope = await encryptJsonEnvelope(snapshot, webdav.syncPassword)
   const response = await requestWebDAV(deps.platform, webdav.url, {
     url: snapshotUrl(settings),
@@ -176,14 +211,8 @@ export async function downloadAndMergeWebDAVSnapshot(
   settings: Settings,
   deps: WebDAVSyncDeps
 ): Promise<DownloadWebDAVSnapshotResult> {
-  const webdav = getWebDAVSettings(settings)
-  const response = await requestWebDAV(deps.platform, webdav.url, {
-    url: snapshotUrl(settings),
-    method: 'GET',
-    headers: authHeaders(settings),
-  })
-
-  if (response.status === 404) {
+  const remote = await downloadWebDAVSnapshot(settings, deps.platform)
+  if (!remote) {
     return {
       imported: 0,
       conflicts: 0,
@@ -191,10 +220,7 @@ export async function downloadAndMergeWebDAVSnapshot(
       remoteMissing: true,
     }
   }
-  assertSuccess(response, 'Download WebDAV sync snapshot', [200])
 
-  const envelope = JSON.parse(response.body) as SyncCryptoEnvelope
-  const remote = parseSyncSnapshot(await decryptJsonEnvelope(envelope, webdav.syncPassword))
   const [localSessions, localMetas] = await Promise.all([deps.listLocalSessions(), deps.listLocalMetas()])
   const result = mergeRemoteSnapshot({
     localSessions,

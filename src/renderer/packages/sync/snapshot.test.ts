@@ -24,12 +24,7 @@ function legacySession(id: string, name: string, text: string): Session {
   return value
 }
 
-function meta(
-  id: string,
-  name: string,
-  sortOrder = 1,
-  type: SessionMetaRecord['type'] = 'chat'
-): SessionMetaRecord {
+function meta(id: string, name: string, sortOrder = 1, type: SessionMetaRecord['type'] = 'chat'): SessionMetaRecord {
   return {
     id,
     name,
@@ -69,6 +64,100 @@ describe('sync snapshot merge', () => {
     expect(snapshot.metas.map((item) => item.id)).toEqual(['chat-1', 'legacy-1'])
   })
 
+  it('strips local-only blob references when creating snapshots', () => {
+    const local = session('chat-1', 'Chat', 'hello')
+    local.assistantAvatarKey = 'avatar-key'
+    local.backgroundImage = { type: 'storage-key', storageKey: 'background-key' }
+    local.messages[0].contentParts.push({ type: 'image', storageKey: 'image-key' })
+    local.messages[0].files = [
+      {
+        id: 'file-1',
+        name: 'doc.txt',
+        fileType: 'text/plain',
+        storageKey: 'file-key',
+        localPath: '/tmp/doc.txt',
+        ragMode: 'session-retrieval',
+        sessionAttachmentId: 12,
+        sessionAttachmentAvailability: 'allowed',
+        tokenCountMap: { default: 10 },
+        lineCount: 5,
+        byteLength: 123,
+      },
+    ]
+    local.messages[0].links = [
+      {
+        id: 'link-1',
+        title: 'Example',
+        url: 'https://example.com',
+        storageKey: 'link-key',
+        tokenCountMap: { default: 20 },
+        lineCount: 10,
+        byteLength: 456,
+      },
+    ]
+    ;(local.messages[0] as unknown as { pictures: Array<{ storageKey: string }> }).pictures = [
+      { storageKey: 'legacy-picture-key' },
+    ]
+    local.threads = [
+      {
+        id: 'thread-1',
+        name: 'Thread',
+        createdAt: 1,
+        messages: [
+          {
+            id: 'thread-message-1',
+            role: 'user',
+            contentParts: [{ type: 'image', storageKey: 'thread-image-key' }],
+          },
+        ],
+      },
+    ]
+    local.messageForksHash = {
+      fork: {
+        position: 0,
+        createdAt: 1,
+        lists: [
+          {
+            id: 'fork-list',
+            messages: [
+              {
+                id: 'fork-message-1',
+                role: 'user',
+                contentParts: [{ type: 'image', storageKey: 'fork-image-key' }],
+              },
+            ],
+          },
+        ],
+      },
+    }
+
+    const snapshot = createSyncSnapshot({
+      sessions: [local],
+      metas: [
+        {
+          ...meta('chat-1', 'Chat'),
+          assistantAvatarKey: 'avatar-key',
+          backgroundImage: { type: 'storage-key', storageKey: 'background-key' },
+        },
+      ],
+      deviceName: 'Mac',
+      exportedAt: '2026-06-21T00:00:00.000Z',
+    })
+    const synced = snapshot.sessions[0]
+    const message = synced.messages[0]
+
+    expect(synced.assistantAvatarKey).toBeUndefined()
+    expect(synced.backgroundImage).toBeUndefined()
+    expect(message.contentParts).toEqual([{ type: 'text', text: 'hello' }])
+    expect(message.files).toEqual([{ id: 'file-1', name: 'doc.txt', fileType: 'text/plain' }])
+    expect(message.links).toEqual([{ id: 'link-1', title: 'Example', url: 'https://example.com' }])
+    expect(message).not.toHaveProperty('pictures')
+    expect(synced.threads?.[0].messages[0].contentParts).toEqual([])
+    expect(synced.messageForksHash?.fork.lists[0].messages[0].contentParts).toEqual([])
+    expect(snapshot.metas[0].assistantAvatarKey).toBeUndefined()
+    expect(snapshot.metas[0].backgroundImage).toBeUndefined()
+  })
+
   it('imports missing remote sessions and metadata', () => {
     const remote: SyncSnapshot = {
       version: 1,
@@ -90,6 +179,44 @@ describe('sync snapshot merge', () => {
     expect(result.metasToSave.map((m) => m.id)).toEqual(['remote-1'])
     expect(result.imported).toBe(1)
     expect(result.conflicts).toBe(0)
+  })
+
+  it('strips local-only blob references when importing remote sessions', () => {
+    const remoteSession = session('remote-1', 'Remote', 'hello')
+    remoteSession.assistantAvatarKey = 'avatar-key'
+    remoteSession.messages[0].contentParts.push({ type: 'image', storageKey: 'image-key' })
+    remoteSession.messages[0].files = [
+      { id: 'file-1', name: 'doc.txt', fileType: 'text/plain', storageKey: 'file-key', localPath: '/tmp/doc.txt' },
+    ]
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [remoteSession],
+      metas: [
+        {
+          ...meta('remote-1', 'Remote'),
+          assistantAvatarKey: 'avatar-key',
+          backgroundImage: { type: 'storage-key', storageKey: 'background-key' },
+        },
+      ],
+    }
+
+    const result = mergeRemoteSnapshot({
+      localSessions: [],
+      localMetas: [],
+      remote,
+      now: 1000,
+      createId: () => 'unused',
+    })
+
+    expect(result.sessionsToSave[0].assistantAvatarKey).toBeUndefined()
+    expect(result.sessionsToSave[0].messages[0].contentParts).toEqual([{ type: 'text', text: 'hello' }])
+    expect(result.sessionsToSave[0].messages[0].files).toEqual([
+      { id: 'file-1', name: 'doc.txt', fileType: 'text/plain' },
+    ])
+    expect(result.metasToSave[0].assistantAvatarKey).toBeUndefined()
+    expect(result.metasToSave[0].backgroundImage).toBeUndefined()
   })
 
   it('ignores non-chat remote sessions and repairs non-chat metas for imported chat sessions', () => {

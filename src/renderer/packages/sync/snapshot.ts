@@ -1,4 +1,11 @@
-import { isChatSession, type Session, type SessionMetaRecord } from '@shared/types'
+import {
+  isChatSession,
+  type Message,
+  type MessageFile,
+  type MessageLink,
+  type Session,
+  type SessionMetaRecord,
+} from '@shared/types'
 import type { MergeRemoteSnapshotInput, MergeRemoteSnapshotResult, SyncSnapshot } from './types'
 
 function isChatSessionMetaLike(item: Pick<SessionMetaRecord, 'type'>): boolean {
@@ -22,15 +29,105 @@ function sessionsEqual(left: Session, right: Session): boolean {
   return stableStringify(left) === stableStringify(right)
 }
 
+function stripLocalFileReferences(file: MessageFile): MessageFile {
+  const {
+    storageKey: _storageKey,
+    localPath: _localPath,
+    ragMode: _ragMode,
+    sessionAttachmentId: _sessionAttachmentId,
+    sessionAttachmentAvailability: _sessionAttachmentAvailability,
+    sessionAttachmentIndexStatus: _sessionAttachmentIndexStatus,
+    sessionAttachmentBlockedReason: _sessionAttachmentBlockedReason,
+    sessionAttachmentWarningReason: _sessionAttachmentWarningReason,
+    sessionAttachmentStatus: _sessionAttachmentStatus,
+    sessionAttachmentChunkCount: _sessionAttachmentChunkCount,
+    sessionAttachmentIndexingStage: _sessionAttachmentIndexingStage,
+    sessionAttachmentTotalChunks: _sessionAttachmentTotalChunks,
+    sessionAttachmentEmbeddedChunks: _sessionAttachmentEmbeddedChunks,
+    tokenCountMap: _tokenCountMap,
+    tokenCalculatedAt: _tokenCalculatedAt,
+    lineCount: _lineCount,
+    byteLength: _byteLength,
+    ...rest
+  } = file
+  return rest
+}
+
+function stripLocalLinkReferences(link: MessageLink): MessageLink {
+  const {
+    storageKey: _storageKey,
+    tokenCountMap: _tokenCountMap,
+    tokenCalculatedAt: _tokenCalculatedAt,
+    lineCount: _lineCount,
+    byteLength: _byteLength,
+    ...rest
+  } = link
+  return rest
+}
+
+function stripLocalMessageReferences(message: Message): Message {
+  const { pictures: _pictures, ...messageWithoutLegacyPictures } = message as Message & { pictures?: unknown }
+  const result: Message = {
+    ...messageWithoutLegacyPictures,
+    contentParts: message.contentParts.filter((part) => part.type !== 'image'),
+  }
+
+  if (message.files) {
+    result.files = message.files.map(stripLocalFileReferences)
+  }
+  if (message.links) {
+    result.links = message.links.map(stripLocalLinkReferences)
+  }
+
+  return result
+}
+
+function stripLocalSessionReferences(session: Session): Session {
+  const {
+    assistantAvatarKey: _assistantAvatarKey,
+    backgroundImage: _backgroundImage,
+    ...sessionWithoutLocalImages
+  } = session
+
+  return {
+    ...sessionWithoutLocalImages,
+    backgroundImage: session.backgroundImage?.type === 'url' ? session.backgroundImage : undefined,
+    messages: session.messages.map(stripLocalMessageReferences),
+    threads: session.threads?.map((thread) => ({
+      ...thread,
+      messages: thread.messages.map(stripLocalMessageReferences),
+    })),
+    messageForksHash: session.messageForksHash
+      ? Object.fromEntries(
+          Object.entries(session.messageForksHash).map(([key, fork]) => [
+            key,
+            {
+              ...fork,
+              lists: fork.lists.map((list) => ({
+                ...list,
+                messages: list.messages.map(stripLocalMessageReferences),
+              })),
+            },
+          ])
+        )
+      : undefined,
+  }
+}
+
+function stripLocalMetaReferences(meta: SessionMetaRecord): SessionMetaRecord {
+  const { assistantAvatarKey: _assistantAvatarKey, backgroundImage: _backgroundImage, ...metaWithoutLocalImages } = meta
+
+  return {
+    ...metaWithoutLocalImages,
+    backgroundImage: meta.backgroundImage?.type === 'url' ? meta.backgroundImage : undefined,
+  }
+}
+
 function copyName(name: string): string {
   return `${name} (Synced copy)`
 }
 
-function metaForSession(
-  session: Session,
-  remoteMeta: SessionMetaRecord | undefined,
-  now: number
-): SessionMetaRecord {
+function metaForSession(session: Session, remoteMeta: SessionMetaRecord | undefined, now: number): SessionMetaRecord {
   return {
     id: session.id,
     name: session.name,
@@ -70,7 +167,7 @@ export function createSyncSnapshot(input: {
   deviceName: string
   exportedAt?: string
 }): SyncSnapshot {
-  const sessions = input.sessions.filter(isChatSession)
+  const sessions = input.sessions.filter(isChatSession).map(stripLocalSessionReferences)
   const sessionIds = new Set(sessions.map((session) => session.id))
 
   return {
@@ -78,14 +175,27 @@ export function createSyncSnapshot(input: {
     exportedAt: input.exportedAt ?? new Date().toISOString(),
     deviceName: input.deviceName,
     sessions,
-    metas: input.metas.filter((meta) => sessionIds.has(meta.id) && isChatSessionMetaLike(meta)),
+    metas: input.metas
+      .filter((meta) => sessionIds.has(meta.id) && isChatSessionMetaLike(meta))
+      .map(stripLocalMetaReferences),
   }
 }
 
 export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemoteSnapshotResult {
-  const localSessionById = new Map(input.localSessions.filter(isChatSession).map((session) => [session.id, session]))
-  const localMetaById = new Map(input.localMetas.filter(isChatSessionMetaLike).map((meta) => [meta.id, meta]))
-  const remoteMetaById = new Map(input.remote.metas.map((meta) => [meta.id, meta]))
+  const localSessionById = new Map(
+    input.localSessions.filter(isChatSession).map((session) => {
+      const sanitizedSession = stripLocalSessionReferences(session)
+      return [sanitizedSession.id, sanitizedSession]
+    })
+  )
+  const localMetaById = new Map(
+    input.localMetas.filter(isChatSessionMetaLike).map((meta) => {
+      const sanitizedMeta = stripLocalMetaReferences(meta)
+      return [sanitizedMeta.id, sanitizedMeta]
+    })
+  )
+  const remoteMetas = input.remote.metas.map(stripLocalMetaReferences)
+  const remoteMetaById = new Map(remoteMetas.map((meta) => [meta.id, meta]))
   const seenRemoteSessionIds = new Set<string>()
 
   const sessionsToSave: Session[] = []
@@ -93,7 +203,7 @@ export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemot
   let imported = 0
   let conflicts = 0
 
-  for (const remoteSession of input.remote.sessions) {
+  for (const remoteSession of input.remote.sessions.map(stripLocalSessionReferences)) {
     if (!isChatSession(remoteSession) || seenRemoteSessionIds.has(remoteSession.id)) {
       continue
     }

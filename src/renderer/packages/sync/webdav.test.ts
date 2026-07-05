@@ -18,6 +18,10 @@ describe('WebDAV helpers', () => {
     expect(buildBasicAuthHeader('alice', 'app-password')).toBe(`Basic ${btoa('alice:app-password')}`)
   })
 
+  it('encodes basic auth credentials as UTF-8 before base64 encoding', () => {
+    expect(buildBasicAuthHeader('用户', '密钥')).toBe(`Basic ${Buffer.from('用户:密钥', 'utf8').toString('base64')}`)
+  })
+
   it('routes requests through the platform WebDAV request method', async () => {
     const webdavRequest = vi.fn(async () => ({
       status: 200,
@@ -38,12 +42,15 @@ describe('WebDAV helpers', () => {
       }
     )
 
-    expect(webdavRequest).toHaveBeenCalledWith({
-      url: 'https://dav.example.com/ChatboxSync/v1/snapshot.json.enc',
-      method: 'PUT',
-      headers: { Authorization: 'Basic abc' },
-      body: 'payload',
-    }, 'https://dav.example.com/')
+    expect(webdavRequest).toHaveBeenCalledWith(
+      {
+        url: 'https://dav.example.com/ChatboxSync/v1/snapshot.json.enc',
+        method: 'PUT',
+        headers: { Authorization: 'Basic abc' },
+        body: 'payload',
+      },
+      'https://dav.example.com/'
+    )
     expect(result.body).toBe('ok')
   })
 

@@ -3,6 +3,15 @@ import { spawn } from 'child_process'
 import { app, ipcMain, shell } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import {
+  parseIpcPayload,
+  skillNamePayload,
+  skillsCreatePayload,
+  skillsExecuteScriptPayload,
+  skillsInstallMarketplacePayload,
+  skillsInstallPayload,
+  skillsScanRepoPayload,
+} from '../ipc-payloads'
 import { getLogger } from '../util'
 import { discoverSkills } from './discovery'
 import { detectSkillsInRepo } from './github-fetcher'
@@ -26,9 +35,10 @@ export function registerSkillsHandlers() {
     }
   })
 
-  ipcMain.handle('skills:load', async (_event, name: string) => {
+  ipcMain.handle('skills:load', async (_event, rawName: string) => {
+    const name = parseIpcPayload('skills:load', skillNamePayload, rawName)
     try {
-      if (!name || typeof name !== 'string') {
+      if (!name) {
         return null
       }
       if (!isValidSkillName(name)) {
@@ -62,9 +72,9 @@ export function registerSkillsHandlers() {
     return getSkillsDir()
   })
 
-  ipcMain.handle('skills:create', async (_event, params: { name: string; description: string; body: string }) => {
+  ipcMain.handle('skills:create', async (_event, rawParams: { name: string; description: string; body: string }) => {
     try {
-      const { name, description, body } = params
+      const { name, description, body } = parseIpcPayload('skills:create', skillsCreatePayload, rawParams)
       if (!isValidSkillName(name)) {
         return {
           success: false,
@@ -93,7 +103,8 @@ export function registerSkillsHandlers() {
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       log.error('skills:create failed', error)
-      return { success: false, skillName: params?.name ?? '', error: msg }
+      const fallbackName = typeof rawParams?.name === 'string' ? rawParams.name : ''
+      return { success: false, skillName: fallbackName, error: msg }
     }
   })
 
@@ -117,9 +128,14 @@ export function registerSkillsHandlers() {
       _event,
       params: { skillName: string; scriptName: string; args?: string[] }
     ): Promise<{ success: boolean; stdout: string; stderr: string; exitCode: number | null }> => {
-      const { skillName, scriptName, args = [] } = params
-
+      let skillName = ''
+      let scriptName = ''
       try {
+        const parsed = parseIpcPayload('skills:execute-script', skillsExecuteScriptPayload, params)
+        skillName = parsed.skillName
+        scriptName = parsed.scriptName
+        const args = parsed.args ?? []
+
         if (!skillName || !scriptName) {
           throw new Error('Skill name and script name are required')
         }
@@ -247,7 +263,8 @@ export function registerSkillsHandlers() {
     }
   )
 
-  ipcMain.handle('skills:scan-repo', async (_event, owner: string, repo: string) => {
+  ipcMain.handle('skills:scan-repo', async (_event, rawOwner: string, rawRepo: string) => {
+    const [owner, repo] = parseIpcPayload('skills:scan-repo', skillsScanRepoPayload, [rawOwner, rawRepo])
     try {
       return await detectSkillsInRepo(owner, repo)
     } catch (error) {
@@ -256,8 +273,9 @@ export function registerSkillsHandlers() {
     }
   })
 
-  ipcMain.handle('skills:install', async (_event, params: { owner: string; repo: string; skillPath: string }) => {
+  ipcMain.handle('skills:install', async (_event, rawParams: { owner: string; repo: string; skillPath: string }) => {
     try {
+      const params = parseIpcPayload('skills:install', skillsInstallPayload, rawParams)
       return await installSkillFromGitHub(params.owner, params.repo, params.skillPath)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
@@ -266,32 +284,36 @@ export function registerSkillsHandlers() {
     }
   })
 
-  ipcMain.handle('skills:install-marketplace', async (_event, skill: MarketplaceSkill) => {
+  ipcMain.handle('skills:install-marketplace', async (_event, rawSkill: MarketplaceSkill) => {
     try {
+      const skill = parseIpcPayload('skills:install-marketplace', skillsInstallMarketplacePayload, rawSkill)
       return await installSkillFromMarketplace(skill)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       log.error('skills:install-marketplace failed', error)
-      return { success: false, skillName: skill?.name ?? '', error: msg }
+      const fallbackName = typeof rawSkill?.name === 'string' ? rawSkill.name : ''
+      return { success: false, skillName: fallbackName, error: msg }
     }
   })
 
-  ipcMain.handle('skills:delete', async (_event, skillName: string) => {
+  ipcMain.handle('skills:delete', async (_event, rawSkillName: string) => {
     try {
+      const skillName = parseIpcPayload('skills:delete', skillNamePayload, rawSkillName)
       return await deleteSkill(skillName)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
-      log.error(`skills:delete failed for "${skillName}"`, error)
+      log.error(`skills:delete failed for "${String(rawSkillName)}"`, error)
       return { success: false, error: msg }
     }
   })
 
-  ipcMain.handle('skills:check-update', async (_event, skillName: string) => {
+  ipcMain.handle('skills:check-update', async (_event, rawSkillName: string) => {
     try {
+      const skillName = parseIpcPayload('skills:check-update', skillNamePayload, rawSkillName)
       return await checkForUpdates(skillName)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
-      log.error(`skills:check-update failed for "${skillName}"`, error)
+      log.error(`skills:check-update failed for "${String(rawSkillName)}"`, error)
       return { hasUpdate: false, error: msg }
     }
   })

@@ -7,6 +7,12 @@ import { BrowserWindow, ipcMain } from 'electron'
 import iconv from 'iconv-lite'
 import { isEmpty } from 'lodash'
 import { v4 as uuidv4 } from 'uuid'
+import {
+  mcpStdioCreateMetaPayload,
+  mcpStdioCreatePayload,
+  mcpTransportIdPayload,
+  parseIpcPayload,
+} from '../ipc-payloads'
 import { getLogger } from '../util'
 import { ensureStdioServerApproved } from './approval-ledger'
 import { shellEnv } from './shell-env'
@@ -36,7 +42,11 @@ function getTransport(transportId: string) {
 
 ipcMain.handle(
   'mcp:stdio-transport:create',
-  async (event, serverParams: StdioServerParameters, meta?: { name?: string }) => {
+  async (event, rawServerParams: StdioServerParameters, rawMeta?: { name?: string }) => {
+    // §6.2: shape-validate before anything else — command/args/env feed both
+    // the approval fingerprint and the spawn.
+    const serverParams = parseIpcPayload('mcp:stdio-transport:create', mcpStdioCreatePayload, rawServerParams)
+    const meta = parseIpcPayload('mcp:stdio-transport:create (meta)', mcpStdioCreateMetaPayload, rawMeta)
     logger.info('create', serverParams)
 
     // SEC-1: a stdio launch runs a local process with the user's permissions.
@@ -95,19 +105,22 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('mcp:stdio-transport:start', async (_event, transportId: string) => {
+ipcMain.handle('mcp:stdio-transport:start', async (_event, rawTransportId: string) => {
+  const transportId = parseIpcPayload('mcp:stdio-transport:start', mcpTransportIdPayload, rawTransportId)
   logger.info('start', transportId)
   const transport = getTransport(transportId)
   await transport.start()
 })
 
-ipcMain.handle('mcp:stdio-transport:send', async (_event, transportId: string, message: JSONRPCMessage) => {
+ipcMain.handle('mcp:stdio-transport:send', async (_event, rawTransportId: string, message: JSONRPCMessage) => {
+  const transportId = parseIpcPayload('mcp:stdio-transport:send', mcpTransportIdPayload, rawTransportId)
   logger.info('send', transportId, message)
   const transport = getTransport(transportId)
   await transport.send(message)
 })
 
-ipcMain.handle('mcp:stdio-transport:close', async (_event, transportId: string) => {
+ipcMain.handle('mcp:stdio-transport:close', async (_event, rawTransportId: string) => {
+  const transportId = parseIpcPayload('mcp:stdio-transport:close', mcpTransportIdPayload, rawTransportId)
   logger.info('close', transportId)
   const transport = getTransport(transportId)
   await transport.close()

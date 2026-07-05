@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
 import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
 import type { ImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type { SessionMetaStorage } from '@/storage/SessionMetaStorage'
@@ -10,11 +9,15 @@ export type PlatformType = 'web' | 'desktop' | 'mobile'
 
 export interface Storage {
   getStorageType(): string
+  // biome-ignore lint/suspicious/noExplicitAny: the store holds heterogeneous JSON payloads; callers narrow per key
   setStoreValue(key: string, value: any): Promise<void>
+  // biome-ignore lint/suspicious/noExplicitAny: the store holds heterogeneous JSON payloads; callers narrow per key
   getStoreValue(key: string): Promise<any>
   delStoreValue(key: string): Promise<void>
+  // biome-ignore lint/suspicious/noExplicitAny: the store holds heterogeneous JSON payloads; callers narrow per key
   getAllStoreValues(): Promise<{ [key: string]: any }>
   getAllStoreKeys(): Promise<string[]>
+  // biome-ignore lint/suspicious/noExplicitAny: the store holds heterogeneous JSON payloads; callers narrow per key
   setAllStoreValues(data: { [key: string]: any }): Promise<void>
 }
 

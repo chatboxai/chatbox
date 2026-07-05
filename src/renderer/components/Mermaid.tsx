@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/security/noDangerouslySetInnerHtml: <explanation> */
 import DataObjectIcon from '@mui/icons-material/DataObject'
 import { ChartBarStacked } from 'lucide-react'
 import mermaid from 'mermaid'
@@ -95,7 +94,7 @@ export function MermaidSVGPreviewDangerous(props: {
         })
       }}
     >
-      {/* 这里直接注入了 svg 代码 */}
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: svgCode is SVG produced by mermaid.render() from the fenced chart source, not raw model/user HTML */}
       <div dangerouslySetInnerHTML={{ __html: svgCode }} />
     </div>
   )

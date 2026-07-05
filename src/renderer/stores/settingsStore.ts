@@ -1,6 +1,3 @@
-/** biome-ignore-all lint/suspicious/noExplicitAny: any */
-/** biome-ignore-all lint/suspicious/noFallthroughSwitchClause: migrate */
-
 import * as defaults from '@shared/defaults'
 import { type ProviderSettings, type Settings, SettingsSchema } from '@shared/types'
 import type { DocumentParserConfig } from '@shared/types/settings'
@@ -70,13 +67,16 @@ export const settingsStore = createStore<Settings & Action>()(
             return state
           }
         },
+        // biome-ignore lint/suspicious/noExplicitAny: pre-migration persisted state predates the current schema
         migrate: (persisted: any, version) => {
           // merge the newly added fields in defaults.settings() into the persisted values (deep merge).
+          // biome-ignore lint/suspicious/noExplicitAny: pre-migration persisted state predates the current schema
           const settings: any = deepmerge(defaults.settings(), persisted, {
             arrayMerge: (_target, source) => source,
           })
 
           switch (version) {
+            // biome-ignore lint/suspicious/noFallthroughSwitchClause: migrations from version N intentionally run every later step
             case 0:
               // fix typo
               settings.shortcuts.inputBoxSendMessage =
@@ -84,6 +84,7 @@ export const settingsStore = createStore<Settings & Action>()(
               settings.shortcuts.inputBoxSendMessageWithoutResponse =
                 settings.shortcuts.inpubBoxSendMessageWithoutResponse ||
                 settings.shortcuts.inputBoxSendMessageWithoutResponse
+            // biome-ignore lint/suspicious/noFallthroughSwitchClause: migrations from version N intentionally run every later step
             case 2:
               // Add skills defaults for existing users upgrading from before skills feature
               if (!settings.skills) {

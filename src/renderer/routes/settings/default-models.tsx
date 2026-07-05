@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/style/noNonNullAssertion: <todo> */
 import { Flex, Stack, Text, Title } from '@mantine/core'
 import { SystemProviders } from '@shared/defaults'
 import { IconSelector } from '@tabler/icons-react'
@@ -34,7 +33,7 @@ export function RouteComponent() {
           keepMounted
           width={320}
           showAuto={true}
-          autoText={t('Auto (Use Last Used)')!}
+          autoText={t('Auto (Use Last Used)') ?? undefined}
           selectedProviderId={settings.defaultChatModel?.provider}
           selectedModelId={settings.defaultChatModel?.model}
           searchPosition="top"
@@ -51,7 +50,7 @@ export function RouteComponent() {
           }}
         >
           <ModelSelectContent
-            autoText={t('Auto (Use Last Used)')!}
+            autoText={t('Auto (Use Last Used)') ?? undefined}
             provider={settings.defaultChatModel?.provider}
             model={settings.defaultChatModel?.model}
           />
@@ -69,7 +68,7 @@ export function RouteComponent() {
           position="bottom-start"
           width={320}
           showAuto={true}
-          autoText={t('Auto (Use Chat Model)')!}
+          autoText={t('Auto (Use Chat Model)') ?? undefined}
           selectedProviderId={settings.threadNamingModel?.provider}
           selectedModelId={settings.threadNamingModel?.model}
           searchPosition="top"
@@ -86,7 +85,7 @@ export function RouteComponent() {
           }
         >
           <ModelSelectContent
-            autoText={t('Auto (Use Chat Model)')!}
+            autoText={t('Auto (Use Chat Model)') ?? undefined}
             provider={settings.threadNamingModel?.provider}
             model={settings.threadNamingModel?.model}
           />
@@ -104,7 +103,7 @@ export function RouteComponent() {
           position="bottom-start"
           width={320}
           showAuto={true}
-          autoText={t('Auto (Use Chat Model)')!}
+          autoText={t('Auto (Use Chat Model)') ?? undefined}
           selectedProviderId={settings.searchTermConstructionModel?.provider}
           selectedModelId={settings.searchTermConstructionModel?.model}
           searchPosition="top"
@@ -121,7 +120,7 @@ export function RouteComponent() {
           }
         >
           <ModelSelectContent
-            autoText={t('Auto (Use Chat Model)')!}
+            autoText={t('Auto (Use Chat Model)') ?? undefined}
             provider={settings.searchTermConstructionModel?.provider}
             model={settings.searchTermConstructionModel?.model}
           />
@@ -137,7 +136,7 @@ export function RouteComponent() {
         <ModelSelector
           position="bottom-start"
           showAuto={true}
-          autoText={t('None')!}
+          autoText={t('None') ?? undefined}
           width={320}
           modelFilter={(model) => model.capabilities?.includes('vision') ?? false}
           selectedProviderId={settings.ocrModel?.provider}
@@ -156,7 +155,7 @@ export function RouteComponent() {
           }
         >
           <ModelSelectContent
-            autoText={t('None')!}
+            autoText={t('None') ?? undefined}
             provider={settings.ocrModel?.provider}
             model={settings.ocrModel?.model}
           />

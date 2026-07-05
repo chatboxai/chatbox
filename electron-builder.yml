@@ -7,11 +7,12 @@ asarUnpack:
   - "**/node_modules/libsql/**"
 files:
   - "dist"
-  # - "!dist/**/*.map"
-  # - "!dist/**/stats.html"
+  - "!dist/**/*.map"
+  - "!dist/**/stats.html"
   - "node_modules"
   - "!node_modules/@types"
   - "!node_modules/undici-types"
+  - "!node_modules/**/*.map"
   - "package.json"
 
 beforePack: .erb/scripts/ensure-app-deps.cjs

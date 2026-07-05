@@ -45,6 +45,7 @@ Future development after `1.0.1-beta` should be recorded here until the next bet
 - Replaced all five whole-file lint-suppression directives with per-line suppressions carrying real justifications; the settings screen's default-model pickers lost their non-null assertions outright via a proper nullability fix.
 - Marked every fire-and-forget promise call explicitly with `void` (49 sites across renderer startup, hooks, mobile platform, and main-process backup/worker paths) so unintentionally dropped promises can no longer hide; Biome baseline ratcheted down to 0 errors / 769 warnings.
 - Fixed the broken `delete-sourcemaps` npm script (used by the web and mobile build paths): it pointed at a file that never existed, and the underlying script imported webpack-era config that was removed long ago. It now actually strips production sourcemaps from `release/app/dist`.
+- The packaged desktop app no longer bundles sourcemaps or bundle-analysis reports: hidden production sourcemaps (app and node_modules) and the `stats.html` visualizer output are now excluded at packaging time, shrinking the macOS app archive from 313 MB to 160 MB (−49%). Verified with a full arm64 package build, an archive audit (zero map/stats files, all packages intact), and a packaged-app launch probe.
 
 ### Chat Organization
 

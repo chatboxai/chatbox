@@ -1,4 +1,5 @@
 import type { Session, SessionMetaRecord } from '@shared/types'
+
 export type { WebDAVMethod, WebDAVRequest, WebDAVResponse } from '@shared/sync-webdav'
 
 export type SyncProvider = 'webdav'
@@ -27,6 +28,7 @@ export type MergeRemoteSnapshotInput = {
   remote: SyncSnapshot
   now: number
   createId: () => string
+  preferRemoteMetadata?: boolean
 }
 
 export type MergeRemoteSnapshotResult = {

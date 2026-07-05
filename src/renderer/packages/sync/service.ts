@@ -228,6 +228,7 @@ export async function downloadAndMergeWebDAVSnapshot(
     remote,
     now: (deps.now ?? Date.now)(),
     createId: deps.createId,
+    preferRemoteMetadata: true,
   })
 
   const savedSessionIds: string[] = []

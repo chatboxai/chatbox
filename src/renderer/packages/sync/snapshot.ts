@@ -29,6 +29,32 @@ function sessionsEqual(left: Session, right: Session): boolean {
   return stableStringify(left) === stableStringify(right)
 }
 
+function sessionContentEqual(left: Session, right: Session): boolean {
+  const {
+    name: _leftName,
+    starred: _leftStarred,
+    hidden: _leftHidden,
+    assistantAvatarKey: _leftAssistantAvatarKey,
+    picUrl: _leftPicUrl,
+    backgroundImage: _leftBackgroundImage,
+    ...leftContent
+  } = left
+  const {
+    name: _rightName,
+    starred: _rightStarred,
+    hidden: _rightHidden,
+    assistantAvatarKey: _rightAssistantAvatarKey,
+    picUrl: _rightPicUrl,
+    backgroundImage: _rightBackgroundImage,
+    ...rightContent
+  } = right
+  return stableStringify(leftContent) === stableStringify(rightContent)
+}
+
+function metasEqual(left: SessionMetaRecord, right: SessionMetaRecord): boolean {
+  return stableStringify(left) === stableStringify(right)
+}
+
 function shouldNormalizeFileAttachmentId(file: MessageFile): boolean {
   return file.id === file.storageKey || file.id === file.localPath || file.id.startsWith('file:')
 }
@@ -96,18 +122,11 @@ function stripLocalSessionReferences(session: Session): Session {
     backgroundImage: _backgroundImage,
     ...sessionWithoutLocalImages
   } = session
-
-  return {
-    ...sessionWithoutLocalImages,
-    backgroundImage: session.backgroundImage?.type === 'url' ? session.backgroundImage : undefined,
-    messages: session.messages.map(stripLocalMessageReferences),
-    threads: session.threads?.map((thread) => ({
-      ...thread,
-      messages: thread.messages.map(stripLocalMessageReferences),
-    })),
-    messageForksHash: session.messageForksHash
+  const messageForkEntries = Object.entries(session.messageForksHash ?? {})
+  const messageForksHash =
+    messageForkEntries.length > 0
       ? Object.fromEntries(
-          Object.entries(session.messageForksHash).map(([key, fork]) => [
+          messageForkEntries.map(([key, fork]) => [
             key,
             {
               ...fork,
@@ -118,7 +137,17 @@ function stripLocalSessionReferences(session: Session): Session {
             },
           ])
         )
-      : undefined,
+      : undefined
+
+  return {
+    ...sessionWithoutLocalImages,
+    backgroundImage: session.backgroundImage?.type === 'url' ? session.backgroundImage : undefined,
+    messages: session.messages.map(stripLocalMessageReferences),
+    threads: session.threads?.map((thread) => ({
+      ...thread,
+      messages: thread.messages.map(stripLocalMessageReferences),
+    })),
+    messageForksHash,
   }
 }
 
@@ -166,6 +195,22 @@ function metaForCopiedSession(
     backgroundImage: session.backgroundImage ?? remoteMeta?.backgroundImage,
     sortOrder: now,
     createdAt: now,
+  }
+}
+
+function applyMetaToSession(session: Session, meta: SessionMetaRecord | undefined): Session {
+  if (!meta) {
+    return session
+  }
+  return {
+    ...session,
+    name: meta.name,
+    type: session.type,
+    starred: meta.starred,
+    hidden: meta.hidden,
+    assistantAvatarKey: meta.assistantAvatarKey,
+    picUrl: meta.picUrl,
+    backgroundImage: meta.backgroundImage,
   }
 }
 
@@ -219,24 +264,33 @@ export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemot
 
     const localSession = localSessionById.get(remoteSession.id)
     const remoteMeta = remoteMetaById.get(remoteSession.id)
+    const remoteSessionWithMeta = applyMetaToSession(remoteSession, remoteMeta)
 
     if (!localSession) {
-      sessionsToSave.push(remoteSession)
-      metasToSave.push(metaForSession(remoteSession, remoteMeta, input.now))
+      sessionsToSave.push(remoteSessionWithMeta)
+      metasToSave.push(metaForSession(remoteSessionWithMeta, remoteMeta, input.now))
       imported += 1
       continue
     }
 
-    if (sessionsEqual(localSession, remoteSession)) {
-      if (!localMetaById.has(remoteSession.id) && remoteMeta) {
-        metasToSave.push(metaForSession(remoteSession, remoteMeta, input.now))
+    if (sessionContentEqual(localSession, remoteSession)) {
+      if (input.preferRemoteMetadata) {
+        if (!sessionsEqual(localSession, remoteSessionWithMeta)) {
+          sessionsToSave.push(remoteSessionWithMeta)
+        }
+        const localMeta = localMetaById.get(remoteSession.id)
+        if (remoteMeta && (!localMeta || !metasEqual(localMeta, remoteMeta))) {
+          metasToSave.push(metaForSession(remoteSessionWithMeta, remoteMeta, input.now))
+        }
+      } else if (!localMetaById.has(remoteSession.id) && remoteMeta) {
+        metasToSave.push(metaForSession(remoteSessionWithMeta, remoteMeta, input.now))
       }
       continue
     }
 
-    const copiedName = copyName(remoteSession.name)
+    const copiedName = copyName(remoteSessionWithMeta.name)
     const copiedSession: Session = {
-      ...remoteSession,
+      ...remoteSessionWithMeta,
       id: input.createId(),
       name: copiedName,
     }

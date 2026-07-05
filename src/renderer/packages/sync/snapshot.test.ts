@@ -299,4 +299,65 @@ describe('sync snapshot merge', () => {
     expect(result.imported).toBe(0)
     expect(result.conflicts).toBe(1)
   })
+
+  it('updates remote metadata for same-content sessions without creating synced copies when requested', () => {
+    const local = session('same-id', 'Project', 'same text')
+    const remoteSession = {
+      ...session('same-id', 'Project Remote', 'same text'),
+      starred: true,
+    }
+    const remoteMeta = {
+      ...meta('same-id', 'Project Remote', 99),
+      starred: true,
+    }
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [remoteSession],
+      metas: [remoteMeta],
+    }
+
+    const result = mergeRemoteSnapshot({
+      localSessions: [local],
+      localMetas: [meta('same-id', 'Project', 1)],
+      remote,
+      now: 2000,
+      createId: () => 'copy-id',
+      preferRemoteMetadata: true,
+    })
+
+    expect(result.sessionsToSave).toEqual([expect.objectContaining({ id: 'same-id', name: 'Project Remote' })])
+    expect(result.metasToSave).toEqual([remoteMeta])
+    expect(result.imported).toBe(0)
+    expect(result.conflicts).toBe(0)
+  })
+
+  it('keeps local metadata for same-content sessions during upload merges', () => {
+    const local = session('same-id', 'Project', 'same text')
+    const remoteSession = {
+      ...session('same-id', 'Project Remote', 'same text'),
+      starred: true,
+    }
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [remoteSession],
+      metas: [{ ...meta('same-id', 'Project Remote', 99), starred: true }],
+    }
+
+    const result = mergeRemoteSnapshot({
+      localSessions: [local],
+      localMetas: [meta('same-id', 'Project', 1)],
+      remote,
+      now: 2000,
+      createId: () => 'copy-id',
+    })
+
+    expect(result.sessionsToSave).toEqual([])
+    expect(result.metasToSave).toEqual([])
+    expect(result.imported).toBe(0)
+    expect(result.conflicts).toBe(0)
+  })
 })

@@ -1,4 +1,4 @@
-import type { Settings } from '@shared/types'
+import type { Session, Settings } from '@shared/types'
 import { describe, expect, it, vi } from 'vitest'
 import { decryptJsonEnvelope, encryptJsonEnvelope } from './crypto'
 import { downloadAndMergeWebDAVSnapshot, uploadWebDAVSnapshot } from './service'
@@ -17,7 +17,7 @@ const baseSettings = {
   },
 } as Settings
 
-function session(id: string, name: string, text: string) {
+function session(id: string, name: string, text: string): Session {
   return {
     id,
     type: 'chat' as const,
@@ -165,6 +165,52 @@ describe('WebDAV sync service', () => {
     )
     expect(deps.saveMetas).toHaveBeenCalledWith(remote.metas)
     expect(deps.updateLastSyncedAt).toHaveBeenCalledWith('1970-01-01T00:00:02.000Z')
+  })
+
+  it('downloads metadata-only changes without creating synced copies', async () => {
+    const local = session('same-id', 'Local Name', 'same text')
+    local.settings = { temperature: undefined }
+    const remoteSession = {
+      ...session('same-id', 'Remote Name', 'same text'),
+      starred: true,
+    }
+    const remoteMeta = {
+      ...meta('same-id', 'Remote Name', 99),
+      starred: true,
+    }
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [remoteSession],
+      metas: [remoteMeta],
+    }
+    const envelope = await encryptJsonEnvelope(remote, 'sync-secret')
+    const deps = {
+      platform: {
+        webdavRequest: vi.fn(async (request: WebDAVRequest) => ({
+          status: request.method === 'GET' ? 200 : 405,
+          headers: {},
+          body: JSON.stringify(envelope),
+        })),
+      },
+      listLocalSessions: vi.fn(async () => [local]),
+      listLocalMetas: vi.fn(async () => [meta('same-id', 'Local Name', 1)]),
+      saveSession: vi.fn(),
+      saveMetas: vi.fn(),
+      deleteSession: vi.fn(),
+      updateLastSyncedAt: vi.fn(),
+      createId: vi.fn(() => 'copy-id'),
+      now: () => 2000,
+    }
+
+    const result = await downloadAndMergeWebDAVSnapshot(baseSettings, deps)
+
+    expect(result.imported).toBe(0)
+    expect(result.conflicts).toBe(0)
+    expect(deps.createId).not.toHaveBeenCalled()
+    expect(deps.saveSession).toHaveBeenCalledWith(expect.objectContaining({ id: 'same-id', name: 'Remote Name' }))
+    expect(deps.saveMetas).toHaveBeenCalledWith([expect.objectContaining(remoteMeta)])
   })
 
   it('rejects plaintext HTTP WebDAV URLs before sending credentials', async () => {

@@ -37,11 +37,11 @@ import { initRecentDirectoriesStore } from './stores/recentDirectoriesStore'
 import { initSettingsStore } from './stores/settingsStore'
 
 // Token estimation system initialization (runs in all environments)
-import('./setup/token_estimation_init')
+void import('./setup/token_estimation_init')
 
 // 引入移动端安全区域代码，主要为了解决异形屏幕的问题
 if (WORKSPAICE_BUILD_TARGET === 'mobile_app' && WORKSPAICE_BUILD_PLATFORM === 'ios') {
-  import('./setup/mobile_safe_area')
+  void import('./setup/mobile_safe_area')
 }
 
 // ==========执行初始化==============
@@ -57,10 +57,10 @@ async function initializeApp() {
   }
 
   // 最后执行 storage 清理，清理不 block 进入UI
-  import('./setup/storage_clear')
+  void import('./setup/storage_clear')
 
   // 启动mcp服务器
-  import('./setup/mcp_bootstrap')
+  void import('./setup/mcp_bootstrap')
 }
 
 // ==========渲染节点==============
@@ -109,7 +109,7 @@ const tid = setTimeout(() => {
     </StrictMode>
   )
   if (platform.type === 'mobile') {
-    SplashScreen.hide()
+    void SplashScreen.hide()
   }
 }, 1000)
 
@@ -125,7 +125,7 @@ initializeApp()
     // 等待settings和onboarding初始化完成，避免闪屏
     const [settings] = await Promise.all([initSettingsStore(), initLastUsedModelStore(), initRecentDirectoriesStore()])
 
-    i18n.changeLanguage(settings.language)
+    void i18n.changeLanguage(settings.language)
     if (platform.type === 'desktop') {
       initSessionAttachmentRagMaintenance()
       window.location.hash = '/'
@@ -143,7 +143,7 @@ initializeApp()
     )
 
     if (platform.type === 'mobile') {
-      SplashScreen.hide()
+      void SplashScreen.hide()
     }
     const el = document.querySelector('.splash-screen')
     if (el) {

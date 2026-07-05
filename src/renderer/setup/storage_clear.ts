@@ -11,7 +11,7 @@ import * as atoms from '../stores/atoms'
 // 同时也避免了桌面端疑似出现的“图片丢失”问题（可能不是bug，与开发环境有关？）
 if (platform.type !== 'desktop') {
   setTimeout(() => {
-    tickStorageTask()
+    void tickStorageTask()
   }, 10 * 1000) // 防止水合状态
 }
 

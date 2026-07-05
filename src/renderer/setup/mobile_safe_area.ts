@@ -6,16 +6,16 @@
 import { Keyboard } from '@capacitor/keyboard'
 import { SafeArea } from 'capacitor-plugin-safe-area'
 
-SafeArea.getSafeAreaInsets().then(({ insets }) => {
+void SafeArea.getSafeAreaInsets().then(({ insets }) => {
   for (const [key, value] of Object.entries(insets)) {
     document.documentElement.style.setProperty(`--mobile-safe-area-inset-${key}`, `${value}px`)
   }
 })
 
-SafeArea.getStatusBarHeight().then(({ statusBarHeight }) => {
+void SafeArea.getStatusBarHeight().then(({ statusBarHeight }) => {
   // console.log(statusBarHeight, 'statusbarHeight');
 })
-;(async () => {
+void (async () => {
   // when safe-area changed
   const eventListener = await SafeArea.addListener('safeAreaChanged', (data) => {
     const { insets } = data
@@ -26,12 +26,12 @@ SafeArea.getStatusBarHeight().then(({ statusBarHeight }) => {
   // eventListener.remove();
 })()
 
-Keyboard.addListener('keyboardWillShow', async (info) => {
+void Keyboard.addListener('keyboardWillShow', async (info) => {
   document.documentElement.style.setProperty(`--mobile-safe-area-inset-bottom`, `0px`)
 })
 
-Keyboard.addListener('keyboardWillHide', () => {
-  SafeArea.getSafeAreaInsets().then(({ insets }) => {
+void Keyboard.addListener('keyboardWillHide', () => {
+  void SafeArea.getSafeAreaInsets().then(({ insets }) => {
     for (const [key, value] of Object.entries(insets)) {
       document.documentElement.style.setProperty(`--mobile-safe-area-inset-${key}`, `${value}px`)
     }

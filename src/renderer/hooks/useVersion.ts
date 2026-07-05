@@ -9,7 +9,7 @@ export default function useVersion() {
       const v = await platform.getVersion()
       setVersion(v)
     }
-    handler()
+    void handler()
   }, [])
 
   return {

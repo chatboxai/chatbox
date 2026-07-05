@@ -132,7 +132,7 @@ function _PictureDialog(props: {
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
-            onSaveDefault()
+            void onSaveDefault()
           }}
         >
           <SaveIcon />

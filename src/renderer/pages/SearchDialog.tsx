@@ -196,11 +196,11 @@ export default function SearchDialog(props: Props) {
                               const success = await scrollActions.scrollToMessage(targetSessionId, targetMessageId)
 
                               if (!success && attempt < maxAttempts) {
-                                tryScroll(attempt + 1, maxAttempts)
+                                void tryScroll(attempt + 1, maxAttempts)
                               }
                             }
 
-                            tryScroll()
+                            void tryScroll()
                           }}
                         >
                           {/* 下面这个隐藏元素，是为了避免这个问题：

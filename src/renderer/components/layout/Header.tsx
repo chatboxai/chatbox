@@ -48,7 +48,7 @@ export default function Header(props: { session: Session }) {
     if (!currentSession) {
       return
     }
-    NiceModal.show('session-settings', { session: currentSession })
+    void NiceModal.show('session-settings', { session: currentSession })
   }
 
   return (

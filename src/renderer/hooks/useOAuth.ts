@@ -174,7 +174,7 @@ export function useOAuth(
     if (!isDesktop || !isOAuthActive || !tokenProviderSettings?.oauth) return
 
     if (isOAuthExpired(tokenProviderSettings)) {
-      refreshToken()
+      void refreshToken()
       return
     }
 
@@ -183,7 +183,7 @@ export function useOAuth(
 
     const timeUntilExpiry = expiresAt - Date.now()
     if (timeUntilExpiry <= 0) {
-      refreshToken()
+      void refreshToken()
       return
     }
 

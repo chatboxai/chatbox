@@ -28,13 +28,13 @@ export default function useAppTheme() {
   const language = useLanguage()
 
   useLayoutEffect(() => {
-    switchTheme(theme)
+    void switchTheme(theme)
   }, [theme])
 
   useLayoutEffect(() => {
     platform.onSystemThemeChange(() => {
       const theme = settingsStore.getState().theme
-      switchTheme(theme)
+      void switchTheme(theme)
     })
   }, [])
 

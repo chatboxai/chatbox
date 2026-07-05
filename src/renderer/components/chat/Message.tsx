@@ -248,7 +248,7 @@ const _Message: FC<Props> = (props) => {
     [sessionId]
   )
   const onCodeCopy = useCallback(() => {
-    trackWithSessionName(JK_EVENTS.COPY_CODE_CLICK)
+    void trackWithSessionName(JK_EVENTS.COPY_CODE_CLICK)
   }, [trackWithSessionName])
 
   const contentParts = msg.contentParts || []

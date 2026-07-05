@@ -106,7 +106,7 @@ export class WebLogger {
 
     // 延迟 1000ms 批量写入
     this.flushTimer = setTimeout(() => {
-      this.flush()
+      void this.flush()
     }, 1000)
   }
 

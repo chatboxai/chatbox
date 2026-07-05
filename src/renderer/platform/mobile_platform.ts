@@ -36,7 +36,7 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
     super()
     mobileLogger.init().catch((e) => console.error('Failed to init mobile logger:', e))
     // 监听深度链接 (Deep Links)
-    App.addListener('appUrlOpen', (event) => {
+    void App.addListener('appUrlOpen', (event) => {
       console.debug('App URL opened:', event.url)
       this.handleDeepLink(event.url)
     })
@@ -171,7 +171,7 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
     let value = await this.getStoreValue('configs')
     if (value === undefined || value === null) {
       value = defaults.newConfigs()
-      this.setStoreValue('configs', value)
+      void this.setStoreValue('configs', value)
     }
     return value
   }
@@ -179,7 +179,7 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
     let value = await this.getStoreValue('settings')
     if (value === undefined || value === null) {
       value = defaults.settings()
-      this.setStoreValue('settings', value)
+      void this.setStoreValue('settings', value)
     }
     return value
   }

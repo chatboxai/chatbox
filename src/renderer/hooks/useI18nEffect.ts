@@ -6,7 +6,7 @@ export function useI18nEffect() {
   const language = useLanguage()
   const { i18n } = useTranslation()
   useEffect(() => {
-    ;(async () => {
+    void (async () => {
       i18n.changeLanguage(language)
     })()
   }, [language])

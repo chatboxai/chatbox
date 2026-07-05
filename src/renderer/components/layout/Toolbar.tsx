@@ -39,7 +39,7 @@ export default function Toolbar({ sessionId }: { sessionId: string }) {
   const setWidthFull = useUIStore((s) => s.setWidthFull)
 
   const handleExportAndSave = () => {
-    NiceModal.show('export-chat')
+    void NiceModal.show('export-chat')
   }
   const handleSessionClean = () => {
     void clearSession(sessionId)

@@ -145,7 +145,7 @@ export class MobileLogger {
 
     // 延迟 500ms 批量写入
     this.flushTimer = setTimeout(() => {
-      this.flush()
+      void this.flush()
     }, 500)
   }
 

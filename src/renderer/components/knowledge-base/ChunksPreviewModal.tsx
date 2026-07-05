@@ -62,7 +62,7 @@ const ChunksPreviewModal: React.FC<ChunksPreviewModalProps> = ({
       }
     }
 
-    loadChunks()
+    void loadChunks()
   }, [opened, file, knowledgeBaseId, maxChunks, knowledgeBaseController])
 
   return (

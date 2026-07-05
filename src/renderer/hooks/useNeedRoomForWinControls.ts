@@ -8,7 +8,7 @@ isFullscreenAtom.onMount = (set) => {
   const check = async () => {
     set(await platform.isFullscreen())
   }
-  check()
+  void check()
   const handleResize = debounce(check, 250)
   window.addEventListener('resize', handleResize)
   return () => {

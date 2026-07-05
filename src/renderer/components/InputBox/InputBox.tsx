@@ -1119,7 +1119,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       if (!event.target.files) {
         return
       }
-      insertFiles(Array.from(event.target.files))
+      void insertFiles(Array.from(event.target.files))
       event.target.value = ''
       dom.focusMessageInput()
     }
@@ -1204,7 +1204,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // 拖拽上传
     const { getRootProps, getInputProps } = useDropzone({
       onDrop: (acceptedFiles: File[], fileRejections) => {
-        insertFiles(acceptedFiles)
+        void insertFiles(acceptedFiles)
         // Show toast for rejected files
         if (fileRejections.length > 0) {
           const rejectedNames = fileRejections.map((r) => r.file.name).join(', ')

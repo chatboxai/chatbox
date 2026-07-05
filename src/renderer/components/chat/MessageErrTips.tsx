@@ -351,7 +351,7 @@ export default function MessageErrTips(props: { msg: Message; onRetry?: () => vo
                 onTranslate={(e) => {
                   e.stopPropagation()
                   if (!expanded) setExpanded(true)
-                  handleTranslate()
+                  void handleTranslate()
                 }}
                 onCopy={(e) => {
                   e.stopPropagation()

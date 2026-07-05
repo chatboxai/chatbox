@@ -20,7 +20,7 @@ export function MessageMermaid(props: { source: string; theme: 'light' | 'dark';
     if (generating) {
       return
     }
-    ;(async () => {
+    void (async () => {
       const { id, svg } = await mermaidCodeToSvgCode(source, theme)
       setSvgCode(svg)
       setSvgId(id)

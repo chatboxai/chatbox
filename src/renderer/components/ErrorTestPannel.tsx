@@ -17,6 +17,7 @@ export function ErrorTestPanel() {
   }
 
   const testUnhandledPromise = () => {
+    // biome-ignore lint/nursery/noFloatingPromises: this dev panel button exists to fire a real unhandled rejection
     Promise.reject(new Error('Test unhandled promise rejection - this error is intentional'))
   }
 

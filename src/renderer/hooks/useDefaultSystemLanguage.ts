@@ -6,7 +6,7 @@ export function useSystemLanguageWhenInit() {
   useEffect(() => {
     // 通过定时器延迟启动，防止处理状态底层存储的异步加载前错误的初始数据
     setTimeout(() => {
-      ;(async () => {
+      void (async () => {
         const { languageInited } = settingsStore.getState()
         if (!languageInited) {
           let locale = await platform.getLocale()

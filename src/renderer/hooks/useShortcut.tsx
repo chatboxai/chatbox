@@ -66,14 +66,14 @@ export default function useShortcut() {
       return
     }
     if (e.code === 'Tab' && ctrlKey && !shift) {
-      switchToNext()
+      void switchToNext()
     }
     if (e.code === 'Tab' && ctrlKey && shift) {
-      switchToNext(true)
+      void switchToNext(true)
     }
     for (let i = 1; i <= 9; i++) {
       if (e.code === `Digit${i}` && ctrlKey) {
-        switchToIndex(i - 1)
+        void switchToIndex(i - 1)
       }
     }
 

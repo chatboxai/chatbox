@@ -150,7 +150,7 @@ function ExportAndImport(props: { onCancel: () => void }) {
     }
     const reader = new FileReader()
     reader.onload = (event) => {
-      ;(async () => {
+      void (async () => {
         setImportTips('')
         try {
           const result = event.target?.result

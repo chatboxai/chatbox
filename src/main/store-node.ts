@@ -198,7 +198,7 @@ export function initStore(): Store<StoreType> {
   }
 
   // 4) 启动自动备份，每10分钟备份一次，并自动清理多余的备份文件
-  autoBackup()
+  void autoBackup()
   autoBackupTimer = setInterval(autoBackup, 10 * 60 * 1000)
   powerMonitor.on('resume', () => {
     clearInterval(autoBackupTimer)

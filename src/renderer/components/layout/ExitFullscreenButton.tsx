@@ -14,10 +14,10 @@ export default function ExitFullscreenButton() {
       setIsFullscreen(isFullscreen)
     }
     // 初始检查
-    checkFullscreen()
+    void checkFullscreen()
     // 监听窗口变化事件
     const handleResize = debounce(() => {
-      checkFullscreen()
+      void checkFullscreen()
     }, 1 * 1000)
     window.addEventListener('resize', handleResize)
     return () => {

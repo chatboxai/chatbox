@@ -42,7 +42,7 @@ export default class BaseStorage {
         if (key === 'settings') {
           log.info(`[CONFIG_DEBUG] getItem settings: value was null/undefined, using initialValue`)
         }
-        this.setItemNow(key, value)
+        void this.setItemNow(key, value)
       } else if (key === 'settings') {
         const providers = (value as Record<string, unknown>)?.providers
         const providersCount =

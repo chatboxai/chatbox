@@ -15,9 +15,18 @@ const RawSyncSnapshotSchema = z.object({
   metas: z.array(SessionMetaRecordSchema),
 })
 
+const MAX_UPLOAD_ATTEMPTS = 3
+const HTTP_NOT_FOUND = 404
+const HTTP_PRECONDITION_FAILED = 412
+
 type SyncPlatform = {
   getDeviceName?: () => Promise<string>
   webdavRequest?: (request: WebDAVRequest, baseUrl: string) => Promise<WebDAVResponse>
+}
+
+type DownloadedWebDAVSnapshot = {
+  snapshot?: SyncSnapshot
+  etag?: string
 }
 
 export type WebDAVSyncDeps = {
@@ -108,6 +117,20 @@ function assertSuccess(response: WebDAVResponse, action: string, okStatuses: num
   }
 }
 
+function responseHeader(headers: Record<string, string>, name: string): string | undefined {
+  const normalizedName = name.toLowerCase()
+  const entry = Object.entries(headers).find(([headerName]) => headerName.toLowerCase() === normalizedName)
+  const value = entry?.[1].trim()
+  return value ? value : undefined
+}
+
+function requireWebDAVSnapshotETag(remote: DownloadedWebDAVSnapshot): string {
+  if (!remote.etag) {
+    throw new Error('WebDAV server did not return an ETag for the sync snapshot; refusing to overwrite it')
+  }
+  return remote.etag
+}
+
 async function ensureWebDAVCollections(settings: Settings, platform: SyncPlatform) {
   const webdav = getWebDAVSettings(settings)
   const headers = authHeaders(settings)
@@ -121,7 +144,7 @@ async function ensureWebDAVCollections(settings: Settings, platform: SyncPlatfor
   }
 }
 
-async function downloadWebDAVSnapshot(settings: Settings, platform: SyncPlatform): Promise<SyncSnapshot | undefined> {
+async function downloadWebDAVSnapshot(settings: Settings, platform: SyncPlatform): Promise<DownloadedWebDAVSnapshot> {
   const webdav = getWebDAVSettings(settings)
   const response = await requestWebDAV(platform, webdav.url, {
     url: snapshotUrl(settings),
@@ -129,13 +152,16 @@ async function downloadWebDAVSnapshot(settings: Settings, platform: SyncPlatform
     headers: authHeaders(settings),
   })
 
-  if (response.status === 404) {
-    return undefined
+  if (response.status === HTTP_NOT_FOUND) {
+    return {}
   }
   assertSuccess(response, 'Download WebDAV sync snapshot', [200])
 
   const envelope = JSON.parse(response.body) as SyncCryptoEnvelope
-  return parseSyncSnapshot(await decryptJsonEnvelope(envelope, webdav.syncPassword))
+  return {
+    snapshot: parseSyncSnapshot(await decryptJsonEnvelope(envelope, webdav.syncPassword)),
+    etag: responseHeader(response.headers, 'etag'),
+  }
 }
 
 export async function testWebDAVConnection(settings: Settings, deps: Pick<WebDAVSyncDeps, 'platform'>): Promise<void> {
@@ -157,6 +183,7 @@ export async function uploadWebDAVSnapshot(
   deps: WebDAVSyncDeps
 ): Promise<UploadWebDAVSnapshotResult> {
   const webdav = getWebDAVSettings(settings)
+  const now = deps.now ?? Date.now
   await ensureWebDAVCollections(settings, deps.platform)
 
   const [sessions, metas, deviceName] = await Promise.all([
@@ -164,47 +191,64 @@ export async function uploadWebDAVSnapshot(
     deps.listLocalMetas(),
     deps.platform.getDeviceName?.() ?? Promise.resolve('Unknown device'),
   ])
-  const lastSyncedAt = new Date((deps.now ?? Date.now)()).toISOString()
+  const lastSyncedAt = new Date(now()).toISOString()
   const localSnapshot = createSyncSnapshot({
     sessions,
     metas,
     deviceName,
     exportedAt: lastSyncedAt,
   })
-  const remoteSnapshot = await downloadWebDAVSnapshot(settings, deps.platform)
-  const mergeResult = remoteSnapshot
-    ? mergeRemoteSnapshot({
-        localSessions: localSnapshot.sessions,
-        localMetas: localSnapshot.metas,
-        remote: remoteSnapshot,
-        now: (deps.now ?? Date.now)(),
-        createId: deps.createId,
-      })
-    : undefined
-  const snapshot = mergeResult
-    ? createSyncSnapshot({
-        sessions: [...localSnapshot.sessions, ...mergeResult.sessionsToSave],
-        metas: [...localSnapshot.metas, ...mergeResult.metasToSave],
-        deviceName,
-        exportedAt: lastSyncedAt,
-      })
-    : localSnapshot
-  const envelope = await encryptJsonEnvelope(snapshot, webdav.syncPassword)
-  const response = await requestWebDAV(deps.platform, webdav.url, {
-    url: snapshotUrl(settings),
-    method: 'PUT',
-    headers: {
-      ...authHeaders(settings),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(envelope),
-  })
-  assertSuccess(response, 'Upload WebDAV sync snapshot', [200, 201, 204])
-  await deps.updateLastSyncedAt(lastSyncedAt)
-  return {
-    uploaded: snapshot.sessions.length,
-    lastSyncedAt,
+
+  for (let attempt = 0; attempt < MAX_UPLOAD_ATTEMPTS; attempt += 1) {
+    const remote = await downloadWebDAVSnapshot(settings, deps.platform)
+    const mergeResult = remote.snapshot
+      ? mergeRemoteSnapshot({
+          localSessions: localSnapshot.sessions,
+          localMetas: localSnapshot.metas,
+          remote: remote.snapshot,
+          now: now(),
+          createId: deps.createId,
+        })
+      : undefined
+    const snapshot = mergeResult
+      ? createSyncSnapshot({
+          sessions: [...localSnapshot.sessions, ...mergeResult.sessionsToSave],
+          metas: [...localSnapshot.metas, ...mergeResult.metasToSave],
+          deviceName,
+          exportedAt: lastSyncedAt,
+        })
+      : localSnapshot
+    const preconditionHeaders: Record<string, string> = remote.snapshot
+      ? { 'If-Match': requireWebDAVSnapshotETag(remote) }
+      : { 'If-None-Match': '*' }
+    const envelope = await encryptJsonEnvelope(snapshot, webdav.syncPassword)
+    const response = await requestWebDAV(deps.platform, webdav.url, {
+      url: snapshotUrl(settings),
+      method: 'PUT',
+      headers: {
+        ...authHeaders(settings),
+        'Content-Type': 'application/json',
+        ...preconditionHeaders,
+      },
+      body: JSON.stringify(envelope),
+    })
+
+    if (response.status === HTTP_PRECONDITION_FAILED) {
+      if (attempt < MAX_UPLOAD_ATTEMPTS - 1) {
+        continue
+      }
+      throw new Error('Upload WebDAV sync snapshot failed because the remote snapshot changed during upload')
+    }
+
+    assertSuccess(response, 'Upload WebDAV sync snapshot', [200, 201, 204])
+    await deps.updateLastSyncedAt(lastSyncedAt)
+    return {
+      uploaded: snapshot.sessions.length,
+      lastSyncedAt,
+    }
   }
+
+  throw new Error('Upload WebDAV sync snapshot failed because the remote snapshot changed during upload')
 }
 
 export async function downloadAndMergeWebDAVSnapshot(
@@ -212,7 +256,7 @@ export async function downloadAndMergeWebDAVSnapshot(
   deps: WebDAVSyncDeps
 ): Promise<DownloadWebDAVSnapshotResult> {
   const remote = await downloadWebDAVSnapshot(settings, deps.platform)
-  if (!remote) {
+  if (!remote.snapshot) {
     return {
       imported: 0,
       conflicts: 0,
@@ -225,7 +269,7 @@ export async function downloadAndMergeWebDAVSnapshot(
   const result = mergeRemoteSnapshot({
     localSessions,
     localMetas,
-    remote,
+    remote: remote.snapshot,
     now: (deps.now ?? Date.now)(),
     createId: deps.createId,
     preferRemoteMetadata: true,

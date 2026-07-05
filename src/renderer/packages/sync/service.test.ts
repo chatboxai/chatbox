@@ -2,7 +2,7 @@ import type { Session, Settings } from '@shared/types'
 import { describe, expect, it, vi } from 'vitest'
 import { decryptJsonEnvelope, encryptJsonEnvelope } from './crypto'
 import { downloadAndMergeWebDAVSnapshot, uploadWebDAVSnapshot } from './service'
-import type { SyncSnapshot, WebDAVRequest } from './types'
+import type { SyncSnapshot, WebDAVRequest, WebDAVResponse } from './types'
 
 const baseSettings = {
   sync: {
@@ -73,6 +73,8 @@ describe('WebDAV sync service', () => {
     expect(result.uploaded).toBe(1)
     expect(put?.url).toBe('https://dav.example.com/files/me/ChatboxSync/v1/snapshot.json.enc')
     expect(put?.headers?.Authorization).toBe(`Basic ${btoa('alice:app-password')}`)
+    expect(put?.headers?.['If-None-Match']).toBe('*')
+    expect(put?.headers?.['If-Match']).toBeUndefined()
     expect(put?.body).not.toContain('hello')
 
     const envelope = JSON.parse(put?.body ?? '{}')
@@ -82,6 +84,117 @@ describe('WebDAV sync service', () => {
   })
 
   it('merges the existing remote snapshot before uploading local sessions', async () => {
+    const requests: WebDAVRequest[] = []
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('remote-1', 'Remote', 'remote text')],
+      metas: [meta('remote-1', 'Remote')],
+    }
+    const remoteEnvelope = await encryptJsonEnvelope(remote, 'sync-secret')
+    const deps = {
+      platform: {
+        getDeviceName: vi.fn(async () => 'Mac'),
+        webdavRequest: vi.fn((request: WebDAVRequest) => {
+          requests.push(request)
+          if (request.method === 'GET') {
+            return Promise.resolve({
+              status: 200,
+              headers: { ETag: '"remote-etag"' },
+              body: JSON.stringify(remoteEnvelope),
+            })
+          }
+          return Promise.resolve({ status: request.method === 'PUT' ? 201 : 405, headers: {}, body: '' })
+        }),
+      },
+      listLocalSessions: vi.fn(async () => [session('local-1', 'Local', 'local text')]),
+      listLocalMetas: vi.fn(async () => [meta('local-1', 'Local')]),
+      saveSession: vi.fn(),
+      saveMetas: vi.fn(),
+      deleteSession: vi.fn(),
+      updateLastSyncedAt: vi.fn(),
+      createId: vi.fn(() => 'copy-id'),
+      now: () => 1000,
+    }
+
+    const result = await uploadWebDAVSnapshot(baseSettings, deps)
+    const put = requests.find((request) => request.method === 'PUT')
+    const envelope = JSON.parse(put?.body ?? '{}')
+    const decrypted = await decryptJsonEnvelope<SyncSnapshot>(envelope, 'sync-secret')
+
+    expect(result.uploaded).toBe(2)
+    expect(put?.headers?.['If-Match']).toBe('"remote-etag"')
+    expect(put?.headers?.['If-None-Match']).toBeUndefined()
+    expect(decrypted.sessions.map((item) => item.id).sort()).toEqual(['local-1', 'remote-1'])
+    expect(decrypted.metas.map((item) => item.id).sort()).toEqual(['local-1', 'remote-1'])
+    expect(deps.saveSession).not.toHaveBeenCalled()
+    expect(deps.saveMetas).not.toHaveBeenCalled()
+  })
+
+  it('re-downloads and merges again when a conditional upload detects a changed remote snapshot', async () => {
+    const requests: WebDAVRequest[] = []
+    const remoteBeforeRace: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('remote-1', 'Remote 1', 'remote text 1')],
+      metas: [meta('remote-1', 'Remote 1')],
+    }
+    const remoteAfterRace: SyncSnapshot = {
+      ...remoteBeforeRace,
+      sessions: [...remoteBeforeRace.sessions, session('remote-2', 'Remote 2', 'remote text 2')],
+      metas: [...remoteBeforeRace.metas, meta('remote-2', 'Remote 2', 2)],
+    }
+    let getCount = 0
+    let putCount = 0
+    const deps = {
+      platform: {
+        getDeviceName: vi.fn(async () => 'Mac'),
+        webdavRequest: vi.fn(async (request: WebDAVRequest): Promise<WebDAVResponse> => {
+          requests.push(request)
+          if (request.method === 'GET') {
+            getCount += 1
+            const remote = getCount === 1 ? remoteBeforeRace : remoteAfterRace
+            const envelope = await encryptJsonEnvelope(remote, 'sync-secret')
+            return {
+              status: 200,
+              headers: { etag: getCount === 1 ? '"old-etag"' : '"new-etag"' },
+              body: JSON.stringify(envelope),
+            }
+          }
+          if (request.method === 'PUT') {
+            putCount += 1
+            return { status: putCount === 1 ? 412 : 201, headers: {}, body: '' }
+          }
+          return { status: 405, headers: {}, body: '' }
+        }),
+      },
+      listLocalSessions: vi.fn(async () => [session('local-1', 'Local', 'local text')]),
+      listLocalMetas: vi.fn(async () => [meta('local-1', 'Local')]),
+      saveSession: vi.fn(),
+      saveMetas: vi.fn(),
+      deleteSession: vi.fn(),
+      updateLastSyncedAt: vi.fn(),
+      createId: vi.fn(() => 'copy-id'),
+      now: () => 1000,
+    }
+
+    const result = await uploadWebDAVSnapshot(baseSettings, deps)
+    const puts = requests.filter((request) => request.method === 'PUT')
+    const finalEnvelope = JSON.parse(puts[1]?.body ?? '{}')
+    const decrypted = await decryptJsonEnvelope<SyncSnapshot>(finalEnvelope, 'sync-secret')
+
+    expect(result.uploaded).toBe(3)
+    expect(requests.filter((request) => request.method === 'GET')).toHaveLength(2)
+    expect(puts).toHaveLength(2)
+    expect(puts[0].headers?.['If-Match']).toBe('"old-etag"')
+    expect(puts[1].headers?.['If-Match']).toBe('"new-etag"')
+    expect(decrypted.sessions.map((item) => item.id).sort()).toEqual(['local-1', 'remote-1', 'remote-2'])
+    expect(deps.updateLastSyncedAt).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses to overwrite an existing remote snapshot when the server does not return an ETag', async () => {
     const requests: WebDAVRequest[] = []
     const remote: SyncSnapshot = {
       version: 1,
@@ -112,16 +225,10 @@ describe('WebDAV sync service', () => {
       now: () => 1000,
     }
 
-    const result = await uploadWebDAVSnapshot(baseSettings, deps)
-    const put = requests.find((request) => request.method === 'PUT')
-    const envelope = JSON.parse(put?.body ?? '{}')
-    const decrypted = await decryptJsonEnvelope<SyncSnapshot>(envelope, 'sync-secret')
+    await expect(uploadWebDAVSnapshot(baseSettings, deps)).rejects.toThrow(/etag/i)
 
-    expect(result.uploaded).toBe(2)
-    expect(decrypted.sessions.map((item) => item.id).sort()).toEqual(['local-1', 'remote-1'])
-    expect(decrypted.metas.map((item) => item.id).sort()).toEqual(['local-1', 'remote-1'])
-    expect(deps.saveSession).not.toHaveBeenCalled()
-    expect(deps.saveMetas).not.toHaveBeenCalled()
+    expect(requests.filter((request) => request.method === 'PUT')).toHaveLength(0)
+    expect(deps.updateLastSyncedAt).not.toHaveBeenCalled()
   })
 
   it('downloads, decrypts, and saves missing remote sessions', async () => {

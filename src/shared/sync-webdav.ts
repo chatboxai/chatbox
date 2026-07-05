@@ -31,7 +31,7 @@ const ALLOWED_WEBDAV_TARGETS = new Map<string, Set<WebDAVMethod>>([
   [SYNC_COLLECTION_PATH, new Set(['MKCOL'])],
   [SYNC_SNAPSHOT_PATH, new Set(['GET', 'PUT', 'PROPFIND'])],
 ])
-const ALLOWED_WEBDAV_HEADERS = new Set(['authorization', 'content-type', 'depth'])
+const ALLOWED_WEBDAV_HEADERS = new Set(['authorization', 'content-type', 'depth', 'if-match', 'if-none-match'])
 const REDIRECT_STATUS_MIN = 300
 const REDIRECT_STATUS_MAX = 399
 
@@ -54,7 +54,10 @@ export function validateWebDAVRequestTarget(baseUrl: string, request: WebDAVRequ
   if (typeof request.url !== 'string' || typeof request.method !== 'string') {
     rejectWebDAVRequest()
   }
-  if (request.headers !== undefined && (typeof request.headers !== 'object' || request.headers === null || Array.isArray(request.headers))) {
+  if (
+    request.headers !== undefined &&
+    (typeof request.headers !== 'object' || request.headers === null || Array.isArray(request.headers))
+  ) {
     rejectWebDAVRequest()
   }
   if (request.body !== undefined && typeof request.body !== 'string') {

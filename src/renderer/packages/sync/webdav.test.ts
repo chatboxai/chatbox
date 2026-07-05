@@ -66,6 +66,15 @@ describe('WebDAV helpers', () => {
 
     expect(() =>
       validateWebDAVRequestTarget(baseUrl, {
+        url: 'https://dav.example.com/remote.php/dav/files/me/ChatboxSync/v1/snapshot.json.enc',
+        method: 'PUT',
+        headers: { 'If-Match': '"abc"', 'If-None-Match': '*' },
+        body: 'payload',
+      })
+    ).not.toThrow()
+
+    expect(() =>
+      validateWebDAVRequestTarget(baseUrl, {
         url: 'https://dav.example.com/remote.php/dav/files/me/other.json',
         method: 'GET',
       })

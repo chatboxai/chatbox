@@ -29,8 +29,13 @@ function sessionsEqual(left: Session, right: Session): boolean {
   return stableStringify(left) === stableStringify(right)
 }
 
-function stripLocalFileReferences(file: MessageFile): MessageFile {
+function shouldNormalizeFileAttachmentId(file: MessageFile): boolean {
+  return file.id === file.storageKey || file.id === file.localPath || file.id.startsWith('file:')
+}
+
+function stripLocalFileReferences(file: MessageFile, index: number): MessageFile {
   const {
+    id,
     storageKey: _storageKey,
     localPath: _localPath,
     ragMode: _ragMode,
@@ -50,7 +55,10 @@ function stripLocalFileReferences(file: MessageFile): MessageFile {
     byteLength: _byteLength,
     ...rest
   } = file
-  return rest
+  return {
+    id: shouldNormalizeFileAttachmentId(file) ? `synced-file:${index}:${file.name}` : id,
+    ...rest,
+  }
 }
 
 function stripLocalLinkReferences(link: MessageLink): MessageLink {

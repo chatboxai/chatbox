@@ -71,10 +71,10 @@ describe('sync snapshot merge', () => {
     local.messages[0].contentParts.push({ type: 'image', storageKey: 'image-key' })
     local.messages[0].files = [
       {
-        id: 'file-1',
+        id: 'file:/tmp/doc.txt-123-456',
         name: 'doc.txt',
         fileType: 'text/plain',
-        storageKey: 'file-key',
+        storageKey: 'file:/tmp/doc.txt-123-456',
         localPath: '/tmp/doc.txt',
         ragMode: 'session-retrieval',
         sessionAttachmentId: 12,
@@ -82,6 +82,12 @@ describe('sync snapshot merge', () => {
         tokenCountMap: { default: 10 },
         lineCount: 5,
         byteLength: 123,
+      },
+      {
+        id: 'custom-file-id',
+        name: 'custom.txt',
+        fileType: 'text/plain',
+        storageKey: 'file:/tmp/custom.txt-789-123',
       },
     ]
     local.messages[0].links = [
@@ -149,7 +155,10 @@ describe('sync snapshot merge', () => {
     expect(synced.assistantAvatarKey).toBeUndefined()
     expect(synced.backgroundImage).toBeUndefined()
     expect(message.contentParts).toEqual([{ type: 'text', text: 'hello' }])
-    expect(message.files).toEqual([{ id: 'file-1', name: 'doc.txt', fileType: 'text/plain' }])
+    expect(message.files).toEqual([
+      { id: 'synced-file:0:doc.txt', name: 'doc.txt', fileType: 'text/plain' },
+      { id: 'custom-file-id', name: 'custom.txt', fileType: 'text/plain' },
+    ])
     expect(message.links).toEqual([{ id: 'link-1', title: 'Example', url: 'https://example.com' }])
     expect(message).not.toHaveProperty('pictures')
     expect(synced.threads?.[0].messages[0].contentParts).toEqual([])
@@ -186,7 +195,13 @@ describe('sync snapshot merge', () => {
     remoteSession.assistantAvatarKey = 'avatar-key'
     remoteSession.messages[0].contentParts.push({ type: 'image', storageKey: 'image-key' })
     remoteSession.messages[0].files = [
-      { id: 'file-1', name: 'doc.txt', fileType: 'text/plain', storageKey: 'file-key', localPath: '/tmp/doc.txt' },
+      {
+        id: 'file:/tmp/doc.txt-123-456',
+        name: 'doc.txt',
+        fileType: 'text/plain',
+        storageKey: 'file:/tmp/doc.txt-123-456',
+        localPath: '/tmp/doc.txt',
+      },
     ]
     const remote: SyncSnapshot = {
       version: 1,
@@ -213,7 +228,7 @@ describe('sync snapshot merge', () => {
     expect(result.sessionsToSave[0].assistantAvatarKey).toBeUndefined()
     expect(result.sessionsToSave[0].messages[0].contentParts).toEqual([{ type: 'text', text: 'hello' }])
     expect(result.sessionsToSave[0].messages[0].files).toEqual([
-      { id: 'file-1', name: 'doc.txt', fileType: 'text/plain' },
+      { id: 'synced-file:0:doc.txt', name: 'doc.txt', fileType: 'text/plain' },
     ])
     expect(result.metasToSave[0].assistantAvatarKey).toBeUndefined()
     expect(result.metasToSave[0].backgroundImage).toBeUndefined()

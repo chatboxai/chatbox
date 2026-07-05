@@ -28,11 +28,13 @@ _Last updated 2026-07-02 (branch `dev`). Findings below are the original snapsho
 
 - **P2 — §6.3 tool-error unification ✅ (2026-07-04):** all toolsets now report infrastructure failures by throwing; the AI SDK v6 turns throws into `tool-error` parts, forwards the message to the model, and continues the loop. `normalizeToolSetErrors` in `tools-builder.ts` is the assembly-boundary safety net (non-Error throws wrapped, returned `Error` values — the legacy MCP pattern that serialized to `{}` — converted to throws, aborts untouched). MCP controller's return-err hack removed (stale pre-v6 comment); sandbox/file/KB error strings and skills `{error}` guards became throws; script exit≠0 and abort-cancel stay structured results. Persisted error shape unified to `{error: string, errorCode?, input, toolName}` in both `stream-chunk-processor.ts` and `abstract-ai-sdk.ts` (which previously persisted stack traces and an object shape the UI couldn't render). See `ARCHITECTURE_NOTES.md`.
 
+- **Low/opportunistic tier ✅ (2026-07-05):** §8.5 `WorkspAIceAIAPIError` → `CodedError` rename (incl. component + relic type) · §8.2 Sentry shim collapsed to a single shared no-op (`src/shared/sentry-shim.ts`; ErrorBoundary now self-contained; unused `sentry` DI adapter removed) · §8.1 dep audit closed (`material-ui-popup-state` removed; `store` and `react-swipeable-views` verified in use) · §8.6 all five `biome-ignore-all` files narrowed to per-line justified suppressions (Mermaid `<explanation>` placeholder replaced; default-models `t()!` fixed properly) · §6.4 all 49 `noFloatingPromises` resolved via explicit `void` (+1 justified suppression in ErrorTestPannel); biome baseline ratcheted 819 → 769 · bonus: broken `delete-sourcemaps` npm script repaired (runner file never existed; underlying script imported removed webpack config).
+
 **Open — recommended order:**
 
-1. **Low / opportunistic:** §6.4 `noFloatingPromises` burndown · §8.2 Sentry-shim shrink · §8.1 remaining dep audit · §8.5 error-mapper rename · §8.6 `biome-ignore-all` narrowing.
-2. **P3 / with redesign:** InputBox split · MUI→Mantine · settings responsiveness · features F1/F2/F4.
-3. **Product decision:** SEC-6 (mobile SQLite encryption) resolves for free if mobile is dropped.
+1. **P3 / with redesign:** InputBox split · MUI→Mantine · settings responsiveness · features F1/F2/F4.
+2. **Product decision:** SEC-6 (mobile SQLite encryption) resolves for free if mobile is dropped.
+3. **Never prioritized (§6/§7 leftovers):** §6.2 zod-validation of high-value IPC payloads · §7.6 skill-install trust UX · §6.5 coverage on high-risk targets (active QA cycle).
 
 ---
 

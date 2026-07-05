@@ -16,7 +16,7 @@
     "build:preload": "electron-vite build",
     "build:renderer": "electron-vite build",
     "build:web": "cross-env WORKSPAICE_BUILD_PLATFORM=web electron-vite build && pnpm run delete-sourcemaps",
-    "delete-sourcemaps": "ts-node ./.erb/scripts/delete-source-maps-runner.js",
+    "delete-sourcemaps": "node ./.erb/scripts/delete-source-maps.cjs",
     "postinstall": "node .erb/scripts/postinstall.cjs",
     "package": "ts-node ./.erb/scripts/clean.js && pnpm run build && electron-builder build --publish never",
     "package:all": "ts-node ./.erb/scripts/clean.js && pnpm run build && electron-builder build --publish never --win --mac --linux",

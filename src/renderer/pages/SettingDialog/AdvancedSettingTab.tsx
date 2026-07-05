@@ -18,6 +18,7 @@ import { Accordion, AccordionDetails, AccordionSummary } from '@/components/Acco
 import TextFieldReset from '@/components/common/TextFieldReset'
 import { ShortcutConfig } from '@/components/Shortcut'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { sanitizeSettingsForExport } from '@/packages/settings-export'
 import platform from '@/platform'
 import storage, { StorageKey } from '@/storage'
 import { migrateOnData } from '@/stores/migration'
@@ -163,10 +164,13 @@ function ExportAndImport(props: { onCancel: () => void }) {
   const onExport = async () => {
     const data = await storage.getAll()
     delete data[StorageKey.Configs] // 不导出 uuid
-    ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // 不导出license认证数据
-    ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // 不导出license设备数据，导入数据的新设备也应该计入设备数
-    if (!exportItems.includes(ExportDataItem.Key)) {
-      delete (data[StorageKey.Settings] as Settings).licenseKey
+    if (data[StorageKey.Settings]) {
+      data[StorageKey.Settings] = sanitizeSettingsForExport(
+        data[StorageKey.Settings] as Settings,
+        exportItems.includes(ExportDataItem.Key)
+      )
+    }
+    if (!exportItems.includes(ExportDataItem.Key) && data[StorageKey.Settings]) {
       delete (data[StorageKey.Settings] as Settings).providers
     }
     if (!exportItems.includes(ExportDataItem.Setting)) {

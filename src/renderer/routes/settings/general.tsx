@@ -13,18 +13,18 @@ import {
   TextInput,
   Title,
 } from '@mantine/core'
-import { type Language, type ProviderInfo, type Settings, Theme } from '@shared/types'
+import { type Language, type Settings, Theme } from '@shared/types'
 import { formatFileSize } from '@shared/utils'
 import { IconInfoCircle } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import dayjs from 'dayjs'
-import { mapValues } from 'lodash'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import LazySlider from '@/components/common/LazySlider'
 import { languageNameMap, languages } from '@/i18n/locales'
+import { sanitizeSettingsForExport } from '@/packages/settings-export'
 import { createDefaultWebDAVSyncDeps } from '@/packages/sync/local'
 import { downloadAndMergeWebDAVSnapshot, testWebDAVConnection, uploadWebDAVSnapshot } from '@/packages/sync/service'
 import { toastError } from '@/packages/toast'
@@ -524,23 +524,10 @@ const ImportExportDataSection = () => {
                 if (value !== null) {
                   // 对settings进行特殊处理，清理敏感数据
                   if (key === StorageKey.Settings) {
-                    const cleanedSettings = { ...(value as Settings) }
-                    cleanedSettings.licenseDetail = undefined
-                    cleanedSettings.licenseInstances = undefined
-
-                    if (!exportItems.includes(ExportDataItem.Key)) {
-                      delete cleanedSettings.licenseKey
-                      if (cleanedSettings.providers) {
-                        cleanedSettings.providers = mapValues(cleanedSettings.providers, (provider: ProviderInfo) => {
-                          const cleanedProvider = { ...provider }
-                          delete cleanedProvider.apiKey
-                          delete cleanedProvider.accessKey
-                          delete cleanedProvider.secretKey
-                          delete cleanedProvider.sessionToken
-                          return cleanedProvider
-                        }) as unknown as { [key: string]: ProviderInfo }
-                      }
-                    }
+                    const cleanedSettings = sanitizeSettingsForExport(
+                      value as Settings,
+                      exportItems.includes(ExportDataItem.Key)
+                    )
 
                     yield ','
                     yield `"${key}":${JSON.stringify(cleanedSettings)}`

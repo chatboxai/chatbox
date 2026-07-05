@@ -224,7 +224,6 @@
     "localforage": "^1.10.0",
     "lucide-react": "^0.419.0",
     "mark.js": "^8.11.1",
-    "material-ui-popup-state": "^5.0.4",
     "mermaid": "^11.13.0",
     "mini-css-extract-plugin": "^2.7.6",
     "msw": "^2.10.5",

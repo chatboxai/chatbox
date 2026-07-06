@@ -89,7 +89,6 @@ import {
   type SessionAttachment,
   type SessionAttachmentIndexingStage,
   type SessionType,
-  type ShortcutSendValue,
 } from '../../../shared/types'
 import * as dom from '../../hooks/dom'
 import { startPreparedSessionAttachmentIndexing } from '../../stores/sessionAttachmentRagIndexing'
@@ -106,6 +105,7 @@ import KnowledgeBaseMenu from '../knowledge-base/KnowledgeBaseMenu'
 import ModelSelector from '../ModelSelector'
 import MCPMenu from '../mcp/MCPMenu'
 import { FileMiniCard, ImageMiniCard, LinkMiniCard } from './Attachments'
+import { resolveComposerKeyAction } from './composerKeyboard'
 import { ImageUploadInput } from './ImageUploadInput'
 import {
   cleanupFile,
@@ -808,64 +808,53 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     const onKeyDown = useCallback(
       (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        const isPressedHash: Record<ShortcutSendValue, boolean> = {
-          '': false,
-          Enter: event.keyCode === 13 && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey,
-          'CommandOrControl+Enter': event.keyCode === 13 && (event.ctrlKey || event.metaKey) && !event.shiftKey,
-          'Ctrl+Enter': event.keyCode === 13 && event.ctrlKey && !event.shiftKey,
-          'Command+Enter': event.keyCode === 13 && event.metaKey,
-          'Shift+Enter': event.keyCode === 13 && event.shiftKey,
-          'Ctrl+Shift+Enter': event.keyCode === 13 && event.ctrlKey && event.shiftKey,
-        }
-
-        // 发送消息
-        if (isPressedHash[shortcuts.inputBoxSendMessage]) {
-          if (platform.type === 'mobile' && isSmallScreen && shortcuts.inputBoxSendMessage === 'Enter') {
-            // 移动端点击回车不会发送消息
-            return
-          }
-          event.preventDefault()
-          handleSubmitRef.current()
-          return
-        }
-
-        // 发送消息但不生成回复
-        if (isPressedHash[shortcuts.inputBoxSendMessageWithoutResponse]) {
-          event.preventDefault()
-          handleSubmitRef.current(false)
-          return
-        }
-
-        // 向上向下键翻阅历史消息
         const currentInput = latestInputRef.current
         const inputElement = messageInputFieldRef.current?.getElement()
-        if (
-          (event.key === 'ArrowUp' || event.key === 'ArrowDown') &&
-          inputElement &&
-          inputElement === document.activeElement && // 聚焦在输入框
-          (currentInput.length === 0 || window.getSelection()?.toString() === currentInput) // 要么为空，要么输入框全选
-        ) {
-          event.preventDefault()
-          if (event.key === 'ArrowUp') {
+        const action = resolveComposerKeyAction(event, {
+          sendShortcut: shortcuts.inputBoxSendMessage,
+          sendWithoutResponseShortcut: shortcuts.inputBoxSendMessageWithoutResponse,
+          suppressMobileEnter: platform.type === 'mobile' && isSmallScreen,
+          isInputFocused: !!inputElement && inputElement === document.activeElement,
+          isEmptyOrFullySelected: currentInput.length === 0 || window.getSelection()?.toString() === currentInput,
+        })
+
+        switch (action.type) {
+          case 'send':
+            event.preventDefault()
+            handleSubmitRef.current()
+            return
+          case 'send-without-response':
+            event.preventDefault()
+            handleSubmitRef.current(false)
+            return
+          case 'history-prev': {
+            // Arrow-up: recall the previous input from history.
+            event.preventDefault()
             const previousInput = getPreviousHistoryInputRef.current()
             if (previousInput !== undefined) {
               messageInputFieldRef.current?.setValue(previousInput)
               setTimeout(() => inputElement?.select(), 10)
             }
-          } else if (event.key === 'ArrowDown') {
+            return
+          }
+          case 'history-next': {
+            // Arrow-down: recall the next input from history.
+            event.preventDefault()
             const nextInput = getNextHistoryInputRef.current()
             if (nextInput !== undefined) {
               messageInputFieldRef.current?.setValue(nextInput)
               setTimeout(() => inputElement?.select(), 10)
             }
+            return
           }
-        }
-
-        // Prevent Chromium's native Escape behaviour which reverts textarea
-        // value to its defaultValue, causing controlled-input state to desync.
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          messageInputFieldRef.current?.getElement()?.blur()
+          case 'blur':
+            // Prevent Chromium's native Escape behaviour which reverts textarea
+            // value to its defaultValue, causing controlled-input state to desync.
+            event.preventDefault()
+            messageInputFieldRef.current?.getElement()?.blur()
+            return
+          default:
+            return
         }
       },
       [shortcuts, isSmallScreen]

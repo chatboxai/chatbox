@@ -87,7 +87,6 @@ import {
   type Message,
   ModelProviderEnum,
   type SessionAttachment,
-  type SessionAttachmentIndexingStage,
   type SessionType,
 } from '../../../shared/types'
 import * as dom from '../../hooks/dom'
@@ -118,6 +117,7 @@ import {
   storeLinkPromise,
 } from './preprocessState'
 import SkillSlashMenu from './SkillSlashMenu'
+import { deriveAttachmentCardState, mergeSessionAttachmentStatesIntoFiles } from './sessionAttachmentDisplay'
 import TokenCountMenu from './TokenCountMenu'
 
 export type InputBoxPayload = {
@@ -145,76 +145,6 @@ export type InputBoxProps = {
   onStartNewThread?(): boolean
   onRollbackThread?(): boolean
   onClickSessionSettings?(): boolean | Promise<boolean>
-}
-
-function mergeSessionAttachmentStatesIntoFiles(
-  files: PreprocessedFile[],
-  attachments: SessionAttachment[]
-): { files: PreprocessedFile[]; changed: boolean } {
-  if (files.length === 0 || attachments.length === 0) {
-    return { files, changed: false }
-  }
-
-  const attachmentStateMap = new Map(attachments.map((attachment) => [attachment.id, attachment]))
-  let changed = false
-  const nextFiles = files.map((file) => {
-    if (!file.sessionAttachmentId) {
-      return file
-    }
-    const attachment = attachmentStateMap.get(file.sessionAttachmentId)
-    if (!attachment) {
-      return file
-    }
-    const nextFile = {
-      ...file,
-      sessionAttachmentAvailability: attachment.availability ?? file.sessionAttachmentAvailability,
-      sessionAttachmentIndexStatus: attachment.indexStatus ?? file.sessionAttachmentIndexStatus,
-      sessionAttachmentChunkCount: attachment.chunkCount ?? file.sessionAttachmentChunkCount,
-      sessionAttachmentTotalChunks: attachment.totalChunks ?? file.sessionAttachmentTotalChunks,
-      sessionAttachmentEmbeddedChunks: attachment.embeddedChunks ?? file.sessionAttachmentEmbeddedChunks,
-      sessionAttachmentIndexingStage: attachment.indexingStage ?? file.sessionAttachmentIndexingStage,
-      error: attachment.error ?? file.error,
-    }
-    const fileChanged =
-      nextFile.sessionAttachmentAvailability !== file.sessionAttachmentAvailability ||
-      nextFile.sessionAttachmentIndexStatus !== file.sessionAttachmentIndexStatus ||
-      nextFile.sessionAttachmentChunkCount !== file.sessionAttachmentChunkCount ||
-      nextFile.sessionAttachmentTotalChunks !== file.sessionAttachmentTotalChunks ||
-      nextFile.sessionAttachmentEmbeddedChunks !== file.sessionAttachmentEmbeddedChunks ||
-      nextFile.sessionAttachmentIndexingStage !== file.sessionAttachmentIndexingStage ||
-      nextFile.error !== file.error
-    if (fileChanged) {
-      changed = true
-    }
-    return fileChanged ? nextFile : file
-  })
-
-  return { files: nextFiles, changed }
-}
-
-function getSessionAttachmentProgressValue(embeddedChunks?: number, totalChunks?: number): number | undefined {
-  if (!totalChunks || totalChunks <= 0 || embeddedChunks === undefined) return undefined
-  return Math.max(0, Math.min(100, Math.round((embeddedChunks / totalChunks) * 100)))
-}
-
-function getSessionAttachmentStageLabel(
-  stage: SessionAttachmentIndexingStage | undefined,
-  t: (key: string) => string
-): string {
-  switch (stage) {
-    case 'queued':
-      return t('Queued')
-    case 'chunking':
-      return t('Preparing')
-    case 'embedding':
-      return t('Indexing')
-    case 'finalizing':
-      return t('Finishing')
-    case 'ready':
-      return t('Indexed')
-    default:
-      return t('Indexing')
-  }
 }
 
 const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
@@ -1410,62 +1340,29 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 ))}
                 {attachments?.map((file) => {
                   const fileKey = inputFileKeyByFileRef.current.get(file) ?? StorageKeyGenerator.fileUniqKey(file)
-                  const status = preConstructedMessage.preprocessingStatus.files[fileKey]
                   const preprocessedFile = preConstructedMessage.preprocessedFiles.find(
                     (f) => f.inputFileKey === fileKey || StorageKeyGenerator.fileUniqKey(f.file) === fileKey
                   )
-                  const effectiveIndexStatus = preprocessedFile?.sessionAttachmentId
-                    ? (preprocessedAttachmentIndexStatusMap.get(preprocessedFile.sessionAttachmentId) ??
-                      preprocessedFile.sessionAttachmentIndexStatus)
-                    : preprocessedFile?.sessionAttachmentIndexStatus
-                  const effectiveAttachmentError = preprocessedFile?.sessionAttachmentId
-                    ? (preprocessedAttachmentErrorMap.get(preprocessedFile.sessionAttachmentId) ??
-                      preprocessedFile?.error)
-                    : preprocessedFile?.error
-                  const attachmentProgress = preprocessedFile?.sessionAttachmentId
-                    ? preprocessedAttachmentProgressMap.get(preprocessedFile.sessionAttachmentId)
-                    : undefined
-                  const totalChunks =
-                    attachmentProgress?.totalChunks ?? preprocessedFile?.sessionAttachmentTotalChunks ?? 0
-                  const embeddedChunks =
-                    attachmentProgress?.embeddedChunks ?? preprocessedFile?.sessionAttachmentEmbeddedChunks ?? 0
-                  const indexingStage =
-                    attachmentProgress?.indexingStage ?? preprocessedFile?.sessionAttachmentIndexingStage
-                  const progressValue = getSessionAttachmentProgressValue(embeddedChunks, totalChunks)
-                  const isSessionAttachmentTakingLong =
-                    !!attachmentProgress?.processingStartedAt &&
-                    effectiveIndexStatus !== 'ready' &&
-                    Date.now() - attachmentProgress.processingStartedAt > 30000
-                  const statusText =
-                    preprocessedFile?.ragMode === 'session-retrieval' && effectiveIndexStatus !== 'ready'
-                      ? progressValue !== undefined
-                        ? `${isSessionAttachmentTakingLong ? t('Still indexing') : getSessionAttachmentStageLabel(indexingStage, t)} · ${progressValue}%`
-                        : isSessionAttachmentTakingLong
-                          ? t('Still indexing')
-                          : getSessionAttachmentStageLabel(indexingStage, t)
-                      : status === 'processing'
-                        ? t('Preparing')
-                        : undefined
+                  const cardState = deriveAttachmentCardState({
+                    fileStatus: preConstructedMessage.preprocessingStatus.files[fileKey],
+                    preprocessedFile,
+                    indexStatusMap: preprocessedAttachmentIndexStatusMap,
+                    errorMap: preprocessedAttachmentErrorMap,
+                    progressMap: preprocessedAttachmentProgressMap,
+                    t,
+                  })
                   return (
                     <FileMiniCard
                       key={fileKey}
                       name={file.name}
                       fileType={file.type}
-                      status={
-                        effectiveAttachmentError
-                          ? 'error'
-                          : preprocessedFile?.ragMode === 'session-retrieval'
-                            ? effectiveIndexStatus === 'ready'
-                              ? 'completed'
-                              : 'processing'
-                            : status
-                      }
-                      statusText={statusText}
-                      progressValue={progressValue}
-                      isTakingLong={isSessionAttachmentTakingLong}
-                      errorMessage={effectiveAttachmentError}
+                      status={cardState.cardStatus}
+                      statusText={cardState.statusText}
+                      progressValue={cardState.progressValue}
+                      isTakingLong={cardState.isTakingLong}
+                      errorMessage={cardState.errorMessage}
                       onErrorClick={() => {
-                        const errorCode = effectiveAttachmentError
+                        const errorCode = cardState.errorMessage
                         if (errorCode) {
                           void NiceModal.show('file-parse-error', {
                             errorCode,

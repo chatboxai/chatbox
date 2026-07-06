@@ -21,7 +21,7 @@ import { Toaster } from 'sonner'
 import Divider from '@/components/common/Divider'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import Page from '@/components/layout/Page'
-import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { useScreenDownToMD } from '@/hooks/useScreenChange'
 import platform from '@/platform'
 import { featureFlags } from '@/utils/feature-flags'
 
@@ -102,13 +102,16 @@ export function RouteComponent() {
   const { t } = useTranslation()
   const router = useRouter()
   const canGoBack = useCanGoBack()
-  const isSmallScreen = useIsSmallScreen()
+  // Stack the settings navigation below the `md` breakpoint (~900px): the
+  // two-pane layout below forces a 800px min-width, which would otherwise clip
+  // the detail pane and force horizontal scrolling between ~600–800px (FABLE §9.2).
+  const isStacked = useScreenDownToMD()
 
   return (
     <Page
       title={t('Settings')}
       left={
-        isSmallScreen && canGoBack ? (
+        isStacked && canGoBack ? (
           <ActionIcon
             className="controls"
             variant="subtle"
@@ -137,18 +140,18 @@ export function SettingsRoot() {
   const { t } = useTranslation()
   const routerState = useRouterState()
   const key = routerState.location.pathname.split('/')[2]
-  const isSmallScreen = useIsSmallScreen()
+  const isStacked = useScreenDownToMD()
 
   return (
-    <Flex flex={1} h="100%" miw={isSmallScreen ? undefined : 800}>
-      {(!isSmallScreen || routerState.location.pathname === '/settings') && (
+    <Flex flex={1} h="100%" miw={isStacked ? undefined : 800}>
+      {(!isStacked || routerState.location.pathname === '/settings') && (
         <Stack
-          p={isSmallScreen ? 0 : 'xs'}
-          gap={isSmallScreen ? 0 : 'xs'}
-          maw={isSmallScreen ? undefined : 256}
+          p={isStacked ? 0 : 'xs'}
+          gap={isStacked ? 0 : 'xs'}
+          maw={isStacked ? undefined : 256}
           className={clsx(
             'border-solid border-0 border-r overflow-auto border-workspaice-border-primary',
-            isSmallScreen ? 'w-full border-r-0' : 'flex-[1_0_auto]'
+            isStacked ? 'w-full border-r-0' : 'flex-[1_0_auto]'
           )}
         >
           {ITEMS.map((item) => (
@@ -166,7 +169,7 @@ export function SettingsRoot() {
                 gap="xs"
                 p="md"
                 pr="xl"
-                py={isSmallScreen ? 'sm' : undefined}
+                py={isStacked ? 'sm' : undefined}
                 align="center"
                 c={item.key === key ? 'workspaice-brand' : 'workspaice-secondary'}
                 bg={item.key === key ? 'var(--workspaice-background-brand-secondary)' : 'transparent'}
@@ -182,20 +185,20 @@ export function SettingsRoot() {
                   flex={1}
                   lineClamp={1}
                   span={true}
-                  className={`!text-inherit ${isSmallScreen ? 'min-h-[32px] leading-[32px]' : ''}`}
+                  className={`!text-inherit ${isStacked ? 'min-h-[32px] leading-[32px]' : ''}`}
                 >
                   {t(item.label)}
                 </Text>
-                {isSmallScreen && (
+                {isStacked && (
                   <ScalableIcon icon={IconChevronRight} size={20} className="!text-workspaice-tint-tertiary" />
                 )}
               </Flex>
 
-              {isSmallScreen && <Divider />}
+              {isStacked && <Divider />}
             </Link>
           ))}
 
-          {isSmallScreen && (
+          {isStacked && (
             <Link to={`/about`} className={'block no-underline w-full'}>
               <Flex
                 component="span"
@@ -214,19 +217,19 @@ export function SettingsRoot() {
                   flex={1}
                   lineClamp={1}
                   span={true}
-                  className={`!text-inherit ${isSmallScreen ? 'min-h-[32px] leading-[32px]' : ''}`}
+                  className={`!text-inherit ${isStacked ? 'min-h-[32px] leading-[32px]' : ''}`}
                 >
                   {t('About')}
                 </Text>
                 <ScalableIcon icon={IconChevronRight} size={20} className="!text-workspaice-tint-tertiary" />
               </Flex>
 
-              {isSmallScreen && <Divider />}
+              {isStacked && <Divider />}
             </Link>
           )}
         </Stack>
       )}
-      {!(isSmallScreen && routerState.location.pathname === '/settings') && (
+      {!(isStacked && routerState.location.pathname === '/settings') && (
         <Box flex="1 1 80%" className="overflow-auto">
           <Outlet />
         </Box>

@@ -2,6 +2,7 @@ import { Badge, Button, Checkbox, Flex, Modal, Paper, Stack, Text } from '@manti
 import { IconCheck, IconX } from '@tabler/icons-react'
 import { type FC, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { skillsController } from '@/packages/skills/controller'
 import { settingsStore } from '@/stores/settingsStore'
@@ -77,17 +78,25 @@ export const GitHubInstallModal: FC<GitHubInstallModalProps> = ({
         const result = await skillsController.installSkill(repoOwner, repoName, skill.path)
 
         if (result.success) {
-          settingsStore.setState((state) => {
-            if (state.skills.enabledSkillNames.includes(result.skillName)) {
-              return state
-            }
-            return {
-              skills: {
-                ...state.skills,
-                enabledSkillNames: [...state.skills.enabledSkillNames, result.skillName],
-              },
-            }
-          })
+          // §7.6: script-bearing skills stay disabled until the user reviews
+          // their scripts (the enable toggle opens the review modal).
+          if (result.scriptNames?.length) {
+            toast.info(
+              t('"{{name}}" contains scripts — review them when enabling the skill', { name: result.skillName })
+            )
+          } else {
+            settingsStore.setState((state) => {
+              if (state.skills.enabledSkillNames.includes(result.skillName)) {
+                return state
+              }
+              return {
+                skills: {
+                  ...state.skills,
+                  enabledSkillNames: [...state.skills.enabledSkillNames, result.skillName],
+                },
+              }
+            })
+          }
         }
 
         setInstallStatuses((prev) => ({

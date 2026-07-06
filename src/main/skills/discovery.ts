@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { getLogger } from '../util'
 import { parseSkillFile } from './parser'
+import { listScriptNames, readSourceJson } from './skill-dir'
 
 const log = getLogger('skills:discovery')
 
@@ -27,11 +28,14 @@ export function discoverSkills(skillsDir: string): SkillInfo[] {
 
       const bodyTokenEstimate = Math.ceil(parsed.body.length / 4)
 
+      const skillDir = path.join(skillsDir, entry.name)
       customSkills.push({
         ...parsed.metadata,
-        path: path.join(skillsDir, entry.name),
+        path: skillDir,
         isBuiltin: false,
         bodyTokenEstimate,
+        scriptNames: listScriptNames(skillDir),
+        source: readSourceJson(skillDir) ?? undefined,
       })
     }
   } catch (error) {

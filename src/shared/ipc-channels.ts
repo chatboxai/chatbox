@@ -117,6 +117,7 @@ export const INVOKABLE_IPC_CHANNELS = [
   'skills:install-marketplace',
   'skills:load',
   'skills:open-directory',
+  'skills:read-script',
   'skills:scan-repo',
   'switch-theme',
   'window:close',

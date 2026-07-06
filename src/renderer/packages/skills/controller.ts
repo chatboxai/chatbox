@@ -11,6 +11,14 @@ interface SkillInstallResult {
   success: boolean
   skillName: string
   error?: string
+  scriptNames?: string[]
+}
+
+interface SkillScriptReadResult {
+  success: boolean
+  content?: string
+  truncated?: boolean
+  error?: string
 }
 
 interface SkillUpdateResult {
@@ -43,6 +51,10 @@ export const skillsController = {
 
   executeScript(skillName: string, scriptName: string, args?: string[]): Promise<SkillScriptResult> {
     return window.electronAPI.invoke('skills:execute-script', { skillName, scriptName, args })
+  },
+
+  readScript(skillName: string, scriptName: string): Promise<SkillScriptReadResult> {
+    return window.electronAPI.invoke('skills:read-script', { skillName, scriptName })
   },
 
   installSkill(owner: string, repo: string, skillPath: string): Promise<SkillInstallResult> {

@@ -69,6 +69,8 @@ export interface SkillInfo extends SkillMetadata {
   isBuiltin: boolean
   bodyTokenEstimate?: number
   source?: SkillSource
+  /** Executable files in the skill's scripts/ dir (valid script names only). */
+  scriptNames?: string[]
 }
 
 // ===== Zod Schemas =====

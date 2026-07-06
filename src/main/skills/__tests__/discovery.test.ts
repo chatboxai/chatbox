@@ -141,6 +141,41 @@ describe('discoverSkills', () => {
     expect(custom!.bodyTokenEstimate).toBe(Math.ceil(400 / 4))
   })
 
+  it('populates scriptNames and source for installed skills', () => {
+    mockedExistsSync.mockReturnValue(true)
+    mockedReaddirSync.mockImplementation((dirPath) => {
+      if (String(dirPath).endsWith('scripts')) {
+        return [makeDirent('run.sh', false), makeDirent('nested', true)] as unknown as ReturnType<typeof fs.readdirSync>
+      }
+      return [makeDirent('my-skill', true)] as unknown as ReturnType<typeof fs.readdirSync>
+    })
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ type: 'github', repo: 'owner/repo' }))
+    mockedParseSkillFile.mockReturnValue({
+      metadata: { name: 'my-skill', description: 'desc' },
+      body: 'body',
+    })
+
+    const result = discoverSkills('/skills')
+
+    expect(result).toHaveLength(1)
+    expect(result[0].scriptNames).toEqual(['run.sh'])
+    expect(result[0].source?.type).toBe('github')
+  })
+
+  it('leaves scriptNames empty and source undefined when absent', () => {
+    mockedExistsSync.mockImplementation((p) => !String(p).endsWith('scripts') && !String(p).endsWith('source.json'))
+    mockedReaddirSync.mockReturnValue([makeDirent('my-skill', true)] as Dirent[])
+    mockedParseSkillFile.mockReturnValue({
+      metadata: { name: 'my-skill', description: 'desc' },
+      body: 'body',
+    })
+
+    const result = discoverSkills('/skills')
+
+    expect(result[0].scriptNames).toEqual([])
+    expect(result[0].source).toBeUndefined()
+  })
+
   it('should skip skills where parser returns null', () => {
     mockedExistsSync.mockReturnValue(true)
     mockedReaddirSync.mockReturnValue([makeDirent('bad-skill', true)] as Dirent[])

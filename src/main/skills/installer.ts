@@ -5,6 +5,7 @@ import path from 'path'
 import { getLogger } from '../util'
 import { type DetectedSkill, detectSkillsInRepo, downloadSkillFiles, getLatestCommitHash } from './github-fetcher'
 import { parseSkillFile } from './parser'
+import { listScriptNames, readSourceJson, writeSourceJson } from './skill-dir'
 import { isValidSkillName } from './validation'
 
 const log = getLogger('skills:installer')
@@ -17,6 +18,8 @@ interface InstallResult {
   success: boolean
   skillName: string
   error?: string
+  /** Present on success: executable scripts the installed skill ships (FABLE §7.6 trust UX). */
+  scriptNames?: string[]
 }
 
 interface DeleteResult {
@@ -53,20 +56,6 @@ function parseGitHubUrl(source: string): { owner: string; repo: string } | null 
   }
 
   return null
-}
-
-function readSourceJson(skillDir: string): SkillSource | null {
-  const sourcePath = path.join(skillDir, 'source.json')
-  if (!fs.existsSync(sourcePath)) return null
-  try {
-    return JSON.parse(fs.readFileSync(sourcePath, 'utf-8')) as SkillSource
-  } catch {
-    return null
-  }
-}
-
-function writeSourceJson(skillDir: string, source: SkillSource): void {
-  fs.writeFileSync(path.join(skillDir, 'source.json'), JSON.stringify(source, null, 2), 'utf-8')
 }
 
 export async function installSkillFromGitHub(owner: string, repo: string, skillPath: string): Promise<InstallResult> {
@@ -115,7 +104,7 @@ export async function installSkillFromGitHub(owner: string, repo: string, skillP
       writeSourceJson(targetDir, source)
 
       log.info(`Installed skill "${skillName}" from ${owner}/${repo}`)
-      return { success: true, skillName }
+      return { success: true, skillName, scriptNames: listScriptNames(targetDir) }
     } finally {
       if (fs.existsSync(tempDir)) {
         fs.rmSync(tempDir, { recursive: true, force: true })

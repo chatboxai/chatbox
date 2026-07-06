@@ -34,6 +34,11 @@ export const skillsExecuteScriptPayload = z.object({
 
 export const skillsScanRepoPayload = z.tuple([z.string(), z.string()])
 
+export const skillsReadScriptPayload = z.object({
+  skillName: z.string(),
+  scriptName: z.string(),
+})
+
 export const skillsInstallPayload = z.object({
   owner: z.string(),
   repo: z.string(),

@@ -10,6 +10,7 @@ import {
   skillsExecuteScriptPayload,
   skillsInstallMarketplacePayload,
   skillsInstallPayload,
+  skillsReadScriptPayload,
   skillsScanRepoPayload,
 } from '../ipc-payloads'
 import { getLogger } from '../util'
@@ -17,6 +18,7 @@ import { discoverSkills } from './discovery'
 import { detectSkillsInRepo } from './github-fetcher'
 import { checkForUpdates, deleteSkill, installSkillFromGitHub, installSkillFromMarketplace } from './installer'
 import { parseSkillFile } from './parser'
+import { readSkillScript } from './script-reader'
 import { isValidScriptName, isValidSkillName } from './validation'
 
 const log = getLogger('skills:ipc-handlers')
@@ -262,6 +264,16 @@ export function registerSkillsHandlers() {
       }
     }
   )
+
+  ipcMain.handle('skills:read-script', (_event, rawParams: { skillName: string; scriptName: string }) => {
+    try {
+      const { skillName, scriptName } = parseIpcPayload('skills:read-script', skillsReadScriptPayload, rawParams)
+      return readSkillScript(getSkillsDir(), skillName, scriptName)
+    } catch (error) {
+      log.error('skills:read-script failed', error)
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
+  })
 
   ipcMain.handle('skills:scan-repo', async (_event, rawOwner: string, rawRepo: string) => {
     const [owner, repo] = parseIpcPayload('skills:scan-repo', skillsScanRepoPayload, [rawOwner, rawRepo])

@@ -34,7 +34,14 @@ import { toastError } from '@/packages/toast'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import CreateSkillModal from './CreateSkillModal'
 import GitHubInstallModal, { type DetectedSkill } from './GitHubInstallModal'
+import ScriptsReviewModal from './ScriptsReviewModal'
 import SkillsSpotlight, { skillsSpotlight } from './SkillsSpotlight'
+
+// FABLE §7.6: skills pulled from GitHub/marketplace that ship executable
+// scripts need an explicit script review before they can be enabled.
+export function requiresScriptReview(skill: SkillInfo): boolean {
+  return !!skill.scriptNames?.length && (skill.source?.type === 'github' || skill.source?.type === 'marketplace')
+}
 
 const SkillCard: FC<{
   skill: SkillInfo
@@ -199,6 +206,7 @@ export const SkillsSection: FC = () => {
   const [repoInfo, setRepoInfo] = useState({ owner: '', repo: '' })
   const [showGithubInput, setShowGithubInput] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [scriptsReview, setScriptsReview] = useState<{ skillName: string; scriptNames: string[] } | null>(null)
   const skillSettings = useSettingsStore((state) => state.skills)
   const { translatedSkills, getTranslatedName, isTranslating, translationEnabled, toggleTranslation } =
     useSkillTranslation(skills)
@@ -232,7 +240,7 @@ export const SkillsSection: FC = () => {
     [originalUserSkillByPath]
   )
 
-  const handleUserToggle = useCallback((name: string, enabled: boolean) => {
+  const setSkillEnabled = useCallback((name: string, enabled: boolean) => {
     settingsStore.setState((state) => {
       const current = state.skills.enabledSkillNames
       if (enabled) {
@@ -242,6 +250,17 @@ export const SkillsSection: FC = () => {
       return { skills: { ...state.skills, enabledSkillNames: current.filter((n) => n !== name) } }
     })
   }, [])
+
+  const handleUserToggle = useCallback(
+    (skill: SkillInfo, enabled: boolean) => {
+      if (enabled && requiresScriptReview(skill)) {
+        setScriptsReview({ skillName: skill.name, scriptNames: skill.scriptNames ?? [] })
+        return
+      }
+      setSkillEnabled(skill.name, enabled)
+    },
+    [setSkillEnabled]
+  )
 
   const handleSkillCreated = useCallback(
     (createdName: string) => {
@@ -469,7 +488,7 @@ export const SkillsSection: FC = () => {
                 skill={skill}
                 translatedName={getTranslatedName(skill)}
                 enabled={skillSettings.enabledSkillNames.includes(originalSkill.name)}
-                onToggle={(name, enabled) => handleUserToggle(originalSkill.name || name, enabled)}
+                onToggle={(_name, enabled) => handleUserToggle(originalSkill, enabled)}
                 actionItems={actionItems}
               />
             )
@@ -497,6 +516,19 @@ export const SkillsSection: FC = () => {
       <SkillsSpotlight
         installedSkillNames={skills.filter((s) => !s.isBuiltin).map((s) => s.name)}
         onInstallComplete={fetchSkills}
+      />
+
+      <ScriptsReviewModal
+        opened={scriptsReview !== null}
+        skillName={scriptsReview?.skillName ?? ''}
+        scriptNames={scriptsReview?.scriptNames ?? []}
+        onConfirm={() => {
+          if (scriptsReview) {
+            setSkillEnabled(scriptsReview.skillName, true)
+          }
+          setScriptsReview(null)
+        }}
+        onClose={() => setScriptsReview(null)}
       />
     </>
   )

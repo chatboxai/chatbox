@@ -710,7 +710,7 @@ const _Message: FC<Props> = (props) => {
                   user: !isBubbleLayout ? (
                     <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/chat')} />
                   ) : null,
-                  system: <SystemAvatar sessionType={props.sessionType} onClick={onClickAssistantAvatar} />,
+                  system: <SystemAvatar onClick={onClickAssistantAvatar} />,
                   tool: null,
                 }[msg.role]
               }

@@ -7,9 +7,10 @@ import { ImageInStorage, isBlockedRemoteAssetUrl } from '../Image'
 import Robot from '../icons/Robot'
 import { ScalableIcon } from './ScalableIcon'
 
+// No `sessionType` here: SystemAvatar never reads it, and an undeclared extra prop
+// would ride `...avatarProps` onto the DOM via Mantine Avatar (React unknown-prop warning).
 export type SystemAvatarProps = {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | number
-  sessionType?: 'chat' | 'picture'
 } & PolymorphicComponentProps<'div', AvatarProps>
 
 export const SystemAvatar: FC<SystemAvatarProps> = ({ size = 'md', className, ...avatarProps }) => {

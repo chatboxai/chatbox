@@ -43,7 +43,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useAtom, useAtomValue } from 'jotai'
-import _, { pick } from 'lodash'
+import { pick } from 'lodash'
 import type React from 'react'
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
@@ -104,6 +104,13 @@ import KnowledgeBaseMenu from '../knowledge-base/KnowledgeBaseMenu'
 import ModelSelector from '../ModelSelector'
 import MCPMenu from '../mcp/MCPMenu'
 import { FileMiniCard, ImageMiniCard, LinkMiniCard } from './Attachments'
+import {
+  findProviderModelInfo,
+  getUnsupportedFileMessage,
+  MAX_LINKS,
+  planLinkInsertion,
+  resolveModelDisplayText,
+} from './composerInsertion'
 import { resolveComposerKeyAction } from './composerKeyboard'
 import * as composerSubmit from './composerSubmit'
 import { ImageUploadInput } from './ImageUploadInput'
@@ -405,23 +412,12 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         return result.changed ? { ...prev, preprocessedFiles: result.files } : prev
       })
     }, [preprocessedAttachmentStates, setPreConstructedMessage])
-    const modelSelectorDisplayText = useMemo(() => {
-      if (!model) {
-        return t('Select Model')
-      }
-      const providerInfo = providers.find((p) => p.id === model.provider)
-
-      const modelInfo = (providerInfo?.models || providerInfo?.defaultSettings?.models)?.find(
-        (m) => m.modelId === model.modelId
-      )
-      return `${modelInfo?.nickname || model.modelId}`
-    }, [providers, model, t])
+    const modelSelectorDisplayText = useMemo(() => resolveModelDisplayText(providers, model, t), [providers, model, t])
 
     // Get model info for context window
     const modelInfo = useMemo(() => {
       if (!model) return null
-      const providerInfo = providers.find((p) => p.id === model.provider)
-      return (providerInfo?.models || providerInfo?.defaultSettings?.models)?.find((m) => m.modelId === model.modelId)
+      return findProviderModelInfo(providers, model)
     }, [providers, model])
 
     // Check if model supports tool use for files
@@ -876,24 +872,17 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     }
 
     const insertLinks = (urls: string[]) => {
-      const MAX_LINKS = 6
-      const dedupedLinks = _.uniqBy([...(links || []), ...urls.map((u) => ({ url: u }))], 'url')
-      // 保留最先添加的前 6 个链接，多出来的直接丢弃（而非静默丢掉最早的）
-      const newLinks = dedupedLinks.slice(0, MAX_LINKS)
-      setLinks(newLinks)
+      const plan = planLinkInsertion(links, urls)
+      setLinks(plan.links)
 
-      if (dedupedLinks.length > newLinks.length) {
+      if (plan.droppedSome) {
         toastActions.add(
           t('Only the first {{limit}} links can be attached. The extra links were skipped.', { limit: MAX_LINKS })
         )
       }
 
-      // 只预处理实际保留下来的链接（findIndex 返回 -1 表示该链接已被裁剪，跳过）
-      for (const url of urls) {
-        const linkIndex = newLinks.findIndex((l) => l.url === url)
-        if (linkIndex >= 0 && linkIndex < MAX_LINKS) {
-          startLinkPreprocessing(url)
-        }
+      for (const url of plan.urlsToPreprocess) {
+        startLinkPreprocessing(url)
       }
     }
 
@@ -937,22 +926,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
           // Check if file type is supported
           if (!isSupportedFile(file.name)) {
-            const unsupportedType = getUnsupportedFileType(file.name)
-            let errorMsg = t('Unsupported file type: {{fileName}}', { fileName: file.name })
-            if (unsupportedType === 'iwork') {
-              errorMsg = t('iWork files (Pages, Keynote) are not supported. Please export to PDF or Office format.')
-            } else if (unsupportedType === 'audio') {
-              errorMsg = t('Audio files are not supported')
-            } else if (unsupportedType === 'video') {
-              errorMsg = t('Video files are not supported')
-            } else if (unsupportedType === 'binary') {
-              errorMsg = t('Binary/executable files are not supported')
-            } else if (unsupportedType === 'archive') {
-              errorMsg = t('Archive files are not supported. Please extract and upload individual files.')
-            } else if (unsupportedType === 'image') {
-              errorMsg = t('Advanced image formats are not supported. Please convert to JPG or PNG.')
-            }
-            toastActions.add(errorMsg)
+            toastActions.add(getUnsupportedFileMessage(getUnsupportedFileType(file.name), file.name, t))
             continue
           }
 

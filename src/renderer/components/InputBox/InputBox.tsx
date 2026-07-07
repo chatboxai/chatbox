@@ -105,6 +105,7 @@ import ModelSelector from '../ModelSelector'
 import MCPMenu from '../mcp/MCPMenu'
 import { FileMiniCard, ImageMiniCard, LinkMiniCard } from './Attachments'
 import { resolveComposerKeyAction } from './composerKeyboard'
+import * as composerSubmit from './composerSubmit'
 import { ImageUploadInput } from './ImageUploadInput'
 import {
   cleanupFile,
@@ -309,53 +310,33 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const pictureInputRef = useRef<HTMLInputElement | null>(null)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-    // Check if any preprocessing is in progress
-    const isPreprocessing = useMemo(() => {
-      const hasProcessingFiles = Object.values(preConstructedMessage.preprocessingStatus.files || {}).some(
-        (status) => status === 'processing'
-      )
-      const hasProcessingLinks = Object.values(preConstructedMessage.preprocessingStatus.links || {}).some(
-        (status) => status === 'processing'
-      )
-      return hasProcessingFiles || hasProcessingLinks
-    }, [preConstructedMessage.preprocessingStatus])
-
-    // Check if any preprocessing has errors
-    const hasPreprocessErrors = useMemo(() => {
-      const hasErrorFiles = Object.values(preConstructedMessage.preprocessingStatus.files || {}).some(
-        (status) => status === 'error'
-      )
-      const hasErrorLinks = Object.values(preConstructedMessage.preprocessingStatus.links || {}).some(
-        (status) => status === 'error'
-      )
-      return hasErrorFiles || hasErrorLinks
-    }, [preConstructedMessage.preprocessingStatus])
-
+    const isPreprocessing = useMemo(
+      () => composerSubmit.isPreprocessingInProgress(preConstructedMessage.preprocessingStatus),
+      [preConstructedMessage.preprocessingStatus]
+    )
+    const hasPreprocessErrors = useMemo(
+      () => composerSubmit.hasPreprocessingErrors(preConstructedMessage.preprocessingStatus),
+      [preConstructedMessage.preprocessingStatus]
+    )
     const hasBlockedSessionRagFiles = useMemo(
-      () =>
-        preConstructedMessage.preprocessedFiles.some(
-          (file) => file.ragMode === 'session-retrieval' && file.sessionAttachmentAvailability === 'blocked'
-        ),
+      () => composerSubmit.hasBlockedSessionRagFiles(preConstructedMessage.preprocessedFiles),
       [preConstructedMessage.preprocessedFiles]
     )
     const hasSessionRetrievalFiles = useMemo(
-      () =>
-        preConstructedMessage.preprocessedFiles.some(
-          (file) => file.ragMode === 'session-retrieval' && file.sessionAttachmentAvailability !== 'blocked'
-        ),
+      () => composerSubmit.hasSessionRetrievalFiles(preConstructedMessage.preprocessedFiles),
       [preConstructedMessage.preprocessedFiles]
     )
     const hasLargeAttachmentWarning = useMemo(
       () =>
-        preConstructedMessage.preprocessedFiles.some(
-          (file) =>
-            file.sessionAttachmentWarningReason === sessionHelpers.SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING
+        composerSubmit.hasLargeAttachmentWarning(
+          preConstructedMessage.preprocessedFiles,
+          sessionHelpers.SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING
         ),
       [preConstructedMessage.preprocessedFiles]
     )
 
     const disableSubmit = useMemo(
-      () => !(hasTextContent || links?.length || attachments?.length || pictureKeys?.length),
+      () => composerSubmit.computeDisableSubmit({ hasTextContent, links, attachments, pictureKeys }),
       [hasTextContent, links, attachments, pictureKeys]
     )
 
@@ -613,12 +594,14 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const closeSelectModelErrorTipCb = useRef<NodeJS.Timeout>()
     const handleSubmit = async (needGenerating = true, options: SubmitOptions = {}) => {
       if (
-        disableSubmit ||
-        generating ||
-        isSubmitting ||
-        isPreprocessing ||
-        hasPreprocessErrors ||
-        hasBlockedSessionRagFiles
+        composerSubmit.isSubmitBlocked({
+          disableSubmit,
+          isPreprocessing,
+          isSubmitting,
+          hasPreprocessErrors,
+          hasBlockedSessionRagFiles,
+        }) ||
+        generating
       ) {
         return
       }
@@ -656,12 +639,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             setPreConstructedMessage((prev) => ({ ...prev, preprocessedFiles: result.files }))
           }
         }
-        const unreadySessionAttachments = preprocessedFilesForSubmit.filter(
-          (file) =>
-            file.ragMode === 'session-retrieval' &&
-            file.sessionAttachmentAvailability !== 'blocked' &&
-            (file.sessionAttachmentIndexStatus ?? 'pending') !== 'ready'
-        )
+        const unreadySessionAttachments = composerSubmit.selectUnreadySessionAttachments(preprocessedFilesForSubmit)
         if (unreadySessionAttachments.length > 0 && !options.allowUnreadySessionAttachments) {
           setUnreadyAttachmentSubmitPrompt({ opened: true, count: unreadySessionAttachments.length })
           return
@@ -1168,6 +1146,17 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       [knowledgeBase, setKnowledgeBase]
     )
 
+    // Send button: the shared submit-blocked predicate plus a running compaction.
+    // `generating` is intentionally excluded — while generating the button becomes "stop".
+    const sendButtonBlocked =
+      composerSubmit.isSubmitBlocked({
+        disableSubmit,
+        isPreprocessing,
+        isSubmitting,
+        hasPreprocessErrors,
+        hasBlockedSessionRagFiles,
+      }) || isCompactionRunning
+
     // Show deprecated notice for legacy picture sessions
     if (sessionType === 'picture') {
       return (
@@ -1220,43 +1209,15 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
               {/* Send Button */}
               <ActionIcon
-                disabled={
-                  (disableSubmit ||
-                    isPreprocessing ||
-                    isSubmitting ||
-                    isCompactionRunning ||
-                    hasPreprocessErrors ||
-                    hasBlockedSessionRagFiles) &&
-                  !generating
-                }
+                disabled={sendButtonBlocked && !generating}
                 size={32}
                 variant="filled"
                 color={generating ? 'dark' : 'workspaice-brand'}
                 radius="xl"
                 aria-label={generating ? t('Stop generating') : t('Send')}
                 onClick={generating ? onStopGenerating : () => handleSubmit()}
-                className={cn(
-                  'shrink-0 mb-1',
-                  !generating &&
-                    (disableSubmit ||
-                      isPreprocessing ||
-                      isSubmitting ||
-                      isCompactionRunning ||
-                      hasPreprocessErrors ||
-                      hasBlockedSessionRagFiles) &&
-                    'disabled:!opacity-100 !text-white'
-                )}
-                style={
-                  !generating &&
-                  (disableSubmit ||
-                    isPreprocessing ||
-                    isSubmitting ||
-                    isCompactionRunning ||
-                    hasPreprocessErrors ||
-                    hasBlockedSessionRagFiles)
-                    ? { backgroundColor: 'rgba(222, 226, 230, 1)' }
-                    : undefined
-                }
+                className={cn('shrink-0 mb-1', !generating && sendButtonBlocked && 'disabled:!opacity-100 !text-white')}
+                style={!generating && sendButtonBlocked ? { backgroundColor: 'rgba(222, 226, 230, 1)' } : undefined}
               >
                 {generating ? (
                   <ScalableIcon icon={IconPlayerStopFilled} size={16} />

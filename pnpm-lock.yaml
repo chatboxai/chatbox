@@ -267,8 +267,8 @@ importers:
         specifier: ^5.11.11
         version: 5.18.0(@emotion/react@11.14.0(@types/react@18.3.27)(react@18.3.1))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@18.3.27)(react@18.3.1))(@types/react@18.3.27)(react@18.3.1))(@types/react@18.3.27)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@openrouter/ai-sdk-provider':
-        specifier: ^2.0.0
-        version: 2.1.1(ai@6.0.67(zod@4.3.6))(zod@4.3.6)
+        specifier: ^2.10.0
+        version: 2.10.0(ai@6.0.67(zod@4.3.6))(zod@4.3.6)
       '@pmmmwh/react-refresh-webpack-plugin':
         specifier: ^0.5.10
         version: 0.5.17(react-refresh@0.14.2)(type-fest@4.41.0)(webpack-dev-server@4.15.2)(webpack@5.104.1)
@@ -2921,8 +2921,8 @@ packages:
   '@open-draft/until@2.1.0':
     resolution: {integrity: sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==}
 
-  '@openrouter/ai-sdk-provider@2.1.1':
-    resolution: {integrity: sha512-UypPbVnSExxmG/4Zg0usRiit3auvQVrjUXSyEhm0sZ9GQnW/d8p/bKgCk2neh1W5YyRSo7PNQvCrAEBHZnqQkQ==}
+  '@openrouter/ai-sdk-provider@2.10.0':
+    resolution: {integrity: sha512-FMsAEjLUt5pWuRE2LDC/LCvVrFjLlrEzUITH5+5SZtfq7KZ2wrOHjQVxzz92sju8S9ltpzW87CLW8/b0oBXVCw==}
     engines: {node: '>=18'}
     peerDependencies:
       ai: ^6.0.0
@@ -16439,7 +16439,7 @@ snapshots:
 
   '@open-draft/until@2.1.0': {}
 
-  '@openrouter/ai-sdk-provider@2.1.1(ai@6.0.67(zod@4.3.6))(zod@4.3.6)':
+  '@openrouter/ai-sdk-provider@2.10.0(ai@6.0.67(zod@4.3.6))(zod@4.3.6)':
     dependencies:
       ai: 6.0.67(zod@4.3.6)
       zod: 4.3.6

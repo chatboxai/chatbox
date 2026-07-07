@@ -1,5 +1,5 @@
 import NiceModal from '@ebay/nice-modal-react'
-import { Tooltip, Typography } from '@mui/material'
+import { Text, Tooltip } from '@mantine/core'
 import { CodedError } from '@shared/models/errors'
 import type { SessionAttachmentIndexingStage } from '@shared/types'
 import { AlertCircle, CheckCircle, Eye, Link, Link2, Loader2, RotateCw, Trash2 } from 'lucide-react'
@@ -147,7 +147,9 @@ export function FileMiniCard(props: {
       onClick={handleClick}
     >
       <Tooltip
-        title={
+        multiline
+        maw={300}
+        label={
           status === 'error' && translatedError
             ? translatedError
             : onPreviewClick
@@ -157,13 +159,14 @@ export function FileMiniCard(props: {
       >
         <div className="flex flex-col justify-center items-center min-w-0 w-full">
           <FileIcon filename={name} className="w-8 h-8 text-black mb-1" />
-          <Typography className="w-full px-1 text-black text-center" noWrap sx={{ fontSize: '12px', lineHeight: 1.25 }}>
+          <Text truncate className="w-full px-1 text-black text-center" style={{ fontSize: 12, lineHeight: 1.25 }}>
             {name}
-          </Typography>
+          </Text>
           {displayedStatusText && (
             <div className="mt-1 flex items-center justify-center gap-1 w-full min-w-0">
               {status === 'processing' && <Loader2 size="12" className="animate-spin text-blue-500 shrink-0" />}
-              <Typography
+              <Text
+                truncate
                 className={
                   status === 'error'
                     ? 'min-w-0 text-red-500 text-center'
@@ -171,11 +174,10 @@ export function FileMiniCard(props: {
                       ? 'min-w-0 text-amber-600 text-center'
                       : 'min-w-0 text-gray-500 text-center'
                 }
-                noWrap
-                sx={{ fontSize: '11px', lineHeight: 1.2 }}
+                style={{ fontSize: 11, lineHeight: 1.2 }}
               >
                 {displayedStatusText}
-              </Typography>
+              </Text>
             </div>
           )}
         </div>
@@ -352,7 +354,7 @@ export function MessageAttachment(props: {
           : label
 
   return (
-    <Tooltip title={tooltipTitle}>
+    <Tooltip multiline maw={300} label={tooltipTitle}>
       <div
         className={`flex items-center gap-2 px-2 py-1.5 min-w-0 overflow-hidden
             relative
@@ -366,13 +368,13 @@ export function MessageAttachment(props: {
           {url && !filename && <Link2 className="w-4 h-4 text-workspaice-secondary" strokeWidth={1.5} />}
         </div>
         <div className="min-w-0 flex-1 overflow-hidden">
-          <Typography className="text-xs leading-tight truncate" noWrap>
+          <Text truncate className="text-xs leading-tight" style={{ fontSize: 12, lineHeight: 1.25 }}>
             {label}
-          </Typography>
+          </Text>
           {subtitle && (
-            <Typography className="text-workspaice-tertiary" noWrap sx={{ fontSize: '10px', lineHeight: 1.4 }}>
+            <Text truncate className="text-workspaice-tertiary" style={{ fontSize: 10, lineHeight: 1.4 }}>
               {subtitle}
-            </Typography>
+            </Text>
           )}
         </div>
         {showStatus &&
@@ -453,12 +455,12 @@ export function LinkMiniCard(props: {
                                 group/file-mini-card relative"
       onClick={handleClick}
     >
-      <Tooltip title={status === 'error' && translatedError ? translatedError : url}>
+      <Tooltip multiline maw={300} label={status === 'error' && translatedError ? translatedError : url}>
         <div className="flex flex-col justify-center items-center">
           <Link className="w-8 h-8 text-black" strokeWidth={1} />
-          <Typography className="w-20 pt-1 text-black text-center" noWrap sx={{ fontSize: '10px' }}>
+          <Text truncate className="w-20 pt-1 text-black text-center" style={{ fontSize: 10, lineHeight: 1.5 }}>
             {label}
-          </Typography>
+          </Text>
         </div>
       </Tooltip>
 

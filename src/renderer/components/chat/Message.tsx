@@ -3,13 +3,13 @@ import {
   ActionIcon,
   type ActionIconProps,
   Badge,
+  Box,
   Flex,
   Image as Img,
   Loader,
   Text,
   Tooltip as Tooltip1,
 } from '@mantine/core'
-import { Box, Grid, useTheme } from '@mui/material'
 import type { Message, MessagePicture, MessageToolCallPart, SessionType } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import {
@@ -88,7 +88,6 @@ const _Message: FC<Props> = (props) => {
   } = props
 
   const { t } = useTranslation()
-  const theme = useTheme()
   const isSmallScreen = useIsSmallScreen()
   const {
     userAvatarKey,
@@ -406,7 +405,8 @@ const _Message: FC<Props> = (props) => {
         {isBubbleLayout && statusElements}
         <Box
           className={cn('msg-content', { 'msg-content-small': small })}
-          sx={small ? { fontSize: theme.typography.body2.fontSize } : {}}
+          // MUI body2 font size (theme kept MUI's default 14px scale)
+          style={small ? { fontSize: '0.875rem' } : undefined}
         >
           {msg.invokedSkills && msg.invokedSkills.length > 0 && (
             <Flex gap="xxs" wrap="wrap" mb="xs">
@@ -647,12 +647,11 @@ const _Message: FC<Props> = (props) => {
           className,
           'w-full'
         )}
-        sx={{
+        // isSmallScreen is the same MUI down('sm') query the old sx used
+        style={{
           paddingBottom: '0.1rem',
-          paddingX: '1rem',
-          [theme.breakpoints.down('sm')]: {
-            paddingX: '0.3rem',
-          },
+          paddingLeft: isSmallScreen ? '0.3rem' : '1rem',
+          paddingRight: isSmallScreen ? '0.3rem' : '1rem',
         }}
       >
         <Flex justify="flex-end" gap="xs" className="w-full">
@@ -686,17 +685,17 @@ const _Message: FC<Props> = (props) => {
         className,
         'w-full'
       )}
-      sx={{
+      // isSmallScreen is the same MUI down('sm') query the old sx used
+      style={{
         paddingBottom: '0.1rem',
-        paddingX: '1rem',
-        [theme.breakpoints.down('sm')]: {
-          paddingX: '0.3rem',
-        },
+        paddingLeft: isSmallScreen ? '0.3rem' : '1rem',
+        paddingRight: isSmallScreen ? '0.3rem' : '1rem',
       }}
     >
-      <Grid container wrap="nowrap" spacing={1.5}>
+      {/* Former MUI Grid (nowrap, spacing 1.5 → 12px gutter); text column keeps flex:1/min-w-0 */}
+      <Flex wrap="nowrap" gap={12}>
         {(showAvatar ?? true) && (
-          <Grid item>
+          <Box className="shrink-0">
             <Box className={cn('relative', msg.role !== 'assistant' ? 'mt-1' : 'mt-2')}>
               {
                 {
@@ -721,19 +720,17 @@ const _Message: FC<Props> = (props) => {
                 </Flex>
               )}
             </Box>
-          </Grid>
+          </Box>
         )}
-        <Grid item xs sm container sx={{ width: '0px', paddingRight: (showAvatar ?? true) ? '15px' : '0px' }}>
-          <Grid item xs>
-            {messageContent}
-            {(msg.files || msg.links) && (
-              <MessageAttachmentGrid files={msg.files} links={msg.links} align={isUserBubble ? 'end' : 'start'} />
-            )}
-            {meta}
-            {actionButtons}
-          </Grid>
-        </Grid>
-      </Grid>
+        <Box className="min-w-0 flex-1" style={{ paddingRight: (showAvatar ?? true) ? '15px' : '0px' }}>
+          {messageContent}
+          {(msg.files || msg.links) && (
+            <MessageAttachmentGrid files={msg.files} links={msg.links} align={isUserBubble ? 'end' : 'start'} />
+          )}
+          {meta}
+          {actionButtons}
+        </Box>
+      </Flex>
     </Box>
   )
 }

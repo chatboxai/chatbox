@@ -1,5 +1,4 @@
-import { ActionIcon, Flex, Loader, Text, Tooltip } from '@mantine/core'
-import { Link } from '@mui/material'
+import { ActionIcon, Anchor, Flex, Loader, Text, Tooltip } from '@mantine/core'
 import { aiProviderNameHash } from '@shared/models'
 import { CodedError } from '@shared/models/errors'
 import type { Message } from '@shared/types'
@@ -207,12 +206,14 @@ export default function MessageErrTips(props: { msg: Message; onRetry?: () => vo
         }}
         components={{
           OpenSettingButton: (
-            <Link
+            // underline="always" matches the old MUI Link default
+            <Anchor
+              underline="always"
               className="cursor-pointer italic"
               onClick={() => {
                 navigateToSettings('/default-models')
               }}
-            ></Link>
+            ></Anchor>
           ),
         }}
       />
@@ -278,13 +279,14 @@ export default function MessageErrTips(props: { msg: Message; onRetry?: () => vo
             : 'AI Provider',
         }}
         components={[
-          <Link
+          <Anchor
+            underline="always"
             key="link"
             className="cursor-pointer font-bold"
             onClick={() => {
               navigateToSettings()
             }}
-          ></Link>,
+          ></Anchor>,
         ]}
       />
     )

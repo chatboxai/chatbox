@@ -88,6 +88,14 @@ export interface Platform extends Storage {
   getKnowledgeBaseController(): KnowledgeBaseController
   getSessionAttachmentRagController(): SessionAttachmentRagController
 
+  // Cross-session full-text search index (main-process FTS5, FABLE F4)
+  chatSearchUpsertSession(sessionId: string, entries: { messageId: string; text: string }[]): Promise<void>
+  chatSearchDeleteSessions(sessionIds: string[]): Promise<void>
+  chatSearchQuery(query: string, limit?: number): Promise<{ sessionId: string; messageId: string }[]>
+  chatSearchGetMeta(key: string): Promise<string | null>
+  chatSearchSetMeta(key: string, value: string): Promise<void>
+  chatSearchClear(): Promise<void>
+
   getImageGenerationStorage(): ImageGenerationStorage
 
   getTaskSessionStorage(): TaskSessionStorage

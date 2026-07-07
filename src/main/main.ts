@@ -630,6 +630,9 @@ if (!gotTheLock) {
       // DB, locked file) must not prevent the window, tray, shortcuts, or
       // deep links from coming up. The renderer accesses the KB lazily via
       // IPC, and session-attachment RAG still waits for the KB to be ready.
+      void import('./chat-search/index.js')
+        .then((mod) => mod.getInitPromise())
+        .catch((error) => log.error('[ChatSearch] Failed to initialize during bootstrap:', error))
       await knowledgeBaseInitPromise
       await initializeSessionAttachmentRagAfterAppReady()
     })

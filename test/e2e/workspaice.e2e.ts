@@ -184,6 +184,41 @@ test('opens the command palette with Cmd/Ctrl+K and navigates via an action', as
   await expect(searchInput).toBeHidden()
 })
 
+test('finds a locally-sent message via cross-conversation search', async ({ page }) => {
+  // Seed a mock provider + model so the composer accepts a message (no network:
+  // Ctrl+Enter sends without generating a response)
+  await page.getByTestId('settings-nav-link').click()
+  await page.getByTestId('add-provider-button').click()
+  await page.getByText('Add Custom Provider').click()
+  await page.getByTestId('custom-provider-name-input').fill('E2E Search Provider')
+  await page.getByTestId('custom-provider-add-button').click()
+  await page.getByTestId('provider-api-host-input').fill('http://127.0.0.1:9/v1')
+  await page.getByText('New', { exact: true }).click()
+  const modelEditDialog = page.getByRole('dialog', { name: 'Edit Model' })
+  await modelEditDialog.getByRole('textbox').first().fill('mock-model')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.keyboard.press('Escape') // close settings modal
+
+  // Pick the model in the composer and send without response
+  await page.getByText('Select Model').click()
+  await page.getByText('mock-model').first().click()
+  await page.getByTestId('message-input').fill('zebra quantum searchable e2e message')
+  await page.keyboard.press('Control+Enter')
+  // The message renders in the created session's message list
+  await expect(page.getByTestId('message-input')).toHaveValue('')
+
+  // Open global search (Cmd/Ctrl+Shift+F), search across all conversations
+  await page.keyboard.press('ControlOrMeta+Shift+f')
+  const searchInput = page.getByPlaceholder('Type a command or search...', { exact: true })
+  await expect(searchInput).toBeVisible()
+  await searchInput.fill('quantum searchable')
+  await page.getByText('Search All Conversations', { exact: false }).click()
+
+  // A result group for the chat appears with the matched message
+  await expect(page.getByText(/^Chat ".*":$/).first()).toBeVisible()
+  await expect(page.getByText('zebra quantum searchable e2e message').first()).toBeVisible()
+})
+
 test('enters and cancels empty bulk chat selection without mutating sessions', async ({ page }) => {
   await page.getByTestId('select-chats-button').click()
 

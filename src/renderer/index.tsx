@@ -27,6 +27,7 @@ import './setup/global_error_handler'
 
 import { QueryClientProvider } from '@tanstack/react-query'
 import { initSessionAttachmentRagMaintenance } from './setup/session_attachment_rag_maintenance'
+import { ensureChatSearchBackfill } from './stores/chatSearchIndexing'
 import { initLastUsedModelStore } from './stores/lastUsedModelStore'
 import { initRecentDirectoriesStore } from './stores/recentDirectoriesStore'
 import { initSettingsStore } from './stores/settingsStore'
@@ -111,6 +112,7 @@ initializeApp()
 
     void i18n.changeLanguage(settings.language)
     initSessionAttachmentRagMaintenance()
+    ensureChatSearchBackfill()
     window.location.hash = '/'
 
     // 初始化完成，可以开始渲染

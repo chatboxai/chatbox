@@ -306,6 +306,31 @@ export default class TestPlatform implements Platform {
     throw new Error('Session attachment RAG not implemented in test platform.')
   }
 
+  // Chat-search index: in-memory no-ops so store code paths run in tests
+  public chatSearchUpsertSession(_sessionId: string, _entries: { messageId: string; text: string }[]): Promise<void> {
+    return Promise.resolve()
+  }
+
+  public chatSearchDeleteSessions(_sessionIds: string[]): Promise<void> {
+    return Promise.resolve()
+  }
+
+  public chatSearchQuery(_query: string, _limit?: number): Promise<{ sessionId: string; messageId: string }[]> {
+    return Promise.resolve([])
+  }
+
+  public chatSearchGetMeta(_key: string): Promise<string | null> {
+    return Promise.resolve(null)
+  }
+
+  public chatSearchSetMeta(_key: string, _value: string): Promise<void> {
+    return Promise.resolve()
+  }
+
+  public chatSearchClear(): Promise<void> {
+    return Promise.resolve()
+  }
+
   public getImageGenerationStorage(): ImageGenerationStorage {
     if (!this._imageGenerationStorage) {
       this._imageGenerationStorage = new IndexedDBImageGenerationStorage()

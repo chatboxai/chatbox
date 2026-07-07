@@ -309,6 +309,31 @@ export default class DesktopPlatform implements Platform {
     return this._sessionMetaStorage
   }
 
+  // Cross-session full-text search index (main-process FTS5, FABLE F4)
+  public chatSearchUpsertSession(sessionId: string, entries: { messageId: string; text: string }[]): Promise<void> {
+    return this.ipc.invoke('chat-search:upsert-session', { sessionId, entries })
+  }
+
+  public chatSearchDeleteSessions(sessionIds: string[]): Promise<void> {
+    return this.ipc.invoke('chat-search:delete-sessions', { sessionIds })
+  }
+
+  public chatSearchQuery(query: string, limit?: number): Promise<{ sessionId: string; messageId: string }[]> {
+    return this.ipc.invoke('chat-search:query', { query, limit })
+  }
+
+  public chatSearchGetMeta(key: string): Promise<string | null> {
+    return this.ipc.invoke('chat-search:get-meta', { key })
+  }
+
+  public chatSearchSetMeta(key: string, value: string): Promise<void> {
+    return this.ipc.invoke('chat-search:set-meta', { key, value })
+  }
+
+  public chatSearchClear(): Promise<void> {
+    return this.ipc.invoke('chat-search:clear')
+  }
+
   public async sandboxInit(config: { workingDirectory: string }) {
     return this.ipc.invoke('sandbox:init', config)
   }

@@ -33,6 +33,7 @@ const log = getLogger('chat-store')
 
 import { clearScrollPositionCache } from '@/components/chat/MessageList'
 import { cleanupSessionAtomCache } from './atoms/throttleWriteSessionAtom'
+import { deleteChatSearchSessions, scheduleChatSearchSync } from './chatSearchIndexing'
 import { lastUsedModelStore } from './lastUsedModelStore'
 import queryClient from './queryClient'
 import { getSessionMeta } from './sessionHelpers'
@@ -245,6 +246,8 @@ export async function updateSessionWithMessages(sessionId: string, updater: Upda
         if (session) {
           console.debug('chatStore', 'persist session', sessionId)
           await storage.setItemNow(StorageKeyGenerator.session(sessionId), session)
+          // Keep the FTS chat-search index in sync (debounced; FABLE F4)
+          scheduleChatSearchSync(session)
         }
       }
     )
@@ -316,6 +319,7 @@ export async function deleteSession(id: string) {
       console.warn('Failed to cleanup session attachment RAG entries for session deletion:', error)
     }
   }
+  deleteChatSearchSessions([id])
   await storage.removeItem(StorageKeyGenerator.session(id))
   _setSessionCache(id, null)
   const metaStorage = await getMetaStorage()
@@ -343,6 +347,7 @@ export async function deleteSessions(ids: string[]) {
     })
   }
 
+  deleteChatSearchSessions(uniqueIds)
   await runInChunks(uniqueIds, 20, async (id) => {
     await storage.removeItem(StorageKeyGenerator.session(id))
   })

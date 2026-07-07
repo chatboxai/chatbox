@@ -82,6 +82,7 @@ Generic workflow rules (branch, commits, pushing, ambiguity) live in `AGENT_RULE
 - `src/renderer/packages/mcp/`: MCP client/controller.
 - `src/renderer/packages/skills/`: skills controller (renderer-side IPC stubs).
 - `src/main/skills/`: skills IPC handlers (discovery, load, script execution).
+- `src/main/chat-search/`: FTS5 chat-search index (db + IPC); renderer sync in `src/renderer/stores/chatSearchIndexing.ts`.
 - `electron-builder.yml`: desktop packaging metadata.
 - `package.json`: package metadata and scripts.
 - `README.md` and `doc/`: project documentation.

@@ -16,6 +16,12 @@
 
 export const INVOKABLE_IPC_CHANNELS = [
   'appLog',
+  'chat-search:clear',
+  'chat-search:delete-sessions',
+  'chat-search:get-meta',
+  'chat-search:query',
+  'chat-search:set-meta',
+  'chat-search:upsert-session',
   'clearLogs',
   'delStoreBlob',
   'delStoreValue',

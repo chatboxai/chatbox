@@ -632,6 +632,66 @@ function _searchSessions(regexp: RegExp, s: Session) {
 
 const SEARCH_PAGE_SIZE = 30
 const SEARCH_RESULT_LIMIT = 50
+const SEARCH_INDEX_HIT_LIMIT = 300
+
+/**
+ * Serve a global search from the main-process FTS index. Hits are re-verified
+ * against the live session blob with the same regexp as the scan path, so
+ * match semantics (and stale index rows) behave identically. Returns false if
+ * the index isn't ready yet.
+ */
+async function searchSessionsViaIndex(
+  searchInput: string,
+  regexp: RegExp,
+  emitBatch: (batch: Session[]) => void
+): Promise<boolean> {
+  const { isChatSearchReady } = await import('./chatSearchIndexing')
+  if (!(await isChatSearchReady())) {
+    return false
+  }
+
+  const hits = await platform.chatSearchQuery(searchInput, SEARCH_INDEX_HIT_LIMIT)
+
+  // Group hit message ids by session, preserving the index's rank order.
+  const hitsBySession = new Map<string, Set<string>>()
+  for (const hit of hits) {
+    let ids = hitsBySession.get(hit.sessionId)
+    if (!ids) {
+      ids = new Set()
+      hitsBySession.set(hit.sessionId, ids)
+    }
+    ids.add(hit.messageId)
+  }
+
+  let matchedMessageTotal = 0
+  for (const [hitSessionId, messageIds] of hitsBySession) {
+    const stored = await storage.getItem<Session | null>(StorageKeyGenerator.session(hitSessionId), null)
+    if (!stored) continue
+    const session = migrateSession(stored)
+
+    const matchedMessages: Message[] = []
+    const collect = (messages: Message[]) => {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const message = messages[i]
+        if (messageIds.has(message.id) && regexp.test(getMessageText(message))) {
+          matchedMessages.push(message)
+        }
+      }
+    }
+    collect(session.messages)
+    for (const thread of session.threads || []) {
+      collect(thread.messages)
+    }
+
+    if (matchedMessages.length === 0) continue
+    matchedMessageTotal += matchedMessages.length
+    emitBatch([{ ...session, messages: matchedMessages.map((m) => migrateMessage(m)) }])
+    if (matchedMessageTotal >= SEARCH_RESULT_LIMIT) {
+      break
+    }
+  }
+  return true
+}
 
 export async function searchSessions(searchInput: string, sessionId?: string, onResult?: (result: Session[]) => void) {
   const safeInput = searchInput.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
@@ -653,6 +713,19 @@ export async function searchSessions(searchInput: string, sessionId?: string, on
       emitBatch([{ ...session, messages: matchedMessages }])
     }
     return
+  }
+
+  // FTS5 index path (FABLE F4): the trigram tokenizer needs >= 3 chars; shorter
+  // queries and not-yet-backfilled indexes fall through to the brute-force scan.
+  if (searchInput.trim().length >= 3) {
+    try {
+      const served = await searchSessionsViaIndex(searchInput, regexp, emitBatch)
+      if (served) {
+        return
+      }
+    } catch (error) {
+      log.error('chat-search index query failed, falling back to scan:', error)
+    }
   }
 
   const metaStorage = await getMetaStorage()

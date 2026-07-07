@@ -1,5 +1,6 @@
 import { getDefaultStore } from 'jotai'
 import { useEffect } from 'react'
+import { commandPalette } from '@/components/commandPaletteStore'
 import { navigateToSettings } from '@/modals/Settings'
 import { router } from '@/router'
 import { uiStore } from '@/stores/uiStore'
@@ -77,13 +78,17 @@ export default function useShortcut() {
       }
     }
 
+    // 全局命令面板 CmdOrCtrl + K；搜索改为 CmdOrCtrl + Shift + F
     if (e.key === 'k' && ctrlKey) {
+      e.preventDefault()
+      commandPalette.toggle()
+      return
+    }
+    if ((e.key === 'f' || e.key === 'F') && ctrlKey && shift) {
+      e.preventDefault()
       const openSearchDialog = uiStore.getState().openSearchDialog
-      if (openSearchDialog) {
-        uiStore.setState({ openSearchDialog: false })
-      } else {
-        uiStore.setState({ openSearchDialog: true })
-      }
+      uiStore.setState({ openSearchDialog: !openSearchDialog })
+      return
     }
     if (e.key === ',' && ctrlKey) {
       e.preventDefault()

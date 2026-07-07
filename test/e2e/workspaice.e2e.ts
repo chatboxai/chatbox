@@ -144,6 +144,34 @@ test('creates, renames, creates a chat inside, and deletes a workspace', async (
   await expect(page.locator(`[data-testid="workspace-row-${workspaceId}"]`)).toHaveCount(0)
 })
 
+test('opens the command palette with Cmd/Ctrl+K and navigates via an action', async ({ page }) => {
+  // The keydown listener is attached on React mount — wait for the app to be interactive first
+  await expect(page.getByTestId('message-input')).toBeVisible()
+  await page.keyboard.press('ControlOrMeta+k')
+  const paletteInput = page.getByPlaceholder('Type a command or search conversations...')
+  await expect(paletteInput).toBeVisible()
+
+  // Filter to a command and run it via keyboard
+  await paletteInput.fill('Create Image')
+  await expect(page.getByText('Open the image creator')).toBeVisible()
+  await page.keyboard.press('Enter')
+  await expect(paletteInput).toBeHidden()
+  await expect(page.getByText('Image Creator', { exact: true }).first()).toBeVisible()
+
+  // Palette toggles closed with the same shortcut
+  await page.keyboard.press('ControlOrMeta+k')
+  await expect(paletteInput).toBeVisible()
+  await page.keyboard.press('ControlOrMeta+k')
+  await expect(paletteInput).toBeHidden()
+
+  // Search moved to Cmd/Ctrl+Shift+F (same shortcut toggles it closed)
+  const searchInput = page.getByPlaceholder('Type a command or search...', { exact: true })
+  await page.keyboard.press('ControlOrMeta+Shift+f')
+  await expect(searchInput).toBeVisible()
+  await page.keyboard.press('ControlOrMeta+Shift+f')
+  await expect(searchInput).toBeHidden()
+})
+
 test('enters and cancels empty bulk chat selection without mutating sessions', async ({ page }) => {
   await page.getByTestId('select-chats-button').click()
 

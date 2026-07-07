@@ -1,5 +1,6 @@
 import { Theme } from '@shared/types'
 import { z } from 'zod'
+import CommandPalette from '@/components/CommandPalette'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
@@ -256,6 +257,8 @@ function Root() {
       <PictureDialog />
       {/* 搜索 */}
       <SearchDialog />
+      {/* 全局命令面板 ⌘K */}
+      <CommandPalette />
       {/* 没有配置模型时的欢迎弹窗 */}
       {/* <WelcomeDialog /> */}
       <Toasts /> {/* mui */}

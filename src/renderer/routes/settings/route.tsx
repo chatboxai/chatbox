@@ -78,15 +78,11 @@ const ITEMS = [
     label: 'Chat Settings',
     icon: <IconMessages className="w-full h-full" />,
   },
-  ...(platform.type === 'mobile'
-    ? []
-    : [
-        {
-          key: 'hotkeys',
-          label: 'Keyboard Shortcuts',
-          icon: <IconKeyboard className="w-full h-full" />,
-        },
-      ]),
+  {
+    key: 'hotkeys',
+    label: 'Keyboard Shortcuts',
+    icon: <IconKeyboard className="w-full h-full" />,
+  },
   {
     key: 'general',
     label: 'General Settings',

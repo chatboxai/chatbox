@@ -24,8 +24,8 @@ function getSearchProviders() {
   switch (provider) {
     case 'bing':
       selectedProviders.push(new BingSearch())
-      if (language !== 'zh-Hans' && platform.type !== 'mobile') {
-        selectedProviders.push(new BingNewsSearch()) // 国内和移动端容易被重定向到 Bing 首页
+      if (language !== 'zh-Hans') {
+        selectedProviders.push(new BingNewsSearch()) // 国内容易被重定向到 Bing 首页
       }
       break
     case 'tavily':

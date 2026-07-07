@@ -23,7 +23,6 @@ function ctx(overrides: Partial<ComposerKeyContext> = {}): ComposerKeyContext {
   return {
     sendShortcut: 'Enter',
     sendWithoutResponseShortcut: 'Ctrl+Enter',
-    suppressMobileEnter: false,
     isInputFocused: true,
     isEmptyOrFullySelected: true,
     ...overrides,
@@ -80,18 +79,6 @@ describe('matchSendShortcut', () => {
 describe('resolveComposerKeyAction', () => {
   it('returns send when the send shortcut matches', () => {
     expect(resolveComposerKeyAction(keyEvent(), ctx())).toEqual({ type: 'send' })
-  })
-
-  it('suppresses a bare-Enter send on a mobile small screen', () => {
-    expect(resolveComposerKeyAction(keyEvent(), ctx({ suppressMobileEnter: true }))).toEqual({ type: 'none' })
-  })
-
-  it('does not suppress a non-Enter send shortcut on mobile', () => {
-    const action = resolveComposerKeyAction(
-      keyEvent({ ctrlKey: true }),
-      ctx({ sendShortcut: 'Ctrl+Enter', suppressMobileEnter: true })
-    )
-    expect(action).toEqual({ type: 'send' })
   })
 
   it('returns send-without-response for that shortcut', () => {

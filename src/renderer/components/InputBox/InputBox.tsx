@@ -683,7 +683,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
               message: undefined,
             })
             setShowRollbackThreadButton(false)
-            if (platform.type !== 'mobile' && messageTextForHistory) {
+            if (messageTextForHistory) {
               addInputBoxHistory(messageTextForHistory)
             }
           },
@@ -708,7 +708,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         const action = resolveComposerKeyAction(event, {
           sendShortcut: shortcuts.inputBoxSendMessage,
           sendWithoutResponseShortcut: shortcuts.inputBoxSendMessageWithoutResponse,
-          suppressMobileEnter: platform.type === 'mobile' && isSmallScreen,
           isInputFocused: !!inputElement && inputElement === document.activeElement,
           isEmptyOrFullySelected: currentInput.length === 0 || window.getSelection()?.toString() === currentInput,
         })

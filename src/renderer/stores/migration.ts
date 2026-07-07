@@ -10,14 +10,11 @@ import {
 } from '@shared/types'
 import dayjs from 'dayjs'
 import { getDefaultStore } from 'jotai'
-import { difference, intersection, keyBy, uniq, uniqBy } from 'lodash'
-import oldStore from 'store'
+import localforage from 'localforage'
+import { keyBy, uniq, uniqBy } from 'lodash'
 import { v4 as uuidv4 } from 'uuid'
-import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import platform from '@/platform'
 import type { Storage } from '@/platform/interfaces'
-import { getOldVersionStorages } from '@/platform/storages'
-import WebPlatform from '@/platform/web_platform'
 import { initData } from '@/setup/init_data'
 import storage, { StorageKey } from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
@@ -25,6 +22,7 @@ import { createSessionMetaRecordsFromLegacyList } from '@/utils/session-utils'
 import * as defaults from '../../shared/defaults'
 import { getLogger } from '../lib/utils'
 import { migrationProcessAtom } from './atoms/utilAtoms'
+import { getOldVersionStorages } from './migration-legacy-storage'
 import { getSessionMeta } from './sessionHelpers'
 
 const log = getLogger('migration')
@@ -56,36 +54,19 @@ async function doMigrateStorage(oldStorage: Storage) {
   log.info(
     `migrateStorage: old version storage found, migrating data from old storage(${oldStorage.getStorageType()}) to ${storage.getStorageType()}`
   )
-  if (platform.type === 'mobile') {
-    // for mobile copy all keys
-    const keys = await oldStorage.getAllStoreKeys()
-    for (let index = 0; index < keys.length; index++) {
-      const key = keys[index]
-      try {
-        const val = await oldStorage.getStoreValue(key)
-        await storage.setItemNow(key, val)
-        log.info(`migrateStorage: ${index + 1} / ${keys.length} migrated`)
-      } catch {
-        log.info(`migrateStorage: failed to migrate ${key}`)
-      }
+  // for desktop copy all except settings, configs and configVersion, then delete old key
+  const kvs = await oldStorage.getAllStoreValues()
+  const keys = Object.keys(kvs).filter((k) => !['settings', 'configs', 'configVersion'].includes(k))
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index]
+    try {
+      const val = kvs[key]
+      await storage.setItemNow(key, val)
+      await oldStorage.delStoreValue(key)
+      log.info(`migrateStorage: ${index + 1} / ${keys.length} migrated`)
+    } catch {
+      log.info(`migrateStorage: failed to migrate ${key}`)
     }
-  } else if (platform.type === 'desktop') {
-    // for desktop copy all except settings, configs and configVersion, then delete old key
-    const kvs = await oldStorage.getAllStoreValues()
-    const keys = Object.keys(kvs).filter((k) => !['settings', 'configs', 'configVersion'].includes(k))
-    for (let index = 0; index < keys.length; index++) {
-      const key = keys[index]
-      try {
-        const val = kvs[key]
-        await storage.setItemNow(key, val)
-        await oldStorage.delStoreValue(key)
-        log.info(`migrateStorage: ${index + 1} / ${keys.length} migrated`)
-      } catch {
-        log.info(`migrateStorage: failed to migrate ${key}`)
-      }
-    }
-  } else {
-    // no migration for web platform yet
   }
   const migrated = await oldStorage.getStoreValue('migrated')
 
@@ -131,7 +112,7 @@ async function migrateStorage() {
   const latestDesktopMigratedVersion = 12 // desktop 端最新的迁移版本是 11 到 12
 
   // 桌面端的configVersion一直在config file storage中，不存在不同storage间不同的情况
-  if (platform.type === 'desktop' && configVersion > 0 && configVersion < latestDesktopMigratedVersion) {
+  if (configVersion > 0 && configVersion < latestDesktopMigratedVersion) {
     log.info(
       `migrateStorage: desktop platform needs migration, config version ${configVersion} < latest migrated version ${latestDesktopMigratedVersion}`
     )
@@ -142,17 +123,8 @@ async function migrateStorage() {
 
   if (!needMigration) {
     log.info(
-      `migrateStorage check: platform ${platform.type} old config version: ${oldConfigVersion}, old storage: ${oldStorage?.getStorageType()}`
+      `migrateStorage check: old config version: ${oldConfigVersion}, old storage: ${oldStorage?.getStorageType()}`
     )
-
-    if (
-      platform.type !== 'desktop' &&
-      oldConfigVersion > configVersion &&
-      oldStorage &&
-      oldStorage.getStorageType() !== storage.getStorageType()
-    ) {
-      needMigration = true
-    }
   }
 
   if (needMigration && oldStorage) {
@@ -228,22 +200,18 @@ async function migrate_1_to_2(_dataStore: MigrateStore) {
 }
 
 async function migrate_2_to_3(dataStore: MigrateStore) {
-  // 原来 Electron 应用存储图片 base64 数据到 IndexedDB，现在改成本地文件存储
+  // 原来 Electron 应用存储图片 base64 数据到 IndexedDB（默认 localforage 实例），现在改成本地文件存储
   if (!dataStore.setBlob) {
     return
   }
-  if (platform.type !== 'desktop') {
-    return
-  }
-  const ws = new WebPlatform()
-  const blobKeys = await ws.listStoreBlobKeys()
+  const blobKeys = await localforage.keys()
   for (const key of blobKeys) {
-    const value = await ws.getStoreBlob(key)
+    const value = await localforage.getItem<string>(key)
     if (!value) {
       continue
     }
     await dataStore.setBlob(key, value)
-    await ws.delStoreBlob(key)
+    await localforage.removeItem(key)
   }
 }
 
@@ -251,50 +219,18 @@ async function migrate_3_to_4(_dataStore: MigrateStore) {
   // Demo artifact session seeding removed — new installs start empty
 }
 
-// 已经迁移到storage migration
-async function migrate_4_to_5(dataStore: MigrateStore): Promise<boolean> {
-  if (platform.type !== 'web') {
-    return false
-  }
-  // 针对网页版，从 store 迁移至 localforage
-  // 本质上是从更小的 localStorage 迁移到更大的 IndexedDB，解决容量不够用的问题
-  const keys: string[] = []
-  oldStore.each((value, key) => {
-    keys.push(key)
-  })
-  if (keys.length === 0) {
-    return false
-  }
-  for (const key of keys) {
-    await dataStore.setData(key, oldStore.get(key))
-  }
-  return true
+// 网页版专用（store → localforage），桌面端无操作；保留占位防止版本号被复用
+async function migrate_4_to_5(_dataStore: MigrateStore): Promise<boolean> {
+  return false
 }
 
 async function migrate_5_to_6(_dataStore: MigrateStore) {
   // Demo mermaid session seeding removed — new installs start empty
 }
 
-// 针对 mobile 端，从 store 迁移至 sqlite
-// 解决容量不够用的问题
-// 不在需要了
-async function migrate_6_to_7(dataStore: MigrateStore): Promise<boolean> {
-  if (platform.type !== 'mobile') {
-    return false
-  }
-  // 针对mobile端，从 store 迁移至 sqllite
-  // 解决容量不够用的问题
-  const keys: string[] = []
-  oldStore.each((value, key) => {
-    keys.push(key)
-  })
-  if (keys.length === 0) {
-    return false
-  }
-  for (const key of keys) {
-    await dataStore.setData(key, oldStore.get(key))
-  }
-  return true
+// 移动端专用（store → sqlite），桌面端无操作；保留占位防止版本号被复用
+async function migrate_6_to_7(_dataStore: MigrateStore): Promise<boolean> {
+  return false
 }
 
 // 从所有 sessions 保存在一个 key 迁移到每个 session 保存在一个 key，增加 session 列表的读取性能
@@ -316,49 +252,9 @@ async function migrate_7_to_8(dataStore: MigrateStore): Promise<boolean> {
   return true
 }
 
-// 修复之前从 7 以下升级，会导致 7_8 不执行的问题，从 chat-sessions 里找到 chat-sessions-list 中不存在的 session，然后迁移
-async function migrate_8_to_9(dataStore: MigrateStore): Promise<boolean> {
-  if (platform.type !== 'mobile') {
-    return false
-  }
-
-  const oldSessions = await dataStore.getData<Session[]>(StorageKey.ChatSessions, [])
-  log.info(`migrate_8_to_9, old sessions: ${oldSessions.length}`)
-  if (oldSessions.length === 0) {
-    return false
-  }
-
-  const sessionList = await dataStore.getData<SessionMeta[]>(StorageKey.ChatSessionsList, [])
-  const existedSessionIds = sessionList.map((session) => session.id)
-
-  // 如果 排除掉 预置的 session， chat-sessions 和 chat-sessions-list 里的 session id 全都不一致，说明之前漏了 7-8 的 migration，需要执行数据找回，否则跳过找回步骤
-  const intersectSessionIds = intersection(
-    existedSessionIds,
-    oldSessions.map((session) => session.id)
-  )
-
-  const defaultSessionIds = uniq([
-    ...defaultSessionsForEN.map((session) => session.id),
-    ...defaultSessionsForCN.map((session) => session.id),
-  ])
-
-  // 如果 intersectSessionIds 里还有值，说明之前成功执行过 7-8 的 migration，跳过找回步骤
-  if (difference(intersectSessionIds, defaultSessionIds).length !== 0) {
-    return false
-  }
-
-  // 找到 chat-sessions 里不存在于 chat-sessions-list 的 session
-  const missedSessions = oldSessions.filter((session) => !existedSessionIds.includes(session.id))
-  const missedSessionList = missedSessions.map((session) => getSessionMeta(session))
-  log.info(`migrate_8_to_9, missedSessions: ${missedSessions.length}`)
-
-  // 写入 chat-sessions-list
-  await dataStore.setData(StorageKey.ChatSessionsList, [...sessionList, ...missedSessionList])
-  const missedSessionMap = keyBy(missedSessions, (session) => StorageKeyGenerator.session(session.id))
-  await dataStore.setAll(missedSessionMap)
-  log.info(`migrate_8_to_9 done`)
-
-  return true
+// 移动端专用（7_8 补救迁移），桌面端无操作；保留占位防止版本号被复用
+async function migrate_8_to_9(_dataStore: MigrateStore): Promise<boolean> {
+  return false
 }
 
 function setInitProcess(process: string) {
@@ -660,12 +556,6 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
 }
 
 async function migrate_10_to_11(dataStore: MigrateStore) {
-  if (platform.type === 'mobile') {
-    // 释放 localstorage 空间
-    log.info('migrate_10_to_11, remove settings')
-    oldStore.remove(StorageKey.Settings)
-  }
-
   // 修复之前写入的错误的默认值
   const settings = await dataStore.getData<Settings | null>(StorageKey.Settings, null)
   if (settings) {

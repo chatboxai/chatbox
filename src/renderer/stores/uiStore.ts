@@ -20,7 +20,7 @@ export const uiStore = createStore(
         messageScrolling: null as RefObject<VirtuosoHandle> | null,
         messageScrollingAtTop: false,
         messageScrollingAtBottom: false,
-        showSidebar: platform.type !== 'mobile',
+        showSidebar: true,
         openSearchDialog: false,
         searchDialogGlobalOnly: false, // 是否只显示全局搜索（用于对话列表）
         openAboutDialog: false, // 是否展示相关信息的窗口

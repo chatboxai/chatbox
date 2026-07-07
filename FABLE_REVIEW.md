@@ -34,11 +34,13 @@ _Last updated 2026-07-02 (branch `dev`). Findings below are the original snapsho
 
 - **P3 chat-surface phase ✅ (2026-07-07):** §8.4 InputBox split — all pure decision logic extracted to tested modules (`composerKeyboard` 18 tests · `sessionAttachmentDisplay` 15 · `composerSubmit` 12 · `composerInsertion` 11; `MessageInputField` moved to its own file; 2,072 → ~1,758 lines) · §8.7 MUI→Mantine on the chat leaves `Message.tsx`/`MessageErrTips.tsx`/`Attachments.tsx` with live-verified pixel parity (`Sidebar.tsx` `SwipeableDrawer` deliberately kept on MUI pending the mobile decision — no Mantine equivalent) · §9.2 settings responsiveness (shipped earlier in the phase) · composer token refresh (disabled-send bg, over-budget tint, no-model pulse now use `--workspaice-*` tokens; disabled send was previously light-gray even in dark mode) · §9.3 dismissible first-use toolbar hint (persisted `uiStore.composerHintDismissed`) · §9.5 disclaimer only renders while the session is empty · §9.7 capability-icon legend in `ModelList` (provider settings, fetch modal, import). Verified: `qa:ci` green, live light/dark + desktop/mobile checks on the isolated dev profile. See `ARCHITECTURE_NOTES.md` for the MUI→Mantine parity facts (breakpoint/typography/Grid/Tooltip equivalences).
 
+- **Mobile+web drop ✅ (2026-07-07):** SEC-6 resolved by removing the mobile (Capacitor) and web build paths entirely (user decision — desktop-only product). 17 capacitor deps, `mobile_platform`/`web_platform`/Capacitor storage layers, mobile/web scripts and build branches removed (~3,600 lines); `PlatformType` narrowed to `'desktop'`; `Sidebar.tsx` + `ThreadHistoryDrawer.tsx` migrated off MUI `SwipeableDrawer` to Mantine. Small-screen responsive UI and RTL preserved. Verified: full `qa:ci` green (1,311 unit + integration + 7 E2E).
+
 **Open — recommended order:**
 
 1. **Features (deferred from P3):** F1 onboarding (fold §9.4 empty-state into it) · F2 ⌘K palette (low-lift, `@mantine/spotlight` already wired) · F4 chat full-text search.
-2. **Product decision:** SEC-6 (mobile SQLite encryption) resolves for free if mobile is dropped; also unblocks the `Sidebar.tsx` SwipeableDrawer question.
-3. **QA cycle:** §6.5 coverage on high-risk targets (KB/session-attachment RAG IPC mains, `InputBox.tsx`, `MessageList.tsx`, session CRUD).
+2. **QA cycle:** §6.5 coverage on high-risk targets (KB/session-attachment RAG IPC mains, `InputBox.tsx`, `MessageList.tsx`, session CRUD).
+3. **Maintenance:** electron-builder ≥26.13 upgrade (drop the app-builder-lib patch) + Electron 42.x patch bump.
 
 ---
 
@@ -110,7 +112,7 @@ Ordered by severity. "Known/tracked" = already in `.ai/` notes.
 - ✅ **DONE (2026-07-02)** — **[PROD-1] EdgeOne hosted deploy still shipped** (`src/renderer/packages/edgeone.ts`, `deployHtmlToEdgeOne` imported by `components/Markdown.tsx`, plus `modals/EdgeOneDeploySuccess.tsx`). Sends user HTML artifacts to `https://mcp.edgeone.site`. Violates the local-first non-negotiable. Remove the button, the package, and the modal.
 - ✅ **DONE (2026-07-03, packaging-layer patch — see §0)** — **[SEC-5] node-fetch@2.7.0 CVEs in packaged app** — known/tracked; root cause is eager `zeroentropy` loading via `@mastra/rag`. The long-term fix (lazy/scoped import) is described in `.ai/ARCHITECTURE_NOTES.md`. (Resolution: `patch-mastra-rag.cjs` lazifies + removes zeroentropy at pack time; npm override forces the residual never-loaded gaxios chain onto node-fetch@3.)
 - ✅ **DONE (2026-07-02)** — **[STAB-1] Window creation is gated on knowledge-base init** (`src/main/main.ts:548`: `await knowledgeBaseInitPromise` before `createWindow()`). A hung/slow libsql init (corrupt DB, locked file) means *no window ever appears* and no user-visible error. Show the window first; let KB init resolve behind it (the renderer already tolerates async RAG readiness — see `refreshSessionAttachmentStatuses`).
-- **[SEC-6] Mobile SQLite `'no-encryption'`** — known/tracked, pending the mobile-support decision. If mobile is dropped (open product question), this disappears for free.
+- ✅ **DONE (2026-07-07, mobile+web build paths removed)** — **[SEC-6] Mobile SQLite `'no-encryption'`** — resolved by product decision: mobile (Capacitor) and web build paths were dropped entirely; the unencrypted mobile SQLite storage layer no longer exists. The same phase migrated `Sidebar.tsx`/`ThreadHistoryDrawer.tsx` off MUI `SwipeableDrawer` (→ Mantine `Drawer` + fixed aside) and removed the leftover hosted `report-content` flow, `DesktopDownloadReminder`, and the dead legacy `pages/SettingDialog`.
 
 ### 5.3 Low
 

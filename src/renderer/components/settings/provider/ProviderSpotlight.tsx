@@ -38,19 +38,17 @@ const ProviderSpotlight: FC<{
       },
     ]
 
-    if (platform.type !== 'mobile') {
-      quickActions.push({
-        id: 'import-clipboard',
-        label: isImporting ? String(t('Importing...')) : String(t('Import from clipboard')),
-        description: String(t('Import provider config from clipboard')),
-        onClick: () => {
-          if (isImporting) return
-          providerSpotlight.close()
-          onImportProvider()
-        },
-        leftSection: <ScalableIcon icon={IconFileImport} size={24} className="text-workspaice-tint-brand" />,
-      })
-    }
+    quickActions.push({
+      id: 'import-clipboard',
+      label: isImporting ? String(t('Importing...')) : String(t('Import from clipboard')),
+      description: String(t('Import provider config from clipboard')),
+      onClick: () => {
+        if (isImporting) return
+        providerSpotlight.close()
+        onImportProvider()
+      },
+      leftSection: <ScalableIcon icon={IconFileImport} size={24} className="text-workspaice-tint-brand" />,
+    })
 
     return [
       {

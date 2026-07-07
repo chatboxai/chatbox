@@ -1,4 +1,3 @@
-import { SplashScreen } from '@capacitor/splash-screen'
 import '@mantine/core/styles.css'
 import '@mantine/spotlight/styles.css'
 import { RouterProvider } from '@tanstack/react-router'
@@ -16,12 +15,8 @@ import './static/index.css'
 import { initLogAtom, migrationProcessAtom } from './stores/atoms/utilAtoms'
 import * as migration from './stores/migration'
 import queryClient from './stores/queryClient'
-import { WORKSPAICE_BUILD_PLATFORM, WORKSPAICE_BUILD_TARGET } from './variables'
 
 const log = getLogger('index')
-
-// 按需加载 polyfill
-import './setup/load_polyfill'
 
 // SEC-3: route cross-origin fetches through the main-process net proxy
 // (desktop only). Must be installed before any provider/network call.
@@ -39,11 +34,6 @@ import { initSettingsStore } from './stores/settingsStore'
 // Token estimation system initialization (runs in all environments)
 void import('./setup/token_estimation_init')
 
-// 引入移动端安全区域代码，主要为了解决异形屏幕的问题
-if (WORKSPAICE_BUILD_TARGET === 'mobile_app' && WORKSPAICE_BUILD_PLATFORM === 'ios') {
-  void import('./setup/mobile_safe_area')
-}
-
 // ==========执行初始化==============
 async function initializeApp() {
   log.info('initializeApp')
@@ -55,9 +45,6 @@ async function initializeApp() {
   } catch (e) {
     log.error('migrate error', e)
   }
-
-  // 最后执行 storage 清理，清理不 block 进入UI
-  void import('./setup/storage_clear')
 
   // 启动mcp服务器
   void import('./setup/mcp_bootstrap')
@@ -108,9 +95,6 @@ const tid = setTimeout(() => {
       </ErrorBoundary>
     </StrictMode>
   )
-  if (platform.type === 'mobile') {
-    void SplashScreen.hide()
-  }
 }, 1000)
 
 // 等待初始化完成后再渲染
@@ -126,10 +110,8 @@ initializeApp()
     const [settings] = await Promise.all([initSettingsStore(), initLastUsedModelStore(), initRecentDirectoriesStore()])
 
     void i18n.changeLanguage(settings.language)
-    if (platform.type === 'desktop') {
-      initSessionAttachmentRagMaintenance()
-      window.location.hash = '/'
-    }
+    initSessionAttachmentRagMaintenance()
+    window.location.hash = '/'
 
     // 初始化完成，可以开始渲染
     ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
@@ -142,9 +124,6 @@ initializeApp()
       </StrictMode>
     )
 
-    if (platform.type === 'mobile') {
-      void SplashScreen.hide()
-    }
     const el = document.querySelector('.splash-screen')
     if (el) {
       el.addEventListener('animationend', () => {

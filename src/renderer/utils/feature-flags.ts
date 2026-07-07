@@ -1,8 +1,6 @@
-import platform from '@/platform'
-
 export const featureFlags = {
-  mcp: platform.type === 'desktop',
-  knowledgeBase: platform.type === 'desktop',
-  skills: platform.type === 'desktop',
+  mcp: true,
+  knowledgeBase: true,
+  skills: true,
   taskMode: false,
 }

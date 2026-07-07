@@ -1,5 +1,5 @@
 import { ActionIcon, Flex, Image, Paper, Skeleton, Text, Tooltip } from '@mantine/core'
-import { IconDownload, IconMaximize, IconMessageReport, IconPhoto, IconPhotoOff } from '@tabler/icons-react'
+import { IconDownload, IconMaximize, IconPhoto, IconPhotoOff } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import type PhotoSwipe from 'photoswipe'
 import type { UIElementData } from 'photoswipe'
@@ -15,13 +15,11 @@ import { blobToDataUrl, getBase64ImageSize, getImageSizeFromUrl } from './consta
 export interface GeneratedImagesGalleryProps {
   images: string[] // CDN URLs or local storage keys
   onUseAsReference: (urlOrKey: string) => void
-  onReport?: () => void
 }
 
 export const GeneratedImagesGallery = memo(function GeneratedImagesGallery({
   images,
   onUseAsReference,
-  onReport,
 }: GeneratedImagesGalleryProps) {
   const imageKeys = images
   const imageKeysRef = useRef(imageKeys)
@@ -56,11 +54,7 @@ export const GeneratedImagesGallery = memo(function GeneratedImagesGallery({
         // Otherwise read from storage
         const base64 = await fetchBlob(keyOrUrl)
         if (!base64) return
-        const filename =
-          platform.type === 'mobile'
-            ? `${keyOrUrl.replaceAll(':', '_')}_${Math.random().toString(36).substring(7)}`
-            : keyOrUrl
-        platform.exporter.exportImageFile(filename, base64)
+        platform.exporter.exportImageFile(keyOrUrl, base64)
       },
     },
   ]
@@ -73,7 +67,6 @@ export const GeneratedImagesGallery = memo(function GeneratedImagesGallery({
             key={keyOrUrl}
             keyOrUrl={keyOrUrl}
             onUseAsReference={() => onUseAsReference(keyOrUrl)}
-            onReport={onReport}
             isSmallScreen={isSmallScreen}
           />
         ))}
@@ -85,7 +78,6 @@ export const GeneratedImagesGallery = memo(function GeneratedImagesGallery({
 interface GeneratedImageGalleryItemProps {
   keyOrUrl: string
   onUseAsReference: () => void
-  onReport?: () => void
   isSmallScreen: boolean
 }
 
@@ -118,12 +110,7 @@ function calculateDisplaySize(width: number, height: number): { displayWidth: nu
   return { displayWidth: Math.round(displayWidth), displayHeight: Math.round(displayHeight) }
 }
 
-function GeneratedImageGalleryItem({
-  keyOrUrl,
-  onUseAsReference,
-  onReport,
-  isSmallScreen,
-}: GeneratedImageGalleryItemProps) {
+function GeneratedImageGalleryItem({ keyOrUrl, onUseAsReference, isSmallScreen }: GeneratedImageGalleryItemProps) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
   const isUrl = keyOrUrl.startsWith('http://') || keyOrUrl.startsWith('https://')
@@ -180,14 +167,6 @@ function GeneratedImageGalleryItem({
       onUseAsReference()
     },
     [onUseAsReference]
-  )
-
-  const handleReport = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation()
-      onReport?.()
-    },
-    [onReport]
   )
 
   // Error state: show error placeholder with retry option
@@ -248,23 +227,7 @@ function GeneratedImageGalleryItem({
             }}
           />
 
-          {onReport && isSmallScreen && (
-            <Tooltip label={t('report')} withArrow disabled={isSmallScreen}>
-              <ActionIcon
-                aria-label={t('report')}
-                color="red"
-                variant="white"
-                size="sm"
-                radius="xl"
-                onClick={handleReport}
-                className="absolute right-3 bottom-3 z-[1] !bg-white/70 !text-red-500 shadow-sm opacity-65 transition-opacity hover:opacity-100 pointer-events-auto"
-              >
-                <IconMessageReport size={14} />
-              </ActionIcon>
-            </Tooltip>
-          )}
-
-          {/* Hover Overlay (always visible on mobile) */}
+          {/* Hover Overlay (always visible on small screens) */}
           <div
             className={`
               absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent

@@ -2,7 +2,6 @@ import { Theme } from '@shared/types'
 import { z } from 'zod'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
-import DesktopDownloadReminder from '@/components/layout/DesktopDownloadReminder'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
 import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
@@ -255,12 +254,8 @@ function Root() {
       {/* <OpenAttachLinkDialog /> */}
       {/* 图片预览 */}
       <PictureDialog />
-      {/* Hosted remote dialogs are disabled for the local-first fork. */}
-      {/* 手机端举报内容 */}
-      {/* <ReportContentDialog /> */}
       {/* 搜索 */}
       <SearchDialog />
-      <DesktopDownloadReminder />
       {/* 没有配置模型时的欢迎弹窗 */}
       {/* <WelcomeDialog /> */}
       <Toasts /> {/* mui */}

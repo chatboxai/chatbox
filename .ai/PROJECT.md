@@ -44,7 +44,6 @@ Generic workflow rules (branch, commits, pushing, ambiguity) live in `AGENT_RULE
 ## Useful Commands
 
 - Start desktop dev app: `pnpm dev` or `pnpm start`.
-- Start web-only dev mode: `pnpm dev:web`.
 - Build: `pnpm build`.
 - Typecheck: `pnpm check`.
 - Test: `pnpm test`.

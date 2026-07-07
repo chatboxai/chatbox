@@ -1,6 +1,4 @@
-import platform from '@/platform'
 import { ApiError, BaseError, NetworkError } from '../../shared/models/errors'
-import { handleMobileRequest } from './mobile-request'
 
 interface RequestOptions {
   method: string
@@ -45,14 +43,10 @@ function buildHeaders(options: RequestOptions, _url: string): Headers {
 }
 
 async function doRequest(url: string, options: RequestOptions): Promise<Response> {
-  const { signal, retry = 3, useProxy = false, body, method } = options
+  const { signal, retry = 3, body, method } = options
   const headers = buildHeaders(options, url)
 
   const makeRequest = async () => {
-    if (platform.type === 'mobile' && useProxy) {
-      return handleMobileRequest(url, method, headers, body, signal)
-    }
-
     const res = await fetch(url, { method, headers, body, signal })
     if (!res.ok) {
       const err = await res.text().catch(() => null)

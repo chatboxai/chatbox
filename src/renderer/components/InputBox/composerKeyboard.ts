@@ -23,11 +23,6 @@ export interface ComposerKeyContext {
   sendShortcut: ShortcutSendValue
   /** `shortcuts.inputBoxSendMessageWithoutResponse` */
   sendWithoutResponseShortcut: ShortcutSendValue
-  /**
-   * True on a mobile small screen, where a bare `Enter` send shortcut is
-   * suppressed so Enter inserts a newline instead of sending.
-   */
-  suppressMobileEnter: boolean
   /** The textarea currently holds focus (`el === document.activeElement`). */
   isInputFocused: boolean
   /** The input is empty or its entire contents are selected. */
@@ -75,10 +70,6 @@ export function matchSendShortcut(shortcut: ShortcutSendValue, event: ComposerKe
  */
 export function resolveComposerKeyAction(event: ComposerKeyEvent, ctx: ComposerKeyContext): ComposerKeyAction {
   if (matchSendShortcut(ctx.sendShortcut, event)) {
-    // On mobile small screens a bare Enter must not send (it inserts a newline).
-    if (ctx.suppressMobileEnter && ctx.sendShortcut === 'Enter') {
-      return { type: 'none' }
-    }
     return { type: 'send' }
   }
 

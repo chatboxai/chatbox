@@ -3,6 +3,7 @@ import {
   Badge,
   Box,
   Button,
+  Drawer,
   Flex,
   Image,
   NavLink,
@@ -11,7 +12,6 @@ import {
   Text,
   Tooltip,
 } from '@mantine/core'
-import SwipeableDrawer from '@mui/material/SwipeableDrawer'
 import {
   IconCirclePlus,
   IconCode,
@@ -41,7 +41,6 @@ import { settingsStore, useLanguage } from './stores/settingsStore'
 import { taskSessionStore } from './stores/taskSessionStore'
 import { useUIStore } from './stores/uiStore'
 import { featureFlags } from './utils/feature-flags'
-import { WORKSPAICE_BUILD_PLATFORM } from './variables'
 
 export default function Sidebar() {
   const { t } = useTranslation()
@@ -130,218 +129,220 @@ export default function Sidebar() {
     }
   }, [isResizing, language, setSidebarWidth])
 
-  return (
-    <SwipeableDrawer
-      anchor={language === 'ar' ? 'right' : 'left'}
-      variant={isSmallScreen ? 'temporary' : 'persistent'}
-      open={showSidebar}
-      onClose={() => setShowSidebar(false)}
-      onOpen={() => setShowSidebar(true)}
-      ModalProps={{
-        keepMounted: true, // Better open performance on mobile.
-        disableEnforceFocus: true, // 关闭 focus trap，避免在侧边栏打开时弹出的 modal 中 input 无法点击
-      }}
-      sx={{
-        '& .MuiDrawer-paper': {
-          backgroundColor: isSmallScreen ? undefined : 'transparent',
-          backgroundImage: 'none',
-          boxSizing: 'border-box',
-          width: isSmallScreen ? '75vw' : sidebarWidth,
-          maxWidth: '75vw',
-        },
-      }}
-      SlideProps={language === 'ar' ? { direction: 'left' } : undefined}
-      PaperProps={
-        language === 'ar' ? { sx: { direction: 'rtl', overflowY: 'initial' } } : { sx: { overflowY: 'initial' } }
-      }
-      disableSwipeToOpen={WORKSPAICE_BUILD_PLATFORM !== 'ios'} // 只在iOS设备上启用SwipeToOpen
-    >
-      <Stack
-        h="100%"
-        gap={0}
-        pt="var(--mobile-safe-area-inset-top, 0px)"
-        pb="var(--mobile-safe-area-inset-bottom, 0px)"
-        className="relative"
-      >
-        {needRoomForMacWindowControls && <Box className="title-bar flex-[0_0_44px]" />}
-        <Flex align="center" justify="space-between" px="md" py="sm">
-          <Flex align="center" gap="sm">
-            <Flex align="center" gap="sm" onClick={() => navigate({ to: '/about' })} style={{ cursor: 'pointer' }}>
-              <Image src={icon} w={20} h={20} />
-              <Box>
-                <Flex align="center" gap="sm">
-                  <Text span c="workspaice-secondary" size="xl" lh={1.2} fw="700">
-                    WorkspAIce
+  const sidebarContent = (
+    <Stack h="100%" gap={0} className="relative">
+      {needRoomForMacWindowControls && <Box className="title-bar flex-[0_0_44px]" />}
+      <Flex align="center" justify="space-between" px="md" py="sm">
+        <Flex align="center" gap="sm">
+          <Flex align="center" gap="sm" onClick={() => navigate({ to: '/about' })} style={{ cursor: 'pointer' }}>
+            <Image src={icon} w={20} h={20} />
+            <Box>
+              <Flex align="center" gap="sm">
+                <Text span c="workspaice-secondary" size="xl" lh={1.2} fw="700">
+                  WorkspAIce
+                </Text>
+                {/\d/.test(versionHook.version) && (
+                  <Text span c="workspaice-tertiary" size="sm">
+                    {versionHook.version}
                   </Text>
-                  {/\d/.test(versionHook.version) && (
-                    <Text span c="workspaice-tertiary" size="sm">
-                      {versionHook.version}
-                    </Text>
-                  )}
-                </Flex>
-                <Badge
-                  color="workspaice-accent2"
-                  variant="filled"
-                  size="xs"
-                  radius="sm"
-                  styles={{ label: { letterSpacing: 0.6 } }}
-                >
-                  BETA
-                </Badge>
-              </Box>
-            </Flex>
-            {FORCE_ENABLE_DEV_PAGES && <ThemeSwitchButton size="xs" />}
+                )}
+              </Flex>
+              <Badge
+                color="workspaice-accent2"
+                variant="filled"
+                size="xs"
+                radius="sm"
+                styles={{ label: { letterSpacing: 0.6 } }}
+              >
+                BETA
+              </Badge>
+            </Box>
           </Flex>
-
-          <Tooltip label={t('Collapse')} openDelay={1000} withArrow>
-            <ActionIcon
-              variant="subtle"
-              color="workspaice-tertiary"
-              size={20}
-              aria-label={t('Collapse')}
-              onClick={() => setShowSidebar(false)}
-            >
-              <IconLayoutSidebarLeftCollapse />
-            </ActionIcon>
-          </Tooltip>
+          {FORCE_ENABLE_DEV_PAGES && <ThemeSwitchButton size="xs" />}
         </Flex>
 
-        {featureFlags.taskMode && (
-          <SegmentedControl
-            value={sidebarMode}
-            onChange={(val) => {
-              setSidebarMode(val as 'chat' | 'task')
-              const { startupPage } = settingsStore.getState()
-              if (val === 'chat') {
-                const sid = JSON.parse(localStorage.getItem('_currentSessionIdCachedAtom') || '""') as string
-                if (sid && startupPage === 'session') {
-                  navigate({ to: '/session/$sessionId', params: { sessionId: sid } })
-                } else {
-                  navigate({ to: '/' })
-                }
-              } else if (val === 'task') {
-                const taskId = taskSessionStore.getState().currentTaskId
-                if (taskId && startupPage === 'session') {
-                  navigate({ to: '/task/$taskId', params: { taskId } })
-                } else {
-                  navigate({ to: '/task' })
-                }
+        <Tooltip label={t('Collapse')} openDelay={1000} withArrow>
+          <ActionIcon
+            variant="subtle"
+            color="workspaice-tertiary"
+            size={20}
+            aria-label={t('Collapse')}
+            onClick={() => setShowSidebar(false)}
+          >
+            <IconLayoutSidebarLeftCollapse />
+          </ActionIcon>
+        </Tooltip>
+      </Flex>
+
+      {featureFlags.taskMode && (
+        <SegmentedControl
+          value={sidebarMode}
+          onChange={(val) => {
+            setSidebarMode(val as 'chat' | 'task')
+            const { startupPage } = settingsStore.getState()
+            if (val === 'chat') {
+              const sid = JSON.parse(localStorage.getItem('_currentSessionIdCachedAtom') || '""') as string
+              if (sid && startupPage === 'session') {
+                navigate({ to: '/session/$sessionId', params: { sessionId: sid } })
+              } else {
+                navigate({ to: '/' })
               }
-            }}
-            data={[
-              { label: t('Chat'), value: 'chat' },
-              { label: t('Task'), value: 'task' },
-            ]}
-            size="xs"
-            fullWidth
-            mx="xs"
-            mb="xs"
-          />
-        )}
+            } else if (val === 'task') {
+              const taskId = taskSessionStore.getState().currentTaskId
+              if (taskId && startupPage === 'session') {
+                navigate({ to: '/task/$taskId', params: { taskId } })
+              } else {
+                navigate({ to: '/task' })
+              }
+            }
+          }}
+          data={[
+            { label: t('Chat'), value: 'chat' },
+            { label: t('Task'), value: 'task' },
+          ]}
+          size="xs"
+          fullWidth
+          mx="xs"
+          mb="xs"
+        />
+      )}
 
-        {sidebarMode === 'task' && featureFlags.taskMode ? (
-          <TaskSessionList />
-        ) : (
-          <SessionList sessionListViewportRef={sessionListViewportRef} />
-        )}
+      {sidebarMode === 'task' && featureFlags.taskMode ? (
+        <TaskSessionList />
+      ) : (
+        <SessionList sessionListViewportRef={sessionListViewportRef} />
+      )}
 
-        <Stack gap={0} px="xs" pb="xs">
-          <Divider />
-          <Stack gap="xs" pt="xs" mb="xs">
-            {sidebarMode === 'task' && featureFlags.taskMode ? (
-              <Button variant="light" fullWidth onClick={handleCreateNewTask}>
-                <ScalableIcon icon={IconCirclePlus} className="mr-2" />
-                {t('New Task')}
-              </Button>
-            ) : (
-              <>
-                <Button variant="light" fullWidth data-testid="new-chat-button" onClick={handleCreateNewSession}>
-                  <ScalableIcon icon={IconCirclePlus} className="mr-2" />
-                  {t('New Chat')}
-                </Button>
-                <Button
-                  variant="light"
-                  fullWidth
-                  data-testid="new-image-button"
-                  onClick={handleCreateNewPictureSession}
-                >
-                  <ScalableIcon icon={IconPhotoPlus} className="mr-2" />
-                  {t('Create Image')}
-                </Button>
-              </>
-            )}
-          </Stack>
-
-          {isSmallScreen ? (
-            <Flex gap="md" align="center">
-              <ActionIcon
-                variant="transparent"
-                color="workspaice-secondary"
-                size={24}
-                aria-label={t('Settings')}
-                onClick={() => {
-                  navigateToSettings()
-                  setShowSidebar(false)
-                }}
-              >
-                <ScalableIcon icon={IconSettingsFilled} size={20} />
-              </ActionIcon>
-
-              <SmallScreenAboutIcon navigate={navigate} setShowSidebar={setShowSidebar} />
-            </Flex>
+      <Stack gap={0} px="xs" pb="xs">
+        <Divider />
+        <Stack gap="xs" pt="xs" mb="xs">
+          {sidebarMode === 'task' && featureFlags.taskMode ? (
+            <Button variant="light" fullWidth onClick={handleCreateNewTask}>
+              <ScalableIcon icon={IconCirclePlus} className="mr-2" />
+              {t('New Task')}
+            </Button>
           ) : (
             <>
-              <NavLink
-                c="workspaice-secondary"
-                className="rounded"
-                label={t('Settings')}
-                data-testid="settings-nav-link"
-                leftSection={<ScalableIcon icon={IconSettingsFilled} size={20} />}
-                onClick={() => navigateToSettings()}
-                variant="light"
-                p="xs"
-              />
-              {FORCE_ENABLE_DEV_PAGES && (
-                <NavLink
-                  c="workspaice-secondary"
-                  className="rounded"
-                  label="Dev Tools"
-                  leftSection={<ScalableIcon icon={IconCode} size={20} />}
-                  onClick={() => navigate({ to: '/dev' })}
-                  variant="light"
-                  p="xs"
-                />
-              )}
-              <AboutNavLink versionHook={versionHook} navigate={navigate} />
+              <Button variant="light" fullWidth data-testid="new-chat-button" onClick={handleCreateNewSession}>
+                <ScalableIcon icon={IconCirclePlus} className="mr-2" />
+                {t('New Chat')}
+              </Button>
+              <Button variant="light" fullWidth data-testid="new-image-button" onClick={handleCreateNewPictureSession}>
+                <ScalableIcon icon={IconPhotoPlus} className="mr-2" />
+                {t('Create Image')}
+              </Button>
             </>
           )}
         </Stack>
-        {!isSmallScreen && (
-          <Box
-            onMouseDown={handleResizeStart}
-            className={clsx(
-              `sidebar-resizer absolute top-0 bottom-0 w-1 cursor-col-resize z-[1] bg-workspaice-border-primary opacity-0 hover:opacity-70 transition-opacity duration-200`,
-              language === 'ar' ? '-left-1' : '-right-1'
-            )}
-          />
-        )}
-        {showDebugDevPane && (
-          <>
-            <Button
-              size="xs"
-              variant="filled"
-              color="dark"
-              leftSection={<ScalableIcon icon={IconCode} size={14} />}
-              className={clsx('absolute z-[2] shadow-md', isSmallScreen ? 'bottom-20 right-3' : 'bottom-3 right-3')}
-              onClick={() => setShowDevPane(true)}
+
+        {isSmallScreen ? (
+          <Flex gap="md" align="center">
+            <ActionIcon
+              variant="transparent"
+              color="workspaice-secondary"
+              size={24}
+              aria-label={t('Settings')}
+              onClick={() => {
+                navigateToSettings()
+                setShowSidebar(false)
+              }}
             >
-              Dev
-            </Button>
-            <SessionAttachmentRagDevPane opened={showDevPane} onClose={() => setShowDevPane(false)} />
+              <ScalableIcon icon={IconSettingsFilled} size={20} />
+            </ActionIcon>
+
+            <SmallScreenAboutIcon navigate={navigate} setShowSidebar={setShowSidebar} />
+          </Flex>
+        ) : (
+          <>
+            <NavLink
+              c="workspaice-secondary"
+              className="rounded"
+              label={t('Settings')}
+              data-testid="settings-nav-link"
+              leftSection={<ScalableIcon icon={IconSettingsFilled} size={20} />}
+              onClick={() => navigateToSettings()}
+              variant="light"
+              p="xs"
+            />
+            {FORCE_ENABLE_DEV_PAGES && (
+              <NavLink
+                c="workspaice-secondary"
+                className="rounded"
+                label="Dev Tools"
+                leftSection={<ScalableIcon icon={IconCode} size={20} />}
+                onClick={() => navigate({ to: '/dev' })}
+                variant="light"
+                p="xs"
+              />
+            )}
+            <AboutNavLink versionHook={versionHook} navigate={navigate} />
           </>
         )}
       </Stack>
-    </SwipeableDrawer>
+      {!isSmallScreen && (
+        <Box
+          onMouseDown={handleResizeStart}
+          className={clsx(
+            `sidebar-resizer absolute top-0 bottom-0 w-1 cursor-col-resize z-[1] bg-workspaice-border-primary opacity-0 hover:opacity-70 transition-opacity duration-200`,
+            language === 'ar' ? '-left-1' : '-right-1'
+          )}
+        />
+      )}
+      {showDebugDevPane && (
+        <>
+          <Button
+            size="xs"
+            variant="filled"
+            color="dark"
+            leftSection={<ScalableIcon icon={IconCode} size={14} />}
+            className={clsx('absolute z-[2] shadow-md', isSmallScreen ? 'bottom-20 right-3' : 'bottom-3 right-3')}
+            onClick={() => setShowDevPane(true)}
+          >
+            Dev
+          </Button>
+          <SessionAttachmentRagDevPane opened={showDevPane} onClose={() => setShowDevPane(false)} />
+        </>
+      )}
+    </Stack>
+  )
+
+  if (isSmallScreen) {
+    return (
+      <Drawer
+        opened={showSidebar}
+        onClose={() => setShowSidebar(false)}
+        position={language === 'ar' ? 'right' : 'left'}
+        size="75vw"
+        padding={0}
+        withCloseButton={false}
+        keepMounted
+        // 关闭 focus trap，避免在侧边栏打开时弹出的 modal 中 input 无法点击
+        trapFocus={false}
+        styles={{
+          body: { height: '100%', padding: 0 },
+          content: { overflowY: 'initial' },
+        }}
+      >
+        <Box dir={language === 'ar' ? 'rtl' : 'ltr'} h="100%">
+          {sidebarContent}
+        </Box>
+      </Drawer>
+    )
+  }
+
+  // 桌面端：固定侧栏（原 MUI persistent drawer）；内容区自行按 sidebarWidth 让位（见 routes/__root.tsx）
+  return (
+    <Box
+      component="nav"
+      className="fixed top-0 bottom-0 z-[100]"
+      style={{
+        insetInlineStart: 0,
+        width: sidebarWidth,
+        display: showSidebar ? undefined : 'none',
+      }}
+    >
+      {sidebarContent}
+    </Box>
   )
 }
 

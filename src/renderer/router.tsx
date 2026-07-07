@@ -1,6 +1,5 @@
 import { createHashHistory, createRouter, useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import platform from './platform'
 import { routeTree } from './routeTree.gen'
 
 // Create a new router instance
@@ -15,7 +14,7 @@ export const router = createRouter({
 
     return null
   },
-  history: platform.type === 'web' ? undefined : createHashHistory(),
+  history: createHashHistory(),
 })
 
 // Register the router instance for type safety

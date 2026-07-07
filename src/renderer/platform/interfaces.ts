@@ -5,7 +5,7 @@ import type { TaskSessionStorage } from '@/storage/TaskSessionStorage'
 import type { KnowledgeBaseController } from './knowledge-base/interface'
 import type { SessionAttachmentRagController } from './session-attachment-rag/interface'
 
-export type PlatformType = 'web' | 'desktop' | 'mobile'
+export type PlatformType = 'desktop'
 
 export interface Storage {
   getStorageType(): string

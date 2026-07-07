@@ -115,7 +115,7 @@ class TestExporter implements Exporter {
  * TestPlatform 实现
  */
 export default class TestPlatform implements Platform {
-  public type: PlatformType = 'web'
+  public type: PlatformType = 'desktop'
   public exporter: TestExporter = new TestExporter()
 
   private storage = new InMemoryStorage()

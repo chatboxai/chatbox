@@ -288,8 +288,6 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
     .optional()
     .catch(undefined),
 
-  desktopDownloadPromptDismissed: z.boolean().default(false),
-
   // chat settings
   showWordCount: z.boolean().optional().catch(undefined),
   showTokenCount: z.boolean().optional().catch(undefined),

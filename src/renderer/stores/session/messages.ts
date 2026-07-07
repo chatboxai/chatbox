@@ -18,7 +18,7 @@ import { getSessionWebBrowsing } from './utils'
 const log = getLogger('session-messages')
 
 async function attachLargeFileRagMetadata(sessionId: string, message: Message): Promise<Message> {
-  if (platform.type !== 'desktop' || !message.files?.length) {
+  if (!message.files?.length) {
     return message
   }
 
@@ -158,12 +158,10 @@ export async function persistStreamingMessage(
  * @param messageId
  */
 export async function removeMessage(sessionId: string, messageId: string) {
-  if (platform.type === 'desktop') {
-    try {
-      await platform.getSessionAttachmentRagController().deleteMessageAttachments(messageId)
-    } catch (error) {
-      console.warn('Failed to cleanup session attachment RAG entries for message deletion:', error)
-    }
+  try {
+    await platform.getSessionAttachmentRagController().deleteMessageAttachments(messageId)
+  } catch (error) {
+    console.warn('Failed to cleanup session attachment RAG entries for message deletion:', error)
   }
   await chatStore.removeMessage(sessionId, messageId)
 }
@@ -235,13 +233,6 @@ export async function submitNewUserMessage(
   }
 
   try {
-    // 如果本次消息开启了联网问答，需要检查当前模型是否支持
-    // 桌面版&手机端总是支持联网问答，不再需要检查模型是否支持
-    const model = await createModel(settings)
-    if (webBrowsing && platform.type === 'web' && !model.isSupportToolUse()) {
-      throw CodedError.fromCodeName('model_not_support_web_browsing_2', 'model_not_support_web_browsing_2')
-    }
-
     // Files and links are now preprocessed in InputBox with storage keys, so no need to process them here
     // Just verify they have storage keys
     if (newUserMsg.files?.length) {

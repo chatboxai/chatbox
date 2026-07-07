@@ -1,6 +1,5 @@
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Badge, Flex, ScrollArea, Text } from '@mantine/core'
-import SwipeableDrawer from '@mui/material/SwipeableDrawer'
+import { ActionIcon, Badge, Drawer, Flex, ScrollArea, Text } from '@mantine/core'
 import type { Session, SessionThreadBrief } from '@shared/types'
 import { IconDots, IconEdit, IconSwitch, IconTrash, IconX } from '@tabler/icons-react'
 import { useAtom, useAtomValue } from 'jotai'
@@ -12,7 +11,6 @@ import { scrollToIndex } from '@/stores/scrollActions'
 import { removeCurrentThread, removeThread, switchThread as switchThreadAction } from '@/stores/sessionActions'
 import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/sessionHelpers'
 import { useLanguage } from '@/stores/settingsStore'
-import { WORKSPAICE_BUILD_PLATFORM } from '@/variables'
 import ActionMenu from '../ActionMenu'
 import { ScalableIcon } from '../common/ScalableIcon'
 
@@ -53,48 +51,55 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
   )
 
   return (
-    <SwipeableDrawer
-      anchor={language === 'ar' ? 'left' : 'right'}
-      variant="temporary"
-      open={!!showDrawer}
+    <Drawer
+      opened={!!showDrawer}
       onClose={() => setShowDrawer(false)}
-      onOpen={() => setShowDrawer(true)}
-      title={t('Thread History') || ''}
-      ModalProps={{
-        keepMounted: true, // Better open performance on mobile.
+      position={language === 'ar' ? 'left' : 'right'}
+      size={280}
+      padding={0}
+      withCloseButton={false}
+      keepMounted
+      // 关闭 focus trap，避免在侧边栏打开时弹出的 modal 中 input 无法点击
+      trapFocus={false}
+      styles={{
+        body: { height: '100%', padding: 0 },
+        content: { overflowY: 'initial' },
       }}
-      classes={{
-        paper:
-          'bg-none box-border max-w-75vw min-w-[240px] flex flex-col gap-0 pt-[var(--mobile-safe-area-inset-top)] pb-[var(--mobile-safe-area-inset-bottom)]',
-      }}
-      SlideProps={language === 'ar' ? { direction: 'right' } : undefined}
-      PaperProps={
-        language === 'ar' ? { sx: { direction: 'rtl', overflowY: 'initial' } } : { sx: { overflowY: 'initial' } }
-      }
-      disableSwipeToOpen={WORKSPAICE_BUILD_PLATFORM !== 'ios'} // 只在iOS设备上启用SwipeToOpen
-      disableEnforceFocus={true} // 关闭 focus trap，避免在侧边栏打开时弹出的 modal 中 input 无法点击
     >
-      <Flex align="center" justify="space-between" className="px-sm py-xs">
-        <Text size="md" fw={600}>
-          {t('Thread History')}
-        </Text>
-        <ActionIcon variant="transparent" color="workspaice-primary" onClick={() => setShowDrawer(false)}>
-          <ScalableIcon icon={IconX} size={20} />
-        </ActionIcon>
+      <Flex
+        dir={language === 'ar' ? 'rtl' : 'ltr'}
+        direction="column"
+        gap={0}
+        h="100%"
+        className="box-border min-w-[240px]"
+      >
+        <Flex align="center" justify="space-between" className="px-sm py-xs">
+          <Text size="md" fw={600}>
+            {t('Thread History')}
+          </Text>
+          <ActionIcon
+            variant="transparent"
+            color="workspaice-primary"
+            aria-label={t('Close')}
+            onClick={() => setShowDrawer(false)}
+          >
+            <ScalableIcon icon={IconX} size={20} />
+          </ActionIcon>
+        </Flex>
+        <ScrollArea className="flex-1">
+          {threadList.map((thread, index) => (
+            <ThreadItem
+              key={thread.id}
+              thread={thread}
+              goto={gotoThreadMessage}
+              showHistoryDrawer={showDrawer}
+              switchThread={handleSwitchThread}
+              lastOne={index === threadList.length - 1}
+            />
+          ))}
+        </ScrollArea>
       </Flex>
-      <ScrollArea className="flex-1">
-        {threadList.map((thread, index) => (
-          <ThreadItem
-            key={thread.id}
-            thread={thread}
-            goto={gotoThreadMessage}
-            showHistoryDrawer={showDrawer}
-            switchThread={handleSwitchThread}
-            lastOne={index === threadList.length - 1}
-          />
-        ))}
-      </ScrollArea>
-    </SwipeableDrawer>
+    </Drawer>
   )
 }
 

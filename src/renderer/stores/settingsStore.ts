@@ -14,12 +14,11 @@ import { mergeProviderSettings, type ProviderSettingsUpdate } from './providerSe
 const log = getLogger('settings-store')
 
 /**
- * Returns platform-specific default document parser configuration.
- * - Desktop: 'local' (has full Node.js environment for local parsing)
- * - Mobile/Web: 'none' (only basic text file support by default)
+ * Returns the default document parser configuration.
+ * Desktop has a full Node.js environment, so local parsing is the default.
  */
 export function getPlatformDefaultDocumentParser(): DocumentParserConfig {
-  return platform.type === 'desktop' ? { type: 'local' } : { type: 'none' }
+  return { type: 'local' }
 }
 
 type Action = {

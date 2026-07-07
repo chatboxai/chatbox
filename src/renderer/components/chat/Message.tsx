@@ -19,7 +19,6 @@ import {
   IconCopy,
   IconDotsVertical,
   IconInfoCircle,
-  IconMessageReport,
   IconPencil,
   IconPhotoPlus,
   type IconProps,
@@ -31,7 +30,6 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import * as dateFns from 'date-fns'
-import { concat } from 'lodash'
 import type { UIElementData } from 'photoswipe'
 import type React from 'react'
 import { type FC, forwardRef, type MouseEventHandler, memo, useCallback, useMemo, useRef, useState } from 'react'
@@ -161,10 +159,6 @@ const _Message: FC<Props> = (props) => {
         toastActions.add(t('copied to clipboard'))
       }
     }
-
-  const onReport = useCallback(async () => {
-    await NiceModal.show('report-content', { contentId: getMessageText(msg) || msg.id })
-  }, [msg])
 
   const onDelMsg = useCallback(() => {
     removeMessage(sessionId, msg.id)
@@ -327,15 +321,6 @@ const _Message: FC<Props> = (props) => {
         onClick: quoteMsg,
       },
       { divider: true },
-      ...(msg.role === 'assistant' && platform.type === 'mobile'
-        ? [
-            {
-              text: t('report'),
-              icon: IconMessageReport,
-              onClick: onReport,
-            },
-          ]
-        : []),
       // 开发环境添加测试错误按钮
       ...(process.env.NODE_ENV === 'development'
         ? [
@@ -361,7 +346,6 @@ const _Message: FC<Props> = (props) => {
     [
       t,
       msg.role,
-      onReport,
       quoteMsg,
       onDelMsg,
       onViewMessageJson,
@@ -521,10 +505,7 @@ const _Message: FC<Props> = (props) => {
           )}
         </Box>
         {props.sessionType === 'picture' && contentParts.filter((p) => p.type === 'image').length > 0 && (
-          <PictureGallery
-            pictures={contentParts.filter((p) => p.type === 'image')}
-            onReport={platform.type === 'mobile' ? onReport : undefined}
-          />
+          <PictureGallery pictures={contentParts.filter((p) => p.type === 'image')} />
         )}
         <MessageErrTips
           msg={msg}
@@ -765,69 +746,39 @@ function getBase64ImageSize(base64: string): Promise<{ width: number; height: nu
 type PictureGalleryProps = {
   pictures: MessagePicture[]
   compact?: boolean
-  onReport?(picture: MessagePicture): void
 }
 
-const PictureGallery = memo(({ pictures, compact, onReport }: PictureGalleryProps) => {
+const PictureGallery = memo(({ pictures, compact }: PictureGalleryProps) => {
   const isSmallScreen = useIsSmallScreen()
   const imageHeight = compact ? (isSmallScreen ? 60 : 100) : isSmallScreen ? 100 : 200
   const fetchBlob = useFetchBlob()
-  const uiElements: UIElementData[] = concat(
-    [
-      {
-        name: 'custom-download-button',
-        ariaLabel: 'Download',
-        order: 9,
-        isButton: true,
-        html: {
-          isCustomSVG: true,
-          inner:
-            '<path d="M20.5 14.3 17.1 18V10h-2.2v7.9l-3.4-3.6L10 16l6 6.1 6-6.1ZM23 23H9v2h14Z" id="pswp__icn-download"/>',
-          outlineID: 'pswp__icn-download',
-        },
-        appendTo: 'bar',
-        onClick: async (_e: MouseEvent, _el: HTMLElement, pswp: import('photoswipe').default) => {
-          const picture = pictures[pswp.currIndex]
-          if (picture.storageKey) {
-            const base64 = await fetchBlob(picture.storageKey)
-            if (!base64) {
-              return
-            }
-            // storageKey中含有冒号，会在android端导致存储失败，且android端在同文件名的情况下不会再次保存图片，也无提示，可能对用户造成困扰，所以增加随机后缀
-            const filename =
-              platform.type === 'mobile'
-                ? `${picture.storageKey.replaceAll(':', '_')}_${Math.random().toString(36).substring(7)}`
-                : picture.storageKey
-            platform.exporter.exportImageFile(filename, base64)
-          } else if (picture.url) {
-            platform.exporter.exportByUrl(`image_${Math.random().toString(36).substring(7)}`, picture.url)
-          }
-        },
+  const uiElements: UIElementData[] = [
+    {
+      name: 'custom-download-button',
+      ariaLabel: 'Download',
+      order: 9,
+      isButton: true,
+      html: {
+        isCustomSVG: true,
+        inner:
+          '<path d="M20.5 14.3 17.1 18V10h-2.2v7.9l-3.4-3.6L10 16l6 6.1 6-6.1ZM23 23H9v2h14Z" id="pswp__icn-download"/>',
+        outlineID: 'pswp__icn-download',
       },
-    ],
-    onReport
-      ? [
-          {
-            name: 'report-button',
-            ariaLabel: 'Report',
-            order: 8,
-            isButton: true,
-            html: {
-              isCustomSVG: true,
-              inner:
-                '<path d="M 16 6 A 10 10 0 0 1 16 26 L 16 24 A 8 8 0 0 0 16 8 L 16 6 A 10 10 0 0 0 16 26 L 16 24 A 8 8 0 0 1 16 8 M 15 11 A 1 1 0 0 1 17 11 L 17 16 A 1 1 0 0 1 15 16 M 16 19 A 1.5 1.5 0 0 1 16 22 A 1.5 1.5 0 0 1 16 19 Z" id="pswp__icn-report">',
-              outlineID: 'pswp__icn-report',
-            },
-            appendTo: 'bar',
-            onClick: (_e, _el, pswp) => {
-              const picture = pictures[pswp.currIndex]
-              pswp.close()
-              onReport(picture)
-            },
-          },
-        ]
-      : []
-  )
+      appendTo: 'bar',
+      onClick: async (_e: MouseEvent, _el: HTMLElement, pswp: import('photoswipe').default) => {
+        const picture = pictures[pswp.currIndex]
+        if (picture.storageKey) {
+          const base64 = await fetchBlob(picture.storageKey)
+          if (!base64) {
+            return
+          }
+          platform.exporter.exportImageFile(picture.storageKey, base64)
+        } else if (picture.url) {
+          platform.exporter.exportByUrl(`image_${Math.random().toString(36).substring(7)}`, picture.url)
+        }
+      },
+    },
+  ]
   return (
     <Flex gap="sm" wrap="wrap">
       <Gallery uiElements={uiElements}>

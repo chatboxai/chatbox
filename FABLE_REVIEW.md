@@ -32,11 +32,13 @@ _Last updated 2026-07-02 (branch `dev`). Findings below are the original snapsho
 
 - **§6.2 + §7.6 + `qa:release:win` smoke ✅ (2026-07-06):** §6.2 — high-value IPC payloads (`skills:*`, `sandbox:*`, `mcp:stdio-transport:*`) are now zod-validated main-side via `src/main/ipc-payloads.ts`/`parseIpcPayload`; validation matches each handler's existing error channel (envelope handlers validate inside `try`, throw handlers let it propagate), schemas are shape-only (domain rules stay in the handlers), and `mcp:stdio-transport:create` now strips fields it never consumed. §7.6 — installed github/marketplace skills that ship a `scripts/` dir require explicit review before enabling: `discoverSkills` surfaces `SkillInfo.scriptNames`, the enable toggle opens `ScriptsReviewModal` (lazy-loads each script over the new read-only `skills:read-script` channel — same allowlist+realpath defenses as execute-script), and both install flows stopped auto-enabling script-bearing skills so review is the single choke point. Also ran the deferred `qa:release:win` smoke: NSIS `Setup.exe` builds, asar complete (601 pkgs, `node-fetch@3.3.2` only) — one-time fix was a corrupt cached `electron-v42.5.0-win32-arm64.zip` (delete + refetch). Verified: `qa:ci` green (1,167 unit + 37 integration + 7 E2E), biome at baseline (0/769). See `.ai/ARCHITECTURE_NOTES.md`.
 
+- **P3 chat-surface phase ✅ (2026-07-07):** §8.4 InputBox split — all pure decision logic extracted to tested modules (`composerKeyboard` 18 tests · `sessionAttachmentDisplay` 15 · `composerSubmit` 12 · `composerInsertion` 11; `MessageInputField` moved to its own file; 2,072 → ~1,758 lines) · §8.7 MUI→Mantine on the chat leaves `Message.tsx`/`MessageErrTips.tsx`/`Attachments.tsx` with live-verified pixel parity (`Sidebar.tsx` `SwipeableDrawer` deliberately kept on MUI pending the mobile decision — no Mantine equivalent) · §9.2 settings responsiveness (shipped earlier in the phase) · composer token refresh (disabled-send bg, over-budget tint, no-model pulse now use `--workspaice-*` tokens; disabled send was previously light-gray even in dark mode) · §9.3 dismissible first-use toolbar hint (persisted `uiStore.composerHintDismissed`) · §9.5 disclaimer only renders while the session is empty · §9.7 capability-icon legend in `ModelList` (provider settings, fetch modal, import). Verified: `qa:ci` green, live light/dark + desktop/mobile checks on the isolated dev profile. See `ARCHITECTURE_NOTES.md` for the MUI→Mantine parity facts (breakpoint/typography/Grid/Tooltip equivalences).
+
 **Open — recommended order:**
 
-1. **P3 / with redesign:** InputBox split · MUI→Mantine · settings responsiveness · features F1/F2/F4.
-2. **Product decision:** SEC-6 (mobile SQLite encryption) resolves for free if mobile is dropped.
-3. **QA cycle:** §6.5 coverage on high-risk targets (`store-node.ts`, KB/session-attachment RAG, `InputBox.tsx`, `MessageList.tsx`, session CRUD).
+1. **Features (deferred from P3):** F1 onboarding (fold §9.4 empty-state into it) · F2 ⌘K palette (low-lift, `@mantine/spotlight` already wired) · F4 chat full-text search.
+2. **Product decision:** SEC-6 (mobile SQLite encryption) resolves for free if mobile is dropped; also unblocks the `Sidebar.tsx` SwipeableDrawer question.
+3. **QA cycle:** §6.5 coverage on high-risk targets (KB/session-attachment RAG IPC mains, `InputBox.tsx`, `MessageList.tsx`, session CRUD).
 
 ---
 
@@ -209,7 +211,7 @@ Ordered roughly by value-to-effort. All are local-first-compatible (no hosted se
 | ✅ **P1 — DONE** | ✅ SEC-1 (MCP spawn constraint) · ✅ dead deps + dead upstream code (§8.1–8.2, partial — Sentry shim + 3-dep audit open) · ✅ biome ratchet (§8.3) · ✅ SEC-2 (Electron 35 → 42) | SEC-2 shipped 2026-07-02; win-package smoke ✅ 2026-07-06 (see §0). |
 | ✅ **P2 — DONE** | ✅ SEC-3 (main-process provider proxy → `webSecurity: true`, 2026-07-03) · ✅ SEC-8 (prod CSP via build-time meta tag, 2026-07-03) · ✅ SEC-5 (node-fetch@2 stripped at pack time, 2026-07-03) · ✅ tool-error unification (§6.3, 2026-07-04) · ✅ a11y labels (§9.1, 2026-07-04 with §9.3/§9.9) | All P2 items shipped — see §0. |
 | ✅ **Hardening — DONE** | ✅ §6.2 (zod-validate high-value IPC payloads, 2026-07-06) · ✅ §7.6 (skill-install script review, 2026-07-06) | Last of the never-prioritized §6/§7 security leftovers — see §0. |
-| **P3 — with redesign** | InputBox split · MUI→Mantine · settings responsiveness · features F1/F2/F4 | Ride along with the already-planned chat-surface redesign. |
+| ✅ **P3 — DONE (2026-07-07, except features)** | ✅ InputBox split · ✅ MUI→Mantine chat leaves (Sidebar drawer deferred with SEC-6) · ✅ settings responsiveness · ✅ §9.3/§9.5/§9.7 UX wins | Features F1/F2/F4 remain open — see §0. |
 
 ---
 

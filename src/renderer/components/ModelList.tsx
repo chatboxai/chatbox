@@ -58,6 +58,12 @@ export function ModelList({
     return formatNumber(count)
   }
 
+  // Legend only earns its row when at least one model shows capability icons (FABLE §9.7)
+  const showCapabilityLegend = useMemo(
+    () => models.some((model) => model.capabilities?.length || model.contextWindow || model.maxOutput),
+    [models]
+  )
+
   return (
     <Stack gap="sm" className={className}>
       {showSearch && models.length > 0 && (
@@ -231,6 +237,41 @@ export function ModelList({
           </Flex>
         )}
       </Stack>
+
+      {showCapabilityLegend && (
+        <Flex gap="md" align="center" wrap="wrap" px="xxs" style={{ opacity: 0.8 }}>
+          <Flex gap={4} align="center" c="workspaice-warning">
+            <ScalableIcon icon={IconBulb} size={12} />
+            <Text size="xs" c="dimmed">
+              {t('Reasoning')}
+            </Text>
+          </Flex>
+          <Flex gap={4} align="center" c="workspaice-brand">
+            <ScalableIcon icon={IconEye} size={12} />
+            <Text size="xs" c="dimmed">
+              {t('Vision')}
+            </Text>
+          </Flex>
+          <Flex gap={4} align="center" c="workspaice-success">
+            <ScalableIcon icon={IconTool} size={12} />
+            <Text size="xs" c="dimmed">
+              {t('Tool Use')}
+            </Text>
+          </Flex>
+          <Flex gap={4} align="center" c="dimmed">
+            <ScalableIcon icon={IconDatabase} size={12} />
+            <Text size="xs" c="dimmed">
+              {t('Context Window')}
+            </Text>
+          </Flex>
+          <Flex gap={4} align="center" c="dimmed">
+            <ScalableIcon icon={IconLogout} size={12} />
+            <Text size="xs" c="dimmed">
+              {t('Max Output')}
+            </Text>
+          </Flex>
+        </Flex>
+      )}
     </Stack>
   )
 }

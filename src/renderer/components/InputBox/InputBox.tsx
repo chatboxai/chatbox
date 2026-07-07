@@ -27,6 +27,7 @@ import {
   IconSettings,
   IconVocabulary,
   IconWorldWww,
+  IconX,
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
@@ -169,6 +170,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const pasteLongTextAsAFile = useSettingsStore((state) => state.pasteLongTextAsAFile)
     const shortcuts = useSettingsStore((state) => state.shortcuts)
     const widthFull = useUIStore((s) => s.widthFull) || fullWidth
+    // One-shot first-use hint for the toolbar icon row (FABLE §9.3)
+    const composerHintDismissed = useUIStore((s) => s.composerHintDismissed)
+    const dismissComposerHint = useUIStore((s) => s.dismissComposerHint)
     const saveBlob = useSaveBlob()
 
     const currentSessionId = sessionId
@@ -1178,7 +1182,11 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 aria-label={generating ? t('Stop generating') : t('Send')}
                 onClick={generating ? onStopGenerating : () => handleSubmit()}
                 className={cn('shrink-0 mb-1', !generating && sendButtonBlocked && 'disabled:!opacity-100 !text-white')}
-                style={!generating && sendButtonBlocked ? { backgroundColor: 'rgba(222, 226, 230, 1)' } : undefined}
+                style={
+                  !generating && sendButtonBlocked
+                    ? { backgroundColor: 'var(--workspaice-background-disabled)' }
+                    : undefined
+                }
               >
                 {generating ? (
                   <ScalableIcon icon={IconPlayerStopFilled} size={16} />
@@ -1357,6 +1365,31 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     />
                   )
                 })}
+              </Flex>
+            )}
+
+            {/* First-use hint for the toolbar icon row (FABLE §9.3); dismissed once, persisted */}
+            {!composerHintDismissed && (
+              <Flex
+                align="center"
+                gap={8}
+                className="rounded-md px-2.5 py-1.5"
+                style={{ background: 'var(--workspaice-background-brand-secondary)' }}
+              >
+                <Text size="xs" c="dimmed" lh={1.35} className="min-w-0 flex-1">
+                  {t(
+                    'Tip: the toolbar below attaches files and images, toggles web search, and picks the model for this chat.'
+                  )}
+                </Text>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  aria-label={t('Dismiss hint')}
+                  onClick={dismissComposerHint}
+                >
+                  <ScalableIcon icon={IconX} size={14} />
+                </ActionIcon>
               </Flex>
             )}
 
@@ -1557,7 +1590,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   <UnstyledButton
                     aria-label={t('Estimated Token Usage')}
                     className={`flex items-center gap-0.5 shrink-0 text-xs cursor-pointer hover:text-workspaice-tint-secondary transition-colors px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] ${
-                      tokenPercentage && tokenPercentage > 80 ? 'text-red-500' : 'text-workspaice-tint-tertiary'
+                      tokenPercentage && tokenPercentage > 80
+                        ? 'text-[var(--workspaice-tint-error)]'
+                        : 'text-workspaice-tint-tertiary'
                     }`}
                   >
                     <ScalableIcon icon={IconArrowUp} size={14} />
@@ -1598,7 +1633,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                       <UnstyledButton
                         className={cn(
                           'flex min-w-0 max-w-full items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--workspaice-background-tertiary)] transition-colors',
-                          !model && 'animate-pulse bg-blue-500/20'
+                          !model && 'animate-pulse bg-[var(--workspaice-background-brand-secondary-hover)]'
                         )}
                       >
                         {!!model && <ProviderImageIcon size={18} provider={model.provider} />}
@@ -1623,7 +1658,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             </Flex>
           </Stack>
 
-          <Disclaimer />
+          {/* Only surface the AI-accuracy disclaimer while the session is empty (FABLE §9.5) */}
+          {(isNewSession || !currentSession?.messages?.length) && <Disclaimer />}
         </Stack>
         {currentSession && (
           <CompressionModal

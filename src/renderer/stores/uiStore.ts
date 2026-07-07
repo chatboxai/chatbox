@@ -44,6 +44,8 @@ export const uiStore = createStore(
         widthFull: false, // Stored UI preference
         sidebarWidth: null as number | null, // Custom sidebar width, null means use default
         sidebarMode: 'chat' as 'chat' | 'task',
+        // One-shot first-use hint over the composer toolbar (FABLE §9.3); persisted once dismissed
+        composerHintDismissed: false,
       },
       (set, get) => ({
         addToast: (content: string, duration?: number) => {
@@ -197,6 +199,10 @@ export const uiStore = createStore(
         setSidebarMode: (sidebarMode: 'chat' | 'task') => {
           set({ sidebarMode })
         },
+
+        dismissComposerHint: () => {
+          set({ composerHintDismissed: true })
+        },
       })
     ),
     {
@@ -206,6 +212,7 @@ export const uiStore = createStore(
         widthFull: state.widthFull,
         sidebarWidth: state.sidebarWidth,
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
+        composerHintDismissed: state.composerHintDismissed,
       }),
       storage: safeStorage,
     }

@@ -155,6 +155,14 @@ export const useLanguage = () => useSettingsStore((state) => state.language)
 export const useTheme = () => useSettingsStore((state) => state.theme)
 export const useMcpSettings = () => useSettingsStore((state) => state.mcp)
 
+/** 是否已配置至少一个 AI provider（用于首次启动引导 / 空状态提示，FABLE F1/§9.4）。 */
+export function hasConfiguredProvider(settings: Pick<Settings, 'providers'> = settingsStore.getState()): boolean {
+  const providers = settings.providers
+  return !!providers && typeof providers === 'object' && !Array.isArray(providers) && Object.keys(providers).length > 0
+}
+
+export const useHasConfiguredProvider = () => useSettingsStore((state) => hasConfiguredProvider(state))
+
 export const useProviderSettings = (providerId: string) => {
   const providers = useSettingsStore((state) => state.providers)
 

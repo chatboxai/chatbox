@@ -49,6 +49,9 @@ const test = base.extend<Fixtures>({
   page: async ({ app }, use) => {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
+    // Fresh profiles have no provider configured, so the first-run onboarding
+    // modal (FABLE F1) always appears — dismiss it so tests start at the chat screen.
+    await page.getByRole('button', { name: 'Setup later' }).click()
     await use(page)
   },
   rendererErrors: async ({ page }, use) => {

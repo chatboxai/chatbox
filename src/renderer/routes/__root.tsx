@@ -56,8 +56,15 @@ import { router } from '@/router'
 import Sidebar from '@/Sidebar'
 import storage from '@/storage'
 import { useSession } from '@/stores/chatStore'
-import { initSettingsStore, settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
-import { useUIStore } from '@/stores/uiStore'
+import {
+  hasConfiguredProvider,
+  initSettingsStore,
+  settingsStore,
+  useLanguage,
+  useSettingsStore,
+  useTheme,
+} from '@/stores/settingsStore'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 import { blobToDataUrl } from './image-creator/-components/constants'
 
 function BackgroundImageOverlay() {
@@ -149,6 +156,24 @@ function Root() {
       }
 
       initialized.current = true
+
+      // 首次启动引导（FABLE F1）：没有配置任何 provider 且未被关闭过时，展示欢迎弹窗。
+      if (!uiStore.persist.hasHydrated()) {
+        await new Promise<void>((resolve) => {
+          const unsub = uiStore.persist.onFinishHydration(() => {
+            unsub()
+            resolve()
+          })
+        })
+      }
+      if (!hasConfiguredProvider() && !uiStore.getState().onboardingDismissed) {
+        const result = await NiceModal.show('welcome')
+        if (result !== 'setup') {
+          // “稍后设置”：不再自动弹出；点击“设置 Provider”则留待下次启动继续引导
+          uiStore.getState().dismissOnboarding()
+        }
+        return
+      }
 
       const shouldShowAboutDialogWhenStartUp = await platform.shouldShowAboutDialogWhenStartUp()
       if (shouldShowAboutDialogWhenStartUp) {

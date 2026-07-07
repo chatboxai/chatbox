@@ -46,6 +46,8 @@ export const uiStore = createStore(
         sidebarMode: 'chat' as 'chat' | 'task',
         // One-shot first-use hint over the composer toolbar (FABLE §9.3); persisted once dismissed
         composerHintDismissed: false,
+        // First-run onboarding (welcome modal, FABLE F1); persisted once dismissed via "Setup later"
+        onboardingDismissed: false,
       },
       (set, get) => ({
         addToast: (content: string, duration?: number) => {
@@ -203,6 +205,10 @@ export const uiStore = createStore(
         dismissComposerHint: () => {
           set({ composerHintDismissed: true })
         },
+
+        dismissOnboarding: () => {
+          set({ onboardingDismissed: true })
+        },
       })
     ),
     {
@@ -213,6 +219,7 @@ export const uiStore = createStore(
         sidebarWidth: state.sidebarWidth,
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
         composerHintDismissed: state.composerHintDismissed,
+        onboardingDismissed: state.onboardingDismissed,
       }),
       storage: safeStorage,
     }

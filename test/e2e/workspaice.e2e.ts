@@ -49,6 +49,9 @@ const test = base.extend<Fixtures>({
   page: async ({ app }, use) => {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
+    // Fresh profiles have no provider configured, so the first-run onboarding
+    // modal (FABLE F1) always appears — dismiss it so tests start at the chat screen.
+    await page.getByRole('button', { name: 'Setup later' }).click()
     await use(page)
   },
   rendererErrors: async ({ page }, use) => {
@@ -98,6 +101,14 @@ test('opens model provider settings and edits a mock custom provider', async ({ 
 
   await expect(page.getByTestId('provider-api-host-input')).toHaveValue('http://127.0.0.1:9/v1')
   await expect(page.getByTestId('provider-api-key-input')).toHaveValue('sk-e2e-not-real')
+})
+
+test('points a provider-less profile at provider setup from the empty state', async ({ page }) => {
+  // The page fixture already dismissed the first-run onboarding modal ("Setup later"),
+  // which itself proves the modal appears on a fresh profile. The empty state keeps a CTA.
+  await expect(page.getByText('No AI provider configured yet')).toBeVisible()
+  await page.getByTestId('empty-state-setup-provider').click()
+  await expect(page.getByText('Model Provider')).toBeVisible()
 })
 
 test('preserves composer draft input without calling a provider', async ({ page }) => {
@@ -151,10 +162,11 @@ test('opens the command palette with Cmd/Ctrl+K and navigates via an action', as
   const paletteInput = page.getByPlaceholder('Type a command or search conversations...')
   await expect(paletteInput).toBeVisible()
 
-  // Filter to a command and run it via keyboard
+  // Filter to a command and run it
   await paletteInput.fill('Create Image')
-  await expect(page.getByText('Open the image creator')).toBeVisible()
-  await page.keyboard.press('Enter')
+  const imageAction = page.getByText('Open the image creator')
+  await expect(imageAction).toBeVisible()
+  await imageAction.click()
   await expect(paletteInput).toBeHidden()
   await expect(page.getByText('Image Creator', { exact: true }).first()).toBeVisible()
 

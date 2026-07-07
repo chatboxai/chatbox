@@ -66,7 +66,7 @@ import * as atoms from '@/stores/atoms'
 import { compactionUIStateMapAtom } from '@/stores/atoms/compactionAtoms'
 import * as chatStore from '@/stores/chatStore'
 import { useSession, useSessionSettings } from '@/stores/chatStore'
-import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
+import { settingsStore, useHasConfiguredProvider, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { delay } from '@/utils'
 import { featureFlags } from '@/utils/feature-flags'
@@ -528,6 +528,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
 
     const [showSelectModelErrorTip, setShowSelectModelErrorTip] = useState(false)
+    // 没有配置任何 provider 时，“请选择模型”提示改为指向 provider 设置（FABLE §9.4 的死胡同修复）
+    const hasProvider = useHasConfiguredProvider()
     useEffect(() => {
       if (showSelectModelErrorTip) {
         const clickEventListener = () => {
@@ -1611,7 +1613,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                       <Flex align="center" c="white" gap="xxs" min-w-0>
                         <ScalableIcon icon={IconAlertCircle} size={12} className="text-inherit" />
                         <Text span size="xxs" c="white">
-                          {t('Please select a model')}
+                          {hasProvider
+                            ? t('Please select a model')
+                            : t('No AI provider configured yet — click here to set one up')}
                         </Text>
                       </Flex>
                     }

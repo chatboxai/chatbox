@@ -1,13 +1,13 @@
 diff --git a/out/util/appFileCopier.js b/out/util/appFileCopier.js
-index f762b47b85539eea2b38f6cf76692624a3b7e307..78b2f2ee9d55a972488536e23e752a5eeb7e246d 100644
+index 230f5bcd04697279ad8b43f406c9112637065c98..f90e0ac36653c4a450d80b1b920f95bda1667232 100644
 --- a/out/util/appFileCopier.js
 +++ b/out/util/appFileCopier.js
-@@ -176,7 +176,7 @@ async function collectNodeModulesWithLogging(platformPackager) {
+@@ -234,7 +234,7 @@ async function collectNodeModulesWithLogging(platformPackager) {
+     const packager = platformPackager.info;
      const { tempDirManager, appDir, projectDir } = packager;
-     let deps = undefined;
      const searchDirectories = Array.from(new Set([appDir, projectDir, await packager.getWorkspaceRoot()])).filter((it) => (0, builder_util_1.isEmptyOrSpaces)(it) === false);
 -    const pmApproaches = [await packager.getPackageManager(), node_module_collector_1.PM.TRAVERSAL];
 +    const pmApproaches = [node_module_collector_1.PM.NPM, await packager.getPackageManager(), node_module_collector_1.PM.TRAVERSAL];
-     for (const pm of pmApproaches) {
-         for (const dir of searchDirectories) {
-             builder_util_1.log.info({ pm, searchDir: dir }, "searching for node modules");
+     // Validate against the as-declared (pre-extraMetadata) production dependencies so a configured
+     // `extraMetadata.dependencies` entry that isn't installed cannot reject a correct collection.
+     const deps = await resolveFirstMatchingCollection({

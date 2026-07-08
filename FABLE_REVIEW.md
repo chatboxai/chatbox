@@ -42,10 +42,11 @@ _Last updated 2026-07-02 (branch `dev`). Findings below are the original snapsho
 
 - **F4 cross-session full-text search ✅ (2026-07-07):** main-process libsql FTS5 index (`src/main/chat-search/`, trigram tokenizer → case-insensitive substring matching incl. CJK, verified by 7 real-libsql unit tests). Renderer keeps IndexedDB as source of truth: debounced per-session sync hooked into `chatStore.updateSessionWithMessages`'s persist callback + delete hooks; one-time background backfill (version-namespaced meta flag). `searchSessions` global mode uses the index for queries ≥3 chars with hits re-verified against live blobs (identical match semantics); shorter queries / unready index fall back to the original scan. 6 new `chat-search:*` channels in the IPC allowlist. E2E: seed mock provider+model → send without response → global search finds it.
 
+- **SEC-2 maintenance ✅ (2026-07-07):** Electron 42.5.0 → 42.5.1 and electron-builder 26.8.1 → 26.15.6. The app-builder-lib patch could NOT be dropped: upstream's pnpm-collector fix (PR #9618) restores completeness but collects the **workspace root** tree instead of `release/app`'s flat npm install, silently reintroducing SEC-5 (zeroentropy + node-fetch@2 shipped in a trial build). Rebased the one-line NPM-collector-first patch to 26.15.6. Verified: mac arm64 + win x64 asar audits (601 pkgs, single node-fetch@3.3.2, no zeroentropy, SEC-5 lazy-require marker present), packaged-app startup probe clean (Electron 42.5.1 / Chromium 148), full `qa:ci` green. Electron 43 deliberately deferred (no patch releases yet).
+
 **Open — recommended order:**
 
 1. **QA cycle:** §6.5 coverage on high-risk targets (KB/session-attachment RAG IPC mains, `InputBox.tsx`, `MessageList.tsx`, session CRUD).
-2. **Maintenance:** electron-builder ≥26.13 upgrade (drop the app-builder-lib patch) + Electron 42.x patch bump.
 
 ---
 

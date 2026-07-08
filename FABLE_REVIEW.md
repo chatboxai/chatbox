@@ -44,9 +44,9 @@ _Last updated 2026-07-02 (branch `dev`). Findings below are the original snapsho
 
 - **SEC-2 maintenance ✅ (2026-07-07):** Electron 42.5.0 → 42.5.1 and electron-builder 26.8.1 → 26.15.6. The app-builder-lib patch could NOT be dropped: upstream's pnpm-collector fix (PR #9618) restores completeness but collects the **workspace root** tree instead of `release/app`'s flat npm install, silently reintroducing SEC-5 (zeroentropy + node-fetch@2 shipped in a trial build). Rebased the one-line NPM-collector-first patch to 26.15.6. Verified: mac arm64 + win x64 asar audits (601 pkgs, single node-fetch@3.3.2, no zeroentropy, SEC-5 lazy-require marker present), packaged-app startup probe clean (Electron 42.5.1 / Chromium 148), full `qa:ci` green. Electron 43 deliberately deferred (no patch releases yet).
 
-**Open — recommended order:**
+- **§6.5 coverage cycle ✅ (2026-07-08):** 73 new tests on the named high-risk targets — `session-attachment-rag/ipc-handlers.ts` (16: attachment lifecycle, cancel-filtering, retry state machine, embed→vector-query→rerank plan incl. clamping/dedupe/rerank-failure fallback, read-parents session isolation, maintenance), `knowledge-base/db.ts` (9: migrations idempotency, UTC timestamp parsing, transaction rollback, processing→paused startup cleanup, 5-min timeout→failed), `knowledge-base/ipc-handlers.ts` (14: kb CRUD, upload validation+size cap, pause/resume/retry state machine, transactional delete with real vector-purge SQL and rollback-on-index-failure — which surfaced and fixed a missing `await withTransaction` that made `kb:file:delete`'s failure envelope unreachable), renderer `session/crud.ts` (19: fractional-indexing reorder, switch/wrap-around, clear semantics; documented the dead starred-crossing branch) and `session/messages.ts` (10), plus `CommandPalette` component smokes (5, jsdom+RTL). Coverage floor ratcheted 20/15/15/20 → **25/18/18/25** (actuals: 28.1 stmts / 21.0 branch / 21.8 funcs / 28.5 lines).
 
-1. **QA cycle:** §6.5 coverage on high-risk targets (KB/session-attachment RAG IPC mains, `InputBox.tsx`, `MessageList.tsx`, session CRUD).
+**This review is fully executed.** Every finding, hardening item, feature (F1/F2/F4), and the coverage cycle from this document has shipped; §10's F3/F5–F15 remain uncommitted ideas. Residual opportunistic cleanups are tracked in `.ai/STATE.md`.
 
 ---
 

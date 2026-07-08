@@ -636,7 +636,10 @@ export function registerKnowledgeBaseHandlers() {
         throw new Error('Invalid file ID')
       }
 
-      return withTransaction(async () => {
+      // `await` is required: without it the surrounding catch never sees a
+      // rejected transaction, so failures would reject the IPC call instead of
+      // returning the {success:false} envelope the renderer expects.
+      return await withTransaction(async () => {
         const db = getDatabase()
         const vectorStore = getVectorStore()
 

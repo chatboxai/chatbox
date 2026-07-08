@@ -23,10 +23,10 @@ export default defineConfig(({ mode }) => ({
       reportsDirectory: './coverage/unit',
       include: ['src/**/*.{ts,tsx}'],
       thresholds: {
-        statements: 20,
-        branches: 15,
-        functions: 15,
-        lines: 20,
+        statements: 25,
+        branches: 18,
+        functions: 18,
+        lines: 25,
       },
       exclude: [
         'node_modules/**',

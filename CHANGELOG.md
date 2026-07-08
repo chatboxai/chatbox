@@ -2,9 +2,13 @@
 
 All notable WorkspAIce changes are tracked here.
 
-## [1.0.2-beta] - Unreleased
+## [1.0.3] - Unreleased
 
-Future development after `1.0.1-beta` should be recorded here until the next beta release is cut.
+First non-beta release line. The `-beta` designation has been dropped and the in-app BETA badge removed. Future development is recorded here until the next release is cut.
+
+## [1.0.2-beta] - 2026-07-08
+
+Final beta release, closing out the `1.0.x-beta` line.
 
 ### Security And Stability
 

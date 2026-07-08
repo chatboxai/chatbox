@@ -1,6 +1,5 @@
 import {
   ActionIcon,
-  Badge,
   Box,
   Button,
   Drawer,
@@ -147,15 +146,6 @@ export default function Sidebar() {
                   </Text>
                 )}
               </Flex>
-              <Badge
-                color="workspaice-accent2"
-                variant="filled"
-                size="xs"
-                radius="sm"
-                styles={{ label: { letterSpacing: 0.6 } }}
-              >
-                BETA
-              </Badge>
             </Box>
           </Flex>
           {FORCE_ENABLE_DEV_PAGES && <ThemeSwitchButton size="xs" />}

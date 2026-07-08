@@ -4,8 +4,8 @@ For agents, not humans. What's true right now. Edit in place after every task (s
 
 ## Active Cycle
 
-- Development version is `1.0.2-beta` (root and `release/app` manifests). Keep working under this version until the user explicitly says it's released, then move to `1.0.3-beta`.
-- Last installed/verified local macOS build: `1.0.2-beta` (`CFBundleShortVersionString` confirmed, codesign valid, ad-hoc signed for local testing).
+- Development version is `1.0.3` (root and `release/app` manifests). **The beta line is retired** — `1.0.2-beta` was the final beta (dated 2026-07-08 in `CHANGELOG.md`); all versions from `1.0.3` on are non-beta. There is no in-app BETA badge anymore (removed from `Sidebar.tsx`); the sidebar shows the plain version number. Bump to `1.0.4` (not `-beta`) for the next release cut.
+- Last built local macOS packages: `1.0.3` arm64 (`WorkspAIce-1.0.3-arm64.dmg`) + x64 (`WorkspAIce-1.0.3.dmg`, no arch suffix — electron-builder omits it for x64), both ad-hoc signed, `hdiutil verify` VALID, binaries confirmed arm64/x86_64, `CFBundleShortVersionString` 1.0.3. Stale `1.0.2-beta` DMGs still sit in `release/build/` alongside them.
 
 ## In Flight / Next Up
 

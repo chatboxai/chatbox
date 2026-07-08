@@ -141,6 +141,7 @@ export function isOpenAICompatible(providerId: string, _modelId: string) {
       ModelProviderEnum.MiniMaxCN,
       ModelProviderEnum.Moonshot,
       ModelProviderEnum.MoonshotCN,
+      ModelProviderEnum.TokenLab,
     ].includes(providerId as ModelProviderEnum) || providerId.startsWith('custom-provider-')
   )
 }

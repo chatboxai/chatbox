@@ -184,6 +184,31 @@ export const openRouterProvider = defineProvider({
         nickname: 'GPT-5.4 Image 2',
         type: 'image',
       },
+      {
+        modelId: 'openai/gpt-image-1',
+        nickname: 'GPT Image 1',
+        type: 'image',
+      },
+      {
+        modelId: 'bytedance-seed/seedream-4.5',
+        nickname: 'Seedream 4.5',
+        type: 'image',
+      },
+      {
+        modelId: 'black-forest-labs/flux.2-pro',
+        nickname: 'FLUX.2 Pro',
+        type: 'image',
+      },
+      {
+        modelId: 'sourceful/riverflow-v2.5-pro',
+        nickname: 'Riverflow V2.5 Pro',
+        type: 'image',
+      },
+      {
+        modelId: 'recraft/recraft-v4',
+        nickname: 'Recraft V4',
+        type: 'image',
+      },
     ],
   },
   createModel: (config) => {

@@ -122,6 +122,10 @@ export function updateSyncLastSyncedAt(isoDate: string) {
   })
 }
 
+export function getSyncLastSyncedAt(): string | undefined {
+  return settingsStore.getState().sync?.lastSyncedAt
+}
+
 export function createDefaultWebDAVSyncDeps(): WebDAVSyncDeps {
   return {
     platform,
@@ -132,5 +136,6 @@ export function createDefaultWebDAVSyncDeps(): WebDAVSyncDeps {
     deleteSession: deleteSyncSession,
     saveMetas: saveSyncMetas,
     updateLastSyncedAt: updateSyncLastSyncedAt,
+    getLastSyncedAt: getSyncLastSyncedAt,
   }
 }

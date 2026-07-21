@@ -190,3 +190,4 @@ storybook-static
 .claude/worktrees/
 
 tmp-*.md
+.workbuddy/

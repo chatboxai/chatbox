@@ -17,6 +17,8 @@ export type SyncCryptoEnvelope = {
 export type SyncSnapshot = {
   version: 1
   exportedAt: string
+  /** Snapshot write time in epoch milliseconds; older snapshots may omit it (fall back to exportedAt). */
+  updatedAt?: number
   deviceName: string
   sessions: Session[]
   metas: SessionMetaRecord[]

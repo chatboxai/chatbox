@@ -3,13 +3,14 @@ import { SessionMetaRecordSchema, SessionSchema } from '@shared/types/session'
 import { z } from 'zod'
 import { migrateSession } from '@/utils/session-utils'
 import { decryptJsonEnvelope, encryptJsonEnvelope } from './crypto'
-import { createSyncSnapshot, mergeRemoteSnapshot } from './snapshot'
+import { createSyncSnapshot, mergeRemoteSnapshot, snapshotUpdatedAt } from './snapshot'
 import type { SyncCryptoEnvelope, SyncSnapshot, WebDAVRequest, WebDAVResponse } from './types'
 import { buildBasicAuthHeader, joinWebDAVUrl, requestWebDAV, SYNC_COLLECTION_PATH, SYNC_SNAPSHOT_PATH } from './webdav'
 
 const RawSyncSnapshotSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
+  updatedAt: z.number().optional(),
   deviceName: z.string(),
   sessions: z.array(z.unknown()),
   metas: z.array(SessionMetaRecordSchema),
@@ -38,6 +39,7 @@ export type WebDAVSyncDeps = {
   deleteSession: (sessionId: string) => Promise<void>
   saveMetas: (metas: SessionMetaRecord[]) => Promise<void>
   updateLastSyncedAt: (isoDate: string) => Promise<void> | void
+  getLastSyncedAt?: () => string | undefined | Promise<string | undefined>
   createConflictId?: (sourceSessionId: string, contentFingerprint: string) => string
   now?: () => number
 }
@@ -53,6 +55,31 @@ export type DownloadWebDAVSnapshotResult = {
   saved: number
   lastSyncedAt?: string
   remoteMissing?: boolean
+  remoteStale?: boolean
+}
+
+function parseIsoToMillis(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined
+  }
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+/**
+ * Skip merging when the remote snapshot is not newer than the last sync.
+ * Merging an already-seen snapshot again would only recreate "(Synced copy)"
+ * duplicates on every device that replays it.
+ */
+async function isRemoteSnapshotStale(remote: SyncSnapshot, deps: WebDAVSyncDeps): Promise<boolean> {
+  if (!deps.getLastSyncedAt) {
+    return false
+  }
+  const lastSyncedAt = parseIsoToMillis(await deps.getLastSyncedAt())
+  if (lastSyncedAt === undefined) {
+    return false
+  }
+  return snapshotUpdatedAt(remote) <= lastSyncedAt
 }
 
 function getWebDAVSettings(settings: Settings) {
@@ -192,21 +219,27 @@ export async function uploadWebDAVSnapshot(
     deps.listLocalMetas(),
     deps.platform.getDeviceName?.() ?? Promise.resolve('Unknown device'),
   ])
-  const lastSyncedAt = new Date(now()).toISOString()
+  const snapshotUpdatedAtMs = now()
+  const lastSyncedAt = new Date(snapshotUpdatedAtMs).toISOString()
   const localSnapshot = createSyncSnapshot({
     sessions,
     metas,
     deviceName,
     exportedAt: lastSyncedAt,
+    updatedAt: snapshotUpdatedAtMs,
   })
 
   for (let attempt = 0; attempt < MAX_UPLOAD_ATTEMPTS; attempt += 1) {
     const remote = await downloadWebDAVSnapshot(settings, deps.platform)
-    const mergeResult = remote.snapshot
+    // Only merge remote content that is newer than our last sync. Re-merging an
+    // already-synced snapshot would resurrect "(Synced copy)" duplicates that the
+    // local device has since folded back into its own sessions.
+    const shouldMergeRemote = remote.snapshot ? !(await isRemoteSnapshotStale(remote.snapshot, deps)) : false
+    const mergeResult = shouldMergeRemote
       ? mergeRemoteSnapshot({
           localSessions: localSnapshot.sessions,
           localMetas: localSnapshot.metas,
-          remote: remote.snapshot,
+          remote: remote.snapshot!,
           now: now(),
           createConflictId: deps.createConflictId,
         })
@@ -220,6 +253,7 @@ export async function uploadWebDAVSnapshot(
           metas: [...localSnapshot.metas, ...mergeResult.metasToSave],
           deviceName,
           exportedAt: lastSyncedAt,
+          updatedAt: snapshotUpdatedAtMs,
         })
       : localSnapshot
     const preconditionHeaders: Record<string, string> = remote.snapshot
@@ -266,6 +300,15 @@ export async function downloadAndMergeWebDAVSnapshot(
       conflicts: 0,
       saved: 0,
       remoteMissing: true,
+    }
+  }
+
+  if (await isRemoteSnapshotStale(remote.snapshot, deps)) {
+    return {
+      imported: 0,
+      conflicts: 0,
+      saved: 0,
+      remoteStale: true,
     }
   }
 

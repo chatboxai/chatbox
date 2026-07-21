@@ -245,19 +245,34 @@ export function createSyncSnapshot(input: {
   metas: SessionMetaRecord[]
   deviceName: string
   exportedAt?: string
+  updatedAt?: number
 }): SyncSnapshot {
   const sessions = input.sessions.filter(isChatSession).map(stripLocalSessionReferences)
   const sessionIds = new Set(sessions.map((session) => session.id))
+  const exportedAt = input.exportedAt ?? new Date().toISOString()
 
   return {
     version: 1,
-    exportedAt: input.exportedAt ?? new Date().toISOString(),
+    exportedAt,
+    updatedAt: input.updatedAt ?? Date.parse(exportedAt),
     deviceName: input.deviceName,
     sessions,
     metas: input.metas
       .filter((meta) => sessionIds.has(meta.id) && isChatSessionMetaLike(meta))
       .map(stripLocalMetaReferences),
   }
+}
+
+/**
+ * Last-write time of a snapshot in epoch milliseconds.
+ * Snapshots written before `updatedAt` existed fall back to `exportedAt`.
+ */
+export function snapshotUpdatedAt(snapshot: Pick<SyncSnapshot, 'updatedAt' | 'exportedAt'>): number {
+  if (typeof snapshot.updatedAt === 'number' && Number.isFinite(snapshot.updatedAt)) {
+    return snapshot.updatedAt
+  }
+  const parsed = Date.parse(snapshot.exportedAt)
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemoteSnapshotResult {

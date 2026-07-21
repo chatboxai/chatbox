@@ -170,9 +170,6 @@ function ExportAndImport(props: { onCancel: () => void }) {
         exportItems.includes(ExportDataItem.Key)
       )
     }
-    if (!exportItems.includes(ExportDataItem.Key) && data[StorageKey.Settings]) {
-      delete (data[StorageKey.Settings] as Settings).providers
-    }
     if (!exportItems.includes(ExportDataItem.Setting)) {
       delete data[StorageKey.Settings]
     }

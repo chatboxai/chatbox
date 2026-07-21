@@ -1,4 +1,4 @@
-import type { Session, SessionMetaRecord } from '@shared/types'
+import type { Session, SessionMeta, SessionMetaRecord } from '@shared/types'
 
 export type { WebDAVMethod, WebDAVRequest, WebDAVResponse } from '@shared/sync-webdav'
 
@@ -27,12 +27,23 @@ export type MergeRemoteSnapshotInput = {
   localMetas: SessionMetaRecord[]
   remote: SyncSnapshot
   now: number
-  createId: () => string
+  createConflictId?: (sourceSessionId: string, contentFingerprint: string) => string
   preferRemoteMetadata?: boolean
 }
 
+export type SyncSessionChange =
+  | {
+      kind: 'create'
+      session: Session
+    }
+  | {
+      kind: 'update-metadata'
+      sessionId: string
+      patch: Omit<SessionMeta, 'id'>
+    }
+
 export type MergeRemoteSnapshotResult = {
-  sessionsToSave: Session[]
+  sessionChanges: SyncSessionChange[]
   metasToSave: SessionMetaRecord[]
   imported: number
   conflicts: number

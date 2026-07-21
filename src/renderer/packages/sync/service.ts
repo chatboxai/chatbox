@@ -1,4 +1,4 @@
-import type { Session, SessionMetaRecord, Settings } from '@shared/types'
+import type { Session, SessionMeta, SessionMetaRecord, Settings } from '@shared/types'
 import { SessionMetaRecordSchema, SessionSchema } from '@shared/types/session'
 import { z } from 'zod'
 import { migrateSession } from '@/utils/session-utils'
@@ -33,11 +33,12 @@ export type WebDAVSyncDeps = {
   platform: SyncPlatform
   listLocalSessions: () => Promise<Session[]>
   listLocalMetas: () => Promise<SessionMetaRecord[]>
-  saveSession: (session: Session) => Promise<void>
-  deleteSession?: (sessionId: string) => Promise<void>
+  createSession: (session: Session, meta: SessionMetaRecord) => Promise<void>
+  updateSessionMetadata: (sessionId: string, patch: Omit<SessionMeta, 'id'>) => Promise<Omit<SessionMeta, 'id'>>
+  deleteSession: (sessionId: string) => Promise<void>
   saveMetas: (metas: SessionMetaRecord[]) => Promise<void>
   updateLastSyncedAt: (isoDate: string) => Promise<void> | void
-  createId: () => string
+  createConflictId?: (sourceSessionId: string, contentFingerprint: string) => string
   now?: () => number
 }
 
@@ -207,12 +208,15 @@ export async function uploadWebDAVSnapshot(
           localMetas: localSnapshot.metas,
           remote: remote.snapshot,
           now: now(),
-          createId: deps.createId,
+          createConflictId: deps.createConflictId,
         })
       : undefined
     const snapshot = mergeResult
       ? createSyncSnapshot({
-          sessions: [...localSnapshot.sessions, ...mergeResult.sessionsToSave],
+          sessions: [
+            ...localSnapshot.sessions,
+            ...mergeResult.sessionChanges.filter((change) => change.kind === 'create').map((change) => change.session),
+          ],
           metas: [...localSnapshot.metas, ...mergeResult.metasToSave],
           deviceName,
           exportedAt: lastSyncedAt,
@@ -271,22 +275,56 @@ export async function downloadAndMergeWebDAVSnapshot(
     localMetas,
     remote: remote.snapshot,
     now: (deps.now ?? Date.now)(),
-    createId: deps.createId,
+    createConflictId: deps.createConflictId,
     preferRemoteMetadata: true,
   })
 
-  const savedSessionIds: string[] = []
+  const metaById = new Map(result.metasToSave.map((meta) => [meta.id, meta]))
+  const createdSessionIds = new Set<string>()
+  const undoOperations: Array<
+    | { kind: 'delete-created'; sessionId: string }
+    | { kind: 'restore-metadata'; sessionId: string; patch: Omit<SessionMeta, 'id'> }
+  > = []
   try {
-    for (const session of result.sessionsToSave) {
-      await deps.saveSession(session)
-      savedSessionIds.push(session.id)
+    for (const change of result.sessionChanges) {
+      if (change.kind === 'create') {
+        const meta = metaById.get(change.session.id)
+        if (!meta) {
+          throw new Error(`Missing metadata for synced session ${change.session.id}`)
+        }
+        await deps.createSession(change.session, meta)
+        createdSessionIds.add(change.session.id)
+        undoOperations.push({ kind: 'delete-created', sessionId: change.session.id })
+      } else {
+        const previous = await deps.updateSessionMetadata(change.sessionId, change.patch)
+        undoOperations.push({ kind: 'restore-metadata', sessionId: change.sessionId, patch: previous })
+      }
     }
-    if (result.metasToSave.length > 0) {
-      await deps.saveMetas(result.metasToSave)
+
+    const existingMetasToSave = result.metasToSave.filter((meta) => !createdSessionIds.has(meta.id))
+    if (existingMetasToSave.length > 0) {
+      await deps.saveMetas(existingMetasToSave)
     }
   } catch (error) {
-    if (deps.deleteSession) {
-      await Promise.allSettled(savedSessionIds.map((id) => deps.deleteSession?.(id)))
+    const rollbackErrors: unknown[] = []
+    for (const undo of undoOperations.reverse()) {
+      try {
+        if (undo.kind === 'delete-created') {
+          await deps.deleteSession(undo.sessionId)
+        } else {
+          await deps.updateSessionMetadata(undo.sessionId, undo.patch)
+        }
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        `WebDAV sync import failed: ${message}; restoring local data also failed`,
+        { cause: error }
+      )
     }
     throw error
   }
@@ -297,7 +335,7 @@ export async function downloadAndMergeWebDAVSnapshot(
   return {
     imported: result.imported,
     conflicts: result.conflicts,
-    saved: result.sessionsToSave.length,
+    saved: result.sessionChanges.length,
     lastSyncedAt,
   }
 }

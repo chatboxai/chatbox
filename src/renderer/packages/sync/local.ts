@@ -1,9 +1,15 @@
-import type { Session, SessionMetaRecord } from '@shared/types'
-import { v4 as uuidv4 } from 'uuid'
+import type { Session, SessionMeta, SessionMetaRecord } from '@shared/types'
 import platform from '@/platform'
 import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { getMetaStorage, listAllSessionsMeta, refreshSessionListCache } from '@/stores/chatStore'
+import {
+  createSessionWithId,
+  deleteSession,
+  getMetaStorage,
+  listAllSessionsMeta,
+  refreshSessionListCache,
+  updateSession,
+} from '@/stores/chatStore'
 import { settingsStore } from '@/stores/settingsStore'
 import { migrateSession } from '@/utils/session-utils'
 import type { WebDAVSyncDeps } from './service'
@@ -31,12 +37,58 @@ export async function listLocalSyncMetas(): Promise<SessionMetaRecord[]> {
   return (await listAllSessionsMeta()).filter(isChatSessionLike)
 }
 
-export async function saveSyncSession(session: Session): Promise<void> {
-  await storage.setItemNow(StorageKeyGenerator.session(session.id), session)
+export async function createSyncSession(session: Session, meta: SessionMetaRecord): Promise<void> {
+  await createSessionWithId(session, meta)
 }
 
 export async function deleteSyncSession(sessionId: string): Promise<void> {
-  await storage.removeItem(StorageKeyGenerator.session(sessionId))
+  await deleteSession(sessionId)
+}
+
+function sessionMetadataPatch(session: SessionMeta): Omit<SessionMeta, 'id'> {
+  return {
+    name: session.name,
+    type: session.type,
+    starred: session.starred,
+    hidden: session.hidden,
+    assistantAvatarKey: session.assistantAvatarKey,
+    picUrl: session.picUrl,
+    backgroundImage: session.backgroundImage,
+  }
+}
+
+export async function updateSyncSessionMetadata(
+  sessionId: string,
+  patch: Omit<SessionMeta, 'id'>
+): Promise<Omit<SessionMeta, 'id'>> {
+  let previous: Omit<SessionMeta, 'id'> | undefined
+  try {
+    await updateSession(sessionId, (current) => {
+      if (!current) {
+        throw new Error(`Session ${sessionId} not found`)
+      }
+      previous = sessionMetadataPatch(current)
+      return { ...current, ...patch }
+    })
+  } catch (error) {
+    if (previous) {
+      try {
+        await updateSession(sessionId, previous)
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          `Failed to update synced session ${sessionId} and restore its metadata`,
+          { cause: error }
+        )
+      }
+    }
+    throw error
+  }
+
+  if (!previous) {
+    throw new Error(`Session ${sessionId} not found`)
+  }
+  return previous
 }
 
 export async function saveSyncMetas(metas: SessionMetaRecord[]): Promise<void> {
@@ -44,8 +96,24 @@ export async function saveSyncMetas(metas: SessionMetaRecord[]): Promise<void> {
     return
   }
   const metaStorage = await getMetaStorage()
-  await metaStorage.createMany(metas)
-  await refreshSessionListCache()
+  const previous = await Promise.all(metas.map((meta) => metaStorage.getById(meta.id)))
+  try {
+    await metaStorage.createMany(metas)
+    await refreshSessionListCache()
+  } catch (error) {
+    const previousRecords = previous.filter((meta): meta is SessionMetaRecord => meta !== null)
+    const newIds = metas.filter((_, index) => previous[index] === null).map((meta) => meta.id)
+    try {
+      await metaStorage.createMany(previousRecords)
+      await metaStorage.deleteMany(newIds)
+      await refreshSessionListCache()
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], 'Failed to save synced metadata and restore previous records', {
+        cause: error,
+      })
+    }
+    throw error
+  }
 }
 
 export function updateSyncLastSyncedAt(isoDate: string) {
@@ -59,10 +127,10 @@ export function createDefaultWebDAVSyncDeps(): WebDAVSyncDeps {
     platform,
     listLocalSessions: listLocalSyncSessions,
     listLocalMetas: listLocalSyncMetas,
-    saveSession: saveSyncSession,
+    createSession: createSyncSession,
+    updateSessionMetadata: updateSyncSessionMetadata,
     deleteSession: deleteSyncSession,
     saveMetas: saveSyncMetas,
     updateLastSyncedAt: updateSyncLastSyncedAt,
-    createId: uuidv4,
   }
 }

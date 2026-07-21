@@ -234,6 +234,60 @@ export async function createSession(newSession: Omit<Session, 'id'>, previousId?
   return session
 }
 
+const pendingSessionCreates = new Map<string, Promise<Session>>()
+
+async function _createSessionWithId(session: Session, record: SessionMetaRecord): Promise<Session> {
+  if (session.id !== record.id) {
+    throw new Error('Session and metadata IDs must match')
+  }
+
+  const metaStorage = await getMetaStorage()
+  const [existingSession, existingMeta] = await Promise.all([
+    platform.getStoreValue(StorageKeyGenerator.session(session.id)),
+    metaStorage.getById(session.id),
+  ])
+  if (existingSession || existingMeta) {
+    throw new Error(`Session ${session.id} already exists`)
+  }
+
+  await storage.setItemNow(StorageKeyGenerator.session(session.id), session)
+  try {
+    await metaStorage.create(record)
+  } catch (error) {
+    try {
+      await storage.removeItem(StorageKeyGenerator.session(session.id))
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `Failed to create session ${session.id} and remove its partially written data`,
+        { cause: error }
+      )
+    }
+    throw error
+  }
+
+  _setSessionCache(session.id, session)
+  updateSessionListData((items) => sortSessionRecords([...items, record]))
+  return session
+}
+
+/** Create an imported session with its existing ID and exact metadata. */
+export async function createSessionWithId(session: Session, record: SessionMetaRecord): Promise<Session> {
+  const pending = pendingSessionCreates.get(session.id)
+  if (pending) {
+    await pending
+    throw new Error(`Session ${session.id} already exists`)
+  }
+
+  const creation = _createSessionWithId(session, record)
+  pendingSessionCreates.set(session.id, creation)
+  try {
+    return await creation
+  } finally {
+    pendingSessionCreates.delete(session.id)
+  }
+}
+
 const sessionUpdateQueues: Record<string, UpdateQueue<Session>> = {}
 
 export async function updateSessionWithMessages(sessionId: string, updater: Updater<Session>) {

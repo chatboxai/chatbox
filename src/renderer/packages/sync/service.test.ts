@@ -59,11 +59,12 @@ describe('WebDAV sync service', () => {
       },
       listLocalSessions: vi.fn(async () => [session('s1', 'Local', 'hello')]),
       listLocalMetas: vi.fn(async () => [meta('s1', 'Local')]),
-      saveSession: vi.fn(),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      createId: vi.fn(),
+      createConflictId: vi.fn(),
       now: () => 1000,
     }
 
@@ -110,11 +111,12 @@ describe('WebDAV sync service', () => {
       },
       listLocalSessions: vi.fn(async () => [session('local-1', 'Local', 'local text')]),
       listLocalMetas: vi.fn(async () => [meta('local-1', 'Local')]),
-      saveSession: vi.fn(),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      createId: vi.fn(() => 'copy-id'),
+      createConflictId: vi.fn(() => 'copy-id'),
       now: () => 1000,
     }
 
@@ -128,7 +130,7 @@ describe('WebDAV sync service', () => {
     expect(put?.headers?.['If-None-Match']).toBeUndefined()
     expect(decrypted.sessions.map((item) => item.id).sort()).toEqual(['local-1', 'remote-1'])
     expect(decrypted.metas.map((item) => item.id).sort()).toEqual(['local-1', 'remote-1'])
-    expect(deps.saveSession).not.toHaveBeenCalled()
+    expect(deps.createSession).not.toHaveBeenCalled()
     expect(deps.saveMetas).not.toHaveBeenCalled()
   })
 
@@ -172,11 +174,12 @@ describe('WebDAV sync service', () => {
       },
       listLocalSessions: vi.fn(async () => [session('local-1', 'Local', 'local text')]),
       listLocalMetas: vi.fn(async () => [meta('local-1', 'Local')]),
-      saveSession: vi.fn(),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      createId: vi.fn(() => 'copy-id'),
+      createConflictId: vi.fn(() => 'copy-id'),
       now: () => 1000,
     }
 
@@ -217,11 +220,12 @@ describe('WebDAV sync service', () => {
       },
       listLocalSessions: vi.fn(async () => [session('local-1', 'Local', 'local text')]),
       listLocalMetas: vi.fn(async () => [meta('local-1', 'Local')]),
-      saveSession: vi.fn(),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      createId: vi.fn(() => 'copy-id'),
+      createConflictId: vi.fn(() => 'copy-id'),
       now: () => 1000,
     }
 
@@ -250,11 +254,12 @@ describe('WebDAV sync service', () => {
       },
       listLocalSessions: vi.fn(async () => []),
       listLocalMetas: vi.fn(async () => []),
-      saveSession: vi.fn(),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      createId: vi.fn(() => 'copy-id'),
+      createConflictId: vi.fn(() => 'copy-id'),
       now: () => 2000,
     }
 
@@ -262,15 +267,16 @@ describe('WebDAV sync service', () => {
 
     expect(result.imported).toBe(1)
     expect(result.conflicts).toBe(0)
-    expect(deps.saveSession).toHaveBeenCalledWith(
+    expect(deps.createSession).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'remote-1',
         messages: remote.sessions[0].messages,
         name: 'Remote',
         type: 'chat',
-      })
+      }),
+      remote.metas[0]
     )
-    expect(deps.saveMetas).toHaveBeenCalledWith(remote.metas)
+    expect(deps.saveMetas).not.toHaveBeenCalled()
     expect(deps.updateLastSyncedAt).toHaveBeenCalledWith('1970-01-01T00:00:02.000Z')
   })
 
@@ -303,11 +309,12 @@ describe('WebDAV sync service', () => {
       },
       listLocalSessions: vi.fn(async () => [local]),
       listLocalMetas: vi.fn(async () => [meta('same-id', 'Local Name', 1)]),
-      saveSession: vi.fn(),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(async () => ({ name: 'Local Name', type: 'chat' as const })),
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      createId: vi.fn(() => 'copy-id'),
+      createConflictId: vi.fn(() => 'copy-id'),
       now: () => 2000,
     }
 
@@ -315,8 +322,11 @@ describe('WebDAV sync service', () => {
 
     expect(result.imported).toBe(0)
     expect(result.conflicts).toBe(0)
-    expect(deps.createId).not.toHaveBeenCalled()
-    expect(deps.saveSession).toHaveBeenCalledWith(expect.objectContaining({ id: 'same-id', name: 'Remote Name' }))
+    expect(deps.createConflictId).not.toHaveBeenCalled()
+    expect(deps.updateSessionMetadata).toHaveBeenCalledWith(
+      'same-id',
+      expect.objectContaining({ name: 'Remote Name', starred: true })
+    )
     expect(deps.saveMetas).toHaveBeenCalledWith([expect.objectContaining(remoteMeta)])
   })
 
@@ -327,11 +337,12 @@ describe('WebDAV sync service', () => {
       },
       listLocalSessions: vi.fn(async () => [session('s1', 'Local', 'hello')]),
       listLocalMetas: vi.fn(async () => [meta('s1', 'Local')]),
-      saveSession: vi.fn(),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      createId: vi.fn(),
+      createConflictId: vi.fn(),
     }
     const settings = {
       ...baseSettings,
@@ -360,15 +371,16 @@ describe('WebDAV sync service', () => {
       },
       listLocalSessions: vi.fn(async () => []),
       listLocalMetas: vi.fn(async () => []),
-      saveSession: vi.fn(),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      createId: vi.fn(() => 'copy-id'),
+      createConflictId: vi.fn(() => 'copy-id'),
     }
 
     await expect(downloadAndMergeWebDAVSnapshot(baseSettings, deps)).rejects.toThrow(/invalid sync snapshot/i)
-    expect(deps.saveSession).not.toHaveBeenCalled()
+    expect(deps.createSession).not.toHaveBeenCalled()
     expect(deps.saveMetas).not.toHaveBeenCalled()
     expect(deps.updateLastSyncedAt).not.toHaveBeenCalled()
   })
@@ -405,25 +417,81 @@ describe('WebDAV sync service', () => {
       },
       listLocalSessions: vi.fn(async () => []),
       listLocalMetas: vi.fn(async () => []),
-      saveSession: vi.fn(),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      createId: vi.fn(() => 'copy-id'),
+      createConflictId: vi.fn(() => 'copy-id'),
       now: () => 2000,
     }
 
     await downloadAndMergeWebDAVSnapshot(baseSettings, deps)
 
-    expect(deps.saveSession).toHaveBeenCalledWith(
+    expect(deps.createSession).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'legacy-remote',
         messages: [expect.objectContaining({ contentParts: [{ type: 'text', text: 'legacy remote text' }] })],
-      })
+      }),
+      remote.metas[0]
     )
   })
 
-  it('rolls back saved sessions when metadata import fails', async () => {
+  it('restores updated sessions and deletes only new sessions when metadata import fails', async () => {
+    const local = session('same-id', 'Local Name', 'same text')
+    local.settings = { temperature: undefined }
+    const remoteExisting = session('same-id', 'Remote Name', 'same text')
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [remoteExisting, session('remote-2', 'Remote 2', 'hello')],
+      metas: [meta('same-id', 'Remote Name', 99), meta('remote-2', 'Remote 2')],
+    }
+    const envelope = await encryptJsonEnvelope(remote, 'sync-secret')
+    const previousPatch = {
+      name: 'Local Name',
+      type: 'chat' as const,
+      starred: undefined,
+      hidden: undefined,
+      assistantAvatarKey: undefined,
+      picUrl: undefined,
+      backgroundImage: undefined,
+    }
+    const deps = {
+      platform: {
+        webdavRequest: vi.fn(async (request: WebDAVRequest) => ({
+          status: request.method === 'GET' ? 200 : 405,
+          headers: {},
+          body: JSON.stringify(envelope),
+        })),
+      },
+      listLocalSessions: vi.fn(async () => [local]),
+      listLocalMetas: vi.fn(async () => [meta('same-id', 'Local Name')]),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(async () => previousPatch),
+      saveMetas: vi.fn(() => Promise.reject(new Error('meta write failed'))),
+      deleteSession: vi.fn(),
+      updateLastSyncedAt: vi.fn(),
+      createConflictId: vi.fn(() => 'copy-id'),
+      now: () => 2000,
+    }
+
+    await expect(downloadAndMergeWebDAVSnapshot(baseSettings, deps)).rejects.toThrow(/meta write failed/)
+
+    expect(deps.createSession).toHaveBeenCalledTimes(1)
+    expect(deps.deleteSession).toHaveBeenCalledWith('remote-2')
+    expect(deps.deleteSession).not.toHaveBeenCalledWith('same-id')
+    expect(deps.updateSessionMetadata).toHaveBeenNthCalledWith(
+      1,
+      'same-id',
+      expect.objectContaining({ name: 'Remote Name' })
+    )
+    expect(deps.updateSessionMetadata).toHaveBeenNthCalledWith(2, 'same-id', previousPatch)
+    expect(deps.updateLastSyncedAt).not.toHaveBeenCalled()
+  })
+
+  it('removes earlier new sessions when a later create fails', async () => {
     const remote: SyncSnapshot = {
       version: 1,
       exportedAt: '2026-06-21T00:00:00.000Z',
@@ -442,19 +510,22 @@ describe('WebDAV sync service', () => {
       },
       listLocalSessions: vi.fn(async () => []),
       listLocalMetas: vi.fn(async () => []),
-      saveSession: vi.fn(),
-      saveMetas: vi.fn(() => Promise.reject(new Error('meta write failed'))),
+      createSession: vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('second session write failed')),
+      updateSessionMetadata: vi.fn(),
+      saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      createId: vi.fn(() => 'copy-id'),
       now: () => 2000,
     }
 
-    await expect(downloadAndMergeWebDAVSnapshot(baseSettings, deps)).rejects.toThrow(/meta write failed/)
+    await expect(downloadAndMergeWebDAVSnapshot(baseSettings, deps)).rejects.toThrow(/second session write failed/)
 
-    expect(deps.saveSession).toHaveBeenCalledTimes(2)
+    expect(deps.deleteSession).toHaveBeenCalledTimes(1)
     expect(deps.deleteSession).toHaveBeenCalledWith('remote-1')
-    expect(deps.deleteSession).toHaveBeenCalledWith('remote-2')
+    expect(deps.saveMetas).not.toHaveBeenCalled()
     expect(deps.updateLastSyncedAt).not.toHaveBeenCalled()
   })
 })

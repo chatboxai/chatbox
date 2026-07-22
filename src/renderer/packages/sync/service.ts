@@ -294,10 +294,15 @@ export async function uploadWebDAVSnapshot(
     }
 
     assertSuccess(response, 'Upload WebDAV sync snapshot', [200, 201, 204])
-    // The remote now holds exactly what we wrote. Record the ETag returned by
-    // the PUT (if any) so the next download can recognize it as already seen;
-    // without one, the next download simply merges idempotently.
-    await rememberRemoteSnapshot(responseHeader(response.headers, 'etag'), settings, deps)
+    // Record the PUT's ETag as last seen only when no remote merge happened:
+    // without a merge the remote now holds exactly our local state. A merged
+    // snapshot, though, contains remote-only sessions that were never
+    // persisted locally — remembering its ETag would make the next download
+    // skip the very merge that saves them. Leave lastSeen untouched then; the
+    // next download re-merges idempotently and persists them.
+    if (!mergeResult) {
+      await rememberRemoteSnapshot(responseHeader(response.headers, 'etag'), settings, deps)
+    }
     await deps.updateLastSyncedAt(lastSyncedAt)
     return {
       uploaded: snapshot.sessions.length,

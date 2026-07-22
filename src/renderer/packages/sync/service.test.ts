@@ -431,6 +431,81 @@ describe('WebDAV sync service', () => {
 
     expect(result.uploaded).toBe(2)
     expect(decrypted.sessions.map((item) => item.id).sort()).toEqual(['local-1', 'remote-1'])
+    // The upload merged remote sessions that were never persisted locally, so
+    // the new ETag must not be remembered — otherwise the next download would
+    // skip the very merge that saves them.
+    expect(deps.setLastSeenSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('persists remote-only sessions on the download after a merged upload', async () => {
+    // Regression: a merged upload must not mark the uploaded snapshot as seen.
+    // The merged snapshot holds remote-only sessions that were never saved
+    // locally; remembering its ETag would make every later download report
+    // remoteUnchanged and those sessions would never land on this device.
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-22T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('remote-1', 'Remote', 'remote text')],
+      metas: [meta('remote-1', 'Remote')],
+    }
+    let serverBody = JSON.stringify(await encryptJsonEnvelope(remote, 'sync-secret'))
+    let serverEtag = '"etag-v1"'
+    let lastSeen: { endpoint: string; etag?: string } | undefined
+    // Mirror the migrated shape production storage returns, so the round-trip
+    // through the upload/download migration does not look like a conflict.
+    const localSession = session('local-1', 'Local', 'local text')
+    localSession.settings = { temperature: undefined }
+    const deps = {
+      platform: {
+        getDeviceName: vi.fn(async () => 'Mac'),
+        webdavRequest: vi.fn((request: WebDAVRequest) => {
+          if (request.method === 'GET') {
+            return Promise.resolve({ status: 200, headers: { ETag: serverEtag }, body: serverBody })
+          }
+          if (request.method === 'PUT') {
+            serverBody = request.body ?? ''
+            serverEtag = '"etag-v2"'
+            return Promise.resolve({ status: 201, headers: { ETag: serverEtag }, body: '' })
+          }
+          return Promise.resolve({ status: 405, headers: {}, body: '' })
+        }),
+      },
+      listLocalSessions: vi.fn(async () => [localSession]),
+      listLocalMetas: vi.fn(async () => [meta('local-1', 'Local')]),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(async () => ({ name: 'Local', type: 'chat' as const })),
+      saveMetas: vi.fn(),
+      deleteSession: vi.fn(),
+      updateLastSyncedAt: vi.fn(),
+      getLastSeenSnapshot: vi.fn(() => lastSeen),
+      setLastSeenSnapshot: vi.fn((seen: { endpoint: string; etag?: string }) => {
+        lastSeen = seen
+      }),
+      createConflictId: vi.fn(() => 'copy-id'),
+      now: () => 1000,
+    }
+
+    const upload = await uploadWebDAVSnapshot(baseSettings, deps)
+
+    expect(upload.uploaded).toBe(2)
+    expect(lastSeen).toBeUndefined()
+
+    const download = await downloadAndMergeWebDAVSnapshot(baseSettings, deps)
+
+    expect(download.remoteUnchanged).toBeUndefined()
+    expect(download.imported).toBe(1)
+    expect(deps.createSession).toHaveBeenCalledTimes(1)
+    expect(deps.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'remote-1' }),
+      expect.objectContaining({ id: 'remote-1' })
+    )
+    // Once the download has actually persisted the merge, recording the ETag
+    // is safe again.
+    expect(lastSeen).toEqual({
+      endpoint: 'https://dav.example.com/files/me/\nalice',
+      etag: '"etag-v2"',
+    })
   })
 
   it('merges a remote snapshot with older timestamps but an unseen ETag during upload', async () => {

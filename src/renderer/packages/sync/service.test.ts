@@ -780,4 +780,42 @@ describe('WebDAV sync service', () => {
     expect(deps.saveMetas).not.toHaveBeenCalled()
     expect(deps.updateLastSyncedAt).not.toHaveBeenCalled()
   })
+
+  it('wraps the original and rollback errors in an AggregateError when restoring also fails', async () => {
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('remote-1', 'Remote 1', 'hi'), session('remote-2', 'Remote 2', 'hello')],
+      metas: [meta('remote-1', 'Remote 1'), meta('remote-2', 'Remote 2')],
+    }
+    const envelope = await encryptJsonEnvelope(remote, 'sync-secret')
+    const importError = new Error('second session write failed')
+    const rollbackError = new Error('delete failed')
+    const deps = {
+      platform: {
+        webdavRequest: vi.fn(async (request: WebDAVRequest) => ({
+          status: request.method === 'GET' ? 200 : 405,
+          headers: {},
+          body: JSON.stringify(envelope),
+        })),
+      },
+      listLocalSessions: vi.fn(async () => []),
+      listLocalMetas: vi.fn(async () => []),
+      createSession: vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(importError),
+      updateSessionMetadata: vi.fn(),
+      saveMetas: vi.fn(),
+      deleteSession: vi.fn(() => Promise.reject(rollbackError)),
+      updateLastSyncedAt: vi.fn(),
+      now: () => 2000,
+    }
+
+    const failure = await downloadAndMergeWebDAVSnapshot(baseSettings, deps).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as Error).message).toMatch(/restoring local data also failed/)
+    expect((failure as AggregateError).errors).toEqual([importError, rollbackError])
+    expect(deps.deleteSession).toHaveBeenCalledWith('remote-1')
+    expect(deps.updateLastSyncedAt).not.toHaveBeenCalled()
+  })
 })

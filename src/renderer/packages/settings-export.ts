@@ -13,23 +13,31 @@ function sanitizeProviderForExport(provider: ProviderSettings): ProviderSettings
 }
 
 export function sanitizeSettingsForExport(settings: Settings, includeSecrets: boolean): Settings {
+  // The export path reads raw storage via a type cast, and settings persisted
+  // before the sync/extension fields existed are not re-normalized until the
+  // next settings save — so both objects can be absent at runtime despite
+  // being required in the schema. Spread and redact defensively.
   const cleanedSettings: Settings = {
     ...settings,
     licenseDetail: undefined,
     licenseInstances: undefined,
     providers: settings.providers ? { ...settings.providers } : settings.providers,
-    extension: {
-      ...settings.extension,
-      webSearch: {
-        ...settings.extension.webSearch,
-      },
-    },
-    sync: {
-      ...settings.sync,
-      webdav: {
-        ...settings.sync.webdav,
-      },
-    },
+    extension: settings.extension
+      ? {
+          ...settings.extension,
+          webSearch: {
+            ...settings.extension.webSearch,
+          },
+        }
+      : settings.extension,
+    sync: settings.sync
+      ? {
+          ...settings.sync,
+          webdav: {
+            ...settings.sync.webdav,
+          },
+        }
+      : settings.sync,
   }
 
   if (!includeSecrets) {
@@ -43,11 +51,15 @@ export function sanitizeSettingsForExport(settings: Settings, includeSecrets: bo
         Object.entries(cleanedSettings.providers).map(([id, provider]) => [id, sanitizeProviderForExport(provider)])
       ) as Settings['providers']
     }
-    delete cleanedSettings.extension.webSearch.tavilyApiKey
-    delete cleanedSettings.extension.webSearch.bochaApiKey
-    delete cleanedSettings.extension.webSearch.queritApiKey
-    cleanedSettings.sync.webdav.password = ''
-    cleanedSettings.sync.webdav.syncPassword = ''
+    if (cleanedSettings.extension?.webSearch) {
+      delete cleanedSettings.extension.webSearch.tavilyApiKey
+      delete cleanedSettings.extension.webSearch.bochaApiKey
+      delete cleanedSettings.extension.webSearch.queritApiKey
+    }
+    if (cleanedSettings.sync?.webdav) {
+      cleanedSettings.sync.webdav.password = ''
+      cleanedSettings.sync.webdav.syncPassword = ''
+    }
   }
 
   return cleanedSettings

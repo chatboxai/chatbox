@@ -120,4 +120,28 @@ describe('sanitizeSettingsForExport', () => {
     expect(sanitized.licenseDetail).toBeUndefined()
     expect(sanitized.licenseInstances).toBeUndefined()
   })
+
+  it('does not crash on settings persisted before sync and extension fields existed', () => {
+    // Raw storage from older app versions lacks these objects entirely; the
+    // export path casts without schema parsing, so sanitize must cope.
+    const legacy = {
+      ...defaults.settings(),
+      licenseKey: 'license-secret',
+      providers: {
+        openai: {
+          apiKey: 'sk-secret',
+          apiHost: 'https://api.example.com',
+        },
+      },
+      sync: undefined,
+      extension: undefined,
+    } as unknown as Settings
+
+    const sanitized = sanitizeSettingsForExport(legacy, false)
+
+    expect(sanitized.licenseKey).toBeUndefined()
+    expect(sanitized.providers?.openai).toEqual({ apiHost: 'https://api.example.com' })
+    expect(sanitized.sync).toBeUndefined()
+    expect(sanitized.extension).toBeUndefined()
+  })
 })

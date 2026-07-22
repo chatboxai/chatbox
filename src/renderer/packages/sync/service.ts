@@ -18,6 +18,7 @@ const RawSyncSnapshotSchema = z.object({
 const MAX_UPLOAD_ATTEMPTS = 3
 const HTTP_NOT_FOUND = 404
 const HTTP_PRECONDITION_FAILED = 412
+const STRONG_ETAG_PATTERN = /^"[\x21\x23-\x7e\x80-\xff]*"$/
 
 type SyncPlatform = {
   getDeviceName?: () => Promise<string>
@@ -169,9 +170,15 @@ function responseHeader(headers: Record<string, string>, name: string): string |
   return value ? value : undefined
 }
 
-function requireWebDAVSnapshotETag(remote: DownloadedWebDAVSnapshot): string {
+function requireStrongWebDAVSnapshotETag(remote: DownloadedWebDAVSnapshot): string {
   if (!remote.etag) {
     throw new Error('WebDAV server did not return an ETag for the sync snapshot; refusing to overwrite it')
+  }
+  if (remote.etag.startsWith('W/')) {
+    throw new Error('WebDAV server returned a weak ETag that cannot be used with If-Match; refusing to overwrite it')
+  }
+  if (!STRONG_ETAG_PATTERN.test(remote.etag)) {
+    throw new Error('WebDAV server returned an invalid ETag for the sync snapshot; refusing to overwrite it')
   }
   return remote.etag
 }
@@ -246,20 +253,22 @@ export async function uploadWebDAVSnapshot(
 
   for (let attempt = 0; attempt < MAX_UPLOAD_ATTEMPTS; attempt += 1) {
     const remote = await downloadWebDAVSnapshot(settings, deps.platform)
+    const remoteSnapshot = remote.snapshot
     // Only merge a remote snapshot this device has not synced with yet.
     // Re-merging an already-seen snapshot would resurrect "(Synced copy)"
     // duplicates that the local device has since folded back into its own
     // sessions; skipping a genuinely new one would drop remote-only sessions.
-    const shouldMergeRemote = remote.snapshot ? !(await isRemoteSnapshotAlreadySeen(remote, settings, deps)) : false
-    const mergeResult = shouldMergeRemote
-      ? mergeRemoteSnapshot({
-          localSessions: localSnapshot.sessions,
-          localMetas: localSnapshot.metas,
-          remote: remote.snapshot!,
-          now: now(),
-          createConflictId: deps.createConflictId,
-        })
-      : undefined
+    const shouldMergeRemote = remoteSnapshot ? !(await isRemoteSnapshotAlreadySeen(remote, settings, deps)) : false
+    const mergeResult =
+      shouldMergeRemote && remoteSnapshot
+        ? mergeRemoteSnapshot({
+            localSessions: localSnapshot.sessions,
+            localMetas: localSnapshot.metas,
+            remote: remoteSnapshot,
+            now: now(),
+            createConflictId: deps.createConflictId,
+          })
+        : undefined
     const snapshot = mergeResult
       ? createSyncSnapshot({
           sessions: [
@@ -271,8 +280,8 @@ export async function uploadWebDAVSnapshot(
           exportedAt: lastSyncedAt,
         })
       : localSnapshot
-    const preconditionHeaders: Record<string, string> = remote.snapshot
-      ? { 'If-Match': requireWebDAVSnapshotETag(remote) }
+    const preconditionHeaders: Record<string, string> = remoteSnapshot
+      ? { 'If-Match': requireStrongWebDAVSnapshotETag(remote) }
       : { 'If-None-Match': '*' }
     const envelope = await encryptJsonEnvelope(snapshot, webdav.syncPassword)
     const response = await requestWebDAV(deps.platform, webdav.url, {

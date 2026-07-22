@@ -1,5 +1,5 @@
 import type { Session, SessionMetaRecord } from '@shared/types'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createSyncSnapshot, mergeRemoteSnapshot } from './snapshot'
 import type { SyncSnapshot } from './types'
 
@@ -405,6 +405,51 @@ describe('sync snapshot merge', () => {
     if (first.kind !== 'create' || second.kind !== 'create') throw new Error('Expected conflict copies')
 
     expect(first.session.id).not.toBe(second.session.id)
+  })
+
+  it('uses locale-independent stable conflict IDs for Unicode object keys', () => {
+    const local = session('same-id', 'Project', 'local text')
+    const remoteSession = session('same-id', 'Project', 'remote text')
+    const unicodeKey = '\u00e4'
+    remoteSession.messages[0].contentParts = [
+      {
+        type: 'tool-call',
+        state: 'call',
+        toolCallId: 'tool-1',
+        toolName: 'search',
+        args: { z: 1, [unicodeKey]: 2 },
+      },
+    ]
+    const conflictIdForLocale = (locale: string) => {
+      const collator = new Intl.Collator(locale)
+      const localeCompare = vi.spyOn(String.prototype, 'localeCompare').mockImplementation(function (
+        this: string,
+        other: string
+      ) {
+        return collator.compare(String(this), other)
+      })
+      try {
+        const result = mergeRemoteSnapshot({
+          localSessions: [local],
+          localMetas: [meta('same-id', 'Project')],
+          remote: {
+            version: 1,
+            exportedAt: '2026-06-21T00:00:00.000Z',
+            deviceName: 'Phone',
+            sessions: [remoteSession],
+            metas: [meta('same-id', 'Project')],
+          },
+          now: 2000,
+        })
+        const change = result.sessionChanges[0]
+        if (change.kind !== 'create') throw new Error('Expected a conflict copy')
+        return change.session.id
+      } finally {
+        localeCompare.mockRestore()
+      }
+    }
+
+    expect(conflictIdForLocale('en')).toBe(conflictIdForLocale('sv'))
   })
 
   it('keeps the stable conflict ID when only remote metadata changes', () => {

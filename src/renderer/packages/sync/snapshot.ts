@@ -14,13 +14,19 @@ function isChatSessionMetaLike(item: Pick<SessionMetaRecord, 'type'>): boolean {
   return item.type === 'chat' || !item.type
 }
 
+function compareStableKeys(left: string, right: string): number {
+  if (left < right) return -1
+  if (left > right) return 1
+  return 0
+}
+
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(stableStringify).join(',')}]`
   }
   if (value && typeof value === 'object') {
     return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareStableKeys(left, right))
       .map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`)
       .join(',')}}`
   }

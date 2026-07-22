@@ -4,6 +4,8 @@ const ENVELOPE_VERSION = 1
 const PBKDF2_ITERATIONS = 250_000
 const SALT_BYTES = 16
 const IV_BYTES = 12
+const AES_GCM_TAG_BYTES = 16
+const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 function getCrypto(): Crypto {
   const cryptoImpl = globalThis.crypto
@@ -28,6 +30,57 @@ function base64ToBytes(value: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i)
   }
   return bytes
+}
+
+function invalidEnvelope(reason: string): never {
+  throw new Error(`Invalid sync encryption envelope: ${reason}`)
+}
+
+function decodeEnvelopeField(value: unknown, field: string, expectedBytes?: number): Uint8Array {
+  if (typeof value !== 'string' || !BASE64_PATTERN.test(value)) {
+    invalidEnvelope(`${field} must be canonical Base64`)
+  }
+  if (expectedBytes !== undefined && value.length !== Math.ceil(expectedBytes / 3) * 4) {
+    invalidEnvelope(`${field} must decode to ${expectedBytes} bytes`)
+  }
+  let decoded: Uint8Array
+  try {
+    decoded = base64ToBytes(value)
+  } catch {
+    return invalidEnvelope(`${field} must be canonical Base64`)
+  }
+  if (bytesToBase64(decoded) !== value) {
+    invalidEnvelope(`${field} must be canonical Base64`)
+  }
+  if (expectedBytes !== undefined && decoded.byteLength !== expectedBytes) {
+    invalidEnvelope(`${field} must decode to ${expectedBytes} bytes`)
+  }
+  return decoded
+}
+
+function validateEnvelope(envelope: SyncCryptoEnvelope): {
+  salt: Uint8Array
+  iv: Uint8Array
+  ciphertext: Uint8Array
+} {
+  const candidate = envelope as Partial<SyncCryptoEnvelope> | null
+  if (!candidate || typeof candidate !== 'object') {
+    invalidEnvelope('expected an object')
+  }
+  if (candidate.version !== ENVELOPE_VERSION || candidate.kdf !== 'PBKDF2-SHA256' || candidate.cipher !== 'AES-GCM') {
+    throw new Error('Unsupported sync encryption envelope')
+  }
+  if (candidate.iterations !== PBKDF2_ITERATIONS) {
+    invalidEnvelope(`iterations must equal ${PBKDF2_ITERATIONS}`)
+  }
+
+  const salt = decodeEnvelopeField(candidate.salt, 'salt', SALT_BYTES)
+  const iv = decodeEnvelopeField(candidate.iv, 'iv', IV_BYTES)
+  const ciphertext = decodeEnvelopeField(candidate.ciphertext, 'ciphertext')
+  if (ciphertext.byteLength < AES_GCM_TAG_BYTES) {
+    invalidEnvelope(`ciphertext must include a ${AES_GCM_TAG_BYTES}-byte authentication tag`)
+  }
+  return { salt, iv, ciphertext }
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -79,19 +132,15 @@ export async function encryptJsonEnvelope<T>(payload: T, password: string): Prom
 }
 
 export async function decryptJsonEnvelope<T = unknown>(envelope: SyncCryptoEnvelope, password: string): Promise<T> {
-  if (envelope.version !== ENVELOPE_VERSION || envelope.kdf !== 'PBKDF2-SHA256' || envelope.cipher !== 'AES-GCM') {
-    throw new Error('Unsupported sync encryption envelope')
-  }
+  const { salt, iv, ciphertext } = validateEnvelope(envelope)
 
   try {
     const cryptoImpl = getCrypto()
-    const salt = base64ToBytes(envelope.salt)
-    const iv = base64ToBytes(envelope.iv)
-    const key = await deriveAesKey(password, salt, envelope.iterations)
+    const key = await deriveAesKey(password, salt, PBKDF2_ITERATIONS)
     const decrypted = await cryptoImpl.subtle.decrypt(
       { name: 'AES-GCM', iv: toArrayBuffer(iv) },
       key,
-      toArrayBuffer(base64ToBytes(envelope.ciphertext))
+      toArrayBuffer(ciphertext)
     )
     return JSON.parse(new TextDecoder().decode(decrypted)) as T
   } catch (error) {

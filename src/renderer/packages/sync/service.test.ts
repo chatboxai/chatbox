@@ -235,6 +235,48 @@ describe('WebDAV sync service', () => {
     expect(deps.updateLastSyncedAt).not.toHaveBeenCalled()
   })
 
+  it('refuses a weak ETag before attempting a conditional upload', async () => {
+    const requests: WebDAVRequest[] = []
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('remote-1', 'Remote', 'remote text')],
+      metas: [meta('remote-1', 'Remote')],
+    }
+    const remoteEnvelope = await encryptJsonEnvelope(remote, 'sync-secret')
+    const deps = {
+      platform: {
+        getDeviceName: vi.fn(async () => 'Mac'),
+        webdavRequest: vi.fn((request: WebDAVRequest) => {
+          requests.push(request)
+          if (request.method === 'GET') {
+            return Promise.resolve({
+              status: 200,
+              headers: { ETag: 'W/"remote-etag"' },
+              body: JSON.stringify(remoteEnvelope),
+            })
+          }
+          return Promise.resolve({ status: request.method === 'PUT' ? 412 : 405, headers: {}, body: '' })
+        }),
+      },
+      listLocalSessions: vi.fn(async () => [session('local-1', 'Local', 'local text')]),
+      listLocalMetas: vi.fn(async () => [meta('local-1', 'Local')]),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
+      saveMetas: vi.fn(),
+      deleteSession: vi.fn(),
+      updateLastSyncedAt: vi.fn(),
+      now: () => 1000,
+    }
+
+    await expect(uploadWebDAVSnapshot(baseSettings, deps)).rejects.toThrow(/weak ETag.*If-Match/i)
+
+    expect(requests.filter((request) => request.method === 'GET')).toHaveLength(1)
+    expect(requests.filter((request) => request.method === 'PUT')).toHaveLength(0)
+    expect(deps.updateLastSyncedAt).not.toHaveBeenCalled()
+  })
+
   it('skips downloading when the remote snapshot is the one last synced with', async () => {
     const remote: SyncSnapshot = {
       version: 1,

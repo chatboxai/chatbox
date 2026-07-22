@@ -235,7 +235,7 @@ describe('WebDAV sync service', () => {
     expect(deps.updateLastSyncedAt).not.toHaveBeenCalled()
   })
 
-  it('skips downloading when the remote snapshot is not newer than the last sync', async () => {
+  it('skips downloading when the remote snapshot is the one last synced with', async () => {
     const remote: SyncSnapshot = {
       version: 1,
       exportedAt: '2026-06-21T00:00:00.000Z',
@@ -248,7 +248,7 @@ describe('WebDAV sync service', () => {
       platform: {
         webdavRequest: vi.fn(async (request: WebDAVRequest) => ({
           status: request.method === 'GET' ? 200 : 405,
-          headers: {},
+          headers: { ETag: '"remote-etag"' },
           body: JSON.stringify(envelope),
         })),
       },
@@ -259,21 +259,72 @@ describe('WebDAV sync service', () => {
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      getLastSyncedAt: vi.fn(() => '2026-06-21T00:00:00.000Z'),
+      getLastSeenSnapshot: vi.fn(() => ({
+        endpoint: 'https://dav.example.com/files/me/\nalice',
+        etag: '"remote-etag"',
+      })),
+      setLastSeenSnapshot: vi.fn(),
       createConflictId: vi.fn(() => 'copy-id'),
       now: () => 2000,
     }
 
     const result = await downloadAndMergeWebDAVSnapshot(baseSettings, deps)
 
-    expect(result.remoteStale).toBe(true)
+    expect(result.remoteUnchanged).toBe(true)
     expect(result.imported).toBe(0)
     expect(result.conflicts).toBe(0)
     expect(deps.createSession).not.toHaveBeenCalled()
     expect(deps.listLocalSessions).not.toHaveBeenCalled()
+    expect(deps.setLastSeenSnapshot).not.toHaveBeenCalled()
   })
 
-  it('skips re-merging an already synced remote snapshot during upload', async () => {
+  it('downloads a snapshot whose ETag matches another endpoint only', async () => {
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('remote-1', 'Remote', 'remote text')],
+      metas: [meta('remote-1', 'Remote')],
+    }
+    const envelope = await encryptJsonEnvelope(remote, 'sync-secret')
+    const deps = {
+      platform: {
+        webdavRequest: vi.fn(async (request: WebDAVRequest) => ({
+          status: request.method === 'GET' ? 200 : 405,
+          headers: { ETag: '"remote-etag"' },
+          body: JSON.stringify(envelope),
+        })),
+      },
+      listLocalSessions: vi.fn(async () => []),
+      listLocalMetas: vi.fn(async () => []),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
+      saveMetas: vi.fn(),
+      deleteSession: vi.fn(),
+      updateLastSyncedAt: vi.fn(),
+      // A matching ETag recorded for a different WebDAV endpoint/account must
+      // never suppress the merge against the current endpoint.
+      getLastSeenSnapshot: vi.fn(() => ({
+        endpoint: 'https://other.example.com/dav/\nbob',
+        etag: '"remote-etag"',
+      })),
+      setLastSeenSnapshot: vi.fn(),
+      createConflictId: vi.fn(() => 'copy-id'),
+      now: () => 2000,
+    }
+
+    const result = await downloadAndMergeWebDAVSnapshot(baseSettings, deps)
+
+    expect(result.remoteUnchanged).toBeUndefined()
+    expect(result.imported).toBe(1)
+    expect(deps.createSession).toHaveBeenCalledTimes(1)
+    expect(deps.setLastSeenSnapshot).toHaveBeenCalledWith({
+      endpoint: 'https://dav.example.com/files/me/\nalice',
+      etag: '"remote-etag"',
+    })
+  })
+
+  it('skips re-merging an already seen remote snapshot during upload', async () => {
     const requests: WebDAVRequest[] = []
     const remote: SyncSnapshot = {
       version: 1,
@@ -305,7 +356,11 @@ describe('WebDAV sync service', () => {
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      getLastSyncedAt: vi.fn(() => '2026-06-21T00:00:00.000Z'),
+      getLastSeenSnapshot: vi.fn(() => ({
+        endpoint: 'https://dav.example.com/files/me/\nalice',
+        etag: '"remote-etag"',
+      })),
+      setLastSeenSnapshot: vi.fn(),
       createConflictId: vi.fn(() => 'copy-id'),
       now: () => 1000,
     }
@@ -315,20 +370,24 @@ describe('WebDAV sync service', () => {
     const envelope = JSON.parse(put?.body ?? '{}')
     const decrypted = await decryptJsonEnvelope<SyncSnapshot>(envelope, 'sync-secret')
 
-    // The stale remote snapshot must not be merged back in, otherwise its
-    // divergent content would be re-uploaded as a "(Synced copy)" duplicate.
+    // The already-seen remote snapshot must not be merged back in, otherwise
+    // its divergent content would be re-uploaded as a "(Synced copy)" duplicate.
     expect(result.uploaded).toBe(1)
     expect(decrypted.sessions.map((item) => item.id)).toEqual(['same-id'])
     expect(decrypted.sessions[0].name).toBe('Local')
-    expect(decrypted.updatedAt).toBe(1000)
+    // The PUT response carried no ETag, so only the endpoint is remembered and
+    // the next download will merge idempotently instead of being skipped.
+    expect(deps.setLastSeenSnapshot).toHaveBeenCalledWith({
+      endpoint: 'https://dav.example.com/files/me/\nalice',
+      etag: undefined,
+    })
   })
 
-  it('merges a remote snapshot that is newer than the last sync', async () => {
+  it('merges a remote snapshot that has not been seen before during upload', async () => {
     const requests: WebDAVRequest[] = []
     const remote: SyncSnapshot = {
       version: 1,
       exportedAt: '2026-06-22T00:00:00.000Z',
-      updatedAt: Date.parse('2026-06-22T00:00:00.000Z'),
       deviceName: 'Phone',
       sessions: [session('remote-1', 'Remote', 'remote text')],
       metas: [meta('remote-1', 'Remote')],
@@ -356,9 +415,67 @@ describe('WebDAV sync service', () => {
       saveMetas: vi.fn(),
       deleteSession: vi.fn(),
       updateLastSyncedAt: vi.fn(),
-      getLastSyncedAt: vi.fn(() => '2026-06-21T00:00:00.000Z'),
+      getLastSeenSnapshot: vi.fn(() => ({
+        endpoint: 'https://dav.example.com/files/me/\nalice',
+        etag: '"previously-seen-etag"',
+      })),
+      setLastSeenSnapshot: vi.fn(),
       createConflictId: vi.fn(() => 'copy-id'),
       now: () => 1000,
+    }
+
+    const result = await uploadWebDAVSnapshot(baseSettings, deps)
+    const put = requests.find((request) => request.method === 'PUT')
+    const envelope = JSON.parse(put?.body ?? '{}')
+    const decrypted = await decryptJsonEnvelope<SyncSnapshot>(envelope, 'sync-secret')
+
+    expect(result.uploaded).toBe(2)
+    expect(decrypted.sessions.map((item) => item.id).sort()).toEqual(['local-1', 'remote-1'])
+  })
+
+  it('merges a remote snapshot with older timestamps but an unseen ETag during upload', async () => {
+    // Regression test for the wall-clock stale gate: a snapshot uploaded by a
+    // device with a slow clock (exportedAt behind our last sync) is still a
+    // genuinely new snapshot. Skipping its merge here would drop the
+    // remote-only session from the PUT body and delete it from the server.
+    const requests: WebDAVRequest[] = []
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T09:59:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('remote-1', 'Remote', 'remote text')],
+      metas: [meta('remote-1', 'Remote')],
+    }
+    const remoteEnvelope = await encryptJsonEnvelope(remote, 'sync-secret')
+    const deps = {
+      platform: {
+        getDeviceName: vi.fn(async () => 'Mac'),
+        webdavRequest: vi.fn((request: WebDAVRequest) => {
+          requests.push(request)
+          if (request.method === 'GET') {
+            return Promise.resolve({
+              status: 200,
+              headers: { ETag: '"remote-etag"' },
+              body: JSON.stringify(remoteEnvelope),
+            })
+          }
+          return Promise.resolve({ status: request.method === 'PUT' ? 201 : 405, headers: {}, body: '' })
+        }),
+      },
+      listLocalSessions: vi.fn(async () => [session('local-1', 'Local', 'local text')]),
+      listLocalMetas: vi.fn(async () => [meta('local-1', 'Local')]),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
+      saveMetas: vi.fn(),
+      deleteSession: vi.fn(),
+      updateLastSyncedAt: vi.fn(),
+      getLastSeenSnapshot: vi.fn(() => ({
+        endpoint: 'https://dav.example.com/files/me/\nalice',
+        etag: '"previously-seen-etag"',
+      })),
+      setLastSeenSnapshot: vi.fn(),
+      createConflictId: vi.fn(() => 'copy-id'),
+      now: () => Date.parse('2026-06-21T10:00:00.000Z'),
     }
 
     const result = await uploadWebDAVSnapshot(baseSettings, deps)

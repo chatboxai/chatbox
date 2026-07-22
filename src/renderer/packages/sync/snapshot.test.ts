@@ -429,9 +429,11 @@ describe('sync snapshot merge', () => {
     expect(first.session.id).toBe(second.session.id)
   })
 
-  it('refuses to overwrite different content occupying a stable conflict ID', () => {
+  it('preserves an edited synced copy instead of aborting the merge', () => {
     const local = session('same-id', 'Local', 'local text')
-    const occupied = session('stable-copy-id', 'Unrelated', 'different content')
+    // The user kept chatting in the synced copy after importing it, so its
+    // content no longer matches the remote snapshot it was imported from.
+    const editedCopy = session('stable-copy-id', 'Unrelated', 'different content')
     const remote: SyncSnapshot = {
       version: 1,
       exportedAt: '2026-06-21T00:00:00.000Z',
@@ -440,15 +442,66 @@ describe('sync snapshot merge', () => {
       metas: [meta('same-id', 'Remote')],
     }
 
-    expect(() =>
-      mergeRemoteSnapshot({
-        localSessions: [local, occupied],
-        localMetas: [meta('same-id', 'Local'), meta('stable-copy-id', 'Unrelated')],
-        remote,
-        now: 2000,
-        createConflictId: () => 'stable-copy-id',
-      })
-    ).toThrow(/already used by different content/)
+    const result = mergeRemoteSnapshot({
+      localSessions: [local, editedCopy],
+      localMetas: [meta('same-id', 'Local'), meta('stable-copy-id', 'Unrelated')],
+      remote,
+      now: 2000,
+      createConflictId: () => 'stable-copy-id',
+    })
+
+    // The copy is user-owned local data: it must be left completely untouched
+    // (no session change, no meta save, no new conflict) without failing.
+    expect(result.sessionChanges).toHaveLength(0)
+    expect(result.metasToSave).toHaveLength(0)
+    expect(result.conflicts).toBe(0)
+    expect(result.imported).toBe(0)
+  })
+
+  it('replays an unchanged remote conflict without touching the locally edited copy', () => {
+    // Reviewer reproduction: import a conflict copy, append one local message
+    // to it, then merge the same remote snapshot again. The merge must succeed
+    // and the copy must keep the user's appended message.
+    const local = session('same-id', 'Local', 'local text')
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-06-21T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('same-id', 'Remote', 'remote text')],
+      metas: [meta('same-id', 'Remote')],
+    }
+    const deps = { now: 2000, createConflictId: () => 'stable-copy-id' }
+
+    const first = mergeRemoteSnapshot({
+      localSessions: [local],
+      localMetas: [meta('same-id', 'Local')],
+      remote,
+      ...deps,
+    })
+    const created = first.sessionChanges.find((change) => change.kind === 'create')
+    if (!created || created.kind !== 'create') throw new Error('Expected a synced copy to be created')
+
+    const copyWithUserMessage: Session = {
+      ...created.session,
+      messages: [
+        ...created.session.messages,
+        {
+          id: 'user-msg',
+          role: 'user',
+          contentParts: [{ type: 'text' as const, text: 'user follow-up' }],
+        },
+      ],
+    }
+    const replay = mergeRemoteSnapshot({
+      localSessions: [local, copyWithUserMessage],
+      localMetas: [meta('same-id', 'Local'), meta('stable-copy-id', 'Remote (Synced copy)')],
+      remote,
+      ...deps,
+    })
+
+    expect(replay.sessionChanges).toHaveLength(0)
+    expect(replay.metasToSave).toHaveLength(0)
+    expect(copyWithUserMessage.messages.map((item) => item.id)).toContain('user-msg')
   })
 
   it('updates remote metadata for same-content sessions without creating synced copies when requested', () => {

@@ -3,14 +3,13 @@ import { SessionMetaRecordSchema, SessionSchema } from '@shared/types/session'
 import { z } from 'zod'
 import { migrateSession } from '@/utils/session-utils'
 import { decryptJsonEnvelope, encryptJsonEnvelope } from './crypto'
-import { createSyncSnapshot, mergeRemoteSnapshot, snapshotUpdatedAt } from './snapshot'
+import { createSyncSnapshot, mergeRemoteSnapshot } from './snapshot'
 import type { SyncCryptoEnvelope, SyncSnapshot, WebDAVRequest, WebDAVResponse } from './types'
 import { buildBasicAuthHeader, joinWebDAVUrl, requestWebDAV, SYNC_COLLECTION_PATH, SYNC_SNAPSHOT_PATH } from './webdav'
 
 const RawSyncSnapshotSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  updatedAt: z.number().optional(),
   deviceName: z.string(),
   sessions: z.array(z.unknown()),
   metas: z.array(SessionMetaRecordSchema),
@@ -30,6 +29,16 @@ type DownloadedWebDAVSnapshot = {
   etag?: string
 }
 
+/**
+ * Identity of the remote snapshot this device last synced with. Scoped to the
+ * endpoint (URL + username) so that switching WebDAV servers or accounts never
+ * suppresses a merge against the new endpoint's snapshot.
+ */
+export type LastSeenSnapshot = {
+  endpoint: string
+  etag?: string
+}
+
 export type WebDAVSyncDeps = {
   platform: SyncPlatform
   listLocalSessions: () => Promise<Session[]>
@@ -39,7 +48,8 @@ export type WebDAVSyncDeps = {
   deleteSession: (sessionId: string) => Promise<void>
   saveMetas: (metas: SessionMetaRecord[]) => Promise<void>
   updateLastSyncedAt: (isoDate: string) => Promise<void> | void
-  getLastSyncedAt?: () => string | undefined | Promise<string | undefined>
+  getLastSeenSnapshot?: () => LastSeenSnapshot | undefined | Promise<LastSeenSnapshot | undefined>
+  setLastSeenSnapshot?: (seen: LastSeenSnapshot) => Promise<void> | void
   createConflictId?: (sourceSessionId: string, contentFingerprint: string) => string
   now?: () => number
 }
@@ -55,31 +65,38 @@ export type DownloadWebDAVSnapshotResult = {
   saved: number
   lastSyncedAt?: string
   remoteMissing?: boolean
-  remoteStale?: boolean
+  remoteUnchanged?: boolean
 }
 
-function parseIsoToMillis(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined
-  }
-  const parsed = Date.parse(value)
-  return Number.isFinite(parsed) ? parsed : undefined
+function syncEndpoint(settings: Settings): string {
+  const webdav = getWebDAVSettings(settings)
+  return `${webdav.url}\n${webdav.username}`
 }
 
 /**
- * Skip merging when the remote snapshot is not newer than the last sync.
- * Merging an already-seen snapshot again would only recreate "(Synced copy)"
- * duplicates on every device that replays it.
+ * Skip merging only when the remote snapshot is the exact one this device
+ * last synced with (same endpoint, same ETag). Device clocks are never
+ * compared: a clock-skewed device must still see every genuinely new
+ * snapshot, otherwise the skipped merge would let a later conditional upload
+ * overwrite remote-only sessions. When in doubt (no ETag, no record), merge.
  */
-async function isRemoteSnapshotStale(remote: SyncSnapshot, deps: WebDAVSyncDeps): Promise<boolean> {
-  if (!deps.getLastSyncedAt) {
+async function isRemoteSnapshotAlreadySeen(
+  remote: DownloadedWebDAVSnapshot,
+  settings: Settings,
+  deps: WebDAVSyncDeps
+): Promise<boolean> {
+  if (!remote.etag || !deps.getLastSeenSnapshot) {
     return false
   }
-  const lastSyncedAt = parseIsoToMillis(await deps.getLastSyncedAt())
-  if (lastSyncedAt === undefined) {
+  const lastSeen = await deps.getLastSeenSnapshot()
+  if (!lastSeen) {
     return false
   }
-  return snapshotUpdatedAt(remote) <= lastSyncedAt
+  return lastSeen.endpoint === syncEndpoint(settings) && lastSeen.etag === remote.etag
+}
+
+async function rememberRemoteSnapshot(etag: string | undefined, settings: Settings, deps: WebDAVSyncDeps) {
+  await deps.setLastSeenSnapshot?.({ endpoint: syncEndpoint(settings), etag })
 }
 
 function getWebDAVSettings(settings: Settings) {
@@ -219,22 +236,21 @@ export async function uploadWebDAVSnapshot(
     deps.listLocalMetas(),
     deps.platform.getDeviceName?.() ?? Promise.resolve('Unknown device'),
   ])
-  const snapshotUpdatedAtMs = now()
-  const lastSyncedAt = new Date(snapshotUpdatedAtMs).toISOString()
+  const lastSyncedAt = new Date(now()).toISOString()
   const localSnapshot = createSyncSnapshot({
     sessions,
     metas,
     deviceName,
     exportedAt: lastSyncedAt,
-    updatedAt: snapshotUpdatedAtMs,
   })
 
   for (let attempt = 0; attempt < MAX_UPLOAD_ATTEMPTS; attempt += 1) {
     const remote = await downloadWebDAVSnapshot(settings, deps.platform)
-    // Only merge remote content that is newer than our last sync. Re-merging an
-    // already-synced snapshot would resurrect "(Synced copy)" duplicates that the
-    // local device has since folded back into its own sessions.
-    const shouldMergeRemote = remote.snapshot ? !(await isRemoteSnapshotStale(remote.snapshot, deps)) : false
+    // Only merge a remote snapshot this device has not synced with yet.
+    // Re-merging an already-seen snapshot would resurrect "(Synced copy)"
+    // duplicates that the local device has since folded back into its own
+    // sessions; skipping a genuinely new one would drop remote-only sessions.
+    const shouldMergeRemote = remote.snapshot ? !(await isRemoteSnapshotAlreadySeen(remote, settings, deps)) : false
     const mergeResult = shouldMergeRemote
       ? mergeRemoteSnapshot({
           localSessions: localSnapshot.sessions,
@@ -253,7 +269,6 @@ export async function uploadWebDAVSnapshot(
           metas: [...localSnapshot.metas, ...mergeResult.metasToSave],
           deviceName,
           exportedAt: lastSyncedAt,
-          updatedAt: snapshotUpdatedAtMs,
         })
       : localSnapshot
     const preconditionHeaders: Record<string, string> = remote.snapshot
@@ -279,6 +294,10 @@ export async function uploadWebDAVSnapshot(
     }
 
     assertSuccess(response, 'Upload WebDAV sync snapshot', [200, 201, 204])
+    // The remote now holds exactly what we wrote. Record the ETag returned by
+    // the PUT (if any) so the next download can recognize it as already seen;
+    // without one, the next download simply merges idempotently.
+    await rememberRemoteSnapshot(responseHeader(response.headers, 'etag'), settings, deps)
     await deps.updateLastSyncedAt(lastSyncedAt)
     return {
       uploaded: snapshot.sessions.length,
@@ -303,12 +322,12 @@ export async function downloadAndMergeWebDAVSnapshot(
     }
   }
 
-  if (await isRemoteSnapshotStale(remote.snapshot, deps)) {
+  if (await isRemoteSnapshotAlreadySeen(remote, settings, deps)) {
     return {
       imported: 0,
       conflicts: 0,
       saved: 0,
-      remoteStale: true,
+      remoteUnchanged: true,
     }
   }
 
@@ -373,6 +392,7 @@ export async function downloadAndMergeWebDAVSnapshot(
   }
 
   const lastSyncedAt = new Date((deps.now ?? Date.now)()).toISOString()
+  await rememberRemoteSnapshot(remote.etag, settings, deps)
   await deps.updateLastSyncedAt(lastSyncedAt)
 
   return {

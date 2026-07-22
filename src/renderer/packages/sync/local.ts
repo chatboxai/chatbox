@@ -122,8 +122,19 @@ export function updateSyncLastSyncedAt(isoDate: string) {
   })
 }
 
-export function getSyncLastSyncedAt(): string | undefined {
-  return settingsStore.getState().sync?.lastSyncedAt
+export function getSyncLastSeenSnapshot(): { endpoint: string; etag?: string } | undefined {
+  const sync = settingsStore.getState().sync
+  if (!sync?.lastSeenEndpoint) {
+    return undefined
+  }
+  return { endpoint: sync.lastSeenEndpoint, etag: sync.lastSeenETag }
+}
+
+export function setSyncLastSeenSnapshot(seen: { endpoint: string; etag?: string }) {
+  settingsStore.getState().setSettings((settings) => {
+    settings.sync.lastSeenEndpoint = seen.endpoint
+    settings.sync.lastSeenETag = seen.etag
+  })
 }
 
 export function createDefaultWebDAVSyncDeps(): WebDAVSyncDeps {
@@ -136,6 +147,7 @@ export function createDefaultWebDAVSyncDeps(): WebDAVSyncDeps {
     deleteSession: deleteSyncSession,
     saveMetas: saveSyncMetas,
     updateLastSyncedAt: updateSyncLastSyncedAt,
-    getLastSyncedAt: getSyncLastSyncedAt,
+    getLastSeenSnapshot: getSyncLastSeenSnapshot,
+    setLastSeenSnapshot: setSyncLastSeenSnapshot,
   }
 }

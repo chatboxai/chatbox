@@ -245,7 +245,6 @@ export function createSyncSnapshot(input: {
   metas: SessionMetaRecord[]
   deviceName: string
   exportedAt?: string
-  updatedAt?: number
 }): SyncSnapshot {
   const sessions = input.sessions.filter(isChatSession).map(stripLocalSessionReferences)
   const sessionIds = new Set(sessions.map((session) => session.id))
@@ -254,25 +253,12 @@ export function createSyncSnapshot(input: {
   return {
     version: 1,
     exportedAt,
-    updatedAt: input.updatedAt ?? Date.parse(exportedAt),
     deviceName: input.deviceName,
     sessions,
     metas: input.metas
       .filter((meta) => sessionIds.has(meta.id) && isChatSessionMetaLike(meta))
       .map(stripLocalMetaReferences),
   }
-}
-
-/**
- * Last-write time of a snapshot in epoch milliseconds.
- * Snapshots written before `updatedAt` existed fall back to `exportedAt`.
- */
-export function snapshotUpdatedAt(snapshot: Pick<SyncSnapshot, 'updatedAt' | 'exportedAt'>): number {
-  if (typeof snapshot.updatedAt === 'number' && Number.isFinite(snapshot.updatedAt)) {
-    return snapshot.updatedAt
-  }
-  const parsed = Date.parse(snapshot.exportedAt)
-  return Number.isFinite(parsed) ? parsed : 0
 }
 
 export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemoteSnapshotResult {
@@ -360,7 +346,13 @@ export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemot
 
     if (existingCopy) {
       if (!sessionContentEqual(existingCopy, copiedSession)) {
-        throw new Error(`Stable sync conflict ID ${conflictId} is already used by different content`)
+        // The synced copy is a normal mutable session: the user may have kept
+        // chatting in it after import. A content mismatch here means the copy
+        // is now user-owned local data, not an ID collision (the stable ID is
+        // derived from the source session ID and the remote content
+        // fingerprint, so an identical ID always refers to the same import).
+        // Preserve the edited copy untouched and never abort the sync over it.
+        continue
       }
       if (input.preferRemoteMetadata && !sessionMetadataEqual(existingCopy, copiedSession)) {
         sessionChanges.push({

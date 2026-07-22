@@ -299,6 +299,11 @@ export const SyncSettingsSchema = z.object({
       syncPassword: '',
     }),
   lastSyncedAt: z.string().optional().catch(undefined),
+  // Identity of the remote snapshot this device last synced with, used to skip
+  // re-merging an unchanged snapshot. Scoped to the endpoint (URL + username)
+  // so switching WebDAV servers or accounts never suppresses a merge.
+  lastSeenEndpoint: z.string().optional().catch(undefined),
+  lastSeenETag: z.string().optional().catch(undefined),
 })
 
 export enum Theme {

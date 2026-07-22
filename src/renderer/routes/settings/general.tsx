@@ -365,8 +365,8 @@ const WebDAVSyncSection = () => {
               if (result.remoteMissing) {
                 return String(t('No remote sync snapshot found'))
               }
-              if (result.remoteStale) {
-                return String(t('Remote snapshot is not newer than local data, merge skipped'))
+              if (result.remoteUnchanged) {
+                return String(t('Remote snapshot has not changed since the last sync, merge skipped'))
               }
               return String(
                 t('Imported {{imported}} conversations, created {{conflicts}} synced copies', {

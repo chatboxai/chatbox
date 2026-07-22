@@ -28,16 +28,39 @@ export function sanitizeSettingsForExport(settings: Settings, includeSecrets: bo
           webSearch: {
             ...settings.extension.webSearch,
           },
+          documentParser: settings.extension.documentParser
+            ? {
+                ...settings.extension.documentParser,
+                mineru: settings.extension.documentParser.mineru
+                  ? { ...settings.extension.documentParser.mineru }
+                  : undefined,
+              }
+            : settings.extension.documentParser,
         }
       : settings.extension,
     sync: settings.sync
       ? {
           ...settings.sync,
+          // Device-local sync state (which snapshot this device last saw, and
+          // when it synced) must not travel with an export: a restored device
+          // would inherit the old device's lastSeen identity and skip its
+          // first download merge against the unchanged remote snapshot.
+          lastSyncedAt: undefined,
+          lastSeenEndpoint: undefined,
+          lastSeenETag: undefined,
           webdav: {
             ...settings.sync.webdav,
           },
         }
       : settings.sync,
+    mcp: settings.mcp
+      ? {
+          ...settings.mcp,
+          servers: Array.isArray(settings.mcp.servers)
+            ? settings.mcp.servers.map((server) => ({ ...server, transport: { ...server.transport } }))
+            : settings.mcp.servers,
+        }
+      : settings.mcp,
   }
 
   if (!includeSecrets) {
@@ -59,6 +82,20 @@ export function sanitizeSettingsForExport(settings: Settings, includeSecrets: bo
     if (cleanedSettings.sync?.webdav) {
       cleanedSettings.sync.webdav.password = ''
       cleanedSettings.sync.webdav.syncPassword = ''
+    }
+    if (cleanedSettings.extension?.documentParser?.mineru) {
+      cleanedSettings.extension.documentParser.mineru.apiToken = ''
+    }
+    // MCP transports routinely carry credentials — stdio env vars (API tokens)
+    // and HTTP headers (Authorization) must not leave the device in an export.
+    if (cleanedSettings.mcp?.servers) {
+      for (const server of cleanedSettings.mcp.servers) {
+        if (server.transport.type === 'stdio') {
+          delete server.transport.env
+        } else {
+          delete server.transport.headers
+        }
+      }
     }
   }
 

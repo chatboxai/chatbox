@@ -36,6 +36,8 @@ function settingsWithSecrets(): Settings {
         syncPassword: 'sync-secret',
       },
       lastSyncedAt: '2026-07-05T00:00:00.000Z',
+      lastSeenEndpoint: 'https://dav.example.com/files/me/\nalice',
+      lastSeenETag: '"seen-etag"',
     },
     extension: {
       ...defaults.settings().extension,
@@ -46,6 +48,36 @@ function settingsWithSecrets(): Settings {
         bochaApiKey: 'bocha-secret',
         queritApiKey: 'querit-secret',
       },
+      documentParser: {
+        type: 'mineru',
+        mineru: { apiToken: 'mineru-secret' },
+      },
+    },
+    mcp: {
+      servers: [
+        {
+          id: 'local-fs',
+          name: 'Local FS',
+          enabled: true,
+          transport: {
+            type: 'stdio',
+            command: 'npx',
+            args: ['srv'],
+            env: { GITHUB_TOKEN: 'ghp-secret' },
+          },
+        },
+        {
+          id: 'remote-http',
+          name: 'Remote HTTP',
+          enabled: true,
+          transport: {
+            type: 'http',
+            url: 'https://mcp.example.com/',
+            headers: { Authorization: 'Bearer secret' },
+          },
+        },
+      ],
+      enabledBuiltinServers: [],
     },
   }
 }
@@ -101,6 +133,54 @@ describe('sanitizeSettingsForExport', () => {
     expect(settings.extension.webSearch.tavilyApiKey).toBe('tavily-secret')
     expect(settings.extension.webSearch.bochaApiKey).toBe('bocha-secret')
     expect(settings.extension.webSearch.queritApiKey).toBe('querit-secret')
+  })
+
+  it('removes device-local sync state from every export', () => {
+    const withSecrets = sanitizeSettingsForExport(settingsWithSecrets(), true)
+    const withoutSecrets = sanitizeSettingsForExport(settingsWithSecrets(), false)
+
+    // lastSeen is this device's sync identity, not user configuration: a
+    // restored device inheriting it would skip its first download merge
+    // against the unchanged remote snapshot. Strip it regardless of the
+    // includeSecrets flag.
+    for (const sanitized of [withSecrets, withoutSecrets]) {
+      expect(sanitized.sync.lastSyncedAt).toBeUndefined()
+      expect(sanitized.sync.lastSeenEndpoint).toBeUndefined()
+      expect(sanitized.sync.lastSeenETag).toBeUndefined()
+    }
+    // Credentials still follow the includeSecrets flag; only the device-local
+    // state is always stripped.
+    expect(withSecrets.sync.webdav.password).toBe('dav-secret')
+    expect(withoutSecrets.sync.webdav.password).toBe('')
+  })
+
+  it('removes the MinerU API token when key export is not selected', () => {
+    const settings = settingsWithSecrets()
+    const sanitized = sanitizeSettingsForExport(settings, false)
+
+    expect(sanitized.extension.documentParser?.type).toBe('mineru')
+    expect(sanitized.extension.documentParser?.mineru?.apiToken).toBe('')
+    expect(sanitizeSettingsForExport(settingsWithSecrets(), true).extension.documentParser?.mineru?.apiToken).toBe(
+      'mineru-secret'
+    )
+    // The original settings object must keep its token untouched.
+    expect(settings.extension.documentParser?.mineru?.apiToken).toBe('mineru-secret')
+  })
+
+  it('removes MCP transport env and headers when key export is not selected', () => {
+    const settings = settingsWithSecrets()
+    const sanitized = sanitizeSettingsForExport(settings, false)
+
+    const [stdioServer, httpServer] = sanitized.mcp.servers
+    expect(stdioServer.transport).toEqual({ type: 'stdio', command: 'npx', args: ['srv'] })
+    expect(httpServer.transport).toEqual({ type: 'http', url: 'https://mcp.example.com/' })
+    // Transport credentials survive when key export is selected.
+    const withSecrets = sanitizeSettingsForExport(settingsWithSecrets(), true)
+    expect(withSecrets.mcp.servers[0].transport).toMatchObject({ env: { GITHUB_TOKEN: 'ghp-secret' } })
+    expect(withSecrets.mcp.servers[1].transport).toMatchObject({ headers: { Authorization: 'Bearer secret' } })
+    // The original settings object must keep its credentials untouched.
+    expect(settings.mcp.servers[0].transport).toMatchObject({ env: { GITHUB_TOKEN: 'ghp-secret' } })
+    expect(settings.mcp.servers[1].transport).toMatchObject({ headers: { Authorization: 'Bearer secret' } })
   })
 
   it('keeps WebDAV and provider secrets when key export is selected', () => {

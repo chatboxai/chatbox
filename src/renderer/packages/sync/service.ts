@@ -3,7 +3,7 @@ import { SessionMetaRecordSchema, SessionSchema } from '@shared/types/session'
 import { z } from 'zod'
 import { migrateSession } from '@/utils/session-utils'
 import { decryptJsonEnvelope, encryptJsonEnvelope } from './crypto'
-import { createSyncSnapshot, mergeRemoteSnapshot } from './snapshot'
+import { createSyncSnapshot, mergeRemoteSnapshot, sessionHasActiveGeneration } from './snapshot'
 import type { SyncCryptoEnvelope, SyncSnapshot, WebDAVRequest, WebDAVResponse } from './types'
 import { buildBasicAuthHeader, joinWebDAVUrl, requestWebDAV, SYNC_COLLECTION_PATH, SYNC_SNAPSHOT_PATH } from './webdav'
 
@@ -236,13 +236,16 @@ export async function uploadWebDAVSnapshot(
 ): Promise<UploadWebDAVSnapshotResult> {
   const webdav = getWebDAVSettings(settings)
   const now = deps.now ?? Date.now
-  await ensureWebDAVCollections(settings, deps.platform)
 
   const [sessions, metas, deviceName] = await Promise.all([
     deps.listLocalSessions(),
     deps.listLocalMetas(),
     deps.platform.getDeviceName?.() ?? Promise.resolve('Unknown device'),
   ])
+  if (sessions.some(sessionHasActiveGeneration)) {
+    throw new Error('Cannot upload chat history while a response is still generating')
+  }
+  await ensureWebDAVCollections(settings, deps.platform)
   const lastSyncedAt = new Date(now()).toISOString()
   const localSnapshot = createSyncSnapshot({
     sessions,

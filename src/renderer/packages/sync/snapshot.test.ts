@@ -1,6 +1,6 @@
 import type { Session, SessionMetaRecord } from '@shared/types'
 import { describe, expect, it, vi } from 'vitest'
-import { createSyncSnapshot, mergeRemoteSnapshot } from './snapshot'
+import { createSyncSnapshot, mergeRemoteSnapshot, sessionHasActiveGeneration } from './snapshot'
 import type { SyncSnapshot } from './types'
 
 function session(id: string, name: string, text: string, type: Session['type'] = 'chat'): Session {
@@ -69,6 +69,10 @@ describe('sync snapshot merge', () => {
     local.assistantAvatarKey = 'avatar-key'
     local.backgroundImage = { type: 'storage-key', storageKey: 'background-key' }
     local.messages[0].contentParts.push({ type: 'image', storageKey: 'image-key' })
+    local.messages[0].cancel = vi.fn()
+    local.messages[0].generating = true
+    local.messages[0].status = [{ type: 'retrying', attempt: 1, maxAttempts: 3 }]
+    local.messages[0].isStreamingMode = true
     local.messages[0].files = [
       {
         id: 'file:/tmp/doc.txt-123-456',
@@ -113,6 +117,9 @@ describe('sync snapshot merge', () => {
           {
             id: 'thread-message-1',
             role: 'user',
+            generating: true,
+            status: [{ type: 'loading_webpage' }],
+            isStreamingMode: true,
             contentParts: [{ type: 'image', storageKey: 'thread-image-key' }],
           },
         ],
@@ -129,6 +136,9 @@ describe('sync snapshot merge', () => {
               {
                 id: 'fork-message-1',
                 role: 'user',
+                generating: true,
+                status: [{ type: 'sending_file' }],
+                isStreamingMode: true,
                 contentParts: [{ type: 'image', storageKey: 'fork-image-key' }],
               },
             ],
@@ -161,10 +171,49 @@ describe('sync snapshot merge', () => {
     ])
     expect(message.links).toEqual([{ id: 'link-1', title: 'Example', url: 'https://example.com' }])
     expect(message).not.toHaveProperty('pictures')
+    expect(message).not.toHaveProperty('cancel')
+    expect(message).not.toHaveProperty('generating')
+    expect(message).not.toHaveProperty('status')
+    expect(message).not.toHaveProperty('isStreamingMode')
     expect(synced.threads?.[0].messages[0].contentParts).toEqual([])
     expect(synced.messageForksHash?.fork.lists[0].messages[0].contentParts).toEqual([])
+    expect(synced.threads?.[0].messages[0]).not.toHaveProperty('generating')
+    expect(synced.threads?.[0].messages[0]).not.toHaveProperty('status')
+    expect(synced.threads?.[0].messages[0]).not.toHaveProperty('isStreamingMode')
+    expect(synced.messageForksHash?.fork.lists[0].messages[0]).not.toHaveProperty('generating')
+    expect(synced.messageForksHash?.fork.lists[0].messages[0]).not.toHaveProperty('status')
+    expect(synced.messageForksHash?.fork.lists[0].messages[0]).not.toHaveProperty('isStreamingMode')
     expect(snapshot.metas[0].assistantAvatarKey).toBeUndefined()
     expect(snapshot.metas[0].backgroundImage).toBeUndefined()
+  })
+
+  it('detects active generation in main messages, threads, and forks', () => {
+    const main = session('main', 'Main', 'hello')
+    main.messages[0].generating = true
+
+    const thread = session('thread', 'Thread', 'hello')
+    thread.threads = [
+      {
+        id: 'thread-1',
+        name: 'Thread',
+        createdAt: 1,
+        messages: [{ ...thread.messages[0], generating: true }],
+      },
+    ]
+
+    const fork = session('fork', 'Fork', 'hello')
+    fork.messageForksHash = {
+      fork: {
+        position: 0,
+        createdAt: 1,
+        lists: [{ id: 'fork-list', messages: [{ ...fork.messages[0], generating: true }] }],
+      },
+    }
+
+    expect(sessionHasActiveGeneration(session('idle', 'Idle', 'hello'))).toBe(false)
+    expect(sessionHasActiveGeneration(main)).toBe(true)
+    expect(sessionHasActiveGeneration(thread)).toBe(true)
+    expect(sessionHasActiveGeneration(fork)).toBe(true)
   })
 
   it('imports missing remote sessions and metadata', () => {
@@ -194,6 +243,10 @@ describe('sync snapshot merge', () => {
   it('strips local-only blob references when importing remote sessions', () => {
     const remoteSession = session('remote-1', 'Remote', 'hello')
     remoteSession.assistantAvatarKey = 'avatar-key'
+    remoteSession.messages[0].cancel = vi.fn()
+    remoteSession.messages[0].generating = true
+    remoteSession.messages[0].status = [{ type: 'loading_webpage' }]
+    remoteSession.messages[0].isStreamingMode = true
     remoteSession.messages[0].contentParts.push({ type: 'image', storageKey: 'image-key' })
     remoteSession.messages[0].files = [
       {
@@ -230,6 +283,10 @@ describe('sync snapshot merge', () => {
     if (created.kind !== 'create') throw new Error('Expected a created session')
     expect(created.session.assistantAvatarKey).toBeUndefined()
     expect(created.session.messages[0].contentParts).toEqual([{ type: 'text', text: 'hello' }])
+    expect(created.session.messages[0]).not.toHaveProperty('cancel')
+    expect(created.session.messages[0]).not.toHaveProperty('generating')
+    expect(created.session.messages[0]).not.toHaveProperty('status')
+    expect(created.session.messages[0]).not.toHaveProperty('isStreamingMode')
     expect(created.session.messages[0].files).toEqual([
       { id: 'synced-file:0:doc.txt', name: 'doc.txt', fileType: 'text/plain' },
     ])
@@ -383,6 +440,94 @@ describe('sync snapshot merge', () => {
     )
     expect(result.metasToSave).toHaveLength(1)
     expect(result.conflicts).toBe(1)
+  })
+
+  it('does not import a remote conflict copy already owned by its local source session', () => {
+    const deviceA = session('same-id', 'Project', 'device A text')
+    const deviceB = session('same-id', 'Project', 'device B text')
+    const deviceBCopyResult = mergeRemoteSnapshot({
+      localSessions: [deviceA],
+      localMetas: [meta('same-id', 'Project')],
+      remote: {
+        version: 1,
+        exportedAt: '2026-06-21T00:00:00.000Z',
+        deviceName: 'Device B',
+        sessions: [deviceB],
+        metas: [meta('same-id', 'Project')],
+      },
+      now: 2000,
+    })
+    const deviceBCopy = deviceBCopyResult.sessionChanges[0]
+    if (deviceBCopy.kind !== 'create') throw new Error('Expected a Device B conflict copy')
+    expect(deviceBCopy.session.syncConflictSourceId).toBe('same-id')
+
+    const result = mergeRemoteSnapshot({
+      localSessions: [deviceB],
+      localMetas: [meta('same-id', 'Project')],
+      remote: {
+        version: 1,
+        exportedAt: '2026-06-21T00:01:00.000Z',
+        deviceName: 'Device A',
+        sessions: [deviceA, deviceBCopy.session],
+        metas: [meta('same-id', 'Project'), deviceBCopyResult.metasToSave[0]],
+      },
+      now: 3000,
+    })
+
+    expect(result.sessionChanges).toHaveLength(1)
+    expect(result.sessionChanges[0]).toEqual(
+      expect.objectContaining({
+        kind: 'create',
+        session: expect.objectContaining({ syncConflictSourceId: 'same-id' }),
+      })
+    )
+    expect(
+      result.sessionChanges.some((change) => change.kind === 'create' && change.session.id === deviceBCopy.session.id)
+    ).toBe(false)
+    expect(result.imported).toBe(0)
+    expect(result.conflicts).toBe(1)
+  })
+
+  it('recognizes existing stable conflict copies created before provenance was recorded', () => {
+    const deviceA = session('same-id', 'Project', 'device A text')
+    const deviceB = session('same-id', 'Project', 'device B text')
+    const deviceBCopyResult = mergeRemoteSnapshot({
+      localSessions: [deviceA],
+      localMetas: [meta('same-id', 'Project')],
+      remote: {
+        version: 1,
+        exportedAt: '2026-06-21T00:00:00.000Z',
+        deviceName: 'Device B',
+        sessions: [deviceB],
+        metas: [meta('same-id', 'Project')],
+      },
+      now: 2000,
+    })
+    const deviceBCopy = deviceBCopyResult.sessionChanges[0]
+    if (deviceBCopy.kind !== 'create') throw new Error('Expected a Device B conflict copy')
+    const legacyCopy = { ...deviceBCopy.session }
+    delete legacyCopy.syncConflictSourceId
+
+    const result = mergeRemoteSnapshot({
+      localSessions: [deviceB],
+      localMetas: [meta('same-id', 'Project')],
+      remote: {
+        version: 1,
+        exportedAt: '2026-06-21T00:01:00.000Z',
+        deviceName: 'Device A',
+        sessions: [deviceA, legacyCopy],
+        metas: [meta('same-id', 'Project'), deviceBCopyResult.metasToSave[0]],
+      },
+      now: 3000,
+    })
+
+    expect(result.sessionChanges).toHaveLength(1)
+    expect(result.sessionChanges[0]).not.toEqual(
+      expect.objectContaining({
+        kind: 'create',
+        session: expect.objectContaining({ id: legacyCopy.id }),
+      })
+    )
   })
 
   it('uses different stable conflict IDs when remote content changes', () => {

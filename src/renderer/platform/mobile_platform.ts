@@ -2,6 +2,7 @@ import { App } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
 import { CapacitorHttp } from '@capacitor/core'
 import { Device } from '@capacitor/device'
+import { WebDAVHttp } from '@chatbox/capacitor-webdav-http'
 import * as defaults from '@shared/defaults'
 import { validateWebDAVRequestTarget } from '@shared/sync-webdav'
 import type { Config, Settings, ShortcutSetting } from '@shared/types'
@@ -248,6 +249,19 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
 
   public async webdavRequest(request: WebDAVRequest, baseUrl: string): Promise<WebDAVResponse> {
     validateWebDAVRequestTarget(baseUrl, request)
+    if (CHATBOX_BUILD_PLATFORM === 'android') {
+      const response = await WebDAVHttp.request({
+        baseUrl,
+        url: request.url,
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+      })
+      if (response.status >= 300 && response.status <= 399) {
+        throw new Error('WebDAV redirects are not allowed')
+      }
+      return response
+    }
     const response = await CapacitorHttp.request({
       url: request.url,
       method: request.method,

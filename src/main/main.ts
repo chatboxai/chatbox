@@ -14,7 +14,19 @@ import './legacy-database-migration'
  */
 
 import fs from 'node:fs'
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme, net, session, shell, Tray } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  net,
+  session,
+  shell,
+  Tray,
+} from 'electron'
 import electronDebug from 'electron-debug'
 import log from 'electron-log/main'
 import os from 'os'

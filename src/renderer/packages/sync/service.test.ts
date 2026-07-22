@@ -84,6 +84,39 @@ describe('WebDAV sync service', () => {
     expect(deps.updateLastSyncedAt).toHaveBeenCalledWith('1970-01-01T00:00:01.000Z')
   })
 
+  it('rejects uploads while any response is still generating', async () => {
+    const activeSession = session('s1', 'Local', 'hello')
+    activeSession.threads = [
+      {
+        id: 'thread-1',
+        name: 'Thread',
+        createdAt: 1,
+        messages: [{ ...activeSession.messages[0], generating: true }],
+      },
+    ]
+    const webdavRequest = vi.fn()
+    const deps = {
+      platform: {
+        getDeviceName: vi.fn(async () => 'Mac'),
+        webdavRequest,
+      },
+      listLocalSessions: vi.fn(async () => [activeSession]),
+      listLocalMetas: vi.fn(async () => [meta('s1', 'Local')]),
+      createSession: vi.fn(),
+      updateSessionMetadata: vi.fn(),
+      saveMetas: vi.fn(),
+      deleteSession: vi.fn(),
+      updateLastSyncedAt: vi.fn(),
+      createConflictId: vi.fn(),
+      now: () => 1000,
+    }
+
+    await expect(uploadWebDAVSnapshot(baseSettings, deps)).rejects.toThrow(/still generating/i)
+
+    expect(webdavRequest).not.toHaveBeenCalled()
+    expect(deps.updateLastSyncedAt).not.toHaveBeenCalled()
+  })
+
   it('merges the existing remote snapshot before uploading local sessions', async () => {
     const requests: WebDAVRequest[] = []
     const remote: SyncSnapshot = {

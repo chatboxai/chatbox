@@ -14,6 +14,18 @@ function isChatSessionMetaLike(item: Pick<SessionMetaRecord, 'type'>): boolean {
   return item.type === 'chat' || !item.type
 }
 
+export function sessionHasActiveGeneration(session: Session): boolean {
+  if (session.messages.some((message) => message.generating)) {
+    return true
+  }
+  if (session.threads?.some((thread) => thread.messages.some((message) => message.generating))) {
+    return true
+  }
+  return Object.values(session.messageForksHash ?? {}).some((fork) =>
+    fork.lists.some((list) => list.messages.some((message) => message.generating))
+  )
+}
+
 function compareStableKeys(left: string, right: string): number {
   if (left < right) return -1
   if (left > right) return 1
@@ -42,6 +54,7 @@ function sessionContentFingerprint(session: Session): string {
     assistantAvatarKey: _assistantAvatarKey,
     picUrl: _picUrl,
     backgroundImage: _backgroundImage,
+    syncConflictSourceId: _syncConflictSourceId,
     ...content
   } = session
   return stableStringify(content)
@@ -112,9 +125,16 @@ function stripLocalLinkReferences(link: MessageLink): MessageLink {
 }
 
 function stripLocalMessageReferences(message: Message): Message {
-  const { pictures: _pictures, ...messageWithoutLegacyPictures } = message as Message & { pictures?: unknown }
+  const {
+    pictures: _pictures,
+    cancel: _cancel,
+    generating: _generating,
+    status: _status,
+    isStreamingMode: _isStreamingMode,
+    ...messageWithoutRuntimeState
+  } = message as Message & { pictures?: unknown }
   const result: Message = {
-    ...messageWithoutLegacyPictures,
+    ...messageWithoutRuntimeState,
     contentParts: message.contentParts.filter((part) => part.type !== 'image'),
   }
 
@@ -246,6 +266,19 @@ function defaultCreateConflictId(sourceSessionId: string, contentFingerprint: st
   return uuidv5(`chatbox:webdav-sync:v1:${sourceSessionId}:${contentFingerprint}`, uuidv5.URL)
 }
 
+function conflictSourceIdForRemoteCopy(
+  remoteSession: Session,
+  localSessionById: Map<string, Session>
+): string | undefined {
+  if (remoteSession.syncConflictSourceId) {
+    return remoteSession.syncConflictSourceId
+  }
+  const fingerprint = sessionContentFingerprint(remoteSession)
+  return [...localSessionById.keys()].find(
+    (sourceSessionId) => defaultCreateConflictId(sourceSessionId, fingerprint) === remoteSession.id
+  )
+}
+
 export function createSyncSnapshot(input: {
   sessions: Session[]
   metas: SessionMetaRecord[]
@@ -300,6 +333,11 @@ export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemot
     const remoteSessionWithMeta = applyMetaToSession(remoteSession, remoteMeta)
 
     if (!localSession) {
+      const conflictSourceId = conflictSourceIdForRemoteCopy(remoteSession, localSessionById)
+      const localConflictSource = conflictSourceId ? localSessionById.get(conflictSourceId) : undefined
+      if (localConflictSource && sessionContentEqual(localConflictSource, remoteSession)) {
+        continue
+      }
       const meta = metaForSession(remoteSessionWithMeta, remoteMeta, input.now)
       sessionChanges.push({ kind: 'create', session: remoteSessionWithMeta })
       metasToSaveById.set(meta.id, meta)
@@ -343,6 +381,7 @@ export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemot
       ...remoteSessionWithMeta,
       id: conflictId,
       name: copiedName,
+      syncConflictSourceId: remoteSession.syncConflictSourceId ?? remoteSession.id,
     }
     const copiedMeta = {
       ...metaForCopiedSession(copiedSession, remoteMeta, input.now),

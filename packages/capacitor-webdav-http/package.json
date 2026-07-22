@@ -1,0 +1,22 @@
+{
+  "name": "@chatbox/capacitor-webdav-http",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Android WebDAV transport for Chatbox",
+  "main": "dist/plugin.cjs.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "files": [
+    "android/src/main/",
+    "android/build.gradle",
+    "dist/"
+  ],
+  "peerDependencies": {
+    "@capacitor/core": "^7.0.0"
+  },
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  }
+}

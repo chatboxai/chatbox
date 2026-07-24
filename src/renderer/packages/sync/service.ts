@@ -1,4 +1,4 @@
-import type { Session, SessionMeta, SessionMetaRecord, Settings } from '@shared/types'
+import { isChatSession, type Session, type SessionMeta, type SessionMetaRecord, type Settings } from '@shared/types'
 import { SessionMetaRecordSchema, SessionSchema } from '@shared/types/session'
 import { z } from 'zod'
 import { migrateSession } from '@/utils/session-utils'
@@ -40,14 +40,29 @@ export type LastSeenSnapshot = {
   etag?: string
 }
 
+export type SyncMetadataOrder = Pick<SessionMetaRecord, 'sortOrder' | 'createdAt'>
+
+export type SyncMetadataUndo = {
+  previousSession?: Partial<Omit<SessionMeta, 'id'>>
+  appliedSession?: Partial<Omit<SessionMeta, 'id'>>
+  previousOrder?: SyncMetadataOrder
+  appliedOrder?: SyncMetadataOrder
+}
+
 export type WebDAVSyncDeps = {
   platform: SyncPlatform
   listLocalSessions: () => Promise<Session[]>
   listLocalMetas: () => Promise<SessionMetaRecord[]>
   createSession: (session: Session, meta: SessionMetaRecord) => Promise<void>
-  updateSessionMetadata: (sessionId: string, patch: Omit<SessionMeta, 'id'>) => Promise<Omit<SessionMeta, 'id'>>
+  updateSessionMetadata: (
+    sessionId: string,
+    patch: Partial<Omit<SessionMeta, 'id'>> | undefined,
+    order: SyncMetadataOrder | undefined
+  ) => Promise<SyncMetadataUndo>
+  restoreSessionMetadata?: (sessionId: string, undo: SyncMetadataUndo) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
-  saveMetas: (metas: SessionMetaRecord[]) => Promise<void>
+  /** @deprecated Existing metadata is now updated field-by-field by updateSessionMetadata. */
+  saveMetas?: (metas: SessionMetaRecord[]) => Promise<void>
   updateLastSyncedAt: (isoDate: string) => Promise<void> | void
   getLastSeenSnapshot?: () => LastSeenSnapshot | undefined | Promise<LastSeenSnapshot | undefined>
   setLastSeenSnapshot?: (seen: LastSeenSnapshot) => Promise<void> | void
@@ -69,6 +84,19 @@ export type DownloadWebDAVSnapshotResult = {
   remoteUnchanged?: boolean
 }
 
+export type TestWebDAVConnectionResult = {
+  snapshotExists: boolean
+  encryptionVerified: boolean
+}
+
+export type PreviewWebDAVUploadResult = {
+  localCount: number
+  remoteCount: number
+  remoteOnlyCount: number
+  willRemoveRemoteCount: number
+  remoteMissing: boolean
+}
+
 function syncEndpoint(settings: Settings): string {
   const webdav = getWebDAVSettings(settings)
   return `${webdav.url}\n${webdav.username}`
@@ -84,7 +112,7 @@ function syncEndpoint(settings: Settings): string {
 async function isRemoteSnapshotAlreadySeen(
   remote: DownloadedWebDAVSnapshot,
   settings: Settings,
-  deps: WebDAVSyncDeps
+  deps: Pick<WebDAVSyncDeps, 'getLastSeenSnapshot'>
 ): Promise<boolean> {
   if (!remote.etag || !deps.getLastSeenSnapshot) {
     return false
@@ -216,18 +244,38 @@ async function downloadWebDAVSnapshot(settings: Settings, platform: SyncPlatform
   }
 }
 
-export async function testWebDAVConnection(settings: Settings, deps: Pick<WebDAVSyncDeps, 'platform'>): Promise<void> {
-  const webdav = getWebDAVSettings(settings)
+export async function testWebDAVConnection(
+  settings: Settings,
+  deps: Pick<WebDAVSyncDeps, 'platform'>
+): Promise<TestWebDAVConnectionResult> {
   await ensureWebDAVCollections(settings, deps.platform)
-  const response = await requestWebDAV(deps.platform, webdav.url, {
-    url: snapshotUrl(settings),
-    method: 'PROPFIND',
-    headers: {
-      ...authHeaders(settings),
-      Depth: '0',
-    },
-  })
-  assertSuccess(response, 'Check WebDAV snapshot', [200, 207, 404])
+  const remote = await downloadWebDAVSnapshot(settings, deps.platform)
+  return {
+    snapshotExists: Boolean(remote.snapshot),
+    encryptionVerified: Boolean(remote.snapshot),
+  }
+}
+
+export async function previewWebDAVUpload(
+  settings: Settings,
+  deps: Pick<WebDAVSyncDeps, 'platform' | 'listLocalSessions' | 'getLastSeenSnapshot'>
+): Promise<PreviewWebDAVUploadResult> {
+  const [sessions, remote] = await Promise.all([
+    deps.listLocalSessions(),
+    downloadWebDAVSnapshot(settings, deps.platform),
+  ])
+  const localSessionIds = new Set(sessions.filter(isChatSession).map((session) => session.id))
+  const remoteSessions = remote.snapshot?.sessions.filter(isChatSession) ?? []
+  const remoteOnlyCount = remoteSessions.filter((session) => !localSessionIds.has(session.id)).length
+  const remoteAlreadySeen = remote.snapshot ? await isRemoteSnapshotAlreadySeen(remote, settings, deps) : false
+
+  return {
+    localCount: localSessionIds.size,
+    remoteCount: remoteSessions.length,
+    remoteOnlyCount,
+    willRemoveRemoteCount: remoteAlreadySeen ? remoteOnlyCount : 0,
+    remoteMissing: !remote.snapshot,
+  }
 }
 
 export async function uploadWebDAVSnapshot(
@@ -362,9 +410,10 @@ export async function downloadAndMergeWebDAVSnapshot(
   const createdSessionIds = new Set<string>()
   const undoOperations: Array<
     | { kind: 'delete-created'; sessionId: string }
-    | { kind: 'restore-metadata'; sessionId: string; patch: Omit<SessionMeta, 'id'> }
+    | { kind: 'restore-metadata'; sessionId: string; undo: SyncMetadataUndo }
   > = []
   try {
+    const updatedSessionIds = new Set<string>()
     for (const change of result.sessionChanges) {
       if (change.kind === 'create') {
         const meta = metaById.get(change.session.id)
@@ -375,14 +424,27 @@ export async function downloadAndMergeWebDAVSnapshot(
         createdSessionIds.add(change.session.id)
         undoOperations.push({ kind: 'delete-created', sessionId: change.session.id })
       } else {
-        const previous = await deps.updateSessionMetadata(change.sessionId, change.patch)
-        undoOperations.push({ kind: 'restore-metadata', sessionId: change.sessionId, patch: previous })
+        const meta = metaById.get(change.sessionId)
+        const order = meta ? { sortOrder: meta.sortOrder, createdAt: meta.createdAt } : undefined
+        const undo = await deps.updateSessionMetadata(change.sessionId, change.patch, order)
+        updatedSessionIds.add(change.sessionId)
+        undoOperations.push({ kind: 'restore-metadata', sessionId: change.sessionId, undo })
       }
     }
 
-    const existingMetasToSave = result.metasToSave.filter((meta) => !createdSessionIds.has(meta.id))
-    if (existingMetasToSave.length > 0) {
-      await deps.saveMetas(existingMetasToSave)
+    // A meta-only change contains ordering information. Session metadata such as
+    // name/starred is always represented by an update change above. Applying
+    // only these fields avoids replacing a concurrently edited full record.
+    for (const meta of result.metasToSave) {
+      if (createdSessionIds.has(meta.id) || updatedSessionIds.has(meta.id)) {
+        continue
+      }
+      const undo = await deps.updateSessionMetadata(
+        meta.id,
+        undefined,
+        { sortOrder: meta.sortOrder, createdAt: meta.createdAt }
+      )
+      undoOperations.push({ kind: 'restore-metadata', sessionId: meta.id, undo })
     }
   } catch (error) {
     const rollbackErrors: unknown[] = []
@@ -390,8 +452,10 @@ export async function downloadAndMergeWebDAVSnapshot(
       try {
         if (undo.kind === 'delete-created') {
           await deps.deleteSession(undo.sessionId)
+        } else if (deps.restoreSessionMetadata) {
+          await deps.restoreSessionMetadata(undo.sessionId, undo.undo)
         } else {
-          await deps.updateSessionMetadata(undo.sessionId, undo.patch)
+          await deps.updateSessionMetadata(undo.sessionId, undo.undo.previousSession, undo.undo.previousOrder)
         }
       } catch (rollbackError) {
         rollbackErrors.push(rollbackError)

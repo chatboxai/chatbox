@@ -1,12 +1,16 @@
 import type { Session, Settings } from '@shared/types'
 import { describe, expect, it, vi } from 'vitest'
 import { decryptJsonEnvelope, encryptJsonEnvelope } from './crypto'
-import { downloadAndMergeWebDAVSnapshot, uploadWebDAVSnapshot } from './service'
+import {
+  downloadAndMergeWebDAVSnapshot,
+  previewWebDAVUpload,
+  testWebDAVConnection,
+  uploadWebDAVSnapshot,
+} from './service'
 import type { SyncSnapshot, WebDAVRequest, WebDAVResponse } from './types'
 
 const baseSettings = {
   sync: {
-    enabled: true,
     provider: 'webdav',
     webdav: {
       url: 'https://dav.example.com/files/me/',
@@ -43,6 +47,124 @@ function meta(id: string, name: string, sortOrder = 1) {
 }
 
 describe('WebDAV sync service', () => {
+  it('tests WebDAV credentials and verifies the encryption password against an existing snapshot', async () => {
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-07-23T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('remote-1', 'Remote', 'remote text')],
+      metas: [meta('remote-1', 'Remote')],
+    }
+    const envelope = await encryptJsonEnvelope(remote, 'sync-secret')
+    const webdavRequest = vi.fn(
+      async (request: WebDAVRequest): Promise<WebDAVResponse> => ({
+        status: request.method === 'GET' ? 200 : request.method === 'MKCOL' ? 405 : 400,
+        headers: request.method === 'GET' ? { ETag: '"remote-etag"' } : {},
+        body: request.method === 'GET' ? JSON.stringify(envelope) : '',
+      })
+    )
+
+    const result = await testWebDAVConnection(baseSettings, { platform: { webdavRequest } })
+
+    expect(result).toEqual({ snapshotExists: true, encryptionVerified: true })
+    expect(webdavRequest.mock.calls.map(([request]) => request.method)).toEqual(['MKCOL', 'MKCOL', 'GET'])
+  })
+
+  it('rejects a wrong encryption password while testing an existing snapshot', async () => {
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-07-23T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [],
+      metas: [],
+    }
+    const envelope = await encryptJsonEnvelope(remote, 'different-secret')
+    const webdavRequest = vi.fn(async (request: WebDAVRequest) => ({
+      status: request.method === 'GET' ? 200 : 405,
+      headers: {},
+      body: request.method === 'GET' ? JSON.stringify(envelope) : '',
+    }))
+
+    await expect(testWebDAVConnection(baseSettings, { platform: { webdavRequest } })).rejects.toThrow(/decrypt/i)
+  })
+
+  it('reports that the encryption password cannot be verified when no snapshot exists', async () => {
+    const webdavRequest = vi.fn(async (request: WebDAVRequest) => ({
+      status: request.method === 'GET' ? 404 : 405,
+      headers: {},
+      body: '',
+    }))
+
+    await expect(testWebDAVConnection(baseSettings, { platform: { webdavRequest } })).resolves.toEqual({
+      snapshotExists: false,
+      encryptionVerified: false,
+    })
+  })
+
+  it('previews remote conversations that a replacement upload would remove', async () => {
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-07-23T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('local-1', 'Local', 'same'), session('remote-only', 'Remote only', 'remote')],
+      metas: [meta('local-1', 'Local'), meta('remote-only', 'Remote only')],
+    }
+    const envelope = await encryptJsonEnvelope(remote, 'sync-secret')
+    const platform = {
+      webdavRequest: vi.fn(async () => ({
+        status: 200,
+        headers: { ETag: '"remote-etag"' },
+        body: JSON.stringify(envelope),
+      })),
+    }
+
+    const result = await previewWebDAVUpload(baseSettings, {
+      platform,
+      listLocalSessions: vi.fn(async () => [session('local-1', 'Local', 'same')]),
+      getLastSeenSnapshot: vi.fn(() => ({
+        endpoint: 'https://dav.example.com/files/me/\nalice',
+        etag: '"remote-etag"',
+      })),
+    })
+
+    expect(result).toEqual({
+      localCount: 1,
+      remoteCount: 2,
+      remoteOnlyCount: 1,
+      willRemoveRemoteCount: 1,
+      remoteMissing: false,
+    })
+  })
+
+  it('does not report removals when an unseen remote snapshot will be merged first', async () => {
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-07-23T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [session('remote-only', 'Remote only', 'remote')],
+      metas: [meta('remote-only', 'Remote only')],
+    }
+    const envelope = await encryptJsonEnvelope(remote, 'sync-secret')
+
+    const result = await previewWebDAVUpload(baseSettings, {
+      platform: {
+        webdavRequest: vi.fn(async () => ({
+          status: 200,
+          headers: { ETag: '"new-etag"' },
+          body: JSON.stringify(envelope),
+        })),
+      },
+      listLocalSessions: vi.fn(async () => []),
+      getLastSeenSnapshot: vi.fn(() => ({
+        endpoint: 'https://dav.example.com/files/me/\nalice',
+        etag: '"old-etag"',
+      })),
+    })
+
+    expect(result.remoteOnlyCount).toBe(1)
+    expect(result.willRemoveRemoteCount).toBe(0)
+  })
+
   it('uploads an encrypted snapshot to the fixed WebDAV path', async () => {
     const requests: WebDAVRequest[] = []
     const deps = {

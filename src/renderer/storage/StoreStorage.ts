@@ -46,14 +46,20 @@ export default class StoreStorage extends BaseStorage {
     return value
   }
 
-  private debounceQueue = new Map<string, DebouncedFunc<(key: string, value: unknown) => void>>()
+  private debounceQueue = new Map<string, DebouncedFunc<(key: string, value: unknown) => Promise<void>>>()
 
-  public async setItem<T>(key: string, value: T): Promise<void> {
+  public setItem<T>(key: string, value: T): Promise<void> {
     let debounced = this.debounceQueue.get(key)
     if (!debounced) {
       debounced = debounce(this.setItemNow.bind(this), 500, { maxWait: 2000 })
       this.debounceQueue.set(key, debounced)
     }
-    debounced(key, value)
+    void debounced(key, value)
+    return Promise.resolve()
+  }
+
+  /** Persist the latest queued value before another process reads this key. */
+  public async flushItem(key: string): Promise<void> {
+    await this.debounceQueue.get(key)?.flush()
   }
 }

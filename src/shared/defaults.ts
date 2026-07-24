@@ -152,7 +152,6 @@ export function settings(): Settings {
       translationEnabled: true,
     },
     sync: {
-      enabled: false,
       provider: 'webdav',
       webdav: {
         url: '',

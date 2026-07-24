@@ -283,7 +283,6 @@ const MCPSettingsSchema = z.object({
 })
 
 export const SyncSettingsSchema = z.object({
-  enabled: z.boolean().catch(false),
   provider: z.literal('webdav').catch('webdav'),
   webdav: z
     .object({
@@ -439,7 +438,6 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
     translationEnabled: true,
   }),
   sync: SyncSettingsSchema.catch({
-    enabled: false,
     provider: 'webdav',
     webdav: {
       url: '',

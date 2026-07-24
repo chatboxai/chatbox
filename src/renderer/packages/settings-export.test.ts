@@ -1,5 +1,5 @@
 import * as defaults from '@shared/defaults'
-import type { Settings } from '@shared/types'
+import { ModelProviderType, type Settings } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import { sanitizeSettingsForExport } from './settings-export'
 
@@ -26,8 +26,27 @@ function settingsWithSecrets(): Settings {
         activeAuthMode: 'oauth',
       },
     },
+    customProviders: [
+      {
+        id: 'custom-openai',
+        name: 'Custom OpenAI',
+        type: ModelProviderType.OpenAI,
+        isCustom: true,
+        defaultSettings: {
+          apiKey: 'custom-sk-secret',
+          accessKey: 'custom-access-secret',
+          secretKey: 'custom-secret-key',
+          sessionToken: 'custom-session-token',
+          apiHost: 'https://custom-api.example.com',
+          oauth: {
+            accessToken: 'custom-oauth-access-secret',
+            refreshToken: 'custom-oauth-refresh-secret',
+          },
+          activeAuthMode: 'oauth',
+        },
+      },
+    ],
     sync: {
-      enabled: true,
       provider: 'webdav',
       webdav: {
         url: 'https://dav.example.com/files/me/',
@@ -62,7 +81,7 @@ function settingsWithSecrets(): Settings {
           transport: {
             type: 'stdio',
             command: 'npx',
-            args: ['srv'],
+            args: ['srv', '--api-key', 'stdio-arg-secret'],
             env: { GITHUB_TOKEN: 'ghp-secret' },
           },
         },
@@ -72,7 +91,7 @@ function settingsWithSecrets(): Settings {
           enabled: true,
           transport: {
             type: 'http',
-            url: 'https://mcp.example.com/',
+            url: 'https://mcp.example.com/?access_token=http-url-secret',
             headers: { Authorization: 'Bearer secret' },
           },
         },
@@ -112,6 +131,18 @@ describe('sanitizeSettingsForExport', () => {
     // The original settings object must keep its credentials untouched.
     expect(settings.providers?.openai?.oauth?.accessToken).toBe('oauth-access-secret')
     expect(settings.providers?.openai?.oauth?.refreshToken).toBe('oauth-refresh-secret')
+  })
+
+  it('removes credentials from custom provider default settings when key export is not selected', () => {
+    const settings = settingsWithSecrets()
+    const sanitized = sanitizeSettingsForExport(settings, false)
+
+    expect(sanitized.customProviders?.[0].defaultSettings).toEqual({
+      apiHost: 'https://custom-api.example.com',
+      activeAuthMode: 'oauth',
+    })
+    expect(settings.customProviders?.[0].defaultSettings?.apiKey).toBe('custom-sk-secret')
+    expect(settings.customProviders?.[0].defaultSettings?.oauth?.accessToken).toBe('custom-oauth-access-secret')
   })
 
   it('removes remembered and per-account license keys when key export is not selected', () => {
@@ -167,17 +198,24 @@ describe('sanitizeSettingsForExport', () => {
     expect(settings.extension.documentParser?.mineru?.apiToken).toBe('mineru-secret')
   })
 
-  it('removes MCP transport env and headers when key export is not selected', () => {
+  it('removes custom MCP servers when key export is not selected', () => {
     const settings = settingsWithSecrets()
     const sanitized = sanitizeSettingsForExport(settings, false)
 
-    const [stdioServer, httpServer] = sanitized.mcp.servers
-    expect(stdioServer.transport).toEqual({ type: 'stdio', command: 'npx', args: ['srv'] })
-    expect(httpServer.transport).toEqual({ type: 'http', url: 'https://mcp.example.com/' })
+    expect(sanitized.mcp.servers).toEqual([])
+    expect(JSON.stringify(sanitized)).not.toMatch(
+      /ghp-secret|Bearer secret|stdio-arg-secret|http-url-secret/
+    )
     // Transport credentials survive when key export is selected.
     const withSecrets = sanitizeSettingsForExport(settingsWithSecrets(), true)
-    expect(withSecrets.mcp.servers[0].transport).toMatchObject({ env: { GITHUB_TOKEN: 'ghp-secret' } })
-    expect(withSecrets.mcp.servers[1].transport).toMatchObject({ headers: { Authorization: 'Bearer secret' } })
+    expect(withSecrets.mcp.servers[0].transport).toMatchObject({
+      args: ['srv', '--api-key', 'stdio-arg-secret'],
+      env: { GITHUB_TOKEN: 'ghp-secret' },
+    })
+    expect(withSecrets.mcp.servers[1].transport).toMatchObject({
+      url: 'https://mcp.example.com/?access_token=http-url-secret',
+      headers: { Authorization: 'Bearer secret' },
+    })
     // The original settings object must keep its credentials untouched.
     expect(settings.mcp.servers[0].transport).toMatchObject({ env: { GITHUB_TOKEN: 'ghp-secret' } })
     expect(settings.mcp.servers[1].transport).toMatchObject({ headers: { Authorization: 'Bearer secret' } })
@@ -192,6 +230,8 @@ describe('sanitizeSettingsForExport', () => {
     expect(sanitized.providers?.openai?.apiKey).toBe('sk-secret')
     expect(sanitized.providers?.openai?.oauth?.accessToken).toBe('oauth-access-secret')
     expect(sanitized.providers?.openai?.oauth?.refreshToken).toBe('oauth-refresh-secret')
+    expect(sanitized.customProviders?.[0].defaultSettings?.apiKey).toBe('custom-sk-secret')
+    expect(sanitized.customProviders?.[0].defaultSettings?.oauth?.accessToken).toBe('custom-oauth-access-secret')
     expect(sanitized.extension.webSearch.tavilyApiKey).toBe('tavily-secret')
     expect(sanitized.extension.webSearch.bochaApiKey).toBe('bocha-secret')
     expect(sanitized.extension.webSearch.queritApiKey).toBe('querit-secret')

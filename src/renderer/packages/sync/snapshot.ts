@@ -7,7 +7,7 @@ import {
   type SessionMeta,
   type SessionMetaRecord,
 } from '@shared/types'
-import { v5 as uuidv5 } from 'uuid'
+import { validate as uuidValidate, version as uuidVersion, v5 as uuidv5 } from 'uuid'
 import type { MergeRemoteSnapshotInput, MergeRemoteSnapshotResult, SyncSnapshot } from './types'
 
 function isChatSessionMetaLike(item: Pick<SessionMetaRecord, 'type'>): boolean {
@@ -131,6 +131,10 @@ function stripLocalMessageReferences(message: Message): Message {
     generating: _generating,
     status: _status,
     isStreamingMode: _isStreamingMode,
+    tokenCountMap: _tokenCountMap,
+    tokenCalculatedAt: _tokenCalculatedAt,
+    wordCount: _wordCount,
+    tokenCount: _tokenCount,
     ...messageWithoutRuntimeState
   } = message as Message & { pictures?: unknown }
   const result: Message = {
@@ -230,6 +234,36 @@ function metaForCopiedSession(
   }
 }
 
+function metaForExistingSession(
+  session: Session,
+  localMeta: SessionMetaRecord | undefined,
+  remoteMeta: SessionMetaRecord | undefined,
+  now: number,
+  preferRemoteOrder: boolean
+): SessionMetaRecord {
+  const primaryOrderMeta = preferRemoteOrder ? remoteMeta : localMeta
+  const fallbackOrderMeta = preferRemoteOrder ? localMeta : remoteMeta
+  const localBackground =
+    session.backgroundImage?.type === 'storage-key'
+      ? session.backgroundImage
+      : localMeta?.backgroundImage?.type === 'storage-key'
+        ? localMeta.backgroundImage
+        : session.backgroundImage
+
+  return {
+    id: session.id,
+    name: session.name,
+    type: session.type,
+    starred: session.starred,
+    hidden: session.hidden,
+    assistantAvatarKey: session.assistantAvatarKey ?? localMeta?.assistantAvatarKey,
+    picUrl: session.picUrl,
+    backgroundImage: localBackground,
+    sortOrder: primaryOrderMeta?.sortOrder ?? fallbackOrderMeta?.sortOrder ?? now,
+    createdAt: primaryOrderMeta?.createdAt ?? fallbackOrderMeta?.createdAt ?? now,
+  }
+}
+
 function applyMetaToSession(session: Session, meta: SessionMetaRecord | undefined): Session {
   if (!meta) {
     return session
@@ -246,7 +280,7 @@ function applyMetaToSession(session: Session, meta: SessionMetaRecord | undefine
   }
 }
 
-function metadataPatch(session: Session): Omit<SessionMeta, 'id'> {
+function sessionMetadata(session: Session): Omit<SessionMeta, 'id'> {
   return {
     name: session.name,
     type: session.type,
@@ -258,12 +292,33 @@ function metadataPatch(session: Session): Omit<SessionMeta, 'id'> {
   }
 }
 
+function remoteMetadataPatch(localSession: Session, remoteSession: Session): Omit<SessionMeta, 'id'> {
+  const patch: Omit<SessionMeta, 'id'> = {
+    name: remoteSession.name,
+    type: remoteSession.type,
+    starred: remoteSession.starred,
+    hidden: remoteSession.hidden,
+    picUrl: remoteSession.picUrl,
+  }
+
+  // A storage-key background and assistant avatar refer to blobs that exist
+  // only on this device. Remote snapshots cannot meaningfully replace them.
+  if (localSession.backgroundImage?.type !== 'storage-key') {
+    patch.backgroundImage = remoteSession.backgroundImage
+  }
+  return patch
+}
+
 function sessionMetadataEqual(left: Session, right: Session): boolean {
-  return stableStringify(metadataPatch(left)) === stableStringify(metadataPatch(right))
+  return stableStringify(sessionMetadata(left)) === stableStringify(sessionMetadata(right))
 }
 
 function defaultCreateConflictId(sourceSessionId: string, contentFingerprint: string): string {
   return uuidv5(`chatbox:webdav-sync:v1:${sourceSessionId}:${contentFingerprint}`, uuidv5.URL)
+}
+
+function isPossibleLegacyConflictId(id: string): boolean {
+  return uuidValidate(id) && uuidVersion(id) === 5
 }
 
 function conflictSourceIdForRemoteCopy(
@@ -273,10 +328,20 @@ function conflictSourceIdForRemoteCopy(
   if (remoteSession.syncConflictSourceId) {
     return remoteSession.syncConflictSourceId
   }
+
+  // Only UUIDv5 IDs can be conflict copies created by the pre-provenance format.
+  // Normal UUIDv4 sessions should not pay the compatibility scan cost.
+  if (!isPossibleLegacyConflictId(remoteSession.id)) {
+    return undefined
+  }
+
   const fingerprint = sessionContentFingerprint(remoteSession)
-  return [...localSessionById.keys()].find(
-    (sourceSessionId) => defaultCreateConflictId(sourceSessionId, fingerprint) === remoteSession.id
-  )
+  for (const sourceSessionId of localSessionById.keys()) {
+    if (defaultCreateConflictId(sourceSessionId, fingerprint) === remoteSession.id) {
+      return sourceSessionId
+    }
+  }
+  return undefined
 }
 
 export function createSyncSnapshot(input: {
@@ -301,17 +366,16 @@ export function createSyncSnapshot(input: {
 }
 
 export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemoteSnapshotResult {
-  const localSessionById = new Map(
-    input.localSessions.filter(isChatSession).map((session) => {
-      const sanitizedSession = stripLocalSessionReferences(session)
-      return [sanitizedSession.id, sanitizedSession]
+  const localSessions = input.localSessions.filter(isChatSession)
+  const localSessionById = new Map(localSessions.map((session) => [session.id, session] as const))
+  const comparableLocalSessionById = new Map(
+    localSessions.map((session) => {
+      const comparableSession = stripLocalSessionReferences(session)
+      return [comparableSession.id, comparableSession] as const
     })
   )
   const localMetaById = new Map(
-    input.localMetas.filter(isChatSessionMetaLike).map((meta) => {
-      const sanitizedMeta = stripLocalMetaReferences(meta)
-      return [sanitizedMeta.id, sanitizedMeta]
-    })
+    input.localMetas.filter(isChatSessionMetaLike).map((meta) => [meta.id, meta] as const)
   )
   const remoteMetas = input.remote.metas.map(stripLocalMetaReferences)
   const remoteMetaById = new Map(remoteMetas.map((meta) => [meta.id, meta]))
@@ -329,12 +393,13 @@ export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemot
     seenRemoteSessionIds.add(remoteSession.id)
 
     const localSession = localSessionById.get(remoteSession.id)
+    const comparableLocalSession = comparableLocalSessionById.get(remoteSession.id)
     const remoteMeta = remoteMetaById.get(remoteSession.id)
     const remoteSessionWithMeta = applyMetaToSession(remoteSession, remoteMeta)
 
     if (!localSession) {
-      const conflictSourceId = conflictSourceIdForRemoteCopy(remoteSession, localSessionById)
-      const localConflictSource = conflictSourceId ? localSessionById.get(conflictSourceId) : undefined
+      const conflictSourceId = conflictSourceIdForRemoteCopy(remoteSession, comparableLocalSessionById)
+      const localConflictSource = conflictSourceId ? comparableLocalSessionById.get(conflictSourceId) : undefined
       if (localConflictSource && sessionContentEqual(localConflictSource, remoteSession)) {
         continue
       }
@@ -342,32 +407,33 @@ export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemot
       sessionChanges.push({ kind: 'create', session: remoteSessionWithMeta })
       metasToSaveById.set(meta.id, meta)
       localSessionById.set(remoteSessionWithMeta.id, remoteSessionWithMeta)
+      comparableLocalSessionById.set(remoteSessionWithMeta.id, remoteSessionWithMeta)
       localMetaById.set(meta.id, meta)
       imported += 1
       continue
     }
 
-    if (sessionContentEqual(localSession, remoteSession)) {
+    if (comparableLocalSession && sessionContentEqual(comparableLocalSession, remoteSession)) {
       if (input.preferRemoteMetadata) {
-        if (!sessionMetadataEqual(localSession, remoteSessionWithMeta)) {
+        const patch = remoteMetadataPatch(localSession, remoteSessionWithMeta)
+        const updatedSession = { ...localSession, ...patch }
+        if (!sessionMetadataEqual(localSession, updatedSession)) {
           sessionChanges.push({
             kind: 'update-metadata',
             sessionId: remoteSession.id,
-            patch: metadataPatch(remoteSessionWithMeta),
+            patch,
           })
-          localSessionById.set(remoteSession.id, {
-            ...localSession,
-            ...metadataPatch(remoteSessionWithMeta),
-          })
+          localSessionById.set(remoteSession.id, updatedSession)
+          comparableLocalSessionById.set(remoteSession.id, stripLocalSessionReferences(updatedSession))
         }
         const localMeta = localMetaById.get(remoteSession.id)
-        if (remoteMeta && (!localMeta || !metasEqual(localMeta, remoteMeta))) {
-          const meta = metaForSession(remoteSessionWithMeta, remoteMeta, input.now)
+        const meta = metaForExistingSession(updatedSession, localMeta, remoteMeta, input.now, true)
+        if (remoteMeta && (!localMeta || !metasEqual(localMeta, meta))) {
           metasToSaveById.set(meta.id, meta)
           localMetaById.set(meta.id, meta)
         }
       } else if (!localMetaById.has(remoteSession.id) && remoteMeta) {
-        const meta = metaForSession(remoteSessionWithMeta, remoteMeta, input.now)
+        const meta = metaForExistingSession(localSession, undefined, remoteMeta, input.now, true)
         metasToSaveById.set(meta.id, meta)
         localMetaById.set(meta.id, meta)
       }
@@ -381,16 +447,17 @@ export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemot
       ...remoteSessionWithMeta,
       id: conflictId,
       name: copiedName,
-      syncConflictSourceId: remoteSession.syncConflictSourceId ?? remoteSession.id,
+      syncConflictSourceId: remoteSession.id,
     }
     const copiedMeta = {
       ...metaForCopiedSession(copiedSession, remoteMeta, input.now),
       name: copiedName,
     }
     const existingCopy = localSessionById.get(conflictId)
+    const comparableExistingCopy = comparableLocalSessionById.get(conflictId)
 
     if (existingCopy) {
-      if (!sessionContentEqual(existingCopy, copiedSession)) {
+      if (!comparableExistingCopy || !sessionContentEqual(comparableExistingCopy, copiedSession)) {
         // The synced copy is a normal mutable session: the user may have kept
         // chatting in it after import. A content mismatch here means the copy
         // is now user-owned local data, not an ID collision (the stable ID is
@@ -399,25 +466,28 @@ export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemot
         // Preserve the edited copy untouched and never abort the sync over it.
         continue
       }
-      if (input.preferRemoteMetadata && !sessionMetadataEqual(existingCopy, copiedSession)) {
-        sessionChanges.push({
-          kind: 'update-metadata',
-          sessionId: conflictId,
-          patch: metadataPatch(copiedSession),
-        })
-        localSessionById.set(conflictId, {
-          ...existingCopy,
-          ...metadataPatch(copiedSession),
-        })
+      let updatedCopy = existingCopy
+      if (input.preferRemoteMetadata) {
+        const patch = remoteMetadataPatch(existingCopy, copiedSession)
+        updatedCopy = { ...existingCopy, ...patch }
+        if (!sessionMetadataEqual(existingCopy, updatedCopy)) {
+          sessionChanges.push({
+            kind: 'update-metadata',
+            sessionId: conflictId,
+            patch,
+          })
+          localSessionById.set(conflictId, updatedCopy)
+          comparableLocalSessionById.set(conflictId, stripLocalSessionReferences(updatedCopy))
+        }
       }
       const existingCopyMeta = localMetaById.get(conflictId)
-      const updatedCopyMeta = existingCopyMeta
-        ? {
-            ...copiedMeta,
-            sortOrder: existingCopyMeta.sortOrder,
-            createdAt: existingCopyMeta.createdAt,
-          }
-        : copiedMeta
+      const updatedCopyMeta = metaForExistingSession(
+        updatedCopy,
+        existingCopyMeta,
+        copiedMeta,
+        input.now,
+        false
+      )
       if (input.preferRemoteMetadata && (!existingCopyMeta || !metasEqual(existingCopyMeta, updatedCopyMeta))) {
         metasToSaveById.set(conflictId, updatedCopyMeta)
         localMetaById.set(conflictId, updatedCopyMeta)
@@ -428,6 +498,7 @@ export function mergeRemoteSnapshot(input: MergeRemoteSnapshotInput): MergeRemot
     sessionChanges.push({ kind: 'create', session: copiedSession })
     metasToSaveById.set(conflictId, copiedMeta)
     localSessionById.set(conflictId, copiedSession)
+    comparableLocalSessionById.set(conflictId, copiedSession)
     localMetaById.set(conflictId, copiedMeta)
     conflicts += 1
   }

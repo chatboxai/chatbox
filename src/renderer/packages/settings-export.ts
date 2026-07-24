@@ -22,6 +22,16 @@ export function sanitizeSettingsForExport(settings: Settings, includeSecrets: bo
     licenseDetail: undefined,
     licenseInstances: undefined,
     providers: settings.providers ? { ...settings.providers } : settings.providers,
+    customProviders: settings.customProviders
+      ? settings.customProviders.map((provider) => ({
+          ...provider,
+          defaultSettings: provider.defaultSettings
+            ? includeSecrets
+              ? { ...provider.defaultSettings }
+              : sanitizeProviderForExport(provider.defaultSettings)
+            : provider.defaultSettings,
+        }))
+      : settings.customProviders,
     extension: settings.extension
       ? {
           ...settings.extension,
@@ -56,9 +66,15 @@ export function sanitizeSettingsForExport(settings: Settings, includeSecrets: bo
     mcp: settings.mcp
       ? {
           ...settings.mcp,
-          servers: Array.isArray(settings.mcp.servers)
-            ? settings.mcp.servers.map((server) => ({ ...server, transport: { ...server.transport } }))
-            : settings.mcp.servers,
+          // MCP credentials can be embedded anywhere in a transport, including
+          // command arguments and URL paths/query parameters. There is no safe
+          // generic redaction for an arbitrary custom server, so secret-free
+          // exports omit those servers entirely.
+          servers: includeSecrets
+            ? Array.isArray(settings.mcp.servers)
+              ? settings.mcp.servers.map((server) => ({ ...server, transport: { ...server.transport } }))
+              : settings.mcp.servers
+            : [],
         }
       : settings.mcp,
   }
@@ -85,17 +101,6 @@ export function sanitizeSettingsForExport(settings: Settings, includeSecrets: bo
     }
     if (cleanedSettings.extension?.documentParser?.mineru) {
       cleanedSettings.extension.documentParser.mineru.apiToken = ''
-    }
-    // MCP transports routinely carry credentials — stdio env vars (API tokens)
-    // and HTTP headers (Authorization) must not leave the device in an export.
-    if (cleanedSettings.mcp?.servers) {
-      for (const server of cleanedSettings.mcp.servers) {
-        if (server.transport.type === 'stdio') {
-          delete server.transport.env
-        } else {
-          delete server.transport.headers
-        }
-      }
     }
   }
 

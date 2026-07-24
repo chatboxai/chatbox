@@ -12,7 +12,7 @@ import {
 } from '@/stores/chatStore'
 import { settingsStore } from '@/stores/settingsStore'
 import { migrateSession } from '@/utils/session-utils'
-import type { WebDAVSyncDeps } from './service'
+import type { SyncMetadataOrder, SyncMetadataUndo, WebDAVSyncDeps } from './service'
 
 function isChatSessionLike(item: Pick<Session, 'type'> | Pick<SessionMetaRecord, 'type'>): boolean {
   return item.type === 'chat' || !item.type
@@ -57,23 +57,106 @@ function sessionMetadataPatch(session: SessionMeta): Omit<SessionMeta, 'id'> {
   }
 }
 
-export async function updateSyncSessionMetadata(
-  sessionId: string,
-  patch: Omit<SessionMeta, 'id'>
-): Promise<Omit<SessionMeta, 'id'>> {
-  let previous: Omit<SessionMeta, 'id'> | undefined
-  try {
+function valuesForPatchedMetadata(
+  session: SessionMeta,
+  patch: Partial<Omit<SessionMeta, 'id'>>
+): Partial<Omit<SessionMeta, 'id'>> {
+  const source = sessionMetadataPatch(session) as Record<string, unknown>
+  const previous: Record<string, unknown> = {}
+  for (const key of Object.keys(patch)) {
+    previous[key] = source[key]
+  }
+  return previous as Partial<Omit<SessionMeta, 'id'>>
+}
+
+function conditionalSessionRestore(
+  session: Session,
+  undo: SyncMetadataUndo
+): Partial<Omit<SessionMeta, 'id'>> {
+  const current = sessionMetadataPatch(session) as Record<string, unknown>
+  const applied = undo.appliedSession as Record<string, unknown> | undefined
+  const previous = undo.previousSession as Record<string, unknown> | undefined
+  const restore: Record<string, unknown> = {}
+  if (!applied || !previous) {
+    return restore as Partial<Omit<SessionMeta, 'id'>>
+  }
+  for (const key of Object.keys(applied)) {
+    if (Object.is(current[key], applied[key])) {
+      restore[key] = previous[key]
+    }
+  }
+  return restore as Partial<Omit<SessionMeta, 'id'>>
+}
+
+export async function restoreSyncSessionMetadata(sessionId: string, undo: SyncMetadataUndo): Promise<void> {
+  if (undo.appliedSession && undo.previousSession) {
     await updateSession(sessionId, (current) => {
       if (!current) {
         throw new Error(`Session ${sessionId} not found`)
       }
-      previous = sessionMetadataPatch(current)
-      return { ...current, ...patch }
+      return { ...current, ...conditionalSessionRestore(current, undo) }
     })
+  }
+
+  if (undo.appliedOrder && undo.previousOrder) {
+    const metaStorage = await getMetaStorage()
+    const current = await metaStorage.getById(sessionId)
+    if (!current) {
+      throw new Error(`Session metadata ${sessionId} not found`)
+    }
+    const restore: Partial<SyncMetadataOrder> = {}
+    if (current.sortOrder === undo.appliedOrder.sortOrder) {
+      restore.sortOrder = undo.previousOrder.sortOrder
+    }
+    if (current.createdAt === undo.appliedOrder.createdAt) {
+      restore.createdAt = undo.previousOrder.createdAt
+    }
+    if (Object.keys(restore).length > 0) {
+      const restored = await metaStorage.update(sessionId, restore)
+      if (!restored) {
+        throw new Error(`Session metadata ${sessionId} not found`)
+      }
+      await refreshSessionListCache()
+    }
+  }
+}
+
+export async function updateSyncSessionMetadata(
+  sessionId: string,
+  patch: Partial<Omit<SessionMeta, 'id'>> | undefined,
+  order: SyncMetadataOrder | undefined = undefined
+): Promise<SyncMetadataUndo> {
+  const undo: SyncMetadataUndo = {}
+  try {
+    if (patch && Object.keys(patch).length > 0) {
+      await updateSession(sessionId, (current) => {
+        if (!current) {
+          throw new Error(`Session ${sessionId} not found`)
+        }
+        undo.previousSession = valuesForPatchedMetadata(current, patch)
+        undo.appliedSession = { ...patch }
+        return { ...current, ...patch }
+      })
+    }
+
+    if (order) {
+      const metaStorage = await getMetaStorage()
+      const current = await metaStorage.getById(sessionId)
+      if (!current) {
+        throw new Error(`Session metadata ${sessionId} not found`)
+      }
+      undo.previousOrder = { sortOrder: current.sortOrder, createdAt: current.createdAt }
+      undo.appliedOrder = { ...order }
+      const updated = await metaStorage.update(sessionId, order)
+      if (!updated) {
+        throw new Error(`Session metadata ${sessionId} not found`)
+      }
+      await refreshSessionListCache()
+    }
   } catch (error) {
-    if (previous) {
+    if (undo.appliedSession || undo.appliedOrder) {
       try {
-        await updateSession(sessionId, previous)
+        await restoreSyncSessionMetadata(sessionId, undo)
       } catch (rollbackError) {
         throw new AggregateError(
           [error, rollbackError],
@@ -85,10 +168,7 @@ export async function updateSyncSessionMetadata(
     throw error
   }
 
-  if (!previous) {
-    throw new Error(`Session ${sessionId} not found`)
-  }
-  return previous
+  return undo
 }
 
 export async function saveSyncMetas(metas: SessionMetaRecord[]): Promise<void> {
@@ -144,8 +224,8 @@ export function createDefaultWebDAVSyncDeps(): WebDAVSyncDeps {
     listLocalMetas: listLocalSyncMetas,
     createSession: createSyncSession,
     updateSessionMetadata: updateSyncSessionMetadata,
+    restoreSessionMetadata: restoreSyncSessionMetadata,
     deleteSession: deleteSyncSession,
-    saveMetas: saveSyncMetas,
     updateLastSyncedAt: updateSyncLastSyncedAt,
     getLastSeenSnapshot: getSyncLastSeenSnapshot,
     setLastSeenSnapshot: setSyncLastSeenSnapshot,

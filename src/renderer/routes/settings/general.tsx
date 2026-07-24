@@ -22,11 +22,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
+import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import LazySlider from '@/components/common/LazySlider'
 import { languageNameMap, languages } from '@/i18n/locales'
 import { sanitizeSettingsForExport } from '@/packages/settings-export'
 import { createDefaultWebDAVSyncDeps } from '@/packages/sync/local'
-import { downloadAndMergeWebDAVSnapshot, testWebDAVConnection, uploadWebDAVSnapshot } from '@/packages/sync/service'
+import {
+  downloadAndMergeWebDAVSnapshot,
+  type PreviewWebDAVUploadResult,
+  previewWebDAVUpload,
+  testWebDAVConnection,
+  uploadWebDAVSnapshot,
+} from '@/packages/sync/service'
 import { toastError } from '@/packages/toast'
 import platform from '@/platform'
 import storage, { StorageKey } from '@/storage'
@@ -238,13 +245,12 @@ export function RouteComponent() {
   )
 }
 
-const WebDAVSyncSection = () => {
+export const WebDAVSyncSection = () => {
   const { t } = useTranslation()
-  const { setSettings, sync } = useSettingsStore((state) => ({
-    setSettings: state.setSettings,
-    sync: state.sync,
-  }))
+  const setSettings = useSettingsStore((state) => state.setSettings)
+  const sync = useSettingsStore((state) => state.sync)
   const [runningAction, setRunningAction] = useState<'test' | 'upload' | 'download' | null>(null)
+  const [uploadPreview, setUploadPreview] = useState<PreviewWebDAVUploadResult | null>(null)
 
   const updateWebDAVSettings = (patch: Partial<typeof sync.webdav>) => {
     setSettings((settings) => {
@@ -259,6 +265,9 @@ const WebDAVSyncSection = () => {
     if (runningAction) return
     setRunningAction(action)
     try {
+      // Desktop validates against settings read by the main process. Flush the
+      // debounced write so both processes use the same WebDAV URL.
+      await storage.flushItem(StorageKey.Settings)
       const message = await task()
       if (message) {
         toast.success(message)
@@ -272,26 +281,21 @@ const WebDAVSyncSection = () => {
 
   const currentSettings = () => settingsStore.getState().getSettings()
 
+  const uploadCurrentSnapshot = async () => {
+    const result = await uploadWebDAVSnapshot(currentSettings(), createDefaultWebDAVSyncDeps())
+    return String(t('Uploaded {{count}} conversations', { count: result.uploaded }))
+  }
+
   return (
     <Stack gap="md">
       <Stack gap="xxs">
-        <Title order={5}>{t('WebDAV Sync')}</Title>
+        <Title order={5}>{t('Manual WebDAV Sync')}</Title>
         <Text c="chatbox-tertiary">
           {t(
-            'Sync chat history through your own WebDAV storage. API keys, licenses, and provider credentials are not synced.'
+            'Manually merge chat history through your own WebDAV storage. API keys, licenses, and provider credentials are not synced.'
           )}
         </Text>
       </Stack>
-
-      <Switch
-        label={t('Enable WebDAV sync')}
-        checked={sync.enabled}
-        onChange={(event) =>
-          setSettings((settings) => {
-            settings.sync.enabled = event.currentTarget.checked
-          })
-        }
-      />
 
       <TextInput
         maw={420}
@@ -335,8 +339,10 @@ const WebDAVSyncSection = () => {
           disabled={Boolean(runningAction)}
           onClick={() =>
             runSyncAction('test', async () => {
-              await testWebDAVConnection(currentSettings(), { platform })
-              return String(t('Connection successful'))
+              const result = await testWebDAVConnection(currentSettings(), { platform })
+              return result.encryptionVerified
+                ? String(t('Connection and encryption password verified'))
+                : String(t('Connection successful; no remote snapshot exists to verify the encryption password'))
             })
           }
         >
@@ -345,20 +351,24 @@ const WebDAVSyncSection = () => {
         <Button
           variant="light"
           loading={runningAction === 'upload'}
-          disabled={Boolean(runningAction) || !sync.enabled}
+          disabled={Boolean(runningAction)}
           onClick={() =>
             runSyncAction('upload', async () => {
-              const result = await uploadWebDAVSnapshot(currentSettings(), createDefaultWebDAVSyncDeps())
-              return String(t('Uploaded {{count}} conversations', { count: result.uploaded }))
+              const preview = await previewWebDAVUpload(currentSettings(), createDefaultWebDAVSyncDeps())
+              if (preview.willRemoveRemoteCount > 0) {
+                setUploadPreview(preview)
+                return undefined
+              }
+              return uploadCurrentSnapshot()
             })
           }
         >
-          {t('Upload Now')}
+          {t('Merge and Upload')}
         </Button>
         <Button
           variant="light"
           loading={runningAction === 'download'}
-          disabled={Boolean(runningAction) || !sync.enabled}
+          disabled={Boolean(runningAction)}
           onClick={() =>
             runSyncAction('download', async () => {
               const result = await downloadAndMergeWebDAVSnapshot(currentSettings(), createDefaultWebDAVSyncDeps())
@@ -380,6 +390,43 @@ const WebDAVSyncSection = () => {
           {t('Download and Merge')}
         </Button>
       </Flex>
+
+      <AdaptiveModal
+        opened={Boolean(uploadPreview)}
+        centered
+        size="sm"
+        title={t('Replace remote conversations?')}
+        onClose={() => setUploadPreview(null)}
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            {t(
+              'This upload will remove {{count}} conversations that exist only in the last-seen remote snapshot. This cannot be undone by Chatbox.',
+              { count: uploadPreview?.willRemoveRemoteCount ?? 0 }
+            )}
+          </Text>
+          <Text size="sm" c="chatbox-tertiary">
+            {t('Local conversations: {{local}}; remote conversations: {{remote}}', {
+              local: uploadPreview?.localCount ?? 0,
+              remote: uploadPreview?.remoteCount ?? 0,
+            })}
+          </Text>
+          <AdaptiveModal.Actions>
+            <Button variant="light" onClick={() => setUploadPreview(null)}>
+              {t('Cancel')}
+            </Button>
+            <Button
+              color="red"
+              onClick={() => {
+                setUploadPreview(null)
+                void runSyncAction('upload', uploadCurrentSnapshot)
+              }}
+            >
+              {t('Replace Remote Snapshot')}
+            </Button>
+          </AdaptiveModal.Actions>
+        </Stack>
+      </AdaptiveModal>
     </Stack>
   )
 }

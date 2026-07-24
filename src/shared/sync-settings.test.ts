@@ -3,11 +3,10 @@ import * as defaults from './defaults'
 import { SettingsSchema } from './types'
 
 describe('sync settings defaults', () => {
-  it('defaults WebDAV sync to disabled and keeps credentials empty', () => {
+  it('defaults manual WebDAV sync credentials to empty values', () => {
     const settings = SettingsSchema.parse(defaults.settings())
 
     expect(settings.sync).toEqual({
-      enabled: false,
       provider: 'webdav',
       webdav: {
         url: '',

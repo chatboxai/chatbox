@@ -1,4 +1,5 @@
 import type { Session, SessionMetaRecord } from '@shared/types'
+import { v4 as uuidv4 } from 'uuid'
 import { describe, expect, it, vi } from 'vitest'
 import { createSyncSnapshot, mergeRemoteSnapshot, sessionHasActiveGeneration } from './snapshot'
 import type { SyncSnapshot } from './types'
@@ -71,6 +72,10 @@ describe('sync snapshot merge', () => {
     local.messages[0].contentParts.push({ type: 'image', storageKey: 'image-key' })
     local.messages[0].cancel = vi.fn()
     local.messages[0].generating = true
+    local.messages[0].tokenCountMap = { default: 10 }
+    local.messages[0].tokenCalculatedAt = { default: 1000 }
+    local.messages[0].wordCount = 1
+    local.messages[0].tokenCount = 2
     local.messages[0].status = [{ type: 'retrying', attempt: 1, maxAttempts: 3 }]
     local.messages[0].isStreamingMode = true
     local.messages[0].files = [
@@ -173,6 +178,10 @@ describe('sync snapshot merge', () => {
     expect(message).not.toHaveProperty('pictures')
     expect(message).not.toHaveProperty('cancel')
     expect(message).not.toHaveProperty('generating')
+    expect(message).not.toHaveProperty('tokenCountMap')
+    expect(message).not.toHaveProperty('tokenCalculatedAt')
+    expect(message).not.toHaveProperty('wordCount')
+    expect(message).not.toHaveProperty('tokenCount')
     expect(message).not.toHaveProperty('status')
     expect(message).not.toHaveProperty('isStreamingMode')
     expect(synced.threads?.[0].messages[0].contentParts).toEqual([])
@@ -237,6 +246,32 @@ describe('sync snapshot merge', () => {
     ])
     expect(result.metasToSave.map((m) => m.id)).toEqual(['remote-1'])
     expect(result.imported).toBe(1)
+    expect(result.conflicts).toBe(0)
+  })
+
+  it('ignores device-local message token cache differences', () => {
+    const local = session('same-id', 'Project', 'same text')
+    const remoteSession = session('same-id', 'Project', 'same text')
+    remoteSession.messages[0].tokenCountMap = { default: 2 }
+    remoteSession.messages[0].tokenCalculatedAt = { default: 1234 }
+    remoteSession.messages[0].wordCount = 2
+    remoteSession.messages[0].tokenCount = 3
+
+    const result = mergeRemoteSnapshot({
+      localSessions: [local],
+      localMetas: [meta('same-id', 'Project')],
+      remote: {
+        version: 1,
+        exportedAt: '2026-07-23T00:00:00.000Z',
+        deviceName: 'Device B',
+        sessions: [remoteSession],
+        metas: [meta('same-id', 'Project')],
+      },
+      now: 2000,
+    })
+
+    expect(result.sessionChanges).toEqual([])
+    expect(result.metasToSave).toEqual([])
     expect(result.conflicts).toBe(0)
   })
 
@@ -530,6 +565,105 @@ describe('sync snapshot merge', () => {
     )
   })
 
+  it('does not scan local sessions for ordinary UUIDv4 remote sessions', () => {
+    const sessionCount = 512
+    const localSessions = Array.from({ length: sessionCount }, (_, index) =>
+      session(uuidv4(), `Local ${index}`, `local ${index}`)
+    )
+    const remoteSessions = Array.from({ length: sessionCount }, (_, index) =>
+      session(uuidv4(), `Remote ${index}`, `remote ${index}`)
+    )
+    const startedAt = performance.now()
+
+    const result = mergeRemoteSnapshot({
+      localSessions,
+      localMetas: localSessions.map((item, index) => meta(item.id, item.name, index)),
+      remote: {
+        version: 1,
+        exportedAt: '2026-06-21T00:01:00.000Z',
+        deviceName: 'Device B',
+        sessions: remoteSessions,
+        metas: remoteSessions.map((item, index) => meta(item.id, item.name, index)),
+      },
+      now: 3000,
+    })
+
+    expect(result.sessionChanges).toHaveLength(sessionCount)
+    expect(performance.now() - startedAt).toBeLessThan(1500)
+  })
+
+  it('keeps nested conflict provenance tied to the immediate source copy', () => {
+    const localRoot = session('same-id', 'Project', 'local text')
+    const firstRemote = session('same-id', 'Project', 'remote text')
+    const first = mergeRemoteSnapshot({
+      localSessions: [localRoot],
+      localMetas: [meta('same-id', 'Project')],
+      remote: {
+        version: 1,
+        exportedAt: '2026-06-21T00:00:00.000Z',
+        deviceName: 'Device B',
+        sessions: [firstRemote],
+        metas: [meta('same-id', 'Project')],
+      },
+      now: 1000,
+    })
+    const firstCopyChange = first.sessionChanges[0]
+    if (firstCopyChange.kind !== 'create') throw new Error('Expected the first conflict copy')
+
+    const deviceACopy = {
+      ...firstCopyChange.session,
+      messages: [
+        {
+          ...firstCopyChange.session.messages[0],
+          contentParts: [{ type: 'text' as const, text: 'device A edit' }],
+        },
+      ],
+    }
+    const deviceBCopy = {
+      ...firstCopyChange.session,
+      messages: [
+        {
+          ...firstCopyChange.session.messages[0],
+          contentParts: [{ type: 'text' as const, text: 'device B edit' }],
+        },
+      ],
+    }
+    const nested = mergeRemoteSnapshot({
+      localSessions: [localRoot, deviceACopy],
+      localMetas: [meta('same-id', 'Project'), meta(deviceACopy.id, deviceACopy.name)],
+      remote: {
+        version: 1,
+        exportedAt: '2026-06-21T00:01:00.000Z',
+        deviceName: 'Device B',
+        sessions: [deviceBCopy],
+        metas: [meta(deviceBCopy.id, deviceBCopy.name)],
+      },
+      now: 2000,
+    })
+    const nestedCopyChange = nested.sessionChanges[0]
+    if (nestedCopyChange.kind !== 'create') throw new Error('Expected the nested conflict copy')
+
+    expect(nestedCopyChange.session.syncConflictSourceId).toBe(firstCopyChange.session.id)
+
+    const replay = mergeRemoteSnapshot({
+      localSessions: [localRoot, deviceBCopy],
+      localMetas: [meta('same-id', 'Project'), meta(deviceBCopy.id, deviceBCopy.name)],
+      remote: {
+        version: 1,
+        exportedAt: '2026-06-21T00:02:00.000Z',
+        deviceName: 'Device A',
+        sessions: [nestedCopyChange.session],
+        metas: [nested.metasToSave[0]],
+      },
+      now: 3000,
+    })
+
+    expect(replay.sessionChanges).toEqual([])
+    expect(replay.metasToSave).toEqual([])
+    expect(replay.imported).toBe(0)
+    expect(replay.conflicts).toBe(0)
+  })
+
   it('uses different stable conflict IDs when remote content changes', () => {
     const local = session('same-id', 'Project', 'local text')
     const merge = (text: string) =>
@@ -731,6 +865,54 @@ describe('sync snapshot merge', () => {
     expect(result.metasToSave).toEqual([remoteMeta])
     expect(result.imported).toBe(0)
     expect(result.conflicts).toBe(0)
+  })
+
+  it('preserves device-local avatar and background references during remote metadata updates', () => {
+    const local = session('same-id', 'Project', 'same text')
+    local.assistantAvatarKey = 'local-avatar'
+    local.backgroundImage = { type: 'storage-key', storageKey: 'local-background' }
+    const localMeta = {
+      ...meta('same-id', 'Project', 1),
+      assistantAvatarKey: 'local-avatar',
+      backgroundImage: { type: 'storage-key' as const, storageKey: 'local-background' },
+    }
+    const remote: SyncSnapshot = {
+      version: 1,
+      exportedAt: '2026-07-23T00:00:00.000Z',
+      deviceName: 'Phone',
+      sessions: [
+        {
+          ...session('same-id', 'Project Remote', 'same text'),
+          starred: true,
+        },
+      ],
+      metas: [{ ...meta('same-id', 'Project Remote', 99), starred: true }],
+    }
+
+    const result = mergeRemoteSnapshot({
+      localSessions: [local],
+      localMetas: [localMeta],
+      remote,
+      now: 2000,
+      preferRemoteMetadata: true,
+    })
+
+    const metadataChange = result.sessionChanges[0]
+    expect(metadataChange).toMatchObject({
+      kind: 'update-metadata',
+      sessionId: 'same-id',
+      patch: { name: 'Project Remote', starred: true },
+    })
+    if (metadataChange.kind !== 'update-metadata') throw new Error('Expected a metadata update')
+    expect(metadataChange.patch).not.toHaveProperty('assistantAvatarKey')
+    expect(metadataChange.patch).not.toHaveProperty('backgroundImage')
+    expect(result.metasToSave[0]).toMatchObject({
+      name: 'Project Remote',
+      starred: true,
+      sortOrder: 99,
+      assistantAvatarKey: 'local-avatar',
+      backgroundImage: { type: 'storage-key', storageKey: 'local-background' },
+    })
   })
 
   it('keeps local metadata for same-content sessions during upload merges', () => {

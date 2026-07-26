@@ -6,8 +6,9 @@ export const greenPTProvider = defineProvider({
   id: ModelProviderEnum.GreenPT,
   name: 'GreenPT',
   type: ModelProviderType.OpenAI,
-  description: 'OpenAI-compatible AI inference hosted in Europe on renewable-powered infrastructure.',
-  curatedModelIds: ['glm-5.2', 'kimi-k2.7-code', 'gemma4', 'green-embedding'],
+  description:
+    'GreenPT is a European AI provider running optimized inference in data centers powered by 100% renewable energy.',
+  curatedModelIds: ['glm-5.2', 'kimi-k2.7-code', 'green-embedding'],
   urls: {
     website: 'https://greenpt.com/',
     apiKey: 'https://account.greenpt.ai/api/keys',
@@ -27,12 +28,6 @@ export const greenPTProvider = defineProvider({
         contextWindow: 256_000,
         maxOutput: 256_000,
         capabilities: ['reasoning', 'tool_use'],
-      },
-      {
-        modelId: 'gemma4',
-        contextWindow: 256_000,
-        maxOutput: 32_000,
-        capabilities: ['vision', 'reasoning', 'tool_use'],
       },
       {
         modelId: 'green-embedding',

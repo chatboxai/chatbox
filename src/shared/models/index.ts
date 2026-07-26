@@ -21,6 +21,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.Ollama]: 'Ollama API',
   [ModelProviderEnum.Groq]: 'Groq API',
   [ModelProviderEnum.DeepSeek]: 'DeepSeek API',
+  [ModelProviderEnum.GreenPT]: 'GreenPT API',
   [ModelProviderEnum.SiliconFlow]: 'SiliconFlow API',
   [ModelProviderEnum.VolcEngine]: 'VolcEngine API',
   [ModelProviderEnum.MistralAI]: 'MistralAI',
@@ -73,6 +74,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.DeepSeek,
     label: aiProviderNameHash[ModelProviderEnum.DeepSeek],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.GreenPT,
+    label: aiProviderNameHash[ModelProviderEnum.GreenPT],
     disabled: false,
   },
   {

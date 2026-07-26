@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeClaudeHost, normalizeGeminiHost, normalizeOpenAIApiHostAndPath } from './llm_utils'
+import { ModelProviderEnum } from '../types'
+import {
+  isOpenAICompatible,
+  normalizeClaudeHost,
+  normalizeGeminiHost,
+  normalizeOpenAIApiHostAndPath,
+} from './llm_utils'
+
+describe('isOpenAICompatible', () => {
+  it('recognizes GreenPT', () => {
+    expect(isOpenAICompatible(ModelProviderEnum.GreenPT, 'glm-5.2')).toBe(true)
+  })
+})
 
 describe('normalizeOpenAIApiHostAndPath', () => {
   it('returns defaults when apiHost is empty', () => {

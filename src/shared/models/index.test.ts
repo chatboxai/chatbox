@@ -132,6 +132,7 @@ describe('getModel', () => {
     [ModelProviderEnum.MiniMaxCN, 'MiniMax-M2.5', 'https://api.minimaxi.com/v1'],
     [ModelProviderEnum.Moonshot, 'kimi-k2.5', 'https://api.moonshot.ai/v1'],
     [ModelProviderEnum.MoonshotCN, 'kimi-k2.5', 'https://api.moonshot.cn/v1'],
+    [ModelProviderEnum.Modelsell, 'test-model', 'https://modelsell.com/v1'],
   ])('returns OpenAI-compatible model instances for %s', (provider, modelId, apiHost) => {
     const sessionSettings: SessionSettings = {
       provider,

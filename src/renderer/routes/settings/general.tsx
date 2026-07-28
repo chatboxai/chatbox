@@ -5,30 +5,41 @@ import {
   Divider,
   FileButton,
   Flex,
+  PasswordInput,
   Radio,
-  Select,
   Stack,
   Switch,
   Text,
   TextInput,
   Title,
 } from '@mantine/core'
-import { type Language, type ProviderInfo, type Settings, Theme } from '@shared/types'
+import { type Language, type Settings, Theme } from '@shared/types'
 import { formatFileSize } from '@shared/utils'
 import { IconInfoCircle } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import dayjs from 'dayjs'
-import { mapValues, uniqBy } from 'lodash'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
+import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import LazySlider from '@/components/common/LazySlider'
 import { languageNameMap, languages } from '@/i18n/locales'
+import { sanitizeSettingsForExport } from '@/packages/settings-export'
+import { createDefaultWebDAVSyncDeps } from '@/packages/sync/local'
+import {
+  downloadAndMergeWebDAVSnapshot,
+  type PreviewWebDAVUploadResult,
+  previewWebDAVUpload,
+  testWebDAVConnection,
+  uploadWebDAVSnapshot,
+} from '@/packages/sync/service'
+import { toastError } from '@/packages/toast'
 import platform from '@/platform'
 import storage, { StorageKey } from '@/storage'
 import { getMetaStorage, recoverSessionList } from '@/stores/chatStore'
 import { migrateOnData } from '@/stores/migration'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 
 export const Route = createFileRoute('/settings/general')({
   component: RouteComponent,
@@ -156,6 +167,14 @@ export function RouteComponent() {
       {/* Data Recovery */}
       <DataRecoverySection />
 
+      {platform.type !== 'web' && (
+        <>
+          <Divider />
+
+          <WebDAVSyncSection />
+        </>
+      )}
+
       <Divider />
 
       {/* import and export data */}
@@ -222,6 +241,192 @@ export function RouteComponent() {
           </Stack>
         </>
       )}
+    </Stack>
+  )
+}
+
+export const WebDAVSyncSection = () => {
+  const { t } = useTranslation()
+  const setSettings = useSettingsStore((state) => state.setSettings)
+  const sync = useSettingsStore((state) => state.sync)
+  const [runningAction, setRunningAction] = useState<'test' | 'upload' | 'download' | null>(null)
+  const [uploadPreview, setUploadPreview] = useState<PreviewWebDAVUploadResult | null>(null)
+
+  const updateWebDAVSettings = (patch: Partial<typeof sync.webdav>) => {
+    setSettings((settings) => {
+      settings.sync.webdav = {
+        ...settings.sync.webdav,
+        ...patch,
+      }
+    })
+  }
+
+  const runSyncAction = async (action: 'test' | 'upload' | 'download', task: () => Promise<string | undefined>) => {
+    if (runningAction) return
+    setRunningAction(action)
+    try {
+      // Desktop validates against settings read by the main process. Flush the
+      // debounced write so both processes use the same WebDAV URL.
+      await storage.flushItem(StorageKey.Settings)
+      const message = await task()
+      if (message) {
+        toast.success(message)
+      }
+    } catch (error) {
+      toastError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRunningAction(null)
+    }
+  }
+
+  const currentSettings = () => settingsStore.getState().getSettings()
+
+  const uploadCurrentSnapshot = async () => {
+    const result = await uploadWebDAVSnapshot(currentSettings(), createDefaultWebDAVSyncDeps())
+    return String(t('Uploaded {{count}} conversations', { count: result.uploaded }))
+  }
+
+  return (
+    <Stack gap="md">
+      <Stack gap="xxs">
+        <Title order={5}>{t('Manual WebDAV Sync')}</Title>
+        <Text c="chatbox-tertiary">
+          {t(
+            'Manually merge chat history through your own WebDAV storage. API keys, licenses, and provider credentials are not synced.'
+          )}
+        </Text>
+      </Stack>
+
+      <TextInput
+        maw={420}
+        label={t('WebDAV URL')}
+        placeholder="https://dav.example.com/remote.php/dav/files/me/"
+        value={sync.webdav.url}
+        onChange={(event) => updateWebDAVSettings({ url: event.currentTarget.value })}
+      />
+
+      <TextInput
+        maw={320}
+        label={t('Username')}
+        value={sync.webdav.username}
+        onChange={(event) => updateWebDAVSettings({ username: event.currentTarget.value })}
+      />
+
+      <PasswordInput
+        maw={320}
+        label={t('WebDAV password')}
+        value={sync.webdav.password}
+        onChange={(event) => updateWebDAVSettings({ password: event.currentTarget.value })}
+      />
+
+      <PasswordInput
+        maw={320}
+        label={t('Sync encryption password')}
+        value={sync.webdav.syncPassword}
+        onChange={(event) => updateWebDAVSettings({ syncPassword: event.currentTarget.value })}
+      />
+
+      {sync.lastSyncedAt && (
+        <Text size="sm" c="chatbox-tertiary">
+          {t('Last synced at {{time}}', { time: dayjs(sync.lastSyncedAt).format('YYYY-MM-DD HH:mm') })}
+        </Text>
+      )}
+
+      <Flex gap="sm" wrap="wrap">
+        <Button
+          variant="light"
+          loading={runningAction === 'test'}
+          disabled={Boolean(runningAction)}
+          onClick={() =>
+            runSyncAction('test', async () => {
+              const result = await testWebDAVConnection(currentSettings(), { platform })
+              return result.encryptionVerified
+                ? String(t('Connection and encryption password verified'))
+                : String(t('Connection successful; no remote snapshot exists to verify the encryption password'))
+            })
+          }
+        >
+          {t('Test Connection')}
+        </Button>
+        <Button
+          variant="light"
+          loading={runningAction === 'upload'}
+          disabled={Boolean(runningAction)}
+          onClick={() =>
+            runSyncAction('upload', async () => {
+              const preview = await previewWebDAVUpload(currentSettings(), createDefaultWebDAVSyncDeps())
+              if (preview.willRemoveRemoteCount > 0) {
+                setUploadPreview(preview)
+                return undefined
+              }
+              return uploadCurrentSnapshot()
+            })
+          }
+        >
+          {t('Merge and Upload')}
+        </Button>
+        <Button
+          variant="light"
+          loading={runningAction === 'download'}
+          disabled={Boolean(runningAction)}
+          onClick={() =>
+            runSyncAction('download', async () => {
+              const result = await downloadAndMergeWebDAVSnapshot(currentSettings(), createDefaultWebDAVSyncDeps())
+              if (result.remoteMissing) {
+                return String(t('No remote sync snapshot found'))
+              }
+              if (result.remoteUnchanged) {
+                return String(t('Remote snapshot has not changed since the last sync, merge skipped'))
+              }
+              return String(
+                t('Imported {{imported}} conversations, created {{conflicts}} synced copies', {
+                  imported: result.imported,
+                  conflicts: result.conflicts,
+                })
+              )
+            })
+          }
+        >
+          {t('Download and Merge')}
+        </Button>
+      </Flex>
+
+      <AdaptiveModal
+        opened={Boolean(uploadPreview)}
+        centered
+        size="sm"
+        title={t('Replace remote conversations?')}
+        onClose={() => setUploadPreview(null)}
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            {t(
+              'This upload will remove {{count}} conversations that exist only in the last-seen remote snapshot. This cannot be undone by Chatbox.',
+              { count: uploadPreview?.willRemoveRemoteCount ?? 0 }
+            )}
+          </Text>
+          <Text size="sm" c="chatbox-tertiary">
+            {t('Local conversations: {{local}}; remote conversations: {{remote}}', {
+              local: uploadPreview?.localCount ?? 0,
+              remote: uploadPreview?.remoteCount ?? 0,
+            })}
+          </Text>
+          <AdaptiveModal.Actions>
+            <Button variant="light" onClick={() => setUploadPreview(null)}>
+              {t('Cancel')}
+            </Button>
+            <Button
+              color="red"
+              onClick={() => {
+                setUploadPreview(null)
+                void runSyncAction('upload', uploadCurrentSnapshot)
+              }}
+            >
+              {t('Replace Remote Snapshot')}
+            </Button>
+          </AdaptiveModal.Actions>
+        </Stack>
+      </AdaptiveModal>
     </Stack>
   )
 }
@@ -369,23 +574,10 @@ const ImportExportDataSection = () => {
                 if (value !== null) {
                   // 对settings进行特殊处理，清理敏感数据
                   if (key === StorageKey.Settings) {
-                    const cleanedSettings = { ...(value as Settings) }
-                    cleanedSettings.licenseDetail = undefined
-                    cleanedSettings.licenseInstances = undefined
-
-                    if (!exportItems.includes(ExportDataItem.Key)) {
-                      delete cleanedSettings.licenseKey
-                      if (cleanedSettings.providers) {
-                        cleanedSettings.providers = mapValues(cleanedSettings.providers, (provider: ProviderInfo) => {
-                          const cleanedProvider = { ...provider }
-                          delete cleanedProvider.apiKey
-                          delete cleanedProvider.accessKey
-                          delete cleanedProvider.secretKey
-                          delete cleanedProvider.sessionToken
-                          return cleanedProvider
-                        }) as unknown as { [key: string]: ProviderInfo }
-                      }
-                    }
+                    const cleanedSettings = sanitizeSettingsForExport(
+                      value as Settings,
+                      exportItems.includes(ExportDataItem.Key)
+                    )
 
                     yield ','
                     yield `"${key}":${JSON.stringify(cleanedSettings)}`

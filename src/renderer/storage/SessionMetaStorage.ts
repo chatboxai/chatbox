@@ -99,15 +99,22 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
 
   async update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null> {
     await this.initialize()
-    const existing = await this.getById(id)
-    if (!existing) return null
-
-    const updated = { ...existing, ...updates }
     return new Promise((resolve, reject) => {
-      const store = this.getStore('readwrite')
-      const request = store.put(updated)
-      request.onsuccess = () => resolve(updated)
-      request.onerror = () => reject(request.error)
+      if (!this.db) throw new Error('Database not initialized')
+      const tx = this.db.transaction(STORE_NAME, 'readwrite')
+      const store = tx.objectStore(STORE_NAME)
+      const request = store.get(id)
+      let updated: SessionMetaRecord | null = null
+
+      request.onsuccess = () => {
+        const existing = request.result as SessionMetaRecord | undefined
+        if (!existing) return
+        updated = { ...existing, ...updates, id }
+        store.put(updated)
+      }
+      tx.oncomplete = () => resolve(updated)
+      tx.onerror = () => reject(tx.error)
+      tx.onabort = () => reject(tx.error)
     })
   }
 

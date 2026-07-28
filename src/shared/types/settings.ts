@@ -282,6 +282,29 @@ const MCPSettingsSchema = z.object({
   enabledBuiltinServers: z.array(z.string()),
 })
 
+export const SyncSettingsSchema = z.object({
+  provider: z.literal('webdav').catch('webdav'),
+  webdav: z
+    .object({
+      url: z.string().catch(''),
+      username: z.string().catch(''),
+      password: z.string().catch(''),
+      syncPassword: z.string().catch(''),
+    })
+    .catch({
+      url: '',
+      username: '',
+      password: '',
+      syncPassword: '',
+    }),
+  lastSyncedAt: z.string().optional().catch(undefined),
+  // Identity of the remote snapshot this device last synced with, used to skip
+  // re-merging an unchanged snapshot. Scoped to the endpoint (URL + username)
+  // so switching WebDAV servers or accounts never suppresses a merge.
+  lastSeenEndpoint: z.string().optional().catch(undefined),
+  lastSeenETag: z.string().optional().catch(undefined),
+})
+
 export enum Theme {
   Dark,
   Light,
@@ -414,6 +437,16 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
     enabledSkillNames: [],
     translationEnabled: true,
   }),
+  sync: SyncSettingsSchema.catch({
+    provider: 'webdav',
+    webdav: {
+      url: '',
+      username: '',
+      password: '',
+      syncPassword: '',
+    },
+    lastSyncedAt: undefined,
+  }),
 })
 
 // TODO: provider的 base info 和 settings混在一起了，可以考虑像 session settings 和 global settings一样拆开
@@ -441,6 +474,7 @@ export type ExtensionSettings = z.infer<typeof ExtensionSettingsSchema>
 export type MCPTransportConfig = z.infer<typeof MCPTransportConfigSchema>
 export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>
 export type MCPSettings = z.infer<typeof MCPSettingsSchema>
+export type SyncSettings = z.infer<typeof SyncSettingsSchema>
 
 // Re-export SkillSettings for convenience
 export type { SkillSettings } from './skills'

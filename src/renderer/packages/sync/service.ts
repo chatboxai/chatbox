@@ -1,0 +1,507 @@
+import { isChatSession, type Session, type SessionMeta, type SessionMetaRecord, type Settings } from '@shared/types'
+import { SessionMetaRecordSchema, SessionSchema } from '@shared/types/session'
+import { z } from 'zod'
+import { migrateSession } from '@/utils/session-utils'
+import { decryptJsonEnvelope, encryptJsonEnvelope } from './crypto'
+import { createSyncSnapshot, mergeRemoteSnapshot, sessionHasActiveGeneration } from './snapshot'
+import type { SyncCryptoEnvelope, SyncSnapshot, WebDAVRequest, WebDAVResponse } from './types'
+import { buildBasicAuthHeader, joinWebDAVUrl, requestWebDAV, SYNC_COLLECTION_PATH, SYNC_SNAPSHOT_PATH } from './webdav'
+
+const RawSyncSnapshotSchema = z.object({
+  version: z.literal(1),
+  exportedAt: z.string(),
+  deviceName: z.string(),
+  sessions: z.array(z.unknown()),
+  metas: z.array(SessionMetaRecordSchema),
+})
+
+const MAX_UPLOAD_ATTEMPTS = 3
+const HTTP_NOT_FOUND = 404
+const HTTP_PRECONDITION_FAILED = 412
+const STRONG_ETAG_PATTERN = /^"[\x21\x23-\x7e\x80-\xff]*"$/
+
+type SyncPlatform = {
+  getDeviceName?: () => Promise<string>
+  webdavRequest?: (request: WebDAVRequest, baseUrl: string) => Promise<WebDAVResponse>
+}
+
+type DownloadedWebDAVSnapshot = {
+  snapshot?: SyncSnapshot
+  etag?: string
+}
+
+/**
+ * Identity of the remote snapshot this device last synced with. Scoped to the
+ * endpoint (URL + username) so that switching WebDAV servers or accounts never
+ * suppresses a merge against the new endpoint's snapshot.
+ */
+export type LastSeenSnapshot = {
+  endpoint: string
+  etag?: string
+}
+
+export type SyncMetadataOrder = Pick<SessionMetaRecord, 'sortOrder' | 'createdAt'>
+
+export type SyncMetadataUndo = {
+  previousSession?: Partial<Omit<SessionMeta, 'id'>>
+  appliedSession?: Partial<Omit<SessionMeta, 'id'>>
+  previousOrder?: SyncMetadataOrder
+  appliedOrder?: SyncMetadataOrder
+}
+
+export type WebDAVSyncDeps = {
+  platform: SyncPlatform
+  listLocalSessions: () => Promise<Session[]>
+  listLocalMetas: () => Promise<SessionMetaRecord[]>
+  createSession: (session: Session, meta: SessionMetaRecord) => Promise<void>
+  updateSessionMetadata: (
+    sessionId: string,
+    patch: Partial<Omit<SessionMeta, 'id'>> | undefined,
+    order: SyncMetadataOrder | undefined
+  ) => Promise<SyncMetadataUndo>
+  restoreSessionMetadata?: (sessionId: string, undo: SyncMetadataUndo) => Promise<void>
+  updateLastSyncedAt: (isoDate: string) => Promise<void> | void
+  getLastSeenSnapshot?: () => LastSeenSnapshot | undefined | Promise<LastSeenSnapshot | undefined>
+  setLastSeenSnapshot?: (seen: LastSeenSnapshot) => Promise<void> | void
+  createConflictId?: (sourceSessionId: string, contentFingerprint: string) => string
+  now?: () => number
+}
+
+export type UploadWebDAVSnapshotResult = {
+  uploaded: number
+  lastSyncedAt: string
+}
+
+export type DownloadWebDAVSnapshotResult = {
+  imported: number
+  conflicts: number
+  saved: number
+  lastSyncedAt?: string
+  remoteMissing?: boolean
+  remoteUnchanged?: boolean
+}
+
+export type TestWebDAVConnectionResult = {
+  snapshotExists: boolean
+  encryptionVerified: boolean
+}
+
+export type PreviewWebDAVUploadResult = {
+  localCount: number
+  remoteCount: number
+  remoteOnlyCount: number
+  willRemoveRemoteCount: number
+  remoteMissing: boolean
+}
+
+function syncEndpoint(settings: Settings): string {
+  const webdav = getWebDAVSettings(settings)
+  return `${webdav.url}\n${webdav.username}`
+}
+
+/**
+ * Skip merging only when the remote snapshot is the exact one this device
+ * last synced with (same endpoint, same ETag). Device clocks are never
+ * compared: a clock-skewed device must still see every genuinely new
+ * snapshot, otherwise the skipped merge would let a later conditional upload
+ * overwrite remote-only sessions. When in doubt (no ETag, no record), merge.
+ */
+async function isRemoteSnapshotAlreadySeen(
+  remote: DownloadedWebDAVSnapshot,
+  settings: Settings,
+  deps: Pick<WebDAVSyncDeps, 'getLastSeenSnapshot'>
+): Promise<boolean> {
+  if (!remote.etag || !deps.getLastSeenSnapshot) {
+    return false
+  }
+  const lastSeen = await deps.getLastSeenSnapshot()
+  if (!lastSeen) {
+    return false
+  }
+  return lastSeen.endpoint === syncEndpoint(settings) && lastSeen.etag === remote.etag
+}
+
+async function rememberRemoteSnapshot(etag: string | undefined, settings: Settings, deps: WebDAVSyncDeps) {
+  await deps.setLastSeenSnapshot?.({ endpoint: syncEndpoint(settings), etag })
+}
+
+function getWebDAVSettings(settings: Settings) {
+  const sync = settings.sync
+  if (!sync || sync.provider !== 'webdav') {
+    throw new Error('WebDAV sync is not configured')
+  }
+  const { url, username, password, syncPassword } = sync.webdav
+  if (!url.trim()) {
+    throw new Error('WebDAV URL is required')
+  }
+  if (new URL(url).protocol !== 'https:') {
+    throw new Error('WebDAV URL must use HTTPS')
+  }
+  if (!username.trim()) {
+    throw new Error('WebDAV username is required')
+  }
+  if (!password) {
+    throw new Error('WebDAV password is required')
+  }
+  if (!syncPassword) {
+    throw new Error('Sync encryption password is required')
+  }
+  return sync.webdav
+}
+
+function authHeaders(settings: Settings): Record<string, string> {
+  const webdav = getWebDAVSettings(settings)
+  return {
+    Authorization: buildBasicAuthHeader(webdav.username, webdav.password),
+  }
+}
+
+function parseSyncSnapshot(value: unknown): SyncSnapshot {
+  const result = RawSyncSnapshotSchema.safeParse(value)
+  if (!result.success) {
+    throw new Error('Invalid sync snapshot')
+  }
+  const sessions = z
+    .array(SessionSchema)
+    .safeParse(result.data.sessions.map((session) => migrateSession(session as Session)))
+  if (!sessions.success) {
+    throw new Error('Invalid sync snapshot')
+  }
+  return {
+    ...result.data,
+    sessions: sessions.data,
+  }
+}
+
+function snapshotUrl(settings: Settings): string {
+  return joinWebDAVUrl(getWebDAVSettings(settings).url, SYNC_SNAPSHOT_PATH)
+}
+
+function collectionUrls(settings: Settings): string[] {
+  const webdav = getWebDAVSettings(settings)
+  return ['ChatboxSync/', SYNC_COLLECTION_PATH].map((path) => joinWebDAVUrl(webdav.url, path))
+}
+
+function assertSuccess(response: WebDAVResponse, action: string, okStatuses: number[]) {
+  if (!okStatuses.includes(response.status)) {
+    throw new Error(`${action} failed with HTTP ${response.status}${response.body ? `: ${response.body}` : ''}`)
+  }
+}
+
+function responseHeader(headers: Record<string, string>, name: string): string | undefined {
+  const normalizedName = name.toLowerCase()
+  const entry = Object.entries(headers).find(([headerName]) => headerName.toLowerCase() === normalizedName)
+  const value = entry?.[1].trim()
+  return value ? value : undefined
+}
+
+function requireStrongWebDAVSnapshotETag(remote: DownloadedWebDAVSnapshot): string {
+  if (!remote.etag) {
+    throw new Error('WebDAV server did not return an ETag for the sync snapshot; refusing to overwrite it')
+  }
+  if (remote.etag.startsWith('W/')) {
+    throw new Error('WebDAV server returned a weak ETag that cannot be used with If-Match; refusing to overwrite it')
+  }
+  if (!STRONG_ETAG_PATTERN.test(remote.etag)) {
+    throw new Error('WebDAV server returned an invalid ETag for the sync snapshot; refusing to overwrite it')
+  }
+  return remote.etag
+}
+
+async function ensureWebDAVCollections(settings: Settings, platform: SyncPlatform) {
+  const webdav = getWebDAVSettings(settings)
+  const headers = authHeaders(settings)
+  for (const url of collectionUrls(settings)) {
+    const response = await requestWebDAV(platform, webdav.url, {
+      url,
+      method: 'MKCOL',
+      headers,
+    })
+    assertSuccess(response, 'Create WebDAV sync directory', [200, 201, 405])
+  }
+}
+
+async function downloadWebDAVSnapshot(settings: Settings, platform: SyncPlatform): Promise<DownloadedWebDAVSnapshot> {
+  const webdav = getWebDAVSettings(settings)
+  const response = await requestWebDAV(platform, webdav.url, {
+    url: snapshotUrl(settings),
+    method: 'GET',
+    headers: authHeaders(settings),
+  })
+
+  if (response.status === HTTP_NOT_FOUND) {
+    return {}
+  }
+  assertSuccess(response, 'Download WebDAV sync snapshot', [200])
+
+  const envelope = JSON.parse(response.body) as SyncCryptoEnvelope
+  return {
+    snapshot: parseSyncSnapshot(await decryptJsonEnvelope(envelope, webdav.syncPassword)),
+    etag: responseHeader(response.headers, 'etag'),
+  }
+}
+
+export async function testWebDAVConnection(
+  settings: Settings,
+  deps: Pick<WebDAVSyncDeps, 'platform'>
+): Promise<TestWebDAVConnectionResult> {
+  await ensureWebDAVCollections(settings, deps.platform)
+  const remote = await downloadWebDAVSnapshot(settings, deps.platform)
+  return {
+    snapshotExists: Boolean(remote.snapshot),
+    encryptionVerified: Boolean(remote.snapshot),
+  }
+}
+
+export async function previewWebDAVUpload(
+  settings: Settings,
+  deps: Pick<WebDAVSyncDeps, 'platform' | 'listLocalSessions' | 'getLastSeenSnapshot'>
+): Promise<PreviewWebDAVUploadResult> {
+  const [sessions, remote] = await Promise.all([
+    deps.listLocalSessions(),
+    downloadWebDAVSnapshot(settings, deps.platform),
+  ])
+  const localSessionIds = new Set(sessions.filter(isChatSession).map((session) => session.id))
+  const remoteSessions = remote.snapshot?.sessions.filter(isChatSession) ?? []
+  const remoteOnlyCount = remoteSessions.filter((session) => !localSessionIds.has(session.id)).length
+  const remoteAlreadySeen = remote.snapshot ? await isRemoteSnapshotAlreadySeen(remote, settings, deps) : false
+
+  return {
+    localCount: localSessionIds.size,
+    remoteCount: remoteSessions.length,
+    remoteOnlyCount,
+    willRemoveRemoteCount: remoteAlreadySeen ? remoteOnlyCount : 0,
+    remoteMissing: !remote.snapshot,
+  }
+}
+
+export async function uploadWebDAVSnapshot(
+  settings: Settings,
+  deps: WebDAVSyncDeps
+): Promise<UploadWebDAVSnapshotResult> {
+  const webdav = getWebDAVSettings(settings)
+  const now = deps.now ?? Date.now
+
+  const [sessions, metas, deviceName] = await Promise.all([
+    deps.listLocalSessions(),
+    deps.listLocalMetas(),
+    deps.platform.getDeviceName?.() ?? Promise.resolve('Unknown device'),
+  ])
+  if (sessions.some(sessionHasActiveGeneration)) {
+    throw new Error('Cannot upload chat history while a response is still generating')
+  }
+  await ensureWebDAVCollections(settings, deps.platform)
+  const lastSyncedAt = new Date(now()).toISOString()
+  const localSnapshot = createSyncSnapshot({
+    sessions,
+    metas,
+    deviceName,
+    exportedAt: lastSyncedAt,
+  })
+
+  for (let attempt = 0; attempt < MAX_UPLOAD_ATTEMPTS; attempt += 1) {
+    const remote = await downloadWebDAVSnapshot(settings, deps.platform)
+    const remoteSnapshot = remote.snapshot
+    // Only merge a remote snapshot this device has not synced with yet.
+    // Re-merging an already-seen snapshot would resurrect "(Synced copy)"
+    // duplicates that the local device has since folded back into its own
+    // sessions; skipping a genuinely new one would drop remote-only sessions.
+    const shouldMergeRemote = remoteSnapshot ? !(await isRemoteSnapshotAlreadySeen(remote, settings, deps)) : false
+    const mergeResult =
+      shouldMergeRemote && remoteSnapshot
+        ? mergeRemoteSnapshot({
+            localSessions: localSnapshot.sessions,
+            localMetas: localSnapshot.metas,
+            remote: remoteSnapshot,
+            now: now(),
+            createConflictId: deps.createConflictId,
+          })
+        : undefined
+    const snapshot = mergeResult
+      ? createSyncSnapshot({
+          sessions: [
+            ...localSnapshot.sessions,
+            ...mergeResult.sessionChanges.filter((change) => change.kind === 'create').map((change) => change.session),
+          ],
+          metas: [...localSnapshot.metas, ...mergeResult.metasToSave],
+          deviceName,
+          exportedAt: lastSyncedAt,
+        })
+      : localSnapshot
+    const preconditionHeaders: Record<string, string> = remoteSnapshot
+      ? { 'If-Match': requireStrongWebDAVSnapshotETag(remote) }
+      : { 'If-None-Match': '*' }
+    const envelope = await encryptJsonEnvelope(snapshot, webdav.syncPassword)
+    const response = await requestWebDAV(deps.platform, webdav.url, {
+      url: snapshotUrl(settings),
+      method: 'PUT',
+      headers: {
+        ...authHeaders(settings),
+        'Content-Type': 'application/json',
+        ...preconditionHeaders,
+      },
+      body: JSON.stringify(envelope),
+    })
+
+    if (response.status === HTTP_PRECONDITION_FAILED) {
+      if (attempt < MAX_UPLOAD_ATTEMPTS - 1) {
+        continue
+      }
+      throw new Error('Upload WebDAV sync snapshot failed because the remote snapshot changed during upload')
+    }
+
+    assertSuccess(response, 'Upload WebDAV sync snapshot', [200, 201, 204])
+    // Record the PUT's ETag as last seen only when no remote merge happened:
+    // without a merge the remote now holds exactly our local state. A merged
+    // snapshot, though, contains remote-only sessions that were never
+    // persisted locally — remembering its ETag would make the next download
+    // skip the very merge that saves them. Leave lastSeen untouched then; the
+    // next download re-merges idempotently and persists them.
+    if (!mergeResult) {
+      await rememberRemoteSnapshot(responseHeader(response.headers, 'etag'), settings, deps)
+    }
+    await deps.updateLastSyncedAt(lastSyncedAt)
+    return {
+      uploaded: snapshot.sessions.length,
+      lastSyncedAt,
+    }
+  }
+
+  throw new Error('Upload WebDAV sync snapshot failed because the remote snapshot changed during upload')
+}
+
+export async function downloadAndMergeWebDAVSnapshot(
+  settings: Settings,
+  deps: WebDAVSyncDeps
+): Promise<DownloadWebDAVSnapshotResult> {
+  const remote = await downloadWebDAVSnapshot(settings, deps.platform)
+  if (!remote.snapshot) {
+    return {
+      imported: 0,
+      conflicts: 0,
+      saved: 0,
+      remoteMissing: true,
+    }
+  }
+
+  if (await isRemoteSnapshotAlreadySeen(remote, settings, deps)) {
+    return {
+      imported: 0,
+      conflicts: 0,
+      saved: 0,
+      remoteUnchanged: true,
+    }
+  }
+
+  const [localSessions, localMetas] = await Promise.all([deps.listLocalSessions(), deps.listLocalMetas()])
+  const result = mergeRemoteSnapshot({
+    localSessions,
+    localMetas,
+    remote: remote.snapshot,
+    now: (deps.now ?? Date.now)(),
+    createConflictId: deps.createConflictId,
+    preferRemoteMetadata: true,
+  })
+
+  const metaById = new Map(result.metasToSave.map((meta) => [meta.id, meta]))
+  const plannedCreatedSessionIds = new Set(
+    result.sessionChanges.filter((change) => change.kind === 'create').map((change) => change.session.id)
+  )
+  const createdSessionIds = new Set<string>()
+  const undoOperations: Array<{ sessionId: string; undo: SyncMetadataUndo }> = []
+  try {
+    const updatedSessionIds = new Set<string>()
+
+    // Update existing sessions first. These writes have field-scoped undo
+    // records, so a later failure can restore them without clobbering edits
+    // made concurrently by the user.
+    for (const change of result.sessionChanges) {
+      if (change.kind !== 'update-metadata') {
+        continue
+      }
+      const meta = metaById.get(change.sessionId)
+      const order = meta ? { sortOrder: meta.sortOrder, createdAt: meta.createdAt } : undefined
+      const undo = await deps.updateSessionMetadata(change.sessionId, change.patch, order)
+      updatedSessionIds.add(change.sessionId)
+      undoOperations.push({ sessionId: change.sessionId, undo })
+    }
+
+    // A meta-only change contains ordering information. Session metadata such as
+    // name/starred is always represented by an update change above. Applying
+    // only these fields avoids replacing a concurrently edited full record.
+    for (const meta of result.metasToSave) {
+      if (plannedCreatedSessionIds.has(meta.id) || updatedSessionIds.has(meta.id)) {
+        continue
+      }
+      const undo = await deps.updateSessionMetadata(meta.id, undefined, {
+        sortOrder: meta.sortOrder,
+        createdAt: meta.createdAt,
+      })
+      undoOperations.push({ sessionId: meta.id, undo })
+    }
+
+    // Create new sessions last to minimize partial progress. Each creation is
+    // already atomic across the session value and its metadata. If a later
+    // creation fails, keep completed imports: their stable IDs make the next
+    // download idempotently resume instead of deleting data that may already
+    // have been opened or edited by the user.
+    for (const change of result.sessionChanges) {
+      if (change.kind !== 'create') {
+        continue
+      }
+      const meta = metaById.get(change.session.id)
+      if (!meta) {
+        throw new Error(`Missing metadata for synced session ${change.session.id}`)
+      }
+      await deps.createSession(change.session, meta)
+      createdSessionIds.add(change.session.id)
+    }
+  } catch (error) {
+    const rollbackErrors: unknown[] = []
+    for (const undo of undoOperations.reverse()) {
+      try {
+        if (deps.restoreSessionMetadata) {
+          await deps.restoreSessionMetadata(undo.sessionId, undo.undo)
+        } else {
+          await deps.updateSessionMetadata(undo.sessionId, undo.undo.previousSession, undo.undo.previousOrder)
+        }
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      const message = error instanceof Error ? error.message : String(error)
+      const completedImportLabel =
+        createdSessionIds.size === 1 ? 'conversation import was' : 'conversation imports were'
+      const partialImport =
+        createdSessionIds.size > 0
+          ? `; ${createdSessionIds.size} completed ${completedImportLabel} kept and will be reused on retry`
+          : ''
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        `WebDAV sync import failed: ${message}${partialImport}; restoring local data also failed`,
+        { cause: error }
+      )
+    }
+    if (createdSessionIds.size > 0) {
+      const message = error instanceof Error ? error.message : String(error)
+      const conversationLabel = createdSessionIds.size === 1 ? 'conversation' : 'conversations'
+      throw new Error(
+        `WebDAV sync import failed after importing ${createdSessionIds.size} ${conversationLabel}: ${message}. Completed imports were kept; retry to continue.`,
+        { cause: error }
+      )
+    }
+    throw error
+  }
+
+  const lastSyncedAt = new Date((deps.now ?? Date.now)()).toISOString()
+  await rememberRemoteSnapshot(remote.etag, settings, deps)
+  await deps.updateLastSyncedAt(lastSyncedAt)
+
+  return {
+    imported: result.imported,
+    conflicts: result.conflicts,
+    saved: result.sessionChanges.length,
+    lastSyncedAt,
+  }
+}

@@ -91,6 +91,7 @@
     "@babel/preset-env": "^7.28.0",
     "@biomejs/biome": "2.0.0",
     "@braintree/sanitize-url": "^6.0.4",
+    "@chatbox/capacitor-webdav-http": "workspace:*",
     "@capacitor-community/sqlite": "^7.0.2",
     "@capacitor/android": "^7.0.0",
     "@capacitor/app": "^7.0.0",

@@ -17,6 +17,7 @@ import {
 import { type InfiniteData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import compact from 'lodash/compact'
 import isEmpty from 'lodash/isEmpty'
+import isEqual from 'lodash/isEqual'
 import { useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import platform from '@/platform'
@@ -232,6 +233,159 @@ export async function createSession(newSession: Omit<Session, 'id'>, previousId?
   updateSessionListData((items) => sortSessionRecords([...items, record]))
 
   return session
+}
+
+const pendingSessionCreates = new Map<string, Promise<Session>>()
+
+function normalizePersistedSession(session: Session): Session {
+  // Every platform persists sessions through JSON. Normalize both sides the
+  // same way before comparing so optional `undefined` properties and migrated
+  // legacy messages do not turn a crash-recovery retry into a false collision.
+  return migrateSession(JSON.parse(JSON.stringify(session)) as Session)
+}
+
+function importedSessionsEqual(left: Session, right: Session): boolean {
+  try {
+    return isEqual(normalizePersistedSession(left), normalizePersistedSession(right))
+  } catch {
+    return false
+  }
+}
+
+function normalizeImportedMeta(record: SessionMetaRecord) {
+  // SQLite represents false booleans and empty optional strings as absent
+  // values. Treat those representations as equivalent to the incoming record.
+  return {
+    id: record.id,
+    name: record.name,
+    type: record.type || undefined,
+    starred: Boolean(record.starred),
+    hidden: Boolean(record.hidden),
+    assistantAvatarKey: record.assistantAvatarKey || undefined,
+    picUrl: record.picUrl || undefined,
+    backgroundImage: record.backgroundImage,
+    sortOrder: record.sortOrder,
+    createdAt: record.createdAt,
+  }
+}
+
+function importedMetasEqual(left: SessionMetaRecord, right: SessionMetaRecord): boolean {
+  return isEqual(normalizeImportedMeta(left), normalizeImportedMeta(right))
+}
+
+function importedSessionCollision(sessionId: string, part: 'session data' | 'metadata'): Error {
+  return new Error(`Session ${sessionId} already exists with different ${part}`)
+}
+
+function publishImportedSession(session: Session, record: SessionMetaRecord): void {
+  _setSessionCache(session.id, session)
+  updateSessionListData((items) => sortSessionRecords([...items.filter((item) => item.id !== record.id), record]))
+}
+
+async function createImportedMetadata(
+  metaStorage: SessionMetaStorage,
+  record: SessionMetaRecord
+): Promise<SessionMetaRecord> {
+  try {
+    await metaStorage.create(record)
+    return record
+  } catch (error) {
+    // Some storage implementations can report an error after committing. If
+    // the exact row is now present, accepting it is safer than deleting the
+    // matching session and leaving the metadata orphaned.
+    try {
+      const committed = await metaStorage.getById(record.id)
+      if (committed && importedMetasEqual(committed, record)) {
+        return committed
+      }
+    } catch {
+      // Preserve the original create error when the verification read fails.
+    }
+    throw error
+  }
+}
+
+async function _createSessionWithId(session: Session, record: SessionMetaRecord): Promise<Session> {
+  if (session.id !== record.id) {
+    throw new Error('Session and metadata IDs must match')
+  }
+
+  const metaStorage = await getMetaStorage()
+  const [existingSessionValue, existingMeta] = await Promise.all([
+    platform.getStoreValue(StorageKeyGenerator.session(session.id)),
+    metaStorage.getById(session.id),
+  ])
+
+  const existingSession = existingSessionValue ? normalizePersistedSession(existingSessionValue as Session) : undefined
+  if (existingSession && !importedSessionsEqual(existingSession, session)) {
+    throw importedSessionCollision(session.id, 'session data')
+  }
+  if (existingMeta && !importedMetasEqual(existingMeta, record)) {
+    throw importedSessionCollision(session.id, 'metadata')
+  }
+
+  if (existingSession && existingMeta) {
+    // Metadata already contributes to the persisted list total. Re-appending
+    // it to a partially loaded paginated cache would incorrectly increment the
+    // cached total when the row is not in the currently loaded pages.
+    _setSessionCache(existingSession.id, existingSession)
+    return existingSession
+  }
+
+  if (existingSession) {
+    const repairedMeta = await createImportedMetadata(metaStorage, record)
+    publishImportedSession(existingSession, repairedMeta)
+    return existingSession
+  }
+
+  if (existingMeta) {
+    await storage.setItemNow(StorageKeyGenerator.session(session.id), session)
+    _setSessionCache(session.id, session)
+    return session
+  }
+
+  await storage.setItemNow(StorageKeyGenerator.session(session.id), session)
+  let createdMeta: SessionMetaRecord
+  try {
+    createdMeta = await createImportedMetadata(metaStorage, record)
+  } catch (error) {
+    try {
+      await storage.removeItem(StorageKeyGenerator.session(session.id))
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `Failed to create session ${session.id} and remove its partially written data`,
+        { cause: error }
+      )
+    }
+    throw error
+  }
+  publishImportedSession(session, createdMeta)
+  return session
+}
+
+/** Create an imported session with its existing ID and exact metadata. */
+export async function createSessionWithId(session: Session, record: SessionMetaRecord): Promise<Session> {
+  const previous = pendingSessionCreates.get(session.id)
+  const creation = (async () => {
+    if (previous) {
+      try {
+        await previous
+      } catch {
+        // Reconcile persisted state after the failed attempt. It may have left
+        // either half of the fixed-ID session behind.
+      }
+    }
+    return _createSessionWithId(session, record)
+  })()
+  pendingSessionCreates.set(session.id, creation)
+  try {
+    return await creation
+  } finally {
+    if (pendingSessionCreates.get(session.id) === creation) {
+      pendingSessionCreates.delete(session.id)
+    }
+  }
 }
 
 const sessionUpdateQueues: Record<string, UpdateQueue<Session>> = {}

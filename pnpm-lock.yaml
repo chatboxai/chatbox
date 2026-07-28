@@ -203,6 +203,9 @@ importers:
       '@capacitor/toast':
         specifier: ^7.0.0
         version: 7.0.3(@capacitor/core@7.4.5)
+      '@chatbox/capacitor-webdav-http':
+        specifier: workspace:*
+        version: link:packages/capacitor-webdav-http
       '@dnd-kit/core':
         specifier: ^6.0.8
         version: 6.3.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -761,6 +764,12 @@ importers:
       zustand:
         specifier: ^5.0.6
         version: 5.0.11(@types/react@18.3.27)(immer@10.2.0)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
+
+  packages/capacitor-webdav-http:
+    dependencies:
+      '@capacitor/core':
+        specifier: ^7.0.0
+        version: 7.4.5
 
   release/app:
     dependencies:

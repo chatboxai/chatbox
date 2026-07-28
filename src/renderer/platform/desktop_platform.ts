@@ -12,6 +12,7 @@ import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/
 import { IndexedDBTaskSessionStorage, type TaskSessionStorage } from '@/storage/TaskSessionStorage'
 import { rememberFileNativePath } from '@/utils/file-native-path'
 import { getOS } from '../packages/navigator'
+import type { WebDAVRequest, WebDAVResponse } from '../packages/sync/types'
 import type { Platform, PlatformType } from './interfaces'
 import DesktopKnowledgeBaseController from './knowledge-base/desktop-controller'
 import DesktopSessionAttachmentRagController from './session-attachment-rag/desktop-controller'
@@ -235,6 +236,10 @@ export default class DesktopPlatform implements Platform {
 
   public async ensureAutoLaunch(enable: boolean) {
     return this.ipc.invoke('ensureAutoLaunch', enable)
+  }
+
+  public async webdavRequest(request: WebDAVRequest, _baseUrl: string): Promise<WebDAVResponse> {
+    return this.ipc.invoke('webdav:request', request)
   }
 
   async parseFileLocally(file: File): Promise<{ key?: string; isSupported: boolean }> {

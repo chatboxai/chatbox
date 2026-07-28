@@ -166,32 +166,29 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
 
   async update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null> {
     await this.initialize()
-    const existing = await this.getById(id)
-    if (!existing) return null
+    const columns: string[] = []
+    const values: unknown[] = []
+    const add = (property: keyof SessionMetaRecord, column: string, value: unknown) => {
+      if (Object.hasOwn(updates, property)) {
+        columns.push(`${column} = ?`)
+        values.push(value)
+      }
+    }
 
-    const updated = { ...existing, ...updates }
-    const row = this.recordToRow(updated)
+    add('name', 'name', updates.name)
+    add('starred', 'starred', updates.starred ? 1 : 0)
+    add('hidden', 'hidden', updates.hidden ? 1 : 0)
+    add('assistantAvatarKey', 'assistant_avatar_key', updates.assistantAvatarKey || null)
+    add('picUrl', 'pic_url', updates.picUrl || null)
+    add('backgroundImage', 'background_image', updates.backgroundImage ? JSON.stringify(updates.backgroundImage) : null)
+    add('type', 'type', updates.type || null)
+    add('sortOrder', 'sort_order', updates.sortOrder)
+    add('createdAt', 'created_at', updates.createdAt)
 
-    await this.database.run(
-      `UPDATE session_meta SET
-       name = ?, starred = ?, hidden = ?, assistant_avatar_key = ?, pic_url = ?,
-       background_image = ?, type = ?, sort_order = ?, created_at = ?
-       WHERE id = ?`,
-      [
-        row.name,
-        row.starred,
-        row.hidden,
-        row.assistant_avatar_key,
-        row.pic_url,
-        row.background_image,
-        row.type,
-        row.sort_order,
-        row.created_at,
-        id,
-      ]
-    )
-
-    return updated
+    if (columns.length > 0) {
+      await this.database.run(`UPDATE session_meta SET ${columns.join(', ')} WHERE id = ?`, [...values, id])
+    }
+    return await this.getById(id)
   }
 
   async getById(id: string): Promise<SessionMetaRecord | null> {

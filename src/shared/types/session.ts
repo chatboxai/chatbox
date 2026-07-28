@@ -279,6 +279,7 @@ export const SessionSchema = z.object({
   threads: z.array(SessionThreadSchema).optional(),
   threadName: z.string().optional(),
   messageForksHash: z.record(z.string(), MessageForkSchema).optional(),
+  syncConflictSourceId: z.string().optional(),
   compactionPoints: z.array(CompactionPointSchema).optional(),
 })
 

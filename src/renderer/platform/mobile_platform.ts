@@ -1,7 +1,10 @@
 import { App } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
+import { CapacitorHttp } from '@capacitor/core'
 import { Device } from '@capacitor/device'
+import { WebDAVHttp } from '@chatbox/capacitor-webdav-http'
 import * as defaults from '@shared/defaults'
+import { validateWebDAVRequestTarget } from '@shared/sync-webdav'
 import type { Config, Settings, ShortcutSetting } from '@shared/types'
 import localforage from 'localforage'
 import { v4 as uuidv4 } from 'uuid'
@@ -13,6 +16,7 @@ import { SQLiteSessionMetaStorage } from '@/storage/SQLiteSessionMetaStorage'
 import { IndexedDBTaskSessionStorage, type TaskSessionStorage } from '@/storage/TaskSessionStorage'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
 import { getBrowser, getOS } from '../packages/navigator'
+import type { WebDAVRequest, WebDAVResponse } from '../packages/sync/types'
 import type { Platform, PlatformType } from './interfaces'
 import type { KnowledgeBaseController } from './knowledge-base/interface'
 import MobileExporter from './mobile_exporter'
@@ -241,6 +245,42 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
 
   public async ensureAutoLaunch(enable: boolean) {
     return
+  }
+
+  public async webdavRequest(request: WebDAVRequest, baseUrl: string): Promise<WebDAVResponse> {
+    validateWebDAVRequestTarget(baseUrl, request)
+    if (CHATBOX_BUILD_PLATFORM === 'android') {
+      const response = await WebDAVHttp.request({
+        baseUrl,
+        url: request.url,
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+      })
+      if (response.status >= 300 && response.status <= 399) {
+        throw new Error('WebDAV redirects are not allowed')
+      }
+      return response
+    }
+    const response = await CapacitorHttp.request({
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+      data: request.body,
+      disableRedirects: true,
+      webFetchExtra: {
+        redirect: 'error',
+      },
+      responseType: 'text',
+    })
+    if (response.status >= 300 && response.status <= 399) {
+      throw new Error('WebDAV redirects are not allowed')
+    }
+    return {
+      status: response.status,
+      headers: response.headers ?? {},
+      body: typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? ''),
+    }
   }
 
   async parseFileLocally(file: File): Promise<{ key?: string; isSupported: boolean }> {

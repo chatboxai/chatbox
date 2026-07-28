@@ -94,6 +94,7 @@ export function useImageModelGroups(): ImageModelGroup[] {
   const chatboxProvider = providers.find((p) => p.id === ModelProviderEnum.ChatboxAI)
   const openAIProvider = providers.find((p) => p.id === ModelProviderEnum.OpenAI)
   const geminiProvider = providers.find((p) => p.id === ModelProviderEnum.Gemini)
+  const openRouterProvider = providers.find((p) => p.id === ModelProviderEnum.OpenRouter)
   const customGeminiProviders = providers.filter((p) => p.isCustom && p.type === ModelProviderType.Gemini)
 
   const openAIImageModels = useProviderImageModels(ModelProviderEnum.OpenAI, !!openAIProvider)
@@ -161,11 +162,29 @@ export function useImageModelGroups(): ImageModelGroup[] {
       }
     }
 
+    if (openRouterProvider) {
+      const defaultModels = (openRouterProvider.defaultSettings?.models || [])
+        .filter((model) => model.type === 'image')
+        .map(providerModelToOption)
+      const manualModels = (providerSettingsMap?.[openRouterProvider.id]?.models || [])
+        .filter((model) => model.type === 'image')
+        .map(manualImageModelToOption)
+      const models = mergeImageModels(defaultModels, manualModels)
+      if (models.length > 0) {
+        groups.push({
+          label: openRouterProvider.name,
+          providerId: openRouterProvider.id,
+          models,
+        })
+      }
+    }
+
     return groups
   }, [
     chatboxProvider,
     openAIProvider,
     geminiProvider,
+    openRouterProvider,
     customGeminiProviders,
     providerSettingsMap,
     chatboxAIImageModels,

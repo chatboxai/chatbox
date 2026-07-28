@@ -127,7 +127,7 @@
     "@mantine/spotlight": "^7.17.7",
     "@mui/icons-material": "^5.11.11",
     "@mui/material": "^5.11.11",
-    "@openrouter/ai-sdk-provider": "^2.0.0",
+    "@openrouter/ai-sdk-provider": "^2.10.0",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.5.10",
     "@radix-ui/react-dialog": "^1.0.5",
     "@sentry/react": "^10.12.0",

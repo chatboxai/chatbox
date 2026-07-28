@@ -29,6 +29,7 @@ export const FEATURED_PROVIDER_IDS: string[] = [
   ModelProviderEnum.SiliconFlow,
   ModelProviderEnum.DeepSeek,
   ModelProviderEnum.OpenRouter,
+  ModelProviderEnum.Modelsell,
   ModelProviderEnum.Ollama,
 ]
 

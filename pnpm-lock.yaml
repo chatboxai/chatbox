@@ -696,8 +696,8 @@ importers:
         specifier: ^4.0.1
         version: 4.0.3
       shell-quote:
-        specifier: ^1.8.2
-        version: 1.8.3
+        specifier: ^1.8.4
+        version: 1.8.4
       shiki:
         specifier: ^4.0.2
         version: 4.0.2
@@ -21786,7 +21786,7 @@ snapshots:
       date-fns: 2.30.0
       lodash: 4.17.23
       rxjs: 7.8.2
-      shell-quote: 1.8.3
+      shell-quote: 1.8.4
       spawn-command: 0.0.2
       supports-color: 8.1.1
       tree-kill: 1.2.2
@@ -24710,7 +24710,7 @@ snapshots:
   launch-editor@2.12.0:
     dependencies:
       picocolors: 1.1.1
-      shell-quote: 1.8.3
+      shell-quote: 1.8.4
 
   layout-base@1.0.2: {}
 

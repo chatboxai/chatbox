@@ -318,6 +318,7 @@
     "lodash": "^4.17.21",
     "ofetch": "^1.0.1",
     "officeparser": "5.0.0",
+    "protobufjs": "7.5.5",
     "sanitize-filename": "^1.6.3",
     "uuid": "^9.0.0"
   },

@@ -60,9 +60,6 @@ export type WebDAVSyncDeps = {
     order: SyncMetadataOrder | undefined
   ) => Promise<SyncMetadataUndo>
   restoreSessionMetadata?: (sessionId: string, undo: SyncMetadataUndo) => Promise<void>
-  deleteSession: (sessionId: string) => Promise<void>
-  /** @deprecated Existing metadata is now updated field-by-field by updateSessionMetadata. */
-  saveMetas?: (metas: SessionMetaRecord[]) => Promise<void>
   updateLastSyncedAt: (isoDate: string) => Promise<void> | void
   getLastSeenSnapshot?: () => LastSeenSnapshot | undefined | Promise<LastSeenSnapshot | undefined>
   setLastSeenSnapshot?: (seen: LastSeenSnapshot) => Promise<void> | void
@@ -407,52 +404,63 @@ export async function downloadAndMergeWebDAVSnapshot(
   })
 
   const metaById = new Map(result.metasToSave.map((meta) => [meta.id, meta]))
+  const plannedCreatedSessionIds = new Set(
+    result.sessionChanges.filter((change) => change.kind === 'create').map((change) => change.session.id)
+  )
   const createdSessionIds = new Set<string>()
-  const undoOperations: Array<
-    | { kind: 'delete-created'; sessionId: string }
-    | { kind: 'restore-metadata'; sessionId: string; undo: SyncMetadataUndo }
-  > = []
+  const undoOperations: Array<{ sessionId: string; undo: SyncMetadataUndo }> = []
   try {
     const updatedSessionIds = new Set<string>()
+
+    // Update existing sessions first. These writes have field-scoped undo
+    // records, so a later failure can restore them without clobbering edits
+    // made concurrently by the user.
     for (const change of result.sessionChanges) {
-      if (change.kind === 'create') {
-        const meta = metaById.get(change.session.id)
-        if (!meta) {
-          throw new Error(`Missing metadata for synced session ${change.session.id}`)
-        }
-        await deps.createSession(change.session, meta)
-        createdSessionIds.add(change.session.id)
-        undoOperations.push({ kind: 'delete-created', sessionId: change.session.id })
-      } else {
-        const meta = metaById.get(change.sessionId)
-        const order = meta ? { sortOrder: meta.sortOrder, createdAt: meta.createdAt } : undefined
-        const undo = await deps.updateSessionMetadata(change.sessionId, change.patch, order)
-        updatedSessionIds.add(change.sessionId)
-        undoOperations.push({ kind: 'restore-metadata', sessionId: change.sessionId, undo })
+      if (change.kind !== 'update-metadata') {
+        continue
       }
+      const meta = metaById.get(change.sessionId)
+      const order = meta ? { sortOrder: meta.sortOrder, createdAt: meta.createdAt } : undefined
+      const undo = await deps.updateSessionMetadata(change.sessionId, change.patch, order)
+      updatedSessionIds.add(change.sessionId)
+      undoOperations.push({ sessionId: change.sessionId, undo })
     }
 
     // A meta-only change contains ordering information. Session metadata such as
     // name/starred is always represented by an update change above. Applying
     // only these fields avoids replacing a concurrently edited full record.
     for (const meta of result.metasToSave) {
-      if (createdSessionIds.has(meta.id) || updatedSessionIds.has(meta.id)) {
+      if (plannedCreatedSessionIds.has(meta.id) || updatedSessionIds.has(meta.id)) {
         continue
       }
-      const undo = await deps.updateSessionMetadata(
-        meta.id,
-        undefined,
-        { sortOrder: meta.sortOrder, createdAt: meta.createdAt }
-      )
-      undoOperations.push({ kind: 'restore-metadata', sessionId: meta.id, undo })
+      const undo = await deps.updateSessionMetadata(meta.id, undefined, {
+        sortOrder: meta.sortOrder,
+        createdAt: meta.createdAt,
+      })
+      undoOperations.push({ sessionId: meta.id, undo })
+    }
+
+    // Create new sessions last to minimize partial progress. Each creation is
+    // already atomic across the session value and its metadata. If a later
+    // creation fails, keep completed imports: their stable IDs make the next
+    // download idempotently resume instead of deleting data that may already
+    // have been opened or edited by the user.
+    for (const change of result.sessionChanges) {
+      if (change.kind !== 'create') {
+        continue
+      }
+      const meta = metaById.get(change.session.id)
+      if (!meta) {
+        throw new Error(`Missing metadata for synced session ${change.session.id}`)
+      }
+      await deps.createSession(change.session, meta)
+      createdSessionIds.add(change.session.id)
     }
   } catch (error) {
     const rollbackErrors: unknown[] = []
     for (const undo of undoOperations.reverse()) {
       try {
-        if (undo.kind === 'delete-created') {
-          await deps.deleteSession(undo.sessionId)
-        } else if (deps.restoreSessionMetadata) {
+        if (deps.restoreSessionMetadata) {
           await deps.restoreSessionMetadata(undo.sessionId, undo.undo)
         } else {
           await deps.updateSessionMetadata(undo.sessionId, undo.undo.previousSession, undo.undo.previousOrder)
@@ -463,9 +471,23 @@ export async function downloadAndMergeWebDAVSnapshot(
     }
     if (rollbackErrors.length > 0) {
       const message = error instanceof Error ? error.message : String(error)
+      const completedImportLabel =
+        createdSessionIds.size === 1 ? 'conversation import was' : 'conversation imports were'
+      const partialImport =
+        createdSessionIds.size > 0
+          ? `; ${createdSessionIds.size} completed ${completedImportLabel} kept and will be reused on retry`
+          : ''
       throw new AggregateError(
         [error, ...rollbackErrors],
-        `WebDAV sync import failed: ${message}; restoring local data also failed`,
+        `WebDAV sync import failed: ${message}${partialImport}; restoring local data also failed`,
+        { cause: error }
+      )
+    }
+    if (createdSessionIds.size > 0) {
+      const message = error instanceof Error ? error.message : String(error)
+      const conversationLabel = createdSessionIds.size === 1 ? 'conversation' : 'conversations'
+      throw new Error(
+        `WebDAV sync import failed after importing ${createdSessionIds.size} ${conversationLabel}: ${message}. Completed imports were kept; retry to continue.`,
         { cause: error }
       )
     }

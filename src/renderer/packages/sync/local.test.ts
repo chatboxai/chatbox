@@ -2,17 +2,14 @@ import type { Session, SessionMetaRecord } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createSyncSession,
-  deleteSyncSession,
   listLocalSyncMetas,
   listLocalSyncSessions,
   restoreSyncSessionMetadata,
-  saveSyncMetas,
   updateSyncSessionMetadata,
 } from './local'
 
 vi.mock('@/stores/chatStore', () => ({
   createSessionWithId: vi.fn(),
-  deleteSession: vi.fn(),
   getMetaStorage: vi.fn(),
   listAllSessionsMeta: vi.fn(),
   refreshSessionListCache: vi.fn(),
@@ -25,14 +22,8 @@ vi.mock('@/storage', () => ({
   },
 }))
 
-const {
-  createSessionWithId,
-  deleteSession,
-  getMetaStorage,
-  listAllSessionsMeta,
-  refreshSessionListCache,
-  updateSession,
-} = await import('@/stores/chatStore')
+const { createSessionWithId, getMetaStorage, listAllSessionsMeta, refreshSessionListCache, updateSession } =
+  await import('@/stores/chatStore')
 const { default: storage } = await import('@/storage')
 
 function session(id: string, type?: Session['type']): Session {
@@ -59,7 +50,6 @@ describe('local sync data selection', () => {
     vi.mocked(listAllSessionsMeta).mockReset()
     vi.mocked(storage.getItem).mockReset()
     vi.mocked(createSessionWithId).mockReset()
-    vi.mocked(deleteSession).mockReset()
     vi.mocked(updateSession).mockReset()
     vi.mocked(getMetaStorage).mockReset()
     vi.mocked(refreshSessionListCache).mockReset()
@@ -147,14 +137,14 @@ describe('local sync data selection', () => {
     current.name = 'Local Name'
     let persisted = current
     let callCount = 0
-    vi.mocked(updateSession).mockImplementation(async (_id, updater) => {
+    vi.mocked(updateSession).mockImplementation((_id, updater) => {
       const next = typeof updater === 'function' ? updater(persisted) : { ...persisted, ...updater }
       persisted = { ...persisted, ...next }
       callCount += 1
       if (callCount === 1) {
-        throw new Error('meta update failed')
+        return Promise.reject(new Error('meta update failed'))
       }
-      return persisted
+      return Promise.resolve(persisted)
     })
 
     await expect(updateSyncSessionMetadata('same-id', { name: 'Remote Name', type: 'chat' })).rejects.toThrow(
@@ -174,15 +164,13 @@ describe('local sync data selection', () => {
       update: vi.fn(async (_id, updates) => ({ ...currentMeta, ...updates })),
     }
     vi.mocked(getMetaStorage).mockResolvedValue(metaStorage as never)
-    vi.mocked(updateSession).mockImplementation(async (_id, updater) => {
-      return typeof updater === 'function' ? ({ ...current, ...updater(current) } as Session) : { ...current, ...updater }
+    vi.mocked(updateSession).mockImplementation((_id, updater) => {
+      const updated =
+        typeof updater === 'function' ? ({ ...current, ...updater(current) } as Session) : { ...current, ...updater }
+      return Promise.resolve(updated)
     })
 
-    const undo = await updateSyncSessionMetadata(
-      'same-id',
-      { name: 'Remote Name' },
-      { sortOrder: 99, createdAt: 100 }
-    )
+    const undo = await updateSyncSessionMetadata('same-id', { name: 'Remote Name' }, { sortOrder: 99, createdAt: 100 })
 
     expect(metaStorage.update).toHaveBeenCalledWith('same-id', { sortOrder: 99, createdAt: 100 })
     expect(metaStorage.update).not.toHaveBeenCalledWith('same-id', expect.objectContaining({ name: expect.anything() }))
@@ -200,10 +188,10 @@ describe('local sync data selection', () => {
       update: vi.fn(async (_id, updates) => ({ ...currentMeta, ...updates })),
     }
     vi.mocked(getMetaStorage).mockResolvedValue(metaStorage as never)
-    vi.mocked(updateSession).mockImplementation(async (_id, updater) => {
+    vi.mocked(updateSession).mockImplementation((_id, updater) => {
       const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater }
       current = { ...current, ...next }
-      return current
+      return Promise.resolve(current)
     })
 
     await restoreSyncSessionMetadata('same-id', {
@@ -216,33 +204,5 @@ describe('local sync data selection', () => {
     expect(current.name).toBe('User Edit')
     expect(current.starred).toBeUndefined()
     expect(metaStorage.update).toHaveBeenCalledWith('same-id', { createdAt: 2 })
-  })
-
-  it('deletes rolled-back sessions through chatStore', async () => {
-    await deleteSyncSession('remote-1')
-
-    expect(deleteSession).toHaveBeenCalledWith('remote-1')
-  })
-
-  it('restores exact metadata when the batch is written but refreshing the cache fails', async () => {
-    const previous = meta('same-id', 'chat')
-    previous.name = 'Local Name'
-    const remote = { ...previous, name: 'Remote Name', sortOrder: 99 }
-    const metaStorage = {
-      getById: vi.fn(async () => previous),
-      createMany: vi.fn(async () => undefined),
-      deleteMany: vi.fn(async () => undefined),
-    }
-    vi.mocked(getMetaStorage).mockResolvedValue(metaStorage as never)
-    vi.mocked(refreshSessionListCache)
-      .mockRejectedValueOnce(new Error('cache refresh failed'))
-      .mockResolvedValueOnce(undefined)
-
-    await expect(saveSyncMetas([remote])).rejects.toThrow(/cache refresh failed/)
-
-    expect(metaStorage.createMany).toHaveBeenNthCalledWith(1, [remote])
-    expect(metaStorage.createMany).toHaveBeenNthCalledWith(2, [previous])
-    expect(metaStorage.deleteMany).toHaveBeenCalledWith([])
-    expect(refreshSessionListCache).toHaveBeenCalledTimes(2)
   })
 })

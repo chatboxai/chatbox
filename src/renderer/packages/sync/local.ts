@@ -4,7 +4,6 @@ import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import {
   createSessionWithId,
-  deleteSession,
   getMetaStorage,
   listAllSessionsMeta,
   refreshSessionListCache,
@@ -41,10 +40,6 @@ export async function createSyncSession(session: Session, meta: SessionMetaRecor
   await createSessionWithId(session, meta)
 }
 
-export async function deleteSyncSession(sessionId: string): Promise<void> {
-  await deleteSession(sessionId)
-}
-
 function sessionMetadataPatch(session: SessionMeta): Omit<SessionMeta, 'id'> {
   return {
     name: session.name,
@@ -69,10 +64,7 @@ function valuesForPatchedMetadata(
   return previous as Partial<Omit<SessionMeta, 'id'>>
 }
 
-function conditionalSessionRestore(
-  session: Session,
-  undo: SyncMetadataUndo
-): Partial<Omit<SessionMeta, 'id'>> {
+function conditionalSessionRestore(session: SessionMeta, undo: SyncMetadataUndo): Partial<Omit<SessionMeta, 'id'>> {
   const current = sessionMetadataPatch(session) as Record<string, unknown>
   const applied = undo.appliedSession as Record<string, unknown> | undefined
   const previous = undo.previousSession as Record<string, unknown> | undefined
@@ -171,31 +163,6 @@ export async function updateSyncSessionMetadata(
   return undo
 }
 
-export async function saveSyncMetas(metas: SessionMetaRecord[]): Promise<void> {
-  if (metas.length === 0) {
-    return
-  }
-  const metaStorage = await getMetaStorage()
-  const previous = await Promise.all(metas.map((meta) => metaStorage.getById(meta.id)))
-  try {
-    await metaStorage.createMany(metas)
-    await refreshSessionListCache()
-  } catch (error) {
-    const previousRecords = previous.filter((meta): meta is SessionMetaRecord => meta !== null)
-    const newIds = metas.filter((_, index) => previous[index] === null).map((meta) => meta.id)
-    try {
-      await metaStorage.createMany(previousRecords)
-      await metaStorage.deleteMany(newIds)
-      await refreshSessionListCache()
-    } catch (rollbackError) {
-      throw new AggregateError([error, rollbackError], 'Failed to save synced metadata and restore previous records', {
-        cause: error,
-      })
-    }
-    throw error
-  }
-}
-
 export function updateSyncLastSyncedAt(isoDate: string) {
   settingsStore.getState().setSettings((settings) => {
     settings.sync.lastSyncedAt = isoDate
@@ -225,7 +192,6 @@ export function createDefaultWebDAVSyncDeps(): WebDAVSyncDeps {
     createSession: createSyncSession,
     updateSessionMetadata: updateSyncSessionMetadata,
     restoreSessionMetadata: restoreSyncSessionMetadata,
-    deleteSession: deleteSyncSession,
     updateLastSyncedAt: updateSyncLastSyncedAt,
     getLastSeenSnapshot: getSyncLastSeenSnapshot,
     setLastSeenSnapshot: setSyncLastSeenSnapshot,

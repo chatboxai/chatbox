@@ -203,9 +203,7 @@ describe('sanitizeSettingsForExport', () => {
     const sanitized = sanitizeSettingsForExport(settings, false)
 
     expect(sanitized.mcp.servers).toEqual([])
-    expect(JSON.stringify(sanitized)).not.toMatch(
-      /ghp-secret|Bearer secret|stdio-arg-secret|http-url-secret/
-    )
+    expect(JSON.stringify(sanitized)).not.toMatch(/ghp-secret|Bearer secret|stdio-arg-secret|http-url-secret/)
     // Transport credentials survive when key export is selected.
     const withSecrets = sanitizeSettingsForExport(settingsWithSecrets(), true)
     expect(withSecrets.mcp.servers[0].transport).toMatchObject({

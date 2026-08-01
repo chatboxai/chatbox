@@ -34,7 +34,7 @@ function getTransport(transportId: string) {
 }
 
 ipcMain.handle('mcp:stdio-transport:create', async (event, serverParams: StdioServerParameters) => {
-  logger.info('create', serverParams)
+  logger.info('create stdio transport')
 
   const postMessage = (channel: string, ...args: any[]) => {
     try {

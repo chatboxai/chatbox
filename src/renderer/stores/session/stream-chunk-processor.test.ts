@@ -718,6 +718,7 @@ describe('processStreamChunk', () => {
 
   it('offloads large tool-result to blob storage via onLargeToolResult', async () => {
     const largeResult = 'x'.repeat(TOOL_RESULT_SIZE_LIMIT + 100)
+    const providerMetadata = { openai: { itemId: 'result-item-1' } }
     const mockCallbacks: StreamProcessorCallbacks = {
       onFileReceived: vi.fn(async () => 'mock-key'),
       onLargeToolResult: vi.fn(async () => 'tool-result:sess:tc1'),
@@ -730,15 +731,21 @@ describe('processStreamChunk', () => {
       mockCallbacks
     )
     const r2 = await processStreamChunk(
-      chunk('tool-result', { toolCallId: 'tc1', result: largeResult }),
+      chunk('tool-result', { toolCallId: 'tc1', result: largeResult, providerMetadata }),
       r1.state,
       mockCallbacks
     )
 
-    const part = r2.state.contentParts[0] as { state: string; result: string; resultStorageKey: string }
+    const part = r2.state.contentParts[0] as {
+      state: string
+      result: string
+      resultStorageKey: string
+      resultProviderMetadata?: unknown
+    }
     expect(part.state).toBe('result')
     expect(part.resultStorageKey).toBe('tool-result:sess:tc1')
     expect(part.result).toBe(largeResult.slice(0, TOOL_RESULT_PREVIEW_LENGTH))
+    expect(part.resultProviderMetadata).toEqual(providerMetadata)
     expect(mockCallbacks.onLargeToolResult).toHaveBeenCalledWith('tc1', largeResult)
   })
 

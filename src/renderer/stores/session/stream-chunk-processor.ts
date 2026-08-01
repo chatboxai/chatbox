@@ -271,6 +271,7 @@ export async function processStreamChunk(
         existing.state = 'result'
         finalizeToolCallDuration(existing)
         const rawResult = 'result' in chunk ? chunk.result : chunk.output
+        existing.resultProviderMetadata = chunk.providerMetadata
 
         // Check if the result is too large and should be offloaded to blob storage
         if (callbacks.onLargeToolResult) {
@@ -294,7 +295,6 @@ export async function processStreamChunk(
         }
 
         existing.result = rawResult
-        existing.resultProviderMetadata = chunk.providerMetadata
       }
       break
     }

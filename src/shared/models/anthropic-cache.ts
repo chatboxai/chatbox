@@ -10,7 +10,7 @@ import type { ModelMessage } from 'ai'
  * Works with both direct Anthropic API and AWS Bedrock.
  * See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
  */
-export function addAnthropicCacheControl(messages: ModelMessage[]): ModelMessage[] {
+export function addAnthropicCacheControl(messages: ModelMessage[], ttl: '5m' | '1h' = '5m'): ModelMessage[] {
   if (messages.length === 0) {
     return messages
   }

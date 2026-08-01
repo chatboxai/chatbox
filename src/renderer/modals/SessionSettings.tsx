@@ -15,6 +15,7 @@ import { AssistantAvatar } from '@/components/common/Avatar'
 import LazyNumberInput from '@/components/common/LazyNumberInput'
 import MaxContextMessageCountSlider from '@/components/common/MaxContextMessageCountSlider'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
+import SegmentedControl from '@/components/common/SegmentedControl'
 import SliderWithInput from '@/components/common/SliderWithInput'
 import { TooltipInfoTrigger } from '@/components/common/TooltipInfoTrigger'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
@@ -512,6 +513,32 @@ export function ChatConfig({
           />
         </Flex>
       </Stack>
+      {settings?.provider === ModelProviderEnum.Claude && (
+        <Stack gap="xs">
+          <Text size="sm" fw="600">
+            {t('Prompt Cache')}
+          </Text>
+          <SegmentedControl
+            value={settings?.providerOptions?.claude?.cacheTTL ?? 'auto'}
+            onChange={(value) =>
+              onSettingsChange({
+                providerOptions: {
+                  ...settings?.providerOptions,
+                  claude: {
+                    ...settings?.providerOptions?.claude,
+                    cacheTTL: value as 'auto' | '5m' | '1h',
+                  },
+                },
+              })
+            }
+            data={[
+              { label: t('Auto'), value: 'auto' },
+              { label: t('5 min'), value: '5m' },
+              { label: t('1 hour'), value: '1h' },
+            ]}
+          />
+        </Stack>
+      )}
     </Stack>
   )
 }

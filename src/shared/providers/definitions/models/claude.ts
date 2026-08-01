@@ -17,6 +17,7 @@ interface Options {
   topP?: number
   maxOutputTokens?: number
   stream?: boolean
+  cacheTTL?: 'auto' | '5m' | '1h'
   extraHeaders?: Record<string, string>
   customFetch?: typeof globalThis.fetch
   authToken?: string
@@ -132,14 +133,30 @@ export default class Claude extends AbstractAISDKModel {
   }
 
   public async chat(messages: ModelMessage[], options: CallChatCompletionOptions): Promise<StreamTextResult> {
-    return super.chat(addAnthropicCacheControl(messages), options)
+    const ttl =
+      this.options.cacheTTL === '5m'
+        ? '5m'
+        : this.options.cacheTTL === '1h'
+          ? '1h'
+          : messages.length >= 10
+            ? '1h'
+            : '5m'
+    return super.chat(addAnthropicCacheControl(messages, ttl), options)
   }
 
   public async *chatStream<T extends ToolSet>(
     messages: ModelMessage[],
     options: ChatStreamOptions
   ): AsyncGenerator<ModelStreamPart<T>> {
-    yield* super.chatStream<T>(addAnthropicCacheControl(messages), options)
+    const ttl =
+      this.options.cacheTTL === '5m'
+        ? '5m'
+        : this.options.cacheTTL === '1h'
+          ? '1h'
+          : messages.length >= 10
+            ? '1h'
+            : '5m'
+    yield* super.chatStream<T>(addAnthropicCacheControl(messages, ttl), options)
   }
 
   // https://docs.anthropic.com/en/docs/api/models

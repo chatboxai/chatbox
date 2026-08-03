@@ -275,7 +275,7 @@
     "sass": "^1.62.1",
     "sass-loader": "^13.3.1",
     "shell-env": "^4.0.1",
-    "shell-quote": "^1.8.2",
+    "shell-quote": "^1.10.0",
     "shiki": "^4.0.2",
     "sonner": "^2.0.3",
     "store": "^2.0.12",

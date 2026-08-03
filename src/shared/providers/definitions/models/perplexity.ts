@@ -1,6 +1,7 @@
 import { createPerplexity } from '@ai-sdk/perplexity'
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
-import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
+import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
+import type { CallChatCompletionOptions } from '../../../models/types'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 
@@ -21,6 +22,16 @@ export default class Perplexity extends AbstractAISDKModel {
     dependencies: ModelDependencies
   ) {
     super(options, dependencies)
+  }
+
+  protected getCallSettings(_options: CallChatCompletionOptions): CallSettings {
+    return {
+      temperature: this.options.temperature,
+      topP: this.options.topP,
+      // Perplexity API rejects max_tokens < 16 with HTTP 400.
+      // Floor to 16 so a small user-configured value never causes a request error.
+      maxOutputTokens: this.options.maxOutputTokens != null ? Math.max(16, this.options.maxOutputTokens) : undefined,
+    }
   }
 
   protected getProvider() {

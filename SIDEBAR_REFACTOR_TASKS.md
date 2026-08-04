@@ -528,6 +528,12 @@
 - Cyclic folder drops are rejected with visual feedback.
 - Mobile reorder mode works.
 
+> **Ek (Kısım 1):** `ROOT_DROP_ID` artık UI'ya bağlı (trailing `RootDropSpacer` +
+> empty-state wrapper). Root'a taşıma her zaman mümkün (son satır klasör olsa bile).
+> Kapsamlı senaryo testleri eklendi (klasör üst/alt dizine, chat üste/alta, boş
+> klasöre drop, cycle, propagation). Bkz. `SIDEBAR_REFACTOR_NOTES.md` → Phase 5 (Kısım 1).
+> Hâlâ açık: **drop indicator çizgileri** (4.3 — Visual Polish, görsel only; resolver mantığı hazır).
+
 ---
 
 ## Phase 5 — Integration & Polish
@@ -565,13 +571,20 @@
 - About navigates to `/about`.
 - On mobile, close sidebar after navigation.
 
-### 5.5 Delete folder behavior
+### 5.5 Delete folder behavior ✅ (Kısım 1'de tamamlandı)
 
 **[MOD] `src/renderer/components/sidebar/SidebarFolderItem.tsx` / `folderStore.ts`**
 - On folder delete, show a confirmation modal.
-- Option A: prevent deletion if folder has children (recommended MVP).
+- Option A: prevent deletion if folder has children (recommended MVP). ✅
 - Option B: move children to root before deletion (future enhancement).
 - Update cache after deletion.
+
+**Durum (Kısım 1):** Option A implement edildi.
+- `folderStore.ts` → yeni `getFolderChildCounts(folderId)` (cache'den senkron alt klasör + chat sayısı).
+- `chatStore.ts` → `InfiniteSessionData` export edildi (folderStore kullanımı için).
+- `ConfirmModal.tsx` → `hideCancel` prop'u (tek butonlu uyarı modalı).
+- `SidebarTree.tsx` → `deleteFolderById` NiceModal akışına: dolu = uyarı (OK only), boş = onay (Delete/Cancel, danger).
+- i18n (en): 6 yeni anahtar. Bkz. `SIDEBAR_REFACTOR_NOTES.md` → Phase 5 (Kısım 1).
 
 ### 5.6 Update dot indicator
 
@@ -654,6 +667,12 @@ Add these keys to every locale file:
 - [ ] `Expand Folder`
 - [ ] `No chats yet`
 - [ ] `No folders yet`
+- [ ] `OK` ✅ (Kısım 1, en)
+- [ ] `Cannot Delete Folder` ✅ (Kısım 1, en)
+- [ ] `Are you sure you want to delete this folder?` ✅ (Kısım 1, en)
+- [ ] `Folder contains chats` ✅ (Kısım 1, en)
+- [ ] `Folder contains subfolders` ✅ (Kısım 1, en)
+- [ ] `This folder is not empty. Please move or delete its contents first.` ✅ (Kısım 1, en)
 - [ ] `Adjust order` (already exists)
 - [ ] `Done` (already exists)
 - [ ] `Archive` (already exists)

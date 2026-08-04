@@ -68,7 +68,7 @@ export async function getMetaStorage(): Promise<SessionMetaStorage> {
 
 // MARK: session list operations
 
-type InfiniteSessionData = InfiniteData<SessionMetaPage, number>
+export type InfiniteSessionData = InfiniteData<SessionMetaPage, number>
 
 async function _listSessionsMetaPage(cursor: number): Promise<SessionMetaPage> {
   console.debug('chatStore', 'listSessionsMetaPage', cursor)

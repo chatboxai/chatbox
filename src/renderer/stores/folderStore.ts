@@ -16,6 +16,19 @@ import type { FolderStorage } from '@/storage/FolderStorage'
 import { sortFolderRecords } from '@/storage/FolderStorage'
 import queryClient from './queryClient'
 
+// Importing `getCachedSessionsMeta` directly from chatStore would create a
+// circular import (chatStore is a large module). Instead we read the session
+// list cache via the same query client + key chatStore uses, keeping this
+// module free of the chatStore dependency graph.
+import { QueryKeys as SessionQueryKeys, type InfiniteSessionData } from './chatStore'
+import type { SessionMetaRecord } from '@shared/types/session'
+
+function getCachedSessionsMeta(): SessionMetaRecord[] {
+  const data = queryClient.getQueryData<InfiniteSessionData>(SessionQueryKeys.ChatSessionsList)
+  if (!data) return []
+  return data.pages.flatMap((p) => p.items)
+}
+
 const log = getLogger('folder-store')
 
 export const FolderQueryKeys = {
@@ -151,6 +164,33 @@ export async function deleteFolder(id: string): Promise<void> {
  */
 export async function moveFolder(id: string, parentId: string | null, sortOrder: number): Promise<void> {
   await updateFolder(id, { parentId, sortOrder })
+}
+
+export interface FolderChildCounts {
+  /** Number of subfolders whose `parentId` is this folder. */
+  folders: number
+  /** Number of sessions whose `parentId` is this folder (cached session list). */
+  sessions: number
+  /** Total child count (`folders + sessions`). */
+  total: number
+}
+
+/**
+ * Count the direct children of a folder — both subfolders (from the folder
+ * cache) and sessions (from the session-list cache). Used by the delete flow to
+ * decide whether a folder is empty before deletion.
+ *
+ * Reads from cache only (no storage round-trip) so it is safe to call
+ * synchronously from a UI handler.
+ */
+export function getFolderChildCounts(folderId: string): FolderChildCounts {
+  const folders = getCachedFolders().filter((folder) => (folder.parentId ?? null) === folderId)
+  const sessions = getCachedSessionsMeta().filter((session) => (session.parentId ?? null) === folderId)
+  return {
+    folders: folders.length,
+    sessions: sessions.length,
+    total: folders.length + sessions.length,
+  }
 }
 
 /**

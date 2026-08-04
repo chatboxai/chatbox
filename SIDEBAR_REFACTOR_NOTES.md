@@ -13,6 +13,7 @@
 - [Bug Fix: Klasör içi New Chat görünmüyor](#bug-fix-klasör-içi-new-chat-görünmüyor)
 - [Bug Fix: New Folder popup + subfolder akışı](#bug-fix-new-folder-popup--subfolder-akışı)
 - [Phase 4 — Drag & Drop](#phase-4--drag--drop)
+- [Phase 5 (Kısım 1) — Klasör Silme Güvenliği + DnD Root Drop](#phase-5-kısım-1--klasör-silme-güvenliği--dnd-root-drop)
 - [Doğrulama Özeti](#doğrulama-özeti)
 - [Phase 5'e Bırakılanlar](#phase-5e-bırakılanlar)
 
@@ -201,6 +202,116 @@ Dragged item anchor'ın **üstüne** (daha yüksek sortOrder) yerleşir. Descend
 
 ---
 
+## Phase 5 (Kısım 1) — Klasör Silme Güvenliği + DnD Root Drop
+
+> Phase 5'in ilk çift gönderimi. Kullanıcı talebi sırasıyla: (1) klasör silme
+> ancak altı boş değilse engellenmeli; (2) DnD tüm senaryolarda doğru çalışmalı
+> (klasörü üst/alt dizine taşıma, chat üste/alta taşıma, root'a drop). Sonrasında
+> Phase 5'in geri kalanına (Done butonu, create-and-rename, createEmpty→parentId,
+> cleanup, i18n) devam edilecek.
+
+### Görev 1 — Klasör Silme Güvenliği (boş değilse silinmez)
+
+**Sorun:** `SidebarTree.tsx` → `deleteFolderById` doğrudan `deleteFolder(id)` çağırıyordu.
+`SidebarFolderItem`'taki `doubleCheck: true` yalnızca hızlı çift-tıklama korumasıydı — gerçek
+onay modalı yoktu ve **boş klasör kontrolü hiç yoktu**. Dolu klasör de silinir, içindeki
+chat'ler yetim kalırdı (`parentId` dangling referans).
+
+**Düzeltme:**
+
+- **`stores/folderStore.ts`** — Yeni `getFolderChildCounts(folderId): FolderChildCounts`
+  helper'ı. Cache'den (storage round-trip yok, senkron) hem alt klasörleri hem de doğrudan
+  chat'leri sayar → `{ folders, sessions, total }`. Dairesel bağımlılık yaratmamak için
+  chatStore'u import etmek yerine **aynı queryClient + `InfiniteSessionData`** üzerinden
+  session list cache'ini okuyor (yerel `getCachedSessionsMeta` kopyası).
+- **`stores/chatStore.ts`** — `InfiniteSessionData` tipi `export type` yapıldı
+  (folderStore kullanıyor; önceden local-only `type`'dı).
+- **`modals/ConfirmModal.tsx`** — `hideCancel?: boolean` prop'u eklendi. `true` verildiğinde
+  Cancel butonu gizlenir → tek butonlu "OK" uyarı modalı (warning'ler için, iptal edilecek
+  bir şey yoksa).
+- **`components/sidebar/SidebarTree.tsx` → `deleteFolderById`** — NiceModal onay akışına
+  bağlandı:
+  1. `getFolderChildCounts` > 0 ise → "Cannot Delete Folder" uyarısı (tek OK butonu,
+     `hideCancel:true`). Mesajda alt klasör/chat sayısı listelenir. **Silme iptal.**
+  2. Boş klasör ise → "Delete Folder" + "Bu klasörü silmek istediğinden emin misin?"
+     onayı (`danger`). Kullanıcı onaylarsa `deleteFolder(id)`.
+- **i18n (en)** — 6 yeni anahtar: `OK`, `Cannot Delete Folder`,
+  `Are you sure you want to delete this folder?`, `Folder contains chats`,
+  `Folder contains subfolders`,
+  `This folder is not empty. Please move or delete its contents first.`
+  (Diğer 13 locale henüz fallback value ile — Phase 5 i18n review kapsamında çevrilecek.)
+
+**Akış:**
+1. Folder item "Delete Folder" (menü) → `deleteFolderById(id)`
+2. Dolu → uyarı modalı (OK) → dönüş, silme yok
+3. Boş → onay modalı (Delete/Cancel) → onay → `deleteFolder` → cache'den kaldırılır
+
+---
+
+### Görev 2 — DnD Doğruluğu (root drop zone + senaryo testleri)
+
+**Kritik boşluk:** `ROOT_DROP_ID` resolver'da tanımlıydı ama **hiçbir UI drop zone'una bağlı
+değildi**. `PinnedSectionDroppable` gibi bir root droppable yoktu. Sonuç: bir öğeyi root
+seviyesine taşımak için root'ta mutlaka bir session olması gerekiyordu (klasöre bırakınca
+içine girerdi). Root'ta yalnızca klasör varsa → root'a taşıma imkânsız.
+
+**Düzeltme (`components/sidebar/SidebarTree.tsx`):**
+
+- `FlatRow` tipine `{ type: 'root-drop'; id: 'root-drop' }` eklendi.
+- Ağacın **sonuna trailing root-drop spacer** eklendi → her zaman root'a drop imkânı
+  (son satır klasör olsa bile).
+- **Boş ağaç (empty state)** artık `RootDropSpacer` ile sarılı → pinned session boş ağaca
+  sürüklenip root'a konabilir.
+- Yeni **`RootDropSpacer`** bileşeni: `useDroppable({ id: ROOT_DROP_ID })` ile bağlı,
+  hover'da `bg-chatbox-background-brand-secondary` highlight. `grow` prop'u empty state için
+  alanı büyütür (minHeight 120), trailing spacer ince (minHeight 24).
+- `ROOT_DROP_ID` import'u `treeDrop`'tan eklendi.
+
+**Senaryo doğrulaması (yeni testlerle):**
+
+| Senaryo | Beklenen | Test |
+|---|---|---|
+| Klasörü üst dizine taşı (içinden dışına) → `ROOT_DROP_ID` | `newParentId: null`, move-to-folder | ✅ |
+| Klasörü alt dizine taşı (root → sibling klasör içine) | `newParentId: hedef`, move-to-folder | ✅ |
+| Chat'i üste taşı (alt → en üst) | reorder-within-parent, en yüksek sortOrder | ✅ |
+| Chat'i alta taşı (en üst → alt) | reorder-within-parent, anchor üstüne | ✅ |
+| Chat'i iki sibling arasına yerleştir | midpoint fractional sortOrder | ✅ |
+| Chat'i boş klasöre drop | içine yerleş (move-to-folder) | ✅ |
+| Cycle: klasör → kendi descendant'ı | reddedilir (null) | ✅ |
+| Klasör → kendisi | reddedilir (null) | ✅ |
+| Root klasör → `ROOT_DROP_ID` (zaten root) | reorder-within-parent (no-op) | ✅ |
+| Folder move propagation (alt klasör+chat otomatik takip) | parentId ilişkisi korunur, depth güncellenir | ✅ |
+
+**Korunan davranış (önceki testler):** pinned↔tree pin/unpin geçişleri, root session'a
+reorder, folder→folder içine yerleşme, cycle rejection — hepsi çalışıyor.
+
+**Notlar:**
+- `folder → folder` "her zaman içine yerleş" davranışı korundu; root spacer ile **üst
+  seviyeye çıkarma** (sibling yapma) yolu açıldı. Tam above/below/onto **drop indicator
+  çizgileri** Phase 5 "Visual Polish" görevi — orada hedef satır üst/alt/üstüne yerleşme
+  ayrımı UI ile belirtilecek. Şimdilik resolver mantığı: onto = içine yerleş, onto session =
+  o session'ın parent'ında reorder.
+- Folder move propagation mantıksal olarak doğru: `moveFolder` yalnızca taşınan klasörün
+  `parentId`'sini günceller, descendant'ların `parentId`'leri aynı kalır → `buildSidebarTree`
+  onları otomatik olarak yeni konuma yerleştirir (testle doğrulandı).
+
+---
+
+### Test özeti (bu gönderim)
+
+| Test dosyası | Önce | Sonra |
+|---|---|---|
+| `sidebar/__tests__/treeDrop.test.ts` | 14 | **22** (+8 yeni senaryo) |
+| `sidebar/__tests__/useSidebarTree.test.ts` | 8 | **9** (+1 propagation) |
+| Toplam sidebar testi | 22 | **31** |
+| chatStore-cache.test.ts | 4 | 4 (etkilenmedi) |
+
+Tüm 31 sidebar + 4 chatStore-cache testi ✅ geçiyor. Değişen dosyalarda (`folderStore`,
+`SidebarTree`, `ConfirmModal`, `chatStore`, testler) **sıfır** TS hatası (pre-existing
+alakasız hatalar aynı kaldı).
+
+---
+
 ## Doğrulama Özeti
 
 | Kontrol | Sonuç |
@@ -220,11 +331,32 @@ Dragged item anchor'ın **üstüne** (daha yüksek sortOrder) yerleşir. Descend
 
 ## Phase 5'e Bırakılanlar
 
-- **Drop indicator**: DragOverlay var ama satırlar arası görsel insert-line indicator yok (basit opacity=0 dragging).
-- **Mobil "Done" butonu**: `isReordering` state'i var, grip handle mobilde görünür ama header'da "Done" butonu yok (eski SessionList'teydi).
-- **Klasör silme confirm modal**: Hâlâ doğrudan `deleteFolder`. Boş klasör kontrolü + NiceModal confirm eklenecek.
-- **`createEmpty` parentId desteği**: `createChatInFolder` önce chat oluşturup sonra `updateSession({parentId})` ile taşıyor. `createEmpty`'ye parentId desteği eklenecek (TODO işaretli).
-- **Create-and-immediately-rename**: `CreateFolderModal` isim soruyor ama klasör oluşturulduktan sonra inline rename edit moduna geçme akışı geliştirilebilir.
-- **`SessionList.tsx` temizliği**: Eski flat list component'i tamamen kaldırılıp import'lar temizlenebilir.
-- **i18n anahtar doğrulama**: Tüm diller için yeni anahtarların çevirileri (şu an English fallback value ile).
-- **Kapsamlı entegrasyon testleri**: DnD end-to-end, klasör oluşturma/silme akışları.
+> **Tamamlananlar (Kısım 1):** ✅ Klasör silme confirm modal + boş klasör kontrolü
+> (`getFolderChildCounts` + NiceModal) — bkz. [Phase 5 (Kısım 1)](#phase-5-kısım-1--klasör-silme-güvenliği--dnd-root-drop).
+> ✅ DnD root drop zone (`ROOT_DROP_ID` artık bağlı) + kapsamlı senaryo testleri.
+
+**Kalanlar:**
+
+- **Drop indicator (Visual Polish):** DragOverlay var, satırlar arası görsel insert-line
+  indicator yok (basit opacity=0 dragging). Hedef satırın üst/alt/üstüne yerleşme ayrımı
+  UI ile belirtilecek. Resolver mantığı hazır (onto=içine, onto session=reorder); yalnızca
+  görsel çizgiler eksik.
+- **Mobil "Done" butonu:** `isReordering` state'i var, grip handle mobilde görünür ama
+  header'da "Done" butonu yok (eski SessionList'teydi).
+- **`createEmpty` parentId desteği:** `createChatInFolder` önce chat oluşturup sonra
+  `updateSession({parentId})` ile taşıyor. `createEmpty`'ye parentId desteği eklenecek
+  (TODO işaretli, `SidebarTree.tsx` + `Sidebar.tsx`).
+- **Create-and-immediately-rename:** `CreateFolderModal` isim soruyor ama klasör oluşturulduktan
+  sonra inline rename edit moduna geçme akışı geliştirilebilir (`SidebarFolderItem`'taki
+  `initialEditing` prop'u mevcut, akış bağlanacak).
+- **`SessionList.tsx` temizliği:** Eski flat list component'i tamamen kaldırılıp unused
+  import'lar temizlenebilir (hâlâ projede ama `SidebarTree` tarafından değiştirildi).
+- **i18n çeviri review:** Bu gönderimde eklenen 6 yeni anahtar (`OK`, `Cannot Delete Folder`,
+  `Are you sure you want to delete this folder?`, `Folder contains chats`,
+  `Folder contains subfolders`,
+  `This folder is not empty. Please move or delete its contents first.`) yalnızca `en`
+  locale'inde. Diğer 13 locale için çeviriler (şu an English fallback value ile) + Phase 1'in
+  14 anahtarının tüm diller için son gözden geçirmesi.
+- **Kapsamlı entegrasyon testleri:** DnD end-to-end (applyTreeDrop store-side), klasör
+  oluşturma/silme akışlarının render testleri. Resolver + tree-builder birim testleri kapsamlı;
+  store mutation katmanı test edilmedi (cache/storage mock gerektirir).

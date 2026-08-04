@@ -140,6 +140,29 @@ describe('buildSidebarTree', () => {
       expect(folderNode.children[0]?.depth).toBe(1)
     }
   })
+
+  it('propagates folder moves to all descendants (parentId relationship preserved)', () => {
+    // Simulate a folder `f1` that was just moved under a new root folder
+    // `f-new`. Its descendants (subfolder f2 + chat s1) keep their parentId
+    // pointing at f1, so they automatically follow f1 wherever it goes — no
+    // per-descendant move required. This is the core propagation guarantee.
+    const fNew = makeFolder({ id: 'f-new', sortOrder: 500 })
+    const f1 = makeFolder({ id: 'f1', parentId: 'f-new', sortOrder: 400 })
+    const f2 = makeFolder({ id: 'f2', parentId: 'f1', sortOrder: 300 })
+    const s1 = makeSession({ id: 's1', parentId: 'f1', sortOrder: 200 })
+    const s2 = makeSession({ id: 's2', parentId: 'f2', sortOrder: 100 })
+
+    const tree = buildTree({
+      sessions: [s1, s2],
+      folders: [fNew, f1, f2],
+      expandedFolderIds: new Set(['f-new', 'f1', 'f2']),
+    })
+
+    const flat = flattenSidebarTree(tree)
+    // Full hierarchy follows f1 → f-new root: f-new > f1 > (f2 > s2), s1
+    expect(flat.map((node) => node.id)).toEqual(['f-new', 'f1', 'f2', 's2', 's1'])
+    expect(flat.map((node) => node.depth)).toEqual([0, 1, 2, 3, 2])
+  })
 })
 
 describe('selectPinnedSessions', () => {

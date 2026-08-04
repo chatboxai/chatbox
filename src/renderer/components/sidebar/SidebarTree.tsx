@@ -35,8 +35,9 @@ import SidebarEmptyState from './SidebarEmptyState'
 import SidebarFolderItem from './SidebarFolderItem'
 import SidebarSectionLabel from './SidebarSectionLabel'
 import SidebarSessionItem from './SidebarSessionItem'
-import { applyTreeDrop, computeTreeDrop, PINNED_SECTION_ID, type SidebarFlatRow } from './treeDrop'
+import { applyTreeDrop, computeTreeDrop, PINNED_SECTION_ID, ROOT_DROP_ID, type SidebarFlatRow } from './treeDrop'
 import { flattenSidebarTree, type SidebarTreeNode, selectPinnedSessions, useSidebarTree } from './useSidebarTree'
+import i18n from '@/i18n'
 
 export interface SidebarTreeProps {
   sessionListViewportRef: MutableRefObject<HTMLDivElement | null>
@@ -46,6 +47,7 @@ type FlatRow =
   | { type: 'pinned-label'; id: 'pinned-label' }
   | { type: 'pinned-divider'; id: 'pinned-divider' }
   | { type: 'empty'; id: 'empty' }
+  | { type: 'root-drop'; id: 'root-drop' }
   | { type: 'node'; id: string; node: SidebarTreeNode; pinned?: boolean }
 
 /**
@@ -103,9 +105,17 @@ export default function SidebarTree(props: SidebarTreeProps) {
     for (const node of flatNodes) {
       out.push({ type: 'node', id: node.id, node })
     }
+    // Empty tree → render the empty state (which doubles as a root drop target
+    // so a pinned session can be dragged back to an empty tree root).
     if (out.length === 0) {
       out.push({ type: 'empty', id: 'empty' })
     }
+    // Trailing root-drop spacer: lets the user drop an item at the bottom of
+    // the tree to move it to the root level even when the last visible row is a
+    // folder (dropping onto a folder would otherwise nest inside it). The
+    // spacer is a flex region, not a sortable item, so it never participates in
+    // reordering — it only acts as a `ROOT_DROP_ID` droppable.
+    out.push({ type: 'root-drop', id: 'root-drop' })
     return out
   }, [pinnedSessions, flatNodes])
 
@@ -251,7 +261,21 @@ export default function SidebarTree(props: SidebarTreeProps) {
               )
             }
             if (row.type === 'empty') {
-              return <SidebarEmptyState />
+              // Empty tree acts as a root drop target so pinned sessions (or
+              // any item) can be dragged into an otherwise empty root.
+              return (
+                <RootDropSpacer grow>
+                  <SidebarEmptyState />
+                </RootDropSpacer>
+              )
+            }
+            if (row.type === 'root-drop') {
+              // Trailing spacer at the bottom of the tree: dropping here moves
+              // the item to the root level. It fills remaining vertical space so
+              // the whole bottom region is a valid drop target, not just a thin
+              // line. Grows only when there are few items (otherwise a thin
+              // spacer is enough — the list scrolls).
+              return <RootDropSpacer />
             }
 
             const { node } = row
@@ -355,11 +379,33 @@ function PinnedSectionDroppable(props: { children: React.ReactNode }) {
   )
 }
 
+/**
+ * Drop target bound to {@link ROOT_DROP_ID}. Dropping an item here moves it to
+ * the root level (top of the tree). Used as the trailing spacer at the bottom
+ * of the tree and as the wrapper of the empty state.
+ *
+ * `grow` makes the spacer fill remaining viewport space so the whole empty
+ * area below a short list is droppable; without it the spacer is a slim region
+ * just below the last item.
+ */
+function RootDropSpacer(props: { children?: React.ReactNode; grow?: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: ROOT_DROP_ID })
+  return (
+    <div
+      ref={setNodeRef}
+      className={isOver ? 'bg-chatbox-background-brand-secondary rounded-sm' : undefined}
+      style={props.grow ? { minHeight: 120 } : { minHeight: 24 }}
+    >
+      {props.children}
+    </div>
+  )
+}
+
 import { updateSession } from '@/stores/chatStore'
 // Local lazy imports to avoid pulling the store action modules into the
 // component's top-level graph before they're needed. They resolve to the same
 // singletons used elsewhere.
-import { deleteFolder, updateFolder } from '@/stores/folderStore'
+import { deleteFolder, getFolderChildCounts, updateFolder } from '@/stores/folderStore'
 import { createEmpty } from '@/stores/session/crud'
 
 async function updateFolderName(id: string, name: string) {
@@ -367,10 +413,40 @@ async function updateFolderName(id: string, name: string) {
 }
 
 async function deleteFolderById(id: string) {
-  // MVP: only allow deletion when the folder has no children. The confirm modal
-  // text in SidebarFolderItem explains this; callers should check emptiness
-  // before invoking. Here we delegate straight to the store.
-  await deleteFolder(id)
+  const t = i18n.t.bind(i18n)
+  const counts = getFolderChildCounts(id)
+  if (counts.total > 0) {
+    // Folder is not empty — refuse deletion and explain why. Both subfolders
+    // and direct chats must be moved/removed first.
+    const detail = [
+      counts.folders > 0 ? t('Folder contains subfolders') : null,
+      counts.sessions > 0 ? t('Folder contains chats') : null,
+    ]
+      .filter(Boolean)
+      .join('\n')
+    await NiceModal.show<boolean>('confirm', {
+      title: t('Cannot Delete Folder'),
+      message:
+        t('This folder is not empty. Please move or delete its contents first.') +
+        (detail ? `\n\n${detail}` : ''),
+      confirmText: t('OK'),
+      hideCancel: true,
+      danger: true,
+    })
+    return
+  }
+
+  // Empty folder — ask for a single confirmation, then delete.
+  const confirmed = await NiceModal.show<boolean>('confirm', {
+    title: t('Delete Folder'),
+    message: t('Are you sure you want to delete this folder?'),
+    confirmText: t('Delete'),
+    cancelText: t('Cancel'),
+    danger: true,
+  })
+  if (confirmed) {
+    await deleteFolder(id)
+  }
 }
 
 async function createChatInFolder(parentId: string) {

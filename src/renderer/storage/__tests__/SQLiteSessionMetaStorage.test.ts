@@ -56,11 +56,11 @@ describe('SQLiteSessionMetaStorage', () => {
       [
         {
           statement: expect.stringContaining('INSERT OR REPLACE INTO session_meta'),
-          values: ['a', 'Test Session', 0, 0, null, null, null, null, 'chat', 100, 100],
+          values: ['a', 'Test Session', 0, 0, null, null, null, null, 'chat', 100, 100, null],
         },
         {
           statement: expect.stringContaining('INSERT OR REPLACE INTO session_meta'),
-          values: ['b', 'Test Session', 1, 0, null, null, null, null, 'chat', 100, 100],
+          values: ['b', 'Test Session', 1, 0, null, null, null, null, 'chat', 100, 100, null],
         },
       ],
       true

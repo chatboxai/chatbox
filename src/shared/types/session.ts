@@ -385,6 +385,12 @@ export const SessionSchema = z.object({
   threadName: z.string().optional(),
   messageForksHash: z.record(z.string(), MessageForkSchema).optional(),
   compactionPoints: z.array(CompactionPointSchema).optional(),
+  /**
+   * Parent folder id. When set, the chat is nested inside the folder with this
+   * id in the sidebar tree. `undefined` (or `null`) means the chat is a
+   * top-level item. Added by the sidebar refactor (Option B folder tree).
+   */
+  parentId: z.string().optional(),
 })
 
 export const SessionMetaSchema = SessionSchema.pick({
@@ -397,6 +403,7 @@ export const SessionMetaSchema = SessionSchema.pick({
   picUrl: true,
   backgroundImage: true,
   type: true,
+  parentId: true,
 })
 
 export const SessionMetaRecordSchema = SessionMetaSchema.extend({

@@ -101,6 +101,13 @@ if (inferredDist) {
   process.env.SENTRY_DIST = inferredDist
 }
 
+// Build number for the sidebar footer About badge. CI may override
+// CHATBOX_BUILD_NUMBER; otherwise fall back to the app version so a number is
+// always available in dev/local builds. The renderer hides the badge only when
+// the resolved value is an empty string.
+const buildNumber = process.env.CHATBOX_BUILD_NUMBER || packageJson.version
+process.env.CHATBOX_BUILD_NUMBER = buildNumber
+
 export default defineConfig(({ mode }) => {
   const isProduction = mode === 'production'
   const isWeb = process.env.CHATBOX_BUILD_PLATFORM === 'web'
@@ -169,6 +176,7 @@ export default defineConfig(({ mode }) => {
         'process.env.USE_NEWDB_API': JSON.stringify(process.env.USE_NEWDB_API || ''),
         'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
         'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
+        'process.env.CHATBOX_BUILD_NUMBER': JSON.stringify(process.env.CHATBOX_BUILD_NUMBER || ''),
       },
     },
     preload: {
@@ -305,6 +313,7 @@ export default defineConfig(({ mode }) => {
         'process.env.USE_NEWDB_API': JSON.stringify(process.env.USE_NEWDB_API || ''),
         'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
         'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
+        'process.env.CHATBOX_BUILD_NUMBER': JSON.stringify(process.env.CHATBOX_BUILD_NUMBER || ''),
       },
       optimizeDeps: {
         // Force a fresh dep optimization on dev startup. This avoids stale .vite

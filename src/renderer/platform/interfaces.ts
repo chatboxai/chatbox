@@ -6,6 +6,7 @@ import type {
   SandboxReadResult,
 } from '@shared/sandbox-provider'
 import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
+import type { FolderStorage } from '@/storage/FolderStorage'
 import type { ImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type { SessionMetaStorage } from '@/storage/SessionMetaStorage'
 import type { KnowledgeBaseController } from './knowledge-base/interface'
@@ -141,6 +142,14 @@ export interface Platform extends Storage {
   getImageGenerationStorage(): ImageGenerationStorage
 
   getSessionMetaStorage(): SessionMetaStorage
+
+  /**
+   * Build number for display next to the About icon in the sidebar footer.
+   * Fallback chain: `CHATBOX_BUILD_NUMBER` env → app/package version → empty string.
+   */
+  getBuildNumber(): Promise<string>
+
+  getFolderStorage(): FolderStorage
 
   // Sandbox operations (Desktop only)
   // Single code-execution entry point for all platforms: code is fed to the sandboxed process

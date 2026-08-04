@@ -191,6 +191,20 @@ export async function reorderSessions(oldIndex: number, newIndex: number) {
 }
 
 /**
+ * Move a session to a new parent folder (or root) with a target `sortOrder`.
+ * Used by the sidebar tree drag & drop (Phase 4). `parentId` and `sortOrder`
+ * are written directly to meta storage (they are not part of SessionMeta, so
+ * `updateSession` would drop them) and the session-list cache is refreshed.
+ */
+export async function moveSession(sessionId: string, parentId: string | null, sortOrder: number): Promise<void> {
+  const metaStorage = await chatStore.getMetaStorage()
+  await metaStorage.update(sessionId, { parentId: parentId ?? undefined, sortOrder })
+  chatStore.updateSessionListData((items) =>
+    items.map((s) => (s.id === sessionId ? { ...s, parentId: parentId ?? undefined, sortOrder } : s))
+  )
+}
+
+/**
  * Switch to session by sorted index
  */
 export async function switchToIndex(index: number) {

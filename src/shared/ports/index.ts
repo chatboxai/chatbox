@@ -58,3 +58,4 @@ export interface CoreRuntimePorts {
 }
 
 export type { SessionDataRepositoryPort, SessionMetaRepositoryPort, SessionRepositoryPort } from './session-repository'
+export type { FolderRepositoryPort } from './folder-repository'

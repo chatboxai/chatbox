@@ -13,6 +13,7 @@ import localforage from 'localforage'
 import { v4 as uuidv4 } from 'uuid'
 import { parseLocale } from '@/i18n/parser'
 import { getLogger } from '@/lib/utils'
+import { type FolderStorage, IndexedDBFolderStorage } from '@/storage/FolderStorage'
 import { type ImageGenerationStorage, IndexedDBImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/SessionMetaStorage'
 import { rememberFileNativePath } from '@/utils/file-native-path'
@@ -36,6 +37,7 @@ export default class DesktopPlatform implements Platform {
   private _sessionAttachmentRagController?: DesktopSessionAttachmentRagController
   private _imageGenerationStorage: ImageGenerationStorage | null = null
   private _sessionMetaStorage: SessionMetaStorage | null = null
+  private _folderStorage: FolderStorage | null = null
 
   public ipc: ElectronIPC
   constructor(ipc: ElectronIPC) {
@@ -372,6 +374,20 @@ export default class DesktopPlatform implements Platform {
       this._sessionMetaStorage = new IndexedDBSessionMetaStorage()
     }
     return this._sessionMetaStorage
+  }
+
+  public async getBuildNumber(): Promise<string> {
+    return cache('ipc:getBuildNumber', () => this.ipc.invoke('getBuildNumber'), {
+      ttl: 5 * 60 * 1000,
+      memoryOnly: true,
+    })
+  }
+
+  public getFolderStorage(): FolderStorage {
+    if (!this._folderStorage) {
+      this._folderStorage = new IndexedDBFolderStorage()
+    }
+    return this._folderStorage
   }
 
   public async sandboxExecCode(params: {

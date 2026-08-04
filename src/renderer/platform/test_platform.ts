@@ -10,6 +10,7 @@
 import * as defaults from '@shared/defaults'
 import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
+import { type FolderStorage, IndexedDBFolderStorage } from '@/storage/FolderStorage'
 import { type ImageGenerationStorage, IndexedDBImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/SessionMetaStorage'
 import type { Exporter, Platform, PlatformType, Storage } from './interfaces'
@@ -142,6 +143,7 @@ export default class TestPlatform implements Platform {
   private storage = new InMemoryStorage()
   private _sessionMetaStorage: SessionMetaStorage | null = null
   private _imageGenerationStorage: ImageGenerationStorage | null = null
+  private _folderStorage: FolderStorage | null = null
   private blobs = new Map<string, string>()
   private configs: Config | null = null
   private settings: Settings | null = null
@@ -364,6 +366,17 @@ export default class TestPlatform implements Platform {
     return this._sessionMetaStorage
   }
 
+  public async getBuildNumber(): Promise<string> {
+    return process.env.CHATBOX_BUILD_NUMBER || 'test-build'
+  }
+
+  public getFolderStorage(): FolderStorage {
+    if (!this._folderStorage) {
+      this._folderStorage = new IndexedDBFolderStorage()
+    }
+    return this._folderStorage
+  }
+
   public async minimize(): Promise<void> {
     // no-op
   }
@@ -431,6 +444,7 @@ export default class TestPlatform implements Platform {
     this.settings = null
     this._sessionMetaStorage = null
     this._imageGenerationStorage = null
+    this._folderStorage = null
   }
 
   /**

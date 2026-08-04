@@ -6,8 +6,10 @@ import type { Config, Settings, ShortcutSetting } from '@shared/types'
 import localforage from 'localforage'
 import { v4 as uuidv4 } from 'uuid'
 import { parseLocale } from '@/i18n/parser'
+import type { FolderStorage } from '@/storage/FolderStorage'
 import type { ImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type { SessionMetaStorage } from '@/storage/SessionMetaStorage'
+import { SQLiteFolderStorage } from '@/storage/SQLiteFolderStorage'
 import { SQLiteImageGenerationStorage } from '@/storage/SQLiteImageGenerationStorage'
 import { SQLiteSessionMetaStorage } from '@/storage/SQLiteSessionMetaStorage'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
@@ -28,6 +30,7 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   private navigationCallback: ((path: string) => void) | null = null
   private _imageGenerationStorage: ImageGenerationStorage | null = null
   private _sessionMetaStorage: SessionMetaStorage | null = null
+  private _folderStorage: FolderStorage | null = null
 
   constructor() {
     super()
@@ -332,6 +335,26 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
       this._sessionMetaStorage = new SQLiteSessionMetaStorage()
     }
     return this._sessionMetaStorage
+  }
+
+  public async getBuildNumber(): Promise<string> {
+    // Prefer the build-time injected CHATBOX_BUILD_NUMBER, then the native app
+    // build number, falling back to an empty string when neither is available.
+    const envBuildNumber = process.env.CHATBOX_BUILD_NUMBER
+    if (envBuildNumber) return envBuildNumber
+    try {
+      const info = await App.getInfo()
+      return info.build || ''
+    } catch {
+      return ''
+    }
+  }
+
+  public getFolderStorage(): FolderStorage {
+    if (!this._folderStorage) {
+      this._folderStorage = new SQLiteFolderStorage()
+    }
+    return this._folderStorage
   }
 
   public minimize() {

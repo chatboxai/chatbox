@@ -3,6 +3,7 @@ import type { Config, Settings, ShortcutSetting } from '@shared/types'
 import localforage from 'localforage'
 import { v4 as uuidv4 } from 'uuid'
 import { parseLocale } from '@/i18n/parser'
+import { type FolderStorage, IndexedDBFolderStorage } from '@/storage/FolderStorage'
 import { type ImageGenerationStorage, IndexedDBImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/SessionMetaStorage'
 import { getBrowser, getOS } from '../packages/navigator'
@@ -21,6 +22,7 @@ export default class WebPlatform extends IndexedDBStorage implements Platform {
 
   private imageGenerationStorage: ImageGenerationStorage | null = null
   private sessionMetaStorage: SessionMetaStorage | null = null
+  private folderStorage: FolderStorage | null = null
 
   constructor() {
     super()
@@ -216,6 +218,18 @@ export default class WebPlatform extends IndexedDBStorage implements Platform {
       this.sessionMetaStorage = new IndexedDBSessionMetaStorage()
     }
     return this.sessionMetaStorage
+  }
+
+  public async getBuildNumber(): Promise<string> {
+    // `CHATBOX_BUILD_NUMBER` is injected at build time (see vite.config.web.ts).
+    return process.env.CHATBOX_BUILD_NUMBER || ''
+  }
+
+  public getFolderStorage(): FolderStorage {
+    if (!this.folderStorage) {
+      this.folderStorage = new IndexedDBFolderStorage()
+    }
+    return this.folderStorage
   }
 
   public minimize() {

@@ -18,6 +18,7 @@ import path from 'node:path'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import packageJson from './package.json'
 import { dvhToVh, injectBaseTag } from './electron.vite.config'
 
 export default defineConfig({
@@ -53,6 +54,11 @@ export default defineConfig({
     'process.env.USE_NEWDB_API': JSON.stringify(process.env.USE_NEWDB_API || ''),
     'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
     'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
+    // Sidebar footer About badge: prefer CI-injected build number, fall back to
+    // the package version so the badge always shows something in web builds.
+    'process.env.CHATBOX_BUILD_NUMBER': JSON.stringify(
+      process.env.CHATBOX_BUILD_NUMBER || packageJson.version
+    ),
   },
   css: {
     modules: {

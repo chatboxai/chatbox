@@ -58,6 +58,9 @@ export const uiStore = createStore(
         sidebarWidth: null as number | null, // Custom sidebar width, null means use default
         agentModeSmartSwitchingDefault: true,
         sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
+        // Sidebar refactor: ids of folders expanded in the folder tree. Persisted
+        // so expand/collapse state survives restarts.
+        expandedFolderIds: [] as string[],
       },
       (set, get) => ({
         addToast: (content: string, duration?: number, action?: Toast['action']) => {
@@ -216,6 +219,21 @@ export const uiStore = createStore(
           set({ agentModeSmartSwitchingDefault: enabled })
         },
 
+        toggleExpandedFolderId: (id: string) => {
+          set((state) => {
+            const current = state.expandedFolderIds
+            return {
+              expandedFolderIds: current.includes(id)
+                ? current.filter((folderId) => folderId !== id)
+                : [...current, id],
+            }
+          })
+        },
+
+        setExpandedFolderIds: (ids: string[]) => {
+          set({ expandedFolderIds: ids })
+        },
+
         clearSessionAgentMode: (sessionId?: string) => {
           if (sessionId) {
             set((state) => {
@@ -238,6 +256,7 @@ export const uiStore = createStore(
         sidebarWidth: state.sidebarWidth,
         agentModeSmartSwitchingDefault: state.agentModeSmartSwitchingDefault,
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
+        expandedFolderIds: state.expandedFolderIds,
       }),
       storage: safeStorage,
     }

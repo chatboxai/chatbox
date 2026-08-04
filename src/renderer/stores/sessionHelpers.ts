@@ -865,6 +865,13 @@ export function getSessionMeta(session: SessionMeta) {
     'picUrl',
     'backgroundImage',
     'type',
+    // Sidebar refactor: folder nesting key. Without this, updateSession() drops
+    // parentId before persisting (getSessionMeta is the only path metaStorage
+    // sees via updateSessionWithMessages), so chats never appear under their
+    // folder. sortOrder is intentionally omitted — it lives only on
+    // SessionMetaRecord, not SessionMeta, and reorder paths write it directly
+    // to metaStorage (see session/crud.ts reorderSessions).
+    'parentId',
   ])
 }
 

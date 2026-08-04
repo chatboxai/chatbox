@@ -31,6 +31,7 @@ export function isFirstDay(): boolean {
 export default function useVersion() {
   const remoteConfig = useAtomValue(remoteConfigAtom)
   const [version, _setVersion] = useState('')
+  const [buildNumber, _setBuildNumber] = useState('')
   const [needCheckUpdate, setNeedCheckUpdate] = useState(false)
   const isStoreReviewPlatform =
     CHATBOX_BUILD_PLATFORM === 'ios' ||
@@ -51,6 +52,12 @@ export default function useVersion() {
       const settings = await platform.getSettings()
       const version = await platform.getVersion()
       _setVersion(version)
+      try {
+        const buildNumber = await platform.getBuildNumber()
+        _setBuildNumber(buildNumber || '')
+      } catch (e) {
+        console.error('Failed to read build number:', e)
+      }
       try {
         const os = await platform.getPlatform()
         const needUpdate = await remote.checkNeedUpdate(version, os, config, settings)
@@ -81,5 +88,6 @@ export default function useVersion() {
     isExceeded,
     isExceededResolved,
     needCheckUpdate,
+    buildNumber,
   }
 }

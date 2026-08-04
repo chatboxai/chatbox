@@ -6,6 +6,7 @@ import ArtifactPreview from './ArtifactPreview'
 import ClearSessionList from './ClearSessionList'
 import ConfirmModal from './ConfirmModal'
 import ContentViewer from './ContentViewer'
+import CreateFolderModal from './CreateFolderModal'
 import ExportChat from './ExportChat'
 import FileParseError from './FileParseError'
 import JsonViewer from './JsonViewer'
@@ -26,6 +27,7 @@ NiceModal.register('app-store-rating', AppStoreRating)
 NiceModal.register('artifact-preview', ArtifactPreview)
 NiceModal.register('clear-session-list', ClearSessionList)
 NiceModal.register('confirm', ConfirmModal)
+NiceModal.register('create-folder', CreateFolderModal)
 NiceModal.register('export-chat', ExportChat)
 NiceModal.register('message-edit', MessageEdit)
 NiceModal.register('json-viewer', JsonViewer)

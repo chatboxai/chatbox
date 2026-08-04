@@ -717,6 +717,11 @@ ipcMain.handle('listStoreBlobKeys', async (event) => {
 ipcMain.handle('getVersion', () => {
   return app.getVersion()
 })
+ipcMain.handle('getBuildNumber', () => {
+  // Fallback chain: injected build number → app version → empty string.
+  // The renderer hides the badge when an empty string is returned.
+  return process.env.CHATBOX_BUILD_NUMBER || app.getVersion()
+})
 ipcMain.handle('getPlatform', () => {
   return process.platform
 })

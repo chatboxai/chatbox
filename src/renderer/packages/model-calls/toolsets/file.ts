@@ -1,5 +1,5 @@
 import { jsonSchema, type ToolSet } from 'ai'
-import { MAX_INLINE_FILE_LINES, PREVIEW_LINES } from '@/packages/context-management/attachment-payload'
+import { MAX_INLINE_FILE_LINES, PREVIEW_LINES } from '@shared/constants'
 import platform from '@/platform'
 import { asRecord, contentOrErrorText, numberField, stringField, toTextModelOutput } from './model-output'
 

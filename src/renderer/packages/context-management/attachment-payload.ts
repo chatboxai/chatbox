@@ -1,7 +1,8 @@
-import type { CompactionPoint, Message, Settings } from '@shared/types'
+﻿import type { CompactionPoint, Message, Settings } from '@shared/types'
+import { MAX_INLINE_FILE_LINES, PREVIEW_LINES } from '@shared/constants'
 
-export const MAX_INLINE_FILE_LINES = 500
-export const PREVIEW_LINES = 100
+export { MAX_INLINE_FILE_LINES, PREVIEW_LINES }
+
 
 export interface AttachmentWrapperPrefixParams {
   attachmentIndex: number

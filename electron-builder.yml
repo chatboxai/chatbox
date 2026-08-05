@@ -44,14 +44,14 @@ dmg:
       path: /Applications
 
 win:
-  target:
-    - target: nsis
-      arch:
-        - x64
-        - arm64
-  verifyUpdateCodeSignature: false
-  artifactName: ${productName}-${version}-Setup.${ext}
-  signtoolOptions:
+ target:
+   - target: nsis
+     arch:
+       - x64
+       - arm64
+ verifyUpdateCodeSignature: false
+ artifactName: ${productName}-${version}-Setup.${ext}
+ signtoolOptions:
     sign: ./custom_win_sign.js
     signingHashAlgorithms:
       - sha256

@@ -11,7 +11,7 @@
   "main": "out/main/main.js",
   "scripts": {
     "generate:model-snapshot": "pnpm exec tsx scripts/generate-model-snapshot.ts",
-    "build": "electron-vite build",
+    "build": "cross-env ROLLUP_SKIP_NATIVE=true node --max-old-space-size=16384 --no-concurrent-recompilation ./node_modules/electron-vite/bin/electron-vite.js build",
     "build:main": "electron-vite build",
     "build:preload": "electron-vite build",
     "build:renderer": "electron-vite build",

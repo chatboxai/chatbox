@@ -53,4 +53,11 @@ describe('generation entry-point locking', () => {
 
     expect(orchestrateGenerationMock.mock.calls.map((call) => call[1].id)).toEqual(['assistant-1', 'assistant-2'])
   })
+
+  it('returns the outcome produced by chat orchestration', async () => {
+    const completed = { status: 'completed' } as const
+    orchestrateGenerationMock.mockResolvedValueOnce(completed)
+
+    await expect(generate('session-1', message('assistant-1'))).resolves.toEqual(completed)
+  })
 })

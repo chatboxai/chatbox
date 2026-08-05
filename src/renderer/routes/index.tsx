@@ -36,7 +36,7 @@ import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { createSession as createSessionStore } from '@/stores/chatStore'
 import { resolveChatboxLicenseDefaultModel } from '@/stores/defaultChatModel'
 import { getHasCompletedFirstSuccessfulChat } from '@/stores/firstSuccessfulChat'
-import { generate, submitNewUserMessage, switchCurrentSession } from '@/stores/sessionActions'
+import { acceptSubmission, generate, switchCurrentSession } from '@/stores/sessionActions'
 import { initEmptyChatSession } from '@/stores/sessionHelpers'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -353,14 +353,10 @@ function Index() {
   )
 
   const handleSubmit = useCallback(
-    async ({ constructedMessage, needGenerating = true, onUserMessageReady, settingsPatch }: InputBoxPayload) => {
+    async ({ constructedMessage, needGenerating = true, onAccepted, settingsPatch }: InputBoxPayload) => {
       const newSession = await createPersistedChatSession({ settingsPatch })
 
-      void submitNewUserMessage(newSession.id, {
-        newUserMsg: constructedMessage,
-        needGenerating,
-        onUserMessageReady,
-      })
+      acceptSubmission(newSession.id, { message: constructedMessage, needGenerating }, onAccepted)
     },
     [createPersistedChatSession]
   )

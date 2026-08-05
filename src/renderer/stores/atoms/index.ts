@@ -1,5 +1,6 @@
 export * from './compactionAtoms'
 export * from './configAtoms'
 export * from './sessionAtoms'
+export * from './submissionQueueAtoms'
 export * from './throttleWriteSessionAtom'
 export * from './uiAtoms'

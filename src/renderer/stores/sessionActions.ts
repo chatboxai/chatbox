@@ -46,6 +46,17 @@ export {
   stopPausedToolCall,
 } from './session/orchestration'
 export { createLoadingPictures } from './session/pictures'
+export type { GenerationOutcome, NewQueuedSubmission, SubmissionOutcome } from './session/submission-queue'
+export {
+  acceptSubmission,
+  clearSessionSubmissionQueue,
+  drainSubmissionQueue,
+  pauseSubmissionQueue,
+  removeQueuedSubmission,
+  resumeSubmissionQueue,
+  updateQueuedSubmission,
+  wakeSubmissionQueueAfterToolResolution,
+} from './session/submission-queue'
 // Re-export thread operations from session/threads.ts
 export {
   compressAndCreateThread,

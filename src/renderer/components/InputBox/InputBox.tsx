@@ -1,5 +1,5 @@
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Box, Button, Flex, Loader, Menu, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
+import { Box, Button, Flex, Loader, Menu, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
 import { useViewportSize } from '@mantine/hooks'
 import {
   getFileAcceptConfig,
@@ -21,7 +21,6 @@ import {
   IconFilePencil,
   IconFolder,
   IconPhoto,
-  IconPlayerStopFilled,
   IconPlus,
   IconSettings,
   IconWand,
@@ -96,6 +95,7 @@ import AgentModeButton from './AgentModeButton'
 import { FileMiniCard, getParserTypeLabel, ImageMiniCard } from './Attachments'
 import { getAgentModeUIState } from './agentModeState'
 import { ImageUploadInput } from './ImageUploadInput'
+import InputBoxActionButtons from './InputBoxActionButtons'
 import { MessageInputField, type MessageInputFieldRef } from './MessageInputField'
 import { cleanupFile, markFileProcessing, onFileProcessed, storeFilePromise } from './preprocessState'
 import ReasoningControlButton from './ReasoningControlButton'
@@ -106,7 +106,7 @@ import { useReasoningControlState } from './useReasoningControlState'
 export type InputBoxPayload = {
   constructedMessage: Message
   needGenerating?: boolean
-  onUserMessageReady?: () => void
+  onAccepted?: () => void
   settingsPatch?: Partial<SessionSettings>
 }
 
@@ -126,8 +126,8 @@ export type InputBoxProps = {
   onSelectModel?(provider: string, model: string): void
   onSubmit?(payload: InputBoxPayload): Promise<void>
   onStopGenerating?(): boolean
-  onStartNewThread?(): boolean
-  onRollbackThread?(): boolean
+  onStartNewThread?(): boolean | Promise<boolean>
+  onRollbackThread?(): boolean | Promise<boolean>
   onClickSessionSettings?(): boolean | Promise<boolean>
 }
 
@@ -779,7 +779,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const handleSubmit = async (needGenerating = true, options: SubmitOptions = {}) => {
       if (
         disableSubmit ||
-        generating ||
         isSubmitting ||
         isPreprocessing ||
         isAwaitingToolApproval ||
@@ -852,7 +851,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           constructedMessage: latestMessage,
           needGenerating,
           settingsPatch: reasoningSettingsPatch,
-          onUserMessageReady: () => {
+          onAccepted: () => {
             messageInputFieldRef.current?.clearDraft()
             draftMessageIdRef.current = undefined
             setPreConstructedMessage({
@@ -999,15 +998,15 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       ]
     )
 
-    const startNewThread = () => {
-      const res = onStartNewThread?.()
+    const startNewThread = async () => {
+      const res = await onStartNewThread?.()
       if (res) {
         setShowRollbackThreadButton(true)
       }
     }
 
-    const rollbackThread = () => {
-      const res = onRollbackThread?.()
+    const rollbackThread = async () => {
+      const res = await onRollbackThread?.()
       if (res) {
         setShowRollbackThreadButton(false)
       }
@@ -1401,54 +1400,20 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 onPaste={onPaste}
               />
 
-              {/* Send Button */}
-              <ActionIcon
-                disabled={
-                  (disableSubmit ||
-                    isPreprocessing ||
-                    isSubmitting ||
-                    isCompactionRunning ||
-                    isAwaitingToolApproval ||
-                    hasPreprocessErrors ||
-                    hasBlockedSessionRagFiles) &&
-                  !generating
+              <InputBoxActionButtons
+                generating={generating}
+                sendDisabled={
+                  disableSubmit ||
+                  isPreprocessing ||
+                  isSubmitting ||
+                  isCompactionRunning ||
+                  isAwaitingToolApproval ||
+                  hasPreprocessErrors ||
+                  hasBlockedSessionRagFiles
                 }
-                size={32}
-                variant="filled"
-                color={generating ? 'dark' : 'chatbox-brand'}
-                radius="xl"
-                onClick={generating ? onStopGenerating : () => handleSubmit()}
-                className={cn(
-                  'shrink-0 mb-1',
-                  !generating &&
-                    (disableSubmit ||
-                      isPreprocessing ||
-                      isSubmitting ||
-                      isCompactionRunning ||
-                      isAwaitingToolApproval ||
-                      hasPreprocessErrors ||
-                      hasBlockedSessionRagFiles) &&
-                    'disabled:!opacity-100 !text-white'
-                )}
-                style={
-                  !generating &&
-                  (disableSubmit ||
-                    isPreprocessing ||
-                    isSubmitting ||
-                    isCompactionRunning ||
-                    isAwaitingToolApproval ||
-                    hasPreprocessErrors ||
-                    hasBlockedSessionRagFiles)
-                    ? { backgroundColor: 'rgba(222, 226, 230, 1)' }
-                    : undefined
-                }
-              >
-                {generating ? (
-                  <ScalableIcon icon={IconPlayerStopFilled} size={16} />
-                ) : (
-                  <ScalableIcon icon={IconArrowUp} size={16} />
-                )}
-              </ActionIcon>
+                onSend={() => handleSubmit()}
+                onStop={onStopGenerating}
+              />
             </Flex>
 
             {(!!pictureKeys.length || !!attachments.length) && (

@@ -6,6 +6,7 @@ import * as chatStore from '../chatStore'
 import { createAttachmentResolver } from './attachment-resolver'
 import { createNewFork, findMessageLocation } from './forks'
 import { withSessionGenerationLock } from './generation-lock'
+import type { GenerationOutcome } from './generation-outcome'
 import { insertMessageAfter } from './messages'
 import { orchestrateGeneration } from './orchestration'
 import { orchestratePictureGeneration } from './pictures'
@@ -19,19 +20,18 @@ export async function _generateWithoutSessionLock(
     skipAgentModeSuggestion?: boolean
     agentModeEntrySource?: AgentModeEntrySource
   }
-) {
+): Promise<GenerationOutcome> {
   const session = await chatStore.getSession(sessionId)
   const settings = await chatStore.getSessionSettings(sessionId)
   if (!session || !settings) {
-    return
+    return { status: 'failed', error: 'Session or session settings not found' }
   }
 
   if (session.type === 'chat' || session.type === undefined) {
-    await orchestrateGeneration(sessionId, targetMsg, options)
-    return
+    return orchestrateGeneration(sessionId, targetMsg, options)
   }
 
-  await orchestratePictureGeneration(sessionId, targetMsg, session, settings, options)
+  return orchestratePictureGeneration(sessionId, targetMsg, session, settings, options)
 }
 
 export function generate(
@@ -42,7 +42,7 @@ export function generate(
     skipAgentModeSuggestion?: boolean
     agentModeEntrySource?: AgentModeEntrySource
   }
-) {
+): Promise<GenerationOutcome> {
   return withSessionGenerationLock(sessionId, () => _generateWithoutSessionLock(sessionId, targetMsg, options))
 }
 

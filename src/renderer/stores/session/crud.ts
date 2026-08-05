@@ -16,6 +16,7 @@ import * as atoms from '../atoms'
 import * as chatStore from '../chatStore'
 import * as scrollActions from '../scrollActions'
 import { initEmptyChatSession, initEmptyPictureSession } from '../sessionHelpers'
+import { clearSessionSubmissionQueue } from './submission-queue'
 
 /**
  * Create a new session and switch to it
@@ -257,6 +258,7 @@ export async function clearConversationList(keepNum: number) {
  * Clear all messages in a session, keeping only system prompt
  */
 export async function clear(sessionId: string) {
+  await clearSessionSubmissionQueue(sessionId)
   const session = await chatStore.getSession(sessionId)
   if (!session) {
     return

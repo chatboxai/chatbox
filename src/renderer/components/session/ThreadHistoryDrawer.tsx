@@ -15,6 +15,7 @@ import { useLanguage } from '@/stores/settingsStore'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
 import ActionMenu from '../ActionMenu'
 import { ScalableIcon } from '../common/ScalableIcon'
+import { confirmAndDiscardSubmissionQueue } from '../InputBox/queued-message-confirmation'
 
 export default function ThreadHistoryDrawer({ session }: { session: Session }) {
   const { t } = useTranslation()
@@ -45,8 +46,11 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
   )
 
   const handleSwitchThread = useCallback(
-    (threadId: string) => {
-      void switchThreadAction(session.id, threadId)
+    async (threadId: string) => {
+      if (!(await confirmAndDiscardSubmissionQueue(session.id))) {
+        return
+      }
+      await switchThreadAction(session.id, threadId)
       setShowDrawer(false)
     },
     [session.id, setShowDrawer]
@@ -102,7 +106,7 @@ function ThreadItem(props: {
   thread: SessionThreadBrief
   goto(threadId: string): void
   showHistoryDrawer: string | boolean
-  switchThread(threadId: string): void
+  switchThread(threadId: string): void | Promise<void>
   lastOne?: boolean
 }) {
   const { t } = useTranslation()
@@ -118,7 +122,7 @@ function ThreadItem(props: {
   }, [currentSessionId, thread.id])
 
   const onSwitchButtonClick = useCallback(() => {
-    switchThread(thread.id)
+    void switchThread(thread.id)
   }, [switchThread, thread.id])
 
   return (
@@ -157,7 +161,11 @@ function ThreadItem(props: {
                 return
               }
               if (lastOne) {
-                void removeCurrentThread(currentSessionId)
+                void (async () => {
+                  if (await confirmAndDiscardSubmissionQueue(currentSessionId)) {
+                    await removeCurrentThread(currentSessionId)
+                  }
+                })()
               } else {
                 void removeThread(currentSessionId, thread.id)
               }

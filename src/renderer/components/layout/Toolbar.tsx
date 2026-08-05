@@ -24,6 +24,7 @@ import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import ActionMenu from '../ActionMenu'
 import { ScalableIcon } from '../common/ScalableIcon'
+import { confirmAndDiscardSubmissionQueue } from '../InputBox/queued-message-confirmation'
 import Broom from '../icons/Broom'
 import LayoutExpand from '../icons/LayoutExpand'
 import LayoutShrink from '../icons/LayoutShrink'
@@ -45,11 +46,17 @@ export default function Toolbar({ sessionId }: { sessionId: string }) {
   const handleExportAndSave = () => {
     NiceModal.show('export-chat')
   }
-  const handleSessionClean = () => {
-    void clearSession(sessionId)
+  const handleSessionClean = async () => {
+    if (!(await confirmAndDiscardSubmissionQueue(sessionId))) {
+      return
+    }
+    await clearSession(sessionId)
   }
   const handleSessionDelete = async () => {
     if (!(await confirmSessionDeletion(sessionId))) {
+      return
+    }
+    if (!(await confirmAndDiscardSubmissionQueue(sessionId))) {
       return
     }
     try {

@@ -1,25 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { wakeBackgroundTaskFollowUpsMock, withSessionGenerationLockMock } = vi.hoisted(() => {
-  const storage = {
-    getItem: () => null,
-    setItem: () => undefined,
-    removeItem: () => undefined,
-    clear: () => undefined,
-  }
-  ;(globalThis as unknown as { localStorage: typeof storage }).localStorage = storage
-  ;(globalThis as unknown as { window: { localStorage: typeof storage } }).window = { localStorage: storage }
-  return {
-    wakeBackgroundTaskFollowUpsMock: vi.fn(),
-    withSessionGenerationLockMock: vi.fn(() => Promise.resolve()),
-  }
-})
+const { wakeBackgroundTaskFollowUpsMock, wakeSubmissionQueueAfterToolResolutionMock, withSessionGenerationLockMock } =
+  vi.hoisted(() => {
+    const storage = {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+      clear: () => undefined,
+    }
+    ;(globalThis as unknown as { localStorage: typeof storage }).localStorage = storage
+    ;(globalThis as unknown as { window: { localStorage: typeof storage } }).window = { localStorage: storage }
+    return {
+      wakeBackgroundTaskFollowUpsMock: vi.fn(),
+      wakeSubmissionQueueAfterToolResolutionMock: vi.fn(),
+      withSessionGenerationLockMock: vi.fn(() => Promise.resolve()),
+    }
+  })
 
 vi.mock('@/packages/chatbox-cli/background-follow-up', () => ({
   wakeBackgroundTaskFollowUps: wakeBackgroundTaskFollowUpsMock,
 }))
 vi.mock('./generation-lock', () => ({
   withSessionGenerationLock: withSessionGenerationLockMock,
+}))
+vi.mock('./submission-queue', () => ({
+  wakeSubmissionQueueAfterToolResolution: wakeSubmissionQueueAfterToolResolutionMock,
 }))
 vi.mock('../chatStore', () => ({}))
 
@@ -44,6 +49,7 @@ const approvalDetails = {
 describe('paused tool-call generation entry-point locking', () => {
   beforeEach(() => {
     wakeBackgroundTaskFollowUpsMock.mockClear()
+    wakeSubmissionQueueAfterToolResolutionMock.mockClear()
     withSessionGenerationLockMock.mockClear()
   })
 
@@ -66,6 +72,8 @@ describe('paused tool-call generation entry-point locking', () => {
 
     expect(wakeBackgroundTaskFollowUpsMock).toHaveBeenCalledOnce()
     expect(wakeBackgroundTaskFollowUpsMock).toHaveBeenCalledWith('session-1')
+    expect(wakeSubmissionQueueAfterToolResolutionMock).toHaveBeenCalledOnce()
+    expect(wakeSubmissionQueueAfterToolResolutionMock).toHaveBeenCalledWith('session-1')
   })
 })
 

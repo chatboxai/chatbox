@@ -10,6 +10,8 @@ import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
+import QueuedMessagePanel from '@/components/InputBox/QueuedMessagePanel'
+import { confirmAndDiscardSubmissionQueue } from '@/components/InputBox/queued-message-confirmation'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
 import ThreadHistoryDrawer from '@/components/session/ThreadHistoryDrawer'
@@ -22,7 +24,7 @@ import { updateSession as updateSessionStore, useSession } from '@/stores/chatSt
 import { applyChatboxLicenseDefaultModelToSession } from '@/stores/defaultChatModel'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
-import { modifyMessage, removeCurrentThread, startNewThread, submitNewUserMessage } from '@/stores/sessionActions'
+import { acceptSubmission, modifyMessage, removeCurrentThread, startNewThread } from '@/stores/sessionActions'
 import { getAllMessageList } from '@/stores/sessionHelpers'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -140,11 +142,14 @@ function RouteComponent() {
     [currentSession]
   )
 
-  const onStartNewThread = useCallback(() => {
+  const onStartNewThread = useCallback(async () => {
     if (!currentSession) {
       return false
     }
-    void startNewThread(currentSession.id)
+    if (!(await confirmAndDiscardSubmissionQueue(currentSession.id))) {
+      return false
+    }
+    await startNewThread(currentSession.id)
     if (currentSession.copilotId) {
       void remote
         .recordCopilotUsage({ id: currentSession.copilotId, action: 'create_thread' })
@@ -153,16 +158,19 @@ function RouteComponent() {
     return true
   }, [currentSession])
 
-  const onRollbackThread = useCallback(() => {
+  const onRollbackThread = useCallback(async () => {
     if (!currentSession) {
       return false
     }
-    void removeCurrentThread(currentSession.id)
+    if (!(await confirmAndDiscardSubmissionQueue(currentSession.id))) {
+      return false
+    }
+    await removeCurrentThread(currentSession.id)
     return true
   }, [currentSession])
 
   const onSubmit = useCallback(
-    async ({ constructedMessage, needGenerating = true, onUserMessageReady }: InputBoxPayload) => {
+    async ({ constructedMessage, needGenerating = true, onAccepted }: InputBoxPayload) => {
       messageListRef.current?.setIsNewMessage(true)
 
       if (!currentSession) {
@@ -181,11 +189,7 @@ function RouteComponent() {
           .catch((error) => console.warn('[recordCopilotUsage] failed', error))
       }
 
-      await submitNewUserMessage(currentSession.id, {
-        newUserMsg: constructedMessage,
-        needGenerating,
-        onUserMessageReady,
-      })
+      acceptSubmission(currentSession.id, { message: constructedMessage, needGenerating }, onAccepted)
     },
     [currentSession, currentSessionWithDefaultModel]
   )
@@ -245,6 +249,7 @@ function RouteComponent() {
 
         {/* <ScrollButtons /> */}
         <ErrorBoundary name="session-inputbox">
+          <QueuedMessagePanel sessionId={currentSession.id} generating={!!lastGeneratingMessage} />
           <InputBox
             key={`input-box${currentSession.id}`}
             sessionId={currentSession.id}

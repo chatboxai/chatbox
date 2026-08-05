@@ -483,6 +483,8 @@ function cleanupDeletedSessionRuntimeState(id: string) {
 
 export async function deleteSession(id: string) {
   console.debug('chatStore', 'deleteSession', id)
+  const { clearSessionSubmissionQueue } = await import('./session/submission-queue')
+  await clearSessionSubmissionQueue(id)
   await cleanupSessionAttachmentRagEntries([id], 'session deletion')
   await storage.removeItem(StorageKeyGenerator.session(id))
   const metaStorage = await getMetaStorage()
@@ -540,6 +542,8 @@ export async function deleteSessions(ids: string[]) {
   const uniqueIds = [...new Set(ids)]
   if (uniqueIds.length === 0) return
 
+  const { clearSessionSubmissionQueue } = await import('./session/submission-queue')
+  await Promise.all(uniqueIds.map((id) => clearSessionSubmissionQueue(id)))
   await cleanupSessionAttachmentRagEntries(uniqueIds, 'session deletion')
 
   await runInChunks(uniqueIds, 20, async (id) => {

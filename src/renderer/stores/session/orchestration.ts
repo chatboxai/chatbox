@@ -47,6 +47,7 @@ import {
 import { createAttachmentResolver } from './attachment-resolver'
 import { findMessageLocation } from './forks'
 import { withSessionGenerationLock } from './generation-lock'
+import type { GenerationOutcome } from './generation-outcome'
 import { modifyMessage, persistStreamingMessage, updateStreamingCache } from './messages'
 import { createInitialState, processStreamChunk } from './stream-chunk-processor'
 import { buildToolsForSession } from './tools-builder'
@@ -59,6 +60,12 @@ import {
 } from './utils'
 
 const MAX_TOOL_CALLS_BEFORE_CONFIRMATION = 25
+
+async function wakeDeferredSessionWork(sessionId: string): Promise<void> {
+  wakeBackgroundTaskFollowUps(sessionId)
+  const { wakeSubmissionQueueAfterToolResolution } = await import('./submission-queue')
+  wakeSubmissionQueueAfterToolResolution(sessionId)
+}
 
 type ExecutableTool = {
   execute?: (
@@ -454,14 +461,14 @@ export async function orchestrateGeneration(
     skipAgentModeSuggestion?: boolean
     agentModeEntrySource?: AgentModeEntrySource
   }
-) {
+): Promise<GenerationOutcome> {
   const session = await chatStore.getSession(sessionId)
   const settings = await chatStore.getSessionSettings(sessionId)
   const globalSettings = settingsStore.getState().getSettings()
   const configs = await platform.getConfig()
 
   if (!session || !settings) {
-    return
+    return { status: 'failed', error: 'Session or session settings not found' }
   }
 
   trackGenerateEvent(sessionId, settings, globalSettings, session.type, options)
@@ -476,7 +483,9 @@ export async function orchestrateGeneration(
   await persistStreamingMessage(sessionId, targetMsg)
 
   const found = findTargetMessageIndex(session, targetMsg.id)
-  if (!found) return
+  if (!found) {
+    return { status: 'failed', error: 'Target message not found' }
+  }
   const { messages, index: targetMsgIx } = found
   const promptTargetMsgIx = options?.appendToMessage ? targetMsgIx + 1 : targetMsgIx
 
@@ -535,7 +544,7 @@ export async function orchestrateGeneration(
       if (controller.signal.aborted) {
         targetMsg = { ...targetMsg, generating: false, cancel: undefined, status: [] }
         await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-        return
+        return { status: 'stopped' }
       }
 
       trackWorkModeSuggestionDecision(
@@ -568,7 +577,7 @@ export async function orchestrateGeneration(
           finishReason: 'agent-mode-suggested',
         }
         await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-        return
+        return { status: 'completed' }
       }
 
       await setSessionAgentMode(sessionId, 'off')
@@ -686,7 +695,7 @@ export async function orchestrateGeneration(
         usage: processorState.usage,
       }
       await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-      return
+      return { status: 'tool-paused' }
     }
 
     for (const part of processorState.contentParts) {
@@ -720,6 +729,7 @@ export async function orchestrateGeneration(
       markFirstSuccessfulChatCompleted()
     }
     appleAppStore.tickAfterMessageGenerated()
+    return { status: 'completed' }
   } catch (err: unknown) {
     const pause = getToolCallPause(err)
     if (pause) {
@@ -737,7 +747,7 @@ export async function orchestrateGeneration(
         usage: processorState.usage,
       }
       await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-      return
+      return { status: 'tool-paused' }
     }
 
     if (controller.signal.aborted) {
@@ -748,14 +758,16 @@ export async function orchestrateGeneration(
         status: [],
       }
       await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-      return
+      return { status: 'stopped' }
     }
 
-    targetMsg = handleGenerationError(err, targetMsg, settings, {
+    const error = err instanceof Error ? err : new Error(String(err))
+    targetMsg = handleGenerationError(error, targetMsg, settings, {
       agentMode: getSessionAgentModeEntry(sessionId, session).value,
       operationType: options?.operationType,
     })
     await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
+    return { status: 'failed', error: error.message }
   }
 }
 
@@ -835,7 +847,7 @@ async function buildToolsForPausedToolCall(session: Session, settings: SessionSe
 export function stopPausedToolCall(sessionId: string, messageId: string, toolCallId: string) {
   return withSessionGenerationLock(sessionId, () =>
     stopPausedToolCallWithoutSessionLock(sessionId, messageId, toolCallId)
-  ).finally(() => wakeBackgroundTaskFollowUps(sessionId))
+  ).finally(() => wakeDeferredSessionWork(sessionId))
 }
 
 async function stopPausedToolCallWithoutSessionLock(sessionId: string, messageId: string, toolCallId: string) {
@@ -939,7 +951,7 @@ async function stopPausedToolCallWithoutSessionLock(sessionId: string, messageId
 export function continuePausedToolCall(sessionId: string, messageId: string, toolCallId: string) {
   return withSessionGenerationLock(sessionId, () =>
     continuePausedToolCallWithoutSessionLock(sessionId, messageId, toolCallId)
-  ).finally(() => wakeBackgroundTaskFollowUps(sessionId))
+  ).finally(() => wakeDeferredSessionWork(sessionId))
 }
 
 async function continuePausedToolCallWithoutSessionLock(sessionId: string, messageId: string, toolCallId: string) {

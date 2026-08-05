@@ -14,7 +14,6 @@
  * - Export (1): Export functionality
  */
 
-export { createAttachmentResolver } from './attachment-resolver'
 export {
   createDefaultAgentModeEntry,
   getSessionAgentModeEntry,
@@ -23,6 +22,7 @@ export {
   setSessionAgentMode,
   useSessionAgentMode,
 } from './agent-mode'
+export { createAttachmentResolver } from './attachment-resolver'
 // CRUD operations (8 functions)
 export {
   clear,
@@ -75,6 +75,17 @@ export {
   stopPausedToolCall,
 } from './orchestration'
 export { createLoadingPictures } from './pictures'
+export type { GenerationOutcome, NewQueuedSubmission, SubmissionOutcome } from './submission-queue'
+export {
+  acceptSubmission,
+  clearSessionSubmissionQueue,
+  drainSubmissionQueue,
+  pauseSubmissionQueue,
+  removeQueuedSubmission,
+  resumeSubmissionQueue,
+  updateQueuedSubmission,
+  wakeSubmissionQueueAfterToolResolution,
+} from './submission-queue'
 // Thread operations (9 functions)
 export {
   compressAndCreateThread,

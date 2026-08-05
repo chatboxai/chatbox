@@ -7,6 +7,7 @@ import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import type * as chatStore from '../chatStore'
 import { settingsStore } from '../settingsStore'
+import type { GenerationOutcome } from './generation-outcome'
 import { modifyMessage } from './messages'
 import { handleGenerationError, initializeTargetMessage, trackGenerateEvent } from './utils'
 
@@ -32,7 +33,7 @@ export async function orchestratePictureGeneration(
   session: NonNullable<Awaited<ReturnType<typeof chatStore.getSession>>>,
   settings: SessionSettings,
   options?: { operationType?: 'send_message' | 'regenerate'; agentModeEntrySource?: AgentModeEntrySource }
-) {
+): Promise<GenerationOutcome> {
   const globalSettings = settingsStore.getState().getSettings()
 
   // Track generation event
@@ -53,7 +54,7 @@ export async function orchestratePictureGeneration(
   let targetMsgIx = messages.findIndex((m) => m.id === targetMsg.id)
   if (targetMsgIx <= 0) {
     if (!session.threads) {
-      return
+      return { status: 'failed', error: 'Target message not found' }
     }
     for (const t of session.threads) {
       messages = t.messages
@@ -63,7 +64,7 @@ export async function orchestratePictureGeneration(
       }
     }
     if (targetMsgIx <= 0) {
-      return
+      return { status: 'failed', error: 'Target message not found' }
     }
   }
 
@@ -109,8 +110,11 @@ export async function orchestratePictureGeneration(
       throw new Error(`Unknown session type: ${session.type}, generate failed`)
     }
     appleAppStore.tickAfterMessageGenerated()
+    return { status: 'completed' }
   } catch (err: unknown) {
-    targetMsg = handleGenerationError(err, targetMsg, settings)
+    const error = err instanceof Error ? err : new Error(String(err))
+    targetMsg = handleGenerationError(error, targetMsg, settings)
     await modifyMessage(sessionId, targetMsg, true)
+    return { status: 'failed', error: error.message }
   }
 }

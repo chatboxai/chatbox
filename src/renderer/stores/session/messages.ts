@@ -15,6 +15,7 @@ import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndex
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
 import { withSessionGenerationLock } from './generation-lock'
+import type { SubmissionOutcome } from './generation-outcome'
 import { getSessionWebBrowsing } from './utils'
 
 const log = getLogger('session-messages')
@@ -70,11 +71,12 @@ async function attachLargeFileRagMetadata(sessionId: string, message: Message): 
 export async function insertMessage(sessionId: string, msg: Message) {
   const session = await chatStore.getSession(sessionId)
   if (!session) {
-    return
+    return false
   }
   msg.wordCount = countMessageWords(msg)
   msg.tokenCount = estimateTokensFromMessages([msg])
-  return await chatStore.insertMessage(session.id, msg)
+  await chatStore.insertMessage(session.id, msg)
+  return true
 }
 
 /**
@@ -178,13 +180,24 @@ export function submitNewUserMessage(
   sessionId: string,
   params: { newUserMsg: Message; needGenerating: boolean; onUserMessageReady?: () => void }
 ) {
-  return withSessionGenerationLock(sessionId, () => submitNewUserMessageUnlocked(sessionId, params))
+  return withSessionGenerationLock(sessionId, () =>
+    _submitNewUserMessageWithoutSessionLock(sessionId, {
+      newUserMsg: params.newUserMsg,
+      needGenerating: params.needGenerating,
+      onUserMessageCommitted: params.onUserMessageReady,
+    })
+  )
 }
 
-async function submitNewUserMessageUnlocked(
+export async function _submitNewUserMessageWithoutSessionLock(
   sessionId: string,
-  params: { newUserMsg: Message; needGenerating: boolean; onUserMessageReady?: () => void }
-) {
+  params: {
+    newUserMsg: Message
+    needGenerating: boolean
+    onUserMessageCommitted?: () => void
+    shouldCommit?: () => boolean
+  }
+): Promise<SubmissionOutcome> {
   // Import the unlocked generation helper lazily to avoid a circular dependency and
   // avoid reacquiring the session lock already held by submitNewUserMessage().
   const { _generateWithoutSessionLock } = await import('./generation.js')
@@ -192,7 +205,7 @@ async function submitNewUserMessageUnlocked(
   const session = await chatStore.getSession(sessionId)
   const settings = await chatStore.getSessionSettings(sessionId)
   if (!session || !settings) {
-    return
+    return { committed: false, generation: { status: 'failed', error: 'Session or session settings not found' } }
   }
 
   // Run compaction check before sending message (blocking)
@@ -204,16 +217,31 @@ async function submitNewUserMessageUnlocked(
     }
   }
 
-  // Invoke callback after compaction succeeds, before user message is inserted
-  // This allows caller to clear draft at the right time
-  params.onUserMessageReady?.()
-
   let { newUserMsg } = params
   const { needGenerating } = params
   const webBrowsing = getSessionWebBrowsing(sessionId, settings.provider)
 
   // 先在聊天列表中插入发送的用户消息
-  await insertMessage(sessionId, newUserMsg)
+  if (params.shouldCommit && !params.shouldCommit()) {
+    return {
+      committed: false,
+      generation: { status: 'failed', error: 'Queued submission was discarded before commit' },
+    }
+  }
+  const inserted = await insertMessage(sessionId, newUserMsg)
+  if (!inserted) {
+    return { committed: false, generation: { status: 'failed', error: 'Session not found before user message commit' } }
+  }
+  if (params.shouldCommit && !params.shouldCommit()) {
+    // A queue clear or thread replacement can occur while the storage write above is in flight.
+    // The write cannot be cancelled, so compensate before exposing the message as committed.
+    await removeMessage(sessionId, newUserMsg.id)
+    return {
+      committed: false,
+      generation: { status: 'failed', error: 'Queued submission was discarded during user message commit' },
+    }
+  }
+  params.onUserMessageCommitted?.()
   newUserMsg = await attachLargeFileRagMetadata(sessionId, newUserMsg)
 
   const globalSettings = settingsStore.getState().getSettings()
@@ -301,10 +329,15 @@ async function submitNewUserMessageUnlocked(
     } else {
       await insertMessage(sessionId, newAssistantMsg)
     }
-    return // 文件上传失败，不再继续生成回复
+    return {
+      committed: true,
+      generation: { status: 'failed', error: error.message },
+    }
   }
   // 根据需要，生成这条回复消息
   if (needGenerating) {
-    return _generateWithoutSessionLock(sessionId, newAssistantMsg, { operationType: 'send_message' })
+    const generation = await _generateWithoutSessionLock(sessionId, newAssistantMsg, { operationType: 'send_message' })
+    return { committed: true, generation }
   }
+  return { committed: true, generation: { status: 'completed' } }
 }

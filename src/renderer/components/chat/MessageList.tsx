@@ -48,9 +48,9 @@ import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/session
 import { settingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import ActionMenu from '../ActionMenu'
-
 import { ErrorBoundary } from '../common/ErrorBoundary'
 import { ScalableIcon } from '../common/ScalableIcon'
+import { confirmAndDiscardSubmissionQueue } from '../InputBox/queued-message-confirmation'
 import { BlockCodeCollapsedStateProvider } from '../Markdown'
 import ForkMarkerMessage from './ForkMarkerMessage'
 import Message from './Message'
@@ -691,7 +691,7 @@ const ThreadLabel: FC<ThreadLabelProps> = memo(({ thread, sessionId }) => {
 
   const handleContinueThread = useCallback(() => {
     if (!thread.id) return
-    void switchThread(sessionId, thread.id)
+    void confirmAndDiscardSubmissionQueue(sessionId, () => switchThread(sessionId, thread.id))
   }, [sessionId, thread.id])
 
   const handleMoveToConversations = useCallback(() => {

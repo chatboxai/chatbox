@@ -1,5 +1,6 @@
 import { getDefaultStore } from 'jotai'
 import { useEffect } from 'react'
+import { confirmAndDiscardSubmissionQueue } from '@/components/InputBox/queued-message-confirmation'
 import { navigateToSettings } from '@/modals/Settings'
 import { router } from '@/router'
 import { uiStore } from '@/stores/uiStore'
@@ -93,7 +94,7 @@ export default function useShortcut() {
       e.preventDefault()
       const sid = getRouteSessionId()
       if (sid) {
-        void startNewThread(sid)
+        void confirmAndDiscardSubmissionQueue(sid, () => startNewThread(sid))
       }
       return
     }

@@ -50,6 +50,7 @@ win:
        - x64
        - arm64
  verifyUpdateCodeSignature: false
+ signAndEditExecutable: false
  artifactName: ${productName}-${version}-Setup.${ext}
  signtoolOptions:
     sign: ./custom_win_sign.js

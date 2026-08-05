@@ -18,6 +18,9 @@ export const lmStudioProvider = defineProvider({
         topP: config.settings.topP,
         maxOutputTokens: config.settings.maxTokens,
         stream: config.settings.stream,
+        // On mobile, this selects the native HTTP transport. It is required for
+        // direct LAN access (and lets iOS present its local-network prompt).
+        useProxy: config.dependencies.platformType === 'mobile' || config.providerSetting.useProxy,
       },
       config.dependencies
     )

@@ -259,23 +259,32 @@ export default defineConfig(({ mode }) => {
               return 'assets/[name].[hash][extname]'
             },
             // Optimize chunk splitting to reduce memory usage during build
-            manualChunks(id) {
-              const normalizedId = id.split(path.sep).join('/')
-              const isNodeModulePackage = (pkg: string) => normalizedId.includes(`/node_modules/${pkg}/`)
+           manualChunks(id) {
+            const normalizedId = id.split(path.sep).join('/')
+            const isNodeModulePackage = (pkg: string) => normalizedId.includes(`/node_modules/${pkg}/`)
 
-              if (normalizedId.includes('/node_modules/')) {
-                // Split large vendor chunks
-                if (isNodeModulePackage('@ai-sdk') || isNodeModulePackage('ai')) {
-                  return 'vendor-ai'
-                }
-                if (isNodeModulePackage('@mantine') || isNodeModulePackage('@tabler')) {
-                  return 'vendor-ui'
-                }
-                if (isNodeModulePackage('d3') || /\/node_modules\/d3-[^/]+\//.test(normalizedId)) {
-                  return 'vendor-charts'
-                }
-              }
-            },
+            // Keep session stores together to avoid circular chunk dependencies
+            if (normalizedId.includes('src/renderer/stores/session/') || normalizedId.includes('src/renderer/stores/sessionActions')) {
+              return 'stores-session'
+            }
+            // Keep context-management modules together to avoid circular chunk dependencies
+            if (normalizedId.includes('src/renderer/packages/context-management/')) {
+              return 'context-management'
+            }
+
+            if (normalizedId.includes('/node_modules/')) {
+               // Split large vendor chunks
+               if (isNodeModulePackage('@ai-sdk') || isNodeModulePackage('ai')) {
+                 return 'vendor-ai'
+               }
+               if (isNodeModulePackage('@mantine') || isNodeModulePackage('@tabler')) {
+                 return 'vendor-ui'
+               }
+               if (isNodeModulePackage('d3') || /\/node_modules\/d3-[^/]+\//.test(normalizedId)) {
+                 return 'vendor-charts'
+               }
+             }
+           },
           },
         },
       },

@@ -1,10 +1,10 @@
 import type { Session } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import { getLogger } from '@/lib/utils'
+import { PREVIEW_LINES } from '@shared/constants'
 import {
   buildAttachmentWrapperPrefix,
   buildAttachmentWrapperSuffix,
-  PREVIEW_LINES,
 } from '@/packages/context-management/attachment-payload'
 import storage from '@/storage'
 import * as chatStore from '@/stores/chatStore'

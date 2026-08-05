@@ -7,7 +7,7 @@
 
 import type { Message, MessageFile, MessageLink } from '@shared/types/session'
 import { getMessageText } from '@shared/utils/message'
-import { MAX_INLINE_FILE_LINES } from '@/packages/context-management/attachment-payload'
+import { MAX_INLINE_FILE_LINES } from '@shared/constants'
 import { getTokenCacheKey, isAttachmentCacheValid, isMessageTextCacheValid } from './cache-keys'
 import { getPriority } from './computation-queue'
 import { estimateTokens } from './tokenizer'

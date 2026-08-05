@@ -2,10 +2,10 @@ import * as Sentry from '@sentry/react'
 import type { Message, MessageFile, MessageLink } from '../../shared/types'
 import { TOKEN_CACHE_KEYS, type TokenCacheKey } from '../../shared/types/session'
 import { getMessageText, isEmptyMessage } from '../../shared/utils/message'
+import { MAX_INLINE_FILE_LINES } from '@shared/constants'
 import {
   buildAttachmentWrapperPrefix,
   buildAttachmentWrapperSuffix,
-  MAX_INLINE_FILE_LINES,
 } from './context-management/attachment-payload'
 import {
   estimateDeepSeekTokens,

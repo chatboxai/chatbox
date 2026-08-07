@@ -25,6 +25,7 @@ export function createCustomProviderModel(
           topP: settings.topP,
           maxOutputTokens: settings.maxTokens,
           stream: settings.stream,
+          useProxy: providerSetting.useProxy,
         },
         dependencies
       )
@@ -38,6 +39,7 @@ export function createCustomProviderModel(
           topP: settings.topP,
           maxOutputTokens: settings.maxTokens,
           stream: settings.stream,
+          useProxy: providerSetting.useProxy,
         },
         dependencies
       )

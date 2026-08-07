@@ -716,6 +716,10 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                 flex={1}
                 value={providerSettings?.apiHost || baseInfo.defaultSettings?.apiHost || ''}
                 onChange={handleApiHostChange}
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
               />
             </Flex>
             <Text span size="xs" flex="0 1 auto" c="chatbox-secondary">
@@ -741,6 +745,10 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                       value={providerSettings?.apiHost}
                       placeholder={baseInfo.defaultSettings?.apiHost}
                       onChange={handleApiHostChange}
+                      inputMode="url"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                     />
                   </Flex>
                 </Stack>

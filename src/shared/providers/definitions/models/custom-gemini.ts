@@ -4,6 +4,7 @@ import { generateText } from 'ai'
 import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
 import { ApiError } from '../../../models/errors'
 import type { CallChatCompletionOptions } from '../../../models/types'
+import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 import { normalizeGoogleThinkingConfig } from '../../../utils/google-thinking'
@@ -19,6 +20,7 @@ interface Options {
   topP?: number
   maxOutputTokens?: number
   stream?: boolean
+  useProxy?: boolean
 }
 
 export default class CustomGemini extends AbstractAISDKModel {
@@ -45,6 +47,7 @@ export default class CustomGemini extends AbstractAISDKModel {
     return createGoogleGenerativeAI({
       apiKey: this.options.apiKey,
       baseURL: normalizeGeminiHost(this.options.apiHost).apiHost,
+      fetch: createFetchWithProxy(this.options.useProxy, this.dependencies),
     })
   }
 
@@ -168,6 +171,7 @@ export default class CustomGemini extends AbstractAISDKModel {
       const res = await this.dependencies.request.apiRequest({
         url: `${apiHost}/models?key=${this.options.apiKey}`,
         method: 'GET',
+        useProxy: this.options.useProxy,
         headers: {},
       })
       const json: Response = await res.json()

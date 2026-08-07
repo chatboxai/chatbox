@@ -5,6 +5,7 @@ import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-
 import { addAnthropicCacheControl } from '../../../models/anthropic-cache'
 import { ApiError } from '../../../models/errors'
 import type { CallChatCompletionOptions, ChatStreamOptions, ModelStreamPart } from '../../../models/types'
+import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
 import type { ProviderModelInfo, StreamTextResult } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 import { normalizeClaudeHost } from '../../../utils/llm_utils'
@@ -18,6 +19,7 @@ interface Options {
   topP?: number
   maxOutputTokens?: number
   stream?: boolean
+  useProxy?: boolean
 }
 
 export default class CustomClaude extends AbstractAISDKModel {
@@ -37,6 +39,7 @@ export default class CustomClaude extends AbstractAISDKModel {
     return createAnthropic({
       baseURL: this.options.apiHost,
       apiKey: this.options.apiKey,
+      fetch: createFetchWithProxy(this.options.useProxy, this.dependencies),
       headers: {
         'anthropic-dangerous-direct-browser-access': 'true',
       },
@@ -92,6 +95,7 @@ export default class CustomClaude extends AbstractAISDKModel {
     const res = await this.dependencies.request.apiRequest({
       url: url,
       method: 'GET',
+      useProxy: this.options.useProxy,
       headers: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',

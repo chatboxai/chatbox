@@ -78,6 +78,7 @@ export default class CustomProviderSettingUtil extends BaseConfig implements Mod
             apiKey: settings.apiKey!,
             model,
             temperature: 0,
+            useProxy: settings.useProxy,
           },
           dependencies
         )
@@ -90,6 +91,7 @@ export default class CustomProviderSettingUtil extends BaseConfig implements Mod
             apiKey: settings.apiKey!,
             model,
             temperature: 0,
+            useProxy: settings.useProxy,
           },
           dependencies
         )

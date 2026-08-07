@@ -34,6 +34,11 @@ describe('normalizeOpenAIApiHostAndPath', () => {
     expect(result.apiHost).toBe('http://localhost:8080/v1')
   })
 
+  it('normalizes mixed-case HTTP protocols from mobile keyboards', () => {
+    const result = normalizeOpenAIApiHostAndPath({ apiHost: 'Http://192.168.1.10:11434' })
+    expect(result.apiHost).toBe('http://192.168.1.10:11434/v1')
+  })
+
   it('extracts path when user puts full URL in apiHost', () => {
     const result = normalizeOpenAIApiHostAndPath({
       apiHost: 'https://my-proxy.com/v1/chat/completions',

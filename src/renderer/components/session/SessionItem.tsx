@@ -1,9 +1,9 @@
 import { Haptics, ImpactStyle } from '@capacitor/haptics'
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Flex, Text } from '@mantine/core'
+import { ActionIcon, Box, Flex, Text } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
-import { IconArchive, IconArrowsMoveVertical, IconPinned, IconPinnedFilled } from '@tabler/icons-react'
+import { IconArchive, IconArrowsMoveVertical, IconLoader2, IconPinned, IconPinnedFilled } from '@tabler/icons-react'
 import clsx from 'clsx'
 import dayjs from 'dayjs'
 import { type MouseEvent, memo, type PointerEvent, useRef, useState } from 'react'
@@ -15,6 +15,7 @@ import platform from '@/platform'
 import { router } from '@/router'
 import { archiveSession, countArchivedSessionsMeta, updateSession as updateSessionStore } from '@/stores/chatStore'
 import { switchCurrentSession } from '@/stores/sessionActions'
+import { useSessionActivity } from '@/stores/sessionActivityStore'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
@@ -59,6 +60,7 @@ export interface Props {
 function SessionItem(props: Props) {
   const { session, selected } = props
   const { t } = useTranslation()
+  const activity = useSessionActivity(session.id)
   const pinActionLabel = session.starred ? t('Unpin') : t('Pin')
   const archiveActionLabel = t('Archive')
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
@@ -266,11 +268,32 @@ function SessionItem(props: Props) {
         flex={1}
         lineClamp={1}
         c={selected ? 'chatbox-brand' : 'chatbox-primary'}
+        fw={activity === 'completed' ? 600 : undefined}
       >
         {session.name}
       </Text>
 
-      {!isSmallScreen && (
+      {activity !== 'idle' && (
+        <Box
+          component="span"
+          data-session-activity={activity}
+          role="status"
+          aria-label={activity === 'generating' ? t('Generating...') : t('Completed')}
+          title={activity === 'generating' ? t('Generating...') : t('Completed')}
+          className={clsx(
+            'shrink-0 flex h-5 w-5 items-center justify-center',
+            !isSmallScreen && 'group-hover/session-item:hidden'
+          )}
+        >
+          {activity === 'generating' ? (
+            <ScalableIcon icon={IconLoader2} size={15} className="animate-spin text-chatbox-brand" />
+          ) : (
+            <Box component="span" w={8} h={8} bg="chatbox-brand" className="rounded-full" />
+          )}
+        </Box>
+      )}
+
+      {!isSmallScreen && activity === 'idle' && (
         <Text
           span
           c="chatbox-disabled"

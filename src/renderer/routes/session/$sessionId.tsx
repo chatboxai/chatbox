@@ -36,6 +36,7 @@ import {
   stopGeneratingMessages,
   submitNewUserMessage,
 } from '@/stores/sessionActions'
+import { clearViewedSessionActivity, markSessionActivityViewed } from '@/stores/sessionActivityStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
@@ -65,6 +66,11 @@ function RouteComponent() {
   const isSmallScreen = useIsSmallScreen()
   const setLastUsedChatModel = useStore(lastUsedModelStore, (state) => state.setChatModel)
   const setLastUsedPictureModel = useStore(lastUsedModelStore, (state) => state.setPictureModel)
+
+  useEffect(() => {
+    markSessionActivityViewed(currentSessionId)
+    return () => clearViewedSessionActivity(currentSessionId)
+  }, [currentSessionId])
   const welcomeCardMode = useMemo(
     () =>
       getHomeWelcomeCardMode({

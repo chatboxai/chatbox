@@ -11,6 +11,7 @@ import platform from '@/platform'
 import { reportError } from '@/utils/sentry'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attachment-rag/logging'
 import * as chatStore from '../chatStore'
+import { clearMessageGenerationActivity, syncSessionGenerationActivity } from '../sessionActivityStore'
 import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndexing'
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
@@ -74,7 +75,9 @@ export async function insertMessage(sessionId: string, msg: Message) {
   }
   msg.wordCount = countMessageWords(msg)
   msg.tokenCount = estimateTokensFromMessages([msg])
-  return await chatStore.insertMessage(session.id, msg)
+  const result = await chatStore.insertMessage(session.id, msg)
+  syncSessionGenerationActivity(sessionId, msg)
+  return result
 }
 
 /**
@@ -92,6 +95,7 @@ export async function insertMessageAfter(sessionId: string, msg: Message, afterM
   msg.tokenCount = estimateTokensFromMessages([msg])
 
   await chatStore.insertMessage(sessionId, msg, afterMsgId)
+  syncSessionGenerationActivity(sessionId, msg)
 }
 
 /**
@@ -123,6 +127,7 @@ export async function modifyMessage(
   } else {
     await chatStore.updateMessage(sessionId, updated.id, updated)
   }
+  syncSessionGenerationActivity(sessionId, updated)
 }
 
 /**
@@ -131,6 +136,7 @@ export async function modifyMessage(
  */
 export function updateStreamingCache(sessionId: string, message: Message): void {
   message.timestamp = Date.now()
+  syncSessionGenerationActivity(sessionId, message)
   chatStore.updateMessageCache(sessionId, message.id, message).catch((err) => {
     console.error('Failed to update streaming cache:', err)
   })
@@ -152,6 +158,7 @@ export async function persistStreamingMessage(
   }
   message.timestamp = Date.now()
   await chatStore.updateMessage(sessionId, message.id, message)
+  syncSessionGenerationActivity(sessionId, message)
 }
 
 /**
@@ -168,6 +175,7 @@ export async function removeMessage(sessionId: string, messageId: string) {
     }
   }
   await chatStore.removeMessage(sessionId, messageId)
+  clearMessageGenerationActivity(sessionId, messageId)
 }
 
 /**

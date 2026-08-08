@@ -43,6 +43,7 @@ import {
 } from './chatStore-cache'
 import { lastUsedModelStore } from './lastUsedModelStore'
 import queryClient from './queryClient'
+import { clearSessionActivity } from './sessionActivityStore'
 import { getSessionMeta } from './sessionHelpers'
 import { settingsStore, useSettingsStore } from './settingsStore'
 import { UpdateQueue } from './updateQueue'
@@ -475,6 +476,7 @@ function cleanupDeletedSessionRuntimeState(id: string) {
   uiStore.getState().clearSessionAgentMode(id)
   cleanupSessionAtomCache(id)
   clearScrollPositionCache(id)
+  clearSessionActivity(id)
   delete sessionUpdateQueues[id]
   // Remove persisted download artifacts so deleted session references do not leak files on disk.
   platform.sandboxReset?.({ sessionId: id }).catch(() => {})

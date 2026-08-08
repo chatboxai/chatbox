@@ -28,6 +28,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.Perplexity]: 'Perplexity API',
   [ModelProviderEnum.XAI]: 'xAI API',
   [ModelProviderEnum.OpenRouter]: 'OpenRouter API',
+  [ModelProviderEnum.TrustedRouter]: 'TrustedRouter API',
   [ModelProviderEnum.Bedrock]: 'AWS Bedrock',
   [ModelProviderEnum.VercelAIGateway]: 'Vercel AI Gateway',
   [ModelProviderEnum.OpenCodeGo]: 'OpenCode Go',
@@ -119,6 +120,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.OpenRouter,
     label: aiProviderNameHash[ModelProviderEnum.OpenRouter],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.TrustedRouter,
+    label: aiProviderNameHash[ModelProviderEnum.TrustedRouter],
     disabled: false,
   },
   {

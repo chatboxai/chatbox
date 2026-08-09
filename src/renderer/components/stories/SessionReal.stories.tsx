@@ -128,7 +128,7 @@ export const SessionItemStates: StoryObj = {
 
 function SessionItemStatesFixture() {
   useEffect(() => {
-    beginSessionGeneration(sessionMetas[1].id, 'generating-reply')
+    beginSessionGeneration(sessionMetas[1].id)
     sessionActivityStore.setState({
       unreadCompletedSessionIds: { [sessionMetas[2].id]: true },
     })

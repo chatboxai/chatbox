@@ -18,7 +18,6 @@ import * as chatStore from '../chatStore'
 import * as scrollActions from '../scrollActions'
 import { clearSessionActivity } from '../sessionActivityStore'
 import { initEmptyChatSession, initEmptyPictureSession } from '../sessionHelpers'
-import { cancelSessionGenerationMessages } from './generation-runtime'
 import { getGenerationControlMessages } from './generation-state'
 
 /**
@@ -262,7 +261,9 @@ export async function clear(sessionId: string) {
   if (!session) {
     return
   }
-  cancelSessionGenerationMessages(session.id, getGenerationControlMessages(session))
+  for (const message of getGenerationControlMessages(session)) {
+    message.cancel?.()
+  }
   if (platform.type === 'desktop') {
     try {
       await platform.getSessionAttachmentRagController().deleteSessionAttachments(sessionId)
@@ -275,7 +276,7 @@ export async function clear(sessionId: string) {
     threads: undefined,
     messageForksHash: undefined,
   })
-  clearSessionActivity(session.id, { preserveViewedSession: true })
+  clearSessionActivity(session.id)
   return updated
 }
 

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../chatStore', () => ({
-  updateMessageCache: vi.fn().mockResolvedValue(true),
-  updateMessage: vi.fn().mockResolvedValue(true),
+  updateMessageCache: vi.fn().mockResolvedValue(undefined),
+  updateMessage: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('../../settingsStore', () => ({

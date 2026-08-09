@@ -52,7 +52,7 @@ import { createAttachmentResolver } from './attachment-resolver'
 import { findMessageLocation } from './forks'
 import { cancelRunningToolCallBatch, finishAbortedGeneration } from './generation-cancellation'
 import { withSessionGenerationLock } from './generation-lock'
-import { beginSessionGeneration, registerSessionGenerationCancel, settleSessionGeneration } from './generation-runtime'
+import { beginSessionGeneration, settleSessionGeneration } from './generation-runtime'
 import { modifyMessage, persistStreamingMessage, updateStreamingCache } from './messages'
 import { registerUnsettledStreamDrain, waitForUnsettledStreamDrains } from './state'
 import { createInitialState, processStreamChunk } from './stream-chunk-processor'
@@ -475,20 +475,14 @@ export async function orchestrateGeneration(
     externalAbortSignal?: AbortSignal
   }
 ) {
-  if (!beginSessionGeneration(sessionId, targetMsg.id)) return
+  beginSessionGeneration(sessionId)
+  let finalMessage: Message | undefined
   try {
-    await runGeneration(sessionId, targetMsg, options)
+    finalMessage = await runGeneration(sessionId, targetMsg, options)
   } finally {
-    if (settleSessionGeneration(sessionId, targetMsg.id)) {
-      try {
-        const latestSession = await chatStore.getSession(sessionId)
-        const location = latestSession ? findMessageLocation(latestSession, targetMsg.id) : null
-        if (location) {
-          markSessionReplyCompleted(sessionId, location.list[location.index])
-        }
-      } catch (error) {
-        console.warn('Failed to resolve completed generation activity:', error)
-      }
+    settleSessionGeneration(sessionId)
+    if (finalMessage) {
+      markSessionReplyCompleted(sessionId, finalMessage)
     }
   }
 }
@@ -518,7 +512,7 @@ async function runGeneration(
   const configs = await platform.getConfig()
 
   if (!session || !settings) {
-    return
+    return targetMsg
   }
 
   trackGenerateEvent(sessionId, settings, globalSettings, session.type, options)
@@ -538,12 +532,11 @@ async function runGeneration(
     contextMessages && contextTargetIndex > 0
       ? { messages: contextMessages, index: contextTargetIndex }
       : findTargetMessageIndex(session, targetMsg.id)
-  if (!found) return
+  if (!found) return targetMsg
   const { messages, index: targetMsgIx } = found
   const promptTargetMsgIx = options?.appendToMessage ? targetMsgIx + 1 : targetMsgIx
 
   const controller = new AbortController()
-  registerSessionGenerationCancel(sessionId, targetMsg.id, (stoppedAt = Date.now()) => controller.abort(stoppedAt))
   const externalSignal = options?.externalAbortSignal
   if (externalSignal?.aborted) {
     controller.abort(externalSignal.reason)
@@ -555,7 +548,7 @@ async function runGeneration(
     // caller's chained controller); finalize as canceled instead of streaming.
     targetMsg = { ...targetMsg, generating: false, cancel: undefined, status: [], finishReason: 'canceled' }
     await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-    return
+    return targetMsg
   }
   // Wire the stop button to this controller before any pre-stream network work
   // runs (agent-mode suggestion classifier, MCP/tool harness setup). Those steps
@@ -582,7 +575,7 @@ async function runGeneration(
     if (controller.signal.aborted) {
       targetMsg = { ...targetMsg, generating: false, cancel: undefined, status: [], finishReason: 'canceled' }
       await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-      return
+      return targetMsg
     }
   }
 
@@ -650,7 +643,7 @@ async function runGeneration(
           finishReason: 'canceled',
         }
         await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-        return
+        return targetMsg
       }
 
       trackWorkModeSuggestionDecision(
@@ -683,7 +676,7 @@ async function runGeneration(
           finishReason: 'agent-mode-suggested',
         }
         await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-        return
+        return targetMsg
       }
 
       await setSessionAgentMode(sessionId, 'off')
@@ -869,7 +862,7 @@ async function runGeneration(
       } finally {
         if (drain) await drain
       }
-      return
+      return targetMsg
     }
 
     if (processorState.contentParts.some((part) => part.type === 'tool-call' && part.state === 'paused')) {
@@ -884,7 +877,7 @@ async function runGeneration(
         usage: processorState.usage,
       }
       await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-      return
+      return targetMsg
     }
 
     for (const part of processorState.contentParts) {
@@ -940,17 +933,19 @@ async function runGeneration(
         usage: processorState.usage,
       }
       await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
-      return
+      return targetMsg
     }
 
-    if (await persistAbortedGenerationIfNeeded()) return
+    if (await persistAbortedGenerationIfNeeded()) return targetMsg
 
     targetMsg = handleGenerationError(err, targetMsg, settings, {
       agentMode: getSessionAgentModeEntry(sessionId, session).value,
       operationType: options?.operationType,
     })
     await persistStreamingMessage(sessionId, targetMsg, { refreshCounting: true })
+    return targetMsg
   }
+  return targetMsg
 }
 
 async function buildToolsForPausedToolCall(session: Session, settings: SessionSettings, targetMsg: Message) {

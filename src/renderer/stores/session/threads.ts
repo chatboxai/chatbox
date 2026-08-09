@@ -1,5 +1,4 @@
 import * as defaults from '@shared/defaults'
-import { pruneUnreachableMessageForks } from '@shared/session/message-forks'
 import { createMessage, type Message, type Session, type SessionThread } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import { v4 as uuidv4 } from 'uuid'
@@ -7,12 +6,6 @@ import * as dom from '@/hooks/dom'
 import * as chatStore from '../chatStore'
 import * as scrollActions from '../scrollActions'
 import { _copySession as copySession, switchCurrentSession } from './crud'
-import { cancelSessionGenerationMessages } from './generation-runtime'
-import { getCurrentConversationMessages } from './generation-state'
-
-function cancelCurrentConversationGenerations(session: Session): void {
-  cancelSessionGenerationMessages(session.id, getCurrentConversationMessages(session))
-}
 
 /**
  * Edit a thread (currently only supports name modification)
@@ -55,23 +48,8 @@ export async function removeThread(sessionId: string, threadId: string) {
     await removeCurrentThread(sessionId)
     return
   }
-  const targetThread = session.threads?.find((thread) => thread.id === threadId)
-  if (targetThread) {
-    cancelSessionGenerationMessages(
-      session.id,
-      getCurrentConversationMessages({ ...session, messages: targetThread.messages, threads: [] })
-    )
-  }
-  return await chatStore.updateSessionWithMessages(sessionId, (current) => {
-    if (!current) throw new Error(`Session ${sessionId} not found during thread removal`)
-    const updated = {
-      ...current,
-      threads: current.threads?.filter((thread) => thread.id !== threadId),
-    }
-    return {
-      ...updated,
-      messageForksHash: pruneUnreachableMessageForks(updated),
-    }
+  return await chatStore.updateSessionWithMessages(sessionId, {
+    threads: session.threads?.filter((t) => t.id !== threadId),
   })
 }
 
@@ -89,7 +67,9 @@ export async function switchThread(sessionId: string, threadId: string) {
   if (!target) {
     return
   }
-  cancelCurrentConversationGenerations(session)
+  for (const m of session.messages) {
+    m?.cancel?.()
+  }
   // Build the transfer from the queue's current session (not the snapshot
   // above): a compaction commit may still be persisting, and submitting a
   // stale full object would overwrite its summary and compaction point.
@@ -132,7 +112,9 @@ export async function refreshContextAndCreateNewThread(sessionId: string) {
   if (!session) {
     return
   }
-  cancelCurrentConversationGenerations(session)
+  for (const m of session.messages) {
+    m?.cancel?.()
+  }
   // Archive from the queue's current session, not the snapshot above: a
   // compaction commit may still be persisting its summary/point.
   await chatStore.updateSessionWithMessages(sessionId, (current) => {
@@ -179,7 +161,10 @@ export async function removeCurrentThread(sessionId: string) {
   if (!session) {
     return
   }
-  cancelCurrentConversationGenerations(session)
+  // Cancel all ongoing message generations
+  for (const m of session.messages) {
+    m?.cancel?.()
+  }
   await chatStore.updateSessionWithMessages(sessionId, (current) => {
     if (!current) {
       throw new Error(`Session ${sessionId} not found during thread removal`)
@@ -198,7 +183,6 @@ export async function removeCurrentThread(sessionId: string) {
       updatedSession.threadName = lastThread.name
       updatedSession.compactionPoints = lastThread.compactionPoints
     }
-    updatedSession.messageForksHash = pruneUnreachableMessageForks(updatedSession)
     return updatedSession
   })
 }
@@ -214,7 +198,10 @@ export async function compressAndCreateThread(sessionId: string, summary: string
     return
   }
 
-  cancelCurrentConversationGenerations(session)
+  // Cancel all ongoing message generations
+  for (const m of session.messages) {
+    m?.cancel?.()
+  }
 
   // Archive from the queue's current session, not the snapshot above.
   await chatStore.updateSessionWithMessages(sessionId, (current) => {

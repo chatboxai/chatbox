@@ -28,7 +28,6 @@ const {
   setSessionAgentModeMock,
   lockSessionAgentModeMock,
   clearSessionActivityMock,
-  cancelSessionGenerationMessagesMock,
 } = vi.hoisted(() => ({
   updateSessionWithMessages: vi.fn(),
   updateSessionMock: vi.fn(),
@@ -46,7 +45,6 @@ const {
   setSessionAgentModeMock: vi.fn(),
   lockSessionAgentModeMock: vi.fn(),
   clearSessionActivityMock: vi.fn(),
-  cancelSessionGenerationMessagesMock: vi.fn(),
 }))
 
 const { deleteSessionAttachmentsMock, platformMock } = vi.hoisted(() => {
@@ -111,10 +109,8 @@ vi.mock('./sessionActivityStore', () => ({
 }))
 
 vi.mock('./session/generation-runtime', () => ({
-  cancelSessionGenerationMessages: cancelSessionGenerationMessagesMock,
   beginSessionGeneration: vi.fn(),
-  registerSessionGenerationCancel: vi.fn(),
-  settleSessionGeneration: vi.fn().mockReturnValue(false),
+  settleSessionGeneration: vi.fn(),
 }))
 
 vi.mock('../platform', () => ({
@@ -232,7 +228,6 @@ beforeEach(() => {
   setSessionAgentModeMock.mockReset()
   lockSessionAgentModeMock.mockReset()
   clearSessionActivityMock.mockReset()
-  cancelSessionGenerationMessagesMock.mockReset()
   deleteSessionAttachmentsMock.mockReset()
   platformMock.type = 'web'
 })
@@ -279,20 +274,20 @@ describe('session message cleanup', () => {
 
     await sessionActions.clear(session.id)
 
-    expect(cancelSessionGenerationMessagesMock).toHaveBeenCalledOnce()
-    expect(cancelSessionGenerationMessagesMock.mock.calls[0][1]).toContain(forkReply)
+    expect(cancel).toHaveBeenCalledOnce()
     expect(updateSessionWithMessages).toHaveBeenCalledWith(session.id, {
       messages: [session.messages[0]],
       threads: undefined,
       messageForksHash: undefined,
     })
-    expect(clearSessionActivityMock).toHaveBeenCalledWith(session.id, { preserveViewedSession: true })
+    expect(clearSessionActivityMock).toHaveBeenCalledWith(session.id)
     expect(updateSessionWithMessages.mock.invocationCallOrder[0]).toBeLessThan(
       clearSessionActivityMock.mock.invocationCallOrder[0]
     )
   })
 
   test('cancels generation before waiting for desktop attachment cleanup', async () => {
+    const cancel = vi.fn()
     let finishAttachmentCleanup!: () => void
     const attachmentCleanup = new Promise<void>((resolve) => {
       finishAttachmentCleanup = resolve
@@ -302,7 +297,7 @@ describe('session message cleanup', () => {
     const session: Session = {
       id: 'session-clear',
       name: 'Session to clear',
-      messages: [{ ...makeMessage('assistant', 'assistant'), generating: true }],
+      messages: [{ ...makeMessage('assistant', 'assistant'), generating: true, cancel }],
     }
     getSessionMock.mockResolvedValue(session)
     updateSessionWithMessages.mockResolvedValue({ ...session, messages: [] })
@@ -310,8 +305,8 @@ describe('session message cleanup', () => {
     const clearing = sessionActions.clear(session.id)
     await vi.waitFor(() => expect(deleteSessionAttachmentsMock).toHaveBeenCalledOnce())
 
-    expect(cancelSessionGenerationMessagesMock).toHaveBeenCalledOnce()
-    expect(cancelSessionGenerationMessagesMock.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(
       deleteSessionAttachmentsMock.mock.invocationCallOrder[0]
     )
     expect(updateSessionWithMessages).not.toHaveBeenCalled()
@@ -712,12 +707,7 @@ describe('fork actions', () => {
     const copiedFork = newSession.messageForksHash?.[copiedPivotId]
     expect(copiedFork).toBeDefined()
     expect(copiedFork?.lists[1].messages[0].id).not.toBe(threadAlternative.id)
-    expect(updateSessionWithMessages).toHaveBeenCalledTimes(1)
-    const [updatedSessionId, updater] = updateSessionWithMessages.mock.calls[0] as [string, (value: Session) => Session]
-    expect(updatedSessionId).toBe(session.id)
-    const sourceAfterMove = updater(session)
-    expect(sourceAfterMove.threads).toEqual([])
-    expect(Object.keys(sourceAfterMove.messageForksHash ?? {})).toEqual([currentPivot.id])
+    expect(updateSessionWithMessages).toHaveBeenCalledWith(session.id, { threads: [] })
     expect(routerNavigateMock).toHaveBeenCalledWith({
       to: '/session/$sessionId',
       params: { sessionId: 'new-session-thread' },

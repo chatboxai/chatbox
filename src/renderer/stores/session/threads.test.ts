@@ -1,10 +1,9 @@
 import type { CompactionPoint, Message, Session } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock, updateSessionWithMessagesMock, cancelSessionGenerationMessagesMock } = vi.hoisted(() => ({
+const { getSessionMock, updateSessionWithMessagesMock } = vi.hoisted(() => ({
   getSessionMock: vi.fn(),
   updateSessionWithMessagesMock: vi.fn(),
-  cancelSessionGenerationMessagesMock: vi.fn(),
 }))
 
 vi.mock('../chatStore', () => ({
@@ -15,7 +14,6 @@ vi.mock('../chatStore', () => ({
 vi.mock('../scrollActions', () => ({ scrollToBottom: vi.fn() }))
 vi.mock('@/hooks/dom', () => ({ focusMessageInput: vi.fn() }))
 vi.mock('./crud', () => ({ _copySession: vi.fn(), switchCurrentSession: vi.fn() }))
-vi.mock('./generation-runtime', () => ({ cancelSessionGenerationMessages: cancelSessionGenerationMessagesMock }))
 vi.mock('uuid', () => ({ v4: () => 'new-thread-id' }))
 
 import { refreshContextAndCreateNewThread, removeCurrentThread, switchThread } from './threads'
@@ -101,40 +99,10 @@ describe('thread flows carry compaction points with their messages', () => {
 
     await removeCurrentThread('session-1')
 
-    expect(cancelSessionGenerationMessagesMock).toHaveBeenCalledOnce()
-    expect(cancelSessionGenerationMessagesMock.mock.calls[0][1]).toContain(generating)
+    expect(cancel).toHaveBeenCalledOnce()
     const updater = updateSessionWithMessagesMock.mock.calls[0][1] as (session: Session) => Session
     const updated = updater({ ...testSession(), messages: [message('u1', { role: 'user' }), generating] })
     expect(updated.messages.some((item) => item.id === generating.id)).toBe(false)
-  })
-
-  it('removeCurrentThread prunes forks owned by the discarded current thread', async () => {
-    const currentPivot = message('u1', { role: 'user' })
-    const historyPivot = message('u0', { role: 'user' })
-    const source = {
-      ...testSession(),
-      messages: [currentPivot],
-      threads: [{ ...testSession().threads![0], messages: [historyPivot] }],
-      messageForksHash: {
-        [currentPivot.id]: {
-          position: 0,
-          lists: [{ id: 'current-fork', messages: [message('current-fork-reply')] }],
-          createdAt: 1,
-        },
-        [historyPivot.id]: {
-          position: 0,
-          lists: [{ id: 'history-fork', messages: [message('history-fork-reply')] }],
-          createdAt: 2,
-        },
-      },
-    } satisfies Session
-    getSessionMock.mockResolvedValue(source)
-
-    await removeCurrentThread('session-1')
-
-    const updater = updateSessionWithMessagesMock.mock.calls[0][1] as (session: Session) => Session
-    const updated = updater(source)
-    expect(Object.keys(updated.messageForksHash ?? {})).toEqual([historyPivot.id])
   })
 
   it('removeCurrentThread clears compaction points when no thread remains', async () => {

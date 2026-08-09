@@ -36,7 +36,7 @@ import {
   stopGeneratingMessages,
   submitNewUserMessage,
 } from '@/stores/sessionActions'
-import { clearViewedSessionActivity, markSessionActivityViewed } from '@/stores/sessionActivityStore'
+import { clearSessionActivity } from '@/stores/sessionActivityStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
@@ -68,8 +68,7 @@ function RouteComponent() {
   const setLastUsedPictureModel = useStore(lastUsedModelStore, (state) => state.setPictureModel)
 
   useEffect(() => {
-    markSessionActivityViewed(currentSessionId)
-    return () => clearViewedSessionActivity(currentSessionId)
+    clearSessionActivity(currentSessionId)
   }, [currentSessionId])
   const welcomeCardMode = useMemo(
     () =>

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../chatStore', () => ({
-  updateMessageCache: vi.fn().mockResolvedValue(undefined),
-  updateMessage: vi.fn().mockResolvedValue(undefined),
+  updateMessageCache: vi.fn().mockResolvedValue(true),
+  updateMessage: vi.fn().mockResolvedValue(true),
 }))
 
 vi.mock('../../settingsStore', () => ({
@@ -38,6 +38,13 @@ vi.mock('@/packages/token', () => ({
 
 import type { Message } from '@shared/types'
 import * as chatStore from '../../chatStore'
+import {
+  clearMessageGenerationActivity,
+  getSessionActivity,
+  resetSessionActivityStore,
+  sessionActivityStore,
+  syncSessionGenerationActivity,
+} from '../../sessionActivityStore'
 import { persistStreamingMessage, updateStreamingCache } from '../messages'
 
 function createTestMessage(overrides?: Partial<Message>): Message {
@@ -53,6 +60,7 @@ function createTestMessage(overrides?: Partial<Message>): Message {
 describe('updateStreamingCache', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetSessionActivityStore()
   })
 
   it('calls chatStore.updateMessageCache with correct args', () => {
@@ -77,11 +85,21 @@ describe('updateStreamingCache', () => {
     expect(() => updateStreamingCache('session-1', createTestMessage())).not.toThrow()
     await new Promise((resolve) => setTimeout(resolve, 10))
   })
+
+  it('does not register a deleted message when a stale cache update is ignored', async () => {
+    vi.mocked(chatStore.updateMessageCache).mockResolvedValueOnce(false)
+
+    updateStreamingCache('session-1', createTestMessage({ generating: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(getSessionActivity(sessionActivityStore.getState(), 'session-1')).toBe('idle')
+  })
 })
 
 describe('persistStreamingMessage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetSessionActivityStore()
   })
 
   it('calls chatStore.updateMessage', async () => {
@@ -113,5 +131,20 @@ describe('persistStreamingMessage', () => {
     const msg = createTestMessage({ wordCount: 10 })
     await persistStreamingMessage('session-1', msg)
     expect(msg.wordCount).toBe(10)
+  })
+
+  it('does not restore activity when a deleted message receives a stale final persist', async () => {
+    const generating = createTestMessage({ generating: true })
+    syncSessionGenerationActivity('session-1', generating)
+    clearMessageGenerationActivity('session-1', generating.id)
+    vi.mocked(chatStore.updateMessage).mockResolvedValueOnce(false)
+
+    await persistStreamingMessage('session-1', {
+      ...generating,
+      generating: false,
+      finishReason: 'stop',
+    })
+
+    expect(getSessionActivity(sessionActivityStore.getState(), 'session-1')).toBe('idle')
   })
 })

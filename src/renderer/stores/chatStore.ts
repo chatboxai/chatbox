@@ -698,6 +698,7 @@ export async function updateMessage(
   updater: Updater<Message>,
   onlyUpdateCache?: boolean
 ) {
+  let messageFound = false
   const update = (session: Session | null | undefined): Session => {
     if (!session) {
       throw new Error(`session ${sessionId} not found`)
@@ -717,6 +718,7 @@ export async function updateMessage(
     }
     const message = session.messages.find((m) => m.id === messageId)
     if (message) {
+      messageFound = true
       return {
         ...session,
         messages: updateMessages(session.messages),
@@ -728,6 +730,7 @@ export async function updateMessage(
       for (const thread of session.threads) {
         const message = thread.messages.find((m) => m.id === messageId)
         if (message) {
+          messageFound = true
           return {
             ...session,
             threads: session.threads.map((th) => {
@@ -750,6 +753,8 @@ export async function updateMessage(
         if (listIndex < 0) {
           continue
         }
+
+        messageFound = true
 
         return {
           ...session,
@@ -776,10 +781,11 @@ export async function updateMessage(
 
   if (onlyUpdateCache) {
     await updateSessionCache(sessionId, update)
-    return
+    return messageFound
   }
 
   await updateSessionWithMessages(sessionId, update, { preserveCachedGeneratingMessages: true })
+  return messageFound
 }
 
 export async function removeMessage(sessionId: string, messageId: string) {

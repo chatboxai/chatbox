@@ -27,6 +27,7 @@ const {
   sessionAgentModeMapMock,
   setSessionAgentModeMock,
   lockSessionAgentModeMock,
+  clearSessionActivityMock,
 } = vi.hoisted(() => ({
   updateSessionWithMessages: vi.fn(),
   updateSessionMock: vi.fn(),
@@ -43,6 +44,7 @@ const {
   >,
   setSessionAgentModeMock: vi.fn(),
   lockSessionAgentModeMock: vi.fn(),
+  clearSessionActivityMock: vi.fn(),
 }))
 
 vi.hoisted(() => {
@@ -87,6 +89,12 @@ vi.mock('./chatStore', () => ({
   listAllSessionsMeta: listAllSessionsMetaMock,
   archiveSessions: archiveSessionsMock,
   deleteSessions: deleteSessionsMock,
+}))
+
+vi.mock('./sessionActivityStore', () => ({
+  clearSessionActivity: clearSessionActivityMock,
+  clearMessageGenerationActivity: vi.fn(),
+  syncSessionGenerationActivity: vi.fn(),
 }))
 
 vi.mock('../platform', () => ({
@@ -206,6 +214,7 @@ beforeEach(() => {
   }
   setSessionAgentModeMock.mockReset()
   lockSessionAgentModeMock.mockReset()
+  clearSessionActivityMock.mockReset()
 })
 
 describe('conversation list cleanup', () => {
@@ -222,6 +231,35 @@ describe('conversation list cleanup', () => {
     expect(archiveSessionsMock).toHaveBeenCalledTimes(1)
     expect(archiveSessionsMock).toHaveBeenCalledWith(['archive-1', 'archive-2'])
     expect(deleteSessionsMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('session message cleanup', () => {
+  test('cancels generation and clears sidebar activity after removing all messages', async () => {
+    const cancel = vi.fn()
+    const session: Session = {
+      id: 'session-clear',
+      name: 'Session to clear',
+      messages: [
+        makeMessage('system', 'system'),
+        makeMessage('user'),
+        { ...makeMessage('assistant', 'assistant'), generating: true, cancel },
+      ],
+    }
+    getSessionMock.mockResolvedValue(session)
+    updateSessionWithMessages.mockResolvedValue({ ...session, messages: [session.messages[0]] })
+
+    await sessionActions.clear(session.id)
+
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(updateSessionWithMessages).toHaveBeenCalledWith(session.id, {
+      messages: [session.messages[0]],
+      threads: undefined,
+    })
+    expect(clearSessionActivityMock).toHaveBeenCalledWith(session.id, { preserveViewedSession: true })
+    expect(updateSessionWithMessages.mock.invocationCallOrder[0]).toBeLessThan(
+      clearSessionActivityMock.mock.invocationCallOrder[0]
+    )
   })
 })
 

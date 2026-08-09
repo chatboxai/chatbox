@@ -94,14 +94,14 @@ export function clearViewedSessionActivity(sessionId: string): void {
   sessionActivityStore.setState((state) => (state.viewedSessionId === sessionId ? { viewedSessionId: null } : state))
 }
 
-export function clearSessionActivity(sessionId: string): void {
+export function clearSessionActivity(sessionId: string, options?: { preserveViewedSession?: boolean }): void {
   sessionActivityStore.setState((state) => {
     const generatingMessageIdsBySession = { ...state.generatingMessageIdsBySession }
     const unreadCompletedSessionIds = { ...state.unreadCompletedSessionIds }
     delete generatingMessageIdsBySession[sessionId]
     delete unreadCompletedSessionIds[sessionId]
     return {
-      ...(state.viewedSessionId === sessionId ? { viewedSessionId: null } : {}),
+      ...(state.viewedSessionId === sessionId && !options?.preserveViewedSession ? { viewedSessionId: null } : {}),
       generatingMessageIdsBySession,
       unreadCompletedSessionIds,
     }

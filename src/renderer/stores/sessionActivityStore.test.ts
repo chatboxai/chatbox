@@ -2,6 +2,7 @@ import { createMessage } from '@shared/types'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   clearMessageGenerationActivity,
+  clearSessionActivity,
   clearViewedSessionActivity,
   getSessionActivity,
   markSessionActivityViewed,
@@ -78,5 +79,16 @@ describe('sessionActivityStore', () => {
     clearMessageGenerationActivity('background-session', 'reply-1')
 
     expect(getSessionActivity(sessionActivityStore.getState(), 'background-session')).toBe('idle')
+  })
+
+  it('keeps the current session viewed when clearing its message activity', () => {
+    syncSessionGenerationActivity('current-session', generatingReply('reply-1'))
+
+    clearSessionActivity('current-session', { preserveViewedSession: true })
+    syncSessionGenerationActivity('current-session', generatingReply('reply-2'))
+    syncSessionGenerationActivity('current-session', completedReply('reply-2'))
+
+    expect(sessionActivityStore.getState().viewedSessionId).toBe('current-session')
+    expect(getSessionActivity(sessionActivityStore.getState(), 'current-session')).toBe('idle')
   })
 })

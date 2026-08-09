@@ -16,6 +16,7 @@ import { sortSessionRecords } from '@/storage/SessionMetaStorage'
 import * as atoms from '../atoms'
 import * as chatStore from '../chatStore'
 import * as scrollActions from '../scrollActions'
+import { clearSessionActivity } from '../sessionActivityStore'
 import { initEmptyChatSession, initEmptyPictureSession } from '../sessionHelpers'
 
 /**
@@ -269,10 +270,12 @@ export async function clear(sessionId: string) {
   session.messages.forEach((msg) => {
     msg?.cancel?.()
   })
-  return await chatStore.updateSessionWithMessages(session.id, {
+  const updated = await chatStore.updateSessionWithMessages(session.id, {
     messages: session.messages.filter((m) => m.role === 'system').slice(0, 1),
     threads: undefined,
   })
+  clearSessionActivity(session.id, { preserveViewedSession: true })
+  return updated
 }
 
 // Re-export copySession for use by threads.ts (moveThreadToConversations)

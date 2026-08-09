@@ -122,12 +122,10 @@ export async function modifyMessage(
 
   // 更新消息时间戳
   updated.timestamp = Date.now()
-  if (updateOnlyCache) {
-    await chatStore.updateMessageCache(sessionId, updated.id, updated)
-  } else {
-    await chatStore.updateMessage(sessionId, updated.id, updated)
-  }
-  syncSessionGenerationActivity(sessionId, updated)
+  const messageUpdated = updateOnlyCache
+    ? await chatStore.updateMessageCache(sessionId, updated.id, updated)
+    : await chatStore.updateMessage(sessionId, updated.id, updated)
+  if (messageUpdated) syncSessionGenerationActivity(sessionId, updated)
 }
 
 /**
@@ -136,10 +134,14 @@ export async function modifyMessage(
  */
 export function updateStreamingCache(sessionId: string, message: Message): void {
   message.timestamp = Date.now()
-  syncSessionGenerationActivity(sessionId, message)
-  chatStore.updateMessageCache(sessionId, message.id, message).catch((err) => {
-    console.error('Failed to update streaming cache:', err)
-  })
+  chatStore
+    .updateMessageCache(sessionId, message.id, message)
+    .then((messageUpdated) => {
+      if (messageUpdated) syncSessionGenerationActivity(sessionId, message)
+    })
+    .catch((err) => {
+      console.error('Failed to update streaming cache:', err)
+    })
 }
 
 /**
@@ -157,8 +159,8 @@ export async function persistStreamingMessage(
     message.tokenCountMap = undefined
   }
   message.timestamp = Date.now()
-  await chatStore.updateMessage(sessionId, message.id, message)
-  syncSessionGenerationActivity(sessionId, message)
+  const messageUpdated = await chatStore.updateMessage(sessionId, message.id, message)
+  if (messageUpdated) syncSessionGenerationActivity(sessionId, message)
 }
 
 /**

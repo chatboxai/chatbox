@@ -59,6 +59,49 @@ export function findMessageLocation(session: Session, messageId: string): Messag
   return null
 }
 
+export function collectReachableMessages(session: Session, initialLists: Message[][]): Message[] {
+  const messages: Message[] = []
+  const seenMessageIds = new Set<string>()
+  const visitedForkIds = new Set<string>()
+  const pendingLists = [...initialLists]
+
+  while (pendingLists.length > 0) {
+    const list = pendingLists.shift()
+    if (!list) continue
+
+    for (const message of list) {
+      if (!seenMessageIds.has(message.id)) {
+        seenMessageIds.add(message.id)
+        messages.push(message)
+      }
+
+      const fork = session.messageForksHash?.[message.id]
+      if (!fork || visitedForkIds.has(message.id)) continue
+      visitedForkIds.add(message.id)
+      for (const branch of fork.lists) {
+        pendingLists.push(branch.messages)
+      }
+    }
+  }
+
+  return messages
+}
+
+export function pruneUnreachableMessageForks(session: Session): Session['messageForksHash'] {
+  if (!session.messageForksHash) return undefined
+
+  const reachableIds = new Set(
+    collectReachableMessages(session, [
+      session.messages,
+      ...(session.threads ?? []).map((thread) => thread.messages),
+    ]).map((message) => message.id)
+  )
+  const retained = Object.fromEntries(
+    Object.entries(session.messageForksHash).filter(([forkMessageId]) => reachableIds.has(forkMessageId))
+  )
+  return Object.keys(retained).length > 0 ? retained : undefined
+}
+
 /**
  * Reconstruct the isolated conversation path containing a message. Saved fork
  * lists only store the tail after their pivot, so this joins each tail with its

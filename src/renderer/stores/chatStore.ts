@@ -43,6 +43,12 @@ import {
 } from './chatStore-cache'
 import { lastUsedModelStore } from './lastUsedModelStore'
 import queryClient from './queryClient'
+import {
+  cancelAndWaitForSessionGenerations,
+  clearSessionGenerationRuntime,
+  reconcileSessionGenerationRuntime,
+  releaseSessionGenerationBlock,
+} from './session/generation-runtime'
 import { clearSessionActivity } from './sessionActivityStore'
 import { getSessionMeta } from './sessionHelpers'
 import { settingsStore, useSettingsStore } from './settingsStore'
@@ -347,48 +353,85 @@ export async function createSession(newSession: Omit<Session, 'id'>, previousId?
 }
 
 const sessionUpdateQueues: Record<string, UpdateQueue<Session>> = {}
+const sessionUpdateOperations = new Map<string, Set<Promise<void>>>()
+const sealedDeletedSessionIds = new Set<string>()
+
+function trackSessionUpdate(sessionId: string): { done: Promise<void>; finish: () => void } {
+  let finish!: () => void
+  const done = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  const operations = sessionUpdateOperations.get(sessionId) ?? new Set<Promise<void>>()
+  operations.add(done)
+  sessionUpdateOperations.set(sessionId, operations)
+  return {
+    done,
+    finish: () => {
+      finish()
+      operations.delete(done)
+      if (operations.size === 0) sessionUpdateOperations.delete(sessionId)
+    },
+  }
+}
+
+async function waitForSessionUpdates(sessionId: string): Promise<void> {
+  while (true) {
+    const operations = [...(sessionUpdateOperations.get(sessionId) ?? [])]
+    if (operations.length === 0) return
+    await Promise.all(operations)
+  }
+}
 
 export async function updateSessionWithMessages(
   sessionId: string,
   updater: Updater<Session>,
   options?: { preserveCachedGeneratingMessages?: boolean }
 ) {
-  if (!sessionUpdateQueues[sessionId]) {
-    // do not use await here to avoid data race
-    sessionUpdateQueues[sessionId] = new UpdateQueue<Session>(
-      () => getSession(sessionId),
-      async (session) => {
-        if (session) {
-          console.debug('chatStore', 'persist session', sessionId)
-          await storage.setItemNow(StorageKeyGenerator.session(sessionId), session)
+  if (sealedDeletedSessionIds.has(sessionId)) {
+    throw new Error(`Session ${sessionId} is being deleted`)
+  }
+  const operation = trackSessionUpdate(sessionId)
+  try {
+    if (!sessionUpdateQueues[sessionId]) {
+      // do not use await here to avoid data race
+      sessionUpdateQueues[sessionId] = new UpdateQueue<Session>(
+        () => getSession(sessionId),
+        async (session) => {
+          if (session) {
+            console.debug('chatStore', 'persist session', sessionId)
+            await storage.setItemNow(StorageKeyGenerator.session(sessionId), session)
+          }
         }
-      }
-    )
-  }
-  let needUpdateSessionList = true
-  const updated = await sessionUpdateQueues[sessionId].set((prev) => {
-    if (!prev) {
-      throw new Error(`Session ${sessionId} not found`)
+      )
     }
-    if (typeof updater === 'function') {
-      return updater(prev)
-    } else {
-      if (isEmpty(getSessionMeta(updater as SessionMeta))) {
-        needUpdateSessionList = false
+    let needUpdateSessionList = true
+    const updated = await sessionUpdateQueues[sessionId].set((prev) => {
+      if (!prev) {
+        throw new Error(`Session ${sessionId} not found`)
       }
-      return { ...prev, ...updater }
+      if (typeof updater === 'function') {
+        return updater(prev)
+      } else {
+        if (isEmpty(getSessionMeta(updater as SessionMeta))) {
+          needUpdateSessionList = false
+        }
+        return { ...prev, ...updater }
+      }
+    })
+    if (needUpdateSessionList) {
+      const newMeta = getSessionMeta(updated)
+      const metaStorage = await getMetaStorage()
+      await metaStorage.update(sessionId, newMeta)
+      updateSessionListData((items) =>
+        sortSessionRecords(items.map((s) => (s.id === sessionId ? { ...s, ...newMeta } : s)))
+      )
     }
-  })
-  if (needUpdateSessionList) {
-    const newMeta = getSessionMeta(updated)
-    const metaStorage = await getMetaStorage()
-    await metaStorage.update(sessionId, newMeta)
-    updateSessionListData((items) =>
-      sortSessionRecords(items.map((s) => (s.id === sessionId ? { ...s, ...newMeta } : s)))
-    )
+    _setSessionCache(sessionId, updated, options)
+    reconcileSessionGenerationRuntime(updated)
+    return updated
+  } finally {
+    operation.finish()
   }
-  _setSessionCache(sessionId, updated, options)
-  return updated
 }
 
 // 这里只能修改messages之外的字段
@@ -470,6 +513,7 @@ async function cleanupSessionAttachmentRagEntries(ids: string[], operation: stri
 }
 
 function cleanupDeletedSessionRuntimeState(id: string) {
+  clearSessionGenerationRuntime(id)
   _setSessionCache(id, null)
   uiStore.getState().clearSessionWebBrowsing(id)
   uiStore.getState().removeSessionKnowledgeBase(id)
@@ -478,20 +522,86 @@ function cleanupDeletedSessionRuntimeState(id: string) {
   clearScrollPositionCache(id)
   clearSessionActivity(id)
   delete sessionUpdateQueues[id]
+  sealedDeletedSessionIds.delete(id)
+  releaseSessionGenerationBlock(id)
   // Remove persisted download artifacts so deleted session references do not leak files on disk.
   platform.sandboxReset?.({ sessionId: id }).catch(() => {})
   platform.sandboxRemoveArtifacts?.({ sessionId: id }).catch(() => {})
 }
 
+function beginSessionDeletion(id: string): Promise<void> {
+  return cancelAndWaitForSessionGenerations(id)
+}
+
+async function sealSessionDeletion(id: string): Promise<void> {
+  sealedDeletedSessionIds.add(id)
+  await waitForSessionUpdates(id)
+}
+
+function rollbackSessionDeletion(id: string): void {
+  sealedDeletedSessionIds.delete(id)
+  releaseSessionGenerationBlock(id)
+}
+
+type SessionDeletionSnapshot = {
+  session: Session | null
+  meta: SessionMetaRecord | null
+}
+
+async function captureSessionDeletionSnapshot(
+  id: string,
+  metaStorage: SessionMetaStorage
+): Promise<SessionDeletionSnapshot> {
+  const [session, meta] = await Promise.all([getSession(id), metaStorage.getById(id)])
+  return { session, meta }
+}
+
+async function restoreSessionDeletionSnapshots(
+  snapshots: Map<string, SessionDeletionSnapshot>,
+  metaStorage: SessionMetaStorage
+): Promise<void> {
+  await runInChunks([...snapshots.entries()], 20, async ([id, snapshot]) => {
+    if (snapshot.session) {
+      await storage.setItemNow(StorageKeyGenerator.session(id), snapshot.session)
+    }
+    if (snapshot.meta) {
+      const restored = await metaStorage.update(id, snapshot.meta)
+      if (!restored) {
+        await metaStorage.create(snapshot.meta)
+      }
+    }
+  })
+}
+
 export async function deleteSession(id: string) {
   console.debug('chatStore', 'deleteSession', id)
-  await cleanupSessionAttachmentRagEntries([id], 'session deletion')
-  await storage.removeItem(StorageKeyGenerator.session(id))
-  const metaStorage = await getMetaStorage()
-  await metaStorage.delete(id)
-  updateSessionListData((items) => items.filter((session) => session.id !== id))
-  updateArchivedSessionListData((items) => items.filter((session) => session.id !== id))
-  cleanupDeletedSessionRuntimeState(id)
+  const generationSettled = beginSessionDeletion(id)
+  let storageRemovalAttempted = false
+  let snapshots: Map<string, SessionDeletionSnapshot> | undefined
+  try {
+    await cleanupSessionAttachmentRagEntries([id], 'session deletion')
+    await generationSettled
+    await sealSessionDeletion(id)
+    const metaStorage = await getMetaStorage()
+    snapshots = new Map([[id, await captureSessionDeletionSnapshot(id, metaStorage)]])
+    storageRemovalAttempted = true
+    await storage.removeItem(StorageKeyGenerator.session(id))
+    await metaStorage.delete(id)
+    updateSessionListData((items) => items.filter((session) => session.id !== id))
+    updateArchivedSessionListData((items) => items.filter((session) => session.id !== id))
+    cleanupDeletedSessionRuntimeState(id)
+  } catch (error) {
+    if (storageRemovalAttempted) {
+      try {
+        const metaStorage = await getMetaStorage()
+        if (snapshots) await restoreSessionDeletionSnapshots(snapshots, metaStorage)
+      } catch (restoreError) {
+        console.error(`Failed to restore session ${id} after deletion failure:`, restoreError)
+      }
+    }
+    rollbackSessionDeletion(id)
+    throw error
+  }
 }
 
 export async function archiveSession(id: string) {
@@ -542,19 +652,41 @@ export async function deleteSessions(ids: string[]) {
   const uniqueIds = [...new Set(ids)]
   if (uniqueIds.length === 0) return
 
-  await cleanupSessionAttachmentRagEntries(uniqueIds, 'session deletion')
+  const generationSettlements = uniqueIds.map((id) => beginSessionDeletion(id))
+  let storageRemovalAttempted = false
+  let snapshots: Map<string, SessionDeletionSnapshot> | undefined
+  try {
+    await cleanupSessionAttachmentRagEntries(uniqueIds, 'session deletion')
+    await Promise.all(generationSettlements)
+    await Promise.all(uniqueIds.map((id) => sealSessionDeletion(id)))
 
-  await runInChunks(uniqueIds, 20, async (id) => {
-    await storage.removeItem(StorageKeyGenerator.session(id))
-  })
+    const metaStorage = await getMetaStorage()
+    snapshots = new Map(
+      await Promise.all(uniqueIds.map(async (id) => [id, await captureSessionDeletionSnapshot(id, metaStorage)] as const))
+    )
+    storageRemovalAttempted = true
+    await runInChunks(uniqueIds, 20, async (id) => {
+      await storage.removeItem(StorageKeyGenerator.session(id))
+    })
 
-  const metaStorage = await getMetaStorage()
-  await metaStorage.deleteMany(uniqueIds)
-  await refreshSessionListCache()
-  updateArchivedSessionListData((items) => items.filter((session) => !uniqueIds.includes(session.id)))
+    await metaStorage.deleteMany(uniqueIds)
+    await refreshSessionListCache()
+    updateArchivedSessionListData((items) => items.filter((session) => !uniqueIds.includes(session.id)))
 
-  for (const id of uniqueIds) {
-    cleanupDeletedSessionRuntimeState(id)
+    for (const id of uniqueIds) {
+      cleanupDeletedSessionRuntimeState(id)
+    }
+  } catch (error) {
+    if (storageRemovalAttempted) {
+      try {
+        const metaStorage = await getMetaStorage()
+        if (snapshots) await restoreSessionDeletionSnapshots(snapshots, metaStorage)
+      } catch (restoreError) {
+        console.error('Failed to restore sessions after bulk deletion failure:', restoreError)
+      }
+    }
+    for (const id of uniqueIds) rollbackSessionDeletion(id)
+    throw error
   }
 }
 

@@ -28,6 +28,7 @@ const {
   setSessionAgentModeMock,
   lockSessionAgentModeMock,
   clearSessionActivityMock,
+  cancelSessionGenerationMessagesMock,
 } = vi.hoisted(() => ({
   updateSessionWithMessages: vi.fn(),
   updateSessionMock: vi.fn(),
@@ -45,7 +46,20 @@ const {
   setSessionAgentModeMock: vi.fn(),
   lockSessionAgentModeMock: vi.fn(),
   clearSessionActivityMock: vi.fn(),
+  cancelSessionGenerationMessagesMock: vi.fn(),
 }))
+
+const { deleteSessionAttachmentsMock, platformMock } = vi.hoisted(() => {
+  const deleteSessionAttachments = vi.fn()
+  return {
+    deleteSessionAttachmentsMock: deleteSessionAttachments,
+    platformMock: {
+      type: 'web' as 'web' | 'desktop',
+      getConfig: async () => ({}),
+      getSessionAttachmentRagController: () => ({ deleteSessionAttachments }),
+    },
+  }
+})
 
 vi.hoisted(() => {
   const storage = {
@@ -93,15 +107,18 @@ vi.mock('./chatStore', () => ({
 
 vi.mock('./sessionActivityStore', () => ({
   clearSessionActivity: clearSessionActivityMock,
-  clearMessageGenerationActivity: vi.fn(),
-  syncSessionGenerationActivity: vi.fn(),
+  markSessionReplyCompleted: vi.fn(),
+}))
+
+vi.mock('./session/generation-runtime', () => ({
+  cancelSessionGenerationMessages: cancelSessionGenerationMessagesMock,
+  beginSessionGeneration: vi.fn(),
+  registerSessionGenerationCancel: vi.fn(),
+  settleSessionGeneration: vi.fn().mockReturnValue(false),
 }))
 
 vi.mock('../platform', () => ({
-  default: {
-    type: 'web',
-    getConfig: async () => ({}),
-  },
+  default: platformMock,
 }))
 
 vi.mock('@/adapters', () => ({
@@ -215,6 +232,9 @@ beforeEach(() => {
   setSessionAgentModeMock.mockReset()
   lockSessionAgentModeMock.mockReset()
   clearSessionActivityMock.mockReset()
+  cancelSessionGenerationMessagesMock.mockReset()
+  deleteSessionAttachmentsMock.mockReset()
+  platformMock.type = 'web'
 })
 
 describe('conversation list cleanup', () => {
@@ -235,31 +255,70 @@ describe('conversation list cleanup', () => {
 })
 
 describe('session message cleanup', () => {
-  test('cancels generation and clears sidebar activity after removing all messages', async () => {
+  test('cancels active fork generation and clears all conversation data', async () => {
     const cancel = vi.fn()
+    const pivot = makeMessage('pivot', 'user')
+    const forkReply = { ...makeMessage('fork-reply', 'assistant'), generating: true, cancel }
     const session: Session = {
       id: 'session-clear',
       name: 'Session to clear',
-      messages: [
-        makeMessage('system', 'system'),
-        makeMessage('user'),
-        { ...makeMessage('assistant', 'assistant'), generating: true, cancel },
-      ],
+      messages: [makeMessage('system', 'system'), pivot],
+      messageForksHash: {
+        [pivot.id]: {
+          position: 0,
+          lists: [
+            { id: 'current', messages: [] },
+            { id: 'inactive', messages: [forkReply] },
+          ],
+          createdAt: 1,
+        },
+      },
     }
     getSessionMock.mockResolvedValue(session)
     updateSessionWithMessages.mockResolvedValue({ ...session, messages: [session.messages[0]] })
 
     await sessionActions.clear(session.id)
 
-    expect(cancel).toHaveBeenCalledOnce()
+    expect(cancelSessionGenerationMessagesMock).toHaveBeenCalledOnce()
+    expect(cancelSessionGenerationMessagesMock.mock.calls[0][1]).toContain(forkReply)
     expect(updateSessionWithMessages).toHaveBeenCalledWith(session.id, {
       messages: [session.messages[0]],
       threads: undefined,
+      messageForksHash: undefined,
     })
     expect(clearSessionActivityMock).toHaveBeenCalledWith(session.id, { preserveViewedSession: true })
     expect(updateSessionWithMessages.mock.invocationCallOrder[0]).toBeLessThan(
       clearSessionActivityMock.mock.invocationCallOrder[0]
     )
+  })
+
+  test('cancels generation before waiting for desktop attachment cleanup', async () => {
+    let finishAttachmentCleanup!: () => void
+    const attachmentCleanup = new Promise<void>((resolve) => {
+      finishAttachmentCleanup = resolve
+    })
+    platformMock.type = 'desktop'
+    deleteSessionAttachmentsMock.mockReturnValue(attachmentCleanup)
+    const session: Session = {
+      id: 'session-clear',
+      name: 'Session to clear',
+      messages: [{ ...makeMessage('assistant', 'assistant'), generating: true }],
+    }
+    getSessionMock.mockResolvedValue(session)
+    updateSessionWithMessages.mockResolvedValue({ ...session, messages: [] })
+
+    const clearing = sessionActions.clear(session.id)
+    await vi.waitFor(() => expect(deleteSessionAttachmentsMock).toHaveBeenCalledOnce())
+
+    expect(cancelSessionGenerationMessagesMock).toHaveBeenCalledOnce()
+    expect(cancelSessionGenerationMessagesMock.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteSessionAttachmentsMock.mock.invocationCallOrder[0]
+    )
+    expect(updateSessionWithMessages).not.toHaveBeenCalled()
+
+    finishAttachmentCleanup()
+    await clearing
+    expect(updateSessionWithMessages).toHaveBeenCalledOnce()
   })
 })
 
@@ -653,7 +712,12 @@ describe('fork actions', () => {
     const copiedFork = newSession.messageForksHash?.[copiedPivotId]
     expect(copiedFork).toBeDefined()
     expect(copiedFork?.lists[1].messages[0].id).not.toBe(threadAlternative.id)
-    expect(updateSessionWithMessages).toHaveBeenCalledWith(session.id, { threads: [] })
+    expect(updateSessionWithMessages).toHaveBeenCalledTimes(1)
+    const [updatedSessionId, updater] = updateSessionWithMessages.mock.calls[0] as [string, (value: Session) => Session]
+    expect(updatedSessionId).toBe(session.id)
+    const sourceAfterMove = updater(session)
+    expect(sourceAfterMove.threads).toEqual([])
+    expect(Object.keys(sourceAfterMove.messageForksHash ?? {})).toEqual([currentPivot.id])
     expect(routerNavigateMock).toHaveBeenCalledWith({
       to: '/session/$sessionId',
       params: { sessionId: 'new-session-thread' },

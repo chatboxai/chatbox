@@ -34,6 +34,7 @@ import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import * as chatStore from '../chatStore'
 import { markFirstSuccessfulChatCompleted } from '../firstSuccessfulChat'
+import { markSessionReplyCompleted } from '../sessionActivityStore'
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
 import { uiStore } from '../uiStore'
@@ -51,6 +52,7 @@ import { createAttachmentResolver } from './attachment-resolver'
 import { findMessageLocation } from './forks'
 import { cancelRunningToolCallBatch, finishAbortedGeneration } from './generation-cancellation'
 import { withSessionGenerationLock } from './generation-lock'
+import { beginSessionGeneration, registerSessionGenerationCancel, settleSessionGeneration } from './generation-runtime'
 import { modifyMessage, persistStreamingMessage, updateStreamingCache } from './messages'
 import { registerUnsettledStreamDrain, waitForUnsettledStreamDrains } from './state'
 import { createInitialState, processStreamChunk } from './stream-chunk-processor'
@@ -470,6 +472,36 @@ export async function orchestrateGeneration(
     skipAgentModeSuggestion?: boolean
     agentModeEntrySource?: AgentModeEntrySource
     contextMessages?: Message[]
+    externalAbortSignal?: AbortSignal
+  }
+) {
+  if (!beginSessionGeneration(sessionId, targetMsg.id)) return
+  try {
+    await runGeneration(sessionId, targetMsg, options)
+  } finally {
+    if (settleSessionGeneration(sessionId, targetMsg.id)) {
+      try {
+        const latestSession = await chatStore.getSession(sessionId)
+        const location = latestSession ? findMessageLocation(latestSession, targetMsg.id) : null
+        if (location) {
+          markSessionReplyCompleted(sessionId, location.list[location.index])
+        }
+      } catch (error) {
+        console.warn('Failed to resolve completed generation activity:', error)
+      }
+    }
+  }
+}
+
+async function runGeneration(
+  sessionId: string,
+  targetMsg: Message,
+  options?: {
+    operationType?: 'send_message' | 'regenerate'
+    appendToMessage?: boolean
+    skipAgentModeSuggestion?: boolean
+    agentModeEntrySource?: AgentModeEntrySource
+    contextMessages?: Message[]
     /**
      * Signal of the controller the caller previously exposed via `message.cancel`
      * (e.g. a paused-tool-call continuation handing off to a follow-up generation).
@@ -511,6 +543,7 @@ export async function orchestrateGeneration(
   const promptTargetMsgIx = options?.appendToMessage ? targetMsgIx + 1 : targetMsgIx
 
   const controller = new AbortController()
+  registerSessionGenerationCancel(sessionId, targetMsg.id, (stoppedAt = Date.now()) => controller.abort(stoppedAt))
   const externalSignal = options?.externalAbortSignal
   if (externalSignal?.aborted) {
     controller.abort(externalSignal.reason)

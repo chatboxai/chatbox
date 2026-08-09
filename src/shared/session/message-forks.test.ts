@@ -7,6 +7,7 @@ import {
   findMessageContext,
   findMessageLocation,
   forkTailStartIndex,
+  pruneUnreachableMessageForks,
 } from './message-forks'
 
 function message(id: string, role: Message['role']): Message {
@@ -182,6 +183,33 @@ describe('buildSwitchForkToPatch', () => {
     expect(buildSwitchForkToPatch(session, pivot.id, 0)).toBeNull()
     expect(buildSwitchForkToPatch(session, pivot.id, 2)).toBeNull()
     expect(buildSwitchForkToPatch(session, pivot.id, 0.5)).toBeNull()
+  })
+})
+
+describe('pruneUnreachableMessageForks', () => {
+  test('removes discarded branch trees while preserving forks reachable from a historical thread', () => {
+    const discardedPivot = message('discarded-pivot', 'user')
+    const retainedPivot = message('retained-pivot', 'user')
+    const session: Session = {
+      id: 'session-prune',
+      name: 'Session',
+      messages: [],
+      threads: [{ id: 'thread-1', name: 'History', createdAt: 1, messages: [retainedPivot] }],
+      messageForksHash: {
+        [discardedPivot.id]: {
+          position: 0,
+          lists: [{ id: 'discarded-list', messages: [message('discarded-reply', 'assistant')] }],
+          createdAt: 1,
+        },
+        [retainedPivot.id]: {
+          position: 0,
+          lists: [{ id: 'retained-list', messages: [message('retained-reply', 'assistant')] }],
+          createdAt: 2,
+        },
+      },
+    }
+
+    expect(Object.keys(pruneUnreachableMessageForks(session) ?? {})).toEqual([retainedPivot.id])
   })
 })
 

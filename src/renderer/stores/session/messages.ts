@@ -11,7 +11,6 @@ import platform from '@/platform'
 import { reportError } from '@/utils/sentry'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attachment-rag/logging'
 import * as chatStore from '../chatStore'
-import { clearMessageGenerationActivity, syncSessionGenerationActivity } from '../sessionActivityStore'
 import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndexing'
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
@@ -75,9 +74,7 @@ export async function insertMessage(sessionId: string, msg: Message) {
   }
   msg.wordCount = countMessageWords(msg)
   msg.tokenCount = estimateTokensFromMessages([msg])
-  const result = await chatStore.insertMessage(session.id, msg)
-  syncSessionGenerationActivity(sessionId, msg)
-  return result
+  return await chatStore.insertMessage(session.id, msg)
 }
 
 /**
@@ -95,7 +92,6 @@ export async function insertMessageAfter(sessionId: string, msg: Message, afterM
   msg.tokenCount = estimateTokensFromMessages([msg])
 
   await chatStore.insertMessage(sessionId, msg, afterMsgId)
-  syncSessionGenerationActivity(sessionId, msg)
 }
 
 /**
@@ -122,10 +118,11 @@ export async function modifyMessage(
 
   // 更新消息时间戳
   updated.timestamp = Date.now()
-  const messageUpdated = updateOnlyCache
-    ? await chatStore.updateMessageCache(sessionId, updated.id, updated)
-    : await chatStore.updateMessage(sessionId, updated.id, updated)
-  if (messageUpdated) syncSessionGenerationActivity(sessionId, updated)
+  if (updateOnlyCache) {
+    await chatStore.updateMessageCache(sessionId, updated.id, updated)
+  } else {
+    await chatStore.updateMessage(sessionId, updated.id, updated)
+  }
 }
 
 /**
@@ -134,14 +131,9 @@ export async function modifyMessage(
  */
 export function updateStreamingCache(sessionId: string, message: Message): void {
   message.timestamp = Date.now()
-  chatStore
-    .updateMessageCache(sessionId, message.id, message)
-    .then((messageUpdated) => {
-      if (messageUpdated) syncSessionGenerationActivity(sessionId, message)
-    })
-    .catch((err) => {
-      console.error('Failed to update streaming cache:', err)
-    })
+  chatStore.updateMessageCache(sessionId, message.id, message).catch((err) => {
+    console.error('Failed to update streaming cache:', err)
+  })
 }
 
 /**
@@ -159,8 +151,7 @@ export async function persistStreamingMessage(
     message.tokenCountMap = undefined
   }
   message.timestamp = Date.now()
-  const messageUpdated = await chatStore.updateMessage(sessionId, message.id, message)
-  if (messageUpdated) syncSessionGenerationActivity(sessionId, message)
+  await chatStore.updateMessage(sessionId, message.id, message)
 }
 
 /**
@@ -177,7 +168,6 @@ export async function removeMessage(sessionId: string, messageId: string) {
     }
   }
   await chatStore.removeMessage(sessionId, messageId)
-  clearMessageGenerationActivity(sessionId, messageId)
 }
 
 /**

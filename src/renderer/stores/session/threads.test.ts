@@ -16,7 +16,7 @@ vi.mock('@/hooks/dom', () => ({ focusMessageInput: vi.fn() }))
 vi.mock('./crud', () => ({ _copySession: vi.fn(), switchCurrentSession: vi.fn() }))
 vi.mock('uuid', () => ({ v4: () => 'new-thread-id' }))
 
-import { refreshContextAndCreateNewThread, removeCurrentThread, switchThread } from './threads'
+import { compressAndCreateThread, refreshContextAndCreateNewThread, removeCurrentThread, switchThread } from './threads'
 
 function message(id: string, overrides: Partial<Message> = {}): Message {
   return { id, role: 'assistant', contentParts: [], ...overrides }
@@ -103,6 +103,35 @@ describe('thread flows carry compaction points with their messages', () => {
     const updater = updateSessionWithMessagesMock.mock.calls[0][1] as (session: Session) => Session
     const updated = updater({ ...testSession(), messages: [message('u1', { role: 'user' }), generating] })
     expect(updated.messages.some((item) => item.id === generating.id)).toBe(false)
+  })
+
+  it.each([
+    ['switchThread', () => switchThread('session-1', 'thread-1')],
+    ['refreshContextAndCreateNewThread', () => refreshContextAndCreateNewThread('session-1')],
+    ['removeCurrentThread', () => removeCurrentThread('session-1')],
+    ['compressAndCreateThread', () => compressAndCreateThread('session-1', 'Summary')],
+  ])('cancels a generating inactive fork reply before %s replaces the current conversation', async (_name, run) => {
+    const cancel = vi.fn()
+    const pivot = message('fork-pivot', { role: 'user' })
+    const forkReply = message('fork-reply', { generating: true, cancel })
+    getSessionMock.mockResolvedValue({
+      ...testSession(),
+      messages: [pivot],
+      messageForksHash: {
+        [pivot.id]: {
+          position: 0,
+          lists: [
+            { id: 'current', messages: [] },
+            { id: 'inactive', messages: [forkReply] },
+          ],
+          createdAt: 1,
+        },
+      },
+    })
+
+    await run()
+
+    expect(cancel).toHaveBeenCalledOnce()
   })
 
   it('removeCurrentThread clears compaction points when no thread remains', async () => {

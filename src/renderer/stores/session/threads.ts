@@ -6,6 +6,13 @@ import * as dom from '@/hooks/dom'
 import * as chatStore from '../chatStore'
 import * as scrollActions from '../scrollActions'
 import { _copySession as copySession, switchCurrentSession } from './crud'
+import { getCurrentConversationMessages } from './generation-state'
+
+function cancelCurrentConversationGenerations(session: Session): void {
+  for (const message of getCurrentConversationMessages(session)) {
+    message.cancel?.()
+  }
+}
 
 /**
  * Edit a thread (currently only supports name modification)
@@ -67,9 +74,7 @@ export async function switchThread(sessionId: string, threadId: string) {
   if (!target) {
     return
   }
-  for (const m of session.messages) {
-    m?.cancel?.()
-  }
+  cancelCurrentConversationGenerations(session)
   // Build the transfer from the queue's current session (not the snapshot
   // above): a compaction commit may still be persisting, and submitting a
   // stale full object would overwrite its summary and compaction point.
@@ -112,9 +117,7 @@ export async function refreshContextAndCreateNewThread(sessionId: string) {
   if (!session) {
     return
   }
-  for (const m of session.messages) {
-    m?.cancel?.()
-  }
+  cancelCurrentConversationGenerations(session)
   // Archive from the queue's current session, not the snapshot above: a
   // compaction commit may still be persisting its summary/point.
   await chatStore.updateSessionWithMessages(sessionId, (current) => {
@@ -161,10 +164,7 @@ export async function removeCurrentThread(sessionId: string) {
   if (!session) {
     return
   }
-  // Cancel all ongoing message generations
-  for (const m of session.messages) {
-    m?.cancel?.()
-  }
+  cancelCurrentConversationGenerations(session)
   await chatStore.updateSessionWithMessages(sessionId, (current) => {
     if (!current) {
       throw new Error(`Session ${sessionId} not found during thread removal`)
@@ -198,10 +198,7 @@ export async function compressAndCreateThread(sessionId: string, summary: string
     return
   }
 
-  // Cancel all ongoing message generations
-  for (const m of session.messages) {
-    m?.cancel?.()
-  }
+  cancelCurrentConversationGenerations(session)
 
   // Archive from the queue's current session, not the snapshot above.
   await chatStore.updateSessionWithMessages(sessionId, (current) => {

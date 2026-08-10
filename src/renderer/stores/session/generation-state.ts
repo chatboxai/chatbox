@@ -53,10 +53,9 @@ export function getCurrentConversationMessages(session: Session): Message[] {
 /**
  * Return messages that should control the session-level generating UI.
  *
- * Current conversation messages keep their existing behavior, including the
- * short placeholder window before an AbortController is registered. Historical
- * threads and their forks are included only while they have a runtime cancel
- * callback, so stale persisted `generating: true` flags cannot lock the session.
+ * Current conversation messages are always included. Historical threads and
+ * their forks are included only while they have a runtime cancel callback, so
+ * stale persisted `generating: true` flags cannot lock the session.
  */
 export function getGenerationControlMessages(session: Session): Message[] {
   const currentMessages = getCurrentConversationMessages(session)

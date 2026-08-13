@@ -47,7 +47,7 @@ export function addAnthropicCacheControl(messages: ModelMessage[], ttl: '5m' | '
         ...msg.providerOptions,
         anthropic: {
           ...(msg.providerOptions?.anthropic as Record<string, unknown> | undefined),
-          cacheControl: { type: 'ephemeral' },
+          cacheControl: { type: 'ephemeral', ttl },
         },
       },
     }

@@ -22,6 +22,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.Groq]: 'Groq API',
   [ModelProviderEnum.DeepSeek]: 'DeepSeek API',
   [ModelProviderEnum.SiliconFlow]: 'SiliconFlow API',
+  [ModelProviderEnum.TokenLab]: 'TokenLab API',
   [ModelProviderEnum.VolcEngine]: 'VolcEngine API',
   [ModelProviderEnum.MistralAI]: 'MistralAI',
   [ModelProviderEnum.LMStudio]: 'LM Studio API',
@@ -108,6 +109,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.SiliconFlow,
     label: aiProviderNameHash[ModelProviderEnum.SiliconFlow],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.TokenLab,
+    label: aiProviderNameHash[ModelProviderEnum.TokenLab],
     disabled: false,
   },
   {

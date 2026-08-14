@@ -44,6 +44,7 @@ export default class OpenAIResponses extends AbstractAISDKModel {
       this.options.model.modelId,
       options.providerOptions?.openai
     )
+    const promptCacheKey = options.sessionId
 
     return {
       temperature: this.options.temperature,
@@ -57,6 +58,7 @@ export default class OpenAIResponses extends AbstractAISDKModel {
       providerOptions: {
         openai: {
           ...openaiProviderOptions,
+          ...(promptCacheKey ? { promptCacheKey } : {}),
           store: false,
         },
       },

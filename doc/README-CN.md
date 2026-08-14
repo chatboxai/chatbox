@@ -224,7 +224,7 @@ npm run package:all
 
 ## Star History
 
-[![星星历史图表](https://api.star-history.com/svg?repos=chatboxai/chatbox&type=Date)](https://star-history.com/#chatboxai/chatbox&Date)
+[![星星历史图表](https://star-history.dera.page/svg?repos=chatboxai/chatbox&type=Date)](https://star-history.dera.page/#chatboxai/chatbox&Date)
 
 ## 联系方式
 

@@ -8,8 +8,10 @@ import { getRegistrySync } from './fetch'
  * Replaces the backend API call to getProviderModelsInfo.
  *
  * Enrichment strategy:
- * - capabilities, contextWindow, maxOutput: registry data OVERWRITES existing values
+ * - capabilities, contextWindow, maxOutput: registry data OVERWRITES existing values by default
  *   (these are factual data, registry is more authoritative and up-to-date)
+ * - when a model has capabilitiesOverride, existing capabilities are treated as user overrides
+ * - when a model has contextWindowOverride or maxOutputOverride, those numeric limits are treated as user overrides
  * - nickname: only filled when missing (user may have customized it)
  * - type: only filled when missing (embedding/rerank may be set by provider definition)
  * - labels: only filled when missing
@@ -25,12 +27,25 @@ export function enrichModelsFromRegistry(models: ProviderModelInfo[], chatboxPro
   return models.map((model) => {
     const meta = findModelInRegistry(model.modelId, providerRegistry)
     if (!meta) return model
+    const shouldPreserveCapabilities = model.capabilitiesOverride === true && model.capabilities !== undefined
+    const shouldPreserveContextWindow =
+      model.contextWindowOverride === true && typeof model.contextWindow === 'number' && model.contextWindow > 0
+    const shouldPreserveMaxOutput =
+      model.maxOutputOverride === true && typeof model.maxOutput === 'number' && model.maxOutput > 0
 
     return {
       ...model,
-      capabilities: meta.capabilities.length > 0 ? meta.capabilities : model.capabilities,
-      contextWindow: meta.contextWindow > 0 ? meta.contextWindow : model.contextWindow,
-      maxOutput: meta.maxOutput > 0 ? meta.maxOutput : model.maxOutput,
+      capabilities: shouldPreserveCapabilities
+        ? model.capabilities
+        : meta.capabilities.length > 0
+          ? [...meta.capabilities]
+          : model.capabilities,
+      contextWindow: shouldPreserveContextWindow
+        ? model.contextWindow
+        : meta.contextWindow > 0
+          ? meta.contextWindow
+          : model.contextWindow,
+      maxOutput: shouldPreserveMaxOutput ? model.maxOutput : meta.maxOutput > 0 ? meta.maxOutput : model.maxOutput,
       nickname: model.nickname || meta.name,
       type: model.type || meta.type,
     }

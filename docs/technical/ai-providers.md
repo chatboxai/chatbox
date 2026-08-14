@@ -1,6 +1,6 @@
 # AI 供应商系统
 
-> Last updated: 2026-03
+> Last updated: 2026-07
 
 ## 概述
 
@@ -79,7 +79,8 @@ Provider / Model 控制面目前有多个来源：provider definition、本地�
 | `apiHost` / `apiPath` | provider settings | provider defaults | 无 | 请求路由 |
 | effective API key | desktop OAuth token | provider settings `apiKey` | 空字符串 | 请求鉴权 |
 | model list | user-saved models | backend remote manifest / provider API | curated registry fallback | 设置页模型选择 |
-| runtime capability / context / maxOutput | models.dev registry（覆写） | provider defaults / provider API / user-saved model info | 无 | 运行时行为与 UI feature gate |
+| runtime capability | explicit model capability override | models.dev registry | provider defaults / provider API | 运行时行为与 UI feature gate |
+| context / maxOutput | explicit model numeric override | models.dev registry | provider defaults / provider API / user-saved model info | 上下文与输出上限展示和运行时约束 |
 | release date / status / family | models.dev registry | 无 | 无 | 展示、发现新模型 |
 
 #### 关键约束
@@ -95,7 +96,7 @@ Provider / Model 控制面目前有多个来源：provider definition、本地�
 | `ProviderDefinition` | provider contract、默认配置、实例工厂、`modelsDevProviderId` 声明 | 不直接决定消息流或 UI 交互细节 |
 | provider ID mapping (`provider-mapping.ts`) | Chatbox ↔ models.dev ID 映射关系（单一数据源） | 不决定 provider 注册或 UI 路由 |
 | OAuth mapping / credential manager | 凭证来源、刷新、共享规则 | 不决定模型选择或 capability |
-| models.dev registry | 模型元数据权威来源、capability 覆写、fallback 模型列表、新模型发现 | 不负责全局 provider 注册 |
+| models.dev registry | 模型元数据权威来源、默认 capability、context/maxOutput 覆写、fallback 模型列表、新模型发现 | 不负责全局 provider 注册，不覆盖带有显式 override 标记的 capability/context/maxOutput 配置 |
 | registry 缓存层 (`fetch.ts`) | 多级缓存（内存→Blob→快照）、fetch 去重、订阅通知 | 不决定富化策略 |
 | provider API / user config | 当前 endpoint 的模型配置与运行约束 | 不负责全局 provider 注册 |
 | model class (`OpenAI` / `Claude` / ...) | 发请求、收响应、适配具体协议 | 不维护全局 precedence 规则 |
@@ -168,9 +169,9 @@ Provider / Model 控制面目前有多个来源：provider definition、本地�
 
 | 字段 | 策略 | 原因 |
 |------|------|------|
-| `capabilities` | registry **覆写** | 事实数据，registry 更权威 |
-| `contextWindow` | registry **覆写** | 事实数据，registry 更权威 |
-| `maxOutput` | registry **覆写** | 事实数据，registry 更权威 |
+| `capabilities` | 默认 registry **覆写**；模型带有 `capabilitiesOverride` 时保留显式值 | 用户可能接入兼容端点、代理或私有部署，能力不一定等同于公开模型 |
+| `contextWindow` | 默认 registry **覆写**；模型带有 `contextWindowOverride` 且值为正数时保留显式值 | 用户可能接入兼容端点、代理或私有部署，真实上下文不一定等同于公开模型 |
+| `maxOutput` | 默认 registry **覆写**；模型带有 `maxOutputOverride` 且值为正数时保留显式值 | 用户可能接入兼容端点、代理或私有部署，真实输出上限不一定等同于公开模型 |
 | `nickname` | 仅在缺失时填充 | 用户可能已自定义 |
 | `type` | 仅在缺失时填充 | 保留现有分类 |
 
@@ -193,7 +194,8 @@ Provider / Model 控制面目前有多个来源：provider definition、本地�
 
 关键决策：
 - 本地模型配置优先于远程配置（保留用户自定义）
-- 注册表富化**覆写** capabilities/contextWindow（更权威）
+- 注册表富化默认覆写 capabilities/contextWindow/maxOutput；只有模型带有对应 override 标记时才保留显式配置
+- 清空手动输入的 context/maxOutput 会移除对应 override，恢复 registry 默认值
 - **仅在 provider API 成功时**才追加发现的新模型（避免在 fallback 模式下引入未经验证的模型）
 
 ### 新模型发现

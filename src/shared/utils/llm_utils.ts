@@ -138,6 +138,7 @@ export function isOpenAICompatible(providerId: string, _modelId: string) {
       ModelProviderEnum.XAI,
       ModelProviderEnum.Groq,
       ModelProviderEnum.DeepSeek,
+      ModelProviderEnum.GreenPT,
       ModelProviderEnum.LMStudio,
       ModelProviderEnum.Qwen,
       ModelProviderEnum.QwenPortal,

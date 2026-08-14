@@ -18,6 +18,7 @@ export enum ModelProviderEnum {
   Ollama = 'ollama',
   Groq = 'groq',
   DeepSeek = 'deepseek',
+  GreenPT = 'greenpt',
   SiliconFlow = 'siliconflow',
   VolcEngine = 'volcengine',
   MistralAI = 'mistral-ai',

@@ -2,7 +2,7 @@ import { Button, Flex, PasswordInput, Select, Stack, Text, Title } from '@mantin
 import { IconCheck, IconX } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { ofetch } from 'ofetch'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
@@ -52,17 +52,26 @@ export function RouteComponent() {
 
   const [checkingAnysearch, setCheckingAnysearch] = useState(false)
   const [anysearchAvailable, setAnysearchAvailable] = useState<boolean>()
+  const anysearchCheckVersion = useRef(0)
   const checkAnysearch = async () => {
-    if (!extension.webSearch.anysearchApiKey) return
+    const apiKey = extension.webSearch.anysearchApiKey?.trim()
+    if (!apiKey) return
+    const checkVersion = ++anysearchCheckVersion.current
     setCheckingAnysearch(true)
     setAnysearchAvailable(undefined)
     try {
-      await new AnysearchSearch(extension.webSearch.anysearchApiKey, 1).search('Chatbox')
-      setAnysearchAvailable(true)
+      await new AnysearchSearch(apiKey, 1).search('Chatbox')
+      if (checkVersion === anysearchCheckVersion.current) {
+        setAnysearchAvailable(true)
+      }
     } catch {
-      setAnysearchAvailable(false)
+      if (checkVersion === anysearchCheckVersion.current) {
+        setAnysearchAvailable(false)
+      }
     } finally {
-      setCheckingAnysearch(false)
+      if (checkVersion === anysearchCheckVersion.current) {
+        setCheckingAnysearch(false)
+      }
     }
   }
 
@@ -434,6 +443,8 @@ export function RouteComponent() {
               maw={320}
               value={extension.webSearch.anysearchApiKey}
               onChange={(event) => {
+                anysearchCheckVersion.current += 1
+                setCheckingAnysearch(false)
                 setAnysearchAvailable(undefined)
                 setSettings({
                   extension: {

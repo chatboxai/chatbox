@@ -1287,7 +1287,7 @@
   "Pause after every {{count}} steps": "Pausa ogni {{count}} passaggi",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "Le attività lunghe si mettono in pausa ogni {{count}} passaggi per chiedere conferma, così puoi verificare che siano sulla buona strada. Disattiva l'opzione per lasciarle proseguire senza interruzioni.",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "Le attività lunghe si mettono in pausa ogni {{count}} passaggi per chiedere conferma, così puoi verificare che siano sulla buona strada. Ogni chat può modificare questa opzione nelle proprie impostazioni della conversazione.",
-  "{{count}} operation(s) awaiting approval": "{{count}} operazione/i in attesa di approvazione",
+  "{{count}} operation(s) awaiting approval": "Approvazioni in attesa: {{count}}",
   "Anysearch API Key": "Chiave API Anysearch",
   "Batch Web Search": "Ricerca web in batch",
   "Discover Search Domains": "Scopri domini di ricerca",

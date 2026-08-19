@@ -542,6 +542,8 @@
   "It only takes a few seconds and helps a lot.": "잠시만 시간을 내어 평가해주시면 큰 도움이 됩니다.",
   "iWork files (Pages, Keynote) are not supported. Please export to PDF or Office format.": "iWork 파일(Pages, Keynote)은 지원되지 않습니다. PDF 또는 Office 형식으로 내보내 주세요.",
   "Jump to message {{index}}": "{{index}}번 메시지로 이동",
+  "Keenable API Key": "Keenable API Key",
+  "Keenable works without an API key. Adding one only raises the rate limit.": "Keenable은 API Key 없이도 작동합니다. Key를 입력하면 요청 한도만 늘어납니다.",
   "Keep only the Top <input /> Conversations in List and Archive the Rest": "목록에서 상위 <input />개의 대화만 유지하고 나머지는 보관",
   "Keyboard Shortcuts": "키보드 단축키",
   "Knowledge Base": "지식 베이스",

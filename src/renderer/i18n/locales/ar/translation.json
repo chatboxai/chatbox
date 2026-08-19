@@ -542,6 +542,8 @@
   "It only takes a few seconds and helps a lot.": "لن يستغرق الأمر سوى بضع ثوانٍ وسيساعدنا كثيراً.",
   "iWork files (Pages, Keynote) are not supported. Please export to PDF or Office format.": "ملفات iWork (Pages, Keynote) غير مدعومة. يرجى التصدير إلى صيغة PDF أو Office.",
   "Jump to message {{index}}": "الانتقال إلى الرسالة {{index}}",
+  "Keenable API Key": "مفتاح API الخاص بـ Keenable",
+  "Keenable works without an API key. Adding one only raises the rate limit.": "يعمل Keenable بدون مفتاح API. إضافة مفتاح ترفع حد الاستخدام فقط.",
   "Keep only the Top <input /> Conversations in List and Archive the Rest": "احتفظ فقط بأعلى <input /> محادثة في القائمة وأرشف الباقي",
   "Keyboard Shortcuts": "اختصارات لوحة المفاتيح",
   "Knowledge Base": "قاعدة المعرفة",

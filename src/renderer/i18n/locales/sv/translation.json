@@ -542,6 +542,8 @@
   "It only takes a few seconds and helps a lot.": "Det tar bara några sekunder och hjälper mycket.",
   "iWork files (Pages, Keynote) are not supported. Please export to PDF or Office format.": "iWork-filer (Pages, Keynote) stöds inte. Exportera till PDF eller Office-format.",
   "Jump to message {{index}}": "Gå till meddelande {{index}}",
+  "Keenable API Key": "Keenable API-nyckel",
+  "Keenable works without an API key. Adding one only raises the rate limit.": "Keenable fungerar utan API-nyckel. En nyckel höjer bara begärandegränsen.",
   "Keep only the Top <input /> Conversations in List and Archive the Rest": "Behåll endast de <input /> främsta konversationerna i listan och arkivera resten",
   "Keyboard Shortcuts": "Tangentbordsgenvägar",
   "Knowledge Base": "Kunskapsbas",

@@ -542,6 +542,8 @@
   "It only takes a few seconds and helps a lot.": "只需几秒钟，并且非常有帮助。",
   "iWork files (Pages, Keynote) are not supported. Please export to PDF or Office format.": "iWork 文件 (Pages、Keynote) 不支持。请导出为 PDF 或 Office 格式。",
   "Jump to message {{index}}": "跳转到消息 {{index}}",
+  "Keenable API Key": "Keenable API 密钥",
+  "Keenable works without an API key. Adding one only raises the rate limit.": "Keenable 无需 API 密钥即可使用，填写密钥只会提高速率限制。",
   "Keep only the Top <input /> Conversations in List and Archive the Rest": "只保留列表中最顶部的 <input /> 个对话，并归档其余",
   "Keyboard Shortcuts": "键盘快捷键",
   "Knowledge Base": "知识库",

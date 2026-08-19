@@ -542,6 +542,8 @@
   "It only takes a few seconds and helps a lot.": "ほんの数秒で完了し、非常に助かります。",
   "iWork files (Pages, Keynote) are not supported. Please export to PDF or Office format.": "iWorkファイル（Pages、Keynote）はサポートされていません。PDFまたはOffice形式にエクスポートしてください。",
   "Jump to message {{index}}": "メッセージ {{index}} に移動",
+  "Keenable API Key": "Keenable API Key",
+  "Keenable works without an API key. Adding one only raises the rate limit.": "Keenable は API Key なしで利用できます。Key を設定するとレート制限が緩和されるだけです。",
   "Keep only the Top <input /> Conversations in List and Archive the Rest": "リスト内の上位 <input /> 件の会話のみを残し、残りはアーカイブします",
   "Keyboard Shortcuts": "キーボードショートカット",
   "Knowledge Base": "ナレッジベース",

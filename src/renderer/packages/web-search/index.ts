@@ -9,6 +9,7 @@ import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
 import { BochaSearch } from './bocha'
 import { ChatboxSearch } from './chatbox-search'
+import { KeenableSearch } from './keenable'
 import { QueritSearch } from './querit'
 import { TavilySearch } from './tavily'
 
@@ -50,6 +51,10 @@ function getSearchProviders() {
         throw ChatboxAIAPIError.fromCodeName('bocha_api_key_required', 'bocha_api_key_required')
       }
       selectedProviders.push(new BochaSearch(settings.webSearch.bochaApiKey))
+      break
+    case 'keenable':
+      // No API key required. When one is set it only lifts the rate limit.
+      selectedProviders.push(new KeenableSearch(settings.webSearch.keenableApiKey))
       break
     case 'querit':
       if (!settings.webSearch.queritApiKey) {
@@ -132,7 +137,7 @@ export const webSearchExecutor = async (
  * Single source of truth: which configured providers offer the parse_link tool.
  * Keep in sync with the provider classes' `supportsParseLink` flags.
  */
-export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily'])
+export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily', 'keenable'])
 
 /**
  * Returns the first configured search provider that supports parseLink.

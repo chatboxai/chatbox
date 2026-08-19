@@ -1287,5 +1287,9 @@
   "Pause after every {{count}} steps": "{{count}} ステップごとに一時停止",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "長時間のタスクは {{count}} ステップごとに一時停止して確認を求めるため、順調に進んでいるかチェックできます。オフにすると中断なしで実行されます。",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "長時間のタスクは {{count}} ステップごとに一時停止して確認を求めるため、順調に進んでいるかチェックできます。チャットごとに会話設定で個別に上書きできます。",
-  "{{count}} operation(s) awaiting approval": "{{count}}件の操作が承認待ち"
+  "{{count}} operation(s) awaiting approval": "{{count}}件の操作が承認待ち",
+  "Anysearch API Key": "Anysearch APIキー",
+  "Batch Web Search": "一括Web検索",
+  "Discover Search Domains": "検索ドメインを検出",
+  "Enter your Anysearch API Key": "Anysearch APIキーを入力"
 }

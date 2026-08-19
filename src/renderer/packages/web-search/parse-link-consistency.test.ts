@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BingSearch } from '@/packages/web-search/bing'
+import { AnysearchSearch } from '@/packages/web-search/anysearch'
 import { BingNewsSearch } from '@/packages/web-search/bing-news'
 import { BochaSearch } from '@/packages/web-search/bocha'
 import { ChatboxSearch } from '@/packages/web-search/chatbox-search'
@@ -32,6 +33,7 @@ describe('parse_link capability consistency', () => {
     { id: 'tavily', instance: new TavilySearch('stub-api-key') },
     { id: 'bocha', instance: new BochaSearch('stub-api-key') },
     { id: 'querit', instance: new QueritSearch('stub-api-key') },
+    { id: 'anysearch', instance: new AnysearchSearch('stub-api-key') },
   ]
 
   it.each(providers)('$id: PROVIDERS_WITH_PARSE_LINK matches supportsParseLink flag', ({ id, instance }) => {

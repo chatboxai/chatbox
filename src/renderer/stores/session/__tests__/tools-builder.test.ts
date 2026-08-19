@@ -123,10 +123,33 @@ vi.mock('@/packages/model-calls/toolsets/web-search', () => {
   const { z } = require('zod')
   return {
     default: { description: 'web search toolset' },
-    getToolSetDescription: ({ includeParseLink }: { includeParseLink: boolean }) =>
-      includeParseLink ? 'web search toolset\n## parse_link' : 'web search toolset',
+    getToolSetDescription: ({
+      includeParseLink,
+      includeAnysearchAdvanced,
+    }: {
+      includeParseLink: boolean
+      includeAnysearchAdvanced?: boolean
+    }) =>
+      `web search toolset${includeParseLink ? '\n## parse_link' : ''}${
+        includeAnysearchAdvanced ? '\n## anysearch_batch_search' : ''
+      }`,
     webSearchTool: tool({ description: 'web_search', inputSchema: z.object({}), execute: async () => ({}) }),
     parseLinkTool: tool({ description: 'parse_link', inputSchema: z.object({}), execute: async () => ({}) }),
+    anysearchBatchSearchTool: tool({
+      description: 'anysearch_batch_search',
+      inputSchema: z.object({}),
+      execute: async () => ({}),
+    }),
+    anysearchGetSubDomainsTool: tool({
+      description: 'anysearch_get_sub_domains',
+      inputSchema: z.object({}),
+      execute: async () => ({}),
+    }),
+    anysearchSearchTool: tool({
+      description: 'anysearch_search',
+      inputSchema: z.object({}),
+      execute: async () => ({}),
+    }),
   }
 })
 
@@ -401,6 +424,19 @@ describe('buildToolsForSession', () => {
     expect(result.instructions).toContain("Use the user's language for this sentence.")
     expect(result.instructions).toContain('trivial single-tool lookups')
     expect(result.instructions).toContain('## parse_link')
+  })
+
+  test('webBrowsing=true exposes all Anysearch tools outside agent mode when Anysearch is configured', async () => {
+    webSearchProvider.current = 'anysearch'
+    const model = createMockModel()
+    const result = await buildToolsForSession(model, { webBrowsing: true, messages: [], agentMode: 'off' })
+
+    expect(result.tools.web_search).toBeDefined()
+    expect(result.tools.parse_link).toBeDefined()
+    expect(result.tools.anysearch_batch_search).toBeDefined()
+    expect(result.tools.anysearch_get_sub_domains).toBeDefined()
+    expect(result.tools.anysearch_search).toBeDefined()
+    expect(result.instructions).toContain('## anysearch_batch_search')
   })
 
   test('webBrowsing=true does not expose parse_link when configured search provider does not support it', async () => {

@@ -36,6 +36,19 @@ vi.mock('./tavily', () => {
   }
 })
 
+vi.mock('./anysearch', () => ({
+  AnysearchSearch: class {
+    constructor(
+      _apiKey: string,
+      private readonly maxResults: number
+    ) {}
+
+    search = vi.fn().mockImplementation(async () => ({
+      items: [{ title: `Anysearch Result ${this.maxResults}`, snippet: 'test', link: 'https://example.com' }],
+    }))
+  },
+}))
+
 vi.mock('./chatbox-search', () => {
   return {
     ChatboxSearch: class {
@@ -86,5 +99,20 @@ describe('webSearchExecutor', () => {
 
     // Both should return same results (cached)
     expect(result1.searchResults).toEqual(result2.searchResults)
+  })
+
+  it('does not reuse Anysearch cache entries after max results changes', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'anysearch', anysearchApiKey: 'key', anysearchMaxResults: 3 },
+    } as ReturnType<typeof getExtensionSettings>)
+    const first = await webSearchExecutor({ query: 'same Anysearch query' }, {})
+
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'anysearch', anysearchApiKey: 'key', anysearchMaxResults: 7 },
+    } as ReturnType<typeof getExtensionSettings>)
+    const second = await webSearchExecutor({ query: 'same Anysearch query' }, {})
+
+    expect(first.searchResults[0].title).toBe('Anysearch Result 3')
+    expect(second.searchResults[0].title).toBe('Anysearch Result 7')
   })
 })

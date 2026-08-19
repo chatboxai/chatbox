@@ -9,6 +9,7 @@ import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
+import { AnysearchSearch } from '@/packages/web-search/anysearch'
 import { BochaSearch } from '@/packages/web-search/bocha'
 import { WEB_SEARCH_PROVIDERS } from '@/packages/web-search/constants'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
@@ -46,6 +47,22 @@ export function RouteComponent() {
       } finally {
         setCheckingQuerit(false)
       }
+    }
+  }
+
+  const [checkingAnysearch, setCheckingAnysearch] = useState(false)
+  const [anysearchAvailable, setAnysearchAvailable] = useState<boolean>()
+  const checkAnysearch = async () => {
+    if (!extension.webSearch.anysearchApiKey) return
+    setCheckingAnysearch(true)
+    setAnysearchAvailable(undefined)
+    try {
+      await new AnysearchSearch(extension.webSearch.anysearchApiKey, 1).search('Chatbox')
+      setAnysearchAvailable(true)
+    } catch {
+      setAnysearchAvailable(false)
+    } finally {
+      setCheckingAnysearch(false)
     }
   }
 
@@ -110,7 +127,7 @@ export function RouteComponent() {
               ...extension,
               webSearch: {
                 ...extension.webSearch,
-                provider: e as 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit',
+                provider: e as 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'anysearch',
               },
             },
           })
@@ -127,6 +144,8 @@ export function RouteComponent() {
           const tools: { label: string; supported: boolean }[] = [
             { label: t('Web Search'), supported: true },
             { label: t('Read Webpage'), supported: supportsParseLink },
+            { label: t('Batch Web Search'), supported: extension.webSearch.provider === 'anysearch' },
+            { label: t('Discover Search Domains'), supported: extension.webSearch.provider === 'anysearch' },
           ]
           return tools.map(({ label, supported }) => (
             <Flex key={label} align="center" gap="xs">
@@ -403,6 +422,79 @@ export function RouteComponent() {
                 maw={320}
               />
             </Stack>
+          </Stack>
+        </Stack>
+      )}
+      {extension.webSearch.provider === 'anysearch' && (
+        <Stack gap="xs">
+          <Text fw="600">{t('Anysearch API Key')}</Text>
+          <Flex align="center" gap="xs">
+            <PasswordInput
+              flex={1}
+              maw={320}
+              value={extension.webSearch.anysearchApiKey}
+              onChange={(event) => {
+                setAnysearchAvailable(undefined)
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      anysearchApiKey: event.currentTarget.value,
+                    },
+                  },
+                })
+              }}
+              placeholder={t('Enter your Anysearch API Key') || 'Enter your Anysearch API Key'}
+              error={anysearchAvailable === false}
+            />
+            <Button
+              color="blue"
+              variant="light"
+              onClick={checkAnysearch}
+              loading={checkingAnysearch}
+              disabled={!extension.webSearch.anysearchApiKey?.trim()}
+            >
+              {t('Check')}
+            </Button>
+          </Flex>
+          {typeof anysearchAvailable === 'boolean' ? (
+            <Text size="xs" c={anysearchAvailable ? 'chatbox-success' : 'chatbox-error'}>
+              {anysearchAvailable ? t('Connection successful!') : t('API key invalid!')}
+            </Text>
+          ) : null}
+          <Button
+            variant="transparent"
+            size="compact-xs"
+            px={0}
+            className="self-start"
+            onClick={() => platform.openLink('https://anysearch.com/pricing')}
+          >
+            {t('Get API Key')}
+          </Button>
+          <Stack mt="md" gap="xs">
+            <Text size="sm">{t('Max Results')}</Text>
+            <Select
+              comboboxProps={{ withinPortal: true, withArrow: true }}
+              data={Array.from({ length: 10 }, (_, index) => {
+                const value = String(index + 1)
+                return { value, label: value }
+              })}
+              value={String(extension.webSearch.anysearchMaxResults ?? 10)}
+              onChange={(value) => {
+                if (!value) return
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      anysearchMaxResults: Number(value),
+                    },
+                  },
+                })
+              }}
+              maw={320}
+            />
           </Stack>
         </Stack>
       )}

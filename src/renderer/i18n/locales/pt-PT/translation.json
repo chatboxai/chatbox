@@ -1287,5 +1287,9 @@
   "Pause after every {{count}} steps": "Pausar a cada {{count}} passos",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "As tarefas longas são pausadas a cada {{count}} passos para confirmação, para que possa verificar se estão no caminho certo. Desative para que sejam executadas sem interrupções.",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "As tarefas longas são pausadas a cada {{count}} passos para confirmação, para que possa verificar se estão no caminho certo. Cada conversa pode substituir esta opção nas suas definições de conversa.",
-  "{{count}} operation(s) awaiting approval": "{{count}} operação(ões) à espera de aprovação"
+  "{{count}} operation(s) awaiting approval": "{{count}} operação(ões) à espera de aprovação",
+  "Anysearch API Key": "Chave de API Anysearch",
+  "Batch Web Search": "Pesquisa Web em Lote",
+  "Discover Search Domains": "Descobrir Domínios de Pesquisa",
+  "Enter your Anysearch API Key": "Introduza a sua chave de API Anysearch"
 }

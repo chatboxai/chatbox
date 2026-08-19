@@ -142,6 +142,8 @@ export function settings(): Settings {
         queritApiKey: '',
         queritMaxResults: 5,
         queritTimeRange: 'none',
+        anysearchApiKey: '',
+        anysearchMaxResults: 10,
       },
       knowledgeBase: {
         models: {

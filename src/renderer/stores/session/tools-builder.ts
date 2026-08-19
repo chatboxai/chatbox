@@ -15,7 +15,14 @@ import { getToolSet as getKBToolSet } from '@/packages/model-calls/toolsets/know
 import { asRecord, numberField, stringField, toTextModelOutput } from '@/packages/model-calls/toolsets/model-output'
 import { remapPhantomHomePath } from '@/packages/model-calls/toolsets/sandbox-paths'
 import { getToolSet as getSessionAttachmentRagToolSet } from '@/packages/model-calls/toolsets/session-attachment-rag'
-import { getToolSetDescription, parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
+import {
+  anysearchBatchSearchTool,
+  anysearchGetSubDomainsTool,
+  anysearchSearchTool,
+  getToolSetDescription,
+  parseLinkTool,
+  webSearchTool,
+} from '@/packages/model-calls/toolsets/web-search'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
 import { type ExplanationContext, requestUserExecApproval } from '@/packages/user-exec-approval'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
@@ -242,6 +249,7 @@ export async function buildToolsForSession(
   const webSupported = webBrowsing && model.isSupportToolUse('web-browsing')
   const searchProvider = settingActions.getExtensionSettings().webSearch.provider
   const includeParseLinkTool = webSupported && PROVIDERS_WITH_PARSE_LINK.has(searchProvider)
+  const includeAnysearchAdvancedTools = webSupported && searchProvider === 'anysearch'
 
   let kbToolSet: Awaited<ReturnType<typeof getKBToolSet>> | null = null
   if (knowledgeBase && kbSupported) {
@@ -276,7 +284,10 @@ In long conversations, earlier tool call results may be automatically compressed
     instructions += fileToolSet.description
   }
   if (webSupported) {
-    instructions += getToolSetDescription({ includeParseLink: includeParseLinkTool })
+    instructions += getToolSetDescription({
+      includeParseLink: includeParseLinkTool,
+      includeAnysearchAdvanced: includeAnysearchAdvancedTools,
+    })
   }
 
   let codeExecToolSet: ReturnType<typeof buildCodeExecutionTools> | null = null
@@ -302,6 +313,11 @@ In long conversations, earlier tool call results may be automatically compressed
     // Validation (Pro for build-in, API key for third parties) happens at execution time.
     if (includeParseLinkTool) {
       tools.parse_link = parseLinkTool
+    }
+    if (includeAnysearchAdvancedTools) {
+      tools.anysearch_batch_search = anysearchBatchSearchTool
+      tools.anysearch_get_sub_domains = anysearchGetSubDomainsTool
+      tools.anysearch_search = anysearchSearchTool
     }
   }
 

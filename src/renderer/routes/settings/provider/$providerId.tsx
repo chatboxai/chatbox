@@ -86,6 +86,7 @@ const BUILTIN_API_HOST_PROVIDERS = new Set<string>([
   ModelProviderEnum.Ollama,
   ModelProviderEnum.LMStudio,
   ModelProviderEnum.VercelAIGateway,
+  ModelProviderEnum.Jalapeno,
 ])
 
 const OAUTH_ONLY_PROVIDERS = new Set<string>([ModelProviderEnum.QwenPortal])

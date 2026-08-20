@@ -27,6 +27,7 @@ export enum ModelProviderEnum {
   OpenRouter = 'openrouter',
   Bedrock = 'bedrock',
   VercelAIGateway = 'vercel-ai-gateway',
+  Jalapeno = 'jalapeno',
   Custom = 'custom',
 }
 

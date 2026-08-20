@@ -145,6 +145,7 @@ export function isOpenAICompatible(providerId: string, _modelId: string) {
       ModelProviderEnum.MiniMaxCN,
       ModelProviderEnum.Moonshot,
       ModelProviderEnum.MoonshotCN,
+      ModelProviderEnum.Jalapeno,
     ].includes(providerId as ModelProviderEnum) || providerId.startsWith('custom-provider-')
   )
 }

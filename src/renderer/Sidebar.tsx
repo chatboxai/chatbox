@@ -1,16 +1,13 @@
 import { registerPlugin } from '@capacitor/core'
-import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Box, Button, Flex, Image, NavLink, Stack, Text } from '@mantine/core'
+import { ActionIcon, Box, Button, Flex, Stack, Text } from '@mantine/core'
 import SwipeableDrawer from '@mui/material/SwipeableDrawer'
 import { TestId } from '@shared/automation/testids'
 import {
-  IconArchive,
   IconCirclePlus,
   IconCode,
   IconDownload,
   IconHelpCircle,
   IconInfoCircle,
-  IconLayoutSidebarLeftCollapse,
   IconMessageChatbot,
   IconPhotoPlus,
   IconSearch,
@@ -23,16 +20,14 @@ import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import Divider from './components/common/Divider'
 import { ScalableIcon } from './components/common/ScalableIcon'
-import ThemeSwitchButton from './components/dev/ThemeSwitchButton'
 import SessionList from './components/session/SessionList'
 import { FORCE_ENABLE_DEV_PAGES } from './dev/devToolsConfig'
-import useNeedRoomForMacWinControls from './hooks/useNeedRoomForWinControls'
+import useNeedRoomForWinControls from './hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen, useSidebarWidth } from './hooks/useScreenChange'
 import useVersion from './hooks/useVersion'
 import { navigateToSettings } from './modals/Settings'
 import { trackingEvent } from './packages/event'
 import { getSidebarModalSx } from './sidebar-drawer'
-import icon from './static/icon.png'
 import { useLanguage } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
 import { installUpdate, useUpdateStore } from './stores/updateStore'
@@ -69,12 +64,11 @@ export default function Sidebar() {
   const sidebarWidth = useSidebarWidth()
 
   const isSmallScreen = useIsSmallScreen()
+  const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
 
   const [isResizing, setIsResizing] = useState(false)
   const resizeStartX = useRef<number>(0)
   const resizeStartWidth = useRef<number>(0)
-
-  const { needRoomForMacWindowControls } = useNeedRoomForMacWinControls()
 
   const handleCreateNewSession = useCallback(() => {
     navigate({ to: `/` })
@@ -170,7 +164,7 @@ export default function Sidebar() {
         gap={0}
         pt="var(--mobile-safe-area-inset-top, 0px)"
         pb="var(--mobile-safe-area-inset-bottom, 0px)"
-        className="relative"
+        className="relative chatbox-sidebar"
       >
         {needRoomForMacWindowControls && <Box className="title-bar flex-[0_0_44px]" />}
         <Flex align="center" justify="space-between" gap="xs" px="md" py="sm" className="border-0">
@@ -181,7 +175,6 @@ export default function Sidebar() {
               onClick={() => navigate({ to: '/about' })}
               style={{ cursor: 'pointer', minWidth: 0 }}
             >
-              <Image src={icon} w={20} h={20} />
               <Text span c="chatbox-secondary" size="xl" lh={1.2} fw="700" truncate>
                 Chatbox
               </Text>
@@ -192,7 +185,6 @@ export default function Sidebar() {
                 </Text>
               )}
             </Flex>
-            {FORCE_ENABLE_DEV_PAGES && <ThemeSwitchButton size="xs" />}
           </Flex>
 
           <Flex align="center" gap={2} style={{ flexShrink: 0 }}>
@@ -207,158 +199,75 @@ export default function Sidebar() {
                 <IconSearch size={18} />
               </ActionIcon>
             </Tooltip>
-            <Tooltip label={t('Clear Conversation List')} openDelay={1000} withArrow>
-              <ActionIcon
-                variant="subtle"
-                color="chatbox-tertiary"
-                size={26}
-                radius="md"
-                onClick={() => NiceModal.show('clear-session-list')}
-              >
-                <IconArchive size={18} />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label={t('Collapse')} openDelay={1000} withArrow>
-              <ActionIcon
-                variant="subtle"
-                color="chatbox-tertiary"
-                size={26}
-                radius="md"
-                onClick={() => setShowSidebar(false)}
-              >
-                <IconLayoutSidebarLeftCollapse size={18} />
-              </ActionIcon>
-            </Tooltip>
           </Flex>
         </Flex>
+
+        <Stack gap={6} px="sm" pb="sm" className="chatbox-sidebar-primary-actions">
+          <Button
+            variant="subtle"
+            fullWidth
+            radius="md"
+            justify="flex-start"
+            className="chatbox-sidebar-primary-action"
+            data-testid={TestId.sidebar.newChat}
+            onClick={handleCreateNewSession}
+          >
+            <ScalableIcon icon={IconCirclePlus} className="mr-2" />
+            {t('New Chat')}
+          </Button>
+          <Button
+            variant="subtle"
+            fullWidth
+            radius="md"
+            justify="flex-start"
+            className="chatbox-sidebar-primary-action"
+            data-testid={TestId.sidebar.newImage}
+            onClick={handleCreateNewPictureSession}
+          >
+            <ScalableIcon icon={IconPhotoPlus} className="mr-2" />
+            {t('Create Image')}
+          </Button>
+        </Stack>
 
         <SessionList sessionListViewportRef={sessionListViewportRef} />
 
         <SidebarUpdateBanner />
 
-        <Stack gap={0} px="xs" pb="xs">
+        <Stack gap={0} px="sm" pb="sm" className="chatbox-sidebar-footer">
           <Divider />
-          <Stack gap="xs" pt="xs" mb="xs">
-            <Button
-              variant="light"
-              fullWidth
-              radius="lg"
-              data-testid={TestId.sidebar.newChat}
-              onClick={handleCreateNewSession}
-            >
-              <ScalableIcon icon={IconCirclePlus} className="mr-2" />
-              {t('New Chat')}
-            </Button>
-            <Button
-              variant="light"
-              fullWidth
-              radius="lg"
-              data-testid={TestId.sidebar.newImage}
-              onClick={handleCreateNewPictureSession}
-            >
-              <ScalableIcon icon={IconPhotoPlus} className="mr-2" />
-              {t('Create Image')}
-            </Button>
-          </Stack>
-
-          {isSmallScreen ? (
-            <Flex gap="md" align="center">
-              <NavLink
-                c="chatbox-secondary"
-                className="rounded-lg"
-                label={t('My Copilots')}
-                leftSection={<ScalableIcon icon={IconMessageChatbot} size={20} />}
+          <Flex gap={4} pt="xs" align="center" justify="space-between" className="chatbox-sidebar-icon-nav">
+            <SidebarIconButton
+              label={t('My Copilots')}
+              icon={IconMessageChatbot}
+              onClick={() => {
+                navigate({ to: '/copilots' })
+                if (isSmallScreen) setShowSidebar(false)
+              }}
+            />
+            <SidebarIconButton
+              label={t('Settings')}
+              icon={IconSettingsFilled}
+              data-testid={TestId.sidebar.settingsTrigger}
+              onClick={() => {
+                navigateToSettings()
+                if (isSmallScreen) setShowSidebar(false)
+              }}
+            />
+            {!versionHook.isExceeded && (
+              <SidebarIconButton
+                label={t('Help')}
+                icon={IconHelpCircle}
                 onClick={() => {
-                  navigate({
-                    to: '/copilots',
-                  })
-                  setShowSidebar(false)
+                  navigate({ to: '/guide' })
+                  if (isSmallScreen) setShowSidebar(false)
                 }}
-                variant="light"
-                p="xs"
               />
-
-              {!versionHook.isExceeded && (
-                <ActionIcon
-                  variant="transparent"
-                  color="chatbox-secondary"
-                  size={24}
-                  onClick={() => {
-                    navigate({ to: '/guide' })
-                    setShowSidebar(false)
-                  }}
-                >
-                  <ScalableIcon icon={IconHelpCircle} size={20} />
-                </ActionIcon>
-              )}
-              <ActionIcon
-                data-testid={TestId.sidebar.settingsTrigger}
-                variant="transparent"
-                color="chatbox-secondary"
-                size={24}
-                onClick={() => {
-                  navigateToSettings()
-                  setShowSidebar(false)
-                }}
-              >
-                <ScalableIcon icon={IconSettingsFilled} size={20} />
-              </ActionIcon>
-
-              <SmallScreenAboutIcon versionHook={versionHook} navigate={navigate} setShowSidebar={setShowSidebar} />
-            </Flex>
-          ) : (
-            <>
-              <NavLink
-                c="chatbox-secondary"
-                className="rounded-lg"
-                label={t('My Copilots')}
-                leftSection={<ScalableIcon icon={IconMessageChatbot} size={20} />}
-                onClick={() => {
-                  navigate({
-                    to: '/copilots',
-                  })
-                  if (isSmallScreen) {
-                    setShowSidebar(false)
-                  }
-                }}
-                variant="light"
-                p="xs"
-              />
-              <NavLink
-                data-testid={TestId.sidebar.settingsTrigger}
-                c="chatbox-secondary"
-                className="rounded-lg"
-                label={t('Settings')}
-                leftSection={<ScalableIcon icon={IconSettingsFilled} size={20} />}
-                onClick={() => navigateToSettings()}
-                variant="light"
-                p="xs"
-              />
-              {!versionHook.isExceeded && (
-                <NavLink
-                  c="chatbox-secondary"
-                  className="rounded-lg"
-                  label={t('Help')}
-                  leftSection={<ScalableIcon icon={IconHelpCircle} size={20} />}
-                  onClick={() => navigate({ to: '/guide' })}
-                  variant="light"
-                  p="xs"
-                />
-              )}
-              {FORCE_ENABLE_DEV_PAGES && (
-                <NavLink
-                  c="chatbox-secondary"
-                  className="rounded-lg"
-                  label="Dev Tools"
-                  leftSection={<ScalableIcon icon={IconCode} size={20} />}
-                  onClick={() => navigate({ to: '/dev' })}
-                  variant="light"
-                  p="xs"
-                />
-              )}
-              <AboutNavLink versionHook={versionHook} navigate={navigate} />
-            </>
-          )}
+            )}
+            {FORCE_ENABLE_DEV_PAGES && (
+              <SidebarIconButton label="Dev Tools" icon={IconCode} onClick={() => navigate({ to: '/dev' })} />
+            )}
+            <AboutIconButton versionHook={versionHook} navigate={navigate} setShowSidebar={setShowSidebar} />
+          </Flex>
         </Stack>
         {!isSmallScreen && (
           <Box
@@ -371,6 +280,35 @@ export default function Sidebar() {
         )}
       </Stack>
     </SwipeableDrawer>
+  )
+}
+
+function SidebarIconButton({
+  label,
+  icon: Icon,
+  onClick,
+  ...props
+}: {
+  label: string
+  icon: typeof IconMessageChatbot
+  onClick: () => void
+  'data-testid'?: string
+}) {
+  return (
+    <Tooltip label={label} openDelay={500} withArrow>
+      <ActionIcon
+        {...props}
+        aria-label={label}
+        variant="subtle"
+        color="chatbox-secondary"
+        size={34}
+        radius="md"
+        onClick={onClick}
+        className="chatbox-sidebar-icon-button"
+      >
+        <ScalableIcon icon={Icon} size={19} />
+      </ActionIcon>
+    </Tooltip>
   )
 }
 
@@ -421,38 +359,7 @@ function useShowUpdateDot(versionHook: ReturnType<typeof useVersion>) {
   return isMobile ? versionHook.needCheckUpdate : updateStatus === 'downloaded'
 }
 
-function AboutNavLink({
-  versionHook,
-  navigate,
-}: {
-  versionHook: ReturnType<typeof useVersion>
-  navigate: ReturnType<typeof useNavigate>
-}) {
-  const { t } = useTranslation()
-  const showDot = useShowUpdateDot(versionHook)
-
-  return (
-    <NavLink
-      c="chatbox-tertiary"
-      className="rounded-lg"
-      label={
-        <Flex align="center" gap={6}>
-          <span>{`${t('About')} ${/\d/.test(versionHook.version) ? `(${versionHook.version})` : ''}`}</span>
-          {showDot && <Box w={8} h={8} miw={8} bg="chatbox-brand" style={{ borderRadius: '50%' }} />}
-        </Flex>
-      }
-      leftSection={<ScalableIcon icon={IconInfoCircle} size={20} />}
-      onClick={() => navigate({ to: '/about' })}
-      variant="light"
-      p="xs"
-    />
-  )
-}
-
-/**
- * Small screen About icon with dot indicator for mobile.
- */
-function SmallScreenAboutIcon({
+function AboutIconButton({
   versionHook,
   navigate,
   setShowSidebar,
@@ -461,24 +368,33 @@ function SmallScreenAboutIcon({
   navigate: ReturnType<typeof useNavigate>
   setShowSidebar: (v: boolean) => void
 }) {
+  const { t } = useTranslation()
+  const isSmallScreen = useIsSmallScreen()
   const showDot = useShowUpdateDot(versionHook)
 
   return (
-    <Box className="relative">
-      <ActionIcon
-        variant="transparent"
-        color="chatbox-secondary"
-        size={24}
-        onClick={() => {
-          navigate({ to: '/about' })
-          setShowSidebar(false)
-        }}
-      >
-        <ScalableIcon icon={IconInfoCircle} size={20} />
-      </ActionIcon>
-      {showDot && (
-        <Box w={8} h={8} bg="chatbox-brand" className="absolute -top-0.5 -right-0.5" style={{ borderRadius: '50%' }} />
-      )}
-    </Box>
+    <Tooltip
+      label={`${t('About')} ${/\d/.test(versionHook.version) ? `(${versionHook.version})` : ''}`}
+      openDelay={500}
+      withArrow
+    >
+      <Box className="relative">
+        <ActionIcon
+          aria-label={t('About')}
+          variant="subtle"
+          color="chatbox-tertiary"
+          size={34}
+          radius="md"
+          onClick={() => {
+            navigate({ to: '/about' })
+            if (isSmallScreen) setShowSidebar(false)
+          }}
+          className="chatbox-sidebar-icon-button"
+        >
+          <ScalableIcon icon={IconInfoCircle} size={19} />
+        </ActionIcon>
+        {showDot && <Box w={7} h={7} bg="chatbox-brand" className="absolute right-1 top-1 rounded-full" />}
+      </Box>
+    </Tooltip>
   )
 }

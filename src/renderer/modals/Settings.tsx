@@ -76,10 +76,15 @@ export const SettingsModal: FC<SettingsModalProps> = (props) => {
       }}
       transitionProps={{ transition: 'fade-up' }}
     >
-      <Flex flex="0 0 auto" className="title-bar border-0 border-b border-chatbox-border-primary border-solid">
+      <Flex
+        h={48}
+        align="center"
+        flex="0 0 48px"
+        className="title-bar border-0 border-b border-chatbox-border-primary border-solid"
+      >
         <div className={clsx('flex-[1_1_0]', needRoomForMacWindowControls ? 'min-w-16' : '')} />
-        <Flex p="sm" align="center" w={'100%'} maw={1200} gap="xs">
-          <Title order={3} flex={1}>
+        <Flex px="sm" align="center" h="100%" w={'100%'} maw={1200} gap="xs">
+          <Title order={4} fz={18} lh="24px" fw={600} lineClamp={1} flex={1}>
             {t('Settings')}
           </Title>
 
@@ -90,10 +95,10 @@ export const SettingsModal: FC<SettingsModalProps> = (props) => {
             className="controls"
             color="chatbox-secondary"
             variant="light"
-            h={36}
-            w={36}
+            h={32}
+            w={32}
             p={0}
-            radius="lg"
+            radius="md"
             onClick={onClose}
             autoFocus={false}
           >

@@ -153,6 +153,44 @@ html[data-theme="light"] {
   }
 }
 
+/* The message list uses a quieter scrollbar than the rest of the app. These
+   rules live after the theme defaults so the chat surface keeps this treatment
+   in both light and dark mode. */
+.chatbox-chat-scroll::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.chatbox-chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html[data-theme="light"] .chatbox-chat-scroll::-webkit-scrollbar-thumb {
+  background-color: rgb(134 142 150 / 0.18);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+html[data-theme="light"] .chatbox-chat-scroll.scrollbar-scrolling::-webkit-scrollbar-thumb,
+html[data-theme="light"] .chatbox-chat-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: rgb(134 142 150 / 0.3);
+  background-clip: padding-box;
+}
+
+html[data-theme="dark"] .chatbox-chat-scroll::-webkit-scrollbar-thumb {
+  background-color: rgb(206 212 218 / 0.18);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+html[data-theme="dark"] .chatbox-chat-scroll.scrollbar-scrolling::-webkit-scrollbar-thumb,
+html[data-theme="dark"] .chatbox-chat-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: rgb(206 212 218 / 0.3);
+  background-clip: padding-box;
+}
+
 .App {
   width: 100%;
   height: 100%;

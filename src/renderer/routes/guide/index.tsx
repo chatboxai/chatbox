@@ -23,6 +23,7 @@ import {
   IconCheck,
   IconChevronRight,
   IconLanguage,
+  IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconMenu2,
   IconPlayerSkipForward,
@@ -241,23 +242,28 @@ function GuidePage() {
     <Stack h="100%" gap={0} className="bg-chatbox-background-primary">
       {/* Header */}
       <Flex h={48} align="center" px="md" className="flex-none title-bar">
-        {(!showSidebar || isSmallScreen) && (
-          <Flex align="center" className={needRoomForMacWindowControls ? 'pl-20' : ''}>
-            <ActionIcon
-              className="controls"
-              variant="subtle"
-              size={isSmallScreen ? 24 : 20}
-              color={isSmallScreen ? 'chatbox-secondary' : 'chatbox-tertiary'}
-              mr="xs"
-              onClick={() => setShowSidebar(!showSidebar)}
-            >
-              {isSmallScreen ? <IconMenu2 /> : <IconLayoutSidebarLeftExpand />}
-            </ActionIcon>
-          </Flex>
-        )}
+        <Flex align="center" className={!showSidebar && needRoomForMacWindowControls ? 'pl-20' : ''}>
+          <ActionIcon
+            className="controls"
+            aria-label={showSidebar && !isSmallScreen ? t('Collapse') : t('Expand')}
+            variant="subtle"
+            size={isSmallScreen ? 24 : 20}
+            color={isSmallScreen ? 'chatbox-secondary' : 'chatbox-tertiary'}
+            mr="xs"
+            onClick={() => setShowSidebar(!showSidebar)}
+          >
+            {isSmallScreen ? (
+              <IconMenu2 />
+            ) : showSidebar ? (
+              <IconLayoutSidebarLeftCollapse />
+            ) : (
+              <IconLayoutSidebarLeftExpand />
+            )}
+          </ActionIcon>
+        </Flex>
 
         <Flex align="center" gap="xxs" flex={1} {...(isSmallScreen ? { justify: 'center', pl: 28, pr: 8 } : {})}>
-          <Title order={4} fz={!isSmallScreen ? 20 : undefined} lineClamp={1}>
+          <Title order={4} fz={!isSmallScreen ? 18 : undefined} lh="24px" fw={600} lineClamp={1}>
             {t('Getting Started')}
           </Title>
         </Flex>

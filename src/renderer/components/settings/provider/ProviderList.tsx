@@ -73,24 +73,24 @@ export function ProviderList({ providers, onAddProvider }: ProviderListProps) {
                 component="span"
                 align="center"
                 gap="xs"
-                p="md"
-                pr="xl"
-                py={isSmallScreen ? 'sm' : undefined}
+                p="sm"
+                pr="lg"
+                py={isSmallScreen ? 'xs' : 6}
                 c={provider.id === providerId ? 'chatbox-brand' : 'chatbox-secondary'}
                 bg={provider.id === providerId ? 'var(--chatbox-background-brand-secondary)' : 'transparent'}
                 className={clsx(
-                  'cursor-pointer select-none rounded-lg',
+                  'settings-sidebar-item cursor-pointer select-none rounded-lg',
                   provider.id === providerId ? '' : 'hover:!bg-chatbox-background-gray-secondary'
                 )}
               >
                 {provider.isCustom ? (
                   provider.iconUrl ? (
-                    <Image w={32} h={32} src={provider.iconUrl} alt={provider.name} />
+                    <Image w={24} h={24} src={provider.iconUrl} alt={provider.name} />
                   ) : (
-                    <CustomProviderIcon providerId={provider.id} providerName={provider.name} size={32} />
+                    <CustomProviderIcon providerId={provider.id} providerName={provider.name} size={24} />
                   )
                 ) : (
-                  <ProviderIconImage providerId={provider.id} size={32} />
+                  <ProviderIconImage providerId={provider.id} size={24} />
                 )}
 
                 <Text

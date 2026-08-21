@@ -15,7 +15,7 @@ export const WindowControls: FC<FlexProps> = ({ className, ...otherProps }) => {
   const windowMaximized = useWindowMaximized()
   const platformType = useAtomValue(platformTypeAtom)
   return platformType === 'win32' || platformType === 'linux' ? (
-    <Flex align="center" className={clsx('controls self-start', className)} {...otherProps}>
+    <Flex align="center" className={clsx('controls', className)} {...otherProps}>
       <ControlButton label={t('Minimize') ?? ''} icon={IconMinus} onClick={() => platform.minimize()} />
       {!windowMaximized ? (
         <ControlButton label={t('Maximize') ?? ''} icon={IconSquare} onClick={() => platform.maximize()} />

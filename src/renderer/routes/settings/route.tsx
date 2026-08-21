@@ -175,25 +175,25 @@ export function SettingsRoot() {
               <Flex
                 component="span"
                 gap="xs"
-                p="md"
-                pr="xl"
-                py={isSmallScreen ? 'sm' : undefined}
+                p="sm"
+                pr="lg"
+                py={isSmallScreen ? 'xs' : undefined}
                 align="center"
                 c={item.key === key ? 'chatbox-brand' : 'chatbox-secondary'}
                 bg={item.key === key ? 'var(--chatbox-background-brand-secondary)' : 'transparent'}
                 className={clsx(
-                  ' cursor-pointer select-none rounded-lg',
+                  'settings-sidebar-item cursor-pointer select-none rounded-lg',
                   item.key === key ? '' : 'hover:!bg-chatbox-background-gray-secondary'
                 )}
               >
-                <Box component="span" flex="0 0 auto" w={20} h={20} mr="xs">
+                <Box component="span" flex="0 0 auto" w={18} h={18} mr="xs">
                   {item.icon}
                 </Box>
                 <Text
                   flex={1}
                   lineClamp={1}
                   span={true}
-                  className={`!text-inherit ${isSmallScreen ? 'min-h-[32px] leading-[32px]' : ''}`}
+                  className={`!text-inherit ${isSmallScreen ? 'min-h-[28px] leading-[28px]' : ''}`}
                 >
                   {'noTranslate' in item && item.noTranslate ? item.label : t(item.label)}
                 </Text>
@@ -214,21 +214,21 @@ export function SettingsRoot() {
               <Flex
                 component="span"
                 gap="xs"
-                p="md"
-                pr="xl"
-                py="sm"
+                p="sm"
+                pr="lg"
+                py="xs"
                 align="center"
                 c={'chatbox-secondary'}
-                className={clsx(' cursor-pointer select-none rounded-lg')}
+                className={clsx('settings-sidebar-item cursor-pointer select-none rounded-lg')}
               >
-                <Box component="span" flex="0 0 auto" w={20} h={20} mr="xs">
+                <Box component="span" flex="0 0 auto" w={18} h={18} mr="xs">
                   <ScalableIcon icon={IconInfoCircle} size={20} />
                 </Box>
                 <Text
                   flex={1}
                   lineClamp={1}
                   span={true}
-                  className={`!text-inherit ${isSmallScreen ? 'min-h-[32px] leading-[32px]' : ''}`}
+                  className={`!text-inherit ${isSmallScreen ? 'min-h-[28px] leading-[28px]' : ''}`}
                 >
                   {t('About')}
                 </Text>

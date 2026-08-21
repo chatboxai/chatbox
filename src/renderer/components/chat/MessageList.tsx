@@ -477,7 +477,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
           {/* Virtuoso smooths appended items but snaps same-item height growth; the controller below owns both cases. */}
           <Virtuoso
             style={{ scrollbarGutter: 'stable' }}
-            className={platformType === 'win32' ? 'scrollbar-custom' : ''}
+            className={cn('chatbox-chat-scroll', platformType === 'win32' ? 'scrollbar-custom' : '')}
             data={renderItems}
             ref={virtuoso}
             followOutput={false}

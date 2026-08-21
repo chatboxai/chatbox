@@ -313,8 +313,125 @@ html[data-need-room-for-windows-controls="true"] .pswp__top-bar {
   width: 12px !important;
 }
 
+/* Keep scroll affordances available without making them compete with the content. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(134 142 150 / 0.24) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgb(134 142 150 / 0.22);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: rgb(134 142 150 / 0.34);
+  background-clip: padding-box;
+}
+
+[data-mantine-color-scheme="dark"] * {
+  scrollbar-color: rgb(206 212 218 / 0.24) transparent;
+}
+
+[data-mantine-color-scheme="dark"] *::-webkit-scrollbar-thumb {
+  background: rgb(206 212 218 / 0.22);
+  background-clip: padding-box;
+}
+
+[data-mantine-color-scheme="dark"] *:hover::-webkit-scrollbar-thumb {
+  background: rgb(206 212 218 / 0.34);
+  background-clip: padding-box;
+}
+
 *::-webkit-scrollbar-corner {
   background-color: transparent;
+}
+
+.chatbox-sidebar {
+  background: var(--chatbox-background-primary);
+  border-inline-end: 1px solid color-mix(in srgb, var(--chatbox-border-primary), transparent 28%);
+}
+
+.chatbox-sidebar-primary-actions {
+  flex: 0 0 auto;
+}
+
+.chatbox-sidebar-primary-action {
+  justify-content: flex-start;
+  min-height: 38px;
+  color: var(--chatbox-tint-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-align: left;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.chatbox-sidebar-primary-action:hover {
+  color: var(--chatbox-tint-primary);
+  background: var(--chatbox-background-secondary);
+}
+
+.chatbox-sidebar-footer {
+  flex: 0 0 auto;
+  color: var(--chatbox-tint-tertiary);
+}
+
+.chatbox-sidebar-icon-nav {
+  min-height: 42px;
+}
+
+.chatbox-sidebar-icon-button {
+  color: var(--chatbox-tint-tertiary);
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
+}
+
+.chatbox-sidebar-icon-button:hover,
+.chatbox-sidebar-icon-button:focus-visible {
+  color: var(--chatbox-tint-primary);
+  background: var(--chatbox-background-secondary);
+}
+
+.chatbox-chat-scroll {
+  scrollbar-color: rgb(134 142 150 / 0.2) transparent;
+  scrollbar-width: thin;
+}
+
+[data-mantine-color-scheme="dark"] .chatbox-chat-scroll {
+  scrollbar-color: rgb(206 212 218 / 0.2) transparent;
+}
+
+.settings-sidebar-item {
+  min-height: 38px;
+}
+
+@media (max-width: 640px) {
+  .chatbox-sidebar {
+    border-inline-end: 0;
+  }
+
+  .chatbox-sidebar-primary-actions {
+    padding-inline: var(--chatbox-spacing-md);
+  }
+
+  .chatbox-sidebar-footer {
+    padding-inline: var(--chatbox-spacing-md);
+  }
 }
 
 div[data-vaul-handle] {

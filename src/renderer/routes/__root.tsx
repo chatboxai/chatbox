@@ -353,13 +353,9 @@ function Root() {
           }}
         >
           <Box
-            className="title-bar absolute inset-x-0 top-0 hidden sm:block"
-            sx={{ height: showSidebar ? '10px' : '5px' }}
-          />
-          <Box
             className="h-full box-border"
             sx={{
-              padding: { xs: 0, sm: showSidebar ? '10px 10px 10px 0' : '5px' },
+              padding: { xs: 0, sm: showSidebar ? '0 10px 10px 0' : '0 5px 5px' },
               transition: (theme) =>
                 theme.transitions.create('padding', {
                   easing: showSidebar ? theme.transitions.easing.easeOut : theme.transitions.easing.sharp,
@@ -370,12 +366,12 @@ function Root() {
             }}
           >
             <Box
-              className={`h-full overflow-hidden border-[0.5px] border-solid border-chatbox-border-primary ${
+              className={`h-full overflow-hidden ${
                 hasBackgroundImage ? 'bg-transparent' : 'bg-chatbox-background-primary'
               }`}
               sx={{
-                borderRadius: { xs: 0, sm: '16px' },
-                boxShadow: { xs: 'none', sm: '0 0 22px rgba(0, 0, 0, 0.11)' },
+                borderRadius: 0,
+                boxShadow: 'none',
               }}
             >
               <ErrorBoundary name="main">

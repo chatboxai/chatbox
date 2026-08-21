@@ -1,7 +1,7 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Flex, Text } from '@mantine/core'
 import type { Session } from '@shared/types'
-import { IconLayoutSidebarLeftExpand, IconMenu2 } from '@tabler/icons-react'
+import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconMenu2 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { PencilIcon } from 'lucide-react'
 import { useEffect } from 'react'
@@ -56,20 +56,25 @@ export default function Header(props: { session: Session }) {
         px="md"
         className={clsx('flex-none title-bar border-0', isSmallScreen ? 'bg-chatbox-background-primary' : '')}
       >
-        {(!showSidebar || isSmallScreen) && (
-          <Flex align="center" className={needRoomForMacWindowControls ? 'pl-20' : ''}>
-            <ActionIcon
-              className="controls"
-              variant="subtle"
-              size={isSmallScreen ? 24 : 20}
-              color={isSmallScreen ? 'chatbox-secondary' : 'chatbox-tertiary'}
-              mr="xs"
-              onClick={() => setShowSidebar(!showSidebar)}
-            >
-              {isSmallScreen ? <IconMenu2 /> : <IconLayoutSidebarLeftExpand />}
-            </ActionIcon>
-          </Flex>
-        )}
+        <Flex align="center" className={!showSidebar && needRoomForMacWindowControls ? 'pl-20' : ''}>
+          <ActionIcon
+            className="controls"
+            aria-label={t(showSidebar && !isSmallScreen ? 'Collapse' : 'Expand')}
+            variant="subtle"
+            size={isSmallScreen ? 24 : 20}
+            color={isSmallScreen ? 'chatbox-secondary' : 'chatbox-tertiary'}
+            mr="xs"
+            onClick={() => setShowSidebar(!showSidebar)}
+          >
+            {isSmallScreen ? (
+              <IconMenu2 />
+            ) : showSidebar ? (
+              <IconLayoutSidebarLeftCollapse />
+            ) : (
+              <IconLayoutSidebarLeftExpand />
+            )}
+          </ActionIcon>
+        </Flex>
 
         <Flex
           align="center"

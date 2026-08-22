@@ -1,0 +1,13 @@
+{
+  "welcome": "\u200Fخوش آمدید",
+  "settings": "\u200Fتنظیمات",
+  "language": "\u200Fزبان",
+  "Local First": "\u200F🔐 اولویت با دستگاه شما: داده‌های شما روی دستگاه خودتان می‌ماند. آیا کلمه Privacy درست نمایش داده می‌شود؟",
+  "Multi-Model Support": "\u200F🎯 پشتیبانی از چندین مدل: با یک برنامه، با همه مدل‌های AI مثل ChatGPT چت کنید.",
+  "Product Manual": "\u200F📕 راهنمای محصول",
+  "Help Center": "\u200F🆘 مرکز راهنمایی",
+  "I'm new to this": "\u200Fمن در این زمینه تازه‌کار هستم",
+  "Skip guide": "\u200Fرد کردن راهنما",
+  "I know how to configure API keys": "\u200Fمن می‌دانم چگونه کلیدهای API را پیکربندی کنم",
+  "characters": "\u200Fکاراکتر"
+}

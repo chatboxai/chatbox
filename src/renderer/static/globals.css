@@ -378,3 +378,34 @@ div[data-vaul-drawer] {
   animation: chatbox-approval-ring-spin 2.5s linear infinite;
   pointer-events: none;
 }
+
+
+/* ==========================================
+   Smart RTL and BiDi Text Rendering Support
+   ========================================== */
+
+/* 1. Set base direction for RTL languages (layout only, not text alignment) */
+html[dir="rtl"] {
+  direction: rtl;
+}
+
+/* 2. Smart text direction detection: browser determines direction based on first character */
+html[dir="rtl"] p,
+html[dir="rtl"] span,
+html[dir="rtl"] div,
+html[dir="rtl"] button,
+html[dir="rtl"] h1, html[dir="rtl"] h2, html[dir="rtl"] h3, html[dir="rtl"] h4, html[dir="rtl"] h5, html[dir="rtl"] h6,
+html[dir="rtl"] li,
+html[dir="rtl"] a {
+  direction: auto !important; /* Auto-detect: LTR for English, RTL for Persian/Arabic */
+  unicode-bidi: plaintext !important; /* Natural BiDi behavior */
+  text-align: start !important; /* Smart alignment: right for RTL, left for LTR */
+}
+
+/* 3. Code blocks and technical content always remain LTR */
+html[dir="rtl"] code,
+html[dir="rtl"] pre {
+  direction: ltr !important;
+  text-align: left !important;
+  unicode-bidi: isolate !important;
+}

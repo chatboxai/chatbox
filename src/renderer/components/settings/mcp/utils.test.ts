@@ -15,6 +15,25 @@ function createFormValues(command: string): MCPServerConfigFormValues {
 }
 
 describe('MCP stdio command form conversion', () => {
+  it('preserves environment variables with empty values across edits', () => {
+    const initialConfig: MCPServerConfig = {
+      id: 'server-1',
+      name: 'Test server',
+      enabled: true,
+      transport: {
+        type: 'stdio',
+        command: 'server',
+        args: [],
+        env: {
+          EMPTY: '',
+          TOKEN: 'value',
+        },
+      },
+    }
+
+    expect(getConfigFromFormValues(getFormValuesFromConfig(initialConfig))).toEqual(initialConfig)
+  })
+
   it('preserves a quoted Windows path across repeated edits', () => {
     const initialValues = createFormValues(String.raw`uv --directory "C:\\path\\to\\" run xx.py`)
     const initialConfig = getConfigFromFormValues(initialValues)

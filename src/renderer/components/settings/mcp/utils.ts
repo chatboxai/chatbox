@@ -11,7 +11,7 @@ const envUtils = {
       if (eqIndex === -1) continue
       const key = line.slice(0, eqIndex)
       const value = line.slice(eqIndex + 1)
-      if (key && value && key.trim() && value.trim()) {
+      if (key.trim()) {
         result[key.trim()] = value.trim()
       }
     }

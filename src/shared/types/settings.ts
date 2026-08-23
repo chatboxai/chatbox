@@ -517,6 +517,7 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
     'pt-PT',
     'es',
     'ar',
+    'fa', // <<< این خط را اضافه کنید
     'it-IT',
     'sv',
     'nb-NO',

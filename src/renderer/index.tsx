@@ -19,6 +19,7 @@ import * as migration from './stores/migration'
 import { getMigrationErrorContext } from './stores/migration-error'
 import queryClient from './stores/queryClient'
 import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
+import { isRTL } from './utils/rtl'
 
 const log = getLogger('index')
 
@@ -173,7 +174,30 @@ initializeApp()
       initRecentDirectoriesStore(),
     ])
 
+
+
+
+
+
+
+
     i18n.changeLanguage(settings.language)
+
+// Automatically set document direction based on selected language
+// This enables proper RTL layout mirroring for languages like Persian, Arabic, etc.
+document.documentElement.dir = isRTL(settings.language) ? 'rtl' : 'ltr'
+
+// Listen to language changes and update direction dynamically
+i18n.on('languageChanged', (lng) => {
+  document.documentElement.dir = isRTL(lng) ? 'rtl' : 'ltr'
+})
+
+
+
+
+
+
+
     initLoginLicenseStateReconciliation()
 
     // Initialize auto-updater event listeners (desktop only, idempotent)

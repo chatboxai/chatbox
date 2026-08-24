@@ -110,6 +110,16 @@ describe('IndexedDBSessionMetaStorage', () => {
     expect(store.indexNames.contains('archivedAt')).toBe(false)
   })
 
+  it('round-trips hasPausedToolCall on session meta records', async () => {
+    const record = makeRecord({ id: 'paused-1', name: 'Waiting', hasPausedToolCall: true })
+    await storage.create(record)
+
+    await expect(storage.getById('paused-1')).resolves.toMatchObject({
+      id: 'paused-1',
+      hasPausedToolCall: true,
+    })
+  })
+
   it('update existing record', async () => {
     const record = makeRecord({ id: 'test-1', name: 'Original' })
     await storage.create(record)

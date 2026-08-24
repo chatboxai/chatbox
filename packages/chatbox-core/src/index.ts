@@ -47,6 +47,7 @@ export {
   createSessionMetaRecord,
   ForkService,
   getSessionMetadataSnapshot,
+  hasPausedToolCall,
   hasSessionMetaFields,
   type NameGenerationSchedulerPort,
   projectSessionMeta,

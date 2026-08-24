@@ -1,3 +1,4 @@
+import { hasPausedToolCall } from '@chatbox/core'
 import {
   LEGACY_PROVIDER_MODEL_KEYS,
   type LegacyFlatSettings,
@@ -33,7 +34,7 @@ import WebPlatform from '@/platform/web_platform'
 import { initData } from '@/setup/init_data'
 import storage, { StorageKey } from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { createSessionMetaRecordsFromLegacyList } from '@/utils/session-utils'
+import { createSessionMetaRecordsFromLegacyList, migrateSession } from '@/utils/session-utils'
 import * as defaults from '../../shared/defaults'
 import { getLogger } from '../lib/utils'
 import { migrationProcessAtom } from './atoms/utilAtoms'
@@ -62,7 +63,7 @@ type MigrateStore = {
   setBlob?: (key: string, value: string) => Promise<void>
 }
 
-export const CurrentVersion = 15
+export const CurrentVersion = 16
 
 async function doMigrateStorage(oldStorage: Storage) {
   // 找到老版本的数据，说明是升级，执行数据迁移操作
@@ -207,6 +208,7 @@ export async function migrateOnData(dataStore: MigrateStore, canRelaunch = true)
     migrate_12_to_13,
     migrate_13_to_14,
     migrate_14_to_15,
+    migrate_15_to_16,
   ]
 
   for (; configVersion < CurrentVersion; configVersion++) {
@@ -607,5 +609,33 @@ async function migrate_14_to_15(dataStore: MigrateStore) {
   await sessionMetaStorage.createMany(records)
 
   log.info(`migrate_14_to_15, migrated ${records.length} session meta records to DB`)
+  return false
+}
+
+async function migrate_15_to_16(dataStore: MigrateStore) {
+  // Legacy JSON backup imports reuse migrateOnData() with a minimal in-memory
+  // data store (no setBlob) and restore metadata through their own path; only
+  // a live startup should reconcile the application's persisted meta storage.
+  if (!dataStore.setBlob) return false
+
+  const sessionMetaStorage = platform.getSessionMetaStorage()
+  await sessionMetaStorage.initialize()
+
+  const records = await sessionMetaStorage.getAll()
+  let updated = 0
+  for (const record of records) {
+    const rawSession = await dataStore.getData<Session | null>(StorageKeyGenerator.session(record.id), null)
+    if (!rawSession) continue
+    // Normalize legacy message shapes (e.g. `content` without `contentParts`)
+    // before scanning so hasPausedToolCall never touches undefined contentParts.
+    const session = migrateSession(rawSession)
+    const hasPaused = hasPausedToolCall(session)
+    if (hasPaused !== (record.hasPausedToolCall === true)) {
+      await sessionMetaStorage.update(record.id, { hasPausedToolCall: hasPaused })
+      updated++
+    }
+  }
+
+  log.info(`migrate_15_to_16, backfilled ${updated} of ${records.length} session meta records`)
   return false
 }

@@ -19,8 +19,13 @@ function completedReply(id: string) {
   return { ...createMessage('assistant', 'Finished answer'), id, generating: false, finishReason: 'stop' }
 }
 
-function activity(sessionId: string) {
-  return getSessionActivity(sessionActivityStore.getState(), sessionId, isSessionGenerating(sessionId))
+function activity(sessionId: string, persistedWaiting = false) {
+  return getSessionActivity(
+    sessionActivityStore.getState(),
+    sessionId,
+    isSessionGenerating(sessionId),
+    persistedWaiting
+  )
 }
 
 function startGeneration(sessionId: string, messageId = 'reply-1') {
@@ -47,7 +52,24 @@ describe('sessionActivityStore', () => {
     expect(activity('background-session')).toBe('generating')
   })
 
+  it('shows generating over waiting when a session mixes active and paused replies', () => {
+    startGeneration('background-session', 'reply-1')
+    const paused = startGeneration('background-session', 'reply-2')
+    generationRuntimeStore.setPhase('background-session', paused.messageId, 'paused', paused)
+
+    expect(activity('background-session', true)).toBe('generating')
+  })
+
   it('does not treat a paused runtime as active generation', () => {
+    const runtime = startGeneration('background-session')
+    generationRuntimeStore.setPhase('background-session', runtime.messageId, 'paused', runtime)
+
+    expect(activity('background-session', true)).toBe('waiting')
+  })
+
+  it('does not derive waiting from a paused runtime alone', () => {
+    // A paused runtime can belong to an inactive fork branch with nothing to
+    // act on; only the persisted active-conversation projection marks waiting.
     const runtime = startGeneration('background-session')
     generationRuntimeStore.setPhase('background-session', runtime.messageId, 'paused', runtime)
 

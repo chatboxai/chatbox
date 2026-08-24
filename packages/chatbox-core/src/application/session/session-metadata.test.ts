@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'vitest'
 import type { Message, Session, SessionMeta } from '../../types'
-import { assertNoMessageDataUpdate, getSessionMetadataSnapshot, projectSessionMeta } from './session-metadata'
+import {
+  assertNoMessageDataUpdate,
+  getSessionMetadataSnapshot,
+  hasPausedToolCall,
+  projectSessionMeta,
+} from './session-metadata'
 
 describe('projectSessionMeta', () => {
   test('preserves the previous pick semantics for absent and explicitly undefined optional fields', () => {
@@ -39,6 +44,84 @@ function session(overrides: Partial<Session>): Session {
     ...overrides,
   }
 }
+
+describe('hasPausedToolCall', () => {
+  test('detects a paused tool call in the message list', () => {
+    const pausedSession = session({
+      messages: [
+        message({
+          id: 'message-1',
+          contentParts: [
+            {
+              type: 'tool-call',
+              toolCallId: 'tool-1',
+              toolName: 'user_exec',
+              args: {},
+              state: 'paused',
+              pauseReason: { type: 'user_exec_approval', command: 'rm -rf' },
+            },
+          ],
+        }),
+      ],
+    })
+
+    expect(hasPausedToolCall(pausedSession)).toBe(true)
+  })
+
+  test('detects a tool-call-limit pause', () => {
+    const limitedSession = session({
+      messages: [
+        message({
+          id: 'message-1',
+          contentParts: [
+            {
+              type: 'tool-call',
+              toolCallId: 'tool-1',
+              toolName: 'search',
+              args: {},
+              state: 'paused',
+              pauseReason: { type: 'tool_call_limit', maxToolCalls: 25 },
+            },
+          ],
+        }),
+      ],
+    })
+
+    expect(hasPausedToolCall(limitedSession)).toBe(true)
+  })
+
+  test('ignores a paused tool call whose pause reason surfaces no action', () => {
+    // Imported or cross-version data can hold a paused part without a
+    // recognized pauseReason; no approval card or continue action exists for
+    // it, so it must not mark the session as waiting.
+    const strandedSession = session({
+      messages: [
+        message({
+          id: 'message-1',
+          contentParts: [
+            {
+              type: 'tool-call',
+              toolCallId: 'tool-1',
+              toolName: 'user_exec',
+              args: {},
+              state: 'paused',
+            },
+          ],
+        }),
+      ],
+    })
+
+    expect(hasPausedToolCall(strandedSession)).toBe(false)
+  })
+
+  test('returns false when no tool call is paused', () => {
+    const idleSession = session({
+      messages: [message({ id: 'message-1', contentParts: [{ type: 'text', text: 'hi' }] })],
+    })
+
+    expect(hasPausedToolCall(idleSession)).toBe(false)
+  })
+})
 
 describe('session metadata update helpers', () => {
   test('returns a snapshot without message-owned fields', () => {

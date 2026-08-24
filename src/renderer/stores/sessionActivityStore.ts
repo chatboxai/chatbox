@@ -8,7 +8,7 @@ import { isSuccessfulAssistantReply } from './session/message-success'
 
 const generationRuntimeStore = rendererApplication.generationRuntime
 
-export type SessionActivity = 'idle' | 'generating' | 'completed'
+export type SessionActivity = 'idle' | 'generating' | 'waiting' | 'completed'
 
 type SessionActivityState = {
   unreadCompletedSessionIds: Record<string, true>
@@ -46,9 +46,11 @@ export function clearSessionActivity(sessionId: string): void {
 export function getSessionActivity(
   state: SessionActivityState,
   sessionId: string,
-  generating = false
+  generating = false,
+  waiting = false
 ): SessionActivity {
   if (generating) return 'generating'
+  if (waiting) return 'waiting'
   if (state.unreadCompletedSessionIds[sessionId]) return 'completed'
   return 'idle'
 }
@@ -65,9 +67,17 @@ function useSessionGenerating(sessionId: string): boolean {
   )
 }
 
-export function useSessionActivity(sessionId: string): SessionActivity {
+/**
+ * "Waiting for you" comes from the persisted `hasPausedToolCall` projection,
+ * never from paused generation runtimes: a paused runtime can belong to an
+ * inactive fork branch, where the composer gate and pending-action bar offer
+ * nothing to act on. The projection scans the same active conversation those
+ * surfaces read and is persisted (and published to the session list) before a
+ * runtime ever enters `paused`, so it is just as live.
+ */
+export function useSessionActivity(sessionId: string, persistedWaiting = false): SessionActivity {
   const generating = useSessionGenerating(sessionId)
-  return useStore(sessionActivityStore, (state) => getSessionActivity(state, sessionId, generating))
+  return useStore(sessionActivityStore, (state) => getSessionActivity(state, sessionId, generating, persistedWaiting))
 }
 
 export function resetSessionActivityStore(): void {

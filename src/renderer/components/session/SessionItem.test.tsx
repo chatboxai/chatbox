@@ -122,6 +122,18 @@ describe('SessionItem', () => {
     }
   )
 
+  test('does not show waiting for a paused runtime without the persisted flag', () => {
+    // A paused runtime can belong to an inactive fork branch with nothing to
+    // act on; only the persisted hasPausedToolCall projection marks waiting.
+    const runtime = generationRuntimeStore.start(session.id, 'reply-1')
+    generationRuntimeStore.setPhase(session.id, runtime.messageId, 'paused', runtime)
+    const view = renderItem(false)
+
+    expect(screen.queryByRole('status', { name: 'Waiting for you...' })).toBeNull()
+    view.unmount()
+  })
+
+
   test('saves on blur', () => {
     renderItem()
 

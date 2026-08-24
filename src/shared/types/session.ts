@@ -467,6 +467,7 @@ export const SessionMetaSchema = SessionSchema.pick({
   type: true,
 }).extend({
   recoveryArchived: z.boolean().optional(),
+  hasPausedToolCall: z.boolean().optional(),
 })
 
 export const SessionMetaRecordSchema = SessionMetaSchema.extend({

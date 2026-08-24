@@ -1,3 +1,4 @@
+import { hasPendingPauseInteraction } from '../../message-approval'
 import type { Session, SessionMeta, SessionMetaRecord } from '../../types'
 
 const sessionMetaKeys = [
@@ -10,6 +11,7 @@ const sessionMetaKeys = [
   'picUrl',
   'backgroundImage',
   'type',
+  'hasPausedToolCall',
 ] as const satisfies ReadonlyArray<keyof SessionMeta>
 
 const sessionMessageDataKeys = ['messages', 'threads', 'messageForksHash', 'compactionPoints'] as const
@@ -34,20 +36,45 @@ export function projectSessionMeta(session: SessionMeta): SessionMeta {
 export function projectSessionMetaUpdate(session: Session): SessionMeta {
   return {
     ...projectSessionMeta(session),
+    hasPausedToolCall: hasPausedToolCall(session),
     recoveryArchived: undefined,
   }
 }
 
 export function createSessionMetaRecord(session: Session, sortOrder: number, createdAt: number): SessionMetaRecord {
   return {
-    ...projectSessionMeta(session),
+    ...projectSessionMetaUpdate(session),
     sortOrder,
     createdAt,
   }
 }
 
+/**
+ * Whether the session's active conversation has a tool call waiting for user
+ * action (approval or a tool-call-limit continue). Deliberately scans only
+ * `session.messages` — the same set the composer gate (`awaitingToolApproval`)
+ * and the pending-action bar read: a pause parked in an inactive fork branch
+ * offers nothing to act on until that branch is switched active, so it must
+ * not mark the session as waiting. Pauses whose reason this build surfaces no
+ * action for (imported or cross-version data) are excluded for the same
+ * reason. The sidebar's "waiting" indicator derives solely from this
+ * projection.
+ */
+export function hasPausedToolCall(session: Session): boolean {
+  return hasPendingPauseInteraction(session.messages)
+}
+
 export function hasSessionMetaFields(update: Partial<Session>): boolean {
   return sessionMetaKeys.some((key) => Object.hasOwn(update, key))
+}
+
+/**
+ * Message-bearing object updates (e.g. "clear conversation" replacing
+ * `messages`) can change the `hasPausedToolCall` projection even though they
+ * carry no metadata key, so they must still trigger a metadata write.
+ */
+export function hasMessageDataFields(update: Partial<Session>): boolean {
+  return sessionMessageDataKeys.some((key) => Object.hasOwn(update, key))
 }
 
 export function getSessionMetadataSnapshot(session: Session): SessionMetadataUpdate {

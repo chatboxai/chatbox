@@ -1,6 +1,8 @@
-import type { SessionMetaRecord } from '@shared/types'
+import { hasPausedToolCall } from '@chatbox/core'
+import type { Session, SessionMetaRecord } from '@shared/types'
 import { SessionMetaRecordSchema } from '@shared/types'
-import { BackupStorageKey } from './storage-keys'
+import { migrateSession } from '@/utils/session-utils'
+import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
 import type { BackupMetaStorage, BackupStorage } from './types'
 
 export interface LegacyBackupDataStore {
@@ -68,6 +70,13 @@ export async function importLegacyJsonBackup(
     for (const item of rawMeta) {
       const record = normalizeMeta(item)
       if (!record) continue
+      // Derive the waiting flag from the imported session so a legacy backup
+      // containing a paused tool call (or replacing one) keeps the correct
+      // sidebar state. Normalize to tolerate legacy `content` message shapes.
+      const rawSession = importData[backupSessionStorageKey(record.id)]
+      if (rawSession && typeof rawSession === 'object') {
+        record.hasPausedToolCall = hasPausedToolCall(migrateSession(rawSession as Session))
+      }
       const existing = await options.metaStorage.getById(record.id)
       if (existing)
         await options.metaStorage.update(record.id, { ...record, recoveryArchived: record.recoveryArchived })

@@ -46,6 +46,8 @@ export class SessionMetadataUpdateError extends Error {
 
   constructor(
     readonly session: Session,
+    /** The projection that failed to persist, so callers can still align live read models. */
+    readonly meta: SessionMeta,
     readonly metadataError: unknown
   ) {
     super(`Failed to update metadata for session ${session.id}`, { cause: metadataError })
@@ -284,7 +286,7 @@ export class SessionWriteCoordinator {
       try {
         await this.repository.meta.update(sessionId, meta)
       } catch (error) {
-        throw new SessionMetadataUpdateError(updated, error)
+        throw new SessionMetadataUpdateError(updated, meta, error)
       }
     }
     return { session: updated, meta }

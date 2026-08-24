@@ -94,7 +94,7 @@ describe('shared attachment ownership', () => {
       messageId: 'replacement',
     })
     expect(ragControllerMock.deleteMessageAttachments).toHaveBeenCalledWith('original')
-    expect(sessionsMock.removeMessage).toHaveBeenCalledWith('session-1', 'original')
+    expect(sessionsMock.removeMessage).toHaveBeenCalledWith('session-1', 'original', expect.any(Function))
   })
 
   it('leaves unshared attachments with the deleted message', async () => {
@@ -122,7 +122,7 @@ describe('shared attachment ownership', () => {
 
     await removeMessage('session-1', 'doomed')
 
-    expect(sessionsMock.removeMessage).toHaveBeenCalledWith('session-1', 'doomed')
+    expect(sessionsMock.removeMessage).toHaveBeenCalledWith('session-1', 'doomed', expect.any(Function))
   })
 
   it('rebinds attachments shared with survivors when the active branch is deleted', async () => {

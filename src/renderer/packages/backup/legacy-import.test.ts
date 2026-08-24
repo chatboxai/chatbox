@@ -123,6 +123,46 @@ describe('legacy JSON backup import', () => {
     expect(metaStorage.records.get('old')?.recoveryArchived).toBeUndefined()
   })
 
+  it('derives hasPausedToolCall from the imported session when restoring legacy metadata', async () => {
+    const storage = new LegacyMemoryStorage()
+    const metaStorage = new LegacyMemoryMetaStorage()
+    const result = await importLegacyJsonBackup(
+      asJsonFile({
+        'session:paused': {
+          id: 'paused',
+          name: 'Paused',
+          messages: [
+            {
+              id: 'msg-1',
+              role: 'assistant',
+              generating: false,
+              contentParts: [
+                {
+                  type: 'tool-call',
+                  toolCallId: 't1',
+                  toolName: 'user_exec',
+                  args: {},
+                  state: 'paused',
+                  pauseReason: { type: 'user_exec_approval', command: 'ls' },
+                },
+              ],
+            },
+          ],
+        },
+        'chat-sessions-list': [{ id: 'paused', name: 'Paused', sortOrder: 1, createdAt: 1 }],
+      }),
+      {
+        storage,
+        metaStorage,
+        recoverSessionList: () => Promise.resolve(),
+        migrateData: () => Promise.resolve(),
+      }
+    )
+
+    expect(metaStorage.records.get('paused')?.hasPausedToolCall).toBe(true)
+    expect(result.importedMetaCount).toBe(1)
+  })
+
   it('rejects non-object JSON backups', async () => {
     await expect(
       importLegacyJsonBackup(asJsonFile([]), {

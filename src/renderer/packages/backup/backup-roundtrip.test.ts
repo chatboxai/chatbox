@@ -110,6 +110,30 @@ function createMeta(session: Session, sortOrder: number): SessionMetaRecord {
   return { id: session.id, name: session.name, sortOrder, createdAt: sortOrder }
 }
 
+function createPausedSession(id: string): Session {
+  return {
+    id,
+    name: `Paused ${id}`,
+    messages: [
+      {
+        id: `message-${id}`,
+        role: 'assistant',
+        generating: false,
+        contentParts: [
+          {
+            type: 'tool-call',
+            toolCallId: `tool-${id}`,
+            toolName: 'user_exec',
+            args: {},
+            state: 'paused',
+            pauseReason: { type: 'user_exec_approval', command: 'ls' },
+          },
+        ],
+      },
+    ],
+  }
+}
+
 function createAttachmentSession(id: string): Session {
   return {
     id,
@@ -149,6 +173,69 @@ function combine(chunks: Uint8Array[]): Uint8Array {
 
 describe('ZIP backup round trip', () => {
   afterEach(() => vi.restoreAllMocks())
+
+  it('recomputes hasPausedToolCall from the restored session when the backup meta lacks it', async () => {
+    const source = new MemoryStorage()
+    const sourceMeta = new MemoryMetaStorage()
+    const pausedSession = createPausedSession('paused')
+    source.values.set(backupSessionStorageKey(pausedSession.id), pausedSession)
+    // A pre-change backup meta has no hasPausedToolCall field.
+    sourceMeta.records.set(pausedSession.id, createMeta(pausedSession, 1))
+
+    const chunks: Uint8Array[] = []
+    await exportBackupArchive({
+      exportItems: ['conversations'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: sourceMeta,
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (dataCallback) => {
+        for await (const chunk of dataCallback()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+
+    const destinationMeta = new MemoryMetaStorage()
+    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'backup.zip'), {
+      storage: new MemoryStorage(),
+      metaStorage: destinationMeta,
+    })
+
+    expect(destinationMeta.records.get(pausedSession.id)?.hasPausedToolCall).toBe(true)
+  })
+
+  it('clears a stale hasPausedToolCall when an import replaces a paused session with a non-paused one', async () => {
+    const source = new MemoryStorage()
+    const sourceMeta = new MemoryMetaStorage()
+    const session = createSession('replace')
+    source.values.set(backupSessionStorageKey(session.id), session)
+    sourceMeta.records.set(session.id, createMeta(session, 1))
+
+    const chunks: Uint8Array[] = []
+    await exportBackupArchive({
+      exportItems: ['conversations'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: sourceMeta,
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (dataCallback) => {
+        for await (const chunk of dataCallback()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+
+    const destination = new MemoryStorage()
+    const destinationMeta = new MemoryMetaStorage()
+    destinationMeta.records.set(session.id, { ...createMeta(session, 99), hasPausedToolCall: true })
+
+    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'backup.zip'), {
+      storage: destination,
+      metaStorage: destinationMeta,
+    })
+
+    expect(destinationMeta.records.get(session.id)?.hasPausedToolCall).toBe(false)
+  })
+
 
   it('restores independent sessions and shared resources, remapping conflicting blob keys', async () => {
     const nativeRandomUuid = vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementation(() => {

@@ -18,6 +18,7 @@ import {
   assertNoMessageDataUpdate,
   createSessionMetaRecord,
   getSessionMetadataSnapshot,
+  hasMessageDataFields,
   hasSessionMetaFields,
   type SessionMetadataUpdate,
 } from './session-metadata'
@@ -60,9 +61,13 @@ async function runInChunks<T>(items: T[], chunkSize: number, worker: (item: T) =
   }
 }
 
+const META_PROJECTION_REPAIR_DELAY_MS = 1000
+
 export class SessionService {
   private readonly now: () => number
   private readonly getLastUsedModels: NonNullable<SessionServiceOptions['getLastUsedModels']>
+  private readonly getVisibleSessionMetas: NonNullable<SessionServiceOptions['getVisibleSessionMetas']>
+  private readonly pendingMetaRepairs = new Set<string>()
   private initialization: Promise<void> | null = null
 
   constructor(
@@ -216,7 +221,7 @@ export class SessionService {
     options: UpdateSessionOptions = {}
   ): Promise<Session> {
     await this.initialize()
-    const updateMeta = typeof updater === 'function' || hasSessionMetaFields(updater)
+    const updateMeta = typeof updater === 'function' || hasSessionMetaFields(updater) || hasMessageDataFields(updater)
     let result: SessionWriteResult
     try {
       result = await this.writes.update(sessionId, updater, {
@@ -227,16 +232,19 @@ export class SessionService {
       if (!(error instanceof SessionMetadataUpdateError)) throw error
 
       // The full session is already durable and is also the coordinator's
-      // current snapshot. Project it even though the list metadata write failed,
-      // otherwise staleTime: Infinity leaves external read models permanently
-      // behind and a retry can append the same message again.
+      // current snapshot. Project it — including the derived metadata patch —
+      // even though the list metadata write failed, otherwise staleTime:
+      // Infinity leaves external read models permanently behind and a retry
+      // can append the same message again. The persisted metadata record is
+      // still stale, so schedule a repair for it too.
       options.onFullSessionPersisted?.(error.session)
       await this.events.publish({
         type: 'session-updated',
         session: error.session,
-        meta: null,
+        meta: error.meta,
         preserveCachedGeneratingMessages: options.preserveCachedGeneratingMessages === true,
       })
+      this.scheduleMetaProjectionRepair(sessionId)
       throw error.metadataError
     }
     options.onFullSessionPersisted?.(result.session)
@@ -473,6 +481,37 @@ export class SessionService {
     await this.repository.meta.createMany(records)
     await this.publishListReset({ visible: true, archived: true })
     return { recovered: sessionsWithTimestamp.length, failed: failedSessionIds.length }
+  }
+
+  /**
+   * One deferred retry per failure burst. If the retry fails as well, give up:
+   * any later successful write to the session reprojects its metadata anyway.
+   */
+  private scheduleMetaProjectionRepair(sessionId: string): void {
+    if (this.pendingMetaRepairs.has(sessionId)) return
+    this.pendingMetaRepairs.add(sessionId)
+    setTimeout(() => {
+      this.pendingMetaRepairs.delete(sessionId)
+      void this.repairMetaProjection(sessionId)
+    }, META_PROJECTION_REPAIR_DELAY_MS)
+  }
+
+  private async repairMetaProjection(sessionId: string): Promise<void> {
+    try {
+      const result = await this.writes.reprojectMeta(sessionId)
+      if (!result) return
+      await this.events.publish({
+        type: 'session-updated',
+        session: result.session,
+        meta: result.meta,
+        preserveCachedGeneratingMessages: true,
+      })
+    } catch (error) {
+      await this.log('warn', 'Failed to repair session metadata projection', {
+        sessionId,
+        error: describeError(error),
+      })
+    }
   }
 
   private async log(level: 'error' | 'warn', message: string, context: Record<string, unknown>): Promise<void> {

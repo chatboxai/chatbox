@@ -12,6 +12,24 @@ function message(id: string): Message {
   }
 }
 
+function pausedToolCallMessage(id: string): Message {
+  return {
+    id,
+    role: 'assistant',
+    generating: false,
+    contentParts: [
+      {
+        type: 'tool-call',
+        toolCallId: `${id}-tool`,
+        toolName: 'user_exec',
+        args: {},
+        state: 'paused',
+        pauseReason: { type: 'user_exec_approval', command: 'ls' },
+      },
+    ],
+  }
+}
+
 function appendMessage(session: Session | null | undefined, messageId: string): Session {
   if (!session) throw new Error('Expected current session')
   return {
@@ -21,6 +39,29 @@ function appendMessage(session: Session | null | undefined, messageId: string): 
 }
 
 describe('SessionWriteCoordinator', () => {
+  test('reprojectMeta repairs the metadata record from the retained snapshot', async () => {
+    const repository = new MemorySessionRepository()
+    const session = createTestSession('session-1')
+    repository.sessions.set(session.id, session)
+    repository.records.set(session.id, createTestRecord(session, 1))
+    const coordinator = new SessionWriteCoordinator(repository)
+    vi.spyOn(repository.meta, 'update').mockRejectedValueOnce(new Error('metadata update failed'))
+
+    await expect(
+      coordinator.update(session.id, (current) => {
+        if (!current) throw new Error('Expected current session')
+        return { ...current, messages: [pausedToolCallMessage('reply-1')] }
+      })
+    ).rejects.toThrow('Failed to update metadata')
+    expect(repository.records.get(session.id)?.hasPausedToolCall).not.toBe(true)
+
+    const result = await coordinator.reprojectMeta(session.id)
+
+    expect(result?.meta?.hasPausedToolCall).toBe(true)
+    expect(repository.records.get(session.id)?.hasPausedToolCall).toBe(true)
+  })
+
+
   test('starts from the injected read model and serializes concurrent writes', async () => {
     const repository = new MemorySessionRepository()
     const persisted = createTestSession('session-1')
@@ -81,6 +122,26 @@ describe('SessionWriteCoordinator', () => {
     expect(repository.sessions.get(session.id)?.name).toBe('Recovered')
   })
 
+  test('projects hasPausedToolCall into the metadata and clears it when the pause resolves', async () => {
+    const repository = new MemorySessionRepository()
+    const session = createTestSession('session-1')
+    repository.sessions.set(session.id, session)
+    repository.records.set(session.id, createTestRecord(session, 1))
+    const coordinator = new SessionWriteCoordinator(repository)
+
+    await coordinator.update(session.id, (current) => {
+      if (!current) throw new Error('Expected current session')
+      return { ...current, messages: [pausedToolCallMessage('reply-1')] }
+    })
+    expect(repository.records.get(session.id)?.hasPausedToolCall).toBe(true)
+
+    await coordinator.update(session.id, (current) => {
+      if (!current) throw new Error('Expected current session')
+      return { ...current, messages: [message('reply-1')] }
+    })
+    expect(repository.records.get(session.id)?.hasPausedToolCall).toBe(false)
+  })
+
   test('reports metadata failure after retaining the persisted session snapshot', async () => {
     const repository = new MemorySessionRepository()
     const session = createTestSession('session-1')
@@ -95,7 +156,7 @@ describe('SessionWriteCoordinator', () => {
       .catch((error: unknown) => error)
 
     expect(failure).toBeInstanceOf(SessionMetadataUpdateError)
-    expect(failure).toMatchObject({ metadataError })
+    expect(failure).toMatchObject({ metadataError, meta: { id: session.id, hasPausedToolCall: false } })
     expect(repository.sessions.get(session.id)?.messages.map(({ id }) => id)).toEqual(['persisted'])
 
     await coordinator.update(session.id, (current) => appendMessage(current, 'next'))

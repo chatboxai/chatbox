@@ -134,6 +134,7 @@ describe('SQLiteSessionMetaStorage', () => {
       100,
       100,
       1,
+      0,
     ])
 
     mockDatabase.query.mockResolvedValueOnce({
@@ -189,6 +190,7 @@ describe('SQLiteSessionMetaStorage', () => {
       null,
       100,
       100,
+      0,
       0,
       'recovery',
     ])

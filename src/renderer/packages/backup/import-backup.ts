@@ -1,3 +1,4 @@
+import { hasPausedToolCall } from '@chatbox/core'
 import type { CopilotDetail, Session, Settings } from '@shared/types'
 import {
   combineMemoryStateTokens,
@@ -6,6 +7,7 @@ import {
   parseCopilotMemoryStateTokens,
 } from '@shared/types/agent-persona'
 import { v4 as uuidv4 } from 'uuid'
+import { migrateSession } from '@/utils/session-utils'
 import {
   BACKUP_MANIFEST_PATH,
   backupEntryByteLimit,
@@ -443,6 +445,7 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
           await options.metaStorage
             .update(metaId, {
               ...previous,
+              hasPausedToolCall: previous.hasPausedToolCall,
               starred: previous.starred,
               hidden: previous.hidden,
               archivedAt: previous.archivedAt,
@@ -586,6 +589,10 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
       const meta = {
         ...restoreSessionMetaResourceKeys(descriptor.meta, resourceKeyMap),
         recoveryArchived: descriptor.meta.recoveryArchived,
+        // Recompute the flag from the restored session (normalized to tolerate
+        // legacy `content` shapes) so a pre-change backup still restores the
+        // waiting indicator, and so a replaced paused session clears to false.
+        hasPausedToolCall: hasPausedToolCall(migrateSession(session)),
       }
       const existingMeta = await options.metaStorage.getById(session.id)
       previousMeta.set(session.id, existingMeta)

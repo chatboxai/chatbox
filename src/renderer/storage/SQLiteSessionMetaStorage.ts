@@ -74,7 +74,8 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         background_image TEXT,
         type TEXT,
         sort_order REAL NOT NULL,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        has_paused_tool_call INTEGER NOT NULL DEFAULT 0
       )
     `)
 
@@ -92,6 +93,10 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     if (!hasRecoveryArchived) {
       await this.database.execute('ALTER TABLE session_meta ADD COLUMN recovery_archived INTEGER NOT NULL DEFAULT 0')
     }
+    const hasPausedToolCall = columns.values?.some((column) => column.name === 'has_paused_tool_call')
+    if (!hasPausedToolCall) {
+      await this.database.execute('ALTER TABLE session_meta ADD COLUMN has_paused_tool_call INTEGER NOT NULL DEFAULT 0')
+    }
   }
 
   private recordToRow(record: SessionMetaRecord): Record<string, unknown> {
@@ -108,6 +113,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
       sort_order: record.sortOrder,
       created_at: record.createdAt,
       recovery_archived: record.recoveryArchived ? 1 : 0,
+      has_paused_tool_call: record.hasPausedToolCall ? 1 : 0,
     }
   }
 
@@ -123,6 +129,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
       backgroundImage: parseBackgroundImage(row.background_image as string),
       type: (row.type as SessionMetaRecord['type']) || undefined,
       recoveryArchived: row.recovery_archived === 1 ? true : undefined,
+      hasPausedToolCall: row.has_paused_tool_call === 1 ? true : undefined,
       sortOrder: row.sort_order as number,
       createdAt: row.created_at as number,
     }
@@ -133,8 +140,8 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     const row = this.recordToRow(record)
     await this.database.run(
       `INSERT INTO session_meta
-       (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at, recovery_archived)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at, recovery_archived, has_paused_tool_call)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.name,
@@ -148,6 +155,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         row.sort_order,
         row.created_at,
         row.recovery_archived,
+        row.has_paused_tool_call,
       ]
     )
   }
@@ -157,8 +165,8 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     if (records.length === 0) return
 
     const statement = `INSERT OR REPLACE INTO session_meta
-      (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at, recovery_archived)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at, recovery_archived, has_paused_tool_call)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     const set: capSQLiteSet[] = records.map((record) => {
       const row = this.recordToRow(record)
       return {
@@ -176,6 +184,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
           row.sort_order,
           row.created_at,
           row.recovery_archived,
+          row.has_paused_tool_call,
         ],
       }
     })
@@ -194,7 +203,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     await this.database.run(
       `UPDATE session_meta SET
        name = ?, starred = ?, hidden = ?, archived_at = ?, assistant_avatar_key = ?, pic_url = ?,
-       background_image = ?, type = ?, sort_order = ?, created_at = ?, recovery_archived = ?
+       background_image = ?, type = ?, sort_order = ?, created_at = ?, recovery_archived = ?, has_paused_tool_call = ?
        WHERE id = ?`,
       [
         row.name,
@@ -208,6 +217,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         row.sort_order,
         row.created_at,
         row.recovery_archived,
+        row.has_paused_tool_call,
         id,
       ]
     )

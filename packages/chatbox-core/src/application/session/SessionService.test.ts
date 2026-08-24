@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
+import type { Session } from '../../types'
 import { createTestRecord, createTestSession, MemorySessionRepository } from './__tests__/memory-session-repository'
 import { SessionService } from './SessionService'
 import { SessionNotFoundError, SessionWriteCoordinator } from './SessionWriteCoordinator'
@@ -498,6 +499,111 @@ describe('SessionService', () => {
     expect(deleteSpy).toHaveBeenCalledWith(session.id)
     expect(order).toEqual(['effect', 'storage', 'deleted'])
     expect(harness.repository.records.has(session.id)).toBe(false)
+  })
+
+  test('reprojects hasPausedToolCall when a message-bearing object update clears a paused session', async () => {
+    const harness = createHarness()
+    const session: Session = {
+      id: 'session-1',
+      name: 'session-1',
+      type: 'chat',
+      messages: [
+        {
+          id: 'msg-1',
+          role: 'assistant',
+          generating: false,
+          contentParts: [
+            {
+              type: 'tool-call',
+              toolCallId: 'tool-1',
+              toolName: 'user_exec',
+              args: {},
+              state: 'paused',
+              pauseReason: { type: 'user_exec_approval', command: 'ls' },
+            },
+          ],
+        },
+      ],
+    }
+    harness.repository.sessions.set(session.id, session)
+    harness.repository.records.set(session.id, { ...createTestRecord(session, 1), hasPausedToolCall: true })
+
+    await harness.service.updateSessionWithMessages(session.id, {
+      messages: [],
+      threads: undefined,
+      messageForksHash: undefined,
+    })
+
+    expect(harness.repository.records.get(session.id)?.hasPausedToolCall).toBe(false)
+  })
+
+  test('publishes the computed projection and repairs the record when the metadata write fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const harness = createHarness()
+      const session = createTestSession('session-1')
+      harness.repository.sessions.set(session.id, session)
+      harness.repository.records.set(session.id, { ...createTestRecord(session, 1), hasPausedToolCall: true })
+      const metadataError = new Error('metadata update failed')
+      vi.spyOn(harness.repository.meta, 'update').mockRejectedValueOnce(metadataError)
+
+      await expect(
+        harness.service.updateSessionWithMessages(session.id, (current) => {
+          if (!current) throw new Error('Expected current session')
+          return { ...current, name: 'Renamed' }
+        })
+      ).rejects.toBe(metadataError)
+
+      // Live read models still receive the projection derived from the durable
+      // session, so e.g. the sidebar's waiting pill clears immediately.
+      expect(harness.published.at(-1)).toMatchObject({
+        type: 'session-updated',
+        session: { id: session.id, name: 'Renamed' },
+        meta: { id: session.id, name: 'Renamed', hasPausedToolCall: false },
+      })
+      expect(harness.repository.records.get(session.id)).toMatchObject({ name: 'session-1', hasPausedToolCall: true })
+
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(harness.repository.records.get(session.id)).toMatchObject({ name: 'Renamed', hasPausedToolCall: false })
+      expect(harness.published.at(-1)).toMatchObject({
+        type: 'session-updated',
+        session: { id: session.id, name: 'Renamed' },
+        meta: { id: session.id, name: 'Renamed', hasPausedToolCall: false },
+        preserveCachedGeneratingMessages: true,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('gives up the metadata repair when the retry fails too', async () => {
+    vi.useFakeTimers()
+    try {
+      const harness = createHarness()
+      const session = createTestSession('session-1')
+      harness.repository.sessions.set(session.id, session)
+      harness.repository.records.set(session.id, createTestRecord(session, 1))
+      vi.spyOn(harness.repository.meta, 'update').mockRejectedValue(new Error('metadata update failed'))
+
+      await expect(
+        harness.service.updateSessionWithMessages(session.id, (current) => {
+          if (!current) throw new Error('Expected current session')
+          return { ...current, name: 'Renamed' }
+        })
+      ).rejects.toThrow('metadata update failed')
+
+      await vi.advanceTimersByTimeAsync(5000)
+
+      expect(harness.repository.records.get(session.id)).toMatchObject({ name: 'session-1' })
+      expect(harness.log).toHaveBeenCalledWith(
+        'warn',
+        'Failed to repair session metadata projection',
+        expect.objectContaining({ sessionId: session.id })
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('rejects writes that start after deletion begins and never resurrects the session', async () => {

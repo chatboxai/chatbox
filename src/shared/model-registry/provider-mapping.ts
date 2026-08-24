@@ -22,6 +22,7 @@ export const PROVIDER_ID_MAP: Record<string, string> = {
   moonshot: 'moonshotai',
   'moonshot-cn': 'moonshotai',
   siliconflow: 'siliconflow',
+  futurmix: 'futurmix',
   'chatglm-6b': 'zhipuai',
   qwen: 'alibaba',
   'qwen-portal': 'alibaba',

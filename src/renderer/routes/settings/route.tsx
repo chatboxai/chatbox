@@ -5,6 +5,7 @@ import {
   IconArchive,
   IconBook,
   IconBox,
+  IconBrain,
   IconCategory,
   IconChevronLeft,
   IconChevronRight,
@@ -77,14 +78,21 @@ const ITEMS = [
           noTranslate: true,
           icon: <IconWand className="w-full h-full" />,
         },
-        // Agent settings share the skills gate: both surface only where agent mode runs.
-        {
-          key: 'agent',
-          label: 'Agent',
-          icon: <IconRobotFace className="w-full h-full" />,
-        },
       ]
     : []),
+  // Memory works on every platform, so the page stays reachable where agent mode
+  // does not run — narrowed there to the memory controls it can actually offer.
+  featureFlags.agentMode
+    ? {
+        key: 'agent',
+        label: 'Agent',
+        icon: <IconRobotFace className="w-full h-full" />,
+      }
+    : {
+        key: 'agent',
+        label: 'Memory',
+        icon: <IconBrain className="w-full h-full" />,
+      },
   {
     key: 'document-parser',
     label: 'Document Parser',

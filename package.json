@@ -16,7 +16,7 @@
     "build:preload": "cross-env CHATBOX_ELECTRON_VITE_TARGET=preload electron-vite build",
     "build:renderer": "cross-env CHATBOX_ELECTRON_VITE_TARGET=renderer electron-vite build",
     "build:web": "cross-env CHATBOX_BUILD_PLATFORM=web electron-vite build && pnpm run delete-sourcemaps",
-    "delete-sourcemaps": "ts-node ./.erb/scripts/delete-source-maps-runner.js",
+    "delete-sourcemaps": "node scripts/delete-source-maps.mjs",
     "postinstall": "node .erb/scripts/postinstall.cjs",
     "package": "tsx ./.erb/scripts/clean.js && pnpm run build && cross-env UPDATE_CHANNEL=alpha electron-builder build --publish never",
     "package:all": "tsx ./.erb/scripts/clean.js && pnpm run build && cross-env UPDATE_CHANNEL=alpha electron-builder build --publish never --win --mac --linux",

@@ -136,7 +136,7 @@ export function MemoriesSection() {
       </Flex>
       <Text size="sm" c="dimmed">
         {t(
-          'Facts the agent saved from your conversations. They are loaded into new agent sessions; deleting one only affects future sessions.'
+          'Facts saved from your conversations. They are loaded into new conversations; deleting one only affects future ones.'
         )}
       </Text>
       {platform.scanLocalAgentMemories && (

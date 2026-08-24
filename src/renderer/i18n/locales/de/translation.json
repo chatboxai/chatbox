@@ -1364,7 +1364,7 @@
   "Reset to template": "Auf Vorlage zurücksetzen",
   "Unsaved changes": "Ungespeicherte Änderungen",
   "Memories": "Erinnerungen",
-  "Facts the agent saved from your conversations. They are loaded into new agent sessions; deleting one only affects future sessions.": "Fakten, die der Agent aus Ihren Gesprächen gespeichert hat. Sie werden in neue Agent-Sitzungen geladen; das Löschen wirkt sich nur auf künftige Sitzungen aus.",
+  "Facts saved from your conversations. They are loaded into new conversations; deleting one only affects future ones.": "Fakten, die aus Ihren Gesprächen gespeichert wurden. Sie werden in neue Konversationen geladen; das Löschen wirkt sich nur auf künftige Konversationen aus.",
   "No memories yet. The agent saves durable facts here as you work together.": "Noch keine Erinnerungen. Während Ihrer Zusammenarbeit speichert der Agent hier dauerhaft nützliche Fakten.",
   "Soul defines who your agent is — persona, tone, and boundaries. It replaces per-session system prompts in agent mode and is loaded when an agent session starts.": "Soul definiert, wer Ihr Agent ist – Persona, Ton und Grenzen. Im Agent-Modus ersetzt es sitzungsspezifische Systemprompts und wird beim Start einer Agent-Sitzung geladen.",
   "Agent": "Agent",

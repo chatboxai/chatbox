@@ -1364,7 +1364,7 @@
   "Reset to template": "템플릿으로 초기화",
   "Unsaved changes": "저장되지 않은 변경 사항",
   "Memories": "메모리",
-  "Facts the agent saved from your conversations. They are loaded into new agent sessions; deleting one only affects future sessions.": "에이전트가 대화에서 저장한 사실입니다. 새 에이전트 세션에 로드되며, 삭제해도 이후 세션에만 영향을 줍니다.",
+  "Facts saved from your conversations. They are loaded into new conversations; deleting one only affects future ones.": "대화에서 저장된 사실입니다. 새 대화에 로드되며, 삭제해도 이후 대화에만 영향을 줍니다.",
   "No memories yet. The agent saves durable facts here as you work together.": "아직 메모리가 없습니다. 함께 작업하는 동안 에이전트가 오래 유용한 사실을 여기에 저장합니다.",
   "Soul defines who your agent is — persona, tone, and boundaries. It replaces per-session system prompts in agent mode and is loaded when an agent session starts.": "Soul은 에이전트가 누구인지 — 페르소나, 말투, 경계를 정의합니다. 에이전트 모드에서 세션별 시스템 프롬프트를 대체하며, 에이전트 세션이 시작될 때 로드됩니다.",
   "Agent": "에이전트",

@@ -1363,7 +1363,7 @@
   "Reset to template": "重置为模板",
   "Unsaved changes": "有未保存的更改",
   "Memories": "记忆",
-  "Facts the agent saved from your conversations. They are loaded into new agent sessions; deleting one only affects future sessions.": "智能体从对话中保存的事实。它们会被加载到新的智能体会话中；删除只影响之后的会话。",
+  "Facts saved from your conversations. They are loaded into new conversations; deleting one only affects future ones.": "从对话中保存的事实。它们会被加载到新的对话中；删除只影响之后的对话。",
   "No memories yet. The agent saves durable facts here as you work together.": "还没有记忆。随着你们的协作，智能体会把长期有用的事实保存在这里。",
   "Soul defines who your agent is — persona, tone, and boundaries. It replaces per-session system prompts in agent mode and is loaded when an agent session starts.": "Soul 定义了你的智能体是谁 — 人格、语气和边界。在智能体模式下它取代每个会话单独的系统提示词，并在智能体会话开始时加载。",
   "Agent": "智能体",

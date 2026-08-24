@@ -24,6 +24,7 @@ export enum ModelProviderEnum {
   LMStudio = 'lm-studio',
   Perplexity = 'perplexity',
   XAI = 'xAI',
+  LLMApi = 'llmapi',
   OpenRouter = 'openrouter',
   Bedrock = 'bedrock',
   VercelAIGateway = 'vercel-ai-gateway',

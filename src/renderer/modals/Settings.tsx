@@ -217,7 +217,11 @@ export const SettingsModal: FC<SettingsModalProps> = (props) => {
       }}
       transitionProps={{ transition: 'fade-up' }}
     >
-      <Flex flex="0 0 auto" className="title-bar border-0 border-b border-chatbox-border-primary border-solid">
+      <Flex
+        flex="0 0 auto"
+        pt="var(--mobile-safe-area-inset-top, 0px)"
+        className="title-bar border-0 border-b border-chatbox-border-primary border-solid"
+      >
         <div className={clsx('flex-[1_1_0]', needRoomForMacWindowControls ? 'min-w-16' : '')} />
         <Flex p="sm" align="center" w={'100%'} maw={1200} gap="xs">
           <Title order={3} flex={1}>

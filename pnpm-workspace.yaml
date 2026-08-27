@@ -18,6 +18,7 @@ supportedArchitectures:
 # Supply chain security: only install packages published at least 7 days ago
 minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
+  - "capacitor-stream-http"
 
 # epub falls back to its pure-JavaScript adm-zip implementation when this
 # deprecated native optional dependency is unavailable.

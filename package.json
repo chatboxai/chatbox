@@ -202,7 +202,7 @@
     "browserslist-config-erb": "^0.0.3",
     "canvas-confetti": "^1.9.4",
     "capacitor-plugin-safe-area": "^4.0.0",
-    "capacitor-stream-http": "^0.1.0",
+    "capacitor-stream-http": "^0.1.1",
     "chalk": "^4.1.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",

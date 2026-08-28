@@ -1287,5 +1287,12 @@
   "Pause after every {{count}} steps": "{{count}}단계마다 일시 중지",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "긴 작업은 {{count}}단계마다 일시 중지되어 확인을 요청하므로 작업이 올바르게 진행되고 있는지 확인할 수 있습니다. 끄면 중단 없이 실행됩니다.",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "긴 작업은 {{count}}단계마다 일시 중지되어 확인을 요청하므로 작업이 올바르게 진행되고 있는지 확인할 수 있습니다. 각 채팅의 대화 설정에서 개별적으로 변경할 수 있습니다.",
-  "{{count}} operation(s) awaiting approval": "{{count}}개의 작업이 승인 대기 중"
+  "{{count}} operation(s) awaiting approval": "{{count}}개의 작업이 승인 대기 중",
+  "New Folder": "새 폴더",
+  "Move to Folder": "폴더로 이동",
+  "Remove from Folder": "폴더에서 제거",
+  "Rename Folder": "폴더 이름 바꾸기",
+  "Delete Folder": "폴더 삭제",
+  "Folder Name": "폴더 이름",
+  "No folders yet. Create one to group your conversations.": "아직 폴더가 없습니다. 대화를 정리할 폴더를 만들어 보세요."
 }

@@ -1287,5 +1287,12 @@
   "Pause after every {{count}} steps": "{{count}} ステップごとに一時停止",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "長時間のタスクは {{count}} ステップごとに一時停止して確認を求めるため、順調に進んでいるかチェックできます。オフにすると中断なしで実行されます。",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "長時間のタスクは {{count}} ステップごとに一時停止して確認を求めるため、順調に進んでいるかチェックできます。チャットごとに会話設定で個別に上書きできます。",
-  "{{count}} operation(s) awaiting approval": "{{count}}件の操作が承認待ち"
+  "{{count}} operation(s) awaiting approval": "{{count}}件の操作が承認待ち",
+  "New Folder": "新規フォルダー",
+  "Move to Folder": "フォルダーに移動",
+  "Remove from Folder": "フォルダーから取り出す",
+  "Rename Folder": "フォルダーの名前を変更",
+  "Delete Folder": "フォルダーを削除",
+  "Folder Name": "フォルダー名",
+  "No folders yet. Create one to group your conversations.": "フォルダーがまだありません。会話をまとめるフォルダーを作成しましょう。"
 }

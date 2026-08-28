@@ -1287,5 +1287,12 @@
   "Pause after every {{count}} steps": "Pause toutes les {{count}} étapes",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "Les tâches longues se mettent en pause toutes les {{count}} étapes pour confirmation, afin de vérifier qu'elles sont sur la bonne voie. Désactivez cette option pour les laisser s'exécuter sans interruption.",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "Les tâches longues se mettent en pause toutes les {{count}} étapes pour confirmation, afin de vérifier qu'elles sont sur la bonne voie. Chaque discussion peut remplacer ce réglage dans ses paramètres de conversation.",
-  "{{count}} operation(s) awaiting approval": "{{count}} opération(s) en attente d'approbation"
+  "{{count}} operation(s) awaiting approval": "{{count}} opération(s) en attente d'approbation",
+  "New Folder": "Nouveau dossier",
+  "Move to Folder": "Déplacer vers le dossier",
+  "Remove from Folder": "Retirer du dossier",
+  "Rename Folder": "Renommer le dossier",
+  "Delete Folder": "Supprimer le dossier",
+  "Folder Name": "Nom du dossier",
+  "No folders yet. Create one to group your conversations.": "Aucun dossier pour le moment. Créez-en un pour regrouper vos conversations."
 }

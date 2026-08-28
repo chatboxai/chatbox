@@ -7,7 +7,7 @@ import {
   type Session,
   type SessionMeta,
 } from '@shared/types'
-import { areSessionsInSamePinGroup } from '@shared/utils/session-sort'
+import { areSessionsInSameDragGroup } from '@shared/utils/session-sort'
 import { getDefaultStore } from 'jotai'
 import { omit } from 'lodash'
 import platform from '@/platform'
@@ -145,28 +145,32 @@ export function switchCurrentSession(sessionId: string) {
 
 /**
  * Reorder sessions in the list using fractional indexing.
- * Computes a new sortOrder for the moved item based on its new neighbors.
+ * Moves the dragged session (activeId) onto the position of overId, guarded to
+ * the same visual drag group (both pinned, or both in the same folder / unfiled).
  */
-export async function reorderSessions(oldIndex: number, newIndex: number) {
-  console.debug('sessionActions', 'reorderSessions', oldIndex, newIndex)
+export async function reorderSessions(activeId: string, overId: string) {
+  console.debug('sessionActions', 'reorderSessions', activeId, overId)
+  if (activeId === overId) return
   const sessions = await chatStore.listSessionsMeta()
-  const movedSession = sessions[oldIndex]
-  if (!movedSession || oldIndex === newIndex) return
-  const reorderedSessions = [...sessions]
-  reorderedSessions.splice(oldIndex, 1)
-  reorderedSessions.splice(newIndex, 0, movedSession)
-  const targetSession = reorderedSessions[newIndex]
-  const nextStarred = targetSession?.starred ?? movedSession.starred
+  const activeSession = sessions.find((s) => s.id === activeId)
+  const overSession = sessions.find((s) => s.id === overId)
+  if (!activeSession || !overSession) return
+  if (!areSessionsInSameDragGroup(activeSession, overSession)) return
 
-  const comparableReordered = reorderedSessions.filter((s) => areSessionsInSamePinGroup(s, movedSession))
-  const targetGroupIndex = comparableReordered.findIndex((s) => s.id === movedSession.id)
-  const before = comparableReordered[targetGroupIndex - 1]
-  const after = comparableReordered[targetGroupIndex + 1]
+  // Fractional indexing within the shared drag group; group order is sortOrder descending.
+  const groupSessions = sessions.filter((s) => areSessionsInSameDragGroup(s, activeSession))
+  const activeIndex = groupSessions.findIndex((s) => s.id === activeId)
+  const overIndex = groupSessions.findIndex((s) => s.id === overId)
+  if (activeIndex < 0 || overIndex < 0) return
+  const reordered = [...groupSessions]
+  reordered.splice(activeIndex, 1)
+  reordered.splice(overIndex, 0, activeSession)
+  const targetIndex = reordered.findIndex((s) => s.id === activeId)
+  const before = reordered[targetIndex - 1]
+  const after = reordered[targetIndex + 1]
 
   let newSortOrder: number
-  if (targetGroupIndex < 0 || reorderedSessions.length === 0) {
-    return
-  } else if (!before && !after) {
+  if (!before && !after) {
     newSortOrder = Date.now()
   } else if (!before) {
     newSortOrder = after.sortOrder + 1000
@@ -176,16 +180,10 @@ export async function reorderSessions(oldIndex: number, newIndex: number) {
     newSortOrder = (before.sortOrder + after.sortOrder) / 2
   }
 
-  if (nextStarred !== movedSession.starred) {
-    await chatStore.updateSession(movedSession.id, { starred: nextStarred })
-  }
-
   const metaStorage = await chatStore.getMetaStorage()
-  await metaStorage.update(movedSession.id, { sortOrder: newSortOrder, starred: nextStarred })
+  await metaStorage.update(activeSession.id, { sortOrder: newSortOrder })
   chatStore.updateSessionListData((items) => {
-    const updated = items.map((s) =>
-      s.id === movedSession.id ? { ...s, sortOrder: newSortOrder, starred: nextStarred } : s
-    )
+    const updated = items.map((s) => (s.id === activeSession.id ? { ...s, sortOrder: newSortOrder } : s))
     return sortSessionRecords(updated)
   })
 }

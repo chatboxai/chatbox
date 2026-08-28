@@ -1287,5 +1287,12 @@
   "Pause after every {{count}} steps": "每 {{count}} 步暫停確認",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "長任務每執行 {{count}} 步會暫停等待確認，方便你檢查任務是否在正軌上。關閉後任務將不間斷執行。",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "長任務每執行 {{count}} 步會暫停等待確認，方便你檢查任務是否在正軌上。各對話可在其對話設定中個別覆寫此設定。",
-  "{{count}} operation(s) awaiting approval": "{{count}} 個操作等待批准"
+  "{{count}} operation(s) awaiting approval": "{{count}} 個操作等待批准",
+  "New Folder": "新增資料夾",
+  "Move to Folder": "移動到資料夾",
+  "Remove from Folder": "移出資料夾",
+  "Rename Folder": "重新命名資料夾",
+  "Delete Folder": "刪除資料夾",
+  "Folder Name": "資料夾名稱",
+  "No folders yet. Create one to group your conversations.": "還沒有資料夾。建立一個來歸納你的對話吧。"
 }

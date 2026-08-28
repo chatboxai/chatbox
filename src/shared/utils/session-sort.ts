@@ -8,6 +8,22 @@ export function areSessionsInSamePinGroup(
 }
 
 /**
+ * Drag-reorder guard for the folder-aware sidebar: two sessions can only swap
+ * positions when they share the same visual group — both pinned, or both
+ * unpinned and filed into the same folder (null folderId = unfiled "Chats").
+ */
+export function areSessionsInSameDragGroup(
+  first: Pick<SessionMeta, 'starred' | 'folderId'> | undefined,
+  second: Pick<SessionMeta, 'starred' | 'folderId'> | undefined
+): boolean {
+  if (first === undefined || second === undefined) return false
+  if (first.starred === true || second.starred === true) {
+    return first.starred === true && second.starred === true
+  }
+  return (first.folderId ?? null) === (second.folderId ?? null)
+}
+
+/**
  * Session list ordering shared by the renderer sidebar and the native mobile
  * drawer: hidden sessions are dropped, starred sessions pin to the top, the
  * rest reverse to newest-first.

@@ -8,6 +8,8 @@ import ConfirmModal from './ConfirmModal'
 import ContentViewer from './ContentViewer'
 import ExportChat from './ExportChat'
 import FileParseError from './FileParseError'
+import FolderPicker from './FolderPicker'
+import FolderSettings from './FolderSettings'
 import JsonViewer from './JsonViewer'
 import MessageEdit from './MessageEdit'
 import ModelEdit from './ModelEdit'
@@ -25,6 +27,8 @@ NiceModal.register('session-settings', SessionSettings)
 NiceModal.register('app-store-rating', AppStoreRating)
 NiceModal.register('artifact-preview', ArtifactPreview)
 NiceModal.register('clear-session-list', ClearSessionList)
+NiceModal.register('folder-settings', FolderSettings)
+NiceModal.register('folder-picker', FolderPicker)
 NiceModal.register('confirm', ConfirmModal)
 NiceModal.register('export-chat', ExportChat)
 NiceModal.register('message-edit', MessageEdit)

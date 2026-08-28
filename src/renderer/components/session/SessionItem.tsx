@@ -3,7 +3,7 @@ import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Box, Flex, Text } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
-import { IconArchive, IconArrowsMoveVertical, IconLoader2, IconPinned, IconPinnedFilled } from '@tabler/icons-react'
+import { IconArchive, IconArrowsMoveVertical, IconFolder, IconLoader2, IconPinned, IconPinnedFilled } from '@tabler/icons-react'
 import clsx from 'clsx'
 import dayjs from 'dayjs'
 import { type MouseEvent, memo, type PointerEvent, useRef, useState } from 'react'
@@ -206,6 +206,13 @@ function SessionItem(props: Props) {
       },
     },
     {
+      text: t('Move to Folder') || '',
+      icon: IconFolder,
+      onClick: () => {
+        void NiceModal.show('folder-picker', { sessionId: session.id })
+      },
+    },
+    {
       text: t('Adjust order') || '',
       icon: IconArrowsMoveVertical,
       disabled: !props.onStartReordering,
@@ -304,6 +311,23 @@ function SessionItem(props: Props) {
       )}
 
       <Flex gap={2} className={clsx(isSmallScreen ? 'hidden' : 'group-hover/session-item:flex hidden')}>
+        <Tooltip label={t('Move to Folder')} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
+          <ActionIcon
+            aria-label={t('Move to Folder')}
+            variant="transparent"
+            size={20}
+            color="chatbox-tertiary"
+            onPointerDown={stopItemClick}
+            onClick={(event) => {
+              stopItemClick(event)
+              dismissActionTooltip()
+              void NiceModal.show('folder-picker', { sessionId: session.id })
+            }}
+          >
+            <ScalableIcon icon={IconFolder} className="text-inherit" size={16} />
+          </ActionIcon>
+        </Tooltip>
+
         <Tooltip label={pinActionLabel} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
           <ActionIcon
             data-testid={TestId.sidebar.sessionPin}

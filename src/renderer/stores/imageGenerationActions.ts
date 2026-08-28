@@ -3,6 +3,7 @@ import { getModel } from '@shared/providers'
 import type { ImageGeneration, ImageGenerationModel, ImageGenerationSource } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types'
 import { createModelDependencies } from '@/adapters'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { normalizePlausibleModel, normalizePlausibleProvider } from '@/analytics/plausible'
 import { getLogger } from '@/lib/utils'
 import {
@@ -13,7 +14,6 @@ import {
   submitImageGeneration,
 } from '@/packages/remote'
 import platform from '@/platform'
-import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { trackEvent } from '@/utils/track'
 import {
@@ -355,7 +355,7 @@ async function generateImagesDirect(recordId: string, params: GenerateImageParam
       signal,
       async (picBase64: string) => {
         const storageKey = StorageKeyGenerator.picture(`image-gen:${recordId}`)
-        await storage.setBlob(storageKey, picBase64)
+        await currentBlobStorage.set(storageKey, picBase64)
         const updated = await addGeneratedImage(recordId, storageKey)
         if (updated) {
           queryClient.setQueryData([IMAGE_GEN_QUERY_KEY, recordId], updated)
@@ -371,7 +371,7 @@ async function generateImagesDirect(recordId: string, params: GenerateImageParam
       if (existingCount < resultDataUrls.length) {
         for (let i = existingCount; i < resultDataUrls.length; i++) {
           const storageKey = StorageKeyGenerator.picture(`image-gen:${recordId}`)
-          await storage.setBlob(storageKey, resultDataUrls[i])
+          await currentBlobStorage.set(storageKey, resultDataUrls[i])
           await addGeneratedImage(recordId, storageKey)
         }
       }

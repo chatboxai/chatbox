@@ -2,9 +2,9 @@ import type { ImageGeneration } from '@shared/types'
 import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query'
 import { v4 as uuidv4 } from 'uuid'
 import { createStore, useStore } from 'zustand'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
-import blobStorage from '@/storage'
 import type { ImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 
 const log = getLogger('image-generation-store')
@@ -175,7 +175,7 @@ export async function deleteRecord(id: string): Promise<void> {
       // Avoid deleting unrelated blobs.
       if (!key.startsWith('picture:image-gen:') && !key.startsWith('picture:image-creator-ref:')) continue
       try {
-        await blobStorage.delBlob(key)
+        await currentBlobStorage.remove(key)
       } catch (e) {
         log.error('Failed to delete blob for record cleanup:', key, e)
       }

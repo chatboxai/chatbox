@@ -5,13 +5,13 @@ import {
   stringifyDataForExport,
   type ToolCallSummary,
 } from '@chatbox/core/utils/chat-export'
-import type { Message, Session } from '@shared/types'
 import { MantineProvider } from '@mantine/core'
+import type { Message, Session } from '@shared/types'
 import { escape as escapeHtml } from 'lodash'
 import ReactDOMServer from 'react-dom/server'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import Markdown, { BlockCodeCollapsedStateProvider } from '@/components/Markdown'
 import * as base64 from '@/packages/base64'
-import storage from '@/storage'
 
 // Plain-text Markdown / TXT exporters are shared with the native mobile shell.
 export { formatChatAsMarkdown, formatChatAsTxt } from '@chatbox/core/utils/chat-export'
@@ -69,7 +69,7 @@ async function renderMessageHtml(message: Message): Promise<string> {
       )
     } else if (part.type === 'image' && part.storageKey) {
       let url = ''
-      const b64 = await storage.getBlob(part.storageKey)
+      const b64 = await currentBlobStorage.get(part.storageKey)
       if (b64) {
         let { type, data } = base64.parseImage(b64)
         if (type === '') {

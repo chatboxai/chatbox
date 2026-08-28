@@ -133,6 +133,20 @@ describe('CurrentSessionRepository contract', () => {
     expect(harness.setItemNow).toHaveBeenCalledWith('session:session-1', session)
   })
 
+  test('reports full-session write failures with operation and session context', async () => {
+    const cause = new Error('session write failed')
+    harness.setItemNow.mockRejectedValueOnce(cause)
+
+    const error = await harness.repository.setSession(createSession()).catch((reason: unknown) => reason)
+
+    expect(error).toBeInstanceOf(SessionRepositoryError)
+    expect(error).toMatchObject({
+      operation: 'set-session',
+      sessionId: 'session-1',
+      cause,
+    })
+  })
+
   test('reads and migrates sessions using the current compatibility path', async () => {
     const persisted = createSession()
     harness.values.set('session:session-1', persisted)

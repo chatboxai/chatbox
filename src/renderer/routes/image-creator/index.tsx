@@ -26,6 +26,7 @@ import {
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ImageModelSelect } from '@/components/ImageModelSelect'
@@ -36,7 +37,6 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import useVersion from '@/hooks/useVersion'
 import { getLogger } from '@/lib/utils'
 import { resumeImageGenerationWithFollowUp } from '@/packages/chatbox-cli/image-task-follow-up'
-import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { cancelGeneration, createAndGenerate, retryGeneration } from '@/stores/imageGenerationActions'
@@ -277,7 +277,7 @@ export function ImageCreatorPage() {
     await Promise.all(
       keys.map(async (key) => {
         try {
-          await storage.delBlob(key)
+          await currentBlobStorage.remove(key)
         } catch (e) {
           log.error('Failed to cleanup temp reference image blob:', key, e)
         }
@@ -334,7 +334,7 @@ export function ImageCreatorPage() {
         const dataUrl = e.target?.result as string
         const storageKey = StorageKeyGenerator.picture('image-creator-ref')
         try {
-          await storage.setBlob(storageKey, dataUrl)
+          await currentBlobStorage.set(storageKey, dataUrl)
         } catch (err) {
           log.error('Failed to store uploaded reference image:', err)
           return
@@ -359,7 +359,9 @@ export function ImageCreatorPage() {
     setReferenceImages((prev) => prev.filter((img) => img.storageKey !== storageKey))
     if (current?.isTempUpload) {
       tempUploadKeysRef.current.delete(storageKey)
-      void storage.delBlob(storageKey).catch((e) => log.error('Failed to delete temp reference image blob:', e))
+      void currentBlobStorage
+        .remove(storageKey)
+        .catch((e) => log.error('Failed to delete temp reference image blob:', e))
     }
   }, [])
 

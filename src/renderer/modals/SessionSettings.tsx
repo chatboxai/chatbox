@@ -9,6 +9,7 @@ import { IconTrash, IconUpload } from '@tabler/icons-react'
 import { pick } from 'lodash'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { rendererApplication } from '@/app/renderer-application'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import { AssistantAvatar } from '@/components/common/Avatar'
@@ -22,7 +23,6 @@ import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { trackingEvent } from '@/packages/event'
-import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
 import { getSessionMeta } from '@/stores/sessionHelpers'
@@ -104,13 +104,13 @@ const SessionSettingsModal = NiceModal.create(
       }
       return target
     }
-    const onSave = () => {
+    const onSave = async () => {
       if (!session || !editingData) {
         return
       }
 
       if (!disableAutoSave) {
-        void rendererApplication.sessions.updateSessionWithMessages(editingData.id, (s) => {
+        await rendererApplication.sessions.updateSessionWithMessages(editingData.id, (s) => {
           const merged = {
             ...(s ?? {}),
             ...getSessionMeta(editingData),
@@ -119,6 +119,8 @@ const SessionSettingsModal = NiceModal.create(
 
           return applySessionChanges(merged)
         })
+        // Background keys may be shared by copied or Copilot-created Sessions.
+        // Global orphan cleanup reclaims the blob after every reference is gone.
       } else {
         applySessionChanges(editingData)
       }
@@ -166,7 +168,7 @@ const SessionSettingsModal = NiceModal.create(
                     file,
                     key,
                     () => setEditingData((prev) => ({ ...prev, assistantAvatarKey: key }) as typeof prev),
-                    (k, v) => storage.setBlob(k, v)
+                    (k, v) => currentBlobStorage.set(k, v)
                   )
                 }
               }}
@@ -319,7 +321,7 @@ const SessionSettingsModal = NiceModal.create(
                         key,
                         () =>
                           setEditingData({ ...editingData, backgroundImage: { type: 'storage-key', storageKey: key } }),
-                        (k, v) => storage.setBlob(k, v)
+                        (k, v) => currentBlobStorage.set(k, v)
                       )
                     }
                   }}
@@ -348,12 +350,10 @@ const SessionSettingsModal = NiceModal.create(
                       className="absolute"
                       onClick={() => {
                         if (editingData.backgroundImage) {
-                          if (editingData.backgroundImage.type === 'storage-key') {
-                            storage.removeItem(editingData.backgroundImage.storageKey)
-                          }
                           setEditingData({ ...editingData, backgroundImage: undefined })
                         }
                       }}
+                      aria-label={t('Delete')}
                     >
                       <ScalableIcon icon={IconTrash} size={16} />
                     </ActionIcon>
@@ -392,7 +392,9 @@ export function ChatConfig({
     <Stack gap="md">
       <MaxContextMessageCountSlider
         inputTestId={TestId.settings.sessionMaxContext}
-        value={settings?.maxContextMessageCount ?? chatSessionSettings().maxContextMessageCount!}
+        value={
+          settings?.maxContextMessageCount ?? chatSessionSettings().maxContextMessageCount ?? Number.MAX_SAFE_INTEGER
+        }
         onChange={(v) => onSettingsChange({ maxContextMessageCount: v })}
       />
 

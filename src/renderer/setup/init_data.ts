@@ -1,9 +1,7 @@
+import { CurrentSessionRepository } from '@/adapters/CurrentSessionRepository'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import platform from '@/platform'
-import storage from '@/storage'
-import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { getMetaStorage } from '@/stores/sessionHelpers'
-import { getSessionMeta } from '@/stores/sessionHelpers'
+import { getMetaStorage, getSessionMeta } from '@/stores/sessionHelpers'
 import { createSessionMetaRecordsFromLegacyList } from '@/utils/session-utils'
 
 export async function initData() {
@@ -19,9 +17,10 @@ async function initSessionsIfNeeded() {
 
   const lang = await platform.getLocale().catch(() => 'en')
   const defaultSessions = lang.startsWith('zh') ? defaultSessionsForCN : defaultSessionsForEN
+  const sessionRepository = new CurrentSessionRepository({ metaStorage })
 
   for (const session of defaultSessions) {
-    await storage.setItemNow(StorageKeyGenerator.session(session.id), session)
+    await sessionRepository.setSession(session)
   }
 
   const records = createSessionMetaRecordsFromLegacyList(defaultSessions.map(getSessionMeta))

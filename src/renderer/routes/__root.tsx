@@ -33,6 +33,7 @@ import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useSetAtom } from 'jotai'
 import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { trackJkViewEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { createPageViewVisitGate } from '@/analytics/page-view-visit-gate'
@@ -63,7 +64,6 @@ import SearchDialog from '@/pages/SearchDialog'
 import platform from '@/platform'
 import { getSettingsSearchParam, navigateToDynamicPath, router } from '@/router'
 import Sidebar from '@/Sidebar'
-import storage from '@/storage'
 import * as atoms from '@/stores/atoms'
 
 const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
@@ -104,7 +104,7 @@ function BackgroundImageOverlay() {
     queryKey: ['image-in-storage', effectiveKey],
     queryFn: async () => {
       if (!effectiveKey) return null
-      const b = await storage.getBlob(effectiveKey).catch(() => null)
+      const b = await currentBlobStorage.get(effectiveKey).catch(() => null)
       return b ?? null
     },
     enabled: !!effectiveKey,
@@ -198,7 +198,6 @@ function Root() {
     if (initialized.current) {
       return
     }
-    // biome-ignore lint/nursery/noFloatingPromises: inline call
     ;(async () => {
       // Wait for stores to hydrate from persistent storage
       await Promise.all([initSettingsStore(), initOnboardingStore()])
@@ -349,7 +348,6 @@ function Root() {
       })
     }
 
-    // biome-ignore lint/nursery/noFloatingPromises: analytics tracking
     trackPageView()
   }, [location.pathname, pageViewSessionLoadTarget, settingsSearch])
 

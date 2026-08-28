@@ -60,7 +60,7 @@
     "format": "biome format --write",
     "check:biome": "biome check",
     "check:ci": "biome ci",
-    "check:shared-boundaries": "node scripts/check-shared-boundaries.mjs",
+    "check:shared-boundaries": "node --test scripts/check-shared-boundaries.test.mjs && node scripts/check-shared-boundaries.mjs",
     "mobile:sync": "pnpm run mobile:sync:ios && pnpm run mobile:sync:android",
     "mobile:sync:ios": "cross-env CHATBOX_BUILD_TARGET=mobile_app CHATBOX_BUILD_PLATFORM=ios pnpm run build:renderer && pnpm run delete-sourcemaps && npx cap sync ios",
     "mobile:sync:android": "cross-env CHATBOX_BUILD_TARGET=mobile_app CHATBOX_BUILD_PLATFORM=android pnpm run build:renderer && pnpm run delete-sourcemaps && npx cap sync android",

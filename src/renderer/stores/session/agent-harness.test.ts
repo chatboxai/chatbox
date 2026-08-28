@@ -19,6 +19,23 @@ const { discoverSkillsMock, getSettingsMock, mcpToolsMock, sandboxProviderMock, 
   })
 )
 
+const storageMock = vi.hoisted(() => {
+  const values = new Map<string, unknown>()
+  return {
+    getBlob: vi.fn().mockResolvedValue(null),
+    setBlob: vi.fn().mockResolvedValue(undefined),
+    getItem: vi.fn((key: string, initialValue: unknown) => Promise.resolve(values.get(key) ?? initialValue)),
+    setItem: vi.fn((key: string, value: unknown) => {
+      values.set(key, value)
+      return Promise.resolve()
+    }),
+    setItemNow: vi.fn((key: string, value: unknown) => {
+      values.set(key, value)
+      return Promise.resolve()
+    }),
+  }
+})
+
 vi.hoisted(() => {
   const storage = {
     getItem: () => null,
@@ -46,21 +63,8 @@ vi.mock('@/platform', () => ({
 vi.mock('@/storage', () => {
   // In-memory store: agentPersonaStore reads soul/memories through it when
   // capturing the agent persona snapshot.
-  const values = new Map<string, unknown>()
   return {
-    default: {
-      getBlob: vi.fn().mockResolvedValue(null),
-      setBlob: vi.fn().mockResolvedValue(undefined),
-      getItem: vi.fn((key: string, initialValue: unknown) => Promise.resolve(values.get(key) ?? initialValue)),
-      setItem: vi.fn((key: string, value: unknown) => {
-        values.set(key, value)
-        return Promise.resolve()
-      }),
-      setItemNow: vi.fn((key: string, value: unknown) => {
-        values.set(key, value)
-        return Promise.resolve()
-      }),
-    },
+    default: storageMock,
     StorageKey: { MyCopilots: 'myCopilots' },
   }
 })
@@ -1696,8 +1700,9 @@ describe('chat mode memories', () => {
   })
 
   test('captures a memories snapshot on first chat generation when memories exist', async () => {
-    const storage = (await import('@/storage')).default
-    await storage.setItemNow('agent-memories', [{ id: 'm2', content: 'Timezone is UTC+8', createdAt: 1700000000000 }])
+    await storageMock.setItemNow('agent-memories', [
+      { id: 'm2', content: 'Timezone is UTC+8', createdAt: 1700000000000 },
+    ])
     const persistSessionPromptContextSnapshot = vi.fn()
     const prepared = await chatPrepare(
       { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' } as SessionSettings,
@@ -1754,8 +1759,7 @@ describe('chat mode memories', () => {
   })
 
   test('does not capture mid-conversation even when memories appear', async () => {
-    const storage = (await import('@/storage')).default
-    await storage.setItemNow('agent-memories', [
+    await storageMock.setItemNow('agent-memories', [
       { id: 'm3', content: 'Appeared mid-conversation', createdAt: 1700000000000 },
     ])
     const persistSessionPromptContextSnapshot = vi.fn()
@@ -1772,12 +1776,11 @@ describe('chat mode memories', () => {
     )
     expect(persistSessionPromptContextSnapshot).not.toHaveBeenCalled()
     expect(JSON.stringify(prepared.coreMessages)).not.toContain('Appeared mid-conversation')
-    await storage.setItemNow('agent-memories', [])
+    await storageMock.setItemNow('agent-memories', [])
   })
 
   test('skips snapshot capture entirely when no memories exist', async () => {
-    const storage = (await import('@/storage')).default
-    await storage.setItemNow('agent-memories', [])
+    await storageMock.setItemNow('agent-memories', [])
     const persistSessionPromptContextSnapshot = vi.fn()
     const prepared = await chatPrepare(
       { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' } as SessionSettings,
@@ -1789,12 +1792,13 @@ describe('chat mode memories', () => {
   })
 
   test('copilot memory replaces the global store even when the global switch is off', async () => {
-    const storage = (await import('@/storage')).default
     await enableCopilotMemory({ id: 'cp1', name: 'Tutor' })
-    await storage.setItemNow('copilot-memories', {
+    await storageMock.setItemNow('copilot-memories', {
       cp1: [{ id: 'cm1', content: 'Copilot-only fact', createdAt: 1700000000000 }],
     })
-    await storage.setItemNow('agent-memories', [{ id: 'gm1', content: 'Global-only fact', createdAt: 1700000000000 }])
+    await storageMock.setItemNow('agent-memories', [
+      { id: 'gm1', content: 'Global-only fact', createdAt: 1700000000000 },
+    ])
     getSettingsMock.mockReturnValue({ skills: { enabledSkillNames: [] }, memoryEnabled: false })
     const persistSessionPromptContextSnapshot = vi.fn()
     const prepared = await prepareAgentGenerationHarness({
@@ -1824,17 +1828,18 @@ describe('chat mode memories', () => {
     expect(prepared.tools.save_memory).toBeDefined()
 
     await disableCopilotMemory('cp1')
-    await storage.setItemNow('copilot-memories', {})
-    await storage.setItemNow('agent-memories', [])
+    await storageMock.setItemNow('copilot-memories', {})
+    await storageMock.setItemNow('agent-memories', [])
   })
 
   test('a copilot without its own memory keeps the session on the global store', async () => {
-    const storage = (await import('@/storage')).default
     await addOrUpdateMyCopilot({ id: 'cp1', name: 'Tutor', prompt: 'persona' })
-    await storage.setItemNow('copilot-memories', {
+    await storageMock.setItemNow('copilot-memories', {
       cp1: [{ id: 'cm1', content: 'Copilot-only fact', createdAt: 1700000000000 }],
     })
-    await storage.setItemNow('agent-memories', [{ id: 'gm1', content: 'Global-only fact', createdAt: 1700000000000 }])
+    await storageMock.setItemNow('agent-memories', [
+      { id: 'gm1', content: 'Global-only fact', createdAt: 1700000000000 },
+    ])
     const persistSessionPromptContextSnapshot = vi.fn()
     const prepared = await chatPrepare(
       { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' } as SessionSettings,
@@ -1850,8 +1855,8 @@ describe('chat mode memories', () => {
     expect(serialized).not.toContain('Copilot-only fact')
 
     await removeMyCopilot('cp1')
-    await storage.setItemNow('copilot-memories', {})
-    await storage.setItemNow('agent-memories', [])
+    await storageMock.setItemNow('copilot-memories', {})
+    await storageMock.setItemNow('agent-memories', [])
   })
 
   test('reloads global memory after a copilot memory round trip', async () => {

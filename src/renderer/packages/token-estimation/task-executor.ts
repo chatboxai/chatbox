@@ -1,4 +1,5 @@
 import type { Session } from '@shared/types'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import {
@@ -6,7 +7,6 @@ import {
   buildAttachmentWrapperSuffix,
   PREVIEW_LINES,
 } from '@/packages/context-management/attachment-payload'
-import storage from '@/storage'
 import { computationQueue } from './computation-queue'
 import {
   estimateDraftTokensImmediately,
@@ -170,7 +170,7 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
 
   let content: string | null = null
   try {
-    content = await storage.getBlob(storageKey)
+    content = await currentBlobStorage.get(storageKey)
   } catch (error) {
     log.debug('Failed to retrieve attachment content', { taskId: task.id, attachmentId, error })
     return {

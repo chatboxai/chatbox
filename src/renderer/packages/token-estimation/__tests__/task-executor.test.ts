@@ -1,5 +1,6 @@
 import type { Message, Session } from '@shared/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { computationQueue } from '../computation-queue'
 import { estimateDraftTokensImmediately, getTokenizationTextDigest } from '../draft-tokenization'
 import { _resetExactTokenizationFallbacks, getExactTokenizationFallbackCount } from '../exact-retry'
@@ -15,20 +16,12 @@ vi.mock('@/app/renderer-application', () => ({
   rendererApplication: { sessionQueryBridge: { getSession: getSessionMock } },
 }))
 
-vi.mock('@/storage', () => ({
-  default: {
-    getBlob: vi.fn(),
-  },
-}))
-
 vi.mock('../draft-tokenizer-worker-client', () => ({
   tokenizeDraftOffMainThread: tokenizeDraftMock,
 }))
 
-import storage from '@/storage'
-
 const mockGetSession = getSessionMock
-const mockGetBlob = vi.mocked(storage.getBlob)
+const mockGetBlob = vi.spyOn(currentBlobStorage, 'get')
 
 function createMessage(overrides: Partial<Message> = {}): Message {
   return {

@@ -1,9 +1,9 @@
 import { type ImageGeneration, ModelProviderEnum } from '@shared/types'
+import { rendererApplication } from '@/app/renderer-application'
 import { requestAppActionApproval } from '@/packages/app-action-approval'
 import { type AvailableImageModel, getAvailableImageModels } from '@/packages/image-model-catalog'
 import platform from '@/platform'
 import storage from '@/storage'
-import { rendererApplication } from '@/app/renderer-application'
 import { startImageGeneration } from '@/stores/imageGenerationActions'
 import { imageGenerationStore } from '@/stores/imageGenerationStore'
 import { settingsStore } from '@/stores/settingsStore'
@@ -27,10 +27,6 @@ interface PersistedImageExecution {
 interface ImageExecutionSignature {
   provider: string
   modelId: string
-}
-
-function imageExecutionStorageKey(sessionId: string, toolCallId: string): string {
-  return `${IMAGE_EXECUTION_STORAGE_PREFIX}:${sessionId}:${toolCallId}`
 }
 
 function isPersistedImageExecution(value: unknown): value is PersistedImageExecution {
@@ -342,7 +338,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
   const dalleStyle = approvedRequest?.style ?? parsedStyle
 
   const cacheKey = `${sessionId}:${toolCallId}`
-  const persistedExecutionKey = imageExecutionStorageKey(sessionId, toolCallId)
+  const persistedExecutionKey = `${IMAGE_EXECUTION_STORAGE_PREFIX}:${sessionId}:${toolCallId}`
   const existing = executionCache.get(cacheKey)
   const persistedExecutionValue = existing ? null : await storage.getItem<unknown>(persistedExecutionKey, null)
   if (persistedExecutionValue !== null && !isPersistedImageExecution(persistedExecutionValue)) {

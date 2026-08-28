@@ -6,6 +6,7 @@ import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION } from '@shared/utils/tool-call-limi
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { AssistantAvatar, UserAvatar } from '@/components/common/Avatar'
 import { Divider } from '@/components/common/Divider'
 import MaxContextMessageCountSlider from '@/components/common/MaxContextMessageCountSlider'
@@ -15,7 +16,6 @@ import { TooltipInfoTrigger } from '@/components/common/TooltipInfoTrigger'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { languageNameMap } from '@/i18n/locales'
-import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
@@ -62,7 +62,7 @@ export function RouteComponent() {
                     file,
                     key,
                     () => setSettings({ userAvatarKey: key }),
-                    (k, v) => storage.setBlob(k, v)
+                    (k, v) => currentBlobStorage.set(k, v)
                   )
                 }
               }}
@@ -101,7 +101,7 @@ export function RouteComponent() {
                     file,
                     key,
                     () => setSettings({ defaultAssistantAvatarKey: key }),
-                    (k, v) => storage.setBlob(k, v)
+                    (k, v) => currentBlobStorage.set(k, v)
                   )
                 }
               }}
@@ -246,7 +246,7 @@ export function RouteComponent() {
                       file,
                       key,
                       () => setSettings({ backgroundImageKey: key }),
-                      (k, v) => storage.setBlob(k, v)
+                      (k, v) => currentBlobStorage.set(k, v)
                     )
                   }
                 }}

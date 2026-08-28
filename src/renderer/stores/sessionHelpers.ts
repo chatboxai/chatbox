@@ -19,6 +19,7 @@ import { migrateMessage } from '@shared/utils/message'
 import { BrowserAttachmentAdapter } from '@/adapters/BrowserAttachmentAdapter'
 import { CapacitorAttachmentAdapter } from '@/adapters/CapacitorAttachmentAdapter'
 import { DesktopAttachmentAdapter } from '@/adapters/DesktopAttachmentAdapter'
+import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { PREVIEW_LINES } from '@/packages/context-management/attachment-payload'
 import * as localParser from '@/packages/local-parser'
@@ -26,9 +27,9 @@ import * as remote from '@/packages/remote'
 import { estimateTokens } from '@/packages/token'
 import platform from '@/platform'
 import storage from '@/storage'
+import { nonSessionStorageKey } from '@/storage/non-session-key'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { authInfoStore } from '@/stores/authInfoStore'
-import { rendererApplication } from '@/app/renderer-application'
 import { reportError } from '@/utils/sentry'
 import { migrateSession } from '@/utils/session-utils'
 import * as defaults from '../../shared/defaults'
@@ -629,7 +630,7 @@ const attachmentService = new AttachmentService({
     get: <T>(key: string) => storage.getItem<T | null>(key, null),
     async set(key, value) {
       try {
-        await storage.setItem(key, value)
+        await storage.setItem(nonSessionStorageKey(key), value)
       } catch (error) {
         throw normalizeFilePreprocessFailure(error, 'metadata_storage') ?? error
       }
@@ -738,7 +739,7 @@ export async function prepareFileAttachment(
  */
 export async function preprocessLink(
   url: string,
-  settings: SessionSettings
+  _settings: SessionSettings
 ): Promise<{
   url: string
   title: string
@@ -768,7 +769,7 @@ export async function preprocessLink(
 
       const { lineCount, byteLength, tokenCountMap } = computePreviewMetadata(existingContent, existingTokenMap)
 
-      await storage.setItem(`${uniqKey}_tokenMap`, tokenCountMap)
+      await storage.setItem(nonSessionStorageKey(`${uniqKey}_tokenMap`), tokenCountMap)
 
       return {
         url,
@@ -801,7 +802,7 @@ export async function preprocessLink(
 
       // Store token map for future use
       if (content) {
-        await storage.setItem(`${uniqKey}_tokenMap`, tokenCountMap)
+        await storage.setItem(nonSessionStorageKey(`${uniqKey}_tokenMap`), tokenCountMap)
       }
 
       return {
@@ -828,7 +829,7 @@ export async function preprocessLink(
         : { lineCount: undefined, byteLength: undefined, tokenCountMap: {} }
 
       if (content) {
-        await storage.setItem(`${uniqKey}_tokenMap`, tokenCountMap)
+        await storage.setItem(nonSessionStorageKey(`${uniqKey}_tokenMap`), tokenCountMap)
       }
 
       return {

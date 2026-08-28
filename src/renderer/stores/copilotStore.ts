@@ -8,13 +8,14 @@ import {
 } from '@shared/types/agent-persona'
 import { getDefaultStore } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
-import storage, { StorageKey } from '@/storage'
+import storage from '@/storage'
 import { copilotMemoryEpoch, retireCopilotMemories } from './agentPersonaStore'
 
 /** Copilots whose chats keep their own memory list instead of the global one. */
 export const COPILOT_MEMORY_OWNERS_STORAGE_KEY = 'copilot-memory-owners'
 /** Per-Copilot source revision retained across enabled and disabled states. */
 export const COPILOT_MEMORY_TOKENS_STORAGE_KEY = 'copilot-memory-state-tokens'
+const MY_COPILOTS_STORAGE_KEY = 'myCopilots'
 
 export interface CopilotMemoryOwner {
   id: string
@@ -50,13 +51,13 @@ function createMirroredListAtom<T>(key: string, parse?: (value: unknown) => T[])
 
   const listAtom = atomWithStorage<T[]>(key, [], {
     getItem: read,
-    setItem(storageKey: string, value: T[]): Promise<void> {
+    setItem(_storageKey: string, value: T[]): Promise<void> {
       current = value
-      return storage.setItem(storageKey, value)
+      return storage.setItem(key, value)
     },
-    removeItem(storageKey: string): Promise<void> {
+    removeItem(): Promise<void> {
       current = []
-      return storage.removeItem(storageKey)
+      return storage.removeItem(key)
     },
   })
 
@@ -72,7 +73,7 @@ function createMirroredListAtom<T>(key: string, parse?: (value: unknown) => T[])
   return { atom: listAtom, read, update, peek: () => current }
 }
 
-const myCopilots = createMirroredListAtom<CopilotDetail>(StorageKey.MyCopilots)
+const myCopilots = createMirroredListAtom<CopilotDetail>(MY_COPILOTS_STORAGE_KEY)
 const memoryOwners = createMirroredListAtom<CopilotMemoryOwner>(COPILOT_MEMORY_OWNERS_STORAGE_KEY)
 const memoryTokens = createMirroredListAtom<CopilotMemoryStateToken>(
   COPILOT_MEMORY_TOKENS_STORAGE_KEY,

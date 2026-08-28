@@ -3,7 +3,6 @@ import { rendererApplication } from '@/app/renderer-application'
 import { clearScrollPositionCache } from '@/components/chat/MessageList'
 import { sessionStartupRecovery } from '@/packages/session-startup-recovery'
 import platform from '@/platform'
-import { cleanupSessionAtomCache } from '@/stores/atoms/throttleWriteSessionAtom'
 import { clearSessionNameGenerationState, syncSessionAutoTitle } from '@/stores/session/naming'
 import { clearSessionActivity } from '@/stores/sessionActivityStore'
 import { uiStore } from '@/stores/uiStore'
@@ -29,7 +28,6 @@ function cleanupDeletedSessionRuntimeState(sessionId: string): void {
   uiStore.getState().clearSessionWebBrowsing(sessionId)
   uiStore.getState().removeSessionKnowledgeBase(sessionId)
   uiStore.getState().clearSessionAgentMode(sessionId)
-  cleanupSessionAtomCache(sessionId)
   clearScrollPositionCache(sessionId)
   clearSessionNameGenerationState(sessionId)
   clearSessionActivity(sessionId)

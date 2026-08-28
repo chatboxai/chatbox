@@ -7,6 +7,7 @@ import NiceModal from '@ebay/nice-modal-react'
 import {
   type Message,
   type Session,
+  type SessionFolder,
   type SessionMeta,
   type SessionMetaPage,
   type SessionMetaRecord,
@@ -51,6 +52,7 @@ import { UpdateQueue } from './updateQueue'
 export const QueryKeys = {
   ChatSessionsList: ['chat-sessions-list'],
   ArchivedChatSessionsList: ['archived-chat-sessions-list'],
+  SessionFolders: ['session-folders'],
   ChatSession: (id: string) => ['chat-session', id],
   ChatSessionSettings: (id: string) => ['chat-session-settings', id],
 }
@@ -408,6 +410,95 @@ export async function updateSession(sessionId: string, updater: Updater<SessionM
     },
     { preserveCachedGeneratingMessages: true }
   )
+}
+
+// MARK: session folders
+// Folders are a small flat list persisted as a single KV blob (no pagination/indexes needed),
+// unlike session metas which live in SessionMetaStorage.
+
+function sortFolders(folders: SessionFolder[]): SessionFolder[] {
+  return [...folders].sort((a, b) => b.sortOrder - a.sortOrder)
+}
+
+export async function listFolders(): Promise<SessionFolder[]> {
+  const cached = queryClient.getQueryData<SessionFolder[]>(QueryKeys.SessionFolders)
+  if (cached) return cached
+  const folders = sortFolders(await storage.getItem<SessionFolder[]>(StorageKey.SessionFolders, []))
+  queryClient.setQueryData(QueryKeys.SessionFolders, folders)
+  return folders
+}
+
+export function useFolders() {
+  const { data, isLoading } = useQuery({
+    queryKey: QueryKeys.SessionFolders,
+    queryFn: () => listFolders(),
+    staleTime: Infinity,
+  })
+  return { folders: data ?? [], isLoading }
+}
+
+export function updateFoldersData(updater: (folders: SessionFolder[]) => SessionFolder[]) {
+  queryClient.setQueryData<SessionFolder[]>(QueryKeys.SessionFolders, (old) => updater(old ?? []))
+}
+
+async function persistFolders(folders: SessionFolder[]) {
+  await storage.setItemNow(StorageKey.SessionFolders, folders)
+  updateFoldersData(() => folders)
+}
+
+export async function createFolder(name: string): Promise<SessionFolder> {
+  const folders = await listFolders()
+  const folder: SessionFolder = {
+    id: uuidv4(),
+    name,
+    // Place the new folder above existing ones, mirroring how new chats sort to the top.
+    sortOrder: (folders[0]?.sortOrder ?? 0) + 1000,
+    createdAt: Date.now(),
+  }
+  await persistFolders(sortFolders([folder, ...folders]))
+  return folder
+}
+
+export async function renameFolder(folderId: string, name: string) {
+  const folders = await listFolders()
+  await persistFolders(folders.map((f) => (f.id === folderId ? { ...f, name } : f)))
+}
+
+export async function deleteFolder(folderId: string) {
+  // Move member sessions back to the unfiled list before dropping the folder.
+  const sessions = await listAllSessionsMeta()
+  const memberSessions = sessions.filter((s) => s.folderId === folderId)
+  await runInChunks(memberSessions, 20, async (s) => {
+    await updateSession(s.id, { folderId: undefined })
+  })
+  const folders = await listFolders()
+  await persistFolders(folders.filter((f) => f.id !== folderId))
+  uiStore.getState().removeCollapsedFolder(folderId)
+}
+
+export async function reorderFolders(activeId: string, overId: string) {
+  if (activeId === overId) return
+  const folders = await listFolders()
+  const active = folders.find((f) => f.id === activeId)
+  if (!active) return
+  const reordered = folders.filter((f) => f.id !== activeId)
+  const overIndex = reordered.findIndex((f) => f.id === overId)
+  if (overIndex < 0) return
+  reordered.splice(overIndex, 0, active)
+  // Reassign evenly-spaced sort orders so future inserts keep room for midpoints.
+  const base = Date.now()
+  await persistFolders(reordered.map((f, i) => ({ ...f, sortOrder: base + (reordered.length - i) * 1000 })))
+}
+
+export async function moveSessionToFolder(sessionId: string, folderId: string | null) {
+  const session = await getSession(sessionId)
+  if (!session) return
+  if (folderId) {
+    // Pinning and folders are mutually exclusive: unpin when filing into a folder.
+    await updateSession(sessionId, { folderId, starred: undefined })
+  } else {
+    await updateSession(sessionId, { folderId: undefined })
+  }
 }
 
 // only update session cache without touching storage, for performance sensitive usage

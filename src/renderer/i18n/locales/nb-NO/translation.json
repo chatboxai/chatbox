@@ -1287,5 +1287,12 @@
   "Pause after every {{count}} steps": "Pause hvert {{count}}. trinn",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "Lange oppgaver pauses hvert {{count}}. trinn for bekreftelse, slik at du kan sjekke at de er på rett spor. Slå av for å la dem kjøre uten avbrudd.",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "Lange oppgaver pauses hvert {{count}}. trinn for bekreftelse, slik at du kan sjekke at de er på rett spor. Enkeltchatter kan overstyre dette i samtaleinnstillingene sine.",
-  "{{count}} operation(s) awaiting approval": "{{count}} operasjon(er) venter på godkjenning"
+  "{{count}} operation(s) awaiting approval": "{{count}} operasjon(er) venter på godkjenning",
+  "New Folder": "Ny mappe",
+  "Move to Folder": "Flytt til mappe",
+  "Remove from Folder": "Fjern fra mappe",
+  "Rename Folder": "Gi nytt navn til mappe",
+  "Delete Folder": "Slett mappe",
+  "Folder Name": "Mappenavn",
+  "No folders yet. Create one to group your conversations.": "Ingen mapper ennå. Opprett en for å gruppere samtalene dine."
 }

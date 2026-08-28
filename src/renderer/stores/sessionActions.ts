@@ -48,6 +48,14 @@ export {
   stopPausedToolCall,
 } from './session/orchestration'
 export { createLoadingPictures } from './session/pictures'
+// Re-export session folder operations from chatStore
+export {
+  createFolder,
+  deleteFolder,
+  moveSessionToFolder,
+  renameFolder,
+  reorderFolders,
+} from './chatStore'
 // Re-export thread operations from session/threads.ts
 export {
   compressAndCreateThread,

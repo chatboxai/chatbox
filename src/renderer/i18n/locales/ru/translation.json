@@ -1287,5 +1287,12 @@
   "Pause after every {{count}} steps": "Пауза каждые {{count}} шагов",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "Длинные задачи приостанавливаются каждые {{count}} шагов для подтверждения, чтобы вы могли убедиться, что всё идёт по плану. Отключите, чтобы они выполнялись без остановок.",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "Длинные задачи приостанавливаются каждые {{count}} шагов для подтверждения, чтобы вы могли убедиться, что всё идёт по плану. Для отдельных чатов это можно переопределить в настройках беседы.",
-  "{{count}} operation(s) awaiting approval": "{{count}} операция(и/й) ожидает одобрения"
+  "{{count}} operation(s) awaiting approval": "{{count}} операция(и/й) ожидает одобрения",
+  "New Folder": "Новая папка",
+  "Move to Folder": "Переместить в папку",
+  "Remove from Folder": "Убрать из папки",
+  "Rename Folder": "Переименовать папку",
+  "Delete Folder": "Удалить папку",
+  "Folder Name": "Название папки",
+  "No folders yet. Create one to group your conversations.": "Папок пока нет. Создайте папку, чтобы группировать диалоги."
 }

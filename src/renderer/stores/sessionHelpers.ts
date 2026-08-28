@@ -1033,6 +1033,7 @@ export function getSessionMeta(session: SessionMeta) {
     'starred',
     'hidden',
     'archivedAt',
+    'folderId',
     'assistantAvatarKey',
     'picUrl',
     'backgroundImage',

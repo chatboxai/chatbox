@@ -19,8 +19,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Button, Flex, Text } from '@mantine/core'
-import type { SessionMetaRecord } from '@shared/types'
-import { areSessionsInSamePinGroup } from '@shared/utils/session-sort'
+import type { SessionFolder, SessionMetaRecord } from '@shared/types'
 import { IconArrowsMoveVertical, IconGripVertical, IconLoader2 } from '@tabler/icons-react'
 import { useRouterState } from '@tanstack/react-router'
 import { type CSSProperties, type MutableRefObject, useCallback, useMemo, useState } from 'react'
@@ -28,8 +27,10 @@ import { useTranslation } from 'react-i18next'
 import { Virtuoso } from 'react-virtuoso'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform from '@/platform'
-import { useSessionList } from '@/stores/chatStore'
+import { useFolders, useSessionList } from '@/stores/chatStore'
 import { reorderSessions } from '@/stores/sessionActions'
+import { useUIStore } from '@/stores/uiStore'
+import FolderHeader from './FolderHeader'
 import SessionItem from './SessionItem'
 
 export interface Props {
@@ -38,6 +39,7 @@ export interface Props {
 
 type SessionListItem =
   | { type: 'section'; id: string; label: string }
+  | { type: 'folder'; id: string; folder: SessionFolder }
   | { type: 'session'; id: string; session: SessionMetaRecord }
 
 function SessionListLoadingFooter() {
@@ -51,6 +53,8 @@ function SessionListLoadingFooter() {
 export default function SessionList(props: Props) {
   const { t } = useTranslation()
   const { sessionMetaList: sortedSessions, fetchNextPage, hasNextPage, isFetchingNextPage } = useSessionList()
+  const { folders } = useFolders()
+  const collapsedFolders = useUIStore((s) => s.collapsedFolders)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [isReordering, setIsReordering] = useState(false)
   const isSmallScreen = useIsSmallScreen()
@@ -74,20 +78,14 @@ export default function SessionList(props: Props) {
   }
   const onDragEnd = async (event: DragEndEvent) => {
     setActiveDragId(null)
-    if (!event.over || !sortedSessions) {
+    if (!event.over) {
       return
     }
     const activeId = String(event.active.id)
     const overId = String(event.over.id)
+    // Cross-group protection (pinned vs folder vs unfiled) lives inside reorderSessions.
     if (activeId !== overId) {
-      const oldIndex = sortedSessions.findIndex((s) => s.id === activeId)
-      const newIndex = sortedSessions.findIndex((s) => s.id === overId)
-      const activeSession = sortedSessions[oldIndex]
-      const overSession = sortedSessions[newIndex]
-      if (oldIndex < 0 || newIndex < 0 || !areSessionsInSamePinGroup(activeSession, overSession)) {
-        return
-      }
-      await reorderSessions(oldIndex, newIndex)
+      await reorderSessions(activeId, overId)
     }
   }
   const onDragCancel = () => {
@@ -97,29 +95,41 @@ export default function SessionList(props: Props) {
     () => sortedSessions?.find((session) => session.id === activeDragId),
     [activeDragId, sortedSessions]
   )
-  const sortableSessionIds = useMemo(() => sortedSessions?.map((session) => session.id) ?? [], [sortedSessions])
   const displayItems = useMemo<SessionListItem[]>(() => {
     if (!sortedSessions) {
       return []
     }
 
     const pinnedSessions = sortedSessions.filter((session) => session.starred)
-    const otherSessions = sortedSessions.filter((session) => !session.starred)
-    if (pinnedSessions.length === 0) {
-      return otherSessions.map((session) => ({ type: 'session', id: session.id, session }))
-    }
+    const folderedSessions = sortedSessions.filter((session) => !session.starred && session.folderId)
+    const chatSessions = sortedSessions.filter((session) => !session.starred && !session.folderId)
+    const hasGroupHeaders = pinnedSessions.length > 0 || folders.length > 0
 
-    return [
-      { type: 'section', id: 'section:pinned', label: t('Pinned') },
-      ...pinnedSessions.map((session) => ({ type: 'session' as const, id: session.id, session })),
-      ...(otherSessions.length > 0
-        ? [
-            { type: 'section' as const, id: 'section:chats', label: t('Chats') },
-            ...otherSessions.map((session) => ({ type: 'session' as const, id: session.id, session })),
-          ]
-        : []),
-    ]
-  }, [sortedSessions, t])
+    const items: SessionListItem[] = []
+    if (pinnedSessions.length > 0) {
+      items.push({ type: 'section', id: 'section:pinned', label: t('Pinned') })
+      pinnedSessions.forEach((session) => items.push({ type: 'session', id: session.id, session }))
+    }
+    folders.forEach((folder) => {
+      items.push({ type: 'folder', id: `folder:${folder.id}`, folder })
+      if (collapsedFolders[folder.id] !== true) {
+        folderedSessions
+          .filter((session) => session.folderId === folder.id)
+          .forEach((session) => items.push({ type: 'session', id: session.id, session }))
+      }
+    })
+    if (chatSessions.length > 0) {
+      if (hasGroupHeaders) {
+        items.push({ type: 'section', id: 'section:chats', label: t('Chats') })
+      }
+      chatSessions.forEach((session) => items.push({ type: 'session', id: session.id, session }))
+    }
+    return items
+  }, [sortedSessions, folders, collapsedFolders, t])
+  const sortableSessionIds = useMemo(
+    () => displayItems.filter((item) => item.type === 'session').map((item) => item.id),
+    [displayItems]
+  )
   const routerState = useRouterState()
   const onEndReached = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
@@ -195,6 +205,10 @@ export default function SessionList(props: Props) {
                     {item.label}
                   </Text>
                 )
+              }
+
+              if (item.type === 'folder') {
+                return <FolderHeader folder={item.folder} />
               }
 
               return (

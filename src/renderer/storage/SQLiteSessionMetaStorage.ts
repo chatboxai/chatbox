@@ -84,9 +84,12 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     `)
 
     const columns = await this.database.query('PRAGMA table_info(session_meta)')
-    const hasArchivedAt = columns.values?.some((column) => column.name === 'archived_at')
-    if (!hasArchivedAt) {
+    const columnNames = columns.values?.map((column) => column.name) ?? []
+    if (!columnNames.includes('archived_at')) {
       await this.database.execute('ALTER TABLE session_meta ADD COLUMN archived_at INTEGER')
+    }
+    if (!columnNames.includes('folder_id')) {
+      await this.database.execute('ALTER TABLE session_meta ADD COLUMN folder_id TEXT')
     }
   }
 
@@ -97,6 +100,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
       starred: record.starred ? 1 : 0,
       hidden: record.hidden ? 1 : 0,
       archived_at: record.archivedAt ?? null,
+      folder_id: record.folderId || null,
       assistant_avatar_key: record.assistantAvatarKey || null,
       pic_url: record.picUrl || null,
       background_image: record.backgroundImage ? JSON.stringify(record.backgroundImage) : null,
@@ -113,6 +117,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
       starred: row.starred === 1 ? true : undefined,
       hidden: row.hidden === 1 ? true : undefined,
       archivedAt: row.archived_at === null || row.archived_at === undefined ? undefined : Number(row.archived_at),
+      folderId: (row.folder_id as string) || undefined,
       assistantAvatarKey: (row.assistant_avatar_key as string) || undefined,
       picUrl: (row.pic_url as string) || undefined,
       backgroundImage: parseBackgroundImage(row.background_image as string),
@@ -127,14 +132,15 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     const row = this.recordToRow(record)
     await this.database.run(
       `INSERT INTO session_meta
-       (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, name, starred, hidden, archived_at, folder_id, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.name,
         row.starred,
         row.hidden,
         row.archived_at,
+        row.folder_id,
         row.assistant_avatar_key,
         row.pic_url,
         row.background_image,
@@ -150,8 +156,8 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     if (records.length === 0) return
 
     const statement = `INSERT OR REPLACE INTO session_meta
-      (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, name, starred, hidden, archived_at, folder_id, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     const set: capSQLiteSet[] = records.map((record) => {
       const row = this.recordToRow(record)
       return {
@@ -162,6 +168,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
           row.starred,
           row.hidden,
           row.archived_at,
+          row.folder_id,
           row.assistant_avatar_key,
           row.pic_url,
           row.background_image,
@@ -185,7 +192,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
 
     await this.database.run(
       `UPDATE session_meta SET
-       name = ?, starred = ?, hidden = ?, archived_at = ?, assistant_avatar_key = ?, pic_url = ?,
+       name = ?, starred = ?, hidden = ?, archived_at = ?, folder_id = ?, assistant_avatar_key = ?, pic_url = ?,
        background_image = ?, type = ?, sort_order = ?, created_at = ?
        WHERE id = ?`,
       [
@@ -193,6 +200,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         row.starred,
         row.hidden,
         row.archived_at,
+        row.folder_id,
         row.assistant_avatar_key,
         row.pic_url,
         row.background_image,

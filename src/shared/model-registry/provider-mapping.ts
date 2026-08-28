@@ -3,8 +3,8 @@
  * to models.dev provider IDs.
  *
  * Only providers with a known models.dev counterpart are listed here.
- * Providers not in this map (Ollama, LM Studio, VolcEngine,
- * ChatboxAI, Azure) will not receive models.dev enrichment.
+ * Providers not in this map (Ollama, LM Studio, ChatboxAI, Azure)
+ * will not receive models.dev enrichment.
  */
 export const PROVIDER_ID_MAP: Record<string, string> = {
   openai: 'openai',
@@ -24,6 +24,7 @@ export const PROVIDER_ID_MAP: Record<string, string> = {
   siliconflow: 'siliconflow',
   'chatglm-6b': 'zhipuai',
   qwen: 'alibaba',
+  volcengine: 'volcengine',
   'qwen-portal': 'alibaba',
 }
 

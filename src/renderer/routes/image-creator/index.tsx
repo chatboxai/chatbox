@@ -173,11 +173,10 @@ function InputToolbar({
         {/* Reference Image Button */}
         <UnstyledButton
           onClick={onAddReference}
-          aria-label={t('Upload')}
           className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
         >
           <IconPhoto size={16} className="text-[var(--chatbox-tint-secondary)]" />
-          <Text size="sm" className="image-creator-reference-label text-[var(--chatbox-tint-secondary)]">
+          <Text size="sm" className="text-[var(--chatbox-tint-secondary)]">
             {t('Upload')}
           </Text>
         </UnstyledButton>
@@ -211,7 +210,7 @@ function InputToolbar({
    Main Page Component
    ============================================ */
 
-export function ImageCreatorPage() {
+function ImageCreatorPage() {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
   const { providers } = useProviders()

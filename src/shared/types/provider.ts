@@ -22,6 +22,7 @@ export enum ModelProviderEnum {
   VolcEngine = 'volcengine',
   MistralAI = 'mistral-ai',
   LMStudio = 'lm-studio',
+  Llmman = 'llmman',
   Perplexity = 'perplexity',
   XAI = 'xAI',
   OpenRouter = 'openrouter',

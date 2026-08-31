@@ -36,6 +36,7 @@ export function needEditSetting() {
         (key) =>
           (key === ModelProviderEnum.Ollama ||
             key === ModelProviderEnum.LMStudio ||
+            key === ModelProviderEnum.Llmman ||
             key.startsWith('custom-provider')) &&
           providers[key].models?.length
       ).length > 0

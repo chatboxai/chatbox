@@ -25,6 +25,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.VolcEngine]: 'VolcEngine API',
   [ModelProviderEnum.MistralAI]: 'MistralAI',
   [ModelProviderEnum.LMStudio]: 'LM Studio API',
+  [ModelProviderEnum.Llmman]: 'llmman API',
   [ModelProviderEnum.Perplexity]: 'Perplexity API',
   [ModelProviderEnum.XAI]: 'xAI API',
   [ModelProviderEnum.OpenRouter]: 'OpenRouter API',

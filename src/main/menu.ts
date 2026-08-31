@@ -1,4 +1,4 @@
-import { app, type BrowserWindow, Menu, MenuItem, type MenuItemConstructorOptions, shell } from 'electron'
+import { app, type BrowserWindow, Menu, type MenuItemConstructorOptions, shell } from 'electron'
 import Locale from './locales'
 
 interface DarwinMenuItemConstructorOptions extends MenuItemConstructorOptions {
@@ -19,17 +19,32 @@ export default class MenuBuilder {
     this.mainWindow.webContents.on('context-menu', (event, props) => {
       const hasSelection = Boolean(props.selectionText?.trim())
 
-      // 没有选中文本：禁止右键菜单
-      if (!hasSelection) {
+      // 没有选中文本且不是可编辑区域：禁止右键菜单
+      if (!hasSelection && !props.isEditable) {
         event.preventDefault()
         return
       }
       const items: (Electron.MenuItem | Electron.MenuItemConstructorOptions)[] = [
-        { role: 'copy', label: locale.t('Copy'), accelerator: 'CmdOrCtrl+C' },
-        { role: 'cut', label: locale.t('Cut'), accelerator: 'CmdOrCtrl+X' },
-        { role: 'paste', label: locale.t('Paste'), accelerator: 'CmdOrCtrl+V' },
-        { role: 'pasteAndMatchStyle', label: locale.t('PasteAsPlainText'), accelerator: 'CmdOrCtrl+Shift+V' },
-        // { type: 'separator' },
+        { role: 'copy', label: locale.t('Copy'), accelerator: 'CmdOrCtrl+C', enabled: hasSelection },
+        {
+          role: 'cut',
+          label: locale.t('Cut'),
+          accelerator: 'CmdOrCtrl+X',
+          enabled: hasSelection && props.isEditable,
+        },
+        { role: 'paste', label: locale.t('Paste'), accelerator: 'CmdOrCtrl+V', enabled: props.isEditable },
+        {
+          role: 'pasteAndMatchStyle',
+          label: locale.t('PasteAsPlainText'),
+          accelerator: 'CmdOrCtrl+Shift+V',
+          enabled: props.isEditable,
+        },
+        { type: 'separator' },
+        {
+          role: 'selectAll',
+          label: locale.t('SelectAll'),
+          accelerator: 'CmdOrCtrl+A',
+        },
         // { role: 'resetZoom', label: locale.t('ResetZoom'), accelerator: 'CmdOrCtrl+0' },
         // { role: 'zoomIn', label: locale.t('ZoomIn'), accelerator: 'CmdOrCtrl+=' },
         // { role: 'zoomOut', label: locale.t('ZoomOut'), accelerator: 'CmdOrCtrl+-' },

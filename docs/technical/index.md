@@ -36,6 +36,7 @@
 | [自动更新系统](./auto-updater.md) | electron-updater 机制、状态管理、Feed URL Fallback、本地测试方法 |
 | [Sentry 错误上报](./sentry-error-reporting.md) | 错误覆盖范围、统一分类、采样降噪、去重与隐私规则 |
 | [产品分析上报](./analytics.md) | GA 客户端 DAU、Plausible 页面趋势、跨平台事件与追踪授权边界 |
+| [VibeDrop HTML 发布](./vibedrop-publish.md) | 跨仓发布链路、鉴权、可见性、内容审核和运行时依赖的实施记录 |
 | [关键技术决策记录](./key-decisions.md) | 14 项关键决策、替代方案分析、权衡理由 |
 
 ## 文档定位

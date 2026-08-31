@@ -1,6 +1,6 @@
 # Context Module
 
-Pure function context builder for AI message preparation. **Production context builder** used by orchestration layer.
+Pure function context builder for AI message preparation. **Production context builder** used by the session generation entrypoints.
 
 ## Exports
 
@@ -15,7 +15,7 @@ import type { AttachmentResolver, ContextBuilderOptions } from '@shared/context'
 
 **Production context builder** - Pure function that prepares messages for AI generation.
 
-Used directly by `orchestration.ts` and wrapped by `genMessageContext()` in the session module.
+Used by the session agent harness and wrapped by `genMessageContext()` for compatibility callers.
 
 ```typescript
 async function buildContext(
@@ -36,7 +36,8 @@ estimation can measure exactly the selection the send path will use.
 
 **Usage pattern:**
 ```typescript
-import { buildContext, createAttachmentResolver } from '@shared/context'
+import { buildContext } from '@shared/context'
+import { createAttachmentResolver } from '@/stores/session'
 
 const resolver = createAttachmentResolver()
 const contextMessages = await buildContext(messages, {

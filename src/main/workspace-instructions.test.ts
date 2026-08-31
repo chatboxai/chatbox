@@ -1,5 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, test } from 'vitest'
 import { WORKSPACE_INSTRUCTIONS_MAX_CHARS } from '../shared/types/workspace-instructions'
 import { loadWorkspaceInstructions } from './workspace-instructions'
@@ -25,6 +26,20 @@ afterEach(() => {
 })
 
 describe('loadWorkspaceInstructions', () => {
+  test('loads this repository canonical AGENTS.md as a regular file', async () => {
+    const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+    const instructionPath = path.join(repositoryRoot, 'AGENTS.md')
+
+    const instructionStat = lstatSync(instructionPath)
+    const result = await loadWorkspaceInstructions([repositoryRoot])
+
+    expect(instructionStat.isFile()).toBe(true)
+    expect(instructionStat.isSymbolicLink()).toBe(false)
+    expect(result.files).toHaveLength(1)
+    expect(result.files[0].filePath).toBe(instructionPath)
+    expect(result.files[0].content).toContain('canonical instruction entrypoint')
+  })
+
   test('reads a lowercase agents.md without truncating a long line', async () => {
     const root = createTemporaryRoot()
     const workspace = createWorkspace(root, 'workspace')
@@ -70,6 +85,22 @@ describe('loadWorkspaceInstructions', () => {
 
       expect(result.files).toEqual([])
       expect(JSON.stringify(result)).not.toContain('private-key-material')
+    }
+  )
+
+  test.skipIf(process.platform === 'win32')(
+    'rejects a symlinked AGENTS.md whose target stays inside the workspace',
+    async () => {
+      const root = createTemporaryRoot()
+      const workspace = createWorkspace(root, 'workspace')
+      const instructionTarget = path.join(workspace, 'workspace-instructions.md')
+      writeFileSync(instructionTarget, 'internal workspace instructions')
+      symlinkSync(instructionTarget, path.join(workspace, 'AGENTS.md'), 'file')
+
+      const result = await loadWorkspaceInstructions([workspace])
+
+      expect(result.files).toEqual([])
+      expect(JSON.stringify(result)).not.toContain('internal workspace instructions')
     }
   )
 

@@ -35,10 +35,11 @@ import './setup/protect'
 void import('./setup/token_estimation_init')
 
 // 引入移动端安全区域代码，主要为了解决异形屏幕的问题
+let androidStatusBarSetup: Promise<typeof import('./setup/mobile_status_bar')> | undefined
 if (CHATBOX_BUILD_TARGET === 'mobile_app') {
   void import('./setup/mobile_safe_area')
   if (CHATBOX_BUILD_PLATFORM === 'android') {
-    void import('./setup/mobile_status_bar')
+    androidStatusBarSetup = import('./setup/mobile_status_bar')
   }
 }
 
@@ -122,12 +123,22 @@ initializeRenderer()
     }
     const el = document.querySelector('.splash-screen')
     if (el) {
-      const removeSplashScreen = () => el.remove()
+      let splashScreenFinalized = false
+      const removeSplashScreen = () => {
+        if (splashScreenFinalized) {
+          return
+        }
+        splashScreenFinalized = true
+        el.remove()
+        void androidStatusBarSetup?.then(({ syncStatusBarTheme }) => syncStatusBarTheme())
+      }
       el.addEventListener('animationend', removeSplashScreen, { once: true })
       el.classList.add('splash-screen-fade-out')
       // Some embedded WebEngines apply the class but never dispatch animationend.
       // Never leave the initialized application permanently covered by the splash screen.
       setTimeout(removeSplashScreen, 600)
+    } else {
+      void androidStatusBarSetup?.then(({ syncStatusBarTheme }) => syncStatusBarTheme())
     }
 
     if (window?.navigator?.storage) {

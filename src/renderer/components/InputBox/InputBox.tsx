@@ -25,6 +25,7 @@ import {
   IconCirclePlus,
   IconFilePencil,
   IconFolder,
+  IconMicrophone,
   IconPhoto,
   IconPlayerStopFilled,
   IconPlus,
@@ -78,6 +79,7 @@ import {
 } from '@/packages/model-registry'
 import * as picUtils from '@/packages/pic_utils'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
+import { transcribeOpenAICompatibleAudio } from '@/packages/speech-to-text/openai-compatible'
 import { seedExactDraftTokens } from '@/packages/token-estimation'
 import platform from '@/platform'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
@@ -264,6 +266,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const [hasTextContent, setHasTextContent] = useState(false)
     const draftMessageIdRef = useRef<string | undefined>(undefined)
     const enabledSkillNames = useSettingsStore((state) => state.skills.enabledSkillNames)
+    const speechToText = useSettingsStore((state) => state.extension.speechToText)
     const [inputSkills, setInputSkills] = useState<Array<{ name: string; description: string }>>([])
     const [inputSkillsLoading, setInputSkillsLoading] = useState(false)
     const [skillCommandQuery, setSkillCommandQuery] = useState<string | null>(null)
@@ -526,6 +529,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     const pictureInputRef = useRef<HTMLInputElement | null>(null)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
+    const audioInputRef = useRef<HTMLInputElement | null>(null)
+    const [transcribingAudio, setTranscribingAudio] = useState(false)
 
     // Check if any preprocessing is in progress
     const isPreprocessing = useMemo(() => {
@@ -1336,6 +1341,27 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const onFileUploadClick = () => {
       fileInputRef.current?.click()
     }
+    const onAudioTranscriptionClick = () => {
+      audioInputRef.current?.click()
+    }
+    const onAudioTranscriptionChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const [file] = Array.from(event.currentTarget.files ?? [])
+      event.currentTarget.value = ''
+      if (!file || !speechToText?.baseUrl.trim() || !speechToText.model.trim()) {
+        toastActions.add(t('Configure a speech-to-text service before transcribing audio.'))
+        return
+      }
+
+      setTranscribingAudio(true)
+      try {
+        const text = await transcribeOpenAICompatibleAudio(speechToText, file)
+        messageInputFieldRef.current?.setValue((value) => `${value}${value.trim() ? '\n\n' : ''}${text}`)
+      } catch (error) {
+        toastActions.add((error as Error).message || t('Audio transcription failed'))
+      } finally {
+        setTranscribingAudio(false)
+      }
+    }
 
     const onImageDeleteClick = async (picKey: string) => {
       setPreConstructedMessage((prev) => ({
@@ -1847,10 +1873,24 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 multiple
                 accept={isAgentModeActive ? undefined : getFileAcceptString()}
               />
+              <input
+                type="file"
+                ref={audioInputRef}
+                className="hidden"
+                accept="audio/*"
+                onChange={(event) => void onAudioTranscriptionChange(event)}
+              />
 
               {/* Left Group: Tool Buttons */}
               <Flex align="center" gap={0}>
-                <AttachmentMenu onImageUploadClick={onImageUploadClick} onFileUploadClick={onFileUploadClick} t={t} />
+                <AttachmentMenu
+                  onImageUploadClick={onImageUploadClick}
+                  onFileUploadClick={onFileUploadClick}
+                  onAudioTranscriptionClick={onAudioTranscriptionClick}
+                  speechToTextEnabled={Boolean(speechToText?.enabled) && !isSmallScreen}
+                  transcribingAudio={transcribingAudio}
+                  t={t}
+                />
 
                 <ReasoningControlButton
                   provider={model?.provider}
@@ -2106,8 +2146,18 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 const AttachmentMenu: React.FC<{
   onImageUploadClick: () => void
   onFileUploadClick: () => void
+  onAudioTranscriptionClick: () => void
+  speechToTextEnabled: boolean
+  transcribingAudio: boolean
   t: (key: string) => string
-}> = ({ onImageUploadClick, onFileUploadClick, t }) => {
+}> = ({
+  onImageUploadClick,
+  onFileUploadClick,
+  onAudioTranscriptionClick,
+  speechToTextEnabled,
+  transcribingAudio,
+  t,
+}) => {
   const isSmallScreen = useIsSmallScreen()
   const toolbarIconSize = isSmallScreen ? 22 : 18
   return (
@@ -2146,6 +2196,15 @@ const AttachmentMenu: React.FC<{
         >
           {t('Select File')}
         </Menu.Item>
+        {speechToTextEnabled && (
+          <Menu.Item
+            leftSection={<IconMicrophone size={16} />}
+            onClick={onAudioTranscriptionClick}
+            disabled={transcribingAudio}
+          >
+            {transcribingAudio ? t('Transcribing audio...') : t('Transcribe Audio')}
+          </Menu.Item>
+        )}
       </Menu.Dropdown>
     </Menu>
   )

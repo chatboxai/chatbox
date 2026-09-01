@@ -13,6 +13,7 @@ import {
   IconInfoCircle,
   IconKeyboard,
   IconMessages,
+  IconMicrophone,
   IconRobotFace,
   IconSparkles,
   IconWand,
@@ -51,6 +52,15 @@ const ITEMS = [
     label: 'Web Search',
     icon: <IconWorldWww className="w-full h-full" />,
   },
+  ...(platform.type === 'mobile'
+    ? []
+    : [
+        {
+          key: 'speech-to-text',
+          label: 'Speech to Text',
+          icon: <IconMicrophone className="w-full h-full" />,
+        },
+      ]),
   ...(featureFlags.mcp
     ? [
         {

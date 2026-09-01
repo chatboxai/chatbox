@@ -1,9 +1,10 @@
 import {
   CapacitorSQLite,
-  SQLiteConnection,
   type capSQLiteSet,
+  SQLiteConnection,
   type SQLiteDBConnection,
 } from '@capacitor-community/sqlite'
+import { CAPACITOR_SESSION_META_SCHEMA_SQL } from '@chatbox/core'
 import type { SessionMetaPage, SessionMetaRecord } from '@shared/types'
 import { type SessionMetaStorage, sortSessionRecords } from './SessionMetaStorage'
 
@@ -62,27 +63,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     this.database = await this.sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false)
     await this.database.open()
 
-    await this.database.execute(`
-      CREATE TABLE IF NOT EXISTS session_meta (
-        id TEXT PRIMARY KEY NOT NULL,
-        name TEXT NOT NULL DEFAULT '',
-        starred INTEGER NOT NULL DEFAULT 0,
-        hidden INTEGER NOT NULL DEFAULT 0,
-        archived_at INTEGER,
-        assistant_avatar_key TEXT,
-        pic_url TEXT,
-        background_image TEXT,
-        type TEXT,
-        sort_order REAL NOT NULL,
-        created_at INTEGER NOT NULL,
-        has_paused_tool_call INTEGER NOT NULL DEFAULT 0
-      )
-    `)
-
-    await this.database.execute(`
-      CREATE INDEX IF NOT EXISTS idx_session_meta_sort_order
-      ON session_meta(sort_order DESC)
-    `)
+    await this.database.execute(CAPACITOR_SESSION_META_SCHEMA_SQL)
 
     const columns = await this.database.query('PRAGMA table_info(session_meta)')
     const hasArchivedAt = columns.values?.some((column) => column.name === 'archived_at')

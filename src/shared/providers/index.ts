@@ -1,6 +1,7 @@
 import { enrichModelFromRegistry } from '../model-registry/enrich'
 import type { ModelInterface } from '../models/types'
-import { mergeSharedOAuthProviderSettings, resolveEffectiveApiKey } from '../oauth'
+import { isUsingOAuth, mergeSharedOAuthProviderSettings, resolveEffectiveApiKey } from '../oauth'
+import type { PlatformType } from '../platform'
 import type { Config, ProviderModelInfo, SessionSettings, Settings } from '../types'
 import type { ModelDependencies } from '../types/adapters'
 import { withResolvedModelApiStyle } from './api-style'
@@ -17,6 +18,8 @@ import {
 } from './registry'
 import type { CreateModelConfig, ProviderDefinition, ProviderDefinitionInput } from './types'
 import { createCustomProviderModel } from './utils'
+
+export { projectProviderCatalog, type ProviderCatalogProjection } from './catalog'
 
 export {
   clearProviderRegistry,
@@ -41,7 +44,11 @@ export function getBuiltinProviderIds(): string[] {
  * Get provider settings from session and global settings.
  * This is a helper function that extracts and formats provider-related settings.
  */
-export function getProviderSettings(setting: SessionSettings, globalSettings: Settings) {
+export function getProviderSettings(
+  setting: SessionSettings,
+  globalSettings: Settings,
+  platformType: PlatformType = 'desktop'
+) {
   console.debug('getProviderSettings', setting.provider, setting.modelId)
   const provider = setting.provider
   if (!provider) {
@@ -58,7 +65,7 @@ export function getProviderSettings(setting: SessionSettings, globalSettings: Se
   }
   const providerSetting = mergeSharedOAuthProviderSettings(provider, globalSettings.providers)
   // When OAuth is active, use the provider's default API host (OAuth tokens are issued for specific endpoints)
-  const isOAuthActive = providerSetting.activeAuthMode === 'oauth' && !!providerSetting.oauth?.accessToken
+  const isOAuthActive = isUsingOAuth(providerSetting, platformType)
   const formattedApiHost = (
     (isOAuthActive ? '' : providerSetting.apiHost) ||
     providerBaseInfo.defaultSettings?.apiHost ||
@@ -137,7 +144,11 @@ export function getModel(
 
   if (providerDefinition) {
     // Provider is registered - use the new registry-based approach
-    const { providerSetting, formattedApiHost, providerBaseInfo } = getProviderSettings(settings, globalSettings)
+    const { providerSetting, formattedApiHost, providerBaseInfo } = getProviderSettings(
+      settings,
+      globalSettings,
+      dependencies.platformType || 'desktop'
+    )
     const model = withReasoningApiStyle(
       getModelConfig(settings, globalSettings, provider),
       providerBaseInfo.type,
@@ -162,7 +173,11 @@ export function getModel(
   }
 
   // Provider not registered - check if it's a custom provider
-  const { providerSetting, formattedApiHost, providerBaseInfo } = getProviderSettings(settings, globalSettings)
+  const { providerSetting, formattedApiHost, providerBaseInfo } = getProviderSettings(
+    settings,
+    globalSettings,
+    dependencies.platformType || 'desktop'
+  )
   const model = withReasoningApiStyle(
     getModelConfig(settings, globalSettings, provider),
     providerBaseInfo.type,

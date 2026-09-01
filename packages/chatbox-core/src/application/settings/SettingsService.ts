@@ -95,6 +95,13 @@ export class SettingsService implements SettingsRepositoryPort {
     this.enqueuePersistence(next)
   }
 
+  replaceSettings(settings: Settings): void {
+    this.assertActive()
+    const next = SettingsSchema.parse(settings)
+    this.publish(next)
+    this.enqueuePersistence(next)
+  }
+
   subscribe(listener: SettingsListener): () => void {
     this.assertActive()
     this.listeners.add(listener)

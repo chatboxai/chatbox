@@ -215,7 +215,7 @@ export interface GenerationSteeringPort {
 export interface GenerationHostPort {
   getConfig(): Promise<Config>
   getKnowledgeBase(sessionId: string): Pick<KnowledgeBase, 'id' | 'name'> | undefined
-  getWebBrowsing(sessionId: string, provider: ModelProvider | undefined): boolean
+  getWebBrowsing(sessionId: string, provider: ModelProvider | undefined, settings?: SessionSettings): boolean
   getAgentModeEntry(sessionId: string, session: Session): { value: AgentModeValue; locked?: boolean }
   setAgentMode(sessionId: string, value: AgentModeValue): Promise<void> | void
   lockAgentMode(sessionId: string, reason: Exclude<AgentModeLockReason, null>): Promise<void> | void
@@ -428,7 +428,7 @@ export class GenerationService<TContext> {
       // resolving here guarantees a switched model never inherits another model's parameters.
       const reasoningProviderOptions = resolveReasoningProviderOptions(settings, settings.provider, settings.modelId)
       const knowledgeBase = host.getKnowledgeBase(sessionId)
-      const webBrowsing = host.getWebBrowsing(sessionId, settings.provider)
+      const webBrowsing = host.getWebBrowsing(sessionId, settings.provider, settings)
       const agentModeSupported =
         this.dependencies.capabilities.supports('agent-mode') && model.isSupportToolUse('agent')
       const agentModeEntry = host.getAgentModeEntry(sessionId, session)

@@ -3,7 +3,12 @@ import type { Config, Message, Session, SessionSettings, Settings } from '@share
 import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { generationStreamFixture } from '../testing/generation-stream'
-import { GenerationService, type GenerationServiceDependencies, type GenerationSessionPort } from './GenerationService'
+import {
+  type GenerationHostPort,
+  GenerationService,
+  type GenerationServiceDependencies,
+  type GenerationSessionPort,
+} from './GenerationService'
 import { GenerationRuntimeStore } from './runtime-store'
 
 type ModelContext = { host: 'test' }
@@ -55,6 +60,7 @@ interface Harness {
   steeringWake: ReturnType<typeof vi.fn>
   model: ModelInterface
   preparedTargetMessageIndexes: number[]
+  preparedWebBrowsing: boolean[]
   inserted: Array<{ message: Message; afterMessageId: string }>
   setStreamFactory(factory: () => AsyncGenerator<ModelStreamPart<ToolSet>>): void
   setChatStreamFactory(
@@ -62,6 +68,7 @@ interface Harness {
   ): void
   setPrepareStep(prepareStep: ChatStreamOptions['prepareStep']): void
   setPreparedTools(tools: ToolSet): void
+  setWebBrowsingResolver(resolver: GenerationHostPort['getWebBrowsing']): void
   setSteeredMessageIds(messageIds: string[]): void
   setTools(tools: ToolSet): void
   failSessionSettingsUpdate(error: Error): void
@@ -102,6 +109,7 @@ function createHarness(): Harness {
   let insertionFailure: { error: Error; commit?: boolean } | undefined
   let persistenceCallCount = 0
   const preparedTargetMessageIndexes: number[] = []
+  const preparedWebBrowsing: boolean[] = []
   const inserted: Array<{ message: Message; afterMessageId: string }> = []
   const trackPauseAction = vi.fn()
   const afterMessageGenerated = vi.fn()
@@ -118,6 +126,7 @@ function createHarness(): Harness {
     release: steeringRelease,
   }))
   const steeringWake = vi.fn()
+  let webBrowsingResolver: GenerationHostPort['getWebBrowsing'] = () => false
 
   const model = {
     name: 'Test',
@@ -263,6 +272,7 @@ function createHarness(): Harness {
     preparation: {
       prepare: (request) => {
         preparedTargetMessageIndexes.push(request.targetMessageIndex)
+        preparedWebBrowsing.push(request.webBrowsing)
         return Promise.resolve({
           promptMessages: request.messages.slice(0, request.targetMessageIndex),
           coreMessages: [{ role: 'user', content: 'Hello' }],
@@ -303,7 +313,7 @@ function createHarness(): Harness {
     host: {
       getConfig: () => Promise.resolve({} as Config),
       getKnowledgeBase: () => undefined,
-      getWebBrowsing: () => false,
+      getWebBrowsing: (sessionId, provider, settings) => webBrowsingResolver(sessionId, provider, settings),
       getAgentModeEntry: () => ({ value: agentModeSuggestionEnabled ? 'auto' : 'off' }),
       setAgentMode: () => undefined,
       lockAgentMode: () => undefined,
@@ -346,6 +356,7 @@ function createHarness(): Harness {
     steeringWake,
     model,
     preparedTargetMessageIndexes,
+    preparedWebBrowsing,
     inserted,
     setStreamFactory(factory) {
       streamFactory = factory
@@ -358,6 +369,9 @@ function createHarness(): Harness {
     },
     setPreparedTools(tools) {
       preparedTools = tools
+    },
+    setWebBrowsingResolver(resolver) {
+      webBrowsingResolver = resolver
     },
     setSteeredMessageIds(messageIds) {
       steeredMessageIds = messageIds
@@ -417,6 +431,29 @@ describe('GenerationService', () => {
 
   beforeEach(() => {
     harness = createHarness()
+  })
+
+  it('passes the current SessionSettings to the host Web Search resolver', async () => {
+    harness.sessionSettings.webBrowsing = true
+    let receivedSettings: SessionSettings | undefined
+    harness.setWebBrowsingResolver((_sessionId, _provider, settings) => {
+      receivedSettings = settings
+      return settings?.webBrowsing ?? false
+    })
+
+    await harness.service.orchestrate('session-1', targetMessage(), { operationType: 'send_message' })
+
+    expect(receivedSettings).toBe(harness.sessionSettings)
+    expect(harness.preparedWebBrowsing.at(-1)).toBe(true)
+  })
+
+  it('keeps the host result authoritative so the existing Web preference map remains compatible', async () => {
+    harness.sessionSettings.webBrowsing = true
+    harness.setWebBrowsingResolver(() => false)
+
+    await harness.service.orchestrate('session-1', targetMessage(), { operationType: 'send_message' })
+
+    expect(harness.preparedWebBrowsing.at(-1)).toBe(false)
   })
 
   it('replays the shared stream fixture and persists the current terminal projection', async () => {

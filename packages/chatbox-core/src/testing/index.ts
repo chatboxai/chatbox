@@ -1,4 +1,5 @@
 export * from './InMemoryBlobStorage'
+export * from './InMemoryKeyValueStorage'
 export * from './InMemorySessionRepository'
 export * from './InMemorySettingsRepository'
 export * from './InMemorySettingsStorage'

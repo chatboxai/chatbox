@@ -18,6 +18,7 @@ import { Accordion, AccordionDetails, AccordionSummary } from '@/components/Acco
 import TextFieldReset from '@/components/common/TextFieldReset'
 import { ShortcutConfig } from '@/components/Shortcut'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { type BackupExportItem, updateBackupExportItemSelection } from '@/packages/backup'
 import platform from '@/platform'
 import storage, { StorageKey } from '@/storage'
 import { migrateOnData } from '@/stores/migration'
@@ -153,7 +154,7 @@ function ExportAndImport(props: { onCancel: () => void }) {
   const { t } = useTranslation()
   const theme = useTheme()
   const [tab, setTab] = useState<'export' | 'import'>('export')
-  const [exportItems, setExportItems] = useState<ExportDataItem[]>([
+  const [exportItems, setExportItems] = useState<BackupExportItem[]>([
     ExportDataItem.Setting,
     ExportDataItem.Conversations,
     ExportDataItem.Copilot,
@@ -286,12 +287,9 @@ function ExportAndImport(props: { onCancel: () => void }) {
                 control={
                   <Checkbox
                     checked={exportItems.includes(item.value)}
-                    onChange={(e, checked) => {
-                      if (checked && !exportItems.includes(item.value)) {
-                        setExportItems([...exportItems, item.value])
-                      } else if (!checked) {
-                        setExportItems(exportItems.filter((v) => v !== item.value))
-                      }
+                    disabled={item.value === ExportDataItem.Setting && exportItems.includes(ExportDataItem.Key)}
+                    onChange={(_event, checked) => {
+                      setExportItems((current) => updateBackupExportItemSelection(current, item.value, checked))
                     }}
                   />
                 }

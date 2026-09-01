@@ -114,6 +114,18 @@ describe('SettingsService', () => {
     expect(service.getSettings().memoryStateToken).toBe(enabledToken)
   })
 
+  test('replaces the complete settings snapshot so omitted credentials are cleared', async () => {
+    const storage = new MemorySettingsStorage()
+    const initialSettings = { ...createDefaultSettings(), licenseKey: 'license-to-clear' }
+    const service = new SettingsService(storage, { initialSettings, isDesktopLike: false })
+
+    service.replaceSettings(createDefaultSettings())
+    await service.flushPersistence()
+
+    expect(service.getSettings().licenseKey).toBeUndefined()
+    expect(storage.value).not.toHaveProperty('licenseKey')
+  })
+
   test('logs failed writes, exposes the failure to flush and continues the persistence queue', async () => {
     const storage = new MemorySettingsStorage()
     const writeError = new Error('storage unavailable')

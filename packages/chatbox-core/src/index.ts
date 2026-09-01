@@ -1,9 +1,52 @@
 /** Public, host-neutral API for Chatbox application and generation logic. */
 
 export type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
+export { getChatboxAPIOrigin } from '@shared/request/chatbox-api-origin'
+export {
+  fetchNativeAccountLicenses,
+  fetchNativeAccountProfile,
+  fetchNativeChatboxAIModels,
+  generateNativeWebAuthToken,
+  loginNativeEmailCode,
+  type NativeAccountLicense,
+  type NativeAccountProfile,
+  type NativeAccountRequestOptions,
+  type NativeAccountTokens,
+  refreshNativeAccountTokens,
+  sendNativeEmailLoginCode,
+} from '@shared/services/native-account'
+export {
+  type NativeDocumentParserFile,
+  type NativeDocumentParserRequestOptions,
+  parseNativeChatboxAIDocument,
+} from '@shared/services/native-document-parser'
+export {
+  activateNativeLicense,
+  deactivateNativeLicense,
+  fetchNativeLicenseDetail,
+  type NativeLicenseActivationResult,
+  type NativeLicenseDetailResult,
+  type NativeLicenseRequestOptions,
+  validateNativeLicense,
+} from '@shared/services/native-license'
+export {
+  type ReportNativeContentOptions,
+  reportNativeContent,
+} from '@shared/services/native-report'
+export {
+  hasNativeWebSearchConfiguration,
+  type NativeWebSearchOptions,
+  type NativeWebSearchProvider,
+  type NativeWebSearchResultItem,
+  nativeWebSearchProviderOptions,
+  normalizeNativeWebSearchSettings,
+  searchNativeWeb,
+} from '@shared/services/native-web-search'
 export type {
   CompactionPoint,
   Config,
+  ImageGeneration,
+  ImageGenerationPage,
   Language,
   Message,
   Session,
@@ -15,6 +58,11 @@ export type {
   Settings,
   Updater,
 } from '@shared/types'
+export {
+  createWebSearchTool,
+  WEB_SEARCH_TOOLSET_INSTRUCTION,
+  type WebSearchToolResult,
+} from '@shared/web-search-tool'
 export {
   type AttachmentAnalysis,
   type AttachmentAnalysisPort,
@@ -28,6 +76,20 @@ export {
   type PickedAssetContentPort,
   type PreparedAttachment,
 } from './application/attachments'
+export {
+  type ChatGenerationPort,
+  type ChatMessageFiles,
+  type ChatMessageInput,
+  type ChatMessageLinks,
+  ChatMessageService,
+  type ChatMessageServiceDependencies,
+  type ChatMessageSessionPort,
+  type ChatMessageValidationCode,
+  ChatMessageValidationError,
+  type ChatSendResult,
+  type SendExistingSessionRequest,
+  type SendNewSessionRequest,
+} from './application/chat'
 export {
   buildCompactionCommitPatch,
   type CompactionFailure,
@@ -49,13 +111,16 @@ export {
   getSessionMetadataSnapshot,
   hasPausedToolCall,
   hasSessionMetaFields,
+  migrateSession,
   type NameGenerationSchedulerPort,
   projectSessionMeta,
+  recoverSessionOnLoad,
   type ScheduledNameGeneration,
   type SessionApplicationEvent,
   type SessionDeleteOperation,
   SessionEventBus,
   type SessionEventListener,
+  type SessionLoadRecovery,
   type SessionMetadataUpdate,
   type SessionNameGenerationOptions,
   SessionNamingService,
@@ -110,6 +175,7 @@ export {
   ProviderOptionsSchema,
   type ProviderSettings,
   ProviderSettingsSchema,
+  resolveWebBrowsing,
   SETTINGS_PERSIST_VERSION,
   SessionSettingsSchema,
   type SettingsHostDefaults,
@@ -125,10 +191,18 @@ export {
   type UnifiedTokenUsageDetail,
 } from './domain/settings'
 export {
+  getUnsupportedFileType,
+  isSupportedFile,
+  isTextFilePath,
+} from './file-extensions'
+export {
   AGENT_MODE_SUGGESTION_PROMPT,
   type AgentModeSuggestionDecision,
   applyLegacyToolFallback,
   applyPersistentToolCallPause,
+  BasicGenerationPreparation,
+  type BasicGenerationPreparationOptions,
+  type BasicGenerationToolPreparation,
   cancelRunningToolCallBatch,
   createInitialState,
   createPausedToolCallExecutionContext,
@@ -198,11 +272,32 @@ export {
   type PendingPauseInteraction,
 } from './message-approval'
 export {
+  ACTIVE_SESSION_THREAD_KEY,
+  CAPACITOR_IMAGE_GENERATION_DATABASE_FILE,
+  CAPACITOR_IMAGE_GENERATION_SCHEMA_SQL,
+  CAPACITOR_MAIN_DATABASE_FILE,
+  CAPACITOR_MAIN_KEY_VALUE_SCHEMA_SQL,
+  CAPACITOR_SESSION_META_DATABASE_FILE,
+  CAPACITOR_SESSION_META_SCHEMA_SQL,
+  type PersistedForkBranchRow,
+  type PersistedForkMessageRow,
+  type PersistedForkRow,
+  type PersistedMessageRow,
+  type PersistedSessionGraph,
+  type PersistedSessionHeader,
+  type PersistedThreadRow,
+  SESSION_GRAPH_SCHEMA_VERSION,
+  SessionGraphCodec,
+  SessionGraphCodecError,
+  type SessionGraphCodecOptions,
+} from './persistence'
+export {
   type AnalyticsEventValue,
   type AnalyticsPort,
   type AttachmentContentPort,
   type AttachmentDescriptor,
   type BlobStoragePort,
+  type ImageGenerationStoragePort,
   type KeyValueStoragePort,
   type LoggerPort,
   type LogLevel,
@@ -236,6 +331,25 @@ export {
   shouldShowConcurrentReplyStop,
 } from './session/action-gates'
 export {
+  countCancellableGeneratingAssistantMessages,
+  getConversationMessages,
+  getCurrentConversationMessages,
+  getGenerationControlMessages,
+  getReachableSessionMessages,
+  isCancellableGeneratingAssistantMessage,
+} from './session/generation-state'
+export {
+  buildCreateForkPatch,
+  buildDeleteForkPatch,
+  buildExpandForkPatch,
+  buildSwitchForkPatch,
+  buildSwitchForkToPatch,
+  type ForkIdentityPort,
+  findMessageContext,
+  findMessageLocation,
+  findMessageSourceThread,
+} from './session/message-forks'
+export {
   type AutoTitleAction,
   type AutoTitleSession,
   backfillMissingThreadName,
@@ -253,15 +367,9 @@ export {
   UNTITLED_SESSION_NAME,
 } from './session/auto-title'
 export {
-  countCancellableGeneratingAssistantMessages,
-  getConversationMessages,
-  getCurrentConversationMessages,
-  getGenerationControlMessages,
-  getReachableSessionMessages,
-  isCancellableGeneratingAssistantMessage,
-} from './session/generation-state'
-export {
   hasContentForAutoTitle,
   hasSuccessfulUserAssistantTurn,
   isSuccessfulAssistantReply,
 } from './session/message-success'
+export { createMessage, isChatSession } from './types'
+export { getMessageText } from './utils/message'

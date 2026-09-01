@@ -26,6 +26,7 @@ function walk(dirPath) {
   if (!existsSync(dirPath)) return []
   const entries = readdirSync(dirPath)
   return entries.flatMap((entry) => {
+    if (entry === 'node_modules') return []
     const fullPath = join(dirPath, entry)
     const stat = statSync(fullPath)
     if (stat.isDirectory()) {
@@ -190,6 +191,14 @@ function createBoundaries(root) {
       forbiddenDirectories: [rendererDirectory, mainDirectory, preloadDirectory],
       forbidOutsideDirectory: true,
       supportedPath: 'Use @chatbox/core public exports instead of reaching into host or shared implementations.',
+    },
+    {
+      name: '@chatbox/i18n',
+      directory: join(root, 'packages/chatbox-i18n/src'),
+      forbiddenSpecifiers: portableHostSpecifiers,
+      forbiddenDirectories: [rendererDirectory, mainDirectory, preloadDirectory],
+      forbidOutsideDirectory: true,
+      supportedPath: 'Keep shared translations portable and independent from host-process implementations.',
     },
     {
       name: 'renderer process',
@@ -1010,6 +1019,8 @@ function findSessionStorageViolations(root, readSourceFile) {
     join(root, 'src/renderer/stores/migration.ts'),
     join(root, 'src/renderer/packages/backup/import-backup.ts'),
     join(root, 'src/renderer/packages/backup/legacy-import.ts'),
+    join(root, 'packages/chatbox-core/src/backup/import-backup.ts'),
+    join(root, 'packages/chatbox-core/src/backup/legacy-import.ts'),
     join(root, 'src/renderer/pages/SettingDialog/AdvancedSettingTab.tsx'),
   ])
   const rawImportOwners = rawStorageOwners(root)
@@ -1055,6 +1066,7 @@ function findSessionStorageViolations(root, readSourceFile) {
 function findWildcardExportViolations(root) {
   const packageManifests = [
     { name: '@chatbox/core', file: join(root, 'packages/chatbox-core/package.json') },
+    { name: '@chatbox/i18n', file: join(root, 'packages/chatbox-i18n/package.json') },
     { name: '@chatbox/react', file: join(root, 'packages/chatbox-react/package.json') },
   ]
 

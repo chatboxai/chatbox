@@ -1,6 +1,6 @@
 # Chatbox Pro 技术设计文档
 
-> Last updated: 2026-07
+> Last updated: 2026-08
 
 本目录包含 Chatbox Pro 的系统设计与技术决策文档，面向工程师和技术负责人。
 

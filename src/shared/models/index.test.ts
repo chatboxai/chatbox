@@ -98,6 +98,37 @@ describe('getModel', () => {
     expect(model).toBeInstanceOf(OpenAIResponses)
   })
 
+  it('keeps the API-key OpenAI model and custom host when desktop OAuth state is read on mobile', () => {
+    const sessionSettings: SessionSettings = {
+      provider: ModelProviderEnum.OpenAI,
+      modelId: 'gpt-4o-mini',
+      stream: true,
+    }
+    const defaultSettings = getDefaultSettings()
+    const globalSettings: Settings = {
+      ...defaultSettings,
+      providers: {
+        ...defaultSettings.providers,
+        [ModelProviderEnum.OpenAI]: {
+          apiKey: 'mobile-api-key',
+          apiHost: 'https://mobile-proxy.test/v1',
+          activeAuthMode: 'oauth',
+          oauth: { accessToken: 'desktop-oauth-token' },
+          models: [{ modelId: 'gpt-4o-mini' }],
+        },
+      },
+    }
+
+    const model = getModel(sessionSettings, globalSettings, newConfigs(), {
+      ...mockDependencies,
+      platformType: 'mobile',
+    })
+
+    expect(model).toBeInstanceOf(OpenAI)
+    expect((model as OpenAI).options.apiKey).toBe('mobile-api-key')
+    expect((model as OpenAI).options.apiHost).toBe('https://mobile-proxy.test/v1')
+  })
+
   it('returns OpenAIResponses when openai-responses enables OAuth with shared OpenAI credentials', () => {
     const sessionSettings: SessionSettings = {
       provider: ModelProviderEnum.OpenAIResponses,

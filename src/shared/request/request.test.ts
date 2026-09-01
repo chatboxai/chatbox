@@ -151,4 +151,13 @@ describe('createAfetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(clearTokens).not.toHaveBeenCalled()
   })
+
+  it('recognizes a structural AbortError without depending on DOMException', async () => {
+    const abortError = Object.assign(new Error('cancelled'), { name: 'AbortError' })
+    const fetchMock = vi.fn().mockRejectedValue(abortError)
+    const afetch = createAfetch(platformInfo, fetchMock)
+
+    await expect(afetch('https://example.com', {}, { retry: 3 })).rejects.toBe(abortError)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })

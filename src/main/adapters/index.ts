@@ -56,7 +56,7 @@ export async function createModelDependencies(): Promise<ModelDependencies> {
           method: options.method || 'GET',
           headers: options.headers,
           body: options.body,
-          signal: options.signal,
+          signal: options.signal as RequestInit['signal'],
         })
         return response
       },

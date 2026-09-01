@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import type { Message, Session, SessionMetaRecord, SessionThread } from '../../shared/types'
 import { rendererApplication } from '@/app/renderer-application'
+import type {
+  Message,
+  Session,
+  SessionMetaRecord,
+  SessionPromptContextSnapshot,
+  SessionThread,
+} from '../../shared/types'
 import * as sessionActions from './session'
 import { sessionActivityStore } from './sessionActivityStore'
 
@@ -202,6 +208,18 @@ function makeMessage(id: string, role: Message['role'] = 'user'): Message {
     id,
     role,
     contentParts: [],
+  }
+}
+
+function makePromptContextSnapshot(soul: string): SessionPromptContextSnapshot {
+  return {
+    version: 1,
+    soul,
+    memories: [],
+    workspaceInstructions: '',
+    workspaceDirectories: [],
+    capturedAt: 1,
+    scope: 'agent',
   }
 }
 
@@ -737,16 +755,30 @@ describe('fork actions', () => {
     const threadPivot = makeMessage('thread-pivot', 'user')
     const threadReply = makeMessage('thread-reply', 'assistant')
     const threadAlternative = makeMessage('thread-alt', 'assistant')
+    const currentPromptContext = makePromptContextSnapshot('Current Soul')
+    const threadPromptContext = makePromptContextSnapshot('Moved Thread Soul')
+    const threadCompactionPoint = {
+      summaryMessageId: threadAlternative.id,
+      boundaryMessageId: threadPivot.id,
+      createdAt: 3,
+    }
     const thread: SessionThread = {
       id: 'thread-1',
       name: 'Moved Thread',
       createdAt: 1,
       messages: [threadPivot, threadReply],
+      compactionPoints: [threadCompactionPoint],
+      sessionPromptContextSnapshot: threadPromptContext,
     }
     const session: Session = {
       id: 'session-move-thread',
       name: 'Source Session',
       messages: [currentPivot, currentReply],
+      settings: {
+        provider: 'openai',
+        temperature: 0.25,
+        sessionPromptContextSnapshot: currentPromptContext,
+      },
       threads: [thread],
       messageForksHash: {
         [currentPivot.id]: {
@@ -767,16 +799,34 @@ describe('fork actions', () => {
         },
       },
     }
+    const concurrentThread: SessionThread = {
+      id: 'thread-concurrent',
+      name: 'Concurrent Thread',
+      createdAt: 4,
+      messages: [makeMessage('concurrent-message', 'user')],
+    }
+    const latestSession: Session = {
+      ...session,
+      threads: [thread, concurrentThread],
+    }
+    let updatedSource: Session | undefined
 
     getSessionMock.mockResolvedValue(session)
     createSessionMock.mockImplementation(async (newSession: Omit<Session, 'id'>) => ({
       ...newSession,
       id: 'new-session-thread',
     }))
+    updateSessionWithMessages.mockImplementation((updatedSessionId, updater) => {
+      expect(updatedSessionId).toBe(session.id)
+      expect(updater).toEqual(expect.any(Function))
+      updatedSource = updater(latestSession) as Session
+      return Promise.resolve(updatedSource)
+    })
 
     await sessionActions.moveThreadToConversations(session.id, thread.id)
 
     expect(createSessionMock).toHaveBeenCalledTimes(1)
+    expect(createSessionMock).toHaveBeenCalledWith(expect.any(Object), session.id)
     const newSession = createSessionMock.mock.calls[0][0] as Omit<Session, 'id'>
     expect(newSession.name).toBe(thread.name)
     expect(newSession.threads).toEqual([])
@@ -789,7 +839,22 @@ describe('fork actions', () => {
     const copiedFork = newSession.messageForksHash?.[copiedPivotId]
     expect(copiedFork).toBeDefined()
     expect(copiedFork?.lists[1].messages[0].id).not.toBe(threadAlternative.id)
-    expect(updateSessionWithMessages).toHaveBeenCalledWith(session.id, { threads: [] })
+    const copiedAlternativeId = copiedFork?.lists[1].messages[0].id
+    expect(newSession.compactionPoints).toEqual([
+      {
+        ...threadCompactionPoint,
+        boundaryMessageId: copiedPivotId,
+        summaryMessageId: copiedAlternativeId,
+      },
+    ])
+    expect(newSession.settings).toEqual({
+      provider: 'openai',
+      temperature: 0.25,
+      sessionPromptContextSnapshot: threadPromptContext,
+    })
+    expect(updatedSource?.threads).toEqual([concurrentThread])
+    expect(updatedSource?.settings).toBe(session.settings)
+    expect(updateSessionWithMessages).toHaveBeenCalledWith(session.id, expect.any(Function))
     expect(routerNavigateMock).toHaveBeenCalledWith({ to: '/session/new-session-thread' })
   })
 

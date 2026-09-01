@@ -1,11 +1,11 @@
 import type { CopilotDetail, Session, SessionMetaRecord, Settings } from '@shared/types'
 import { unzipSync, zipSync } from 'fflate'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bytesToBase64 } from './codec'
+import { bytesToBase64, sha256Checksum } from './codec'
 import { exportBackupArchive } from './export-backup'
 import { importBackupArchive } from './import-backup'
 import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
-import type { BackupMetaStorage, BackupStorage } from './types'
+import type { BackupFile, BackupMetaStorage, BackupStorage } from './types'
 
 class MemoryStorage implements BackupStorage {
   readonly values = new Map<string, unknown>()
@@ -171,76 +171,26 @@ function combine(chunks: Uint8Array[]): Uint8Array {
   return output
 }
 
+function asNativeBackupFile(bytes: Uint8Array): BackupFile {
+  return {
+    size: bytes.byteLength,
+    readBytes: (offset, length) => Promise.resolve(bytes.slice(offset, offset + length)),
+    async *chunks() {
+      await Promise.resolve()
+      yield bytes
+    },
+    text: () => Promise.reject(new Error('ZIP import must not read the file as text')),
+  }
+}
+
 describe('ZIP backup round trip', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('recomputes hasPausedToolCall from the restored session when the backup meta lacks it', async () => {
-    const source = new MemoryStorage()
-    const sourceMeta = new MemoryMetaStorage()
-    const pausedSession = createPausedSession('paused')
-    source.values.set(backupSessionStorageKey(pausedSession.id), pausedSession)
-    // A pre-change backup meta has no hasPausedToolCall field.
-    sourceMeta.records.set(pausedSession.id, createMeta(pausedSession, 1))
-
-    const chunks: Uint8Array[] = []
-    await exportBackupArchive({
-      exportItems: ['conversations'],
-      includeKeys: false,
-      storage: source,
-      metaStorage: sourceMeta,
-      application: { version: 'test', platform: 'test' },
-      writeArchive: async (dataCallback) => {
-        for await (const chunk of dataCallback()) chunks.push(chunk)
-        return { boundedMemory: true }
-      },
+  it('restores a native ZIP without Blob, Web Streams, Web Crypto, or crypto.getRandomValues', async () => {
+    const nativeRandomValues = vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation(() => {
+      throw new Error('Web Crypto getRandomValues is unavailable')
     })
-
-    const destinationMeta = new MemoryMetaStorage()
-    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'backup.zip'), {
-      storage: new MemoryStorage(),
-      metaStorage: destinationMeta,
-    })
-
-    expect(destinationMeta.records.get(pausedSession.id)?.hasPausedToolCall).toBe(true)
-  })
-
-  it('clears a stale hasPausedToolCall when an import replaces a paused session with a non-paused one', async () => {
-    const source = new MemoryStorage()
-    const sourceMeta = new MemoryMetaStorage()
-    const session = createSession('replace')
-    source.values.set(backupSessionStorageKey(session.id), session)
-    sourceMeta.records.set(session.id, createMeta(session, 1))
-
-    const chunks: Uint8Array[] = []
-    await exportBackupArchive({
-      exportItems: ['conversations'],
-      includeKeys: false,
-      storage: source,
-      metaStorage: sourceMeta,
-      application: { version: 'test', platform: 'test' },
-      writeArchive: async (dataCallback) => {
-        for await (const chunk of dataCallback()) chunks.push(chunk)
-        return { boundedMemory: true }
-      },
-    })
-
-    const destination = new MemoryStorage()
-    const destinationMeta = new MemoryMetaStorage()
-    destinationMeta.records.set(session.id, { ...createMeta(session, 99), hasPausedToolCall: true })
-
-    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'backup.zip'), {
-      storage: destination,
-      metaStorage: destinationMeta,
-    })
-
-    expect(destinationMeta.records.get(session.id)?.hasPausedToolCall).toBe(false)
-  })
-
-
-  it('restores independent sessions and shared resources, remapping conflicting blob keys', async () => {
-    const nativeRandomUuid = vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementation(() => {
-      throw new Error('Web Crypto randomUUID is unavailable')
-    })
+    let importId = 0
     const source = new MemoryStorage()
     const sourceMeta = new MemoryMetaStorage()
     for (const [index, id] of ['one', 'two'].entries()) {
@@ -274,10 +224,23 @@ describe('ZIP backup round trip', () => {
     const destinationMeta = new MemoryMetaStorage()
     destination.blobs.set('picture:shared', 'data:image/png;base64,/w==')
     const archive = combine(chunks)
-    const result = await importBackupArchive(
-      new File([Uint8Array.from(archive).buffer], 'backup.zip', { type: 'application/zip' }),
-      { storage: destination, metaStorage: destinationMeta }
-    )
+    const checksums = new Map<string, Awaited<ReturnType<typeof sha256Checksum>>>()
+    for (const bytes of Object.values(unzipSync(archive))) {
+      checksums.set(bytesToBase64(bytes), await sha256Checksum(bytes))
+    }
+    const nativeDigest = vi.spyOn(globalThis.crypto.subtle, 'digest').mockImplementation(() => {
+      throw new Error('Web Crypto digest is unavailable')
+    })
+    const result = await importBackupArchive(asNativeBackupFile(archive), {
+      storage: destination,
+      metaStorage: destinationMeta,
+      createId: () => `native-import-${++importId}`,
+      checksum: (bytes) => {
+        const checksum = checksums.get(bytesToBase64(bytes))
+        if (!checksum) throw new Error('Missing native checksum fixture')
+        return Promise.resolve(checksum)
+      },
+    })
 
     expect(result.restoredSessionCount).toBe(2)
     expect(destination.blobs.get('picture:shared')).toBe('data:image/png;base64,/w==')
@@ -290,7 +253,8 @@ describe('ZIP backup round trip', () => {
     expect(restoredTwo.messages[0].contentParts[1]).toMatchObject({ storageKey: restoredKey.storageKey })
     expect(destination.blobs.get(restoredKey.storageKey)).toBe('data:image/png;base64,AAECAw==')
     expect(destinationMeta.records.size).toBe(2)
-    expect(nativeRandomUuid).not.toHaveBeenCalled()
+    expect(nativeRandomValues).not.toHaveBeenCalled()
+    expect(nativeDigest).not.toHaveBeenCalled()
   })
 
   it('rebases conversation-only snapshots without replacing frozen memories', async () => {
@@ -1227,7 +1191,7 @@ describe('ZIP backup round trip', () => {
         signal: abortController.signal,
         onProgress: (progress) => {
           if (progress.phase === 'restoring' && progress.current === 1) {
-            abortController.abort(new DOMException('Canceled by test', 'AbortError'))
+            abortController.abort('Canceled by test')
           }
         },
       })

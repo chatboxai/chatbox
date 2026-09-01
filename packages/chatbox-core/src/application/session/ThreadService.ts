@@ -46,16 +46,20 @@ export class ThreadService {
 
   async edit(sessionId: string, threadId: string, update: Pick<Partial<SessionThread>, 'name'>): Promise<boolean> {
     const session = await this.dependencies.sessions.getSession(sessionId)
-    if (!session?.threads) return false
+    if (!session) return false
 
     if (threadId === sessionId) {
       await this.dependencies.sessions.updateSession(sessionId, { threadName: update.name })
       return true
     }
 
-    if (!session.threads.some((thread) => thread.id === threadId)) return false
-    await this.dependencies.sessions.updateSessionWithMessages(sessionId, {
-      threads: session.threads.map((thread) => (thread.id === threadId ? { ...thread, ...update } : thread)),
+    if (!session.threads?.some((thread) => thread.id === threadId)) return false
+    await this.dependencies.sessions.updateSessionWithMessages(sessionId, (current) => {
+      if (!current) throw new Error(`Session ${sessionId} not found during thread edit`)
+      return {
+        ...current,
+        threads: current.threads?.map((thread) => (thread.id === threadId ? { ...thread, ...update } : thread)),
+      }
     })
     return true
   }
@@ -67,10 +71,16 @@ export class ThreadService {
       return this.removeCurrentFromSession(session.id, expectedCurrent ?? getCurrentThreadTarget(session))
     }
 
-    const target = session.threads?.find((thread) => thread.id === threadId)
-    if (target) this.dependencies.cancelMessages(sessionId, getConversationMessages(session, target.messages))
-    await this.dependencies.sessions.updateSessionWithMessages(sessionId, {
-      threads: session.threads?.filter((thread) => thread.id !== threadId),
+    if (!session.threads?.some((thread) => thread.id === threadId)) return false
+    await this.dependencies.sessions.updateSessionWithMessages(sessionId, (current) => {
+      if (!current) throw new Error(`Session ${sessionId} not found during thread removal`)
+      const target = current.threads?.find((thread) => thread.id === threadId)
+      if (!target) return current
+      this.dependencies.cancelMessages(sessionId, getConversationMessages(current, target.messages))
+      return {
+        ...current,
+        threads: current.threads?.filter((thread) => thread.id !== threadId),
+      }
     })
     return true
   }

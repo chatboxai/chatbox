@@ -468,6 +468,33 @@ describe('SessionService', () => {
     )
   })
 
+  test('updates sort order in session metadata and refreshes the visible list', async () => {
+    const harness = createHarness()
+    const first = createTestSession('session-1')
+    const second = createTestSession('session-2')
+    for (const [index, session] of [first, second].entries()) {
+      harness.repository.sessions.set(session.id, session)
+      harness.repository.records.set(session.id, createTestRecord(session, index + 1))
+    }
+
+    await expect(harness.service.updateSessionSortOrder(first.id, 3000)).resolves.toMatchObject({
+      id: first.id,
+      sortOrder: 3000,
+    })
+
+    expect(harness.repository.records.get(first.id)?.sortOrder).toBe(3000)
+    expect(harness.published.at(-1)).toMatchObject({
+      type: 'session-list-reset',
+      visible: { items: [{ id: first.id }, { id: second.id }] },
+    })
+  })
+
+  test('rejects sort-order updates for missing session metadata', async () => {
+    const harness = createHarness()
+
+    await expect(harness.service.updateSessionSortOrder('missing', 3000)).rejects.toBeInstanceOf(SessionNotFoundError)
+  })
+
   test('deletes persistence only after awaited pre-delete effects', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')

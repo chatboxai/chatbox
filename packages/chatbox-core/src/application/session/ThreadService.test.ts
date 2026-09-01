@@ -24,17 +24,22 @@ function promptContextSnapshot(soul: string): SessionPromptContextSnapshot {
 function createHarness(initial: Session) {
   let session = initial
   let copiedSource: Session | undefined
+  let beforeNextMessageUpdate: ((current: Session) => Session) | undefined
   let id = 0
   const sessions: SessionUseCasePort = {
     getSession: () => Promise.resolve(session),
-    async updateSession(_sessionId, updater: Updater<SessionMetadataUpdate>) {
+    updateSession(_sessionId, updater: Updater<SessionMetadataUpdate>) {
       const update = typeof updater === 'function' ? updater(session) : updater
       session = { ...session, ...update }
-      return session
+      return Promise.resolve(session)
     },
-    async updateSessionWithMessages(_sessionId, updater) {
+    updateSessionWithMessages(_sessionId, updater) {
+      if (beforeNextMessageUpdate) {
+        session = beforeNextMessageUpdate(session)
+        beforeNextMessageUpdate = undefined
+      }
       session = typeof updater === 'function' ? updater(session) : { ...session, ...updater }
-      return session
+      return Promise.resolve(session)
     },
   }
   const cancelMessages = vi.fn()
@@ -44,9 +49,9 @@ function createHarness(initial: Session) {
     now: () => 100 + id,
     getDefaultSystemPrompt: () => 'Default system',
     cancelMessages,
-    copySession: async (source) => {
+    copySession: (source) => {
       copiedSource = source
-      return { ...source, id: 'copied-session' }
+      return Promise.resolve({ ...source, id: 'copied-session' })
     },
   })
   return {
@@ -58,10 +63,45 @@ function createHarness(initial: Session) {
     get copiedSource() {
       return copiedSource
     },
+    beforeMessageUpdate(update: (current: Session) => Session) {
+      beforeNextMessageUpdate = update
+    },
   }
 }
 
 describe('ThreadService', () => {
+  test('edits the active thread name even before a history list exists', async () => {
+    const harness = createHarness({ id: 'session-1', name: 'Session', messages: [] })
+
+    await expect(harness.service.edit('session-1', 'session-1', { name: 'Renamed' })).resolves.toBe(true)
+
+    expect(harness.session.threadName).toBe('Renamed')
+  })
+
+  test('applies archived thread edits and removals to the latest queued Session', async () => {
+    const original = { id: 'history-1', name: 'History', messages: [], createdAt: 1 }
+    const concurrent = { id: 'history-2', name: 'Concurrent', messages: [], createdAt: 2 }
+    const harness = createHarness({
+      id: 'session-1',
+      name: 'Session',
+      messages: [],
+      threads: [original],
+    })
+
+    harness.beforeMessageUpdate((current) => ({
+      ...current,
+      threads: [...(current.threads ?? []), concurrent],
+    }))
+    await expect(harness.service.edit('session-1', original.id, { name: 'Edited' })).resolves.toBe(true)
+    expect(harness.session.threads?.map(({ id, name }) => ({ id, name }))).toEqual([
+      { id: original.id, name: 'Edited' },
+      { id: concurrent.id, name: concurrent.name },
+    ])
+
+    await expect(harness.service.remove('session-1', original.id)).resolves.toBe(true)
+    expect(harness.session.threads).toEqual([concurrent])
+  })
+
   test('switches thread data while returning UI effects to the host', async () => {
     const current = [message('system', 'system'), message('current', 'user')]
     const history = [message('history', 'user')]
@@ -164,23 +204,53 @@ describe('ThreadService', () => {
   })
 
   test('moves a history thread into a copied conversation before removing it', async () => {
-    const historyMessages = [message('history', 'user')]
+    const historyPivot = message('history-pivot', 'user')
+    const historySummary = message('history-summary', 'assistant')
+    const historyMessages = [historyPivot, historySummary]
     const historySnapshot = promptContextSnapshot('History Soul')
+    const currentSnapshot = promptContextSnapshot('Current Soul')
+    const historyCompactionPoint = {
+      summaryMessageId: historySummary.id,
+      boundaryMessageId: historyPivot.id,
+      createdAt: 2,
+    }
+    const concurrentThread = {
+      id: 'history-2',
+      name: 'Concurrent',
+      messages: [message('concurrent', 'user')],
+      createdAt: 3,
+    }
     const harness = createHarness({
       id: 'session-1',
       name: 'Session',
       messages: [message('current', 'user')],
-      settings: { sessionPromptContextSnapshot: promptContextSnapshot('Current Soul') },
+      settings: {
+        provider: 'openai',
+        temperature: 0.25,
+        sessionPromptContextSnapshot: currentSnapshot,
+      },
+      messageForksHash: {
+        [historyPivot.id]: {
+          position: 0,
+          lists: [{ id: 'history-list', messages: [] }],
+          createdAt: 1,
+        },
+      },
       threads: [
         {
           id: 'history-1',
           name: 'History',
           messages: historyMessages,
           createdAt: 1,
+          compactionPoints: [historyCompactionPoint],
           sessionPromptContextSnapshot: historySnapshot,
         },
       ],
     })
+    harness.beforeMessageUpdate((current) => ({
+      ...current,
+      threads: [...(current.threads ?? []), concurrentThread],
+    }))
 
     await expect(harness.service.moveToConversation('session-1', 'history-1')).resolves.toBe('copied-session')
 
@@ -189,9 +259,16 @@ describe('ThreadService', () => {
       messages: historyMessages,
       threads: [],
       threadName: 'History',
-      settings: { sessionPromptContextSnapshot: historySnapshot },
+      compactionPoints: [historyCompactionPoint],
+      settings: {
+        provider: 'openai',
+        temperature: 0.25,
+        sessionPromptContextSnapshot: historySnapshot,
+      },
     })
-    expect(harness.session.threads).toEqual([])
+    expect(harness.copiedSource?.messageForksHash?.[historyPivot.id]).toBeDefined()
+    expect(harness.session.threads).toEqual([concurrentThread])
+    expect(harness.session.settings?.sessionPromptContextSnapshot).toBe(currentSnapshot)
     expect(harness.cancelMessages).toHaveBeenCalledWith('session-1', historyMessages)
   })
 

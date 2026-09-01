@@ -1,3 +1,4 @@
+export { isAbortError, normalizeBackupExportItems, updateBackupExportItemSelection } from '@chatbox/core/backup'
 export type { BackupExportResult } from './export-backup'
 export { exportBackupArchive } from './export-backup'
 export type { BackupImportResult } from './import-backup'

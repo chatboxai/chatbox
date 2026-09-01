@@ -132,6 +132,27 @@ describe('SettingsSchema MCP protocol mode', () => {
   })
 })
 
+describe('SettingsSchema new message scroll behavior', () => {
+  test('defaults new message auto-scroll to top to disabled for existing settings', () => {
+    const { autoScrollNewMessagesToTop: _unset, ...legacySettings } = defaultSettings()
+
+    expect(SettingsSchema.parse(legacySettings).autoScrollNewMessagesToTop).toBe(false)
+  })
+})
+
+describe('SettingsSchema Web Search preference', () => {
+  test.each([true, false])('preserves explicit %s in global and session settings', (webBrowsing) => {
+    expect(SettingsSchema.parse({ ...defaultSettings(), webBrowsing }).webBrowsing).toBe(webBrowsing)
+    expect(SessionSettingsSchema.parse({ webBrowsing }).webBrowsing).toBe(webBrowsing)
+  })
+
+  test('keeps missing preferences unset and drops malformed values', () => {
+    expect(SettingsSchema.parse(defaultSettings()).webBrowsing).toBeUndefined()
+    expect(SessionSettingsSchema.parse({}).webBrowsing).toBeUndefined()
+    expect(SessionSettingsSchema.parse({ webBrowsing: 'enabled' }).webBrowsing).toBeUndefined()
+  })
+})
+
 describe('SettingsSchema background image opacity', () => {
   test('uses the original opacity for existing settings', () => {
     const legacySettings: Record<string, unknown> = { ...defaultSettings() }

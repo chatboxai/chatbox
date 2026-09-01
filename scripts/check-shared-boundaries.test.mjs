@@ -205,7 +205,7 @@ test('rejects main and preload imports from renderer through aliases and relativ
   )
 })
 
-test('allows only the repository owner and four named recovery paths to use Session-capable storage APIs', () => {
+test('allows only the repository owner and named recovery paths to use Session-capable storage APIs', () => {
   const writer =
     'storage.setItemNow(StorageKeyGenerator.session(session.id), session)\nstorage.removeItem(StorageKeyGenerator.session(session.id))'
   withFixture(
@@ -215,6 +215,10 @@ test('allows only the repository owner and four named recovery paths to use Sess
       'src/renderer/packages/backup/import-backup.ts':
         'options.storage.setItemNow(backupSessionStorageKey(session.id), session)',
       'src/renderer/packages/backup/legacy-import.ts':
+        'for (const [key, value] of entries) options.storage.setItemNow(key, value)',
+      'packages/chatbox-core/src/backup/import-backup.ts':
+        'options.storage.setItemNow(backupSessionStorageKey(session.id), session)',
+      'packages/chatbox-core/src/backup/legacy-import.ts':
         'for (const [key, value] of entries) options.storage.setItemNow(key, value)',
       'src/renderer/pages/SettingDialog/AdvancedSettingTab.tsx': 'storage.setAll({ ...previousData, ...importData })',
     },

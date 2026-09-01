@@ -1,4 +1,5 @@
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite'
+import { CAPACITOR_IMAGE_GENERATION_SCHEMA_SQL } from '@chatbox/core'
 import type { ImageGeneration, ImageGenerationPage } from '@shared/types'
 import type { ImageGenerationStorage } from './ImageGenerationStorage'
 
@@ -33,28 +34,7 @@ export class SQLiteImageGenerationStorage implements ImageGenerationStorage {
     this.database = await this.sqlite.createConnection(DB_NAME, false, 'no-encryption', 2, false)
     await this.database.open()
 
-    await this.database.execute(`
-      CREATE TABLE IF NOT EXISTS image_generation (
-        id TEXT PRIMARY KEY NOT NULL,
-        prompt TEXT NOT NULL,
-        reference_images TEXT NOT NULL DEFAULT '[]',
-        generated_images TEXT NOT NULL DEFAULT '[]',
-        generated_image_thumbnails TEXT,
-        created_at INTEGER NOT NULL,
-        model_provider TEXT NOT NULL,
-        model_id TEXT NOT NULL,
-        dalle_style TEXT,
-        image_generate_num INTEGER,
-        status TEXT NOT NULL,
-        parent_id TEXT,
-        error TEXT,
-        error_code TEXT,
-        error_item_uuid TEXT,
-        task_id TEXT,
-        aspect_ratio TEXT,
-        source TEXT
-      )
-    `)
+    await this.database.execute(CAPACITOR_IMAGE_GENERATION_SCHEMA_SQL)
 
     // Migration: add new columns if they don't exist (for existing databases)
     await this.addColumnIfNotExists('task_id', 'TEXT')
@@ -62,11 +42,6 @@ export class SQLiteImageGenerationStorage implements ImageGenerationStorage {
     await this.addColumnIfNotExists('error_item_uuid', 'TEXT')
     await this.addColumnIfNotExists('generated_image_thumbnails', 'TEXT')
     await this.addColumnIfNotExists('source', 'TEXT')
-
-    await this.database.execute(`
-      CREATE INDEX IF NOT EXISTS idx_image_generation_created_at
-      ON image_generation(created_at DESC)
-    `)
   }
 
   private async addColumnIfNotExists(columnName: string, columnDef: string): Promise<void> {

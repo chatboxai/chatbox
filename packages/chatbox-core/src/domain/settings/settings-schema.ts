@@ -191,6 +191,8 @@ export const GlobalSessionSettingsSchema = z.object({
   topP: z.number().optional().catch(undefined),
   maxTokens: z.number().finite().int().min(1).optional().catch(undefined),
   stream: z.boolean().optional().catch(true),
+  // Explicit Web Search preference. Undefined follows the active provider default.
+  webBrowsing: z.boolean().optional().catch(undefined),
 })
 
 export const SessionSettingsSchema = GlobalSessionSettingsSchema.extend({

@@ -1,5 +1,7 @@
 import { strToU8, zipSync } from 'fflate'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { isZipBackupFile } from './import-backup'
+import type { BackupFile } from './types'
 import { createZipStream, readZipFileEntries, type ZipArchiveEntry } from './zip'
 
 async function collect(stream: AsyncIterable<Uint8Array>): Promise<Uint8Array> {
@@ -22,7 +24,94 @@ function asFile(bytes: Uint8Array): File {
   return new File([Uint8Array.from(bytes).buffer], 'backup.zip', { type: 'application/zip' })
 }
 
+function asReactNativeFile(bytes: Uint8Array): BackupFile {
+  const file = asFile(bytes)
+  return {
+    size: bytes.byteLength,
+    readBytes: (offset, length) => Promise.resolve(bytes.slice(offset, offset + length)),
+    async *chunks() {
+      await Promise.resolve()
+      yield bytes
+    },
+    slice: () => {
+      throw new Error("Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported")
+    },
+    stream: () => {
+      throw new Error('React Native Web Streams are unavailable')
+    },
+    text: () => file.text(),
+  }
+}
+
+function asStreamingBackupFile(bytes: Uint8Array, cancel: () => Promise<void>): BackupFile {
+  return {
+    size: bytes.byteLength,
+    readBytes: (start, length) => Promise.resolve(bytes.slice(start, start + length)),
+    stream: () => {
+      let offset = 0
+      return {
+        getReader: () => ({
+          read: () => {
+            if (offset >= bytes.byteLength) return Promise.resolve({ done: true as const, value: undefined })
+            const value = bytes.slice(offset, offset + 3)
+            offset += value.byteLength
+            return Promise.resolve({ done: false as const, value })
+          },
+          cancel,
+        }),
+      }
+    },
+    text: () => Promise.resolve(new TextDecoder().decode(bytes)),
+  }
+}
+
 describe('streaming ZIP', () => {
+  it('uses native range reads when React Native Blob.slice is unsupported', async () => {
+    const archive = zipSync({ 'manifest.json': strToU8('{"ok":true}') })
+    const file = asReactNativeFile(archive)
+    const restored: string[] = []
+
+    expect(await isZipBackupFile(file)).toBe(true)
+    await readZipFileEntries(file, (entry) => {
+      restored.push(entry.path)
+    })
+
+    expect(restored).toEqual(['manifest.json'])
+  })
+
+  it('reads a backup through the host-neutral stream contract', async () => {
+    const archive = zipSync({ 'manifest.json': strToU8('{"ok":true}') })
+    const restored: string[] = []
+    const cancel = vi.fn(() => Promise.resolve())
+
+    await readZipFileEntries(asStreamingBackupFile(archive, cancel), (entry) => {
+      restored.push(entry.path)
+    })
+
+    expect(restored).toEqual(['manifest.json'])
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+
+  it('does not let stream cleanup failures mask the primary read error', async () => {
+    const archive = zipSync({ 'manifest.json': strToU8('{"ok":true}') })
+    const primaryError = new Error('Primary stream read failed')
+    const cancel = vi.fn(() => Promise.reject(new Error('Stream cleanup failed')))
+    const file: BackupFile = {
+      size: archive.byteLength,
+      readBytes: (start, length) => Promise.resolve(archive.slice(start, start + length)),
+      stream: () => ({
+        getReader: () => ({
+          read: () => Promise.reject(primaryError),
+          cancel,
+        }),
+      }),
+      text: () => Promise.resolve(new TextDecoder().decode(archive)),
+    }
+
+    await expect(readZipFileEntries(file, () => undefined)).rejects.toBe(primaryError)
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+
   it('writes and reads entries without assembling entry data in the ZIP layer', async () => {
     const archive = await collect(
       createZipStream([

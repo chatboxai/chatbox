@@ -1,3 +1,4 @@
+import { getBackupFilename } from '@chatbox/core/backup'
 import {
   ActionIcon,
   Alert,
@@ -29,12 +30,12 @@ import {
 } from '@shared/theme-colors'
 import { type Language, Theme } from '@shared/types'
 import { formatFileSize } from '@shared/utils'
-import { getBackupFilename } from '@shared/utils/backup'
 import { IconCheck, IconDeviceFloppy, IconInfoCircle, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { rendererApplication } from '@/app/renderer-application'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { InterfaceColorInput } from '@/components/common/InterfaceColorInput'
 import LazySlider from '@/components/common/LazySlider'
@@ -46,16 +47,17 @@ import {
   exportBackupArchive,
   importBackupArchive,
   importLegacyJsonBackup,
+  isAbortError,
   isZipBackupFile,
   rehydrateImportedSession,
+  updateBackupExportItemSelection,
 } from '@/packages/backup'
 import platform from '@/platform'
 import { canShareFile, shareFile } from '@/platform/web_file_share'
 import storage from '@/storage'
 import { withAgentPersonaLocks } from '@/stores/agentPersonaStore'
-import { rendererApplication } from '@/app/renderer-application'
-import { getMetaStorage } from '@/stores/sessionHelpers'
 import { migrateOnData } from '@/stores/migration'
+import { getMetaStorage } from '@/stores/sessionHelpers'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 
@@ -644,7 +646,7 @@ const ImportExportDataSection = () => {
   const [pendingDownload, setPendingDownload] = useState<{ filename: string; blob: Blob }>()
   const [pendingDownloadUrl, setPendingDownloadUrl] = useState<string>()
   const operationAbortRef = useRef<AbortController | null>(null)
-  const [exportItems, setExportItems] = useState<ExportDataItem[]>([
+  const [exportItems, setExportItems] = useState<BackupExportItem[]>([
     ExportDataItem.Setting,
     ExportDataItem.Conversations,
     ExportDataItem.Copilot,
@@ -680,7 +682,7 @@ const ImportExportDataSection = () => {
     try {
       await shareFile(pendingDownloadFile)
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
+      if (isAbortError(error)) return
       console.error('Failed to share backup:', error)
     }
   }
@@ -697,7 +699,7 @@ const ImportExportDataSection = () => {
     try {
       const date = new Date()
       const result = await exportBackupArchive({
-        exportItems: exportItems.map((item) => item as BackupExportItem),
+        exportItems,
         includeKeys: exportItems.includes(ExportDataItem.Key),
         exportedAt: date,
         storage,
@@ -756,7 +758,7 @@ const ImportExportDataSection = () => {
             : { color: 'green', title: String(t('Backup exported successfully')) }
       )
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (isAbortError(error)) {
         setExportNotice({ color: 'yellow', title: String(t('Export canceled')) })
       } else {
         console.error('Export failed:', serializeErrorForLog(error))
@@ -823,7 +825,7 @@ const ImportExportDataSection = () => {
       }
       await platform.relaunch()
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') setImportTips(String(t('Import canceled')))
+      if (isAbortError(error)) setImportTips(String(t('Import canceled')))
       else {
         console.error('Import failed:', error)
         setImportTips(
@@ -887,14 +889,9 @@ const ImportExportDataSection = () => {
             key={value}
             checked={exportItems.includes(value)}
             label={label}
-            disabled={isLoading}
+            disabled={isLoading || (value === ExportDataItem.Setting && exportItems.includes(ExportDataItem.Key))}
             onChange={(e) => {
-              const checked = e.currentTarget.checked
-              if (checked && !exportItems.includes(value)) {
-                setExportItems([...exportItems, value])
-              } else if (!checked) {
-                setExportItems(exportItems.filter((v) => v !== value))
-              }
+              setExportItems((current) => updateBackupExportItemSelection(current, value, e.currentTarget.checked))
             }}
           />
         ))}

@@ -23,4 +23,11 @@ describe('backup resource codec', () => {
       value: '34a3be81f9446ab48383356a82763fcf93a08a667d01f77a554392821a7893ce',
     })
   })
+
+  it('supports a platform SHA-256 provider without Web Crypto', async () => {
+    const digest = new Uint8Array(32).fill(0xab)
+    const checksum = await sha256Checksum(new Uint8Array([1, 2, 3]), () => Promise.resolve(digest.buffer))
+
+    expect(checksum).toEqual({ algorithm: 'sha256', value: 'ab'.repeat(32) })
+  })
 })

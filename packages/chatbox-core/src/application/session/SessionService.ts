@@ -316,6 +316,14 @@ export class SessionService {
     )
   }
 
+  async updateSessionSortOrder(sessionId: string, sortOrder: number): Promise<SessionMetaRecord> {
+    await this.initialize()
+    const updated = await this.repository.meta.update(sessionId, { sortOrder })
+    if (!updated) throw new SessionNotFoundError(sessionId)
+    await this.publishListReset({ visible: true })
+    return updated
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     await this.initialize()
     await this.writes.delete(sessionId, async () => {

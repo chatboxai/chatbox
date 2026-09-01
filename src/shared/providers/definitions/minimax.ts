@@ -1,4 +1,4 @@
-import { createBearerOAuthFetch, createOAuthCredentialManager } from '../../oauth'
+import { createBearerOAuthFetch, createOAuthCredentialManager, isUsingOAuth } from '../../oauth'
 import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import OpenAI from './models/openai'
@@ -52,8 +52,7 @@ function createMiniMaxProvider(config: {
       ],
     },
     createModel: (createConfig) => {
-      const isOAuth =
-        createConfig.providerSetting.activeAuthMode === 'oauth' && !!createConfig.providerSetting.oauth?.accessToken
+      const isOAuth = isUsingOAuth(createConfig.providerSetting, createConfig.dependencies.platformType || 'desktop')
       const credentialManager = createOAuthCredentialManager(
         config.id,
         createConfig.providerSetting,

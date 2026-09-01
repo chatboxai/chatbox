@@ -1,4 +1,5 @@
 import { ApiError, BaseError, ChatboxAIAPIError, NetworkError } from '../models/errors'
+import type { AbortSignalLike } from '../types/adapters'
 import { parseJsonOrEmpty } from '../utils/json_utils'
 import { isChatboxAPI } from './chatboxai_pool'
 
@@ -27,9 +28,9 @@ function toError(e: unknown): Error {
  * retry logic — retrying a request the caller already cancelled is wasted work
  * and surfaces a confusing NetworkError instead of the original AbortError.
  */
-function isAbortError(e: unknown, signal?: AbortSignal | null): boolean {
+function isAbortError(e: unknown, signal?: AbortSignalLike | null): boolean {
   if (signal?.aborted) return true
-  return e instanceof DOMException && e.name === 'AbortError'
+  return getStringProperty(e, 'name') === 'AbortError'
 }
 
 /**
@@ -97,7 +98,7 @@ function sanitizeResponseBody(status: number, response: string): string {
 
 export function createAfetch(
   platformInfo: PlatformInfo,
-  fetchImplementation: FetchImplementation = (url, init) => fetch(url, init)
+  fetchImplementation: FetchImplementation = (url, init) => fetch(url as RequestInfo, init)
 ) {
   return async function afetch(
     url: RequestInfo | URL,
@@ -259,7 +260,7 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
 
     for (let i = 0; i < retry + 1; i++) {
       try {
-        const res = await fetch(url, init)
+        const res = await fetch(url as RequestInfo, init)
 
         // 检查 401 Unauthorized
         if (res.status === 401) {
@@ -299,7 +300,7 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
           }
 
           console.debug('🔄 Retrying request with new token...')
-          const retryRes = await fetch(url, init)
+          const retryRes = await fetch(url as RequestInfo, init)
 
           if (!retryRes.ok) {
             const response = await retryRes.text().catch((e: unknown) => {

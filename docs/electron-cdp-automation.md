@@ -244,23 +244,30 @@ await evaluate(`
 
 1. **手动截图**: `Cmd+Shift+4` (macOS)
 2. **`Page.startScreencast`**: 可返回帧数据，但窗口不可见时帧为空白
-3. **`Emulation.setDeviceMetricsOverride`**: 有时能让截图工作（强制 compositor 渲染），但不稳定
+3. **Playwright Electron QA**: 需要固定尺寸证据时，改用 `test/e2e/electron-qa-window.ts` 的 `setElectronQaViewport()`，让 BrowserWindow content bounds 与 renderer/CDP viewport 保持一致
 
 ```js
-// 设置视口（有时能让后台截图工作）
-await send('Emulation.setDeviceMetricsOverride', {
-  width: 1280,
-  height: 800,
-  deviceScaleFactor: 2,
-  mobile: false,
-})
-await sleep(2000)
-
 // 截图
-const result = await send('Page.captureScreenshot', { format: 'png' })
+const metrics = await send('Page.getLayoutMetrics')
+const renderer = await evaluate(`
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    deviceScaleFactor: window.devicePixelRatio,
+  }
+`)
+if (
+  metrics.cssLayoutViewport.clientWidth !== renderer.width ||
+  metrics.cssLayoutViewport.clientHeight !== renderer.height
+) {
+  throw new Error('CDP layout viewport does not match the renderer viewport')
+}
+const result = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
 const buffer = Buffer.from(result.data, 'base64')
 fs.writeFileSync('screenshot.png', buffer)
 ```
+
+不要用 `Emulation.setDeviceMetricsOverride` 或 Playwright `page.setViewportSize()` 为真实 Electron 截图定尺寸：它们只模拟 renderer metrics，不会同步 BrowserWindow content bounds。`Page.captureScreenshot` 默认按设备像素输出，PNG 宽高等于 CSS viewport 乘以 `window.devicePixelRatio`；需要跨 DPR 固定像素尺寸时，使用 `test/e2e/electron-qa-window.ts` 的 `captureElectronQaScreenshot()`。
 
 ### Page.reload 后的重连
 

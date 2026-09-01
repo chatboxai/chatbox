@@ -105,9 +105,8 @@ html[data-theme="light"] {
   padding-left: var(--mobile-safe-area-inset-left, 0px);
 }
 
-/* 当页面包含 disclaimer 时，取消 .App 的底部安全区域 padding，
-   让 disclaimer 沉入安全区域，减少底部留白 */
-.App:has(.disclaimer-safe-area) {
+/* iOS allows the disclaimer to extend into the bottom safe area to reduce visual whitespace. */
+.App[data-chatbox-platform="ios"]:has(.disclaimer-safe-area) {
   padding-bottom: 0;
 }
 

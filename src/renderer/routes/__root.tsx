@@ -363,6 +363,7 @@ function Root() {
   return (
     <Box
       className="box-border App relative bg-chatbox-background-primary"
+      data-chatbox-platform={CHATBOX_BUILD_PLATFORM}
       spellCheck={spellCheck}
       dir={language === 'ar' ? 'rtl' : 'ltr'}
     >

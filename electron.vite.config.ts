@@ -218,6 +218,8 @@ export default defineConfig(({ mode }) => {
         'process.env.USE_NEWDB_API': JSON.stringify(process.env.USE_NEWDB_API || ''),
         'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
         'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
+        'process.env.CHATBOX_SKIP_GUIDE': JSON.stringify(process.env.CHATBOX_SKIP_GUIDE || ''),
+        'process.env.CHATBOX_START_PAGE': JSON.stringify(process.env.CHATBOX_START_PAGE || ''),
       },
     },
     preload: {
@@ -355,6 +357,8 @@ export default defineConfig(({ mode }) => {
         'process.env.USE_NEWDB_API': JSON.stringify(process.env.USE_NEWDB_API || ''),
         'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
         'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
+        'process.env.CHATBOX_SKIP_GUIDE': JSON.stringify(process.env.CHATBOX_SKIP_GUIDE || ''),
+        'process.env.CHATBOX_START_PAGE': JSON.stringify(process.env.CHATBOX_START_PAGE || ''),
       },
       optimizeDeps: {
         // Force a fresh dep optimization on dev startup. This avoids stale .vite

@@ -34,7 +34,7 @@
     "dev:web:standalone": "vite --config vite.config.web.ts",
     "dev:debug": "cross-env MAIN_ARGS=\"--inspect=5858\" pnpm start",
     "start": "electron-vite dev",
-    "start:cdp": "electron-vite dev -- --remote-debugging-port=9333",
+    "start:cdp": "electron-vite dev -- --skip-guide --remote-debugging-port=9333",
     "start:main": "cross-env NODE_ENV=development electronmon -r ts-node/register/transpile-only .",
     "start:preload": "electron-vite build --preload --watch",
     "start:renderer": "electron-vite",

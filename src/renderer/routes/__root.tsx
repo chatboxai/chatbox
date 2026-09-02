@@ -27,6 +27,7 @@ import {
 import { Box, Grid } from '@mui/material'
 import CssBaseline from '@mui/material/CssBaseline'
 import { ThemeProvider } from '@mui/material/styles'
+import { shouldNavigateToStartPage, shouldSkipOnboardingGuide, splitLaunchPath } from '@shared/dev-launch'
 import { type RemoteConfig, Theme } from '@shared/types'
 import { useQuery } from '@tanstack/react-query'
 import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
@@ -65,6 +66,7 @@ import platform from '@/platform'
 import { getSettingsSearchParam, navigateToDynamicPath, router } from '@/router'
 import Sidebar from '@/Sidebar'
 import * as atoms from '@/stores/atoms'
+import { getRendererDevLaunchOptions } from '@/utils/dev-launch'
 
 const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 
@@ -203,10 +205,39 @@ function Root() {
       await Promise.all([initSettingsStore(), initOnboardingStore()])
       void prefetchModelRegistry()
 
-      const remoteConfig = await remote
-        .getRemoteConfig('setting_chatboxai_first')
-        .catch(() => ({ setting_chatboxai_first: false }) as RemoteConfig)
-      setRemoteConfig(async (prev) => ({ ...(await prev), ...remoteConfig }))
+      const syncRemoteConfig = async () => {
+        const remoteConfig = await remote
+          .getRemoteConfig('setting_chatboxai_first')
+          .catch(() => ({ setting_chatboxai_first: false }) as RemoteConfig)
+        setRemoteConfig(async (prev) => ({ ...(await prev), ...remoteConfig }))
+        return remoteConfig
+      }
+
+      const launchOptions = getRendererDevLaunchOptions()
+      const skipOnboarding = shouldSkipOnboardingGuide(launchOptions)
+      if (skipOnboarding) {
+        onboardingStore.getState().markCompleted()
+        initialized.current = true
+        if (
+          launchOptions.startPage &&
+          shouldNavigateToStartPage(
+            launchOptions.startPage,
+            location.pathname,
+            location.search as Record<string, unknown>
+          )
+        ) {
+          const { pathname, search } = splitLaunchPath(launchOptions.startPage)
+          navigateToDynamicPath({
+            to: pathname,
+            replace: true,
+            search: Object.keys(search).length > 0 ? search : undefined,
+          })
+        }
+        void syncRemoteConfig()
+        return
+      }
+
+      const remoteConfig = await syncRemoteConfig()
 
       // Skip guide-related checks if already on guide, dev tools, or settings/mcp page
       if (
@@ -250,7 +281,7 @@ function Root() {
         return
       }
     })()
-  }, [setOpenAboutDialog, setRemoteConfig, location.pathname, isExceeded, isExceededResolved])
+  }, [setOpenAboutDialog, setRemoteConfig, location.pathname, location.search, isExceeded, isExceededResolved])
 
   const showSidebar = useUIStore((s) => s.showSidebar)
   const sidebarWidth = useSidebarWidth()
@@ -269,6 +300,7 @@ function Root() {
   }, [_theme])
 
   useEffect(() => {
+    if (shouldSkipOnboardingGuide(getRendererDevLaunchOptions())) return
     if (startupPathname.current !== '/') return
     const { startupPage } = settingsStore.getState()
     let sid = ''

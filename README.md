@@ -339,3 +339,7 @@ chatbox/
 ## License
 
 [LICENSE](./LICENSE)
+
+### Development launch options
+
+Skip onboarding and open a page with `CHATBOX_SKIP_GUIDE=1 CHATBOX_START_PAGE=/settings pnpm dev`, or pass `--skip-guide --start-page=/settings` after `pnpm exec electron-vite dev --`. Web development also accepts `?skipGuide=1`.

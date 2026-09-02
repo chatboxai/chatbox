@@ -30,6 +30,7 @@ import path from 'path'
 // @ts-expect-error - source-map-support doesn't have type definitions
 import * as sourceMapSupport from 'source-map-support'
 import type { ShortcutSetting } from 'src/shared/types'
+import { applyDevLaunchHashToUrl, buildDevLaunchHash, parseDevLaunchOptions } from '../shared/dev-launch'
 import { KNOWN_LOCAL_PARSER_ERROR_CODES } from '../shared/file-parse-errors'
 import { VIEW_IMAGE_MAX_READ_BYTES } from '../shared/tools/view-image'
 import { flushSentry, sentry } from './adapters/sentry'
@@ -72,6 +73,11 @@ const MAIN_RUNTIME_POLICY = getMainRuntimePolicy(process.env, {
 })
 const QA_RUNTIME_PATHS = CHATBOX_QA_PREFLIGHT.paths
 const QA_LAUNCH_ARGUMENTS = CHATBOX_QA_PREFLIGHT.launchArguments
+const DEV_LAUNCH_OPTIONS = parseDevLaunchOptions({
+  argv: process.argv,
+  env: process.env,
+})
+const DEV_LAUNCH_HASH = buildDevLaunchHash(DEV_LAUNCH_OPTIONS)
 
 if (QA_RUNTIME_PATHS && QA_LAUNCH_ARGUMENTS && MAIN_RUNTIME_POLICY.qaTaskId) {
   for (const directory of [
@@ -529,12 +535,14 @@ async function createWindow() {
   // Load the local URL for development or the local
   // html file for production
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    mainWindow.loadURL(applyDevLaunchHashToUrl(process.env['ELECTRON_RENDERER_URL'], DEV_LAUNCH_HASH))
     // Vite can spend a while re-optimizing dependencies during development,
     // especially under x64 emulation on Windows ARM64. Show the window while
     // navigation is in progress instead of leaving it accessible only through
     // the tray until the renderer has finished its first paint.
     showMainWindow()
+  } else if (DEV_LAUNCH_HASH) {
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'), { hash: DEV_LAUNCH_HASH })
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }

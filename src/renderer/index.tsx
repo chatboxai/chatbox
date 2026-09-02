@@ -16,6 +16,7 @@ import { router } from './router'
 import './static/globals.css'
 import './static/index.css'
 import { initLogAtom, migrationProcessAtom } from './stores/atoms/utilAtoms'
+import { captureRendererDevLaunchOptions } from './utils/dev-launch'
 import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
 
 // 按需加载 polyfill
@@ -92,6 +93,8 @@ const tid = setTimeout(() => {
     void SplashScreen.hide()
   }
 }, 1000)
+
+captureRendererDevLaunchOptions()
 
 // 等待初始化完成后再渲染
 initializeRenderer()

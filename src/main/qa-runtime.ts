@@ -1,5 +1,6 @@
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { readCommandLineOption } from '../shared/dev-launch'
 
 export type ChatboxQaEnvironment = {
   // Index signature so `process.env` (NodeJS.ProcessEnv) is assignable: without
@@ -51,18 +52,6 @@ export type MainRuntimePolicy = {
 }
 
 const QA_TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
-
-function readCommandLineOption(argv: string[], name: string): string | null {
-  const option = `--${name}`
-  const inlinePrefix = `${option}=`
-  const inlineValue = argv.find((argument) => argument.startsWith(inlinePrefix))
-  if (inlineValue) {
-    return inlineValue.slice(inlinePrefix.length)
-  }
-
-  const optionIndex = argv.indexOf(option)
-  return optionIndex >= 0 ? (argv[optionIndex + 1] ?? null) : null
-}
 
 function validateQaTaskId(env: ChatboxQaEnvironment): string {
   const taskId = env.CHATBOX_QA_TASK_ID

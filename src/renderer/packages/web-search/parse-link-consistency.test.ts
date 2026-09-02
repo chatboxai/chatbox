@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import { BingSearch } from '@/packages/web-search/bing'
 import { BingNewsSearch } from '@/packages/web-search/bing-news'
 import { BochaSearch } from '@/packages/web-search/bocha'
 import { ChatboxSearch } from '@/packages/web-search/chatbox-search'
 import { KeenableSearch } from '@/packages/web-search/keenable'
-import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import { QueritSearch } from '@/packages/web-search/querit'
+import { SearxngSearch } from '@/packages/web-search/searxng'
 import { TavilySearch } from '@/packages/web-search/tavily'
 
 /**
@@ -33,6 +34,7 @@ describe('parse_link capability consistency', () => {
     { id: 'tavily', instance: new TavilySearch('stub-api-key') },
     { id: 'bocha', instance: new BochaSearch('stub-api-key') },
     { id: 'querit', instance: new QueritSearch('stub-api-key') },
+    { id: 'searxng', instance: new SearxngSearch('https://searx.example.com') },
     { id: 'keenable', instance: new KeenableSearch() },
   ]
 

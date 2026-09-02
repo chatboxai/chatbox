@@ -8,30 +8,68 @@ import { getLogger } from '../util'
 import { buildAttachmentChunks, buildEmbeddedText, selectAttachmentChunkingPipeline } from './chunking'
 import {
   deleteAttachmentGraph,
-  deleteAttachmentIndex,
+  deleteAttachmentIndexOrThrow,
   getSessionAttachment,
   getVectorStore,
+  hasAttachmentVectorIndex,
   listPendingSessionAttachments,
+  listSessionAttachmentChunks,
   markSessionAttachmentFailed,
   markSessionAttachmentIndexing,
   markSessionAttachmentReady,
   purgeCanceledSessionAttachments,
   replaceAttachmentParentsAndChunks,
+  resetSessionAttachmentIndexingCheckpoint,
   runVectorWrite,
+  type SessionAttachmentChunkRecord,
+  type SessionAttachmentRecord,
   updateSessionAttachmentIndexingProgress,
 } from './db'
-import { getSessionAttachmentEmbeddingProviderWithResolution } from './model-providers'
+import {
+  getSessionAttachmentEmbeddingProviderWithResolution,
+  type SessionAttachmentEmbeddingProviderResolution,
+} from './model-providers'
 
 const log = getLogger('session-attachment-rag:file-loaders')
 const BATCH_SIZE = 50
 const EMBEDDING_MAX_RETRIES = 2
 const EMBEDDING_RETRY_DELAY_MS = 1000
+const DEFAULT_EMBEDDING_BATCH_TIMEOUT_MS = 60_000
+const EMBEDDING_TIMEOUT_ENV = 'SESSION_ATTACHMENT_RAG_EMBEDDING_TIMEOUT_MS'
 
 class SessionAttachmentCanceledError extends Error {
   constructor(attachmentId: number) {
     super(`Session attachment ${attachmentId} was canceled`)
     this.name = 'SessionAttachmentCanceledError'
   }
+}
+
+class SessionAttachmentEmbeddingDimensionMismatchError extends Error {
+  constructor(expected: number, actual: number) {
+    super(`Embedding dimension changed from ${expected} to ${actual}`)
+    this.name = 'SessionAttachmentEmbeddingDimensionMismatchError'
+  }
+}
+
+class SessionAttachmentEmbeddingTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Embedding request timed out after ${timeoutMs / 1000} seconds`)
+    this.name = 'SessionAttachmentEmbeddingTimeoutError'
+  }
+}
+
+function getEmbeddingBatchTimeoutMs() {
+  if (process.env.NODE_ENV === 'production') {
+    return DEFAULT_EMBEDDING_BATCH_TIMEOUT_MS
+  }
+  const configured = Number.parseInt(process.env[EMBEDDING_TIMEOUT_ENV] ?? '', 10)
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_EMBEDDING_BATCH_TIMEOUT_MS
+}
+
+export interface SessionAttachmentWorkerDependencies {
+  getContent(storageKey: string): Promise<string | null | undefined>
+  resolveEmbeddingProvider(): Promise<SessionAttachmentEmbeddingProviderResolution>
+  embedValues(model: EmbeddingModel, values: string[]): Promise<number[][]>
 }
 
 async function ensureAttachmentNotCanceled(attachmentId: number) {
@@ -65,17 +103,40 @@ function isTransientEmbeddingError(error: unknown): boolean {
   return false
 }
 
-async function embedManyWithRetry(model: EmbeddingModel, values: string[]) {
+export async function embedManyWithRetry(model: EmbeddingModel, values: string[]) {
   let attempt = 0
+  const timeoutMs = getEmbeddingBatchTimeoutMs()
+  const deadline = Date.now() + timeoutMs
 
   while (true) {
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) {
+      throw new SessionAttachmentEmbeddingTimeoutError(timeoutMs)
+    }
+
+    const abortController = new AbortController()
+    let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeoutId = globalThis.setTimeout(() => {
+        abortController.abort()
+        reject(new SessionAttachmentEmbeddingTimeoutError(timeoutMs))
+      }, remainingMs)
+    })
+
     try {
-      return await embedMany({
-        model,
-        values,
-        maxRetries: 0,
-      })
+      return await Promise.race([
+        embedMany({
+          model,
+          values,
+          maxRetries: 0,
+          abortSignal: abortController.signal,
+        }),
+        timeoutPromise,
+      ])
     } catch (error) {
+      if (error instanceof SessionAttachmentEmbeddingTimeoutError) {
+        throw error
+      }
       attempt += 1
       if (attempt > EMBEDDING_MAX_RETRIES || !isTransientEmbeddingError(error)) {
         throw error
@@ -85,38 +146,165 @@ async function embedManyWithRetry(model: EmbeddingModel, values: string[]) {
       log.warn(
         `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Retrying embedding batch after transient error (attempt ${attempt}/${EMBEDDING_MAX_RETRIES}): ${message}`
       )
-      await setTimeout(EMBEDDING_RETRY_DELAY_MS * attempt)
+      const retryDelayMs = EMBEDDING_RETRY_DELAY_MS * attempt
+      if (Date.now() + retryDelayMs >= deadline) {
+        throw new SessionAttachmentEmbeddingTimeoutError(timeoutMs)
+      }
+      await setTimeout(retryDelayMs)
+    } finally {
+      if (timeoutId !== undefined) {
+        globalThis.clearTimeout(timeoutId)
+      }
     }
   }
 }
 
-async function processAttachment(attachmentId: number) {
-  const attachment = await ensureAttachmentNotCanceled(attachmentId)
+const defaultWorkerDependencies: SessionAttachmentWorkerDependencies = {
+  getContent: getStoreBlob,
+  resolveEmbeddingProvider: getSessionAttachmentEmbeddingProviderWithResolution,
+  embedValues: async (model, values) => (await embedManyWithRetry(model, values)).embeddings,
+}
+
+function validateEmbeddingBatch(embeddings: number[][], expectedCount: number, expectedDimension?: number) {
+  if (embeddings.length !== expectedCount) {
+    throw new Error(`Embedding batch failed: expected ${expectedCount}, got ${embeddings.length}`)
+  }
+  for (const embedding of embeddings) {
+    if (embedding.length === 0) {
+      throw new Error('Embedding provider returned an empty vector')
+    }
+    if (expectedDimension !== undefined && embedding.length !== expectedDimension) {
+      throw new SessionAttachmentEmbeddingDimensionMismatchError(expectedDimension, embedding.length)
+    }
+  }
+}
+
+async function getContinuationPlan(
+  attachment: SessionAttachmentRecord,
+  embeddingModel: string
+): Promise<
+  | {
+      chunks: SessionAttachmentChunkRecord[]
+      embeddedChunks: number
+      embeddingDimension: number
+    }
+  | undefined
+> {
+  const totalChunks = attachment.totalChunks ?? 0
+  const embeddedChunks = attachment.embeddedChunks ?? 0
+  const embeddingDimension = attachment.embeddingDimension ?? 0
+  if (
+    totalChunks <= 0 ||
+    embeddedChunks < 0 ||
+    embeddedChunks > totalChunks ||
+    attachment.chunkCount !== totalChunks ||
+    attachment.embeddingModel !== embeddingModel ||
+    embeddingDimension <= 0 ||
+    !(await hasAttachmentVectorIndex(attachment.id))
+  ) {
+    return undefined
+  }
+
+  const chunks = await listSessionAttachmentChunks(attachment.id)
+  if (chunks.length !== totalChunks || chunks.some((chunk, index) => chunk.chunkOrder !== index)) {
+    return undefined
+  }
+
+  return { chunks, embeddedChunks, embeddingDimension }
+}
+
+export async function isSessionAttachmentCheckpointResumable(
+  attachment: SessionAttachmentRecord,
+  embeddingModel: string
+): Promise<boolean> {
+  return Boolean(await getContinuationPlan(attachment, embeddingModel))
+}
+
+async function embedAttachmentChunks(params: {
+  attachment: SessionAttachmentRecord
+  chunks: SessionAttachmentChunkRecord[]
+  startIndex: number
+  embeddingModel: EmbeddingModel
+  embeddingDimension: number
+  dependencies: SessionAttachmentWorkerDependencies
+  prefetchedFirstEmbedding?: number[]
+}) {
+  const { attachment, chunks, startIndex, embeddingModel, embeddingDimension, dependencies, prefetchedFirstEmbedding } =
+    params
+  const indexName = `sa_${attachment.id}`
+
+  for (let index = startIndex; index < chunks.length; index += BATCH_SIZE) {
+    await ensureAttachmentNotCanceled(attachment.id)
+    const batchChunks = chunks.slice(index, index + BATCH_SIZE)
+    const batchValues = batchChunks.map((chunk) => chunk.embeddedText)
+    let embeddings: number[][]
+    if (index === 0 && prefetchedFirstEmbedding) {
+      embeddings = [prefetchedFirstEmbedding]
+      if (batchValues.length > 1) {
+        embeddings.push(...(await dependencies.embedValues(embeddingModel, batchValues.slice(1))))
+      }
+    } else {
+      embeddings = await dependencies.embedValues(embeddingModel, batchValues)
+    }
+    validateEmbeddingBatch(embeddings, batchValues.length, embeddingDimension)
+    await ensureAttachmentNotCanceled(attachment.id)
+
+    await runVectorWrite(() =>
+      getVectorStore().upsert({
+        indexName,
+        ids: batchChunks.map((chunk) => `${indexName}_${chunk.chunkOrder}`),
+        vectors: embeddings,
+        metadata: batchChunks.map((chunk) => ({
+          attachmentId: attachment.id,
+          parentId: chunk.parentId,
+          filename: attachment.filename,
+          sectionPath: chunk.sectionPath,
+          chunkOrder: chunk.chunkOrder,
+          text: chunk.embeddedText,
+          rawText: chunk.rawText,
+        })),
+      })
+    )
+    await updateSessionAttachmentIndexingProgress(attachment.id, {
+      indexingStage: 'embedding',
+      totalChunks: chunks.length,
+      embeddedChunks: Math.min(index + batchChunks.length, chunks.length),
+    })
+    log.debug(
+      `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Upserted embedding batch: attachmentId=${attachment.id}, batchStart=${index}, batchSize=${batchChunks.length}`
+    )
+
+    if (index + BATCH_SIZE < chunks.length) {
+      await setTimeout(100)
+    }
+  }
+}
+
+async function processAttachmentFromScratch(
+  attachment: SessionAttachmentRecord,
+  embeddingResolution: SessionAttachmentEmbeddingProviderResolution,
+  dependencies: SessionAttachmentWorkerDependencies
+) {
   log.debug(
     `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Begin processing attachment: id=${attachment.id}, file="${attachment.filename}", parser=${attachment.parserType ?? 'unknown'}, storageKey=${attachment.attachmentStorageKey}`
   )
 
-  const content = await getStoreBlob(attachment.attachmentStorageKey)
+  const content = await dependencies.getContent(attachment.attachmentStorageKey)
   if (!content?.trim()) {
     throw new Error('Attachment content not found or empty')
   }
 
   const chunkingPipeline = selectAttachmentChunkingPipeline(attachment.filename)
-  await updateSessionAttachmentIndexingProgress(attachmentId, {
-    indexingStage: 'chunking',
-    totalChunks: 0,
-    embeddedChunks: 0,
-  })
   const { parents, children } = await buildAttachmentChunks(content, attachment.filename)
   if (parents.length === 0 || children.length === 0) {
     throw new Error('Attachment did not produce any retrievable chunks')
   }
-  await ensureAttachmentNotCanceled(attachmentId)
+  await ensureAttachmentNotCanceled(attachment.id)
   log.debug(
     `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Chunking completed: attachmentId=${attachment.id}, pipeline=${chunkingPipeline}, parents=${parents.length}, children=${children.length}`
   )
 
-  const parentIdMap = await replaceAttachmentParentsAndChunks(
+  await replaceAttachmentParentsAndChunks(
     attachment.id,
     parents.map((parent) => ({
       parentOrder: parent.parentOrder,
@@ -139,98 +327,103 @@ async function processAttachment(attachmentId: number) {
       tokenEstimate: child.tokenEstimate,
     }))
   )
-  await ensureAttachmentNotCanceled(attachmentId)
-  await updateSessionAttachmentIndexingProgress(attachmentId, {
+  await ensureAttachmentNotCanceled(attachment.id)
+  await updateSessionAttachmentIndexingProgress(attachment.id, {
     indexingStage: 'embedding',
     totalChunks: children.length,
     embeddedChunks: 0,
   })
 
   const indexName = `sa_${attachment.id}`
-  const embeddingResolution = await getSessionAttachmentEmbeddingProviderWithResolution()
   const embeddingModel = embeddingResolution.provider
   log.debug(
     `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [MODEL] Actual embedding model selected: attachmentId=${attachment.id}, source=${embeddingResolution.source}, model=${embeddingResolution.modelString}`
   )
 
-  const embeddedTexts = children.map((child) =>
-    buildEmbeddedText({
-      filename: attachment.filename,
-      sectionPath: child.sectionPath,
-      text: child.rawText,
-    })
-  )
-
-  const firstEmbedding = await embedManyWithRetry(embeddingModel, [embeddedTexts[0]])
-  await ensureAttachmentNotCanceled(attachmentId)
+  const chunks = await listSessionAttachmentChunks(attachment.id)
+  const firstEmbeddings = await dependencies.embedValues(embeddingModel, [chunks[0].embeddedText])
+  validateEmbeddingBatch(firstEmbeddings, 1)
+  const embeddingDimension = firstEmbeddings[0].length
+  await ensureAttachmentNotCanceled(attachment.id)
   log.debug(
-    `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Embedding initialized: attachmentId=${attachment.id}, dimension=${firstEmbedding.embeddings[0].length}, totalChunks=${embeddedTexts.length}`
+    `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Embedding initialized: attachmentId=${attachment.id}, dimension=${embeddingDimension}, totalChunks=${chunks.length}`
   )
+  await updateSessionAttachmentIndexingProgress(attachment.id, {
+    indexingStage: 'embedding',
+    totalChunks: chunks.length,
+    embeddedChunks: 0,
+    embeddingModel: embeddingResolution.modelString,
+    embeddingDimension,
+  })
   await runVectorWrite(() =>
     getVectorStore().createIndex({
       indexName,
-      dimension: firstEmbedding.embeddings[0].length,
+      dimension: embeddingDimension,
     })
   )
 
-  for (let index = 0; index < embeddedTexts.length; index += BATCH_SIZE) {
-    await ensureAttachmentNotCanceled(attachmentId)
-    const batchValues = embeddedTexts.slice(index, index + BATCH_SIZE)
-    const batchChildren = children.slice(index, index + BATCH_SIZE)
-    let embeddings = firstEmbedding.embeddings
-    if (index !== 0) {
-      const embeddingResult = await embedManyWithRetry(embeddingModel, batchValues)
-      embeddings = embeddingResult.embeddings
-    } else if (batchValues.length > 1) {
-      const restEmbeddingResult = await embedManyWithRetry(embeddingModel, batchValues.slice(1))
-      embeddings = [firstEmbedding.embeddings[0], ...restEmbeddingResult.embeddings]
-    }
+  await embedAttachmentChunks({
+    attachment,
+    chunks,
+    startIndex: 0,
+    embeddingModel,
+    embeddingDimension,
+    dependencies,
+    prefetchedFirstEmbedding: firstEmbeddings[0],
+  })
+}
 
-    await runVectorWrite(() =>
-      getVectorStore().upsert({
-        indexName,
-        ids: batchChildren.map((child) => `${indexName}_${child.chunkOrder}`),
-        vectors: embeddings,
-        metadata: batchChildren.map((child) => ({
-          attachmentId: attachment.id,
-          parentId: parentIdMap.get(child.parentOrder),
-          filename: attachment.filename,
-          sectionPath: child.sectionPath,
-          chunkOrder: child.chunkOrder,
-          text: buildEmbeddedText({
-            filename: attachment.filename,
-            sectionPath: child.sectionPath,
-            text: child.rawText,
-          }),
-          rawText: child.rawText,
-        })),
+async function processAttachment(attachmentId: number, dependencies: SessionAttachmentWorkerDependencies) {
+  const attachment = await ensureAttachmentNotCanceled(attachmentId)
+  const embeddingResolution = await dependencies.resolveEmbeddingProvider()
+  const continuation = await getContinuationPlan(attachment, embeddingResolution.modelString)
+
+  if (continuation) {
+    log.info(
+      `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Continuing attachment indexing: attachmentId=${attachment.id}, embeddedChunks=${continuation.embeddedChunks}, totalChunks=${continuation.chunks.length}`
+    )
+    try {
+      await updateSessionAttachmentIndexingProgress(attachment.id, {
+        indexingStage: 'embedding',
+        totalChunks: continuation.chunks.length,
+        embeddedChunks: continuation.embeddedChunks,
       })
-    )
-    await updateSessionAttachmentIndexingProgress(attachmentId, {
-      indexingStage: 'embedding',
-      totalChunks: children.length,
-      embeddedChunks: Math.min(index + batchChildren.length, children.length),
-    })
-    log.debug(
-      `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Upserted embedding batch: attachmentId=${attachment.id}, batchStart=${index}, batchSize=${batchChildren.length}`
-    )
-
-    if (index + BATCH_SIZE < embeddedTexts.length) {
-      await setTimeout(100)
+      await embedAttachmentChunks({
+        attachment,
+        chunks: continuation.chunks,
+        startIndex: continuation.embeddedChunks,
+        embeddingModel: embeddingResolution.provider,
+        embeddingDimension: continuation.embeddingDimension,
+        dependencies,
+      })
+    } catch (error) {
+      if (!(error instanceof SessionAttachmentEmbeddingDimensionMismatchError)) {
+        throw error
+      }
+      log.warn(
+        `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Embedding space changed; rebuilding attachment index: attachmentId=${attachment.id}, error=${error.message}`
+      )
+      await deleteAttachmentIndexOrThrow(attachment.id)
+      await resetSessionAttachmentIndexingCheckpoint(attachment.id)
+      await processAttachmentFromScratch(attachment, embeddingResolution, dependencies)
     }
+  } else {
+    await deleteAttachmentIndexOrThrow(attachment.id)
+    await resetSessionAttachmentIndexingCheckpoint(attachment.id)
+    await processAttachmentFromScratch(attachment, embeddingResolution, dependencies)
   }
 
   await updateSessionAttachmentIndexingProgress(attachmentId, {
     indexingStage: 'finalizing',
-    totalChunks: children.length,
-    embeddedChunks: children.length,
   })
   log.info(
     `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Attachment processing completed: id=${attachment.id}, file="${attachment.filename}"`
   )
 }
 
-async function processPendingAttachments() {
+export async function processPendingAttachmentsOnce(
+  dependencies: SessionAttachmentWorkerDependencies = defaultWorkerDependencies
+) {
   await purgeCanceledSessionAttachments(20)
 
   const pending = await listPendingSessionAttachments(5)
@@ -250,8 +443,7 @@ async function processPendingAttachments() {
         )
         continue
       }
-      await deleteAttachmentIndex(attachment.id)
-      await processAttachment(attachment.id)
+      await processAttachment(attachment.id, dependencies)
       await ensureAttachmentNotCanceled(attachment.id)
       log.debug(
         `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Transition indexing -> ready: attachmentId=${attachment.id}, file="${attachment.filename}"`
@@ -293,7 +485,7 @@ export async function startWorkerLoop() {
   log.info(`${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Starting session attachment rag worker loop`)
   while (true) {
     try {
-      await processPendingAttachments()
+      await processPendingAttachmentsOnce()
     } catch (error) {
       log.error(`${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [FILE] Session attachment rag worker loop error:`, error)
       sentry.withScope((scope) => {

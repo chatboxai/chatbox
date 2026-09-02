@@ -107,11 +107,8 @@ export function PreparingToolCallStatus(props: {
 }) {
   const { status } = props
   const { t } = useTranslation()
-  const translate = t as (key: string, options?: Record<string, unknown>) => string
-  const label = status.toolName
-    ? `${translate('Preparing')} ${getToolName(status.toolName)}`
-    : translate('Preparing tool call')
-  const progress = formatPreparingProgress(status.progress, translate)
+  const label = status.toolName ? `${t('Preparing')} ${getToolName(status.toolName)}` : t('Preparing tool call')
+  const progress = formatPreparingProgress(status.progress, t)
 
   return (
     <Group gap={6} align="center" wrap="nowrap" mt={6} mb={2} className="max-w-full">
@@ -130,7 +127,9 @@ export function PreparingToolCallStatus(props: {
 
 function formatPreparingProgress(
   progress: Extract<NonNullable<Message['status']>[number], { type: 'preparing_tool_call' }>['progress'],
-  t: (key: string, options?: Record<string, unknown>) => string
+  // Narrowed to the shape this helper uses: i18next's full TFunction overloads
+  // blow past TypeScript's instantiation depth limit at the call site.
+  t: (key: string, options?: { count?: number }) => string
 ): string | null {
   if (!progress) return null
   if (progress.kind === 'lines') {

@@ -7,4 +7,6 @@ export const PROVIDER_ICON_ALIASES: Record<string, string> = {
   'qwen-portal': 'qwen',
   'minimax-cn': 'minimax',
   'moonshot-cn': 'moonshot',
+  'xiaomi-mimo': 'xiaomi',
+  'zhipu-glm-coding-plan': 'chatglm-6b',
 }

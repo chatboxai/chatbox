@@ -9,11 +9,9 @@ import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { scheduleGenerateNameAndThreadName, scheduleGenerateThreadName } from '@/stores/sessionActions'
-import * as settingActions from '@/stores/settingActions'
+import { syncSessionAutoTitle } from '@/stores/session/naming'
 import { useUIStore } from '@/stores/uiStore'
 import Divider from '../common/Divider'
-import { getAutoTitleGenerationAction } from './auto-title'
 import Toolbar from './Toolbar'
 import WindowControls from './WindowControls'
 
@@ -26,20 +24,12 @@ export default function Header(props: { session: Session }) {
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
 
   const { session: currentSession } = props
+  const visibleSessionId = currentSession.id
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sync only when the visible session id changes; message-driven naming is handled by session-updated in registerSessionUiEffects
   useEffect(() => {
-    const autoGenerateTitle = settingActions.getAutoGenerateTitle()
-    if (!autoGenerateTitle) {
-      return
-    }
-
-    const action = getAutoTitleGenerationAction(currentSession)
-    if (action === 'session-and-thread') {
-      scheduleGenerateNameAndThreadName(currentSession.id)
-    } else if (action === 'thread') {
-      scheduleGenerateThreadName(currentSession.id)
-    }
-  }, [currentSession])
+    syncSessionAutoTitle(currentSession)
+  }, [visibleSessionId])
 
   const editCurrentSession = () => {
     if (!currentSession) {
@@ -98,7 +88,7 @@ export default function Header(props: { session: Session }) {
           </Tooltip>
         </Flex>
 
-        <Toolbar sessionId={currentSession.id} />
+        <Toolbar session={currentSession} />
 
         <WindowControls className="-mr-3 ml-2" />
       </Flex>

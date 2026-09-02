@@ -6,8 +6,8 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
+import { rendererApplication } from '@/app/renderer-application'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
-import PendingApprovalPill from '@/components/chat/PendingApprovalPill'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
@@ -20,26 +20,18 @@ import useVersion from '@/hooks/useVersion'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import * as remote from '@/packages/remote'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
-import { updateSession as updateSessionStore, useSession } from '@/stores/chatStore'
 import { applyChatboxLicenseDefaultModelToSession } from '@/stores/defaultChatModel'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
-import {
-  countCancellableGeneratingAssistantMessages,
-  getGenerationControlMessages,
-} from '@/stores/session/generation-state'
-import {
-  modifyMessage,
-  removeCurrentThread,
-  removeMessage,
-  startNewThread,
-  stopGeneratingMessages,
-  submitNewUserMessage,
-} from '@/stores/sessionActions'
+import { stopAllMessageGenerations } from '@/stores/session/generation-cancellation'
+import { submitNewUserMessage } from '@/stores/session/messages'
+import { removeCurrentThread, startNewThread } from '@/stores/session/threads'
 import { clearSessionActivity } from '@/stores/sessionActivityStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
+
+const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 
 export const Route = createFileRoute('/session/$sessionId')({
   component: RouteComponent,
@@ -60,16 +52,17 @@ function RouteComponent() {
   const licenseDetail = useSettingsStore((s) => s.licenseDetail)
   const licensePlanName = useSettingsStore((s) => s.licensePlanName)
   const hasExpiredLicense = useSettingsStore((s) => s.hasExpiredLicense)
+  const autoScrollNewMessagesToTop = useSettingsStore((s) => s.autoScrollNewMessagesToTop)
   const isLoggedIn = useAuthInfoStore((s) => Boolean(s.accessToken && s.refreshToken))
   const { isExceeded, isExceededResolved } = useVersion()
   const widthFull = useUIStore((s) => s.widthFull)
   const isSmallScreen = useIsSmallScreen()
   const setLastUsedChatModel = useStore(lastUsedModelStore, (state) => state.setChatModel)
-  const setLastUsedPictureModel = useStore(lastUsedModelStore, (state) => state.setPictureModel)
 
   useEffect(() => {
     clearSessionActivity(currentSessionId)
   }, [currentSessionId])
+
   const welcomeCardMode = useMemo(
     () =>
       getHomeWelcomeCardMode({
@@ -82,10 +75,6 @@ function RouteComponent() {
     [providers.length, isLoggedIn, hasLicense, hasExpiredLicense, isExceeded, isExceededResolved]
   )
 
-  const generationControlMessages = useMemo(
-    () => (currentSession ? getGenerationControlMessages(currentSession) : []),
-    [currentSession]
-  )
   const shouldShowTemplateWelcomeCard = useMemo(
     () => Boolean(currentSession && builtInTemplateSessionIds.has(currentSession.id) && welcomeCardMode !== 'none'),
     [currentSession, welcomeCardMode]
@@ -101,15 +90,6 @@ function RouteComponent() {
       licensePlanName,
     })
   }, [currentSession, hasExpiredLicense, licenseDetail, licenseKey, licensePlanName])
-  const generatingMessages = useMemo(
-    () => generationControlMessages.filter((message) => message.generating),
-    [generationControlMessages]
-  )
-  const cancellableGeneratingReplyCount = useMemo(
-    () => countCancellableGeneratingAssistantMessages(generationControlMessages),
-    [generationControlMessages]
-  )
-
   const messageListRef = useRef<MessageListRef>(null)
 
   const goHome = useCallback(() => {
@@ -131,20 +111,14 @@ function RouteComponent() {
           setLastUsedChatModel(provider, modelId)
         }
       }
-      if (currentSession.type === 'picture' && currentSession.settings) {
-        const { provider, modelId } = currentSession.settings
-        if (provider && modelId) {
-          setLastUsedPictureModel(provider, modelId)
-        }
-      }
     }
-  }, [currentSession?.settings, currentSession?.type, currentSession, setLastUsedChatModel, setLastUsedPictureModel])
+  }, [currentSession?.settings, currentSession?.type, currentSession, setLastUsedChatModel])
 
   useEffect(() => {
     if (!currentSession || !currentSessionWithDefaultModel || currentSessionWithDefaultModel === currentSession) {
       return
     }
-    void updateSessionStore(currentSession.id, {
+    void rendererApplication.sessions.updateSession(currentSession.id, {
       settings: currentSessionWithDefaultModel.settings,
     })
   }, [currentSession, currentSessionWithDefaultModel])
@@ -154,7 +128,7 @@ function RouteComponent() {
       if (!currentSession) {
         return
       }
-      void updateSessionStore(currentSession.id, {
+      void rendererApplication.sessions.updateSession(currentSession.id, {
         settings: {
           ...(currentSession.settings || {}),
           provider,
@@ -188,13 +162,13 @@ function RouteComponent() {
 
   const onSubmit = useCallback(
     async ({ constructedMessage, needGenerating = true, onUserMessageReady }: InputBoxPayload) => {
-      messageListRef.current?.setIsNewMessage(true)
+      messageListRef.current?.setIsNewMessage(autoScrollNewMessagesToTop)
 
       if (!currentSession) {
         return
       }
       if (currentSessionWithDefaultModel && currentSessionWithDefaultModel !== currentSession) {
-        await updateSessionStore(currentSession.id, {
+        await rendererApplication.sessions.updateSession(currentSession.id, {
           settings: currentSessionWithDefaultModel.settings,
         })
       }
@@ -212,7 +186,7 @@ function RouteComponent() {
         onUserMessageReady,
       })
     },
-    [currentSession, currentSessionWithDefaultModel]
+    [autoScrollNewMessagesToTop, currentSession, currentSessionWithDefaultModel]
   )
 
   const onClickSessionSettings = useCallback(() => {
@@ -229,12 +203,15 @@ function RouteComponent() {
     if (!currentSession) {
       return false
     }
-    void stopGeneratingMessages(currentSession.id, generatingMessages, {
-      removeMessage,
-      persistMessage: (sessionId, message) => modifyMessage(sessionId, message, true),
+    void stopAllMessageGenerations(currentSession.id).catch((error) => {
+      console.error('Failed to stop all message generations:', error)
     })
     return true
-  }, [currentSession, generatingMessages])
+  }, [currentSession])
+
+  const onViewCompactionSummary = useCallback((summaryMessageId: string) => {
+    messageListRef.current?.scrollToMessage(summaryMessageId)
+  }, [])
 
   const model = useMemo(() => {
     if (!currentSessionWithDefaultModel?.settings?.modelId || !currentSessionWithDefaultModel?.settings?.provider) {
@@ -273,13 +250,6 @@ function RouteComponent() {
           </Box>
         )}
 
-        {/* 悬浮审批胶囊：审批卡片滚出视口时出现在输入框上方 */}
-        <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} px="sm" mb="xs">
-          <ErrorBoundary name="session-approval-pill">
-            <PendingApprovalPill session={currentSession} />
-          </ErrorBoundary>
-        </Box>
-
         {/* <ScrollButtons /> */}
         <ErrorBoundary name="session-inputbox">
           <InputBox
@@ -291,10 +261,9 @@ function RouteComponent() {
             onRollbackThread={onRollbackThread}
             onSelectModel={onSelectModel}
             onClickSessionSettings={onClickSessionSettings}
-            generating={generatingMessages.length > 0}
-            generatingCount={cancellableGeneratingReplyCount}
             onSubmit={onSubmit}
             onStopGenerating={onStopGenerating}
+            onViewCompactionSummary={onViewCompactionSummary}
           />
         </ErrorBoundary>
       </Box>

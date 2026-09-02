@@ -14,6 +14,15 @@ export const volcEngineProvider = defineProvider({
     apiPath: '/api/v3/chat/completions',
     models: [
       {
+        modelId: 'doubao-seed-2-1-pro-260628',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+      },
+      {
+        modelId: 'doubao-seed-evolving',
+        contextWindow: 1_000_000,
+        capabilities: ['reasoning', 'tool_use'],
+      },
+      {
         modelId: 'deepseek-v3-250324',
         contextWindow: 64_000,
         capabilities: ['tool_use', 'reasoning'],
@@ -33,6 +42,7 @@ export const volcEngineProvider = defineProvider({
         contextWindow: 128_000,
         capabilities: ['vision'],
       },
+      { modelId: 'doubao-embedding-vision-251215', type: 'embedding' },
       { modelId: 'doubao-embedding-text-240715', type: 'embedding' },
     ],
   },

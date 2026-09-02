@@ -67,6 +67,10 @@ const translations = {
     en: 'Paste as Plain Text',
     zh: '粘贴为文本',
   },
+  SelectAll: {
+    en: 'Select All',
+    zh: '全选',
+  },
   ReplaceWith: {
     en: 'Replace with',
     zh: '替换成',

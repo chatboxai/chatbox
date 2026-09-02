@@ -1,6 +1,6 @@
 import type { Message, Session } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
-import * as chatStore from '@/stores/chatStore'
+import { rendererApplication } from '@/app/renderer-application'
 import { searchSessions } from '@/stores/sessionHelpers'
 import { booleanFlag, ChatboxCliUsageError, integerFlag } from './parser'
 import type { ChatboxCliCommandDefinition } from './types'
@@ -49,8 +49,8 @@ export const chatCommands: ChatboxCliCommandDefinition[] = [
       const cursor = integerFlag(parsed, 'cursor', { defaultValue: 0, min: 0, max: 10_000_000 })
       const archived = booleanFlag(parsed, 'archived')
       const page = archived
-        ? await chatStore.listArchivedSessionsMetaPage(cursor, limit)
-        : await chatStore.listSessionsMetaPage(cursor, limit)
+        ? await rendererApplication.sessions.listArchivedSessionsMetaPage(cursor, limit)
+        : await rendererApplication.sessions.listSessionsMetaPage(cursor, limit)
       return {
         scope: 'global',
         items: page.items.map((item) => ({
@@ -102,7 +102,7 @@ export const chatCommands: ChatboxCliCommandDefinition[] = [
       if (!sessionId) throw new ChatboxCliUsageError('Missing session id.')
       const limit = integerFlag(parsed, 'limit', { defaultValue: 20, min: 1, max: 50 })
       const cursor = integerFlag(parsed, 'cursor', { defaultValue: 0, min: 0, max: 10_000_000 })
-      const session = await chatStore.getSession(sessionId)
+      const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
       if (!session) throw new ChatboxCliUsageError(`Conversation not found: ${sessionId}`)
 
       const messages = readableMessages(session)

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeClaudeHost, normalizeGeminiHost, normalizeOpenAIApiHostAndPath } from './llm_utils'
+import {
+  normalizeAzureEndpoint,
+  normalizeClaudeHost,
+  normalizeGeminiHost,
+  normalizeOpenAIApiHostAndPath,
+} from './llm_utils'
 
 describe('normalizeOpenAIApiHostAndPath', () => {
   it('returns defaults when apiHost is empty', () => {
@@ -110,5 +115,33 @@ describe('normalizeGeminiHost', () => {
   it('strips trailing slash before appending', () => {
     const result = normalizeGeminiHost('https://generativelanguage.googleapis.com/')
     expect(result.apiHost).toBe('https://generativelanguage.googleapis.com/v1beta')
+  })
+})
+
+describe('normalizeAzureEndpoint', () => {
+  it('accepts an Azure resource name', () => {
+    expect(normalizeAzureEndpoint('my-resource').endpoint).toBe('https://my-resource.openai.azure.com/openai')
+  })
+
+  it('accepts a standard Azure hostname without a scheme', () => {
+    expect(normalizeAzureEndpoint('my-resource.openai.azure.com').endpoint).toBe(
+      'https://my-resource.openai.azure.com/openai'
+    )
+  })
+
+  it('accepts a custom gateway hostname without a scheme', () => {
+    expect(normalizeAzureEndpoint('azure-gateway.example.com').endpoint).toBe(
+      'https://azure-gateway.example.com/openai'
+    )
+  })
+
+  it('preserves an explicit HTTP scheme for local gateways', () => {
+    expect(normalizeAzureEndpoint(' http://localhost:8080/azure/path ').endpoint).toBe('http://localhost:8080/openai')
+  })
+
+  it('keeps the settings placeholder renderable', () => {
+    expect(normalizeAzureEndpoint('https://<resource_name>.openai.azure.com').endpoint).toBe(
+      'https://<resource_name>.openai.azure.com/openai'
+    )
   })
 })

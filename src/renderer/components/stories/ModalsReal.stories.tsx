@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router'
 import { type ComponentType, useEffect, useReducer, useRef, useState } from 'react'
 import i18n from '@/i18n'
-import { QueryKeys } from '@/stores/chatStore'
+import { QueryKeys } from '@chatbox/react/query'
 import { settingsStore } from '@/stores/settingsStore'
 
 const queryClient = new QueryClient({

@@ -1,4 +1,5 @@
 import type { ImageGeneration, ImageGenerationPage } from '@shared/types'
+import { reportDbOpenSucceeded, toDbOpenError, watchDbOpenBlocked, watchDbVersionChange } from './db-schema-guard'
 
 const PAGE_SIZE = 20
 const DB_NAME = 'chatbox-image-generation'
@@ -19,21 +20,32 @@ export class IndexedDBImageGenerationStorage implements ImageGenerationStorage {
   private initPromise: Promise<void> | null = null
 
   initialize(): Promise<void> {
-    if (this.initPromise) {
-      return this.initPromise
+    if (!this.initPromise) {
+      this.initPromise = this.openDatabase().catch((error) => {
+        this.initPromise = null
+        throw error
+      })
     }
-    this.initPromise = this.openDatabase()
     return this.initPromise
   }
 
   private openDatabase(): Promise<void> {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, 1)
+      watchDbOpenBlocked(DB_NAME, request)
 
-      request.onerror = () => reject(request.error)
+      request.onerror = () => reject(toDbOpenError(DB_NAME, request.error))
 
       request.onsuccess = () => {
-        this.db = request.result
+        const db = request.result
+        this.db = db
+        reportDbOpenSucceeded(DB_NAME)
+        watchDbVersionChange(DB_NAME, db, () => {
+          if (this.db === db) {
+            this.db = null
+            this.initPromise = null
+          }
+        })
         resolve()
       }
 

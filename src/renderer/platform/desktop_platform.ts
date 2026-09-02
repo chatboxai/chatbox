@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
 
+import type { AnalyticsEventParams } from '@shared/analytics'
 import type { ElectronIPC } from '@shared/electron-types'
 import type {
   SandboxExecLanguage,
@@ -8,6 +9,7 @@ import type {
   SandboxReadResult,
 } from '@shared/sandbox-provider'
 import type { Config, Settings, ShortcutSetting } from '@shared/types'
+import type { WorkspaceInstructionsResult } from '@shared/types/workspace-instructions'
 import { cache } from '@shared/utils/cache'
 import localforage from 'localforage'
 import { v4 as uuidv4 } from 'uuid'
@@ -29,6 +31,7 @@ const store = localforage.createInstance({ name: 'chatboxstore' })
 
 export default class DesktopPlatform implements Platform {
   public type: PlatformType = 'desktop'
+  public readonly isDesktopLike = true
 
   public exporter = new WebExporter()
 
@@ -213,13 +216,19 @@ export default class DesktopPlatform implements Platform {
   }
 
   public initTracking(): void {
-    setTimeout(() => {
-      this.trackingEvent('user_engagement', {})
-    }, 4000) // 怀疑应用初始化后需要一段时间才能正常工作
+    // Desktop events are sent through the main-process Measurement Protocol bridge.
   }
-  public trackingEvent(name: string, params: { [key: string]: string }) {
-    const dataJson = JSON.stringify({ name, params })
-    this.ipc.invoke('analysticTrackingEvent', dataJson)
+  public async trackingEvent(name: string, params: AnalyticsEventParams): Promise<void> {
+    const chatboxPlatform = await this.getPlatform()
+    const dataJson = JSON.stringify({
+      name,
+      params: {
+        ...params,
+        chatbox_platform_type: 'desktop',
+        chatbox_platform: chatboxPlatform,
+      },
+    })
+    await this.ipc.invoke('analysticTrackingEvent', dataJson)
   }
 
   public async shouldShowAboutDialogWhenStartUp(): Promise<boolean> {
@@ -280,6 +289,14 @@ export default class DesktopPlatform implements Platform {
 
   async fsRead(params: { filePath: string; offset?: number; limit?: number }) {
     return this.ipc.invoke('fs:read', params)
+  }
+
+  async fsReadImage(params: { filePath: string }): Promise<{ success: boolean; bytes?: ArrayBuffer; error?: string }> {
+    return this.ipc.invoke('fs:read-image', params)
+  }
+
+  async readWorkspaceInstructions(directories: string[]): Promise<WorkspaceInstructionsResult> {
+    return this.ipc.invoke('workspace:read-instructions', directories)
   }
 
   async fsList(params: { dirPath: string }) {
@@ -384,6 +401,17 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('sandbox:exec-code', params)
   }
 
+  public async sandboxRunCommand(params: {
+    command: string
+    shell: 'bash' | 'powershell'
+    workdir?: string
+    timeout?: number
+    sessionId?: string
+    toolCallId: string
+  }): Promise<import('@shared/sandbox-provider').SandboxRunCommandResult> {
+    return this.ipc.invoke('sandbox:run-command', params)
+  }
+
   public async sandboxRead(params: {
     filePath: string
     offset?: number
@@ -464,6 +492,13 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('sandbox:copy-blob', params)
   }
 
+  public async sandboxSeedBlobs(params: {
+    items: Array<{ blobKey: string; targetFilename: string }>
+    sessionId?: string
+  }) {
+    return this.ipc.invoke('sandbox:seed-blobs', params)
+  }
+
   public async sandboxExportFile(params: { sandboxPath: string; suggestedName?: string }) {
     return this.ipc.invoke('sandbox:export-file', params)
   }
@@ -482,8 +517,16 @@ export default class DesktopPlatform implements Platform {
 
   public async sandboxReadFileBase64(params: {
     filePath: string
+    maxBytes?: number
   }): Promise<{ success: boolean; base64?: string; error?: string }> {
     return this.ipc.invoke('sandbox:read-file-base64', params)
+  }
+
+  public async sandboxReadFileBytes(params: {
+    filePath: string
+    maxBytes?: number
+  }): Promise<{ success: boolean; bytes?: ArrayBuffer; error?: string }> {
+    return this.ipc.invoke('sandbox:read-file-bytes', params)
   }
 
   public async sandboxCreateHtmlPreview(params: { filePath: string }) {
@@ -492,6 +535,10 @@ export default class DesktopPlatform implements Platform {
 
   public async openDirectoryDialog() {
     return this.ipc.invoke('dialog:openDirectory')
+  }
+
+  public async scanLocalAgentMemories() {
+    return this.ipc.invoke('agent-persona:scan-local-memories')
   }
 
   public minimize() {

@@ -70,8 +70,10 @@ export function getToolName(toolName: string, input?: unknown): string {
     sandbox_find: t('Find Files'),
     load_skill: t('Load Skill'),
     install_skill: t('Install Skill'),
+    run_command: t('Run Command'),
     user_exec: t('Run Command'),
     parse_file: t('Parse File'),
+    view_image: t('View Image'),
   }
 
   return toolNames[toolName] || toolName

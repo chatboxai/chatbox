@@ -171,6 +171,23 @@ export interface SessionAttachmentRagDebugSnapshot {
   }>
 }
 
+export interface SessionAttachmentOwnershipClaim {
+  attachmentId: number
+  sessionId: string
+  messageId: string
+}
+
+export interface SessionAttachmentRagMaintenanceScope {
+  sessionIds: string[]
+  messageIds: string[]
+  /**
+   * One live (session, message) claim per indexed attachment id. Rows whose
+   * recorded owner is gone but that a claim can still place are rebound rather
+   * than swept, so a shared attachment survives an owner removal on its own.
+   */
+  attachmentReferences: SessionAttachmentOwnershipClaim[]
+}
+
 export interface SessionAttachmentRagMaintenanceResult {
   interruptedFailedCount: number
   canceledPurgedCount: number
@@ -182,7 +199,6 @@ export type ChatboxAIModel = 'chatboxai-3.5' | 'chatboxai-4' | string
 export function copyMessage(source: Message): Message {
   return {
     ...source,
-    cancel: undefined,
     id: uuidv4(),
   }
 }
@@ -238,7 +254,6 @@ export function copyMessageForksWithMapping(
           if (existingId) {
             return {
               ...message,
-              cancel: undefined,
               id: existingId,
             }
           }
@@ -413,6 +428,9 @@ export interface SessionAttachment {
   chunkCount?: number
   totalChunks?: number
   embeddedChunks?: number
+  embeddingModel?: string
+  embeddingDimension?: number
+  resumable?: boolean
   indexingStage?: SessionAttachmentIndexingStage
   parserType?: string
   availability: SessionAttachmentAvailability
@@ -455,6 +473,8 @@ export type FileMeta = {
   size: number
 }
 
+export * from './types/agent-persona'
+export * from './types/command-execution'
 export * from './types/image-generation'
 export * from './types/session'
 export * from './types/settings'

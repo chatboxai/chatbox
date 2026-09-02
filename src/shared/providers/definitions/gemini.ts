@@ -8,11 +8,15 @@ export const geminiProvider = defineProvider({
   type: ModelProviderType.Gemini,
   modelsDevProviderId: 'google',
   curatedModelIds: [
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
     'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
     'gemini-3.1-pro-preview',
     'gemini-3.1-flash-lite',
     'gemini-3-flash-preview',
-    'gemini-3-pro-image-preview',
+    'gemini-3-pro-image',
+    'gemini-3.1-flash-image',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
     'gemini-2.5-pro',
@@ -26,7 +30,25 @@ export const geminiProvider = defineProvider({
     // https://ai.google.dev/models/gemini
     models: [
       {
+        modelId: 'gemini-3.7-flash',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_048_576,
+        maxOutput: 65_536,
+      },
+      {
+        modelId: 'gemini-3.6-flash',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_048_576,
+        maxOutput: 65_536,
+      },
+      {
         modelId: 'gemini-3.5-flash',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_048_576,
+        maxOutput: 65_536,
+      },
+      {
+        modelId: 'gemini-3.5-flash-lite',
         capabilities: ['vision', 'reasoning', 'tool_use'],
         contextWindow: 1_048_576,
         maxOutput: 65_536,
@@ -50,9 +72,15 @@ export const geminiProvider = defineProvider({
         maxOutput: 65_536,
       },
       {
-        modelId: 'gemini-3-pro-image-preview',
+        modelId: 'gemini-3-pro-image',
         capabilities: ['vision', 'reasoning'],
         contextWindow: 65_536,
+        maxOutput: 32_768,
+      },
+      {
+        modelId: 'gemini-3.1-flash-image',
+        capabilities: ['vision', 'reasoning'],
+        contextWindow: 131_072,
         maxOutput: 32_768,
       },
       {

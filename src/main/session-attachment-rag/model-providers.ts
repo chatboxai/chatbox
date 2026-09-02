@@ -20,11 +20,16 @@ export type SessionAttachmentEmbeddingProviderResolution = {
   source: 'chatbox-ai-license' | 'default-embedding-model'
 }
 
+export function getSessionAttachmentEmbeddingModelString(): string | undefined {
+  const settings = getSettings()
+  const defaultEmbeddingModel = getDefaultEmbeddingModelString(settings)
+  return defaultEmbeddingModel || (store.get('settings.licenseKey') ? SESSION_ATTACHMENT_EMBEDDING_MODEL : undefined)
+}
+
 export async function getSessionAttachmentEmbeddingProviderWithResolution(): Promise<SessionAttachmentEmbeddingProviderResolution> {
   const settings = getSettings()
-  const hasLicense = Boolean(store.get('settings.licenseKey'))
   const defaultEmbeddingModel = getDefaultEmbeddingModelString(settings)
-  const embeddingModel = defaultEmbeddingModel || (hasLicense ? SESSION_ATTACHMENT_EMBEDDING_MODEL : undefined)
+  const embeddingModel = getSessionAttachmentEmbeddingModelString()
   const source: SessionAttachmentEmbeddingProviderResolution['source'] = defaultEmbeddingModel
     ? 'default-embedding-model'
     : 'chatbox-ai-license'

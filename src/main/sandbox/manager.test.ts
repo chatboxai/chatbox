@@ -190,7 +190,15 @@ describe('resolveWindowsBash', () => {
 })
 
 describe('resolveWindowsPowerShell', () => {
-  const stdinArgs = ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '-']
+  const stdinArgs = [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    expect.stringMatching(
+      /\[Console\]::InputEncoding.+\[Console\]::In\.ReadToEnd\(\).+\[ScriptBlock\]::Create.+exit \$chatboxExitCode/s
+    ),
+  ]
 
   afterEach(() => {
     resetWindowsPowerShellResolutionCache()
@@ -322,6 +330,71 @@ describe('execCode on Windows without shell runtimes', () => {
     } finally {
       await resetSandbox(sessionId)
       rmSync(workDir, { recursive: true, force: true })
+    }
+  })
+
+  test('keeps HOME and temp redirected to the session directory (native Windows has no OS sandbox)', async () => {
+    setPlatform('win32')
+    const workDir = mkdtempSync(path.join(tmpdir(), 'chatbox-win-env-'))
+    const profileDir = mkdtempSync(path.join(tmpdir(), 'chatbox-win-profile-'))
+    const sessionId = 'windows-env-session'
+    const previousUserProfile = process.env.USERPROFILE
+    const previousGitConfigGlobal = process.env.GIT_CONFIG_GLOBAL
+    const children: EventEmitter[] = []
+    ;(spawn as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new EventEmitter(),
+        stderr: new EventEmitter(),
+        stdin: { on: vi.fn(), write: vi.fn(), end: vi.fn() },
+        killed: false,
+        pid: 300 + children.length,
+      })
+      children.push(child)
+      return child
+    })
+    const runAndCaptureEnv = async () => {
+      const execution = execCode({ code: 'console.log("hi")', language: 'node', sessionId })
+      children[children.length - 1].emit('close', 0)
+      await expect(execution).resolves.toMatchObject({ exitCode: 0 })
+      const calls = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls
+      return (calls[calls.length - 1][2] as { env: NodeJS.ProcessEnv }).env
+    }
+
+    try {
+      await initSandbox(workDir, sessionId)
+      process.env.USERPROFILE = profileDir
+      delete process.env.GIT_CONFIG_GLOBAL
+
+      writeFileSync(path.join(profileDir, '.gitconfig'), '[user]\n\tname = Real Name\n')
+      const env = await runAndCaptureEnv()
+      expect(env).toMatchObject({
+        HOME: workDir,
+        TMPDIR: workDir,
+        TMP: workDir,
+        TEMP: workDir,
+        XDG_CACHE_HOME: path.join(workDir, '.cache'),
+        npm_config_cache: path.join(workDir, '.cache', 'npm'),
+        GIT_CONFIG_GLOBAL: path.join(profileDir, '.gitconfig'),
+      })
+
+      // XDG fallback when ~/.gitconfig is absent.
+      rmSync(path.join(profileDir, '.gitconfig'))
+      const xdgConfig = path.join(profileDir, '.config', 'git', 'config')
+      mkdirSync(path.dirname(xdgConfig), { recursive: true })
+      writeFileSync(xdgConfig, '[user]\n\tname = Real Name\n')
+      expect((await runAndCaptureEnv()).GIT_CONFIG_GLOBAL).toBe(xdgConfig)
+
+      // No global config in the real profile: leave git untouched.
+      rmSync(path.join(profileDir, '.config'), { recursive: true })
+      expect((await runAndCaptureEnv()).GIT_CONFIG_GLOBAL).toBeUndefined()
+    } finally {
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE
+      else process.env.USERPROFILE = previousUserProfile
+      if (previousGitConfigGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL
+      else process.env.GIT_CONFIG_GLOBAL = previousGitConfigGlobal
+      await resetSandbox(sessionId)
+      rmSync(workDir, { recursive: true, force: true })
+      rmSync(profileDir, { recursive: true, force: true })
     }
   })
 
@@ -627,6 +700,45 @@ describe('native Windows writes to user-granted directories', () => {
         error: 'Write access denied for protected file',
       })
       expect(readFileSync(path.join(nestedDir, '.ENV.LOCAL'), 'utf8')).toBe('before')
+    } finally {
+      await resetSandbox(sessionId)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('rejects top-level git metadata writes but keeps other .git paths writable', async () => {
+    setPlatform('win32')
+    const root = mkdtempSync(path.join(process.cwd(), '.tmp-windows-git-meta-'))
+    const workDir = path.join(root, 'sandbox')
+    const grantedDir = path.join(root, 'granted')
+    const sessionId = 'windows-git-meta-session'
+    mkdirSync(workDir)
+    mkdirSync(path.join(grantedDir, '.git', 'hooks'), { recursive: true })
+    mkdirSync(path.join(grantedDir, 'vendor', 'repo', '.git'), { recursive: true })
+
+    try {
+      await expect(initSandbox(workDir, sessionId, [grantedDir])).resolves.toEqual({
+        success: true,
+        acceptedWorkingDirectories: [path.resolve(grantedDir)],
+      })
+      // Host-escape vectors at the granted root stay read-only…
+      await expect(writeFile(path.join(grantedDir, '.git', 'config'), '[probe]', sessionId)).resolves.toEqual({
+        success: false,
+        error: 'Write access denied for protected file',
+      })
+      await expect(
+        writeFile(path.join(grantedDir, '.git', 'hooks', 'pre-commit'), '#!/bin/sh', sessionId)
+      ).resolves.toEqual({
+        success: false,
+        error: 'Write access denied for protected file',
+      })
+      // …while ordinary repo metadata and nested repos stay writable (commit/clone flows).
+      await expect(writeFile(path.join(grantedDir, '.git', 'COMMIT_EDITMSG'), 'msg', sessionId)).resolves.toEqual({
+        success: true,
+      })
+      await expect(
+        writeFile(path.join(grantedDir, 'vendor', 'repo', '.git', 'config'), '[core]', sessionId)
+      ).resolves.toEqual({ success: true })
     } finally {
       await resetSandbox(sessionId)
       rmSync(root, { recursive: true, force: true })

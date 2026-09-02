@@ -10,6 +10,10 @@ const pendingPromises = new Map<string, Promise<unknown>>()
 // Memory-only cache that expires on restart
 const memoryCache = new Map<string, CacheItem<unknown>>()
 
+function hasLocalForageRuntime(): boolean {
+  return typeof globalThis === 'object' && 'localforage' in globalThis
+}
+
 // Cross-platform storage adapter
 class CrossPlatformStorage {
   private name: string
@@ -21,7 +25,7 @@ class CrossPlatformStorage {
 
   async getItem(key: string): Promise<string | null> {
     // In renderer process with localforage
-    if (typeof window !== 'undefined' && 'localforage' in window) {
+    if (hasLocalForageRuntime()) {
       try {
         const localforage = (await import('localforage')).default
         const store = localforage.createInstance({ name: this.name })
@@ -38,7 +42,7 @@ class CrossPlatformStorage {
 
   async setItem(key: string, value: string): Promise<void> {
     // In renderer process with localforage
-    if (typeof window !== 'undefined' && 'localforage' in window) {
+    if (hasLocalForageRuntime()) {
       try {
         const localforage = (await import('localforage')).default
         const store = localforage.createInstance({ name: this.name })
@@ -57,7 +61,7 @@ class CrossPlatformStorage {
 
   async removeItem(key: string): Promise<void> {
     // In renderer process with localforage
-    if (typeof window !== 'undefined' && 'localforage' in window) {
+    if (hasLocalForageRuntime()) {
       try {
         const localforage = (await import('localforage')).default
         const store = localforage.createInstance({ name: this.name })

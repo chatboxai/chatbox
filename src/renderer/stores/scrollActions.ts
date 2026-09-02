@@ -1,5 +1,5 @@
 import { buildMessageRenderItems } from '@/components/chat/message-render-items'
-import { getSession } from './chatStore'
+import { rendererApplication } from '@/app/renderer-application'
 import { getAllMessageList } from './sessionHelpers'
 import { uiStore } from './uiStore'
 
@@ -10,7 +10,7 @@ export async function scrollToMessage(
   align: 'start' | 'center' | 'end' = 'start',
   behavior: 'auto' | 'smooth' = 'auto' // 'auto' 立即滚动到指定位置，'smooth' 平滑滚动到指定位置
 ): Promise<boolean> {
-  const session = await getSession(sessionId)
+  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
   if (!session) {
     return false
   }

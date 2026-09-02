@@ -46,7 +46,8 @@ export async function testApiOrigins() {
           const controller = new AbortController()
           setTimeout(() => controller.abort(), 2000) // 2秒超时
           const res = await ofetch<{ data: { api_origins: string[] } }>(`${origin}/api/api_origins`, {
-            signal: controller.signal,
+            // ofetch and React Native expose compatible signals through different declarations.
+            signal: controller.signal as unknown as NonNullable<Parameters<typeof ofetch>[1]>['signal'],
             retry: 1,
           })
           // 如果服务器返回了新的 API 域名，则更新缓存

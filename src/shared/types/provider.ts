@@ -27,6 +27,12 @@ export enum ModelProviderEnum {
   OpenRouter = 'openrouter',
   Bedrock = 'bedrock',
   VercelAIGateway = 'vercel-ai-gateway',
+  OpenCodeGo = 'opencode-go',
+  OpenCodeZen = 'opencode-zen',
+  TencentHunyuan = 'tencent-hunyuan',
+  XiaomiMiMo = 'xiaomi-mimo',
+  LongCat = 'longcat',
+  ZhipuGLMCodingPlan = 'zhipu-glm-coding-plan',
   Custom = 'custom',
 }
 

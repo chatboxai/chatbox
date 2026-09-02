@@ -1,7 +1,12 @@
 import type { Message } from '@shared/types'
 import { describe, expect, test } from 'vitest'
 import type { MessageMinimapAnchor } from './MessageMinimapRail'
-import { areMinimapAnchorsEqual, getMessagePreviewText, MINIMAP_PREVIEW_MAX_LENGTH } from './message-navigation-utils'
+import {
+  areMinimapAnchorsEqual,
+  canReuseMinimapAnchorsDuringGeneration,
+  getMessagePreviewText,
+  MINIMAP_PREVIEW_MAX_LENGTH,
+} from './message-navigation-utils'
 
 function message(contentParts: Message['contentParts']): Message {
   return { id: 'message-1', role: 'assistant', contentParts }
@@ -69,5 +74,44 @@ describe('areMinimapAnchorsEqual', () => {
     expect(areMinimapAnchorsEqual([anchor()], [anchor({ itemIndex: 1 })])).toBe(false)
     expect(areMinimapAnchorsEqual([anchor()], [anchor({ text: 'changed' })])).toBe(false)
     expect(areMinimapAnchorsEqual([anchor()], [anchor({ assistantText: undefined })])).toBe(false)
+  })
+})
+
+describe('canReuseMinimapAnchorsDuringGeneration', () => {
+  const user = { id: 'user-1', role: 'user', contentParts: [] } satisfies Message
+  const assistant = {
+    id: 'assistant-1',
+    role: 'assistant',
+    contentParts: [{ type: 'text', text: 'partial' }],
+    generating: true,
+  } satisfies Message
+
+  test('allows only same-id generating assistant replacements', () => {
+    expect(canReuseMinimapAnchorsDuringGeneration([user, assistant], [user, assistant])).toBe(true)
+    expect(
+      canReuseMinimapAnchorsDuringGeneration(
+        [user, assistant],
+        [user, { ...assistant, contentParts: [{ type: 'text', text: 'next chunk' }] }]
+      )
+    ).toBe(true)
+  })
+
+  test('rejects edits, completion, insertion, and message replacement', () => {
+    expect(canReuseMinimapAnchorsDuringGeneration([user, assistant], [{ ...user }, assistant])).toBe(false)
+    expect(canReuseMinimapAnchorsDuringGeneration([user, assistant], [user, { ...assistant, generating: false }])).toBe(
+      false
+    )
+    expect(
+      canReuseMinimapAnchorsDuringGeneration([user, assistant], [user, assistant, { ...user, id: 'user-2' }])
+    ).toBe(false)
+    expect(canReuseMinimapAnchorsDuringGeneration([user, assistant], [user, { ...assistant, id: 'assistant-2' }])).toBe(
+      false
+    )
+    expect(
+      canReuseMinimapAnchorsDuringGeneration(
+        [user, { ...assistant, generating: false }],
+        [user, { ...assistant, contentParts: [{ type: 'text', text: 'new generation' }] }]
+      )
+    ).toBe(false)
   })
 })

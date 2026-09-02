@@ -1,6 +1,6 @@
 # 思考控制（Reasoning Control）
 
-> Last updated: 2026-06
+> Last updated: 2026-08
 
 本文梳理「思考控制」（即推理强度 / thinking effort）的**支持条件判定逻辑**，以及参数从 UI 选择到请求发出的完整流转，供后续维护参考。
 
@@ -36,7 +36,7 @@ getReasoningControlCapabilities(provider, model): {
 
 ## 2. effectiveProvider：apiStyle 映射（含自建供应商）
 
-对 **ChatboxAI** 和**自建供应商（custom）**，模型可能以任意 API 风格代理后端模型，因此用 `apiStyle` 推导「有效供应商」（`getEffectiveProvider`）：
+对 **ChatboxAI**、**OpenCode 网关（Zen / Go）**和**自建供应商（custom）**，模型可能以任意 API 风格代理后端模型，因此用 `apiStyle` 推导「有效供应商」（`getEffectiveProvider`）：
 
 | `apiStyle` | effectiveProvider |
 |-----------|-------------------|
@@ -48,19 +48,22 @@ getReasoningControlCapabilities(provider, model): {
 是否走 apiStyle 映射由 `usesModelApiStyleForReasoning(provider)` 决定，返回 `true` 的情况：
 
 - `provider === ChatboxAI`
+- `isOpenCodeGatewayProvider(provider)`（`OpenCodeZen` / `OpenCodeGo`：内置网关，id 在枚举内，但按模型走 Responses / Anthropic Messages / Google / Chat Completions）
 - `provider === Custom`（字面枚举值 `'custom'`）
 - **`provider` 不是任何内置供应商 id**（即用户自建供应商，其 id 是任意值）—— 通过 `isCustomProviderId()`（不在 `Object.values(ModelProviderEnum)` 中）判断
 
 > **代理型供应商的判定原则：api style（= provider type）+ model id。** 这类供应商的 id 不带内置语义，不能用 id 直接匹配模型列表；必须先由 provider type 决定 api style，再用 api style 推导 effectiveProvider，最后用 model id 命中写死的列表。涵盖：
 > - **自建供应商（custom）**：id 任意，`isCustomProviderId` 命中（不在 `ModelProviderEnum`）。
 > - **内置代理供应商**：如 `github-copilot`（id 不在 `ModelProviderEnum`，type 为 OpenAI，代理 gpt/claude/gemini 等）——同样被 `isCustomProviderId` 命中，按 apiStyle 判定。
+> - **OpenCode Zen / Go**：id 在枚举内，但 `createModel()` 仍按模型 id 覆盖 `apiStyle`，reasoning-control 必须走同一套映射，否则 DeepSeek 会被误判为 `requires-deepseek-api-style`。
 >
 > apiStyle 兜底两端共用 `src/shared/providers/api-style.ts` 的 `API_STYLE_BY_PROVIDER_TYPE` / `apiStyleFromProviderType`，**单一来源**：
 > - UI 侧：`useReasoningControlState` 的 `withProviderApiStyleFallback`。
 > - 请求侧：`getModel` 的 `withReasoningApiStyle`（registry + custom 两条分支都盖），保证 UI 与 gate 解析出同一 effectiveProvider。
+> - OpenCode 两个网关再由 `applyOpenCodeZenModelMetadata()` / `applyOpenCodeGoModelMetadata()` 按模型 id 覆盖 provider-type 兜底（例如把 Qwen 从 `openai` 改回 `anthropic`）。
 >
-> OpenRouter 例外，始终保持自身；其它内置供应商（id 在枚举内）直接用自身作为 effectiveProvider，apiStyle 被忽略，盖值是无副作用的 no-op。
-> `isOpenAICompatibleApiStyle` 同样对 ChatboxAI 和上述代理型供应商生效（用于 DeepSeek 等按 model id 检测的思考模型）。
+> OpenRouter 例外，始终保持自身；其它「非网关」内置供应商（id 在枚举内）直接用自身作为 effectiveProvider，apiStyle 被忽略，盖值是无副作用的 no-op。
+> `isOpenAICompatibleApiStyle` 对 ChatboxAI、OpenCode 网关和上述代理型供应商生效（用于 DeepSeek 等按 model id 检测的思考模型）。
 
 ---
 

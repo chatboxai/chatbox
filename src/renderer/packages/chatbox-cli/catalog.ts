@@ -75,9 +75,10 @@ export const chatboxCliCommandCatalog: ChatboxCliCommandCatalogEntry[] = [
   {
     domain: 'image',
     path: ['image', 'generate'],
-    description: 'Request approval, then start a callback-driven image background task. Never poll for completion.',
+    description:
+      'Request approval, then start a callback-driven image background task. Never poll for completion. When the user names a model, pass --model (model id or display name); without --model the first catalog model is used.',
     usage:
-      'chatbox image generate --prompt <text> [--provider <id>] [--model <id>] [--count 1] [--aspect-ratio <ratio>]',
+      'chatbox image generate --prompt <text> [--provider <id>] [--model <id-or-name>] [--count 1] [--aspect-ratio <ratio>]',
   },
   {
     domain: 'image',
@@ -94,7 +95,8 @@ export const chatboxCliCommandCatalog: ChatboxCliCommandCatalogEntry[] = [
   {
     domain: 'image',
     path: ['image', 'models'],
-    description: 'List configured image-capable models without exposing provider credentials.',
+    description:
+      'List configured image-capable models without exposing provider credentials. Run this when the user asks which models exist or names a model you cannot resolve.',
     usage: 'chatbox image models',
   },
 ]

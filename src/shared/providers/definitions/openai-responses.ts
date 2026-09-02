@@ -1,5 +1,5 @@
-import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { createOAuthCredentialManager, createOpenAIOAuthFetch } from '../../oauth'
+import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import OpenAIResponses from './models/openai-responses'
 
@@ -8,7 +8,17 @@ export const openaiResponsesProvider = defineProvider({
   name: 'OpenAI (Responses)',
   type: ModelProviderType.OpenAIResponses,
   modelsDevProviderId: 'openai',
-  curatedModelIds: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.2', 'gpt-5.2-pro', 'o3-pro'],
+  curatedModelIds: [
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna',
+    'gpt-5.4',
+    'gpt-5.4-mini',
+    'gpt-5.4-nano',
+    'gpt-5.2',
+    'gpt-5.2-pro',
+    'o3-pro',
+  ],
   urls: {
     website: 'https://openai.com',
     docs: 'https://platform.openai.com/docs/api-reference/responses',
@@ -18,6 +28,24 @@ export const openaiResponsesProvider = defineProvider({
     apiPath: '/responses',
     // Responses API supported models - https://platform.openai.com/docs/api-reference/responses
     models: [
+      {
+        modelId: 'gpt-5.6-sol',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-5.6-terra',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-5.6-luna',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
       {
         modelId: 'gpt-5.4',
         capabilities: ['vision', 'tool_use', 'reasoning'],

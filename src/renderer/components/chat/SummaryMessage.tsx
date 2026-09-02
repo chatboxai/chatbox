@@ -1,14 +1,17 @@
+import { isActionAvailableInMode, type SessionMode } from '@chatbox/core/session/mode-policy'
+import type { PromptCacheDeleteTarget } from '@chatbox/core/session/prompt-cache-policy'
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Button, Collapse, Flex, Group, Stack, Text } from '@mantine/core'
+import { ActionIcon, Button, Checkbox, Collapse, Flex, Group, Stack, Text } from '@mantine/core'
 import type { Message } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import { IconChevronDown, IconChevronUp, IconPencil, IconTrash } from '@tabler/icons-react'
-import { type FC, memo, useCallback, useState } from 'react'
+import { type FC, memo, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Markdown from '@/components/Markdown'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { dismissPromptCacheBreakConfirm, isPromptCacheBreakConfirmDismissed } from '@/utils/prompt-cache-confirm'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { Modal } from '../layout/Overlay'
 
@@ -18,26 +21,63 @@ interface SummaryMessageProps {
   isLatestSummary?: boolean
   onDelete?: () => void
   sessionId: string
+  highlighted?: boolean
+  /** Resolved by the list container; both modes keep latest-summary edit and delete. */
+  sessionMode?: SessionMode
+  /** Resolve prompt-cache delete policy when the delete dialog opens. */
+  shouldConfirmPromptCacheDelete?: (messageId: string, target: PromptCacheDeleteTarget) => boolean
 }
 
-const SummaryMessage: FC<SummaryMessageProps> = ({ msg, className, isLatestSummary, onDelete, sessionId }) => {
+const SummaryMessage: FC<SummaryMessageProps> = ({
+  msg,
+  className,
+  isLatestSummary,
+  onDelete,
+  sessionId,
+  highlighted = false,
+  sessionMode = 'chat',
+  shouldConfirmPromptCacheDelete,
+}) => {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [explainPromptCacheBreak, setExplainPromptCacheBreak] = useState(false)
+  const [dontShowAgain, setDontShowAgain] = useState(false)
   const enableMarkdownRendering = useSettingsStore((state) => state.enableMarkdownRendering)
   const enableLaTeXRendering = useSettingsStore((state) => state.enableLaTeXRendering)
   const enableMermaidRendering = useSettingsStore((state) => state.enableMermaidRendering)
 
   const summaryText = getMessageText(msg)
 
+  const canDeleteSummary = onDelete !== undefined && isActionAvailableInMode('delete-message', sessionMode)
+
   const handleConfirmDelete = () => {
+    if (explainPromptCacheBreak && dontShowAgain) {
+      dismissPromptCacheBreakConfirm('delete-summary')
+    }
     setShowDeleteConfirm(false)
+    setDontShowAgain(false)
     onDelete?.()
+  }
+
+  const handleDeleteClick = () => {
+    const shouldExplain =
+      !isPromptCacheBreakConfirmDismissed('delete-summary') &&
+      shouldConfirmPromptCacheDelete?.(msg.id, 'summary') === true
+    setExplainPromptCacheBreak(shouldExplain)
+    setDontShowAgain(false)
+    setShowDeleteConfirm(true)
   }
 
   const handleEdit = useCallback(() => {
     void NiceModal.show('message-edit', { sessionId, msg, hideSaveAndResend: true })
   }, [sessionId, msg])
+
+  useEffect(() => {
+    if (highlighted) {
+      setExpanded(true)
+    }
+  }, [highlighted])
 
   const summaryBadge = (
     <Flex
@@ -56,7 +96,13 @@ const SummaryMessage: FC<SummaryMessageProps> = ({ msg, className, isLatestSumma
   )
 
   return (
-    <div className={cn('w-full py-4 group/summary', className)}>
+    <div
+      className={cn(
+        'w-full py-4 group/summary rounded-xl transition-colors duration-500',
+        highlighted && 'bg-chatbox-background-brand-secondary',
+        className
+      )}
+    >
       <Flex align="center" gap="xs" className="w-full">
         <div className="flex-1 h-px bg-chatbox-border-primary" />
         {summaryBadge}
@@ -97,7 +143,7 @@ const SummaryMessage: FC<SummaryMessageProps> = ({ msg, className, isLatestSumma
                   <ScalableIcon icon={IconPencil} size={16} />
                 </ActionIcon>
               </Tooltip>
-              {onDelete && (
+              {canDeleteSummary && (
                 <Tooltip label={t('Delete')} openDelay={1000} withArrow>
                   <ActionIcon
                     variant="subtle"
@@ -107,8 +153,8 @@ const SummaryMessage: FC<SummaryMessageProps> = ({ msg, className, isLatestSumma
                     mih="auto"
                     p={4}
                     bd={0}
-                    color="chatbox-secondary"
-                    onClick={() => setShowDeleteConfirm(true)}
+                    color="chatbox-error"
+                    onClick={handleDeleteClick}
                   >
                     <ScalableIcon icon={IconTrash} size={16} />
                   </ActionIcon>
@@ -128,6 +174,20 @@ const SummaryMessage: FC<SummaryMessageProps> = ({ msg, className, isLatestSumma
       >
         <Stack gap="md">
           <Text size="sm">{t('Deleting this summary will restore original messages to context calculation.')}</Text>
+          {explainPromptCacheBreak && (
+            <>
+              <Text size="sm">
+                {t(
+                  "It will also invalidate the model's cached context, so the next reply may cost more and take longer."
+                )}
+              </Text>
+              <Checkbox
+                label={t("Don't show again")}
+                checked={dontShowAgain}
+                onChange={(event) => setDontShowAgain(event.currentTarget.checked)}
+              />
+            </>
+          )}
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setShowDeleteConfirm(false)}>
               {t('Cancel')}

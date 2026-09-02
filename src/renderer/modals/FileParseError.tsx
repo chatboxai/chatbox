@@ -5,13 +5,12 @@ import {
   LOCAL_PARSER_MAX_PDF_FILE_SIZE_LABEL,
   LOCAL_PARSER_PDF_PASSWORD_PROTECTED_ERROR,
 } from '@shared/file-parse-errors'
-import { ChatboxAIAPIError } from '@shared/models/errors'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { Trans, useTranslation } from 'react-i18next'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import LinkTargetBlank from '@/components/common/Link'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
-import { navigateToSettings } from '@/modals/Settings'
+import { navigateToSettings } from '@/modals/settings-navigation'
 import { trackingEvent } from '@/packages/event'
 import { buildChatboxUrl } from '@/packages/remote'
 import platform from '@/platform'
@@ -23,6 +22,7 @@ import {
   SESSION_ATTACHMENT_RAG_REQUIRES_TOOL_USE_MODEL_ERROR,
 } from '@/stores/sessionAttachmentRagErrors'
 import * as settingActions from '@/stores/settingActions'
+import { getFileParseErrorI18nKey } from '@/utils/file-parse-error'
 
 interface FileParseErrorProps {
   errorCode: string
@@ -38,8 +38,8 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
     modal.hide()
   }
 
-  // 根据错误码获取错误详情
-  const errorDetail = ChatboxAIAPIError.codeNameMap[errorCode]
+  // 根据错误码和平台能力获取错误文案
+  const errorI18nKey = getFileParseErrorI18nKey(errorCode, platform.isDesktopLike)
 
   // 错误提示内容
   const renderErrorTips = () => {
@@ -69,13 +69,7 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
       )
     }
     if (isSessionAttachmentRagIndexingError(errorCode)) {
-      return (
-        <Text>
-          {t(
-            'Large file indexing failed. The file was parsed, but Chatbox could not save the local search index. Remove this file and try uploading it again. If the problem continues, use a smaller file or Knowledge Base.'
-          )}
-        </Text>
-      )
+      return <Text>{`${t('Indexing failed')}. ${t('Continue')}`}</Text>
     }
     if (errorCode === SESSION_ATTACHMENT_RAG_REQUIRES_KNOWLEDGE_BASE_ERROR) {
       return (
@@ -103,19 +97,28 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
       )
     }
 
-    if (!errorDetail) {
+    if (!errorI18nKey) {
       // 未知错误
       return <Text>{t('Failed to parse file. Please try again or use a different file format.')}</Text>
     }
 
     return (
       <Trans
-        i18nKey={errorDetail.i18nKey}
+        i18nKey={errorI18nKey}
         values={{
           model: t('current model'),
         }}
         components={{
-          OpenSettingButton: <span />,
+          OpenSettingButton: (
+            <button
+              type="button"
+              className="cursor-pointer border-0 bg-transparent p-0 underline font-semibold text-blue-600 hover:text-blue-700"
+              onClick={() => {
+                onClose()
+                navigateToSettings('/chatbox-ai')
+              }}
+            />
+          ),
           OpenExtensionSettingButton: <span />,
           OpenMorePlanButton: (
             <a
@@ -133,8 +136,9 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
             />
           ),
           OpenDocumentParserSettingButton: (
-            <a
-              className="cursor-pointer underline font-semibold text-blue-600 hover:text-blue-700"
+            <button
+              type="button"
+              className="cursor-pointer border-0 bg-transparent p-0 underline font-semibold text-blue-600 hover:text-blue-700"
               onClick={() => {
                 onClose()
                 navigateToSettings('/document-parser')

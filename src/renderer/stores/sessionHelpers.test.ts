@@ -14,9 +14,11 @@ const {
   mockUploadAndCreateUserFile,
   mockSetBlob,
   mockGetBlob,
+  mockDelBlob,
   mockSetItem,
   mockGetItem,
   mockReportError,
+  mockCleanupOrphanedBlobs,
 } = vi.hoisted(() => {
   const blobs = new Map<string, string>()
   const license = { key: 'licensed-key' as string | undefined }
@@ -50,15 +52,20 @@ const {
       blobs.set(key, value)
     }),
     mockGetBlob: vi.fn(async (key: string) => blobs.get(key) ?? null),
+    mockDelBlob: vi.fn(async (key: string) => {
+      blobs.delete(key)
+    }),
     mockSetItem: vi.fn(async () => undefined),
     mockGetItem: vi.fn(async <T>(_key: string, initialValue: T) => initialValue),
     mockReportError: vi.fn(),
+    mockCleanupOrphanedBlobs: vi.fn(async () => 0),
   }
 })
 
 vi.mock('@/platform', () => ({
   default: {
     type: 'desktop',
+    isDesktopLike: true,
     parseFileLocally: mockParseFileLocally,
     parseFileWithMineru: mockParseFileWithMineru,
   },
@@ -68,6 +75,7 @@ vi.mock('@/storage', () => ({
   default: {
     getBlob: mockGetBlob,
     setBlob: mockSetBlob,
+    delBlob: mockDelBlob,
     getItem: mockGetItem,
     setItem: mockSetItem,
   },
@@ -132,6 +140,10 @@ vi.mock('@/utils/sentry', () => ({
   reportError: mockReportError,
 }))
 
+vi.mock('@/setup/storage_clear', () => ({
+  cleanupOrphanedBlobs: mockCleanupOrphanedBlobs,
+}))
+
 vi.mock('@/lib/format-chat', () => ({
   formatChatAsHtml: vi.fn(),
   formatChatAsMarkdown: vi.fn(),
@@ -142,8 +154,10 @@ vi.mock('@/i18n', () => ({
   default: {},
 }))
 
-vi.mock('@/stores/chatStore', () => ({
-  getMetaStorage: vi.fn(),
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: {
+    sessions: { initialize: vi.fn(), repository: { meta: {} } },
+  },
 }))
 
 import {
@@ -177,11 +191,17 @@ describe('preprocessFile local parser fallback', () => {
     mockParseFileWithMineru.mockReset()
     mockGetSessionRagConfig.mockClear()
     mockUploadAndCreateUserFile.mockReset()
-    mockSetBlob.mockClear()
+    mockSetBlob.mockReset()
+    mockSetBlob.mockImplementation(async (key: string, value: string) => {
+      blobStore.set(key, value)
+    })
     mockGetBlob.mockClear()
+    mockDelBlob.mockClear()
     mockSetItem.mockClear()
     mockGetItem.mockClear()
     mockReportError.mockClear()
+    mockCleanupOrphanedBlobs.mockReset()
+    mockCleanupOrphanedBlobs.mockResolvedValue(0)
   })
 
   it('falls back to Chatbox AI when local parsing throws and a license is active', async () => {
@@ -266,7 +286,7 @@ describe('preprocessFile local parser fallback', () => {
     expect(result.error).toBe('empty_attachment_content')
   })
 
-  it('keeps local_parser_failed when local parsing throws without a license', async () => {
+  it('prompts for a license when local parsing throws without a key', async () => {
     const file = createFile('no-license.pdf')
     licenseState.key = undefined
     mockParseFileLocally.mockRejectedValueOnce(new Error('local failed'))
@@ -276,23 +296,11 @@ describe('preprocessFile local parser fallback', () => {
     expect(mockUploadAndCreateUserFile).not.toHaveBeenCalled()
     expect(result.content).toBe('')
     expect(result.storageKey).toBe('')
-    expect(result.error).toBe('local_parser_failed')
-    expect(mockReportError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'local_parser_failed' }),
-      expect.objectContaining({
-        domain: 'file-attachment',
-        operation: 'preprocess-file',
-        priority: 'high',
-        tags: expect.objectContaining({
-          file_extension: 'pdf',
-          preprocess_stage: 'local_parse',
-          user_error_code: 'local_parser_failed',
-        }),
-      })
-    )
+    expect(result.error).toBe('chatbox_ai_parser_license_key_required')
+    expect(mockReportError).not.toHaveBeenCalled()
   })
 
-  it('rejects empty local content without a license for ordinary attachments', async () => {
+  it('prompts for a license when local parsing returns empty content without a key', async () => {
     const file = createFile('empty-without-license.pdf')
     licenseState.key = undefined
     mockParseFileLocally.mockResolvedValueOnce({ isSupported: true, key: 'missing-local-key' })
@@ -302,7 +310,23 @@ describe('preprocessFile local parser fallback', () => {
     expect(mockUploadAndCreateUserFile).not.toHaveBeenCalled()
     expect(result.content).toBe('')
     expect(result.storageKey).toBe('')
-    expect(result.error).toBe('empty_attachment_content')
+    expect(result.error).toBe('chatbox_ai_parser_license_key_required')
+    expect(mockReportError).not.toHaveBeenCalled()
+  })
+
+  it('prompts for a license when Chatbox AI parser is selected and local parsing fails without a key', async () => {
+    parserState.type = 'chatbox-ai'
+    const file = createFile('cloud-without-license.pdf')
+    licenseState.key = undefined
+    mockParseFileLocally.mockResolvedValueOnce({ isSupported: false })
+
+    const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
+
+    expect(mockUploadAndCreateUserFile).not.toHaveBeenCalled()
+    expect(result.content).toBe('')
+    expect(result.storageKey).toBe('')
+    expect(result.error).toBe('chatbox_ai_parser_license_key_required')
+    expect(mockReportError).not.toHaveBeenCalled()
   })
 
   it('reprocesses whitespace-only cached content instead of returning an empty attachment', async () => {
@@ -323,11 +347,15 @@ describe('preprocessFile local parser fallback', () => {
     const file = createFile('pasted_text_123.txt', 'long pasted text')
     const quotaError = new Error('Quota exceeded while writing local storage')
     quotaError.name = 'QuotaExceededError'
-    mockParseFileLocally.mockRejectedValueOnce(quotaError)
+    mockParseFileLocally.mockRejectedValue(quotaError)
 
     const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
 
     expect(mockUploadAndCreateUserFile).not.toHaveBeenCalled()
+    expect(mockCleanupOrphanedBlobs).toHaveBeenCalledTimes(1)
+    // Retry happens even when the cleanup found no orphans: space may have been
+    // freed outside the cleanup's accounting (e.g. temp parse blob reclaim).
+    expect(mockParseFileLocally).toHaveBeenCalledTimes(2)
     expect(result.error).toBe('file_storage_quota_exceeded')
     expect(mockReportError).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'file_storage_quota_exceeded' }),
@@ -339,7 +367,9 @@ describe('preprocessFile local parser fallback', () => {
           error_type: 'QuotaExceededError',
           file_extension: 'txt',
           file_size_bucket: 'under_100_kb',
+          freed_blob_count: 0,
           preprocess_stage: 'local_parse',
+          quota_recovery: 'retry_failed',
           user_error_code: 'file_storage_quota_exceeded',
         }),
       })
@@ -347,6 +377,178 @@ describe('preprocessFile local parser fallback', () => {
     const [reportedError, context] = mockReportError.mock.calls[0]
     expect(reportedError.stack).not.toContain(quotaError.message)
     expect(JSON.stringify(context)).not.toContain(file.name)
+    mockParseFileLocally.mockReset()
+  })
+
+  it('retries once after freeing orphaned blobs and recovers silently', async () => {
+    const file = createFile('report.pdf')
+    const quotaError = new Error('Quota exceeded')
+    quotaError.name = 'QuotaExceededError'
+    blobStore.set('local-key', 'parsed content after cleanup')
+    mockParseFileLocally.mockRejectedValueOnce(quotaError)
+    mockParseFileLocally.mockResolvedValueOnce({ isSupported: true, key: 'local-key' })
+    mockCleanupOrphanedBlobs.mockResolvedValueOnce(12)
+
+    const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
+
+    expect(mockCleanupOrphanedBlobs).toHaveBeenCalledTimes(1)
+    expect(mockParseFileLocally).toHaveBeenCalledTimes(2)
+    expect(result.error).toBeUndefined()
+    expect(result.content).toBe('parsed content after cleanup')
+    expect(mockReportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'file_storage_quota_exceeded' }),
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          freed_blob_count: 12,
+          quota_recovery: 'recovered',
+        }),
+      })
+    )
+  })
+
+  it('surfaces the quota error when the retry after cleanup also fails', async () => {
+    const file = createFile('report.pdf')
+    const quotaError = new Error('Quota exceeded')
+    quotaError.name = 'QuotaExceededError'
+    mockParseFileLocally.mockRejectedValue(quotaError)
+    mockCleanupOrphanedBlobs.mockResolvedValueOnce(3)
+
+    const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
+
+    expect(mockParseFileLocally).toHaveBeenCalledTimes(2)
+    expect(result.error).toBe('file_storage_quota_exceeded')
+    expect(mockReportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'file_storage_quota_exceeded' }),
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          freed_blob_count: 3,
+          quota_recovery: 'retry_failed',
+        }),
+      })
+    )
+    mockParseFileLocally.mockReset()
+  })
+
+  it('recovers when the retry succeeds after reclaiming space outside cleanup accounting', async () => {
+    const file = createFile('report.pdf')
+    const quotaError = new Error('Quota exceeded')
+    quotaError.name = 'QuotaExceededError'
+    blobStore.set('local-key', 'parsed content after temp reclaim')
+    mockParseFileLocally.mockRejectedValueOnce(quotaError)
+    mockParseFileLocally.mockResolvedValueOnce({ isSupported: true, key: 'local-key' })
+    // Cleanup finds no orphans, but the retry succeeds anyway (temp blob reclaim).
+    mockCleanupOrphanedBlobs.mockResolvedValueOnce(0)
+
+    const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
+
+    expect(result.error).toBeUndefined()
+    expect(result.content).toBe('parsed content after temp reclaim')
+    expect(mockReportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'file_storage_quota_exceeded' }),
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          freed_blob_count: 0,
+          quota_recovery: 'recovered',
+        }),
+      })
+    )
+  })
+
+  it('still surfaces the quota error when orphan cleanup itself fails', async () => {
+    const file = createFile('report.pdf')
+    const quotaError = new Error('Quota exceeded')
+    quotaError.name = 'QuotaExceededError'
+    mockParseFileLocally.mockRejectedValue(quotaError)
+    mockCleanupOrphanedBlobs.mockRejectedValueOnce(new Error('cleanup failed'))
+
+    const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
+
+    // Retry still happens: cleanup failing does not mean no space was reclaimed elsewhere.
+    expect(mockParseFileLocally).toHaveBeenCalledTimes(2)
+    expect(result.error).toBe('file_storage_quota_exceeded')
+    expect(mockReportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'file_storage_quota_exceeded' }),
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          cleanup_outcome: 'cleanup_failed',
+          quota_recovery: 'retry_failed',
+        }),
+      })
+    )
+    mockParseFileLocally.mockReset()
+  })
+
+  it('reclaims the temporary parse blob after copying to the durable key', async () => {
+    const file = createFile('report.pdf')
+    blobStore.set('parseFile-temp-key', 'parsed content')
+    mockParseFileLocally.mockResolvedValueOnce({ isSupported: true, key: 'parseFile-temp-key' })
+
+    const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
+
+    expect(result.error).toBeUndefined()
+    expect(result.content).toBe('parsed content')
+    expect(mockDelBlob).toHaveBeenCalledWith('parseFile-temp-key')
+    expect(blobStore.has('parseFile-temp-key')).toBe(false)
+  })
+
+  it('reclaims the temporary parse blob even when the durable write hits quota', async () => {
+    const file = createFile('report.pdf')
+    const quotaError = new Error('Quota exceeded')
+    quotaError.name = 'QuotaExceededError'
+    // Parser re-stages the temp blob on every attempt; the durable file:* write
+    // always hits quota (raw-binary writes share the prefix but swallow errors).
+    mockParseFileLocally.mockImplementation(async () => {
+      blobStore.set('parseFile-temp-key', 'parsed content')
+      return { isSupported: true, key: 'parseFile-temp-key' }
+    })
+    mockSetBlob.mockImplementation(async (key: string, value: string) => {
+      if (key.startsWith('file:') && !key.endsWith('_raw')) {
+        throw quotaError
+      }
+      blobStore.set(key, value)
+    })
+
+    const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
+
+    expect(result.error).toBe('file_storage_quota_exceeded')
+    expect(mockDelBlob).toHaveBeenCalledWith('parseFile-temp-key')
+    expect(blobStore.has('parseFile-temp-key')).toBe(false)
+    mockParseFileLocally.mockReset()
+  })
+
+  it('classifies MinerU persistence quota failures for recovery instead of parser errors', async () => {
+    const file = createFile('report.pdf')
+    parserState.type = 'mineru'
+    const quotaError = new Error('Quota exceeded while persisting parsed content')
+    quotaError.name = 'QuotaExceededError'
+    // MinerU parses successfully, but storing the parsed content hits the quota.
+    // First setBlob call is the raw-binary write (errors swallowed); the second
+    // one persists the MinerU content and rejects. The post-cleanup retry then
+    // succeeds with the default setBlob implementation.
+    mockParseFileWithMineru.mockResolvedValue({ success: true, content: 'mineru parsed content' })
+    mockSetBlob
+      .mockImplementationOnce(async (key: string, value: string) => {
+        blobStore.set(key, value)
+      })
+      .mockRejectedValueOnce(quotaError)
+
+    const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
+
+    // The original failure is classified as a quota error (stage: parse), and
+    // the automatic retry recovers.
+    expect(result.error).toBeUndefined()
+    expect(result.content).toBe('mineru parsed content')
+    expect(mockCleanupOrphanedBlobs).toHaveBeenCalledTimes(1)
+    expect(mockReportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'file_storage_quota_exceeded' }),
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          preprocess_stage: 'parse',
+          quota_recovery: 'recovered',
+          user_error_code: 'file_storage_quota_exceeded',
+        }),
+      })
+    )
   })
 
   it('rejects whitespace-only content returned by MinerU', async () => {
@@ -365,12 +567,13 @@ describe('preprocessFile local parser fallback', () => {
     const file = createFile('report.pdf')
     const quotaError = new Error('QuotaExceededError: the current transaction exceeded its quota limitations')
     quotaError.name = 'QuotaExceededError'
-    mockParseFileLocally.mockRejectedValueOnce(new Error('local failed'))
-    mockUploadAndCreateUserFile.mockRejectedValueOnce(quotaError)
+    mockParseFileLocally.mockRejectedValue(new Error('local failed'))
+    mockUploadAndCreateUserFile.mockRejectedValue(quotaError)
 
     const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
 
-    expect(mockUploadAndCreateUserFile).toHaveBeenCalledTimes(1)
+    // Initial attempt + one post-cleanup retry
+    expect(mockUploadAndCreateUserFile).toHaveBeenCalledTimes(2)
     expect(result.error).toBe('file_storage_quota_exceeded')
     expect(mockReportError).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'file_storage_quota_exceeded' }),
@@ -387,7 +590,7 @@ describe('preprocessFile local parser fallback', () => {
   it('classifies desktop ENOSPC failures as storage quota errors', async () => {
     const file = createFile('report.pdf')
     // Desktop IPC serialization degrades the error name to plain "Error", only the message survives.
-    mockParseFileLocally.mockRejectedValueOnce(new Error("ENOSPC: no space left on device, write '/tmp/parsed'"))
+    mockParseFileLocally.mockRejectedValue(new Error("ENOSPC: no space left on device, write '/tmp/parsed'"))
 
     const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
 
@@ -616,6 +819,12 @@ describe('preprocessFile local parser fallback', () => {
   })
 
   it('recognizes raw session RAG indexing failures from existing failed attachments', () => {
+    expect(isSessionAttachmentRagIndexingError('ai_provider_error')).toBe(true)
+    expect(
+      isSessionAttachmentRagIndexingError(
+        'API Error: Status Code 400, {"error":{"code":"ai_provider_error","detail":"temporarily unavailable"}}'
+      )
+    ).toBe(true)
     expect(
       isSessionAttachmentRagIndexingError(
         'ConnectionFailed("Unable to open connection to local database /Users/me/databases/chatbox_session_rag_vectors.db: 14")'
@@ -670,6 +879,9 @@ describe('preprocessFile local parser fallback', () => {
     expect(result.storageKey).toBe(storageKey)
     expect(result.rawStorageKey).toBe(rawStorageKey)
     expect(result.parserType).toBe('sandbox-raw')
+    expect(result.tokenCountMap).toBeUndefined()
+    expect(result.lineCount).toBeUndefined()
+    expect(mockSetItem).not.toHaveBeenCalledWith(`${storageKey}_parserType`, 'sandbox-raw')
     expect(blobStore.get(rawStorageKey)).toMatch(/^data:application\/pdf;base64,/)
   })
 })

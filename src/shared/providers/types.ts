@@ -1,4 +1,5 @@
 import type { ModelInterface } from '../models/types'
+import type { PlatformType } from '../platform'
 import type { Config, ProviderModelInfo, ProviderSettings, SessionSettings, SessionType, Settings } from '../types'
 import type { ModelDependencies } from '../types/adapters'
 import type { ModelProviderType } from '../types/provider'
@@ -39,6 +40,8 @@ export interface ProviderDefinition {
   name: string
   /** The underlying API type (OpenAI, Claude, Gemini, etc.) */
   type: ModelProviderType
+  /** Platforms where this provider is available. Omit to make it available everywhere. */
+  platforms?: PlatformType[]
   /** Optional description for the provider */
   description?: string
   /** Related URLs for the provider */
@@ -50,6 +53,12 @@ export interface ProviderDefinition {
   }
   /** Default settings for the provider */
   defaultSettings?: ProviderSettings
+  /**
+   * Controls whether the settings UI merges Chatbox's remote model manifest
+   * with the provider's own model list. Use `provider-only` for platform
+   * services whose model catalog is exclusively managed by the operating system.
+   */
+  modelListSource?: 'merged' | 'provider-only'
   /**
    * The provider ID on models.dev (e.g., 'openai', 'anthropic', 'google').
    * If set, models.dev data will be used to enrich model metadata and

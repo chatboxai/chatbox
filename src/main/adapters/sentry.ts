@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/node'
 import { app } from 'electron'
 import type { SentryAdapter, SentryScope } from '../../shared/utils/sentry_adapter'
-import { createSentryEventProcessor } from '../../shared/utils/sentry_policy'
+import { createSentryEventProcessor, normalizeErrorForSentry } from '../../shared/utils/sentry_policy'
 import { getSettings, store } from '../store-node'
 
 const processSentryEvent = createSentryEventProcessor({
@@ -85,7 +85,7 @@ store.onDidAnyChange((settings, previousSettings) => {
  */
 export class MainSentryAdapter implements SentryAdapter {
   captureException(error: unknown): void {
-    Sentry.captureException(error)
+    Sentry.captureException(normalizeErrorForSentry(error))
   }
 
   withScope(callback: (scope: SentryScope) => void): void {

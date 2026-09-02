@@ -1,4 +1,5 @@
 import { Button, Flex, Image, Indicator, ScrollArea, Stack, Text } from '@mantine/core'
+import { AutomationAdjacentAttr, TestId } from '@shared/automation/testids'
 import { ModelProviderEnum, type ProviderBaseInfo } from '@shared/types'
 import { IconChevronRight, IconPlus } from '@tabler/icons-react'
 import { Link, useRouterState } from '@tanstack/react-router'
@@ -53,6 +54,7 @@ export function ProviderList({ providers, onAddProvider }: ProviderListProps) {
 
   return (
     <Stack
+      data-testid={TestId.settings.providerList}
       maw={isSmallScreen ? undefined : 256}
       className={clsx(
         'border-solid border-0 border-r border-chatbox-border-primary',
@@ -68,6 +70,8 @@ export function ProviderList({ providers, onAddProvider }: ProviderListProps) {
               to={provider.id === 'chatbox-ai' ? `/settings/provider/chatbox-ai` : `/settings/provider/$providerId`}
               params={{ providerId: provider.id }}
               className={'block no-underline'}
+              data-testid={TestId.settings.providerItem}
+              {...{ [AutomationAdjacentAttr.providerId]: provider.id }}
             >
               <Flex
                 component="span"
@@ -117,7 +121,12 @@ export function ProviderList({ providers, onAddProvider }: ProviderListProps) {
         </Stack>
       </ScrollArea>
       <Stack gap="xs" mx="md" my="sm">
-        <Button variant="outline" leftSection={<ScalableIcon icon={IconPlus} />} onClick={onAddProvider}>
+        <Button
+          data-testid={TestId.settings.addProvider}
+          variant="outline"
+          leftSection={<ScalableIcon icon={IconPlus} />}
+          onClick={onAddProvider}
+        >
           {t('Add')}
         </Button>
       </Stack>

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { copyMessageForksWithMapping, copyMessagesWithMapping, copyThreads, createMessage } from './types'
+import {
+  copyMessageForksWithMapping,
+  copyMessagesWithMapping,
+  copyThreads,
+  createMessage,
+  MessageSchema,
+} from './types'
 import type { CompactionPoint, SessionThread } from './types/session'
 
 describe('copyMessagesWithMapping', () => {
@@ -37,20 +43,25 @@ describe('copyMessagesWithMapping', () => {
     expect(idMapping.size).toBe(0)
   })
 
-  it('should clear cancel function on copied messages', () => {
-    const msg = createMessage('user', 'Test')
-    msg.cancel = () => {}
-    const { messages: newMessages } = copyMessagesWithMapping([msg])
-
-    expect(newMessages[0].cancel).toBeUndefined()
-  })
-
   it('should preserve timestamp on copied messages', () => {
     const msg = createMessage('user', 'Test')
     const originalTimestamp = msg.timestamp
     const { messages: newMessages } = copyMessagesWithMapping([msg])
 
     expect(newMessages[0].timestamp).toBe(originalTimestamp)
+  })
+})
+
+describe('MessageSchema', () => {
+  it('drops the removed legacy cancel projection', () => {
+    const parsed = MessageSchema.parse({
+      id: 'legacy-message',
+      role: 'assistant',
+      contentParts: [],
+      cancel: () => undefined,
+    })
+
+    expect('cancel' in parsed).toBe(false)
   })
 })
 

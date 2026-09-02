@@ -1,7 +1,8 @@
+import type { AnalyticsEventParams } from '@shared/analytics'
 import platform from '@/platform'
 import { settingsStore } from '@/stores/settingsStore'
 
-export function trackingEvent(name: string, params: { [key: string]: string } = {}) {
+export function trackingEvent(name: string, params: AnalyticsEventParams = {}) {
   const allowReportingAndTracking = settingsStore.getState().allowReportingAndTracking
   if (!allowReportingAndTracking) {
     return

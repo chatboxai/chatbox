@@ -1,5 +1,7 @@
+import { pickPersistableProviderMetadata } from '../models/provider-part-metadata'
 import { isDeepSeekReasoningEffortModel, isDeepSeekReasoningModel } from '../models/utils/deepseek'
-import type { ModelProvider, ProviderModelInfo, ProviderOptions } from '../types'
+import { usesBedrockConverseProtocol } from '../providers/api-style'
+import type { MessageContentParts, ModelProvider, ProviderModelInfo, ProviderOptions } from '../types'
 import { ModelProviderEnum } from '../types'
 import {
   canDisableGoogleThinking,
@@ -345,23 +347,180 @@ function isCustomProviderId(provider: ModelProvider | undefined): boolean {
   return !!provider && !BUILTIN_PROVIDER_IDS.has(provider)
 }
 
+function isOpenCodeGatewayProvider(provider: ModelProvider | undefined): boolean {
+  return provider === ModelProviderEnum.OpenCodeGo || provider === ModelProviderEnum.OpenCodeZen
+}
+
 function usesModelApiStyleForReasoning(provider: ModelProvider | undefined): boolean {
-  // ChatboxAI proxies many backend models, and custom providers wrap an upstream API,
-  // so for both we resolve the effective provider from the model's API style rather than
-  // the provider id itself.
+  // ChatboxAI and the OpenCode gateways proxy many backend models, and custom providers
+  // wrap an upstream API, so we resolve the effective provider from the model's API style
+  // rather than the provider id itself.
   return (
-    provider === ModelProviderEnum.ChatboxAI || provider === ModelProviderEnum.Custom || isCustomProviderId(provider)
+    provider === ModelProviderEnum.ChatboxAI ||
+    provider === ModelProviderEnum.Custom ||
+    isOpenCodeGatewayProvider(provider) ||
+    isCustomProviderId(provider)
   )
 }
 
 function isOpenAICompatibleApiStyle(provider: ModelProvider | undefined, model: ProviderModelInfo): boolean {
-  // ChatboxAI and custom providers can both expose OpenAI-compatible endpoints; treat a
-  // missing/`openai` API style as OpenAI-compatible so model-id based detection (e.g. DeepSeek)
-  // works the same way for both.
+  // ChatboxAI, the OpenCode gateways, and custom providers can all expose OpenAI-compatible
+  // endpoints; treat a missing/`openai` API style as OpenAI-compatible so model-id
+  // based detection (e.g. DeepSeek) works the same way for all three.
   return (
-    (provider === ModelProviderEnum.ChatboxAI || isCustomProviderId(provider)) &&
+    (provider === ModelProviderEnum.ChatboxAI || isOpenCodeGatewayProvider(provider) || isCustomProviderId(provider)) &&
     (!model.apiStyle || model.apiStyle === 'openai')
   )
+}
+
+function usesOpenAICompatibleReasoningHistory(provider: ModelProvider | undefined, model: ProviderModelInfo): boolean {
+  if (model.apiStyle === 'openai') return true
+
+  // getModel() stamps the provider type onto current models. Keep the missing-style
+  // fallback for older ChatboxAI/OpenCode/custom model records that predate that metadata.
+  return (
+    !model.apiStyle &&
+    (provider === ModelProviderEnum.ChatboxAI ||
+      provider === ModelProviderEnum.Custom ||
+      isOpenCodeGatewayProvider(provider) ||
+      isCustomProviderId(provider))
+  )
+}
+
+/**
+ * Whether historical assistant reasoning must survive conversion to model messages.
+ *
+ * The native DeepSeek SDK needs reasoning parts for its V4 request conversion.
+ * OpenAI-compatible routes, including built-in and custom providers, need the same
+ * parts so their provider SDK can emit reasoning history. Keeping both the API-style
+ * and model-family checks avoids reintroducing the Grok, Mistral, and Gemini regressions
+ * caused by preserving reasoning for every provider.
+ */
+export function shouldPreserveDeepSeekReasoning(
+  provider: ModelProvider | undefined,
+  model: ProviderModelInfo | null | undefined
+): boolean {
+  if (provider === ModelProviderEnum.DeepSeek) return true
+  return !!model && usesOpenAICompatibleReasoningHistory(provider, model) && isDeepSeekReasoningModel(model.modelId)
+}
+
+export interface ReasoningReplayPolicy {
+  /** Which assistant reasoning history survives conversion to model messages. */
+  preserveReasoning: false | 'all-turns'
+  /** Whether only blocks carrying whitelisted replay metadata go on the wire. */
+  signedReasoningOnly: boolean
+}
+
+/**
+ * How assistant reasoning history is replayed to the target route.
+ *
+ * Anthropic Messages routes (direct Claude, ChatboxAI/custom providers with
+ * `apiStyle === 'anthropic'`) replay signed thinking on every assistant turn —
+ * the documented pattern ("pass everything back; the API automatically
+ * filters"), and signatures are valid across Claude API / Bedrock / Vertex.
+ * Unsigned / foreign reasoning (Kimi, DeepSeek, Gemini thoughts, data saved
+ * before signature capture) is omitted at convert time via the signature
+ * whitelist, not by wiping storage. Bedrock Converse shares the apiStyle but
+ * expects the `bedrock` namespace and empty text blocks — it stays excluded
+ * until that protocol is implemented.
+ *
+ * DeepSeek thinking mode keeps its existing all-turns plain-text behavior (see
+ * `shouldPreserveDeepSeekReasoning`).
+ */
+export function resolveReasoningReplayPolicy(
+  provider: ModelProvider | undefined,
+  model: ProviderModelInfo | null | undefined
+): ReasoningReplayPolicy {
+  if (model?.apiStyle === 'anthropic' && !usesBedrockConverseProtocol(provider)) {
+    return { preserveReasoning: 'all-turns', signedReasoningOnly: true }
+  }
+  if (shouldPreserveDeepSeekReasoning(provider, model)) {
+    return { preserveReasoning: 'all-turns', signedReasoningOnly: false }
+  }
+  return { preserveReasoning: false, signedReasoningOnly: false }
+}
+
+/**
+ * Budget-style Claude can send `thinking: { type: 'disabled' }`. Effort /
+ * adaptive models cannot express an explicit off on the wire.
+ */
+export function canSendClaudeThinkingDisabled(modelId: string | undefined): boolean {
+  return !!modelId && !usesClaudeEffortControl(modelId)
+}
+
+/**
+ * Anthropic manual (budget) thinking enforces that the final assistant *turn*
+ * of a thinking-enabled request begins with a thinking block. A tool-use loop
+ * is one turn, and in non-interleaved mode only the loop's first response
+ * carries thinking — later steps legitimately ship bare `tool_use` blocks. The
+ * check therefore anchors on the turn start, not on the last tool call:
+ * resuming is safe whenever the first block the converter puts on the wire is
+ * a signed thinking block, even if later steps in the same turn are unsigned.
+ *
+ * When the resumed turn cannot open with signed thinking (data saved before
+ * signature capture, or a turn minted by another provider), budget-style
+ * models turn thinking off for this request instead — the official
+ * graceful-degradation path ("To avoid this requirement, disable thinking").
+ * The caller must then also drop reasoning replay so the degraded request
+ * carries no thinking blocks at all.
+ *
+ * Effort/adaptive Claude models are exempt by rule, not as a fallback for
+ * their missing `thinking: {type: 'disabled'}` wire shape: the turn-start
+ * requirement exists only in manual mode ("Adaptive mode relaxes this: no
+ * assistant turn needs to start with one"), and these models never receive
+ * manual thinking config anyway (normalizeClaudeReasoningOptions keeps only
+ * the effort param). An unsigned resume is already a valid request for them —
+ * there is nothing to degrade.
+ *
+ * Anchored on the last prompt message: only a request that ends with an
+ * assistant tool exchange (a resumed continuation) is constrained. A fresh
+ * user turn ends with the user message, its history needs no thinking blocks
+ * ("outside tool use, omit prior turns' thinking"), and must never have its
+ * thinking silently degraded by old unsigned turns earlier in the session.
+ */
+export function shouldDisableClaudeThinkingForUnsignedResume(
+  lastPromptMessage: { role: string; contentParts?: MessageContentParts } | undefined,
+  signedReasoningOnly: boolean,
+  modelId: string
+): boolean {
+  if (!signedReasoningOnly || !canSendClaudeThinkingDisabled(modelId)) return false
+  if (lastPromptMessage?.role !== 'assistant') return false
+  const parts = lastPromptMessage.contentParts ?? []
+  // Only completed tool calls reach the wire; without one the request does not
+  // end in a resumed tool exchange, so the turn-start rule has nothing to bite.
+  if (!parts.some(isWireVisibleToolCall)) return false
+  return !turnStartsWithSignedThinking(parts)
+}
+
+function isWireVisibleToolCall(part: MessageContentParts[number]): boolean {
+  return part.type === 'tool-call' && part.state !== 'call' && part.state !== 'paused'
+}
+
+/**
+ * Mirrors what `convertToModelMessages` emits under signed-only replay: skips
+ * parts that never reach the wire (unsigned reasoning, empty or protocol-only
+ * text, unfinished tool calls, info parts) and reports whether the first
+ * surviving block is signed thinking.
+ */
+function turnStartsWithSignedThinking(parts: MessageContentParts): boolean {
+  for (const part of parts) {
+    switch (part.type) {
+      case 'reasoning':
+        if (pickPersistableProviderMetadata(part.providerMetadata)) return true
+        break // unsigned reasoning is omitted from the wire; keep looking
+      case 'text':
+        if (part.text && !part.protocolOnly) return false
+        break
+      case 'tool-call':
+        if (isWireVisibleToolCall(part)) return false
+        break
+      case 'image':
+        return false
+      default:
+        break // info/status parts never reach the wire
+    }
+  }
+  return false
 }
 
 export function getReasoningControlCapabilities(
@@ -463,12 +622,17 @@ function getApiStyleDisabledReason(
   if (
     matchesAny(modelId, QWEN_THINKING_MODELS) &&
     effectiveProvider !== ModelProviderEnum.Qwen &&
-    effectiveProvider !== ModelProviderEnum.QwenPortal
+    effectiveProvider !== ModelProviderEnum.QwenPortal &&
+    !isOpenCodeGatewayProvider(provider)
   ) {
     return 'requires-qwen-api-style'
   }
 
-  if (matchesAny(modelId, GROK_REASONING_EFFORT_MODELS) && effectiveProvider !== ModelProviderEnum.XAI) {
+  if (
+    matchesAny(modelId, GROK_REASONING_EFFORT_MODELS) &&
+    effectiveProvider !== ModelProviderEnum.XAI &&
+    !isOpenCodeGatewayProvider(provider)
+  ) {
     return 'requires-xai-api-style'
   }
 

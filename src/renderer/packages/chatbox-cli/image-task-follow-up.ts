@@ -40,7 +40,7 @@ export function queueImageTaskCompletion(
     elapsedMs: Math.max(0, finishedAt - startedAt),
     summary:
       record.status === 'done'
-        ? `${record.generatedImages.length} image(s) generated. Use "chatbox image status ${record.id}" to inspect the result references.`
+        ? `${record.generatedImages.length} image(s) generated. Chatbox already displays them to the user at the original tool call, so do not show the images again: no markdown images and no image links. Reply with a brief confirmation. Run "chatbox image status ${record.id}" only if the user asks for details.`
         : `Image generation failed: ${record.error?.slice(0, 500) ?? 'Unknown error'}`,
   })
 }

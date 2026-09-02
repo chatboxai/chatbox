@@ -1,4 +1,5 @@
 import { setRuntimeRegistry } from '@shared/model-registry/enrich'
+import { applyRegistryOverlays } from '@shared/model-registry/legacy-overrides'
 import { MODELS_DEV_SNAPSHOT } from '@shared/model-registry/snapshot.generated'
 import { transformFullResponse } from '@shared/model-registry/transform'
 import type { ModelRegistryData, ModelsDevResponse } from '@shared/model-registry/types'
@@ -27,10 +28,11 @@ function notifyListeners(): void {
 }
 
 function applyRegistry(data: ModelRegistryData): ModelRegistryData {
-  memoryCache = data
-  setRuntimeRegistry(data)
+  const overlaidData = applyRegistryOverlays(data)
+  memoryCache = overlaidData
+  setRuntimeRegistry(overlaidData)
   notifyListeners()
-  return data
+  return overlaidData
 }
 
 async function readBlobCache(): Promise<CacheEntry | null> {
@@ -63,7 +65,7 @@ function isCacheValid(entry: CacheEntry): boolean {
  */
 export function getRegistrySync(): ModelRegistryData {
   if (memoryCache) return memoryCache
-  return MODELS_DEV_SNAPSHOT
+  return applyRegistryOverlays(MODELS_DEV_SNAPSHOT)
 }
 
 /**
@@ -76,9 +78,9 @@ export async function getRegistry(): Promise<ModelRegistryData> {
   // Cold start: try to load from platform blob storage
   const cached = await readBlobCache()
   if (cached) {
-    applyRegistry(cached.data)
+    const overlaidData = applyRegistry(cached.data)
     if (isCacheValid(cached)) {
-      return cached.data
+      return overlaidData
     }
   }
 
@@ -106,9 +108,9 @@ export function fetchAndUpdateRegistry(
       }
       const raw = (await response.json()) as ModelsDevResponse
       const transformed = transformFullResponse(raw)
-      applyRegistry(transformed)
-      await writeBlobCache(transformed)
-      return transformed
+      const overlaidData = applyRegistry(transformed)
+      await writeBlobCache(overlaidData)
+      return overlaidData
     } catch (error) {
       console.warn('[model-registry] Fetch failed, using fallback:', error)
       return applyRegistry(fallbackData)

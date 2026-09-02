@@ -75,7 +75,7 @@ const ConfigForm: FC<{
     setTestingResult(null)
     trackEvent('test_mcp_server_connection', { type: config.transport.type })
     try {
-      const server = new MCPServer(config.transport)
+      const server = new MCPServer(config)
       testingAbortController.current = new AbortController()
       await pTimeout(server.start(), {
         milliseconds: 5 * 60_000,
@@ -102,7 +102,7 @@ const ConfigForm: FC<{
 
   const handleSubmit = (values: typeof form.values) => {
     console.debug('form onSubmit', values)
-    trackEvent('save_mcp_server', { type: values.transport.type, name: values.name })
+    trackEvent('save_mcp_server', { type: values.transport.type })
     return props.onSave(getConfigFromFormValues(values))
   }
 
@@ -121,6 +121,24 @@ const ConfigForm: FC<{
             <Radio variant="outline" size="sm" value="stdio" label={t('Local (stdio)')} />
           </Group>
         </Radio.Group>
+        <Stack gap={4}>
+          <Radio.Group
+            required
+            label={t('Protocol')}
+            {...form.getInputProps('protocolMode')}
+            labelProps={{ fw: 600, mb: 'xs' }}
+          >
+            <Group>
+              <Radio variant="outline" size="sm" value="auto" label={t('Auto (recommended)')} />
+              <Radio variant="outline" size="sm" value="legacy" label={t('Legacy')} />
+            </Group>
+          </Radio.Group>
+          <Text size="xs" c="chatbox-tertiary">
+            {t(
+              "If you're unsure, keep Auto. Choose Legacy only if you know the server does not support stateless MCP."
+            )}
+          </Text>
+        </Stack>
         {form.values.transport.type === 'stdio' && (
           <>
             <Textarea

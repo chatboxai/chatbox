@@ -1,6 +1,7 @@
-import type { SessionMetaRepositoryPort } from '@shared/ports'
+import type { SessionMetaRepositoryPort } from '@chatbox/core/ports'
+import { sortSessionRecords } from '@chatbox/core/utils/session-sort'
 import type { SessionMetaPage, SessionMetaRecord } from '@shared/types'
-import { sortSessionRecords } from '@shared/utils/session-sort'
+import { reportDbOpenSucceeded, toDbOpenError, watchDbOpenBlocked, watchDbVersionChange } from './db-schema-guard'
 
 const DB_NAME = 'chatbox-session-meta'
 const STORE_NAME = 'records'
@@ -39,10 +40,12 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
   private initPromise: Promise<void> | null = null
 
   initialize(): Promise<void> {
-    if (this.initPromise) {
-      return this.initPromise
+    if (!this.initPromise) {
+      this.initPromise = this.openDatabase().catch((error) => {
+        this.initPromise = null
+        throw error
+      })
     }
-    this.initPromise = this.openDatabase()
     return this.initPromise
   }
 
@@ -52,13 +55,22 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
       // bump 后用户回退版本会因 VersionError 打不开 session meta DB，导致降级使用失败：
       // `The requested version (X) is less than the existing version (Y)` —— 例如 1.22 → 1.21 降级后无法发消息。
       // 如确需引入 version/schema 变更：只做加法式变更（新 store/索引，keyPath 不变），
-      // 并捕获 VersionError 后以不带 version 的 `indexedDB.open(DB_NAME)` 重试，让旧版本客户端仍能打开新 schema。
+      // 并保留 db-schema-guard，让降级产生的 VersionError 显示更新引导，而不是静默改写数据。
       const request = indexedDB.open(DB_NAME)
+      watchDbOpenBlocked(DB_NAME, request)
 
-      request.onerror = () => reject(request.error)
+      request.onerror = () => reject(toDbOpenError(DB_NAME, request.error))
 
       request.onsuccess = () => {
-        this.db = request.result
+        const db = request.result
+        this.db = db
+        reportDbOpenSucceeded(DB_NAME)
+        watchDbVersionChange(DB_NAME, db, () => {
+          if (this.db === db) {
+            this.db = null
+            this.initPromise = null
+          }
+        })
         resolve()
       }
 

@@ -231,6 +231,19 @@ function CompactionFailedFixture() {
   return <CompactionStatus sessionId="storybook-failed-compaction" />
 }
 
+function CompactionCompletedFixture() {
+  useEffect(() => {
+    setCompactionUIState('storybook-completed-compaction', {
+      status: 'completed',
+      error: null,
+      streamingText: '',
+      summaryMessageId: 'storybook-summary',
+    })
+  }, [])
+
+  return <CompactionStatus sessionId="storybook-completed-compaction" onViewSummary={() => undefined} />
+}
+
 export const MessageStates: StoryObj = {
   name: 'Message system user assistant error generating attachment states',
   parameters: {
@@ -343,7 +356,7 @@ export const AttachmentGridStates: StoryObj = {
 }
 
 export const CompactionStatusStates: StoryObj = {
-  name: 'Compaction running and failed states',
+  name: 'Compaction running completed and failed states',
   parameters: {
     uiInventoryTargets: ['src/renderer/components/chat/CompactionStatus'],
   },
@@ -354,6 +367,7 @@ export const CompactionStatusStates: StoryObj = {
         description="Actual conversation compaction banner driven through the Jotai compaction UI state."
       />
       <CompactionRunningFixture />
+      <CompactionCompletedFixture />
       <CompactionFailedFixture />
     </Stack>
   ),

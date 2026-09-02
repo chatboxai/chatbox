@@ -52,7 +52,9 @@ import {
 import platform from '@/platform'
 import { canShareFile, shareFile } from '@/platform/web_file_share'
 import storage from '@/storage'
-import { getMetaStorage, recoverSessionList } from '@/stores/chatStore'
+import { withAgentPersonaLocks } from '@/stores/agentPersonaStore'
+import { rendererApplication } from '@/app/renderer-application'
+import { getMetaStorage } from '@/stores/sessionHelpers'
 import { migrateOnData } from '@/stores/migration'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -523,7 +525,7 @@ const DataRecoverySection = () => {
     setIsRecovering(true)
     setRecoveryResult(null)
     try {
-      const result = await recoverSessionList()
+      const result = await rendererApplication.sessions.recoverSessionList()
       setRecoveryResult({ success: true, recovered: result.recovered, failed: result.failed })
     } catch (error) {
       console.error('Failed to recover session list:', error)
@@ -763,13 +765,18 @@ const ImportExportDataSection = () => {
     setProgress(null)
     try {
       if (await isZipBackupFile(file)) {
-        const result = await importBackupArchive(file, {
-          storage,
-          metaStorage: await getMetaStorage(),
-          signal: abortController.signal,
-          onProgress: setProgress,
-          rehydrateSession: rehydrateImportedSession,
-        })
+        // Restoring writes agent-soul/agent-memories directly through storage;
+        // holding the persona locks queues concurrent save_memory / Soul edits
+        // until the import transaction finishes so neither side is clobbered.
+        const result = await withAgentPersonaLocks(async () =>
+          importBackupArchive(file, {
+            storage,
+            metaStorage: await getMetaStorage(),
+            signal: abortController.signal,
+            onProgress: setProgress,
+            rehydrateSession: rehydrateImportedSession,
+          })
+        )
         if (result.warnings.length > 0) {
           const warningSummary = result.warnings
             .slice(0, 3)
@@ -795,7 +802,7 @@ const ImportExportDataSection = () => {
           metaStorage: await getMetaStorage(),
           migrateData: (dataStore) => migrateOnData(dataStore, false),
           recoverSessionList: async () => {
-            await recoverSessionList()
+            await rendererApplication.sessions.recoverSessionList()
           },
         })
       }

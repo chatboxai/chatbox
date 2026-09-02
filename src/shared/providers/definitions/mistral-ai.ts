@@ -8,7 +8,7 @@ export const mistralAIProvider = defineProvider({
   type: ModelProviderType.OpenAI,
   modelsDevProviderId: 'mistral',
   curatedModelIds: [
-    'mistral-medium-2604',
+    'mistral-medium-3-5',
     'mistral-small-2603',
     'mistral-large-2512',
     'pixtral-large-latest',
@@ -22,21 +22,21 @@ export const mistralAIProvider = defineProvider({
     apiHost: 'https://api.mistral.ai/v1',
     models: [
       {
-        modelId: 'mistral-medium-2604',
+        modelId: 'mistral-medium-3-5',
         nickname: 'Mistral Medium 3.5',
-        contextWindow: 128_000,
+        contextWindow: 256_000,
         capabilities: ['vision', 'reasoning', 'tool_use'],
       },
       {
         modelId: 'mistral-small-2603',
         nickname: 'Mistral Small 4',
-        contextWindow: 128_000,
+        contextWindow: 256_000,
         capabilities: ['vision', 'reasoning', 'tool_use'],
       },
       {
         modelId: 'mistral-large-2512',
         nickname: 'Mistral Large 3',
-        contextWindow: 128_000,
+        contextWindow: 256_000,
         capabilities: ['vision', 'tool_use'],
       },
       {

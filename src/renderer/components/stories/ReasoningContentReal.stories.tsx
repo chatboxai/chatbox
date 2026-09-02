@@ -56,7 +56,10 @@ export const ActivelyThinking: StoryObj<typeof ReasoningContentUI> = {
   name: 'Actively Thinking',
   args: (() => {
     // Share the same part reference so the component's `===` identity check detects "actively thinking"
-    const part = makeReasoningPart({ text: '', startTime: Date.now() - 3200 })
+    const part = makeReasoningPart({
+      text: 'I should first identify the relevant message-rendering path.\nNow I am comparing the streaming behavior and keeping the newest reasoning tokens visible at the right edge.',
+      startTime: Date.now() - 3200,
+    })
     return {
       message: makeMessage({
         generating: true,

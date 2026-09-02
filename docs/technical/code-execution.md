@@ -1,6 +1,6 @@
 # Chat 模式代码执行技术设计
 
-> Last updated: 2026-07
+> Last updated: 2026-08
 
 本文档描述 Chat 模式下代码执行、Agent Mode、工具暂停审批和 HTML 产物预览的技术设计。产品说明见 [`docs/product/code-execution.md`](../product/code-execution.md)。
 
@@ -63,6 +63,8 @@ Chat 模式不再向模型注入底层 `sandbox_*` 工具，旧的 `toolsets/san
 
 这个选择降低了安装包体积和签名风险，也让 Chat 代码执行聚焦于简单文件处理。
 
+在 SRT 平台（macOS/Linux）上，沙箱子进程保留用户真实的 `HOME`（对齐 Codex / Claude Code 的做法）：隔离从不依赖 HOME 改写——SRT 的 deny 规则用主进程的 `os.homedir()` 展开，读默认放行（减去 `TASK_SANDBOX_DENY_READ_PATHS` 凭据路径），写在 allowWrite 之外一律拒绝。没有 OS 沙箱的平台（原生 Windows、HarmonyOS）则继续把 `HOME`/temp 改写到会话目录：那里没有任何机制拒绝对真实用户目录的写入，改写是唯一把 `~`、`os.homedir()`、临时文件引导进会话目录的手段。Windows 上额外注入 `GIT_CONFIG_GLOBAL` 指回真实全局 git 配置（`%USERPROFILE%\.gitconfig`，缺失时回退 XDG 路径，均不存在则不注入）——Git for Windows 从 `HOME` 解析全局配置，改写会让它丢失用户身份，这个定向注入只修 git、不影响其余工具链的 HOME 引导；`git config --global` 的写目标随之变为真实文件，无沙箱的原生执行本就能做到，不新增暴露面。真实 HOME 让 git 身份、行尾、镜像等所有 `$HOME` 配置自然生效，也消除了「仓库根部 `.gitconfig` / `.ssh/config` 被当作全局配置加载」的投毒面。npm 缓存通过 `npm_config_cache` 重定向到会话 `.cache/npm`（`~/.npm` 不可写）。用户授权目录顶层的 `.git/config` 与 `.git/hooks` 为只读（参照 Codex 的受保护 workspace 元数据，但仅限宿主逃逸向量）：它们会被用户下一次沙箱外的 git 调用执行，而 objects/refs/index 保持可写，commit / branch / rebase / 嵌套 clone 不受影响。
+
 ### 懒初始化和文件注入
 
 沙箱在第一次工具调用时创建。初始化过程会把对话中的上传文件复制到会话沙箱：
@@ -115,7 +117,7 @@ export function computeEffectiveAgentMode(agentModeValue, agentModeSupported) {
 
 ### Auto 建议机制（首轮分类器）
 
-文件触发已被移除，改为在会话首轮用一个独立的快速分类模型判断意图。逻辑位于 `orchestration.ts` 的 `shouldSuggestAgentMode()` 与 `agent-mode-suggestion.ts`。
+文件触发已被移除，改为在会话首轮用一个独立的快速分类模型判断意图。逻辑位于 `packages/chatbox-core/src/generation/` 的 `shouldSuggestAgentMode()`（GenerationService）与 `agent-mode-suggestion.ts`。
 
 触发条件（全部满足才运行分类器）：
 
@@ -156,8 +158,9 @@ export function computeEffectiveAgentMode(agentModeValue, agentModeSupported) {
 4. Agent 工具：有效模式为 `on` 且模型支持 `agent` scope 时注入。
 5. Code execution：存在 `codeExecution` provider 时注入 `code_execution/read_file/create_download`。
 6. Filesystem tools：注入真实文件系统读写编辑工具；沙箱和绑定目录直接写入，其他路径按审批和 Full Access 设置处理。
-7. Skills 与命令：注入启用 Skill 元数据、`load_skill`、`chatbox_cli`、On 模式可直接使用的 `user_exec`，以及 code execution 可用时的 `install_skill`。
-8. MCP 和知识库：按会话配置和模型 scope 注入。
+7. 工作目录约束：绑定用户工作目录时，每轮构建上下文都会通过 Main 进程专用接口读取并注入 workspace 根目录的 `AGENTS.md`。读取前校验真实目录边界，拒绝符号链接文件和不安全根目录；所有 workspace 共用 80,000 字符预算。进入子目录时提示模型检查并遵循作用域更具体的 `AGENTS.md`。
+8. Skills 与命令：注入启用 Skill 元数据、`load_skill`、`chatbox_cli`、On 模式可直接使用的 `user_exec`，以及 code execution 可用时的 `install_skill`。
+9. MCP 和知识库：按会话配置和模型 scope 注入。
 
 Chat Agent 不再 fallback 注入底层 `sandbox_*` 工具。
 
@@ -167,8 +170,9 @@ Chat Agent 不再 fallback 注入底层 `sandbox_*` 工具。
 
 | pauseReason | 触发 | 继续行为 |
 |-------------|------|----------|
-| `tool_call_limit` | 多轮工具调用达到上限 | 用户确认后执行原本暂停的工具调用 |
+| `tool_call_limit` | 多轮工具调用达到上限，且未解析为无人值守（见「多轮工具调用上限」） | 用户确认后执行原本暂停的工具调用 |
 | `user_exec_approval` | `user_exec` 命令未命中白名单、未通过 AI 安全评估且未开启 Full Access | 批准后执行命令，拒绝后写入拒绝结果 |
+| `command_escalation_approval` | `run_command` 在沙箱真实失败后，携带该结果明确返回的一次性 `retry_of` 请求主机重试 | 校验命令、目录和 shell 完全一致，批准后消费 reference 并执行一次 |
 | `file_mutation_approval` | 写入或编辑绑定目录之外的用户真实文件系统，且未开启 Full Access | 批准后执行文件变更，拒绝后写入拒绝结果 |
 
 设计要点：
@@ -177,17 +181,22 @@ Chat Agent 不再 fallback 注入底层 `sandbox_*` 工具。
 - 重启后 UI 可从消息状态恢复“继续/停止”操作，不依赖内存 Promise。
 - 点击继续后走 `continuePausedToolCall()`，执行原工具并调用 `orchestrateGeneration(..., appendToMessage: true)`，结果追加到同一条 assistant 消息。
 - 暂停的 tool call 不会作为已完成工具结果注入模型上下文，避免模型误判工具已经执行。
+- `run_command` 的 `retry_of` 是 Main 进程为非零退出签发的 opaque reference，不是 tool call ID；它只在失败结果中明确返回，不能推断、跨命令复用或重复消费。Bash 执行启用 `pipefail`，避免 `git push | tail` 等管道把上游失败伪装成成功。
 - `user_exec` 先检查安全只读白名单，再对本地策略允许评估的命令执行 AI 结构化安全判断；未通过或评估失败时进入持久化暂停。Full Access 跳过逐次审批，但仍记录审批来源。
 
 ## 多轮工具调用上限
 
-`orchestration.ts` 通过 `withToolCallLimitPause()` 在达到上限时暂停，而不是返回一个普通 tool result 让模型继续循环。暂停发生在即将执行下一次工具前；用户点击继续后会执行该工具调用，并在同一条消息内继续生成。
+GenerationService（`packages/chatbox-core/src/generation/`）通过 `withToolCallLimitPause()` 在达到上限时暂停，而不是返回一个普通 tool result 让模型继续循环。暂停发生在即将执行下一次工具前；用户点击继续后会执行该工具调用，并在同一条消息内继续生成。
 
 当前常量位于 `MAX_TOOL_CALLS_BEFORE_CONFIRMATION`（`src/shared/utils/tool-call-limit-pause.ts`）。发布前应确认它符合产品目标值，避免测试用小阈值影响真实用户。
 
 用户可以关闭这一确认暂停（针对长期挂机任务）：
 
-- 设置项为 `pauseOnToolCallLimit`，会话级（`SessionSettingsSchema`，三态：`undefined` 跟随全局）与全局级（`SettingsSchema`，默认 `true`）各有一份，`shouldPauseOnToolCallLimit()` 按「会话覆盖全局、默认暂停」解析。
+- 设置项为 `pauseOnToolCallLimit`，会话级（`SessionSettingsSchema`，三态：`undefined` 跟随全局）与全局级（`SettingsSchema`，默认 `true`）各有一份。`shouldPauseOnToolCallLimit()` 的解析顺序为：
+  1. 会话级设置存在时直接生效 —— 单个会话的显式选择优先级最高，保证对话设置里的开关不会显示与实际行为不符的状态。
+  2. 会话解析为 Full Access（`resolveCommandApprovalMode()`，含 legacy `agentFullAccess`）时不暂停。Full Access 本身已跳过逐次审批、语义是无人值守，而全局设置默认为 `true`（始终有值），因此这里覆盖的是**全局默认值**而不是会话自己的选择。
+  3. 否则取全局设置，默认暂停。
+- 注意 `commandApprovalMode` 是会话级持久设置，与 agent mode 开关相互独立：曾开过 Full Access 的会话即使后来关掉 agent mode，默认仍不暂停。此时对话设置里的开关会显示为关闭状态，用户可显式打开重新拿回检查点。
 - 暂停卡片上的 "Don't ask again" 菜单（`PausedToolCallDetails`）可选择仅当前会话或所有会话生效，写入设置后通过 `disableToolCallLimitPauseAndContinue()` 立即恢复当前暂停的批次。
 - 会话级开关在对话设置（`SessionSettings.tsx`）中可重新打开；全局开关在设置 → 聊天设置（`routes/settings/chat.tsx`）中。
 

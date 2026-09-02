@@ -1,4 +1,4 @@
-import type { ModelMessage, PrepareStepFunction, TextStreamPart, ToolSet } from 'ai'
+import type { JSONValue, ModelMessage, PrepareStepFunction, TextStreamPart, ToolSet } from 'ai'
 import {
   type MessageContentParts,
   type MessageStatus,
@@ -38,6 +38,22 @@ export interface ModelInterface {
     signal?: AbortSignal,
     callback?: (picBase64: string) => void | Promise<void>
   ) => Promise<string[]>
+}
+
+/** The exact provider-facing settings after model-specific normalization. */
+export interface CallSettings {
+  temperature?: number
+  topP?: number
+  maxOutputTokens?: number
+  providerOptions?: Record<string, Record<string, JSONValue>>
+  system?: string
+}
+
+export interface ResolvedChatRequest {
+  callSettings: CallSettings
+  modelMessages: ModelMessage[]
+  tools: ToolSet
+  stream: boolean
 }
 
 export const CallChatCompletionOptionsSchema = z.object({
@@ -84,6 +100,20 @@ export interface ChatStreamOptions {
   providerOptions?: ProviderOptions
   maxSteps?: number
   prepareStep?: PrepareStepFunction<ToolSet>
+  /**
+   * Runs after each step's preparation resolves provider-facing messages/tools
+   * and before dispatch. **Fail-closed**: the hook is awaited and a rejection
+   * propagates instead of starting the provider stream. A consumer that must
+   * not block dispatch (request logging, telemetry) has to swallow its own
+   * failures.
+   */
+  onRequestResolved?: (request: ResolvedChatRequest) => void | Promise<void>
+  /**
+   * Enables mid-run tool-result relief for long tool loops: when the estimated
+   * step payload approaches `thresholdTokens` (the compaction threshold), old
+   * tool-result outputs are stubbed between steps. See context-pressure-relief.
+   */
+  contextPressure?: { thresholdTokens: number }
 }
 
 export type ModelStatus = MessageStatus

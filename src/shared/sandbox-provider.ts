@@ -18,6 +18,19 @@ export interface SandboxExecResult {
   stderr: string
   exitCode: number
   errorCode?: SandboxExecErrorCode
+  /** Complete output streamed to disk when the inline preview is truncated. */
+  outputFile?: string
+}
+
+export interface SandboxRunCommandResult extends SandboxExecResult {
+  /** Canonical working directory actually used by the sandbox process. */
+  cwd?: string
+  /** Opaque one-time reference returned only when this exact failure may be retried on the host. */
+  retryOf?: string
+  sandbox?: {
+    denied: boolean
+    confidence?: 'high' | 'heuristic'
+  }
 }
 
 export interface SandboxOperationResult {
@@ -41,6 +54,25 @@ export interface SandboxSearchParams {
 }
 
 export type SandboxSearchResult = SandboxOperationResult
+
+export type SandboxSeedBlobItem = {
+  blobKey: string
+  targetFilename: string
+}
+
+export type SandboxSeedBlobResult = {
+  targetFilename: string
+  success: boolean
+  skipped: boolean
+  sandboxPath?: string
+  error?: string
+}
+
+export type SandboxSeedBlobsResult = {
+  success: boolean
+  results: SandboxSeedBlobResult[]
+  error?: string
+}
 
 export interface SandboxProvider {
   type: 'local' | 'cloud'
@@ -77,10 +109,19 @@ export interface SandboxProvider {
   resolveWorkingDirectory(sessionId: string): Promise<string | null>
 
   /** Copy a file into the sandbox working directory */
-  copyFileIn(content: string, targetFilename: string): Promise<{ success: boolean; error?: string }>
+  copyFileIn(
+    content: string,
+    targetFilename: string
+  ): Promise<{ success: boolean; sandboxPath?: string; error?: string }>
 
   /** Copy a file from the blob store into the sandbox (avoids sending content through IPC) */
   copyBlobIn(blobKey: string, targetFilename: string): Promise<{ success: boolean; error?: string }>
+
+  /**
+   * Seed many attachment blobs in one round-trip. Destinations that already hold
+   * the same blob are left untouched (no blob read, no write).
+   */
+  seedBlobsIn?(items: SandboxSeedBlobItem[]): Promise<SandboxSeedBlobsResult>
 
   /** Read a bounded line range from a file in the sandbox. */
   readFileOut(sandboxPath: string, options?: { offset?: number; limit?: number }): Promise<SandboxReadResult>
@@ -112,6 +153,15 @@ export interface SandboxProvider {
     timeout?: number
     toolCallId?: string
   }): Promise<SandboxExecResult>
+
+  /** Execute one platform shell command under the configured local sandbox. */
+  runCommand?(params: {
+    command: string
+    shell: 'bash' | 'powershell'
+    workdir?: string
+    timeout?: number
+    toolCallId: string
+  }): Promise<SandboxRunCommandResult>
 
   /** Search file contents inside the sandbox with the shared bounded search engine. */
   search(params: SandboxSearchParams): Promise<SandboxSearchResult>

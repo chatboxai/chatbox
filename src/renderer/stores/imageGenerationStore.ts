@@ -1,5 +1,5 @@
 import type { ImageGeneration } from '@shared/types'
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query'
 import { v4 as uuidv4 } from 'uuid'
 import { createStore, useStore } from 'zustand'
 import { getLogger } from '@/lib/utils'
@@ -82,6 +82,18 @@ export function useImageGenerationRecord(id: string | null) {
     },
     enabled: !!id,
     staleTime: 1000 * 60 * 5,
+  })
+}
+
+/** Reads several records at once, sharing the cache entries of `useImageGenerationRecord`. */
+export function useImageGenerationRecords(ids: string[]) {
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: [IMAGE_GEN_QUERY_KEY, id],
+      queryFn: () => getStorage().getById(id),
+      staleTime: 1000 * 60 * 5,
+    })),
+    combine: (results) => results.map((result) => result.data ?? null),
   })
 }
 

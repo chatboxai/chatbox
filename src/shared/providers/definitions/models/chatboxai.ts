@@ -432,7 +432,8 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
         uuid: this.config.uuid,
         language: this.options.language,
       }),
-      signal,
+      // RN and DOM use different ambient AbortSignal declarations.
+      signal: signal as unknown as RequestInit['signal'],
     })
     const json = await res.json()
     if (!json['data'] || !json['data'][0]) {

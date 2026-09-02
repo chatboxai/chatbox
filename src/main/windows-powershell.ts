@@ -7,7 +7,29 @@ export interface WindowsPowerShellResolution {
   args: string[]
 }
 
-const POWERSHELL_STDIN_ARGS = ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '-']
+// `-Command -` consumes stdin as a pseudo-interactive prompt. Multiline input can be
+// silently left unsubmitted at EOF, so read the complete UTF-8 payload as data and parse
+// it once instead. Keep this bootstrap ASCII-only because it runs before stdin decoding is
+// configured. Explicitly propagate native exit codes; PowerShell otherwise collapses them.
+const POWERSHELL_STDIN_BOOTSTRAP = [
+  '[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)',
+  '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)',
+  '$OutputEncoding = [Console]::OutputEncoding',
+  '$chatboxSource = [Console]::In.ReadToEnd() + "`n`$global:chatboxSucceeded = `$?"',
+  '$chatboxScript = [ScriptBlock]::Create($chatboxSource)',
+  '$global:LASTEXITCODE = 0',
+  '$global:chatboxSucceeded = $false',
+  'try { & $chatboxScript } catch {',
+  '  $chatboxNodeExitCode = $_.Exception.Data["ChatboxNodeExitCode"]',
+  '  if ($chatboxNodeExitCode -is [int]) { exit $chatboxNodeExitCode }',
+  '  throw',
+  '}',
+  '$chatboxExitCode = $LASTEXITCODE',
+  'if ($global:chatboxSucceeded) { exit 0 }',
+  'if ($chatboxExitCode -is [int] -and $chatboxExitCode -ne 0) { exit $chatboxExitCode }',
+  'exit 1',
+].join('; ')
+const POWERSHELL_STDIN_ARGS = ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', POWERSHELL_STDIN_BOOTSTRAP]
 const POWERSHELL_PROBE_ARGS = ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'exit 0']
 const POWERSHELL_PROBE_TIMEOUT = 10_000
 

@@ -1,4 +1,4 @@
-import type { SessionAttachmentQueryPlan } from '@shared/types'
+import type { SessionAttachmentQueryPlan, SessionAttachmentRagMaintenanceScope } from '@shared/types'
 import { embedMany } from 'ai'
 import { ipcMain } from 'electron'
 import { rerank } from '../../shared/models/rerank'
@@ -20,8 +20,14 @@ import {
   readSessionAttachmentParents,
   rebindSessionAttachment,
   retrySessionAttachment,
+  type SessionAttachmentRecord,
 } from './db'
-import { getSessionAttachmentEmbeddingProvider, getSessionAttachmentRerankProvider } from './model-providers'
+import { isSessionAttachmentCheckpointResumable } from './file-loaders'
+import {
+  getSessionAttachmentEmbeddingModelString,
+  getSessionAttachmentEmbeddingProvider,
+  getSessionAttachmentRerankProvider,
+} from './model-providers'
 
 const log = getLogger('session-attachment-rag:ipc-handlers')
 const QUERY_RECALL_TOP_K = 20
@@ -30,6 +36,23 @@ const QUERY_RETURN_TOP_K_MAX = 12
 
 function toTimestamp(value?: string) {
   return value ? parseSQLiteTimestamp(value) : undefined
+}
+
+async function toRendererSessionAttachment(attachment: SessionAttachmentRecord, embeddingModel?: string) {
+  const resumable =
+    attachment.status === 'failed' && embeddingModel
+      ? await isSessionAttachmentCheckpointResumable(attachment, embeddingModel)
+      : false
+  return {
+    ...attachment,
+    availability: 'allowed' as const,
+    indexStatus: attachment.status,
+    chunkCount: attachment.chunkCount ?? 0,
+    resumable,
+    createdAt: toTimestamp(attachment.createdAt),
+    processingStartedAt: toTimestamp(attachment.processingStartedAt),
+    completedAt: toTimestamp(attachment.completedAt),
+  }
 }
 
 function dedupeByParent<T extends { parentId: number }>(results: T[]) {
@@ -73,15 +96,7 @@ export function registerSessionAttachmentRagHandlers() {
     log.debug(
       `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [IPC] Attachment task created: attachmentId=${id}, status=${attachment?.status}`
     )
-    return {
-      ...attachment,
-      availability: 'allowed' as const,
-      indexStatus: attachment?.status,
-      chunkCount: attachment?.chunkCount ?? 0,
-      createdAt: toTimestamp(attachment?.createdAt),
-      processingStartedAt: toTimestamp(attachment?.processingStartedAt),
-      completedAt: toTimestamp(attachment?.completedAt),
-    }
+    return attachment ? toRendererSessionAttachment(attachment) : undefined
   })
 
   ipcMain.handle('session-attachment-rag:get-attachments', async (_event, ids: number[]) => {
@@ -95,15 +110,10 @@ export function registerSessionAttachmentRagHandlers() {
           .join(',')}`
       )
     }
-    return attachments.map((attachment) => ({
-      ...attachment,
-      availability: 'allowed' as const,
-      indexStatus: attachment.status,
-      chunkCount: attachment.chunkCount ?? 0,
-      createdAt: toTimestamp(attachment.createdAt),
-      processingStartedAt: toTimestamp(attachment.processingStartedAt),
-      completedAt: toTimestamp(attachment.completedAt),
-    }))
+    const embeddingModel = attachments.some((attachment) => attachment.status === 'failed')
+      ? getSessionAttachmentEmbeddingModelString()
+      : undefined
+    return Promise.all(attachments.map((attachment) => toRendererSessionAttachment(attachment, embeddingModel)))
   })
 
   ipcMain.handle('session-attachment-rag:delete-message-attachments', async (_event, messageId: string) => {
@@ -167,12 +177,16 @@ export function registerSessionAttachmentRagHandlers() {
 
   ipcMain.handle(
     'session-attachment-rag:run-maintenance',
-    async (_event, params: { sessionIds: string[]; messageIds: string[] }) => {
+    async (_event, params: SessionAttachmentRagMaintenanceScope) => {
       log.debug(
         `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [IPC] Run maintenance: sessions=${params.sessionIds.length}, messages=${params.messageIds.length}`
       )
       const canceledPurgedCount = await purgeCanceledSessionAttachments(50)
-      const orphanDeletedIds = await cleanupOrphanAttachments(params.sessionIds ?? [], params.messageIds ?? [])
+      const orphanDeletedIds = await cleanupOrphanAttachments(
+        params.sessionIds ?? [],
+        params.messageIds ?? [],
+        params.attachmentReferences ?? []
+      )
       return {
         interruptedFailedCount: 0,
         canceledPurgedCount,

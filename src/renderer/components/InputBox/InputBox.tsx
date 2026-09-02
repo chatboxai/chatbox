@@ -1,3 +1,6 @@
+import { listPendingPauseInteractions } from '@chatbox/core/message-approval'
+import { getSubmitAvailability } from '@chatbox/core/session/action-gates'
+import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import NiceModal from '@ebay/nice-modal-react'
 import { autoUpdate, computePosition, flip, offset, shift, size } from '@floating-ui/dom'
 import { ActionIcon, Box, Button, Flex, Loader, Menu, Stack, Text, Textarea, UnstyledButton } from '@mantine/core'
@@ -10,9 +13,7 @@ import {
   isSupportedFile,
 } from '@shared/file-extensions'
 import { KNOWLEDGE_BASE_MAX_FILE_SIZE, KNOWLEDGE_BASE_MAX_FILE_SIZE_LABEL } from '@shared/knowledge-base'
-import { listPendingApprovalToolCalls } from '@shared/message-approval'
 import { isDeepSeekWeakToolUse } from '@shared/models/utils/deepseek'
-import { getModel } from '@shared/providers'
 import { formatNumber } from '@shared/utils'
 import { resolveReasoningProviderOptions } from '@shared/utils/reasoning-control'
 import {
@@ -26,10 +27,7 @@ import {
   IconFolder,
   IconPhoto,
   IconPlayerStopFilled,
-  IconPlus,
-  IconSettings,
   IconWand,
-  IconWorldWww,
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
@@ -51,20 +49,24 @@ import { createPortal } from 'react-dom'
 import { useDropzone } from 'react-dropzone'
 import { useTranslation } from 'react-i18next'
 import { v4 as uuidv4 } from 'uuid'
-import { createModelDependencies } from '@/adapters'
+import { useStore } from 'zustand'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
+import { rendererApplication } from '@/app/renderer-application'
+import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import useInputBoxHistory from '@/hooks/useInputBoxHistory'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { useProviders } from '@/hooks/useProviders'
 import { useSaveBlob } from '@/hooks/useSaveBlob'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { useSessionLockState } from '@/hooks/useSessionLockState'
 import { cn } from '@/lib/utils'
 import {
   getContextMessageIds,
   isAutoCompactionEnabled,
   isCompactionInProgress,
   useContextTokens,
+  useStableEligibleMessages,
 } from '@/packages/context-management'
 import { trackingEvent } from '@/packages/event'
 import {
@@ -74,29 +76,35 @@ import {
 } from '@/packages/model-registry'
 import * as picUtils from '@/packages/pic_utils'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
+import { seedExactDraftTokens } from '@/packages/token-estimation'
 import platform from '@/platform'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { notifyApprovalInputNudge } from '@/stores/approvalAttentionStore'
 import * as atoms from '@/stores/atoms'
-import { compactionUIStateMapAtom } from '@/stores/atoms/compactionAtoms'
-import * as chatStore from '@/stores/chatStore'
-import { useSession, useSessionSettings } from '@/stores/chatStore'
+import { resolveWebBrowsingMode } from '@/stores/session'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
+import { useSessionSettings } from '@/stores/session/session-settings'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
+import { confirmModelSwitchIfNeeded } from '@/utils/prompt-cache-confirm'
+import { getSessionLockNotice, notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import { trackEvent } from '@/utils/track'
-import {
-  type KnowledgeBase,
-  type Message,
-  ModelProviderEnum,
-  type ProviderModelInfo,
-  type SessionAttachment,
-  type SessionAttachmentIndexingStage,
-  type SessionSettings,
-  type SessionType,
-  type ShortcutSendValue,
+import type {
+  KnowledgeBase,
+  Message,
+  ProviderModelInfo,
+  SessionAttachment,
+  SessionAttachmentIndexingStage,
+  SessionSettings,
+  SessionType,
+  ShortcutSendValue,
 } from '../../../shared/types'
 import * as dom from '../../hooks/dom'
+import {
+  enqueueUserMessage,
+  MAX_QUEUED_MESSAGES,
+  messageQueueStore,
+  resumeQueueAndDrain,
+} from '../../stores/session/message-queue'
 import { startPreparedSessionAttachmentIndexing } from '../../stores/sessionAttachmentRagIndexing'
 import * as sessionHelpers from '../../stores/sessionHelpers'
 import * as toastActions from '../../stores/toastActions'
@@ -110,14 +118,25 @@ import ProviderImageIcon from '../icons/ProviderImageIcon'
 import ModelSelectorV2 from '../ModelSelectorV2'
 import AgentModeButton from './AgentModeButton'
 import { FileMiniCard, getParserTypeLabel, ImageMiniCard } from './Attachments'
+import { ComposerSettingsMenu } from './ComposerSettingsMenu'
 import { getAgentModeUIState } from './agentModeState'
 import { ImageUploadInput } from './ImageUploadInput'
+import { INPUT_SURFACE_CLASS_NAME, INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME, INPUT_SURFACE_STYLE } from './inputSurface'
 import { MessageInputField, type MessageInputFieldRef } from './MessageInputField'
+import PendingActionBar from './PendingActionBar'
 import { cleanupFile, markFileProcessing, onFileProcessed, storeFilePromise } from './preprocessState'
+import { QueuedMessagesBar } from './QueuedMessagesBar'
 import ReasoningControlButton from './ReasoningControlButton'
+import { mergeSessionAttachmentStatesIntoFiles, shouldRefetchSessionAttachmentStates } from './sessionAttachmentState'
 import { getTrailingSkillCommand, insertSkillCommandText } from './skillCommand'
+import { getComposerPlaceholder, getSubmitAction, getSubmitControl } from './submitAction'
 import TokenCountMenu from './TokenCountMenu'
+import { useModelToolCapabilities } from './useModelToolCapabilities'
 import { useReasoningControlState } from './useReasoningControlState'
+import { WebSearchUnavailableBanner } from './WebSearchUnavailableBanner'
+import WorkModeStatusRow from './WorkModeStatusRow'
+
+const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 
 export type InputBoxPayload = {
   constructedMessage: Message
@@ -133,9 +152,9 @@ export type InputBoxRef = {
 export type InputBoxProps = {
   sessionId?: string
   sessionType?: SessionType
-  generating?: boolean
-  /** Number of active replies with a cancellation controller in this runtime. */
-  generatingCount?: number
+  /** Copilot picked on the new-chat page, where the draft session is not persisted yet. */
+  draftCopilotId?: string
+  draftCopilotName?: string
   model?: {
     provider: string
     modelId: string
@@ -147,51 +166,7 @@ export type InputBoxProps = {
   onStartNewThread?(): boolean
   onRollbackThread?(): boolean
   onClickSessionSettings?(): boolean | Promise<boolean>
-}
-
-function mergeSessionAttachmentStatesIntoFiles(
-  files: PreprocessedFile[],
-  attachments: SessionAttachment[]
-): { files: PreprocessedFile[]; changed: boolean } {
-  if (files.length === 0 || attachments.length === 0) {
-    return { files, changed: false }
-  }
-
-  const attachmentStateMap = new Map(attachments.map((attachment) => [attachment.id, attachment]))
-  let changed = false
-  const nextFiles = files.map((file) => {
-    if (!file.sessionAttachmentId) {
-      return file
-    }
-    const attachment = attachmentStateMap.get(file.sessionAttachmentId)
-    if (!attachment) {
-      return file
-    }
-    const nextFile = {
-      ...file,
-      sessionAttachmentAvailability: attachment.availability ?? file.sessionAttachmentAvailability,
-      sessionAttachmentIndexStatus: attachment.indexStatus ?? file.sessionAttachmentIndexStatus,
-      sessionAttachmentChunkCount: attachment.chunkCount ?? file.sessionAttachmentChunkCount,
-      sessionAttachmentTotalChunks: attachment.totalChunks ?? file.sessionAttachmentTotalChunks,
-      sessionAttachmentEmbeddedChunks: attachment.embeddedChunks ?? file.sessionAttachmentEmbeddedChunks,
-      sessionAttachmentIndexingStage: attachment.indexingStage ?? file.sessionAttachmentIndexingStage,
-      error: attachment.error ?? file.error,
-    }
-    const fileChanged =
-      nextFile.sessionAttachmentAvailability !== file.sessionAttachmentAvailability ||
-      nextFile.sessionAttachmentIndexStatus !== file.sessionAttachmentIndexStatus ||
-      nextFile.sessionAttachmentChunkCount !== file.sessionAttachmentChunkCount ||
-      nextFile.sessionAttachmentTotalChunks !== file.sessionAttachmentTotalChunks ||
-      nextFile.sessionAttachmentEmbeddedChunks !== file.sessionAttachmentEmbeddedChunks ||
-      nextFile.sessionAttachmentIndexingStage !== file.sessionAttachmentIndexingStage ||
-      nextFile.error !== file.error
-    if (fileChanged) {
-      changed = true
-    }
-    return fileChanged ? nextFile : file
-  })
-
-  return { files: nextFiles, changed }
+  onViewCompactionSummary?(summaryMessageId: string): void
 }
 
 function getSessionAttachmentProgressValue(embeddedChunks?: number, totalChunks?: number): number | undefined {
@@ -224,8 +199,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     {
       sessionId,
       sessionType = 'chat',
-      generating = false,
-      generatingCount = 0,
+      draftCopilotId,
+      draftCopilotName,
       model,
       fullWidth = false,
       onSelectModel,
@@ -234,6 +209,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       onStartNewThread,
       onRollbackThread,
       onClickSessionSettings,
+      onViewCompactionSummary,
     },
     ref
   ) => {
@@ -254,17 +230,19 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     // Session-level web browsing mode
     const sessionWebBrowsingMap = useUIStore((s) => s.sessionWebBrowsingMap)
+    const newSessionWebBrowsingDefault = useUIStore((s) => s.newSessionWebBrowsingDefault)
     const setSessionWebBrowsing = useUIStore((s) => s.setSessionWebBrowsing)
     const updateCurrentWebBrowsingDisplay = useUIStore((s) => s.updateCurrentWebBrowsingDisplay)
-    // Get session-specific value, or use default based on provider (ChatboxAI defaults to true)
+    // Existing sessions keep their own value. New chats additionally inherit
+    // the user's last explicit choice before falling back to provider defaults.
     const webBrowsingMode = useMemo(() => {
-      const sessionValue = sessionWebBrowsingMap[currentSessionId || 'new']
-      if (sessionValue !== undefined) {
-        return sessionValue
-      }
-      // Default: true for ChatboxAI, false for others
-      return model?.provider === ModelProviderEnum.ChatboxAI
-    }, [sessionWebBrowsingMap, currentSessionId, model?.provider])
+      return resolveWebBrowsingMode(
+        currentSessionId || 'new',
+        model?.provider,
+        sessionWebBrowsingMap,
+        newSessionWebBrowsingDefault
+      )
+    }, [currentSessionId, model?.provider, newSessionWebBrowsingDefault, sessionWebBrowsingMap])
 
     // this is used for keyboard shortcut. if we don't provide this, kbd wont know what to set when it's a new session(it doesnt have provider info)
     useEffect(() => {
@@ -398,13 +376,23 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     const { session: currentSession } = useSession(sessionId || null)
     const { sessionSettings: currentSessionMergedSettings } = useSessionSettings(sessionId || null)
-    const pendingApprovalToolCallId = useMemo(
-      () => listPendingApprovalToolCalls(currentSession?.messages ?? [])[0]?.toolCallId,
-      [currentSession?.messages]
-    )
-    const isAwaitingToolApproval = Boolean(pendingApprovalToolCallId)
+    const sessionLocks = useSessionLockState(currentSession)
+    const submitAvailability = getSubmitAvailability(sessionLocks)
+    // While replies stream, an empty draft shows Stop; entering content turns
+    // the same control back into Send so it can be queued. The hard block
+    // (compaction/pause decision) remains an independent axis.
+    const generating = submitAvailability.control === 'stop'
+    const generatingCount = sessionLocks.generatingReplyCount
+    const isAwaitingPauseDecision = sessionLocks.awaitingPauseDecision
+    // Every pause holds the input read-only, so the pending-action bar takes over
+    // its slot instead of stacking above a dead text field. Same predicate the bar
+    // renders on, so the slot never ends up empty.
+    const pauseTakeover = useMemo(() => {
+      if (isNewSession || !currentSession) return false
+      return listPendingPauseInteractions(currentSession.messages).length > 0
+    }, [isNewSession, currentSession])
 
-    const skillMenuOpen = skillCommandQuery !== null && matchingInputSkills.length > 0 && !isAwaitingToolApproval
+    const skillMenuOpen = skillCommandQuery !== null && matchingInputSkills.length > 0 && !isAwaitingPauseDecision
 
     // Floating UI autoUpdate：跟随 anchor（含纯 position 变化的响应式过渡），替代手写 RO/rAF 状态机
     useLayoutEffect(() => {
@@ -464,22 +452,39 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     })
 
     // Get current messages for token counting - will only recalculate when stable messages actually change
-    // Uses getContextMessageIds to respect compaction points
+    // Uses getContextMessageIds to respect compaction points. Keyed off the
+    // eligible-message subset so per-chunk streaming updates don't re-run it.
+    const stableSessionMessages = useStableEligibleMessages(currentSession?.messages)
     const currentContextMessageIds = useMemo(() => {
       if (isNewSession) return null
-      if (!currentSession?.messages.length) return null
+      if (!currentSession || !stableSessionMessages.length) return null
 
-      return getContextMessageIds(currentSession, currentSessionMergedSettings?.maxContextMessageCount)
-    }, [isNewSession, currentSessionMergedSettings?.maxContextMessageCount, currentSession])
+      return getContextMessageIds(
+        { ...currentSession, messages: stableSessionMessages },
+        currentSessionMergedSettings?.maxContextMessageCount
+      )
+    }, [
+      isNewSession,
+      currentSessionMergedSettings?.maxContextMessageCount,
+      stableSessionMessages,
+      currentSession?.compactionPoints,
+    ])
 
     const { knowledgeBase, setKnowledgeBase } = useKnowledgeBase({ isNewSession })
 
     // Agent mode value for conditional toolbar rendering
     const agentModeEntry = useSessionAgentMode(currentSessionId || 'new')
+    const sessionMode = resolveSessionMode(agentModeEntry.value)
+    // Chat mode has no message queue (mode policy): streaming keeps the Stop
+    // control and submits are blocked with the standard generating notice.
+    // Items already queued before the mode split still drain in order.
+    const queueEnabled = isActionAvailableInMode('queue-message', sessionMode)
+    const canCreateThread = isActionAvailableInMode('create-thread', sessionMode)
 
     const [showCompressionModal, setShowCompressionModal] = useState(false)
 
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const activeSubmitRef = useRef<{ token: symbol; startedWhileGenerating: boolean } | null>(null)
     const [unreadyAttachmentSubmitPrompt, setUnreadyAttachmentSubmitPrompt] = useState<{
       opened: boolean
       count: number
@@ -565,6 +570,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       () => !(hasTextContent || attachments?.length || pictureKeys?.length),
       [hasTextContent, attachments, pictureKeys]
     )
+    const currentQueueLength = useStore(messageQueueStore, (state) =>
+      currentSessionId ? (state.queues[currentSessionId]?.length ?? 0) : 0
+    )
 
     const preprocessedSessionAttachmentIds = useMemo(
       () =>
@@ -577,26 +585,30 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         ),
       [preConstructedMessage.preprocessedFiles]
     )
-    const { data: preprocessedAttachmentStates = [] } = useQuery<SessionAttachment[]>({
+    const [recoveringPreprocessedAttachmentIds, setRecoveringPreprocessedAttachmentIds] = useState<number[]>([])
+    const recoveringPreprocessedAttachmentIdsRef = useRef(new Set<number>())
+    const { data: preprocessedAttachmentStates = [], refetch: refetchPreprocessedAttachmentStates } = useQuery<
+      SessionAttachment[]
+    >({
       queryKey: [
         'input-box-session-attachment-rag-attachments',
-        ...preprocessedSessionAttachmentIds.sort((a, b) => a - b),
+        ...[...preprocessedSessionAttachmentIds].sort((a, b) => a - b),
       ],
       queryFn: () => {
-        if (platform.type !== 'desktop' || preprocessedSessionAttachmentIds.length === 0) {
+        if (!platform.isDesktopLike || preprocessedSessionAttachmentIds.length === 0) {
           return []
         }
         return platform.getSessionAttachmentRagController().getAttachments(preprocessedSessionAttachmentIds)
       },
-      enabled: platform.type === 'desktop' && preprocessedSessionAttachmentIds.length > 0,
+      enabled: platform.isDesktopLike && preprocessedSessionAttachmentIds.length > 0,
       refetchInterval: (query): number | false => {
         const attachments = (query.state.data as SessionAttachment[] | undefined) ?? []
-        return attachments.some(
-          (attachment) => attachment.indexStatus === 'pending' || attachment.indexStatus === 'indexing'
-        )
-          ? 1500
-          : false
+        return shouldRefetchSessionAttachmentStates(attachments, preprocessedSessionAttachmentIds.length) ? 1500 : false
       },
+      // This query reads local IPC state, so browser offline/focus state must not pause progress updates.
+      networkMode: 'always',
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: 'always',
     })
     const preprocessedAttachmentIndexStatusMap = useMemo(
       () => new Map(preprocessedAttachmentStates.map((attachment) => [attachment.id, attachment.indexStatus])),
@@ -604,6 +616,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
     const preprocessedAttachmentErrorMap = useMemo(
       () => new Map(preprocessedAttachmentStates.map((attachment) => [attachment.id, attachment.error])),
+      [preprocessedAttachmentStates]
+    )
+    const preprocessedAttachmentResumableMap = useMemo(
+      () => new Map(preprocessedAttachmentStates.map((attachment) => [attachment.id, attachment.resumable])),
       [preprocessedAttachmentStates]
     )
     const preprocessedAttachmentProgressMap = useMemo(
@@ -620,6 +636,26 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           ])
         ),
       [preprocessedAttachmentStates]
+    )
+    const recoverPreprocessedAttachment = useCallback(
+      async (attachmentId: number) => {
+        if (!platform.isDesktopLike || recoveringPreprocessedAttachmentIdsRef.current.has(attachmentId)) {
+          return
+        }
+        recoveringPreprocessedAttachmentIdsRef.current.add(attachmentId)
+        setRecoveringPreprocessedAttachmentIds((prev) => [...prev, attachmentId])
+        try {
+          await platform.getSessionAttachmentRagController().retryAttachment(attachmentId)
+          toastActions.add(t('Queued'))
+          await refetchPreprocessedAttachmentStates()
+        } catch (error) {
+          toastActions.add(`${t('Failed')}: ${error instanceof Error ? error.message : String(error)}`)
+        } finally {
+          recoveringPreprocessedAttachmentIdsRef.current.delete(attachmentId)
+          setRecoveringPreprocessedAttachmentIds((prev) => prev.filter((id) => id !== attachmentId))
+        }
+      },
+      [refetchPreprocessedAttachmentStates, t]
     )
     useEffect(() => {
       if (preprocessedAttachmentStates.length === 0) {
@@ -655,43 +691,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // Check model tool use capabilities for agent mode and file handling.
     // Uses 'agent' scope as the gate — models with weak function calling
     // (e.g. DeepSeek V3/R1) return false, disabling agent mode entirely.
-    const {
-      data: modelToolCapabilities = { agentMode: false, readFile: false },
-      isFetched: isModelToolCapabilityFetched,
-    } = useQuery({
-      queryKey: ['model-tool-capability', model?.provider, model?.modelId],
-      queryFn: async () => {
-        if (!model?.provider || !model?.modelId) {
-          return { agentMode: false, readFile: false }
-        }
-
-        try {
-          const globalSettings = settingsStore.getState().getSettings()
-          const configs = await platform.getConfig()
-          const dependencies = await createModelDependencies()
-
-          const settings = {
-            provider: model.provider,
-            modelId: model.modelId,
-            ...currentSessionMergedSettings,
-          }
-
-          const modelInstance = getModel(settings, globalSettings, configs, dependencies)
-          return {
-            agentMode: modelInstance.isSupportToolUse('agent'),
-            readFile: modelInstance.isSupportToolUse('read-file'),
-          }
-        } catch (e) {
-          console.debug('useModelToolCapability: failed to check capability', e)
-          return { agentMode: false, readFile: false }
-        }
-      },
-      enabled: !!(model?.provider && model?.modelId),
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-    })
-    const modelSupportToolUseForFile = modelToolCapabilities.readFile
-    const modelSupportsAgentMode = modelToolCapabilities.agentMode
+    const { modelSupportToolUseForFile, modelSupportsAgentMode, isModelToolCapabilityFetched } =
+      useModelToolCapabilities(model, currentSessionMergedSettings)
     const showSessionRetrievalToolWarning =
       hasSessionRetrievalFiles && isModelToolCapabilityFetched && !modelSupportToolUseForFile
     const agentModeUIState = useMemo(
@@ -706,33 +707,55 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     }, [modelSupportToolUseForFile, currentSession?.messages])
 
     // Calculate token counts using unified cache layer
-    const { contextTokens, currentInputTokens, totalTokens, isCalculating, pendingTasks, messageCount } =
-      useContextTokens({
-        sessionId: currentSessionId || null,
-        session: currentSession,
-        settings: currentSessionMergedSettings || {},
-        model,
-        modelSupportToolUseForFile,
-        sandboxMode,
-        constructedMessage: preConstructedMessage.message,
-      })
+    const {
+      contextTokens,
+      currentInputTokens,
+      totalTokens,
+      isCalculating,
+      isCurrentInputApproximate,
+      isTotalApproximate,
+      isContextApproximate,
+      isContextCalculating,
+      pendingContextMessages,
+      messageCount,
+      exactDraftTokens,
+    } = useContextTokens({
+      sessionId: currentSessionId || null,
+      session: currentSession,
+      settings: currentSessionMergedSettings || {},
+      model,
+      modelSupportToolUseForFile,
+      sandboxMode,
+      constructedMessage: preConstructedMessage.message,
+    })
 
     const globalAutoCompaction = useSettingsStore((state) => state.autoCompaction)
     const [isCompacting, setIsCompacting] = useState(false)
 
-    const compactionUIStateMap = useAtomValue(compactionUIStateMapAtom)
-    const isCompactionRunning = useMemo(() => {
-      if (!currentSessionId || isNewSession) return false
-      return compactionUIStateMap[currentSessionId]?.status === 'running'
-    }, [compactionUIStateMap, currentSessionId, isNewSession])
+    // The session-level share of the submit gate comes from the shared
+    // availability model; the remaining flags are renderer-local draft state.
+    const submitInProgress = isSubmitting && !generating
     const submitBlocked =
       disableSubmit ||
       isPreprocessing ||
-      isSubmitting ||
-      isCompactionRunning ||
-      isAwaitingToolApproval ||
+      submitInProgress ||
+      submitAvailability.blockReason !== undefined ||
       hasPreprocessErrors ||
       hasBlockedSessionRagFiles
+    const submitControl = getSubmitControl({
+      generating,
+      hasDraft: !disableSubmit,
+      canQueueDraft: !submitBlocked && currentQueueLength < MAX_QUEUED_MESSAGES,
+      queueEnabled,
+      sessionType,
+      hasModel: Boolean(model),
+    })
+    const showingStopControl = submitControl === 'stop'
+    const composerPlaceholder = getComposerPlaceholder({
+      blockReason: submitAvailability.blockReason,
+      generating,
+      queueEnabled,
+    })
 
     const autoCompactionEnabled = useMemo(() => {
       if (!currentSession) return globalAutoCompaction ?? true
@@ -781,7 +804,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const handleAutoCompactionChange = useCallback(
       async (enabled: boolean) => {
         if (!currentSessionId || isNewSession) return
-        await chatStore.updateSession(currentSessionId, (session) => {
+        await rendererApplication.sessions.updateSession(currentSessionId, (session) => {
           if (!session) {
             throw new Error('Session not found')
           }
@@ -835,22 +858,43 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const insertFilesRef = useRef<(files: File[], options?: InsertFilesOptions) => void>(() => {})
 
     const handleSubmit = async (needGenerating = true, options: SubmitOptions = {}) => {
-      if (
-        disableSubmit ||
-        generating ||
-        isSubmitting ||
-        isPreprocessing ||
-        isAwaitingToolApproval ||
-        hasPreprocessErrors ||
-        hasBlockedSessionRagFiles
-      ) {
+      const submitAction = getSubmitAction({
+        generating,
+        needGenerating,
+        sessionType,
+        queueLength: currentSessionId ? (messageQueueStore.getState().queues[currentSessionId]?.length ?? 0) : 0,
+        blockedForOtherReasons:
+          disableSubmit ||
+          submitInProgress ||
+          isPreprocessing ||
+          submitAvailability.blockReason !== undefined ||
+          hasPreprocessErrors ||
+          hasBlockedSessionRagFiles,
+        queueEnabled,
+        hasModel: Boolean(model),
+      })
+      if (submitAction === 'block' || (submitAction !== 'send' && !currentSessionId)) {
+        // Compaction and approval blocks keep the standard notice. A generating
+        // reply is handled by the queue action in work mode; in chat mode the
+        // queue is disabled, so surface the generating lock notice instead.
+        if (submitAvailability.blockReason) {
+          void notifySessionLockBlocked(submitAvailability.blockReason, t)
+        } else if (generating && needGenerating && !queueEnabled) {
+          void notifySessionLockBlocked('generating', t)
+        }
         return
       }
-
-      if (!model) {
-        return
+      if (generating && activeSubmitRef.current?.startedWhileGenerating === false) {
+        activeSubmitRef.current = null
       }
-
+      if (activeSubmitRef.current) return
+      const submitAttempt = Symbol('input-submit')
+      activeSubmitRef.current = { token: submitAttempt, startedWhileGenerating: generating }
+      const finishSubmitting = () => {
+        if (activeSubmitRef.current?.token !== submitAttempt) return
+        activeSubmitRef.current = null
+        setIsSubmitting(false)
+      }
       // Cancel any pending debounce so it won't overwrite the reset after send
       clearTimeout(debouncedUpdateTimerRef.current)
 
@@ -862,7 +906,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             preprocessedFilesForSubmit.flatMap((file) => (file.sessionAttachmentId ? [file.sessionAttachmentId] : []))
           )
         )
-        if (platform.type === 'desktop' && submitSessionAttachmentIds.length > 0) {
+        if (platform.isDesktopLike && submitSessionAttachmentIds.length > 0) {
           const latestAttachmentStates = await platform
             .getSessionAttachmentRagController()
             .getAttachments(submitSessionAttachmentIds)
@@ -896,39 +940,74 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           return
         }
 
+        // Hand the worker's exact draft count to the send path on the message
+        // itself; the projection check inside skips a draft edited since.
+        const outgoingMessage = seedExactDraftTokens(latestMessage, exactDraftTokens)
+
         const messageTextForHistory = latestMessage.contentParts.find((p) => p.type === 'text')?.text || ''
 
+        const finalizeUserMessageDraft = () => {
+          // clearDraft updates the child on its next render; clear the parent's
+          // immediate source too so a following submit cannot reuse this text.
+          latestInputRef.current = ''
+          setHasTextContent(false)
+          messageInputFieldRef.current?.clearDraft()
+          draftMessageIdRef.current = undefined
+          setPreConstructedMessage({
+            draftMessageId: undefined,
+            text: '',
+            pictureKeys: [],
+            attachments: [],
+            links: [],
+            preprocessedFiles: [],
+            preprocessedLinks: [],
+            preprocessingStatus: {
+              files: {},
+              links: {},
+            },
+            preprocessingPromises: {
+              files: new Map(),
+              links: new Map(),
+            },
+            message: undefined,
+          })
+          setShowRollbackThreadButton(false)
+          markReasoningSettingsCommitted()
+          if (platform.type !== 'mobile' && messageTextForHistory) {
+            addInputBoxHistory(messageTextForHistory)
+          }
+        }
+
+        if (submitAction === 'queue' || submitAction === 'queue-resume') {
+          if (!currentSessionId) {
+            return
+          }
+          // Queued delivery reads session settings later; a dirty reasoning-level
+          // change must land before finalize clears its state (same as the send path).
+          await waitForReasoningPersist()
+          const enqueueResult = enqueueUserMessage(
+            currentSessionId,
+            outgoingMessage,
+            currentSession?.messages.at(-1)?.id
+          )
+          if (enqueueResult !== 'queued') {
+            // The draft is kept in both failure cases — it is the only copy of the text.
+            toastActions.add(enqueueResult === 'full' ? t('Message queue is full') : t('Failed to queue the message'))
+            return
+          }
+          finalizeUserMessageDraft()
+          if (submitAction === 'queue-resume') {
+            resumeQueueAndDrain(currentSessionId)
+          }
+          trackingEvent('send_message', { event_category: 'user' })
+          return
+        }
+
         const params = {
-          constructedMessage: latestMessage,
+          constructedMessage: outgoingMessage,
           needGenerating,
           settingsPatch: reasoningSettingsPatch,
-          onUserMessageReady: () => {
-            messageInputFieldRef.current?.clearDraft()
-            draftMessageIdRef.current = undefined
-            setPreConstructedMessage({
-              draftMessageId: undefined,
-              text: '',
-              pictureKeys: [],
-              attachments: [],
-              links: [],
-              preprocessedFiles: [],
-              preprocessedLinks: [],
-              preprocessingStatus: {
-                files: {},
-                links: {},
-              },
-              preprocessingPromises: {
-                files: new Map(),
-                links: new Map(),
-              },
-              message: undefined,
-            })
-            setShowRollbackThreadButton(false)
-            markReasoningSettingsCommitted()
-            if (platform.type !== 'mobile' && messageTextForHistory) {
-              addInputBoxHistory(messageTextForHistory)
-            }
-          },
+          onUserMessageReady: finalizeUserMessageDraft,
         }
 
         // Ensure an in-flight reasoning-level persist has landed before generation reads session settings
@@ -941,7 +1020,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         console.error('Error submitting message:', e)
         toastActions.add((e as Error)?.message || t('An error occurred while sending the message.'))
       } finally {
-        setIsSubmitting(false)
+        finishSubmitting()
       }
     }
     handleSubmitRef.current = handleSubmit
@@ -1049,6 +1128,35 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       ]
     )
 
+    const handleSelectModel = useCallback(
+      async (provider: string, modelId: string) => {
+        if (!onSelectModel) {
+          return
+        }
+        if (model?.provider === provider && model?.modelId === modelId) {
+          return
+        }
+        if (
+          !(await confirmModelSwitchIfNeeded(sessionMode, currentSession?.messages, isNewSession, {
+            compactionPoints: currentSession?.compactionPoints,
+            maxContextMessageCount: currentSessionMergedSettings.maxContextMessageCount,
+          }))
+        ) {
+          return
+        }
+        onSelectModel(provider, modelId)
+      },
+      [
+        currentSession,
+        currentSessionMergedSettings.maxContextMessageCount,
+        isNewSession,
+        model?.modelId,
+        model?.provider,
+        onSelectModel,
+        sessionMode,
+      ]
+    )
+
     const startNewThread = () => {
       const res = onStartNewThread?.()
       if (res) {
@@ -1080,7 +1188,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           }
 
           let nextPreprocessedFile: PreprocessedFile = preprocessedFile
-          if (platform.type === 'desktop') {
+          if (platform.isDesktopLike) {
             const draftMessageId = draftMessageIdRef.current || uuidv4()
             const indexedFile = await startPreparedSessionAttachmentIndexing({
               file,
@@ -1356,10 +1464,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       (kb: KnowledgeBase | null) => {
         if (!kb || kb.id === knowledgeBase?.id) {
           setKnowledgeBase(undefined)
-          trackEvent('knowledge_base_disabled', { knowledge_base_name: knowledgeBase?.name })
+          trackEvent('knowledge_base_disabled')
         } else {
           setKnowledgeBase(pick(kb, 'id', 'name'))
-          trackEvent('knowledge_base_enabled', { knowledge_base_name: kb.name })
+          trackEvent('knowledge_base_enabled')
         }
       },
       [knowledgeBase, setKnowledgeBase]
@@ -1379,7 +1487,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             align="center"
           >
             <Text size="sm" c="chatbox-tertiary" ta="center">
-              {t('This image session is no longer active. Please use the new Image Creator for image generation.')}
+              {t('This image session is read-only. Please use the new Image Creator for image generation.')}
             </Text>
             <Button variant="light" size="xs" onClick={() => navigate({ to: '/image-creator' })}>
               {t('Go to Image Creator')}
@@ -1400,15 +1508,27 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       >
         <input className="hidden" {...getInputProps()} />
         <Stack className={cn('overflow-visible', widthFull ? 'w-full' : 'max-w-4xl mx-auto')} gap="xs">
-          {currentSessionId && <CompactionStatus sessionId={currentSessionId} />}
+          {currentSessionId && (
+            <CompactionStatus sessionId={currentSessionId} onViewSummary={onViewCompactionSummary} />
+          )}
+          {currentSession && !isNewSession && <WebSearchUnavailableBanner session={currentSession} />}
+          {currentSessionId && !isNewSession && <QueuedMessagesBar sessionId={currentSessionId} />}
+          {currentSession && !isNewSession && (
+            <ErrorBoundary name="pending-action-bar">
+              <PendingActionBar session={currentSession} />
+            </ErrorBoundary>
+          )}
           <Box
             ref={skillMenuAnchorRef}
             className={cn(
               // min-h + justify-between 必须同层，桌面空输入时工具栏贴底
-              'relative flex flex-col justify-between gap-xs rounded-lg bg-chatbox-background-secondary px-3 py-2 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-2px_rgba(0,0,0,0.3)]',
-              !isSmallScreen && 'min-h-[92px]'
+              INPUT_SURFACE_CLASS_NAME,
+              !isSmallScreen && INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME,
+              // Kept mounted while a pause takes over the slot so the draft,
+              // attachments and autosized height survive the swap.
+              pauseTakeover && 'hidden'
             )}
-            style={{ border: '0.5px solid var(--chatbox-border-primary)' }}
+            style={INPUT_SURFACE_STYLE}
           >
             {/*
               skill 列表：Portal + Floating UI autoUpdate
@@ -1456,23 +1576,29 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 document.body
               )}
 
+            {/* Work Mode status row: approval policy + working directories, always visible
+                above the input with their own in-place menus (mirrors the mode panel). */}
+            {platform.isDesktopLike && agentModeUIState.isActive && (
+              <WorkModeStatusRow
+                sessionId={currentSessionId || 'new'}
+                providerId={model?.provider}
+                modelId={model?.modelId}
+              />
+            )}
+
             {/* Input Row */}
-            <Flex
-              align="flex-end"
-              gap={4}
-              // Clicking the locked input while approval is pending surfaces the
-              // floating approval pill even when the card is visible in the list.
-              onClickCapture={
-                pendingApprovalToolCallId ? () => notifyApprovalInputNudge(pendingApprovalToolCallId) : undefined
-              }
-            >
+            <Flex align="flex-end" gap={4}>
               <MessageInputField
                 ref={messageInputFieldRef}
                 isNewSession={isNewSession}
                 viewportHeight={viewportHeight}
-                isReadOnly={isCompactionRunning || isAwaitingToolApproval}
+                isReadOnly={submitAvailability.blockReason !== undefined}
                 placeholder={
-                  isAwaitingToolApproval ? t('Waiting for approval') || '' : t('Type your question here...') || ''
+                  composerPlaceholder.kind === 'locked'
+                    ? getSessionLockNotice(composerPlaceholder.reason, t)
+                    : composerPlaceholder.kind === 'queue'
+                      ? t('Type a message, press Enter to queue it') || ''
+                      : t('Type your question here...') || ''
                 }
                 ariaLabel={t('Type your question here...') || ''}
                 autoFocus={!isSmallScreen}
@@ -1482,26 +1608,42 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 onPaste={onPaste}
               />
 
-              {/* Send Button */}
               <Tooltip
                 // `n` rather than `count`, so i18next does not engage plural resolution for a
                 // label that is only ever shown for more than one reply.
-                label={generatingCount > 1 ? t('Stop all {{n}} replies', { n: generatingCount }) : t('Stop')}
-                disabled={!generating}
+                label={
+                  submitControl === 'queue'
+                    ? t('Will send after the current response finishes')
+                    : generatingCount > 1
+                      ? t('Stop all {{n}} replies', { n: generatingCount })
+                      : t('Stop')
+                }
+                disabled={submitControl === 'send'}
                 withArrow
               >
                 <ActionIcon
-                  data-testid={generating ? TestId.chat.stop : TestId.chat.send}
-                  disabled={submitBlocked && !generating}
+                  data-testid={
+                    submitControl === 'stop'
+                      ? TestId.chat.stop
+                      : submitControl === 'queue'
+                        ? TestId.chat.queuedMessageEnqueue
+                        : TestId.chat.send
+                  }
+                  disabled={submitBlocked && !showingStopControl}
                   size={32}
                   variant="filled"
-                  color={generating ? 'dark' : 'chatbox-brand'}
+                  color={showingStopControl ? 'dark' : 'chatbox-brand'}
                   radius="lg"
-                  onClick={generating ? onStopGenerating : () => handleSubmit()}
-                  className={cn('shrink-0 mb-1', !generating && submitBlocked && 'disabled:!opacity-100 !text-white')}
-                  style={!generating && submitBlocked ? { backgroundColor: 'rgba(222, 226, 230, 1)' } : undefined}
+                  onClick={showingStopControl ? onStopGenerating : () => handleSubmit()}
+                  className={cn(
+                    'shrink-0 mb-1',
+                    !showingStopControl && submitBlocked && 'disabled:!opacity-100 !text-white'
+                  )}
+                  style={
+                    !showingStopControl && submitBlocked ? { backgroundColor: 'rgba(222, 226, 230, 1)' } : undefined
+                  }
                 >
-                  {generating ? (
+                  {showingStopControl ? (
                     <ScalableIcon icon={IconPlayerStopFilled} size={16} />
                   ) : (
                     <ScalableIcon icon={IconArrowUp} size={16} />
@@ -1593,9 +1735,20 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                       preprocessedFile.sessionAttachmentIndexStatus)
                     : preprocessedFile?.sessionAttachmentIndexStatus
                   const effectiveAttachmentError = preprocessedFile?.sessionAttachmentId
-                    ? (preprocessedAttachmentErrorMap.get(preprocessedFile.sessionAttachmentId) ??
-                      preprocessedFile?.error)
+                    ? preprocessedAttachmentErrorMap.has(preprocessedFile.sessionAttachmentId)
+                      ? preprocessedAttachmentErrorMap.get(preprocessedFile.sessionAttachmentId)
+                      : preprocessedFile?.error
                     : preprocessedFile?.error
+                  const attachmentResumable = preprocessedFile?.sessionAttachmentId
+                    ? (preprocessedAttachmentResumableMap.get(preprocessedFile.sessionAttachmentId) ??
+                      preprocessedFile.sessionAttachmentResumable)
+                    : preprocessedFile?.sessionAttachmentResumable
+                  const recoveryAction =
+                    effectiveIndexStatus === 'failed' && attachmentResumable !== undefined
+                      ? attachmentResumable
+                        ? 'continue'
+                        : 'retry'
+                      : undefined
                   const attachmentProgress = preprocessedFile?.sessionAttachmentId
                     ? preprocessedAttachmentProgressMap.get(preprocessedFile.sessionAttachmentId)
                     : undefined
@@ -1611,22 +1764,26 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     effectiveIndexStatus !== 'ready' &&
                     Date.now() - attachmentProgress.processingStartedAt > 30000
                   const statusText =
-                    preprocessedFile?.ragMode === 'session-retrieval' && effectiveIndexStatus !== 'ready'
-                      ? progressValue !== undefined
-                        ? `${isSessionAttachmentTakingLong ? t('Still indexing') : getSessionAttachmentStageLabel(indexingStage, t)} · ${progressValue}%`
-                        : isSessionAttachmentTakingLong
-                          ? t('Still indexing')
-                          : getSessionAttachmentStageLabel(indexingStage, t)
-                      : status === 'processing'
-                        ? t('Preparing')
-                        : undefined
+                    preprocessedFile?.ragMode === 'session-retrieval' && effectiveIndexStatus === 'failed'
+                      ? totalChunks > 0
+                        ? `${t('Indexing failed')} · ${embeddedChunks}/${totalChunks} ${t('chunks')}`
+                        : t('Indexing failed')
+                      : preprocessedFile?.ragMode === 'session-retrieval' && effectiveIndexStatus !== 'ready'
+                        ? progressValue !== undefined
+                          ? `${isSessionAttachmentTakingLong ? t('Still indexing') : getSessionAttachmentStageLabel(indexingStage, t)} · ${progressValue}%`
+                          : isSessionAttachmentTakingLong
+                            ? t('Still indexing')
+                            : getSessionAttachmentStageLabel(indexingStage, t)
+                        : status === 'processing'
+                          ? t('Preparing')
+                          : undefined
                   return (
                     <FileMiniCard
                       key={fileKey}
                       name={file.name}
                       fileType={file.type}
                       status={
-                        effectiveAttachmentError
+                        effectiveIndexStatus === 'failed' || effectiveAttachmentError
                           ? 'error'
                           : preprocessedFile?.ragMode === 'session-retrieval'
                             ? effectiveIndexStatus === 'ready'
@@ -1639,6 +1796,17 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                       progressValue={progressValue}
                       isTakingLong={isSessionAttachmentTakingLong}
                       errorMessage={effectiveAttachmentError}
+                      recoveryAction={recoveryAction}
+                      onRecover={
+                        preprocessedFile?.sessionAttachmentId && recoveryAction
+                          ? () => recoverPreprocessedAttachment(preprocessedFile.sessionAttachmentId as number)
+                          : undefined
+                      }
+                      recovering={
+                        preprocessedFile?.sessionAttachmentId
+                          ? recoveringPreprocessedAttachmentIds.includes(preprocessedFile.sessionAttachmentId)
+                          : false
+                      }
                       onErrorClick={() => {
                         const errorCode = effectiveAttachmentError
                         if (errorCode) {
@@ -1673,7 +1841,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                             // Ignore cancellation errors
                           })
                         }
-                        if (platform.type === 'desktop' && preprocessedFile?.sessionAttachmentId) {
+                        if (platform.isDesktopLike && preprocessedFile?.sessionAttachmentId) {
                           void platform
                             .getSessionAttachmentRagController()
                             .deleteAttachment(preprocessedFile.sessionAttachmentId)
@@ -1713,62 +1881,40 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
               <Flex align="center" gap={0}>
                 <AttachmentMenu onImageUploadClick={onImageUploadClick} onFileUploadClick={onFileUploadClick} t={t} />
 
-                {/* Desktop owns Web Search in AgentModePanel for both Chat and Work modes.
-                    Mobile/Web keep this standalone entry because they do not render that panel. */}
-                {platform.type !== 'desktop' && (
-                  <Tooltip label={t('Web Search')} position="top" withArrow disabled={isSmallScreen}>
-                    <UnstyledButton
-                      data-testid={TestId.chat.webSearchToggle}
-                      onClick={() => {
-                        setWebBrowsingMode(!webBrowsingMode)
-                        dom.focusMessageInput()
-                      }}
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
-                    >
-                      <IconWorldWww
-                        size={toolbarIconSize}
-                        strokeWidth={1.8}
-                        className={
-                          webBrowsingMode ? 'text-[var(--chatbox-tint-brand)]' : 'text-[var(--chatbox-tint-secondary)]'
-                        }
-                      />
-                    </UnstyledButton>
-                  </Tooltip>
-                )}
-
                 <ReasoningControlButton
                   provider={model?.provider}
                   model={reasoningModelInfo}
                   providerOptions={effectiveProviderOptions}
                   iconSize={toolbarIconSize}
-                  compact={isSmallScreen}
                   onChange={(level) => void handleReasoningLevelChange(level)}
                 />
 
-                {/* Agent Mode Panel - desktop only */}
-                {platform.type === 'desktop' && (
-                  <AgentModeButton
-                    sessionId={currentSessionId || 'new'}
-                    providerId={model?.provider}
-                    modelId={model?.modelId}
-                    iconSize={toolbarIconSize}
-                    compact={isSmallScreen}
-                    modelSupportsAgentMode={model ? modelSupportsAgentMode : true}
-                    webBrowsingMode={webBrowsingMode}
-                    onWebBrowsingChange={(v) => {
-                      setWebBrowsingMode(v)
-                      dom.focusMessageInput()
-                    }}
-                    currentKnowledgeBaseId={knowledgeBase?.id}
-                    onKnowledgeBaseSelect={handleKnowledgeBaseSelect}
-                    onSkillSelect={insertSkillCommand}
-                  />
-                )}
+                <AgentModeButton
+                  sessionId={currentSessionId || 'new'}
+                  providerId={model?.provider}
+                  modelId={model?.modelId}
+                  iconSize={toolbarIconSize}
+                  compact={isSmallScreen}
+                  modelSupportsAgentMode={model ? modelSupportsAgentMode : true}
+                  webBrowsingMode={webBrowsingMode}
+                  onWebBrowsingChange={(v) => {
+                    setWebBrowsingMode(v)
+                    dom.focusMessageInput()
+                  }}
+                  currentKnowledgeBaseId={knowledgeBase?.id}
+                  onKnowledgeBaseSelect={handleKnowledgeBaseSelect}
+                  onSkillSelect={insertSkillCommand}
+                  draftCopilotId={draftCopilotId}
+                  draftCopilotName={draftCopilotName}
+                />
 
                 {!isSmallScreen &&
+                  canCreateThread &&
                   (showRollbackThreadButton ? (
                     <Tooltip label={t('Rollback Thread')} position="top" withArrow>
                       <UnstyledButton
+                        data-testid={TestId.chat.rollbackThread}
+                        aria-label={t('Rollback Thread')}
                         onClick={rollbackThread}
                         className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
                       >
@@ -1782,6 +1928,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   ) : (
                     <Tooltip label={t('New Thread')} position="top" withArrow>
                       <UnstyledButton
+                        data-testid={TestId.chat.newThread}
+                        aria-label={t('New Thread')}
                         onClick={startNewThread}
                         disabled={!onStartNewThread}
                         className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
@@ -1798,6 +1946,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 {!isSmallScreen && (
                   <Tooltip label={t('Conversation Settings')} position="top" withArrow>
                     <UnstyledButton
+                      data-testid={TestId.chat.sessionSettings}
+                      aria-label={t('Conversation Settings') || undefined}
                       onClick={onClickSessionSettings}
                       disabled={!onClickSessionSettings}
                       className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
@@ -1811,39 +1961,13 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   </Tooltip>
                 )}
 
-                {/* Mobile: Settings menu */}
                 {isSmallScreen && (
-                  <Menu
-                    trigger="click"
-                    openDelay={100}
-                    closeDelay={100}
-                    keepMounted
-                    transitionProps={{
-                      transition: 'pop',
-                      duration: 200,
-                    }}
-                  >
-                    <Menu.Target>
-                      <UnstyledButton className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors">
-                        <IconSettings
-                          size={toolbarIconSize}
-                          strokeWidth={1.8}
-                          className="text-[var(--chatbox-tint-secondary)]"
-                        />
-                      </UnstyledButton>
-                    </Menu.Target>
-                    <Menu.Dropdown>
-                      <Menu.Item leftSection={<ScalableIcon icon={IconPlus} size={16} />} onClick={startNewThread}>
-                        {t('New Thread')}
-                      </Menu.Item>
-                      <Menu.Item
-                        leftSection={<ScalableIcon icon={IconAdjustmentsHorizontal} size={16} />}
-                        onClick={onClickSessionSettings}
-                      >
-                        {t('Conversation Settings')}
-                      </Menu.Item>
-                    </Menu.Dropdown>
-                  </Menu>
+                  <ComposerSettingsMenu
+                    canCreateThread={canCreateThread}
+                    toolbarIconSize={toolbarIconSize}
+                    onStartNewThread={startNewThread}
+                    onClickSessionSettings={onClickSessionSettings}
+                  />
                 )}
               </Flex>
 
@@ -1854,7 +1978,11 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   contextTokens={contextTokens}
                   totalTokens={totalTokens}
                   isCalculating={isCalculating}
-                  pendingTasks={pendingTasks}
+                  isCurrentInputApproximate={isCurrentInputApproximate}
+                  isTotalApproximate={isTotalApproximate}
+                  isContextApproximate={isContextApproximate}
+                  isContextCalculating={isContextCalculating}
+                  pendingContextMessages={pendingContextMessages}
                   totalContextMessages={messageCount}
                   contextWindow={effectiveContextWindow ?? undefined}
                   currentMessageCount={currentContextMessageIds?.length ?? 0}
@@ -1875,7 +2003,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     <ScalableIcon icon={IconArrowUp} size={14} />
                     {isCalculating && <Loader size={10} />}
                     <Text span size="xs" className="whitespace-nowrap" c="inherit">
-                      {isCalculating ? '~' : ''}
+                      {isTotalApproximate ? '~' : ''}
                       {formatNumber(totalTokens)}
                       {tokenPercentage !== null && tokenPercentage > 10 && ` (${tokenPercentage}%)`}
                     </Text>
@@ -1885,7 +2013,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 {/* Model Selector */}
                 <Box className="min-w-0 flex-1 justify-end max-w-[200px]">
                   <ModelSelectorV2
-                    onSelect={onSelectModel}
+                    onSelect={handleSelectModel}
                     selectedProviderId={model?.provider}
                     selectedModelId={model?.modelId}
                     modelDisabledCheck={modelDisabledCheck}

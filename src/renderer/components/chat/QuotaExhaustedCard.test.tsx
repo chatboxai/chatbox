@@ -30,7 +30,7 @@ describe('QuotaExhaustedCard', () => {
     const onUpgrade = vi.fn()
     render(
       <MantineProvider>
-        <QuotaExhaustedCard kind="quota-exhausted" onUpgrade={onUpgrade} />
+        <QuotaExhaustedCard kind="quota-exhausted" action="upgrade-plan" onAction={onUpgrade} />
       </MantineProvider>
     )
 
@@ -40,10 +40,25 @@ describe('QuotaExhaustedCard', () => {
     expect(onUpgrade).toHaveBeenCalledOnce()
   })
 
+  test('offers an expansion pack after Pro+ quota is exhausted', () => {
+    const onAction = vi.fn()
+    render(
+      <MantineProvider>
+        <QuotaExhaustedCard kind="quota-exhausted" action="buy-expansion-pack" onAction={onAction} />
+      </MantineProvider>
+    )
+
+    expect(
+      screen.getByText('Your quota for the current period is used up. Buy an expansion pack to continue.')
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Buy expansion pack' }))
+    expect(onAction).toHaveBeenCalledOnce()
+  })
+
   test('uses daily-reset copy for Free quota exhaustion', () => {
     render(
       <MantineProvider>
-        <QuotaExhaustedCard kind="free-quota-exhausted" onUpgrade={vi.fn()} />
+        <QuotaExhaustedCard kind="free-quota-exhausted" action="upgrade-plan" onAction={vi.fn()} />
       </MantineProvider>
     )
 
@@ -54,7 +69,12 @@ describe('QuotaExhaustedCard', () => {
     const onConfigureOcr = vi.fn()
     render(
       <MantineProvider>
-        <QuotaExhaustedCard kind="ocr-quota-exhausted" onUpgrade={vi.fn()} onConfigureOcr={onConfigureOcr} />
+        <QuotaExhaustedCard
+          kind="ocr-quota-exhausted"
+          action="upgrade-plan"
+          onAction={vi.fn()}
+          onConfigureOcr={onConfigureOcr}
+        />
       </MantineProvider>
     )
 
@@ -66,7 +86,12 @@ describe('QuotaExhaustedCard', () => {
   test('uses daily-reset copy for free Chatbox AI OCR quota exhaustion', () => {
     render(
       <MantineProvider>
-        <QuotaExhaustedCard kind="free-ocr-quota-exhausted" onUpgrade={vi.fn()} onConfigureOcr={vi.fn()} />
+        <QuotaExhaustedCard
+          kind="free-ocr-quota-exhausted"
+          action="upgrade-plan"
+          onAction={vi.fn()}
+          onConfigureOcr={vi.fn()}
+        />
       </MantineProvider>
     )
 

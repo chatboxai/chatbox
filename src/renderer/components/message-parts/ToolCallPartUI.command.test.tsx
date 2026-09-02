@@ -34,9 +34,12 @@ vi.mock('@/stores/imageGenerationStore', () => ({
   useImageGenerationRecord: () => ({ data: undefined, isFetched: true }),
 }))
 
-vi.mock('@/stores/sessionActions', () => ({
-  continuePausedToolCall: vi.fn(),
-  stopPausedToolCall: vi.fn(),
+vi.mock('@/adapters/CurrentGenerationService', () => ({
+  currentGenerationService: {
+    continuePausedToolCall: vi.fn(),
+    stopPausedToolCall: vi.fn(),
+    disableToolCallLimitPauseAndContinue: vi.fn(),
+  },
 }))
 
 vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
@@ -171,6 +174,30 @@ describe('command execution timeline', () => {
 
     expect(screen.getByText(/Stopped/)).toBeTruthy()
     expect(screen.queryByText(/Failed/)).toBeNull()
+  })
+
+  it('shows only line counts for a paused file mutation', () => {
+    render(
+      <MantineProvider>
+        <StepTimelineUI
+          parts={[
+            commandPart({
+              state: 'paused',
+              toolName: 'edit_file',
+              pauseReason: {
+                type: 'file_mutation_approval',
+                title: 'Edit config.ts',
+                preview: '# Edit 1\n--- old\nsecret = old\n+++ new\nsecret = new',
+              },
+            }),
+          ]}
+        />
+      </MantineProvider>
+    )
+
+    expect(screen.getByText(/Edit config\.ts/)).toBeTruthy()
+    expect(screen.getByText(/\+1 -1/)).toBeTruthy()
+    expect(screen.queryByText(/secret/)).toBeNull()
   })
 
   it('renders a cancelled non-command tool as Stopped instead of Failed', () => {

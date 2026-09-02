@@ -1,5 +1,6 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { Box, Button, Group, Paper, Stack, Text } from '@mantine/core'
+import type { Session } from '@shared/types'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { IconCircleCheck, IconSettings } from '@tabler/icons-react'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router'
@@ -17,6 +18,13 @@ import { Drawer, Modal } from '../layout/Overlay'
 import Page from '../layout/Page'
 import Toolbar from '../layout/Toolbar'
 import WindowControls from '../layout/WindowControls'
+
+const toolbarSession: Session = {
+  id: 'storybook-session',
+  name: 'Product strategy',
+  type: 'chat',
+  messages: [],
+}
 
 const meta: Meta = {
   title: 'Real Components/Layout',
@@ -89,7 +97,7 @@ export const ToolbarStates: StoryObj = {
       />
       <SeedLayoutAtoms platformType="darwin" fullscreen={false} maximized={false} />
       <Paper withBorder radius="md" p="md" maw={520}>
-        <Toolbar sessionId="storybook-session" />
+        <Toolbar session={toolbarSession} />
       </Paper>
     </Stack>
   ),

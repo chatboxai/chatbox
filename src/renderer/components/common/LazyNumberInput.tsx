@@ -17,6 +17,7 @@ export type Props = {
   allowDecimal?: boolean
   hideControls?: boolean
   step?: number
+  inputTestId?: string
 }
 
 // LazyNumberInput: 只有在 input blur 或者按 Enter 键时才触发 onChange
@@ -33,6 +34,7 @@ export default function LazyNumberInput({
   allowDecimal = true,
   hideControls = false,
   step = 1,
+  inputTestId,
 }: Props) {
   const { t } = useTranslation()
 
@@ -87,6 +89,7 @@ export default function LazyNumberInput({
   return (
     <TextInput
       w={width}
+      data-testid={inputTestId}
       size={size}
       placeholder={placeholder || t('Not set') || ''}
       value={inputValue}

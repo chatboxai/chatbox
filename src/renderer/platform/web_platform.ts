@@ -1,3 +1,4 @@
+import { type AnalyticsEventParams, GOOGLE_ANALYTICS_MEASUREMENT_ID } from '@shared/analytics'
 import * as defaults from '@shared/defaults'
 import type { Config, Settings, ShortcutSetting } from '@shared/types'
 import localforage from 'localforage'
@@ -16,6 +17,7 @@ import { parseFileLocallyInBrowser } from './web_platform_utils'
 
 export default class WebPlatform extends IndexedDBStorage implements Platform {
   public type: PlatformType = 'web'
+  public readonly isDesktopLike = false
 
   public exporter = new WebExporter()
 
@@ -123,26 +125,18 @@ export default class WebPlatform extends IndexedDBStorage implements Platform {
   }
 
   public async initTracking() {
-    const GAID = 'G-B365F44W6E'
-    try {
-      const conf = await this.getConfig()
-      window.gtag('config', GAID, {
-        app_name: 'chatbox',
-        user_id: conf.uuid,
-        client_id: conf.uuid,
-        app_version: await this.getVersion(),
-        chatbox_platform_type: 'web',
-        chatbox_platform: await this.getPlatform(),
-        app_platform: await this.getPlatform(),
-      })
-    } catch (e) {
-      window.gtag('config', GAID, {
-        app_name: 'chatbox',
-      })
-      throw e
-    }
+    const conf = await this.getConfig()
+    window.gtag('config', GOOGLE_ANALYTICS_MEASUREMENT_ID, {
+      app_name: 'chatbox',
+      user_id: conf.uuid,
+      client_id: conf.uuid,
+      app_version: await this.getVersion(),
+      chatbox_platform_type: 'web',
+      chatbox_platform: await this.getPlatform(),
+      app_platform: await this.getPlatform(),
+    })
   }
-  public trackingEvent(name: string, params: { [key: string]: string }) {
+  public trackingEvent(name: string, params: AnalyticsEventParams) {
     window.gtag('event', name, params)
   }
 

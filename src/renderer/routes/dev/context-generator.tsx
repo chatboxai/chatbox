@@ -22,8 +22,8 @@ import { useCallback, useMemo, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { estimateTokensFromMessages } from '@/packages/token'
-import { createSession } from '@/stores/chatStore'
-import { switchCurrentSession } from '@/stores/sessionActions'
+import { rendererApplication } from '@/app/renderer-application'
+import { switchCurrentSession } from '@/stores/session/crud'
 
 export const Route = createFileRoute('/dev/context-generator')({
   component: ContextGeneratorPage,
@@ -177,7 +177,7 @@ function ContextGeneratorPage() {
     try {
       const name =
         sessionName.trim() || `Test Context (${generatedMessages.length} msgs, ${totalTokens.toLocaleString()} tokens)`
-      const session = await createSession({
+      const session = await rendererApplication.sessions.createSession({
         name,
         messages: stripEstimatedTokens(generatedMessages),
         type: 'chat',

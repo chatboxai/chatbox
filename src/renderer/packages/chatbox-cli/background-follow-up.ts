@@ -1,9 +1,9 @@
+import { withSessionGenerationLock } from '@chatbox/core/generation'
 import { createMessage, type Message, type MessageBackgroundTask, type Session } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { getLogger } from '@/lib/utils'
 import { estimateTokensFromMessages } from '@/packages/token'
-import * as chatStore from '@/stores/chatStore'
-import { withSessionGenerationLock } from '@/stores/session/generation-lock'
+import { rendererApplication } from '@/app/renderer-application'
 
 const log = getLogger('chatbox-cli-background-follow-up')
 const RETRY_DELAY_MS = 1_000
@@ -145,7 +145,7 @@ function deliverNotification(
   queued: QueuedNotification
 ): Promise<'delivered' | 'deferred' | 'target-missing' | 'discard'> {
   return withSessionGenerationLock(sessionId, async () => {
-    const session = await chatStore.getSession(sessionId)
+    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
     if (!session) return 'discard'
     // A completion callback must not start a potentially long model follow-up while another
     // tool call is still waiting for approval. A persisted `call` cannot still be executing
@@ -160,14 +160,14 @@ function deliverNotification(
       const assistantMessage = prepareMessage({ ...createMessage('assistant', ''), generating: true })
 
       try {
-        await chatStore.updateSessionWithMessages(sessionId, (session) => {
+        await rendererApplication.sessions.updateSessionWithMessages(sessionId, (session) => {
           if (!session) throw new Error(`Session ${sessionId} not found`)
           return appendFollowUpMessages(session, queued.originToolCallId, userMessage, assistantMessage)
         })
         queued.reservedAssistantMessage = assistantMessage
       } catch (error) {
         if (error instanceof BackgroundFollowUpTargetNotFoundError) return 'target-missing'
-        const latestSession = await chatStore.getSession(sessionId)
+        const latestSession = await rendererApplication.sessionQueryBridge.getSession(sessionId)
         if (!latestSession) return 'discard'
         throw error
       }

@@ -252,9 +252,9 @@
 }
 
 .katex-display > .katex {
-  /* width: auto; */
-  /* max-width: 100%; */
   display: inline-block;
+  /* Keep the box at least as wide as the line so \tag stays on the right. */
+  min-width: 100%;
 }
 
 /* Hide scrollbar for inline math */
@@ -311,10 +311,6 @@ html[data-need-room-for-windows-controls="true"] .pswp__top-bar {
 
 .scrollbar-custom::-webkit-scrollbar {
   width: 12px !important;
-}
-
-*::-webkit-scrollbar-corner {
-  background-color: transparent;
 }
 
 div[data-vaul-handle] {
@@ -377,4 +373,76 @@ div[data-vaul-drawer] {
   mask-composite: exclude;
   animation: chatbox-approval-ring-spin 2.5s linear infinite;
   pointer-events: none;
+}
+
+/* Pending-action bar above the input box: item advance, progress pop, resolve
+   flash, and the attention pulse played when the user clicks the locked input. */
+@keyframes chatbox-action-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chatbox-action-item-enter {
+  animation: chatbox-action-item-in 240ms ease;
+}
+
+@keyframes chatbox-action-progress-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.chatbox-action-progress-pop {
+  animation: chatbox-action-progress-pop 320ms ease;
+}
+
+@keyframes chatbox-action-resolve-flash {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+.chatbox-action-resolve-flash {
+  animation: chatbox-action-resolve-flash 700ms ease forwards;
+  pointer-events: none;
+}
+
+@keyframes chatbox-action-bar-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--chatbox-tint-warning) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 12px transparent;
+  }
+}
+
+/* Two identical classes let React restart the animation by swapping class names. */
+.chatbox-action-bar-pulse,
+.chatbox-action-bar-pulse-alt {
+  animation: chatbox-action-bar-pulse 600ms ease-out 2;
 }

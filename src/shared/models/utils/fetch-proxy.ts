@@ -1,9 +1,14 @@
 import type { ModelDependencies } from '../../types/adapters'
 
-/**
- * Creates a fetch function that uses proxy when enabled,
- * or falls back to apiRequest for mobile CORS handling
- */
+type ApiRequestSignal = Parameters<ModelDependencies['request']['apiRequest']>[0]['signal']
+
+// React Native and DOM fetch declarations expose compatible runtime signals
+// through distinct ambient interfaces. Keep the conversion at this boundary.
+function toApiRequestSignal(signal: RequestInit['signal']): ApiRequestSignal {
+  return (signal ?? undefined) as unknown as ApiRequestSignal
+}
+
+/** Passes the provider's network-compatibility preference to the host request adapter. */
 export function createFetchWithProxy(useProxy: boolean | undefined, dependencies: ModelDependencies) {
   return async (url: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method || 'GET'
@@ -17,7 +22,7 @@ export function createFetchWithProxy(useProxy: boolean | undefined, dependencies
         method: 'POST',
         headers,
         body: init?.body,
-        signal: init?.signal || undefined,
+        signal: toApiRequestSignal(init?.signal),
         useProxy,
         retry: 0,
       })
@@ -27,7 +32,7 @@ export function createFetchWithProxy(useProxy: boolean | undefined, dependencies
         url: url.toString(),
         method: 'GET',
         headers,
-        signal: init?.signal || undefined,
+        signal: toApiRequestSignal(init?.signal),
         useProxy,
       })
       return response

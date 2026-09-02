@@ -60,7 +60,13 @@ vi.mock('@/utils/track', () => ({
   trackEvent: vi.fn(),
 }))
 
-vi.mock('@/stores/chatStore', () => ({
-  getSession: vi.fn(),
-  updateSessionWithMessages: vi.fn(),
-}))
+vi.mock('@/app/renderer-application', async () => {
+  const { QueryClient } = await import('@tanstack/react-query')
+  return {
+    rendererApplication: {
+      queryClient: new QueryClient(),
+      sessions: { updateSessionWithMessages: vi.fn() },
+      sessionQueryBridge: { getSession: vi.fn() },
+    },
+  }
+})

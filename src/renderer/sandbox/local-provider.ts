@@ -4,8 +4,11 @@ import type {
   SandboxOperationResult,
   SandboxProvider,
   SandboxReadResult,
+  SandboxRunCommandResult,
   SandboxSearchParams,
   SandboxSearchResult,
+  SandboxSeedBlobItem,
+  SandboxSeedBlobsResult,
 } from '@shared/sandbox-provider'
 import { DEFAULT_EXEC_TIMEOUT } from '@shared/sandbox-provider'
 import platform from '@/platform'
@@ -112,7 +115,10 @@ export class LocalSandboxProvider implements SandboxProvider {
     return result.workingDirectory ?? null
   }
 
-  async copyFileIn(content: string, targetFilename: string): Promise<{ success: boolean; error?: string }> {
+  async copyFileIn(
+    content: string,
+    targetFilename: string
+  ): Promise<{ success: boolean; sandboxPath?: string; error?: string }> {
     if (!platform.sandboxCopyFile) {
       return { success: false, error: 'Sandbox copy not available' }
     }
@@ -126,6 +132,23 @@ export class LocalSandboxProvider implements SandboxProvider {
       return { success: false, error: 'Blob transfer not supported on this platform' }
     }
     return platform.sandboxCopyBlob({ blobKey, targetFilename, sessionId: this.sessionId ?? undefined })
+  }
+
+  async seedBlobsIn(items: SandboxSeedBlobItem[]): Promise<SandboxSeedBlobsResult> {
+    if (platform.sandboxSeedBlobs) {
+      return platform.sandboxSeedBlobs({ items, sessionId: this.sessionId ?? undefined })
+    }
+    const results = []
+    for (const item of items) {
+      const copied = await this.copyBlobIn(item.blobKey, item.targetFilename)
+      results.push({
+        targetFilename: item.targetFilename,
+        success: copied.success,
+        skipped: false,
+        error: copied.error,
+      })
+    }
+    return { success: results.every((result) => result.success), results }
   }
 
   async readFileOut(sandboxPath: string, options?: { offset?: number; limit?: number }): Promise<SandboxReadResult> {
@@ -180,6 +203,23 @@ export class LocalSandboxProvider implements SandboxProvider {
       timeout,
       sessionId: this.sessionId ?? undefined,
       ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+    })
+  }
+
+  async runCommand(params: {
+    command: string
+    shell: 'bash' | 'powershell'
+    workdir?: string
+    timeout?: number
+    toolCallId: string
+  }): Promise<SandboxRunCommandResult> {
+    if (!platform.sandboxRunCommand) {
+      return { stdout: '', stderr: 'Sandbox command execution is unavailable on this platform', exitCode: 1 }
+    }
+    return platform.sandboxRunCommand({
+      ...params,
+      timeout: params.timeout ?? DEFAULT_EXEC_TIMEOUT,
+      sessionId: this.sessionId ?? undefined,
     })
   }
 

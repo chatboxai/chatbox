@@ -24,6 +24,7 @@ async function loadSettingsStoreModule(
   vi.doMock('@/platform', () => ({
     default: {
       type: platformType,
+      isDesktopLike: platformType === 'desktop',
       ensureShortcutConfig: vi.fn(),
       ensureProxyConfig: vi.fn(),
       ensureAutoLaunch: vi.fn(),
@@ -150,7 +151,7 @@ describe('settingsStore persistence', () => {
           apiHost: 'https://api.openai.com',
         },
       },
-      __version: 5,
+      __version: 6,
     })
   })
 
@@ -198,7 +199,7 @@ describe('settingsStore persistence', () => {
     ],
     [
       '1.19/1.20 mod+r new thread shortcut with current persist version',
-      5,
+      6,
       {
         ...defaultSettings().shortcuts,
         messageListRefreshContext: 'mod+r',
@@ -219,7 +220,7 @@ describe('settingsStore persistence', () => {
     ],
     [
       '1.21 missing new thread shortcut with current persist version',
-      5,
+      6,
       (() => {
         const shortcuts: Record<string, unknown> = {
           ...defaultSettings().shortcuts,

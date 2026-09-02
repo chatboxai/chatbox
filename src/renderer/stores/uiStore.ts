@@ -1,4 +1,11 @@
-import type { AgentModeEntry, KnowledgeBase, MessagePicture, Toast } from '@shared/types'
+import type {
+  AgentModeEntry,
+  AgentModeValue,
+  CommandApprovalMode,
+  KnowledgeBase,
+  MessagePicture,
+  Toast,
+} from '@shared/types'
 import type { RefObject } from 'react'
 import type { VirtuosoHandle } from 'react-virtuoso'
 import { v4 as uuidv4 } from 'uuid'
@@ -13,6 +20,18 @@ const isSmallScreenViewport = () => {
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(max-width: 599.95px)').matches
   )
+}
+
+function updateSessionWebBrowsingMap(
+  current: Record<string, boolean | undefined>,
+  sessionId: string,
+  enabled: boolean
+) {
+  const next = { ...current, [sessionId]: enabled }
+  if (sessionId !== 'new') {
+    delete next.new
+  }
+  return next
 }
 
 // UI store for managing UI-related state
@@ -34,6 +53,9 @@ export const uiStore = createStore(
         openAboutDialog: false, // 是否展示相关信息的窗口
         inputBoxWebBrowsingMode: false,
         sessionWebBrowsingMap: {} as Record<string, boolean | undefined>,
+        // Explicit Web Search preference for future new chats. Undefined keeps
+        // the provider-specific default for users who have never changed it.
+        newSessionWebBrowsingDefault: undefined as boolean | undefined,
         // Cache for current session's computed web browsing state (for keyboard shortcut)
         currentWebBrowsingDisplay: { sessionId: '', value: false } as { sessionId: string; value: boolean },
         sessionKnowledgeBaseMap: {} as Record<string, Pick<KnowledgeBase, 'id' | 'name'> | undefined>,
@@ -44,7 +66,13 @@ export const uiStore = createStore(
           // created session's settings on first submit (see routes/index.tsx).
           workingDirectories?: string[]
           agentFullAccess?: boolean
+          commandApprovalMode?: CommandApprovalMode
         },
+        // Last explicit command-approval / working-directory choices (from any chat).
+        // New chats start from these so users don't re-configure every conversation.
+        // Undefined = never chosen, so resolveCommandApprovalMode keeps its own default.
+        newSessionCommandApprovalModeDefault: undefined as CommandApprovalMode | undefined,
+        newSessionWorkingDirectoriesDefault: undefined as string[] | undefined,
         pictureShow: null as {
           picture: MessagePicture
           extraButtons?: {
@@ -57,7 +85,11 @@ export const uiStore = createStore(
         showCopilotsInNewSession: false,
         sidebarWidth: null as number | null, // Custom sidebar width, null means use default
         agentModeSmartSwitchingDefault: true,
+        // Last mode the user explicitly picked in the mode panel; new chats start in this
+        // mode so users don't have to re-select Work Mode for every conversation.
+        agentModeLastSelected: 'off' as Extract<AgentModeValue, 'on' | 'off'>,
         sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
+        promptCacheBreakConfirmDismissed: {} as Record<string, boolean>,
       },
       (set, get) => ({
         addToast: (content: string, duration?: number, action?: Toast['action']) => {
@@ -141,10 +173,8 @@ export const uiStore = createStore(
 
         setSessionWebBrowsing: (sessionId: string, enabled: boolean) => {
           set((state) => ({
-            sessionWebBrowsingMap: {
-              ...state.sessionWebBrowsingMap,
-              [sessionId]: enabled,
-            },
+            sessionWebBrowsingMap: updateSessionWebBrowsingMap(state.sessionWebBrowsingMap, sessionId, enabled),
+            newSessionWebBrowsingDefault: enabled,
             // Update cache if it's for the current session (avoid race condition with kbd shortcut)
             currentWebBrowsingDisplay:
               state.currentWebBrowsingDisplay.sessionId === sessionId
@@ -184,10 +214,8 @@ export const uiStore = createStore(
               : (get().sessionWebBrowsingMap[sessionId] ?? false)
           const newValue = !currentValue
           set((state) => ({
-            sessionWebBrowsingMap: {
-              ...state.sessionWebBrowsingMap,
-              [sessionId]: newValue,
-            },
+            sessionWebBrowsingMap: updateSessionWebBrowsingMap(state.sessionWebBrowsingMap, sessionId, newValue),
+            newSessionWebBrowsingDefault: newValue,
             // Update cache to keep it in sync
             currentWebBrowsingDisplay: { sessionId, value: newValue },
           }))
@@ -204,6 +232,14 @@ export const uiStore = createStore(
           })
         },
 
+        setNewSessionCommandApprovalModeDefault: (mode: CommandApprovalMode) => {
+          set({ newSessionCommandApprovalModeDefault: mode })
+        },
+
+        setNewSessionWorkingDirectoriesDefault: (directories: string[]) => {
+          set({ newSessionWorkingDirectoriesDefault: directories })
+        },
+
         setShowCopilotsInNewSession: (showCopilotsInNewSession: boolean) => {
           set({ showCopilotsInNewSession })
         },
@@ -214,6 +250,10 @@ export const uiStore = createStore(
 
         setAgentModeSmartSwitchingDefault: (enabled: boolean) => {
           set({ agentModeSmartSwitchingDefault: enabled })
+        },
+
+        setAgentModeLastSelected: (mode: Extract<AgentModeValue, 'on' | 'off'>) => {
+          set({ agentModeLastSelected: mode })
         },
 
         clearSessionAgentMode: (sessionId?: string) => {
@@ -237,7 +277,13 @@ export const uiStore = createStore(
         showCopilotsInNewSession: state.showCopilotsInNewSession,
         sidebarWidth: state.sidebarWidth,
         agentModeSmartSwitchingDefault: state.agentModeSmartSwitchingDefault,
+        agentModeLastSelected: state.agentModeLastSelected,
+        newSessionWebBrowsingDefault: state.newSessionWebBrowsingDefault,
+        newSessionCommandApprovalModeDefault: state.newSessionCommandApprovalModeDefault,
+        newSessionWorkingDirectoriesDefault: state.newSessionWorkingDirectoriesDefault,
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
+        sessionKnowledgeBaseMap: state.sessionKnowledgeBaseMap,
+        promptCacheBreakConfirmDismissed: state.promptCacheBreakConfirmDismissed,
       }),
       storage: safeStorage,
     }

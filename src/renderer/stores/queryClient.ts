@@ -1,5 +1,4 @@
-import { QueryClient } from '@tanstack/react-query'
+import { rendererApplication } from '@/app/renderer-application'
 
-export const queryClient = new QueryClient()
-
+export const queryClient = rendererApplication.queryClient
 export default queryClient

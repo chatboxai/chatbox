@@ -1,9 +1,46 @@
 import { describe, expect, it } from 'vitest'
-import { MODELS_DEV_SNAPSHOT } from '../model-registry/snapshot.generated'
 import { getModelsDevProviderId } from '../model-registry/provider-mapping'
+import { MODELS_DEV_SNAPSHOT } from '../model-registry/snapshot.generated'
 import { getAllProviders } from './index'
 
 describe('provider control-plane contracts', () => {
+  it('preserves the built-in registration and display order', () => {
+    expect(getAllProviders().map((provider) => provider.id)).toEqual([
+      'chatbox-ai',
+      'openai',
+      'openai-responses',
+      'gemini',
+      'claude',
+      'deepseek',
+      'qwen',
+      'qwen-portal',
+      'minimax',
+      'minimax-cn',
+      'moonshot',
+      'moonshot-cn',
+      'siliconflow',
+      'openrouter',
+      'ollama',
+      'lm-studio',
+      'azure',
+      'groq',
+      'xAI',
+      'mistral-ai',
+      'perplexity',
+      'volcengine',
+      'chatglm-6b',
+      'github-copilot',
+      'opencode-go',
+      'opencode-zen',
+      'bedrock',
+      'vercel-ai-gateway',
+      'tencent-hunyuan',
+      'xiaomi-mimo',
+      'longcat',
+      'zhipu-glm-coding-plan',
+    ])
+  })
+
   it('registers providers with unique ids', () => {
     const ids = getAllProviders().map((provider) => provider.id)
     expect(new Set(ids).size).toBe(ids.length)

@@ -1,12 +1,13 @@
 import { getDefaultStore } from 'jotai'
 import { useEffect } from 'react'
-import { navigateToSettings } from '@/modals/Settings'
+import { navigateToSettings } from '@/modals/settings-navigation'
 import { router } from '@/router'
 import { uiStore } from '@/stores/uiStore'
 import { getOS } from '../packages/navigator'
 import platform from '../platform'
 import { currentSessionIdAtom } from '../stores/atoms'
-import { startNewThread, switchToIndex, switchToNext } from '../stores/sessionActions'
+import { switchToIndex, switchToNext } from '../stores/session/crud'
+import { startNewThread } from '../stores/session/threads'
 import { settingsStore } from '../stores/settingsStore'
 import * as dom from './dom'
 import { useIsSmallScreen } from './useScreenChange'
@@ -65,7 +66,7 @@ export default function useShortcut() {
   function keyboardShortcut(e: KeyboardEvent) {
     // 这里不用 e.key 是因为 alt、 option、shift 都会改变 e.key 的值
     const shift = e.shiftKey
-    const shortcuts = settingsStore.getState().getSettings().shortcuts
+    const shortcuts = settingsStore.getState().shortcuts
 
     const ctrlKey = getOS() === 'Mac' ? e.metaKey : e.ctrlKey
 

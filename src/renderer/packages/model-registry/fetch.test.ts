@@ -63,8 +63,9 @@ describe('model-registry fetch', () => {
 
     const { getRegistry, getRegistrySync } = await import('./fetch')
 
-    await expect(getRegistry()).resolves.toEqual(staleCache)
-    expect(getRegistrySync()).toEqual(staleCache)
+    await expect(getRegistry()).resolves.toMatchObject(staleCache)
+    expect(getRegistrySync()).toMatchObject(staleCache)
+    expect(getRegistrySync().deepseek['deepseek-v4-flash-vision-exp']?.capabilities).toContain('vision')
   })
 
   it('keeps the current memory cache when force refresh fails', async () => {
@@ -92,9 +93,9 @@ describe('model-registry fetch', () => {
 
     const { forceRefreshRegistry, getRegistry, getRegistrySync } = await import('./fetch')
 
-    await expect(getRegistry()).resolves.toEqual(freshRegistry)
-    await expect(forceRefreshRegistry()).resolves.toEqual(freshRegistry)
-    expect(getRegistrySync()).toEqual(freshRegistry)
+    await expect(getRegistry()).resolves.toMatchObject(freshRegistry)
+    await expect(forceRefreshRegistry()).resolves.toMatchObject(freshRegistry)
+    expect(getRegistrySync()).toMatchObject(freshRegistry)
     expect(mockSetStoreBlob).toHaveBeenCalledTimes(1)
   })
 })

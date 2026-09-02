@@ -1,6 +1,43 @@
 import { describe, expect, test } from 'vitest'
 import { settings as defaultSettings } from '../defaults'
+import {
+  combineMemoryStateTokens,
+  EFFECTIVE_MEMORY_STATE_TOKEN_MAX_CHARS,
+  MEMORY_STATE_TOKEN_MAX_CHARS,
+} from './agent-persona'
 import { SessionSettingsSchema, SettingsSchema } from './settings'
+
+test('SessionSettingsSchema preserves the largest effective memory state token', () => {
+  const componentToken = 'x'.repeat(MEMORY_STATE_TOKEN_MAX_CHARS)
+  const effectiveToken = combineMemoryStateTokens(componentToken, componentToken)
+  const parsed = SessionSettingsSchema.parse({
+    sessionPromptContextSnapshot: {
+      version: 1,
+      soul: '',
+      memories: [],
+      memoryStateToken: effectiveToken,
+      workspaceInstructions: '',
+      workspaceDirectories: [],
+      capturedAt: 1,
+    },
+  })
+
+  expect(effectiveToken).toHaveLength(EFFECTIVE_MEMORY_STATE_TOKEN_MAX_CHARS)
+  expect(parsed.sessionPromptContextSnapshot?.memoryStateToken).toBe(effectiveToken)
+})
+
+describe('SessionSettingsSchema max output tokens', () => {
+  test.each([0, -1, 0.5, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'treats %s as unset',
+    (maxTokens) => {
+      expect(SessionSettingsSchema.parse({ maxTokens }).maxTokens).toBeUndefined()
+    }
+  )
+
+  test.each([undefined, 1, 4096])('preserves valid value %s', (maxTokens) => {
+    expect(SessionSettingsSchema.parse({ maxTokens }).maxTokens).toBe(maxTokens)
+  })
+})
 
 describe('SettingsSchema RAG default models', () => {
   test('parses default embedding and rerank model selections', () => {
@@ -34,12 +71,81 @@ describe('SettingsSchema RAG default models', () => {
   })
 })
 
+describe('SettingsSchema MCP protocol mode', () => {
+  test.each(['auto', 'legacy'] as const)('parses %s protocol mode', (protocolMode) => {
+    const parsed = SettingsSchema.parse({
+      ...defaultSettings(),
+      mcp: {
+        enabledBuiltinServers: [],
+        servers: [
+          {
+            id: 'custom-mcp',
+            name: 'Custom MCP',
+            enabled: true,
+            protocolMode,
+            transport: { type: 'http', url: 'https://example.com/mcp' },
+          },
+        ],
+      },
+    })
+
+    expect(parsed.mcp.servers[0].protocolMode).toBe(protocolMode)
+  })
+
+  test('keeps the protocol mode absent for existing custom servers', () => {
+    const parsed = SettingsSchema.parse({
+      ...defaultSettings(),
+      mcp: {
+        enabledBuiltinServers: [],
+        servers: [
+          {
+            id: 'legacy-mcp',
+            name: 'Legacy MCP',
+            enabled: true,
+            transport: { type: 'http', url: 'https://example.com/mcp' },
+          },
+        ],
+      },
+    })
+
+    expect(parsed.mcp.servers[0].protocolMode).toBeUndefined()
+  })
+
+  test('treats an unknown protocol mode as legacy-compatible configuration', () => {
+    const parsed = SettingsSchema.parse({
+      ...defaultSettings(),
+      mcp: {
+        enabledBuiltinServers: [],
+        servers: [
+          {
+            id: 'unknown-protocol-mcp',
+            name: 'Unknown protocol MCP',
+            enabled: true,
+            protocolMode: 'unknown',
+            transport: { type: 'http', url: 'https://example.com/mcp' },
+          },
+        ],
+      },
+    })
+
+    expect(parsed.mcp.servers[0].protocolMode).toBeUndefined()
+  })
+})
+
 describe('SettingsSchema background image opacity', () => {
   test('uses the original opacity for existing settings', () => {
     const legacySettings: Record<string, unknown> = { ...defaultSettings() }
     delete legacySettings.backgroundImageOpacity
 
     expect(SettingsSchema.parse(legacySettings).backgroundImageOpacity).toBe(0.16)
+  })
+})
+
+describe('SettingsSchema new message scroll behavior', () => {
+  test('defaults new message auto-scroll to top to disabled for existing settings', () => {
+    const { autoScrollNewMessagesToTop: _unset, ...legacySettings } = defaultSettings()
+
+    expect(SettingsSchema.parse(legacySettings).autoScrollNewMessagesToTop).toBe(false)
   })
 })
 
@@ -145,5 +251,18 @@ describe('SessionSettingsSchema per-model provider options', () => {
 
     expect(parsed.providerOptionsByModel).toBeUndefined()
     expect(parsed.provider).toBe('chatbox-ai')
+  })
+})
+
+describe('SessionSettingsSchema command approval mode', () => {
+  test.each(['always_ask', 'smart', 'full_access'] as const)('accepts %s', (commandApprovalMode) => {
+    expect(SessionSettingsSchema.parse({ commandApprovalMode }).commandApprovalMode).toBe(commandApprovalMode)
+  })
+
+  test('drops an unknown mode while retaining the legacy full-access field', () => {
+    const parsed = SessionSettingsSchema.parse({ commandApprovalMode: 'unknown', agentFullAccess: true })
+
+    expect(parsed.commandApprovalMode).toBeUndefined()
+    expect(parsed.agentFullAccess).toBe(true)
   })
 })

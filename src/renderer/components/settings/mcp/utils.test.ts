@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { MCPServerConfig } from '@/packages/mcp/types'
-import { getConfigFromFormValues, getFormValuesFromConfig, type MCPServerConfigFormValues } from './utils'
+import {
+  getConfigFromFormValues,
+  getFormValuesFromConfig,
+  type MCPServerConfigFormValues,
+  parseServerFromJson,
+  parseServersFromJson,
+} from './utils'
 
 function createFormValues(command: string): MCPServerConfigFormValues {
   return {
@@ -39,6 +45,7 @@ describe('MCP stdio command form conversion', () => {
       id: 'server-1',
       name: 'Test server',
       enabled: true,
+      protocolMode: 'legacy',
       transport: {
         type: 'stdio',
         command: String.raw`C:\Program Files\MCP\server.exe`,
@@ -52,9 +59,47 @@ describe('MCP stdio command form conversion', () => {
           `single'quote`,
           '',
         ],
+        env: undefined,
       },
     }
 
     expect(getConfigFromFormValues(getFormValuesFromConfig(config))).toEqual(config)
+  })
+
+  it.each(['auto', 'legacy'] as const)('preserves %s protocol mode across repeated edits', (protocolMode) => {
+    const config: MCPServerConfig = {
+      id: 'server-1',
+      name: 'Test server',
+      enabled: true,
+      protocolMode,
+      transport: { type: 'http', url: 'https://example.com/mcp' },
+    }
+
+    expect(getConfigFromFormValues(getFormValuesFromConfig(config))).toEqual(config)
+  })
+
+  it('shows existing configurations without a protocol mode as legacy', () => {
+    const config: MCPServerConfig = {
+      id: 'server-1',
+      name: 'Test server',
+      enabled: true,
+      transport: { type: 'http', url: 'https://example.com/mcp' },
+    }
+
+    expect(getFormValuesFromConfig(config).protocolMode).toBe('legacy')
+  })
+
+  it('marks single-server and bulk JSON imports as automatic protocol mode', () => {
+    const single = parseServerFromJson(JSON.stringify({ name: 'Remote MCP', url: 'https://example.com/mcp' }))
+    const bulk = parseServersFromJson(
+      JSON.stringify({
+        mcpServers: {
+          local: { command: 'npx', args: ['-y', 'example-mcp'] },
+        },
+      })
+    )
+
+    expect(single?.protocolMode).toBe('auto')
+    expect(bulk[0]?.protocolMode).toBe('auto')
   })
 })

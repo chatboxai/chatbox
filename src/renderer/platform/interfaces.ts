@@ -1,4 +1,7 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
+import type { LocalMemoryScanResult } from '@shared/agent-persona/memory-import'
+import type { AnalyticsEventParams } from '@shared/analytics'
+import type { PlatformType as SharedPlatformType } from '@shared/platform'
 import type {
   SandboxExecLanguage,
   SandboxExecResult,
@@ -6,12 +9,13 @@ import type {
   SandboxReadResult,
 } from '@shared/sandbox-provider'
 import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
+import type { WorkspaceInstructionsResult } from '@shared/types/workspace-instructions'
 import type { ImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type { SessionMetaStorage } from '@/storage/SessionMetaStorage'
 import type { KnowledgeBaseController } from './knowledge-base/interface'
 import type { SessionAttachmentRagController } from './session-attachment-rag/interface'
 
-export type PlatformType = 'web' | 'desktop' | 'mobile'
+export type PlatformType = SharedPlatformType
 
 export interface Storage {
   getStorageType(): string
@@ -25,6 +29,8 @@ export interface Storage {
 
 export interface Platform extends Storage {
   type: PlatformType
+  /** Whether this platform is backed by the Electron main/preload bridge. */
+  isDesktopLike: boolean
 
   exporter: Exporter
 
@@ -80,8 +86,8 @@ export interface Platform extends Storage {
 
   // 追踪
 
-  initTracking(): void
-  trackingEvent(name: string, params: { [key: string]: string }): void
+  initTracking(): Promise<void> | void
+  trackingEvent(name: string, params: AnalyticsEventParams): Promise<void> | void
 
   // 通知
   shouldShowAboutDialogWhenStartUp(): Promise<boolean>
@@ -105,6 +111,7 @@ export interface Platform extends Storage {
     totalLines?: number
     error?: string
   }>
+  readWorkspaceInstructions?(directories: string[]): Promise<WorkspaceInstructionsResult>
   fsList?(params: { dirPath: string }): Promise<{ success: boolean; content?: string; error?: string }>
   fsSearch?(params: {
     pattern: string
@@ -112,6 +119,8 @@ export interface Platform extends Storage {
     regex?: boolean
     include?: string
   }): Promise<{ success: boolean; content?: string; error?: string }>
+  /** Read host image bytes (read-only, size-capped in the main process). */
+  fsReadImage?(params: { filePath: string }): Promise<{ success: boolean; bytes?: ArrayBuffer; error?: string }>
   fsWrite?(params: { filePath: string; content: string }): Promise<{ success: boolean; error?: string }>
   fsEdit?(params: {
     filePath: string
@@ -152,6 +161,14 @@ export interface Platform extends Storage {
     sessionId?: string
     toolCallId?: string
   }): Promise<SandboxExecResult>
+  sandboxRunCommand?(params: {
+    command: string
+    shell: 'bash' | 'powershell'
+    workdir?: string
+    timeout?: number
+    sessionId?: string
+    toolCallId: string
+  }): Promise<import('@shared/sandbox-provider').SandboxRunCommandResult>
   sandboxRead?(params: {
     filePath: string
     offset?: number
@@ -205,6 +222,14 @@ export interface Platform extends Storage {
     targetFilename: string
     sessionId?: string
   }): Promise<{ success: boolean; sandboxPath?: string; error?: string }>
+  sandboxSeedBlobs?(params: {
+    items: Array<{ blobKey: string; targetFilename: string }>
+    sessionId?: string
+  }): Promise<{
+    success: boolean
+    results: Array<{ targetFilename: string; success: boolean; skipped: boolean; sandboxPath?: string; error?: string }>
+    error?: string
+  }>
   sandboxExportFile?(params: {
     sandboxPath: string
     suggestedName?: string
@@ -216,11 +241,22 @@ export interface Platform extends Storage {
   }): Promise<{ success: boolean; artifactPath?: string; error?: string }>
   sandboxHasArtifacts?(params: { sessionId: string }): Promise<{ has: boolean }>
   sandboxRemoveArtifacts?(params: { sessionId: string }): Promise<{ success: boolean; error?: string }>
-  sandboxReadFileBase64?(params: { filePath: string }): Promise<{ success: boolean; base64?: string; error?: string }>
+  sandboxReadFileBase64?(params: {
+    filePath: string
+    /** Reject files larger than this many bytes before reading them into memory. */
+    maxBytes?: number
+  }): Promise<{ success: boolean; base64?: string; error?: string }>
+  sandboxReadFileBytes?(params: {
+    filePath: string
+    /** Reject files larger than this many bytes before reading them into memory. */
+    maxBytes?: number
+  }): Promise<{ success: boolean; bytes?: ArrayBuffer; error?: string }>
   sandboxCreateHtmlPreview?(params: { filePath: string }): Promise<{ success: boolean; url?: string; error?: string }>
 
   // Directory dialog (Desktop only)
   openDirectoryDialog?(): Promise<{ canceled: boolean; path?: string }>
+  /** Scan local Claude/Codex memory files for import candidates (desktop only). */
+  scanLocalAgentMemories?(): Promise<LocalMemoryScanResult>
 
   // window controls
   minimize(): Promise<void>

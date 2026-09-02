@@ -2,13 +2,12 @@ import type { ReactNode } from 'react'
 import { useStreamingTextSegments } from './streaming-text-fade'
 
 export default function StreamingTextFade(props: {
-  children?: ReactNode
   text: string
   streamKey?: string
   generating?: boolean
   className?: string
 }) {
-  const { children, text, streamKey, generating, className } = props
+  const { text, streamKey, generating, className } = props
   const segments = useStreamingTextSegments(text, generating, streamKey)
   const textNodes: ReactNode[] = []
   let cursor = 0
@@ -24,10 +23,5 @@ export default function StreamingTextFade(props: {
   }
   if (cursor < text.length) textNodes.push(text.slice(cursor))
 
-  return (
-    <div className={className}>
-      {segments.length > 0 ? textNodes : text}
-      {children}
-    </div>
-  )
+  return <div className={className}>{segments.length > 0 ? textNodes : text}</div>
 }

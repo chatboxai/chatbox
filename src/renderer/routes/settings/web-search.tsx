@@ -1,4 +1,4 @@
-import { Button, Flex, PasswordInput, Select, Stack, Text, Title } from '@mantine/core'
+import { Button, Flex, PasswordInput, Select, Stack, Text, TextInput, Title } from '@mantine/core'
 import { IconCheck, IconX } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { ofetch } from 'ofetch'
@@ -7,12 +7,14 @@ import { useTranslation } from 'react-i18next'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
+import { TooltipInfoTrigger } from '@/components/common/TooltipInfoTrigger'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import { BochaSearch } from '@/packages/web-search/bocha'
-import { WEB_SEARCH_PROVIDERS } from '@/packages/web-search/constants'
+import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
 import { KeenableSearch } from '@/packages/web-search/keenable'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
+import { SearxngSearch } from '@/packages/web-search/searxng'
 import platform from '@/platform'
 import { useSettingsStore } from '@/stores/settingsStore'
 
@@ -111,6 +113,23 @@ export function RouteComponent() {
     }
   }
 
+  const [checkingSearxng, setCheckingSearxng] = useState(false)
+  const [searxngAvailable, setSearxngAvailable] = useState<boolean>()
+  const checkSearxng = async () => {
+    if (extension.webSearch.searxngBaseUrl?.trim()) {
+      setCheckingSearxng(true)
+      setSearxngAvailable(undefined)
+      try {
+        await new SearxngSearch(extension.webSearch.searxngBaseUrl).search('Chatbox')
+        setSearxngAvailable(true)
+      } catch (e) {
+        setSearxngAvailable(false)
+      } finally {
+        setCheckingSearxng(false)
+      }
+    }
+  }
+
   return (
     <Stack p="md" gap="xxl">
       <Title order={5}>{t('Web Search')}</Title>
@@ -126,7 +145,7 @@ export function RouteComponent() {
               ...extension,
               webSearch: {
                 ...extension.webSearch,
-                provider: e as 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'keenable',
+                provider: e as WebSearchProviderValue,
               },
             },
           })
@@ -169,6 +188,56 @@ export function RouteComponent() {
             'Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.'
           )}
         </Text>
+      )}
+      {extension.webSearch.provider === 'searxng' && (
+        <Stack gap="xs">
+          <Text fw="600">{t('SearXNG Instance URL')}</Text>
+          <Flex align="center" gap="xs">
+            <TextInput
+              flex={1}
+              maw={320}
+              value={extension.webSearch.searxngBaseUrl}
+              onChange={(e) => {
+                setSearxngAvailable(undefined)
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      searxngBaseUrl: e.currentTarget.value,
+                    },
+                  },
+                })
+              }}
+              placeholder="https://searx.example.com"
+              error={searxngAvailable === false}
+            />
+            <Button
+              color="blue"
+              variant="light"
+              onClick={checkSearxng}
+              loading={checkingSearxng}
+              disabled={!extension.webSearch.searxngBaseUrl?.trim()}
+            >
+              {t('Check')}
+            </Button>
+          </Flex>
+          <Text size="xs" c="chatbox-gray">
+            {t('The SearXNG instance must enable JSON output format in search settings.')}
+          </Text>
+
+          {typeof searxngAvailable === 'boolean' ? (
+            searxngAvailable ? (
+              <Text size="xs" c="chatbox-success">
+                {t('Connection successful!')}
+              </Text>
+            ) : (
+              <Text size="xs" c="chatbox-error">
+                {t('Connection failed!')}
+              </Text>
+            )
+          ) : null}
+        </Stack>
       )}
       {/* Keenable API Key (optional) */}
       {extension.webSearch.provider === 'keenable' && (
@@ -400,10 +469,15 @@ export function RouteComponent() {
             <Stack gap="xs">
               <Flex align="center" gap="xs">
                 <Text size="sm">{t('Max Results')}</Text>
-                <Tooltip label={t('Maximum number of results to return.')}>
-                  <Text size="sm" c="gray">
-                    ⓘ
-                  </Text>
+                <Tooltip
+                  label={t('Maximum number of results to return.')}
+                  withArrow
+                  maw={320}
+                  className="!whitespace-normal"
+                  zIndex={3000}
+                  openOnTouch
+                >
+                  <TooltipInfoTrigger label={t('Max Results')} />
                 </Tooltip>
               </Flex>
               <Select
@@ -441,10 +515,15 @@ export function RouteComponent() {
             <Stack gap="xs">
               <Flex align="center" gap="xs">
                 <Text size="sm">{t('Time Range')}</Text>
-                <Tooltip label={t('Time range of the search. For example, the last month.')}>
-                  <Text size="sm" c="gray">
-                    ⓘ
-                  </Text>
+                <Tooltip
+                  label={t('Time range of the search. For example, the last month.')}
+                  withArrow
+                  maw={320}
+                  className="!whitespace-normal"
+                  zIndex={3000}
+                  openOnTouch
+                >
+                  <TooltipInfoTrigger label={t('Time Range')} />
                 </Tooltip>
               </Flex>
               <Select

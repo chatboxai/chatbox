@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Message } from '../../shared/types'
 import { MessageRoleEnum } from '../../shared/types/session'
 import {
@@ -12,6 +12,16 @@ import {
   sliceTextByTokenLimit,
   sumCachedTokensFromMessages,
 } from './token'
+import {
+  estimateDraftTokensImmediately,
+  LONG_DRAFT_TOKENIZATION_THRESHOLD,
+  seedExactDraftTokens,
+} from './token-estimation/draft-tokenization'
+
+vi.mock('./token-estimation/tokenizer', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./token-estimation/tokenizer')>()
+  return { ...actual, estimateTokens: vi.fn(actual.estimateTokens) }
+})
 
 // Helper to create test messages
 function createMessage(overrides: Partial<Message> & { text?: string } = {}): Message {
@@ -985,5 +995,102 @@ describe('estimateTokensFromMessagesForSendPayload', () => {
 
       expect(tokens).toBeGreaterThan(300)
     })
+  })
+})
+
+describe('exact text counts carried on the message', () => {
+  // Sentinel counts far above any real encode of the text prove the carried
+  // value was used instead of a synchronous fallback encode.
+  it('trusts the entry for the requested tokenizer only', () => {
+    // Spaced words: an unbroken same-character run makes the fallback BPE
+    // encode quadratic and the test timing-fragile.
+    const text = 'draft word '.repeat(500)
+    const message = { ...createMessage({ text }), tokenCountMap: { deepseek: 424242 } }
+
+    expect(estimateTokensFromMessages([message], 'output', deepSeekModel)).toBeGreaterThan(424242)
+    // The DeepSeek entry must not leak into default-tokenizer estimates.
+    expect(estimateTokensFromMessages([message], 'output', openAIModel)).toBeLessThan(10000)
+  })
+
+  it('uses a seeded draft count across the send-path estimators', () => {
+    const text = 'draft word '.repeat(500)
+    const message = createMessage()
+    message.contentParts = [
+      { type: 'text', text },
+      { type: 'image', storageKey: 'img-1' },
+    ]
+    const seeded = seedExactDraftTokens(message, {
+      text: `${text}\n[image]`,
+      tokenizerType: 'default',
+      tokens: 555555,
+    })
+
+    expect(estimateTokensFromMessages([seeded], 'output')).toBeGreaterThan(555555)
+    expect(estimateTokensFromMessagesForSendPayload([seeded])).toBeGreaterThan(555555)
+  })
+
+  it('leaves a drifted draft unseeded and falls back to a real estimate', () => {
+    const text = 'draft word '.repeat(500)
+    const message = createMessage({ text })
+    const seeded = seedExactDraftTokens(message, {
+      text: `${text} plus edits after the worker ran`,
+      tokenizerType: 'default',
+      tokens: 555555,
+    })
+
+    expect(seeded.tokenCountMap).toBeUndefined()
+    expect(estimateTokensFromMessages([seeded], 'output')).toBeLessThan(10000)
+  })
+})
+
+describe('unseeded long text stays off the full encoder', () => {
+  // A submit racing the debounce or the worker (or drifting past its result)
+  // arrives with no carried count; the estimators must degrade to the bounded
+  // sampling estimate, never to a full main-thread encode of the long text.
+  const longText = 'draft word '.repeat(500)
+
+  function fullEncodeCalls(): number {
+    return vi.mocked(estimateTokens).mock.calls.filter(([text]) => text.length >= LONG_DRAFT_TOKENIZATION_THRESHOLD)
+      .length
+  }
+
+  beforeEach(() => {
+    vi.mocked(estimateTokens).mockClear()
+  })
+
+  it('samples the long text in estimateTokensFromMessages', () => {
+    const message = createMessage({ text: longText })
+
+    const total = estimateTokensFromMessages([message], 'output')
+
+    expect(total).toBe(3 + estimateDraftTokensImmediately(longText, 'default') + estimateTokens('user'))
+    expect(fullEncodeCalls()).toBe(0)
+  })
+
+  it('samples the long text in estimateTokensFromMessagesForSendPayload', () => {
+    const message = createMessage({ text: longText })
+
+    const total = estimateTokensFromMessagesForSendPayload([message])
+
+    expect(total).toBe(3 + estimateDraftTokensImmediately(longText, 'default') + estimateTokens('user'))
+    expect(fullEncodeCalls()).toBe(0)
+  })
+
+  it('samples with the tokenizer the model resolves to', () => {
+    const message = createMessage({ text: longText })
+
+    const total = estimateTokensFromMessages([message], 'output', deepSeekModel)
+
+    expect(total).toBe(3 + estimateDraftTokensImmediately(longText, 'deepseek') + estimateTokens('user', deepSeekModel))
+    expect(fullEncodeCalls()).toBe(0)
+  })
+
+  it('keeps short unseeded text on the exact encoder', () => {
+    const shortText = 'short unseeded draft'
+    const message = createMessage({ text: shortText })
+
+    estimateTokensFromMessages([message], 'output')
+
+    expect(vi.mocked(estimateTokens).mock.calls.some(([text]) => text === shortText)).toBe(true)
   })
 })

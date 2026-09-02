@@ -10,8 +10,9 @@
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { applyRegistryOverlays } from '../src/shared/model-registry/legacy-overrides'
 import { PROVIDER_ID_MAP, REVERSE_PROVIDER_MAP } from '../src/shared/model-registry/provider-mapping'
-import { transformModelEntry } from '../src/shared/model-registry/transform'
+import { transformProviderModels } from '../src/shared/model-registry/transform'
 import type { ModelMetadata, ModelsDevModelEntry } from '../src/shared/model-registry/types'
 
 const API_URL = 'https://models.dev/api.json'
@@ -49,17 +50,15 @@ async function main() {
     const provider = providerEntry as { models?: Record<string, ModelsDevModelEntry> }
     if (!provider.models || typeof provider.models !== 'object') continue
 
-    const providerModels: Record<string, ModelMetadata> = {}
-    for (const [modelId, entry] of Object.entries(provider.models)) {
-      if (!entry || !modelId) continue
-      providerModels[modelId] = transformModelEntry(entry)
-      totalModels++
-    }
+    const providerModels = transformProviderModels(provider.models)
+    totalModels += Object.keys(providerModels).length
 
     for (const chatboxId of chatboxIds) {
       registry[chatboxId] = providerModels
     }
   }
+
+  const snapshot = applyRegistryOverlays(registry)
 
   const timestamp = new Date().toISOString()
   const providerCount = new Set(Object.values(PROVIDER_ID_MAP)).size
@@ -75,14 +74,14 @@ import type { ModelRegistryData } from './types'
 
 export const SNAPSHOT_TIMESTAMP = '${timestamp}'
 
-export const MODELS_DEV_SNAPSHOT: ModelRegistryData = ${JSON.stringify(registry, null, 2)} as const satisfies ModelRegistryData
+export const MODELS_DEV_SNAPSHOT: ModelRegistryData = ${JSON.stringify(snapshot, null, 2)} as const satisfies ModelRegistryData
 `
 
   fs.writeFileSync(OUTPUT_PATH, output, 'utf-8')
 
   const fileSizeKB = Math.round(fs.statSync(OUTPUT_PATH).size / 1024)
   console.log(`[model-snapshot] Generated snapshot:`)
-  console.log(`  Providers: ${providerCount} (mapped to ${Object.keys(registry).length} Chatbox IDs)`)
+  console.log(`  Providers: ${providerCount} (mapped to ${Object.keys(snapshot).length} Chatbox IDs)`)
   console.log(`  Models: ${totalModels}`)
   console.log(`  File size: ${fileSizeKB} KB`)
   console.log(`  Output: ${OUTPUT_PATH}`)

@@ -44,8 +44,33 @@ export function stripCodesignNoise(stderr: string): string {
     .join('\n')
 }
 
-export function buildPowerShellStdinScript(code: string): string {
-  return `${POWERSHELL_UTF8_PREAMBLE}\n${code}`
+export function buildPowerShellStdinScript(code: string, nodeExecPath?: string): string {
+  const quotedNodeExecPath = nodeExecPath ? `'${nodeExecPath.replaceAll("'", "''")}'` : undefined
+  const nodeShim = quotedNodeExecPath
+    ? `function node {
+  $chatboxPreviousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE
+  try {
+    $env:ELECTRON_RUN_AS_NODE = '1'
+    & ${quotedNodeExecPath} @args
+    $chatboxNodeExitCode = $LASTEXITCODE
+  } finally {
+    if ($null -eq $chatboxPreviousElectronRunAsNode) {
+      Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+    } else {
+      $env:ELECTRON_RUN_AS_NODE = $chatboxPreviousElectronRunAsNode
+    }
+  }
+  $global:LASTEXITCODE = $chatboxNodeExitCode
+  if ($chatboxNodeExitCode -ne 0) {
+    $chatboxNodeException = [Exception]::new('Bundled node process failed')
+    $chatboxNodeException.Data['ChatboxNodeExitCode'] = $chatboxNodeExitCode
+    throw $chatboxNodeException
+  }
+}
+
+`
+    : ''
+  return `${POWERSHELL_UTF8_PREAMBLE}\n${nodeShim}${code}\n`
 }
 
 /**
@@ -77,7 +102,8 @@ export function buildSandboxStdinScript(
   const windowsCdShim = injectWindowsCdShim ? WINDOWS_CD_SHIM : ''
   // The leading no-op keeps empty and comment-only programs valid without masking the exit status
   // of the user's final command.
+  // Pipefail keeps failures from commands such as `git push | tail` visible to the retry policy.
   // Keep a blank line before the closing brace so a trailing backslash retains its normal EOF
   // behavior instead of escaping the brace's newline and corrupting the wrapper syntax.
-  return `${nodeShim}${windowsCdShim}{\n:\n${code}\n\n} </dev/null`
+  return `${nodeShim}${windowsCdShim}set -o pipefail\n{\n:\n${code}\n\n} </dev/null`
 }

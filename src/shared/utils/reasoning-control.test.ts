@@ -13,7 +13,10 @@ import {
   normalizeClaudeReasoningOptions,
   normalizeOpenAIReasoningOptions,
   resolveReasoningProviderOptions,
+  resolveReasoningReplayPolicy,
   setReasoningProviderOptionsForModel,
+  shouldDisableClaudeThinkingForUnsignedResume,
+  shouldPreserveDeepSeekReasoning,
   stripReasoningProviderOptions,
   usesClaudeEffortControl,
 } from './reasoning-control'
@@ -41,6 +44,20 @@ describe('reasoning-control', () => {
       forceReasoning: true,
     })
     expect(getReasoningControlCapabilities(ModelProviderEnum.OpenAIResponses, model('gpt-5.1')).supported).toBe(true)
+  })
+
+  it('writes Responses reasoning options for Copilot GPT-5.6 Luna once apiStyle is routed', () => {
+    const luna = model('gpt-5.6-luna', 'openai-responses')
+    luna.capabilities = ['reasoning']
+
+    const options = getReasoningProviderOptions('github-copilot', luna, 'high')
+
+    expect(options?.openai).toEqual({
+      reasoningEffort: 'high',
+      reasoningSummary: 'auto',
+      include: ['reasoning.encrypted_content'],
+      forceReasoning: true,
+    })
   })
 
   it('does not offer reasoning controls for non-reasoning GPT-5 chat models', () => {
@@ -764,6 +781,61 @@ describe('reasoning-control', () => {
     expect(usesClaudeEffortControl('claude-opus-4-50')).toBe(false)
   })
 
+  it('treats OpenCode Go as a mixed-style gateway for reasoning controls', () => {
+    const deepseek = model('deepseek-v4-pro', 'openai')
+    const luna = model('gpt-5.6-luna', 'openai-responses')
+    const qwen = model('qwen3.8-max', 'anthropic')
+    const grok = model('grok-4.5', 'openai-responses')
+
+    expect(getReasoningControlCapabilities(ModelProviderEnum.OpenCodeGo, deepseek)).toEqual({
+      supported: true,
+      kind: 'deepseek-effort',
+    })
+    expect(getReasoningProviderOptions(ModelProviderEnum.OpenCodeGo, deepseek, 'off')).toEqual({
+      deepseek: { thinking: { type: 'disabled' } },
+    })
+    expect(shouldPreserveDeepSeekReasoning(ModelProviderEnum.OpenCodeGo, deepseek)).toBe(true)
+    expect(shouldPreserveDeepSeekReasoning(ModelProviderEnum.OpenCodeGo, { modelId: 'deepseek-v4-pro' })).toBe(true)
+
+    expect(getReasoningControlCapabilities(ModelProviderEnum.OpenCodeGo, luna)).toEqual({
+      supported: true,
+      kind: 'openai-effort',
+    })
+    expect(getReasoningControlCapabilities(ModelProviderEnum.OpenCodeGo, qwen)).toEqual({
+      supported: false,
+      kind: 'toggle',
+    })
+    expect(getReasoningControlCapabilities(ModelProviderEnum.OpenCodeGo, grok)).toEqual({
+      supported: false,
+      kind: 'toggle',
+    })
+  })
+
+  it('treats OpenCode Zen as a mixed-style gateway for reasoning controls', () => {
+    const deepseek = model('deepseek-v4-pro', 'openai')
+    const sol = model('gpt-5.6-sol', 'openai-responses')
+    const claude = model('claude-opus-5', 'anthropic')
+    const gemini = model('gemini-3.7-flash', 'google')
+
+    expect(getReasoningControlCapabilities(ModelProviderEnum.OpenCodeZen, deepseek)).toEqual({
+      supported: true,
+      kind: 'deepseek-effort',
+    })
+    expect(shouldPreserveDeepSeekReasoning(ModelProviderEnum.OpenCodeZen, deepseek)).toBe(true)
+
+    expect(getReasoningControlCapabilities(ModelProviderEnum.OpenCodeZen, sol)).toEqual({
+      supported: true,
+      kind: 'openai-effort',
+    })
+    expect(getReasoningControlCapabilities(ModelProviderEnum.OpenCodeZen, claude).kind).toBe(
+      'anthropic-adaptive-effort'
+    )
+    expect(getReasoningControlCapabilities(ModelProviderEnum.OpenCodeZen, gemini)).toEqual({
+      supported: true,
+      kind: 'level',
+    })
+  })
+
   describe('stripReasoningProviderOptions', () => {
     it('returns undefined/empty inputs unchanged', () => {
       expect(stripReasoningProviderOptions(undefined)).toBeUndefined()
@@ -889,6 +961,161 @@ describe('reasoning-control', () => {
       expect(
         normalizeOpenAIReasoningOptions('gpt-5.5', { reasoningEffort: 'max', forceReasoning: true })
       ).toBeUndefined()
+    })
+  })
+
+  describe('resolveReasoningReplayPolicy', () => {
+    it('turns on signed all-turns replay for Anthropic Messages routes only', () => {
+      expect(resolveReasoningReplayPolicy(ModelProviderEnum.Claude, model('claude-sonnet-4-5', 'anthropic'))).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: true,
+      })
+      expect(resolveReasoningReplayPolicy('acme-llm', model('claude-opus-4-8', 'anthropic'))).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: true,
+      })
+      // Bedrock speaks the Converse protocol: same apiStyle, different wire format.
+      expect(resolveReasoningReplayPolicy(ModelProviderEnum.Bedrock, model('claude-sonnet-4-5', 'anthropic'))).toEqual({
+        preserveReasoning: false,
+        signedReasoningOnly: false,
+      })
+      // DeepSeek thinking mode keeps its plain-text all-turns channel.
+      expect(resolveReasoningReplayPolicy(ModelProviderEnum.DeepSeek, model('deepseek-reasoner', 'openai'))).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: false,
+      })
+      expect(resolveReasoningReplayPolicy(ModelProviderEnum.OpenAI, model('gpt-5.1', 'openai'))).toEqual({
+        preserveReasoning: false,
+        signedReasoningOnly: false,
+      })
+    })
+  })
+
+  describe('shouldDisableClaudeThinkingForUnsignedResume', () => {
+    const signed = {
+      type: 'reasoning' as const,
+      text: 'signed plan',
+      providerMetadata: { anthropic: { signature: 'sig_1' } },
+    }
+    const redacted = {
+      type: 'reasoning' as const,
+      text: '',
+      providerMetadata: { anthropic: { redactedData: 'encrypted' } },
+      protocolOnly: true as const,
+    }
+    const unsigned = { type: 'reasoning' as const, text: 'foreign leftover' }
+    const tool = (id: string, state: 'result' | 'error' | 'paused' = 'result') => ({
+      type: 'tool-call' as const,
+      toolCallId: id,
+      toolName: 'run_code',
+      args: {},
+      state,
+    })
+    it('keeps thinking on when the resumed turn opens with signed thinking', () => {
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          { role: 'assistant', contentParts: [signed, tool('t1')] },
+          true,
+          'claude-haiku-4-5'
+        )
+      ).toBe(false)
+    })
+
+    it('keeps thinking on for non-interleaved multi-step turns where only the first step is signed', () => {
+      // Documented shape: without interleaved thinking, Claude thinks once at
+      // the start of the turn; later loop steps ship bare tool_use blocks.
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          { role: 'assistant', contentParts: [signed, tool('t1'), tool('t2')] },
+          true,
+          'claude-haiku-4-5'
+        )
+      ).toBe(false)
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          { role: 'assistant', contentParts: [signed, tool('t1'), unsigned, tool('t2')] },
+          true,
+          'claude-haiku-4-5'
+        )
+      ).toBe(false)
+    })
+
+    it('counts redacted thinking behind skipped protocol-only parts as a valid turn start', () => {
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          {
+            role: 'assistant',
+            contentParts: [{ type: 'text', text: '', protocolOnly: true }, redacted, tool('t1')],
+          },
+          true,
+          'claude-haiku-4-5'
+        )
+      ).toBe(false)
+    })
+
+    it('disables thinking when the resumed turn cannot open with signed thinking', () => {
+      // Legacy data: reasoning text persisted without a signature.
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          { role: 'assistant', contentParts: [unsigned, tool('t1')] },
+          true,
+          'claude-haiku-4-5'
+        )
+      ).toBe(true)
+      // A turn minted by another provider starts with text or a bare tool call.
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          { role: 'assistant', contentParts: [{ type: 'text', text: 'gpt narration' }, signed, tool('t1')] },
+          true,
+          'claude-haiku-4-5'
+        )
+      ).toBe(true)
+    })
+
+    it('never fires on fresh user turns, whatever the earlier history holds', () => {
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          { role: 'user', contentParts: [{ type: 'text', text: 'new question' }] },
+          true,
+          'claude-haiku-4-5'
+        )
+      ).toBe(false)
+      expect(shouldDisableClaudeThinkingForUnsignedResume(undefined, true, 'claude-haiku-4-5')).toBe(false)
+    })
+
+    it('requires a completed tool call before treating the tail as a resumed exchange', () => {
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          { role: 'assistant', contentParts: [unsigned, tool('t1', 'paused')] },
+          true,
+          'claude-haiku-4-5'
+        )
+      ).toBe(false)
+    })
+
+    it('leaves effort/adaptive models untouched: the turn-start rule is manual-mode-only', () => {
+      // Adaptive thinking drops the "turn must open with a thinking block"
+      // requirement, and effort models never receive manual thinking config,
+      // so an unsigned resume is already a valid request for them.
+      for (const modelId of ['claude-opus-4-5', 'claude-opus-4-7', 'claude-opus-5']) {
+        expect(
+          shouldDisableClaudeThinkingForUnsignedResume(
+            { role: 'assistant', contentParts: [unsigned, tool('t1')] },
+            true,
+            modelId
+          )
+        ).toBe(false)
+      }
+    })
+
+    it('stays inert outside the signed replay channel', () => {
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          { role: 'assistant', contentParts: [unsigned, tool('t1')] },
+          false,
+          'claude-haiku-4-5'
+        )
+      ).toBe(false)
     })
   })
 })

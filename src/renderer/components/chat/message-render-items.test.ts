@@ -39,6 +39,13 @@ describe('buildMessageRenderItems', () => {
     expect(items.map((item) => item.type)).toEqual(['group', 'message'])
     expect(items[1].messages[0].id).toBe('a2')
   })
+
+  it('keeps the last-turn group key stable when the assistant reply arrives', () => {
+    const waiting = buildMessageRenderItems([makeMessage('u1', 'user')])
+    const replied = buildMessageRenderItems([makeMessage('u1', 'user'), makeMessage('a1', 'assistant')])
+    expect(waiting[0]?.key).toBe('group-u1')
+    expect(replied[0]?.key).toBe(waiting[0]?.key)
+  })
 })
 
 // scrollToMessage locates a message's Virtuoso item via findIndex over the built

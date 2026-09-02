@@ -1,6 +1,8 @@
+import { isThreadHistoryAvailable, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Badge, Flex, ScrollArea, Text } from '@mantine/core'
 import SwipeableDrawer from '@mui/material/SwipeableDrawer'
+import { TestId } from '@shared/automation/testids'
 import type { Session, SessionThreadBrief } from '@shared/types'
 import { IconDots, IconEdit, IconSwitch, IconTrash, IconX } from '@tabler/icons-react'
 import { useAtom, useAtomValue } from 'jotai'
@@ -9,7 +11,8 @@ import { useTranslation } from 'react-i18next'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { currentSessionIdAtom, showThreadHistoryDrawerAtom } from '@/stores/atoms'
 import { scrollToIndex } from '@/stores/scrollActions'
-import { removeCurrentThread, removeThread, switchThread as switchThreadAction } from '@/stores/sessionActions'
+import { useSessionAgentMode } from '@/stores/session/agent-mode'
+import { removeCurrentThread, removeThread, switchThread as switchThreadAction } from '@/stores/session/threads'
 import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/sessionHelpers'
 import { useLanguage } from '@/stores/settingsStore'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
@@ -20,6 +23,9 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
   const { t } = useTranslation()
   const language = useLanguage()
   const [showDrawer, setShowDrawer] = useAtom(showThreadHistoryDrawerAtom)
+  const agentModeEntry = useSessionAgentMode(session.id)
+  const sessionMode = resolveSessionMode(agentModeEntry.value)
+  const showThreadHistory = isThreadHistoryAvailable(session, sessionMode)
 
   const currentMessageList = useMemo(() => getAllMessageList(session), [session])
 
@@ -52,6 +58,12 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
     [session.id, setShowDrawer]
   )
 
+  // Do not mount an unavailable drawer: this also closes entry paths that
+  // bypass the hidden menu items, such as iOS swipe-to-open.
+  if (!showThreadHistory) {
+    return null
+  }
+
   return (
     <SwipeableDrawer
       anchor={language === 'ar' ? 'left' : 'right'}
@@ -69,7 +81,9 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
       }}
       SlideProps={language === 'ar' ? { direction: 'right' } : undefined}
       PaperProps={
-        language === 'ar' ? { sx: { direction: 'rtl', overflowY: 'initial' } } : { sx: { overflowY: 'initial' } }
+        language === 'ar'
+          ? { sx: { direction: 'rtl', overflowY: 'initial' }, 'data-testid': TestId.session.threadHistoryDrawer }
+          : { sx: { overflowY: 'initial' }, 'data-testid': TestId.session.threadHistoryDrawer }
       }
       disableSwipeToOpen={CHATBOX_BUILD_PLATFORM !== 'ios'} // 只在iOS设备上启用SwipeToOpen
       disableEnforceFocus={true} // 关闭 focus trap，避免在侧边栏打开时弹出的 modal 中 input 无法点击
@@ -90,6 +104,7 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
             goto={gotoThreadMessage}
             showHistoryDrawer={showDrawer}
             switchThread={handleSwitchThread}
+            allowStructureActions={sessionMode === 'chat'}
             lastOne={index === threadList.length - 1}
           />
         ))}
@@ -103,10 +118,11 @@ function ThreadItem(props: {
   goto(threadId: string): void
   showHistoryDrawer: string | boolean
   switchThread(threadId: string): void
+  allowStructureActions: boolean
   lastOne?: boolean
 }) {
   const { t } = useTranslation()
-  const { thread, goto, switchThread, lastOne } = props
+  const { thread, goto, switchThread, allowStructureActions, lastOne } = props
   const threadName = thread.name || t('New Thread')
   const currentSessionId = useAtomValue(currentSessionIdAtom)
   const isSmallScreen = useIsSmallScreen()
@@ -144,25 +160,29 @@ function ThreadItem(props: {
         type="desktop"
         items={[
           { text: t('Edit Thread Name'), icon: IconEdit, onClick: onEditButtonClick },
-          { text: t('Switch'), icon: IconSwitch, onClick: onSwitchButtonClick },
-          {
-            divider: true,
-          },
-          {
-            doubleCheck: true,
-            text: t('Delete'),
-            icon: IconTrash,
-            onClick: () => {
-              if (!currentSessionId) {
-                return
-              }
-              if (lastOne) {
-                void removeCurrentThread(currentSessionId)
-              } else {
-                void removeThread(currentSessionId, thread.id)
-              }
-            },
-          },
+          ...(allowStructureActions
+            ? [
+                { text: t('Switch'), icon: IconSwitch, onClick: onSwitchButtonClick },
+                {
+                  divider: true as const,
+                },
+                {
+                  doubleCheck: true,
+                  text: t('Delete'),
+                  icon: IconTrash,
+                  onClick: () => {
+                    if (!currentSessionId) {
+                      return
+                    }
+                    if (lastOne) {
+                      void removeCurrentThread(currentSessionId)
+                    } else {
+                      void removeThread(currentSessionId, thread.id)
+                    }
+                  },
+                },
+              ]
+            : []),
         ]}
         opened={menuOpened}
         onChange={(opened) => setMenuOpened(opened)}

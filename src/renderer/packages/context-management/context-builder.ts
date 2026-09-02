@@ -1,33 +1,33 @@
-import { findLatestApplicableCompactionPoint, isContextEligibleMessage } from '@shared/context'
+import { findLatestApplicableCompactionPoint, selectContextMessages } from '@shared/context'
 import type { CompactionPoint, Message, Session, SessionSettings, SessionThread, Settings } from '@shared/types'
-import { cleanToolCalls } from './tool-cleanup'
 
 export interface BuildContextOptions {
   messages: Message[]
   compactionPoints?: CompactionPoint[]
-  keepToolCallRounds?: number
   sessionSettings?: SessionSettings
   settings?: Partial<Settings>
 }
 
 /**
- * Builds context for AI by finding the latest compaction point, including the summary
- * message at the beginning, and applying tool call cleanup for older messages.
- * Falls back to all messages if no compaction points exist.
+ * Builds the context selection for estimation/UI/compaction purposes by
+ * delegating to the shared send-path selection (`selectContextMessages`):
+ * causal ordering of legacy steered records, eligibility, latest applicable
+ * compaction point, error filtering. Sharing the selection matters for
+ * compaction in particular — the boundary is chosen over this list, and a
+ * list ordered differently from what is actually sent could place the
+ * boundary so that the same reply lands in both the summary and the raw tail.
+ *
+ * Content is returned at full fidelity — tool calls and results intact. Any
+ * send-path cleanup (pressure-driven result stubbing) happens in the shared
+ * buildContext() at request time; estimation must measure the un-relieved
+ * context so pressure decisions are driven by real size.
  *
  * Note: Messages with `generating: true` are excluded from context as they are incomplete.
  */
 export function buildContextForAI(options: BuildContextOptions): Message[] {
-  const { messages, compactionPoints, keepToolCallRounds = 2 } = options
+  const { messages, compactionPoints } = options
 
-  const completedMessages = messages.filter(isContextEligibleMessage)
-
-  if (completedMessages.length === 0) {
-    return []
-  }
-
-  const compactedMessages = computeContextAfterCompaction(completedMessages, compactionPoints)
-  return cleanToolCalls(compactedMessages, keepToolCallRounds)
+  return selectContextMessages(messages, { compactionPoints })
 }
 
 export function computeContextAfterCompaction(messages: Message[], compactionPoints?: CompactionPoint[]): Message[] {
@@ -64,23 +64,21 @@ export function buildContextForSession(
   session: Session,
   options?: {
     threadId?: string
-    keepToolCallRounds?: number
     settings?: Partial<Settings>
   }
 ): Message[] {
-  const { threadId, keepToolCallRounds = 2, settings } = options ?? {}
+  const { threadId, settings } = options ?? {}
 
   if (threadId && session.threads) {
     const thread = session.threads.find((t) => t.id === threadId)
     if (thread) {
-      return buildContextForThread(thread, { keepToolCallRounds, sessionSettings: session.settings, settings })
+      return buildContextForThread(thread, { sessionSettings: session.settings, settings })
     }
   }
 
   return buildContextForAI({
     messages: session.messages,
     compactionPoints: session.compactionPoints,
-    keepToolCallRounds,
     sessionSettings: session.settings,
     settings,
   })
@@ -89,17 +87,15 @@ export function buildContextForSession(
 export function buildContextForThread(
   thread: SessionThread,
   options?: {
-    keepToolCallRounds?: number
     sessionSettings?: SessionSettings
     settings?: Partial<Settings>
   }
 ): Message[] {
-  const { keepToolCallRounds = 2, sessionSettings, settings } = options ?? {}
+  const { sessionSettings, settings } = options ?? {}
 
   return buildContextForAI({
     messages: thread.messages,
     compactionPoints: thread.compactionPoints,
-    keepToolCallRounds,
     sessionSettings,
     settings,
   })

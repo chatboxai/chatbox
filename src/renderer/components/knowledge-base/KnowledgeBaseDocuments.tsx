@@ -44,6 +44,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
+import { bucketPlausibleCount } from '@/analytics/plausible'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useKnowledgeBaseFiles, useKnowledgeBaseFilesActions, useKnowledgeBaseFilesCount } from '@/hooks/knowledge-base'
 import { useChunksPreview } from '@/hooks/useChunksPreview'
@@ -52,6 +53,8 @@ import platform from '@/platform'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { trackEvent } from '@/utils/track'
 import ChunksPreviewModal from './ChunksPreviewModal'
+import { KnowledgeBaseFileErrorButton } from './KnowledgeBaseFileErrorButton'
+import { isChatboxAIParserLicenseRequired } from './knowledge-base-file-error'
 import { RemoteRetryModal } from './RemoteRetryModal'
 
 interface KnowledgeBaseDocumentsProps {
@@ -325,13 +328,12 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
 
         // Track successful uploads only
         if (successfulUploads.length > 0) {
+          const uploadedFileTypes = new Set(correctedFiles.map((file) => file.type || 'unknown'))
           trackEvent('knowledge_base_document_added', {
-            knowledge_base_id: knowledgeBase.id,
-            knowledge_base_name: knowledgeBase.name,
-            file_count: successfulUploads.length,
-            total_attempted: files.length,
-            failed_count: blockedUploadCount,
-            file_types: Array.from(new Set(correctedFiles.map((f) => f.type || 'unknown'))),
+            file_count: bucketPlausibleCount(successfulUploads.length),
+            attempted_file_count: bucketPlausibleCount(files.length),
+            failed_file_count: bucketPlausibleCount(blockedUploadCount),
+            file_type_count: bucketPlausibleCount(uploadedFileTypes.size),
           })
 
           // Immediately refresh the data to show the new files
@@ -354,7 +356,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
         )
       }
     },
-    [knowledgeBase?.id, knowledgeBase?.name, correctMimeType, refetch, refetchCount, invalidateFiles, isExpanded, t]
+    [knowledgeBase?.id, correctMimeType, refetch, refetchCount, invalidateFiles, isExpanded, t]
   )
 
   // Validate file type against supported types
@@ -473,10 +475,10 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
 
   // Handle file retry
   const handleRetryFile = useCallback(
-    async (fileId: number) => {
+    async (fileId: number, useRemoteParsing = false) => {
       try {
         const knowledgeBaseController = platform.getKnowledgeBaseController()
-        await knowledgeBaseController.retryFile(fileId)
+        await knowledgeBaseController.retryFile(fileId, useRemoteParsing)
         if (knowledgeBase?.id) {
           // Refresh data to show updated status
           refetch()
@@ -587,7 +589,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
     }
   }
 
-  const getStatusIcon = (status: string, error?: string, parserType?: string) => {
+  const getStatusIcon = (status: string, error?: string, parserType?: string, fileName?: string) => {
     switch (status) {
       case 'completed':
       case 'done':
@@ -602,6 +604,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
         return <IconPlayerPause size={16} color="var(--chatbox-tint-warning)" />
       case 'failed': {
         const isParsedContentTooLarge = error === KNOWLEDGE_BASE_PARSED_CONTENT_TOO_LARGE_ERROR
+        const isLicenseError = isChatboxAIParserLicenseRequired(error)
         // Determine label based on actual parser type used
         const getParserLabel = () => {
           if (isParsedContentTooLarge) {
@@ -620,14 +623,25 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
           ? t('Parsed document content must be {{limit}} or smaller.', {
               limit: KNOWLEDGE_BASE_MAX_PARSED_CONTENT_SIZE_LABEL,
             })
-          : error || t('Processing failed')
+          : isLicenseError
+            ? t('Sign in needed')
+            : error || t('Processing failed')
         const isRemoteParser = parserType === 'mineru' || parserType === 'chatbox-ai'
+        const statusPill = (
+          <Pill size="xs" c={isRemoteParser ? 'orange' : 'gray'} className="cursor-help">
+            {isLicenseError ? t('Sign in needed') : getParserLabel()}
+          </Pill>
+        )
         return (
           <Flex gap={4} align="center">
             <Tooltip label={errorLabel} multiline w={300} withArrow position="top">
-              <Pill size="xs" c={isRemoteParser ? 'orange' : 'gray'} className="cursor-help">
-                {getParserLabel()}
-              </Pill>
+              {isLicenseError && error && fileName ? (
+                <KnowledgeBaseFileErrorButton errorCode={error} fileName={fileName} label={t('Sign in needed')}>
+                  {statusPill}
+                </KnowledgeBaseFileErrorButton>
+              ) : (
+                statusPill
+              )}
             </Tooltip>
           </Flex>
         )
@@ -976,10 +990,10 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
 
                           <Group gap="sm" align="center">
                             {doc.status === 'failed' ? (
-                              getStatusIcon(doc.status, doc.error, doc.parser_type)
+                              getStatusIcon(doc.status, doc.error, doc.parser_type, doc.filename)
                             ) : (
                               <Center w={20} h={20}>
-                                {getStatusIcon(doc.status, doc.error, doc.parser_type)}
+                                {getStatusIcon(doc.status, doc.error, doc.parser_type, doc.filename)}
                               </Center>
                             )}
                             {doc.status === 'failed' && doc.error !== KNOWLEDGE_BASE_PARSED_CONTENT_TOO_LARGE_ERROR && (
@@ -987,8 +1001,12 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
                                 variant="subtle"
                                 color="blue"
                                 size="sm"
-                                onClick={() => handleRetryFile(doc.id)}
-                                title={t('Retry locally')}
+                                onClick={() => handleRetryFile(doc.id, isChatboxAIParserLicenseRequired(doc.error))}
+                                title={
+                                  isChatboxAIParserLicenseRequired(doc.error)
+                                    ? t('Retry with server parsing')
+                                    : t('Retry locally')
+                                }
                               >
                                 <IconRefresh size={14} />
                               </ActionIcon>

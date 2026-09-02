@@ -2,7 +2,7 @@ import path, { resolve } from 'node:path'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig, type ElectronViteConfig, externalizeDepsPlugin } from 'electron-vite'
 import { visualizer } from 'rollup-plugin-visualizer'
 import type { Plugin } from 'vite'
 import packageJson from './release/app/package.json'
@@ -93,6 +93,53 @@ export function dvhToVh(): Plugin {
   }
 }
 
+const electronViteBuildTargets = ['main', 'preload', 'renderer'] as const
+type ElectronViteBuildTarget = (typeof electronViteBuildTargets)[number]
+
+// Desktop production builds select one target per process so V8 can release the
+// main/preload heaps before the much larger renderer bundle starts.
+export function shouldBuildElectronViteTarget(
+  target: ElectronViteBuildTarget,
+  requestedTarget: string | undefined
+): boolean {
+  if (!requestedTarget) {
+    return true
+  }
+
+  const resolvedTarget = electronViteBuildTargets.find((candidate) => candidate === requestedTarget)
+  if (!resolvedTarget) {
+    throw new Error(
+      `Invalid CHATBOX_ELECTRON_VITE_TARGET "${requestedTarget}". Expected one of: ${electronViteBuildTargets.join(', ')}.`
+    )
+  }
+
+  return resolvedTarget === target
+}
+
+// The index signature keeps `process.env` assignable (weak-type check).
+export function getRendererDevServerConfig(env: {
+  [key: string]: string | undefined
+  CHATBOX_QA?: string
+  DEV_PORT?: string
+}): {
+  port: number
+  strictPort: boolean
+} {
+  const isQa = env.CHATBOX_QA === '1'
+  if (isQa) {
+    const port = env.DEV_PORT && /^\d+$/.test(env.DEV_PORT) ? Number(env.DEV_PORT) : Number.NaN
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+      throw new Error('CHATBOX_QA=1 requires DEV_PORT with a port between 1 and 65535')
+    }
+    return { port, strictPort: true }
+  }
+
+  return {
+    port: Number(env.DEV_PORT) || 1212,
+    strictPort: false,
+  }
+}
+
 const inferredRelease = process.env.SENTRY_RELEASE || packageJson.version
 const inferredDist = process.env.SENTRY_DIST || undefined
 
@@ -106,8 +153,10 @@ export default defineConfig(({ mode }) => {
   const isWeb = process.env.CHATBOX_BUILD_PLATFORM === 'web'
   const isMobile = process.env.CHATBOX_BUILD_TARGET === 'mobile_app'
   const isDesktop = !isWeb && !isMobile
+  const requestedTarget = process.env.CHATBOX_ELECTRON_VITE_TARGET
+  const rendererDevServer = getRendererDevServerConfig(process.env)
 
-  return {
+  const config: ElectronViteConfig = {
     main: {
       plugins: [
         ...(isProduction
@@ -286,7 +335,8 @@ export default defineConfig(({ mode }) => {
         postcss: './postcss.config.cjs',
       },
       server: {
-        port: Number(process.env.DEV_PORT) || 1212,
+        port: rendererDevServer.port,
+        strictPort: rendererDevServer.strictPort,
         watch: {
           // The root .env is a 1Password-managed FIFO in local development. Vite
           // treats env file changes as a full server restart, which can interrupt
@@ -318,4 +368,15 @@ export default defineConfig(({ mode }) => {
       },
     },
   }
+
+  if (!requestedTarget) {
+    return config
+  }
+  if (shouldBuildElectronViteTarget('main', requestedTarget)) {
+    return { main: config.main }
+  }
+  if (shouldBuildElectronViteTarget('preload', requestedTarget)) {
+    return { preload: config.preload }
+  }
+  return { renderer: config.renderer }
 })

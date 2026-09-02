@@ -5,6 +5,7 @@ import {
   ApiError,
   BaseError,
   ChatboxAIAPIError,
+  MESSAGE_ERROR_CODES,
   NetworkError,
   OCRError,
 } from './errors'
@@ -137,9 +138,11 @@ describe('ChatboxAIAPIError', () => {
     [10004, 'token_quota_exhausted'],
     [20039, 'free_token_quota_exhausted'],
     [20040, 'free_agent_mode_token_quota_exhausted'],
-    [20041, 'file_preprocess_failed'],
-    [20042, 'file_storage_quota_exceeded'],
-    [20043, 'empty_attachment_content'],
+    [20036, 'searxng_base_url_required'],
+    [MESSAGE_ERROR_CODES.FILE_PREPROCESS_FAILED, 'file_preprocess_failed'],
+    [MESSAGE_ERROR_CODES.FILE_STORAGE_QUOTA_EXCEEDED, 'file_storage_quota_exceeded'],
+    [MESSAGE_ERROR_CODES.EMPTY_ATTACHMENT_CONTENT, 'empty_attachment_content'],
+    [20046, 'chatbox_ai_parser_license_key_required'],
   ] as const)('getDetail maps client error code %s to %s', (code, name) => {
     const detail = ChatboxAIAPIError.getDetail(code)
 
@@ -158,6 +161,11 @@ describe('ChatboxAIAPIError', () => {
   it('getDetail returns null for 0 or falsy code', () => {
     expect(ChatboxAIAPIError.getDetail(0)).toBeNull()
     expect(ChatboxAIAPIError.getDetail(Number.NaN)).toBeNull()
+  })
+
+  it('keeps every persisted message error code unique', () => {
+    const codes = Object.values(MESSAGE_ERROR_CODES)
+    expect(new Set(codes).size).toBe(codes.length)
   })
 })
 

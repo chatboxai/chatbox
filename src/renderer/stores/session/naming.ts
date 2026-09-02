@@ -1,146 +1,50 @@
-import { isExpectedGenerationError } from '@shared/models/error-classification'
-import type { ModelProvider } from '@shared/types'
-import { createModel } from '@/adapters'
+import type { Session } from '@chatbox/core'
+import { SessionNamingService } from '@chatbox/core/application/session'
+import { currentModelFactory } from '@/adapters/CurrentModelFactory'
+import { rendererApplication } from '@/app/renderer-application'
 import { languageNameMap } from '@/i18n/locales'
-import { generateText } from '@/packages/model-calls'
-import * as promptFormat from '@/packages/prompts'
+import { convertToModelMessages } from '@/packages/model-calls/message-utils'
+import { settingsService } from '@/settings-runtime'
 import { reportError } from '@/utils/sentry'
-import * as chatStore from '../chatStore'
-import { settingsStore } from '../settingsStore'
-import { activeNameGenerations, pendingNameGenerations } from './state'
 
-/**
- * Modify session name and thread name
- */
-export async function modifyNameAndThreadName(sessionId: string, name: string) {
-  await chatStore.updateSession(sessionId, { name, threadName: name })
+const namingService = new SessionNamingService({
+  sessions: {
+    getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
+    updateSession: (sessionId, updater) => rendererApplication.sessions.updateSession(sessionId, updater),
+    updateSessionWithMessages: (sessionId, updater) =>
+      rendererApplication.sessions.updateSessionWithMessages(sessionId, updater),
+  },
+  settings: settingsService,
+  models: currentModelFactory,
+  scheduler: {
+    schedule(callback, delayMs) {
+      const timeout = setTimeout(callback, delayMs)
+      return { cancel: () => clearTimeout(timeout) }
+    },
+  },
+  getLanguageName: (language) => languageNameMap[language],
+  toModelMessages: (messages, model) =>
+    convertToModelMessages(messages, { modelSupportVision: model.isSupportVision() }),
+  reportUnexpectedError: (error) => {
+    reportError(error, {
+      domain: 'ai-generation',
+      operation: 'generate_session_name',
+    })
+  },
+})
+
+export function modifyNameAndThreadName(sessionId: string, name: string) {
+  return namingService.modifyNameAndThreadName(sessionId, name)
 }
 
-/**
- * Modify session's current thread name
- */
-export async function modifyThreadName(sessionId: string, threadName: string) {
-  await chatStore.updateSession(sessionId, { threadName })
+export function modifyThreadName(sessionId: string, threadName: string) {
+  return namingService.modifyThreadName(sessionId, threadName)
 }
 
-/**
- * Internal function to generate a name for a session/thread
- */
-async function _generateName(sessionId: string, modifyName: (sessionId: string, name: string) => Promise<void>) {
-  const session = await chatStore.getSession(sessionId)
-  const globalSettings = settingsStore.getState().getSettings()
-  if (!session) {
-    return
-  }
-  const settings = {
-    ...globalSettings,
-    ...session.settings,
-    ...(session.type === 'picture'
-      ? {
-          modelId: 'gpt-4o-mini',
-        }
-      : {}),
-    ...(globalSettings.threadNamingModel
-      ? {
-          provider: globalSettings.threadNamingModel.provider as ModelProvider,
-          modelId: globalSettings.threadNamingModel.model,
-        }
-      : {}),
-  }
-  try {
-    const model = await createModel(settings)
-    const result = await generateText(
-      model,
-      promptFormat.nameConversation(
-        session.messages.filter((m) => m.role !== 'system').slice(0, 4),
-        languageNameMap[settings.language]
-      )
-    )
-    let name =
-      result.contentParts
-        ?.filter((c) => c.type === 'text')
-        .map((c) => c.text)
-        .join('') || ''
-    name = name.replace(/['""\u201C\u201D]/g, '').replace(/<think>.*?<\/think>/g, '')
-    await modifyName(sessionId, name)
-  } catch (e: unknown) {
-    if (!isExpectedGenerationError(e)) {
-      reportError(e, {
-        domain: 'ai-generation',
-        operation: 'generate_session_name',
-      })
-    }
-  }
+export function syncSessionAutoTitle(session: Session) {
+  namingService.syncAutoTitle(session, { messages: session.messages })
 }
 
-/**
- * Generate session name and thread name
- */
-async function generateNameAndThreadName(sessionId: string) {
-  return await _generateName(sessionId, modifyNameAndThreadName)
-}
-
-/**
- * Generate thread name only
- */
-async function generateThreadName(sessionId: string) {
-  return await _generateName(sessionId, modifyThreadName)
-}
-
-/**
- * Schedule generating session name and thread name (with dedup and delay)
- */
-export function scheduleGenerateNameAndThreadName(sessionId: string) {
-  const key = `name-${sessionId}`
-
-  if (activeNameGenerations.has(key)) {
-    return
-  }
-
-  const existingTimeout = pendingNameGenerations.get(key)
-  if (existingTimeout) {
-    clearTimeout(existingTimeout)
-  }
-
-  const timeout = setTimeout(async () => {
-    pendingNameGenerations.delete(key)
-    activeNameGenerations.add(key)
-
-    try {
-      await generateNameAndThreadName(sessionId)
-    } finally {
-      activeNameGenerations.delete(key)
-    }
-  }, 1000)
-
-  pendingNameGenerations.set(key, timeout)
-}
-
-/**
- * Schedule generating thread name (with dedup and delay)
- */
-export function scheduleGenerateThreadName(sessionId: string) {
-  const key = `thread-${sessionId}`
-
-  if (activeNameGenerations.has(key)) {
-    return
-  }
-
-  const existingTimeout = pendingNameGenerations.get(key)
-  if (existingTimeout) {
-    clearTimeout(existingTimeout)
-  }
-
-  const timeout = setTimeout(async () => {
-    pendingNameGenerations.delete(key)
-    activeNameGenerations.add(key)
-
-    try {
-      await generateThreadName(sessionId)
-    } finally {
-      activeNameGenerations.delete(key)
-    }
-  }, 1000)
-
-  pendingNameGenerations.set(key, timeout)
+export function clearSessionNameGenerationState(sessionId: string): void {
+  namingService.clearSessionState(sessionId)
 }

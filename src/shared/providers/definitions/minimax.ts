@@ -26,18 +26,28 @@ function createMiniMaxProvider(config: {
       models: [
         {
           modelId: 'MiniMax-M3',
+          capabilities: ['vision', 'reasoning', 'tool_use'],
+          contextWindow: 1_000_000,
         },
         {
           modelId: 'MiniMax-M2.7',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 204_800,
         },
         {
           modelId: 'MiniMax-M2.7-highspeed',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 204_800,
         },
         {
           modelId: 'MiniMax-M2.5',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 204_800,
         },
         {
           modelId: 'MiniMax-M2.5-highspeed',
+          capabilities: ['reasoning', 'tool_use'],
+          contextWindow: 204_800,
         },
       ],
     },

@@ -10,8 +10,10 @@ import { jsonSchema, type ToolSet } from 'ai'
 import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
 import { requestFileMutationApproval } from '@/packages/user-exec-approval'
 import platform from '@/platform'
+import { buildEditStats, buildWriteStats } from './file-mutation-stats'
 import { asRecord, contentOrErrorText, numberField, stringField, toTextModelOutput } from './model-output'
 import { remapPhantomHomePathForProvider } from './sandbox-paths'
+import { editSoulVirtualFile, isSoulVirtualPath, writeSoulVirtualFile } from './soul-file'
 
 interface FilesystemContext {
   sessionId?: string
@@ -96,12 +98,8 @@ function formatEditFileOutput(output: unknown): string {
   return contentOrErrorText(output)
 }
 
-function isAbsolutePath(filePath: string): boolean {
+export function isAbsolutePath(filePath: string): boolean {
   return filePath.startsWith('/') || isWindowsAbsolutePath(filePath)
-}
-
-function previewContent(content: string, maxLength = 2000): string {
-  return content.length > maxLength ? `${content.slice(0, maxLength)}\n... [truncated]` : content
 }
 
 function normalizeEdits(input: EditFileInput): EditOperation[] {
@@ -113,15 +111,6 @@ function validateEditInput(input: EditFileInput): { edits: EditOperation[] } | {
   if (input.edits?.length) return { edits: input.edits }
   if (input.old_text !== undefined && input.new_text !== undefined) return { edits: normalizeEdits(input) }
   return { error: 'Provide edits[] or both old_text and new_text.' }
-}
-
-function previewEdits(edits: EditOperation[]): string {
-  return edits
-    .map(
-      (edit, index) =>
-        `# Edit ${index + 1}\n--- old\n${previewContent(edit.old_text)}\n+++ new\n${previewContent(edit.new_text)}`
-    )
-    .join('\n\n')
 }
 
 function ensureSandbox(context: FilesystemContext): Promise<{ success: boolean; error?: string }> {
@@ -172,7 +161,7 @@ function isWindowsRenderer(): boolean {
   return typeof navigator !== 'undefined' && (navigator.userAgent ?? '').includes('Windows')
 }
 
-function normalizeToolPathForPlatform(filePath: string): string {
+export function normalizeToolPathForPlatform(filePath: string): string {
   if (!isWindowsRenderer()) return filePath
   return normalizeWindowsAbsolutePath(filePath) ?? filePath
 }
@@ -427,6 +416,9 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
     }),
     execute: async (input, toolOptions) => {
       const writeInput = input as { file_path: string; content: string }
+      if (isSoulVirtualPath(writeInput.file_path)) {
+        return writeSoulVirtualFile(writeInput.content)
+      }
       writeInput.file_path = await remapPhantomHomePathForProvider(writeInput.file_path, context.provider)
       writeInput.file_path = normalizeToolPathForPlatform(writeInput.file_path)
       const alreadyApproved = (toolOptions as typeof toolOptions & { approved?: boolean }).approved
@@ -454,14 +446,16 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
       if (pathError) return pathError
       if (!platform.fsWrite) return { error: 'Filesystem access is not available on this platform' }
       const fullAccessBypassedApproval = !alreadyApproved && context.fullAccess === true
-      const approved =
-        alreadyApproved ||
-        context.fullAccess ||
-        (await requestFileMutationApproval(
+      let approved = Boolean(alreadyApproved || context.fullAccess)
+      if (!approved) {
+        const writeStats = buildWriteStats(writeInput.content)
+        approved = await requestFileMutationApproval(
           toolOptions.toolCallId,
           `Write file: ${writeInput.file_path}`,
-          previewContent(writeInput.content)
-        ))
+          '',
+          writeStats
+        )
+      }
       if (!approved) return { success: false, error: 'File write denied by user.' }
       // Track when Full Access skipped an approval, regardless of whether the
       // write later succeeds — failed bypassed attempts are the audit signal.
@@ -480,6 +474,12 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
     inputSchema: editFileInputSchema,
     execute: async (input, toolOptions) => {
       const editInput = input as EditFileInput
+      const validatedForSoul = isSoulVirtualPath(editInput.file_path) ? validateEditInput(editInput) : null
+      if (validatedForSoul) {
+        return 'error' in validatedForSoul
+          ? { error: validatedForSoul.error }
+          : editSoulVirtualFile(validatedForSoul.edits)
+      }
       editInput.file_path = await remapPhantomHomePathForProvider(editInput.file_path, context.provider)
       editInput.file_path = normalizeToolPathForPlatform(editInput.file_path)
       const alreadyApproved = (toolOptions as typeof toolOptions & { approved?: boolean }).approved
@@ -514,16 +514,16 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
       if (pathError) return pathError
       if (!platform.fsEdit) return { error: 'Filesystem access is not available on this platform' }
       const fullAccessBypassedApproval = !alreadyApproved && context.fullAccess === true
-      const approved =
-        alreadyApproved ||
-        context.fullAccess ||
-        (await requestFileMutationApproval(
+      let approved = Boolean(alreadyApproved || context.fullAccess)
+      if (!approved) {
+        const editStats = buildEditStats(edits)
+        approved = await requestFileMutationApproval(
           toolOptions.toolCallId,
-          edits.length === 1
-            ? `Edit file: ${editInput.file_path}`
-            : `Edit file: ${editInput.file_path} (${edits.length} edits)`,
-          previewEdits(edits)
-        ))
+          `Edit file: ${editInput.file_path}`,
+          '',
+          editStats
+        )
+      }
       if (!approved) return { success: false, error: 'File edit denied by user.' }
       if (fullAccessBypassedApproval) {
         trackAgentModeFullAccessBypass({ tool: 'edit_file' })

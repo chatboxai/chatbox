@@ -1,3 +1,4 @@
+import { isApprovalPauseReason } from '@chatbox/core/message-approval'
 import NiceModal from '@ebay/nice-modal-react'
 import {
   ActionIcon,
@@ -7,24 +8,16 @@ import {
   Code,
   Collapse,
   Group,
-  Menu,
   Paper,
   Stack,
   Text,
   Tooltip,
   UnstyledButton,
 } from '@mantine/core'
-import { TestId } from '@shared/automation/testids'
-import { isApprovalPauseReason } from '@shared/message-approval'
 import { ChatboxAIAPIError } from '@shared/models/errors'
 import { SANDBOX_EXEC_ERROR_CODES } from '@shared/sandbox-provider'
-import type {
-  ImageGenerationApprovalDetails,
-  Message,
-  MessageReasoningPart,
-  MessageTextPart,
-  MessageToolCallPart,
-} from '@shared/types'
+import { getToolResultImageReference } from '@shared/tool-result-image'
+import type { Message, MessageReasoningPart, MessageTextPart, MessageToolCallPart } from '@shared/types'
 import {
   IconBulb,
   IconCheck,
@@ -45,6 +38,7 @@ import {
   IconInfoCircle,
   IconLoader,
   IconMessage,
+  IconPackage,
   IconPhoto,
   IconPlayerPlay,
   IconSparkles,
@@ -54,36 +48,36 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
-import { type FC, type ReactNode, type Ref, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { type FC, type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ImageGenerationResultGallery } from '@/components/chat/ImageGenerationResultGallery'
-import { ChatboxAIErrorMessage } from '@/components/common/ChatboxAIErrorMessage'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
+import { ImageInStorage } from '@/components/Image'
 import { useBlob } from '@/hooks/useBlob'
 import { formatElapsedTime, MIN_STEP_DURATION_MS, useThinkingTimer } from '@/hooks/useThinkingTimer'
 import { getLogger } from '@/lib/utils'
 import { getAcceptedImageBackgroundTaskResult } from '@/packages/chatbox-cli/background-task-result'
-import { formatComputePointsRemainingRatio } from '@/packages/chatbox-cli/compute-points'
 import { resumeImageGenerationWithFollowUp } from '@/packages/chatbox-cli/image-task-follow-up'
+import { getFileMutationDisplayStats } from '@/packages/model-calls/toolsets/file-mutation-stats'
 import { getToolName } from '@/packages/tools'
 import type { SearchResultItem } from '@/packages/web-search'
 import platform from '@/platform'
 import {
-  registerApprovalActionsElement,
-  setApprovalActionsVisible,
-  unregisterApprovalActionsElement,
+  registerPausedStepElement,
+  unregisterPausedStepElement,
   useApprovalCardHighlighted,
 } from '@/stores/approvalAttentionStore'
-import { useCurrentGeneratingId, useImageGenerationRecord } from '@/stores/imageGenerationStore'
 import {
-  continuePausedToolCall,
-  disableToolCallLimitPauseAndContinue,
-  stopPausedToolCall,
-} from '@/stores/sessionActions'
+  useCurrentGeneratingId,
+  useImageGenerationRecord,
+  useImageGenerationRecords,
+} from '@/stores/imageGenerationStore'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import { inlineSandboxHtmlAssets } from './html-artifact-assets'
 import { getLocalFileName, localFilePathToUrl } from './local-file-url'
+import { ReasoningInlineSummary } from './ReasoningInlineSummary'
+import { ToolUnavailableCard } from './ToolUnavailableCard'
 
 // ─── Tool Error Result ──────────────────────────────────────────────
 
@@ -92,6 +86,9 @@ const log = getLogger('tool-call-part-ui')
 const TOOL_ERROR_PREVIEW_LENGTH = 1_200
 const TOOL_PAYLOAD_PREVIEW_LENGTH = 8_000
 const APPROVAL_PAYLOAD_MAX_HEIGHT = 'min(240px, 35vh)'
+const WRAPPABLE_TEXT_STYLE = { overflowWrap: 'anywhere' } as const
+const PREFORMATTED_OVERFLOW_STYLE = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } as const
+const PRELINE_OVERFLOW_STYLE = { whiteSpace: 'pre-line', lineHeight: 1.5, overflowWrap: 'anywhere' } as const
 const GIT_BASH_DOWNLOAD_URL = 'https://git-scm.com/downloads/win'
 const WSL_INSTALL_URL = 'https://learn.microsoft.com/windows/wsl/install'
 
@@ -163,6 +160,11 @@ function extractToolError(part: MessageToolCallPart): { errorCode?: number; erro
   return { errorCode, errorText }
 }
 
+function hasKnownToolError(part: MessageToolCallPart): boolean {
+  const { errorCode } = extractToolError(part)
+  return errorCode !== undefined && ChatboxAIAPIError.getDetail(errorCode) !== null
+}
+
 const ToolCallErrorDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   const { t } = useTranslation()
   const { errorCode, errorText } = extractToolError(part)
@@ -171,22 +173,23 @@ const ToolCallErrorDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   // hide the underlying error text.
   if (errorCode && ChatboxAIAPIError.getDetail(errorCode)) {
     return (
-      <Text size="sm" c="chatbox-error" component="div">
-        <ChatboxAIErrorMessage errorCode={errorCode} trackingSource="msg_tool_error" />
-      </Text>
+      <ToolUnavailableCard
+        toolLabel={getToolName(part.toolName, part.args)}
+        toolName={part.toolName}
+        errorCode={errorCode}
+      />
     )
   }
   return (
-    <Text size="sm" c="chatbox-error">
+    <Text size="sm" c="chatbox-error" style={WRAPPABLE_TEXT_STYLE}>
       {errorText || t('Tool call failed')}
     </Text>
   )
 }
 
-// Auto-expand a step when it needs attention (paused / waiting for approval) and
-// auto-collapse once that resolves — e.g. after the user clicks Continue/Approve/Stop/Deny.
-// Only the transition edges drive expansion; a stable signal leaves the user's manual
-// toggle untouched.
+// Auto-expand a step when it needs attention (e.g. Bash unavailable) and
+// auto-collapse once that resolves. Only the transition edges drive expansion;
+// a stable signal leaves the user's manual toggle untouched.
 function useAutoExpandOnSignal(signal: boolean): [boolean, (next: boolean | ((prev: boolean) => boolean)) => void] {
   const [expanded, setExpanded] = useState(signal)
   const prevSignal = useRef(signal)
@@ -201,32 +204,26 @@ function useAutoExpandOnSignal(signal: boolean): [boolean, (next: boolean | ((pr
   return [expanded, setExpanded]
 }
 
-// Report whether a pending approval's Approve/Deny actions are visible in the viewport,
-// so the floating approval pill above the input box appears whenever they are not.
-// Observed on the actions row (not the whole card): a tall card whose buttons are
-// scrolled off-screen still needs the pill. Unmounting (virtualized list) and a
-// collapsed step (zero height) both count as not visible. Also registers the element
-// so the pill's "View" action can scroll to it. Keyed per component instance because
-// the same card can be mounted twice (message list + search dialog).
-function useApprovalCardVisibilityReport(toolCallId: string, enabled: boolean) {
+// Register the paused step's element so the pending-action bar's "View" action can
+// scroll back to it. Unmounted steps (virtualized list) simply aren't registered.
+// Keyed per component instance because the same step can be mounted twice
+// (message list + search dialog). The message identity prevents a reused tool
+// call id in an older thread from becoming the current bar's reveal target.
+function usePausedStepElementRegistration(
+  sessionId: string | undefined,
+  messageId: string | undefined,
+  toolCallId: string,
+  enabled: boolean
+) {
   const instanceId = useId()
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || !sessionId || !messageId) return
     const element = ref.current
     if (!element) return
-    registerApprovalActionsElement(toolCallId, instanceId, element)
-    const observer = new IntersectionObserver((entries) => {
-      const entry = entries[entries.length - 1]
-      setApprovalActionsVisible(toolCallId, instanceId, entry?.isIntersecting ?? false)
-    })
-    observer.observe(element)
-    return () => {
-      observer.disconnect()
-      unregisterApprovalActionsElement(toolCallId, instanceId)
-      setApprovalActionsVisible(toolCallId, instanceId, false)
-    }
-  }, [toolCallId, instanceId, enabled])
+    registerPausedStepElement(sessionId, messageId, toolCallId, instanceId, element)
+    return () => unregisterPausedStepElement(sessionId, messageId, toolCallId, instanceId)
+  }, [sessionId, messageId, toolCallId, instanceId, enabled])
   return ref
 }
 
@@ -262,6 +259,7 @@ const toolIconMap: Record<string, React.ElementType> = {
   load_skill: IconSparkles,
   chatbox_cli: IconSparkles,
   user_exec: IconTerminal,
+  view_image: IconPhoto,
 }
 
 const getToolIcon = (toolName: string) => toolIconMap[toolName] || IconCode
@@ -390,6 +388,8 @@ const getSafeExternalHref = (raw: string): string | null => {
   }
 }
 
+const SEARCH_RESULT_CARD_WIDTH = 164
+
 const SearchResultCard: FC<{ index: number; result: SearchResultItem }> = ({ index, result }) => {
   const href = getSafeExternalHref(result.link)
 
@@ -398,19 +398,30 @@ const SearchResultCard: FC<{ index: number; result: SearchResultItem }> = ({ ind
       radius="md"
       p={8}
       bg="var(--chatbox-background-gray-secondary)"
-      w={164}
+      w={SEARCH_RESULT_CARD_WIDTH}
+      maw={SEARCH_RESULT_CARD_WIDTH}
       className="shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
       title={result.title}
+      style={{ minWidth: 0, overflow: 'hidden' }}
     >
-      <Group gap={4} wrap="nowrap" align="flex-start">
+      <Group gap={4} wrap="nowrap" align="flex-start" style={{ minWidth: 0 }}>
         <Text size="xs" fw={600} className="shrink-0" m={0} lh={1.35}>
           {index + 1}.
         </Text>
-        <Text size="xs" truncate="end" m={0} lh={1.35}>
+        <Text size="xs" truncate="end" m={0} lh={1.35} style={{ minWidth: 0 }}>
           {result.title}
         </Text>
       </Group>
-      <Text size="10px" truncate="end" c="chatbox-tertiary" m={0} mt={4} lh={1.25}>
+      <Text
+        size="10px"
+        truncate="end"
+        c="chatbox-tertiary"
+        m={0}
+        mt={4}
+        lh={1.25}
+        title={result.link}
+        style={{ minWidth: 0 }}
+      >
         {result.link}
       </Text>
     </Paper>
@@ -421,11 +432,27 @@ const SearchResultCard: FC<{ index: number; result: SearchResultItem }> = ({ ind
   }
 
   return (
-    <Box component="a" href={href} target="_blank" rel="noopener noreferrer" className="no-underline">
+    <Box
+      component="a"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="no-underline"
+      maw={SEARCH_RESULT_CARD_WIDTH}
+      style={{ minWidth: 0, flexShrink: 0 }}
+    >
       {content}
     </Box>
   )
 }
+
+const SearchResultList: FC<{ results: SearchResultItem[] }> = ({ results }) => (
+  <div className="flex min-w-0 max-w-full gap-2 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
+    {results.map((result, index) => (
+      <SearchResultCard key={`${index}-${result.link}`} index={index} result={result} />
+    ))}
+  </div>
+)
 
 function extractSearchQueries(parts: MessageToolCallPart[]): string[] {
   const queries: string[] = []
@@ -452,8 +479,8 @@ export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }
     resultCount > 0 ? t('{{count}} results', { count: resultCount }) : noResults ? t('Search unsuccessful') : undefined
 
   const isFailState = hasError || noResults
-  const [expanded, setExpanded] = useAutoExpandOnSignal(false)
   const errorPart = hasError ? parts.find((p) => p.state === 'error') : undefined
+  const [expanded, setExpanded] = useAutoExpandOnSignal(Boolean(errorPart && hasKnownToolError(errorPart)))
   const bgColor = isFailState
     ? 'var(--chatbox-background-gray-secondary)'
     : expanded
@@ -462,7 +489,7 @@ export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }
   const border = isFailState ? 'none' : expanded ? '1px solid var(--chatbox-border-brand)' : 'none'
 
   return (
-    <Stack gap={4} mb={4}>
+    <Stack gap={4} mb={4} style={{ minWidth: 0, maxWidth: '100%' }}>
       <UnstyledButton
         onClick={resultCount > 0 || queries.length > 0 || hasError ? () => setExpanded((prev) => !prev) : undefined}
       >
@@ -510,21 +537,22 @@ export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }
         </Group>
       </UnstyledButton>
       {expanded && queries.length > 0 && (
-        <Group gap={4} ml={4}>
+        <Group gap={4} ml={4} wrap="wrap" style={{ minWidth: 0 }}>
           {queries.map((query, index) => (
-            <Text key={`${index}-${query}`} size="xs" c="chatbox-tertiary" fs="italic" lh={1.4}>
+            <Text
+              key={`${index}-${query}`}
+              size="xs"
+              c="chatbox-tertiary"
+              fs="italic"
+              lh={1.4}
+              style={{ overflowWrap: 'anywhere' }}
+            >
               "{query}"{index < queries.length - 1 && ','}
             </Text>
           ))}
         </Group>
       )}
-      {expanded && allResults.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
-          {allResults.map((result, index) => (
-            <SearchResultCard key={`${index}-${result.link}`} index={index} result={result} />
-          ))}
-        </div>
-      )}
+      {expanded && allResults.length > 0 && <SearchResultList results={allResults} />}
       {expanded && errorPart && (
         <Box ml={4} pl="sm" style={{ borderLeft: '1px solid var(--chatbox-tint-error)' }}>
           <ToolCallErrorDetails part={errorPart} />
@@ -539,7 +567,7 @@ export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }
 const ParseLinkUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   const isLoading = part.state === 'call'
   const isError = part.state === 'error'
-  const [expanded, setExpanded] = useAutoExpandOnSignal(false)
+  const [expanded, setExpanded] = useAutoExpandOnSignal(hasKnownToolError(part))
   const result = part.result as Record<string, unknown> | undefined
   const title = (result?.title as string) || ''
   const content = (result?.content as string) || ''
@@ -603,18 +631,21 @@ const ParseLinkUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
             borderLeft: `1px solid ${isError ? 'var(--chatbox-tint-error)' : 'var(--chatbox-tint-placeholder)'}`,
             maxHeight: 400,
             overflowY: 'auto',
+            overflowX: 'hidden',
             marginLeft: 7,
+            minWidth: 0,
+            maxWidth: '100%',
           }}
         >
           {url && (
-            <Text size="xs" c="chatbox-tertiary" mb={4}>
+            <Text size="xs" c="chatbox-tertiary" mb={4} style={WRAPPABLE_TEXT_STYLE}>
               {url}
             </Text>
           )}
           {isError ? (
             <ToolCallErrorDetails part={part} />
           ) : (
-            <Text size="sm" c="chatbox-tertiary" style={{ whiteSpace: 'pre-line', lineHeight: 1.5 }}>
+            <Text size="sm" c="chatbox-tertiary" style={PRELINE_OVERFLOW_STYLE}>
               {content}
             </Text>
           )}
@@ -633,7 +664,7 @@ const ParseLinkDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   return (
     <Stack gap={6}>
       {url && (
-        <Text size="xs" c="chatbox-tertiary">
+        <Text size="xs" c="chatbox-tertiary" style={WRAPPABLE_TEXT_STYLE}>
           {url}
         </Text>
       )}
@@ -641,7 +672,7 @@ const ParseLinkDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
         <ToolCallErrorDetails part={part} />
       ) : (
         content && (
-          <Text size="sm" c="chatbox-tertiary" style={{ whiteSpace: 'pre-line', lineHeight: 1.5 }}>
+          <Text size="sm" c="chatbox-tertiary" style={PRELINE_OVERFLOW_STYLE}>
             {content}
           </Text>
         )
@@ -654,21 +685,21 @@ const ParseLinkDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
 
 const GeneralToolCallUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   const isBashNotAvailable = isBashNotAvailableResult(part)
+  const isActionableToolError = hasKnownToolError(part)
   const isError = part.state === 'error' || isBashNotAvailable
-  const [expanded, setExpanded] = useAutoExpandOnSignal(isBashNotAvailable)
-  const acceptedImageTask = getAcceptedImageBackgroundTaskResult(part.result)
-  const { data: imageRecord } = useImageGenerationRecord(acceptedImageTask?.recordId ?? null)
+  const [expanded, setExpanded] = useAutoExpandOnSignal(isBashNotAvailable || isActionableToolError)
 
   return (
     <Stack gap={6} mb="xs">
       <ToolCallPill part={part} onClick={() => setExpanded((prev) => !prev)} expanded={expanded} />
-      <ImageGenerationResultGallery images={imageRecord?.generatedImages ?? []} />
       <Collapse in={expanded}>
         <Box
           ml={4}
           pl="sm"
           style={{
             borderLeft: `2px solid ${isError ? 'var(--chatbox-tint-error)' : 'var(--chatbox-tint-success)'}`,
+            minWidth: 0,
+            maxWidth: '100%',
           }}
         >
           <GeneralToolCallDetails part={part} />
@@ -684,12 +715,14 @@ const GeneralToolCallDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => 
   const isBashNotAvailable = isBashNotAvailableResult(part)
 
   return (
-    <Stack gap="xs">
+    <Stack gap="xs" style={{ minWidth: 0, maxWidth: '100%' }}>
       <Box>
         <Text size="xs" c="chatbox-tertiary" fw={500} mb={2}>
           {t('Arguments')}
         </Text>
-        <Code block>{stringifyToolPayload(part.args)}</Code>
+        <Code block style={PREFORMATTED_OVERFLOW_STYLE}>
+          {stringifyToolPayload(part.args)}
+        </Code>
       </Box>
       {isError ? (
         <Box>
@@ -706,7 +739,9 @@ const GeneralToolCallDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => 
             <Text size="xs" c="chatbox-tertiary" fw={500} mb={2}>
               {t('Result')}
             </Text>
-            <Code block>{stringifyToolPayload(part.result)}</Code>
+            <Code block style={PREFORMATTED_OVERFLOW_STYLE}>
+              {stringifyToolPayload(part.result)}
+            </Code>
           </Box>
         )
       )}
@@ -718,6 +753,48 @@ const GeneralToolCallDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => 
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'])
 const HTML_EXTENSIONS = new Set(['.html', '.htm'])
+const TEXT_EXTENSIONS = new Set([
+  '.txt',
+  '.md',
+  '.markdown',
+  '.json',
+  '.csv',
+  '.tsv',
+  '.log',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.ini',
+  '.cfg',
+  '.conf',
+  '.xml',
+  '.sql',
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.css',
+  '.scss',
+  '.less',
+  '.vue',
+  '.svelte',
+  '.py',
+  '.java',
+  '.go',
+  '.rs',
+  '.c',
+  '.cpp',
+  '.h',
+  '.hpp',
+  '.rb',
+  '.php',
+])
+
+// Cap text preview reads so a large generated artifact cannot exhaust the renderer.
+const TEXT_PREVIEW_MAX_BYTES = 2 * 1024 * 1024
 
 function getFileExtension(filePath: string): string {
   const name = getLocalFileName(filePath)
@@ -731,6 +808,10 @@ function isImageFile(filePath: string): boolean {
 
 function isHtmlFile(filePath: string): boolean {
   return HTML_EXTENSIONS.has(getFileExtension(filePath))
+}
+
+function isTextFile(filePath: string): boolean {
+  return TEXT_EXTENSIONS.has(getFileExtension(filePath))
 }
 
 function decodeBase64Utf8(base64: string): string {
@@ -760,6 +841,7 @@ const CreateDownloadUI: FC<{ part: MessageToolCallPart } & ToolCallActionContext
   const isSandboxPath = filePath.includes('/chatbox-sandbox/') || filePath.includes('\\chatbox-sandbox\\')
   const canPreview = isDownloadable && !!filePath && isImageFile(filePath) && isSandboxPath
   const canPreviewHtml = isDownloadable && !!filePath && isHtmlFile(filePath) && isSandboxPath
+  const canPreviewText = isDownloadable && !!filePath && isTextFile(filePath) && isSandboxPath
   const imageUrl = canPreview ? localFilePathToUrl(filePath) : null
 
   const handleSave = useCallback(async () => {
@@ -806,7 +888,7 @@ const CreateDownloadUI: FC<{ part: MessageToolCallPart } & ToolCallActionContext
         }
       }
       const res = await platform.sandboxReadFileBase64({ filePath })
-      if (!res.success || !res.base64) {
+      if (!res.success || res.base64 === undefined) {
         setPreviewError(res.error || t('Preview not available'))
         return
       }
@@ -828,6 +910,33 @@ const CreateDownloadUI: FC<{ part: MessageToolCallPart } & ToolCallActionContext
       setPreviewing(false)
     }
   }, [filePath, messageId, part.toolCallId, sessionId, t])
+
+  const handlePreviewText = useCallback(async () => {
+    if (!filePath) return
+    setPreviewing(true)
+    setPreviewError(null)
+    try {
+      const platform = (await import('@/platform')).default
+      if (!platform.sandboxReadFileBase64) {
+        setPreviewError(t('Preview not available'))
+        return
+      }
+      const res = await platform.sandboxReadFileBase64({ filePath, maxBytes: TEXT_PREVIEW_MAX_BYTES })
+      if (!res.success || res.base64 === undefined) {
+        setPreviewError(res.error || t('Preview not available'))
+        return
+      }
+      await NiceModal.show('content-viewer', {
+        title: fileName,
+        content: decodeBase64Utf8(res.base64),
+      })
+    } catch (err) {
+      console.error('Failed to preview text file:', err)
+      setPreviewError(t('Preview not available'))
+    } finally {
+      setPreviewing(false)
+    }
+  }, [filePath, fileName, t])
 
   if (isLoading) {
     return (
@@ -880,13 +989,13 @@ const CreateDownloadUI: FC<{ part: MessageToolCallPart } & ToolCallActionContext
           {fileName}
         </Text>
         <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
-          {canPreviewHtml && (
+          {(canPreviewHtml || canPreviewText) && (
             <Button
               variant="light"
               size="compact-xs"
               leftSection={<IconEye size={14} />}
               loading={previewing}
-              onClick={handlePreviewHtml}
+              onClick={canPreviewText ? handlePreviewText : handlePreviewHtml}
             >
               {t('Preview')}
             </Button>
@@ -922,15 +1031,24 @@ function isDownloadArtifact(part: MessageToolCallPart): boolean {
   return result?.downloadable === true
 }
 
-export const DownloadArtifactsUI: FC<{ parts: MessageToolCallPart[] } & ToolCallActionContext> = ({
-  parts,
-  sessionId,
-  messageId,
-}) => {
+export const MessageArtifactsUI: FC<
+  { imageParts: MessageToolCallPart[]; downloadParts: MessageToolCallPart[] } & ToolCallActionContext
+> = ({ imageParts, downloadParts, sessionId, messageId }) => {
   const { t } = useTranslation()
-  const artifacts = parts.filter(isDownloadArtifact)
+  const artifacts = downloadParts.filter(isDownloadArtifact)
+  const imageRecordIds = useMemo(
+    () =>
+      imageParts
+        .map((part) => getAcceptedImageBackgroundTaskResult(part.result)?.recordId)
+        .filter((recordId): recordId is string => Boolean(recordId)),
+    [imageParts]
+  )
+  const imageRecords = useImageGenerationRecords(imageRecordIds)
+  const generatedImages = useMemo(() => imageRecords.flatMap((record) => record?.generatedImages ?? []), [imageRecords])
 
-  if (artifacts.length === 0) return null
+  // A run that is still generating has no artifact to show yet — stay invisible
+  // instead of leaving an empty section behind.
+  if (artifacts.length === 0 && generatedImages.length === 0) return null
 
   return (
     <Stack
@@ -941,12 +1059,13 @@ export const DownloadArtifactsUI: FC<{ parts: MessageToolCallPart[] } & ToolCall
       style={{ borderTop: '1px solid color-mix(in srgb, var(--chatbox-border-primary) 70%, transparent)' }}
     >
       <Group gap={6}>
-        <IconDownload size={14} color="var(--chatbox-tint-brand)" />
+        <IconPackage size={14} color="var(--chatbox-tint-brand)" />
         <Text size="xs" fw={600} c="chatbox-secondary">
           {t('Artifacts')}
         </Text>
       </Group>
       <Stack gap={6}>
+        <ImageGenerationResultGallery images={generatedImages} />
         {artifacts.map((part) => (
           <CreateDownloadUI key={part.toolCallId} part={part} sessionId={sessionId} messageId={messageId} />
         ))}
@@ -991,13 +1110,13 @@ const CommandExecutionDetails: FC<{ part: MessageToolCallPart }> = ({ part }) =>
   const hasFinished = part.state === 'result' || part.state === 'error'
 
   return (
-    <Stack gap="xs">
+    <Stack gap="xs" style={{ minWidth: 0, maxWidth: '100%' }}>
       {command && (
         <Box>
           <Text size="xs" c="chatbox-tertiary" fw={500} mb={2}>
             {t('Command')}
           </Text>
-          <Code block style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+          <Code block style={PREFORMATTED_OVERFLOW_STYLE}>
             {command}
           </Code>
         </Box>
@@ -1007,7 +1126,7 @@ const CommandExecutionDetails: FC<{ part: MessageToolCallPart }> = ({ part }) =>
           <Text size="xs" c="chatbox-tertiary" fw={500} mb={2}>
             stdout
           </Text>
-          <Code block style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+          <Code block style={PREFORMATTED_OVERFLOW_STYLE}>
             {stdout || '—'}
           </Code>
         </Box>
@@ -1017,7 +1136,7 @@ const CommandExecutionDetails: FC<{ part: MessageToolCallPart }> = ({ part }) =>
           <Text size="xs" c="chatbox-tertiary" fw={500} mb={2}>
             stderr
           </Text>
-          <Code block style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+          <Code block style={PREFORMATTED_OVERFLOW_STYLE}>
             {stderr}
           </Code>
         </Box>
@@ -1094,6 +1213,8 @@ const UserExecUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
           pl="sm"
           style={{
             borderLeft: `2px solid ${isError || isDenied ? 'var(--chatbox-tint-error)' : 'var(--chatbox-tint-success)'}`,
+            minWidth: 0,
+            maxWidth: '100%',
           }}
         >
           <CommandExecutionDetails part={part} />
@@ -1168,161 +1289,12 @@ const ToolCallRunningDots: FC = () => (
   </Group>
 )
 
-// Full-size, high-salience decision buttons shared by all approval cards: the
-// Approve/Deny pair is what users miss, so it carries the card's visual weight.
-const APPROVAL_ACTION_BUTTON_PROPS = { size: 'sm', h: 32, px: 'lg', radius: 'xl' } as const
-
-const ImageGenerationApprovalCard: FC<{
-  toolCallId: string
-  details: ImageGenerationApprovalDetails
-  disabled: boolean
-  onApprove: () => void
-  onDeny: () => void
-  actionsRef?: Ref<HTMLDivElement>
-}> = ({ toolCallId, details, disabled, onApprove, onDeny, actionsRef }) => {
-  const { t, i18n } = useTranslation()
-  const usesChatboxQuota = details.billing === 'chatbox_quota'
-  const computePointsRemainingRatio = details.computePointsRemainingRatio ?? details.computePointsRemaining
-
-  return (
-    <Stack data-testid={TestId.toolCall.approvalCard} data-tool-call-id={toolCallId} gap="sm">
-      <Group gap="xs" wrap="nowrap">
-        <Box className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-chatbox-background-brand-secondary">
-          <IconPhoto size={18} color="var(--chatbox-tint-brand)" />
-        </Box>
-        <Box className="min-w-0">
-          <Text size="sm" fw={600} c="chatbox-primary">
-            {t('Generate images')}
-          </Text>
-          <Text size="xs" c="chatbox-tertiary" truncate="end">
-            {details.provider} · {details.modelId}
-          </Text>
-        </Box>
-      </Group>
-
-      <Paper p="xs" radius="md" bg="var(--chatbox-background-primary)" withBorder>
-        <Text size="xs" c="chatbox-tertiary" mb={3}>
-          {t('Prompt')}
-        </Text>
-        <Box style={{ maxHeight: APPROVAL_PAYLOAD_MAX_HEIGHT, overflow: 'auto' }}>
-          <Text size="sm" c="chatbox-primary" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-            {details.prompt}
-          </Text>
-        </Box>
-      </Paper>
-
-      <Group gap="lg">
-        <Box>
-          <Text size="xs" c="chatbox-tertiary">
-            {t('Number of images')}
-          </Text>
-          <Text size="sm" fw={500}>
-            {details.count}
-          </Text>
-        </Box>
-        {details.aspectRatio && (
-          <Box>
-            <Text size="xs" c="chatbox-tertiary">
-              {t('Aspect ratio')}
-            </Text>
-            <Text size="sm" fw={500}>
-              {details.aspectRatio}
-            </Text>
-          </Box>
-        )}
-        {details.style && (
-          <Box>
-            <Text size="xs" c="chatbox-tertiary">
-              {t('Image style')}
-            </Text>
-            <Text size="sm" fw={500}>
-              {details.style}
-            </Text>
-          </Box>
-        )}
-      </Group>
-
-      <Alert color="yellow" variant="light" icon={<IconInfoCircle size={16} />} p="xs">
-        <Stack gap={3}>
-          <Text size="xs" fw={500}>
-            {usesChatboxQuota
-              ? t('This request will consume {{count}} image quota and compute points.', { count: details.count })
-              : t('This request may incur charges from {{provider}}.', { provider: details.provider })}
-          </Text>
-          {usesChatboxQuota && details.imageQuota && (
-            <Text size="xs" c="chatbox-secondary">
-              {t('Image quota remaining: {{remaining}} / {{total}}', {
-                remaining: details.imageQuota.remaining.toLocaleString(),
-                total: details.imageQuota.total.toLocaleString(),
-              })}
-            </Text>
-          )}
-          {usesChatboxQuota && computePointsRemainingRatio !== undefined && (
-            <Text size="xs" c="chatbox-secondary">
-              {t('Compute points remaining: {{points}}', {
-                points: formatComputePointsRemainingRatio(computePointsRemainingRatio, i18n.language),
-              })}
-            </Text>
-          )}
-          <Text size="xs" c="chatbox-tertiary">
-            {usesChatboxQuota
-              ? t('Exact compute point usage is calculated after generation.')
-              : t('Chatbox AI image quota will not be used.')}
-          </Text>
-        </Stack>
-      </Alert>
-
-      <Group gap="xs" ref={actionsRef}>
-        <Button
-          data-testid={TestId.toolCall.approve}
-          {...APPROVAL_ACTION_BUTTON_PROPS}
-          leftSection={<IconCheck size={14} stroke={2.5} />}
-          color="chatbox-brand"
-          disabled={disabled}
-          onClick={onApprove}
-        >
-          {t('Approve and generate')}
-        </Button>
-        <Button
-          data-testid={TestId.toolCall.deny}
-          {...APPROVAL_ACTION_BUTTON_PROPS}
-          variant="light"
-          color="gray"
-          disabled={disabled}
-          onClick={onDeny}
-        >
-          {t('Cancel')}
-        </Button>
-      </Group>
-    </Stack>
-  )
-}
-
-const PausedToolCallDetails: FC<{ part: MessageToolCallPart } & ToolCallActionContext> = ({
-  part,
-  sessionId,
-  messageId,
-}) => {
+// Read-only pause details: what the agent is waiting on. All decision actions
+// (Approve/Deny/Continue/Stop) live in the pending-action bar at the bottom of
+// the conversation, which takes over the input box slot while input is locked.
+const PausedToolCallDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   const { t } = useTranslation()
   const pauseReason = part.pauseReason
-  const isApproval = isApprovalPauseReason(pauseReason)
-  const approvalActionsRef = useApprovalCardVisibilityReport(part.toolCallId, isApproval)
-  if (
-    pauseReason?.type === 'app_action_approval' &&
-    pauseReason.action === 'image.generate' &&
-    pauseReason.details?.type === 'image_generation'
-  ) {
-    return (
-      <ImageGenerationApprovalCard
-        toolCallId={part.toolCallId}
-        details={pauseReason.details}
-        disabled={!sessionId || !messageId}
-        onApprove={() => sessionId && messageId && continuePausedToolCall(sessionId, messageId, part.toolCallId)}
-        onDeny={() => sessionId && messageId && stopPausedToolCall(sessionId, messageId, part.toolCallId)}
-        actionsRef={approvalActionsRef}
-      />
-    )
-  }
   const title =
     pauseReason?.type === 'tool_call_limit'
       ? t('Paused after {{count}} steps. Check whether the task is on track, then continue or stop to adjust.', {
@@ -1330,115 +1302,54 @@ const PausedToolCallDetails: FC<{ part: MessageToolCallPart } & ToolCallActionCo
         })
       : pauseReason?.type === 'user_exec_approval'
         ? t('Approval required before executing this command.')
-        : pauseReason?.type === 'file_mutation_approval'
-          ? t('Approval required before modifying files.')
-          : pauseReason?.type === 'app_action_approval'
-            ? pauseReason.title
-            : t('Tool execution is paused.')
+        : pauseReason?.type === 'command_escalation_approval'
+          ? t('Approval required before retrying this command with full access.')
+          : pauseReason?.type === 'file_mutation_approval'
+            ? t('Approval required before modifying files.')
+            : pauseReason?.type === 'app_action_approval'
+              ? pauseReason.title
+              : t('Tool execution is paused.')
+  // Legacy pauses recover the counts by diffing the persisted preview — memoized
+  // so highlight/expand re-renders don't redo that work.
+  const fileMutationSummary = useMemo(() => {
+    if (pauseReason?.type !== 'file_mutation_approval') return undefined
+    const stats = getFileMutationDisplayStats(pauseReason)
+    const approximation = stats?.approximate ? '~' : ''
+    const magnitude =
+      stats?.mode === 'write'
+        ? `${stats.approximate ? '~ ' : ''}${t('Writing {{count}} lines', { count: stats.addedLines })}`
+        : stats?.mode === 'edit'
+          ? `${approximation}+${stats.addedLines} ${approximation}-${stats.removedLines}`
+          : undefined
+    return magnitude ? `${pauseReason.title}\n\n${magnitude}` : pauseReason.title
+  }, [pauseReason, t])
   const payload =
     pauseReason?.type === 'user_exec_approval'
-      ? pauseReason.command
-      : pauseReason?.type === 'file_mutation_approval'
-        ? `${pauseReason.title}\n\n${pauseReason.preview}`
-        : pauseReason?.type === 'app_action_approval'
-          ? pauseReason.preview
-          : stringifyToolPayload(part.args)
-  const handleDontAskAgain = (scope: 'session' | 'global') => {
-    if (!sessionId || !messageId || pauseReason?.type !== 'tool_call_limit') return
-    const count = pauseReason.maxToolCalls
-    disableToolCallLimitPauseAndContinue(sessionId, messageId, part.toolCallId, scope)
-      .then(() => {
-        toastActions.add(
-          scope === 'global'
-            ? t("Chats won't pause every {{count}} steps anymore. You can turn it back on in Settings.", { count })
-            : t(
-                "This chat won't pause every {{count}} steps anymore. You can turn it back on in Conversation Settings.",
-                { count }
-              )
-        )
-      })
-      .catch((error) => {
-        log.error('Failed to turn off the step pause:', error)
-        toastActions.add(t('Failed to update the setting. Please try again.'))
-      })
-  }
+      ? `${pauseReason.command}${pauseReason.workdir ? `\n\nWorking directory: ${pauseReason.workdir}` : ''}`
+      : pauseReason?.type === 'command_escalation_approval'
+        ? `${pauseReason.command}\n\n${pauseReason.justification}\n\nWorking directory: ${pauseReason.workdir}`
+        : pauseReason?.type === 'file_mutation_approval'
+          ? fileMutationSummary
+          : pauseReason?.type === 'app_action_approval'
+            ? pauseReason.preview
+            : stringifyToolPayload(part.args)
   return (
-    <Stack data-testid={TestId.toolCall.approvalCard} data-tool-call-id={part.toolCallId} gap="xs">
+    <Stack data-tool-call-id={part.toolCallId} gap="xs">
       <Text size="xs" c="chatbox-secondary">
         {title}
       </Text>
-      <Group gap="xs" ref={approvalActionsRef}>
-        {pauseReason?.type === 'tool_call_limit' ? (
-          <Button.Group>
-            <Button
-              data-testid={TestId.toolCall.continue}
-              size="compact-xs"
-              color="chatbox-brand"
-              disabled={!sessionId || !messageId}
-              onClick={() => sessionId && messageId && continuePausedToolCall(sessionId, messageId, part.toolCallId)}
-            >
-              {t('Continue')}
-            </Button>
-            <Menu position="bottom-start" shadow="md">
-              <Menu.Target>
-                <Button
-                  data-testid={TestId.toolCall.dontAskAgain}
-                  size="compact-xs"
-                  color="chatbox-brand"
-                  px={6}
-                  disabled={!sessionId || !messageId}
-                  aria-label={t('More continue options')}
-                  style={{ borderInlineStart: '1px solid rgba(255, 255, 255, 0.4)' }}
-                >
-                  <IconChevronDown size={12} />
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown maw="min(20rem, calc(100vw - 1.5rem))">
-                <Menu.Item
-                  data-testid={TestId.toolCall.dontAskAgainSession}
-                  style={{ whiteSpace: 'normal' }}
-                  onClick={() => handleDontAskAgain('session')}
-                >
-                  {t("Continue, and don't pause this chat again")}
-                </Menu.Item>
-                <Menu.Item
-                  data-testid={TestId.toolCall.dontAskAgainGlobal}
-                  style={{ whiteSpace: 'normal' }}
-                  onClick={() => handleDontAskAgain('global')}
-                >
-                  {t("Continue, and don't pause any chat again")}
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-          </Button.Group>
-        ) : (
-          <Button
-            data-testid={isApproval ? TestId.toolCall.approve : TestId.toolCall.continue}
-            {...(isApproval ? APPROVAL_ACTION_BUTTON_PROPS : { size: 'compact-xs' as const })}
-            leftSection={isApproval ? <IconCheck size={14} stroke={2.5} /> : undefined}
-            color="chatbox-brand"
-            disabled={!sessionId || !messageId}
-            onClick={() => sessionId && messageId && continuePausedToolCall(sessionId, messageId, part.toolCallId)}
-          >
-            {isApproval ? t('Approve') : t('Continue')}
-          </Button>
-        )}
-        <Button
-          data-testid={TestId.toolCall.deny}
-          {...(isApproval ? APPROVAL_ACTION_BUTTON_PROPS : { size: 'compact-xs' as const })}
-          variant="light"
-          color="chatbox-error"
-          disabled={!sessionId || !messageId}
-          onClick={() => sessionId && messageId && stopPausedToolCall(sessionId, messageId, part.toolCallId)}
-        >
-          {isApproval ? t('Deny') : t('Stop')}
-        </Button>
-      </Group>
-      <Box style={{ maxHeight: APPROVAL_PAYLOAD_MAX_HEIGHT, overflow: 'auto' }}>
-        <Code block>{payload}</Code>
-      </Box>
+      <Text size="xs" c="chatbox-tertiary">
+        {t('Respond in the action bar at the bottom.')}
+      </Text>
+      {payload && (
+        <Box style={{ maxHeight: APPROVAL_PAYLOAD_MAX_HEIGHT, overflow: 'auto' }}>
+          <Code block style={PREFORMATTED_OVERFLOW_STYLE}>
+            {payload}
+          </Code>
+        </Box>
+      )}
       {pauseReason?.type === 'user_exec_approval' && pauseReason.explanation && (
-        <Text size="xs" c="chatbox-secondary" style={{ whiteSpace: 'pre-wrap' }}>
+        <Text size="xs" c="chatbox-secondary" style={PREFORMATTED_OVERFLOW_STYLE}>
           {pauseReason.explanation}
         </Text>
       )}
@@ -1461,22 +1372,25 @@ const WebSearchDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   const results = extractSearchResults(part)
   const queries = extractSearchQueries([part])
   return (
-    <Stack gap={6}>
+    <Stack gap={6} style={{ minWidth: 0, maxWidth: '100%' }}>
       {queries.length > 0 && (
-        <Group gap={6}>
+        <Group gap={6} wrap="wrap" style={{ minWidth: 0 }}>
           {queries.map((query, index) => (
-            <Text key={`${index}-${query}`} size="xs" c="chatbox-tertiary" fs="italic" lh={1.4}>
+            <Text
+              key={`${index}-${query}`}
+              size="xs"
+              c="chatbox-tertiary"
+              fs="italic"
+              lh={1.4}
+              style={{ overflowWrap: 'anywhere' }}
+            >
               "{query}"
             </Text>
           ))}
         </Group>
       )}
       {results.length > 0 ? (
-        <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
-          {results.map((result, index) => (
-            <SearchResultCard key={`${index}-${result.link}`} index={index} result={result} />
-          ))}
-        </div>
+        <SearchResultList results={results} />
       ) : (
         <Text size="sm" c="chatbox-tertiary">
           {t('Search unsuccessful')}
@@ -1486,13 +1400,9 @@ const WebSearchDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   )
 }
 
-const TimelineToolCallDetail: FC<{ part: MessageToolCallPart } & ToolCallActionContext> = ({
-  part,
-  sessionId,
-  messageId,
-}) => {
+const TimelineToolCallDetail: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   if (part.state === 'paused') {
-    return <PausedToolCallDetails part={part} sessionId={sessionId} messageId={messageId} />
+    return <PausedToolCallDetails part={part} />
   }
   if (part.toolName === 'web_search') {
     return <WebSearchDetails part={part} />
@@ -1503,7 +1413,44 @@ const TimelineToolCallDetail: FC<{ part: MessageToolCallPart } & ToolCallActionC
   if (isCommandExecutionPart(part)) {
     return <CommandExecutionDetails part={part} />
   }
+  if (getToolResultImageReference(part)) {
+    return <ViewImageDetails part={part} />
+  }
   return <GeneralToolCallDetails part={part} />
+}
+
+// ─── View Image ─────────────────────────────────────────────────────
+
+const ViewImageDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
+  const setPictureShow = useUIStore((s) => s.setPictureShow)
+  const result = part.result as Record<string, unknown> | undefined
+  const storageKey = getToolResultImageReference(part)?.storageKey ?? ''
+  const filePath =
+    getFirstStringValue(part.args, ['file_path']) || (typeof result?.file_path === 'string' ? result.file_path : '')
+  if (part.state !== 'result' || !storageKey) {
+    return <GeneralToolCallDetails part={part} />
+  }
+  return (
+    <Stack gap={6}>
+      {filePath && (
+        <Text size="xs" c="chatbox-tertiary" style={{ wordBreak: 'break-all' }}>
+          {filePath}
+        </Text>
+      )}
+      <Box
+        style={{
+          maxWidth: 320,
+          borderRadius: 'var(--mantine-radius-md)',
+          overflow: 'hidden',
+          cursor: 'zoom-in',
+          width: 'fit-content',
+        }}
+        onClick={() => setPictureShow({ picture: { storageKey } })}
+      >
+        <ImageInStorage storageKey={storageKey} />
+      </Box>
+    </Stack>
+  )
 }
 
 // Shared timeline rail: the connecting line(s) plus the round status node.
@@ -1567,7 +1514,6 @@ type TimelineToolCallStepProps = {
   part: MessageToolCallPart
   isFirst: boolean
   isLast: boolean
-  showPausedActionDetails?: boolean
 } & ToolCallActionContext
 
 const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResult?: Record<string, unknown> }> = ({
@@ -1576,7 +1522,6 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
   isLast,
   sessionId,
   messageId,
-  showPausedActionDetails = true,
   commandResult,
 }) => {
   const { t } = useTranslation()
@@ -1609,6 +1554,7 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
     part.state === 'result' &&
     (commandResult?.success === false || (commandExitCode !== undefined && commandExitCode !== 0))
   const isBashNotAvailable = isBashNotAvailableResult(part)
+  const isActionableToolError = hasKnownToolError(part)
   const isError =
     (part.state === 'error' && !isCancelled) ||
     isBashNotAvailable ||
@@ -1621,10 +1567,13 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
     !isBackgroundWaiting &&
     imageStatus !== 'error' &&
     !isCommandFailure
-  const [expanded, setExpanded] = useAutoExpandOnSignal(isPaused || isBashNotAvailable)
+  // Paused steps stay collapsed — the decision lives in the pending-action bar
+  // above the input box, so several pending steps don't unfold at once.
+  const [expanded, setExpanded] = useAutoExpandOnSignal(isBashNotAvailable || isActionableToolError)
   const isApprovalPaused = isPaused && isApprovalPauseReason(part.pauseReason)
-  const approvalHighlighted = useApprovalCardHighlighted(part.toolCallId) && isApprovalPaused
-  // The pill's "View" action must reveal the card even if the user collapsed the step.
+  const stepRef = usePausedStepElementRegistration(sessionId, messageId, part.toolCallId, isPaused)
+  const approvalHighlighted = useApprovalCardHighlighted(sessionId, messageId, part.toolCallId) && isPaused
+  // The bar's "View" action reveals the details even if the user collapsed the step.
   useEffect(() => {
     if (approvalHighlighted) setExpanded(true)
   }, [approvalHighlighted, setExpanded])
@@ -1732,10 +1681,10 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
                 ? `${truncateSummary(argSummary || t('Completed'))} · exit ${commandExitCode}`
                 : truncateSummary(argSummary || resultSummary || t('Completed'))
 
-  const hasDetail = isPaused ? showPausedActionDetails : part.state !== 'call' || isCommandExecutionPart(part)
+  const hasDetail = isPaused || part.state !== 'call' || isCommandExecutionPart(part)
 
   return (
-    <Box pos="relative" pl={32} style={{ minHeight: 28, overflow: 'visible' }}>
+    <Box ref={stepRef} pos="relative" pl={32} style={{ minHeight: 28, overflow: 'visible' }}>
       <TimelineRail isFirst={isFirst} isLast={isLast} icon={Icon} dotBg={dotBg} stateColor={stateColor} />
       <UnstyledButton
         onClick={hasDetail ? () => setExpanded((prev) => !prev) : undefined}
@@ -1803,7 +1752,6 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
           {t('The original task cannot be resumed. Please send a new image generation request.')}
         </Text>
       )}
-      <ImageGenerationResultGallery images={imageRecord?.generatedImages ?? []} />
       <Collapse in={expanded && hasDetail}>
         <Box
           // The rotating locate ring plays only after the pill's "View" action, as
@@ -1811,16 +1759,21 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
           className={approvalHighlighted ? 'chatbox-approval-ring' : undefined}
           mt={6}
           mb={2}
-          p={10}
+          p={isActionableToolError ? 0 : 10}
           style={{
             borderRadius: 'var(--mantine-radius-md)',
-            backgroundColor: 'color-mix(in srgb, var(--chatbox-background-gray-secondary) 72%, transparent)',
+            backgroundColor: isActionableToolError
+              ? 'transparent'
+              : 'color-mix(in srgb, var(--chatbox-background-gray-secondary) 72%, transparent)',
             color: 'var(--chatbox-tint-secondary)',
             // Amber accent marks "decision needed" apart from routine tool details.
             borderLeft: isApprovalPaused ? '3px solid var(--chatbox-tint-warning)' : undefined,
+            minWidth: 0,
+            maxWidth: '100%',
+            overflow: 'hidden',
           }}
         >
-          <TimelineToolCallDetail part={part} sessionId={sessionId} messageId={messageId} />
+          <TimelineToolCallDetail part={part} />
         </Box>
       </Collapse>
     </Box>
@@ -1848,27 +1801,6 @@ type CopyReasoningHandler = (content: string) => (e: React.MouseEvent<HTMLButton
 // Renders an intermediate assistant text block as a timeline node. Markdown
 // rendering is delegated to the caller (Message owns the settings/uniqueId).
 type RenderStepText = (part: MessageTextPart, index: number) => ReactNode
-
-// tool_call_limit pauses freeze a whole parallel batch, but the Continue/Stop affordance
-// should render once per batch — on the batch's first paused part (parts without a
-// stepIndex each count as their own batch).
-function makeShouldShowPausedActions(parts: StepTimelinePart[]): (part: MessageToolCallPart) => boolean {
-  const actionIds = new Set<string>()
-  const seenStepIndexes = new Set<number>()
-
-  for (const part of parts) {
-    if (part.type !== 'tool-call') continue
-    if (part.state !== 'paused' || part.pauseReason?.type !== 'tool_call_limit') continue
-    if (part.stepIndex !== undefined) {
-      if (seenStepIndexes.has(part.stepIndex)) continue
-      seenStepIndexes.add(part.stepIndex)
-    }
-    actionIds.add(part.toolCallId)
-  }
-
-  return (part) =>
-    part.state !== 'paused' || part.pauseReason?.type !== 'tool_call_limit' || actionIds.has(part.toolCallId)
-}
 
 const TimelineTextStep: FC<{ children: ReactNode; isFirst: boolean; isLast: boolean }> = ({
   children,
@@ -1928,7 +1860,7 @@ function useReasoningState(message: Message | undefined, part: MessageReasoningP
 }
 
 const TimelineReasoningStep: FC<{
-  part: MessageReasoningPart
+  part?: MessageReasoningPart
   message?: Message
   isFirst: boolean
   isLast: boolean
@@ -1946,18 +1878,14 @@ const TimelineReasoningStep: FC<{
     ? 'var(--chatbox-background-brand-secondary)'
     : 'color-mix(in srgb, var(--chatbox-tint-warning) 12%, transparent)'
 
-  const label = isThinking
-    ? t('Thinking')
-    : showTime
-      ? t('Thought for {{time}}', { time: formatElapsedTime(displayTime) })
-      : t('Deeply thought')
+  const label = isThinking ? t('Thinking') : t('Deeply thought')
 
   return (
     <Box pos="relative" pl={32} style={{ minHeight: 28, overflow: 'visible' }}>
       <TimelineRail isFirst={isFirst} isLast={isLast} icon={IconBulb} dotBg={dotBg} stateColor={stateColor} />
       <UnstyledButton
         onClick={hasDetail ? () => setExpanded((prev) => !prev) : undefined}
-        style={{ cursor: hasDetail ? 'pointer' : 'default', maxWidth: '100%', display: 'block' }}
+        style={{ cursor: hasDetail ? 'pointer' : 'default', width: '100%', maxWidth: '100%', display: 'block' }}
       >
         <Group
           gap={8}
@@ -1965,17 +1893,16 @@ const TimelineReasoningStep: FC<{
           align="center"
           style={{ height: TIMELINE_NODE_CENTER * 2, maxWidth: '100%', transform: 'translateY(-1px)' }}
         >
-          <Text
-            size="sm"
-            fw={500}
-            c="chatbox-secondary"
-            lh="20px"
-            fs={isThinking ? 'italic' : undefined}
-            className="shrink-0"
-          >
+          <Text size="sm" fw={500} c="chatbox-primary" lh="20px" className="shrink-0">
             {label}
           </Text>
           {isThinking && <ToolCallRunningDots />}
+          {showTime && (
+            <Text size="xs" c="chatbox-tertiary" lh="20px" className="shrink-0 tabular-nums">
+              {formatElapsedTime(displayTime)}
+            </Text>
+          )}
+          {!expanded && <ReasoningInlineSummary content={reasoningContent} isThinking={isThinking} />}
           {expanded && hasDetail && onCopyReasoningContent && (
             <ActionIcon
               variant="subtle"
@@ -2011,7 +1938,7 @@ const TimelineReasoningStep: FC<{
             overflowY: 'auto',
           }}
         >
-          <Text size="sm" c="chatbox-tertiary" style={{ whiteSpace: 'pre-line', lineHeight: 1.5 }}>
+          <Text size="sm" c="chatbox-tertiary" style={PRELINE_OVERFLOW_STYLE}>
             {reasoningContent}
           </Text>
         </Box>
@@ -2030,11 +1957,9 @@ export const StepTimelineUI: FC<
     renderText?: RenderStepText
   } & ToolCallActionContext
 > = ({ parts, message, sessionId, messageId, onCopyReasoningContent, renderText }) => {
-  const shouldShowPausedActions = makeShouldShowPausedActions(parts)
-
   return (
-    <Box pos="relative" my={8} mb={12}>
-      <Stack gap={TIMELINE_STACK_GAP}>
+    <Box pos="relative" my={8} mb={12} style={{ minWidth: 0, maxWidth: '100%' }}>
+      <Stack gap={TIMELINE_STACK_GAP} style={{ minWidth: 0 }}>
         {parts.map((part, index) => {
           const isFirst = index === 0
           const isLast = index === parts.length - 1
@@ -2056,7 +1981,7 @@ export const StepTimelineUI: FC<
                 {renderText ? (
                   renderText(part, index)
                 ) : (
-                  <Text size="sm" style={{ whiteSpace: 'pre-line' }}>
+                  <Text size="sm" style={PRELINE_OVERFLOW_STYLE}>
                     {part.text}
                   </Text>
                 )}
@@ -2071,7 +1996,6 @@ export const StepTimelineUI: FC<
               isLast={isLast}
               sessionId={sessionId}
               messageId={messageId}
-              showPausedActionDetails={shouldShowPausedActions(part)}
             />
           )
         })}
@@ -2094,103 +2018,14 @@ export const ReasoningContentUI: FC<{
   message: Message
   part?: MessageReasoningPart
   onCopyReasoningContent: (content: string) => (e: React.MouseEvent<HTMLButtonElement>) => void
-}> = ({ message, part, onCopyReasoningContent }) => {
-  const { t } = useTranslation()
-  const { reasoningContent, isThinking, displayTime } = useReasoningState(message, part)
-
-  const [isExpanded, setIsExpanded] = useState<boolean>(false)
-
-  const shouldShowTimer = message.isStreamingMode === true
-  const showTime = shouldShowTimer && displayTime >= MIN_STEP_DURATION_MS
-
-  const toggleExpanded = useCallback(() => {
-    setIsExpanded((prev) => !prev)
-  }, [])
-
-  const showCopy = isExpanded && reasoningContent.length > 0
-  const copyButton = showCopy ? (
-    <ActionIcon
-      variant="subtle"
-      size="xs"
-      c="chatbox-gray"
-      onClick={(e) => {
-        e.stopPropagation()
-        onCopyReasoningContent(reasoningContent)(e)
-      }}
-      aria-label={t('Copy reasoning content')}
-    >
-      <ScalableIcon icon={IconCopy} size={12} />
-    </ActionIcon>
-  ) : null
-
-  const reasoningCollapse = reasoningContent.length > 0 && (
-    <Collapse in={isExpanded}>
-      <Box
-        mt={4}
-        pl="sm"
-        style={{
-          borderLeft: '1px solid var(--chatbox-tint-placeholder)',
-          maxHeight: 400,
-          overflowY: 'auto',
-          marginLeft: 7,
-        }}
-      >
-        <Text size="sm" c="chatbox-tertiary" style={{ whiteSpace: 'pre-line', lineHeight: 1.5 }}>
-          {reasoningContent}
-        </Text>
-      </Box>
-    </Collapse>
-  )
-
-  if (isThinking) {
-    return (
-      <Box mb={4}>
-        <UnstyledButton onClick={toggleExpanded}>
-          <Group gap={6}>
-            <Box
-              w={6}
-              h={6}
-              style={{
-                borderRadius: '50%',
-                backgroundColor: 'var(--chatbox-tint-brand)',
-                animation: 'pulse 1.5s ease-in-out infinite',
-              }}
-            />
-            <Text size="sm" c="chatbox-tertiary" fs="italic">
-              {t('Thinking')}
-              {showTime ? ` · ${formatElapsedTime(displayTime)}` : '...'}
-            </Text>
-            {copyButton}
-          </Group>
-        </UnstyledButton>
-        {reasoningCollapse}
-      </Box>
-    )
-  }
-
-  return (
-    <Box mb="xs">
-      <Box role="button" onClick={toggleExpanded}>
-        <Group gap={6}>
-          <ScalableIcon icon={IconBulb} size={14} color="var(--chatbox-tint-warning)" />
-          <Text size="sm" fw={600} c="chatbox-secondary" td="underline">
-            {showTime ? t('Thought for {{time}}', { time: formatElapsedTime(displayTime) }) : t('Deeply thought')}
-          </Text>
-          {copyButton}
-        </Group>
-      </Box>
-      <Collapse in={isExpanded}>
-        <Box
-          ml={4}
-          mt={4}
-          pl="sm"
-          style={{ borderLeft: '2px solid var(--chatbox-tint-warning)', maxHeight: 400, overflowY: 'auto' }}
-        >
-          <Text size="sm" c="chatbox-tertiary" style={{ whiteSpace: 'pre-line', lineHeight: 1.5 }}>
-            {reasoningContent}
-          </Text>
-        </Box>
-      </Collapse>
-    </Box>
-  )
-}
+}> = ({ message, part, onCopyReasoningContent }) => (
+  <Box my={8} mb={12}>
+    <TimelineReasoningStep
+      part={part}
+      message={message}
+      isFirst
+      isLast
+      onCopyReasoningContent={onCopyReasoningContent}
+    />
+  </Box>
+)

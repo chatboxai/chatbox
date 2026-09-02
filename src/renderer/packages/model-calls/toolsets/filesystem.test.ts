@@ -28,6 +28,23 @@ vi.mock('@/analytics/agent-mode', () => ({
   trackAgentModeFullAccessBypass: (...args: unknown[]) => trackAgentModeFullAccessBypass(...args),
 }))
 
+const buildEditStatsSpy = vi.fn()
+const buildWriteStatsSpy = vi.fn()
+vi.mock('./file-mutation-stats', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./file-mutation-stats')>()
+  return {
+    ...actual,
+    buildEditStats: (...args: Parameters<typeof actual.buildEditStats>) => {
+      buildEditStatsSpy(...args)
+      return actual.buildEditStats(...args)
+    },
+    buildWriteStats: (...args: Parameters<typeof actual.buildWriteStats>) => {
+      buildWriteStatsSpy(...args)
+      return actual.buildWriteStats(...args)
+    },
+  }
+})
+
 import { buildFilesystemTools } from './filesystem'
 
 const exec = vi.fn(async (..._args: unknown[]): Promise<SandboxExecResult> => ({ stdout: '', stderr: '', exitCode: 0 }))
@@ -147,6 +164,31 @@ describe('filesystem write to sandbox-writable temp (/tmp)', () => {
     expect(fsWrite).toHaveBeenCalledTimes(1)
   })
 
+  test('approval carries change stats so the reviewer sees the magnitude without the diff', async () => {
+    await execute(getTools().write_file, { file_path: '/Users/someone/secret.txt', content: 'one\ntwo' })
+    expect(requestFileMutationApproval).toHaveBeenLastCalledWith(
+      'tool-call-id',
+      'Write file: /Users/someone/secret.txt',
+      '',
+      { mode: 'write', addedLines: 2, removedLines: 0 }
+    )
+
+    await execute(getTools().edit_file, {
+      file_path: '/Users/someone/secret.txt',
+      old_text: 'keep\ndrop me\ntail',
+      new_text: 'keep\nadded\nmore\ntail',
+    })
+    const [, title, preview, stats] = requestFileMutationApproval.mock.calls.at(-1) as [
+      string,
+      string,
+      string,
+      { mode: string; edits: number; addedLines: number; removedLines: number },
+    ]
+    expect(title).toBe('Edit file: /Users/someone/secret.txt')
+    expect(preview).toBe('')
+    expect(stats).toEqual({ mode: 'edit', edits: 1, addedLines: 2, removedLines: 1 })
+  })
+
   test('preserves a real /home/user path and routes it through approval', async () => {
     const realHomeProvider = {
       ...provider,
@@ -168,6 +210,8 @@ describe('user-granted working directories (like /tmp)', () => {
     exec.mockClear()
     requestFileMutationApproval.mockClear()
     trackAgentModeFullAccessBypass.mockClear()
+    buildEditStatsSpy.mockClear()
+    buildWriteStatsSpy.mockClear()
   })
 
   function toolsWithWorkingDir() {
@@ -215,6 +259,7 @@ describe('user-granted working directories (like /tmp)', () => {
     expect(requestFileMutationApproval).not.toHaveBeenCalled()
     expect(fsWrite).toHaveBeenCalledTimes(1)
     expect(trackAgentModeFullAccessBypass).toHaveBeenCalledWith({ tool: 'write_file' })
+    expect(buildWriteStatsSpy).not.toHaveBeenCalled()
   })
 
   test('full access edits absolute paths without approval', async () => {
@@ -224,6 +269,7 @@ describe('user-granted working directories (like /tmp)', () => {
     expect(requestFileMutationApproval).not.toHaveBeenCalled()
     expect(fsEdit).toHaveBeenCalledTimes(1)
     expect(trackAgentModeFullAccessBypass).toHaveBeenCalledWith({ tool: 'edit_file' })
+    expect(buildEditStatsSpy).not.toHaveBeenCalled()
   })
 
   test('full access bypass is tracked even when the write fails', async () => {

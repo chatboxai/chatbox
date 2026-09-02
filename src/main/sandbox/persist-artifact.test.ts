@@ -15,13 +15,13 @@ vi.mock('../util', () => ({
   getLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }))
 
+import { getSandboxArtifactsRoot, getSandboxTmpRoot } from './manager'
 import {
-  getSandboxArtifactsRoot,
-  getSandboxTmpRoot,
+  artifactSourceKey,
   hasSessionArtifacts,
   persistSandboxArtifact,
   removeSessionArtifacts,
-} from './manager'
+} from './persist-artifact'
 
 const SESSION_ID = 'session-persist-test'
 // realpath the temp root so comparisons match macOS /var → /private/var symlink resolution.
@@ -123,6 +123,30 @@ describe('persistSandboxArtifact', () => {
     const second = await persistSandboxArtifact(first.artifactPath!, SESSION_ID)
     expect(second.success).toBe(true)
     expect(second.artifactPath).toBe(first.artifactPath)
+  })
+
+  test('refreshes a persisted artifact when the original working-directory file changed', async () => {
+    const source = makeSandboxFile('site.html', 'v1')
+    const first = await persistSandboxArtifact(source, SESSION_ID)
+    expect(first.success).toBe(true)
+    writeFileSync(source, 'v2', 'utf-8')
+
+    const second = await persistSandboxArtifact(first.artifactPath!, SESSION_ID)
+    expect(second.success).toBe(true)
+    expect(second.artifactPath).toBe(first.artifactPath)
+    expect(readFileSync(first.artifactPath!, 'utf-8')).toBe('v2')
+  })
+
+  test('does not refresh a persisted artifact from a different same-named working file', async () => {
+    mkdirSync(path.join(TMP_SANDBOX_DIR, 'charts'), { recursive: true })
+    const nested = path.join(TMP_SANDBOX_DIR, 'charts', 'report.html')
+    writeFileSync(nested, 'CHARTS', 'utf-8')
+    const first = await persistSandboxArtifact(realpathSync(nested), SESSION_ID)
+    writeFileSync(path.join(TMP_SANDBOX_DIR, 'report.html'), 'ROOT', 'utf-8')
+
+    const second = await persistSandboxArtifact(first.artifactPath!, SESSION_ID)
+    expect(second.artifactPath).toBe(first.artifactPath)
+    expect(readFileSync(first.artifactPath!, 'utf-8')).toBe('CHARTS')
   })
 
   test.skipIf(process.platform === 'win32')(
@@ -236,5 +260,10 @@ describe('persistSandboxArtifact', () => {
     const result = await persistSandboxArtifact(missing, SESSION_ID)
     expect(result.success).toBe(false)
     expect(result.error).toMatch(/file not found/i)
+  })
+
+  test('hashes source paths stably so same-named files in different dirs stay distinct', () => {
+    expect(artifactSourceKey('/tmp/charts/report.html')).not.toBe(artifactSourceKey('/tmp/tables/report.html'))
+    expect(artifactSourceKey('/tmp/report.html')).toBe(artifactSourceKey('/tmp/report.html'))
   })
 })

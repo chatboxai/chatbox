@@ -146,15 +146,29 @@ Comply with user requests to the best of your abilities. Maintain composure and 
 }
 
 export function summarizeConversation(msgs: Message[], language: string): Message[] {
-  const instructionText = `Provide a detailed summary for continuing this conversation.
-Focus on information that would be helpful for continuing, including:
-- What we discussed and why it matters
-- Key decisions made
-- What we're working on
-- What we're going to do next
+  const instructionText = `Summarize this conversation as a handoff briefing for an assistant that will continue it WITHOUT access to the full history. This is an out-of-character, meta-level request: do NOT continue the conversation or reply in character.
 
-The new session will not have access to our conversation history.
-Write in ${language}. Be concise but complete. Do NOT include prefaces or meta-commentary.`
+First determine what kind of conversation this is, then cover the matching sections with concrete detail:
+
+If it is task-oriented (work, coding, analysis, research, tool use):
+1. Goal & current state — what the user ultimately wants; what is done, in progress, or blocked right now
+2. Key decisions and conclusions, and the reasons behind them
+3. Facts learned from tool calls that are worth keeping — exact file paths, command outputs, data values, URLs, error messages
+4. Files or artifacts created/modified, and what was changed in them
+5. Next steps, in order
+
+If it is role-play or creative writing (stories, characters, worldbuilding):
+1. Premise, setting, and established world rules
+2. Characters — names, roles, personality, speech style, and details established so far
+3. Plot so far — key events and revelations, in order
+4. Current scene — where things stand right now: location, ongoing action, emotional tone, relationship dynamics
+5. Open threads — unresolved plot points, foreshadowing, and the user's stated preferences about direction and style
+
+For general chat or mixed conversations, cover whichever of the above apply.
+
+Preserve exact identifiers and established names verbatim (paths, code symbols, keys, numbers, character names). Skip sections that do not apply.
+Write in ${language}; if the conversation itself is mainly in a different language, use that language instead.
+Be concise but complete. Do NOT include prefaces or meta-commentary.`
 
   const instructionMessage: Message = {
     id: `summary-instruction-${Date.now()}`,

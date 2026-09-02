@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../chatStore', () => ({
-  updateMessageCache: vi.fn().mockResolvedValue(undefined),
-  updateMessage: vi.fn().mockResolvedValue(undefined),
+const { updateMessageCacheMock, updateMessageMock } = vi.hoisted(() => ({
+  updateMessageCacheMock: vi.fn().mockResolvedValue(undefined),
+  updateMessageMock: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: {
+    sessions: { updateMessage: updateMessageMock },
+    sessionQueryBridge: { updateMessageCache: updateMessageCacheMock },
+  },
 }))
 
 vi.mock('../../settingsStore', () => ({
@@ -37,7 +44,6 @@ vi.mock('@/packages/token', () => ({
 }))
 
 import type { Message } from '@shared/types'
-import * as chatStore from '../../chatStore'
 import { persistStreamingMessage, updateStreamingCache } from '../messages'
 
 function createTestMessage(overrides?: Partial<Message>): Message {
@@ -55,10 +61,10 @@ describe('updateStreamingCache', () => {
     vi.clearAllMocks()
   })
 
-  it('calls chatStore.updateMessageCache with correct args', () => {
+  it('calls updateMessageCacheMock with correct args', () => {
     const msg = createTestMessage()
     updateStreamingCache('session-1', msg)
-    expect(chatStore.updateMessageCache).toHaveBeenCalledWith(
+    expect(updateMessageCacheMock).toHaveBeenCalledWith(
       'session-1',
       'test-msg-1',
       expect.objectContaining({ id: 'test-msg-1' })
@@ -72,8 +78,8 @@ describe('updateStreamingCache', () => {
     expect(msg.timestamp).toBeGreaterThanOrEqual(before)
   })
 
-  it('does not throw when chatStore rejects', async () => {
-    vi.mocked(chatStore.updateMessageCache).mockRejectedValueOnce(new Error('fail'))
+  it('does not throw when the session service rejects', async () => {
+    updateMessageCacheMock.mockRejectedValueOnce(new Error('fail'))
     expect(() => updateStreamingCache('session-1', createTestMessage())).not.toThrow()
     await new Promise((resolve) => setTimeout(resolve, 10))
   })
@@ -84,10 +90,10 @@ describe('persistStreamingMessage', () => {
     vi.clearAllMocks()
   })
 
-  it('calls chatStore.updateMessage', async () => {
+  it('calls updateMessageMock', async () => {
     const msg = createTestMessage()
     await persistStreamingMessage('session-1', msg)
-    expect(chatStore.updateMessage).toHaveBeenCalledWith(
+    expect(updateMessageMock).toHaveBeenCalledWith(
       'session-1',
       'test-msg-1',
       expect.objectContaining({ id: 'test-msg-1' })

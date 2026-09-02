@@ -1,4 +1,21 @@
 const changelog = `
+## v1.23.1 - 2026.09.02
+1. In long conversations, you'll be asked to confirm before deleting older messages or switching models if that would reset the cached context
+2. Copilot prompts can now be up to 40,000 characters
+3. Fixed the conversation settings menu sitting under the Android navigation bar
+4. Fixed errors related to keyboard shortcuts, conversation settings, and invalid max output tokens
+
+## v1.23.0 - 2026.09.01
+1. Added persistent memory: new chats can remember key facts you saved, as Global Memory or per Copilot
+2. Added Soul in Work Mode to set the AI's personality and boundaries
+3. You can queue a new message while a reply is generating, or insert one immediately
+4. Working directory and permissions carry over from last time, and can be changed above the input
+5. Full Access no longer pauses for confirmation every 25 steps by default
+6. Vision-capable models can open local images or newly downloaded files on their own
+7. Improved context for long tasks: tool results are not dropped too early, and recent messages are kept first when compacting
+8. You can clear all archived chats at once; text in tool results can be previewed
+9. Added Tencent Hunyuan, Xiaomi MiMo, LongCat, GLM Coding Plan, OpenCode Zen, and OpenCode Go, plus self-hosted SearXNG search
+
 ## v1.22.3 - 2026.08.09
 1. Fixed a performance issue that could cause lag when regenerating replies or switching response branches in long conversations
 2. Improved backup export compatibility on devices where backups could fail to export

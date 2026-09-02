@@ -40,15 +40,24 @@ vi.mock('@/platform', () => ({
   default: { type: 'web' },
 }))
 
-vi.mock('../../chatStore', () => ({
-  getSession: getSessionMock,
-  updateSessionCacheSync: updateSessionCacheSyncMock,
-  updateSession: updateSessionMock,
-  useSession: () => ({ session: null }),
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: {
+    sessions: { updateSession: updateSessionMock },
+    sessionQueryBridge: {
+      getSession: getSessionMock,
+      updateSessionCache: updateSessionCacheSyncMock,
+    },
+    sessionHooks: { useSession: () => ({ session: null }) },
+  },
 }))
 
 import { uiStore } from '../../uiStore'
-import { getSessionAgentModeEntry, lockSessionAgentMode, setSessionAgentMode } from '../agent-mode'
+import {
+  createNewChatAgentModeEntry,
+  getSessionAgentModeEntry,
+  lockSessionAgentMode,
+  setSessionAgentMode,
+} from '../agent-mode'
 
 const defaultEntry = { value: 'auto', locked: false, lockReason: null } as const
 
@@ -57,7 +66,7 @@ beforeEach(() => {
   getSessionMock.mockClear()
   updateSessionCacheSyncMock.mockClear()
   updateSessionMock.mockClear()
-  uiStore.setState({ sessionAgentModeMap: {}, agentModeSmartSwitchingDefault: true })
+  uiStore.setState({ sessionAgentModeMap: {}, agentModeSmartSwitchingDefault: true, agentModeLastSelected: 'off' })
 })
 
 describe('setSessionAgentMode', () => {
@@ -206,5 +215,39 @@ describe('getSessionAgentModeEntry', () => {
     })
 
     expect(entry).toEqual({ value: 'off', locked: false, lockReason: null })
+  })
+
+  test('starts a new chat in the last explicitly selected mode', () => {
+    uiStore.getState().setAgentModeLastSelected('on')
+
+    expect(getSessionAgentModeEntry('new')).toEqual({ value: 'on', locked: false, lockReason: null })
+  })
+
+  test('keeps existing sessions without a stored mode in chat mode even when Work Mode is remembered', () => {
+    uiStore.getState().setAgentModeLastSelected('on')
+
+    expect(getSessionAgentModeEntry('legacy-session')).toEqual(defaultEntry)
+    expect(getSessionAgentModeEntry('legacy-session', { settings: {} })).toEqual(defaultEntry)
+  })
+
+  test('prefers the transient new-session selection over the remembered mode', () => {
+    uiStore.getState().setAgentModeLastSelected('on')
+    uiStore.setState({
+      sessionAgentModeMap: { new: { value: 'off', locked: false, lockReason: null } },
+    })
+
+    expect(getSessionAgentModeEntry('new')).toEqual({ value: 'off', locked: false, lockReason: null })
+  })
+})
+
+describe('createNewChatAgentModeEntry', () => {
+  test('returns Work Mode when it was the last explicit selection', () => {
+    expect(createNewChatAgentModeEntry('on', true)).toEqual({ value: 'on', locked: false, lockReason: null })
+    expect(createNewChatAgentModeEntry('on', false)).toEqual({ value: 'on', locked: false, lockReason: null })
+  })
+
+  test('falls back to the smart switching preference for chat mode', () => {
+    expect(createNewChatAgentModeEntry('off', true)).toEqual(defaultEntry)
+    expect(createNewChatAgentModeEntry('off', false)).toEqual({ value: 'off', locked: false, lockReason: null })
   })
 })

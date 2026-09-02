@@ -11,7 +11,7 @@
 Agent Skills 的核心目标是以低耦合方式扩展模型能力：
 
 - 通过标准 `SKILL.md` 格式发现和解析技能
-- 通过 Settings + Session 两级配置控制技能启用范围
+- 通过 Settings 全局配置（`skills.enabledSkillNames`）控制技能启用范围
 - 通过工具调用进行按需加载，避免一次性注入所有技能全文
 
 ## 架构分层
@@ -21,25 +21,22 @@ Agent Skills 的核心目标是以低耦合方式扩展模型能力：
 | Main 进程技能层 | `src/main/skills/` | 发现技能目录、解析 `SKILL.md`、注册技能 IPC |
 | Shared 类型层 | `src/shared/types/skills.ts` | 技能元数据与配置 Schema |
 | Renderer 控制层 | `src/renderer/packages/skills/controller.ts` | 对 IPC 提供类型化封装 |
-| 会话工具构建层 | `src/renderer/stores/session/tools-builder.ts` | 拼装 `<available_skills>` 与 `load_skill` 工具 |
-| UI 层 | Settings + InputBox | 全局启用与会话级覆盖 |
+| 会话工具构建层 | `src/renderer/stores/session/tools-builder.ts` | 在系统指令中拼装技能列表（markdown）与 `load_skill` 工具 |
+| UI 层 | Settings | 全局启用/禁用技能 |
 
 ## 数据模型与配置
 
 ### 全局配置
 
-全局技能开关与启用列表由设置存储管理，使用版本迁移保证向后兼容。
+全局技能开关与启用列表由设置存储管理（`SkillSettingsSchema`），使用版本迁移保证向后兼容。
 
-- `enabledBuiltinSkills`: 启用的内置技能名
-- `enabledSkillNames`: 启用的用户技能名
+- `enabledSkillNames`: 启用的技能名列表（内置与用户技能共用同一列表）
+- `translationEnabled`: 技能翻译功能开关
+- `builtinDefaultsInitialized` / `appliedDefaultBuiltinSkillNames`: 内置技能默认启用的一次性初始化标记
 
-### 会话级覆盖
+### 会话级覆盖（未实现）
 
-会话模型增加可选字段（与 `copilotId` 的可选字段模式一致）：
-
-- `enabledSkillNames?: string[]`
-
-语义为“会话级完整覆盖全局技能列表”；当值为 `undefined` 时回退到全局配置。
+历史设计中曾规划会话级 `enabledSkillNames?: string[]` 覆盖全局配置，当前代码未实现——工具构建只读全局 `skills.enabledSkillNames`。
 
 ## 关键流程
 
@@ -52,19 +49,17 @@ Agent Skills 的核心目标是以低耦合方式扩展模型能力：
 
 ### 2) 上下文注入与工具注册（Renderer）
 
-`buildToolsForSession()` 中执行以下动作：
+`buildToolsForSession()` 中执行以下动作（仅在 agent mode 开启且模型支持 agent 工具时）：
 
-1. 计算当前会话有效技能集合（全局或会话覆盖）。
-2. 生成 `<available_skills>` XML 注入到 `instructions`。
-3. 在支持 Tool Use 的模型上注册 `load_skill`（按名称加载技能正文）。
-4. 模型不支持 Tool Use 时，仅注入 XML 元数据，不注册技能工具。
+1. 读取全局启用技能集合（`skills.enabledSkillNames`）。
+2. 在 `instructions` 中注入 markdown 格式的技能列表（`### Available Skills` 小节）。
+3. 注册 `load_skill` 工具（按名称加载技能正文），并注册 `user_exec` / `install_skill` 等配套工具。
 
 该设计遵循“渐进披露（progressive disclosure）”原则。
 
 ### 3) UI 管理路径
 
 - Settings Skills 页面：全局启用/禁用、目录打开、刷新扫描
-- InputBox SkillsMenu：当前会话启用列表覆盖
 
 ## IPC 通道（技能相关）
 
@@ -79,10 +74,10 @@ Agent Skills 的核心目标是以低耦合方式扩展模型能力：
 ## 已归档决策
 
 - 技能规范遵循 agentskills.io（目录 + `SKILL.md`）
-- 技能激活采用 `load_skill` + `<available_skills>` 模式
+- 技能激活采用 `load_skill` + 系统指令内技能列表（markdown）模式
 - 内置技能以代码常量内置，而非文件系统预置
 - 功能桌面端优先，非桌面端通过 feature flag 降级隐藏
-- 会话级技能选择持久化在 SessionSchema（而非仅 UI 临时态）
+- 会话级技能选择曾计划持久化在 SessionSchema，最终未实现（见上文「会话级覆盖」）
 
 ## 错误处理与边界条件
 
@@ -90,7 +85,7 @@ Agent Skills 的核心目标是以低耦合方式扩展模型能力：
 
 - 无效 `SKILL.md` 解析失败时跳过，不中断主流程
 - 缺失技能目录时自动创建
-- 模型无 Tool Use 能力时仅注入元数据，不注册技能工具
+- 模型不支持 agent 工具或未开启 agent mode 时，不注入技能列表也不注册技能工具
 - 被删除技能被引用时返回可读错误，避免会话崩溃
 
 ## 演进计划（来自 skills-management-panel 计划）

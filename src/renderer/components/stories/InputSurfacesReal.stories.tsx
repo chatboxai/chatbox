@@ -87,6 +87,18 @@ export const AgentModeButtonStates: StoryObj = {
   render: () => <AgentModeButtonFixture />,
 }
 
+export const AgentModeTouchMenuDemo: StoryObj = {
+  name: 'Agent mode touch sheet drill-down demo',
+  parameters: {
+    layout: 'fullscreen',
+    uiInventoryTargets: [
+      'src/renderer/components/InputBox/AgentModeButton',
+      'src/renderer/components/InputBox/AgentModePanel',
+    ],
+  },
+  render: () => <AgentModeTouchMenuDemoFixture />,
+}
+
 export const AttachmentMiniCardStates: StoryObj = {
   name: 'Attachment mini card image file processing completed error states',
   parameters: {
@@ -227,7 +239,8 @@ export const MessageAttachmentStates: StoryObj = {
             ragMode="session-retrieval"
             sessionAttachmentIndexStatus="failed"
             sessionAttachmentError="Large file indexing failed."
-            onRetry={() => undefined}
+            recoveryAction="continue"
+            onRecover={() => undefined}
           />
         </Stack>
       </Paper>
@@ -332,7 +345,7 @@ export const AttachmentParserTypeStates: StoryObj = {
 }
 
 export const InputBoxComposerStates: StoryObj = {
-  name: 'InputBox composer ready selected model generating and missing model states',
+  name: 'InputBox composer ready selected model and missing model states',
   parameters: {
     uiInventoryTargets: ['src/renderer/components/InputBox/InputBox'],
   },
@@ -355,18 +368,8 @@ export const InputBoxComposerStates: StoryObj = {
             onClickSessionSettings={() => true}
           />
         </Paper>
-        <Paper withBorder radius="md" p="md" maw={780}>
-          <Text size="xs" c="dimmed" mb={8}>
-            Generating response
-          </Text>
-          <InputBox
-            sessionId="new"
-            model={{ provider: ModelProviderEnum.OpenAI, modelId: 'gpt-4.1' }}
-            generating
-            onStopGenerating={() => true}
-            onSelectModel={() => undefined}
-          />
-        </Paper>
+        {/* The stop state now derives from session lock state (streaming replies
+            in the session), so it can no longer be forced via props here. */}
         <Paper withBorder radius="md" p="md" maw={780}>
           <Text size="xs" c="dimmed" mb={8}>
             Model not selected
@@ -376,6 +379,49 @@ export const InputBoxComposerStates: StoryObj = {
       </Stack>
     </StoryRouter>
   ),
+}
+
+function AgentModeTouchMenuDemoFixture() {
+  const [webBrowsing, setWebBrowsing] = useState(true)
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    window.localStorage.setItem('chatbox.web-search-moved-tip-dismissed.v1', 'true')
+    setReady(true)
+  }, [])
+
+  if (!ready) return null
+
+  return (
+    <StoryRouter>
+      <Box className="relative mx-auto min-h-[100dvh] max-w-[390px] bg-[var(--chatbox-background-secondary)]">
+        <Box px="md" pt="xl">
+          <Text size="sm" fw={600}>
+            Mobile composer
+          </Text>
+          <Text size="xs" c="dimmed" mt={4}>
+            Tap Chat Mode to open the sheet. Rows drill in-page; desktop-only tools stay hidden.
+          </Text>
+        </Box>
+        <Box className="absolute inset-x-0 bottom-0 border-t border-[var(--chatbox-border-primary)] bg-[var(--chatbox-background-primary)] px-3 py-3">
+          <Group justify="space-between" align="center">
+            <AgentModeButton
+              sessionId="storybook-agent-touch"
+              layout="touch"
+              compact
+              webBrowsingMode={webBrowsing}
+              onWebBrowsingChange={setWebBrowsing}
+              onKnowledgeBaseSelect={() => undefined}
+              onSkillSelect={() => undefined}
+            />
+            <Text size="xs" c="dimmed">
+              Message
+            </Text>
+          </Group>
+        </Box>
+      </Box>
+    </StoryRouter>
+  )
 }
 
 function AgentModeButtonFixture() {

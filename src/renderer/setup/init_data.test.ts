@@ -11,10 +11,6 @@ const storageMock = vi.hoisted(() => ({
   setItemNow: vi.fn(),
 }))
 
-vi.mock('@/stores/chatStore', () => ({
-  getMetaStorage: vi.fn(() => Promise.resolve(metaStorage)),
-}))
-
 vi.mock('@/packages/initial_data', () => ({
   defaultSessionsForCN: [],
   defaultSessionsForEN: [
@@ -44,6 +40,7 @@ vi.mock('@/storage/StoreStorage', () => ({
 }))
 
 vi.mock('@/stores/sessionHelpers', () => ({
+  getMetaStorage: vi.fn(() => Promise.resolve(metaStorage)),
   getSessionMeta: (session: { id: string; name: string; type: 'chat' | 'picture' }) => ({
     id: session.id,
     name: session.name,

@@ -58,7 +58,10 @@ export function useToggleMCPServer() {
       } else if (effect?.action === 'stop') {
         mcpController.stopServer(effect.id)
       }
-      trackEvent('toggle_mcp_server', { id, enabled })
+      trackEvent('toggle_mcp_server', {
+        server_type: isBuiltin ? 'builtin' : 'custom',
+        enabled,
+      })
     },
     [setSettings]
   )

@@ -1,7 +1,11 @@
-import { buildContext } from '@shared/context'
+import { buildAgentPersonaPrompt, buildMemoriesSection } from '@shared/agent-persona/prompt'
+import { buildContext, flattenToolCallPartsToText, selectContextMessages } from '@shared/context'
+import type { AttachmentResolver } from '@shared/context/types'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
 import type { ChatStreamOptions, ModelInterface } from '@shared/models/types'
+import { toSandboxSeedAttachment } from '@shared/sandbox/attachment-path'
 import type { SandboxProvider } from '@shared/sandbox-provider'
+import { supportsToolResultImages } from '@shared/tools/view-image'
 import type {
   AgentModeLockReason,
   AgentModeValue,
@@ -11,12 +15,22 @@ import type {
   Message,
   MessageContentParts,
   Session,
+  SessionPromptContextSnapshot,
   SessionSettings,
   Settings,
 } from '@shared/types'
-import { ModelProviderEnum } from '@shared/types'
 import type { ModelDependencies } from '@shared/types/adapters'
+import { combineMemoryStateTokens } from '@shared/types/agent-persona'
 import { sequenceMessages } from '@shared/utils/message'
+import {
+  resolveReasoningReplayPolicy,
+  shouldDisableClaudeThinkingForUnsignedResume,
+} from '@shared/utils/reasoning-control'
+import {
+  formatTimestampWithZone,
+  insertTimeGapReminders,
+  SYSTEM_REMINDER_PROMPT_INSTRUCTION,
+} from '@shared/utils/system-reminder'
 import type { ToolSet } from 'ai'
 import { t } from 'i18next'
 import { getLogger } from '@/lib/utils'
@@ -24,13 +38,22 @@ import {
   hasAcceptedCallbackBackgroundTask,
   hasAcceptedCallbackBackgroundTaskResult,
 } from '@/packages/chatbox-cli/background-task-result'
-import { convertToModelMessages, injectModelSystemPrompt } from '@/packages/model-calls/message-utils'
+import { assessContextPressure, getConfiguredContextWindow } from '@/packages/context-management/context-pressure'
+import {
+  buildModelSystemPrompt,
+  convertToModelMessages,
+  injectModelSystemPrompt,
+} from '@/packages/model-calls/message-utils'
+import { getOS } from '@/packages/navigator'
 import platform from '@/platform'
 import { createSandboxProvider } from '@/sandbox'
+import { getCopilotMemorySelection } from '@/stores/copilotStore'
+
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attachment-rag/logging'
 import { createAttachmentResolver } from './attachment-resolver'
 import { applyLegacyToolFallback } from './legacy-tool-fallback'
 import { getOCRModel, ocrImagesInMessages } from './ocr-helper'
+import { resolveSessionPromptContextSnapshot } from './prompt-context-snapshot'
 import { buildToolsForSession } from './tools-builder'
 
 const log = getLogger('agent-generation-harness')
@@ -43,6 +66,8 @@ Unless the user requests otherwise, all visible assistant text must be in the sa
 
 export interface AgentGenerationSideEffects {
   lockAgentMode?: (reason: Exclude<AgentModeLockReason, null>) => void
+  /** Persist freshly captured prompt context into the session settings. */
+  persistSessionPromptContextSnapshot?: (snapshot: SessionPromptContextSnapshot) => void
 }
 
 export interface PrepareAgentGenerationHarnessOptions {
@@ -67,6 +92,7 @@ export interface PrepareAgentGenerationHarnessOptions {
    */
   compactionPoints?: CompactionPoint[]
   preserveLastPromptMessageToolCalls?: boolean
+  attachmentResolver?: AttachmentResolver
   sideEffects?: AgentGenerationSideEffects
   sandboxProviderFactory?: () => SandboxProvider | null
   isPro?: () => boolean
@@ -79,6 +105,7 @@ export interface PreparedAgentGenerationHarness {
   chatOptions: ChatStreamOptions
   infoParts: MessageContentParts
   fallbackToolCallPart: MessageContentParts[number] | undefined
+  systemPrompt: string | undefined
   sandboxProvider: SandboxProvider | null
   debug: {
     effectiveAgentMode: 'on' | 'off'
@@ -198,6 +225,7 @@ export async function prepareAgentGenerationHarness(
     providerOptions,
     compactionPoints = session.compactionPoints,
     preserveLastPromptMessageToolCalls = false,
+    attachmentResolver = createAttachmentResolver(),
     sideEffects,
     sandboxProviderFactory = createSandboxProvider,
     isPro = () => true,
@@ -213,6 +241,31 @@ export async function prepareAgentGenerationHarness(
   }
 
   const effectiveAgentMode = computeEffectiveAgentMode(agentModeValue, agentModeSupported)
+
+  // Memory scope: a session created from a copilot with its own memory enabled
+  // reads and writes that copilot's list, and global memories stay out of the
+  // session entirely; otherwise the global switch decides. When the effective
+  // switch is off, stored memories are neither injected nor maintained in
+  // either mode (Soul/identity are unaffected).
+  const memorySelection = await getCopilotMemorySelection(session.copilotId)
+  const memoryScope = memorySelection.scope
+  const memoryEnabled = memoryScope.type === 'copilot' || globalSettings.memoryEnabled !== false
+  const memoryStateToken = combineMemoryStateTokens(
+    memorySelection.memoryStateToken,
+    memoryScope.type === 'global' ? globalSettings.memoryStateToken : ''
+  )
+  const promptContextSnapshot = await resolveSessionPromptContextSnapshot({
+    effectiveAgentMode,
+    memoryEnabled,
+    memoryStateToken,
+    memoryScope,
+    settings,
+    messages,
+    targetMsgIx,
+    persist: sideEffects?.persistSessionPromptContextSnapshot,
+    copilotId: session.copilotId,
+  })
+
   const sandboxProvider = effectiveAgentMode !== 'off' ? sandboxProviderFactory() : null
   // Grant the sandbox read/write access to any user-bound working directories before it
   // initializes lazily on the first tool call (desktop only; cloud provider no-ops).
@@ -233,7 +286,6 @@ export async function prepareAgentGenerationHarness(
     }
   }
 
-  const attachmentResolver = createAttachmentResolver()
   const messagesForPrompt = (await refreshSessionAttachmentStatuses(messages.slice(0, targetMsgIx))).map((message) =>
     // A resumed continuation keeps its target message flagged `generating` for the UI,
     // but its tool calls/results are exactly the context the follow-up request must
@@ -246,14 +298,37 @@ export async function prepareAgentGenerationHarness(
     targetMsgIx,
     preserveLastPromptMessageToolCalls
   )
+  // Pressure is measured on the un-relieved context selection: below the
+  // relief threshold history rides along untouched; above it, old tool
+  // results are stubbed (calls stay). Full compaction is handled separately
+  // at submit time.
+  const contextPressure = assessContextPressure({
+    contextMessages: selectContextMessages(messagesForPrompt, {
+      compactionPoints,
+      maxContextMessageCount: settings.maxContextMessageCount,
+    }),
+    providerId: settings.provider,
+    modelId: model.modelId,
+    contextWindow: getConfiguredContextWindow(globalSettings, settings.provider, model.modelId),
+    compactionThreshold: globalSettings.compactionThreshold,
+    sandboxMode: canExecuteCode,
+  })
   let promptMsgs = await buildContext(messagesForPrompt, {
     attachmentResolver,
     compactionPoints,
     modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
     maxContextMessageCount: settings.maxContextMessageCount,
+    toolCleanupMode: contextPressure.toolCleanupMode,
     preserveToolCallMessageIds,
     sandboxMode: canExecuteCode,
   })
+
+  // Agent mode owns its identity header: session-level system messages are
+  // dropped from the transcript. A Copilot's prompt is frozen into the snapshot
+  // and spliced into the Soul section instead.
+  if (effectiveAgentMode === 'on') {
+    promptMsgs = promptMsgs.filter((message) => message.role !== 'system')
+  }
 
   const infoParts: MessageContentParts = []
 
@@ -292,18 +367,15 @@ export async function prepareAgentGenerationHarness(
       ? {
           sessionId: session.id,
           provider: sandboxProvider,
-          files: allMessages.flatMap(
-            (message) =>
-              message.files?.map((file) => ({
-                storageKey: file.storageKey || '',
-                rawStorageKey: file.rawStorageKey,
-                name: file.name,
-              })) || []
-          ),
+          files: allMessages.flatMap((message) => message.files?.map(toSandboxSeedAttachment) || []),
         }
       : undefined
 
-  const { tools, instructions: toolInstructions } = await buildToolsForSession(model, {
+  const {
+    tools,
+    instructions: toolInstructions,
+    prepareStepMessages,
+  } = await buildToolsForSession(model, {
     sessionId: session.id,
     webBrowsing,
     knowledgeBase,
@@ -311,19 +383,103 @@ export async function prepareAgentGenerationHarness(
     agentMode: effectiveAgentMode,
     sessionSettings: settings,
     codeExecution: codeExecutionOption,
+    commandExecution:
+      effectiveAgentMode === 'on' && sandboxProvider
+        ? { sessionId: session.id, provider: canExecuteCode ? sandboxProvider : undefined }
+        : undefined,
+    agentToolContractVersion: promptContextSnapshot?.agentToolContractVersion ?? 1,
     onAgentModeActivated: () => {
       sideEffects?.lockAgentMode?.('load_skill')
     },
+    workspaceInstructionsOverride: promptContextSnapshot?.workspaceInstructions,
+    globalSettings,
+    memoryScope,
   })
   const hasTools = Object.keys(tools).length > 0
-  const instructions = hasTools ? `${GLOBAL_RESPONSE_LANGUAGE_INSTRUCTION}${toolInstructions}` : toolInstructions
+  // A request that declares no tools must not carry tool wire blocks: providers
+  // such as Anthropic reject tool-call/tool-result content when the request has
+  // no `tools` definition. Fold the whole tool history (any cleanup mode, any
+  // round) into bounded plain text instead of dropping it.
+  if (!hasTools) {
+    promptMsgs = flattenToolCallPartsToText(promptMsgs)
+  }
+  let instructions = hasTools ? `${GLOBAL_RESPONSE_LANGUAGE_INSTRUCTION}${toolInstructions}` : toolInstructions
 
-  let injectedMessages = injectModelSystemPrompt(
-    model.modelId,
-    promptMsgs,
-    instructions,
-    model.isSupportSystemMessage() ? 'system' : 'user'
-  )
+  // Chat mode gets memories (no Soul/identity) from the same frozen snapshot,
+  // appended to the regular instruction path so the session system prompt stays
+  // authoritative. Tool guidance follows whether the memory tools were actually
+  // registered for this model.
+  if (
+    effectiveAgentMode !== 'on' &&
+    memoryEnabled &&
+    promptContextSnapshot &&
+    promptContextSnapshot.memories.length > 0
+  ) {
+    const memoryToolsAvailable = 'save_memory' in tools
+    instructions = `${buildMemoriesSection(promptContextSnapshot.memories, { includeToolGuidance: memoryToolsAvailable })}${instructions}`
+  }
+
+  // Conversation-start anchor shared by the frozen system-prompt line and the
+  // time-gap reminder walk below: snapshot capture when one exists, otherwise
+  // the first surface message.
+  const conversationStartedAt = promptContextSnapshot?.capturedAt ?? messages[0]?.timestamp
+
+  let injectedMessages: Message[]
+  let systemPrompt: string
+  if (effectiveAgentMode === 'on' && promptContextSnapshot) {
+    // Agent mode assembles its own system prompt, ordered by stability for prefix
+    // caching: fixed identity → frozen Soul/memories → tool instructions → runtime
+    // metadata. The timestamp is the snapshot's capture time (not now) so the
+    // system prompt never drifts mid-session.
+    const personaPrompt = buildAgentPersonaPrompt({
+      soul: promptContextSnapshot.soul,
+      copilotPersona: promptContextSnapshot.copilotPersona,
+      memories: memoryEnabled ? promptContextSnapshot.memories : [],
+      platformType: platform.type,
+      os: getOS(),
+    })
+    const runtimeMetadata = `\n## Runtime\nCurrent model: ${model.modelId}\nSession context captured: ${formatTimestampWithZone(promptContextSnapshot.capturedAt, promptContextSnapshot.capturedUtcOffsetMinutes)}\n${SYSTEM_REMINDER_PROMPT_INSTRUCTION}`
+    const systemText = `${personaPrompt}\n${instructions}${runtimeMetadata}`
+    systemPrompt = systemText
+    injectedMessages = [
+      {
+        id: `agent-system-prompt-${promptContextSnapshot.capturedAt}`,
+        role: model.isSupportSystemMessage() ? 'system' : 'user',
+        timestamp: promptContextSnapshot.capturedAt,
+        contentParts: [{ type: 'text', text: systemText }],
+      },
+      ...promptMsgs,
+    ]
+  } else {
+    // Chat mode mirrors the agent-mode ordering above: the session's own
+    // system prompt keeps the byte-0 position, instructions follow, and the
+    // volatile model/date metadata sits last with a date frozen at the
+    // conversation start (snapshot capture when one exists, otherwise the
+    // first surface message) — a day rollover must not rewrite the prefix.
+    systemPrompt = buildModelSystemPrompt(model.modelId, instructions, {
+      conversationStartedAt,
+      // Frozen with the snapshot so a device timezone change never rewrites the
+      // prefix; snapshot-less sessions derive it from the anchor instant.
+      conversationStartUtcOffsetMinutes: promptContextSnapshot?.capturedUtcOffsetMinutes,
+    })
+    // Always target the system slot: models without system-message support get
+    // the whole message coerced to `user` below, and `sequenceMessages` merges
+    // it with the first user turn — instructions still precede the request.
+    // Injecting into the first user message directly would append them AFTER
+    // the user's own text (appended-metadata ordering) and flip precedence.
+    injectedMessages = injectModelSystemPrompt(model.modelId, promptMsgs, instructions, 'system', systemPrompt)
+  }
+
+  // Time reminders ride ephemeral `<system-reminder>`s injected at conversation
+  // gaps (≥30 min of silence before a user message) instead of on every request.
+  // Each is derived from persisted message timestamps, so rebuilds reproduce the
+  // same bytes at the same position — cache-stable — while never being persisted
+  // themselves. A live trailing reminder covers regenerate/stale-resume, where
+  // the wall clock moved past everything in context without a new user message.
+  // `sequenceMessages` merges each into its user turn's tail, or leaves the
+  // trailing one as its own user turn after a resumed tool history (both
+  // provider-safe shapes).
+  injectedMessages = insertTimeGapReminders(injectedMessages, { anchorTimestamp: conversationStartedAt })
 
   if (!model.isSupportSystemMessage()) {
     injectedMessages = injectedMessages.map((message) => ({
@@ -334,24 +490,56 @@ export async function prepareAgentGenerationHarness(
 
   injectedMessages = sequenceMessages(injectedMessages)
 
+  const reasoningReplay = resolveReasoningReplayPolicy(settings.provider, {
+    modelId: model.modelId,
+    apiStyle: model.apiStyle,
+  })
+  // Anchored on the last surface message, before synthetic trailing time
+  // reminders: only a request that resumes an assistant tool exchange is
+  // subject to the Anthropic turn-start rule. When the resumed turn cannot
+  // open with signed thinking, this request degrades to thinking-off and must
+  // then carry no thinking blocks at all — replay is dropped alongside.
+  const disableClaudeThinkingForResume = shouldDisableClaudeThinkingForUnsignedResume(
+    promptMsgs.at(-1),
+    reasoningReplay.signedReasoningOnly,
+    model.modelId
+  )
   const coreMessages = await convertToModelMessages(injectedMessages, {
     modelSupportVision: model.isSupportVision(),
-    preserveReasoning: settings.provider === ModelProviderEnum.DeepSeek,
+    preserveReasoning: disableClaudeThinkingForResume ? false : reasoningReplay.preserveReasoning,
+    signedReasoningOnly: reasoningReplay.signedReasoningOnly,
     // getModel() stamps apiStyle from the provider type (builtin/custom Gemini providers)
     // or the per-model remote config (ChatboxAI google-routed models), so it is the single
     // signal for "this request speaks the Gemini function-call protocol".
     ensureGoogleFunctionCallSignatures: model.apiStyle === 'google',
+    // Re-inline stored view_image results as images on history resends for protocols
+    // that accept media in tool results.
+    supportToolResultImages: supportsToolResultImages(model.apiStyle),
   })
 
   const chatOptions: ChatStreamOptions = {
     sessionId: session.id,
     agentMode: effectiveAgentMode === 'on',
     signal,
-    providerOptions,
+    providerOptions: disableClaudeThinkingForResume
+      ? {
+          ...providerOptions,
+          claude: {
+            ...providerOptions?.claude,
+            thinking: { type: 'disabled' },
+          },
+        }
+      : providerOptions,
   }
 
   if (Object.keys(tools).length > 0) {
     chatOptions.tools = tools as ToolSet
+  }
+
+  // Long tool loops can outgrow the window mid-run where compaction cannot
+  // fire; the model layer stubs old in-run tool results near the threshold.
+  if (contextPressure.thresholdTokens !== null && Object.keys(tools).length > 0) {
+    chatOptions.contextPressure = { thresholdTokens: contextPressure.thresholdTokens }
   }
 
   const allToolNames = Object.keys(tools)
@@ -366,6 +554,17 @@ export async function prepareAgentGenerationHarness(
     }
   }
 
+  // Protocols without tool-result media support get view_image results injected as
+  // follow-up user messages with real image parts. Compose with any existing prepareStep.
+  if (prepareStepMessages) {
+    const basePrepareStep = chatOptions.prepareStep
+    chatOptions.prepareStep = async (prepareOptions) => {
+      const base = await basePrepareStep?.(prepareOptions)
+      const stepMessages = await prepareStepMessages(prepareOptions.messages)
+      return stepMessages === prepareOptions.messages ? base : { ...base, messages: stepMessages }
+    }
+  }
+
   return {
     promptMsgs,
     coreMessages,
@@ -373,6 +572,7 @@ export async function prepareAgentGenerationHarness(
     chatOptions,
     infoParts,
     fallbackToolCallPart,
+    systemPrompt,
     sandboxProvider,
     debug: {
       effectiveAgentMode,

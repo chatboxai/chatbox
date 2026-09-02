@@ -1,3 +1,6 @@
+// Vendored bundle of npm `shell-env` and its deps (execa, default-shell, strip-ansi).
+// The shell-env section tracks upstream v4.0.3 (POSIX-shell fallback, `command env`,
+// tmux-autostart suppression), hand-applied onto the original v4.0.1 bundle.
 var __create = Object.create;
 var __getProtoOf = Object.getPrototypeOf;
 var __defProp = Object.defineProperty;
@@ -1925,10 +1928,12 @@ var default_shell_default = defaultShell;
 // node_modules/shell-env/index.js
 var args = [
   "-ilc",
-  'echo -n "_SHELL_ENV_DELIMITER_"; env; echo -n "_SHELL_ENV_DELIMITER_"; exit'
+  'echo -n "_SHELL_ENV_DELIMITER_"; command env; echo -n "_SHELL_ENV_DELIMITER_"; exit'
 ];
 var env = {
-  DISABLE_AUTO_UPDATE: "true"
+  DISABLE_AUTO_UPDATE: "true",
+  ZSH_TMUX_AUTOSTARTED: "true",
+  ZSH_TMUX_AUTOSTART: "false"
 };
 var parseEnv = (env2) => {
   env2 = env2.split("_SHELL_ENV_DELIMITER_")[1];
@@ -1940,6 +1945,25 @@ var parseEnv = (env2) => {
   }
   return returnValue;
 };
+var fallbackShells = ["/bin/zsh", "/bin/bash"].filter((shell) => shell !== default_shell_default);
+async function tryFallbackShells() {
+  for (const shell of fallbackShells) {
+    try {
+      const { stdout } = await import_execa.default(shell, args, { env });
+      return parseEnv(stdout);
+    } catch {}
+  }
+  return import_node_process2.default.env;
+}
+function tryFallbackShellsSync() {
+  for (const shell of fallbackShells) {
+    try {
+      const { stdout } = import_execa.default.sync(shell, args, { env });
+      return parseEnv(stdout);
+    } catch {}
+  }
+  return import_node_process2.default.env;
+}
 async function shellEnv(shell) {
   if (import_node_process2.default.platform === "win32") {
     return import_node_process2.default.env;
@@ -1950,9 +1974,8 @@ async function shellEnv(shell) {
   } catch (error) {
     if (shell) {
       throw error;
-    } else {
-      return import_node_process2.default.env;
     }
+    return tryFallbackShells();
   }
 }
 function shellEnvSync(shell) {
@@ -1965,8 +1988,7 @@ function shellEnvSync(shell) {
   } catch (error) {
     if (shell) {
       throw error;
-    } else {
-      return import_node_process2.default.env;
     }
+    return tryFallbackShellsSync();
   }
 }

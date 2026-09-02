@@ -58,7 +58,10 @@ export function buildMessageRenderItems(messages: Message[]): MessageRenderItem[
 
       items.push({
         type: 'group',
-        key: `group-${groupedMessages.map((message) => message.id).join('-')}`,
+        // Key the last-turn group by the user message only. Including the
+        // assistant id would change the Virtuoso item identity when the reply
+        // arrives (group-u1 → group-u1-a1) and remount the user bubble.
+        key: `group-${groupedMessages[0].id}`,
         messages: groupedMessages,
       })
       if (groupedMessages.length === 2) {

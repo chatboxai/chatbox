@@ -11,6 +11,7 @@ import { BochaSearch } from './bocha'
 import { ChatboxSearch } from './chatbox-search'
 import { KeenableSearch } from './keenable'
 import { QueritSearch } from './querit'
+import { normalizeSearxngBaseUrl, SearxngSearch } from './searxng'
 import { TavilySearch } from './tavily'
 
 const MAX_CONTEXT_ITEMS = 10
@@ -68,6 +69,14 @@ function getSearchProviders() {
         )
       )
       break
+    case 'searxng': {
+      const searxngBaseUrl = normalizeSearxngBaseUrl(settings.webSearch.searxngBaseUrl ?? '')
+      if (!searxngBaseUrl) {
+        throw ChatboxAIAPIError.fromCodeName('searxng_base_url_required', 'searxng_base_url_required')
+      }
+      selectedProviders.push(new SearxngSearch(searxngBaseUrl))
+      break
+    }
     default:
       throw new Error(`Unsupported search provider: ${provider}`)
   }
@@ -82,13 +91,18 @@ async function _searchRelatedResults(query: string, signal?: AbortSignal) {
       try {
         const result = await provider.search(query, signal)
         console.debug(`web search result for "${query}":`, result.items)
-        return result
+        return { result }
       } catch (err) {
         console.error(err)
-        return { items: [] }
+        return { error: err }
       }
     })
   )
+
+  const successfulResults = results.flatMap((entry) => (entry.result ? [entry.result] : []))
+  if (successfulResults.length === 0) {
+    throw results[0]?.error ?? new Error('Web search failed')
+  }
 
   const items: SearchResultItem[] = []
 
@@ -97,7 +111,7 @@ async function _searchRelatedResults(query: string, signal?: AbortSignal) {
   let hasMore = false
   do {
     hasMore = false
-    for (const result of results) {
+    for (const result of successfulResults) {
       const item = result.items[i]
       if (item) {
         hasMore = true
@@ -123,10 +137,13 @@ export const webSearchExecutor = async (
   { query }: { query: string },
   { abortSignal }: { abortSignal?: AbortSignal }
 ) => {
-  const provider = getExtensionSettings().webSearch.provider
+  const webSearch = getExtensionSettings().webSearch
+  const provider = webSearch.provider
+  const cacheIdentity =
+    provider === 'searxng' ? `${provider}:${normalizeSearxngBaseUrl(webSearch.searxngBaseUrl ?? '')}` : provider
   const searchResults = await cachified({
     cache,
-    key: `search-context:${provider}:${query}`,
+    key: `search-context:${cacheIdentity}:${query}`,
     ttl: 1000 * 60 * 5,
     getFreshValue: () => _searchRelatedResults(query, abortSignal),
   })

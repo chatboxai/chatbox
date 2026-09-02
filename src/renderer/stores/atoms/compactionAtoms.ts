@@ -1,17 +1,19 @@
 import { atom, getDefaultStore } from 'jotai'
 
-export type CompactionStatus = 'idle' | 'running' | 'failed'
+export type CompactionStatus = 'idle' | 'running' | 'completed' | 'failed'
 
 export interface CompactionUIState {
   status: CompactionStatus
   error: string | null
   streamingText: string
+  summaryMessageId: string | null
 }
 
 const defaultCompactionUIState: CompactionUIState = {
   status: 'idle',
   error: null,
   streamingText: '',
+  summaryMessageId: null,
 }
 
 export const compactionUIStateMapAtom = atom<Record<string, CompactionUIState>>({})

@@ -39,7 +39,7 @@ async function readSandboxHtml(sandboxPath: string): Promise<string> {
     throw new Error('Preview not available')
   }
   const res = await platform.sandboxReadFileBase64({ filePath: sandboxPath })
-  if (!res.success || !res.base64) {
+  if (!res.success || res.base64 === undefined) {
     throw new Error(res.error || 'Preview not available')
   }
   return inlineSandboxHtmlAssets(decodeBase64Utf8(res.base64), sandboxPath, (assetPath) => {

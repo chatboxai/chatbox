@@ -8,8 +8,8 @@ import { createMemoryHistory, createRootRoute, createRoute, createRouter, Router
 import { getDefaultStore } from 'jotai'
 import { createContext, type MutableRefObject, type ReactNode, useContext, useEffect, useRef } from 'react'
 import { currentSessionIdAtom, showThreadHistoryDrawerAtom } from '@/stores/atoms'
-import { QueryKeys } from '@/stores/chatStore'
-import { beginSessionGeneration, resetSessionGenerationRuntime } from '@/stores/session/generation-runtime'
+import { QueryKeys } from '@chatbox/react/query'
+import { rendererApplication } from '@/app/renderer-application'
 import { resetSessionActivityStore, sessionActivityStore } from '@/stores/sessionActivityStore'
 import SessionItem from '../session/SessionItem'
 import SessionList from '../session/SessionList'
@@ -128,12 +128,12 @@ export const SessionItemStates: StoryObj = {
 
 function SessionItemStatesFixture() {
   useEffect(() => {
-    beginSessionGeneration(sessionMetas[1].id)
+    const runtime = rendererApplication.generationRuntime.start(sessionMetas[1].id, 'story-reply')
     sessionActivityStore.setState({
       unreadCompletedSessionIds: { [sessionMetas[2].id]: true },
     })
     return () => {
-      resetSessionGenerationRuntime()
+      rendererApplication.generationRuntime.finishActive(sessionMetas[1].id, runtime.messageId, runtime)
       resetSessionActivityStore()
     }
   }, [])

@@ -31,10 +31,10 @@ export function trackSelectModelClick(pageName: string, modelId: string, result:
   })
 }
 
-export function trackUpgradeModelClick(pageName: string, position: UpgradeModelPosition, modelId?: string | null) {
+export function trackUpgradeModelClick(pageName: string, position: UpgradeModelPosition, modelId: string) {
   trackJkClickEvent(JK_EVENTS.UPGRADE_MODEL_CLICK, {
     pageName,
-    content: modelId ?? null,
+    content: modelId,
     contentType: getPlanTypeLabel(),
     contentPosition: position,
   })

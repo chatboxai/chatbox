@@ -67,6 +67,11 @@ src/renderer/packages/token-estimation/
 ├── result-persister.ts      # 结果持久化 (throttle)
 ├── tokenizer.ts             # Token 计算逻辑 (tiktoken/deepseek)
 ├── cache-keys.ts            # 缓存 key 生成工具
+├── exact-retry.ts           # Worker 回退后的有界精算重试预算（每次运行）
+├── draft-tokenization.ts    # 长草稿判定 + 采样快速估算 + 草稿投影 (getDraftTokenizationText) + 文本 digest + 发送种子 (seedExactDraftTokens)
+├── draft-tokenizer-worker-client.ts  # 持久 Worker 客户端（单飞 + 优先级队列，交互请求抢占低优先级 encode，abort 即出队；出错/超时后重建）
+├── draft-tokenizer-worker-handler.ts # Worker 侧计算逻辑
+├── draft-tokenizer.worker.ts # Worker 入口
 └── __tests__/               # 单元测试
 ```
 
@@ -77,10 +82,17 @@ src/renderer/packages/token-estimation/
 **位置**: `hooks/useTokenEstimation.ts`
 
 React 组件的入口点，负责：
-- 调用 `analyzeTokenRequirements()` 分析需要计算的任务
+- 调用 `analyzeCurrentInputTokens()` / `analyzeContextTokens()` 分析需要计算的任务
 - 将任务入队到 `computationQueue`
 - 订阅队列状态变化，返回 `isCalculating`
 - 当 session 切换时取消旧 session 的任务
+- 长草稿（≥4096 字符）的文本计数交给持久 Web Worker 异步精确计算，等待期间显示采样估算；`isCurrentInputApproximate` / `isTotalApproximate` 标记数值是否仍为近似（含 Worker 失败后保留估算的情况）
+- 精确结果通过 `exactDraftTokens` 暴露；提交时 InputBox 用 `seedExactDraftTokens()` 把它种到出站消息的 `tokenCountMap` 上（内部比对草稿投影，编辑过的草稿不种），发送路径 (`estimateTokensFromMessages`) 读到该值即跳过主线程全量重编码
+- 未种入的长文本（debounce 未到就提交、Worker 失败、精确结果后又编辑）在发送路径同样不做全量编码：`estimateMessageTextTokens` 对 ≥4096 字符且无携带条目的文本退化为采样估算，之后由计算队列经 Worker 补上精确值
+- `tokenCountMap` 条目必须描述消息当前文本：编辑路径（modifyMessage / persistStreamingMessage / 保存重发 / `updateQueuedMessageText`）先清除条目（含 `tokenCountApproximate`）再重新估算；异步结果落盘时还会按源文本 digest 校验（见 Result Persister）
+- 持久化的采样回退条目带 `tokenCountApproximate` 标记：上下文/总计通过 `isContextApproximate` / `isTotalApproximate` 继续显示 `~`，analyzer 在每次运行的有界重试预算内（`exact-retry.ts`）重新入队精算，预算耗尽后保留标记、下次启动再试
+
+一次性入口 `analyzeTokenRequirements()` 不含 Worker 流程：对长草稿默认退化为采样估算（近似值），调用方可通过 `currentInputTextTokens` 传入已知的精确/最新计数。
 
 ```typescript
 const {
@@ -134,7 +146,8 @@ PRIORITY = {
 
 执行具体的 token 计算：
 - 读取消息文本或附件内容
-- 调用 tokenizer 计算 token 数
+- 调用 tokenizer 计算 token 数；≥4096 字符的消息文本交给草稿 Worker（低优先级，交互式草稿请求会抢占正在执行的低优先级 encode）精算，Worker 不可用/失败/超时则返回标记为近似的采样估算，避免在渲染线程全量编码
+- message-text 结果携带源文本投影的 digest 与 `approximate` 标记，并在 `exact-retry.ts` 记录/清除 Worker 回退次数
 - 将结果发送到 `resultPersister`
 
 ### 5. Result Persister
@@ -172,6 +185,8 @@ private scheduleFlush(): void {
 - 计算 100 条消息时，任务会连续完成
 - Debounce 会不断重置计时器，直到所有任务完成才 flush
 - Throttle 保证用户每秒都能看到中间进度
+
+**落盘时的 digest 校验**：message-text 结果从 encode 到 flush 之间隔着 Worker 等待与 throttle 窗口，期间消息可能被编辑（编辑路径先清空计数）。apply 时用消息当前投影的 digest 与结果携带的源 digest 比对，不一致的条目直接丢弃——缓存保持缺失，analyzer 会为新文本重新入队；`approximate` 标记也只随通过校验的条目写入/清除。
 
 ### 6. Tokenizer
 

@@ -1,7 +1,7 @@
 import type { ChildProcess } from 'node:child_process'
 import { spawn, spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import {
   copyFile as fsCopyFile,
   readFile as fsReadFile,
@@ -10,9 +10,11 @@ import {
 } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import { pathToFileURL } from 'node:url'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import { app } from 'electron'
+import { app, type UtilityProcess, utilityProcess } from 'electron'
+import { sandboxAttachmentRelPath } from '../../shared/sandbox/attachment-path'
 import {
   SANDBOX_EXEC_ERROR_CODES,
   type SandboxExecErrorCode,
@@ -20,21 +22,41 @@ import {
   type SandboxExecResult,
   type SandboxOperationResult,
   type SandboxReadResult,
+  type SandboxSeedBlobItem,
+  type SandboxSeedBlobResult,
 } from '../../shared/sandbox-provider'
 import {
   TASK_SANDBOX_DENY_READ_PATHS,
   TASK_SANDBOX_DENY_WRITE_PATHS,
   TASK_SANDBOX_EXTRA_WRITE_PATHS,
+  TASK_SANDBOX_PROTECTED_GIT_METADATA_PATHS,
 } from '../../shared/task-sandbox'
 import { shellQuote } from '../../shared/utils/shell'
 import { normalizeWindowsAbsolutePath } from '../../shared/utils/windows-path'
+import { clearFailedCommandRetries, recordFailedSandboxCommand } from '../command-execution-policy'
+import {
+  COMMAND_OUTPUT_CAPTURE_FAILED_MESSAGE,
+  createCommandOutputCapture,
+  createCommandOutputCapturePath,
+  getCommandOutputCaptureRoot,
+} from '../command-output-capture'
 import { buildOperationFinishLog, buildOperationStartLog, createOperationId } from '../operation-log'
 import { killProcessTree } from '../process-tree'
+import { getChatboxQaPaths } from '../qa-runtime'
 import { runRipgrepFileList, runRipgrepSearch } from '../ripgrep-search'
 import { getLogger } from '../util'
 import { resolveWindowsPowerShell } from '../windows-powershell'
+import { pathContainsAttachmentSeedManifest } from './attachment-seed'
+import {
+  classifyAttachmentSeedCopy,
+  classifyAttachmentSeedCopyAgainstManifest,
+  readAttachmentSeedManifest,
+  recordAttachmentSeed,
+} from './attachment-seed-store'
 import { buildSandboxStdinScript, stripCodesignNoise } from './exec-script'
 import { buildSandboxReadScript } from './file-read'
+import { getLoginShellPath } from './login-shell-env'
+import { isUnsafeResolvedPath, safeRealpathSync } from './path-safety'
 import { headTruncate, tailTruncate } from './truncate'
 
 export { resetWindowsPowerShellResolutionCache, resolveWindowsPowerShell } from '../windows-powershell'
@@ -77,6 +99,8 @@ interface SandboxSession {
   initConfigKey: string | null
   runningChildren: Set<ChildProcess>
   runningChildrenByToolCallId: Map<string, ChildProcess>
+  runningUtilities: Set<UtilityProcess>
+  runningUtilitiesByToolCallId: Map<string, UtilityProcess>
   pendingCancelledToolCallIds: Set<string>
   /** Per-session sandbox config for wrapWithSandbox customConfig override */
   sandboxConfig: ReturnType<typeof buildConfig> | null
@@ -94,6 +118,15 @@ function getSession(sessionId?: string): SandboxSession | undefined {
   return sessions.get(sessionId || DEFAULT_SESSION)
 }
 
+/**
+ * Working directory of a live session, or null when the session is not initialized.
+ * Narrow accessor for sibling modules (persist-artifact) — the session registry itself
+ * stays private to this module.
+ */
+export function getSessionWorkingDirectory(sessionId?: string): string | null {
+  return getSession(sessionId)?.workingDirectory ?? null
+}
+
 function getOrCreateSession(sessionId?: string): SandboxSession {
   const id = sessionId || DEFAULT_SESSION
   let session = sessions.get(id)
@@ -106,6 +139,8 @@ function getOrCreateSession(sessionId?: string): SandboxSession {
       initConfigKey: null,
       runningChildren: new Set(),
       runningChildrenByToolCallId: new Map(),
+      runningUtilities: new Set(),
+      runningUtilitiesByToolCallId: new Map(),
       pendingCancelledToolCallIds: new Set(),
       sandboxConfig: null,
     }
@@ -138,15 +173,24 @@ function trackRunningChild(session: SandboxSession, child: ChildProcess, toolCal
   return toolCallId ? session.pendingCancelledToolCallIds.delete(toolCallId) : false
 }
 
+function trackRunningUtility(session: SandboxSession, child: UtilityProcess, toolCallId?: string): boolean {
+  session.runningUtilities.add(child)
+  if (toolCallId) session.runningUtilitiesByToolCallId.set(toolCallId, child)
+
+  const cleanup = () => {
+    session.runningUtilities.delete(child)
+    if (toolCallId && session.runningUtilitiesByToolCallId.get(toolCallId) === child) {
+      session.runningUtilitiesByToolCallId.delete(toolCallId)
+    }
+  }
+  child.once('exit', cleanup)
+  return toolCallId ? session.pendingCancelledToolCallIds.delete(toolCallId) : false
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-/** Resolve symlinks with the same native semantics as fs.promises.realpath(). */
-function safeRealpathSync(p: string): string {
-  try {
-    return realpathSync.native(p)
-  } catch {
-    return path.normalize(p)
-  }
+function isHarmonyBuild(): boolean {
+  return process.env.CHATBOX_BUILD_TARGET === 'harmony_app'
 }
 
 /** True if a command can start and complete successfully. Used only on win32. */
@@ -275,45 +319,6 @@ export function normalizeWindowsShellPath(p: string): string {
   return normalizeWindowsAbsolutePath(p) ?? p
 }
 
-// True when a resolved absolute path is the filesystem root, the user's home, an ancestor
-// of home, or a system dir — granting no-approval sandbox write to any of these would
-// defeat the agent-mode approval model.
-function isUnsafeResolvedPath(resolved: string): boolean {
-  if (!resolved || resolved === path.parse(resolved).root) return true
-  const home = homedir()
-  // candidate is home itself or an ancestor of home (e.g. /Users, /home)
-  if (home && (resolved === home || pathContains(resolved, home))) return true
-  if (process.platform === 'win32') {
-    const windowsSystemRoots = [
-      process.env.SystemRoot,
-      process.env.ProgramFiles,
-      process.env['ProgramFiles(x86)'],
-      process.env.ProgramData,
-    ]
-    for (const systemRoot of windowsSystemRoots) {
-      if (!systemRoot) continue
-      const normalizedRoot = path.resolve(systemRoot)
-      if (resolved === normalizedRoot || pathContains(normalizedRoot, resolved)) return true
-    }
-  }
-  const systemRoots = [
-    '/etc',
-    '/usr',
-    '/bin',
-    '/sbin',
-    '/var',
-    '/System',
-    '/Library',
-    '/private',
-    '/boot',
-    '/dev',
-    '/proc',
-    '/opt',
-    '/root',
-  ]
-  return systemRoots.some((sys) => resolved === sys || pathContains(sys, resolved))
-}
-
 function createWritePathGrant(root: string): WritePathGrant {
   const resolvedRoot = path.resolve(root)
   return { root: resolvedRoot, canonicalRoot: safeRealpathSync(resolvedRoot) }
@@ -394,7 +399,14 @@ function buildConfig(
   const userDenyWrite = userWriteVariants.flatMap((base) =>
     TASK_SANDBOX_DENY_WRITE_PATHS.flatMap((name) => [`${base}/${name}`, `${base}/**/${name}`])
   )
-  const denyWrite = [...new Set([...TASK_SANDBOX_DENY_WRITE_PATHS, ...userDenyWrite])]
+  // Top-level Git metadata protection (see TASK_SANDBOX_PROTECTED_GIT_METADATA_PATHS):
+  // anchored per granted root, deliberately without `**` so `git clone`/`git init` in
+  // subdirectories still work — only the user's own repo root is protected.
+  const userGitMetadataDenyWrite = userWriteVariants.flatMap((base) =>
+    TASK_SANDBOX_PROTECTED_GIT_METADATA_PATHS.flatMap((name) => [`${base}/${name}`, `${base}/${name}/**`])
+  )
+  const denyWrite = [...new Set([...TASK_SANDBOX_DENY_WRITE_PATHS, ...userDenyWrite, ...userGitMetadataDenyWrite])]
+  const captureRoot = getCommandOutputCaptureRoot()
 
   // WARN: `allowedDomains: ['*']` is NOT a wildcard — it's a literal match.
   // Omit `allowedDomains` so wrapWithSandbox generates `(allow network*)`.
@@ -404,7 +416,7 @@ function buildConfig(
       deniedDomains: [] as string[],
     },
     filesystem: {
-      denyRead: [...TASK_SANDBOX_DENY_READ_PATHS],
+      denyRead: [...TASK_SANDBOX_DENY_READ_PATHS, captureRoot, safeRealpathSync(captureRoot)],
       allowWrite,
       denyWrite,
     },
@@ -528,10 +540,32 @@ function isProtectedUserWritePath(
   )
 }
 
-async function validateSessionWritePath(
-  session: SandboxSession,
-  resolved: string
-): Promise<{ valid: boolean; error?: string }> {
+// Main-process file tools bypass the OS sandbox, so the seatbelt denyWrite rules for
+// top-level Git metadata (buildConfig) are mirrored here for user-granted roots.
+function isProtectedGitMetadataPath(
+  resolved: string,
+  canonicalTarget: string | undefined,
+  grants: WritePathGrant[]
+): boolean {
+  const normalizeRel = (rel: string) => {
+    const posix = rel.split(path.sep).join('/')
+    return process.platform === 'win32' ? posix.toLowerCase() : posix
+  }
+  const matchesProtectedMetadata = (root: string, target: string) => {
+    if (!pathContains(root, target)) return false
+    const rel = normalizeRel(path.relative(root, target))
+    return TASK_SANDBOX_PROTECTED_GIT_METADATA_PATHS.some((name) => rel === name || rel.startsWith(`${name}/`))
+  }
+
+  const targetPath = path.resolve(resolved)
+  return grants.some(
+    (grant) =>
+      matchesProtectedMetadata(grant.root, targetPath) ||
+      (canonicalTarget !== undefined && matchesProtectedMetadata(grant.canonicalRoot, canonicalTarget))
+  )
+}
+
+async function validateSessionWritePath(session: SandboxSession, resolved: string): Promise<WritePathValidationResult> {
   const allowedRoots = [session.workingDirectoryGrant, ...session.userWriteGrants].filter(
     (grant): grant is WritePathGrant => grant !== null
   )
@@ -539,7 +573,11 @@ async function validateSessionWritePath(
   if (!validation.valid) {
     return session.userWriteGrants.length > 0 ? validation : { valid: false, error: 'Invalid path: outside sandbox' }
   }
-  if (isProtectedUserWritePath(resolved, validation.canonicalTarget, session.userWriteGrants)) {
+  if (
+    isProtectedUserWritePath(resolved, validation.canonicalTarget, session.userWriteGrants) ||
+    isProtectedGitMetadataPath(resolved, validation.canonicalTarget, session.userWriteGrants) ||
+    pathContainsAttachmentSeedManifest(resolved)
+  ) {
     return { valid: false, error: 'Write access denied for protected file' }
   }
   return validation
@@ -549,23 +587,32 @@ async function validateSessionWritePath(
  * Write content to a file, handling data URLs (base64) and plain text.
  * Creates parent directories as needed.
  */
+/** Decode copy-in content (a data URL or plain text) into the exact bytes written to disk. */
+function contentToFileBuffer(content: string): Buffer {
+  if (content.startsWith('data:')) {
+    const base64Match = content.match(/^data:[^;]*;base64,(.*)$/)
+    if (base64Match) return Buffer.from(base64Match[1], 'base64')
+    const commaIndex = content.indexOf(',')
+    return Buffer.from(commaIndex >= 0 ? content.slice(commaIndex + 1) : content, 'utf-8')
+  }
+  return Buffer.from(content, 'utf-8')
+}
+
+/**
+ * View a Buffer's bytes as a plain Uint8Array. Node types `Buffer.buffer` as
+ * `ArrayBufferLike`, which no longer satisfies the `Uint8Array` parameters of
+ * `fs.writeFile` and `Buffer#equals`, so byte APIs take this zero-copy view.
+ */
+function toByteView(buffer: Buffer): Uint8Array {
+  return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+}
+
 async function writeContentToFile(targetPath: string, content: string): Promise<void> {
   const parentDir = path.dirname(targetPath)
   if (!existsSync(parentDir)) {
     mkdirSync(parentDir, { recursive: true })
   }
-  if (content.startsWith('data:')) {
-    const base64Match = content.match(/^data:[^;]*;base64,(.*)$/)
-    if (base64Match) {
-      const buffer = Buffer.from(base64Match[1], 'base64')
-      await fsWriteFile(targetPath, new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength))
-    } else {
-      const commaIndex = content.indexOf(',')
-      await fsWriteFile(targetPath, commaIndex >= 0 ? content.slice(commaIndex + 1) : content, 'utf-8')
-    }
-  } else {
-    await fsWriteFile(targetPath, content, 'utf-8')
-  }
+  await fsWriteFile(targetPath, toByteView(contentToFileBuffer(content)))
 }
 
 // ─── Sandbox lifecycle ───────────────────────────────────────────────
@@ -591,18 +638,22 @@ export async function initSandbox(
   const safeUserWriteGrants = getSafeUserWriteGrants(userWritePaths)
   const workingDirectoryGrant = createWritePathGrant(workDir)
 
-  // Native Windows path: @anthropic-ai/sandbox-runtime only runs on macOS/Linux. On Windows
-  // we execute code natively with NO OS sandbox (see docs/technical/windows-sandbox.md), so
-  // skip SRT entirely and just record the working directory.
-  if (process.platform === 'win32') {
+  // Native Windows and HarmonyOS paths skip @anthropic-ai/sandbox-runtime. HarmonyOS reports
+  // process.platform=linux, but cannot run bubblewrap/socat inside a HAP; Node code is launched
+  // through Electron's utilityProcess instead (see execHarmonyNodeCode below).
+  if (process.platform === 'win32' || isHarmonyBuild()) {
     session.workingDirectory = workDir
     session.workingDirectoryGrant = workingDirectoryGrant
     session.userWriteGrants = safeUserWriteGrants
     session.initConfigKey = initConfigKey
     session.state = 'initialized'
-    log.info(`Sandbox session ${sessionId || DEFAULT_SESSION} initialized (native Windows, no OS isolation)`)
+    const backend = isHarmonyBuild() ? 'HarmonyOS utility process' : 'native Windows, no OS isolation'
+    log.info(`Sandbox session ${sessionId || DEFAULT_SESSION} initialized (${backend})`)
     return { success: true, acceptedWorkingDirectories: safeUserWriteGrants.map((grant) => grant.root) }
   }
+
+  // Warm the login-shell PATH cache so the first exec doesn't pay the shell-fork latency.
+  void getLoginShellPath()
 
   try {
     // Initialize the global SandboxManager once (shared across sessions).
@@ -637,15 +688,333 @@ export async function initSandbox(
   }
 }
 
+export const HARMONY_UTILITY_RUNNER_SOURCE = `'use strict'
+const fs = require('node:fs')
+const Module = require('node:module')
+const path = require('node:path')
+const util = require('node:util')
+
+// HarmonyOS Electron currently crashes in uv_set_process_title. User code should not be
+// able to trigger that native failure while running inside the utility process.
+try {
+  Object.defineProperty(process, 'title', {
+    configurable: true,
+    get: () => 'chatbox-code',
+    set: () => {},
+  })
+} catch {}
+
+const codePath = path.resolve(process.argv[2])
+const resultPath = path.resolve(process.argv[3])
+const code = fs.readFileSync(codePath, 'utf8').replace(/^#!.*\\r?\\n/, '')
+const userModule = new Module(codePath)
+userModule.filename = codePath
+userModule.paths = Module._nodeModulePaths(path.dirname(codePath))
+// Materialize stdio before taking the baseline; Node creates these handles lazily on first
+// access, and they must not be mistaken for user-created background work.
+void process.stdout
+void process.stderr
+const baselineHandles = new Set(process._getActiveHandles())
+const maxCaptureBytes = 10 * 1024 * 1024
+const capturedOutput = {
+  stdout: { chunks: [], bytes: 0, capped: false },
+  stderr: { chunks: [], bytes: 0, capped: false },
+}
+
+function captureOutput(stream, chunk, encoding) {
+  const buffer = Buffer.isBuffer(chunk)
+    ? chunk
+    : Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : 'utf8')
+  const capture = capturedOutput[stream]
+  capture.bytes += buffer.byteLength
+  if (!capture.capped) {
+    if (capture.bytes > maxCaptureBytes) capture.capped = true
+    else capture.chunks.push(buffer)
+  }
+}
+
+function createOutputProxy(stream, output) {
+  return new Proxy(output, {
+    get(target, property) {
+      if (property === 'write') {
+        return (chunk, encoding, callback) => {
+          let normalizedEncoding = encoding
+          let normalizedCallback = callback
+          if (typeof normalizedEncoding === 'function') {
+            normalizedCallback = normalizedEncoding
+            normalizedEncoding = undefined
+          }
+          captureOutput(stream, chunk, normalizedEncoding)
+          return target.write(chunk, normalizedEncoding, normalizedCallback)
+        }
+      }
+      const value = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+}
+
+const userStdout = createOutputProxy('stdout', process.stdout)
+const userStderr = createOutputProxy('stderr', process.stderr)
+const userProcess = new Proxy(process, {
+  get(target, property) {
+    if (property === 'stdout') return userStdout
+    if (property === 'stderr') return userStderr
+    const value = Reflect.get(target, property, target)
+    return typeof value === 'function' ? value.bind(target) : value
+  },
+  set(target, property, value) {
+    return Reflect.set(target, property, value, target)
+  },
+})
+const stdoutConsoleMethods = new Set(['log', 'info', 'debug'])
+const stderrConsoleMethods = new Set(['error', 'warn'])
+const userConsole = new Proxy(console, {
+  get(target, property) {
+    if (stdoutConsoleMethods.has(property) || stderrConsoleMethods.has(property)) {
+      return (...args) => {
+        captureOutput(stdoutConsoleMethods.has(property) ? 'stdout' : 'stderr', util.format(...args) + '\\n')
+        return target[property](...args)
+      }
+    }
+    const value = Reflect.get(target, property, target)
+    return typeof value === 'function' ? value.bind(target) : value
+  },
+})
+global.__chatboxUserConsole = userConsole
+global.__chatboxUserProcess = userProcess
+
+// HarmonyOS Electron does not currently deliver utilityProcess stdout/stderr pipes reliably.
+// Its Module._compile implementation also ignores injected source prefixes, so execute through
+// AsyncFunction and pass controlled globals explicitly instead.
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+const userFunction = new AsyncFunction(
+  'exports',
+  'require',
+  'module',
+  '__filename',
+  '__dirname',
+  'console',
+  'process',
+  code
+)
+userModule.exports = userFunction(
+  userModule.exports,
+  userModule.require.bind(userModule),
+  userModule,
+  codePath,
+  path.dirname(codePath),
+  userConsole,
+  userProcess
+)
+
+function reportCompletion(exitCode) {
+  // HarmonyOS utilityProcess reliably signals completion but drops stdio and additional message
+  // fields. Persist the bounded result inside the app sandbox and use parentPort only as a signal.
+  fs.writeFileSync(resultPath, JSON.stringify({
+    exitCode,
+    stdout: Buffer.concat(capturedOutput.stdout.chunks).toString('base64'),
+    stderr: Buffer.concat(capturedOutput.stderr.chunks).toString('base64'),
+    stdoutBytes: capturedOutput.stdout.bytes,
+    stderrBytes: capturedOutput.stderr.bytes,
+    stdoutCapped: capturedOutput.stdout.capped,
+    stderrCapped: capturedOutput.stderr.capped,
+  }), 'utf8')
+  process.parentPort.postMessage({ type: 'chatbox-exec-complete', exitCode })
+}
+
+function waitForUserWorkToSettle(exitCode) {
+  let idlePasses = 0
+  const poll = () => {
+    const userHandles = process._getActiveHandles().filter((handle) => !baselineHandles.has(handle))
+    const activeRequests = process._getActiveRequests()
+    if (userHandles.length === 0 && activeRequests.length === 0) idlePasses += 1
+    else idlePasses = 0
+
+    if (idlePasses >= 3) reportCompletion(exitCode)
+    else setTimeout(poll, 10)
+  }
+  poll()
+}
+
+Promise.resolve(userModule.exports).then(
+  () => waitForUserWorkToSettle(process.exitCode || 0),
+  (error) => {
+    userConsole.error(error && error.stack ? error.stack : error)
+    waitForUserWorkToSettle(1)
+  }
+)
+`
+
+async function ensureHarmonyUtilityRunner(): Promise<string> {
+  const runtimeDir = path.join(app.getPath('userData'), 'chatbox-sandbox', 'runtime')
+  mkdirSync(runtimeDir, { recursive: true })
+  const runnerPath = path.join(runtimeDir, 'harmony-node-runner.cjs')
+  await fsWriteFile(runnerPath, HARMONY_UTILITY_RUNNER_SOURCE, 'utf-8')
+  return runnerPath
+}
+
+async function execHarmonyNodeCode(params: {
+  code: string
+  cwd?: string
+  timeout: number
+  session: SandboxSession
+  operationId: string
+  startedAt: number
+  toolCallId?: string
+}): Promise<ExecResult> {
+  const cwd = params.cwd ?? process.cwd()
+  const runnerPath = await ensureHarmonyUtilityRunner()
+  const codePath = path.join(cwd, `.chatbox-exec-${randomUUID()}.cjs`)
+  const resultPath = `${codePath}.result.json`
+  await fsWriteFile(codePath, params.code, 'utf-8')
+
+  const cacheDir = path.join(cwd, '.cache')
+  mkdirSync(cacheDir, { recursive: true })
+  // Unlike the desktop path, HarmonyOS has no OS sandbox wrapping the child, so the
+  // HOME/TMPDIR redirect is the only thing steering tools away from the app's real
+  // directories. Keep it.
+  const env = Object.fromEntries(
+    Object.entries({
+      ...process.env,
+      HOME: cwd,
+      TMPDIR: cwd,
+      TMP: cwd,
+      TEMP: cwd,
+      XDG_CACHE_HOME: cacheDir,
+    }).filter((entry): entry is [string, string] => entry[1] !== undefined)
+  )
+  const MAX_BUFFER_BYTES = 10 * 1024 * 1024
+
+  return await new Promise((resolve) => {
+    const stdoutChunks: string[] = []
+    const stderrChunks: string[] = []
+    const stdoutDecoder = new StringDecoder('utf8')
+    const stderrDecoder = new StringDecoder('utf8')
+    let stdoutBytes = 0
+    let stderrBytes = 0
+    let stdoutCapped = false
+    let stderrCapped = false
+    let timedOut = false
+    let settled = false
+    let completedExitCode: number | undefined
+    let child: UtilityProcess | undefined
+
+    const finish = (code: number) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      rmSync(codePath, { force: true })
+      rmSync(resultPath, { force: true })
+
+      stdoutChunks.push(stdoutDecoder.end())
+      stderrChunks.push(stderrDecoder.end())
+      let stdout = tailTruncate(stdoutChunks.join(''))
+      let stderr = tailTruncate(stripCodesignNoise(stderrChunks.join('')))
+      const exitCode = timedOut ? 124 : (completedExitCode ?? code)
+      if (stdoutCapped) stdout += `\n[Output truncated: exceeded ${MAX_BUFFER_BYTES / 1024 / 1024}MB buffer limit]`
+      if (stderrCapped) stderr += `\n[Stderr truncated: exceeded ${MAX_BUFFER_BYTES / 1024 / 1024}MB buffer limit]`
+      if (timedOut) stderr += `\n[Process timed out after ${params.timeout}ms]`
+
+      const finishLog = buildOperationFinishLog({
+        operationId: params.operationId,
+        success: exitCode === 0,
+        exitCode,
+        durationMs: Date.now() - params.startedAt,
+        timedOut,
+        stdout,
+        stderr,
+        stdoutBytes,
+        stderrBytes,
+      })
+      if (exitCode === 0) log.info(finishLog)
+      else log.warn(finishLog)
+      resolve({ stdout, stderr, exitCode })
+    }
+
+    const timer = setTimeout(() => {
+      timedOut = true
+      child?.kill()
+    }, params.timeout)
+
+    try {
+      child = utilityProcess.fork(runnerPath, [codePath, resultPath], {
+        cwd,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        serviceName: 'Chatbox Code Execution',
+      })
+      const cancelAfterRegistration = trackRunningUtility(params.session, child, params.toolCallId)
+
+      // Drain the platform pipes to avoid backpressure, but receive user output over parentPort.
+      // HarmonyOS Electron currently exposes these streams without delivering their data events.
+      child.stdout?.resume()
+      child.stderr?.resume()
+      child.on('error', (type, location, report) => {
+        const message = `${type}${location ? ` at ${location}` : ''}${report ? `\n${report}` : ''}`
+        stderrBytes += Buffer.byteLength(message)
+        if (!stderrCapped) {
+          if (stderrBytes > MAX_BUFFER_BYTES) stderrCapped = true
+          else stderrChunks.push(message)
+        }
+      })
+      child.on('message', (message) => {
+        if (typeof message !== 'object' || message === null) return
+        const utilityMessage = message as {
+          type?: unknown
+          exitCode?: unknown
+        }
+        if (utilityMessage.type === 'chatbox-exec-complete' && typeof utilityMessage.exitCode === 'number') {
+          try {
+            const result = JSON.parse(readFileSync(resultPath, 'utf8')) as {
+              stdout?: unknown
+              stderr?: unknown
+              stdoutBytes?: unknown
+              stderrBytes?: unknown
+              stdoutCapped?: unknown
+              stderrCapped?: unknown
+            }
+            if (typeof result.stdout === 'string') {
+              stdoutChunks.push(stdoutDecoder.write(Buffer.from(result.stdout, 'base64')))
+            }
+            if (typeof result.stderr === 'string') {
+              stderrChunks.push(stderrDecoder.write(Buffer.from(result.stderr, 'base64')))
+            }
+            if (typeof result.stdoutBytes === 'number') stdoutBytes += result.stdoutBytes
+            if (typeof result.stderrBytes === 'number') stderrBytes += result.stderrBytes
+            if (result.stdoutCapped === true) stdoutCapped = true
+            if (result.stderrCapped === true) stderrCapped = true
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            stderrChunks.push(message)
+            stderrBytes += Buffer.byteLength(message)
+          }
+          completedExitCode = utilityMessage.exitCode
+          child?.kill()
+        }
+      })
+      child.on('exit', finish)
+      if (cancelAfterRegistration) child.kill()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      stderrChunks.push(message)
+      stderrBytes += Buffer.byteLength(message)
+      finish(1)
+    }
+  })
+}
+
 /**
  * Execute agent code inside the sandbox. The program is fed to the child via stdin (see
  * {@link buildSandboxStdinScript}), so the user's bytes never touch a host shell command line —
  * there is no shell escaping and no base64 round-trip.
  *
  * macOS/Linux: the spawn argv comes from SandboxManager.wrapWithSandboxArgv() and runs with
- * {shell:false}, applying SRT confinement. Windows: @anthropic-ai/sandbox-runtime does not run
- * there, so the program executes natively with NO OS sandbox (see
- * docs/technical/windows-sandbox.md) — the session working directory is the only scoping.
+ * {shell:false}, applying SRT confinement. HarmonyOS: Node.js runs through Electron's
+ * utilityProcess inside the application sandbox; Bash and PowerShell are unavailable.
+ * Windows: @anthropic-ai/sandbox-runtime does not run there, so the program executes natively
+ * with NO OS sandbox (see docs/technical/windows-sandbox.md) — the session working directory
+ * is the only scoping.
  */
 export async function execCode(params: {
   code: string
@@ -654,6 +1023,7 @@ export async function execCode(params: {
   cwd?: string
   sessionId?: string
   toolCallId?: string
+  outputFilePath?: string
 }): Promise<ExecResult> {
   const session = getSession(params.sessionId)
   if (!session || session.state !== 'initialized') {
@@ -692,18 +1062,61 @@ export async function execCode(params: {
     return { stdout: '', stderr, exitCode: 127, errorCode }
   }
 
-  // Session env overrides: point HOME/TMPDIR/cache at the working directory.
+  if (isHarmonyBuild()) {
+    if (params.language !== 'node') {
+      return unavailableResult(
+        'HarmonyOS code execution currently supports Node.js only. Use the node language on this platform.',
+        params.language === 'powershell'
+          ? SANDBOX_EXEC_ERROR_CODES.POWERSHELL_NOT_AVAILABLE
+          : SANDBOX_EXEC_ERROR_CODES.BASH_NOT_AVAILABLE
+      )
+    }
+    return await execHarmonyNodeCode({
+      code: params.code,
+      cwd: params.cwd ?? session.workingDirectory ?? undefined,
+      timeout,
+      session,
+      operationId,
+      startedAt,
+      toolCallId: params.toolCallId,
+    })
+  }
+
+  // Session env overrides. On the SRT platforms (macOS/Linux) HOME stays the user's real
+  // home (matching Codex/Claude Code): confinement never depended on it — SRT bakes deny
+  // rules from the main process's os.homedir(), reads are default-allowed minus
+  // TASK_SANDBOX_DENY_READ_PATHS, and writes outside allowWrite are denied regardless of
+  // what HOME says. Rewriting HOME to the working directory silently hid every $HOME-based
+  // user config (git identity, line endings, mirrors…) and let repo-root files (.gitconfig,
+  // .ssh/config) masquerade as the user's global config. Cache/npm redirects below keep
+  // $HOME itself write-free.
   const envOverrides: NodeJS.ProcessEnv = {}
   if (session.workingDirectory) {
     const cacheDir = path.join(session.workingDirectory, '.cache')
     mkdirSync(cacheDir, { recursive: true })
     envOverrides.XDG_CACHE_HOME = cacheDir
-    envOverrides.TMPDIR = envOverrides.TMP = envOverrides.TEMP = session.workingDirectory
-    // Point HOME at the working directory so `~`, `$HOME`, and os.homedir() resolve there.
-    // Confinement is unaffected: SRT expands `~` in deny rules via the main process's
-    // os.homedir() when it bakes the seatbelt policy, so the child's overridden HOME only
-    // affects that child's own `~` expansion, never the deny rules (e.g. ~/.ssh stays denied).
-    envOverrides.HOME = session.workingDirectory
+    // npm's cache defaults to ~/.npm, which is not writable under SRT now that HOME is
+    // real; redirect it so `npm install` keeps working inside the sandbox.
+    envOverrides.npm_config_cache = path.join(cacheDir, 'npm')
+    if (isWindows) {
+      // Native Windows execution has NO OS sandbox (docs/technical/windows-sandbox.md), so
+      // nothing would deny writes to the real profile. Like execHarmonyNodeCode, keep the
+      // HOME/temp redirect as the only thing steering `~`, os.homedir(), and temp files
+      // into the session directory; real-HOME inheritance is deliberately limited to the
+      // platforms where the OS sandbox keeps the real home write-protected.
+      envOverrides.HOME = session.workingDirectory
+      envOverrides.TMPDIR = envOverrides.TMP = envOverrides.TEMP = session.workingDirectory
+      // Git for Windows resolves its global config from HOME, so the redirect above is the
+      // one thing still hiding the user's git identity here (the bug the real-HOME change
+      // fixed on the SRT platforms). Point git — and only git — back at the real global
+      // config. `git config --global` writes then target the real file, which unsandboxed
+      // native execution could already do, so this opens no new exposure.
+      const realHome = process.env.USERPROFILE || homedir()
+      const globalGitConfig = [path.join(realHome, '.gitconfig'), path.join(realHome, '.config', 'git', 'config')].find(
+        existsSync
+      )
+      if (globalGitConfig) envOverrides.GIT_CONFIG_GLOBAL = globalGitConfig
+    }
   }
 
   // Resolve the program that reads the code from stdin.
@@ -766,21 +1179,29 @@ export async function execCode(params: {
     spawnArgs = argv.slice(1)
     // On macOS/Linux wrappedEnv is process.env with proxy vars baked in; layer overrides on top.
     spawnEnv = { ...wrappedEnv, ...envOverrides }
+    // GUI-launched Electron inherits launchd's minimal PATH (missing /opt/homebrew/bin,
+    // ~/.local/bin, version-manager shims, …), so user-installed commands would not resolve.
+    const loginShellPath = await getLoginShellPath()
+    if (loginShellPath) spawnEnv.PATH = loginShellPath
   }
 
   // Windows Bash (especially WSL) must keep resolving `node` from its own PATH; a Windows
   // process.execPath is not executable inside WSL. PowerShell reads its script directly.
   // macOS/Linux Bash needs the bundled-node shim.
   const script = buildSandboxStdinScript(params.code, params.language, process.execPath, !isWindows, isWindows)
-  const MAX_BUFFER_BYTES = 10 * 1024 * 1024 // 10MB cap to prevent OOM from runaway output
+  const MAX_BUFFER_BYTES = params.outputFilePath ? 6_000 : 10 * 1024 * 1024
+  const outputCapture = params.outputFilePath ? createCommandOutputCapture(params.outputFilePath) : undefined
 
   return new Promise((resolve, reject) => {
-    const stdoutChunks: Uint8Array[] = []
-    const stderrChunks: Uint8Array[] = []
+    const stdoutChunks: string[] = []
+    const stderrChunks: string[] = []
+    const stdoutDecoder = new StringDecoder('utf8')
+    const stderrDecoder = new StringDecoder('utf8')
     let stdoutBytes = 0
     let stderrBytes = 0
     let stdoutCapped = false
     let stderrCapped = false
+    let outputLimitExceeded = false
 
     const child = spawn(spawnCmd, spawnArgs, {
       cwd,
@@ -801,62 +1222,99 @@ export async function execCode(params: {
       setTimeout(() => killProcessTree(child, 'SIGKILL'), 3_000)
     }, timeout)
 
-    child.stdout.on('data', (chunk: Uint8Array) => {
+    child.stdout.on('data', (chunk: Buffer) => {
       stdoutBytes += chunk.byteLength
+      if (outputCapture && !outputCapture.append('stdout', chunk)) {
+        child.stdout.pause()
+        outputCapture.onDrain(() => child.stdout.resume())
+      }
+      if (outputCapture?.isLimitExceeded() && !outputLimitExceeded) {
+        outputLimitExceeded = true
+        terminateTrackedChild(child)
+      }
       if (!stdoutCapped) {
+        const remaining = MAX_BUFFER_BYTES - (stdoutBytes - chunk.byteLength)
+        if (remaining > 0) stdoutChunks.push(stdoutDecoder.write(chunk.slice(0, remaining)))
         if (stdoutBytes > MAX_BUFFER_BYTES) stdoutCapped = true
-        else stdoutChunks.push(chunk)
       }
     })
-    child.stderr.on('data', (chunk: Uint8Array) => {
+    child.stderr.on('data', (chunk: Buffer) => {
       stderrBytes += chunk.byteLength
+      if (outputCapture && !outputCapture.append('stderr', chunk)) {
+        child.stderr.pause()
+        outputCapture.onDrain(() => child.stderr.resume())
+      }
+      if (outputCapture?.isLimitExceeded() && !outputLimitExceeded) {
+        outputLimitExceeded = true
+        terminateTrackedChild(child)
+      }
       if (!stderrCapped) {
+        const remaining = MAX_BUFFER_BYTES - (stderrBytes - chunk.byteLength)
+        if (remaining > 0) stderrChunks.push(stderrDecoder.write(chunk.slice(0, remaining)))
         if (stderrBytes > MAX_BUFFER_BYTES) stderrCapped = true
-        else stderrChunks.push(chunk)
       }
     })
     child.on('error', (err) => {
       clearTimeout(timer)
       if (settled) return
       settled = true
-      log.warn(
-        buildOperationFinishLog({
-          operationId,
-          success: false,
-          exitCode: null,
-          durationMs: Date.now() - startedAt,
-          stdout: Buffer.concat(stdoutChunks).toString('utf-8'),
-          stderr: err.message,
-          stdoutBytes,
-          stderrBytes,
-        })
-      )
-      reject(err)
+      void (async () => {
+        await outputCapture?.finish()
+        log.warn(
+          buildOperationFinishLog({
+            operationId,
+            success: false,
+            exitCode: null,
+            durationMs: Date.now() - startedAt,
+            stdout: stdoutChunks.join('') + stdoutDecoder.end(),
+            stderr: err.message,
+            stdoutBytes,
+            stderrBytes,
+          })
+        )
+        reject(err)
+      })()
     })
     child.on('close', (code) => {
       clearTimeout(timer)
       if (settled) return
       settled = true
-      let stdout = tailTruncate(Buffer.concat(stdoutChunks).toString('utf-8'))
-      let stderr = tailTruncate(stripCodesignNoise(Buffer.concat(stderrChunks).toString('utf-8')))
-      const exitCode = timedOut ? 124 : (code ?? 1)
-      if (stdoutCapped) stdout += `\n[Output truncated: exceeded ${MAX_BUFFER_BYTES / 1024 / 1024}MB buffer limit]`
-      if (stderrCapped) stderr += `\n[Stderr truncated: exceeded ${MAX_BUFFER_BYTES / 1024 / 1024}MB buffer limit]`
-      if (timedOut) stderr += `\n[Process timed out after ${timeout}ms]`
-      const finishLog = buildOperationFinishLog({
-        operationId,
-        success: exitCode === 0,
-        exitCode,
-        durationMs: Date.now() - startedAt,
-        timedOut,
-        stdout,
-        stderr,
-        stdoutBytes,
-        stderrBytes,
-      })
-      if (exitCode === 0) log.info(finishLog)
-      else log.warn(finishLog)
-      resolve({ stdout, stderr, exitCode })
+      void (async () => {
+        const outputFile = await outputCapture?.finish()
+        const captureFailed = outputCapture?.isFailed() === true
+        let stdout = tailTruncate(stdoutChunks.join('') + stdoutDecoder.end())
+        let stderr = tailTruncate(stripCodesignNoise(stderrChunks.join('') + stderrDecoder.end()))
+        const exitCode = timedOut ? 124 : outputLimitExceeded ? 1 : (code ?? 1)
+        if (stdoutCapped) {
+          stdout +=
+            params.outputFilePath && !captureFailed
+              ? '\n[Inline stdout preview truncated; see full output file]'
+              : `\n[Output truncated: exceeded ${MAX_BUFFER_BYTES / 1024 / 1024}MB buffer limit]`
+        }
+        if (stderrCapped) {
+          stderr +=
+            params.outputFilePath && !captureFailed
+              ? '\n[Inline stderr preview truncated; see full output file]'
+              : `\n[Stderr truncated: exceeded ${MAX_BUFFER_BYTES / 1024 / 1024}MB buffer limit]`
+        }
+        if (captureFailed) stderr += `\n${COMMAND_OUTPUT_CAPTURE_FAILED_MESSAGE}`
+        if (timedOut) stderr += `\n[Process timed out after ${timeout}ms]`
+        if (outputLimitExceeded) stderr += '\n[Command terminated: output exceeded the 10MB capture limit]'
+        const finishLog = buildOperationFinishLog({
+          operationId,
+          success: exitCode === 0,
+          exitCode,
+          durationMs: Date.now() - startedAt,
+          timedOut,
+          stdout,
+          stderr,
+          stdoutBytes,
+          stderrBytes,
+        })
+        if (exitCode === 0) log.info(finishLog)
+        else log.warn(finishLog)
+        resolve({ stdout, stderr, exitCode, ...(outputFile ? { outputFile } : {}) })
+      })()
     })
 
     // Feed the program via stdin only after cancellation listeners are ready: node executes
@@ -871,23 +1329,102 @@ export async function execCode(params: {
   })
 }
 
+const SANDBOX_DENIAL_PATTERNS = [
+  /operation not permitted/i,
+  /permission denied/i,
+  /read-only file system/i,
+  /\bEACCES\b/i,
+  /\bEPERM\b/i,
+  /\bEROFS\b/i,
+]
+
+/** Execute one model-facing shell command under confinement and retain failed-call identity for an optional retry. */
+export async function runSandboxCommand(params: {
+  command: string
+  shell: 'bash' | 'powershell'
+  workdir?: string
+  timeout?: number
+  sessionId?: string
+  toolCallId: string
+}): Promise<import('../../shared/sandbox-provider').SandboxRunCommandResult> {
+  const session = getSession(params.sessionId)
+  if (!session || session.state !== 'initialized' || !session.workingDirectory) {
+    throw new Error('Sandbox not initialized. Call initSandbox first.')
+  }
+  if (!params.sessionId) throw new Error('Session ID is required for run_command')
+  if (process.platform === 'win32') {
+    throw new Error('Windows has no confined command runner; use the host approval path')
+  }
+  if (params.shell !== 'bash') {
+    throw new Error('Sandboxed run_command uses Bash on macOS and Linux')
+  }
+
+  const defaultCwd = session.userWriteGrants[0]?.root ?? session.workingDirectory
+  const cwd = params.workdir ? path.resolve(defaultCwd, normalizeWindowsShellPath(params.workdir)) : defaultCwd
+  const cwdValidation = await validateSessionWritePath(session, cwd)
+  if (!cwdValidation.valid || !existsSync(cwd) || !statSync(cwd).isDirectory()) {
+    return {
+      stdout: '',
+      stderr: cwdValidation.error ?? 'Working directory does not exist or is not an authorized directory',
+      exitCode: 1,
+      cwd,
+    }
+  }
+
+  const result = await execCode({
+    code: params.command,
+    language: 'bash',
+    timeout: params.timeout,
+    cwd,
+    sessionId: params.sessionId,
+    toolCallId: params.toolCallId,
+    outputFilePath: createCommandOutputCapturePath(params.toolCallId),
+  })
+  const retryOf =
+    result.exitCode !== 0
+      ? recordFailedSandboxCommand({
+          sessionId: params.sessionId,
+          toolCallId: params.toolCallId,
+          command: params.command,
+          cwd,
+          canonicalCwd: cwdValidation.canonicalTarget ?? cwd,
+          shell: params.shell,
+        })
+      : undefined
+  const denied = result.exitCode !== 0 && SANDBOX_DENIAL_PATTERNS.some((pattern) => pattern.test(result.stderr))
+  return {
+    ...result,
+    cwd,
+    ...(retryOf ? { retryOf } : {}),
+    sandbox: { denied, ...(denied ? { confidence: 'heuristic' as const } : {}) },
+  }
+}
+
 export function killRunningCommand(sessionId?: string, toolCallId?: string): { killed: boolean } {
   const session = getSession(sessionId)
   if (!session) return { killed: false }
 
+  const utilities = toolCallId
+    ? [session.runningUtilitiesByToolCallId.get(toolCallId)].filter(
+        (child): child is UtilityProcess => child !== undefined
+      )
+    : [...session.runningUtilities]
   const children = toolCallId
     ? [session.runningChildrenByToolCallId.get(toolCallId)].filter(
         (child): child is ChildProcess => child !== undefined
       )
     : [...session.runningChildren]
 
-  if (toolCallId && children.length === 0) {
+  if (toolCallId && utilities.length === 0 && children.length === 0) {
     // Cancellation can arrive while execCode is still preparing the sandbox wrapper.
     // Remember it so a child registered moments later is terminated immediately.
     session.pendingCancelledToolCallIds.add(toolCallId)
   }
 
   let killed = false
+  for (const utility of utilities) {
+    killed = utility.kill() || killed
+  }
   for (const child of children) {
     if (child.killed) continue
     terminateTrackedChild(child)
@@ -1143,6 +1680,7 @@ export async function findFiles(
 
 export async function resetSandbox(sessionId?: string): Promise<{ success: boolean; error?: string }> {
   const id = sessionId || DEFAULT_SESSION
+  clearFailedCommandRetries(id)
   const session = sessions.get(id)
   if (!session) {
     return { success: true }
@@ -1163,6 +1701,7 @@ export async function resetSandbox(sessionId?: string): Promise<{ success: boole
 
 /** Reset all active sandbox sessions. Called on app quit to clean up. */
 export async function resetAllSessions(): Promise<void> {
+  clearFailedCommandRetries()
   const ids = [...sessions.keys()]
   for (const id of ids) {
     try {
@@ -1188,6 +1727,12 @@ export function getStatus(sessionId?: string): SandboxStatus {
 }
 
 export async function checkAvailability(): Promise<{ available: boolean; reason?: string }> {
+  if (isHarmonyBuild()) {
+    // The HAP cannot launch bubblewrap/socat, but Electron's utility process provides the
+    // packaged Node runtime without going through the blocked child_process/appspawn path.
+    return { available: true }
+  }
+
   if (process.platform === 'darwin') {
     return { available: true }
   }
@@ -1272,6 +1817,37 @@ export function resolveSandboxWorkingDir(sessionId: string): string | null {
   return path.join(getSandboxTmpRoot(), sessionId)
 }
 
+type SandboxCopyTarget = { ok: true; workDir: string; targetPath: string } | { ok: false; error: string }
+
+/**
+ * Shared prologue for copy-into-sandbox entry points: resolve the session working
+ * directory, reject invalid filenames, and validate the target against path traversal,
+ * protected paths, and the attachment seed manifest.
+ */
+async function resolveSandboxCopyTarget(targetFilename: string, sessionId?: string): Promise<SandboxCopyTarget> {
+  const session = getSession(sessionId)
+  if (!session?.workingDirectory) {
+    return { ok: false, error: 'Sandbox not initialized' }
+  }
+  const workDir = session.workingDirectory
+
+  // Reject empty or invalid filenames
+  if (!targetFilename || targetFilename === '.' || targetFilename === '..') {
+    return { ok: false, error: 'Invalid filename' }
+  }
+
+  // Prevent path traversal (with symlink check)
+  const targetPath = path.resolve(workDir, targetFilename)
+  const validation = await validateWritePath(targetPath, workDir)
+  if (!validation.valid) {
+    return { ok: false, error: validation.error || 'Invalid filename: path traversal detected' }
+  }
+  if (pathContainsAttachmentSeedManifest(targetPath)) {
+    return { ok: false, error: 'Invalid filename' }
+  }
+  return { ok: true, workDir, targetPath }
+}
+
 /**
  * Copy a file into the sandbox working directory.
  * Content can be a data URL (base64 encoded) or plain text.
@@ -1281,28 +1857,14 @@ export async function copyFileToSandbox(
   targetFilename: string,
   sessionId?: string
 ): Promise<{ success: boolean; sandboxPath?: string; error?: string }> {
-  const session = getSession(sessionId)
-  if (!session?.workingDirectory) {
-    return { success: false, error: 'Sandbox not initialized' }
-  }
-
-  const workDir = session.workingDirectory
-
-  // Reject empty or invalid filenames
-  if (!targetFilename || targetFilename === '.' || targetFilename === '..') {
-    return { success: false, error: 'Invalid filename' }
-  }
-
-  // Prevent path traversal (with symlink check)
-  const targetPath = path.resolve(workDir, targetFilename)
-  const validation = await validateWritePath(targetPath, workDir)
-  if (!validation.valid) {
-    return { success: false, error: validation.error || 'Invalid filename: path traversal detected' }
+  const target = await resolveSandboxCopyTarget(targetFilename, sessionId)
+  if (!target.ok) {
+    return { success: false, error: target.error }
   }
 
   try {
-    await writeContentToFile(targetPath, content)
-    return { success: true, sandboxPath: targetPath }
+    await writeContentToFile(target.targetPath, content)
+    return { success: true, sandboxPath: target.targetPath }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     log.error('copyFileToSandbox failed:', msg)
@@ -1319,40 +1881,193 @@ export async function copyBlobToSandbox(
   targetFilename: string,
   sessionId?: string
 ): Promise<{ success: boolean; sandboxPath?: string; error?: string }> {
-  const session = getSession(sessionId)
-  if (!session?.workingDirectory) {
-    return { success: false, error: 'Sandbox not initialized' }
-  }
-
-  const workDir = session.workingDirectory
-
-  // Reject empty or invalid filenames
-  if (!targetFilename || targetFilename === '.' || targetFilename === '..') {
-    return { success: false, error: 'Invalid filename' }
-  }
-
-  // Prevent path traversal (with symlink check)
-  const targetPath = path.resolve(workDir, targetFilename)
-  const validation = await validateWritePath(targetPath, workDir)
-  if (!validation.valid) {
-    return { success: false, error: validation.error || 'Invalid filename: path traversal detected' }
-  }
-
   try {
-    // Read blob content directly from the store on disk
-    const { getStoreBlob } = await import('../store-node')
-    const content = await getStoreBlob(blobKey)
-    if (!content) {
-      return { success: false, error: `Blob not found for key: ${blobKey}` }
-    }
-
-    await writeContentToFile(targetPath, content)
-    return { success: true, sandboxPath: targetPath }
+    return await seedAttachmentBlob(blobKey, targetFilename, sessionId, false)
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     log.error('copyBlobToSandbox failed:', msg)
     return { success: false, error: msg }
   }
+}
+
+/**
+ * Seed many attachment blobs in one call. Already-seeded destinations (same blob
+ * still on disk) are skipped without reading the blob store. First-time or
+ * relocated attachments still go through seedAttachmentBlob.
+ */
+export async function seedBlobsToSandbox(
+  items: SandboxSeedBlobItem[],
+  sessionId?: string
+): Promise<{ success: boolean; results: SandboxSeedBlobResult[]; error?: string }> {
+  const results: SandboxSeedBlobResult[] = []
+  if (items.length === 0) {
+    return { success: true, results }
+  }
+
+  const session = getSession(sessionId)
+  if (!session?.workingDirectory) {
+    return { success: false, error: 'Sandbox not initialized', results }
+  }
+
+  const workDir = session.workingDirectory
+  const manifest = readAttachmentSeedManifest(workDir)
+  const pending: SandboxSeedBlobItem[] = []
+
+  for (const item of items) {
+    const target = await resolveSandboxCopyTarget(item.targetFilename, sessionId)
+    if (!target.ok) {
+      results.push({ targetFilename: item.targetFilename, success: false, skipped: false, error: target.error })
+      continue
+    }
+    const { action } = classifyAttachmentSeedCopyAgainstManifest(workDir, target.targetPath, item.blobKey, manifest)
+    if (action === 'skip') {
+      results.push({
+        targetFilename: item.targetFilename,
+        success: true,
+        skipped: true,
+        sandboxPath: target.targetPath,
+      })
+      continue
+    }
+    pending.push(item)
+  }
+
+  for (const item of pending) {
+    try {
+      const seeded = await seedAttachmentBlob(item.blobKey, item.targetFilename, sessionId, false)
+      results.push({
+        targetFilename: item.targetFilename,
+        success: seeded.success,
+        skipped: false,
+        sandboxPath: seeded.sandboxPath,
+        error: seeded.error,
+      })
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      log.error('seedBlobsToSandbox item failed:', msg)
+      results.push({ targetFilename: item.targetFilename, success: false, skipped: false, error: msg })
+    }
+  }
+
+  const success = results.every((result) => result.success)
+  return success ? { success: true, results } : { success: false, results, error: 'Some attachments failed to seed' }
+}
+
+/**
+ * Seed one attachment blob. When the requested name is already occupied by a
+ * different file, write the incoming blob to an identity-derived path so both
+ * uploads remain. `alreadyRelocated` prevents a second hop if that unique path
+ * is also occupied.
+ */
+async function seedAttachmentBlob(
+  blobKey: string,
+  targetFilename: string,
+  sessionId: string | undefined,
+  alreadyRelocated: boolean
+): Promise<{ success: boolean; sandboxPath?: string; error?: string }> {
+  const target = await resolveSandboxCopyTarget(targetFilename, sessionId)
+  if (!target.ok) {
+    return { success: false, error: target.error }
+  }
+  const { workDir, targetPath } = target
+  const { action, seedKey } = classifyAttachmentSeedCopy(workDir, targetPath, blobKey)
+  if (action === 'skip') {
+    return { success: true, sandboxPath: targetPath }
+  }
+
+  const { getStoreBlob } = await import('../store-node')
+  const content = await getStoreBlob(blobKey)
+  if (!content) {
+    if (action === 'reconcile') {
+      // The working copy stays untouched either way; a missing blob is not an error here.
+      return { success: true, sandboxPath: targetPath }
+    }
+    return { success: false, error: `Blob not found for key: ${blobKey}` }
+  }
+
+  if (action === 'reconcile') {
+    // Untracked existing file: a workdir seeded before the manifest existed, a file the
+    // model created, or a seed whose manifest entry was lost. Never overwrite it.
+    // Matching bytes mean this is the unedited seed of the same attachment — record that
+    // baseline so later reseeds can skip. Different bytes mean another file needs this
+    // name; relocate the incoming blob, keeping the working copy if there is nowhere
+    // else for the blob to go.
+    const existing = await fsReadFile(targetPath)
+    if (contentToFileBuffer(content).equals(toByteView(existing))) {
+      recordAttachmentSeed(workDir, seedKey, blobKey)
+      return { success: true, sandboxPath: targetPath }
+    }
+    return writeOrRelocateAttachmentSeed({
+      blobKey,
+      content,
+      workDir,
+      targetPath,
+      targetFilename,
+      sessionId,
+      seedKey,
+      alreadyRelocated,
+      neverOverwrite: true,
+    })
+  }
+
+  if (action === 'relocate') {
+    return writeOrRelocateAttachmentSeed({
+      blobKey,
+      content,
+      workDir,
+      targetPath,
+      targetFilename,
+      sessionId,
+      seedKey,
+      alreadyRelocated,
+      neverOverwrite: false,
+    })
+  }
+
+  await writeContentToFile(targetPath, content)
+  recordAttachmentSeed(workDir, seedKey, blobKey)
+  return { success: true, sandboxPath: targetPath }
+}
+
+async function writeOrRelocateAttachmentSeed(params: {
+  blobKey: string
+  content: string
+  workDir: string
+  targetPath: string
+  targetFilename: string
+  sessionId: string | undefined
+  seedKey: string
+  alreadyRelocated: boolean
+  /** From `reconcile`: the destination holds an untracked working copy that must survive. */
+  neverOverwrite: boolean
+}): Promise<{ success: boolean; sandboxPath?: string; error?: string }> {
+  const {
+    blobKey,
+    content,
+    workDir,
+    targetPath,
+    targetFilename,
+    sessionId,
+    seedKey,
+    alreadyRelocated,
+    neverOverwrite,
+  } = params
+  const uniqueRel = sandboxAttachmentRelPath(path.basename(targetFilename), blobKey)
+  const currentRel = path.relative(workDir, targetPath).split(path.sep).join('/')
+  if (alreadyRelocated || uniqueRel === currentRel) {
+    if (neverOverwrite) {
+      // The blob's own identity path is the occupied destination, so there is nowhere to
+      // relocate it. This is an edited seed whose manifest entry was lost (deleted sidecar,
+      // or a crash between write and record). Keep the working copy and restore the
+      // baseline so later reseeds skip without rereading bytes.
+      recordAttachmentSeed(workDir, seedKey, blobKey)
+      return { success: true, sandboxPath: targetPath }
+    }
+    await writeContentToFile(targetPath, content)
+    recordAttachmentSeed(workDir, seedKey, blobKey)
+    return { success: true, sandboxPath: targetPath }
+  }
+  return seedAttachmentBlob(blobKey, uniqueRel, sessionId, true)
 }
 
 /**
@@ -1363,11 +2078,11 @@ export async function copyBlobToSandbox(
  * renderer's sandbox-path detection (preview gating) keeps working.
  */
 export function getSandboxTmpRoot(): string {
-  return path.join(tmpdir(), 'chatbox-sandbox')
+  return getChatboxQaPaths()?.sandboxTmpRoot ?? path.join(tmpdir(), 'chatbox-sandbox')
 }
 
 export function getSandboxArtifactsRoot(): string {
-  return path.join(app.getPath('userData'), 'chatbox-sandbox', 'artifacts')
+  return getChatboxQaPaths()?.sandboxArtifactsRoot ?? path.join(app.getPath('userData'), 'chatbox-sandbox', 'artifacts')
 }
 
 /**
@@ -1404,7 +2119,7 @@ export function getSandboxAllowedRoots(): string[] {
  * too, since the sandbox can legitimately write outputs to them. Kept in sync with the
  * allowWrite list built in initSandbox() (TASK_SANDBOX_EXTRA_WRITE_PATHS + temp dirs).
  */
-function getSandboxExtraWriteRoots(): string[] {
+export function getSandboxExtraWriteRoots(): string[] {
   if (process.platform === 'win32') return []
   const roots = new Set<string>()
   for (const p of [tmpdir(), '/tmp', ...TASK_SANDBOX_EXTRA_WRITE_PATHS]) {
@@ -1412,114 +2127,6 @@ function getSandboxExtraWriteRoots(): string[] {
     roots.add(safeRealpathSync(p))
   }
   return [...roots]
-}
-
-/** Remove all persisted download artifacts for a session (called on session deletion). */
-export function removeSessionArtifacts(sessionId: string): { success: boolean; error?: string } {
-  if (!sessionId || /[/\\]/.test(sessionId) || sessionId === '.' || sessionId === '..') {
-    return { success: false, error: 'Invalid session ID' }
-  }
-  try {
-    const dir = path.join(getSandboxArtifactsRoot(), sessionId)
-    if (existsSync(dir)) {
-      rmSync(dir, { recursive: true, force: true })
-    }
-    return { success: true }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    log.error('removeSessionArtifacts failed:', msg)
-    return { success: false, error: msg }
-  }
-}
-
-/** Whether a session has any persisted download artifacts on disk. */
-export function hasSessionArtifacts(sessionId: string): boolean {
-  if (!sessionId || /[/\\]/.test(sessionId) || sessionId === '.' || sessionId === '..') {
-    return false
-  }
-  try {
-    const dir = path.join(getSandboxArtifactsRoot(), sessionId)
-    return existsSync(dir) && readdirSync(dir).length > 0
-  } catch {
-    return false
-  }
-}
-
-/**
- * Persist a sandbox file to durable storage under userData so it stays downloadable
- * even after the transient temp working directory is evicted or cleaned up.
- * Idempotent: a path that is already inside the artifacts root is returned as-is.
- * Returns the absolute path of the persisted copy.
- */
-export async function persistSandboxArtifact(
-  sandboxPath: string,
-  sessionId: string,
-  _displayName?: string
-): Promise<{ success: boolean; artifactPath?: string; error?: string }> {
-  // Validate sessionId to prevent path traversal
-  if (!sessionId || /[/\\]/.test(sessionId) || sessionId === '.' || sessionId === '..') {
-    return { success: false, error: 'Invalid session ID' }
-  }
-  // On Windows the path may arrive in bash/POSIX form (e.g. /c/... from Git Bash realpath);
-  // normalize to native Windows form before absolute/root validation.
-  sandboxPath = normalizeWindowsShellPath(sandboxPath)
-  if (!path.isAbsolute(sandboxPath)) {
-    const workingDirectory = getSession(sessionId)?.workingDirectory ?? path.join(getSandboxTmpRoot(), sessionId)
-    const resolvedRelativePath = path.resolve(workingDirectory, sandboxPath)
-    if (resolvedRelativePath !== workingDirectory && !resolvedRelativePath.startsWith(workingDirectory + path.sep)) {
-      return { success: false, error: 'Access denied: relative artifact path escapes the sandbox' }
-    }
-    sandboxPath = resolvedRelativePath
-  }
-  try {
-    // Security: scope session-managed paths to this session. getSandboxAllowedRoots() is
-    // intentionally broader for preview/recovery, so using it here would allow one live
-    // session to persist another session's working file or durable artifact.
-    const resolvedSource = safeRealpathSync(sandboxPath)
-    const sessionWorkingRoot = safeRealpathSync(
-      getSession(sessionId)?.workingDirectory ?? path.join(getSandboxTmpRoot(), sessionId)
-    )
-    const sessionArtifactsRoot = safeRealpathSync(path.join(getSandboxArtifactsRoot(), sessionId))
-    const sharedSandboxTmpRoot = safeRealpathSync(getSandboxTmpRoot())
-    const sharedArtifactsRoot = safeRealpathSync(getSandboxArtifactsRoot())
-    const isInsideRoot = (root: string) => resolvedSource === root || resolvedSource.startsWith(root + path.sep)
-    const insideSessionManagedRoot = [sessionWorkingRoot, sessionArtifactsRoot].some(isInsideRoot)
-    const insideSharedManagedRoot = [sharedSandboxTmpRoot, sharedArtifactsRoot].some(isInsideRoot)
-    const insideExtraWriteRoot = getSandboxExtraWriteRoots().some(
-      (root) => resolvedSource === root || resolvedSource.startsWith(root + path.sep)
-    )
-    if (!insideSessionManagedRoot && (insideSharedManagedRoot || !insideExtraWriteRoot)) {
-      return { success: false, error: 'Access denied: path is outside the sandbox' }
-    }
-    if (!existsSync(resolvedSource)) {
-      return { success: false, error: `File not found: ${sandboxPath}` }
-    }
-    if (!statSync(resolvedSource).isFile()) {
-      return { success: false, error: `Not a file: ${sandboxPath}` }
-    }
-
-    // Already persisted — nothing to copy.
-    if (isInsideRoot(sessionArtifactsRoot)) {
-      return { success: true, artifactPath: resolvedSource }
-    }
-
-    // Group by a stable hash of the source path so distinct files that share a basename
-    // (e.g. charts/report.html vs tables/report.html) don't overwrite each other, while
-    // re-persisting the same source path updates the copy in place.
-    const sourceKey = createHash('sha1').update(resolvedSource).digest('hex').slice(0, 12)
-    const destDir = path.join(getSandboxArtifactsRoot(), sessionId, sourceKey)
-    mkdirSync(destDir, { recursive: true })
-    // Keep the original basename for the on-disk name. NOTE: _displayName is LLM-controlled
-    // and intentionally NOT used here — do not wire it into the path without sanitizing
-    // (path traversal). The download dialog uses display_name only as a save-as suggestion.
-    const destPath = path.join(destDir, path.basename(resolvedSource))
-    await fsCopyFile(resolvedSource, destPath)
-    return { success: true, artifactPath: safeRealpathSync(destPath) }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    log.error('persistSandboxArtifact failed:', msg)
-    return { success: false, error: msg }
-  }
 }
 
 /**

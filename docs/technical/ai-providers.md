@@ -1,6 +1,6 @@
 # AI 供应商系统
 
-> Last updated: 2026-03
+> Last updated: 2026-08
 
 ## 概述
 
@@ -64,6 +64,29 @@ import './definitions/claude'
 2. 若找到 → 调用 `providerDefinition.createModel(config)` 创建实例
 3. 若未找到 → 检查是否为用户自建供应商，通过 `createCustomProviderModel()` 创建
 4. 均未匹配 → 抛出错误
+
+### 跨宿主 ModelFactory 组装
+
+Provider Registry 和具体模型实现仍是单一数据源，但应用核心不再直接读取 Renderer settings、network 或 OAuth 单例：
+
+```text
+Host composition
+  → 显式加载 @chatbox/core/model（注册 builtin providers）
+  → 创建 ModelFactory
+      ├─ SettingsRepositoryPort
+      ├─ loadConfig()
+      ├─ Request / Storage / OAuth adapters
+      └─ resolveModel() → Provider Registry
+  → GenerationService
+```
+
+- `@chatbox/core` 根入口不触发 Provider 注册副作用，适合纯 Core、contract tests 和多个 application graph 共存。
+- `@chatbox/core/model` 是显式模型入口；加载它时注册 builtin providers，并导出 registry/model API 与 Core `ModelFactory`。
+- `ModelFactory` 位于 `packages/chatbox-core/src/application/model/`，从注入的 Settings Repository、Config loader 和 `ModelDependencies` 组装模型，不读取 Renderer store。
+- 当前 Renderer 注入 fetch、OAuth、blob storage 等现有 Adapters；未来 React Native 注入自己的等价实现，无需复制 Provider 选择和模型创建规则。
+- Provider 的“改善网络兼容性”不是统一代理开关；各宿主的实际传输矩阵、CORS/Origin 边界和取消协议见[Provider 网络兼容性请求](./provider-networking.md)。
+
+这种显式入口同时避免 package re-export 导致重复 Provider side effects，并让 Metro/Hermes 可以直接消费经过声明的 public exports。
 
 ### 控制面优先级（Precedence）
 
@@ -240,6 +263,8 @@ Provider 系统除了处理 API Key，也承载了桌面端 OAuth 登录能力�
 | `openai-responses` | `openai` | callback | 复用 OpenAI OAuth provider |
 | `claude` | `claude` | code-paste | `src/main/oauth/providers/anthropic.ts` |
 | `github-copilot` | `github-copilot` | device-code | `src/main/oauth/providers/github-copilot.ts` |
+| `qwen-portal` | `qwen-portal` | device-code | `src/main/oauth/providers/qwen.ts` |
+| `minimax` / `minimax-cn` | `minimax` / `minimax-cn` | device-code | `src/main/oauth/providers/minimax.ts` |
 
 ### 三种 OAuth 流程
 
@@ -282,6 +307,17 @@ Provider 系统除了处理 API Key，也承载了桌面端 OAuth 登录能力�
 - `createBearerOAuthFetch()`：Anthropic 等直接注入 Bearer token
 - `createCopilotOAuthFetch()`：GitHub Copilot 专用头与 endpoint 适配
 
+OpenCode 的两个网关（Zen 按量付费 / Go 订阅制）**都不是** OAuth 供应商：官方只提供控制台 API Key。两者共用一套 `defineOpenCodeModelClasses()` / `createOpenCodeModel()`（`src/shared/providers/definitions/opencode-shared.ts`），按 model id 前缀分发到不同 surface，但路由规则各自独立：
+
+| 网关 | apiHost | Responses | Anthropic Messages | Google | Chat Completions |
+|------|---------|-----------|--------------------|--------|------------------|
+| Zen | `https://opencode.ai/zen/v1` | `gpt-` / `grok-` / `muse-spark` | `claude-` / `qwen3.` | `gemini-` | 其余（含 MiniMax） |
+| Go | `https://opencode.ai/zen/go/v1` | `gpt-` / `grok-` / `muse-spark` | `minimax-` / `qwen3.` | — | 其余 |
+
+注意 MiniMax 在两个网关上落到不同 surface，所以路由规则不能共用一张表。两个网关的模型目录都是 OpenAI 形状的 `/models`，因此 Anthropic / Gemini 子类改为拉这个目录，而不是各自厂商的目录端点。Zen 的 Gemini 直接挂在 `<host>/models/<id>`，不带 `/v1beta`，所以 Gemini 子类覆盖了 `getProvider()`。
+
+Cursor 订阅的 CLI PKCE 登录无法接到公开聊天 API，调研结论见 [Cursor / OpenCode Go 订阅登录](./subscription-oauth-research.md)。
+
 ### 关键实现约束
 
 - **桌面端限定**
@@ -316,12 +352,12 @@ Provider 系统除了处理 API Key，也承载了桌面端 OAuth 登录能力�
 
 ### 当前内置供应商
 
-系统内置 16 个供应商定义（通过副作用导入注册），加上用户自建供应商，总共支持 30+ 家服务商。内置供应商涵盖：
+系统内置供应商定义通过副作用导入注册（见 `src/shared/providers/index.contract.test.ts` 的顺序快照），加上用户自建供应商，总共支持 30+ 家服务商。内置供应商涵盖：
 
 - **云端大厂**：OpenAI、Claude（Anthropic）、Gemini（Google）、Azure OpenAI
 - **专业服务**：DeepSeek、Groq、xAI、Mistral AI、Perplexity
 - **国内平台**：SiliconFlow（硅基流动）、VolcEngine（火山引擎）、ChatGLM（智谱）
-- **聚合平台**：OpenRouter
+- **聚合 / 订阅网关**：OpenRouter、GitHub Copilot、OpenCode Zen、OpenCode Go、Vercel AI Gateway
 - **本地推理**：Ollama、LM Studio
 - **自有服务**：ChatboxAI
 
@@ -348,37 +384,17 @@ Provider 系统除了处理 API Key，也承载了桌面端 OAuth 登录能力�
 
 原因是：provider ID 同时用于设置存储、运行时 provider 路由、OAuth 共享映射和设置页导航。若允许 builtin/custom 共用 ID，会出现“展示的是一个 provider，实际请求走的是另一个 provider”的控制面歧义
 
-## 架构演进
+## 注册表维护
 
-供应商系统经历了一次重大重构：
-
-### 旧方案（手动注册）
-
-记录于 [`docs/adding-provider.md`](../adding-provider.md)。添加一个新供应商需要修改 **7-8 个文件**：
-
-1. `types.ts` — 添加枚举值
-2. `models/your-provider.ts` — 创建模型实现
-3. `models/index.ts` — 在 `getModel()` switch 中添加 case
-4. `defaults.ts` — 在 `SystemProviders` 数组中添加配置
-5. `model-setting-utils/` — 创建并注册设置工具类
-6. UI 图标文件
-
-信息**高度分散**：供应商的 ID、名称、默认配置、工厂逻辑、显示名称分布在不同文件和 switch 语句中，新增或修改供应商极易遗漏步骤。
-
-### 新方案（注册表模式）
-
-记录于 [`docs/adding-new-provider.md`](../adding-new-provider.md)。添加一个新供应商只需 **4 个文件改动**：
+当前 Provider 只通过注册表模式接入。添加一个新供应商通常需要 **4 个文件改动**：
 
 1. `types.ts` — 添加枚举值
 2. `definitions/models/your-provider.ts` — 创建模型类
 3. `definitions/your-provider.ts` — 一次 `defineProvider()` 调用包含全部信息
 4. `providers/index.ts` — 添加一行副作用导入
 
-核心改进：**`defineProvider()` 成为供应商信息的唯一数据源**，消除了 switch 语句和分散配置。迁移对照表见 `docs/adding-new-provider.md` 的 "Migration Notes" 一节。
+`defineProvider()` 是供应商信息的单一数据源。不要重新引入 `getModel()` switch、`SystemProviders` 手工条目或独立 setting-util 注册路径。迁移对照表见 `docs/adding-new-provider.md` 的 "Migration Notes" 一节。
 
 ## 添加新供应商
 
-本文档不重复具体步骤。详细的分步指南请参阅：
-
-- **[`docs/adding-new-provider.md`](../adding-new-provider.md)**（当前推荐，注册表架构）
-- `docs/adding-provider.md`（旧版参考，已不推荐使用）
+本文档不重复具体步骤。详细的分步指南请参阅 [`docs/adding-new-provider.md`](../adding-new-provider.md)。

@@ -7,12 +7,13 @@ export const perplexityProvider = defineProvider({
   name: 'Perplexity',
   type: ModelProviderType.OpenAI,
   modelsDevProviderId: 'perplexity',
-  curatedModelIds: ['sonar-pro', 'sonar-reasoning-pro', 'sonar-deep-research'],
+  curatedModelIds: ['sonar', 'sonar-pro', 'sonar-reasoning-pro', 'sonar-deep-research'],
   urls: {
     website: 'https://www.perplexity.ai/',
   },
   defaultSettings: {
     models: [
+      { modelId: 'sonar', capabilities: ['web_search'], contextWindow: 128_000 },
       { modelId: 'sonar-pro', capabilities: ['web_search'] },
       { modelId: 'sonar-reasoning-pro', capabilities: ['reasoning', 'web_search'] },
       { modelId: 'sonar-deep-research', capabilities: ['reasoning', 'web_search'] },

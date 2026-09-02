@@ -1,5 +1,5 @@
-import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { createOAuthCredentialManager, createOpenAIOAuthFetch } from '../../oauth'
+import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import OpenAI from './models/openai'
 import OpenAIResponses from './models/openai-responses'
@@ -10,6 +10,9 @@ export const openaiProvider = defineProvider({
   type: ModelProviderType.OpenAI,
   modelsDevProviderId: 'openai',
   curatedModelIds: [
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna',
     'gpt-5.4',
     'gpt-5.4-mini',
     'gpt-5.4-nano',
@@ -17,8 +20,11 @@ export const openaiProvider = defineProvider({
     'gpt-5.2-pro',
     'o4-mini',
     'o3-pro',
+    'o3-mini',
     'gpt-4.1',
     'gpt-4.1-mini',
+    'gpt-4o',
+    'gpt-4o-mini',
     'text-embedding-3-small',
     'text-embedding-3-large',
   ],
@@ -29,6 +35,24 @@ export const openaiProvider = defineProvider({
     apiHost: 'https://api.openai.com',
     // https://platform.openai.com/docs/models
     models: [
+      {
+        modelId: 'gpt-5.6-sol',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-5.6-terra',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-5.6-luna',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
       {
         modelId: 'gpt-5.4',
         capabilities: ['vision', 'tool_use', 'reasoning'],
@@ -72,6 +96,12 @@ export const openaiProvider = defineProvider({
         maxOutput: 100_000,
       },
       {
+        modelId: 'o3-mini',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 200_000,
+        maxOutput: 100_000,
+      },
+      {
         modelId: 'gpt-4.1',
         capabilities: ['vision', 'tool_use'],
         contextWindow: 1_047_576,
@@ -94,12 +124,6 @@ export const openaiProvider = defineProvider({
         capabilities: ['vision', 'tool_use'],
         contextWindow: 128_000,
         maxOutput: 16_384,
-      },
-      {
-        modelId: 'o3-mini',
-        capabilities: ['vision', 'tool_use', 'reasoning'],
-        contextWindow: 200_000,
-        maxOutput: 100_000,
       },
       {
         modelId: 'text-embedding-3-small',

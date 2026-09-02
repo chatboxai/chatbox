@@ -1,7 +1,10 @@
+export type MCPProtocolMode = 'auto' | 'legacy'
+
 export type MCPServerConfig<TransportConfig = MCPTransportConfig> = {
   id: string
   name: string
   enabled: boolean
+  protocolMode?: MCPProtocolMode
   transport: TransportConfig
 }
 

@@ -1,4 +1,5 @@
-import { isBuiltinProviderId } from '@shared/providers'
+import { getProviderDefinition, isBuiltinProviderId } from '@shared/providers'
+import { ModelProviderEnum } from '@shared/types'
 
 export type PlausibleOptions = {
   props?: Record<string, unknown>
@@ -6,6 +7,8 @@ export type PlausibleOptions = {
 }
 
 export type Plausible = ((event: string, options?: PlausibleOptions) => void) & { q?: unknown[] }
+
+export type PlausibleCountBucket = '0' | '1' | '2_5' | '6_plus'
 
 const dynamicRoutePatterns = [
   {
@@ -25,6 +28,36 @@ const attributionParams = new Set([
   'utm_content',
   'utm_term',
 ])
+
+export function bucketPlausibleCount(count: number): PlausibleCountBucket {
+  if (count <= 0) return '0'
+  if (count === 1) return '1'
+  if (count <= 5) return '2_5'
+  return '6_plus'
+}
+
+export function normalizePlausibleVersion(version: string): string {
+  const match = version.match(/^(\d+)\.(\d+)/)
+  return match ? `${match[1]}.${match[2]}` : 'unknown'
+}
+
+export function normalizePlausibleProvider(providerId: string | undefined): string {
+  if (!providerId) return 'unknown'
+  return isBuiltinProviderId(providerId) ? providerId : 'custom'
+}
+
+export function normalizePlausibleModel(providerId: string | undefined, modelId: string | undefined): string {
+  if (!modelId) return 'unknown'
+  if (!providerId || normalizePlausibleProvider(providerId) === 'custom') return 'custom'
+  if (providerId === ModelProviderEnum.ChatboxAI) return modelId
+
+  const providerDefinition = getProviderDefinition(providerId)
+  const knownModelIds = [
+    ...(providerDefinition?.curatedModelIds || []),
+    ...(providerDefinition?.defaultSettings?.models?.map((model) => model.modelId) || []),
+  ]
+  return knownModelIds.includes(modelId) ? modelId : 'custom'
+}
 
 function keepAttributionParams(search: string): string {
   const params = new URLSearchParams(search)

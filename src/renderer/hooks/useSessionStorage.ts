@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
-import * as chatStore from '@/stores/chatStore'
-import { QueryKeys } from '@/stores/chatStore'
+import { QueryKeys } from '@chatbox/react/query'
+import { rendererApplication } from '@/app/renderer-application'
+import { getSessionSettings } from '@/stores/session/session-settings'
 
 export function useSession(sessionId: string | undefined) {
   return useQuery({
     queryKey: QueryKeys.ChatSession(sessionId ?? ''),
     queryFn: () => {
       if (!sessionId) return null
-      return chatStore.getSession(sessionId)
+      return rendererApplication.sessionQueryBridge.getSession(sessionId)
     },
     enabled: !!sessionId,
     staleTime: Number.POSITIVE_INFINITY,
@@ -19,7 +20,7 @@ export function useSessionSettings(sessionId: string | undefined) {
     queryKey: QueryKeys.ChatSessionSettings(sessionId ?? ''),
     queryFn: () => {
       if (!sessionId) return null
-      return chatStore.getSessionSettings(sessionId)
+      return getSessionSettings(sessionId)
     },
     enabled: !!sessionId,
   })

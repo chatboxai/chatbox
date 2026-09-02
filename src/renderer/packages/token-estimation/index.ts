@@ -9,9 +9,11 @@
 // Types
 // ============================================================================
 
+export { getDraftTokenizationText, seedExactDraftTokens } from './draft-tokenization'
 export type {
   ComputationTask,
   ContentMode,
+  ExactDraftTokens,
   QueueState,
   TaskResult,
   TokenBreakdown,

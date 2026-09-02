@@ -11,10 +11,20 @@ export type Props = {
   step?: number
   className?: string
   suffix?: string
+  inputTestId?: string
 }
 
 // SliderChangeEnd触发 或者 input blur的时候才触发onChange
-export default function SliderWithInput({ value, onChange, min = 0, max = 1, step = 0.01, className, suffix }: Props) {
+export default function SliderWithInput({
+  value,
+  onChange,
+  min = 0,
+  max = 1,
+  step = 0.01,
+  className,
+  suffix,
+  inputTestId,
+}: Props) {
   const { t } = useTranslation()
   const [tempSliderValue, setTempSliderValue] = useState<number>()
   const sliderValue = useMemo(() => tempSliderValue ?? value ?? 0, [tempSliderValue, value])
@@ -69,6 +79,7 @@ export default function SliderWithInput({ value, onChange, min = 0, max = 1, ste
         onChangeEnd={handleSliderChangeEnd}
       />
       <TextInput
+        data-testid={inputTestId}
         w={64}
         size="sm"
         placeholder={t('Not set') || ''}

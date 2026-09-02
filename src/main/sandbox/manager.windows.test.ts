@@ -33,15 +33,14 @@ import {
   initSandbox,
   listDir,
   normalizeWindowsShellPath,
-  persistSandboxArtifact,
   readFile,
-  removeSessionArtifacts,
   resetSandbox,
   resolveWindowsBash,
   resolveWindowsPowerShell,
   searchFiles,
   writeFile,
 } from './manager'
+import { persistSandboxArtifact, removeSessionArtifacts } from './persist-artifact'
 
 describe.skipIf(process.platform !== 'win32')('native Windows sandbox tools', () => {
   let sessionId: string

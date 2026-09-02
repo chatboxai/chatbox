@@ -1,8 +1,8 @@
 import type { MessageContentParts } from '@shared/types'
+import { visibleContentParts } from '@shared/utils/message'
 
 type MessageContentPart = MessageContentParts[number]
 type TimelinePart = Extract<MessageContentPart, { type: 'reasoning' | 'text' | 'tool-call' }>
-
 export type GroupedMessageContentPart = { type: 'step_group'; parts: TimelinePart[] } | MessageContentPart
 
 interface MessageTimelineLayout {
@@ -36,8 +36,8 @@ export function createMessageTimelineLayout(
   contentParts: MessageContentParts,
   isStreamingMode: boolean | undefined
 ): MessageTimelineLayout {
-  const orderedContentParts = contentParts
-  const preserveLegacyTextReasoningPair = isLegacyNonStreamingTextReasoningPair(contentParts, isStreamingMode)
+  const orderedContentParts = visibleContentParts(contentParts)
+  const preserveLegacyTextReasoningPair = isLegacyNonStreamingTextReasoningPair(orderedContentParts, isStreamingMode)
 
   // Text before the last reasoning/tool-call part is intermediate narration;
   // text after it is the final answer.
@@ -69,4 +69,34 @@ export function createMessageTimelineLayout(
   }
 
   return { orderedContentParts, lastStepIndex, groupedContentParts }
+}
+
+/**
+ * Images the model emitted mid-run are answer content, not process noise: they must
+ * stay visible while the process is collapsed.
+ */
+function collectImageParts(parts: MessageContentParts): GroupedMessageContentPart[] {
+  return parts.filter((part) => part.type === 'image')
+}
+
+/**
+ * Content shown while the process timeline is collapsed: the images produced along
+ * the way, followed by the final answer.
+ */
+export function createCollapsedDisplayGroups(
+  orderedContentParts: MessageContentParts,
+  lastStepIndex: number
+): GroupedMessageContentPart[] {
+  const answerParts = orderedContentParts.slice(lastStepIndex + 1)
+  if (answerParts.length > 0) {
+    return [...collectImageParts(orderedContentParts.slice(0, lastStepIndex + 1)), ...answerParts]
+  }
+  // The message ended on a process step — fall back to showing that last step.
+  const lastPart = orderedContentParts[orderedContentParts.length - 1]
+  if (!lastPart) return []
+  const precedingImages = collectImageParts(orderedContentParts.slice(0, orderedContentParts.length - 1))
+  if (lastPart.type === 'tool-call' || lastPart.type === 'reasoning') {
+    return [...precedingImages, { type: 'step_group' as const, parts: [lastPart] }]
+  }
+  return [...precedingImages, lastPart]
 }

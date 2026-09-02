@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/style/noNonNullAssertion: <todo> */
 import { Flex, Stack, Text, Title } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
 import { SystemProviders } from '@shared/defaults'
 import { IconSelector } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
@@ -56,6 +57,7 @@ export function RouteComponent() {
             autoText={t('Auto (Use Last Used)')!}
             provider={settings.defaultChatModel?.provider}
             model={settings.defaultChatModel?.model}
+            testId={TestId.settings.defaultChatModel}
           />
         </ModelSelector>
 
@@ -254,8 +256,9 @@ const ModelSelectContent = forwardRef<
     autoText?: string
     onClick?: () => void
     modelType?: 'chat' | 'embedding' | 'rerank'
+    testId?: string
   }
->(({ provider, model, autoText, onClick, modelType }, ref) => {
+>(({ provider, model, autoText, onClick, modelType, testId }, ref) => {
   useModelRegistryVersion()
 
   const { t } = useTranslation()
@@ -286,6 +289,7 @@ const ModelSelectContent = forwardRef<
       px={12}
       py={6}
       component="button"
+      data-testid={testId}
       align="center"
       c="chatbox-tertiary"
       w={320}

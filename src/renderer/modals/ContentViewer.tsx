@@ -41,7 +41,12 @@ const ContentViewer = NiceModal.create(
         {metadata && metadata.length > 0 && (
           <div className="mb-sm flex flex-col gap-0.5">
             {metadata.map((m) => (
-              <Text key={m.label ? `${m.label}:${m.value}` : m.value} size="sm" c="dimmed">
+              <Text
+                key={m.label ? `${m.label}:${m.value}` : m.value}
+                size="sm"
+                c="dimmed"
+                style={{ overflowWrap: 'anywhere' }}
+              >
                 {m.label ? `${m.label}: ${m.value}` : m.value}
               </Text>
             ))}

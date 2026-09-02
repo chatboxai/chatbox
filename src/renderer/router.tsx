@@ -24,3 +24,30 @@ declare module '@tanstack/react-router' {
     router: typeof router
   }
 }
+
+type RouterNavigateOptions = Parameters<typeof router.navigate>[0]
+
+/**
+ * Navigates to a path assembled at runtime (session ids, mobile deep links, the
+ * settings modal path). TanStack types `to` as the union of known route paths,
+ * which a runtime-built string can never satisfy statically; the router still
+ * resolves and validates the path at runtime.
+ */
+export function navigateToDynamicPath(options: {
+  to: string
+  replace?: boolean
+  search?: Record<string, unknown>
+  mask?: { to: string }
+}): void {
+  void router.navigate(options as RouterNavigateOptions)
+}
+
+/**
+ * Reads the root-level `settings` search param that drives the settings modal.
+ * No route declares it, so the value is read structurally rather than through
+ * the router's typed search.
+ */
+export function getSettingsSearchParam(search: unknown): string | undefined {
+  const value = (search as Record<string, unknown> | null | undefined)?.settings
+  return typeof value === 'string' ? value : undefined
+}

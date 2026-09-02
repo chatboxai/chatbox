@@ -1,16 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getTokenizationTextDigest } from '../draft-tokenization'
+import { _resetExactTokenizationFallbacks, getExactTokenizationFallbackCount } from '../exact-retry'
 import { ResultPersister, resultPersister } from '../result-persister'
 import type { TaskResult } from '../types'
 
-vi.mock('@/stores/chatStore', () => ({
-  updateMessages: vi.fn().mockResolvedValue({
+const { updateMessagesMock } = vi.hoisted(() => ({
+  updateMessagesMock: vi.fn().mockResolvedValue({
     id: 'session-1',
     name: 'Test Session',
     messages: [],
   }),
 }))
 
-import * as chatStore from '@/stores/chatStore'
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: { sessions: { updateMessages: updateMessagesMock } },
+}))
 
 const mockSession = { id: 'session-1', name: 'Test Session', messages: [] }
 
@@ -23,6 +27,9 @@ function createMessageTextResult(
     messageId: 'msg-1',
     tokenizerType: 'default',
     tokens: 100,
+    // The bare test messages carry no content parts, so their projection is ''.
+    textDigest: getTokenizationTextDigest(''),
+    approximate: false,
     calculatedAt: Date.now(),
     ...overrides,
   }
@@ -54,10 +61,12 @@ describe('ResultPersister', () => {
     persister = new ResultPersister()
     vi.clearAllMocks()
     vi.useFakeTimers()
+    _resetExactTokenizationFallbacks()
   })
 
   afterEach(() => {
     persister.cancel()
+    _resetExactTokenizationFallbacks()
     vi.useRealTimers()
   })
 
@@ -66,14 +75,14 @@ describe('ResultPersister', () => {
       persister.addResult(createMessageTextResult())
       // With throttle, first call triggers immediate flush
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
     })
 
     it('adds attachment result to pending updates', async () => {
       persister.addResult(createAttachmentResult())
       // With throttle, first call triggers immediate flush
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
     })
 
     it('merges multiple results for same message', async () => {
@@ -81,19 +90,19 @@ describe('ResultPersister', () => {
       vi.clearAllMocks()
       persister.addResult(createMessageTextResult({ tokenizerType: 'deepseek', tokens: 150 }))
       // Second result within throttle window should be batched, not flushed yet
-      expect(chatStore.updateMessages).not.toHaveBeenCalled()
+      expect(updateMessagesMock).not.toHaveBeenCalled()
     })
 
     it('keeps separate entries for different messages', async () => {
       persister.addResult(createMessageTextResult({ messageId: 'msg-1' }))
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
 
       // Reset mock for second message
       vi.clearAllMocks()
       persister.addResult(createMessageTextResult({ messageId: 'msg-2' }))
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
     })
 
     it('merges multiple attachment results for same message', async () => {
@@ -101,7 +110,7 @@ describe('ResultPersister', () => {
       vi.clearAllMocks()
       persister.addResult(createAttachmentResult({ attachmentId: 'att-2' }))
       // Second result within throttle window should be batched, not flushed yet
-      expect(chatStore.updateMessages).not.toHaveBeenCalled()
+      expect(updateMessagesMock).not.toHaveBeenCalled()
     })
 
     it('updates existing attachment in pending updates', async () => {
@@ -109,13 +118,13 @@ describe('ResultPersister', () => {
       vi.clearAllMocks()
       persister.addResult(createAttachmentResult({ attachmentId: 'att-1', tokens: 200 }))
       // Second result within throttle window should be batched, not flushed yet
-      expect(chatStore.updateMessages).not.toHaveBeenCalled()
+      expect(updateMessagesMock).not.toHaveBeenCalled()
     })
 
     it('handles preview content mode for attachments', async () => {
       persister.addResult(createAttachmentResult({ contentMode: 'preview' }))
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -123,13 +132,13 @@ describe('ResultPersister', () => {
     it('flushes immediately on first call', async () => {
       persister.addResult(createMessageTextResult())
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
     })
 
     it('batches results within throttle window (1000ms)', async () => {
       persister.addResult(createMessageTextResult({ messageId: 'msg-1' }))
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
 
       vi.clearAllMocks()
 
@@ -137,25 +146,25 @@ describe('ResultPersister', () => {
       vi.advanceTimersByTime(500)
       persister.addResult(createMessageTextResult({ messageId: 'msg-2' }))
       // Don't run timers yet - the scheduled flush should happen at 1000ms
-      expect(chatStore.updateMessages).not.toHaveBeenCalled()
+      expect(updateMessagesMock).not.toHaveBeenCalled()
 
       // Advance to complete the throttle window
       vi.advanceTimersByTime(500)
       await vi.runAllTimersAsync()
       // Now the batched result should flush
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
     })
 
     it('flushes after throttle delay (1000ms) if no flush occurred', async () => {
       persister.addResult(createMessageTextResult())
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
 
       // Add result after throttle window expires
       vi.advanceTimersByTime(1000)
       persister.addResult(createMessageTextResult({ messageId: 'msg-2' }))
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(2)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(2)
     })
   })
 
@@ -163,7 +172,7 @@ describe('ResultPersister', () => {
     it('flushes immediately without waiting for debounce', async () => {
       persister.addResult(createMessageTextResult())
       await persister.flushNow()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
     })
 
     it('clears pending updates after flush', async () => {
@@ -178,22 +187,22 @@ describe('ResultPersister', () => {
 
       vi.advanceTimersByTime(500)
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
     })
 
     it('handles empty pending updates', async () => {
       await persister.flushNow()
-      expect(chatStore.updateMessages).not.toHaveBeenCalled()
+      expect(updateMessagesMock).not.toHaveBeenCalled()
     })
 
     it('waits for in-progress flush to complete', async () => {
       let resolveUpdate: (() => void) | undefined
-      vi.mocked(chatStore.updateMessages).mockImplementationOnce(
+      updateMessagesMock.mockImplementationOnce(
         () =>
           new Promise((resolve) => {
             resolveUpdate = () =>
-              resolve(mockSession as ReturnType<typeof chatStore.updateMessages> extends Promise<infer T> ? T : never)
-          }) as ReturnType<typeof chatStore.updateMessages>
+              resolve(mockSession as ReturnType<typeof updateMessagesMock> extends Promise<infer T> ? T : never)
+          }) as ReturnType<typeof updateMessagesMock>
       )
 
       persister.addResult(createMessageTextResult({ messageId: 'msg-1' }))
@@ -202,13 +211,13 @@ describe('ResultPersister', () => {
       persister.addResult(createMessageTextResult({ messageId: 'msg-2' }))
       const secondFlush = persister.flushNow()
 
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
 
       resolveUpdate?.()
       await firstFlush
       await secondFlush
 
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(2)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(2)
     })
   })
 
@@ -216,20 +225,20 @@ describe('ResultPersister', () => {
     it('clears pending updates', async () => {
       persister.addResult(createMessageTextResult())
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
 
       vi.clearAllMocks()
       persister.cancel()
 
       vi.advanceTimersByTime(1000)
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).not.toHaveBeenCalled()
+      expect(updateMessagesMock).not.toHaveBeenCalled()
     })
 
     it('cancels pending throttle timer', async () => {
       persister.addResult(createMessageTextResult())
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
 
       vi.clearAllMocks()
       persister.addResult(createMessageTextResult({ messageId: 'msg-2' }))
@@ -237,7 +246,7 @@ describe('ResultPersister', () => {
 
       vi.advanceTimersByTime(1000)
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).not.toHaveBeenCalled()
+      expect(updateMessagesMock).not.toHaveBeenCalled()
     })
   })
 
@@ -285,7 +294,7 @@ describe('ResultPersister', () => {
     it('groups updates by sessionId', async () => {
       persister.addResult(createMessageTextResult({ sessionId: 'session-1', messageId: 'msg-1' }))
       await vi.runAllTimersAsync()
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(1)
 
       vi.clearAllMocks()
       persister.addResult(createMessageTextResult({ sessionId: 'session-1', messageId: 'msg-2' }))
@@ -293,32 +302,32 @@ describe('ResultPersister', () => {
 
       await persister.flushNow()
 
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(2)
-      expect(chatStore.updateMessages).toHaveBeenCalledWith('session-1', expect.any(Function))
-      expect(chatStore.updateMessages).toHaveBeenCalledWith('session-2', expect.any(Function))
+      expect(updateMessagesMock).toHaveBeenCalledTimes(2)
+      expect(updateMessagesMock).toHaveBeenCalledWith('session-1', expect.any(Function))
+      expect(updateMessagesMock).toHaveBeenCalledWith('session-2', expect.any(Function))
     })
 
     it('handles updateMessages errors gracefully', async () => {
-      vi.mocked(chatStore.updateMessages).mockRejectedValueOnce(new Error('Update failed'))
+      updateMessagesMock.mockRejectedValueOnce(new Error('Update failed'))
 
       persister.addResult(createMessageTextResult({ sessionId: 'session-1' }))
       persister.addResult(createMessageTextResult({ sessionId: 'session-2' }))
 
       await persister.flushNow()
 
-      expect(chatStore.updateMessages).toHaveBeenCalledTimes(2)
+      expect(updateMessagesMock).toHaveBeenCalledTimes(2)
     })
   })
 
   describe('update application', () => {
     it('applies message text token updates correctly', async () => {
       let capturedUpdater: ((messages: unknown[]) => unknown[]) | undefined
-      vi.mocked(chatStore.updateMessages).mockImplementation((async (_sessionId, updater) => {
+      updateMessagesMock.mockImplementation((async (_sessionId: string, updater: unknown) => {
         if (typeof updater === 'function') {
           capturedUpdater = updater as (messages: unknown[]) => unknown[]
         }
         return mockSession
-      }) as typeof chatStore.updateMessages)
+      }) as typeof updateMessagesMock)
 
       persister.addResult(
         createMessageTextResult({
@@ -344,12 +353,12 @@ describe('ResultPersister', () => {
 
     it('applies attachment token updates correctly', async () => {
       let capturedUpdater: ((messages: unknown[]) => unknown[]) | undefined
-      vi.mocked(chatStore.updateMessages).mockImplementation((async (_sessionId, updater) => {
+      updateMessagesMock.mockImplementation((async (_sessionId: string, updater: unknown) => {
         if (typeof updater === 'function') {
           capturedUpdater = updater as (messages: unknown[]) => unknown[]
         }
         return mockSession
-      }) as typeof chatStore.updateMessages)
+      }) as typeof updateMessagesMock)
 
       persister.addResult(
         createAttachmentResult({
@@ -385,12 +394,12 @@ describe('ResultPersister', () => {
 
     it('applies link attachment updates correctly', async () => {
       let capturedUpdater: ((messages: unknown[]) => unknown[]) | undefined
-      vi.mocked(chatStore.updateMessages).mockImplementation((async (_sessionId, updater) => {
+      updateMessagesMock.mockImplementation((async (_sessionId: string, updater: unknown) => {
         if (typeof updater === 'function') {
           capturedUpdater = updater as (messages: unknown[]) => unknown[]
         }
         return mockSession
-      }) as typeof chatStore.updateMessages)
+      }) as typeof updateMessagesMock)
 
       persister.addResult(
         createAttachmentResult({
@@ -420,12 +429,12 @@ describe('ResultPersister', () => {
 
     it('uses preview cache key for preview content mode', async () => {
       let capturedUpdater: ((messages: unknown[]) => unknown[]) | undefined
-      vi.mocked(chatStore.updateMessages).mockImplementation((async (_sessionId, updater) => {
+      updateMessagesMock.mockImplementation((async (_sessionId: string, updater: unknown) => {
         if (typeof updater === 'function') {
           capturedUpdater = updater as (messages: unknown[]) => unknown[]
         }
         return mockSession
-      }) as typeof chatStore.updateMessages)
+      }) as typeof updateMessagesMock)
 
       persister.addResult(
         createAttachmentResult({
@@ -456,12 +465,12 @@ describe('ResultPersister', () => {
 
     it('preserves existing token data when adding new', async () => {
       let capturedUpdater: ((messages: unknown[]) => unknown[]) | undefined
-      vi.mocked(chatStore.updateMessages).mockImplementation((async (_sessionId, updater) => {
+      updateMessagesMock.mockImplementation((async (_sessionId: string, updater: unknown) => {
         if (typeof updater === 'function') {
           capturedUpdater = updater as (messages: unknown[]) => unknown[]
         }
         return mockSession
-      }) as typeof chatStore.updateMessages)
+      }) as typeof updateMessagesMock)
 
       persister.addResult(
         createMessageTextResult({
@@ -493,12 +502,12 @@ describe('ResultPersister', () => {
 
     it('returns empty array when messages is null', async () => {
       let capturedUpdater: ((messages: unknown[] | null) => unknown[]) | undefined
-      vi.mocked(chatStore.updateMessages).mockImplementation((async (_sessionId, updater) => {
+      updateMessagesMock.mockImplementation((async (_sessionId: string, updater: unknown) => {
         if (typeof updater === 'function') {
           capturedUpdater = updater as (messages: unknown[] | null) => unknown[]
         }
         return mockSession
-      }) as typeof chatStore.updateMessages)
+      }) as typeof updateMessagesMock)
 
       persister.addResult(createMessageTextResult())
       await persister.flushNow()
@@ -507,14 +516,103 @@ describe('ResultPersister', () => {
       expect(result).toEqual([])
     })
 
-    it('leaves unmatched messages unchanged', async () => {
+    it('drops a result computed against text the message no longer holds', async () => {
       let capturedUpdater: ((messages: unknown[]) => unknown[]) | undefined
-      vi.mocked(chatStore.updateMessages).mockImplementation((async (_sessionId, updater) => {
+      updateMessagesMock.mockImplementation((async (_sessionId: string, updater: unknown) => {
         if (typeof updater === 'function') {
           capturedUpdater = updater as (messages: unknown[]) => unknown[]
         }
         return mockSession
-      }) as typeof chatStore.updateMessages)
+      }) as typeof updateMessagesMock)
+
+      // The encode ran against the original long text; the user edited the
+      // message while the result sat in the worker and this throttle window.
+      persister.addResult(
+        createMessageTextResult({
+          tokens: 80000,
+          textDigest: getTokenizationTextDigest('the original long text'),
+          approximate: true,
+          calculatedAt: 12345,
+        })
+      )
+      await persister.flushNow()
+
+      const messages = [{ id: 'msg-1', contentParts: [{ type: 'text', text: 'now something short' }] }]
+      const result = capturedUpdater?.(messages) as Array<{
+        tokenCountMap?: unknown
+        tokenCalculatedAt?: unknown
+      }>
+
+      expect(result?.[0]?.tokenCountMap).toBeUndefined()
+      expect(result?.[0]?.tokenCalculatedAt).toBeUndefined()
+      expect(
+        getExactTokenizationFallbackCount('msg-1', 'default', getTokenizationTextDigest('the original long text'))
+      ).toBe(0)
+    })
+
+    it('applies a result whose digest matches the current text', async () => {
+      let capturedUpdater: ((messages: unknown[]) => unknown[]) | undefined
+      updateMessagesMock.mockImplementation((async (_sessionId: string, updater: unknown) => {
+        if (typeof updater === 'function') {
+          capturedUpdater = updater as (messages: unknown[]) => unknown[]
+        }
+        return mockSession
+      }) as typeof updateMessagesMock)
+
+      persister.addResult(
+        createMessageTextResult({
+          tokens: 321,
+          textDigest: getTokenizationTextDigest('the current text'),
+          calculatedAt: 12345,
+        })
+      )
+      await persister.flushNow()
+
+      const messages = [{ id: 'msg-1', contentParts: [{ type: 'text', text: 'the current text' }] }]
+      const result = capturedUpdater?.(messages)
+
+      expect(result?.[0]).toMatchObject({
+        tokenCountMap: { default: 321 },
+        tokenCalculatedAt: { default: 12345 },
+      })
+    })
+
+    it('marks a fallback result approximate and clears the marker on an exact overwrite', async () => {
+      let capturedUpdater: ((messages: unknown[]) => unknown[]) | undefined
+      updateMessagesMock.mockImplementation((async (_sessionId: string, updater: unknown) => {
+        if (typeof updater === 'function') {
+          capturedUpdater = updater as (messages: unknown[]) => unknown[]
+        }
+        return mockSession
+      }) as typeof updateMessagesMock)
+
+      persister.addResult(createMessageTextResult({ tokens: 500, approximate: true }))
+      await persister.flushNow()
+
+      const approximated = capturedUpdater?.([{ id: 'msg-1' }]) as Array<{ tokenCountApproximate?: unknown }>
+      expect(approximated?.[0]?.tokenCountApproximate).toEqual({ default: true })
+      expect(getExactTokenizationFallbackCount('msg-1', 'default', getTokenizationTextDigest(''))).toBe(1)
+
+      persister.addResult(createMessageTextResult({ tokens: 480, approximate: false }))
+      await persister.flushNow()
+
+      const exact = capturedUpdater?.(approximated as unknown[]) as Array<{
+        tokenCountMap?: unknown
+        tokenCountApproximate?: unknown
+      }>
+      expect(exact?.[0]?.tokenCountMap).toMatchObject({ default: 480 })
+      expect(exact?.[0]?.tokenCountApproximate).toBeUndefined()
+      expect(getExactTokenizationFallbackCount('msg-1', 'default', getTokenizationTextDigest(''))).toBe(0)
+    })
+
+    it('leaves unmatched messages unchanged', async () => {
+      let capturedUpdater: ((messages: unknown[]) => unknown[]) | undefined
+      updateMessagesMock.mockImplementation((async (_sessionId: string, updater: unknown) => {
+        if (typeof updater === 'function') {
+          capturedUpdater = updater as (messages: unknown[]) => unknown[]
+        }
+        return mockSession
+      }) as typeof updateMessagesMock)
 
       persister.addResult(createMessageTextResult({ messageId: 'msg-1', tokens: 100 }))
       await persister.flushNow()
@@ -548,6 +646,6 @@ describe('resultPersister singleton', () => {
   it('can be used directly', async () => {
     resultPersister.addResult(createMessageTextResult())
     await vi.runAllTimersAsync()
-    expect(chatStore.updateMessages).toHaveBeenCalledTimes(1)
+    expect(updateMessagesMock).toHaveBeenCalledTimes(1)
   })
 })

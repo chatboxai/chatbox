@@ -1,10 +1,17 @@
 import { isTextFilePath } from '@shared/file-extensions'
+import {
+  type SandboxSeedAttachment,
+  sandboxAttachmentIdentity,
+  sandboxAttachmentParsedRelPath,
+  sandboxAttachmentRelPath,
+} from '@shared/sandbox/attachment-path'
 import { DEFAULT_EXEC_TIMEOUT, type SandboxExecLanguage, type SandboxProvider } from '@shared/sandbox-provider'
 import { jsonSchema, type ToolSet } from 'ai'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import { asRecord, contentOrErrorText, numberField, stringField, toTextModelOutput } from './model-output'
 import { remapPhantomHomePath, remapPhantomHomePathForProvider } from './sandbox-paths'
+import { isSoulVirtualPath, readSoulVirtualFile } from './soul-file'
 
 const log = getLogger('toolset:code-execution')
 
@@ -12,8 +19,53 @@ const MAX_STDOUT_LENGTH = 50_000
 
 interface CodeExecutionContext {
   sessionId: string
-  files: Array<{ storageKey: string; rawStorageKey?: string; name: string }>
+  files: SandboxSeedAttachment[]
   provider: SandboxProvider
+}
+
+type SeedCopyTask = { blobKey: string; targetName: string; label: string }
+type SeedCopyResult = { name: string; success: boolean; error?: string }
+
+async function seedAttachmentsInBatch(provider: SandboxProvider, copyTasks: SeedCopyTask[]): Promise<SeedCopyResult[]> {
+  if (!provider.seedBlobsIn) return seedAttachmentsWithLimitedConcurrency(provider, copyTasks)
+  try {
+    const seeded = await provider.seedBlobsIn(
+      copyTasks.map((task) => ({ blobKey: task.blobKey, targetFilename: task.targetName }))
+    )
+    const byTarget = new Map(seeded.results.map((result) => [result.targetFilename, result]))
+    return copyTasks.map((task) => {
+      const result = byTarget.get(task.targetName)
+      if (!result) return { name: task.label, success: seeded.success, error: seeded.error }
+      return { name: task.label, success: result.success, error: result.error }
+    })
+  } catch (err) {
+    log.error('Failed to seed attachments in batch:', err)
+    return copyTasks.map((task) => ({ name: task.label, success: false, error: String(err) }))
+  }
+}
+
+async function seedAttachmentsWithLimitedConcurrency(
+  provider: SandboxProvider,
+  copyTasks: SeedCopyTask[]
+): Promise<SeedCopyResult[]> {
+  const MAX_CONCURRENT = 5
+  const copyResults: SeedCopyResult[] = []
+  for (let i = 0; i < copyTasks.length; i += MAX_CONCURRENT) {
+    const batch = copyTasks.slice(i, i + MAX_CONCURRENT)
+    const batchResults = await Promise.all(
+      batch.map(async (task) => {
+        try {
+          const result = await provider.copyBlobIn(task.blobKey, task.targetName)
+          return { name: task.label, success: result.success, error: result.error }
+        } catch (err) {
+          log.error(`Failed to copy file ${task.label} to sandbox:`, err)
+          return { name: task.label, success: false, error: String(err) }
+        }
+      })
+    )
+    copyResults.push(...batchResults)
+  }
+  return copyResults
 }
 
 function truncateOutput(output: string, maxLength = MAX_STDOUT_LENGTH): string {
@@ -74,7 +126,11 @@ function formatDownloadOutput(output: unknown): string {
  * Build code execution tools for a session.
  * Returns tool definitions and a system prompt description.
  */
-export function buildCodeExecutionTools(context: CodeExecutionContext): { tools: ToolSet; description: string } {
+export function buildCodeExecutionTools(context: CodeExecutionContext): {
+  tools: ToolSet
+  description: string
+  ensureSandbox: () => Promise<{ success: boolean; error?: string }>
+} {
   const { provider, files } = context
   let sandboxInitialized = false
   let filesSeeded = false
@@ -108,38 +164,25 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): { tools:
     }
 
     if (!filesSeeded && files.length > 0) {
-      // Copy files into sandbox with concurrency limit to avoid overwhelming IPC
-      const MAX_CONCURRENT = 5
-      const copyResults: Array<{ name: string; success: boolean; error?: string }> = []
-
-      // Build copy tasks: original file + parsed text for non-text files
+      // Re-seed every generation so new uploads appear. Destinations are identity-derived
+      // so two uploads that share a filename both land in the sandbox. Already-seeded
+      // blobs are skipped without reading or writing the file.
       const copyTasks: Array<{ blobKey: string; targetName: string; label: string }> = []
       for (const file of files) {
         const key = file.rawStorageKey || file.storageKey
-        copyTasks.push({ blobKey: key, targetName: file.name, label: file.name })
+        const destRelPath = sandboxAttachmentRelPath(file.name, sandboxAttachmentIdentity(file))
+        copyTasks.push({ blobKey: key, targetName: destRelPath, label: file.name })
 
-        // For non-text files (PDF, DOCX, etc.), also copy pre-parsed text as {name}_parsed.txt
+        // For non-text files (PDF, DOCX, etc.), also copy pre-parsed text next to the original
         if (!isTextFilePath(file.name) && file.rawStorageKey && file.storageKey) {
-          const parsedName = `${file.name}_parsed.txt`
-          copyTasks.push({ blobKey: file.storageKey, targetName: parsedName, label: parsedName })
+          const parsedName = sandboxAttachmentParsedRelPath(destRelPath)
+          copyTasks.push({ blobKey: file.storageKey, targetName: parsedName, label: `${file.name}_parsed.txt` })
         }
       }
 
-      for (let i = 0; i < copyTasks.length; i += MAX_CONCURRENT) {
-        const batch = copyTasks.slice(i, i + MAX_CONCURRENT)
-        const batchResults = await Promise.all(
-          batch.map(async (task) => {
-            try {
-              const result = await provider.copyBlobIn(task.blobKey, task.targetName)
-              return { name: task.label, success: result.success, error: result.error }
-            } catch (err) {
-              log.error(`Failed to copy file ${task.label} to sandbox:`, err)
-              return { name: task.label, success: false, error: String(err) }
-            }
-          })
-        )
-        copyResults.push(...batchResults)
-      }
+      const copyResults = provider.seedBlobsIn
+        ? await seedAttachmentsInBatch(provider, copyTasks)
+        : await seedAttachmentsWithLimitedConcurrency(provider, copyTasks)
 
       const failures = copyResults.filter((r) => !r.success)
       if (failures.length > 0) {
@@ -260,6 +303,9 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): { tools:
     }),
     execute: async (input) => {
       const readInput = input as { file_path: string; offset?: number; limit?: number }
+      if (isSoulVirtualPath(readInput.file_path)) {
+        return readSoulVirtualFile()
+      }
       readInput.file_path = await remapPhantomHomePathForProvider(readInput.file_path, provider)
       if (isAbsolutePath(readInput.file_path)) {
         const status = await provider.getStatus().catch(() => null)
@@ -461,7 +507,7 @@ Read file content from the sandbox with line-based pagination.
 Execute focused Node.js, PowerShell, or Bash snippets. Keep scripts small and task-oriented:
 - Use Node.js for most file-processing tasks.
 - On Windows, prefer PowerShell for terminal commands and native filesystem operations. Use Bash only for POSIX-specific scripts.
-- Read uploaded files from <SANDBOX_PATH> or <PARSED_SANDBOX_PATH>; do not guess alternate filenames.
+- Read uploaded files from <SANDBOX_PATH> or <PARSED_SANDBOX_PATH>; use those paths exactly and do not guess alternate filenames. Uploads that share a filename are stored in distinct subdirectories.
 - Prefer producing explicit result files for transformed data, reports, charts, or exports.
 - Avoid long-running services, project scaffolding, dependency installation, and broad environment exploration.
 
@@ -480,5 +526,6 @@ After creating a file the user should receive — whether via write_file, edit_f
       create_download,
     },
     description,
+    ensureSandbox,
   }
 }

@@ -1,4 +1,5 @@
 import { Button, Flex, Select, Stack, Text, TextInput } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
 import { ModelProviderType } from '@shared/types'
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -48,6 +49,7 @@ export function AddProviderModal({ opened, onClose }: AddProviderModalProps) {
       <Stack gap="xs">
         <Text>{t('Name')}</Text>
         <TextInput
+          data-testid={TestId.settings.addProviderName}
           value={newProviderName}
           onChange={(e) => setNewProviderName(e.currentTarget.value)}
           required
@@ -55,6 +57,7 @@ export function AddProviderModal({ opened, onClose }: AddProviderModalProps) {
         />
         <Text>{t('API Mode')}</Text>
         <AdaptiveSelect
+          data-testid={TestId.settings.addProviderApiMode}
           value={newProviderMode}
           classNames={{ dropdown: 'pointer-events-auto' }}
           onChange={(value) => setNewProviderMode(value as ModelProviderType)}
@@ -79,7 +82,11 @@ export function AddProviderModal({ opened, onClose }: AddProviderModalProps) {
         />
         <AdaptiveModal.Actions>
           <AdaptiveModal.CloseButton onClick={onClose} />
-          <Button onClick={handleAddProvider} disabled={!newProviderName.trim()}>
+          <Button
+            data-testid={TestId.settings.addProviderSubmit}
+            onClick={handleAddProvider}
+            disabled={!newProviderName.trim()}
+          >
             {t('Add')}
           </Button>
         </AdaptiveModal.Actions>

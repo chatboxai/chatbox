@@ -11,6 +11,7 @@ const SESSION_ATTACHMENT_RAG_AUTH_ERROR_PATTERNS = [
 ]
 
 const SESSION_ATTACHMENT_RAG_INDEXING_ERROR_PATTERNS = [
+  'ai_provider_error',
   'chatbox_session_rag_vectors.db',
   'connectionfailed("unable to open connection to local database',
   'session attachment rag vector store not initialized',

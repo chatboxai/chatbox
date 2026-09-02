@@ -9,13 +9,17 @@ const { generateSummaryWithStreamMock, getSessionMock, updateSessionWithMessages
   updateSessionWithMessagesMock: vi.fn(),
 }))
 
-vi.mock('@/stores/chatStore', () => ({
-  getSession: getSessionMock,
-  getSessionSettings: vi.fn(async () => ({})),
-  updateSessionWithMessages: updateSessionWithMessagesMock,
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: {
+    sessions: { updateSessionWithMessages: updateSessionWithMessagesMock },
+    sessionQueryBridge: { getSession: getSessionMock },
+  },
 }))
-vi.mock('@/stores/settingsStore', () => ({
-  settingsStore: { getState: () => ({ getSettings: () => ({ defaultChatModel: { model: 'test-model' } }) }) },
+vi.mock('@/stores/session/session-settings', () => ({
+  getSessionSettings: vi.fn(async () => ({})),
+}))
+vi.mock('@/settings-runtime', () => ({
+  settingsService: { getSettings: () => ({ defaultChatModel: { model: 'test-model' } }) },
 }))
 vi.mock('@/stores/queryClient', () => ({ default: { getQueryData: vi.fn(), setQueryData: vi.fn() } }))
 vi.mock('@/packages/token-estimation', () => ({ getTokenizerType: () => 'estimate' }))
@@ -77,6 +81,9 @@ describe('runCompactionWithUIState', () => {
     const result = await first
 
     expect(result).toMatchObject({ success: true, compacted: true })
-    expect(getCompactionUIState('session-1').status).toBe('idle')
+    expect(getCompactionUIState('session-1')).toMatchObject({
+      status: 'completed',
+      summaryMessageId: expect.any(String),
+    })
   })
 })

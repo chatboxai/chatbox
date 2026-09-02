@@ -32,6 +32,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useSetAtom } from 'jotai'
 import { useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { trackJkViewEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { AppProviders } from '@/components/AppProviders'
@@ -47,7 +48,10 @@ import useScreenChange, { useSidebarWidth } from '@/hooks/useScreenChange'
 import useShortcut from '@/hooks/useShortcut'
 import useVersion from '@/hooks/useVersion'
 import '@/modals'
-import SettingsModal, { navigateToSettings } from '@/modals/Settings'
+import { rendererApplication } from '@/app/renderer-application'
+import DbSchemaGuardDialog from '@/components/DbSchemaGuardDialog'
+import SettingsModal from '@/modals/Settings'
+import { navigateToSettings } from '@/modals/settings-navigation'
 import { prefetchModelRegistry } from '@/packages/model-registry'
 import { getOS } from '@/packages/navigator'
 import * as remote from '@/packages/remote'
@@ -55,11 +59,13 @@ import PictureDialog from '@/pages/PictureDialog'
 import RemoteDialogWindow from '@/pages/RemoteDialogWindow'
 import SearchDialog from '@/pages/SearchDialog'
 import platform from '@/platform'
-import { router } from '@/router'
+import { getSettingsSearchParam, navigateToDynamicPath, router } from '@/router'
 import Sidebar from '@/Sidebar'
 import storage from '@/storage'
 import * as atoms from '@/stores/atoms'
-import { getSession, useSession } from '@/stores/chatStore'
+
+const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
+
 import { initOnboardingStore, onboardingStore } from '@/stores/onboardingStore'
 import * as premiumActions from '@/stores/premiumActions'
 import * as settingActions from '@/stores/settingActions'
@@ -144,6 +150,20 @@ function useHasBackgroundImage() {
   const { session } = useSession(sessionId)
 
   return (isRootPage || isSessionPage) && Boolean(session?.backgroundImage ?? globalBackgroundImageKey)
+}
+
+function SettingsModalErrorFallback({ retry }: { error: Error; retry: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[400] flex justify-center px-4">
+      <div className="pointer-events-auto flex items-center gap-3 rounded-lg border border-solid border-chatbox-border-primary bg-chatbox-background-primary px-4 py-3 shadow-lg">
+        <Text size="sm">{t('Settings failed to load')}</Text>
+        <Button size="xs" variant="light" onClick={retry}>
+          {t('Try Again')}
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 function Root() {
@@ -240,11 +260,9 @@ function Root() {
       const { startupPage } = settingsStore.getState()
       const sid = JSON.parse(localStorage.getItem('_currentSessionIdCachedAtom') || '""') as string
       if (sid && startupPage === 'session') {
-        router.navigate({
+        navigateToDynamicPath({
           to: `/session/${sid}`,
           replace: true,
-          params: (current) => current,
-          search: (current) => current,
         })
       }
     })()
@@ -261,18 +279,14 @@ function Root() {
           const settingsPath = path.substring('/settings'.length)
           navigateToSettings(settingsPath || '/')
         } else {
-          router.navigate({
-            to: path,
-            params: (current) => current,
-            search: (current) => current,
-          })
+          navigateToDynamicPath({ to: path })
         }
       })
     }
   }, [])
 
   // Page view tracking
-  const settingsSearch = (location.search as Record<string, unknown>)?.settings as string | undefined
+  const settingsSearch = getSettingsSearchParam(location.search)
   useEffect(() => {
     const pathname = location.pathname
     let pageName: string | undefined
@@ -301,7 +315,7 @@ function Root() {
 
       if (pathname.startsWith('/session/')) {
         const sessionId = pathname.slice('/session/'.length)
-        const session = await getSession(sessionId).catch(() => null)
+        const session = await rendererApplication.sessionQueryBridge.getSession(sessionId).catch(() => null)
         content = session?.name
       }
 
@@ -331,7 +345,7 @@ function Root() {
       dir={language === 'ar' ? 'rtl' : 'ltr'}
     >
       <BackgroundImageOverlay />
-      {platform.type === 'desktop' && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
+      {platform.isDesktopLike && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
       <Grid container className="h-full relative z-[1]">
         <Sidebar />
         <Box
@@ -405,6 +419,8 @@ function Root() {
       <PictureDialog />
       {/* 似乎是从后端拉一个弹窗的配置 */}
       <RemoteDialogWindow />
+      {/* IndexedDB schema 与当前版本不匹配时的升级/刷新引导 */}
+      <DbSchemaGuardDialog />
       {/* 手机端举报内容 */}
       {/* <ReportContentDialog /> */}
       {/* 搜索 */}
@@ -413,7 +429,9 @@ function Root() {
       {/* 没有配置模型时的欢迎弹窗 */}
       {/* <WelcomeDialog /> */}
       <Toasts /> {/* mui */}
-      <SettingsModal />
+      <ErrorBoundary name="settings-modal" fallback={SettingsModalErrorFallback}>
+        <SettingsModal />
+      </ErrorBoundary>
     </Box>
   )
 }
@@ -620,6 +638,9 @@ const creteMantineTheme = (scale = 1) =>
             width: rem('24px'),
             height: rem('24px'),
             color: 'var(--chatbox-tint-secondary)',
+          },
+          header: {
+            backgroundColor: 'var(--chatbox-background-primary)',
           },
           content: {
             backgroundColor: 'var(--chatbox-background-primary)',

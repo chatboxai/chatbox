@@ -4,6 +4,8 @@ import { type Client, createClient } from '@libsql/client'
 import { LibSQLVector } from '@mastra/libsql'
 import { app } from 'electron'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
+import { planOrphanCleanup } from '../../shared/session-attachment-rag/ownership'
+import type { SessionAttachmentOwnershipClaim } from '../../shared/types'
 import { sentry } from '../adapters/sentry'
 import { getLogger } from '../util'
 
@@ -51,6 +53,8 @@ export interface SessionAttachmentRecord {
   chunkCount?: number
   totalChunks?: number
   embeddedChunks?: number
+  embeddingModel?: string
+  embeddingDimension?: number
   indexingStage?: SessionAttachmentIndexingStage
   parserType?: string
   status: SessionAttachmentStatus
@@ -58,6 +62,17 @@ export interface SessionAttachmentRecord {
   createdAt?: string
   processingStartedAt?: string
   completedAt?: string
+}
+
+export interface SessionAttachmentChunkRecord {
+  id: number
+  attachmentId: number
+  parentId: number
+  chunkOrder: number
+  sectionPath?: string
+  rawText: string
+  embeddedText: string
+  tokenEstimate: number
 }
 
 export interface SessionAttachmentDebugSnapshot {
@@ -104,6 +119,11 @@ function mapRowToSessionAttachmentRecord(row: Record<string, unknown>): SessionA
     chunkCount: Number(row.chunk_count ?? 0),
     totalChunks: Number(row.total_chunks ?? 0),
     embeddedChunks: Number(row.embedded_chunks ?? 0),
+    embeddingModel: row.embedding_model ? String(row.embedding_model) : undefined,
+    embeddingDimension:
+      row.embedding_dimension === null || row.embedding_dimension === undefined
+        ? undefined
+        : Number(row.embedding_dimension),
     indexingStage: row.indexing_stage ? (String(row.indexing_stage) as SessionAttachmentIndexingStage) : undefined,
     parserType: row.parser_type ? String(row.parser_type) : undefined,
     status: String(row.status) as SessionAttachmentStatus,
@@ -119,7 +139,7 @@ function mapRowToSessionAttachmentRecord(row: Record<string, unknown>): SessionA
  * non-backward-compatible schema changes and add a corresponding migration step in
  * `runSchemaMigrations`.
  */
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 async function getSchemaVersion(client: Client): Promise<number> {
   const rs = await client.execute('PRAGMA user_version')
@@ -155,6 +175,20 @@ async function runSchemaMigrations(client: Client) {
       })
     }
   }
+  if (currentVersion < 3) {
+    const migrations = [
+      'ALTER TABLE session_attachment ADD COLUMN embedding_model TEXT DEFAULT NULL',
+      'ALTER TABLE session_attachment ADD COLUMN embedding_dimension INTEGER DEFAULT NULL',
+    ]
+    for (const sql of migrations) {
+      await client.execute(sql).catch((error) => {
+        if (error instanceof Error && error.message.includes('duplicate column name')) {
+          return
+        }
+        throw error
+      })
+    }
+  }
   await setSchemaVersion(client, SCHEMA_VERSION)
 }
 
@@ -175,6 +209,8 @@ async function initDB(client: Client) {
         indexing_stage TEXT DEFAULT NULL,
         total_chunks INTEGER DEFAULT 0,
         embedded_chunks INTEGER DEFAULT 0,
+        embedding_model TEXT DEFAULT NULL,
+        embedding_dimension INTEGER DEFAULT NULL,
         error TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         processing_started_at DATETIME,
@@ -446,9 +482,13 @@ export async function cleanupReadyAttachmentsMissingVectorIndexes() {
   }
 }
 
+export async function deleteAttachmentIndexOrThrow(attachmentId: number) {
+  await runVectorWrite(() => getVectorStore().deleteIndex({ indexName: `sa_${attachmentId}` }))
+}
+
 export async function deleteAttachmentIndex(attachmentId: number) {
   try {
-    await runVectorWrite(() => getVectorStore().deleteIndex({ indexName: `sa_${attachmentId}` }))
+    await deleteAttachmentIndexOrThrow(attachmentId)
   } catch (error) {
     log.warn(
       `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [DB] Failed to delete vector index for attachment ${attachmentId}:`,
@@ -610,6 +650,8 @@ export async function updateSessionAttachmentIndexingProgress(
     indexingStage: SessionAttachmentIndexingStage
     totalChunks?: number
     embeddedChunks?: number
+    embeddingModel?: string
+    embeddingDimension?: number
   }
 ) {
   const client = getDatabase()
@@ -623,10 +665,32 @@ export async function updateSessionAttachmentIndexingProgress(
     assignments.push('embedded_chunks = ?')
     args.push(params.embeddedChunks)
   }
+  if (params.embeddingModel !== undefined) {
+    assignments.push('embedding_model = ?')
+    args.push(params.embeddingModel)
+  }
+  if (params.embeddingDimension !== undefined) {
+    assignments.push('embedding_dimension = ?')
+    args.push(params.embeddingDimension)
+  }
   args.push(id)
   await client.execute({
     sql: `UPDATE session_attachment SET ${assignments.join(', ')} WHERE id = ? AND status = ?`,
     args: [...args, 'indexing'],
+  })
+}
+
+export async function resetSessionAttachmentIndexingCheckpoint(id: number) {
+  const client = getDatabase()
+  await client.execute({
+    sql: `UPDATE session_attachment
+      SET indexing_stage = ?,
+        total_chunks = 0,
+        embedded_chunks = 0,
+        embedding_model = NULL,
+        embedding_dimension = NULL
+      WHERE id = ? AND status = ?`,
+    args: ['chunking', id, 'indexing'],
   })
 }
 
@@ -670,11 +734,16 @@ export async function retrySessionAttachment(id: number) {
   if (existing.status !== 'failed') {
     throw new Error('Only failed session attachments can be retried')
   }
-  await client.execute({
-    sql: 'UPDATE session_attachment SET status = ?, indexing_stage = ?, total_chunks = 0, embedded_chunks = 0, error = NULL, processing_started_at = NULL, completed_at = NULL WHERE id = ?',
-    args: ['pending', 'queued', id],
+  const result = await client.execute({
+    sql: 'UPDATE session_attachment SET status = ?, indexing_stage = ?, error = NULL, processing_started_at = NULL, completed_at = NULL WHERE id = ? AND status = ?',
+    args: ['pending', 'queued', id, 'failed'],
   })
-  log.debug(`${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [DB] Reset attachment to pending: attachmentId=${id}`)
+  if ((result.rowsAffected || 0) === 0) {
+    throw new Error('Only failed session attachments can be retried')
+  }
+  log.debug(
+    `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [DB] Queued attachment continuation: attachmentId=${id}, embeddedChunks=${existing.embeddedChunks ?? 0}, totalChunks=${existing.totalChunks ?? 0}`
+  )
 }
 
 export async function cancelSessionAttachment(id: number) {
@@ -779,6 +848,32 @@ export async function replaceAttachmentParentsAndChunks(
   })
 }
 
+export async function listSessionAttachmentChunks(attachmentId: number): Promise<SessionAttachmentChunkRecord[]> {
+  const client = getDatabase()
+  const rs = await client.execute({
+    sql: `SELECT id, attachment_id, parent_id, chunk_order, section_path, raw_text, embedded_text, token_estimate
+      FROM session_attachment_chunk
+      WHERE attachment_id = ?
+      ORDER BY chunk_order ASC`,
+    args: [attachmentId],
+  })
+  return rs.rows.map((row) => ({
+    id: Number(row.id),
+    attachmentId: Number(row.attachment_id),
+    parentId: Number(row.parent_id),
+    chunkOrder: Number(row.chunk_order),
+    sectionPath: row.section_path ? String(row.section_path) : undefined,
+    rawText: String(row.raw_text),
+    embeddedText: String(row.embedded_text),
+    tokenEstimate: Number(row.token_estimate ?? 0),
+  }))
+}
+
+export async function hasAttachmentVectorIndex(attachmentId: number): Promise<boolean> {
+  const indexNames = await getVectorStore().listIndexes()
+  return indexNames.includes(`sa_${attachmentId}`)
+}
+
 export async function readSessionAttachmentParents(parentIds: number[], allowedAttachmentIds: number[]) {
   if (parentIds.length === 0 || allowedAttachmentIds.length === 0) {
     return []
@@ -865,27 +960,31 @@ export async function clearAllSessionAttachments(): Promise<number> {
 
 export async function cleanupOrphanAttachments(
   validSessionIds: string[],
-  validMessageIds: string[]
+  validMessageIds: string[],
+  attachmentReferences: SessionAttachmentOwnershipClaim[] = []
 ): Promise<number[]> {
   const client = getDatabase()
-  const validSessionIdSet = new Set(validSessionIds)
-  const validMessageIdSet = new Set(validMessageIds)
   const rs = await client.execute({
     sql: 'SELECT id, session_id, message_id FROM session_attachment',
   })
 
-  const orphanIds = rs.rows
-    .map((row) => ({
+  const { deleteIds, repairs } = planOrphanCleanup(
+    rs.rows.map((row) => ({
       id: Number(row.id),
       sessionId: String(row.session_id),
       messageId: String(row.message_id),
-    }))
-    .filter((row) => !validSessionIdSet.has(row.sessionId) || !validMessageIdSet.has(row.messageId))
-    .map((row) => row.id)
+    })),
+    { sessionIds: validSessionIds, messageIds: validMessageIds, attachmentReferences }
+  )
 
-  await deleteAttachmentGraphsBatch(orphanIds)
+  // Repair before deleting: a row handed to a live message must never be swept
+  // in the same pass, and a failed repair leaves it for the next one.
+  for (const repair of repairs) {
+    await rebindSessionAttachment(repair.attachmentId, repair.sessionId, repair.messageId)
+  }
+  await deleteAttachmentGraphsBatch(deleteIds)
 
-  return orphanIds
+  return deleteIds
 }
 
 export async function getSessionAttachmentDebugSnapshot(): Promise<SessionAttachmentDebugSnapshot> {

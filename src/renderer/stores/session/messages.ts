@@ -1,8 +1,17 @@
+import { SessionNotFoundError } from '@chatbox/core'
+import { withSessionGenerationLock } from '@chatbox/core/generation'
+import { getReachableSessionMessages } from '@chatbox/core/session/generation-state'
 import { isExpectedGenerationError } from '@shared/models/error-classification'
 import { BaseError, ChatboxAIAPIError } from '@shared/models/errors'
+import { extractStreamErrorMessage } from '@shared/models/utils/stream-error-message'
+import { supportsSessionGeneration } from '@shared/session/capabilities'
+import { findMessageLocation } from '@shared/session/message-forks'
+import { planAttachmentOwnershipTransfers } from '@shared/session-attachment-rag/ownership'
 import { createMessage, type Message } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
+import { normalizeErrorForSentry } from '@shared/utils/sentry_policy'
 import { createModel } from '@/adapters'
+import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { runCompactionWithUIState } from '@/packages/context-management'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
@@ -10,17 +19,17 @@ import { estimateTokensFromMessages } from '@/packages/token'
 import platform from '@/platform'
 import { reportError } from '@/utils/sentry'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attachment-rag/logging'
-import * as chatStore from '../chatStore'
 import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndexing'
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
-import { withSessionGenerationLock } from './generation-lock'
+import { guardSessionAction } from './action-guard'
+import { getSessionSettings, getSessionTokenModel } from './session-settings'
 import { getSessionWebBrowsing } from './utils'
 
 const log = getLogger('session-messages')
 
-async function attachLargeFileRagMetadata(sessionId: string, message: Message): Promise<Message> {
-  if (platform.type !== 'desktop' || !message.files?.length) {
+export async function attachLargeFileRagMetadata(sessionId: string, message: Message): Promise<Message> {
+  if (!platform.isDesktopLike || !message.files?.length) {
     return message
   }
 
@@ -58,7 +67,7 @@ async function attachLargeFileRagMetadata(sessionId: string, message: Message): 
   log.debug(
     `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Attachment metadata attached to message: session=${sessionId}, message=${message.id}`
   )
-  await chatStore.updateMessage(sessionId, message.id, updatedMessage)
+  await rendererApplication.sessions.updateMessage(sessionId, message.id, updatedMessage)
   return updatedMessage
 }
 
@@ -68,13 +77,15 @@ async function attachLargeFileRagMetadata(sessionId: string, message: Message): 
  * @param msg
  */
 export async function insertMessage(sessionId: string, msg: Message) {
-  const session = await chatStore.getSession(sessionId)
+  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
   if (!session) {
     return
   }
   msg.wordCount = countMessageWords(msg)
-  msg.tokenCount = estimateTokensFromMessages([msg])
-  return await chatStore.insertMessage(session.id, msg)
+  // The session model addresses both the tokenizer and the draft worker's
+  // remembered exact count for a long draft being sent.
+  msg.tokenCount = estimateTokensFromMessages([msg], 'output', getSessionTokenModel(session))
+  return await rendererApplication.sessions.insertMessage(session.id, msg)
 }
 
 /**
@@ -83,15 +94,22 @@ export async function insertMessage(sessionId: string, msg: Message) {
  * @param msg
  * @param afterMsgId
  */
-export async function insertMessageAfter(sessionId: string, msg: Message, afterMsgId: string) {
-  const session = await chatStore.getSession(sessionId)
+export async function insertMessageAfter(
+  sessionId: string,
+  msg: Message,
+  afterMsgId: string,
+  options: { requireAnchor?: boolean } = {}
+) {
+  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
   if (!session) {
-    return
+    // A caller that requires the anchor cannot treat a missing session as a
+    // successful write; let insertMessage raise the same error it always does.
+    if (!options.requireAnchor) return
   }
   msg.wordCount = countMessageWords(msg)
-  msg.tokenCount = estimateTokensFromMessages([msg])
+  msg.tokenCount = estimateTokensFromMessages([msg], 'output', session ? getSessionTokenModel(session) : undefined)
 
-  await chatStore.insertMessage(sessionId, msg, afterMsgId)
+  await rendererApplication.sessions.insertMessage(sessionId, msg, afterMsgId, options)
 }
 
 /**
@@ -106,22 +124,25 @@ export async function modifyMessage(
   refreshCounting?: boolean,
   updateOnlyCache?: boolean
 ) {
-  const session = await chatStore.getSession(sessionId)
+  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
   if (!session) {
     return
   }
   if (refreshCounting) {
     updated.wordCount = countMessageWords(updated)
-    updated.tokenCount = estimateTokensFromMessages([updated])
+    // Cleared first: the estimate below trusts a carried map entry, and the
+    // edited text invalidates whatever the message carried.
     updated.tokenCountMap = undefined
+    updated.tokenCountApproximate = undefined
+    updated.tokenCount = estimateTokensFromMessages([updated], 'output', getSessionTokenModel(session))
   }
 
   // 更新消息时间戳
   updated.timestamp = Date.now()
   if (updateOnlyCache) {
-    await chatStore.updateMessageCache(sessionId, updated.id, updated)
+    await rendererApplication.sessionQueryBridge.updateMessageCache(sessionId, updated.id, updated)
   } else {
-    await chatStore.updateMessage(sessionId, updated.id, updated)
+    await rendererApplication.sessions.updateMessage(sessionId, updated.id, updated)
   }
 }
 
@@ -131,7 +152,7 @@ export async function modifyMessage(
  */
 export function updateStreamingCache(sessionId: string, message: Message): void {
   message.timestamp = Date.now()
-  chatStore.updateMessageCache(sessionId, message.id, message).catch((err) => {
+  rendererApplication.sessionQueryBridge.updateMessageCache(sessionId, message.id, message).catch((err) => {
     console.error('Failed to update streaming cache:', err)
   })
 }
@@ -147,11 +168,14 @@ export async function persistStreamingMessage(
 ): Promise<void> {
   if (options?.refreshCounting) {
     message.wordCount = countMessageWords(message)
-    message.tokenCount = estimateTokensFromMessages([message])
+    // Cleared first: the estimate below trusts a carried map entry, and the
+    // streamed text invalidates whatever the message carried.
     message.tokenCountMap = undefined
+    message.tokenCountApproximate = undefined
+    message.tokenCount = estimateTokensFromMessages([message])
   }
   message.timestamp = Date.now()
-  await chatStore.updateMessage(sessionId, message.id, message)
+  await rendererApplication.sessions.updateMessage(sessionId, message.id, message)
 }
 
 /**
@@ -160,14 +184,45 @@ export async function persistStreamingMessage(
  * @param messageId
  */
 export async function removeMessage(sessionId: string, messageId: string) {
-  if (platform.type === 'desktop') {
+  // Deleting ordinary messages is always allowed (streaming targets are
+  // stopped by the caller first), but removing a compaction summary while
+  // replies stream would yank the compacted context out from under them.
+  // The fetched session is handed to the guard so the summary case doesn't
+  // read it twice.
+  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const location = session ? findMessageLocation(session, messageId) : null
+  if (
+    location?.list[location.index]?.isSummary &&
+    !(await guardSessionAction(sessionId, 'delete-summary', {}, session))
+  ) {
+    return
+  }
+  if (platform.isDesktopLike) {
     try {
-      await platform.getSessionAttachmentRagController().deleteMessageAttachments(messageId)
+      const controller = platform.getSessionAttachmentRagController()
+      // Save & Resend versioning lets several messages share one indexed
+      // attachment row. Rebind shared rows to a surviving reference first so
+      // the delete-by-owner below (and later orphan maintenance) only takes
+      // down rows nobody references any more.
+      const removedMessage = location?.list[location.index]
+      if (session && removedMessage) {
+        for (const transfer of planAttachmentOwnershipTransfers(
+          [removedMessage],
+          getReachableSessionMessages(session)
+        )) {
+          await controller.rebindAttachment({
+            attachmentId: transfer.attachmentId,
+            sessionId,
+            messageId: transfer.messageId,
+          })
+        }
+      }
+      await controller.deleteMessageAttachments(messageId)
     } catch (error) {
       console.warn('Failed to cleanup session attachment RAG entries for message deletion:', error)
     }
   }
-  await chatStore.removeMessage(sessionId, messageId)
+  await rendererApplication.sessions.removeMessage(sessionId, messageId)
 }
 
 /**
@@ -178,10 +233,21 @@ export function submitNewUserMessage(
   sessionId: string,
   params: { newUserMsg: Message; needGenerating: boolean; onUserMessageReady?: () => void }
 ) {
-  return withSessionGenerationLock(sessionId, () => submitNewUserMessageUnlocked(sessionId, params))
+  // The gate runs inside the session lock so it reads the freshest state:
+  // lock-free alternative replies can start streaming between a pre-lock
+  // check and lock acquisition.
+  return withSessionGenerationLock(sessionId, async () => {
+    if (!(await guardSessionAction(sessionId, 'submit-message'))) {
+      return
+    }
+    return submitNewUserMessageUnlocked(sessionId, params)
+  }).catch((error: unknown) => {
+    if (error instanceof SessionNotFoundError) return
+    throw error
+  })
 }
 
-async function submitNewUserMessageUnlocked(
+export async function submitNewUserMessageUnlocked(
   sessionId: string,
   params: { newUserMsg: Message; needGenerating: boolean; onUserMessageReady?: () => void }
 ) {
@@ -189,9 +255,12 @@ async function submitNewUserMessageUnlocked(
   // avoid reacquiring the session lock already held by submitNewUserMessage().
   const { _generateWithoutSessionLock } = await import('./generation.js')
 
-  const session = await chatStore.getSession(sessionId)
-  const settings = await chatStore.getSessionSettings(sessionId)
+  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const settings = await getSessionSettings(sessionId)
   if (!session || !settings) {
+    return
+  }
+  if (!supportsSessionGeneration(session.type)) {
     return
   }
 
@@ -273,8 +342,9 @@ async function submitNewUserMessageUnlocked(
     }
   } catch (err: unknown) {
     // 如果文件上传失败，一定会出现带有错误信息的回复消息
-    const error = !(err instanceof Error) ? new Error(`${err}`) : err
-    if (!isExpectedGenerationError(error)) {
+    const error = normalizeErrorForSentry(err)
+    const userFacingErrorMessage = extractStreamErrorMessage(err)
+    if (!isExpectedGenerationError(err)) {
       reportError(error, {
         domain: 'session',
         operation: 'submit_message',
@@ -289,11 +359,10 @@ async function submitNewUserMessageUnlocked(
     newAssistantMsg = {
       ...newAssistantMsg,
       generating: false,
-      cancel: undefined,
       model: await getModelDisplayName(settings, globalSettings, 'chat'),
       contentParts: [{ type: 'text', text: '' }],
       errorCode,
-      error: `${error.message}`, // 这么写是为了避免类型问题
+      error: userFacingErrorMessage,
       status: [],
     }
     if (needGenerating) {

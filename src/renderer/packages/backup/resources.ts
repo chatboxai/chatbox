@@ -1,4 +1,5 @@
 import { isTextFilePath } from '@shared/file-extensions'
+import { getToolResultImageReference } from '@shared/tool-result-image'
 import type { CopilotDetail, Message, MessageFile, Session, SessionMetaRecord, Settings } from '@shared/types'
 import type { BackupResourceEntry, BackupWarning } from './types'
 
@@ -74,13 +75,24 @@ function collectMessageReferences(
   for (const part of message.contentParts ?? []) {
     if (part.type === 'image') {
       addReference(references, { storageKey: part.storageKey, kind: 'image', sessionId })
-    } else if (part.type === 'tool-call' && part.resultStorageKey) {
-      addReference(references, {
-        storageKey: part.resultStorageKey,
-        kind: 'tool-result',
-        sessionId,
-        mimeType: 'text/plain',
-      })
+    } else if (part.type === 'tool-call') {
+      if (part.resultStorageKey) {
+        addReference(references, {
+          storageKey: part.resultStorageKey,
+          kind: 'tool-result',
+          sessionId,
+          mimeType: 'text/plain',
+        })
+      }
+      const imageReference = getToolResultImageReference(part)
+      if (imageReference) {
+        addReference(references, {
+          storageKey: imageReference.storageKey,
+          kind: 'image',
+          sessionId,
+          mimeType: imageReference.mediaType,
+        })
+      }
     }
   }
 }
@@ -204,10 +216,30 @@ function restoreMessageResourceKeys(message: Message, resourceKeyMap: ReadonlyMa
       const restoredStorageKey = restoreResourceKey(part.storageKey, resourceKeyMap)
       if (restoredStorageKey === undefined) return []
       part.storageKey = restoredStorageKey
-    } else if (part.type === 'tool-call' && part.resultStorageKey !== undefined) {
-      const restoredStorageKey = restoreResourceKey(part.resultStorageKey, resourceKeyMap)
-      if (restoredStorageKey === undefined) delete part.resultStorageKey
-      else part.resultStorageKey = restoredStorageKey
+    } else if (part.type === 'tool-call') {
+      if (part.resultStorageKey !== undefined) {
+        const restoredStorageKey = restoreResourceKey(part.resultStorageKey, resourceKeyMap)
+        if (restoredStorageKey === undefined) delete part.resultStorageKey
+        else part.resultStorageKey = restoredStorageKey
+      }
+      const imageReference = getToolResultImageReference(part)
+      if (imageReference) {
+        const restoredStorageKey = restoreResourceKey(imageReference.storageKey, resourceKeyMap)
+        if (part.resultImageStorageKey !== undefined) {
+          // A missing blob degrades gracefully: converter and UI fall back to the JSON result.
+          if (restoredStorageKey === undefined) {
+            delete part.resultImageStorageKey
+            delete part.resultImageMediaType
+          } else {
+            part.resultImageStorageKey = restoredStorageKey
+          }
+        } else {
+          // Compatibility with backups created before image references became first-class fields.
+          const resultRecord = part.result as Record<string, unknown>
+          if (restoredStorageKey === undefined) delete resultRecord.image_storage_key
+          else resultRecord.image_storage_key = restoredStorageKey
+        }
+      }
     }
     return [part]
   })

@@ -1,4 +1,5 @@
 import { Badge, Button, Flex, Stack, Text, TextInput } from '@mantine/core'
+import { AutomationAdjacentAttr, TestId } from '@shared/automation/testids'
 import type { ProviderModelInfo } from '@shared/types'
 import { formatNumber } from '@shared/utils'
 import {
@@ -72,6 +73,7 @@ export function ModelList({
       )}
 
       <Stack
+        data-testid={TestId.settings.providerModelList}
         gap={0}
         px="xxs"
         className={`border-solid border rounded-lg min-h-[60px] overflow-y-auto border-chatbox-border-primary`}
@@ -80,6 +82,8 @@ export function ModelList({
           filteredModels.map((model) => (
             <Flex
               key={model.modelId}
+              data-testid={TestId.settings.providerModelItem}
+              {...{ [AutomationAdjacentAttr.modelId]: model.modelId }}
               gap="xs"
               align="center"
               py="sm"
@@ -171,6 +175,7 @@ export function ModelList({
                 <Flex flex="0 0 auto" gap="xs" align="center" className="ml-auto">
                   {onEditModel && (
                     <Button
+                      data-testid={TestId.settings.providerModelEdit}
                       variant="transparent"
                       c="chatbox-tertiary"
                       p={0}
@@ -185,6 +190,7 @@ export function ModelList({
 
                   {onDeleteModel && (
                     <Button
+                      data-testid={TestId.settings.providerModelDelete}
                       variant="transparent"
                       c="chatbox-error"
                       p={0}

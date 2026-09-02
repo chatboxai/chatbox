@@ -1,4 +1,5 @@
 import { ActionIcon, Box, Flex, Indicator, Stack, Text } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
 import {
   IconAdjustmentsHorizontal,
   IconArchive,
@@ -12,6 +13,7 @@ import {
   IconInfoCircle,
   IconKeyboard,
   IconMessages,
+  IconRobotFace,
   IconSparkles,
   IconWand,
   IconWorldWww,
@@ -74,6 +76,12 @@ const ITEMS = [
           label: 'Skills',
           noTranslate: true,
           icon: <IconWand className="w-full h-full" />,
+        },
+        // Agent settings share the skills gate: both surface only where agent mode runs.
+        {
+          key: 'agent',
+          label: 'Agent',
+          icon: <IconRobotFace className="w-full h-full" />,
         },
       ]
     : []),
@@ -171,6 +179,15 @@ export function SettingsRoot() {
               key={item.key}
               to={`/settings/${item.key}` as any}
               className={'block no-underline w-full'}
+              data-testid={
+                item.key === 'chat'
+                  ? TestId.settings.navChat
+                  : item.key === 'general'
+                    ? TestId.settings.navGeneral
+                    : item.key === 'default-models'
+                      ? TestId.settings.navDefaultModels
+                      : undefined
+              }
             >
               <Flex
                 component="span"

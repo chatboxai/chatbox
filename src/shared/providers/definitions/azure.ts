@@ -12,7 +12,7 @@ export const azureProvider = defineProvider({
   },
   defaultSettings: {
     endpoint: 'https://<resource_name>.openai.azure.com',
-    apiVersion: '2024-05-01-preview',
+    apiVersion: 'v1',
   },
   createModel: (config) => {
     return new AzureOpenAI(
@@ -21,7 +21,7 @@ export const azureProvider = defineProvider({
         model: config.model,
         azureDalleDeploymentName: config.providerSetting.dalleDeploymentName || '',
         azureApikey: config.effectiveApiKey,
-        azureApiVersion: config.providerSetting.apiVersion || '2024-05-01-preview',
+        azureApiVersion: config.providerSetting.apiVersion || 'v1',
         temperature: config.settings.temperature,
         topP: config.settings.topP,
         maxOutputTokens: config.settings.maxTokens,

@@ -14,8 +14,11 @@
  * - Export (1): Export functionality
  */
 
+// Action gating (2 functions)
+export { getSessionLockStateNow, guardSessionAction } from './action-guard'
 export {
   createDefaultAgentModeEntry,
+  createNewChatAgentModeEntry,
   getSessionAgentModeEntry,
   getSessionAgentModeFromSession,
   lockSessionAgentMode,
@@ -34,23 +37,41 @@ export {
   switchToIndex,
   switchToNext,
 } from './crud'
-// Export operations (1 function)
+// Export operations
 export { exportSessionChat } from './export'
-// Fork operations (6 functions)
-export { createNewFork, deleteFork, expandFork, findMessageLocation, switchFork, switchForkTo } from './forks'
+// Fork operations (7 functions)
+export {
+  createNewFork,
+  createSaveAndResendFork,
+  deleteFork,
+  expandFork,
+  findMessageLocation,
+  switchFork,
+  switchForkTo,
+} from './forks'
 // Generation operations (8 functions)
 export {
   generate,
   generateMore,
-  generateMoreInNewFork,
   genMessageContext,
   getMessageThreadContext,
   getSessionWebBrowsing,
   regenerateInNewFork,
+  retryFromLastToolCallAfterApiError,
+  saveAndResendMessage,
 } from './generation'
-export type { GenerationCancellationPersistence } from './generation-cancellation'
-export { stopGeneratingMessages } from './generation-cancellation'
-export { hasSuccessfulUserAssistantTurn, isSuccessfulAssistantReply } from './message-success'
+export type { GenerationCancellationDependencies } from './generation-cancellation'
+export { stopAllMessageGenerations, stopMessageGeneration } from './generation-cancellation'
+// Message queue (queue user messages while a generation is running)
+export type { QueuedUserMessage, QueuePausedReason } from './message-queue'
+export {
+  clearQueue,
+  enqueueUserMessage,
+  messageQueueStore,
+  removeQueuedMessage,
+  resumeQueueAndDrain,
+} from './message-queue'
+export { hasContentForAutoTitle, hasSuccessfulUserAssistantTurn, isSuccessfulAssistantReply } from './message-success'
 // Message operations (5 functions)
 export {
   insertMessage,
@@ -65,20 +86,9 @@ export {
 export {
   modifyNameAndThreadName,
   modifyThreadName,
-  scheduleGenerateNameAndThreadName,
-  scheduleGenerateThreadName,
+  syncSessionAutoTitle,
 } from './naming'
 export { getOCRModel, ocrImagesInMessages } from './ocr-helper'
-// Orchestration and AI helpers
-export {
-  continuePausedToolCall,
-  disableToolCallLimitPauseAndContinue,
-  isRetryableToolCallStep,
-  orchestrateGeneration,
-  retryFromLastToolCallAfterApiError,
-  stopPausedToolCall,
-} from './orchestration'
-export { createLoadingPictures } from './pictures'
 // Thread operations (9 functions)
 export {
   compressAndCreateThread,
@@ -100,3 +110,4 @@ export {
   initializeTargetMessage,
   trackGenerateEvent,
 } from './utils'
+export { resolveWebBrowsingMode } from './web-browsing'

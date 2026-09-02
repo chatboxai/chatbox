@@ -1,6 +1,10 @@
+import HunyuanColor from '@lobehub/icons/es/Hunyuan/components/Color'
+import LongCatColor from '@lobehub/icons/es/LongCat/components/Color'
 import MinimaxColor from '@lobehub/icons/es/Minimax/components/Color'
 import MoonshotMono from '@lobehub/icons/es/Moonshot/components/Mono'
 import QwenColor from '@lobehub/icons/es/Qwen/components/Color'
+import XiaomiMiMoMono from '@lobehub/icons/es/XiaomiMiMo/components/Mono'
+import ZhipuColor from '@lobehub/icons/es/Zhipu/components/Color'
 import { type ModelProvider, ModelProviderEnum } from '@shared/types'
 import BrandGithub from './BrandGithub'
 
@@ -21,6 +25,22 @@ export default function ProviderIcon(props: { className?: string; size?: number;
 
   if ([ModelProviderEnum.Moonshot, ModelProviderEnum.MoonshotCN].includes(provider as ModelProviderEnum)) {
     return <MoonshotMono className={className} size={size} style={{ color: 'currentColor' }} />
+  }
+
+  if (provider === ModelProviderEnum.TencentHunyuan) {
+    return <HunyuanColor className={className} size={size} />
+  }
+
+  if (provider === ModelProviderEnum.XiaomiMiMo) {
+    return <XiaomiMiMoMono className={className} size={size} style={{ color: 'currentColor' }} />
+  }
+
+  if (provider === ModelProviderEnum.LongCat) {
+    return <LongCatColor className={className} size={size} />
+  }
+
+  if (provider === ModelProviderEnum.ZhipuGLMCodingPlan) {
+    return <ZhipuColor className={className} size={size} />
   }
 
   return (
@@ -109,6 +129,18 @@ export default function ProviderIcon(props: { className?: string; size?: number;
             clipRule="evenodd"
             d="M20.663 0h-1.741c-5.575 0-8.788 3.56-8.788 9.018v.937a7.161 7.161 0 105.043 5.451h5.486a2.623 2.623 0 100-5.246h-5.458V8.787c0-2.09 1.51-3.6 3.717-3.6h1.741a2.594 2.594 0 000-5.187zM10.29 16.839a2.13 2.13 0 10-4.258-.094 2.13 2.13 0 004.258.094z"
           ></path>
+        </>
+      )}
+      {provider === ModelProviderEnum.OpenCodeGo && (
+        <>
+          <path d="M12 3.25A8.75 8.75 0 103 12 8.76 8.76 0 0012 3.25zm0 1.5A7.25 7.25 0 1112 18.75 7.25 7.25 0 0112 4.75z" />
+          <path d="M8.4 8.15h2.35c1.86 0 3.05 1.12 3.05 2.78 0 1.2-.62 2.08-1.62 2.5l1.86 2.42h-1.86l-1.62-2.16H9.85v2.16H8.4V8.15zm1.45 3.72h.82c.9 0 1.48-.5 1.48-1.3 0-.78-.58-1.26-1.48-1.26h-.82v2.56z" />
+        </>
+      )}
+      {provider === ModelProviderEnum.OpenCodeZen && (
+        <>
+          <path d="M12 3.25A8.75 8.75 0 103 12 8.76 8.76 0 0012 3.25zm0 1.5A7.25 7.25 0 1112 18.75 7.25 7.25 0 0112 4.75z" />
+          <path d="M8.4 8.15h2.35c1.86 0 3.05 1.12 3.05 2.78 0 1.2-.62 2.08-1.62 2.5l1.86 2.42h-1.86l-1.62-2.16H9.85v2.16H8.4V8.15zm1.45 3.72h.82c.9 0 1.48-.5 1.48-1.3 0-.78-.58-1.26-1.48-1.26h-.82v2.56z" />
         </>
       )}
       {provider === ModelProviderEnum.OpenRouter && (

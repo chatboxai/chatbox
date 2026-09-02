@@ -3,7 +3,7 @@ import { Button, Image, List, Paper, Stack, Text, Title } from '@mantine/core'
 import { useTranslation } from 'react-i18next'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import icon from '../static/icon.png'
-import { navigateToSettings } from './Settings'
+import { navigateToSettings } from './settings-navigation'
 
 const Welcome = NiceModal.create(() => {
   const { t } = useTranslation()

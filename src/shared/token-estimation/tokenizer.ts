@@ -84,6 +84,16 @@ export function getTokenizerType(model?: TokenModel): TokenizerType {
 // ============================================================================
 
 /**
+ * CJK Unified Ideographs plus extension and compatibility blocks. Astral
+ * ranges must use \u{...} with the `u` flag: written as bare \u20000 they
+ * parse as \u2000 + "0", forming a 0x30-0x2A6D range that matches ASCII
+ * letters/digits and made English text count as Chinese. Astral members only
+ * match full characters (code points), never a lone surrogate code unit.
+ */
+export const CJK_CHARACTER_PATTERN =
+  /[\u4e00-\u9fff\u3400-\u4dbf\u{20000}-\u{2a6df}\u{2a700}-\u{2b73f}\u{2b740}-\u{2b81f}\u{2b820}-\u{2ceaf}\uf900-\ufaff\u{2f800}-\u{2fa1f}]/u
+
+/**
  * Estimate tokens for DeepSeek models.
  *
  * DeepSeek uses a different tokenization algorithm:
@@ -102,14 +112,7 @@ export function estimateDeepSeekTokens(text: string): number {
 
   for (const char of text) {
     // Check if character is Chinese (CJK Unified Ideographs)
-    if (
-      // Astral CJK ranges must use \u{...} with the `u` flag. Written as bare
-      // \u20000 they parse as \u2000 + "0", forming a 0x30\u20130x2A6D range that
-      // matches ASCII letters/digits and made English text count as Chinese.
-      /[\u4e00-\u9fff\u3400-\u4dbf\u{20000}-\u{2a6df}\u{2a700}-\u{2b73f}\u{2b740}-\u{2b81f}\u{2b820}-\u{2ceaf}\uf900-\ufaff\u{2f800}-\u{2fa1f}]/u.test(
-        char
-      )
-    ) {
+    if (CJK_CHARACTER_PATTERN.test(char)) {
       // Chinese character ≈ 0.6 token
       total += 0.6
       prevSpace = false
@@ -166,4 +169,16 @@ export function estimateTokens(str: string, model?: TokenModel): number {
     reportTokenizerError(e)
     return 0
   }
+}
+
+/** Sentinel model that routes type-addressed estimation to the DeepSeek tokenizer. */
+const DEEPSEEK_TOKEN_MODEL: TokenModel = { provider: 'deepseek', modelId: 'deepseek-chat' }
+
+/**
+ * Estimate tokens when only the tokenizer type is known (worker requests,
+ * queued computation tasks). Callers holding a model should use
+ * `estimateTokens` directly.
+ */
+export function estimateTokensForTokenizerType(text: string, tokenizerType: TokenizerType): number {
+  return estimateTokens(text, tokenizerType === 'deepseek' ? DEEPSEEK_TOKEN_MODEL : undefined)
 }

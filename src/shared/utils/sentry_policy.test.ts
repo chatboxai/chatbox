@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { createSentryEventProcessor } from './sentry_policy'
+import { createSentryEventProcessor, normalizeErrorForSentry } from './sentry_policy'
 
 function createProcessor(overrides: Partial<Parameters<typeof createSentryEventProcessor>[0]> = {}) {
   return createSentryEventProcessor({
@@ -219,5 +219,79 @@ describe('Sentry event policy', () => {
       },
       message: 'opened /home/[redacted]/private',
     })
+  })
+
+  test('normalizes non-string Sentry text fields without throwing or leaking their objects', () => {
+    const event = {
+      message: { requestBody: 'private prompt', apiKey: 'sk-private-secret' },
+      exception: {
+        values: [
+          {
+            type: 'ProviderError',
+            value: { message: 'private provider response', token: 'secret' },
+            stacktrace: { frames: [{ filename: { path: '/Users/alice/private' } }] },
+          },
+        ],
+      },
+      tags: { error_priority: 'high' },
+    }
+
+    expect(() => createProcessor()(event)).not.toThrow()
+    expect(event.message).toBe('[non-string object]')
+    expect(event.exception.values[0].value).toBe('[non-string object]')
+    expect(event.exception.values[0].stacktrace.frames[0].filename).toBe('[non-string object]')
+    expect(JSON.stringify(event)).not.toMatch(/private prompt|private provider response|sk-private-secret/)
+  })
+
+  test('drops malformed events when privacy sanitization itself cannot safely inspect them', () => {
+    const event = { exception: { values: [{ value: 'boom' }] } }
+    Object.defineProperty(event, 'extra', {
+      get() {
+        throw new Error('getter failed')
+      },
+    })
+
+    expect(createProcessor()(event)).toBeNull()
+  })
+})
+
+describe('normalizeErrorForSentry', () => {
+  test('keeps real Error instances intact', () => {
+    const error = new Error('boom')
+    expect(normalizeErrorForSentry(error)).toBe(error)
+  })
+
+  test('keeps only allowlisted machine descriptors from provider objects', () => {
+    const normalized = normalizeErrorForSentry({
+      type: 'server_error',
+      code: 'server_shutdown',
+      statusCode: 503,
+      message: 'private provider response containing a user prompt',
+      apiKey: 'sk-private-secret',
+      requestBody: { prompt: 'private prompt' },
+    })
+
+    expect(normalized).toBeInstanceOf(Error)
+    expect(normalized.name).toBe('NonErrorException')
+    expect(normalized.message).toBe(
+      'Non-Error exception (object; type=server_error; code=server_shutdown; status_code=503)'
+    )
+    expect(normalized.message).not.toMatch(/private|prompt|secret|\[object Object\]/)
+  })
+
+  test('does not inspect the content of primitive throws', () => {
+    expect(normalizeErrorForSentry('private user text').message).toBe('Non-Error exception (string)')
+  })
+
+  test('preserves finite primitive numbers as safe diagnostics', () => {
+    expect(normalizeErrorForSentry(401).message).toBe('Non-Error exception (number; value=401)')
+    expect(normalizeErrorForSentry(429).message).toBe('Non-Error exception (number; value=429)')
+    expect(normalizeErrorForSentry(500).message).toBe('Non-Error exception (number; value=500)')
+  })
+
+  test('does not preserve non-finite primitive numbers', () => {
+    expect(normalizeErrorForSentry(Number.NaN).message).toBe('Non-Error exception (number)')
+    expect(normalizeErrorForSentry(Number.POSITIVE_INFINITY).message).toBe('Non-Error exception (number)')
+    expect(normalizeErrorForSentry(Number.NEGATIVE_INFINITY).message).toBe('Non-Error exception (number)')
   })
 })

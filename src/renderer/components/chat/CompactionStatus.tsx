@@ -9,7 +9,7 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import { useAtomValue } from 'jotai'
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
@@ -19,6 +19,7 @@ import { ScalableIcon } from '../common/ScalableIcon'
 
 const MAX_CHARS = 200
 const MAX_LINES = 3
+const COMPLETED_STATUS_DURATION_MS = 15_000
 
 function shouldTruncate(text: string): boolean {
   if (text.length > MAX_CHARS) return true
@@ -39,15 +40,23 @@ function getTruncatedText(text: string): string {
 
 interface CompactionStatusProps {
   sessionId: string
+  onViewSummary?: (summaryMessageId: string) => void
 }
 
-export const CompactionStatus = memo(function CompactionStatus({ sessionId }: CompactionStatusProps) {
+export const CompactionStatus = memo(function CompactionStatus({ sessionId, onViewSummary }: CompactionStatusProps) {
   const { t } = useTranslation()
   const compactionStateMap = useAtomValue(compactionUIStateMapAtom)
   const [expanded, setExpanded] = useState(false)
 
   const compactionState = useMemo(() => {
-    return compactionStateMap[sessionId] ?? { status: 'idle', error: null, streamingText: '' }
+    return (
+      compactionStateMap[sessionId] ?? {
+        status: 'idle',
+        error: null,
+        streamingText: '',
+        summaryMessageId: null,
+      }
+    )
   }, [compactionStateMap, sessionId])
 
   const lastLine = useMemo(() => {
@@ -64,11 +73,55 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId }: Co
   }, [sessionId])
 
   const handleDismiss = useCallback(() => {
-    setCompactionUIState(sessionId, { status: 'idle', error: null, streamingText: '' })
+    setCompactionUIState(sessionId, {
+      status: 'idle',
+      error: null,
+      streamingText: '',
+      summaryMessageId: null,
+    })
   }, [sessionId])
+
+  const handleViewSummary = useCallback(() => {
+    if (!compactionState.summaryMessageId) return
+    onViewSummary?.(compactionState.summaryMessageId)
+    handleDismiss()
+  }, [compactionState.summaryMessageId, handleDismiss, onViewSummary])
+
+  useEffect(() => {
+    if (compactionState.status !== 'completed') return
+    const timer = window.setTimeout(handleDismiss, COMPLETED_STATUS_DURATION_MS)
+    return () => window.clearTimeout(timer)
+  }, [compactionState.status, handleDismiss])
 
   if (compactionState.status === 'idle') {
     return null
+  }
+
+  if (compactionState.status === 'completed') {
+    return (
+      <Box className="rounded-xl bg-chatbox-background-brand-secondary border border-chatbox-border-primary shadow-sm px-3 py-2">
+        <Flex align="center" justify="space-between" gap="xs">
+          <Flex align="center" gap="xs" className="min-w-0">
+            <ScalableIcon icon={IconCheck} size={16} className="flex-shrink-0 text-chatbox-tint-brand" />
+            <Text size="sm" c="chatbox-primary" className="truncate">
+              {t('Earlier messages summarized')}
+            </Text>
+          </Flex>
+          <Flex align="center" gap="xxs" className="flex-shrink-0">
+            {compactionState.summaryMessageId && onViewSummary && (
+              <Button size="compact-xs" variant="subtle" onClick={handleViewSummary}>
+                {t('View')}
+              </Button>
+            )}
+            <Tooltip label={t('Dismiss')}>
+              <ActionIcon size="xs" variant="subtle" color="chatbox-secondary" onClick={handleDismiss}>
+                <IconX size={14} />
+              </ActionIcon>
+            </Tooltip>
+          </Flex>
+        </Flex>
+      </Box>
+    )
   }
 
   if (compactionState.status === 'failed') {

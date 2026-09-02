@@ -42,9 +42,6 @@ describe('isCommandAutoApprovable', () => {
       'groups',
       'ps aux',
       'jq ".name" package.json',
-      'awk "{print $1}" file.txt',
-      "sed 's/foo/bar/' file.txt",
-      'sed -n "3,5p" file.txt',
       'sw_vers',
       'cal',
       'seq 1 10',
@@ -154,6 +151,10 @@ describe('isCommandAutoApprovable', () => {
       'docker exec container bash',
       'kubectl apply -f deploy.yaml',
       'kubectl delete pod my-pod',
+      'awk "{print $1}" file.txt',
+      'gawk \'BEGIN { system("touch /tmp/pwn") }\'',
+      "sed 's/foo/bar/' file.txt",
+      "sed 'e touch /tmp/pwn' input.txt",
     ])('rejects: %s', (cmd) => {
       expect(isCommandAutoApprovable(cmd)).toBe(false)
     })

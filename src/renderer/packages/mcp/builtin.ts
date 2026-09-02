@@ -1,6 +1,6 @@
+import i18n from '@/i18n'
 import { getLicenseKey } from '@/stores/settingActions'
 import type { MCPServerConfig } from './types'
-import i18n from '@/i18n'
 
 export interface BuildinMCPServerConfig {
   id: string
@@ -17,14 +17,6 @@ export const BUILTIN_MCP_SERVERS: BuildinMCPServerConfig[] = [
       'This server enables LLMs to retrieve and process content from web pages, converting HTML to markdown for easier consumption.'
     ),
     url: 'https://mcp.chatboxai.app/fetch',
-  },
-  {
-    id: 'sequentialthinking',
-    name: 'Sequential Thinking',
-    description: i18n.t(
-      'An MCP server implementation that provides a tool for dynamic and reflective problem-solving through a structured thinking process.'
-    ),
-    url: 'https://mcp.chatboxai.app/sequentialthinking',
   },
   {
     id: 'edgeone-pages',
@@ -56,6 +48,7 @@ export function getBuiltinServerConfig(id: string, licenseKey?: string): MCPServ
     id,
     name: config.name,
     enabled: true,
+    protocolMode: 'legacy',
     transport: {
       type: 'http',
       url: config.url,

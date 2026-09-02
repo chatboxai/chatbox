@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import { describe, expect, test, vi } from 'vitest'
+import { describe, expect, type Mock, test, vi } from 'vitest'
 import { fireEvent, render, screen } from '@/test-utils'
 import { AgentModeRewardQuotaCard } from './AgentModeRewardQuotaCard'
 
@@ -26,12 +26,12 @@ vi.mock('react-i18next', () => ({
 }))
 
 function renderCard({
-  onAction = vi.fn(),
+  onAction = vi.fn<() => void>(),
   claimFailed = false,
   rewardClaimed = false,
   resumeFailed = false,
 }: {
-  onAction?: () => void
+  onAction?: Mock<() => void>
   claimFailed?: boolean
   rewardClaimed?: boolean
   resumeFailed?: boolean

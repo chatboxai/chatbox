@@ -2,41 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { loginOrSignupWithEmailCode, sendEmailLoginCode } from '@/packages/remote'
 import { EMAIL_CODE_RESEND_SECONDS } from './constants'
-import { getLoginCodeVerificationErrorMessage } from './loginErrorMessage'
+import {
+  getLoginCodeVerificationErrorPresentation,
+  getSendLoginCodeErrorPresentation,
+  type LoginErrorPresentation,
+} from './loginErrorMessage'
 import type { LoginState } from './types'
 
 interface UseLoginParams {
   language: string
   onLoginSuccess: (tokens: { accessToken: string; refreshToken: string }) => Promise<void>
-}
-
-function getReadableErrorMessage(error: unknown, fallback: string) {
-  if (!(error instanceof Error)) {
-    return fallback
-  }
-
-  const directMessage = error.message?.trim()
-  if (!directMessage) {
-    return fallback
-  }
-
-  const jsonMatch = directMessage.match(/\{[\s\S]*\}$/)
-  if (!jsonMatch) {
-    return directMessage
-  }
-
-  try {
-    const parsed = JSON.parse(jsonMatch[0]) as {
-      error?: {
-        detail?: string
-        title?: string
-      }
-    }
-
-    return parsed.error?.detail || parsed.error?.title || directMessage
-  } catch {
-    return directMessage
-  }
 }
 
 const getLanguagePath = (language: string) => {
@@ -49,7 +24,7 @@ export function useLogin({ language, onLoginSuccess }: UseLoginParams) {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [loginState, setLoginState] = useState<LoginState>('idle')
-  const [loginError, setLoginError] = useState<string>('')
+  const [loginError, setLoginError] = useState<LoginErrorPresentation | null>(null)
   const [countdown, setCountdown] = useState(0)
   const [hasEnteredCodeStep, setHasEnteredCodeStep] = useState(false)
   const requestEpochRef = useRef(0)
@@ -64,7 +39,7 @@ export function useLogin({ language, onLoginSuccess }: UseLoginParams) {
 
       if (hasEnteredCodeStep && countdown <= 0) {
         setCode('')
-        setLoginError('')
+        setLoginError(null)
         setLoginState('idle')
         setHasEnteredCodeStep(false)
       }
@@ -86,21 +61,21 @@ export function useLogin({ language, onLoginSuccess }: UseLoginParams) {
     const requestEpoch = requestEpochRef.current
     const trimmedEmail = email.trim()
     if (!trimmedEmail) {
-      setLoginError(t('Please enter your email address') || 'Please enter your email address')
+      setLoginError({ message: t('Please enter your email address') || 'Please enter your email address' })
       setLoginState('error')
       return false
     }
 
     const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)
     if (!isValidEmail) {
-      setLoginError(t('Please enter a valid email address') || 'Please enter a valid email address')
+      setLoginError({ message: t('Please enter a valid email address') || 'Please enter a valid email address' })
       setLoginState('error')
       return false
     }
 
     try {
       setLoginState('sending_code')
-      setLoginError('')
+      setLoginError(null)
       setCode('')
 
       const result = await sendEmailLoginCode({
@@ -126,8 +101,7 @@ export function useLogin({ language, onLoginSuccess }: UseLoginParams) {
       }
 
       console.error('Failed to send login code:', error)
-      const errorMsg = getReadableErrorMessage(error, t('Failed to send login code'))
-      setLoginError(errorMsg)
+      setLoginError(getSendLoginCodeErrorPresentation(error, t, t('Failed to send login code')))
       setLoginState('error')
       return false
     }
@@ -139,20 +113,22 @@ export function useLogin({ language, onLoginSuccess }: UseLoginParams) {
     const trimmedCode = code.trim()
 
     if (!trimmedEmail) {
-      setLoginError(t('Please enter your email address') || 'Please enter your email address')
+      setLoginError({ message: t('Please enter your email address') || 'Please enter your email address' })
       setLoginState('error')
       return false
     }
 
     if (trimmedCode.length !== 6) {
-      setLoginError(t('Please enter the 6-digit verification code') || 'Please enter the 6-digit verification code')
+      setLoginError({
+        message: t('Please enter the 6-digit verification code') || 'Please enter the 6-digit verification code',
+      })
       setLoginState('error')
       return false
     }
 
     try {
       setLoginState('verifying_code')
-      setLoginError('')
+      setLoginError(null)
 
       const tokens = await loginOrSignupWithEmailCode({
         email: trimmedEmail,
@@ -177,8 +153,7 @@ export function useLogin({ language, onLoginSuccess }: UseLoginParams) {
       }
 
       console.error('Failed to verify login code:', error)
-      const errorMsg = getLoginCodeVerificationErrorMessage(error, t)
-      setLoginError(errorMsg)
+      setLoginError(getLoginCodeVerificationErrorPresentation(error, t))
       setLoginState('error')
       return false
     }
@@ -187,7 +162,7 @@ export function useLogin({ language, onLoginSuccess }: UseLoginParams) {
   const reset = useCallback(() => {
     invalidatePendingRequests()
     setCode('')
-    setLoginError('')
+    setLoginError(null)
     setLoginState('idle')
     setCountdown(0)
     setHasEnteredCodeStep(false)

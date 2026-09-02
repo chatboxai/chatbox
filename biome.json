@@ -6,7 +6,23 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignoreUnknown": true
+    "ignoreUnknown": true,
+    "experimentalScannerIgnores": [
+      ".cache",
+      ".git",
+      ".hg",
+      ".netlify",
+      ".output",
+      ".svn",
+      ".yarn",
+      ".timestamp",
+      ".turbo",
+      ".vercel",
+      ".DS_Store",
+      "RedisCommander.d.ts",
+      "worktrees",
+      ".worktrees"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -22,6 +38,7 @@
     "useEditorconfig": true,
     "includes": [
       "src/**",
+      "packages/**",
       "test/integration/**/*.ts",
       "test/e2e/**/*.ts",
       "!src/main/mcp/shell-env.cjs",
@@ -64,6 +81,7 @@
     },
     "includes": [
       "src/**",
+      "packages/**",
       "test/integration/**/*.ts",
       "test/e2e/**/*.ts",
       "!src/main/mcp/shell-env.cjs",

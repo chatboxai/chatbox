@@ -1,3 +1,5 @@
+import { getGenerationControlMessages } from '@chatbox/core/session/generation-state'
+import { areSessionsInSamePinGroup } from '@chatbox/core/utils/session-sort'
 import {
   copyMessageForksWithMapping,
   copyMessagesWithMapping,
@@ -7,24 +9,99 @@ import {
   type Session,
   type SessionMeta,
 } from '@shared/types'
-import { areSessionsInSamePinGroup } from '@shared/utils/session-sort'
 import { getDefaultStore } from 'jotai'
 import { omit } from 'lodash'
+import { rendererApplication } from '@/app/renderer-application'
 import platform from '@/platform'
-import { router } from '@/router'
+import { navigateToDynamicPath, router } from '@/router'
 import { sortSessionRecords } from '@/storage/SessionMetaStorage'
 import * as atoms from '../atoms'
-import * as chatStore from '../chatStore'
 import * as scrollActions from '../scrollActions'
 import { clearSessionActivity } from '../sessionActivityStore'
-import { initEmptyChatSession, initEmptyPictureSession } from '../sessionHelpers'
-import { getGenerationControlMessages } from './generation-state'
+import { getMetaStorage, initEmptyChatSession } from '../sessionHelpers'
+
+// Lazy import: message-queue.ts imports session modules that lead back here,
+// so a static import would be circular.
+async function clearMessageQueues(sessionIds: string[]): Promise<void> {
+  const { clearQueue } = await import('./message-queue')
+  for (const sessionId of sessionIds) clearQueue(sessionId)
+}
+
+/**
+ * Abort every in-flight generation of a session: registered runtimes first,
+ * then `generating` placeholders the runtime has not registered yet (their
+ * abort lands as a pendingAbort tombstone). Abort-only on purpose — callers
+ * that keep the session (clear) finalize through the runtime's own paths, and
+ * callers that delete it have nothing left to persist to.
+ */
+function abortSessionGenerations(sessionId: string, session: Session | null | undefined, reason: string): void {
+  const activeRuntimeIds = rendererApplication.generationRuntime.getActiveMessageIds(sessionId)
+  for (const messageId of activeRuntimeIds) {
+    rendererApplication.generationRuntime.requestAbort(sessionId, messageId, reason)
+  }
+  if (!session) return
+  for (const message of getGenerationControlMessages(session, activeRuntimeIds)) {
+    if (message.generating && !activeRuntimeIds.has(message.id)) {
+      rendererApplication.generationRuntime.requestAbort(sessionId, message.id, reason)
+    }
+  }
+}
+
+function abortGenerationsBeforeDeletion(sessionId: string): void {
+  // Deletion must stop in-flight work before the session disappears: a
+  // generation still preparing its request (attachments, OCR, tools) would
+  // otherwise dispatch a billable provider call for a deleted conversation.
+  // (The removed request-snapshot checkpoint used to fail that dispatch as a
+  // side effect of its pre-dispatch persist.)
+  //
+  // The placeholder scan reads the cache only, never a fetch: bulk deletion
+  // (delete-all-archived) would otherwise pull every session's full message
+  // list into the query cache before the first delete, and those entries stay
+  // resident until the deletion completes. An unregistered `generating`
+  // placeholder can only exist for a session this renderer is generating in,
+  // and such a session is always cached — a cache miss has nothing to abort
+  // beyond the registered runtimes handled above.
+  abortSessionGenerations(
+    sessionId,
+    rendererApplication.sessionQueryBridge.getCachedSession(sessionId),
+    'session-deleted'
+  )
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  abortGenerationsBeforeDeletion(sessionId)
+  // Clear only after the deletion succeeded: queued messages are the sole copy
+  // of the user's text, and a failed deletion leaves the session (and queue) alive.
+  await rendererApplication.sessions.deleteSession(sessionId)
+  await clearMessageQueues([sessionId])
+}
+
+export async function deleteSessions(sessionIds: string[]): Promise<void> {
+  for (const sessionId of sessionIds) {
+    abortGenerationsBeforeDeletion(sessionId)
+  }
+  await rendererApplication.sessions.deleteSessions(sessionIds)
+  await clearMessageQueues(sessionIds)
+}
+
+export async function deleteAllArchivedSessions(): Promise<void> {
+  const archived = await rendererApplication.sessions.listArchivedSessionsMeta()
+  const sessionIds = archived.map((session) => session.id)
+  if (sessionIds.length === 0) {
+    return
+  }
+  await deleteSessions(sessionIds)
+}
+
+export async function refreshSessionListCache(): Promise<void> {
+  rendererApplication.sessionQueryBridge.resetSessionList(await rendererApplication.sessions.listSessionsMetaPage(0))
+}
 
 /**
  * Create a new session and switch to it
  */
 async function create(newSession: Omit<Session, 'id'>) {
-  const session = await chatStore.createSession(newSession)
+  const session = await rendererApplication.sessions.createSession(newSession)
   switchCurrentSession(session.id)
   return session
 }
@@ -32,19 +109,11 @@ async function create(newSession: Omit<Session, 'id'>) {
 /**
  * Create a new empty session
  */
-export async function createEmpty(type: 'chat' | 'picture') {
-  let newSession: Session
-  switch (type) {
-    case 'chat':
-      newSession = await create(initEmptyChatSession())
-      break
-    case 'picture':
-      newSession = await create(initEmptyPictureSession())
-      break
-    default:
-      throw new Error(`Unknown session type: ${type}`)
+export function createEmpty(type: 'chat') {
+  if (type !== 'chat') {
+    throw new Error('Legacy picture sessions can no longer be created')
   }
-  return newSession
+  return create(initEmptyChatSession())
 }
 
 /**
@@ -58,12 +127,13 @@ async function copySession(
     threadName?: Session['threadName']
     messageForksHash?: Session['messageForksHash']
     compactionPoints?: Session['compactionPoints']
+    settings?: Session['settings']
   },
   options?: {
     appendForkMarker?: boolean
   }
 ) {
-  const source = await chatStore.getSession(sourceMeta.id)
+  const source = await rendererApplication.sessionQueryBridge.getSession(sourceMeta.id)
   if (!source) {
     throw new Error(`Session ${sourceMeta.id} not found`)
   }
@@ -117,9 +187,12 @@ async function copySession(
     threads: newThreads,
     messageForksHash: newMessageForksHash,
     compactionPoints: newCompactionPoints?.length ? newCompactionPoints : undefined,
-    ...(sourceMeta.threadName ? { threadName: sourceMeta.threadName } : {}),
+    ...('threadName' in sourceMeta ? { threadName: sourceMeta.threadName ?? '' } : {}),
+    // Explicit settings override (e.g. a promoted thread carrying its own
+    // frozen persona snapshot); otherwise the source session's settings apply.
+    ...('settings' in sourceMeta ? { settings: sourceMeta.settings } : {}),
   }
-  return await chatStore.createSession(newSession, source.id)
+  return await rendererApplication.sessions.createSession(newSession, source.id)
 }
 
 /**
@@ -136,9 +209,8 @@ export async function copyAndSwitchSession(source: SessionMeta) {
 export function switchCurrentSession(sessionId: string) {
   const store = getDefaultStore()
   store.set(atoms.currentSessionIdAtom, sessionId)
-  router.navigate({
-    to: '/session/$sessionId',
-    params: { sessionId },
+  navigateToDynamicPath({
+    to: `/session/${sessionId}`,
   })
   scrollActions.clearAutoScroll()
 }
@@ -149,7 +221,7 @@ export function switchCurrentSession(sessionId: string) {
  */
 export async function reorderSessions(oldIndex: number, newIndex: number) {
   console.debug('sessionActions', 'reorderSessions', oldIndex, newIndex)
-  const sessions = await chatStore.listSessionsMeta()
+  const sessions = await rendererApplication.sessionQueryBridge.listSessionsMeta()
   const movedSession = sessions[oldIndex]
   if (!movedSession || oldIndex === newIndex) return
   const reorderedSessions = [...sessions]
@@ -177,12 +249,12 @@ export async function reorderSessions(oldIndex: number, newIndex: number) {
   }
 
   if (nextStarred !== movedSession.starred) {
-    await chatStore.updateSession(movedSession.id, { starred: nextStarred })
+    await rendererApplication.sessions.updateSession(movedSession.id, { starred: nextStarred })
   }
 
-  const metaStorage = await chatStore.getMetaStorage()
+  const metaStorage = await getMetaStorage()
   await metaStorage.update(movedSession.id, { sortOrder: newSortOrder, starred: nextStarred })
-  chatStore.updateSessionListData((items) => {
+  rendererApplication.sessionQueryBridge.updateSessionListData((items) => {
     const updated = items.map((s) =>
       s.id === movedSession.id ? { ...s, sortOrder: newSortOrder, starred: nextStarred } : s
     )
@@ -194,7 +266,7 @@ export async function reorderSessions(oldIndex: number, newIndex: number) {
  * Switch to session by sorted index
  */
 export async function switchToIndex(index: number) {
-  const sessions = await chatStore.listSessionsMeta()
+  const sessions = await rendererApplication.sessionQueryBridge.listSessionsMeta()
   const target = sessions[index]
   if (!target) {
     return
@@ -206,7 +278,7 @@ export async function switchToIndex(index: number) {
  * Switch to next/previous session in sorted order
  */
 export async function switchToNext(reversed?: boolean) {
-  const sessions = await chatStore.listSessionsMeta()
+  const sessions = await rendererApplication.sessionQueryBridge.listSessionsMeta()
   if (!sessions) {
     return
   }
@@ -232,12 +304,12 @@ export async function switchToNext(reversed?: boolean) {
  * Archive session list entries, keeping only specified number of sessions
  */
 async function archiveSessionList(keepNum: number) {
-  const sessionMetaList = await chatStore.listAllSessionsMeta()
+  const sessionMetaList = await rendererApplication.sessions.listAllSessionsMeta()
   const archived = sessionMetaList?.slice(keepNum)
   if (!archived?.length) {
     return
   }
-  await chatStore.archiveSessions(archived.map((s) => s.id))
+  await rendererApplication.sessions.archiveSessions(archived.map((s) => s.id))
   // Navigate to home if the current session was archived
   const store = getDefaultStore()
   const currentSessionId = store.get(atoms.currentSessionIdAtom)
@@ -257,24 +329,25 @@ export async function clearConversationList(keepNum: number) {
  * Clear all messages in a session, keeping only system prompt
  */
 export async function clear(sessionId: string) {
-  const session = await chatStore.getSession(sessionId)
+  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
   if (!session) {
     return
   }
-  for (const message of getGenerationControlMessages(session)) {
-    message.cancel?.()
-  }
-  if (platform.type === 'desktop') {
+  abortSessionGenerations(sessionId, session, 'session-cleared')
+  if (platform.isDesktopLike) {
     try {
       await platform.getSessionAttachmentRagController().deleteSessionAttachments(sessionId)
     } catch (error) {
       console.warn('Failed to cleanup session attachment RAG entries while clearing session:', error)
     }
   }
-  const updated = await chatStore.updateSessionWithMessages(session.id, {
+  const updated = await rendererApplication.sessions.updateSessionWithMessages(session.id, {
     messages: session.messages.filter((m) => m.role === 'system').slice(0, 1),
     threads: undefined,
     messageForksHash: undefined,
+    // Pending title for the next conversation — not `undefined`, which
+    // means "historical field missing" and would be backfilled to `name`.
+    threadName: '',
   })
   clearSessionActivity(session.id)
   return updated

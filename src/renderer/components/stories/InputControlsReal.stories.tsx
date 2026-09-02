@@ -137,7 +137,8 @@ export const TokenCountMenuStates: StoryObj = {
           totalTokens={97_240}
           contextWindow={128_000}
           isCalculating
-          pendingTasks={3}
+          isContextCalculating
+          pendingContextMessages={3}
           totalContextMessages={12}
           isCompacting
           autoCompactionEnabled

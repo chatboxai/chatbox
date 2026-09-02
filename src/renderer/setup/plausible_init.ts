@@ -1,5 +1,9 @@
-import { normalizePlausibleUrl, type Plausible } from '../analytics/plausible'
-import { isFirstDay } from '../hooks/useVersion'
+import {
+  normalizePlausibleUrl,
+  normalizePlausibleVersion,
+  type Plausible,
+  type PlausibleOptions,
+} from '../analytics/plausible'
 import platform from '../platform'
 import { initSettingsStore, settingsStore } from '../stores/settingsStore'
 
@@ -8,26 +12,26 @@ export type PlausibleNavigationSubscriber = (onResolved: (hrefChanged: boolean) 
 export async function initPlausibleTracking(subscribeToNavigation?: PlausibleNavigationSubscriber): Promise<void> {
   try {
     const settings = await initSettingsStore()
-    const version = await platform.getVersion().catch(() => 'unknown')
-    const is_first_day = isFirstDay()
+    const version = normalizePlausibleVersion(await platform.getVersion().catch(() => 'unknown'))
 
     // 设置 Plausible 全局属性
     if (window.plausible) {
-      // 为所有后续的 pageview 和事件设置默认属性和已脱敏的 URL。
+      // 统一使用脱敏 URL，并只为功能事件补充低基数版本属性。
       const originalPlausible = window.plausible
       const enhancedPlausible: Plausible = (event, options) => {
         if (!settingsStore.getState().allowReportingAndTracking) {
           return
         }
 
-        const enhancedOptions = {
+        const enhancedOptions: PlausibleOptions = {
           ...options,
           u: normalizePlausibleUrl(window.location.href),
-          props: {
+        }
+        if (event !== 'pageview') {
+          enhancedOptions.props = {
             ...options?.props,
             version,
-            is_first_day,
-          },
+          }
         }
         return originalPlausible(event, enhancedOptions)
       }
@@ -39,15 +43,14 @@ export async function initPlausibleTracking(subscribeToNavigation?: PlausibleNav
 
       window.plausible = enhancedPlausible
 
-      let lastTrackedHref: string | undefined
+      let lastTrackedUrl: string | undefined
       const trackPageView = () => {
-        // Dedupe router lifecycle events for the same location, but keep pageviews
-        // when navigating between two sessions that share the normalized page URL.
-        if (window.location.href === lastTrackedHref) {
+        const normalizedUrl = normalizePlausibleUrl(window.location.href)
+        if (normalizedUrl === lastTrackedUrl) {
           return
         }
-        lastTrackedHref = window.location.href
-        enhancedPlausible('pageview')
+        lastTrackedUrl = normalizedUrl
+        enhancedPlausible('pageview', { u: normalizedUrl })
       }
 
       if (settings.allowReportingAndTracking) {
@@ -62,7 +65,7 @@ export async function initPlausibleTracking(subscribeToNavigation?: PlausibleNav
 
       settingsStore.subscribe((state, previousState) => {
         if (state.allowReportingAndTracking && !previousState.allowReportingAndTracking) {
-          lastTrackedHref = undefined
+          lastTrackedUrl = undefined
           trackPageView()
         }
       })

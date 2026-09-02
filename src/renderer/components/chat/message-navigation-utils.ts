@@ -38,10 +38,40 @@ export function getMessagePreviewText(message: Message, maxLength = MINIMAP_PREV
 }
 
 /**
- * Anchors are rebuilt on every session cache update (each streaming chunk);
- * comparing against the previous result lets MessageList keep a stable array
- * reference — and the memoized rail skip re-rendering — once the streaming
- * reply has grown past the preview length.
+ * Streaming cache updates replace only the generating assistant message while
+ * preserving the other message objects. Reuse the minimap only for that exact
+ * update shape; edits, inserts, removals, reorders, and generation completion
+ * must rebuild anchors.
+ */
+export function canReuseMinimapAnchorsDuringGeneration(previous: Message[], current: Message[]): boolean {
+  if (previous.length !== current.length) {
+    return false
+  }
+
+  for (let i = 0; i < previous.length; i++) {
+    const previousMessage = previous[i]
+    const currentMessage = current[i]
+    if (previousMessage === currentMessage) {
+      continue
+    }
+    if (
+      previousMessage.id !== currentMessage.id ||
+      previousMessage.role !== 'assistant' ||
+      currentMessage.role !== 'assistant' ||
+      previousMessage.generating !== true ||
+      currentMessage.generating !== true
+    ) {
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * Comparing against the previous result lets MessageList keep a stable array
+ * reference when unrelated session state changes. Streaming replies are
+ * frozen separately by MessageList and refreshed once generation completes.
  */
 export function areMinimapAnchorsEqual(previous: MessageMinimapAnchor[], next: MessageMinimapAnchor[]): boolean {
   if (previous.length !== next.length) {

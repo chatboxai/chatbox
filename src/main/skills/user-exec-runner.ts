@@ -1,9 +1,18 @@
 import { spawn } from 'node:child_process'
 import os from 'node:os'
+import path from 'node:path'
+import type { RunCommandShell } from '@shared/types/command-execution'
 import type { UserExecApprovalSource } from '@shared/types/user-exec'
+import { consumeFailedCommandRetry } from '../command-execution-policy'
+import {
+  COMMAND_OUTPUT_CAPTURE_FAILED_MESSAGE,
+  createCommandOutputCapture,
+  createCommandOutputCapturePath,
+} from '../command-output-capture'
 import { buildOperationFinishLog, buildOperationStartLog, createOperationId } from '../operation-log'
 import { killProcessTree } from '../process-tree'
-import { buildPowerShellStdinScript } from '../sandbox/exec-script'
+import { buildPowerShellStdinScript, buildSandboxStdinScript, stripCodesignNoise } from '../sandbox/exec-script'
+import { getLoginShellPathIfReady } from '../sandbox/login-shell-env'
 import { getLogger } from '../util'
 import { resolveWindowsPowerShell } from '../windows-powershell'
 
@@ -16,6 +25,10 @@ export interface UserExecParams {
   sessionId?: string
   toolCallId?: string
   approvalSource?: UserExecApprovalSource
+  retryOf?: string
+  shell?: RunCommandShell
+  baseCwd?: string
+  injectBundledNode?: boolean
 }
 
 export interface UserExecResult {
@@ -24,6 +37,8 @@ export interface UserExecResult {
   stderr: string
   exitCode: number | null
   cancelled?: boolean
+  cwd?: string
+  outputFile?: string
 }
 
 interface ActiveUserExecCommand {
@@ -33,6 +48,10 @@ interface ActiveUserExecCommand {
 interface UserExecEntry {
   command: string
   cwd?: string
+  retryOf?: string
+  shell?: RunCommandShell
+  baseCwd?: string
+  injectBundledNode?: boolean
   promise: Promise<UserExecResult>
   completedAt?: number
 }
@@ -59,16 +78,38 @@ export function cancelUserExecCommand(params: Pick<UserExecParams, 'sessionId' |
   return { killed: true }
 }
 
+export function resolveUserExecCwd(params: Pick<UserExecParams, 'cwd' | 'baseCwd'>): string {
+  const baseCwd = params.baseCwd?.trim() || os.homedir()
+  return path.resolve(baseCwd, params.cwd?.trim() || '.')
+}
+
 export async function executeUserExecCommand(params: UserExecParams): Promise<UserExecResult> {
-  const { command, cwd: requestedCwd, timeout, sessionId, toolCallId, approvalSource } = params
+  const {
+    command,
+    cwd: requestedCwd,
+    baseCwd: requestedBaseCwd,
+    timeout,
+    sessionId,
+    toolCallId,
+    approvalSource,
+    retryOf,
+    shell,
+    injectBundledNode,
+  } = params
+  let resolvedCwd: string | undefined
 
   try {
     if (!command || typeof command !== 'string') throw new Error('Command is required')
 
-    const homeDir = os.homedir()
-    const cwd = requestedCwd?.trim() || homeDir
+    const cwd = resolveUserExecCwd({ cwd: requestedCwd, baseCwd: requestedBaseCwd })
+    resolvedCwd = cwd
+    if (retryOf) {
+      if (!sessionId || !shell) throw new Error('Escalated command retries require sessionId and shell')
+      const retry = consumeFailedCommandRetry({ sessionId, retryOf, command, cwd, shell })
+      if (!retry.valid) throw new Error(retry.error)
+    }
     const timeoutMs = timeout || 120_000
-    const maxOutputBytes = 1024 * 1024 // 1MB
+    const maxOutputBytes = 6_000
     const operationId = createOperationId()
     const startedAt = Date.now()
 
@@ -95,6 +136,7 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
         stdout: '',
         stderr: 'PowerShell is not available on this Windows host.',
         exitCode: null,
+        cwd,
       }
       log.warn(
         buildOperationFinishLog({
@@ -109,7 +151,17 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
       return result
     }
     const shellCommand = powershell?.cmd ?? 'bash'
-    const shellArgs = powershell?.args ?? ['-lc', command]
+    const hostCommand =
+      injectBundledNode && !isWindows ? buildSandboxStdinScript(command, 'bash', process.execPath, true) : command
+    const shellArgs = powershell?.args ?? ['-lc', hostCommand]
+    const outputCapture = createCommandOutputCapture(createCommandOutputCapturePath(toolCallId))
+
+    // GUI-launched Electron inherits launchd's minimal PATH; `bash -l` alone doesn't recover
+    // it on macOS (Homebrew configures zsh's ~/.zprofile, which bash never sources). Read the
+    // cached value synchronously: an await here would delay spawn and open a window in which
+    // cancellation cannot find the child.
+    const loginShellPath = getLoginShellPathIfReady()
+    const spawnEnv = loginShellPath ? { ...process.env, PATH: loginShellPath } : process.env
 
     return await new Promise((resolve) => {
       let stdout = ''
@@ -118,6 +170,8 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
       let stderrBytes = 0
       let settled = false
       let cancelled = false
+      let timedOut = false
+      let outputLimitExceeded = false
       let forceKillHandle: ReturnType<typeof setTimeout> | undefined
       const activeKey = getUserExecKey(sessionId, toolCallId)
 
@@ -126,26 +180,41 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
         settled = true
         clearTimeout(timeoutHandle)
         if (activeKey) activeUserExecCommands.delete(activeKey)
-        const finishLog = buildOperationFinishLog({
-          operationId,
-          success: result.success,
-          exitCode: result.exitCode,
-          durationMs: Date.now() - startedAt,
-          timedOut: result.exitCode === null && result.stderr.includes('timed out'),
-          stdout: result.stdout,
-          stderr: result.stderr,
-          stdoutBytes,
-          stderrBytes,
-        })
-        if (result.success) log.info(finishLog)
-        else log.warn(finishLog)
-        resolve(result)
+        void (async () => {
+          const outputFile = await outputCapture.finish()
+          const capturedResult = {
+            ...result,
+            ...(outputCapture.isFailed()
+              ? {
+                  stderr: `${result.stderr}${result.stderr ? '\n' : ''}${COMMAND_OUTPUT_CAPTURE_FAILED_MESSAGE}`,
+                }
+              : {}),
+            ...(outputFile ? { outputFile } : {}),
+          }
+          const finalResult = injectBundledNode
+            ? { ...capturedResult, stderr: stripCodesignNoise(capturedResult.stderr) }
+            : capturedResult
+          const finishLog = buildOperationFinishLog({
+            operationId,
+            success: finalResult.success,
+            exitCode: finalResult.exitCode,
+            durationMs: Date.now() - startedAt,
+            timedOut: finalResult.exitCode === null && finalResult.stderr.includes('timed out'),
+            stdout: finalResult.stdout,
+            stderr: finalResult.stderr,
+            stdoutBytes,
+            stderrBytes,
+          })
+          if (finalResult.success) log.info(finishLog)
+          else log.warn(finishLog)
+          resolve({ ...finalResult, cwd })
+        })()
       }
 
       const child = spawn(shellCommand, shellArgs, {
         cwd,
         stdio: [isWindows ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-        env: process.env,
+        env: spawnEnv,
         shell: false,
         // Keep the command in its own POSIX process group so cancellation also
         // terminates descendants. Windows uses taskkill /T in killProcessTree.
@@ -166,14 +235,9 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
 
       const timeoutHandle = setTimeout(() => {
         if (settled || child.killed) return
+        timedOut = true
         killProcessTree(child, 'SIGTERM')
         forceKillHandle = setTimeout(() => killProcessTree(child, 'SIGKILL'), 3_000)
-        resolveOnce({
-          success: false,
-          stdout,
-          stderr: stderr || `Command timed out (${timeoutMs / 1000}s)`,
-          exitCode: null,
-        })
       }, timeoutMs)
 
       if (!child.stdout || !child.stderr) {
@@ -181,21 +245,43 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
         resolveOnce({ success: false, stdout: '', stderr: 'Command output streams are unavailable', exitCode: null })
         return
       }
+      const stdoutStream = child.stdout
+      const stderrStream = child.stderr
 
       if (isWindows && child.stdin) {
         child.stdin.on('error', () => {
           // The process error/close handlers below own the final result.
         })
-        child.stdin.end(buildPowerShellStdinScript(command), 'utf8')
+        child.stdin.end(buildPowerShellStdinScript(command, injectBundledNode ? process.execPath : undefined), 'utf8')
       }
 
-      child.stdout.on('data', (data: Buffer) => {
+      stdoutStream.on('data', (data: Buffer) => {
         stdoutBytes += data.byteLength
-        if (stdoutBytes <= maxOutputBytes) stdout += data.toString()
+        if (!outputCapture.append('stdout', data)) {
+          stdoutStream.pause()
+          outputCapture.onDrain(() => stdoutStream.resume())
+        }
+        if (outputCapture.isLimitExceeded() && !outputLimitExceeded) {
+          outputLimitExceeded = true
+          killProcessTree(child, 'SIGTERM')
+          forceKillHandle = setTimeout(() => killProcessTree(child, 'SIGKILL'), 3_000)
+        }
+        const remaining = maxOutputBytes - Buffer.byteLength(stdout)
+        if (remaining > 0) stdout += data.subarray(0, remaining).toString()
       })
-      child.stderr.on('data', (data: Buffer) => {
+      stderrStream.on('data', (data: Buffer) => {
         stderrBytes += data.byteLength
-        if (stderrBytes <= maxOutputBytes) stderr += data.toString()
+        if (!outputCapture.append('stderr', data)) {
+          stderrStream.pause()
+          outputCapture.onDrain(() => stderrStream.resume())
+        }
+        if (outputCapture.isLimitExceeded() && !outputLimitExceeded) {
+          outputLimitExceeded = true
+          killProcessTree(child, 'SIGTERM')
+          forceKillHandle = setTimeout(() => killProcessTree(child, 'SIGKILL'), 3_000)
+        }
+        const remaining = maxOutputBytes - Buffer.byteLength(stderr)
+        if (remaining > 0) stderr += data.subarray(0, remaining).toString()
       })
       child.on('error', (error) => {
         if (forceKillHandle) clearTimeout(forceKillHandle)
@@ -207,9 +293,21 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
         resolveOnce(
           cancelled
             ? { success: false, stdout, stderr, exitCode: 130, cancelled: true }
-            : signal === 'SIGTERM'
-              ? { success: false, stdout, stderr: stderr || 'Command timed out', exitCode: null }
-              : { success: code === 0, stdout, stderr, exitCode: code }
+            : outputLimitExceeded
+              ? {
+                  success: false,
+                  stdout,
+                  stderr: `${stderr}${stderr ? '\n' : ''}[Command terminated: output exceeded the 10MB capture limit]`,
+                  exitCode: 1,
+                }
+              : timedOut || signal === 'SIGTERM'
+                ? {
+                    success: false,
+                    stdout,
+                    stderr: stderr || `Command timed out (${timeoutMs / 1000}s)`,
+                    exitCode: null,
+                  }
+                : { success: code === 0, stdout, stderr, exitCode: code }
         )
       })
     })
@@ -220,6 +318,7 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
       stdout: '',
       stderr: error instanceof Error ? error.message : 'Unknown error',
       exitCode: null,
+      ...(resolvedCwd ? { cwd: resolvedCwd } : {}),
     }
   }
 }
@@ -257,11 +356,18 @@ export function createUserExecRunner(
       const key = `${params.sessionId ?? ''}:${params.toolCallId}`
       const existing = entries.get(key)
       if (existing) {
-        if (existing.command !== params.command || existing.cwd !== params.cwd) {
+        if (
+          existing.command !== params.command ||
+          existing.cwd !== params.cwd ||
+          existing.retryOf !== params.retryOf ||
+          existing.shell !== params.shell ||
+          existing.baseCwd !== params.baseCwd ||
+          existing.injectBundledNode !== params.injectBundledNode
+        ) {
           return Promise.resolve({
             success: false,
             stdout: '',
-            stderr: `Tool call ${params.toolCallId} was reused with a different command or working directory`,
+            stderr: `Tool call ${params.toolCallId} was reused with a different command or working directory, or retry binding`,
             exitCode: null,
           })
         }
@@ -271,6 +377,10 @@ export function createUserExecRunner(
       const entry: UserExecEntry = {
         command: params.command,
         cwd: params.cwd,
+        retryOf: params.retryOf,
+        shell: params.shell,
+        baseCwd: params.baseCwd,
+        injectBundledNode: params.injectBundledNode,
         promise: Promise.resolve().then(() => execute(params)),
       }
       entries.set(key, entry)

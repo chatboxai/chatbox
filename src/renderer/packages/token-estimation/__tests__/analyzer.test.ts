@@ -1,7 +1,13 @@
 import type { Message, MessageFile, MessageLink } from '@shared/types/session'
-import { describe, expect, it } from 'vitest'
-import { analyzeTokenRequirements } from '../analyzer'
-import { PRIORITY } from '../computation-queue'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { analyzeContextTokens, analyzeTokenRequirements } from '../analyzer'
+import { generateTaskId, PRIORITY } from '../computation-queue'
+import { getDraftTokenizationText, getTokenizationTextDigest } from '../draft-tokenization'
+import {
+  _resetExactTokenizationFallbacks,
+  MAX_EXACT_TOKENIZATION_FALLBACKS,
+  recordExactTokenizationFallback,
+} from '../exact-retry'
 
 function createMessage(overrides: Partial<Message> = {}): Message {
   return {
@@ -50,8 +56,8 @@ describe('analyzeTokenRequirements', () => {
       expect(result.contextTokens).toBe(0)
       expect(result.pendingTasks).toHaveLength(0)
       expect(result.breakdown).toEqual({
-        currentInput: { text: 0, attachments: 0 },
-        context: { text: 0, attachments: 0 },
+        currentInput: { text: 0, attachments: 0, toolCalls: 0 },
+        context: { text: 0, attachments: 0, toolCalls: 0 },
       })
     })
   })
@@ -649,5 +655,133 @@ describe('analyzeTokenRequirements', () => {
       expect(result.breakdown.currentInput.attachments).toBe(15)
       expect(result.pendingTasks).toHaveLength(0)
     })
+  })
+})
+
+describe('approximate persisted counts', () => {
+  beforeEach(() => {
+    _resetExactTokenizationFallbacks()
+  })
+
+  afterEach(() => {
+    _resetExactTokenizationFallbacks()
+  })
+
+  function approximateContextMessage(): Message {
+    return createMessage({
+      id: 'ctx-approx',
+      tokenCountMap: { default: 5000 },
+      tokenCalculatedAt: { default: 1000 },
+      tokenCountApproximate: { default: true },
+    })
+  }
+
+  it('counts the fallback value, flags it, and re-attempts an exact encode', () => {
+    const message = approximateContextMessage()
+    const textDigest = getTokenizationTextDigest(getDraftTokenizationText(message))
+    const result = analyzeContextTokens({
+      contextMessages: [message],
+      tokenizerType: 'default',
+      modelSupportToolUseForFile: false,
+    })
+
+    expect(result.breakdown.text).toBe(5000)
+    expect(result.hasApproximateText).toBe(true)
+    expect(result.pendingTasks).toHaveLength(1)
+    expect(result.pendingTasks[0]).toMatchObject({
+      type: 'message-text',
+      messageId: 'ctx-approx',
+      textDigest,
+      retryAttempt: 0,
+    })
+  })
+
+  it('stops re-attempting once the per-run budget is exhausted but keeps the flag', () => {
+    const message = approximateContextMessage()
+    const textDigest = getTokenizationTextDigest(getDraftTokenizationText(message))
+    for (let attempt = 0; attempt < MAX_EXACT_TOKENIZATION_FALLBACKS; attempt++) {
+      recordExactTokenizationFallback('ctx-approx', 'default', textDigest)
+    }
+
+    const result = analyzeContextTokens({
+      contextMessages: [message],
+      tokenizerType: 'default',
+      modelSupportToolUseForFile: false,
+    })
+
+    expect(result.breakdown.text).toBe(5000)
+    expect(result.hasApproximateText).toBe(true)
+    expect(result.pendingTasks).toHaveLength(0)
+  })
+
+  it('changes the task identity when the message text changes', () => {
+    const original = createMessage({ id: 'ctx-versioned', contentParts: [{ type: 'text', text: 'original' }] })
+    const edited = createMessage({ id: 'ctx-versioned', contentParts: [{ type: 'text', text: 'edited' }] })
+    const analyze = (message: Message) =>
+      analyzeContextTokens({
+        contextMessages: [message],
+        tokenizerType: 'default',
+        modelSupportToolUseForFile: false,
+      }).pendingTasks[0]
+
+    const originalId = generateTaskId({ ...analyze(original), sessionId: 'session-1' })
+    const editedId = generateTaskId({ ...analyze(edited), sessionId: 'session-1' })
+
+    expect(editedId).not.toBe(originalId)
+  })
+
+  it('changes the task identity after an accepted fallback', () => {
+    const message = approximateContextMessage()
+    const textDigest = getTokenizationTextDigest(getDraftTokenizationText(message))
+    const firstTask = analyzeContextTokens({
+      contextMessages: [message],
+      tokenizerType: 'default',
+      modelSupportToolUseForFile: false,
+    }).pendingTasks[0]
+
+    recordExactTokenizationFallback(message.id, 'default', textDigest)
+    const retryTask = analyzeContextTokens({
+      contextMessages: [message],
+      tokenizerType: 'default',
+      modelSupportToolUseForFile: false,
+    }).pendingTasks[0]
+
+    expect(retryTask.retryAttempt).toBe(1)
+    expect(generateTaskId({ ...retryTask, sessionId: 'session-1' })).not.toBe(
+      generateTaskId({ ...firstTask, sessionId: 'session-1' })
+    )
+  })
+
+  it('reports exact cached entries as not approximate', () => {
+    const result = analyzeContextTokens({
+      contextMessages: [
+        createMessage({ id: 'ctx-exact', tokenCountMap: { default: 100 }, tokenCalculatedAt: { default: 1000 } }),
+      ],
+      tokenizerType: 'default',
+      modelSupportToolUseForFile: false,
+    })
+
+    expect(result.breakdown.text).toBe(100)
+    expect(result.hasApproximateText).toBe(false)
+    expect(result.pendingTasks).toHaveLength(0)
+  })
+
+  it('scopes the marker to its tokenizer entry', () => {
+    const message = createMessage({
+      id: 'ctx-mixed',
+      tokenCountMap: { default: 5000, deepseek: 4000 },
+      tokenCalculatedAt: { default: 1000, deepseek: 1000 },
+      tokenCountApproximate: { default: true },
+    })
+
+    const result = analyzeContextTokens({
+      contextMessages: [message],
+      tokenizerType: 'deepseek',
+      modelSupportToolUseForFile: false,
+    })
+
+    expect(result.breakdown.text).toBe(4000)
+    expect(result.hasApproximateText).toBe(false)
+    expect(result.pendingTasks).toHaveLength(0)
   })
 })

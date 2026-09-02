@@ -19,6 +19,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
+import { rendererApplication } from '@/app/renderer-application'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { ImageInStorage } from '@/components/Image'
@@ -33,10 +34,12 @@ import useVersion from '@/hooks/useVersion'
 import * as remote from '@/packages/remote'
 import { router } from '@/router'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
-import { createSession as createSessionStore } from '@/stores/chatStore'
 import { resolveChatboxLicenseDefaultModel } from '@/stores/defaultChatModel'
 import { getHasCompletedFirstSuccessfulChat } from '@/stores/firstSuccessfulChat'
-import { generate, submitNewUserMessage, switchCurrentSession } from '@/stores/sessionActions'
+import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
+import { switchCurrentSession } from '@/stores/session/crud'
+import { generate } from '@/stores/session/generation'
+import { submitNewUserMessage } from '@/stores/session/messages'
 import { initEmptyChatSession } from '@/stores/sessionHelpers'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -76,6 +79,9 @@ function Index() {
   const showCopilotsInNewSession = useUIStore((s) => s.showCopilotsInNewSession)
   const widthFull = useUIStore((s) => s.widthFull)
   const sessionWebBrowsingMap = useUIStore((s) => s.sessionWebBrowsingMap)
+  const newSessionWebBrowsingDefault = useUIStore((s) => s.newSessionWebBrowsingDefault)
+  const newSessionCommandApprovalModeDefault = useUIStore((s) => s.newSessionCommandApprovalModeDefault)
+  const newSessionWorkingDirectoriesDefault = useUIStore((s) => s.newSessionWorkingDirectoriesDefault)
   const setSessionWebBrowsing = useUIStore((s) => s.setSessionWebBrowsing)
   const clearSessionWebBrowsing = useUIStore((s) => s.clearSessionWebBrowsing)
   const sessionAgentModeMap = useUIStore((s) => s.sessionAgentModeMap)
@@ -216,6 +222,7 @@ function Index() {
       picUrl: selectedCopilot?.avatar?.type === 'url' ? selectedCopilot.avatar.url : selectedCopilot?.picUrl,
       backgroundImage: selectedCopilot?.backgroundImage,
       name: selectedCopilot?.name || 'Untitled',
+      threadName: '',
       messages: selectedCopilot
         ? [
             {
@@ -251,6 +258,7 @@ function Index() {
         picUrl: c.avatar?.type === 'url' ? c.avatar.url : c.picUrl,
         backgroundImage: c.backgroundImage,
         name: c.name || 'Untitled',
+        threadName: '',
         messages: [
           {
             id: uuidv4(),
@@ -277,7 +285,11 @@ function Index() {
       settingsPatch?: Partial<SessionSettings>
       settingsOverride?: Partial<SessionSettings>
     }) => {
-      const newSession = await createSessionStore({
+      // Transient choices made while the chat was "new" win; otherwise new chats
+      // continue the last explicit choice remembered from any earlier chat.
+      const effectiveApprovalMode = newSessionState.commandApprovalMode ?? newSessionCommandApprovalModeDefault
+      const effectiveWorkingDirectories = newSessionState.workingDirectories ?? newSessionWorkingDirectoriesDefault
+      const newSession = await rendererApplication.sessions.createSession({
         name: options?.name ?? session.name,
         type: 'chat',
         assistantAvatarKey: session.assistantAvatarKey,
@@ -285,16 +297,25 @@ function Index() {
         backgroundImage: session.backgroundImage,
         messages: options?.messages ?? session.messages,
         copilotId: session.copilotId,
-        threadName: options?.threadName,
+        threadName: options?.threadName ?? session.threadName ?? '',
         settings: {
           ...session.settings,
           ...options?.settingsPatch,
-          ...(sessionAgentModeMap.new ? { agentMode: sessionAgentModeMap.new } : {}),
-          // Working directories bound while the chat was still "new" (not yet persisted).
-          ...(newSessionState.workingDirectories?.length
-            ? { workingDirectories: newSessionState.workingDirectories }
-            : {}),
-          ...(newSessionState.agentFullAccess ? { agentFullAccess: true } : {}),
+          // Bake the exact mode shown while the chat was "new" into the created session, so
+          // remembered defaults and transient selections follow the same resolution path.
+          agentMode: getSessionAgentModeEntry('new', undefined, sessionAgentModeMap),
+          // Working directories bound while the chat was still "new" (not yet persisted),
+          // falling back to the remembered default from earlier chats.
+          ...(effectiveWorkingDirectories?.length ? { workingDirectories: effectiveWorkingDirectories } : {}),
+          ...(effectiveApprovalMode
+            ? {
+                commandApprovalMode: effectiveApprovalMode,
+                // Keep the legacy flag in lockstep for older readers.
+                ...(effectiveApprovalMode === 'full_access' ? { agentFullAccess: true } : {}),
+              }
+            : newSessionState.agentFullAccess
+              ? { agentFullAccess: true }
+              : {}),
           ...options?.settingsOverride,
         },
       })
@@ -307,7 +328,7 @@ function Index() {
 
       // Transfer knowledge base / Work Mode settings from newSessionState to the actual
       // session, then clear it so nothing bleeds into the next new chat. (workingDirectories
-      // and agentFullAccess are already baked into the created session's settings above;
+      // and the command approval policy are already baked into the created session's settings above;
       // this only clears them.)
       if (newSessionState.knowledgeBase) {
         addSessionKnowledgeBase(newSession.id, newSessionState.knowledgeBase)
@@ -315,13 +336,15 @@ function Index() {
       if (
         newSessionState.knowledgeBase ||
         newSessionState.workingDirectories?.length ||
-        newSessionState.agentFullAccess
+        newSessionState.agentFullAccess ||
+        newSessionState.commandApprovalMode
       ) {
         setNewSessionState({})
       }
 
-      // Transfer web browsing setting from "new" session to the actual session
-      const newSessionWebBrowsing = sessionWebBrowsingMap.new
+      // Transfer either the transient choice or the remembered new-chat default.
+      // Clearing only removes the transient "new" slot; the remembered default remains.
+      const newSessionWebBrowsing = sessionWebBrowsingMap.new ?? newSessionWebBrowsingDefault
       if (newSessionWebBrowsing !== undefined) {
         setSessionWebBrowsing(newSession.id, newSessionWebBrowsing)
         clearSessionWebBrowsing('new')
@@ -343,8 +366,12 @@ function Index() {
       newSessionState.knowledgeBase,
       newSessionState.workingDirectories,
       newSessionState.agentFullAccess,
+      newSessionState.commandApprovalMode,
+      newSessionCommandApprovalModeDefault,
+      newSessionWorkingDirectoriesDefault,
       setNewSessionState,
       sessionWebBrowsingMap,
+      newSessionWebBrowsingDefault,
       setSessionWebBrowsing,
       clearSessionWebBrowsing,
       sessionAgentModeMap,
@@ -500,6 +527,8 @@ function Index() {
             <InputBox
               sessionType="chat"
               sessionId="new"
+              draftCopilotId={session.copilotId}
+              draftCopilotName={session.copilotId ? session.name : undefined}
               model={selectedModel}
               // fullWidth
               onSelectModel={onSelectModel}

@@ -1,5 +1,5 @@
 import type { ElectronIPC } from '@shared/electron-types'
-import type { SessionAttachmentQueryPlan } from '@shared/types'
+import type { SessionAttachmentQueryPlan, SessionAttachmentRagMaintenanceScope } from '@shared/types'
 import type { SessionAttachmentRagController } from './interface'
 
 class DesktopSessionAttachmentRagController implements SessionAttachmentRagController {
@@ -54,7 +54,7 @@ class DesktopSessionAttachmentRagController implements SessionAttachmentRagContr
     return this.ipc.invoke('session-attachment-rag:clear-all')
   }
 
-  async runMaintenance(params: { sessionIds: string[]; messageIds: string[] }) {
+  async runMaintenance(params: SessionAttachmentRagMaintenanceScope) {
     return this.ipc.invoke('session-attachment-rag:run-maintenance', params)
   }
 

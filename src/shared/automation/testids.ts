@@ -29,6 +29,7 @@ export const TestId = {
     attachmentSelectFile: 'attachment-select-file',
     attachmentImageInput: 'attachment-image-input',
     attachmentFileInput: 'attachment-file-input',
+    attachmentImagePreview: 'attachment-image-preview',
     webSearchToggle: 'web-search-toggle',
     queuedMessageEnqueue: 'queued-message-enqueue',
     queuedMessageBar: 'queued-message-bar',

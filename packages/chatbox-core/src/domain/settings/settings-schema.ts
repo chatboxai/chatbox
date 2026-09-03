@@ -120,6 +120,8 @@ const ProviderBaseInfoSchema = z.discriminatedUnion('isCustom', [
   CustomProviderBaseInfoSchema,
 ])
 
+const ClaudeCacheTTLSchema = z.enum(['auto', '5m', '1h'])
+
 const ClaudeParamsSchema = z.object({
   thinking: z
     .object({
@@ -129,6 +131,7 @@ const ClaudeParamsSchema = z.object({
     .optional()
     .catch(undefined),
   effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().catch(undefined),
+  cacheTTL: ClaudeCacheTTLSchema.optional().catch('auto'),
 })
 
 const OpenAIParamsSchema = z.object({

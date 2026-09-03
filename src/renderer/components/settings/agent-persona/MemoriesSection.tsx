@@ -167,7 +167,7 @@ export function MemoriesSection() {
         </Paper>
       )}
       {!scanning && scanComplete && candidates.length === 0 && (
-        <Text size="xs" c="dimmed">
+        <Text size="sm" c="chatbox-error">
           {t('No new local memories were found.')}
         </Text>
       )}

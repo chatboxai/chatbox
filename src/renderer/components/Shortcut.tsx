@@ -27,6 +27,8 @@ function formatKey(key: string) {
     down: '↓',
     left: '←',
     right: '→',
+    pageup: 'Page Up',
+    pagedown: 'Page Down',
   }
   const MAC_KEY_MAPS: Record<string, string> = {
     ...COMMON_KEY_MAPS,
@@ -157,6 +159,16 @@ export function ShortcutConfig(props: {
       label: t('Navigate to the Specific Conversation'),
       // name: 'sessionListNavTargetIndex',
       keys: 'mod+1-9',
+    },
+    {
+      label: t('Scroll Up the Message List'),
+      // Fixed shortcut handled in useShortcut; not configurable here
+      keys: 'pageup',
+    },
+    {
+      label: t('Scroll Down the Message List'),
+      // Fixed shortcut handled in useShortcut; not configurable here
+      keys: 'pagedown',
     },
     {
       label: t('Show/Hide the Search Dialog'),

@@ -12,6 +12,10 @@ vi.mock('jotai', () => ({
   getDefaultStore: () => ({ get: () => null }),
 }))
 
+vi.mock('@/components/layout/Overlay', () => ({
+  overlayStackAtom: {},
+}))
+
 vi.mock('@/modals/settings-navigation', () => ({
   navigateToSettings: vi.fn(),
 }))
@@ -46,6 +50,10 @@ vi.mock('../stores/atoms', () => ({
   currentSessionIdAtom: {},
 }))
 
+vi.mock('../stores/scrollActions', () => ({
+  getMessageListViewportHeight: () => 0,
+}))
+
 vi.mock('../stores/session/crud', () => ({
   switchToIndex: vi.fn(),
   switchToNext: vi.fn(),
@@ -68,6 +76,7 @@ vi.mock('../stores/settingsStore', () => ({
 
 vi.mock('./dom', () => ({
   focusMessageInput: vi.fn(),
+  messageInputID: 'message-input',
 }))
 
 vi.mock('./useScreenChange', () => ({

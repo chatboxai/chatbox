@@ -1700,7 +1700,7 @@ export async function resetSandbox(sessionId?: string): Promise<{ success: boole
 }
 
 /** Reset all active sandbox sessions. Called on app quit to clean up. */
-export async function resetAllSessions(): Promise<void> {
+export function resetAllSessions(): void {
   clearFailedCommandRetries()
   const ids = [...sessions.keys()]
   for (const id of ids) {

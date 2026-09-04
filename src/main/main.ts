@@ -50,7 +50,7 @@ import { registerOAuthHandlers } from './oauth'
 import * as proxy from './proxy'
 import { getMainRuntimePolicy } from './qa-runtime'
 import { runRipgrepSearch } from './ripgrep-search'
-import { registerSandboxHandlers } from './sandbox'
+import { cleanupSandboxResources, registerSandboxHandlers } from './sandbox'
 import { bufferToArrayBuffer } from './sandbox/read-file-base64'
 import { registerSkillsHandlers } from './skills'
 import {
@@ -78,6 +78,11 @@ const DEV_LAUNCH_OPTIONS = parseDevLaunchOptions({
   env: process.env,
 })
 const DEV_LAUNCH_HASH = buildDevLaunchHash(DEV_LAUNCH_OPTIONS)
+
+function exitHarmonyApp(): void {
+  cleanupSandboxResources()
+  app.exit(0)
+}
 
 if (QA_RUNTIME_PATHS && QA_LAUNCH_ARGUMENTS && MAIN_RUNTIME_POLICY.qaTaskId) {
   for (const directory of [
@@ -506,6 +511,13 @@ async function createWindow() {
     mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
       log.error(`[Harmony renderer] did-fail-load ${errorCode}: ${errorDescription}`)
     })
+    const harmonyWindow = mainWindow as BrowserWindow & { setUseNativeFrame?: (visible: boolean) => void }
+    if (typeof harmonyWindow.setUseNativeFrame === 'function') {
+      harmonyWindow.setUseNativeFrame(false)
+    }
+    if (typeof mainWindow.setWindowButtonVisibility === 'function') {
+      mainWindow.setWindowButtonVisibility(false)
+    }
   }
 
   let hasShownMainWindow = false
@@ -682,11 +694,9 @@ if (quitForInstallRequested) {
   })
 
   app.on('window-all-closed', () => {
-    // Respect the OSX convention of having the application in memory even
-    // after all windows have been closed
-    // if (process.platform !== 'darwin') {
-    //     app.quit()
-    // }
+    if (IS_HARMONY_BUILD) {
+      exitHarmonyApp()
+    }
   })
 
   app
@@ -1185,6 +1195,15 @@ ipcMain.handle('window:unmaximize', () => {
 })
 
 ipcMain.handle('window:close', () => {
+  if (IS_HARMONY_BUILD) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      windowState.saveState(mainWindow)
+    }
+    setImmediate(() => {
+      exitHarmonyApp()
+    })
+    return
+  }
   mainWindow?.close()
 })
 

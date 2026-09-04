@@ -43,7 +43,7 @@ type ControlButtonProps = {
 const ControlButton: FC<ControlButtonProps> = ({ label, icon, onClick, ...props }) => {
   return (
     <Tooltip label={label}>
-      <ActionIcon variant="subtle" size={40} radius={0} color="chatbox-primary" onClick={onClick} {...props}>
+      <ActionIcon variant="subtle" size={40} radius={0} color="chatbox-primary" aria-label={label} onClick={onClick} {...props}>
         <ScalableIcon icon={icon} size={16} strokeWidth={1.5} />
       </ActionIcon>
     </Tooltip>

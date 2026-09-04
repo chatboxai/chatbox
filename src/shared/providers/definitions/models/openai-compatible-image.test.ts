@@ -232,7 +232,7 @@ describe('OpenAI-compatible image models', () => {
         'HTTP-Referer': 'https://chatboxai.app',
         'X-Title': 'Chatbox AI',
       },
-      fetch: undefined,
+      fetch: expect.any(Function),
     })
     expect(openRouterMocks.imageModelFactory).toHaveBeenCalledWith('google/gemini-3-pro-image')
     expect(imageMocks.createOpenAI).not.toHaveBeenCalledWith(

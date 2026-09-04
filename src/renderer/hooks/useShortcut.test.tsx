@@ -119,6 +119,32 @@ describe('useShortcut', () => {
       unmount()
     })
 
+    test('ignores a dialog that is mounted but closed', () => {
+      // MUI Modal with `keepMounted` (SearchDialog in __root.tsx) keeps the paper in
+      // the DOM and hides the root when closed.
+      document.body.innerHTML =
+        '<div role="presentation" aria-hidden="true" style="visibility: hidden">' +
+        '<div role="dialog"><input id="search-input" /></div></div>'
+      const { unmount } = renderHook(() => useShortcut())
+
+      act(() => mocks.windowFocusedHandler?.())
+
+      expect(mocks.focusMessageInput).toHaveBeenCalledTimes(1)
+      unmount()
+    })
+
+    test('still leaves focus in an open dialog next to a closed one', () => {
+      document.body.innerHTML =
+        '<div role="presentation" style="display: none"><div role="dialog"></div></div>' +
+        '<div role="dialog"><textarea id="edit-message"></textarea></div>'
+      const { unmount } = renderHook(() => useShortcut())
+
+      act(() => mocks.windowFocusedHandler?.())
+
+      expect(mocks.focusMessageInput).not.toHaveBeenCalled()
+      unmount()
+    })
+
     test('leaves focus in another editable control', () => {
       document.body.innerHTML = '<input id="thread-name" />'
       document.getElementById('thread-name')?.focus()

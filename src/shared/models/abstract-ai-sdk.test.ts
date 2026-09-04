@@ -1,4 +1,4 @@
-import type { LanguageModelV3, LanguageModelV3CallOptions } from '@ai-sdk/provider'
+import type { ImageModelV3, LanguageModelV3, LanguageModelV3CallOptions } from '@ai-sdk/provider'
 import { jsonSchema, type ModelMessage, type PrepareStepFunction, type Provider, type ToolSet } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelDependencies } from '../types/adapters'
@@ -8,6 +8,7 @@ import { ApiError, ChatboxAIAPIError, MidStreamApiError } from './errors'
 import type { CallChatCompletionOptions, CallSettings } from './types'
 
 const aiMocks = vi.hoisted(() => ({
+  generateImage: vi.fn(),
   streamText: vi.fn(),
 }))
 
@@ -15,6 +16,7 @@ vi.mock('ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ai')>()
   return {
     ...actual,
+    experimental_generateImage: aiMocks.generateImage,
     streamText: aiMocks.streamText,
   }
 })
@@ -26,6 +28,14 @@ const languageModel: LanguageModelV3 = {
   supportedUrls: {},
   doGenerate: vi.fn(),
   doStream: vi.fn(),
+}
+
+const imageModel: ImageModelV3 = {
+  specificationVersion: 'v3',
+  provider: 'test',
+  modelId: 'test-image-model',
+  maxImagesPerCall: 1,
+  doGenerate: vi.fn(),
 }
 
 class TestModel extends AbstractAISDKModel {
@@ -45,6 +55,12 @@ class TestModel extends AbstractAISDKModel {
 
   protected override getCallSettings(): CallSettings {
     return this.callSettings
+  }
+}
+
+class TestImageModel extends TestModel {
+  protected getImageModel() {
+    return imageModel
   }
 }
 
@@ -123,6 +139,43 @@ describe('AbstractAISDKModel max output tokens', () => {
     await model.chatStream([], {}).next()
 
     expect(aiMocks.streamText.mock.calls[0]?.[0]?.maxOutputTokens).toBe(maxOutputTokens)
+  })
+})
+
+function createImageModel(): TestImageModel {
+  return new TestImageModel(
+    {
+      model: {
+        modelId: 'test-image-model',
+        type: 'image',
+      },
+    },
+    createDependencies()
+  )
+}
+
+describe('AbstractAISDKModel image generation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('forwards the selected aspect ratio to the image model', async () => {
+    aiMocks.generateImage.mockResolvedValue({ images: [] })
+
+    await createImageModel().paint({
+      prompt: 'wide landscape',
+      num: 1,
+      aspectRatio: '16:9',
+    })
+
+    expect(aiMocks.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: imageModel,
+        prompt: 'wide landscape',
+        n: 1,
+        aspectRatio: '16:9',
+      })
+    )
   })
 })
 

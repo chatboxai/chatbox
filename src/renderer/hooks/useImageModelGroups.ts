@@ -49,10 +49,17 @@ export function useImageModelGroups(): ImageModelGroup[] {
 
   const chatboxProvider = providers.find((p) => p.id === ModelProviderEnum.ChatboxAI)
   const openAIProvider = providers.find((p) => p.id === ModelProviderEnum.OpenAI)
+  const openRouterProvider = providers.find((p) => p.id === ModelProviderEnum.OpenRouter)
   const geminiProvider = providers.find((p) => p.id === ModelProviderEnum.Gemini)
   const customGeminiProviders = providers.filter((p) => p.isCustom && p.type === ModelProviderType.Gemini)
+  const customOpenAICompatibleProviders = providers.filter(
+    (p) =>
+      p.isCustom &&
+      (p.type === ModelProviderType.OpenAI || p.type === ModelProviderType.OpenAIResponses || p.type === undefined)
+  )
 
   const openAIImageModels = useProviderImageModels(ModelProviderEnum.OpenAI, !!openAIProvider)
+  const openRouterImageModels = useProviderImageModels(ModelProviderEnum.OpenRouter, !!openRouterProvider)
   const geminiImageModels = useProviderImageModels(
     ModelProviderEnum.Gemini,
     !!geminiProvider || customGeminiProviders.length > 0
@@ -115,15 +122,46 @@ export function useImageModelGroups(): ImageModelGroup[] {
       }
     }
 
+    if (openRouterProvider) {
+      const manualModels = (providerSettingsMap?.[openRouterProvider.id]?.models || [])
+        .filter((model) => model.type === 'image')
+        .map(manualImageModelToOption)
+      const models = mergeImageModels(openRouterImageModels, manualModels)
+      if (models.length > 0) {
+        groups.push({
+          label: openRouterProvider.name,
+          providerId: openRouterProvider.id,
+          models,
+        })
+      }
+    }
+
+    for (const provider of customOpenAICompatibleProviders) {
+      const models = (providerSettingsMap?.[provider.id]?.models || [])
+        .filter((model) => model.type === 'image')
+        .map(manualImageModelToOption)
+      if (models.length > 0) {
+        groups.push({
+          label: provider.name,
+          providerId: provider.id,
+          isCustom: true,
+          models,
+        })
+      }
+    }
+
     return groups
   }, [
     chatboxProvider,
     openAIProvider,
+    openRouterProvider,
     geminiProvider,
     customGeminiProviders,
+    customOpenAICompatibleProviders,
     providerSettingsMap,
     chatboxAIImageModels,
     openAIImageModels,
+    openRouterImageModels,
     geminiImageModels,
   ])
 }

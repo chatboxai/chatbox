@@ -59,6 +59,16 @@ export default class OpenRouter extends AbstractAISDKModel {
     })
   }
 
+  protected getImageModel() {
+    const modelId = this.options.model.modelId
+    if (!modelId) return null
+    return this.getProvider().imageModel(modelId)
+  }
+
+  protected override getMaxImagesPerGenerationRequest() {
+    return 1
+  }
+
   public listModels(): Promise<ProviderModelInfo[]> {
     return fetchRemoteModels(
       {

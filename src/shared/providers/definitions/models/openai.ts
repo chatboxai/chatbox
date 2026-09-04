@@ -9,6 +9,7 @@ import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 import { normalizeOpenAIApiHostAndPath } from '../../../utils/llm_utils'
 import { normalizeOpenAIReasoningOptions } from '../../../utils/reasoning-control'
+import { getOpenAIImageGenerationOptions } from './openai-compatible-image'
 
 interface Options {
   apiKey: string
@@ -88,6 +89,10 @@ export default class OpenAI extends AbstractAISDKModel {
     const provider = this.getProvider()
     const imageModelId = modelId || this.options.model.modelId || 'gpt-image-1'
     return provider.image(imageModelId)
+  }
+
+  protected override getImageGenerationOptions(aspectRatio?: string) {
+    return getOpenAIImageGenerationOptions(this.options.model.modelId, aspectRatio)
   }
 
   protected getCallSettings(options: CallChatCompletionOptions) {

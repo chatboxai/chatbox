@@ -127,6 +127,58 @@ describe('image model catalog', () => {
     expect(getModelManifestMock).not.toHaveBeenCalled()
   })
 
+  it('includes OpenRouter remote and manual image models when the provider is configured', async () => {
+    const settings = createSettings()
+    settings.providers = {
+      [ModelProviderEnum.OpenRouter]: {
+        apiKey: 'openrouter-key',
+        models: [{ modelId: 'google/gemini-3-pro-image', type: 'image', nickname: 'Gemini Image' }],
+      },
+    }
+    getModelManifestMock.mockResolvedValue(manifest([{ modelId: 'openai/gpt-image-1', modelName: 'GPT Image 1' }]))
+
+    await expect(getAvailableImageModels(settings)).resolves.toEqual([
+      { provider: ModelProviderEnum.OpenRouter, modelId: 'openai/gpt-image-1', nickname: 'GPT Image 1' },
+      { provider: ModelProviderEnum.OpenRouter, modelId: 'google/gemini-3-pro-image', nickname: 'Gemini Image' },
+    ])
+  })
+
+  it('includes manually marked image models from custom OpenAI-compatible providers', async () => {
+    const settings = createSettings()
+    settings.providers = {
+      'custom-openai': {
+        apiKey: 'custom-key',
+        models: [
+          { modelId: 'local-chat', type: 'chat' },
+          { modelId: 'flux-local', type: 'image', nickname: 'Flux Local' },
+        ],
+      },
+      'custom-responses': {
+        models: [{ modelId: 'gpt-image-1', type: 'image', nickname: 'Responses Image' }],
+      },
+    }
+    settings.customProviders = [
+      {
+        id: 'custom-openai',
+        name: 'Local OpenAI',
+        type: ModelProviderType.OpenAI,
+        isCustom: true,
+      },
+      {
+        id: 'custom-responses',
+        name: 'Custom Responses',
+        type: ModelProviderType.OpenAIResponses,
+        isCustom: true,
+      },
+    ]
+
+    await expect(getAvailableImageModels(settings)).resolves.toEqual([
+      { provider: 'custom-openai', modelId: 'flux-local', nickname: 'Flux Local' },
+      { provider: 'custom-responses', modelId: 'gpt-image-1', nickname: 'Responses Image' },
+    ])
+    expect(getModelManifestMock).not.toHaveBeenCalled()
+  })
+
   it('keeps OpenAI image models when OAuth credentials are stored but API key mode is active', async () => {
     const settings = createSettings()
     settings.providers = {

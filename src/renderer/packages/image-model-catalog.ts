@@ -154,5 +154,32 @@ export async function getAvailableImageModels(
     )
   }
 
+  if (isBuiltinProviderConfigured(ModelProviderEnum.OpenRouter, settings)) {
+    const remoteModels = await loadRemoteModels(ModelProviderEnum.OpenRouter, settings)
+    catalog.push(
+      ...catalogEntries(
+        ModelProviderEnum.OpenRouter,
+        mergeImageModels(remoteModels, manualImageModels(settings, ModelProviderEnum.OpenRouter))
+      )
+    )
+  }
+
+  for (const provider of customOpenAICompatibleImageProviders(settings)) {
+    catalog.push(...catalogEntries(provider.id, manualImageModels(settings, provider.id)))
+  }
+
   return catalog
+}
+
+function isOpenAICompatibleCustomProviderType(type: ModelProviderType | undefined) {
+  return type === ModelProviderType.OpenAI || type === ModelProviderType.OpenAIResponses || type === undefined
+}
+
+function customOpenAICompatibleImageProviders(settings: Settings) {
+  return (settings.customProviders ?? []).filter(
+    (provider) =>
+      provider.isCustom &&
+      isOpenAICompatibleCustomProviderType(provider.type) &&
+      manualImageModels(settings, provider.id).length > 0
+  )
 }

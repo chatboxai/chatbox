@@ -209,6 +209,18 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     return null
   }
 
+  protected getImageGenerationOptions(aspectRatio?: string): {
+    size?: `${number}x${number}`
+    aspectRatio?: `${number}:${number}`
+  } {
+    if (!aspectRatio || aspectRatio === 'auto') return {}
+    return { aspectRatio: aspectRatio as `${number}:${number}` }
+  }
+
+  protected getMaxImagesPerGenerationRequest(): number | undefined {
+    return undefined
+  }
+
   protected getTextEmbeddingModel(options: CallChatCompletionOptions): EmbeddingModel | null {
     const provider = this.getProvider(options)
     if (provider.embeddingModel) {
@@ -487,18 +499,31 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     if (!imageModel) {
       throw new ApiError('Provider doesnt support image generation')
     }
-    const result = await generateImage({
-      model: imageModel,
-      prompt: params.prompt,
-      // images 暂时不支持
-      n: params.num,
-      abortSignal: signal,
-      // Image generation is billable; network-error retries could double-charge.
-      maxRetries: 0,
-    })
-    const dataUrls = result.images.map((image) => `data:${image.mediaType};base64,${image.base64}`)
-    for (const dataUrl of dataUrls) {
-      await callback?.(dataUrl)
+
+    const maxImagesPerRequest = this.getMaxImagesPerGenerationRequest()
+    const requestSizes = maxImagesPerRequest
+      ? Array.from({ length: Math.ceil(params.num / maxImagesPerRequest) }, (_, index) =>
+          Math.min(maxImagesPerRequest, params.num - index * maxImagesPerRequest)
+        )
+      : [params.num]
+    const dataUrls: string[] = []
+
+    for (const requestSize of requestSizes) {
+      const result = await generateImage({
+        model: imageModel,
+        prompt: params.prompt,
+        // images 暂时不支持
+        n: requestSize,
+        ...this.getImageGenerationOptions(params.aspectRatio),
+        abortSignal: signal,
+        // Image generation is billable; network-error retries could double-charge.
+        maxRetries: 0,
+      })
+      for (const image of result.images) {
+        const dataUrl = `data:${image.mediaType};base64,${image.base64}`
+        await callback?.(dataUrl)
+        dataUrls.push(dataUrl)
+      }
     }
     return dataUrls
   }

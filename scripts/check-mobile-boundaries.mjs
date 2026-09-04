@@ -75,7 +75,7 @@ const expectedChatCommandModules = [
   'src/adapters/mobile-model-dependencies.ts',
   'src/application/createMobileGeneration.ts',
   'src/components/composer/ChatComposer.tsx',
-  'src/components/composer/ModelSelectorBottomSheet.tsx',
+  'src/components/composer/ModelSelectorActionSheet.tsx',
 ]
 const expectedI18nModules = ['src/i18n/MobileI18nBridge.tsx', 'src/i18n/mobile-i18n.ts']
 

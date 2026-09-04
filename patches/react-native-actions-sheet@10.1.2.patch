@@ -1,0 +1,68 @@
+diff --git a/dist/src/hooks/use-scroll-handlers.js b/dist/src/hooks/use-scroll-handlers.js
+index 1c2873d1f006fd92e8bd34207a3e8720df69b798..899b5dd61a8f05408b827a58a65edb8b03d40eeb 100644
+--- a/dist/src/hooks/use-scroll-handlers.js
++++ b/dist/src/hooks/use-scroll-handlers.js
+@@ -126,8 +126,8 @@ export function useScrollHandlers(options) {
+         var maxOffsetX = event.nativeEvent.contentSize.width - layout.current.w;
+         var maxOffsetY = event.nativeEvent.contentSize.height - layout.current.h;
+         offset.current = {
+-            x: x === maxOffsetX || x > maxOffsetX - 5 ? ScrollState.END : x,
+-            y: y === maxOffsetY || y > maxOffsetY - 5 ? ScrollState.END : y,
++            x: maxOffsetX > 5 && (x === maxOffsetX || x > maxOffsetX - 5) ? ScrollState.END : x,
++            y: maxOffsetY > 5 && (y === maxOffsetY || y > maxOffsetY - 5) ? ScrollState.END : y,
+         };
+     }, []);
+     return {
+diff --git a/dist/src/index.js b/dist/src/index.js
+index a5a1305189eab6db868a434209809a645a92951b..a60f5773d397878bf89c2684798960e3c20210dc 100644
+--- a/dist/src/index.js
++++ b/dist/src/index.js
+@@ -607,6 +607,18 @@ export default forwardRef(function ActionSheet(_a, ref) {
+         var oldValue = 0;
+         var isRefreshing = false;
+         var offsets = [];
++        var gestureStartedOnDraggableNode = false;
++        var resetGestureState = function () {
++            prevDeltaY = 0;
++            deltaYOnGestureStart = 0;
++            velocity = 0;
++            start = undefined;
++            oldValue = initialValue.current;
++            isRefreshing = false;
++            blockPan = false;
++            offsets.length = 0;
++            gestureStartedOnDraggableNode = false;
++        };
+         function scrollable(value) {
+             var _a, _b, _c;
+             for (var i = 0; i < draggableNodes.current.length; i++) {
+@@ -651,9 +663,12 @@ export default forwardRef(function ActionSheet(_a, ref) {
+                     x: absoluteX,
+                     y: absoluteY,
+                 };
++                gestureStartedOnDraggableNode = getActiveDraggableNodes(start.x, start.y).length > 0;
+             }
+             var isFullOpen = getCurrentPosition() === 0;
+-            var activeDraggableNodes = getActiveDraggableNodes(start.x, start.y, !isFullOpen || (isFullOpen && !isSwipingDown));
++            var activeDraggableNodes = gestureStartedOnDraggableNode
++                ? getActiveDraggableNodes(start.x, start.y, !isFullOpen || (isFullOpen && !isSwipingDown))
++                : [];
+             if (enableGesturesInScrollView &&
+                 activeDraggableNodes.length > 0 &&
+                 !isRefreshing) {
+@@ -803,6 +818,7 @@ export default forwardRef(function ActionSheet(_a, ref) {
+                     return true;
+                 },
+                 onStartShouldSetPanResponder: function (_event, _gesture) {
++                    resetGestureState();
+                     var activeDraggableNodes = getActiveDraggableNodes(_event.nativeEvent.pageX, _event.nativeEvent.pageY);
+                     for (var _i = 0, activeDraggableNodes_3 = activeDraggableNodes; _i < activeDraggableNodes_3.length; _i++) {
+                         var node = activeDraggableNodes_3[_i];
+@@ -818,6 +834,7 @@ export default forwardRef(function ActionSheet(_a, ref) {
+             })
+             : Gesture.Pan()
+                 .withRef(panGestureRef)
++                .onBegin(resetGestureState)
+                 .onChange(function (event) {
+                 return onChange(event.absoluteX, event.absoluteY, event.translationY);
+             })

@@ -26,6 +26,8 @@ export interface ChatMessageSessionPort {
 export interface ChatMessageServiceDependencies {
   sessions: ChatMessageSessionPort
   generation: ChatGenerationPort
+  /** Runs inside the per-session generation lock before a new turn is persisted. */
+  beforeSend?(sessionId: string, pendingUserMessage: Message): Promise<void>
   createId(): string
   now(): number
 }
@@ -72,6 +74,31 @@ export class ChatMessageValidationError extends Error {
     )
     this.name = 'ChatMessageValidationError'
   }
+}
+
+export class ChatSendPreflightInvalidatedError extends Error {
+  constructor() {
+    super('The active conversation changed while preparing to send. Please try again.')
+    this.name = 'ChatSendPreflightInvalidatedError'
+  }
+}
+
+function sendTargetRevision(session: Session): string {
+  const activeMessages = session.messages
+    .filter((message) => !message.isSummary)
+    .map((message) => ({
+      contentParts: message.contentParts,
+      files: message.files,
+      id: message.id,
+      links: message.links,
+      role: message.role,
+      timestamp: message.timestamp,
+    }))
+  return JSON.stringify({
+    activeMessages,
+    modelId: session.settings?.modelId ?? null,
+    provider: session.settings?.provider ?? null,
+  })
 }
 
 function defaultSessionName(input: ChatMessageInput): string {
@@ -212,10 +239,20 @@ export class ChatMessageService {
       const current = await this.requireSession(sessionId)
       validateInput(request.input, current.settings ?? {})
       assertSessionActionAllowed('submit-message', deriveSessionLockState(current))
-
+      const initialTargetRevision = sendTargetRevision(current)
       const { assistantMessage, userMessage } = this.createTurn(request.input)
+      await this.dependencies.beforeSend?.(sessionId, userMessage)
+      const prepared = await this.requireSession(sessionId)
+      if (sendTargetRevision(prepared) !== initialTargetRevision) {
+        throw new ChatSendPreflightInvalidatedError()
+      }
+      validateInput(request.input, prepared.settings ?? {})
+      assertSessionActionAllowed('submit-message', deriveSessionLockState(prepared))
       const session = await this.dependencies.sessions.updateSessionWithMessages(sessionId, (latest) => {
         if (!latest) throw new Error(`Session ${sessionId} not found`)
+        if (sendTargetRevision(latest) !== initialTargetRevision) {
+          throw new ChatSendPreflightInvalidatedError()
+        }
         return { ...latest, messages: [...latest.messages, userMessage, assistantMessage] }
       })
       const result = { assistantMessage, session, userMessage }

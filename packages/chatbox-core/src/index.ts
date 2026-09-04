@@ -86,6 +86,7 @@ export {
   type ChatMessageSessionPort,
   type ChatMessageValidationCode,
   ChatMessageValidationError,
+  ChatSendPreflightInvalidatedError,
   type ChatSendResult,
   type SendExistingSessionRequest,
   type SendNewSessionRequest,
@@ -101,6 +102,7 @@ export {
   type CompactionSessionPort,
   type CompactionSummaryPort,
   findLastCompactionBoundaryMessage,
+  generateCompactionSummaryWithModel,
   isAutoCompactionEnabled,
 } from './application/context'
 export { ModelFactory, type ModelFactoryOptions, type ModelResolver } from './application/model'
@@ -138,6 +140,22 @@ export {
   type UpdateSessionOptions,
 } from './application/session'
 export { type SettingsListener, SettingsService, type SettingsServiceOptions } from './application/settings'
+export {
+  DEFAULT_COMPACTION_THRESHOLD,
+  estimateDraftTokensImmediately,
+  FALLBACK_CONTEXT_WINDOW_TOKENS,
+  getCompactionThresholdTokens,
+  getRawTailTokenBudget,
+  LONG_DRAFT_TOKENIZATION_THRESHOLD,
+  OUTPUT_RESERVE_TOKENS,
+  type PortableTokenEstimationResult,
+  resolveModelContextWindow,
+  selectTokenEstimationContext,
+  type TokenBreakdown,
+  type TokenEstimationModel,
+  type TokenEstimationRequest,
+  TokenEstimationService,
+} from './application/token-estimation'
 export {
   AgentModeEntrySchema,
   type BuiltinProviderBaseInfo,

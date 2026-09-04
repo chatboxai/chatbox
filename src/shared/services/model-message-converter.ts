@@ -179,6 +179,7 @@ async function convertContentParts<T extends TextPart | ImagePart | FilePart>(
           return { type: 'text', text: c.text } as T
         } else if (c.type === 'image') {
           if (options?.modelSupportVision === false) {
+            if (!c.ocrResult) return null
             return { type: 'text', text: `This is an image, OCR Result: \n${c.ocrResult}` } as T
           }
           const resolved = await resolveImageData(c.storageKey, resolveImage)
@@ -213,7 +214,7 @@ type EffectiveReasoningReplay = false | 'text' | 'signed-only'
 async function convertAssistantContentParts(
   contentParts: MessageContentParts,
   resolveImage: ModelImageResolver,
-  options?: { preserveReasoning?: EffectiveReasoningReplay }
+  options?: { modelSupportVision?: boolean; preserveReasoning?: EffectiveReasoningReplay }
 ): Promise<Array<TextPart | FilePart | ToolCallPart | ReasoningPart>> {
   const results: Array<TextPart | FilePart | ToolCallPart | ReasoningPart | null> = await Promise.all(
     contentParts.map(async (c) => {
@@ -261,6 +262,10 @@ async function convertAssistantContentParts(
         } satisfies ReasoningPart
       }
       if (c.type === 'image') {
+        if (options?.modelSupportVision === false) {
+          if (!c.ocrResult) return null
+          return { type: 'text', text: `This is an image, OCR Result: \n${c.ocrResult}` } as TextPart
+        }
         const resolved = await resolveImageData(c.storageKey, resolveImage)
         if (!resolved) return null
         return { type: 'file', data: resolved.base64Data, mediaType: resolved.mediaType } as FilePart

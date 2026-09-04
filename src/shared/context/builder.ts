@@ -230,7 +230,7 @@ function applyMessageLimit(messages: Message[], maxCount: number): Message[] {
   return head ? [head, ...result] : result
 }
 
-async function injectAttachments(
+export async function injectAttachments(
   messages: Message[],
   resolver: AttachmentResolver,
   modelSupportToolUseForFile: boolean,

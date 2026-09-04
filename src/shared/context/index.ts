@@ -1,4 +1,4 @@
-export { buildContext, prepareContextMessages, selectContextMessages } from './builder'
+export { buildContext, injectAttachments, prepareContextMessages, selectContextMessages } from './builder'
 export { findLatestApplicableCompactionPoint } from './compaction-points'
 export { isContextEligibleMessage } from './message-eligibility'
 export { findRecentRoundsStartIndex } from './rounds'

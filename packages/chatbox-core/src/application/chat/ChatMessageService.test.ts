@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Message, Session } from '../../types'
-import { ChatMessageService, type ChatMessageValidationError } from './ChatMessageService'
+import {
+  ChatMessageService,
+  type ChatMessageValidationError,
+  ChatSendPreflightInvalidatedError,
+} from './ChatMessageService'
 
-function createHarness(initial?: Session) {
+function createHarness(
+  initial?: Session,
+  beforeSend?: (sessionId: string, pendingUserMessage: Message) => Promise<void>
+) {
   const sessions = new Map<string, Session>(initial ? [[initial.id, initial]] : [])
   let id = 0
   let now = 100
@@ -39,6 +46,7 @@ function createHarness(initial?: Session) {
       },
     },
     generation: { orchestrate: generation },
+    beforeSend,
     createId: () => `message-${++id}`,
     now: () => ++now,
   })
@@ -121,6 +129,100 @@ describe('ChatMessageService', () => {
     expect(persisted).toHaveBeenCalledOnce()
     expect(harness.generation).toHaveBeenCalledOnce()
     expect(harness.sessions.get(session.id)?.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
+  })
+
+  it('runs the pre-send hook inside the send flight before persisting the new turn', async () => {
+    const session: Session = {
+      id: 'existing-pre-send',
+      name: 'Existing',
+      type: 'chat',
+      settings: { provider: 'openai', modelId: 'gpt-test' },
+      messages: [],
+    }
+    const events: string[] = []
+    const harness = createHarness(session, () => {
+      events.push('before-send')
+      return Promise.resolve()
+    })
+
+    await harness.service.sendExistingSession(session.id, {
+      input: { text: 'Next turn' },
+      onMessagesPersisted: () => {
+        events.push('persisted')
+      },
+    })
+
+    expect(events).toEqual(['before-send', 'persisted'])
+  })
+
+  it('preserves persistence callbacks and the existing graph when pre-send compaction fails', async () => {
+    const session: Session = {
+      id: 'existing-compaction-failure',
+      name: 'Existing',
+      type: 'chat',
+      settings: { provider: 'openai', modelId: 'gpt-test' },
+      messages: [{ id: 'old', role: 'user', contentParts: [{ type: 'text', text: 'old' }] }],
+    }
+    const harness = createHarness(session, () => Promise.reject(new Error('summary failed')))
+    const persisted = vi.fn()
+
+    await expect(
+      harness.service.sendExistingSession(session.id, {
+        input: { text: 'Unpersisted draft' },
+        onMessagesPersisted: persisted,
+      })
+    ).rejects.toThrow('summary failed')
+
+    expect(persisted).not.toHaveBeenCalled()
+    expect(harness.generation).not.toHaveBeenCalled()
+    expect(harness.sessions.get(session.id)?.messages).toEqual(session.messages)
+  })
+
+  it('rejects a delayed preflight when the active thread changes before persistence', async () => {
+    const initialMessage: Message = {
+      id: 'initial-thread-message',
+      role: 'user',
+      contentParts: [{ type: 'text', text: 'Initial thread' }],
+    }
+    const switchedMessage: Message = {
+      id: 'switched-thread-message',
+      role: 'user',
+      contentParts: [{ type: 'text', text: 'Switched thread' }],
+    }
+    const session: Session = {
+      id: 'preflight-thread-race',
+      name: 'Thread race',
+      type: 'chat',
+      settings: { provider: 'openai', modelId: 'gpt-test' },
+      messages: [initialMessage],
+    }
+    let releasePreflight: (() => void) | undefined
+    const preflight = new Promise<void>((resolve) => {
+      releasePreflight = resolve
+    })
+    const beforeSend = vi.fn(() => preflight)
+    const harness = createHarness(session, beforeSend)
+    const persisted = vi.fn()
+
+    const send = harness.service.sendExistingSession(session.id, {
+      input: { text: 'Must stay on initial thread' },
+      onMessagesPersisted: persisted,
+    })
+    await vi.waitFor(() => expect(beforeSend).toHaveBeenCalledOnce())
+    expect(beforeSend).toHaveBeenCalledWith(
+      session.id,
+      expect.objectContaining({
+        role: 'user',
+        contentParts: [{ type: 'text', text: 'Must stay on initial thread' }],
+      })
+    )
+    harness.sessions.set(session.id, { ...session, messages: [switchedMessage] })
+    releasePreflight?.()
+
+    await expect(send).rejects.toBeInstanceOf(ChatSendPreflightInvalidatedError)
+    expect(persisted).not.toHaveBeenCalled()
+    expect(harness.generation).not.toHaveBeenCalled()
+    expect(harness.sessions.get(session.id)?.messages).toEqual([switchedMessage])
   })
 
   it('preserves the previous answer as a fork when retrying', async () => {

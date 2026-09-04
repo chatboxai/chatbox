@@ -1,9 +1,8 @@
 import { buildContext } from '@shared/context'
-import { convertToModelMessages } from '@shared/services/model-message-converter'
 import type { Message, MessageContentParts } from '@shared/types'
-import { sequenceMessages } from '@shared/utils/message'
 import type { ToolSet } from 'ai'
 import type { GenerationPreparationPort, GenerationPreparationRequest } from './GenerationService'
+import { prepareModelMessages } from './model-message-preparation'
 
 export interface BasicGenerationToolPreparation {
   fallbackToolCallPart?: MessageContentParts[number]
@@ -76,24 +75,19 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
         () => `generation-instructions-${request.session.id}`
       )
     }
-    if (!request.model.isSupportSystemMessage()) {
-      promptMessages = promptMessages.map((message) =>
-        message.role === 'system' ? { ...message, role: 'user' as const } : message
-      )
-    }
-    promptMessages = sequenceMessages(promptMessages)
-    const coreMessages = await convertToModelMessages(
-      promptMessages,
-      (storageKey) => request.attachments.read(storageKey),
-      {
-        modelSupportVision: request.model.isSupportVision(),
+    const preparedMessages = await prepareModelMessages({
+      messages: promptMessages,
+      model: request.model,
+      resolveImage: (storageKey) => request.attachments.read(storageKey),
+      conversion: {
         ensureGoogleFunctionCallSignatures: request.model.apiStyle === 'google',
-      }
-    )
+      },
+    })
+    promptMessages = preparedMessages.promptMessages
 
     return {
       promptMessages,
-      coreMessages,
+      coreMessages: preparedMessages.coreMessages,
       tools: tools.tools,
       chatOptions: {
         sessionId: request.session.id,

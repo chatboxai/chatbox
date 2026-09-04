@@ -363,28 +363,5 @@
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": "biome format --write --no-errors-on-unmatched"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@parcel/watcher",
-      "@sentry/cli",
-      "core-js",
-      "core-js-pure",
-      "electron",
-      "esbuild",
-      "msw",
-      "protobufjs",
-      "sharp"
-    ],
-    "overrides": {
-      "@tanstack/router-generator": "1.120.15",
-      "@tanstack/router-plugin": "1.120.15",
-      "@mastra/libsql": "0.13.2",
-      "@mastra/rag": "1.0.8",
-      "handlebars": ">=4.7.9",
-      "convict": ">=6.2.5",
-      "fast-xml-parser": ">=5.5.7",
-      "shell-quote": "1.10.0"
-    }
-  },
   "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
 }

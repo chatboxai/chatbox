@@ -1,8 +1,5 @@
 packages:
-  - .
-  - apps/*
   - packages/*
-  - release/app
 
 # Developers on Windows ARM64 may use both native ARM64 and x64-emulated Node
 # processes against the same checkout. Keep native optional dependencies for
@@ -25,6 +22,46 @@ minimumReleaseAgeExclude:
 # deprecated native optional dependency is unavailable.
 ignoredOptionalDependencies:
   - zipfile
+
+# Dependency build scripts are denied by default. `strictDepBuilds` fails the
+# install when a dependency ships an install/postinstall script that is not
+# listed below, so every script-bearing dependency needs an explicit decision.
+ignoreScripts: false
+strictDepBuilds: true
+dangerouslyAllowAllBuilds: false
+allowBuilds:
+  # Downloads the Electron binary that `pnpm dev`, `pnpm exec electron` and the
+  # local packaging scripts run against; no other package supplies it.
+  electron: true
+  # Builds the native binding used by `pnpm mobile:assets` to generate the iOS
+  # and Android icons and splash screens.
+  sharp: true
+
+  # The remaining install scripts are either compile-from-source fallbacks whose
+  # prebuilt binaries already arrive through optionalDependencies
+  # (@parcel/watcher, @sentry/cli, esbuild), or scripts with no effect on this
+  # repo: core-js and core-js-pure print a funding banner, protobufjs prints a
+  # version-scheme warning, msw copies a service worker only when package.json
+  # declares an `msw` key, and electron-winstaller stages 7-Zip for the Squirrel
+  # target while Windows packaging builds nsis.
+  "@parcel/watcher": false
+  "@sentry/cli": false
+  core-js: false
+  core-js-pure: false
+  electron-winstaller: false
+  esbuild: false
+  msw: false
+  protobufjs: false
+
+overrides:
+  "@tanstack/router-generator": 1.120.15
+  "@tanstack/router-plugin": 1.120.15
+  "@mastra/libsql": 0.13.2
+  "@mastra/rag": 1.0.8
+  handlebars: ">=4.7.9"
+  convict: ">=6.2.5"
+  fast-xml-parser: ">=5.5.7"
+  shell-quote: 1.10.0
 
 patchedDependencies:
   fflate@0.8.3: patches/fflate@0.8.3.patch

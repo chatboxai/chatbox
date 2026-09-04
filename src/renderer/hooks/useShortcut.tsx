@@ -40,6 +40,40 @@ function getRouteSessionId() {
   return sessionRouteMatch?.[1] ? decodeURIComponent(sessionRouteMatch[1]) : null
 }
 
+// When the window regains focus the OS restores it to whatever had it before
+// (the message edit dialog's textarea, a rename input). Moving it to the
+// composer in that state throws the user out of what they were editing (#3830).
+function isRendered(element: Element) {
+  for (let node: Element | null = element; node; node = node.parentElement) {
+    if (node.getAttribute('aria-hidden') === 'true' || (node as HTMLElement).hidden) {
+      return false
+    }
+    const style = window.getComputedStyle(node)
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return false
+    }
+  }
+  return true
+}
+
+// A dialog can be mounted while closed (MUI `keepMounted`, e.g. SearchDialog in
+// __root.tsx): its `role="dialog"` node stays in the DOM under a hidden ancestor,
+// so only a rendered dialog counts as open.
+function hasOpenDialog() {
+  return Array.from(document.querySelectorAll('[role="dialog"]')).some(isRendered)
+}
+
+function shouldAutoFocusMessageInput() {
+  if (hasOpenDialog()) {
+    return false
+  }
+  const active = document.activeElement
+  if (!active || active.id === dom.messageInputID) {
+    return true
+  }
+  return !(active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || (active as HTMLElement).isContentEditable)
+}
+
 export default function useShortcut() {
   const isSmallScreen = useIsSmallScreen()
 
@@ -49,7 +83,7 @@ export default function useShortcut() {
     }
     const focusMessageInput = () => {
       // 大屏幕下，窗口显示时自动聚焦输入框
-      if (!isSmallScreen) {
+      if (!isSmallScreen && shouldAutoFocusMessageInput()) {
         dom.focusMessageInput()
       }
     }

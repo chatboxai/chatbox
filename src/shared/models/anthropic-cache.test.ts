@@ -97,6 +97,22 @@ describe('addAnthropicCacheControl', () => {
     expect(anthropic.thinking).toEqual({ type: 'enabled', budgetTokens: 1000 })
   })
 
+  it('adds 5m TTL when explicitly requested', () => {
+    const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }]
+    const result = addAnthropicCacheControl(messages, '5m')
+    const anthropic = result[0].providerOptions?.anthropic as Record<string, unknown>
+
+    expect(anthropic.cacheControl).toEqual({ type: 'ephemeral', ttl: '5m' })
+  })
+
+  it('adds 1h TTL when explicitly requested', () => {
+    const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }]
+    const result = addAnthropicCacheControl(messages, '1h')
+    const anthropic = result[0].providerOptions?.anthropic as Record<string, unknown>
+
+    expect(anthropic.cacheControl).toEqual({ type: 'ephemeral', ttl: '1h' })
+  })
+
   it('handles no system message with only one user message', () => {
     const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'only one' }] }]
     const result = addAnthropicCacheControl(messages)

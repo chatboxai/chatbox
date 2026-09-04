@@ -120,8 +120,6 @@ const ProviderBaseInfoSchema = z.discriminatedUnion('isCustom', [
   CustomProviderBaseInfoSchema,
 ])
 
-const ClaudeCacheTTLSchema = z.enum(['auto', '5m', '1h'])
-
 const ClaudeParamsSchema = z.object({
   thinking: z
     .object({
@@ -131,7 +129,6 @@ const ClaudeParamsSchema = z.object({
     .optional()
     .catch(undefined),
   effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().catch(undefined),
-  cacheTTL: ClaudeCacheTTLSchema.optional().catch('auto'),
 })
 
 const OpenAIParamsSchema = z.object({
@@ -198,6 +195,7 @@ export const GlobalSessionSettingsSchema = z.object({
 
 export const SessionSettingsSchema = GlobalSessionSettingsSchema.extend({
   provider: z.string().optional().catch(undefined),
+  cacheTTL: z.enum(['auto', '5m', '1h']).optional().catch('auto'),
   modelId: z.string().optional().catch(undefined),
   dalleStyle: z.enum(['vivid', 'natural']).optional().catch('vivid'),
   imageGenerateNum: z.number().optional().catch(1),

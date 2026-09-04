@@ -133,14 +133,7 @@ export default class Claude extends AbstractAISDKModel {
   }
 
   public async chat(messages: ModelMessage[], options: CallChatCompletionOptions): Promise<StreamTextResult> {
-    const ttl =
-      this.options.cacheTTL === '5m'
-        ? '5m'
-        : this.options.cacheTTL === '1h'
-          ? '1h'
-          : messages.length >= 10
-            ? '1h'
-            : '5m'
+    const ttl = this.options.cacheTTL === '5m' || this.options.cacheTTL === '1h' ? this.options.cacheTTL : undefined
     return super.chat(addAnthropicCacheControl(messages, ttl), options)
   }
 
@@ -148,14 +141,7 @@ export default class Claude extends AbstractAISDKModel {
     messages: ModelMessage[],
     options: ChatStreamOptions
   ): AsyncGenerator<ModelStreamPart<T>> {
-    const ttl =
-      this.options.cacheTTL === '5m'
-        ? '5m'
-        : this.options.cacheTTL === '1h'
-          ? '1h'
-          : messages.length >= 10
-            ? '1h'
-            : '5m'
+    const ttl = this.options.cacheTTL === '5m' || this.options.cacheTTL === '1h' ? this.options.cacheTTL : undefined
     yield* super.chatStream<T>(addAnthropicCacheControl(messages, ttl), options)
   }
 

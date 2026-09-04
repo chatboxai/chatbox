@@ -519,16 +519,10 @@ export function ChatConfig({
             {t('Prompt Cache')}
           </Text>
           <SegmentedControl
-            value={settings?.providerOptions?.claude?.cacheTTL ?? 'auto'}
+            value={settings?.cacheTTL ?? 'auto'}
             onChange={(value) =>
               onSettingsChange({
-                providerOptions: {
-                  ...settings?.providerOptions,
-                  claude: {
-                    ...settings?.providerOptions?.claude,
-                    cacheTTL: value as 'auto' | '5m' | '1h',
-                  },
-                },
+                cacheTTL: value as 'auto' | '5m' | '1h',
               })
             }
             data={[

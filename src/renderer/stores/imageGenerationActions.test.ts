@@ -12,6 +12,17 @@ const getImageMock = vi.fn()
 const setCurrentGeneratingIdMock = vi.fn()
 const setCurrentRecordIdMock = vi.fn()
 const trackEventMock = vi.fn()
+const getImageModelCapabilitiesMock = vi.fn()
+const getModelMock = vi.fn()
+const addGeneratedImageMock = vi.fn()
+const setBlobMock = vi.fn()
+const removeBlobMock = vi.fn()
+let currentGeneratingId: string | null = null
+
+vi.mock('@shared/providers', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@shared/providers')>()
+  return { ...actual, getModel: getModelMock }
+})
 
 vi.mock('@/adapters', () => ({
   createModelDependencies: vi.fn(async () => ({
@@ -21,6 +32,13 @@ vi.mock('@/adapters', () => ({
   })),
 }))
 
+vi.mock('@/adapters/CurrentBlobStorage', () => ({
+  currentBlobStorage: {
+    set: setBlobMock,
+    remove: removeBlobMock,
+  },
+}))
+
 vi.mock('@/packages/remote', () => ({
   IMAGE_GENERATION_POLL_INTERVAL_MS: 2000,
   submitImageGeneration: submitImageGenerationMock,
@@ -28,15 +46,19 @@ vi.mock('@/packages/remote', () => ({
   pollImageTask: pollImageTaskMock,
 }))
 
+vi.mock('@/packages/image-model-catalog', () => ({
+  getImageModelCapabilities: getImageModelCapabilitiesMock,
+}))
+
 vi.mock('./imageGenerationStore', () => ({
   IMAGE_GEN_LIST_QUERY_KEY: 'image-gen-list',
   IMAGE_GEN_QUERY_KEY: 'image-gen',
   createRecord: createRecordMock,
   updateRecord: updateRecordMock,
-  addGeneratedImage: vi.fn(),
+  addGeneratedImage: addGeneratedImageMock,
   imageGenerationStore: {
     getState: () => ({
-      currentGeneratingId: null,
+      currentGeneratingId,
       currentRecordId: null,
       setCurrentGeneratingId: setCurrentGeneratingIdMock,
       setCurrentRecordId: setCurrentRecordIdMock,
@@ -55,6 +77,7 @@ vi.mock('./settingsStore', () => ({
   settingsStore: {
     getState: () => ({
       licenseKey: 'license-key',
+      getSettings: () => ({ providers: {} }),
     }),
   },
 }))
@@ -74,6 +97,7 @@ vi.mock('@/lib/utils', () => ({
 
 vi.mock('@/platform', () => ({
   default: {
+    getConfig: vi.fn().mockResolvedValue({ uuid: 'config-1' }),
     getImageGenerationStorage: () => ({
       getById: getImageGenerationByIdMock,
     }),
@@ -85,12 +109,23 @@ vi.mock('@/storage', () => ({
 }))
 
 vi.mock('@/storage/StoreStorage', () => ({
-  StorageKeyGenerator: {},
+  StorageKeyGenerator: {
+    picture: vi.fn(() => 'generated-blob-key'),
+  },
 }))
 
 describe('imageGenerationActions reference image payload', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getModelMock.mockReset()
+    getImageModelCapabilitiesMock.mockReset().mockResolvedValue(undefined)
+    addGeneratedImageMock.mockResolvedValue({ id: 'record-1', generatedImages: ['generated-blob-key'] })
+    setBlobMock.mockResolvedValue(undefined)
+    removeBlobMock.mockResolvedValue(undefined)
+    currentGeneratingId = null
+    setCurrentGeneratingIdMock.mockImplementation((id: string | null) => {
+      currentGeneratingId = id
+    })
 
     createRecordMock.mockResolvedValue({ id: 'record-1', createdAt: 1_000 })
     updateRecordMock.mockImplementation(async (id: string, patch: Record<string, unknown>) => ({ id, ...patch }))
@@ -204,6 +239,65 @@ describe('imageGenerationActions reference image payload', () => {
     releasePersistence?.()
     await handlePromise
     await vi.waitFor(() => expect(submitImageGenerationMock).toHaveBeenCalledOnce())
+  })
+
+  it('claims the generation lock before creating the durable record', async () => {
+    let resolveRecord: ((record: { id: string; createdAt: number }) => void) | undefined
+    createRecordMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRecord = resolve
+        })
+    )
+    const { startImageGeneration } = await import('./imageGenerationActions')
+    const params = {
+      prompt: 'make an image',
+      referenceImages: [],
+      model: { provider: 'chatbox-ai', modelId: 'gpt-image-1' },
+    }
+
+    const firstStart = startImageGeneration(params)
+    await vi.waitFor(() => expect(currentGeneratingId).not.toBeNull())
+    await expect(startImageGeneration(params)).rejects.toThrow('Another image is being generated')
+    expect(createRecordMock).toHaveBeenCalledOnce()
+
+    resolveRecord?.({ id: 'record-1', createdAt: 1_000 })
+    const handle = await firstStart
+    await handle.completion
+  })
+
+  it('marks a record cancelled when Stop wins the durable-create race', async () => {
+    let resolveRecord: ((record: { id: string; createdAt: number }) => void) | undefined
+    createRecordMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRecord = resolve
+        })
+    )
+    const onRecordCreated = vi.fn()
+    const { cancelGeneration, startImageGeneration } = await import('./imageGenerationActions')
+
+    const start = startImageGeneration(
+      {
+        prompt: 'make an image',
+        referenceImages: ['temporary-reference'],
+        model: { provider: 'openrouter', modelId: 'seedream' },
+      },
+      { onRecordCreated }
+    )
+    await vi.waitFor(() => expect(currentGeneratingId).not.toBeNull())
+
+    cancelGeneration()
+    resolveRecord?.({ id: 'record-cancelled', createdAt: 1_000 })
+
+    await expect(start).rejects.toThrow('Image generation was cancelled')
+    expect(onRecordCreated).toHaveBeenCalledWith({ id: 'record-cancelled', createdAt: 1_000 })
+    expect(updateRecordMock).toHaveBeenCalledWith(
+      'record-cancelled',
+      expect.objectContaining({ status: 'error', error: 'Image generation was cancelled.' })
+    )
+    expect(currentGeneratingId).toBeNull()
+    expect(getModelMock).not.toHaveBeenCalled()
   })
 
   it('returns the terminal record when resuming an existing backend task', async () => {
@@ -342,5 +436,326 @@ describe('imageGenerationActions reference image payload', () => {
         })
       )
     })
+  })
+
+  it('blocks OpenRouter when a required stored reference cannot be resolved', async () => {
+    const paintMock = vi.fn()
+    getImageMock.mockResolvedValueOnce(undefined)
+    getModelMock.mockReturnValue({ paint: paintMock })
+
+    const { createAndGenerate } = await import('./imageGenerationActions')
+    await createAndGenerate({
+      prompt: 'edit the image',
+      referenceImages: ['missing-storage-key'],
+      model: { provider: 'openrouter', modelId: 'edit-model' },
+      imageGenerateNum: 1,
+    })
+
+    await vi.waitFor(() => {
+      expect(updateRecordMock).toHaveBeenCalledWith(
+        'record-1',
+        expect.objectContaining({
+          status: 'error',
+          error: expect.stringContaining('A reference image could not be loaded'),
+        })
+      )
+    })
+    expect(getImageMock).toHaveBeenCalledWith('missing-storage-key')
+    expect(getModelMock).not.toHaveBeenCalled()
+    expect(paintMock).not.toHaveBeenCalled()
+    expect(trackEventMock).not.toHaveBeenCalled()
+  })
+
+  it('blocks OpenRouter when any selected reference cannot be resolved', async () => {
+    const paintMock = vi.fn()
+    getImageMock.mockImplementation(async (key: string) =>
+      key === 'stored-reference' ? 'data:image/png;base64,AAAA' : undefined
+    )
+    getModelMock.mockReturnValue({ paint: paintMock })
+
+    const { createAndGenerate } = await import('./imageGenerationActions')
+    await createAndGenerate({
+      prompt: 'edit the image',
+      referenceImages: ['https://example.com/reference.png', 'stored-reference', 'missing-storage-key'],
+      model: { provider: 'openrouter', modelId: 'edit-model' },
+      imageGenerateNum: 1,
+    })
+
+    await vi.waitFor(() => {
+      expect(updateRecordMock).toHaveBeenCalledWith(
+        'record-1',
+        expect.objectContaining({
+          status: 'error',
+          error: expect.stringContaining('A reference image could not be loaded'),
+        })
+      )
+    })
+    expect(getModelMock).not.toHaveBeenCalled()
+    expect(paintMock).not.toHaveBeenCalled()
+    expect(trackEventMock).not.toHaveBeenCalled()
+  })
+
+  it('validates catalog capabilities for a new prompt-only request before calling the provider', async () => {
+    getImageModelCapabilitiesMock.mockResolvedValueOnce({ aspectRatio: null, inputReferences: { min: 1 } })
+    const { startImageGeneration } = await import('./imageGenerationActions')
+    const handle = await startImageGeneration({
+      prompt: 'edit an image',
+      referenceImages: [],
+      model: { provider: 'openrouter', modelId: 'edit-model' },
+    })
+    const record = await handle.completion
+    expect(record).toMatchObject({
+      status: 'error',
+      error: expect.stringContaining('requires at least 1 reference image'),
+    })
+    expect(getModelMock).not.toHaveBeenCalled()
+    expect(currentGeneratingId).toBeNull()
+  })
+
+  it('reloads OpenRouter capabilities before retrying and blocks an unsupported request', async () => {
+    getImageGenerationByIdMock.mockResolvedValueOnce({
+      id: 'record-openrouter',
+      prompt: 'make an image',
+      referenceImages: [],
+      generatedImages: [],
+      createdAt: 1_000,
+      model: { provider: 'openrouter', modelId: 'seedream' },
+      imageGenerateNum: 1,
+      aspectRatio: '4:3',
+      status: 'error',
+    })
+    getImageModelCapabilitiesMock.mockResolvedValueOnce({
+      aspectRatio: { values: ['1:1', '16:9'] },
+      inputReferences: null,
+    })
+
+    const { retryGeneration } = await import('./imageGenerationActions')
+    await retryGeneration('record-openrouter')
+
+    await vi.waitFor(() => {
+      expect(updateRecordMock).toHaveBeenCalledWith(
+        'record-openrouter',
+        expect.objectContaining({
+          status: 'error',
+          error: expect.stringContaining('Choose Auto or one of: 1:1, 16:9'),
+        })
+      )
+    })
+    expect(getModelMock).not.toHaveBeenCalled()
+  })
+
+  it('claims the generation lock before loading retry capabilities', async () => {
+    let resolveCatalog: ((models: undefined) => void) | undefined
+    getImageGenerationByIdMock.mockResolvedValueOnce({
+      id: 'record-openrouter',
+      prompt: 'make an image',
+      referenceImages: [],
+      generatedImages: [],
+      createdAt: 1_000,
+      model: { provider: 'openrouter', modelId: 'seedream' },
+      imageGenerateNum: 1,
+      status: 'error',
+    })
+    getImageModelCapabilitiesMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCatalog = resolve
+        })
+    )
+    getModelMock.mockReturnValue({ paint: vi.fn().mockResolvedValue([]) })
+
+    const { retryGeneration } = await import('./imageGenerationActions')
+    const firstRetry = retryGeneration('record-openrouter')
+
+    await vi.waitFor(() => expect(getImageModelCapabilitiesMock).toHaveBeenCalledOnce())
+    await expect(retryGeneration('record-openrouter')).rejects.toThrow('Another image is being generated')
+    expect(getImageGenerationByIdMock).toHaveBeenCalledTimes(1)
+
+    resolveCatalog?.(undefined)
+    await firstRetry
+    await vi.waitFor(() => expect(currentGeneratingId).toBeNull())
+  })
+
+  it('settles a cancelled retry before releasing its generation lock', async () => {
+    let resolveCatalog: ((models: undefined) => void) | undefined
+    getImageGenerationByIdMock.mockResolvedValueOnce({
+      id: 'record-openrouter',
+      prompt: 'make an image',
+      referenceImages: [],
+      generatedImages: [],
+      createdAt: 1_000,
+      model: { provider: 'openrouter', modelId: 'seedream' },
+      imageGenerateNum: 1,
+      status: 'error',
+    })
+    getImageModelCapabilitiesMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCatalog = resolve
+        })
+    )
+
+    const { cancelGeneration, retryGeneration, startImageGeneration } = await import('./imageGenerationActions')
+    const cancelledRetry = retryGeneration('record-openrouter')
+    await vi.waitFor(() => expect(getImageModelCapabilitiesMock).toHaveBeenCalledOnce())
+
+    cancelGeneration()
+    expect(currentGeneratingId).toBe('record-openrouter')
+    await expect(
+      startImageGeneration({
+        prompt: 'a new image',
+        referenceImages: [],
+        model: { provider: 'chatbox-ai', modelId: 'gpt-image-1' },
+      })
+    ).rejects.toThrow('Another image is being generated')
+
+    resolveCatalog?.(undefined)
+    await cancelledRetry
+    await vi.waitFor(() => expect(currentGeneratingId).toBeNull())
+
+    expect(getModelMock).not.toHaveBeenCalled()
+    expect(updateRecordMock).toHaveBeenCalledWith(
+      'record-openrouter',
+      expect.objectContaining({ status: 'error', error: 'Image generation was cancelled.' })
+    )
+    expect(currentGeneratingId).toBeNull()
+
+    const activeHandle = await startImageGeneration({
+      prompt: 'a new image',
+      referenceImages: [],
+      model: { provider: 'chatbox-ai', modelId: 'gpt-image-1' },
+    })
+    await activeHandle.completion
+  })
+
+  it('retains completed output while a retry appends a new direct result', async () => {
+    const record = {
+      id: 'record-openrouter',
+      prompt: 'make an image',
+      referenceImages: [],
+      generatedImages: ['picture:image-gen:old-output'],
+      createdAt: 1_000,
+      model: { provider: 'openrouter', modelId: 'seedream' },
+      imageGenerateNum: 1,
+      status: 'error',
+    }
+    getImageGenerationByIdMock.mockResolvedValue(record)
+    getImageModelCapabilitiesMock.mockResolvedValue(undefined)
+    getModelMock.mockReturnValue({
+      paint: vi.fn().mockResolvedValue(['data:image/png;base64,NEW']),
+    })
+
+    const { retryGeneration } = await import('./imageGenerationActions')
+    await retryGeneration('record-openrouter')
+
+    await vi.waitFor(() => expect(addGeneratedImageMock).toHaveBeenCalledOnce())
+    const pendingUpdate = updateRecordMock.mock.calls.find(
+      ([id, patch]) => id === 'record-openrouter' && patch.status === 'pending'
+    )?.[1]
+    expect(pendingUpdate).not.toHaveProperty('generatedImages')
+    expect(pendingUpdate).not.toHaveProperty('generatedImageThumbnails')
+    expect(removeBlobMock).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(currentGeneratingId).toBeNull())
+  })
+
+  it('removes a generated blob when Stop wins before the record association', async () => {
+    let finishBlobWrite: (() => void) | undefined
+    setBlobMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishBlobWrite = resolve
+        })
+    )
+    const paintMock = vi.fn(
+      async (
+        _params: unknown,
+        _signal: AbortSignal,
+        onImage: (picBase64: string) => Promise<void>
+      ): Promise<string[]> => {
+        await onImage('data:image/png;base64,OUTPUT')
+        return ['data:image/png;base64,OUTPUT']
+      }
+    )
+    getModelMock.mockReturnValue({ paint: paintMock })
+
+    const { cancelGeneration, startImageGeneration } = await import('./imageGenerationActions')
+    const handle = await startImageGeneration({
+      prompt: 'make an image',
+      referenceImages: [],
+      model: { provider: 'openrouter', modelId: 'seedream' },
+    })
+    await vi.waitFor(() => expect(setBlobMock).toHaveBeenCalledOnce())
+
+    cancelGeneration()
+    finishBlobWrite?.()
+
+    await expect(handle.completion).resolves.toMatchObject({
+      id: 'record-1',
+      status: 'error',
+      error: 'Image generation was cancelled.',
+    })
+    expect(removeBlobMock).toHaveBeenCalledWith('generated-blob-key')
+    expect(addGeneratedImageMock).not.toHaveBeenCalled()
+    expect(currentGeneratingId).toBeNull()
+  })
+
+  it('removes a generated blob when its record association fails', async () => {
+    addGeneratedImageMock.mockRejectedValueOnce(new Error('record write failed'))
+    const paintMock = vi.fn(
+      async (
+        _params: unknown,
+        _signal: AbortSignal,
+        onImage: (picBase64: string) => Promise<void>
+      ): Promise<string[]> => {
+        await onImage('data:image/png;base64,OUTPUT')
+        return ['data:image/png;base64,OUTPUT']
+      }
+    )
+    getModelMock.mockReturnValue({ paint: paintMock })
+
+    const { startImageGeneration } = await import('./imageGenerationActions')
+    const handle = await startImageGeneration({
+      prompt: 'make an image',
+      referenceImages: [],
+      model: { provider: 'openrouter', modelId: 'seedream' },
+    })
+
+    await expect(handle.completion).resolves.toMatchObject({
+      id: 'record-1',
+      status: 'error',
+      error: 'record write failed',
+    })
+    expect(removeBlobMock).toHaveBeenCalledWith('generated-blob-key')
+    expect(currentGeneratingId).toBeNull()
+  })
+
+  it('keeps a generated blob when a failed association was committed', async () => {
+    addGeneratedImageMock.mockRejectedValueOnce(new Error('record write result lost'))
+    getImageGenerationByIdMock.mockResolvedValueOnce({
+      id: 'record-1',
+      generatedImages: ['generated-blob-key'],
+    })
+    const paintMock = vi.fn(
+      async (
+        _params: unknown,
+        _signal: AbortSignal,
+        onImage: (picBase64: string) => Promise<void>
+      ): Promise<string[]> => {
+        await onImage('data:image/png;base64,OUTPUT')
+        return ['data:image/png;base64,OUTPUT']
+      }
+    )
+    getModelMock.mockReturnValue({ paint: paintMock })
+
+    const { startImageGeneration } = await import('./imageGenerationActions')
+    const handle = await startImageGeneration({
+      prompt: 'make an image',
+      referenceImages: [],
+      model: { provider: 'openrouter', modelId: 'seedream' },
+    })
+
+    await handle.completion
+    expect(removeBlobMock).not.toHaveBeenCalled()
+    expect(currentGeneratingId).toBeNull()
   })
 })

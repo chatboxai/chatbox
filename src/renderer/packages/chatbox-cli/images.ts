@@ -70,6 +70,14 @@ function describeAvailableImageModels(models: AvailableImageModel[]): string {
   return `Available image models: ${entries.join(', ')}${suffix}.`
 }
 
+function supportsPromptOnlyGeneration(model: AvailableImageModel): boolean {
+  return (model.capabilities?.inputReferences?.min ?? 0) === 0
+}
+
+function promptOnlyImageModels(models: AvailableImageModel[]): AvailableImageModel[] {
+  return models.filter(supportsPromptOnlyGeneration)
+}
+
 // Ignore case and punctuation so "GPT Image 2" and "gpt-image-2" reference the same model.
 function looseModelKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -299,7 +307,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
   const settings = settingsStore.getState()
   let availableModels: AvailableImageModel[] | undefined
   const ensureAvailableModels = async () => {
-    availableModels ??= await getAvailableImageModels(settings)
+    availableModels ??= promptOnlyImageModels(await getAvailableImageModels(settings))
     return availableModels
   }
 
@@ -391,7 +399,8 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
     throw new ChatboxCliUsageError(`Image model is disabled in settings: ${provider}/${modelId}`)
   }
   const catalog = await ensureAvailableModels()
-  if (!catalog.some((model) => model.provider === provider && model.modelId === modelId)) {
+  const selectedCatalogModel = catalog.find((model) => model.provider === provider && model.modelId === modelId)
+  if (!selectedCatalogModel) {
     throw new ChatboxCliUsageError(
       `Image model is not available: ${provider}/${modelId}. ${describeAvailableImageModels(catalog)}`
     )
@@ -544,10 +553,10 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
   {
     path: ['image', 'models'],
     description:
-      'List configured image-capable models without exposing provider credentials. Run this when the user asks which models exist or names a model you cannot resolve.',
+      'List configured image models that support prompt-only generation without exposing provider credentials. Run this when the user asks which models exist or names a model you cannot resolve.',
     usage: 'chatbox image models',
     async execute() {
-      const models = await getAvailableImageModels()
+      const models = promptOnlyImageModels(await getAvailableImageModels())
       return {
         models,
         defaultModel: models[0] ?? null,

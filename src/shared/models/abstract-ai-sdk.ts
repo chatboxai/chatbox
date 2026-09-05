@@ -5,6 +5,7 @@ import {
   type FinishReason,
   experimental_generateImage as generateImage,
   type ImageModel,
+  type ImageModelProviderMetadata,
   type LanguageModelUsage,
   type ModelMessage,
   type PrepareStepFunction,
@@ -217,8 +218,23 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     return { aspectRatio: aspectRatio as `${number}:${number}` }
   }
 
+  protected getImageGenerationPrompt(params: {
+    prompt: string
+    images?: { imageUrl: string }[]
+  }): string | { text: string; images: string[] } {
+    return params.prompt
+  }
+
   protected getMaxImagesPerGenerationRequest(): number | undefined {
     return undefined
+  }
+
+  protected getGeneratedImageMediaType(
+    defaultMediaType: string,
+    _index: number,
+    _providerMetadata: ImageModelProviderMetadata
+  ): string {
+    return defaultMediaType
   }
 
   protected getTextEmbeddingModel(options: CallChatCompletionOptions): EmbeddingModel | null {
@@ -511,16 +527,16 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     for (const requestSize of requestSizes) {
       const result = await generateImage({
         model: imageModel,
-        prompt: params.prompt,
-        // images 暂时不支持
+        prompt: this.getImageGenerationPrompt(params),
         n: requestSize,
         ...this.getImageGenerationOptions(params.aspectRatio),
         abortSignal: signal,
         // Image generation is billable; network-error retries could double-charge.
         maxRetries: 0,
       })
-      for (const image of result.images) {
-        const dataUrl = `data:${image.mediaType};base64,${image.base64}`
+      for (const [index, image] of result.images.entries()) {
+        const mediaType = this.getGeneratedImageMediaType(image.mediaType, index, result.providerMetadata ?? {})
+        const dataUrl = `data:${mediaType};base64,${image.base64}`
         await callback?.(dataUrl)
         dataUrls.push(dataUrl)
       }

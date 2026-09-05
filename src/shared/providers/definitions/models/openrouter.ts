@@ -1,4 +1,5 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
+import type { ImageModelProviderMetadata } from 'ai'
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
 import { fetchRemoteModels } from '../../../models/openai-compatible'
@@ -67,6 +68,30 @@ export default class OpenRouter extends AbstractAISDKModel {
 
   protected override getMaxImagesPerGenerationRequest() {
     return 1
+  }
+
+  protected override getImageGenerationPrompt(params: {
+    prompt: string
+    images?: { imageUrl: string }[]
+  }): string | { text: string; images: string[] } {
+    if (!params.images?.length) return params.prompt
+    return {
+      text: params.prompt,
+      images: params.images.map((image) => image.imageUrl),
+    }
+  }
+
+  protected override getGeneratedImageMediaType(
+    defaultMediaType: string,
+    index: number,
+    providerMetadata: ImageModelProviderMetadata
+  ): string {
+    const imageMetadata = providerMetadata.openrouter?.images
+    if (!Array.isArray(imageMetadata)) return defaultMediaType
+    const metadata = imageMetadata[index]
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return defaultMediaType
+    const mediaType = metadata.mediaType
+    return typeof mediaType === 'string' && mediaType.startsWith('image/') ? mediaType : defaultMediaType
   }
 
   public listModels(): Promise<ProviderModelInfo[]> {

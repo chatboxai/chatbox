@@ -1,8 +1,20 @@
+import { getRatioOptionsForModel } from '@shared/providers/definitions/image-models'
+import type { ImageModelCapabilities } from '@shared/types'
 import type { ImageModelGroup } from '@/hooks/useImageModelGroups'
 
 export interface ImageModelSelection {
   provider: string
   model: string
+}
+
+export function getImageModelRatioOptions(modelId: string, capabilities?: ImageModelCapabilities): string[] {
+  if (!capabilities) return getRatioOptionsForModel(modelId)
+
+  return [...new Set(['auto', ...(capabilities.aspectRatio?.values ?? [])])]
+}
+
+export function resolveImageRatioSelection(selectedRatio: string, ratioOptions: string[]): string {
+  return ratioOptions.includes(selectedRatio) ? selectedRatio : 'auto'
 }
 
 export function resolveImageModelSelection(

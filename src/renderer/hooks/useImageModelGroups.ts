@@ -1,12 +1,12 @@
-import { ModelProviderEnum, ModelProviderType } from '@shared/types'
+import { ModelProviderEnum, ModelProviderType, type ProviderSettings } from '@shared/types'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import {
   type ImageModelOption,
   isOpenAIImageGenerationAuthSupported,
-  loadProviderImageModels,
   manualImageModelToOption,
   mergeImageModels,
+  providerImageModelsQueryOptions,
 } from '@/packages/image-model-catalog'
 import { useLanguage, useSettingsStore } from '@/stores/settingsStore'
 import useChatboxAIModels from './useChatboxAIModels'
@@ -19,24 +19,20 @@ export interface ImageModelGroup {
   models: ImageModelOption[]
 }
 
-export function useProviderImageModels(provider: ModelProviderEnum, enabled: boolean): ImageModelOption[] {
+export function useProviderImageModels(
+  provider: ModelProviderEnum,
+  enabled: boolean,
+  providerSettings?: ProviderSettings
+): ImageModelOption[] {
   const language = useLanguage()
   const licenseKey = useSettingsStore((state) => state.licenseKey)
-
   const { data } = useQuery({
-    queryKey: [
-      'provider-image-models',
-      provider,
+    ...providerImageModelsQueryOptions(provider, {
+      apiKey: provider === ModelProviderEnum.OpenRouter ? providerSettings?.apiKey : undefined,
       language,
-      provider === ModelProviderEnum.ChatboxAI ? licenseKey || '' : '',
-    ],
+      licenseKey,
+    }),
     enabled,
-    staleTime: 3600 * 1000,
-    queryFn: () =>
-      loadProviderImageModels(provider, {
-        language,
-        licenseKey,
-      }),
   })
 
   return data || []
@@ -59,7 +55,11 @@ export function useImageModelGroups(): ImageModelGroup[] {
   )
 
   const openAIImageModels = useProviderImageModels(ModelProviderEnum.OpenAI, !!openAIProvider)
-  const openRouterImageModels = useProviderImageModels(ModelProviderEnum.OpenRouter, !!openRouterProvider)
+  const openRouterImageModels = useProviderImageModels(
+    ModelProviderEnum.OpenRouter,
+    !!openRouterProvider,
+    providerSettingsMap?.[ModelProviderEnum.OpenRouter]
+  )
   const geminiImageModels = useProviderImageModels(
     ModelProviderEnum.Gemini,
     !!geminiProvider || customGeminiProviders.length > 0

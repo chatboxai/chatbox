@@ -26,7 +26,6 @@ import {
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ImageModelSelect } from '@/components/ImageModelSelect'
@@ -37,7 +36,6 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import useVersion from '@/hooks/useVersion'
 import { getLogger } from '@/lib/utils'
 import { resumeImageGenerationWithFollowUp } from '@/packages/chatbox-cli/image-task-follow-up'
-import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { cancelGeneration, createAndGenerate, retryGeneration } from '@/stores/imageGenerationActions'
 import {
@@ -63,10 +61,11 @@ import {
   getHistoryImageModelDisplayName as resolveHistoryImageModelDisplayName,
   getImageModelDisplayName as resolveImageModelDisplayName,
 } from './-components/model-display-name'
-import { resolveImageModelSelection } from './-components/model-selection'
+import { getImageModelRatioOptions, resolveImageRatioSelection, resolveImageModelSelection } from './-components/model-selection'
 import { PromptDisplay } from './-components/PromptDisplay'
 import { ReferenceImagesPreview } from './-components/ReferenceImagesPreview'
 import { LoadingShimmer } from './-components/Shimmer'
+import { useReferenceImageDraft } from './-hooks/useReferenceImageDraft'
 
 const log = getLogger('image-creator')
 
@@ -232,12 +231,15 @@ function ImageCreatorPage() {
   )
 
   const [prompt, setPrompt] = useState('')
-  const [referenceImages, setReferenceImages] = useState<
-    { storageKey: string; sourceRecordId?: string; isTempUpload?: boolean }[]
-  >([])
-  const referenceImagesRef = useRef(referenceImages)
-  referenceImagesRef.current = referenceImages
-  const tempUploadKeysRef = useRef<Set<string>>(new Set())
+  const {
+    images: referenceImages,
+    upload: handleImageUpload,
+    addReference: handleUseAsReference,
+    removeReference: handleRemoveReferenceImage,
+    replace: replaceReferenceImages,
+    clear: clearReferenceImages,
+    beginSubmission,
+  } = useReferenceImageDraft()
   const [showHistory, setShowHistory] = useState(true)
   const [showMobileHistory, setShowMobileHistory] = useState(false)
   const [selectedProvider, setSelectedProvider] = useState<string>(ModelProviderEnum.ChatboxAI)
@@ -246,8 +248,17 @@ function ImageCreatorPage() {
   const [showModelDrawer, setShowModelDrawer] = useState(false)
   const [showRatioDrawer, setShowRatioDrawer] = useState(false)
 
-  // Get ratio options based on selected model
-  const ratioOptions = getRatioOptionsForModel(selectedModel)
+  const selectedModelCapabilities = useMemo(
+    () =>
+      imageModelGroups
+        .find((group) => group.providerId === selectedProvider)
+        ?.models.find((model) => model.modelId === selectedModel)?.capabilities,
+    [imageModelGroups, selectedProvider, selectedModel]
+  )
+  const ratioOptions = useMemo(
+    () => getImageModelRatioOptions(selectedModel, selectedModelCapabilities),
+    [selectedModel, selectedModelCapabilities]
+  )
 
   const currentGeneratingId = useCurrentGeneratingId()
   const currentRecordId = useCurrentRecordId()
@@ -270,20 +281,6 @@ function ImageCreatorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const cleanupTempUploads = useCallback(async () => {
-    const keys = Array.from(tempUploadKeysRef.current)
-    tempUploadKeysRef.current.clear()
-    await Promise.all(
-      keys.map(async (key) => {
-        try {
-          await currentBlobStorage.remove(key)
-        } catch (e) {
-          log.error('Failed to cleanup temp reference image blob:', key, e)
-        }
-      })
-    )
-  }, [])
-
   useEffect(() => {
     const nextSelection = resolveImageModelSelection(imageModelGroups, selectedProvider, selectedModel)
     if (!nextSelection) {
@@ -296,73 +293,31 @@ function ImageCreatorPage() {
 
     setSelectedProvider(nextSelection.provider)
     setSelectedModel(nextSelection.model)
-    const ratioOptionsForFirstModel = getRatioOptionsForModel(nextSelection.model)
-    setSelectedRatio((prev) => (ratioOptionsForFirstModel.includes(prev) ? prev : 'auto'))
+    const nextCapabilities = imageModelGroups
+      .find((group) => group.providerId === nextSelection.provider)
+      ?.models.find((model) => model.modelId === nextSelection.model)?.capabilities
+    const nextRatioOptions = getImageModelRatioOptions(nextSelection.model, nextCapabilities)
+    setSelectedRatio((prev) => resolveImageRatioSelection(prev, nextRatioOptions))
   }, [imageModelGroups, selectedProvider, selectedModel])
 
-  // Cleanup orphan temp uploads if user leaves the page mid-way.
   useEffect(() => {
-    return () => {
-      void cleanupTempUploads()
-    }
-  }, [cleanupTempUploads])
+    setSelectedRatio((prev) => resolveImageRatioSelection(prev, ratioOptions))
+  }, [ratioOptions])
 
-  const handleModelSelect = useCallback((provider: string, model: string) => {
-    setSelectedProvider(provider)
-    setSelectedModel(model)
-    // lastUsedModelStore.getState().setPictureModel(provider, model)
+  const handleModelSelect = useCallback(
+    (provider: string, model: string) => {
+      setSelectedProvider(provider)
+      setSelectedModel(model)
+      // lastUsedModelStore.getState().setPictureModel(provider, model)
 
-    // Reset ratio to 'auto' if current ratio is not supported by the new model
-    const newRatioOptions = getRatioOptionsForModel(model)
-    setSelectedRatio((prev) => (newRatioOptions.includes(prev) ? prev : 'auto'))
-  }, [])
-
-  const handleImageUpload = useCallback((files: FileList | null) => {
-    if (!files || files.length === 0) return
-
-    let available = MAX_REFERENCE_IMAGES - referenceImagesRef.current.length
-    if (available <= 0) return
-
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith('image/')) continue
-      if (available <= 0) break
-      available--
-
-      const reader = new FileReader()
-      reader.onload = async (e) => {
-        const dataUrl = e.target?.result as string
-        const storageKey = StorageKeyGenerator.picture('image-creator-ref')
-        try {
-          await currentBlobStorage.set(storageKey, dataUrl)
-        } catch (err) {
-          log.error('Failed to store uploaded reference image:', err)
-          return
-        }
-        // Prime blob cache so preview doesn't need to refetch immediately.
-        queryClient.setQueryData(['blob', storageKey], dataUrl)
-        tempUploadKeysRef.current.add(storageKey)
-        setReferenceImages((prev) => {
-          if (prev.length >= MAX_REFERENCE_IMAGES) return prev
-          return [...prev, { storageKey, isTempUpload: true }]
-        })
-      }
-      reader.onerror = () => {
-        log.error('Failed to read image file:', file.name)
-      }
-      reader.readAsDataURL(file)
-    }
-  }, [])
-
-  const handleRemoveReferenceImage = useCallback((storageKey: string) => {
-    const current = referenceImagesRef.current.find((img) => img.storageKey === storageKey)
-    setReferenceImages((prev) => prev.filter((img) => img.storageKey !== storageKey))
-    if (current?.isTempUpload) {
-      tempUploadKeysRef.current.delete(storageKey)
-      void currentBlobStorage
-        .remove(storageKey)
-        .catch((e) => log.error('Failed to delete temp reference image blob:', e))
-    }
-  }, [])
+      const capabilities = imageModelGroups
+        .find((group) => group.providerId === provider)
+        ?.models.find((option) => option.modelId === model)?.capabilities
+      const newRatioOptions = getImageModelRatioOptions(model, capabilities)
+      setSelectedRatio((prev) => resolveImageRatioSelection(prev, newRatioOptions))
+    },
+    [imageModelGroups]
+  )
 
   const handleSubmit = useCallback(async () => {
     if (!prompt.trim() || isCurrentlyGenerating) return
@@ -377,31 +332,28 @@ function ImageCreatorPage() {
     }
 
     try {
-      // Collect all unique source record IDs from reference images (DAG support)
-      const parentIds = [
-        ...new Set(referenceImages.map((img) => img.sourceRecordId).filter((id): id is string => !!id)),
-      ]
-
-      await createAndGenerate({
-        prompt: prompt.trim(),
-        referenceImages: referenceImages.map((img) => img.storageKey),
-        model: {
-          provider: selectedProvider,
-          modelId: selectedModel,
-        },
-        imageGenerateNum: 1,
-        aspectRatio: selectedRatio,
-        parentIds: parentIds.length > 0 ? parentIds : undefined,
-      })
-
-      // Temp uploads are now "owned" by the created record; don't delete them on page leave.
-      tempUploadKeysRef.current.clear()
-      setPrompt('')
-      setReferenceImages([])
+      const submission = beginSubmission()
+      try {
+        await createAndGenerate(
+          {
+            prompt: prompt.trim(),
+            referenceImages: submission.referenceImages,
+            model: { provider: selectedProvider, modelId: selectedModel },
+            imageGenerateNum: 1,
+            aspectRatio: selectedRatio,
+            parentIds: submission.parentIds.length > 0 ? submission.parentIds : undefined,
+          },
+          { onRecordCreated: submission.commit }
+        )
+      } catch (error) {
+        await submission.rollback()
+        throw error
+      }
+      if (submission.complete()) setPrompt('')
     } catch (error) {
       log.error('Failed to generate image:', error)
     }
-  }, [prompt, referenceImages, selectedProvider, selectedModel, selectedRatio, isCurrentlyGenerating, t])
+  }, [prompt, beginSubmission, selectedProvider, selectedModel, selectedRatio, isCurrentlyGenerating, t])
 
   const handleQuickPromptSubmit = useCallback(
     async (quickPrompt: string) => {
@@ -434,13 +386,6 @@ function ImageCreatorPage() {
     [selectedProvider, selectedModel, isCurrentlyGenerating, t]
   )
 
-  const handleUseAsReference = useCallback((storageKey: string, sourceRecordId?: string) => {
-    setReferenceImages((prev) => {
-      if (prev.length >= MAX_REFERENCE_IMAGES) return prev
-      return [...prev, { storageKey, sourceRecordId, isTempUpload: false }]
-    })
-  }, [])
-
   const handleReportGeneratedImage = useCallback(async (record: ImageGeneration) => {
     const contentId = [
       `Image generation prompt: ${record.prompt}`,
@@ -457,22 +402,20 @@ function ImageCreatorPage() {
 
   const handleHistoryClick = useCallback(
     async (record: ImageGeneration) => {
-      await cleanupTempUploads()
       imageGenerationStore.getState().setCurrentRecordId(record.id)
       setPrompt(record.prompt)
 
-      setReferenceImages(record.referenceImages.map((key) => ({ storageKey: key, isTempUpload: false })))
+      await replaceReferenceImages(record.referenceImages.map((key) => ({ storageKey: key })))
     },
-    [cleanupTempUploads]
+    [replaceReferenceImages]
   )
 
   const handleNewCreation = useCallback(() => {
-    void cleanupTempUploads()
+    void clearReferenceImages()
     imageGenerationStore.getState().setCurrentRecordId(null)
     setPrompt('')
-    setReferenceImages([])
     textareaRef.current?.focus()
-  }, [cleanupTempUploads])
+  }, [clearReferenceImages])
 
   const handleLoadMoreHistory = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {

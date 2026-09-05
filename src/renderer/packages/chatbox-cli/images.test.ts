@@ -191,6 +191,52 @@ describe('Chatbox CLI image commands', () => {
     )
   })
 
+  it('starts the selected catalog model with user generation parameters', async () => {
+    const capabilities = {
+      aspectRatio: { values: ['1:1'] },
+      inputReferences: { min: 0, max: 2 },
+    }
+    getAvailableImageModelsMock.mockResolvedValue([
+      { provider: 'openrouter', modelId: 'seedream', nickname: 'Seedream', capabilities },
+    ])
+    const approvalDetails = {
+      type: 'image_generation' as const,
+      provider: 'openrouter',
+      modelId: 'seedream',
+      prompt: 'red fox',
+      count: 1,
+      billing: 'provider' as const,
+    }
+    startImageGenerationMock.mockResolvedValue({
+      recordId: 'record-capabilities',
+      startedAt: 1_000,
+      monitoring: { mode: 'direct' },
+      completion: Promise.resolve(null),
+    })
+
+    const approvalRequired = new Error('approval required')
+    requestAppActionApprovalMock.mockRejectedValueOnce(approvalRequired)
+    await expect(
+      command('generate').execute(
+        context(['--prompt', 'red fox'], { approved: false, toolCallId: 'tool-capability-approval' })
+      )
+    ).rejects.toBe(approvalRequired)
+    const visibleApprovalSummary = requestAppActionApprovalMock.mock.calls[0]?.[3]
+    const visibleApprovalDetails = requestAppActionApprovalMock.mock.calls[0]?.[4]
+    expect(visibleApprovalSummary).not.toContain('capabilit')
+    expect(visibleApprovalDetails).not.toHaveProperty('modelCapabilities')
+    expect(visibleApprovalDetails).not.toHaveProperty('capabilities')
+
+    await command('generate').execute(context(['--prompt', 'red fox'], { approvalDetails }))
+
+    expect(startImageGenerationMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: { provider: 'openrouter', modelId: 'seedream' },
+      }),
+      expect.anything()
+    )
+  })
+
   it('requires a tool-call anchor', async () => {
     await expect(command('generate').execute(context(['--prompt', 'red fox'], { toolCallId: '' }))).rejects.toThrow(
       'requires a tool call id'
@@ -506,6 +552,50 @@ describe('Chatbox CLI image commands', () => {
       defaultModel: { provider: 'chatbox-ai', modelId: 'server-default', nickname: 'Server Default' },
     })
     expect(getAvailableImageModelsMock).toHaveBeenCalledOnce()
+  })
+
+  it('hides models that require reference images from prompt-only CLI generation', async () => {
+    getAvailableImageModelsMock.mockResolvedValue([
+      {
+        provider: 'openrouter',
+        modelId: 'recraft-required-reference',
+        nickname: 'Recraft Required Reference',
+        capabilities: { aspectRatio: null, inputReferences: { min: 1, max: 1 } },
+      },
+      {
+        provider: 'openrouter',
+        modelId: 'prompt-or-reference',
+        nickname: 'Prompt or Reference',
+        capabilities: { aspectRatio: null, inputReferences: { min: 0, max: 2 } },
+      },
+    ])
+
+    await expect(command('models').execute(context([]))).resolves.toEqual({
+      models: [
+        {
+          provider: 'openrouter',
+          modelId: 'prompt-or-reference',
+          nickname: 'Prompt or Reference',
+          capabilities: { aspectRatio: null, inputReferences: { min: 0, max: 2 } },
+        },
+      ],
+      defaultModel: {
+        provider: 'openrouter',
+        modelId: 'prompt-or-reference',
+        nickname: 'Prompt or Reference',
+        capabilities: { aspectRatio: null, inputReferences: { min: 0, max: 2 } },
+      },
+    })
+
+    await expect(
+      command('generate').execute(
+        context(['--prompt', 'red fox', '--provider', 'openrouter', '--model', 'recraft-required-reference'], {
+          approved: false,
+        })
+      )
+    ).rejects.toThrow('Image model is not available')
+    expect(requestAppActionApprovalMock).not.toHaveBeenCalled()
+    expect(startImageGenerationMock).not.toHaveBeenCalled()
   })
 
   it('marks an orphaned pending task for manual recovery instead of promising a callback', async () => {

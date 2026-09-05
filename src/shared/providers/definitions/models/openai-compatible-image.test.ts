@@ -30,7 +30,12 @@ const openRouterMocks = vi.hoisted(() => {
   const imageModel = { modelId: 'openrouter-image-model' }
   const imageModelFactory = vi.fn(() => imageModel)
   const languageModel = vi.fn()
-  const createOpenRouter = vi.fn(() => ({ imageModel: imageModelFactory, languageModel }))
+  const createOpenRouter = vi.fn(
+    (_options: { apiKey: string; headers: Record<string, string>; fetch: typeof globalThis.fetch }) => ({
+      imageModel: imageModelFactory,
+      languageModel,
+    })
+  )
   return { createOpenRouter, imageModel, imageModelFactory }
 })
 
@@ -217,12 +222,13 @@ describe('OpenAI-compatible image models', () => {
   })
 
   it('creates an image model through the OpenRouter provider', () => {
+    const dependencies = createDependencies()
     const instance = new TestOpenRouter(
       {
         apiKey: 'or-key',
         model: { modelId: 'google/gemini-3-pro-image', type: 'image' },
       },
-      createDependencies()
+      dependencies
     )
 
     expect(instance.exposeImageModel()).toBe(openRouterMocks.imageModel)
@@ -239,6 +245,36 @@ describe('OpenAI-compatible image models', () => {
       expect.objectContaining({
         apiKey: 'or-key',
         baseURL: 'https://openrouter.ai/api/v1',
+      })
+    )
+  })
+
+  it('passes OpenRouter reference images through the AI SDK image prompt', async () => {
+    aiMocks.generateImage.mockResolvedValue({ images: [] })
+    const instance = new TestOpenRouter(
+      {
+        apiKey: 'or-key',
+        model: { modelId: 'google/gemini-3-pro-image', type: 'image' },
+      },
+      createDependencies()
+    )
+
+    await instance.paint({
+      prompt: 'edit this image',
+      images: [{ imageUrl: 'https://example.test/reference.png' }, { imageUrl: 'data:image/png;base64,AQID' }],
+      num: 1,
+      aspectRatio: '16:9',
+    })
+
+    expect(aiMocks.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: {
+          text: 'edit this image',
+          images: ['https://example.test/reference.png', 'data:image/png;base64,AQID'],
+        },
+        n: 1,
+        aspectRatio: '16:9',
+        maxRetries: 0,
       })
     )
   })
@@ -262,8 +298,14 @@ describe('OpenAI-compatible image models', () => {
     ).rejects.toBe(secondError)
 
     expect(aiMocks.generateImage).toHaveBeenCalledTimes(2)
-    expect(aiMocks.generateImage).toHaveBeenNthCalledWith(1, expect.objectContaining({ n: 1, aspectRatio: '16:9' }))
-    expect(aiMocks.generateImage).toHaveBeenNthCalledWith(2, expect.objectContaining({ n: 1, aspectRatio: '16:9' }))
+    expect(aiMocks.generateImage).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ n: 1, aspectRatio: '16:9', maxRetries: 0 })
+    )
+    expect(aiMocks.generateImage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ n: 1, aspectRatio: '16:9', maxRetries: 0 })
+    )
     expect(callback).toHaveBeenCalledOnce()
     expect(callback).toHaveBeenCalledWith('data:image/png;base64,first-image')
   })

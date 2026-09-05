@@ -1,8 +1,10 @@
+import type { ImageModelCapabilities } from '../../types/image-generation'
+
 export type ImageModelFamily = 'gemini' | 'openai' | 'dall-e-2' | 'dall-e-3'
 
 type ImageSize = `${number}x${number}`
 
-type ImageModelCapabilities = {
+type ImageModelFamilyDefaults = {
   ratioOptions: string[]
   openaiSizes?: Partial<Record<string, ImageSize>>
 }
@@ -13,7 +15,7 @@ const GPT_IMAGE_SIZES: Record<string, ImageSize> = {
   '2:3': '1024x1536',
 }
 
-const IMAGE_MODEL_CAPABILITIES: Record<ImageModelFamily | 'default', ImageModelCapabilities> = {
+const IMAGE_MODEL_CAPABILITIES: Record<ImageModelFamily | 'default', ImageModelFamilyDefaults> = {
   openai: {
     ratioOptions: ['auto', '1:1', '3:2', '2:3'],
     openaiSizes: GPT_IMAGE_SIZES,
@@ -61,4 +63,45 @@ export function getRatioOptionsForModel(modelId: string): string[] {
 
 export function getOpenAIImageSizeForRatio(modelId: string, aspectRatio: string): ImageSize | undefined {
   return IMAGE_MODEL_CAPABILITIES[getImageModelFamily(modelId)].openaiSizes?.[aspectRatio]
+}
+
+export function validateImageGenerationRequest(params: {
+  modelId: string
+  capabilities?: ImageModelCapabilities
+  aspectRatio?: string
+  referenceCount: number
+}): void {
+  const { modelId, capabilities, aspectRatio, referenceCount } = params
+  if (!capabilities) return
+
+  if (aspectRatio && aspectRatio !== 'auto') {
+    if (!capabilities.aspectRatio) {
+      throw new Error(`Image model ${modelId} does not support custom aspect ratios. Choose Auto.`)
+    }
+    const allowedRatios = capabilities.aspectRatio.values
+    if (allowedRatios?.length && !allowedRatios.includes(aspectRatio)) {
+      throw new Error(
+        `Image model ${modelId} does not support aspect ratio ${aspectRatio}. Choose Auto or one of: ${allowedRatios.join(', ')}.`
+      )
+    }
+  }
+
+  if (!capabilities.inputReferences) {
+    if (referenceCount > 0) {
+      throw new Error(`Image model ${modelId} does not accept reference images. Remove the reference images.`)
+    }
+    return
+  }
+
+  const { min, max } = capabilities.inputReferences
+  if (min !== undefined && referenceCount < min) {
+    throw new Error(
+      `Image model ${modelId} requires at least ${min} reference ${min === 1 ? 'image' : 'images'}. Upload more reference images.`
+    )
+  }
+  if (max !== undefined && referenceCount > max) {
+    throw new Error(
+      `Image model ${modelId} accepts at most ${max} reference ${max === 1 ? 'image' : 'images'}. Remove some reference images.`
+    )
+  }
 }

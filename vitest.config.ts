@@ -7,6 +7,7 @@ export default defineConfig(({ mode }) => {
   // Live-API suite must be opted into explicitly (set by the test:model-provider script);
   // an argv/path heuristic could silently run real API calls with keys auto-loaded from .env
   const isModelProviderRun = process.env.RUN_MODEL_PROVIDER_TESTS === '1'
+  const isOpenRouterImageLiveRun = process.env.RUN_OPENROUTER_IMAGE_LIVE === '1'
   const defaultInclude = [
     'src/**/*.{test,spec}.{ts,tsx}',
     'packages/**/*.{test,spec}.{ts,tsx}',
@@ -26,7 +27,9 @@ export default defineConfig(({ mode }) => {
       globals: true,
       environment: 'node',
       env: {
-        ...loadEnv(mode, process.cwd(), ''),
+        // Managed live suites receive an explicit, bounded environment because the main
+        // checkout's .env can be a FIFO. Vite's synchronous loader could block indefinitely.
+        ...(isOpenRouterImageLiveRun ? {} : loadEnv(mode, process.cwd(), '')),
         NODE_ENV: 'test',
       },
       include: defaultInclude,

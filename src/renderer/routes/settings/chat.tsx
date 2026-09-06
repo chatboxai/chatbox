@@ -1,4 +1,4 @@
-import { Box, Button, FileButton, Flex, Slider, Stack, Switch, Text, Textarea, Title } from '@mantine/core'
+import { Box, Button, FileButton, Flex, Select, Slider, Stack, Switch, Text, Textarea, Title } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import { chatSessionSettings, getDefaultPrompt } from '@shared/defaults'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION } from '@shared/utils/tool-call-limit-pause'
@@ -537,6 +537,22 @@ function ContextManagementSection() {
   return (
     <Stack gap="xl">
       <Text fw="600">{t('Context Management')}</Text>
+
+      <Select
+        label={t('Anthropic prompt cache duration')}
+        description={t(
+          'Applies to Claude API, custom Anthropic providers and Anthropic models in Chatbox AI. One-hour cache writes cost more and require support from your provider or proxy. Changing the duration does not prevent cache misses when the context changes.'
+        )}
+        value={settings.anthropicCacheTtl ?? '5m'}
+        data={[
+          { value: '5m', label: t('5 minutes (default)') },
+          { value: '1h', label: t('1 hour') },
+        ]}
+        allowDeselect={false}
+        onChange={(value) => {
+          if (value === '5m' || value === '1h') setSettings({ anthropicCacheTtl: value })
+        }}
+      />
 
       {/* Auto Compaction Toggle */}
       <Stack gap="sm">

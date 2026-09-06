@@ -47,6 +47,48 @@ function outputOf(message: ModelMessage): { type: string; value?: unknown } {
 }
 
 describe('createMidRunToolResultRelief', () => {
+  it('does not clear tool history because a screenshot has a large base64 encoding', () => {
+    const relief = createMidRunToolResultRelief({ thresholdTokens: 814_400 })
+    const image: ModelMessage = {
+      role: 'user',
+      content: [{ type: 'image', image: 'A'.repeat(7_360_052), mediaType: 'image/png' }],
+    }
+    const messages = [image, assistantToolCall('t1'), toolResult('t1', 40_000)]
+    for (let i = 2; i <= 30; i++) {
+      messages.push(assistantToolCall(`t${i}`), toolResult(`t${i}`, 40_000))
+      expect(relief(messages)).toBeUndefined()
+    }
+    expect(outputOf(messages[2]).value).toBe('r'.repeat(40_000))
+  })
+
+  it('does not chase tool results when non-removable text alone exceeds the threshold', () => {
+    const relief = createMidRunToolResultRelief({ thresholdTokens: 10_000 })
+    const messages = [userMessage('x'.repeat(80_000)), assistantToolCall('t1'), toolResult('t1', 10_000)]
+    for (let i = 2; i <= 5; i++) {
+      messages.push(assistantToolCall(`t${i}`), toolResult(`t${i}`, 10_000))
+      expect(relief(messages)).toBeUndefined()
+    }
+  })
+
+  it('keeps its existing watermark stable if non-removable pressure later becomes dominant', () => {
+    const relief = createMidRunToolResultRelief({ thresholdTokens: 32_000 })
+    const base = [
+      userMessage('task'),
+      assistantToolCall('t1'),
+      toolResult('t1', 40_000),
+      assistantToolCall('t2'),
+      toolResult('t2', 40_000),
+      assistantToolCall('t3'),
+      toolResult('t3', 40_000),
+    ]
+    const first = relief(base) as ModelMessage[]
+    expect(outputOf(first[2]).value).toContain('cleared')
+    const grown = [...base, userMessage('x'.repeat(200_000)), assistantToolCall('t4'), toolResult('t4', 40_000)]
+    const second = relief(grown) as ModelMessage[]
+    expect(second.slice(0, base.length)).toEqual(first)
+    expect(outputOf(second[9]).value).toBe('r'.repeat(40_000))
+  })
+
   it('returns undefined while below the activation threshold', () => {
     const relief = createMidRunToolResultRelief({ thresholdTokens: 1_000_000 })
     const messages = [userMessage('hi'), assistantToolCall('t1'), toolResult('t1', 5000)]
@@ -166,7 +208,7 @@ describe('createMidRunToolResultRelief', () => {
   })
 
   it('never rewrites error outputs', () => {
-    const relief = createMidRunToolResultRelief({ thresholdTokens: 100 })
+    const relief = createMidRunToolResultRelief({ thresholdTokens: 10_000 })
     const messages = [
       userMessage('task'),
       assistantToolCall('t1'),

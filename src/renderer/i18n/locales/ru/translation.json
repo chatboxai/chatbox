@@ -1,4 +1,8 @@
 {
+  "Anthropic prompt cache duration": "Срок хранения кеша промпта Anthropic",
+  "5 minutes (default)": "5 минут (по умолчанию)",
+  "1 hour": "1 час",
+  "Applies to Claude API, custom Anthropic providers and Anthropic models in Chatbox AI. One-hour cache writes cost more and require support from your provider or proxy. Changing the duration does not prevent cache misses when the context changes.": "Для Claude API, пользовательских провайдеров Anthropic и моделей Anthropic в Chatbox AI. Запись часового кеша дороже и требует поддержки провайдера или прокси. Увеличение срока хранения не предотвращает потерю совпадения кеша при изменении контекста.",
   " for free now!": " бесплатно прямо сейчас!",
   "(Remaining/Total)": "(Осталось/Всего)",
   ") — Detailed feature documentation\n- 🆘 [Help Center](": ") — подробная документация по функциям\n- 🆘 [Центр справки](",

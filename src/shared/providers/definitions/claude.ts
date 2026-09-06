@@ -105,6 +105,7 @@ export const claudeProvider = defineProvider({
         topP: config.settings.topP,
         maxOutputTokens: config.settings.maxTokens,
         stream: config.settings.stream,
+        anthropicCacheTtl: config.globalSettings.anthropicCacheTtl,
         extraHeaders: oauthHeaders,
         customFetch:
           isOAuth && credentialManager ? createBearerOAuthFetch(config.dependencies, credentialManager) : undefined,

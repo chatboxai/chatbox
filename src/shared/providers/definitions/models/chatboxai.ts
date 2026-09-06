@@ -10,7 +10,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { type ModelMessage, streamText, type ToolSet } from 'ai'
 import { getRegistryModelMeta } from '../../../model-registry'
 import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
-import { addAnthropicCacheControl } from '../../../models/anthropic-cache'
+import { type AnthropicCacheTtl, addAnthropicCacheControl } from '../../../models/anthropic-cache'
 import { getOpenAICompatibleProviderOptionsKey } from '../../../models/openai-compatible'
 import type {
   CallChatCompletionOptions,
@@ -49,6 +49,7 @@ interface Options {
   topP?: number
   maxOutputTokens?: number
   stream?: boolean
+  anthropicCacheTtl?: AnthropicCacheTtl
 }
 
 interface Config {
@@ -443,7 +444,10 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
   }
 
   public async chat(messages: ModelMessage[], options: CallChatCompletionOptions): Promise<StreamTextResult> {
-    const cached = this.options.model.apiStyle === 'anthropic' ? addAnthropicCacheControl(messages) : messages
+    const cached =
+      this.options.model.apiStyle === 'anthropic'
+        ? addAnthropicCacheControl(messages, this.options.anthropicCacheTtl)
+        : messages
     return super.chat(cached, options)
   }
 
@@ -451,7 +455,10 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
     messages: ModelMessage[],
     options: ChatStreamOptions
   ): AsyncGenerator<ModelStreamPart<T>> {
-    const cached = this.options.model.apiStyle === 'anthropic' ? addAnthropicCacheControl(messages) : messages
+    const cached =
+      this.options.model.apiStyle === 'anthropic'
+        ? addAnthropicCacheControl(messages, this.options.anthropicCacheTtl)
+        : messages
     yield* super.chatStream<T>(cached, options)
   }
 

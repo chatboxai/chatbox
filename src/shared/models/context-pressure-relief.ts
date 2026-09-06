@@ -1,38 +1,15 @@
 import type { ModelMessage } from 'ai'
+import { estimateModelMessageTokens, estimateToolOutputTokens } from './context-message-tokens'
 
 /** In-run relief activates at this fraction of the compaction threshold. */
 export const MID_RUN_RELIEF_ACTIVATION_RATIO = 0.9
 /** How many of the most recent tool-result messages stay intact when relieving. */
 export const MID_RUN_KEEP_RECENT_TOOL_MESSAGES = 2
 /** Outputs smaller than this are not worth rewriting (mutation without meaningful savings). */
-const MIN_STUB_OUTPUT_CHARS = 400
-/** chars-per-token heuristic; matches the estimation used for the compaction threshold. */
-const CHARS_PER_TOKEN = 4
-const PER_MESSAGE_OVERHEAD_TOKENS = 4
+const MIN_STUB_OUTPUT_TOKENS = 100
 
 const TOOL_RESULT_STUB_TEXT =
   '[Old tool result cleared to save context space. Call the tool again if this result is needed.]'
-
-// Step messages accumulate append-only within one run; earlier message objects
-// keep their identity across steps, so identity-keyed memoization avoids
-// re-serializing the whole transcript on every step.
-const messageTokenCache = new WeakMap<object, number>()
-
-function estimateModelMessageTokens(message: ModelMessage): number {
-  const cached = messageTokenCache.get(message)
-  if (cached !== undefined) {
-    return cached
-  }
-  let chars = 0
-  try {
-    chars = JSON.stringify(message.content)?.length ?? 0
-  } catch {
-    chars = 0
-  }
-  const tokens = Math.ceil(chars / CHARS_PER_TOKEN) + PER_MESSAGE_OVERHEAD_TOKENS
-  messageTokenCache.set(message, tokens)
-  return tokens
-}
 
 type ToolMessage = Extract<ModelMessage, { role: 'tool' }>
 type ToolResultItem = Extract<ToolMessage['content'][number], { type: 'tool-result' }>
@@ -43,31 +20,28 @@ function isStubbableOutput(output: ToolOutput): boolean {
   return output.type === 'text' || output.type === 'json' || output.type === 'content'
 }
 
-function serializedOutputLength(output: ToolOutput): number {
-  try {
-    return JSON.stringify(output)?.length ?? 0
-  } catch {
-    return 0
-  }
-}
+const stubbedMessageCache = new WeakMap<ToolMessage, { message: ToolMessage; savedTokens: number }>()
+const STUB_OUTPUT: ToolOutput = { type: 'text', value: TOOL_RESULT_STUB_TEXT }
+const STUB_OUTPUT_TOKENS = estimateToolOutputTokens(STUB_OUTPUT)
 
-function stubToolMessage(message: ToolMessage): { message: ToolMessage; savedChars: number } {
-  let savedChars = 0
+function stubToolMessage(message: ToolMessage): { message: ToolMessage; savedTokens: number } {
+  const cached = stubbedMessageCache.get(message)
+  if (cached) return cached
+  let savedTokens = 0
   const content = message.content.map((part) => {
     if (part.type !== 'tool-result' || !isStubbableOutput(part.output)) {
       return part
     }
-    const originalLength = serializedOutputLength(part.output)
-    if (originalLength <= MIN_STUB_OUTPUT_CHARS) {
+    const originalTokens = estimateToolOutputTokens(part.output)
+    if (originalTokens <= MIN_STUB_OUTPUT_TOKENS) {
       return part
     }
-    savedChars += originalLength - TOOL_RESULT_STUB_TEXT.length
-    return { ...part, output: { type: 'text' as const, value: TOOL_RESULT_STUB_TEXT } }
+    savedTokens += originalTokens - STUB_OUTPUT_TOKENS
+    return { ...part, output: STUB_OUTPUT }
   })
-  if (savedChars === 0) {
-    return { message, savedChars: 0 }
-  }
-  return { message: { ...message, content }, savedChars }
+  const result = { message: savedTokens === 0 ? message : { ...message, content }, savedTokens }
+  stubbedMessageCache.set(message, result)
+  return result
 }
 
 export interface MidRunToolResultReliefOptions {
@@ -119,22 +93,22 @@ export function createMidRunToolResultRelief(
       if (stubbedUpTo === 0) {
         return { messages, savedTokens: 0, changed: false }
       }
-      let savedChars = 0
+      let savedTokens = 0
       let changed = false
       const next = messages.map((message, index) => {
         if (index >= stubbedUpTo || message.role !== 'tool') {
           return message
         }
         const stubbed = stubToolMessage(message)
-        if (stubbed.savedChars > 0) {
-          savedChars += stubbed.savedChars
+        if (stubbed.savedTokens > 0) {
+          savedTokens += stubbed.savedTokens
           changed = true
         }
         return stubbed.message
       })
       return {
         messages: changed ? next : messages,
-        savedTokens: Math.floor(savedChars / CHARS_PER_TOKEN),
+        savedTokens,
         changed,
       }
     }
@@ -157,6 +131,21 @@ export function createMidRunToolResultRelief(
     }
 
     let applied = applyWatermark()
+    if (rawTokens - applied.savedTokens < activationTokens) {
+      return applied.changed ? applied.messages : undefined
+    }
+
+    // If even removing every eligible result cannot relieve the pressure,
+    // advancing the watermark only destroys useful history and the cached
+    // prefix. Preserve any existing watermark, but do not chase a moving tail
+    // because of oversized user text, media, tool inputs, or error outputs.
+    const possibleSavings = messages.reduce(
+      (total, message) => total + (message.role === 'tool' ? stubToolMessage(message).savedTokens : 0),
+      0
+    )
+    if (rawTokens - possibleSavings >= activationTokens) {
+      return applied.changed ? applied.messages : undefined
+    }
 
     // Ratchet: stub everything older than the protected tail; while still over
     // the activation threshold, shrink the tail (down to the floor of 1) so a

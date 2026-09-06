@@ -18,6 +18,7 @@ export function createCustomProviderModel(
     case ModelProviderType.Claude:
       return new CustomClaude(
         {
+          anthropicCacheTtl: config.globalSettings.anthropicCacheTtl,
           apiKey: config.effectiveApiKey,
           apiHost: formattedApiHost,
           model,

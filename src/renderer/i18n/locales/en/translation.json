@@ -1,4 +1,8 @@
 {
+  "Anthropic prompt cache duration": "Anthropic prompt cache duration",
+  "5 minutes (default)": "5 minutes (default)",
+  "1 hour": "1 hour",
+  "Applies to Claude API, custom Anthropic providers and Anthropic models in Chatbox AI. One-hour cache writes cost more and require support from your provider or proxy. Changing the duration does not prevent cache misses when the context changes.": "Applies to Claude API, custom Anthropic providers and Anthropic models in Chatbox AI. One-hour cache writes cost more and require support from your provider or proxy. Changing the duration does not prevent cache misses when the context changes.",
   " for free now!": " for free now!",
   "(Remaining/Total)": "(Remaining/Total)",
   ") — Detailed feature documentation\n- 🆘 [Help Center](": ") — Detailed feature documentation\n- 🆘 [Help Center](",

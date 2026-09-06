@@ -52,6 +52,7 @@ export function createDefaultSettings(): Settings {
     autoGenerateTitle: true,
     autoCompaction: true,
     compactionThreshold: 0.6,
+    anthropicCacheTtl: '5m',
     pauseOnToolCallLimit: true,
     autoLaunch: false,
     autoUpdate: true,

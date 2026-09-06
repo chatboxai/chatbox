@@ -2,7 +2,7 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import type { LanguageModelV3 } from '@ai-sdk/provider'
 import type { ModelMessage, ToolSet } from 'ai'
 import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
-import { addAnthropicCacheControl } from '../../../models/anthropic-cache'
+import { type AnthropicCacheTtl, addAnthropicCacheControl } from '../../../models/anthropic-cache'
 import { ApiError } from '../../../models/errors'
 import type { CallChatCompletionOptions, ChatStreamOptions, ModelStreamPart } from '../../../models/types'
 import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
@@ -19,6 +19,7 @@ interface Options {
   topP?: number
   maxOutputTokens?: number
   stream?: boolean
+  anthropicCacheTtl?: AnthropicCacheTtl
   useProxy?: boolean
 }
 
@@ -77,14 +78,14 @@ export default class CustomClaude extends AbstractAISDKModel {
   }
 
   public async chat(messages: ModelMessage[], options: CallChatCompletionOptions): Promise<StreamTextResult> {
-    return super.chat(addAnthropicCacheControl(messages), options)
+    return super.chat(addAnthropicCacheControl(messages, this.options.anthropicCacheTtl), options)
   }
 
   public async *chatStream<T extends ToolSet>(
     messages: ModelMessage[],
     options: ChatStreamOptions
   ): AsyncGenerator<ModelStreamPart<T>> {
-    yield* super.chatStream<T>(addAnthropicCacheControl(messages), options)
+    yield* super.chatStream<T>(addAnthropicCacheControl(messages, this.options.anthropicCacheTtl), options)
   }
 
   public async listModels(): Promise<ProviderModelInfo[]> {

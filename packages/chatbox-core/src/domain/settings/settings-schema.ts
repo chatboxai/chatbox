@@ -564,6 +564,7 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
 
   autoCompaction: z.boolean().default(true),
   compactionThreshold: z.number().min(0.4).max(0.9).default(0.6),
+  anthropicCacheTtl: z.enum(['5m', '1h']).default('5m').catch('5m'),
 
   // Global default for the tool-call-limit confirmation. Individual sessions
   // can override it via SessionSettingsSchema.pauseOnToolCallLimit.

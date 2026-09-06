@@ -23,6 +23,7 @@ export const chatboxAIProvider = defineProvider({
         topP: config.settings.topP,
         maxOutputTokens: config.settings.maxTokens,
         stream: config.settings.stream,
+        anthropicCacheTtl: config.globalSettings.anthropicCacheTtl,
       },
       config.config,
       config.dependencies

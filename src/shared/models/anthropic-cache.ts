@@ -1,16 +1,19 @@
 import type { ModelMessage } from 'ai'
 
+export type AnthropicCacheTtl = '5m' | '1h'
+
 /**
  * Add ephemeral cache control breakpoints for Anthropic prompt caching.
  * Places up to 3 breakpoints for optimal prefix caching:
- * 1. System message (constant prefix, always cache-hit)
+ * 1. System message (stable prefix when instructions are unchanged)
  * 2. Second-to-last user message (previous turn's breakpoint, cache-hit on this turn)
  * 3. Last message (creates new cache prefix for the next turn)
  *
- * Works with both direct Anthropic API and AWS Bedrock.
+ * Used by direct/custom Anthropic Messages and Anthropic-routed Chatbox AI.
+ * A one-hour TTL requires upstream support and has a higher cache-write price.
  * See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
  */
-export function addAnthropicCacheControl(messages: ModelMessage[]): ModelMessage[] {
+export function addAnthropicCacheControl(messages: ModelMessage[], ttl: AnthropicCacheTtl = '5m'): ModelMessage[] {
   if (messages.length === 0) {
     return messages
   }
@@ -47,7 +50,8 @@ export function addAnthropicCacheControl(messages: ModelMessage[]): ModelMessage
         ...msg.providerOptions,
         anthropic: {
           ...(msg.providerOptions?.anthropic as Record<string, unknown> | undefined),
-          cacheControl: { type: 'ephemeral' },
+          // Omit the default TTL for compatibility with existing relays.
+          cacheControl: { type: 'ephemeral', ...(ttl === '1h' ? { ttl: '1h' } : {}) },
         },
       },
     }

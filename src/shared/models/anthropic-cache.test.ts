@@ -9,6 +9,30 @@ function hasCacheControl(msg: ModelMessage): boolean {
 }
 
 describe('addAnthropicCacheControl', () => {
+  it('requests one-hour TTL consistently at every selected breakpoint without mutating history', () => {
+    const messages: ModelMessage[] = [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: [{ type: 'text', text: 'answer' }] },
+      { role: 'user', content: 'second' },
+    ]
+    const result = addAnthropicCacheControl(messages, '1h')
+    for (const index of [0, 1, 3]) {
+      expect(result[index].providerOptions?.anthropic?.cacheControl).toEqual({ type: 'ephemeral', ttl: '1h' })
+      expect(messages[index].providerOptions).toBeUndefined()
+    }
+    expect(hasCacheControl(result[2])).toBe(false)
+  })
+
+  it('keeps the legacy wire options for the default five-minute TTL', () => {
+    const messages: ModelMessage[] = [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'hello' },
+    ]
+    expect(addAnthropicCacheControl(messages, '5m')).toEqual(addAnthropicCacheControl(messages))
+    expect(addAnthropicCacheControl(messages)[0].providerOptions?.anthropic?.cacheControl).toEqual(cacheControl)
+  })
+
   it('returns empty array unchanged', () => {
     expect(addAnthropicCacheControl([])).toEqual([])
   })

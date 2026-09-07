@@ -4,7 +4,7 @@ import { IDLE_SESSION_LOCK_STATE } from '@chatbox/core/session/action-gates'
 import type { Session } from '@shared/types'
 import { act, renderHook } from '@testing-library/react'
 import { getDefaultStore } from 'jotai'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { rendererApplication } from '@/app/renderer-application'
 import { compactionUIStateMapAtom } from '@/stores/atoms/compactionAtoms'
 import { useSessionLockState } from './useSessionLockState'
@@ -29,6 +29,32 @@ describe('useSessionLockState', () => {
   test('returns the idle state without a session', () => {
     const { result } = renderHook(() => useSessionLockState(null))
     expect(result.current).toEqual(IDLE_SESSION_LOCK_STATE)
+  })
+
+  test('does not rescan an unchanged session during unrelated renderer updates', () => {
+    const readGenerating = vi.fn(() => false)
+    const message = { id: 'user', role: 'user' as const, contentParts: [] }
+    Object.defineProperty(message, 'generating', { get: readGenerating })
+    const current = session({ messages: [message] })
+    const { rerender } = renderHook(() => useSessionLockState(current))
+    const initialReads = readGenerating.mock.calls.length
+    expect(initialReads).toBeGreaterThan(0)
+
+    rerender()
+
+    expect(readGenerating).toHaveBeenCalledTimes(initialReads)
+    act(() => {
+      generationRuntimeStore.start(current.id, 'user')
+    })
+    expect(readGenerating.mock.calls.length).toBeGreaterThan(initialReads)
+  })
+
+  test('joins compaction runtime while an idle transcript waits for complete context', () => {
+    getDefaultStore().set(compactionUIStateMapAtom, {
+      'session-1': { status: 'running', error: null, streamingText: '', summaryMessageId: null },
+    })
+    const { result } = renderHook(() => useSessionLockState(undefined, 'session-1'))
+    expect(result.current.compactionRunning).toBe(true)
   })
 
   test('reports compaction only for the session it runs in', () => {

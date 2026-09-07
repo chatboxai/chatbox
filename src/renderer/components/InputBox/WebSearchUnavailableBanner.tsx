@@ -1,35 +1,20 @@
+import type { SessionReadModel } from '@chatbox/core/ports'
 import { ActionIcon, Button, Flex, Text } from '@mantine/core'
+import {
+  latestConversationMessageHasChatboxSearchSignInError,
+  messageHasChatboxSearchSignInError,
+} from '@shared/session/web-search-sign-in-error'
 import type { Session } from '@shared/types'
 import { IconAlertCircle, IconX } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { rendererApplication } from '@/app/renderer-application'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { navigateToSettings } from '@/modals/settings-navigation'
 import { getWebSearchConfigurationIssue } from '@/packages/web-search/configuration-issue'
 import { useSettingsStore } from '@/stores/settingsStore'
 
-const CHATBOX_SEARCH_LICENSE_REQUIRED = 20024
 const dismissedSessionIds = new Set<string>()
-
-function messageHasChatboxSearchSignInError(message: Session['messages'][number] | undefined): boolean {
-  const parts = message?.contentParts ?? []
-  for (let partIndex = parts.length - 1; partIndex >= 0; partIndex--) {
-    const part = parts[partIndex]
-    if (part.type !== 'tool-call' || part.toolName !== 'web_search' || part.state !== 'error') continue
-    const result = part.result as { errorCode?: unknown } | undefined
-    if (result?.errorCode === CHATBOX_SEARCH_LICENSE_REQUIRED) return true
-  }
-  return false
-}
-
-function findLatestConversationMessage(session: Session): Session['messages'][number] | undefined {
-  for (let messageIndex = session.messages.length - 1; messageIndex >= 0; messageIndex--) {
-    const message = session.messages[messageIndex]
-    if (message.role === 'system' || message.isForkMarker || message.isSummary) continue
-    return message
-  }
-  return undefined
-}
 
 export function hasChatboxSearchSignInError(session: Session): boolean {
   for (let messageIndex = session.messages.length - 1; messageIndex >= 0; messageIndex--) {
@@ -38,25 +23,54 @@ export function hasChatboxSearchSignInError(session: Session): boolean {
   return false
 }
 
-export function WebSearchUnavailableBanner({ session }: { session: Session }) {
+type BannerProps =
+  | { session: Session; sessionId?: never; summary?: never }
+  | {
+      session?: never
+      sessionId: string
+      summary: Pick<
+        Extract<SessionReadModel, { kind: 'window' }>['summary'],
+        'messageCount' | 'webSearchSignInErrorCount' | 'latestMessageHasWebSearchSignInError'
+      >
+    }
+
+export function WebSearchUnavailableBanner(props: BannerProps) {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
   const webSearchConfiguration = useSettingsStore((state) => state.extension.webSearch)
   const licenseKey = useSettingsStore((state) => state.licenseKey)
   const [, refreshDismissedState] = useState(0)
-  const dismissed = dismissedSessionIds.has(session.id)
-  const hasSignInError = useMemo(() => hasChatboxSearchSignInError(session), [session])
-  const latestMessageHasSignInError = useMemo(
-    () => messageHasChatboxSearchSignInError(findLatestConversationMessage(session)),
-    [session]
-  )
+  const sessionId = props.session ? props.session.id : props.sessionId
+  const dismissed = dismissedSessionIds.has(sessionId)
   const stillRequiresChatboxSignIn =
     getWebSearchConfigurationIssue(webSearchConfiguration, licenseKey) === 'chatbox-ai-sign-in'
+  const summary = props.summary
+  const hasProjection =
+    Number.isSafeInteger(summary?.webSearchSignInErrorCount) &&
+    (summary?.webSearchSignInErrorCount ?? -1) >= 0 &&
+    typeof summary?.latestMessageHasWebSearchSignInError === 'boolean'
+  const needsHistory = !props.session && !hasProjection && stillRequiresChatboxSignIn && !dismissed
+  const { session: historicalSession } = rendererApplication.sessionHooks.useSession(sessionId, {
+    enabled: needsHistory,
+  })
+  const session = props.session ?? (needsHistory ? historicalSession : null)
+  const hasSignInError = useMemo(
+    () =>
+      hasProjection ? (summary?.webSearchSignInErrorCount ?? 0) > 0 : !!session && hasChatboxSearchSignInError(session),
+    [hasProjection, summary, session]
+  )
+  const latestMessageHasSignInError = useMemo(
+    () =>
+      hasProjection
+        ? summary?.latestMessageHasWebSearchSignInError
+        : !!session && latestConversationMessageHasChatboxSearchSignInError(session.messages),
+    [hasProjection, summary, session]
+  )
 
   if (!stillRequiresChatboxSignIn || dismissed || !hasSignInError || latestMessageHasSignInError) return null
 
   const dismiss = () => {
-    dismissedSessionIds.add(session.id)
+    dismissedSessionIds.add(sessionId)
     refreshDismissedState((value) => value + 1)
   }
 

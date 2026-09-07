@@ -1,4 +1,9 @@
-import type { Message, Session } from '@shared/types'
+import {
+  SESSION_TEXT_TOKEN_VERSION,
+  type SessionMessagesSource,
+  type SessionTextTokenSource,
+} from '@chatbox/core/ports'
+import type { Message } from '@shared/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { computationQueue } from '../computation-queue'
@@ -7,20 +12,20 @@ import { _resetExactTokenizationFallbacks, getExactTokenizationFallbackCount } f
 import { executeTask, initializeExecutor, setResultPersister } from '../task-executor'
 import type { ComputationTask } from '../types'
 
-const { getSessionMock, tokenizeDraftMock } = vi.hoisted(() => ({
-  getSessionMock: vi.fn(),
+const { readMessagesMock, tokenizeDraftMock } = vi.hoisted(() => ({
+  readMessagesMock: vi.fn(),
   tokenizeDraftMock: vi.fn(),
 }))
 
 vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: { sessionQueryBridge: { getSession: getSessionMock } },
+  rendererApplication: { sessions: { readSessionMessages: readMessagesMock } },
 }))
 
 vi.mock('../draft-tokenizer-worker-client', () => ({
   tokenizeDraftOffMainThread: tokenizeDraftMock,
 }))
 
-const mockGetSession = getSessionMock
+const mockReadMessages = readMessagesMock
 const mockGetBlob = vi.spyOn(currentBlobStorage, 'get')
 
 function createMessage(overrides: Partial<Message> = {}): Message {
@@ -32,14 +37,13 @@ function createMessage(overrides: Partial<Message> = {}): Message {
   }
 }
 
-function createSession(overrides: Partial<Session> = {}): Session {
+function createMessageSource(overrides: Partial<SessionMessagesSource> = {}): SessionMessagesSource {
   return {
-    id: 'session-1',
-    name: 'Test Session',
-    type: 'chat',
+    header: { id: 'session-1', name: 'Test Session', type: 'chat' },
+    revision: 1,
     messages: [createMessage()],
     ...overrides,
-  } as Session
+  }
 }
 
 function createMessageTextTask(overrides: Partial<ComputationTask> = {}): ComputationTask {
@@ -120,11 +124,87 @@ describe('executeTask', () => {
   })
 
   describe('executeMessageTextTask', () => {
+    it('keeps the issued SQL source paired with its exact snapshot without another read', async () => {
+      const textSnapshot = 'Hello world'
+      const textDigest = getTokenizationTextDigest(textSnapshot)
+      const textSource: SessionTextTokenSource = {
+        sessionId: 'session-1',
+        messageId: 'msg-1',
+        payloadId: 's:m:00000000-0000-4000-8000-000000000000',
+        calculationVersion: SESSION_TEXT_TOKEN_VERSION,
+        text: textSnapshot,
+        textDigest,
+      }
+      const task = { ...createMessageTextTask(), textSnapshot, textDigest, textSource }
+      const result = await executeTask(task)
+      expect(result).toMatchObject({ success: true, result: { tokens: 2, textSource } })
+      expect(result.result?.textSource).toBe(textSource)
+      expect(mockReadMessages).not.toHaveBeenCalled()
+      const edited = 'different text'
+      expect(
+        await executeTask({ ...task, textSnapshot: edited, textDigest: getTokenizationTextDigest(edited) })
+      ).toEqual({
+        success: false,
+        error: 'stale_message_text',
+        silent: true,
+      })
+      expect(mockReadMessages).not.toHaveBeenCalled()
+    })
+
+    it('issues a current source only after checking the selected message still matches the task', async () => {
+      const textSnapshot = 'Hello world'
+      const textDigest = getTokenizationTextDigest(textSnapshot)
+      const source: SessionTextTokenSource = {
+        sessionId: 'session-1',
+        messageId: 'msg-1',
+        payloadId: 's:m:00000000-0000-4000-8000-000000000000',
+        calculationVersion: SESSION_TEXT_TOKEN_VERSION,
+        text: textSnapshot,
+        textDigest,
+      }
+      mockReadMessages.mockResolvedValue(
+        createMessageSource({ textTokens: { sources: { 'msg-1': source }, results: [] } })
+      )
+      const task = { ...createMessageTextTask(), textSnapshot, textDigest, textSource: 'read-current' as const }
+      expect(await executeTask(task)).toMatchObject({ success: true, result: { textSource: source } })
+      expect(mockReadMessages).toHaveBeenCalledTimes(1)
+      mockReadMessages.mockResolvedValue(
+        createMessageSource({ messages: [createMessage({ contentParts: [{ type: 'text', text: 'edited' }] })] })
+      )
+      expect(await executeTask(task)).toEqual({ success: false, error: 'stale_message_text', silent: true })
+    })
+
+    it.each(['Hello world', ''])(
+      'computes a supplied snapshot without reading stored messages: %j',
+      async (textSnapshot) => {
+        mockReadMessages.mockRejectedValue(new Error('Snapshot tasks must not read storage'))
+        const task = { ...createMessageTextTask(), textSnapshot, textDigest: getTokenizationTextDigest(textSnapshot) }
+        const result = await executeTask(task)
+        expect(result).toMatchObject({
+          success: true,
+          result: { tokens: textSnapshot ? 2 : 0, approximate: false, textDigest: task.textDigest },
+        })
+        expect(result.result).not.toHaveProperty('textSnapshot')
+        expect(mockReadMessages).not.toHaveBeenCalled()
+      }
+    )
+
+    it.each([undefined, '', 'wrong-digest'])(
+      'rejects snapshot tasks with missing or mismatched digest: %j',
+      async (textDigest) => {
+        mockReadMessages.mockRejectedValue(new Error('Invalid snapshots must not fall back to storage'))
+        const result = await executeTask({ ...createMessageTextTask(), textSnapshot: 'snapshot', textDigest })
+        expect(result).toEqual({ success: false, error: 'stale_message_text', silent: true })
+        expect(mockReadMessages).not.toHaveBeenCalled()
+        expect(tokenizeDraftMock).not.toHaveBeenCalled()
+      }
+    )
+
     it('computes tokens for message text successfully', async () => {
-      const session = createSession({
+      const session = createMessageSource({
         messages: [createMessage({ id: 'msg-1', contentParts: [{ type: 'text', text: 'Hello world' }] })],
       })
-      mockGetSession.mockResolvedValue(session)
+      mockReadMessages.mockResolvedValue(session)
 
       const task = createMessageTextTask()
       const result = await executeTask(task)
@@ -136,10 +216,11 @@ describe('executeTask', () => {
       expect(result.result?.messageId).toBe('msg-1')
       expect(result.result?.tokens).toBeGreaterThan(0)
       expect(result.result?.calculatedAt).toBeDefined()
+      expect(mockReadMessages).toHaveBeenCalledWith({ sessionId: 'session-1', messageIds: ['msg-1'] })
     })
 
     it('returns error when session not found', async () => {
-      mockGetSession.mockResolvedValue(null)
+      mockReadMessages.mockResolvedValue(null)
 
       const task = createMessageTextTask()
       const result = await executeTask(task)
@@ -152,8 +233,8 @@ describe('executeTask', () => {
     })
 
     it('returns error when message not found', async () => {
-      const session = createSession({ messages: [] })
-      mockGetSession.mockResolvedValue(session)
+      const session = createMessageSource({ messages: [] })
+      mockReadMessages.mockResolvedValue(session)
 
       const task = createMessageTextTask()
       const result = await executeTask(task)
@@ -165,19 +246,11 @@ describe('executeTask', () => {
       })
     })
 
-    it('finds message in threads', async () => {
-      const session = createSession({
-        messages: [],
-        threads: [
-          {
-            id: 'thread-1',
-            name: 'Thread 1',
-            messages: [createMessage({ id: 'msg-1', contentParts: [{ type: 'text', text: 'Thread message' }] })],
-            createdAt: Date.now(),
-          },
-        ],
+    it('accepts an archived message returned by the by-ID reader', async () => {
+      const session = createMessageSource({
+        messages: [createMessage({ id: 'msg-1', contentParts: [{ type: 'text', text: 'Thread message' }] })],
       })
-      mockGetSession.mockResolvedValue(session)
+      mockReadMessages.mockResolvedValue(session)
 
       const task = createMessageTextTask()
       const result = await executeTask(task)
@@ -187,10 +260,10 @@ describe('executeTask', () => {
     })
 
     it('uses deepseek tokenizer when specified', async () => {
-      const session = createSession({
+      const session = createMessageSource({
         messages: [createMessage({ id: 'msg-1', contentParts: [{ type: 'text', text: '你好世界' }] })],
       })
-      mockGetSession.mockResolvedValue(session)
+      mockReadMessages.mockResolvedValue(session)
 
       const task = createMessageTextTask({ tokenizerType: 'deepseek' })
       const result = await executeTask(task)
@@ -205,14 +278,40 @@ describe('executeTask', () => {
     // fallback comparison cheap.
     const longText = 'queued draft word '.repeat(300)
 
-    function sessionWithLongMessage(): Session {
-      return createSession({
+    function sessionWithLongMessage(): SessionMessagesSource {
+      return createMessageSource({
         messages: [createMessage({ id: 'msg-1', contentParts: [{ type: 'text', text: longText }] })],
       })
     }
 
+    it.each([false, true])('uses the worker and bounded fallback for snapshots, worker failure: %s', async (failed) => {
+      mockReadMessages.mockRejectedValue(new Error('Snapshot tasks must not read storage'))
+      if (failed) tokenizeDraftMock.mockRejectedValue(new Error('worker unavailable'))
+      else tokenizeDraftMock.mockResolvedValue(424242)
+      const textDigest = getTokenizationTextDigest(longText)
+      const result = await executeTask({
+        ...createMessageTextTask(),
+        textSnapshot: longText,
+        textDigest,
+        retryAttempt: 1,
+      })
+      expect(result).toMatchObject({
+        success: true,
+        result: {
+          textDigest,
+          approximate: failed,
+          tokens: failed ? estimateDraftTokensImmediately(longText, 'default') : 424242,
+        },
+      })
+      expect(tokenizeDraftMock).toHaveBeenCalledWith(longText, 'default', expect.any(AbortSignal), {
+        lowPriority: true,
+      })
+      expect(mockReadMessages).not.toHaveBeenCalled()
+      expect(getExactTokenizationFallbackCount('msg-1', 'default', textDigest)).toBe(0)
+    })
+
     it('encodes in the draft worker at low priority instead of on this thread', async () => {
-      mockGetSession.mockResolvedValue(sessionWithLongMessage())
+      mockReadMessages.mockResolvedValue(sessionWithLongMessage())
       tokenizeDraftMock.mockResolvedValue(424242)
 
       const result = await executeTask(createMessageTextTask())
@@ -227,7 +326,7 @@ describe('executeTask', () => {
     })
 
     it('persists the bounded sampling estimate marked approximate when the worker fails', async () => {
-      mockGetSession.mockResolvedValue(sessionWithLongMessage())
+      mockReadMessages.mockResolvedValue(sessionWithLongMessage())
       tokenizeDraftMock.mockRejectedValue(new Error('worker unavailable'))
 
       const result = await executeTask(createMessageTextTask())
@@ -240,7 +339,7 @@ describe('executeTask', () => {
     })
 
     it('leaves retry budget accounting to the persister', async () => {
-      mockGetSession.mockResolvedValue(sessionWithLongMessage())
+      mockReadMessages.mockResolvedValue(sessionWithLongMessage())
       tokenizeDraftMock.mockRejectedValue(new Error('worker unavailable'))
       const textDigest = getTokenizationTextDigest(longText)
 
@@ -250,7 +349,7 @@ describe('executeTask', () => {
     })
 
     it('drops a task whose analyzed source changed before execution', async () => {
-      mockGetSession.mockResolvedValue(sessionWithLongMessage())
+      mockReadMessages.mockResolvedValue(sessionWithLongMessage())
       const result = await executeTask(
         createMessageTextTask({ textDigest: getTokenizationTextDigest('the previous text') })
       )
@@ -260,7 +359,7 @@ describe('executeTask', () => {
     })
 
     it('keeps short text on the synchronous encoder', async () => {
-      mockGetSession.mockResolvedValue(createSession())
+      mockReadMessages.mockResolvedValue(createMessageSource())
 
       const result = await executeTask(createMessageTextTask())
 
@@ -272,7 +371,7 @@ describe('executeTask', () => {
 
   describe('executeAttachmentTask', () => {
     it('computes tokens for file attachment successfully', async () => {
-      const session = createSession({
+      const session = createMessageSource({
         messages: [
           createMessage({
             id: 'msg-1',
@@ -280,7 +379,7 @@ describe('executeTask', () => {
           }),
         ],
       })
-      mockGetSession.mockResolvedValue(session)
+      mockReadMessages.mockResolvedValue(session)
       mockGetBlob.mockResolvedValue('File content here\nLine 2\nLine 3')
 
       const task = createAttachmentTask()
@@ -296,7 +395,7 @@ describe('executeTask', () => {
     })
 
     it('computes tokens for link attachment successfully', async () => {
-      const session = createSession({
+      const session = createMessageSource({
         messages: [
           createMessage({
             id: 'msg-1',
@@ -304,7 +403,7 @@ describe('executeTask', () => {
           }),
         ],
       })
-      mockGetSession.mockResolvedValue(session)
+      mockReadMessages.mockResolvedValue(session)
       mockGetBlob.mockResolvedValue('Link content here')
 
       const task = createAttachmentTask({
@@ -328,10 +427,10 @@ describe('executeTask', () => {
     })
 
     it('returns error when attachment not found', async () => {
-      const session = createSession({
+      const session = createMessageSource({
         messages: [createMessage({ id: 'msg-1', files: [] })],
       })
-      mockGetSession.mockResolvedValue(session)
+      mockReadMessages.mockResolvedValue(session)
 
       const task = createAttachmentTask()
       const result = await executeTask(task)
@@ -344,7 +443,7 @@ describe('executeTask', () => {
     })
 
     it('returns error when no storage key', async () => {
-      const session = createSession({
+      const session = createMessageSource({
         messages: [
           createMessage({
             id: 'msg-1',
@@ -352,7 +451,7 @@ describe('executeTask', () => {
           }),
         ],
       })
-      mockGetSession.mockResolvedValue(session)
+      mockReadMessages.mockResolvedValue(session)
 
       const task = createAttachmentTask()
       const result = await executeTask(task)
@@ -363,8 +462,8 @@ describe('executeTask', () => {
       })
     })
 
-    it('returns zero tokens when storage read fails', async () => {
-      const session = createSession({
+    it('returns a retryable failure with no cache result when storage read fails', async () => {
+      const session = createMessageSource({
         messages: [
           createMessage({
             id: 'msg-1',
@@ -372,20 +471,17 @@ describe('executeTask', () => {
           }),
         ],
       })
-      mockGetSession.mockResolvedValue(session)
+      mockReadMessages.mockResolvedValue(session)
       mockGetBlob.mockRejectedValue(new Error('Storage error'))
 
       const task = createAttachmentTask()
       const result = await executeTask(task)
 
-      expect(result.success).toBe(true)
-      expect(result.result?.tokens).toBe(0)
-      expect(result.result?.lineCount).toBe(0)
-      expect(result.result?.byteLength).toBe(0)
+      expect(result).toEqual({ success: false, error: 'attachment_read_failed', retryable: true })
     })
 
     it('returns zero tokens when content is empty', async () => {
-      const session = createSession({
+      const session = createMessageSource({
         messages: [
           createMessage({
             id: 'msg-1',
@@ -393,19 +489,23 @@ describe('executeTask', () => {
           }),
         ],
       })
-      mockGetSession.mockResolvedValue(session)
-      mockGetBlob.mockResolvedValue(null)
+      mockReadMessages.mockResolvedValue(session)
+      mockGetBlob.mockResolvedValue('')
 
       const task = createAttachmentTask()
       const result = await executeTask(task)
 
       expect(result.success).toBe(true)
       expect(result.result?.tokens).toBe(0)
+      expect(result.result?.sourceStorageKey).toBe('storage-key-1')
+      expect(result.result?.sourceName).toBe('test.txt')
+      mockGetBlob.mockResolvedValue(null)
+      expect(await executeTask(task)).toEqual({ success: false, error: 'attachment_content_missing', retryable: true })
     })
 
     it('uses preview mode correctly', async () => {
       const lines = Array.from({ length: 200 }, (_, i) => `Line ${i + 1}`).join('\n')
-      const session = createSession({
+      const session = createMessageSource({
         messages: [
           createMessage({
             id: 'msg-1',
@@ -413,7 +513,7 @@ describe('executeTask', () => {
           }),
         ],
       })
-      mockGetSession.mockResolvedValue(session)
+      mockReadMessages.mockResolvedValue(session)
       mockGetBlob.mockResolvedValue(lines)
 
       const fullTask = createAttachmentTask({ contentMode: 'full' })
@@ -430,7 +530,7 @@ describe('executeTask', () => {
     })
 
     it('includes wrapper tokens in calculation', async () => {
-      const session = createSession({
+      const session = createMessageSource({
         messages: [
           createMessage({
             id: 'msg-1',
@@ -438,7 +538,7 @@ describe('executeTask', () => {
           }),
         ],
       })
-      mockGetSession.mockResolvedValue(session)
+      mockReadMessages.mockResolvedValue(session)
       mockGetBlob.mockResolvedValue('x')
 
       const task = createAttachmentTask()
@@ -461,8 +561,8 @@ describe('initializeExecutor', () => {
   })
 
   it('connects executor to computation queue', async () => {
-    const session = createSession()
-    mockGetSession.mockResolvedValue(session)
+    const session = createMessageSource()
+    mockReadMessages.mockResolvedValue(session)
 
     initializeExecutor()
 
@@ -479,8 +579,8 @@ describe('initializeExecutor', () => {
   })
 
   it('passes results to result persister', async () => {
-    const session = createSession()
-    mockGetSession.mockResolvedValue(session)
+    const session = createMessageSource()
+    mockReadMessages.mockResolvedValue(session)
 
     const mockPersister = { addResult: vi.fn() }
     setResultPersister(mockPersister)
@@ -502,6 +602,30 @@ describe('initializeExecutor', () => {
         messageId: 'msg-1',
       })
     )
+  })
+
+  it('does not persist zero attachment data after null or failed blob reads exhaust retry attempts', async () => {
+    vi.useFakeTimers()
+    try {
+      mockReadMessages.mockResolvedValue(
+        createMessageSource({
+          messages: [
+            createMessage({ files: [{ id: 'file-1', name: 'test.txt', fileType: 'text/plain', storageKey: 'blob' }] }),
+          ],
+        })
+      )
+      mockGetBlob.mockResolvedValueOnce(null).mockRejectedValue(new Error('Storage unavailable'))
+      const persister = { addResult: vi.fn() }
+      setResultPersister(persister)
+      initializeExecutor()
+      computationQueue.enqueue(createAttachmentTask())
+      await vi.runAllTimersAsync()
+      expect(mockGetBlob).toHaveBeenCalledTimes(3)
+      expect(persister.addResult).not.toHaveBeenCalled()
+      expect(computationQueue.getStatus().running).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

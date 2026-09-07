@@ -1,9 +1,12 @@
 import type { LoggerPort } from '../../ports/logger'
+import type { SessionMessageDerivedWriteResult } from '../../ports/session-message-source'
 import type { Session, SessionMeta, SessionMetaPage, SessionMetaRecord } from '../../types'
 
 export type SessionDeleteOperation = 'session deletion' | 'bulk session deletion' | 'stale session meta cleanup'
 
 export type SessionApplicationEvent =
+  | ({ type: 'session-derived-data-patched' } & SessionMessageDerivedWriteResult)
+  | ({ type: 'session-text-tokens-cached' } & SessionTextTokenWriteResult)
   | {
       type: 'session-created'
       session: Session
@@ -76,3 +79,5 @@ export class SessionEventBus {
     )
   }
 }
+
+import type { SessionTextTokenWriteResult } from '../../ports/session-text-tokens'

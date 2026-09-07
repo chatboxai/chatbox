@@ -1,5 +1,6 @@
-import type { Session } from '@chatbox/core'
+import { type Session, shouldBackfillThreadName, UNTITLED_SESSION_NAME } from '@chatbox/core'
 import { SessionNamingService } from '@chatbox/core/application/session'
+import type { SessionHeader } from '@chatbox/core/ports'
 import { currentModelFactory } from '@/adapters/CurrentModelFactory'
 import { rendererApplication } from '@/app/renderer-application'
 import { languageNameMap } from '@/i18n/locales'
@@ -43,6 +44,28 @@ export function modifyThreadName(sessionId: string, threadName: string) {
 
 export function syncSessionAutoTitle(session: Session) {
   namingService.syncAutoTitle(session, { messages: session.messages })
+}
+
+export async function syncSessionAutoTitleOnOpen(
+  session: Session | SessionHeader,
+  isCurrent: () => boolean
+): Promise<void> {
+  if ('messages' in session) {
+    if (isCurrent()) syncSessionAutoTitle(session)
+    return
+  }
+
+  // Historical thread-name repair needs message content even when AI naming is disabled.
+  if (
+    !shouldBackfillThreadName(session) &&
+    (settingsService.getSettings().autoGenerateTitle === false ||
+      (session.name !== UNTITLED_SESSION_NAME && session.threadName))
+  ) {
+    return
+  }
+
+  const completeSession = await rendererApplication.sessionQueryBridge.getSession(session.id)
+  if (isCurrent() && completeSession) syncSessionAutoTitle(completeSession)
 }
 
 export function clearSessionNameGenerationState(sessionId: string): void {

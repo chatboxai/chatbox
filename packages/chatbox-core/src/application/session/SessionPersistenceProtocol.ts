@@ -4,15 +4,22 @@ import {
   type StoredSessionRecord,
 } from '../../ports/session-record-store'
 import {
+  type SessionRowCommit,
   SessionRowConflictError,
   type SessionRowSnapshot,
   type SessionRowStorePort,
   type SessionRows,
   type SessionRowsDiff,
 } from '../../ports/session-row-store'
-import { decodeSessionTree, normalizeSessionV1, type SessionRecordV2 } from '../../session/session-tree'
+import {
+  decodeSessionTree,
+  type MessageRow,
+  normalizeSessionV1,
+  type SessionRecordV2,
+} from '../../session/session-tree'
 import type { Session } from '../../types/session'
 import { migrateSession } from './compatibility/session-load'
+import { mapSessionMessages, withoutEstimatedTextTokens } from './session-text-tokens'
 
 export interface PersistedSessionVersion {
   /** Stable across V1 and V2 representations of the same logical session. */
@@ -92,7 +99,8 @@ function hash32(value: string, seed: number): string {
 }
 
 /** Compact representation-independent token used before a V1 or V2 update. */
-export function sessionContentFingerprint(session: Session): string {
+export function sessionContentFingerprint(session: Session, excludeEstimatedTextTokens = false): string {
+  if (excludeEstimatedTextTokens) session = mapSessionMessages(session, withoutEstimatedTextTokens)
   const migrated = migrateSession(session)
   const normalized = normalizeSessionV1(migrated)
   const comparable = normalized.ok ? migrateSession(normalized.session) : migrated
@@ -153,8 +161,17 @@ export class SessionPersistenceProtocol {
     private readonly rows: SessionRowStorePort
   ) {}
 
-  async inspectPersistedState(id: string, knownRows?: KnownRowState): Promise<PersistedSessionState> {
-    const record = await this.records.getRecord(id)
+  /** Rebuildable token estimates have the same version semantics in V1 and rows. */
+  fingerprint(session: Session): string {
+    return sessionContentFingerprint(session, Boolean(this.rows.acceptTextTokenResults))
+  }
+
+  async inspectPersistedState(
+    id: string,
+    knownRows?: KnownRowState,
+    observedRecord?: { record: StoredSessionRecord | null }
+  ): Promise<PersistedSessionState> {
+    const record = observedRecord ? observedRecord.record : await this.records.getRecord(id)
     if (!record || typeof record !== 'object') {
       const revision = await this.rows.getRevision(id)
       return { kind: 'missing', revision }
@@ -174,7 +191,7 @@ export class SessionPersistenceProtocol {
           fingerprint:
             knownRows?.snapshot.revision === snapshot.revision
               ? knownRows.version.fingerprint
-              : sessionContentFingerprint(session),
+              : this.fingerprint(session),
           revision: snapshot.revision,
         },
       }
@@ -182,7 +199,7 @@ export class SessionPersistenceProtocol {
 
     const revision = await this.rows.getRevision(id)
     const session = migrateSession(record)
-    const version = { fingerprint: sessionContentFingerprint(session), revision: null }
+    const version = { fingerprint: this.fingerprint(session), revision: null }
     // The complete V1 record is authoritative until a row marker is published.
     // Residual row payloads are inspected only when attempting to reuse a promotion.
     if (revision === null || !(await this.rows.hasRows(id))) {
@@ -265,13 +282,32 @@ export class SessionPersistenceProtocol {
     }
   }
 
+  /** Publish selected row updates without constructing a complete-session snapshot. */
+  async commitSelectedMessages(
+    id: string,
+    messages: MessageRow[],
+    record: SessionRecordV2,
+    expectedRevision: number
+  ): Promise<SessionRowCommit> {
+    if (record.id !== id || messages.some((message) => message.sessionId !== id)) {
+      throw new Error(`session ${id} selected commit payloads do not share an id`)
+    }
+    const commit = { record, revision: nextRevision(expectedRevision) }
+    await this.rows.applyDiff(
+      { sessionId: id, threads: { upsert: [], delete: [] }, messages: { upsert: messages, delete: [] } },
+      commit,
+      expectedRevision
+    )
+    return commit
+  }
+
   private async recover(
     state: Extract<PersistedSessionState, { kind: 'interrupted-promotion' }>,
     session: Session,
     rows: SessionRows,
     record: SessionRecordV2
   ): Promise<PromotionResult> {
-    const intendedFingerprint = sessionContentFingerprint(session)
+    const intendedFingerprint = this.fingerprint(session)
     const snapshot = intendedFingerprint === state.version.fingerprint ? await this.readPromotionCandidate(state) : null
     if (snapshot) {
       try {
@@ -296,7 +332,7 @@ export class SessionPersistenceProtocol {
     try {
       snapshot = await this.rows.readSnapshot(state.record.id)
       if (!snapshot) return null
-      fingerprint = sessionContentFingerprint(decodeSnapshot(snapshot))
+      fingerprint = this.fingerprint(decodeSnapshot(snapshot))
     } catch {
       // Invalid remnants can be rebuilt from the complete V1 record by a revision-checked write.
       return null

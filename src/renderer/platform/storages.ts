@@ -93,20 +93,34 @@ export class LocalStorage implements Storage {
 }
 
 class SQLiteStorage {
+  private static readonly BRIDGE_CHUNK_SIZE = 256 * 1024
+  private static readonly CHUNKS_PER_WRITE = 2
+  private static readonly MANIFEST_PEEK_LENGTH = 128
+  // Even six-times JSON escaping keeps a complete small value below 100 KiB.
+  private static readonly INLINE_READ_BYTES = 16 * 1024
+  // hex() doubles the payload, so this keeps a 512 KiB bridge string — the same
+  // budget already used by writing two 256 KiB chunks in one executeSet.
+  private static readonly BLOB_SLICE_SIZE = 256 * 1024
+  private static readonly CHUNKED_VALUE_PREFIX = '__CHATBOX_CHUNKED_VALUE_V1__:'
   private sqlite: SQLiteConnection
   private database!: SQLiteDBConnection
-  private initializePromise: Promise<void>
+  private initializePromise: Promise<void> | null = null
+  private operationQueues = new Map<string, Promise<unknown>>()
 
-  constructor() {
+  constructor(private readonly injectedDatabase?: SQLiteDBConnection) {
     this.sqlite = new SQLiteConnection(CapacitorSQLite)
-    this.initializePromise = this.initialize() // 初始化 Promise
+    if (injectedDatabase) this.database = injectedDatabase
   }
 
   // 创建并打开数据库
   private async initialize(): Promise<void> {
     try {
-      // reload的时候会报connection already open错误，所以先关闭
-      this.sqlite.closeConnection('chatbox.db', false)
+      // A WebView reload can leave a native connection from the previous JS context.
+      try {
+        await this.sqlite.closeConnection('chatbox.db', false)
+      } catch {
+        // A fresh launch has no previous connection.
+      }
       this.database = await this.sqlite.createConnection('chatbox.db', false, 'no-encryption', 1, false)
 
       // 创建表
@@ -126,6 +140,14 @@ class SQLiteStorage {
 
   // 确保数据库初始化完成
   private async ensureInitialized(): Promise<void> {
+    if (!this.initializePromise) {
+      this.initializePromise = (this.injectedDatabase ? this.initializeSchema() : this.initialize()).catch(
+        (error: unknown) => {
+          this.initializePromise = null
+          throw error
+        }
+      )
+    }
     await this.initializePromise
   }
 
@@ -133,6 +155,163 @@ class SQLiteStorage {
   async setItem(key: string, value: string): Promise<void> {
     await this.ensureInitialized()
 
+  private createChunkManifest(generation: string, chunkCount: number, length: number): string {
+    return `${SQLiteStorage.CHUNKED_VALUE_PREFIX}${generation}:${chunkCount}:${length}`
+  }
+
+  private splitValue(value: string): string[] {
+    const chunks: string[] = []
+    let offset = 0
+    while (offset < value.length) {
+      let end = Math.min(offset + SQLiteStorage.BRIDGE_CHUNK_SIZE, value.length)
+      const finalCodeUnit = value.charCodeAt(end - 1)
+      if (end < value.length && finalCodeUnit >= 0xd800 && finalCodeUnit <= 0xdbff) end--
+      chunks.push(value.slice(offset, end))
+      offset = end
+    }
+    return chunks
+  }
+
+  private decodeHex(hex: string): Uint8Array {
+    if (hex.length % 2 !== 0) throw new Error('Stored value blob slice is not valid hex')
+    const bytes = new Uint8Array(hex.length / 2)
+    for (let index = 0; index < bytes.length; index++) {
+      const high = Number.parseInt(hex.slice(index * 2, index * 2 + 1), 16)
+      const low = Number.parseInt(hex.slice(index * 2 + 1, index * 2 + 2), 16)
+      if (Number.isNaN(high) || Number.isNaN(low)) throw new Error('Stored value blob slice is not valid hex')
+      bytes[index] = (high << 4) | low
+    }
+    return bytes
+  }
+
+  private toByteLength(value: unknown): number | null {
+    if (typeof value === 'number') return value
+    if (typeof value === 'string' && value !== '') return Number(value)
+    return null
+  }
+
+  private async readValueHead(
+    key: string
+  ): Promise<{ kind: 'complete'; value: string } | { kind: 'prefix'; value: string; byteLength: number } | null> {
+    const result = await this.database.query(
+      `
+        WITH stored AS (
+          SELECT value, length(CAST(value AS BLOB)) AS value_length FROM key_value WHERE key = ?
+        )
+        SELECT value_length,
+          CASE WHEN value_length <= ${SQLiteStorage.INLINE_READ_BYTES}
+            THEN CASE WHEN instr(value, char(0)) = 0 THEN value ELSE hex(CAST(value AS BLOB)) END
+            ELSE substr(value, 1, ${SQLiteStorage.MANIFEST_PEEK_LENGTH}) END AS value,
+          CASE WHEN value_length <= ${SQLiteStorage.INLINE_READ_BYTES}
+            THEN CASE WHEN instr(value, char(0)) = 0 THEN 'complete' ELSE 'hex' END
+            ELSE 'prefix' END AS value_kind
+        FROM stored;
+      `,
+      [key]
+    )
+    const row = result.values?.[0] as { value?: unknown; value_length?: unknown; value_kind?: unknown } | undefined
+    if (!row || typeof row.value !== 'string') return null
+    const byteLength = this.toByteLength(row.value_length)
+    if (byteLength === null || !Number.isSafeInteger(byteLength) || byteLength < 0) {
+      throw new Error('Stored value length is invalid')
+    }
+    if (row.value_kind === 'hex') {
+      return { kind: 'complete', value: new TextDecoder('utf-8').decode(this.decodeHex(row.value)) }
+    }
+    if (row.value_kind === 'complete') return { kind: 'complete', value: row.value }
+    if (row.value_kind === 'prefix') return { kind: 'prefix', value: row.value, byteLength }
+    throw new Error('Stored value read kind is invalid')
+  }
+
+  private async readValueSlice(key: string, start: number, length: number): Promise<string | null> {
+    const result = await this.database.query(
+      `
+        SELECT substr(value, ?, ?) AS value
+        FROM key_value
+        WHERE key = ?;
+      `,
+      [start, length, key]
+    )
+    const value = result.values?.[0]?.value
+    return typeof value === 'string' ? value : null
+  }
+
+  private async readLegacyBlobValue(key: string, byteLength: number): Promise<string> {
+    const decoder = new TextDecoder('utf-8')
+    const parts: string[] = []
+    for (let offset = 1; offset <= byteLength; offset += SQLiteStorage.BLOB_SLICE_SIZE) {
+      const result = await this.database.query(
+        `
+          SELECT hex(substr(CAST(value AS BLOB), ?, ?)) AS value
+          FROM key_value
+          WHERE key = ?;
+        `,
+        [offset, SQLiteStorage.BLOB_SLICE_SIZE, key]
+      )
+      const hex = result.values?.[0]?.value
+      if (typeof hex !== 'string') throw new Error(`Stored value disappeared while reading key "${key}"`)
+      parts.push(decoder.decode(this.decodeHex(hex), { stream: true }))
+    }
+    parts.push(decoder.decode())
+    return parts.join('')
+  }
+
+  private async readChunkedValue(
+    key: string,
+    manifest: { generation: string; chunkCount: number; length: number }
+  ): Promise<string> {
+    const chunks: string[] = []
+    for (let index = 0; index < manifest.chunkCount; index++) {
+      const result = await this.database.query(
+        `
+          SELECT value
+          FROM key_value_chunks
+          WHERE key = ? AND generation = ? AND chunk_index = ?;
+        `,
+        [key, manifest.generation, index]
+      )
+      const value = result.values?.[0]?.value
+      if (typeof value !== 'string') throw new Error(`Stored value chunk is missing for key "${key}"`)
+      chunks.push(value)
+    }
+    return chunks.join('')
+  }
+
+  private async cleanupChunks(key: string, generation?: string): Promise<void> {
+    if (generation) {
+      await this.database.run(
+        `
+          DELETE FROM key_value_chunks
+          WHERE key = ? AND generation <> ?;
+        `,
+        [key, generation]
+      )
+      return
+    }
+    await this.database.run(
+      `
+        DELETE FROM key_value_chunks
+        WHERE key = ?;
+      `,
+      [key]
+    )
+  }
+
+  private async cleanupUnreferencedChunks(): Promise<void> {
+    const result = await this.database.query(`SELECT DISTINCT key FROM key_value_chunks;`)
+    const keys = result.values?.map((row) => String(row.key)) ?? []
+    for (const key of keys) {
+      const prefix = await this.readValueSlice(key, 1, SQLiteStorage.MANIFEST_PEEK_LENGTH)
+      const manifest = this.parseChunkManifest(prefix)
+      if (manifest) await this.cleanupChunks(key, manifest.generation)
+      else await this.cleanupChunks(key)
+    }
+  }
+
+  private async enqueueOperation<T>(key: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.operationQueues.get(key) ?? Promise.resolve()
+    const current = previous.catch(() => undefined).then(operation)
+    this.operationQueues.set(key, current)
     try {
       const query = `
           INSERT OR REPLACE INTO key_value (key, value)
@@ -149,17 +328,29 @@ class SQLiteStorage {
   async getItem(key: string): Promise<string | null> {
     await this.ensureInitialized()
 
-    try {
-      const query = `
-          SELECT value FROM key_value
-          WHERE key = ?;
-        `
-      const result = await this.database.query(query, [key])
-      return result.values?.[0]?.value || null
-    } catch (error) {
-      console.error('Failed to get value', error)
-      throw error
-    }
+    return await this.enqueueOperation(key, async () => {
+      try {
+        const head = await this.readValueHead(key)
+        if (head === null) return null
+        const manifest = this.parseChunkManifest(head.value)
+        if (manifest) return await this.readChunkedValue(key, manifest)
+        if (head.kind === 'complete') return head.value
+        const blobLength = head.byteLength
+        if (blobLength <= SQLiteStorage.BRIDGE_CHUNK_SIZE) {
+          return await this.readValueSlice(key, 1, SQLiteStorage.BRIDGE_CHUNK_SIZE)
+        }
+        const legacyValue = await this.readLegacyBlobValue(key, blobLength)
+        void this.enqueueOperation(key, () =>
+          this.writeItem(key, legacyValue).catch((error) => {
+            console.error('Failed to migrate legacy value', error)
+          })
+        )
+        return legacyValue
+      } catch (error) {
+        console.error('Failed to get value', error)
+        throw error
+      }
+    })
   }
 
   // 删除值
@@ -235,10 +426,20 @@ class SQLiteStorage {
 }
 
 export class MobileSQLiteStorage implements Storage {
+  // Native connections are keyed by database name across all wrappers. Migration
+  // probes and the platform must share initialization and per-key operation queues.
+  private static sharedStorage: SQLiteStorage | undefined
+
   public getStorageType(): string {
     return 'MOBILE_SQLITE'
   }
-  private sqliteStorage = new SQLiteStorage()
+  private sqliteStorage: SQLiteStorage
+
+  constructor(database?: SQLiteDBConnection) {
+    this.sqliteStorage = database
+      ? new SQLiteStorage(database)
+      : (MobileSQLiteStorage.sharedStorage ??= new SQLiteStorage())
+  }
 
   public async setStoreValue(key: string, value: any) {
     await this.sqliteStorage.setItem(key, JSON.stringify(value))

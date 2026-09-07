@@ -9,6 +9,7 @@ import {
   shouldTokenizeDraftOffMainThread,
 } from '../draft-tokenization'
 import { tokenizeDraftOffMainThread } from '../draft-tokenizer-worker-client'
+import { resultPersister } from '../result-persister'
 import { getTokenizerType } from '../tokenizer'
 import type { ExactDraftTokens, TokenEstimationResult, TokenizerType } from '../types'
 
@@ -22,6 +23,8 @@ const QUEUE_STATUS_THROTTLE_MS = 100
 export const LONG_DRAFT_TOKENIZATION_DEBOUNCE_MS = 200
 
 export interface UseTokenEstimationOptions {
+  contextSourcePending?: boolean
+  textTokens?: SessionTextTokenRead
   sessionId: string | null
   constructedMessage: Message | undefined
   contextMessages: Message[]
@@ -194,17 +197,28 @@ export function useTokenEstimation(options: UseTokenEstimationOptions): TokenEst
   const contextAnalysis = useMemo(
     () =>
       analyzeContextTokens({
+        sessionId: sessionId ?? undefined,
+        textSources: options.textTokens?.sources,
+        estimateMissingText: options.contextSourcePending,
         contextMessages,
         tokenizerType,
         modelSupportToolUseForFile,
         sandboxMode,
       }),
-    [contextMessages, tokenizerType, modelSupportToolUseForFile, sandboxMode]
+    [
+      contextMessages,
+      tokenizerType,
+      modelSupportToolUseForFile,
+      sandboxMode,
+      sessionId,
+      options.textTokens?.sources,
+      options.contextSourcePending,
+    ]
   )
 
   const pendingAnalysisTasks = useMemo(
-    () => [...currentInputAnalysis.pendingTasks, ...contextAnalysis.pendingTasks],
-    [currentInputAnalysis.pendingTasks, contextAnalysis.pendingTasks]
+    () => [...currentInputAnalysis.pendingTasks, ...(options.contextSourcePending ? [] : contextAnalysis.pendingTasks)],
+    [currentInputAnalysis.pendingTasks, contextAnalysis.pendingTasks, options.contextSourcePending]
   )
 
   const pendingContextMessages = useMemo(() => {
@@ -213,19 +227,38 @@ export function useTokenEstimation(options: UseTokenEstimationOptions): TokenEst
     return messageIds.size
   }, [contextAnalysis.pendingTasks, queueStatus.unfinishedContextMessageIds])
 
-  const pendingTaskIds = useMemo(() => {
-    if (!sessionId || sessionId === 'new') return []
-    return pendingAnalysisTasks.map((task) =>
+  useEffect(() => {
+    if (!sessionId || sessionId === 'new') return
+
+    // Apply context/model cancellation before deciding which pending work can be reused.
+    computationQueue.retainOnlyMessages(sessionId, contextMessageIds)
+    computationQueue.retainOnlyTokenizerType(sessionId, tokenizerType)
+
+    // A partial cache publication may still omit exact results awaiting their
+    // commit. Keep that handoff intact across re-renders and session re-entry.
+    const tasks = pendingAnalysisTasks
+      .filter(
+        (task) =>
+          task.type !== 'message-text' || !computationQueue.hasPendingTask(generateTaskId({ ...task, sessionId }))
+      )
+      .map((task) => {
+        const source = options.textTokens?.sources[task.messageId]
+        return task.type === 'message-text' &&
+          source?.sessionId === sessionId &&
+          source.text === task.textSnapshot &&
+          source.textDigest === task.textDigest
+          ? { ...task, textSource: source }
+          : task.type === 'message-text' && source
+            ? { ...task, textSource: 'read-current' as const }
+            : task
+      })
+      .filter((task) => !resultPersister.hasPendingExactTextResult({ ...task, sessionId }))
+    const pendingTaskIds = tasks.map((task) =>
       generateTaskId({
         ...task,
         sessionId,
       })
     )
-  }, [pendingAnalysisTasks, sessionId])
-
-  useEffect(() => {
-    if (!sessionId || sessionId === 'new') return
-
     const pendingTaskSignature = pendingTaskIds.join('|')
     if (pendingTaskIds.length > 0 && pendingTaskSignature !== lastInvalidatedTaskSignature.current) {
       computationQueue.invalidateCompletedTasks(pendingTaskIds)
@@ -236,21 +269,15 @@ export function useTokenEstimation(options: UseTokenEstimationOptions): TokenEst
       lastInvalidatedTaskSignature.current = ''
     }
 
-    // Cancel tasks for messages no longer in context (e.g., maxContextMessageCount changed)
-    computationQueue.retainOnlyMessages(sessionId, contextMessageIds)
-
-    // Cancel tasks with old tokenizerType when model changes
-    computationQueue.retainOnlyTokenizerType(sessionId, tokenizerType)
-
-    if (pendingAnalysisTasks.length === 0) return
+    if (tasks.length === 0) return
 
     computationQueue.enqueueBatch(
-      pendingAnalysisTasks.map((task) => ({
+      tasks.map((task) => ({
         ...task,
         sessionId,
       }))
     )
-  }, [sessionId, contextMessageIds, pendingAnalysisTasks, pendingTaskIds, tokenizerType])
+  }, [sessionId, contextMessageIds, pendingAnalysisTasks, tokenizerType, options.textTokens])
 
   useEffect(() => {
     return () => {
@@ -275,11 +302,15 @@ export function useTokenEstimation(options: UseTokenEstimationOptions): TokenEst
     [currentInputAnalysis.breakdown, contextAnalysis.breakdown]
   )
   const isDraftCalculating = draftTextTokens.isCalculating
-  const isContextCalculating = pendingContextMessages > 0
+  const isContextCalculating = options.contextSourcePending === true || pendingContextMessages > 0
   const isCalculating =
-    isDraftCalculating || queueStatus.pending > 0 || queueStatus.running > 0 || pendingAnalysisTasks.length > 0
+    isContextCalculating ||
+    isDraftCalculating ||
+    queueStatus.pending > 0 ||
+    queueStatus.running > 0 ||
+    pendingAnalysisTasks.length > 0
   const isCurrentInputApproximate = draftTextTokens.isApproximate || currentInputAnalysis.pendingTasks.length > 0
-  const isContextApproximate = contextAnalysis.hasApproximateText
+  const isContextApproximate = options.contextSourcePending === true || contextAnalysis.hasApproximateText
 
   return {
     currentInputTokens,
@@ -297,3 +328,5 @@ export function useTokenEstimation(options: UseTokenEstimationOptions): TokenEst
     breakdown,
   }
 }
+
+import type { SessionTextTokenRead } from '@chatbox/core/ports'

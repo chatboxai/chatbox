@@ -58,7 +58,7 @@ export function useSessionAgentMode(sessionId: string): AgentModeEntry {
   const legacyMap = useUIStore((state) => state.sessionAgentModeMap)
   const smartSwitchingDefault = useUIStore((state) => state.agentModeSmartSwitchingDefault)
   const lastSelected = useUIStore((state) => state.agentModeLastSelected)
-  const { session } = rendererApplication.sessionHooks.useSession(sessionId === 'new' ? null : sessionId)
+  const { session } = rendererApplication.sessionHooks.useSessionHeader(sessionId === 'new' ? null : sessionId)
 
   return useMemo(() => {
     return (

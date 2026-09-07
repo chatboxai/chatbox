@@ -1,5 +1,14 @@
+import { findMessageLocation } from '@shared/session/message-forks'
 import type { LoggerPort, SessionRepositoryPort } from '../../ports'
+import type { SessionContextRequest, SessionContextSource } from '../../ports/session-context-source'
+import type { SessionMessageDerivedWriteResult, SessionMessagesSource } from '../../ports/session-message-source'
+import type { SessionReadModel } from '../../ports/session-read-model'
+import { sessionReadModelHeader } from '../../ports/session-read-model'
+import type { SessionMessageWindow, SessionMessageWindowRequest } from '../../ports/session-row-store'
+import { type SessionMessagesRequest, SessionRowConflictError } from '../../ports/session-row-store'
+import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '../../ports/session-text-tokens'
 import type { Message, Session, SessionMetaPage, SessionMetaRecord, SessionSettings, Updater } from '../../types'
+import type { SessionMessageDerivedPatch } from './message-derived-data'
 import {
   applyMessageInsert,
   applyMessageRemoval,
@@ -13,6 +22,7 @@ import {
   type SessionWriteCoordinator,
   type SessionWriteResult,
 } from './SessionWriteCoordinator'
+import { contextSourceFromSession } from './session-context-source'
 import type { SessionEventBus } from './session-events'
 import {
   assertNoMessageDataUpdate,
@@ -97,29 +107,7 @@ export class SessionService {
     await this.initialize()
     try {
       const session = await this.repository.getSession(sessionId)
-      const repairSessionOnRead = this.options.repairSessionOnRead
-      if (!session || !repairSessionOnRead || !repairSessionOnRead(session).changed) {
-        return session
-      }
-
-      const result = await this.writes.updateFromSnapshot(
-        session,
-        (current) => {
-          if (!current) throw new Error(`Session ${sessionId} not found`)
-          const repair = repairSessionOnRead(current)
-          return repair.changed ? repair.session : current
-        },
-        { updateMeta: false }
-      )
-      await this.events.publish({
-        type: 'session-updated',
-        session: result.session,
-        meta: null,
-        // A first read can overlap a streaming cache update. Keep in-flight
-        // chunks; the merge only maps over messages that still exist.
-        preserveCachedGeneratingMessages: true,
-      })
-      return result.session
+      return await this.repairReadSession(session)
     } catch (error) {
       await this.log('error', 'Failed to read session from repository', {
         sessionId,
@@ -127,6 +115,107 @@ export class SessionService {
       })
       throw error
     }
+  }
+
+  private async repairReadSession(session: Session | null): Promise<Session | null> {
+    const sessionId = session?.id
+    const repairSessionOnRead = this.options.repairSessionOnRead
+    if (!session || !repairSessionOnRead || !repairSessionOnRead(session).changed) {
+      return session
+    }
+
+    const result = await this.writes.updateFromSnapshot(
+      session,
+      (current) => {
+        if (!current) throw new Error(`Session ${sessionId} not found`)
+        const repair = repairSessionOnRead(current)
+        return repair.changed ? repair.session : current
+      },
+      { updateMeta: false }
+    )
+    await this.events.publish({
+      type: 'session-updated',
+      session: result.session,
+      meta: null,
+      // A first read can overlap a streaming cache update. Keep in-flight
+      // chunks; the merge only maps over messages that still exist.
+      preserveCachedGeneratingMessages: true,
+    })
+    return result.session
+  }
+
+  async getSessionReadModel(sessionId: string): Promise<SessionReadModel | null> {
+    await this.initialize()
+    const model = await this.repository.getSessionReadModel?.(sessionId)
+    if (model === null) return null
+    if (model?.kind === 'window') return model
+    const session =
+      model?.kind === 'full' ? await this.repairReadSession(model.session) : await this.getSession(sessionId)
+    return session ? { kind: 'full', session, textTokens: model?.kind === 'full' ? model.textTokens : undefined } : null
+  }
+
+  async getCompleteSessionSource(sessionId: string) {
+    await this.initialize()
+    if (this.repository.getCompleteSessionSource) {
+      const source = await this.repository.getCompleteSessionSource(sessionId)
+      const session = source ? await this.repairReadSession(source.session) : null
+      return session ? { ...source, session } : null
+    }
+    const session = await this.getSession(sessionId)
+    return session ? { session } : null
+  }
+
+  async readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {
+    await this.initialize()
+    if (!this.repository.readSessionMessageWindow) throw new Error('Session window reads are unavailable')
+    return this.repository.readSessionMessageWindow(request)
+  }
+
+  async getSessionContextSource(request: SessionContextRequest): Promise<SessionContextSource | null> {
+    await this.initialize()
+    if (this.repository.getSessionContextSource) return this.repository.getSessionContextSource(request)
+    if (request.expectedRevision !== undefined)
+      throw new SessionRowConflictError(request.sessionId, request.expectedRevision, null)
+    const session = await this.getSession(request.sessionId)
+    return session ? contextSourceFromSession(session, request) : null
+  }
+
+  async readSessionMessages(request: SessionMessagesRequest): Promise<SessionMessagesSource | null> {
+    await this.initialize()
+    if (this.repository.readSessionMessages) return this.repository.readSessionMessages(request)
+    if (request.expectedRevision !== undefined)
+      throw new SessionRowConflictError(request.sessionId, request.expectedRevision, null)
+    const session = await this.getSession(request.sessionId)
+    return session
+      ? {
+          header: sessionReadModelHeader({ kind: 'full', session }),
+          revision: null,
+          messages: [...new Set(request.messageIds)].flatMap((id) => {
+            const location = findMessageLocation(session, id)
+            return location ? [location.list[location.index]] : []
+          }),
+        }
+      : null
+  }
+
+  async patchSessionMessageDerivedData(
+    sessionId: string,
+    patches: SessionMessageDerivedPatch[]
+  ): Promise<SessionMessageDerivedWriteResult> {
+    await this.initialize()
+    const result = await this.writes.patchMessageDerivedData(sessionId, patches)
+    if (result.patches.length) await this.events.publish({ type: 'session-derived-data-patched', ...result })
+    return result
+  }
+
+  async acceptSessionTextTokenResults(
+    sessionId: string,
+    results: readonly SessionTextTokenResult[]
+  ): Promise<SessionTextTokenWriteResult> {
+    await this.initialize()
+    const result = await this.writes.acceptTextTokenResults(sessionId, results)
+    if (result.results.length) await this.events.publish({ type: 'session-text-tokens-cached', ...result })
+    return result
   }
 
   async listSessionsMetaPage(cursor: number, limit?: number): Promise<SessionMetaPage> {

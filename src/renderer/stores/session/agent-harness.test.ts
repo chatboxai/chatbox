@@ -132,6 +132,7 @@ import type { ModelMessage } from 'ai'
 import { convertToLanguageModelPrompt, standardizePrompt } from 'ai/internal'
 import { addOrUpdateMyCopilot, disableCopilotMemory, enableCopilotMemory, removeMyCopilot } from '@/stores/copilotStore'
 import { computeEffectiveAgentMode, prepareAgentGenerationHarness } from './agent-harness'
+import * as toolsBuilder from './tools-builder'
 
 function createMockModel(overrides?: Partial<ModelInterface>): ModelInterface {
   return {
@@ -222,6 +223,48 @@ describe('computeEffectiveAgentMode', () => {
 })
 
 describe('prepareAgentGenerationHarness', () => {
+  test('builds compacted prompts while retaining sandbox seeds from the original path', async () => {
+    const buildTools = vi.spyOn(toolsBuilder, 'buildToolsForSession')
+    const seed = { id: 'old-file', name: 'history.csv', storageKey: 'parsed-history', rawStorageKey: 'raw-history' }
+    const messages: Message[] = [
+      { id: 'boundary', role: 'assistant', contentParts: [{ type: 'text', text: 'Old boundary' }] },
+      { id: 'summary', role: 'assistant', isSummary: true, contentParts: [{ type: 'text', text: 'Stored summary' }] },
+      { id: 'question', role: 'user', contentParts: [{ type: 'text', text: 'Inspect the previous upload.' }] },
+    ]
+    try {
+      const prepared = await prepareAgentGenerationHarness({
+        session: { id: 'session-1', name: 'Session', type: 'chat' },
+        settings: { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' } as SessionSettings,
+        globalSettings: {} as Settings,
+        configs: { uuid: 'config-1' } as Config,
+        messages,
+        targetMsgIx: messages.length,
+        history: {
+          firstMessageTimestamp: 123,
+          userMessageCount: 10,
+          hasAssistantMessage: true,
+          hasLegacyCommandHistory: false,
+          sandboxSeedAttachments: [seed],
+        },
+        compactionPoints: [{ boundaryMessageId: 'boundary', summaryMessageId: 'summary', createdAt: 10 }],
+        model: createMockModel(),
+        dependencies: createModelDependencies(),
+        webBrowsing: false,
+        agentModeValue: 'on',
+        agentModeLocked: true,
+        agentModeSupported: true,
+        signal: new AbortController().signal,
+        sandboxProviderFactory: () => sandboxProviderMock as unknown as SandboxProvider,
+        isPro: () => true,
+      })
+      expect(buildTools.mock.calls.at(-1)?.[1].codeExecution?.files).toEqual([seed])
+      expect(JSON.stringify(prepared.coreMessages)).toContain('Stored summary')
+      expect(JSON.stringify(prepared.coreMessages)).not.toContain('Old boundary')
+    } finally {
+      buildTools.mockRestore()
+    }
+  })
+
   test('prepares the real context, system prompt, tools, and sandbox gating for an uploaded file', async () => {
     const userMessage: Message = {
       id: 'msg-1',

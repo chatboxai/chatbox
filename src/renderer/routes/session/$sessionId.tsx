@@ -2,6 +2,7 @@ import NiceModal from '@ebay/nice-modal-react'
 import { Box, Button } from '@mantine/core'
 import type { ModelProvider } from '@shared/types'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useAtomValue } from 'jotai'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
@@ -15,8 +16,11 @@ import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
 import ThreadHistoryDrawer from '@/components/session/ThreadHistoryDrawer'
 import { useGenerationStop } from '@/hooks/useGenerationStop'
+import { useInitialSessionScroll } from '@/hooks/useInitialSessionScroll'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { useSessionPresentation, useSessionTranscript } from '@/hooks/useSessionPresentation'
+import { useSessionViewNavigation } from '@/hooks/useSessionViewNavigation'
 import useVersion from '@/hooks/useVersion'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import * as remote from '@/packages/remote'
@@ -27,10 +31,10 @@ import {
   useSessionStartupQueryFailure,
 } from '@/packages/session-startup-recovery'
 import { showSessionArchiveUndo } from '@/presentation/session/session-archive-notification'
+import { showThreadHistoryDrawerAtom } from '@/stores/atoms'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { applyChatboxLicenseDefaultModelToSession } from '@/stores/defaultChatModel'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
-import * as scrollActions from '@/stores/scrollActions'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { startNewThread } from '@/stores/session/threads'
@@ -39,8 +43,6 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
-
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 
 export const Route = createFileRoute('/session/$sessionId')({
   component: SessionRouteWithErrorBoundary,
@@ -65,10 +67,11 @@ function RouteComponent() {
   const navigate = useNavigate()
   const sessionLoadTarget = useSessionStartupLoadTarget(currentSessionId)
   const recovering = sessionLoadTarget === null
-  const { session: currentSession, isFetching, isError } = useSession(sessionLoadTarget)
+  const { header: currentSession, readModel, isFetching, isError } = useSessionPresentation(sessionLoadTarget)
   useSessionStartupQueryFailure(currentSessionId, sessionLoadTarget, isError && !currentSession)
   const sessionLoadSettled = currentSession?.id === currentSessionId || (!isFetching && !isError)
   useSessionStartupGuard(currentSessionId, sessionLoadSettled, recovering)
+  const transcript = useSessionTranscript(readModel)
   const { providers } = useProviders()
   const licenseKey = useSettingsStore((s) => s.licenseKey)
   const hasLicense = Boolean(licenseKey)
@@ -80,6 +83,18 @@ function RouteComponent() {
   const { isExceeded, isExceededResolved } = useVersion()
   const widthFull = useUIStore((s) => s.widthFull)
   const isSmallScreen = useIsSmallScreen()
+  const showThreadHistory = useAtomValue(showThreadHistoryDrawerAtom)
+  const { session: completeNavigationSession } = rendererApplication.sessionHooks.useSession(sessionLoadTarget, {
+    enabled: !recovering && Boolean(readModel) && (!isSmallScreen || Boolean(showThreadHistory)),
+  })
+  const completeSession =
+    readModel?.kind === 'full'
+      ? readModel.session
+      : !isSmallScreen || showThreadHistory
+        ? (completeNavigationSession ?? undefined)
+        : undefined
+  const messageListRef = useRef<MessageListRef>(null)
+  const { requireComplete } = useSessionViewNavigation(currentSessionId, messageListRef, Boolean(completeSession))
   const setLastUsedChatModel = useStore(lastUsedModelStore, (state) => state.setChatModel)
 
   useEffect(() => {
@@ -113,18 +128,11 @@ function RouteComponent() {
       licensePlanName,
     })
   }, [currentSession, hasExpiredLicense, licenseDetail, licenseKey, licensePlanName])
-  const messageListRef = useRef<MessageListRef>(null)
-
   const goHome = useCallback(() => {
     navigate({ to: '/', replace: true })
   }, [navigate])
 
-  useEffect(() => {
-    if (recovering) return
-    setTimeout(() => {
-      scrollActions.scrollToBottom('auto') // 每次启动时自动滚动到底部
-    }, 200)
-  }, [recovering])
+  useInitialSessionScroll(currentSessionId, completeSession ? 'full' : readModel?.kind, !recovering)
 
   // currentSession变化时（包括session settings变化），存下当前的settings作为新Session的默认值
   useEffect(() => {
@@ -208,8 +216,8 @@ function RouteComponent() {
     if (!currentSession) {
       return false
     }
-    void NiceModal.show('session-settings', {
-      session: currentSession,
+    void rendererApplication.sessionQueryBridge.getSession(currentSession.id).then((session) => {
+      if (session) void NiceModal.show('session-settings', { session })
     })
     return true
   }, [currentSession])
@@ -272,13 +280,33 @@ function RouteComponent() {
 
   return currentSession ? (
     <div className={`flex flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>
-      <Header session={currentSession} />
+      <Header session={completeSession ?? currentSession} />
+      {!completeSession && transcript.error && (
+        <Button variant="subtle" onClick={transcript.retry}>
+          {t('Try Again')}
+        </Button>
+      )}
 
       {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
       <MessageList
         ref={messageListRef}
         key={`message-list${currentSessionId}`}
-        currentSession={currentSession}
+        {...(completeSession
+          ? { currentSession: completeSession }
+          : {
+              transcript: { header: currentSession, messages: transcript.messages },
+              windowIdentity: transcript.windowIdentity,
+              hasOlder: transcript.hasOlder,
+              onLoadOlder: transcript.loadOlder,
+              hasNewer: transcript.hasNewer,
+              onLoadNewer: transcript.loadNewer,
+              isLoadingOlder: transcript.isLoadingOlder,
+              isLoadingNewer: transcript.isLoadingNewer,
+              isJumping: transcript.isJumping,
+              onJumpToEdge: transcript.jumpToEdge,
+              windowPosition: transcript.position,
+              onRequireComplete: requireComplete,
+            })}
         className={!isSmallScreen ? 'pt-[2px]' : undefined}
       />
 
@@ -314,7 +342,7 @@ function RouteComponent() {
           />
         </ErrorBoundary>
       </Box>
-      <ThreadHistoryDrawer session={currentSession} />
+      {completeSession && <ThreadHistoryDrawer session={completeSession} />}
     </div>
   ) : (
     !isFetching && (

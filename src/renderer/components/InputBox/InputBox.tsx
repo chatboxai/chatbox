@@ -6,6 +6,7 @@ import { autoUpdate, computePosition, flip, offset, shift, size } from '@floatin
 import { ActionIcon, Box, Button, Flex, Loader, Menu, Stack, Text, Textarea, UnstyledButton } from '@mantine/core'
 import { useViewportSize } from '@mantine/hooks'
 import { TestId } from '@shared/automation/testids'
+import { selectContextMessages } from '@shared/context'
 import {
   getFileAcceptConfig,
   getFileAcceptString,
@@ -60,9 +61,10 @@ import { useProviders } from '@/hooks/useProviders'
 import { useSaveBlob } from '@/hooks/useSaveBlob'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionLockState } from '@/hooks/useSessionLockState'
+import { useSessionPresentation } from '@/hooks/useSessionPresentation'
+import { useSessionTokenContext } from '@/hooks/useSessionTokenContext'
 import { cn } from '@/lib/utils'
 import {
-  getContextMessageIds,
   isAutoCompactionEnabled,
   isCompactionInProgress,
   useContextTokens,
@@ -136,8 +138,6 @@ import { useReasoningControlState } from './useReasoningControlState'
 import { useThreadCreation } from './useThreadCreation'
 import { WebSearchUnavailableBanner } from './WebSearchUnavailableBanner'
 import WorkModeStatusRow from './WorkModeStatusRow'
-
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 
 export type InputBoxPayload = {
   constructedMessage: Message
@@ -375,9 +375,12 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const pictureKeys = preConstructedMessage.pictureKeys || []
     const attachments = preConstructedMessage.attachments || []
 
-    const { session: currentSession } = useSession(sessionId || null)
+    const { readModel, header: sessionHeader } = useSessionPresentation(sessionId || null)
+    const currentSession = readModel?.kind === 'full' ? readModel.session : undefined
+    const tokenSource = useSessionTokenContext(sessionId || null, readModel)
+    const contextPending = !isNewSession && (!readModel || !tokenSource || tokenSource.isPartial === true)
     const { sessionSettings: currentSessionMergedSettings } = useSessionSettings(sessionId || null)
-    const sessionLocks = useSessionLockState(currentSession)
+    const sessionLocks = useSessionLockState(currentSession, sessionId)
     const submitAvailability = getSubmitAvailability(sessionLocks)
     // While replies stream, an empty draft shows Stop; entering content turns
     // the same control back into Send so it can be queued. The hard block
@@ -453,22 +456,22 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     })
 
     // Get current messages for token counting - will only recalculate when stable messages actually change
-    // Uses getContextMessageIds to respect compaction points. Keyed off the
-    // eligible-message subset so per-chunk streaming updates don't re-run it.
-    const stableSessionMessages = useStableEligibleMessages(currentSession?.messages)
+    // Keyed off the eligible-message subset so streaming chunks do not repeat selection.
+    const stableSessionMessages = useStableEligibleMessages(tokenSource?.candidateMessages)
     const currentContextMessageIds = useMemo(() => {
       if (isNewSession) return null
-      if (!currentSession || !stableSessionMessages.length) return null
-
-      return getContextMessageIds(
-        { ...currentSession, messages: stableSessionMessages },
-        currentSessionMergedSettings?.maxContextMessageCount
+      if (!tokenSource || tokenSource.isPartial || !stableSessionMessages.length) return null
+      const ids = selectContextMessages(stableSessionMessages, { compactionPoints: tokenSource.compactionPoints }).map(
+        (message) => message.id
       )
+      const maxCount = currentSessionMergedSettings?.maxContextMessageCount
+      return maxCount === undefined ? ids : maxCount <= 0 ? [] : ids.slice(-maxCount)
     }, [
       isNewSession,
       currentSessionMergedSettings?.maxContextMessageCount,
       stableSessionMessages,
-      currentSession?.compactionPoints,
+      tokenSource?.compactionPoints,
+      tokenSource?.isPartial,
     ])
 
     const { knowledgeBase, setKnowledgeBase } = useKnowledgeBase({ isNewSession })
@@ -483,6 +486,22 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const canCreateThread = isActionAvailableInMode('create-thread', sessionMode)
 
     const [showCompressionModal, setShowCompressionModal] = useState(false)
+    const compressionSessionIdRef = useRef(sessionId)
+    compressionSessionIdRef.current = sessionId
+    const openCompressionModal = useCallback(async () => {
+      if (!sessionId || isNewSession) return
+      try {
+        const session =
+          currentSession || (await rendererApplication.sessionQueryBridge.requireCompleteSessionView(sessionId))
+        if (session && compressionSessionIdRef.current === sessionId) {
+          setShowCompressionModal(true)
+        }
+      } catch (error) {
+        if (compressionSessionIdRef.current === sessionId) {
+          toastActions.add(`${t('Failed')}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+    }, [sessionId, isNewSession, currentSession, t])
 
     const [isSubmitting, setIsSubmitting] = useState(false)
     const activeSubmitRef = useRef<{ token: symbol; startedWhileGenerating: boolean } | null>(null)
@@ -703,32 +722,36 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     // Determine sandbox mode: files exist in session and model supports tool use for files
     const sandboxMode = useMemo(() => {
-      if (!modelSupportToolUseForFile || !currentSession) return false
-      return currentSession.messages.some((m) => m.files?.length)
-    }, [modelSupportToolUseForFile, currentSession?.messages])
+      if (!modelSupportToolUseForFile) return false
+      if (currentSession) return currentSession.messages.some((m) => m.files?.length)
+      return readModel?.kind === 'window' && readModel.summary.fileMessageCount > 0
+    }, [modelSupportToolUseForFile, currentSession?.messages, readModel])
 
     // Calculate token counts using unified cache layer
     const {
       contextTokens,
       currentInputTokens,
       totalTokens,
-      isCalculating,
+      isCalculating: tokensCalculating,
       isCurrentInputApproximate,
-      isTotalApproximate,
+      isTotalApproximate: tokensTotalApproximate,
       isContextApproximate,
-      isContextCalculating,
+      isContextCalculating: tokensContextCalculating,
       pendingContextMessages,
       messageCount,
       exactDraftTokens,
     } = useContextTokens({
       sessionId: currentSessionId || null,
-      session: currentSession,
+      source: tokenSource,
       settings: currentSessionMergedSettings || {},
       model,
       modelSupportToolUseForFile,
       sandboxMode,
       constructedMessage: preConstructedMessage.message,
     })
+    const isCalculating = contextPending || tokensCalculating
+    const isTotalApproximate = contextPending || tokensTotalApproximate
+    const isContextCalculating = contextPending || tokensContextCalculating
 
     const globalAutoCompaction = useSettingsStore((state) => state.autoCompaction)
     const [isCompacting, setIsCompacting] = useState(false)
@@ -772,9 +795,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     })
 
     const autoCompactionEnabled = useMemo(() => {
-      if (!currentSession) return globalAutoCompaction ?? true
-      return isAutoCompactionEnabled(currentSession.settings, settingsStore.getState())
-    }, [currentSession, globalAutoCompaction])
+      if (!sessionHeader) return globalAutoCompaction ?? true
+      return isAutoCompactionEnabled(sessionHeader.settings, settingsStore.getState())
+    }, [sessionHeader, globalAutoCompaction])
 
     const contextWindowKnown = useMemo(() => {
       if (!model?.modelId) return false
@@ -798,9 +821,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     // Calculate token usage percentage
     const tokenPercentage = useMemo(() => {
-      if (!effectiveContextWindow || effectiveContextWindow <= 0) return null
+      if (contextPending || !effectiveContextWindow || effectiveContextWindow <= 0) return null
       return Math.round((totalTokens / effectiveContextWindow) * 100)
-    }, [totalTokens, effectiveContextWindow])
+    }, [totalTokens, effectiveContextWindow, contextPending])
 
     useEffect(() => {
       if (!currentSessionId || isNewSession) {
@@ -1003,7 +1026,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           const enqueueResult = enqueueUserMessage(
             currentSessionId,
             outgoingMessage,
-            currentSession?.messages.at(-1)?.id
+            currentSession?.messages.at(-1)?.id ??
+              (readModel?.kind === 'window' ? readModel.window.messages.at(-1)?.messageId : undefined)
           )
           if (enqueueResult !== 'queued') {
             // The draft is kept in both failure cases — it is the only copy of the text.
@@ -1512,7 +1536,12 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           {currentSessionId && (
             <CompactionStatus sessionId={currentSessionId} onViewSummary={onViewCompactionSummary} />
           )}
-          {currentSession && !isNewSession && <WebSearchUnavailableBanner session={currentSession} />}
+          {!isNewSession &&
+            (currentSession ? (
+              <WebSearchUnavailableBanner session={currentSession} />
+            ) : readModel?.kind === 'window' ? (
+              <WebSearchUnavailableBanner sessionId={readModel.header.id} summary={readModel.summary} />
+            ) : null)}
           {currentSessionId && !isNewSession && <QueuedMessagesBar sessionId={currentSessionId} />}
           {currentSession && !isNewSession && (
             <ErrorBoundary name="pending-action-bar">
@@ -2005,12 +2034,19 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   isTotalApproximate={isTotalApproximate}
                   isContextApproximate={isContextApproximate}
                   isContextCalculating={isContextCalculating}
+                  isContextLoading={contextPending}
                   pendingContextMessages={pendingContextMessages}
                   totalContextMessages={messageCount}
                   contextWindow={effectiveContextWindow ?? undefined}
                   currentMessageCount={currentContextMessageIds?.length ?? 0}
                   maxContextMessageCount={currentSessionMergedSettings?.maxContextMessageCount}
-                  onCompressClick={sessionId && !isNewSession ? () => setShowCompressionModal(true) : undefined}
+                  onCompressClick={
+                    sessionId && !isNewSession
+                      ? () => {
+                          void openCompressionModal()
+                        }
+                      : undefined
+                  }
                   autoCompactionEnabled={autoCompactionEnabled}
                   isCompacting={isCompacting}
                   contextWindowKnown={contextWindowKnown}
@@ -2028,6 +2064,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     <Text span size="xs" className="whitespace-nowrap" c="inherit">
                       {isTotalApproximate ? '~' : ''}
                       {formatNumber(totalTokens)}
+                      {contextPending && ` · ${t('Partial estimate')}`}
                       {tokenPercentage !== null && tokenPercentage > 10 && ` (${tokenPercentage}%)`}
                     </Text>
                   </Flex>

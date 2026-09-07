@@ -13,6 +13,7 @@ export {
   encodeSessionTree,
   messageRowStatus,
   messageRowUpdatedAt,
+  sessionTopologyFingerprint,
 } from './encode'
 export { type NormalizeSessionV1Result, normalizeSessionV1 } from './normalize'
 export type { MessageRow, MessageRowKind, MessageRowStatus, SessionRecordV2, SessionTree, ThreadRow } from './types'

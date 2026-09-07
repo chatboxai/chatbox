@@ -16,6 +16,21 @@ const HEIGHT_CHANGE_TOLERANCE = 0.5
 // sub-pixel gap that never closes.
 const AT_BOTTOM_TOLERANCE = 4
 
+export function isLayoutClampedScroll(
+  previousScrollTop: number | undefined,
+  previousMaxScrollTop: number | undefined,
+  scrollTop: number,
+  maxScrollTop: number
+) {
+  return (
+    previousScrollTop !== undefined &&
+    previousMaxScrollTop !== undefined &&
+    maxScrollTop < previousMaxScrollTop - HEIGHT_CHANGE_TOLERANCE &&
+    previousScrollTop > maxScrollTop &&
+    Math.abs(maxScrollTop - scrollTop) <= AT_BOTTOM_TOLERANCE
+  )
+}
+
 export function createSmoothFollowOutputController({
   scrollToBottom,
   stopScrolling,
@@ -33,6 +48,7 @@ export function createSmoothFollowOutputController({
 
   const pause = () => {
     following = false
+    pausedByUser = true
     if (pendingFrame !== undefined) {
       cancelFrame(pendingFrame)
       pendingFrame = undefined
@@ -53,25 +69,23 @@ export function createSmoothFollowOutputController({
   const handleScroll = (scrollTop: number, maxScrollTop: number) => {
     const movedUp = lastScrollTop !== undefined && scrollTop < lastScrollTop - SCROLL_DIRECTION_TOLERANCE
     const movedDown = lastScrollTop !== undefined && scrollTop > lastScrollTop + SCROLL_DIRECTION_TOLERANCE
-    const movedUpBecauseLayoutShrank =
-      lastMaxScrollTop !== undefined && maxScrollTop < lastMaxScrollTop - HEIGHT_CHANGE_TOLERANCE
+    const movedUpBecauseLayoutShrank = isLayoutClampedScroll(lastScrollTop, lastMaxScrollTop, scrollTop, maxScrollTop)
     lastScrollTop = scrollTop
     lastMaxScrollTop = maxScrollTop
     if (movedUp && !movedUpBecauseLayoutShrank) {
       const shouldStopScrolling = following
       pause()
-      pausedByUser = true
       // Pausing future retargets is not enough: a native smooth scroll that is already running can
       // continue pulling the viewport downward. Pinning the current position aborts that animation.
       // Deliberate navigation calls pause() before starting its own smooth scroll and must not be aborted.
       if (shouldStopScrolling) {
         stopScrolling?.(scrollTop)
       }
-    } else if (movedDown) {
-      // Resume as soon as the user reaches the end, without waiting for Virtuoso's at-bottom callback.
-      if (pausedByUser && maxScrollTop - scrollTop <= AT_BOTTOM_TOLERANCE) {
-        resume()
-      }
+    } else if (maxScrollTop - scrollTop <= AT_BOTTOM_TOLERANCE && (movedDown || (!pausedByUser && scrollTop > 0))) {
+      // Virtuoso coalesces at-bottom notifications. Measurements can replace a transient true signal
+      // before it arrives, so also recognize a real bottom scroll synchronously. Ignore the initial
+      // zero position of an unmeasured list, and require downward movement to resume a user-paused view.
+      resume()
     }
     return movedUp && !movedUpBecauseLayoutShrank
   }

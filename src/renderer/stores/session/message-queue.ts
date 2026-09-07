@@ -517,14 +517,19 @@ export function takeRequestedSteerableMessage(
   sessionId: string,
   isFromConversation: (anchorMessageId: string) => boolean
 ): QueuedUserMessage | undefined {
-  if (getQueuePausedReason(sessionId)) return undefined
-  const item = getQueue(sessionId).find(
-    (queued) => queued.steerRequested && !queued.inFlight && isSteerableQueuedMessage(queued.message)
-  )
+  const item = peekRequestedSteerableMessage(sessionId)
   if (!item) return undefined
   if (!item.conversationAnchorId || !isFromConversation(item.conversationAnchorId)) return undefined
   setItemInFlight(sessionId, item.id, true)
   return item
+}
+
+/** Inspect the same first candidate as the atomic claim without taking it out of the queue. */
+export function peekRequestedSteerableMessage(sessionId: string): QueuedUserMessage | undefined {
+  if (getQueuePausedReason(sessionId)) return undefined
+  return getQueue(sessionId).find(
+    (queued) => queued.steerRequested && !queued.inFlight && isSteerableQueuedMessage(queued.message)
+  )
 }
 
 /**

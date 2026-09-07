@@ -2,12 +2,21 @@ import type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared
 import type { Config, Message, Session, SessionSettings, Settings } from '@shared/types'
 import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { getSessionMessageTokenizationDigest } from '../application/session/message-derived-data'
+import { RowBackedSessionRepository } from '../application/session/RowBackedSessionRepository'
+import { contextSourceFromRows } from '../application/session/session-context-source'
+import { contextPathFacts } from '../persistence/session-context-read'
+import { contextSession, contextSnapshot } from '../persistence/session-context-read.test-support'
 import { generationStreamFixture } from '../testing/generation-stream'
+import { InMemorySessionRecordStore } from '../testing/InMemorySessionRecordStore'
+import { InMemorySessionRowStore } from '../testing/InMemorySessionRowStore'
 import {
   type GenerationHostPort,
+  type GenerationPreparationRequest,
   GenerationService,
   type GenerationServiceDependencies,
   type GenerationSessionPort,
+  type GenerationSteeringPort,
 } from './GenerationService'
 import { GenerationRuntimeStore } from './runtime-store'
 
@@ -48,6 +57,8 @@ interface Harness {
   storedBlobs: Map<string, string>
   storeBlob: ReturnType<typeof vi.fn>
   session: Session
+  sessions: GenerationSessionPort
+  preparedRequests: GenerationPreparationRequest<ModelContext>[]
   /** The object `getSessionSettings` resolves to; mutate it to drive per-chat settings. */
   sessionSettings: SessionSettings
   globalSettings: Settings
@@ -110,6 +121,7 @@ function createHarness(): Harness {
   let persistenceCallCount = 0
   const preparedTargetMessageIndexes: number[] = []
   const preparedWebBrowsing: boolean[] = []
+  const preparedRequests: GenerationPreparationRequest<ModelContext>[] = []
   const inserted: Array<{ message: Message; afterMessageId: string }> = []
   const trackPauseAction = vi.fn()
   const afterMessageGenerated = vi.fn()
@@ -119,7 +131,7 @@ function createHarness(): Harness {
   let steeredMessageIds: string[] = []
   const steeringRelease = vi.fn()
   const steeringAdmitAnchor = vi.fn()
-  const steeringRegister = vi.fn(() => ({
+  const steeringRegister = vi.fn<GenerationSteeringPort['register']>(() => ({
     inject: steeringInject,
     admitAnchor: steeringAdmitAnchor,
     getInjectedMessageIds: () => steeredMessageIds,
@@ -230,11 +242,6 @@ function createHarness(): Harness {
       // update fails afterwards (SessionMetadataUpdateError).
       return insertionFailure ? Promise.reject(insertionFailure.error) : Promise.resolve()
     },
-    findTargetMessageIndex: (current, messageId) => {
-      const index = current.messages.findIndex((message) => message.id === messageId)
-      return index < 0 ? null : { messages: current.messages, index }
-    },
-    getCompactionPointsForTarget: (current) => current.compactionPoints,
     findMessage: (current, messageId) => current.messages.find((message) => message.id === messageId),
     modifyMessage: (_sessionId, message) => {
       const index = session.messages.findIndex((candidate) => candidate.id === message.id)
@@ -271,6 +278,7 @@ function createHarness(): Harness {
     },
     preparation: {
       prepare: (request) => {
+        preparedRequests.push(request)
         preparedTargetMessageIndexes.push(request.targetMessageIndex)
         preparedWebBrowsing.push(request.webBrowsing)
         return Promise.resolve({
@@ -345,6 +353,8 @@ function createHarness(): Harness {
     storedBlobs,
     storeBlob,
     session,
+    sessions,
+    preparedRequests,
     sessionSettings,
     globalSettings,
     trackPauseAction,
@@ -397,6 +407,242 @@ function createHarness(): Harness {
     },
   }
 }
+
+async function boundedHarness() {
+  const harness = createHarness()
+  const complete = contextSession(100)
+  complete.id = 'session-1'
+  const target = complete.messages.at(-1)
+  if (!target) throw new Error('Missing target')
+  target.id = 'assistant-1'
+  Object.assign(harness.session, complete)
+  const rows = new InMemorySessionRowStore()
+  await rows.writeRows(contextSnapshot(complete))
+  harness.sessions.getSessionContextSource = async (request) => {
+    const source = await rows.readContext(request)
+    return source ? contextSourceFromRows(source) : null
+  }
+  harness.sessions.readSessionMessages = async (request) => {
+    const selected = await rows.readMessages(request)
+    if (!selected) return null
+    const { messages: _messages, threads: _threads, compactionPoints: _points, ...header } = complete
+    return { header, revision: selected.revision, messages: selected.messages.map((row) => row.message) }
+  }
+  const getSession = vi.fn(() => Promise.resolve(harness.session))
+  harness.sessions.getSession = getSession
+  return { ...harness, getSession }
+}
+
+describe('generation context sources', () => {
+  it.each([
+    ['approve', 'token-cache'],
+    ['retry', 'token-cache'],
+    ['approve', 'approval-binding'],
+    ['retry', 'approval-binding'],
+  ] as const)('revalidates %s across a concurrent %s update', async (operation, change) => {
+    const harness = createHarness()
+    const execute = vi.fn(async () => ({ stdout: '/workspace' }))
+    harness.setTools({ user_exec: { execute } } as unknown as ToolSet)
+    harness.session.messages[1] = {
+      ...targetMessage(),
+      generating: false,
+      finishReason: operation === 'approve' ? 'tool-call-paused' : undefined,
+      error: operation === 'retry' ? 'provider disconnected' : undefined,
+      contentParts: [
+        {
+          type: 'tool-call',
+          toolCallId: 'tool-1',
+          toolName: 'user_exec',
+          state: operation === 'approve' ? 'paused' : 'call',
+          args: { command: 'pwd' },
+          pauseReason: { type: 'user_exec_approval', command: 'pwd', workdir: '/workspace' },
+        },
+      ],
+    }
+    const repo = new RowBackedSessionRepository({
+      records: new InMemorySessionRecordStore(),
+      rows: new InMemorySessionRowStore(),
+    })
+    await repo.setSession(harness.session)
+    harness.sessions.getSessionContextSource = repo.getSessionContextSource.bind(repo)
+    harness.sessions.readSessionMessages = repo.readSessionMessages.bind(repo)
+    harness.sessions.getSession = repo.getSession.bind(repo)
+    const saveTarget = async (message: Message) => {
+      const current = await repo.getSession('session-1')
+      if (!current) throw new Error('Missing session')
+      await repo.setSession(
+        { ...current, messages: current.messages.map((m) => (m.id === message.id ? message : m)) },
+        { changedMessageId: message.id }
+      )
+    }
+    const modify = harness.sessions.modifyMessage
+    harness.sessions.modifyMessage = async (...args) => {
+      await modify(...args)
+      await saveTarget(args[1])
+    }
+    const persist = harness.sessions.persistStreamingMessage
+    harness.sessions.persistStreamingMessage = async (...args) => {
+      await persist(...args)
+      await saveTarget(args[1])
+    }
+    let concurrentUpdateCommitted = false
+    harness.sessions.getSessionSettings = async () => {
+      if (!concurrentUpdateCommitted) {
+        concurrentUpdateCommitted = true
+        if (change === 'token-cache') {
+          await repo.patchSessionMessageDerivedData('session-1', [
+            {
+              messageId: 'user-1',
+              text: [
+                {
+                  tokenizerType: 'default',
+                  sourceDigest: getSessionMessageTokenizationDigest(harness.session.messages[0]),
+                  tokens: 42,
+                  calculatedAt: 100,
+                },
+              ],
+            },
+          ])
+        } else {
+          const target = harness.session.messages[1]
+          await saveTarget({
+            ...target,
+            contentParts: target.contentParts.map((part) =>
+              part.type === 'tool-call'
+                ? {
+                    ...part,
+                    args: { command: 'whoami' },
+                    pauseReason: { type: 'user_exec_approval', command: 'whoami', workdir: '/workspace' },
+                  }
+                : part
+            ),
+          })
+        }
+      }
+      return harness.sessionSettings
+    }
+
+    if (operation === 'approve') await harness.service.continuePausedToolCall('session-1', 'assistant-1', 'tool-1')
+    else await harness.service.retryFromLastToolCallAfterApiError('session-1', 'assistant-1', 'tool-1')
+
+    const saved = await repo.getSession('session-1')
+    if (change === 'approval-binding') {
+      expect(execute).not.toHaveBeenCalled()
+      expect(harness.persisted).toHaveLength(0)
+      expect(saved?.messages[1].contentParts).toEqual([expect.objectContaining({ args: { command: 'whoami' } })])
+      return
+    }
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledWith(
+      { command: 'pwd' },
+      expect.objectContaining({ approved: true, approvalWorkdir: '/workspace', toolCallId: 'tool-1' })
+    )
+    expect(saved?.messages[0].tokenCountMap?.default).toBe(42)
+    expect(saved?.messages[1].contentParts).toEqual([
+      expect.objectContaining({ state: 'result', result: { stdout: '/workspace' } }),
+    ])
+  })
+
+  it.each(['approve', 'retry'] as const)(
+    'keeps %s for a removed target a no-op on compatibility hosts',
+    async (operation) => {
+      const harness = createHarness()
+      if (operation === 'approve') await harness.service.continuePausedToolCall('session-1', 'removed-target', 'tool-1')
+      else await harness.service.retryFromLastToolCallAfterApiError('session-1', 'removed-target', 'tool-1')
+      expect(harness.persisted).toHaveLength(0)
+    }
+  )
+
+  it.each(['present', 'read-failed'] as const)(
+    'preserves the original context failure when target verification is %s',
+    async (verification) => {
+      const harness = createHarness()
+      const contextError = new Error('Context storage failed')
+      harness.sessions.getSessionContextSource = () => Promise.reject(contextError)
+      if (verification === 'read-failed')
+        harness.sessions.readSessionMessages = () => Promise.reject(new Error('ID storage failed'))
+      await expect(harness.service.continuePausedToolCall('session-1', 'assistant-1', 'tool-1')).rejects.toBe(
+        contextError
+      )
+      expect(harness.persisted).toHaveLength(0)
+    }
+  )
+
+  it('prepares a bounded source and original history before initializing the target', async () => {
+    const harness = await boundedHarness()
+    const expectedHistory = contextPathFacts(harness.session.messages.slice(0, -1))
+    const originalTarget = { ...harness.session.messages.at(-1), timestamp: 42 } as Message
+    await harness.service.orchestrate('session-1', originalTarget)
+
+    expect(harness.getSession).not.toHaveBeenCalled()
+    expect(harness.preparedRequests[0].session).not.toHaveProperty('messages')
+    expect(harness.preparedRequests[0].messages.map((message) => message.id)).toEqual([
+      'system',
+      'boundary',
+      'summary',
+      'question',
+      'assistant-1',
+    ])
+    expect(harness.preparedRequests[0].history).toEqual(expectedHistory)
+    expect(harness.preparedRequests[0].messages.at(-1)?.timestamp).toBeUndefined()
+    expect(harness.persisted[0].message.timestamp).toBe(42)
+  })
+
+  it('includes the real append target in prompt facts', async () => {
+    const harness = await boundedHarness()
+    const expectedHistory = contextPathFacts(harness.session.messages)
+    await harness.service.orchestrate('session-1', targetMessage(), { appendToMessage: true })
+
+    expect(harness.getSession).not.toHaveBeenCalled()
+    expect(harness.preparedRequests[0].targetMessageIndex).toBe(5)
+    expect(harness.preparedRequests[0].history).toEqual(expectedHistory)
+  })
+
+  it.each(['assistant-1', 'new-target'])(
+    'honors explicit context messages and their frozen scope for %s',
+    async (targetId) => {
+      const harness = await boundedHarness()
+      const contextMessages: Message[] = [
+        { id: 'override-user', role: 'user', timestamp: 99, contentParts: [] },
+        { ...targetMessage(), id: targetId },
+      ]
+      await harness.service.orchestrate('session-1', { ...targetMessage(), id: targetId }, { contextMessages })
+
+      expect(harness.getSession).not.toHaveBeenCalled()
+      expect(harness.preparedRequests[0].messages).toBe(contextMessages)
+      expect(harness.preparedRequests[0].history).toEqual(contextPathFacts(contextMessages.slice(0, 1)))
+      expect(harness.steeringRegister.mock.calls[0][1]).toEqual(new Set(['override-user', targetId]))
+    }
+  )
+
+  it.each([false, true])('loads target scope lazily and fails closed on tree change: %s', async (changed) => {
+    const harness = await boundedHarness()
+    await harness.service.orchestrate('session-1', targetMessage())
+    const loader = harness.steeringRegister.mock.calls[0][1] as Parameters<GenerationSteeringPort['register']>[1]
+    if (typeof loader !== 'function') throw new Error('Expected lazy scope')
+    if (changed) harness.session.messages.splice(2, 1)
+    const scope = await loader()
+
+    expect(harness.getSession).toHaveBeenCalledTimes(1)
+    if (changed) expect(scope).toBeNull()
+    else expect(scope).toEqual(new Set(harness.session.messages.map((message) => message.id)))
+  })
+
+  it('preloads the original complete scope for a legacy source without a fingerprint', async () => {
+    const harness = await boundedHarness()
+    const read = harness.sessions.getSessionContextSource
+    harness.sessions.getSessionContextSource = async (request) => {
+      const source = await read?.(request)
+      return source ? { ...source, topologyFingerprint: undefined } : null
+    }
+    const initialIds = harness.session.messages.map((message) => message.id)
+    await harness.service.orchestrate('session-1', targetMessage())
+    harness.session.messages.splice(2, 1)
+
+    expect(harness.getSession).toHaveBeenCalledTimes(1)
+    expect(harness.steeringRegister.mock.calls[0][1]).toEqual(new Set(initialIds))
+  })
+})
 
 function lastPersisted(harness: Harness): Message {
   const entry = harness.persisted.at(-1)

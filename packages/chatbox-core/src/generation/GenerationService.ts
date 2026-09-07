@@ -1,4 +1,5 @@
 import type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
+import { findMessageContext } from '@shared/session/message-forks'
 import type {
   AgentModeLockReason,
   AgentModeValue,
@@ -19,6 +20,8 @@ import { getMessageText } from '@shared/utils/message'
 import { resolveReasoningProviderOptions } from '@shared/utils/reasoning-control'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION, shouldPauseOnToolCallLimit } from '@shared/utils/tool-call-limit-pause'
 import type { ModelMessage, ToolSet } from 'ai'
+import { contextSourceFromSession } from '../application/session/session-context-source'
+import { contextPathFacts } from '../persistence/session-context-read'
 import type {
   AnalyticsPort,
   AttachmentContentPort,
@@ -29,12 +32,20 @@ import type {
   SessionRepositoryPort,
   SettingsRepositoryPort,
 } from '../ports'
+import type {
+  SessionContextBeforeTarget,
+  SessionContextRequest,
+  SessionContextSource,
+} from '../ports/session-context-source'
+import type { SessionMessagesSource } from '../ports/session-message-source'
+import type { SessionHeader } from '../ports/session-read-model'
+import { type SessionMessagesRequest, SessionRowConflictError } from '../ports/session-row-store'
+import { sessionTopologyFingerprint } from '../session/session-tree/encode'
 import {
   AGENT_MODE_SUGGESTION_PROMPT,
   type AgentModeSuggestionDecision,
   describeUserMessageForAgentModeDecision,
   getLastUserMessage,
-  isFirstUserTurn,
   parseAgentModeSuggestionDecision,
 } from './agent-mode-suggestion'
 import {
@@ -96,7 +107,9 @@ export interface GenerationOptions {
 
 export interface GenerationSessionPort extends Pick<SessionRepositoryPort, 'getSession'> {
   isSessionMissingError?(error: unknown): boolean
-  getSessionSettings(sessionId: string): Promise<SessionSettings | null | undefined>
+  getSessionContextSource?(request: SessionContextRequest): Promise<SessionContextSource | null>
+  readSessionMessages?(request: SessionMessagesRequest): Promise<SessionMessagesSource | null>
+  getSessionSettings(sessionId: string, header?: SessionHeader): Promise<SessionSettings | null | undefined>
   updateSessionSettings(
     sessionId: string,
     update: (current: SessionSettings | undefined) => SessionSettings
@@ -120,8 +133,6 @@ export interface GenerationSessionPort extends Pick<SessionRepositoryPort, 'getS
    */
   insertMessageAfter(sessionId: string, message: Message, afterMessageId: string): Promise<void>
   updateStreamingCache(sessionId: string, message: Message): void
-  findTargetMessageIndex(session: Session, targetMessageId: string): { messages: Message[]; index: number } | null
-  getCompactionPointsForTarget(session: Session, targetMessageId: string): CompactionPoint[] | undefined
   findMessage(session: Session, messageId: string): Message | undefined
   modifyMessage(
     sessionId: string,
@@ -148,12 +159,13 @@ export interface GenerationModelFactoryPort<TContext> extends ModelFactoryPort {
 }
 
 export interface GenerationPreparationRequest<TContext> {
-  session: Session
+  session: SessionHeader
   settings: SessionSettings
   globalSettings: Settings
   config: Config
   messages: Message[]
   targetMessageIndex: number
+  history?: SessionContextBeforeTarget
   model: ModelInterface
   modelContext: TContext
   attachments: AttachmentContentPort
@@ -184,7 +196,11 @@ export interface GenerationPreparationPort<TContext> {
 }
 
 export interface GenerationToolExecutionPort {
-  buildToolsForPausedToolCall(session: Session, settings: SessionSettings, targetMessage: Message): Promise<ToolSet>
+  buildToolsForPausedToolCall(
+    source: SessionContextSource,
+    settings: SessionSettings,
+    targetMessage: Message
+  ): Promise<ToolSet>
 }
 
 export interface GenerationCoordinationPort {
@@ -208,7 +224,10 @@ export interface GenerationSteeringConsumer {
 }
 
 export interface GenerationSteeringPort {
-  register(sessionId: string, conversationMessageIds: ReadonlySet<string>): GenerationSteeringConsumer | null
+  register(
+    sessionId: string,
+    conversationScope: ReadonlySet<string> | (() => Promise<ReadonlySet<string> | null>)
+  ): GenerationSteeringConsumer | null
   wake(sessionId: string): void
 }
 
@@ -216,7 +235,7 @@ export interface GenerationHostPort {
   getConfig(): Promise<Config>
   getKnowledgeBase(sessionId: string): Pick<KnowledgeBase, 'id' | 'name'> | undefined
   getWebBrowsing(sessionId: string, provider: ModelProvider | undefined, settings?: SessionSettings): boolean
-  getAgentModeEntry(sessionId: string, session: Session): { value: AgentModeValue; locked?: boolean }
+  getAgentModeEntry(sessionId: string, session: SessionHeader): { value: AgentModeValue; locked?: boolean }
   setAgentMode(sessionId: string, value: AgentModeValue): Promise<void> | void
   lockAgentMode(sessionId: string, reason: Exclude<AgentModeLockReason, null>): Promise<void> | void
   createPictureStorageKey(sessionId: string, messageId: string): string
@@ -284,6 +303,72 @@ export interface GenerationServiceDependencies<TContext> {
 export class GenerationService<TContext> {
   constructor(private readonly dependencies: GenerationServiceDependencies<TContext>) {}
 
+  private async readContext(request: SessionContextRequest): Promise<SessionContextSource | null> {
+    const { sessions } = this.dependencies
+    if (sessions.getSessionContextSource) return sessions.getSessionContextSource(request)
+    if (request.expectedRevision !== undefined)
+      throw new SessionRowConflictError(request.sessionId, request.expectedRevision, null)
+    const session = await sessions.getSession(request.sessionId)
+    return session ? contextSourceFromSession(session, request) : null
+  }
+
+  private async readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSource | null> {
+    const { sessions } = this.dependencies
+    if (sessions.readSessionMessages) return sessions.readSessionMessages(request)
+    if (request.expectedRevision !== undefined)
+      throw new SessionRowConflictError(request.sessionId, request.expectedRevision, null)
+    const session = await sessions.getSession(request.sessionId)
+    return session
+      ? {
+          header: session,
+          revision: null,
+          messages: request.messageIds.flatMap((id) => {
+            const message = sessions.findMessage(session, id)
+            return message ? [message] : []
+          }),
+        }
+      : null
+  }
+
+  private async readTargetContext(sessionId: string, messageId: string): Promise<SessionContextSource | null> {
+    try {
+      return await this.readContext({ sessionId, targetMessageId: messageId })
+    } catch (error) {
+      // A stale action for a removed target is a no-op; an existing target keeps
+      // the original context-read failure visible.
+      let selected: SessionMessagesSource | null
+      try {
+        selected = await this.readMessages({ sessionId, messageIds: [messageId] })
+      } catch {
+        throw error
+      }
+      if (!selected?.messages.length) return null
+      throw error
+    }
+  }
+
+  private async isCurrentToolTarget(sessionId: string, expected: Message): Promise<boolean> {
+    const selected = await this.readMessages({ sessionId, messageIds: [expected.id] })
+    const current = selected?.messages[0]
+    if (!current) return false
+    const state = (message: Message) => [
+      message.role,
+      message.contentParts,
+      message.generating,
+      message.status,
+      message.finishReason,
+      message.error,
+      message.errorCode,
+      message.errorExtra,
+      message.usage,
+      message.tokenCount,
+      message.tokensUsed,
+    ]
+    // Estimated token caches may advance independently of the reviewed call.
+    // Content, approval bindings, and generation state must still match.
+    return JSON.stringify(state(current)) === JSON.stringify(state(expected))
+  }
+
   async orchestrate(sessionId: string, initialTargetMessage: Message, options?: GenerationOptions): Promise<void> {
     try {
       await this.orchestrateExistingSession(sessionId, initialTargetMessage, options)
@@ -326,21 +411,98 @@ export class GenerationService<TContext> {
       finishRuntime()
     }
 
-    let session: Session | null | undefined
+    let source: SessionContextSource | null
+    let session: SessionHeader
     let settings: SessionSettings | null | undefined
+    let conversationScope: ReadonlySet<string> | (() => Promise<ReadonlySet<string> | null>) = new Set()
+    let messages: Message[]
+    let targetMessageIndex: number
+    let promptTargetMessageIndex: number
+    let history: SessionContextBeforeTarget
+    let lastUserMessage: Message | undefined
     const globalSettings = settingsRepository.getSettings()
     let config: Config
     try {
-      session = await sessions.getSession(sessionId)
-      if (controller.signal.aborted) return finishCanceledSetup(Boolean(session))
-
-      settings = await sessions.getSessionSettings(sessionId)
+      const overrideIndex =
+        options?.contextMessages?.findIndex((message) => message.id === initialTargetMessage.id) ?? -1
+      const override = options?.contextMessages && overrideIndex > 0 ? options.contextMessages : undefined
+      const request: SessionContextRequest = {
+        sessionId,
+        targetMessageId: initialTargetMessage.id,
+        includeTarget: Boolean(options?.appendToMessage),
+      }
+      if (override) {
+        const selected = await this.readMessages({ sessionId, messageIds: [initialTargetMessage.id] })
+        if (!selected) {
+          finishRuntime()
+          return
+        }
+        request.expectedRevision = selected.revision ?? undefined
+        if (selected.messages.length === 0) {
+          request.targetMessageId = undefined
+          request.includeTarget = undefined
+        }
+      }
+      source = await this.readContext(request)
+      if (controller.signal.aborted) return finishCanceledSetup(Boolean(source))
+      if (!source) {
+        finishRuntime()
+        return
+      }
+      if (this.dependencies.steering && !override) {
+        if (source.topologyFingerprint) {
+          const fingerprint = source.topologyFingerprint
+          conversationScope = async () => {
+            const complete = await sessions.getSession(sessionId)
+            if (!complete || sessionTopologyFingerprint(complete) !== fingerprint) return null
+            const path = findMessageContext(complete, initialTargetMessage.id)
+            return path ? new Set(path.list.map((message) => message.id)) : null
+          }
+        } else {
+          const complete = await sessions.getSession(sessionId)
+          if (!complete) {
+            finishRuntime()
+            return
+          }
+          source = contextSourceFromSession(complete, request)
+          conversationScope = new Set(
+            findMessageContext(complete, initialTargetMessage.id)?.list.map((message) => message.id)
+          )
+        }
+      }
+      session = source.header
+      messages =
+        override ??
+        (options?.appendToMessage
+          ? source.candidateMessages
+          : [...source.candidateMessages, ...(source.targetMessage ? [source.targetMessage] : [])])
+      targetMessageIndex = override
+        ? overrideIndex
+        : messages.findIndex((message) => message.id === initialTargetMessage.id)
+      promptTargetMessageIndex = options?.appendToMessage ? targetMessageIndex + 1 : targetMessageIndex
+      history = override
+        ? contextPathFacts(messages.slice(0, promptTargetMessageIndex))
+        : options?.appendToMessage && source.targetMessage
+          ? contextPathFacts([source.targetMessage], source.beforeTarget)
+          : source.beforeTarget
+      if (override) conversationScope = new Set(override.map((message) => message.id))
+      lastUserMessage = getLastUserMessage(messages, promptTargetMessageIndex)
+      if (!lastUserMessage && history.userMessageCount === 1 && history.lastUserMessageId) {
+        lastUserMessage = (
+          await this.readMessages({
+            sessionId,
+            messageIds: [history.lastUserMessageId],
+            expectedRevision: source.revision ?? undefined,
+          })
+        )?.messages[0]
+      }
+      settings = await sessions.getSessionSettings(sessionId, session)
       if (controller.signal.aborted) return finishCanceledSetup(true)
 
       config = await host.getConfig()
       if (controller.signal.aborted) return finishCanceledSetup(true)
 
-      if (!session || !settings) {
+      if (!settings) {
         finishRuntime()
         return
       }
@@ -366,17 +528,10 @@ export class GenerationService<TContext> {
     let firstTokenLatency: number | undefined
     let lastPersistTimestamp = host.now()
 
-    const contextTargetIndex = options?.contextMessages?.findIndex((message) => message.id === targetMessage.id) ?? -1
-    const found =
-      options?.contextMessages && contextTargetIndex > 0
-        ? { messages: options.contextMessages, index: contextTargetIndex }
-        : sessions.findTargetMessageIndex(session, targetMessage.id)
-    if (!found) {
+    if (targetMessageIndex <= 0) {
       finishRuntime()
       return
     }
-    const { messages, index: targetMessageIndex } = found
-    const promptTargetMessageIndex = options?.appendToMessage ? targetMessageIndex + 1 : targetMessageIndex
     // A previous Stop can leave a tool that ignores abortSignal still running.
     // Re-check after every wait because an alternative reply may register a new
     // drain while this generation is already behind the barrier.
@@ -405,8 +560,7 @@ export class GenerationService<TContext> {
     // assistant segment completed so far is finalized, the steered user is
     // inserted after it, and the same provider run continues in a fresh
     // continuation message stored below the steered user.
-    const steering =
-      this.dependencies.steering?.register(sessionId, new Set(messages.map((message) => message.id))) ?? null
+    const steering = this.dependencies.steering?.register(sessionId, conversationScope) ?? null
 
     let processorState = createInitialState()
     const infoParts: MessageContentParts = []
@@ -433,7 +587,6 @@ export class GenerationService<TContext> {
         this.dependencies.capabilities.supports('agent-mode') && model.isSupportToolUse('agent')
       const agentModeEntry = host.getAgentModeEntry(sessionId, session)
       const agentModeValue = agentModeSupported ? agentModeEntry.value : 'off'
-      const lastUserMessage = getLastUserMessage(messages, promptTargetMessageIndex)
 
       if (
         options?.operationType === 'send_message' &&
@@ -442,7 +595,7 @@ export class GenerationService<TContext> {
         agentModeSupported &&
         agentModeValue === 'auto' &&
         lastUserMessage &&
-        isFirstUserTurn(messages, promptTargetMessageIndex)
+        history.userMessageCount === 1
       ) {
         const namingModel = globalSettings.threadNamingModel
         const suggestionModel = await this.createSuggestionModel(settings, namingModel, modelContext.context, model)
@@ -503,6 +656,7 @@ export class GenerationService<TContext> {
         config,
         messages,
         targetMessageIndex: promptTargetMessageIndex,
+        history,
         model,
         modelContext: modelContext.context,
         attachments: this.dependencies.attachments,
@@ -514,7 +668,7 @@ export class GenerationService<TContext> {
         signal: controller.signal,
         providerOptions: reasoningProviderOptions,
         preserveLastPromptMessageToolCalls: Boolean(options?.appendToMessage),
-        compactionPoints: sessions.getCompactionPointsForTarget(session, targetMessage.id),
+        compactionPoints: source.compactionPoints,
         lockAgentMode: (reason) => {
           void host.lockAgentMode(sessionId, reason)
         },
@@ -583,8 +737,10 @@ export class GenerationService<TContext> {
             // A rejected write does not prove nothing was committed: a session
             // whose messages persisted can still fail its list-metadata update
             // and reject. Ask the session which happened instead of guessing.
-            const session = await sessions.getSession(sessionId).catch(() => undefined)
-            const committed = session ? sessions.findMessage(session, continuation.id) !== undefined : false
+            const selected = await this.readMessages({ sessionId, messageIds: [continuation.id] }).catch(
+              () => undefined
+            )
+            const committed = Boolean(selected?.messages.length)
             if (!committed) {
               this.dependencies.logger.log('error', 'Steering continuation insert failed, continuing in place', {
                 error,
@@ -928,12 +1084,10 @@ export class GenerationService<TContext> {
 
   private async stopPausedToolCallUnlocked(sessionId: string, messageId: string, toolCallId: string): Promise<void> {
     const { sessions, analytics } = this.dependencies
-    const [session, settings] = await Promise.all([
-      sessions.getSession(sessionId),
-      sessions.getSessionSettings(sessionId),
-    ])
-    if (!session) return
-    const message = sessions.findMessage(session, messageId)
+    const selected = await this.readMessages({ sessionId, messageIds: [messageId] })
+    if (!selected) return
+    const settings = await sessions.getSessionSettings(sessionId, selected.header)
+    const message = selected.messages[0]
     if (!message) return
     const part = findToolCallPart(message, toolCallId)
     if (!part || part.state !== 'paused') return
@@ -1028,14 +1182,15 @@ export class GenerationService<TContext> {
     options?: { skipPauseActionTracking?: boolean }
   ): Promise<void> {
     const { sessions, analytics, host } = this.dependencies
-    const session = await sessions.getSession(sessionId)
-    const settings = await sessions.getSessionSettings(sessionId)
-    if (!session || !settings) return
-
-    let message = sessions.findMessage(session, messageId)
+    const source = await this.readTargetContext(sessionId, messageId)
+    if (!source) return
+    const settings = await sessions.getSessionSettings(sessionId, source.header)
+    if (!settings) return
+    let message = source.targetMessage
     if (!message) return
     const part = findToolCallPart(message, toolCallId)
     if (!part || part.state !== 'paused') return
+    if (!(await this.isCurrentToolTarget(sessionId, message))) return
 
     const isApproval = isApprovalPauseReason(part.pauseReason)
     const approvalTarget = getApprovalTrackingTarget(part)
@@ -1088,7 +1243,7 @@ export class GenerationService<TContext> {
     await sessions.modifyMessage(sessionId, message, false)
 
     try {
-      const tools = await this.dependencies.tools.buildToolsForPausedToolCall(session, settings, message)
+      const tools = await this.dependencies.tools.buildToolsForPausedToolCall(source, settings, message)
       for (const batchPart of batch) {
         if (controller.signal.aborted) break
 
@@ -1169,7 +1324,7 @@ export class GenerationService<TContext> {
         operation: 'tool_pause_continue',
         provider: settings.provider,
         model: settings.modelId,
-        agentMode: host.getAgentModeEntry(sessionId, session).value,
+        agentMode: host.getAgentModeEntry(sessionId, source.header).value,
         fullAccess: resolveCommandApprovalMode(settings) === 'full_access',
         toolName: part.toolName,
         pauseType: part.pauseReason?.type,
@@ -1207,10 +1362,9 @@ export class GenerationService<TContext> {
     toolCallId: string
   ): Promise<void> {
     const { sessions, analytics, host } = this.dependencies
-    const session = await sessions.getSession(sessionId)
-    if (!session) return
-
-    const message = sessions.findMessage(session, messageId)
+    const source = await this.readTargetContext(sessionId, messageId)
+    if (!source) return
+    const message = source.targetMessage
     if (!message) return
     const part = findToolCallPart(message, toolCallId)
     const lastRetryableToolCall = findLastRetryableToolCallPart(message)
@@ -1228,8 +1382,9 @@ export class GenerationService<TContext> {
     }
 
     if (part.state === 'call') {
-      const settings = await sessions.getSessionSettings(sessionId)
+      const settings = await sessions.getSessionSettings(sessionId, source.header)
       if (!settings) return
+      if (!(await this.isCurrentToolTarget(sessionId, message))) return
 
       let retryMessage = updateToolCallPart(retrySourceMessage, toolCallId, (toolPart) => ({
         ...toolPart,
@@ -1245,7 +1400,7 @@ export class GenerationService<TContext> {
       await sessions.modifyMessage(sessionId, retryMessage, false)
 
       try {
-        const tools = await this.dependencies.tools.buildToolsForPausedToolCall(session, settings, retryMessage)
+        const tools = await this.dependencies.tools.buildToolsForPausedToolCall(source, settings, retryMessage)
         const toolValue = (tools as Record<string, unknown>)[part.toolName]
         const executableTool = toolValue && typeof toolValue === 'object' ? (toolValue as ExecutableTool) : undefined
         if (typeof executableTool?.execute !== 'function') {
@@ -1283,7 +1438,7 @@ export class GenerationService<TContext> {
           operation: 'tool_retry',
           provider: settings.provider,
           model: settings.modelId,
-          agentMode: host.getAgentModeEntry(sessionId, session).value,
+          agentMode: host.getAgentModeEntry(sessionId, source.header).value,
           fullAccess: resolveCommandApprovalMode(settings) === 'full_access',
           toolName: part.toolName,
         })

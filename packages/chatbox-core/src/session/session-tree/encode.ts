@@ -1,7 +1,14 @@
 import type { Message, Session } from '../../types/session'
+import {
+  latestConversationMessageHasChatboxSearchSignInError,
+  messageHasChatboxSearchSignInError,
+} from '@shared/session/web-search-sign-in-error'
+import { hasPendingPauseInteraction } from '../../message-approval'
 import { forkTailStartIndex } from '../message-forks'
 import { normalizeSessionV1 } from './normalize'
 import type { MessageRow, MessageRowStatus, SessionRecordV2, SessionTree, ThreadRow } from './types'
+import { deriveContextReadProjection, preservesContextReadProjection } from '../../persistence/session-context-read'
+import { deriveSessionTopologyFingerprint } from './topology-fingerprint'
 
 export interface EncodeSessionTreeOptions {
   /** Thread id given to the active conversation; the same value yields the same tree. */
@@ -25,7 +32,11 @@ export function messageRowUpdatedAt(message: Message, createdAt: number): number
 }
 
 /** The session record of a tree: the session without the fields the rows carry. */
-export function deriveSessionRecord(session: Session, activeThreadId: string): SessionRecordV2 {
+export function deriveSessionRecord(
+  session: Session,
+  activeThreadId: string,
+  unchangedStructure?: { record: SessionRecordV2; before: Message; after: Message }
+): SessionRecordV2 {
   const {
     messages: _messages,
     threads: _threads,
@@ -38,10 +49,63 @@ export function deriveSessionRecord(session: Session, activeThreadId: string): S
   const forkCreatedAt = Object.fromEntries(
     Object.entries(session.messageForksHash ?? {}).map(([pivotId, fork]) => [pivotId, fork.createdAt])
   )
+  const count = (messages: Message[]) => ({
+    userMessageCount: messages.filter((message) => message.role === 'user').length,
+    fileMessageCount: messages.filter((message) => message.files?.length).length,
+    generatingMessageCount: messages.filter((message) => message.generating === true).length,
+    pausedMessageCount: messages.filter((message) => hasPendingPauseInteraction([message])).length,
+  })
+  const previous = unchangedStructure?.record.presentation
+  const counts =
+    previous && unchangedStructure
+      ? (() => {
+          const before = count([unchangedStructure.before])
+          const after = count([unchangedStructure.after])
+          return {
+            userMessageCount: previous.userMessageCount + after.userMessageCount - before.userMessageCount,
+            fileMessageCount: previous.fileMessageCount + after.fileMessageCount - before.fileMessageCount,
+            generatingMessageCount:
+              previous.generatingMessageCount + after.generatingMessageCount - before.generatingMessageCount,
+            pausedMessageCount: previous.pausedMessageCount + after.pausedMessageCount - before.pausedMessageCount,
+          }
+        })()
+      : count(session.messages)
+  const countSearchErrors = () => session.messages.filter(messageHasChatboxSearchSignInError).length
+  const searchErrorCount =
+    previous?.webSearchSignInErrorCount !== undefined && unchangedStructure
+      ? (() => {
+          const before = Number(messageHasChatboxSearchSignInError(unchangedStructure.before))
+          const after = Number(messageHasChatboxSearchSignInError(unchangedStructure.after))
+          if (before === after) return previous.webSearchSignInErrorCount
+          // A single-path record proves that the changed row belongs to the displayed conversation.
+          if (!previous.hasThreads && !previous.hasForks) return previous.webSearchSignInErrorCount + after - before
+          return countSearchErrors()
+        })()
+      : countSearchErrors()
   return {
     ...record,
     activeThreadId,
     storageFormat: 'rows',
+    ...(unchangedStructure?.record.contextReadProjection &&
+    preservesContextReadProjection(
+      unchangedStructure.before,
+      unchangedStructure.after,
+      unchangedStructure.record.contextReadProjection
+    )
+      ? { contextReadProjection: unchangedStructure.record.contextReadProjection }
+      : {}),
+    ...(unchangedStructure?.record.topologyFingerprint &&
+    Boolean(unchangedStructure.before.isSummary) === Boolean(unchangedStructure.after.isSummary)
+      ? { topologyFingerprint: unchangedStructure.record.topologyFingerprint }
+      : {}),
+    presentation: {
+      ...counts,
+      messageCount: session.messages.length,
+      hasThreads: Boolean(session.threads?.length),
+      hasForks: Object.keys(session.messageForksHash ?? {}).length > 0,
+      webSearchSignInErrorCount: searchErrorCount,
+      latestMessageHasWebSearchSignInError: latestConversationMessageHasChatboxSearchSignInError(session.messages),
+    },
     ...(Object.keys(forkCreatedAt).length > 0 ? { forkCreatedAt } : {}),
   }
 }
@@ -190,6 +254,13 @@ export function encodeSessionTree(session: Session, options: EncodeSessionTreeOp
   }
 
   const sessionRecord = deriveSessionRecord(normalized, options.activeThreadId)
+  sessionRecord.contextReadProjection = deriveContextReadProjection(threads, messages)
+  sessionRecord.topologyFingerprint = deriveSessionTopologyFingerprint(threads, messages)
 
   return { ok: true, tree: { session: sessionRecord, threads, messages }, normalized }
+}
+
+export function sessionTopologyFingerprint(session: Session): string | undefined {
+  const encoded = encodeSessionTree(session, { activeThreadId: session.id, now: 0 })
+  return encoded.ok ? encoded.tree.session.topologyFingerprint : undefined
 }

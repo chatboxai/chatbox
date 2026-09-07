@@ -16,7 +16,7 @@ import { guardSessionAction } from './action-guard'
 import { createAttachmentResolver } from './attachment-resolver'
 import { createNewFork, createSaveAndResendFork, findMessageLocation } from './forks'
 import { insertMessageAfter, modifyMessage } from './messages'
-import { getSessionSettings, getSessionTokenModel } from './session-settings'
+import { getSessionHeader, getSessionTokenModel } from './session-settings'
 import type { AgentModeEntrySource } from './types'
 
 /** Internal generation entry point for callers that already hold the session generation lock. */
@@ -29,9 +29,8 @@ export async function _generateWithoutSessionLock(
     agentModeEntrySource?: AgentModeEntrySource
   }
 ) {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  const settings = await getSessionSettings(sessionId)
-  if (!session || !settings) {
+  const session = await getSessionHeader(sessionId)
+  if (!session) {
     return
   }
 

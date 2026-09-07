@@ -27,8 +27,11 @@ const useGenerationRuntimeVersion = () => rendererApplication.generationHooks.us
  * unchanged so `memo()`d consumers (every Message row) don't re-render per
  * chunk.
  */
-export function useSessionLockState(session: Session | null | undefined): SessionLockState {
-  const sessionId = session?.id
+export function useSessionLockState(
+  session: Session | null | undefined,
+  presentationSessionId?: string
+): SessionLockState {
+  const sessionId = session?.id ?? presentationSessionId
   const compactionRunningAtom = useMemo(
     () =>
       selectAtom(compactionUIStateMapAtom, (stateMap) =>
@@ -37,15 +40,17 @@ export function useSessionLockState(session: Session | null | undefined): Sessio
     [sessionId]
   )
   const compactionRunning = useAtomValue(compactionRunningAtom)
-  useGenerationRuntimeVersion()
-  const activeGenerationMessageIds = sessionId
-    ? rendererApplication.generationRuntime.getActiveMessageIds(sessionId)
-    : new Set<string>()
+  const generationRuntimeVersion = useGenerationRuntimeVersion()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The version invalidates this external-store snapshot.
+  const activeGenerationMessageIds = useMemo(
+    () => (sessionId ? rendererApplication.generationRuntime.getActiveMessageIds(sessionId) : new Set<string>()),
+    [sessionId, generationRuntimeVersion]
+  )
   const previousRef = useRef<SessionLockState>(IDLE_SESSION_LOCK_STATE)
   return useMemo(() => {
     const next = session
       ? deriveSessionLockState(session, { compactionRunning, activeGenerationMessageIds })
-      : IDLE_SESSION_LOCK_STATE
+      : { ...IDLE_SESSION_LOCK_STATE, compactionRunning }
     if (sessionLockStatesEqual(next, previousRef.current)) {
       return previousRef.current
     }

@@ -1,3 +1,4 @@
+import type { SessionContextBeforeTarget } from '@chatbox/core/ports'
 import { boundCopilotPersona } from '@shared/agent-persona/prompt'
 import type { Message, SessionPromptContextSnapshot, SessionSettings } from '@shared/types'
 import type { MemoryScope } from '@shared/types/agent-persona'
@@ -19,6 +20,7 @@ export interface ResolveSessionPromptContextSnapshotOptions {
   settings: SessionSettings
   messages: Message[]
   targetMsgIx: number
+  history?: SessionContextBeforeTarget
   persist?: (snapshot: SessionPromptContextSnapshot) => void
   /** When set, the session system prompt is frozen into Soul as a Copilot overlay. */
   copilotId?: string
@@ -76,9 +78,8 @@ async function reloadSnapshotMemories(
 
 function anchorSnapshotToStartedConversation(
   snapshot: SessionPromptContextSnapshot,
-  messages: Message[]
+  capturedAt: number | undefined
 ): SessionPromptContextSnapshot {
-  const capturedAt = messages[0]?.timestamp
   if (capturedAt === undefined) return snapshot
   const anchored = { ...snapshot, capturedAt }
   delete anchored.capturedUtcOffsetMinutes
@@ -136,13 +137,15 @@ export async function resolveSessionPromptContextSnapshot(
       persist?.(reloaded)
       return reloaded
     }
-    const hasLegacyCommandHistory = messages
-      .slice(0, targetMsgIx)
-      .some((message) =>
-        message.contentParts.some(
-          (part) => part.type === 'tool-call' && (part.toolName === 'user_exec' || part.toolName === 'code_execution')
+    const hasLegacyCommandHistory =
+      options.history?.hasLegacyCommandHistory ??
+      messages
+        .slice(0, targetMsgIx)
+        .some((message) =>
+          message.contentParts.some(
+            (part) => part.type === 'tool-call' && (part.toolName === 'user_exec' || part.toolName === 'code_execution')
+          )
         )
-      )
     const captured = setSnapshotMemoryState(
       await captureSessionPromptContextSnapshot(settings.workingDirectories, 'agent', memoryScope),
       memoryEnabled,
@@ -160,7 +163,10 @@ export async function resolveSessionPromptContextSnapshot(
     return snapshot
   }
 
-  const isConversationStart = !messages.slice(0, targetMsgIx).some((message) => message.role === 'assistant')
+  const isConversationStart = !(
+    options.history?.hasAssistantMessage ??
+    messages.slice(0, targetMsgIx).some((message) => message.role === 'assistant')
+  )
   if (existing) {
     if (sessionPromptContextSnapshotMatchesMemoryState(existing, memoryScope, memoryEnabled, memoryStateToken)) {
       return existing
@@ -185,7 +191,10 @@ export async function resolveSessionPromptContextSnapshot(
       memoryStateToken
     )
     if (!isConversationStart) {
-      snapshot = anchorSnapshotToStartedConversation(snapshot, messages)
+      snapshot = anchorSnapshotToStartedConversation(
+        snapshot,
+        options.history ? options.history.firstMessageTimestamp : messages[0]?.timestamp
+      )
       if (memoryStateToken === '') snapshot = { ...snapshot, memories: [] }
     }
     persist?.(snapshot)

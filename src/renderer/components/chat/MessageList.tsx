@@ -1,4 +1,5 @@
 import { type CurrentThreadTarget, getCurrentThreadTarget } from '@chatbox/core/application/session'
+import type { SessionTranscript } from '@chatbox/core/ports'
 import { getSessionActionGate } from '@chatbox/core/session/action-gates'
 import {
   isActionAvailableInMode,
@@ -11,7 +12,7 @@ import {
   shouldConfirmPromptCacheBreakForDelete,
 } from '@chatbox/core/session/prompt-cache-policy'
 import NiceModal from '@ebay/nice-modal-react'
-import { Button, Flex, Stack, Transition } from '@mantine/core'
+import { Button, Flex, Loader, Stack, Transition } from '@mantine/core'
 import { useThrottledCallback } from '@mantine/hooks'
 import { TestId } from '@shared/automation/testids'
 import type { Session, Message as SessionMessage, SessionThreadBrief } from '@shared/types'
@@ -33,6 +34,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -51,7 +53,7 @@ import { removeMessage } from '@/stores/session/messages'
 import { moveThreadToConversations, removeThread, switchThread } from '@/stores/session/threads'
 import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/sessionHelpers'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
-import { useUIStore } from '@/stores/uiStore'
+import { type TranscriptNavigation, uiStore, useUIStore } from '@/stores/uiStore'
 import { evaluatePromptCacheDeleteContext } from '@/utils/prompt-cache-confirm'
 import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu from '../ActionMenu'
@@ -70,7 +72,20 @@ import {
   isUserNavigationMessage,
 } from './message-navigation-utils'
 import SummaryMessage from './SummaryMessage'
-import { createSmoothFollowOutputController } from './smooth-follow-output'
+import { createSmoothFollowOutputController, isLayoutClampedScroll } from './smooth-follow-output'
+import {
+  boundedWindowSnapshot,
+  clearWindowScrollPosition,
+  createWindowScrollKey,
+  discardWindowScrollPosition,
+  getWindowScrollPosition,
+  observeWindowScrollInvalidation,
+  resolveWindowScrollPosition,
+  saveWindowScrollPosition,
+  type WindowScrollEntry,
+  type WindowTranscriptIdentity,
+  windowScrollObjectId,
+} from './window-scroll-cache'
 
 const EMPTY_MINIMAP_ANCHORS: MessageMinimapAnchor[] = []
 
@@ -95,6 +110,36 @@ function setScrollPosition(sessionId: string, snapshot: StateSnapshot) {
 // Export cleanup function for use when sessions are deleted
 export function clearScrollPositionCache(sessionId: string) {
   sessionScrollPositionCache.delete(sessionId)
+  clearWindowScrollPosition(sessionId)
+}
+
+function readWindowAnchor(container: HTMLElement, items: MessageRenderItem[]) {
+  const list = container.querySelector<HTMLElement>('[data-testid="virtuoso-item-list"]')
+  const viewport = container.getBoundingClientRect()
+  if (!list || viewport.height <= 0 || getComputedStyle(list).visibility === 'hidden') return null
+  for (const item of Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-index]'))) {
+    const bounds = item.getBoundingClientRect()
+    if (bounds.bottom <= viewport.top || bounds.top >= viewport.bottom) continue
+    const messageId = items[Number(item.dataset.index)]?.messages[0]?.id
+    if (messageId) return { messageId, offset: viewport.top - bounds.top }
+  }
+  return null
+}
+
+function readWindowLayout(container: HTMLElement, widthFull: boolean, smallScreen: boolean) {
+  if (container.clientWidth <= 0 || container.clientHeight <= 0 || document.fonts?.status === 'loading') return null
+  const style = getComputedStyle(container)
+  return JSON.stringify([
+    container.clientWidth,
+    container.clientHeight,
+    window.devicePixelRatio,
+    style.fontFamily,
+    style.fontSize,
+    style.lineHeight,
+    widthFull,
+    smallScreen,
+    windowScrollObjectId(settingsStore.getState()),
+  ])
 }
 
 export interface MessageListRef {
@@ -104,10 +149,20 @@ export interface MessageListRef {
   setIsNewMessage: (flag: boolean) => void
 }
 
-export interface MessageListProps {
+export type MessageListProps = {
   className?: string
-  currentSession: Session
-}
+  onLoadOlder?: () => void
+  hasOlder?: boolean
+  hasNewer?: boolean
+  isLoadingOlder?: boolean
+  isLoadingNewer?: boolean
+  isJumping?: boolean
+  onLoadNewer?: () => void
+  onJumpToEdge?: (edge: 'head' | 'tail') => void
+  windowPosition?: { id: number; edge: 'head' | 'tail' } | null
+  onRequireComplete?: (messageId?: string) => void
+  windowIdentity?: WindowTranscriptIdentity
+} & ({ currentSession: Session; transcript?: never } | { currentSession?: never; transcript: SessionTranscript })
 
 const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) => {
   const { t } = useTranslation()
@@ -115,14 +170,20 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const widthFull = useUIStore((s) => s.widthFull)
   const hideSystemPromptMessage = useSettingsStore((s) => s.hideSystemPromptMessage)
 
-  const { currentSession } = props
+  const completeSession = props.currentSession
+  const isCompleteSession = completeSession !== undefined
+  const currentSession = completeSession ?? props.transcript!.header
+  const navigationOwner = useMemo(() => Symbol(currentSession.id), [currentSession.id])
 
   const currentThreadHash = useMemo(
-    () => currentSession && getCurrentThreadHistoryHash(currentSession),
-    [currentSession]
+    () => (completeSession ? getCurrentThreadHistoryHash(completeSession) : {}),
+    [completeSession]
   )
-  const currentMessageList = useMemo(() => getAllMessageList(currentSession), [currentSession])
-  const sessionLocks = useSessionLockState(currentSession)
+  const currentMessageList = useMemo(
+    () => (completeSession ? getAllMessageList(completeSession) : props.transcript!.messages),
+    [completeSession, props.transcript]
+  )
+  const sessionLocks = useSessionLockState(completeSession, currentSession.id)
   // Resolved once per session snapshot and passed down as a plain prop: with
   // multi-thousand-row sessions, per-row store subscriptions would re-run a
   // selector on every streaming chunk. Mode changes rewrite session.settings,
@@ -133,14 +194,14 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   )
   const promptCacheContextRef = useRef({
     mode: sessionMode,
-    messages: currentSession.messages,
-    compactionPoints: currentSession.compactionPoints,
+    messages: completeSession?.messages ?? [],
+    compactionPoints: completeSession?.compactionPoints,
     maxContextMessageCount: currentSession.settings?.maxContextMessageCount,
   })
   promptCacheContextRef.current = {
     mode: sessionMode,
-    messages: currentSession.messages,
-    compactionPoints: currentSession.compactionPoints,
+    messages: completeSession?.messages ?? [],
+    compactionPoints: completeSession?.compactionPoints,
     maxContextMessageCount: currentSession.settings?.maxContextMessageCount,
   }
   const shouldConfirmPromptCacheDelete = useCallback((messageId: string, target: PromptCacheDeleteTarget) => {
@@ -168,6 +229,33 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const renderItems = useMemo<MessageRenderItem[]>(
     () => buildMessageRenderItems(currentMessageList),
     [currentMessageList]
+  )
+  const previousItems = useRef<{ items: MessageRenderItem[]; index: number; positionId?: number } | null>(null)
+  const firstItemIndex = useMemo(() => {
+    if (!props.transcript) return 0
+    const previous = previousItems.current
+    if (previous && previous.positionId === props.windowPosition?.id) {
+      const indices = new Map(
+        renderItems.flatMap((item, index) => item.messages.map((message) => [message.id, index] as const))
+      )
+      for (let index = 0; index < previous.items.length; index++) {
+        const currentIndex = indices.get(previous.items[index].messages[0].id)
+        if (currentIndex !== undefined) return previous.index + index - currentIndex
+      }
+    }
+    return 1000000000 - renderItems.length
+  }, [props.transcript, props.windowPosition?.id, renderItems])
+  useLayoutEffect(() => {
+    previousItems.current = { items: renderItems, index: firstItemIndex, positionId: props.windowPosition?.id }
+  }, [renderItems, firstItemIndex, props.windowPosition?.id])
+  const initialViewWasWindow = useRef(props.transcript !== undefined).current
+  const viewportAnchorRef = useRef<{ messageId: string; offset: number } | null>(null)
+  const windowKey = useMemo(
+    () =>
+      props.transcript
+        ? createWindowScrollKey(currentSession, props.windowIdentity, renderItems, firstItemIndex)
+        : null,
+    [props.transcript, props.windowIdentity, currentSession, renderItems, firstItemIndex]
   )
 
   // A streaming reply replaces the session object for every chunk. Build the
@@ -264,9 +352,90 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const [isNewMessage, setIsNewMessage] = useState(false)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const windowGeometryChanged = useRef(false)
+  const [windowStart, setWindowStart] = useState<{
+    ready: boolean
+    entry?: WindowScrollEntry
+    position?: ReturnType<typeof resolveWindowScrollPosition>
+  }>(() => {
+    const entry = windowKey ? getWindowScrollPosition(currentSession.id) : undefined
+    return { ready: !entry, entry }
+  })
+  const latestWindow = useRef({
+    key: windowKey,
+    renderItems,
+    widthFull,
+    isSmallScreen,
+    isNewMessage,
+    generating: sessionLocks.anyReplyGenerating,
+  })
+  useLayoutEffect(() => {
+    latestWindow.current = {
+      key: windowKey,
+      renderItems,
+      widthFull,
+      isSmallScreen,
+      isNewMessage,
+      generating: sessionLocks.anyReplyGenerating,
+    }
+  }, [windowKey, renderItems, widthFull, isSmallScreen, isNewMessage, sessionLocks.anyReplyGenerating])
+
+  useLayoutEffect(() => {
+    if (windowStart.ready) return
+    // Virtuoso consumes measured ranges on mount. Validate a warm candidate against the actual
+    // viewport before mounting the list; a cold window can begin its normal measurement immediately.
+    const container = messageListRef.current
+    const layout = container && readWindowLayout(container, widthFull, isSmallScreen)
+    const position = resolveWindowScrollPosition(windowStart.entry, windowKey, layout ?? '', renderItems)
+    if (position) {
+      if ('snapshot' in position && position.following) smoothFollowOutput.resume()
+      else smoothFollowOutput.pause()
+      if (windowStart.entry)
+        viewportAnchorRef.current = {
+          messageId: windowStart.entry.anchor.messageId,
+          offset: 'snapshot' in position ? windowStart.entry.anchor.offset : 0,
+        }
+    }
+    setWindowStart({ ready: true, position })
+  }, [windowStart, windowKey, renderItems, widthFull, isSmallScreen, smoothFollowOutput])
+
+  useLayoutEffect(() => {
+    if (isCompleteSession || !windowStart.ready) return
+    const handle = virtuoso.current
+    const container = messageListRef.current
+    let valid = true
+    const unsubscribe = observeWindowScrollInvalidation(currentSession.id, () => {
+      valid = false
+    })
+    return () => {
+      unsubscribe()
+      discardWindowScrollPosition(currentSession.id)
+      const current = latestWindow.current
+      if (!valid || !handle || !container || !current.key || current.isNewMessage || current.generating) return
+      const key = current.key
+      const scroller = container.querySelector<HTMLElement>('[data-virtuoso-scroller]')
+      const layout = readWindowLayout(container, current.widthFull, current.isSmallScreen)
+      const anchor = readWindowAnchor(container, current.renderItems)
+      if (!scroller || !layout || !anchor) return
+      const scrollTop = scroller.scrollTop
+      const following = smoothFollowOutput.isFollowing()
+      if (following && scroller.scrollHeight - scroller.clientHeight - scrollTop > 4) return
+      const save = (snapshot: StateSnapshot | null) =>
+        saveWindowScrollPosition({ version: 1, key, layout, anchor, snapshot, following })
+      if (windowGeometryChanged.current || key.signature === null) {
+        save(null)
+        return
+      }
+      handle.getState((state) => {
+        const snapshot = boundedWindowSnapshot(state, current.renderItems.length)
+        if (!snapshot || Math.abs(snapshot.scrollTop - scrollTop) > 4) return
+        save(snapshot)
+      })
+    }
+  }, [isCompleteSession, windowStart.ready, currentSession.id, smoothFollowOutput, props.windowPosition?.id])
 
   const setMessageListElement = useUIStore((s) => s.setMessageListElement)
-  const setMessageScrolling = useUIStore((s) => s.setMessageScrolling)
+  const setTranscriptNavigation = useUIStore((s) => s.setTranscriptNavigation)
 
   // message navigation handlers
   const [messageNavigationVisible, setMessageNavigationVisible] = useState(false)
@@ -274,13 +443,29 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
 
   const handleScrollToTop = useCallback(() => {
     smoothFollowOutput.pause()
-    virtuoso.current?.scrollToIndex({ index: 0, align: 'start', behavior: 'smooth' })
-  }, [smoothFollowOutput])
+    if (props.hasOlder) {
+      if (props.onJumpToEdge) props.onJumpToEdge('head')
+      else props.onRequireComplete?.()
+      return
+    }
+    smoothFollowOutput.pause()
+    virtuoso.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [smoothFollowOutput, props.hasOlder, props.onJumpToEdge, props.onRequireComplete])
 
   const handleScrollToBottom = useCallback(() => {
+    if (props.hasNewer) {
+      props.onJumpToEdge?.('tail')
+      return
+    }
     smoothFollowOutput.resume()
     virtuoso.current?.scrollTo({ top: Infinity, behavior: 'smooth' })
-  }, [smoothFollowOutput])
+  }, [smoothFollowOutput, props.hasNewer, props.onJumpToEdge])
+
+  useLayoutEffect(() => {
+    if (!props.windowPosition) return
+    if (props.windowPosition.edge === 'head') smoothFollowOutput.pause()
+    else smoothFollowOutput.resume()
+  }, [props.windowPosition, smoothFollowOutput])
 
   const handleMinimapJump = useCallback(
     (anchor: MessageMinimapAnchor) => {
@@ -313,7 +498,6 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
               virtuoso.current.scrollToIndex({
                 index: i,
                 align: 'start',
-                offset: isSmallScreen ? -28 : 0,
                 behavior: 'smooth',
               })
               return
@@ -323,7 +507,6 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                 virtuoso.current.scrollToIndex({
                   index: j,
                   align: 'start',
-                  offset: isSmallScreen ? -28 : 0,
                   behavior: 'smooth',
                 })
                 return
@@ -336,7 +519,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
         }
       }
     }
-  }, [renderItems, isSmallScreen, smoothFollowOutput])
+  }, [renderItems, smoothFollowOutput])
 
   const handleScrollToNext = useCallback(() => {
     smoothFollowOutput.pause()
@@ -371,6 +554,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
 
   const [showScrollToPrev, setShowScrollToPrev] = useState(false)
   const lastScrollTop = useRef<number>()
+  const lastMaxScrollTop = useRef<number>()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     return () => {
@@ -383,9 +567,16 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     }
   }, [])
 
-  const handleScrollTopThrottled = useThrottledCallback((scrollTop?: number) => {
+  const handleScrollTopThrottled = useThrottledCallback((scrollTop: number, maxScrollTop: number) => {
     if (typeof scrollTop === 'number' && typeof lastScrollTop.current === 'number') {
-      if (scrollTop > 0 && scrollTop < lastScrollTop.current) {
+      // A taller scrollport can clamp the bottom position without an upward navigation gesture.
+      const layoutShrank = isLayoutClampedScroll(
+        lastScrollTop.current,
+        lastMaxScrollTop.current,
+        scrollTop,
+        maxScrollTop
+      )
+      if (scrollTop > 0 && scrollTop < lastScrollTop.current && !layoutShrank) {
         // 是向上滚动
         setShowScrollToPrev(true)
         if (timerRef.current) {
@@ -402,30 +593,80 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
       }
     }
     lastScrollTop.current = scrollTop
+    lastMaxScrollTop.current = maxScrollTop
   }, 256)
 
   const handleScroll = useCallback<UIEventHandler>(
     (e) => {
       const scrollTop = e.currentTarget.scrollTop
       const maxScrollTop = e.currentTarget.scrollHeight - e.currentTarget.clientHeight
-      if (smoothFollowOutput.handleScroll(scrollTop, maxScrollTop)) {
+      if (props.hasNewer) {
+        smoothFollowOutput.pause()
+        setAtBottom(false)
+      } else if (smoothFollowOutput.handleScroll(scrollTop, maxScrollTop)) {
         setAtBottom(false)
       } else if (smoothFollowOutput.isFollowing()) {
         setAtBottom(true)
       }
       if (e.currentTarget.scrollHeight - (scrollTop + e.currentTarget.clientHeight) >= 0) {
-        handleScrollTopThrottled(scrollTop)
+        handleScrollTopThrottled(scrollTop, maxScrollTop)
+      }
+      // Rendered ranges include overscan. Preserve only the item intersecting
+      // the viewport and its pixel offset when this view needs complete data.
+      const container = messageListRef.current
+      if (!isCompleteSession && container) {
+        const anchor = readWindowAnchor(container, renderItems)
+        if (anchor) viewportAnchorRef.current = anchor
       }
     },
-    [handleScrollTopThrottled, smoothFollowOutput]
+    [handleScrollTopThrottled, isCompleteSession, renderItems, smoothFollowOutput, props.hasNewer]
   )
   // message navigation handlers end
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 仅执行一次
+  useLayoutEffect(() => {
+    const container = messageListRef.current
+    if ((!isCompleteSession && !windowStart.ready) || !container || !virtuoso.current) return
+    let active = true
+    const navigation: TranscriptNavigation = {
+      owner: navigationOwner,
+      sessionId: currentSession.id,
+      view: isCompleteSession ? 'complete' : 'window',
+      scrollToIndex(location) {
+        const handle = virtuoso.current
+        if (
+          !active ||
+          !handle ||
+          !container.isConnected ||
+          messageListRef.current !== container ||
+          uiStore.getState().transcriptNavigation !== navigation ||
+          container.dataset.sessionId !== navigation.sessionId ||
+          container.dataset.sessionView !== navigation.view
+        )
+          return false
+        if (location.index === 'LAST') smoothFollowOutput.resume()
+        else smoothFollowOutput.pause()
+        handle.scrollToIndex(location)
+        return true
+      },
+    }
+    setTranscriptNavigation(navigation)
+    return () => {
+      active = false
+      if (uiStore.getState().transcriptNavigation === navigation) setTranscriptNavigation(null)
+    }
+  }, [
+    currentSession.id,
+    isCompleteSession,
+    navigationOwner,
+    setTranscriptNavigation,
+    smoothFollowOutput,
+    windowStart.ready,
+  ])
+
   useEffect(() => {
-    setMessageScrolling(virtuoso)
     const currentVirtuoso = virtuoso.current // 清理时 virtuoso.current 已经为 null
     return () => {
+      if (!isCompleteSession) return
       currentVirtuoso?.getState((state) => {
         if (state.ranges.length > 0) {
           // useEffect 可能执行两次，这里根据 ranges 判断是否为第一次 useEffect 严格测试导致的执行
@@ -433,7 +674,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
         }
       })
     }
-  }, [])
+  }, [isCompleteSession, currentSession.id])
   // biome-ignore lint/correctness/useExhaustiveDependencies: 仅执行一次
   useEffect(() => {
     setMessageListElement(messageListRef)
@@ -479,7 +720,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   // identity comes from the frozen Soul — so showing it would misrepresent what the
   // model receives, whatever the display setting says.
   const hideSystemPrompt = hideSystemPromptMessage || !isActionAvailableInMode('session-system-prompt', sessionMode)
-  const showThreadHistory = isThreadHistoryAvailable(currentSession, sessionMode)
+  const showThreadHistory = isThreadHistoryAvailable(completeSession ?? {}, sessionMode)
 
   const renderMessageBlock = useCallback(
     (msg: SessionMessage, options: { isFirstItem: boolean; isLastItem: boolean }) => {
@@ -489,13 +730,13 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
       // Saved alternatives stay inside the pivot block (newest-first in ForkGroup), so the active
       // branch appears last. Forks can pivot on a system message ("Reply Again Below", first-reply
       // retries), so the switcher must stay reachable even while the system prompt is hidden.
-      const forkGroup = currentSession.messageForksHash?.[msg.id] &&
-        currentSession.messageForksHash[msg.id].lists.length > 1 && (
+      const forkGroup = completeSession?.messageForksHash?.[msg.id] &&
+        completeSession.messageForksHash[msg.id].lists.length > 1 && (
           <ForkGroup
             sessionId={currentSession.id}
             sessionType={currentSession.type || 'chat'}
             msgId={msg.id}
-            forks={currentSession.messageForksHash[msg.id]}
+            forks={completeSession.messageForksHash[msg.id]}
             sessionLocks={sessionLocks}
             sessionMode={sessionMode}
             assistantAvatarKey={currentSession.assistantAvatarKey}
@@ -591,6 +832,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     },
     [
       currentSession,
+      completeSession,
       currentThreadHash,
       hideSystemPrompt,
       sessionLocks,
@@ -606,15 +848,28 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   useImperativeHandle(ref, () => ({
     scrollToTop: (behavior = 'auto') => {
       smoothFollowOutput.pause()
+      if (props.hasOlder) {
+        if (props.onJumpToEdge) props.onJumpToEdge('head')
+        else props.onRequireComplete?.()
+        return
+      }
+      smoothFollowOutput.pause()
       virtuoso.current?.scrollTo({ top: 0, behavior })
     },
     scrollToBottom: (behavior = 'auto') => {
+      if (props.hasNewer) {
+        props.onJumpToEdge?.('tail')
+        return
+      }
       smoothFollowOutput.resume()
       virtuoso.current?.scrollTo({ top: Infinity, behavior })
     },
     scrollToMessage: (messageId, behavior = 'smooth') => {
       const itemIndex = renderItems.findIndex((item) => item.messages.some((message) => message.id === messageId))
-      if (itemIndex < 0) return false
+      if (itemIndex < 0) {
+        props.onRequireComplete?.(messageId)
+        return Boolean(props.onRequireComplete)
+      }
 
       smoothFollowOutput.pause()
       setHighlightedMessageId(messageId)
@@ -629,78 +884,181 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   }))
 
   return (
-    <div className={cn('w-full h-full mx-auto', props.className)}>
+    <div className={cn('w-full h-full mx-auto', isSmallScreen && 'flex flex-col', props.className)}>
       <BlockCodeCollapsedStateProvider defaultCollapsed={!!settingsStore.getState().autoCollapseCodeBlock}>
+        {isSmallScreen && (
+          <Transition mounted={showScrollToPrev && (!atTop || !!props.hasOlder)} transition="fade">
+            {(transitionStyle) => (
+              <Flex style={transitionStyle} className="shrink-0 leading-tight bg-chatbox-background-secondary">
+                {[
+                  { text: t('Return to the top'), icon: IconArrowBarToUp, onClick: handleScrollToTop },
+                  { text: t('Back to previous message'), icon: IconArrowUp, onClick: handleScrollToPrev },
+                ].map((item, idx) => (
+                  <Button
+                    key={item.text}
+                    variant="transparent"
+                    className={cn('w-1/2', idx === 0 ? 'border-r border-r-chatbox-border-primary' : '')}
+                    classNames={{ section: '!mr-xxs' }}
+                    size="xs"
+                    h="auto"
+                    py={6}
+                    c="chatbox-tertiary"
+                    onClick={item.onClick}
+                    leftSection={<ScalableIcon icon={item.icon} size={16} />}
+                  >
+                    {item.text}
+                  </Button>
+                ))}
+              </Flex>
+            )}
+          </Transition>
+        )}
         <div
-          className={cn('overflow-hidden h-full pr-0 relative', showMinimap ? 'pl-[28px]' : 'pl-1 sm:pl-0')}
+          className={cn(
+            'overflow-hidden pr-0 relative',
+            isSmallScreen ? 'min-h-0 flex-1' : 'h-full',
+            showMinimap ? 'pl-[28px]' : 'pl-1 sm:pl-0'
+          )}
           ref={messageListRef}
+          data-session-id={currentSession.id}
+          data-session-view={isCompleteSession ? 'complete' : 'window'}
+          aria-busy={props.isJumping || props.isLoadingOlder || props.isLoadingNewer || undefined}
+          onClickCapture={(event) => {
+            if (event.target instanceof Element && event.target.closest('[data-index]'))
+              windowGeometryChanged.current = true
+          }}
+          onKeyDownCapture={() => {
+            windowGeometryChanged.current = true
+          }}
         >
           {/* Virtuoso smooths appended items but snaps same-item height growth; the controller below owns both cases. */}
-          <Virtuoso
-            style={{ scrollbarGutter: isSmallScreen ? 'auto' : 'stable' }}
-            className={platformType === 'win32' ? 'scrollbar-custom' : ''}
-            data={renderItems}
-            // MessageRenderItem already carries a stable key (message id / group ids).
-            // Without computeItemKey, Virtuoso reconciles by index and reuses DOM nodes
-            // across positions; when a message is inserted or removed mid-list (steering,
-            // fork switching, compaction), React's keyed inner <Stack> then tries to remove
-            // a node Virtuoso already moved, throwing "Failed to execute 'removeChild'".
-            computeItemKey={(_, item) => item.key}
-            ref={virtuoso}
-            followOutput={false}
-            {...(sessionScrollPositionCache.has(currentSession.id)
-              ? {
-                  restoreStateFrom: sessionScrollPositionCache.get(currentSession.id),
-                  // 需要额外设置 initialScrollTop，否则恢复位置后 scrollTop 为 0。这时如果用户没有滚动，那么下次保存时 scrollTop 将记为 0，导致下一次恢复时位置始终为顶部。
-                  initialScrollTop: sessionScrollPositionCache.get(currentSession.id)?.scrollTop,
-                }
-              : {
-                  initialTopMostItemIndex: renderItems.length - 1,
-                })}
-            increaseViewportBy={{ top: 2000, bottom: 2000 }}
-            itemContent={(index, item) => {
-              const itemClassName = widthFull ? 'w-full' : 'max-w-4xl mx-auto'
-              const itemStyle = isSmallScreen ? { paddingInlineEnd: 16 } : undefined
-              const isFirstItem = index === 0
-              const isLastItem = index === renderItems.length - 1
+          {(!props.transcript || windowStart.ready) && (
+            <Virtuoso
+              key={props.transcript ? `window-${props.windowPosition?.id ?? 0}` : 'complete'}
+              style={{ scrollbarGutter: isSmallScreen ? 'auto' : 'stable' }}
+              className={platformType === 'win32' ? 'scrollbar-custom' : ''}
+              data={renderItems}
+              firstItemIndex={firstItemIndex}
+              startReached={props.hasOlder ? props.onLoadOlder : undefined}
+              endReached={props.hasNewer ? props.onLoadNewer : undefined}
+              components={WINDOW_BOUNDARY_COMPONENTS}
+              context={
+                props.transcript
+                  ? {
+                      hasOlder: props.hasOlder,
+                      hasNewer: props.hasNewer,
+                      isLoadingOlder: props.isLoadingOlder,
+                      isLoadingNewer: props.isLoadingNewer,
+                      onLoadOlder: props.onLoadOlder,
+                      onLoadNewer: props.onLoadNewer,
+                    }
+                  : undefined
+              }
+              // MessageRenderItem already carries a stable key (message id / group ids).
+              // Without computeItemKey, Virtuoso reconciles by index and reuses DOM nodes
+              // across positions; when a message is inserted or removed mid-list (steering,
+              // fork switching, compaction), React's keyed inner <Stack> then tries to remove
+              // a node Virtuoso already moved, throwing "Failed to execute 'removeChild'".
+              computeItemKey={(_, item) => item.key}
+              ref={virtuoso}
+              followOutput={false}
+              {...(props.transcript && props.windowPosition
+                ? {
+                    ...(props.windowPosition.edge === 'head'
+                      ? { initialScrollTop: 0 }
+                      : { initialTopMostItemIndex: { index: 'LAST' as const, align: 'end' as const } }),
+                  }
+                : props.transcript && windowStart.position
+                  ? 'snapshot' in windowStart.position
+                    ? {
+                        restoreStateFrom: windowStart.position.snapshot,
+                        initialScrollTop: windowStart.position.snapshot.scrollTop,
+                      }
+                    : { initialTopMostItemIndex: { index: windowStart.position.anchorIndex, align: 'start' as const } }
+                  : !props.transcript && !initialViewWasWindow && sessionScrollPositionCache.has(currentSession.id)
+                    ? {
+                        restoreStateFrom: sessionScrollPositionCache.get(currentSession.id),
+                        // 需要额外设置 initialScrollTop，否则恢复位置后 scrollTop 为 0。这时如果用户没有滚动，那么下次保存时 scrollTop 将记为 0，导致下一次恢复时位置始终为顶部。
+                        initialScrollTop: sessionScrollPositionCache.get(currentSession.id)?.scrollTop,
+                      }
+                    : {
+                        initialTopMostItemIndex:
+                          !props.transcript && smoothFollowOutput.isFollowing()
+                            ? { index: 'LAST', align: 'end' }
+                            : !props.transcript && viewportAnchorRef.current
+                              ? {
+                                  index: Math.max(
+                                    0,
+                                    renderItems.findIndex((item) =>
+                                      item.messages.some(
+                                        (message) => message.id === viewportAnchorRef.current?.messageId
+                                      )
+                                    )
+                                  ),
+                                  align: 'start',
+                                  offset: viewportAnchorRef.current.offset,
+                                }
+                              : renderItems.length - 1,
+                      })}
+              increaseViewportBy={{ top: 2000, bottom: 2000 }}
+              itemContent={(absoluteIndex, item) => {
+                const index = absoluteIndex - firstItemIndex
+                const itemClassName = widthFull ? 'w-full' : 'max-w-4xl mx-auto'
+                const itemStyle = isSmallScreen ? { paddingInlineEnd: 16 } : undefined
+                const isFirstItem = index === 0
+                const isLastItem = index === renderItems.length - 1
 
-              if (item.type === 'group') {
+                if (item.type === 'group') {
+                  return (
+                    <div className={itemClassName} style={itemStyle}>
+                      <div
+                        className="flex flex-col pt-5"
+                        style={
+                          messageViewportHeight > 0 && isNewMessage && isLastItem
+                            ? { minHeight: `${messageViewportHeight * 0.85}px` }
+                            : undefined
+                        } // key
+                      >
+                        {item.messages.map((message, messageIndex) =>
+                          renderMessageBlock(message, {
+                            isFirstItem: isFirstItem && messageIndex === 0,
+                            isLastItem: isLastItem && messageIndex === item.messages.length - 1,
+                          })
+                        )}
+                        {/* <div aria-hidden="true" className="flex-1" /> */}
+                      </div>
+                    </div>
+                  )
+                }
+
                 return (
                   <div className={itemClassName} style={itemStyle}>
-                    <div
-                      className="flex flex-col pt-5"
-                      style={
-                        messageViewportHeight > 0 && isNewMessage && isLastItem
-                          ? { minHeight: `${messageViewportHeight * 0.85}px` }
-                          : undefined
-                      } // key
-                    >
-                      {item.messages.map((message, messageIndex) =>
-                        renderMessageBlock(message, {
-                          isFirstItem: isFirstItem && messageIndex === 0,
-                          isLastItem: isLastItem && messageIndex === item.messages.length - 1,
-                        })
-                      )}
-                      {/* <div aria-hidden="true" className="flex-1" /> */}
-                    </div>
+                    {renderMessageBlock(item.messages[0], { isFirstItem, isLastItem })}
                   </div>
                 )
-              }
+              }}
+              atTopStateChange={setAtTop}
+              atBottomStateChange={(nextAtBottom) => {
+                if (!props.hasNewer) smoothFollowOutput.handleAtBottomChange(nextAtBottom)
+                setAtBottom(!props.hasNewer && (nextAtBottom || smoothFollowOutput.isFollowing()))
+              }}
+              totalListHeightChanged={smoothFollowOutput.handleHeightChange}
+              onScroll={handleScroll}
+            />
+          )}
 
-              return (
-                <div className={itemClassName} style={itemStyle}>
-                  {renderMessageBlock(item.messages[0], { isFirstItem, isLastItem })}
-                </div>
-              )
-            }}
-            atTopStateChange={setAtTop}
-            atBottomStateChange={(nextAtBottom) => {
-              smoothFollowOutput.handleAtBottomChange(nextAtBottom)
-              setAtBottom(nextAtBottom || smoothFollowOutput.isFollowing())
-            }}
-            totalListHeightChanged={smoothFollowOutput.handleHeightChange}
-            onScroll={handleScroll}
-          />
+          {props.isJumping && (
+            <Flex
+              role="status"
+              aria-live="polite"
+              gap="xs"
+              align="center"
+              className="absolute top-2 left-1/2 -translate-x-1/2 rounded px-3 py-2 bg-chatbox-background-secondary shadow"
+            >
+              <Loader size="xs" />
+              {t('Loading...')}
+            </Flex>
+          )}
 
           {showMinimap && <MessageMinimapRail anchors={userMessageAnchors} onJump={handleMinimapJump} />}
 
@@ -714,45 +1072,9 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
               onScrollToNext={handleScrollToNext}
             />
           ) : (
-            <>
-              <Transition mounted={showScrollToPrev && !atTop} transition="fade-down">
-                {(transitionStyle) => (
-                  <Flex
-                    style={transitionStyle}
-                    className="absolute z-10 top-0 left-0 right-0 leading-tight bg-chatbox-background-secondary"
-                  >
-                    {[
-                      { text: t('Return to the top'), icon: IconArrowBarToUp, onClick: handleScrollToTop },
-                      {
-                        text: t('Back to previous message'),
-                        icon: IconArrowUp,
-                        onClick: handleScrollToPrev,
-                      },
-                    ].map((item, idx) => (
-                      <Button
-                        key={item.text}
-                        variant="transparent"
-                        className={cn('w-1/2', idx === 0 ? 'border-r border-r-chatbox-border-primary' : '')}
-                        classNames={{
-                          section: '!mr-xxs',
-                        }}
-                        size="xs"
-                        h="auto"
-                        py={6}
-                        c="chatbox-tertiary"
-                        onClick={item.onClick}
-                        leftSection={<ScalableIcon icon={item.icon} size={16} />}
-                      >
-                        {item.text}
-                      </Button>
-                    ))}
-                  </Flex>
-                )}
-              </Transition>
-              <Transition mounted={!atBottom} transition="slide-up">
-                {(transitionStyle) => <ScrollToBottomButton onClick={handleScrollToBottom} style={transitionStyle} />}
-              </Transition>
-            </>
+            <Transition mounted={!atBottom || !!props.hasNewer} transition="slide-up">
+              {(transitionStyle) => <ScrollToBottomButton onClick={handleScrollToBottom} style={transitionStyle} />}
+            </Transition>
           )}
         </div>
       </BlockCodeCollapsedStateProvider>
@@ -761,6 +1083,44 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
 })
 
 export default memo(MessageList)
+
+type WindowBoundaryContext = Pick<
+  MessageListProps,
+  'hasOlder' | 'hasNewer' | 'isLoadingOlder' | 'isLoadingNewer' | 'onLoadOlder' | 'onLoadNewer'
+>
+
+function WindowBoundary({ context, edge }: { context?: WindowBoundaryContext; edge: 'head' | 'tail' }) {
+  const { t } = useTranslation()
+  if (!context) return null
+  const more = edge === 'head' ? context.hasOlder : context.hasNewer
+  const loading = edge === 'head' ? context.isLoadingOlder : context.isLoadingNewer
+  if (!more && edge === 'tail') return null
+  return (
+    <Flex mih={36} justify="center" align="center" gap="xs" role="status" aria-live="polite">
+      {loading ? (
+        <>
+          <Loader size="xs" />
+          {t('Loading...')}
+        </>
+      ) : more ? (
+        <Button
+          variant="subtle"
+          size="compact-xs"
+          onClick={edge === 'head' ? context.onLoadOlder : context.onLoadNewer}
+        >
+          {t('Load More')}
+        </Button>
+      ) : (
+        <span className="text-xs text-chatbox-tertiary">{t('Beginning of conversation')}</span>
+      )}
+    </Flex>
+  )
+}
+
+const WINDOW_BOUNDARY_COMPONENTS = {
+  Header: ({ context }: { context?: WindowBoundaryContext }) => <WindowBoundary context={context} edge="head" />,
+  Footer: ({ context }: { context?: WindowBoundaryContext }) => <WindowBoundary context={context} edge="tail" />,
+}
 
 type ThreadLabelProps = {
   sessionId: string

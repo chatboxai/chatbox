@@ -1,4 +1,4 @@
-import { isContextEligibleMessage } from '@shared/context'
+import { isContextEligibleMessage, selectContextMessages } from '@shared/context'
 import type { CompactionPoint, Message, Session, Settings } from '@shared/types'
 import { useEffect, useMemo, useRef } from 'react'
 import { getTokenizerType } from '@/packages/token-estimation'
@@ -19,12 +19,20 @@ queryClient.setQueryDefaults(['context-tokens'], {
  */
 export interface UseContextTokensOptions {
   sessionId: string | null
-  session: Session | null | undefined
+  source?: ContextTokenSource | null
   settings: Partial<Settings>
   model?: { provider: string; modelId: string }
   modelSupportToolUseForFile: boolean
   sandboxMode?: boolean
   constructedMessage?: Message
+}
+
+export interface ContextTokenSource {
+  /** Loaded-message preview, never eligible for the complete-context decision cache. */
+  isPartial?: boolean
+  textTokens?: SessionTextTokenRead
+  candidateMessages: Message[]
+  compactionPoints?: CompactionPoint[]
 }
 
 /**
@@ -119,6 +127,18 @@ export function getContextMessagesForTokenEstimation(
   return filteredMessages
 }
 
+export function getContextMessagesForTokenSource(
+  source: ContextTokenSource,
+  options: GetContextMessagesForTokenEstimationOptions = {}
+): Message[] {
+  return selectMessagesForSendContext({
+    settings: options.settings ?? {},
+    msgs: selectContextMessages(source.candidateMessages, { compactionPoints: source.compactionPoints }),
+    compactionPoints: source.compactionPoints,
+    preserveLastUserMessage: options.preserveLastUserMessage ?? false,
+  })
+}
+
 /**
  * Generate immutable cache key for context tokens
  *
@@ -203,34 +223,46 @@ export function useStableEligibleMessages(messages: Message[] | undefined): Mess
  * - calculation and progress status (real-time draft and context work)
  */
 export function useContextTokens(options: UseContextTokensOptions): UseContextTokensResult {
-  const { sessionId, session, settings, model, modelSupportToolUseForFile, sandboxMode, constructedMessage } = options
+  const { sessionId, source, settings, model, modelSupportToolUseForFile, sandboxMode, constructedMessage } = options
+  const hasSource = source != null
+  const compactionPoints = source?.compactionPoints
 
   // 1. contextMessages must be stable — keyed off the eligible subset so
   // per-chunk streaming updates (which only touch the generating message)
   // don't re-run context building and analysis.
-  const eligibleMessages = useStableEligibleMessages(session?.messages)
+  const eligibleMessages = useStableEligibleMessages(source?.candidateMessages)
   const contextMessages = useMemo(() => {
-    if (!session) return []
-    return getContextMessagesForTokenEstimation({ ...session, messages: eligibleMessages }, { settings })
-  }, [eligibleMessages, session?.compactionPoints, settings.maxContextMessageCount])
+    if (!hasSource) return []
+    return getContextMessagesForTokenSource({ compactionPoints, candidateMessages: eligibleMessages }, { settings })
+  }, [eligibleMessages, compactionPoints, settings.maxContextMessageCount, hasSource])
 
   // 2. tokenizerType must be stable
   const tokenizerType = useMemo(() => getTokenizerType(model), [model?.provider, model?.modelId])
 
   // 3. cacheKey must be stable (NO modelSupportToolUseForFile!)
   const cacheKey = useMemo(() => {
-    if (!sessionId || sessionId === 'new' || !session) return null
+    if (!sessionId || sessionId === 'new' || !hasSource || source?.isPartial) return null
     return getContextTokensCacheKey({
       sessionId,
       maxContextMessageCount: settings.maxContextMessageCount ?? Number.MAX_SAFE_INTEGER,
       latestContextMessageId: contextMessages[contextMessages.length - 1]?.id ?? null,
-      latestCompactionBoundaryId: getLatestCompactionBoundaryId(session.compactionPoints),
+      latestCompactionBoundaryId: getLatestCompactionBoundaryId(compactionPoints),
       tokenizerType,
     })
-  }, [sessionId, session?.compactionPoints, settings.maxContextMessageCount, contextMessages, tokenizerType])
+  }, [
+    sessionId,
+    compactionPoints,
+    settings.maxContextMessageCount,
+    contextMessages,
+    tokenizerType,
+    hasSource,
+    source?.isPartial,
+  ])
 
   // 4. Call useTokenEstimation
   const tokenResult = useTokenEstimation({
+    textTokens: source?.textTokens,
+    contextSourcePending: source?.isPartial,
     sessionId,
     constructedMessage,
     contextMessages,
@@ -241,13 +273,7 @@ export function useContextTokens(options: UseContextTokensOptions): UseContextTo
 
   const isContextCalculating = tokenResult.isContextCalculating
 
-  // 5. Read existing cache value (for recalculation consistency)
-  const existingCacheValue = useMemo(() => {
-    if (!cacheKey) return null
-    return queryClient.getQueryData<ContextTokensCacheValue>(cacheKey) ?? null
-  }, [cacheKey])
-
-  // 6. New cache value (only when calculation complete)
+  // Publish the decision cache only when calculation is complete.
   const newCacheValue = useMemo<ContextTokensCacheValue | null>(() => {
     if (!cacheKey || isContextCalculating) return null
     return {
@@ -263,10 +289,10 @@ export function useContextTokens(options: UseContextTokensOptions): UseContextTo
     queryClient.setQueryData(cacheKey, newCacheValue)
   }, [cacheKey, newCacheValue])
 
-  // 8. Return with priority: newCacheValue > existingCacheValue > tokenResult
+  // The UI follows live accumulation; the decision cache may describe an older calculation.
   return {
-    contextTokens: newCacheValue?.contextTokens ?? existingCacheValue?.contextTokens ?? tokenResult.contextTokens,
-    messageCount: newCacheValue?.messageCount ?? existingCacheValue?.messageCount ?? contextMessages.length,
+    contextTokens: tokenResult.contextTokens,
+    messageCount: contextMessages.length,
     currentInputTokens: tokenResult.currentInputTokens,
     totalTokens: tokenResult.totalTokens,
     isCalculating: tokenResult.isCalculating,
@@ -280,3 +306,5 @@ export function useContextTokens(options: UseContextTokensOptions): UseContextTo
     exactDraftTokens: tokenResult.exactDraftTokens,
   }
 }
+
+import type { SessionTextTokenRead } from '@chatbox/core/ports'

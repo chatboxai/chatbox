@@ -42,7 +42,7 @@ export class NodeSessionRowSqlDatabase implements SessionRowSqlDatabase {
     return Promise.resolve(this.database.prepare(sql).all(...params) as T[])
   }
 
-  executeBatch(statements: SessionRowSqlStatement[], options?: SessionRowSqlBatchOptions): Promise<void> {
+  executeBatch(statements: Iterable<SessionRowSqlStatement>, options?: SessionRowSqlBatchOptions): Promise<void> {
     this.batchCount += 1
     this.database.exec('BEGIN')
     try {

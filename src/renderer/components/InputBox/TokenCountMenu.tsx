@@ -16,6 +16,7 @@ type Props = {
   isTotalApproximate?: boolean
   isContextApproximate?: boolean
   isContextCalculating?: boolean
+  isContextLoading?: boolean
   pendingContextMessages?: number
   totalContextMessages?: number
   contextWindow?: number
@@ -39,6 +40,7 @@ const TokenCountMenu: FC<Props> = ({
   isTotalApproximate = isCalculating,
   isContextApproximate = false,
   isContextCalculating = false,
+  isContextLoading = false,
   pendingContextMessages,
   totalContextMessages,
   contextWindow,
@@ -112,6 +114,12 @@ const TokenCountMenu: FC<Props> = ({
           </Text>
         </Flex>
 
+        {isContextLoading && (
+          <Text size="xs" c="dimmed" px="xs" pb="xs" role="status">
+            {t('Loading context... Estimates include loaded messages only.')}
+          </Text>
+        )}
+
         <Menu.Item disabled style={{ cursor: 'default' }}>
           <Flex justify="space-between" align="center" gap="xs">
             <Text size="sm">{t('Current input')}:</Text>
@@ -130,7 +138,8 @@ const TokenCountMenu: FC<Props> = ({
                 {isContextCalculating || isContextApproximate ? '~' : ''}
                 {formatNumber(contextTokens)}
               </Text>
-              {isContextCalculating &&
+              {!isContextLoading &&
+                isContextCalculating &&
                 pendingContextMessages !== undefined &&
                 totalContextMessages !== undefined &&
                 totalContextMessages > 0 && (
@@ -142,7 +151,7 @@ const TokenCountMenu: FC<Props> = ({
           </Flex>
         </Menu.Item>
 
-        {maxContextMessageCount !== undefined && currentMessageCount !== undefined && (
+        {!isContextLoading && maxContextMessageCount !== undefined && currentMessageCount !== undefined && (
           <Menu.Item disabled style={{ cursor: 'default' }}>
             <Flex justify="space-between" align="center" gap="xs">
               <Text size="sm">{t('Context messages')}:</Text>
@@ -190,7 +199,7 @@ const TokenCountMenu: FC<Props> = ({
           </>
         )}
 
-        {onCompressClick && contextTokens > 0 && (
+        {!isContextLoading && onCompressClick && contextTokens > 0 && (
           <>
             <Menu.Divider />
             <Menu.Item

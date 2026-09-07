@@ -1,5 +1,23 @@
 import {
+  assertMessageWindowRevision,
+  SessionMessageWindowTraversal,
+  validateMessageWindowRequest,
+  assertSessionReadRevision,
+  validateSessionMessagesRequest,
+  finishSessionContextRead,
+  planSessionContextRead,
+  SessionContextPathTraversal,
+  validateSessionContextRequest,
+  type SessionContextReadPlan,
+} from '@chatbox/core/persistence'
+import {
   type GeneratingMessageRef,
+  type SessionMessageWindow,
+  type SessionMessageWindowRequest,
+  type SessionMessagesRequest,
+  type SessionMessagesSnapshot,
+  type SessionContextRequest,
+  type SessionContextRows,
   SessionRowConflictError,
   type SessionRowCommit,
   type SessionRowSnapshot,
@@ -296,6 +314,270 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
     })
   }
 
+  async readMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {
+    const { sessionId } = request
+    try {
+      validateMessageWindowRequest(request)
+    } catch (error) {
+      throw new SessionRowStoreError('read-message-window', error, sessionId)
+    }
+    const db = await this.ensureDatabase('read-message-window', sessionId)
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(ROW_STORES, 'readonly')
+      const threads = tx.objectStore(SESSION_ROW_THREAD_STORE)
+      const messages = tx.objectStore(SESSION_ROW_MESSAGE_STORE)
+      let result: SessionMessageWindow | null = null
+      let failure: unknown
+      const fail = (error: unknown) => {
+        failure = error
+        tx.abort()
+      }
+      const readThread = (commit: SessionRowCommit) => {
+        const threadId = request.threadId ?? request.cursor?.threadId ?? commit.record.activeThreadId
+        const threadRequest = threads.get([sessionId, threadId])
+        threadRequest.onsuccess = () => {
+          try {
+            const thread = threadRequest.result as PersistedThreadRow | undefined
+            if (!thread) throw new Error('Message window thread is missing')
+            const traversal = new SessionMessageWindowTraversal(request, commit, plainThreadRow(thread))
+            const selected: MessageRow[] = []
+            const readNext = () => {
+              if (traversal.nextMessageId === null || traversal.remaining === 0) {
+                result = traversal.finish(selected)
+                return
+              }
+              const rowRequest = messages.get([sessionId, traversal.nextMessageId])
+              rowRequest.onsuccess = () => {
+                try {
+                  const row = rowRequest.result as MessageRow | undefined
+                  if (traversal.accept(row) && row) selected.push(row)
+                  readNext()
+                } catch (error) {
+                  fail(error)
+                }
+              }
+            }
+            readNext()
+          } catch (error) {
+            fail(error)
+          }
+        }
+      }
+      const headRequest = threads.get([sessionId, REVISION_HEAD_THREAD_ID])
+      headRequest.onsuccess = () => {
+        try {
+          const head = headRequest.result as RevisionHeadRow | undefined
+          assertMessageWindowRevision(request, head?.commitRevision ?? null)
+          if (head?.sessionRecord) {
+            const activeRequest = threads.get([sessionId, head.sessionRecord.activeThreadId])
+            activeRequest.onsuccess = () => {
+              try {
+                const active = activeRequest.result as PersistedThreadRow | undefined
+                readThread(readStoredCommit(sessionId, active ? [active] : [], head))
+              } catch (error) {
+                fail(error)
+              }
+            }
+          } else {
+            const fallback = threads.index(SESSION_INDEX).getAll(sessionId)
+            fallback.onsuccess = () => {
+              try {
+                const stored = fallback.result as Array<PersistedThreadRow | RevisionHeadRow>
+                const persisted = stored.filter((row): row is PersistedThreadRow => !isRevisionHeadRow(row))
+                if (persisted.length > 0) readThread(readStoredCommit(sessionId, persisted, head))
+              } catch (error) {
+                fail(error)
+              }
+            }
+          }
+        } catch (error) {
+          fail(error)
+        }
+      }
+      tx.oncomplete = () => resolve(result)
+      const rejectRead = () => {
+        const error = failure ?? tx.error
+        reject(
+          error instanceof SessionRowConflictError
+            ? error
+            : new SessionRowStoreError('read-message-window', error, sessionId)
+        )
+      }
+      tx.onerror = rejectRead
+      tx.onabort = rejectRead
+    })
+  }
+
+  async readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null> {
+    try {
+      validateSessionMessagesRequest(request)
+    } catch (error) {
+      throw new SessionRowStoreError('read-messages', error, request.sessionId)
+    }
+    return this.readSelectedSnapshot('read-messages', request, (tx, commit, _threads, finish, fail) => {
+      const ids = [...new Set(request.messageIds)]
+      this.readSelectedRows(tx, request.sessionId, ids, (messages) => finish({ ...commit, messages }), fail)
+    })
+  }
+
+  async readContext(request: SessionContextRequest): Promise<SessionContextRows | null> {
+    try {
+      validateSessionContextRequest(request)
+    } catch (error) {
+      throw new SessionRowStoreError('read-context', error, request.sessionId)
+    }
+    return this.readSelectedSnapshot('read-context', request, (tx, commit, threads, finish, fail) => {
+      const thread = threads.find((row) => row.threadId === (request.threadId ?? commit.record.activeThreadId))
+      const targetId = request.targetMessageId ?? thread?.activeLeafMessageId
+      this.readSelectedRows(
+        tx,
+        request.sessionId,
+        targetId ? [targetId] : [],
+        (targets) => {
+          const plan = planSessionContextRead(request, commit, threads, targets[0])
+          const readPlan = (current: SessionContextReadPlan) => {
+            const traversal = new SessionContextPathTraversal(request.sessionId, current)
+            const path: MessageRow[] = []
+            const readNext = () => {
+              if (traversal.nextMessageId === null) {
+                path.reverse()
+                const extras = current.checkpoint
+                  ? [current.checkpoint.point.summaryMessageId, current.checkpoint.systemMessageId].filter(
+                      (id): id is string => Boolean(id) && !path.some((row) => row.messageId === id)
+                    )
+                  : []
+                this.readSelectedRows(
+                  tx,
+                  request.sessionId,
+                  extras,
+                  (extra) => {
+                    const result = finishSessionContextRead(request, commit, current, path, extra)
+                    if (result) finish(result)
+                    else if (current.checkpoint) readPlan({ ...current, checkpoint: undefined })
+                    else throw new Error('Context fallback is incomplete')
+                  },
+                  fail
+                )
+                return
+              }
+              this.readSelectedRows(
+                tx,
+                request.sessionId,
+                [traversal.nextMessageId],
+                (rows) => {
+                  traversal.accept(rows[0])
+                  path.push(rows[0])
+                  readNext()
+                },
+                fail
+              )
+            }
+            readNext()
+          }
+          readPlan(plan)
+        },
+        fail
+      )
+    })
+  }
+
+  private async readSelectedSnapshot<Result>(
+    operation: SessionRowStoreOperation,
+    request: { sessionId: string; expectedRevision?: number },
+    select: (
+      tx: IDBTransaction,
+      commit: SessionRowCommit,
+      threads: ThreadRow[],
+      finish: (result: Result) => void,
+      fail: (error: unknown) => void
+    ) => void
+  ): Promise<Result | null> {
+    const db = await this.ensureDatabase(operation, request.sessionId)
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(ROW_STORES, 'readonly')
+      let result: Result | null = null
+      let failure: unknown
+      const fail = (error: unknown) => {
+        failure = error
+        tx.abort()
+      }
+      const read = tx.objectStore(SESSION_ROW_THREAD_STORE).index(SESSION_INDEX).getAll(request.sessionId)
+      read.onsuccess = () => {
+        try {
+          const stored = read.result as Array<PersistedThreadRow | RevisionHeadRow>
+          const head = stored.find(isRevisionHeadRow)
+          const threads = stored.filter((row): row is PersistedThreadRow => !isRevisionHeadRow(row))
+          assertSessionReadRevision(
+            request,
+            head?.commitRevision ?? threads.find((row) => row.seq === -1)?.commitRevision ?? null
+          )
+          if (threads.length === 0) return
+          const commit = readStoredCommit(request.sessionId, threads, head)
+          select(
+            tx,
+            commit,
+            threads.map(plainThreadRow),
+            (selected) => {
+              result = selected
+            },
+            fail
+          )
+        } catch (error) {
+          fail(error)
+        }
+      }
+      tx.oncomplete = () => resolve(result)
+      const rejectRead = () => {
+        const error = failure ?? tx.error
+        reject(
+          error instanceof SessionRowConflictError
+            ? error
+            : new SessionRowStoreError(operation, error, request.sessionId)
+        )
+      }
+      tx.onerror = rejectRead
+      tx.onabort = rejectRead
+    })
+  }
+
+  private readSelectedRows(
+    tx: IDBTransaction,
+    sessionId: string,
+    ids: string[],
+    finish: (rows: MessageRow[]) => void,
+    fail: (error: unknown) => void
+  ): void {
+    if (ids.length === 0) {
+      finish([])
+      return
+    }
+    const rows = new Map<string, MessageRow>()
+    let remaining = ids.length
+    for (const id of ids) {
+      const read = tx.objectStore(SESSION_ROW_MESSAGE_STORE).get([sessionId, id])
+      read.onsuccess = () => {
+        try {
+          const row = read.result as MessageRow | undefined
+          if (row) {
+            assertMessageRow('read-messages', sessionId, row)
+            if (row.messageId !== id) throw new Error('Message selection returned an unexpected id')
+            rows.set(id, row)
+          }
+          remaining -= 1
+          if (remaining === 0)
+            finish(
+              ids.flatMap((key) => {
+                const row = rows.get(key)
+                return row ? [row] : []
+              })
+            )
+        } catch (error) {
+          fail(error)
+        }
+      }
+    }
+  }
+
   async writeRows(snapshot: SessionRowSnapshot, expectedRevision?: number | null): Promise<void> {
     const { rows, record, revision } = snapshot
     const sessionId = rows.sessionId
@@ -503,19 +785,6 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
       tx.oncomplete = () => resolve([...sessionIds].sort())
       tx.onerror = () => reject(new SessionRowStoreError('list-session-ids', tx.error))
       tx.onabort = () => reject(new SessionRowStoreError('list-session-ids', tx.error))
-    })
-  }
-
-  async upsertMessage(row: MessageRow): Promise<void> {
-    assertSessionId('upsert-message', row.sessionId)
-    assertMessageRow('upsert-message', row.sessionId, row)
-
-    await this.runWrite('upsert-message', row.sessionId, [SESSION_ROW_MESSAGE_STORE], (tx, fail) => {
-      try {
-        tx.objectStore(SESSION_ROW_MESSAGE_STORE).put(row)
-      } catch (error) {
-        fail(error)
-      }
     })
   }
 

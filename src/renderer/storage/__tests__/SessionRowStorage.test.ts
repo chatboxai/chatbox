@@ -2,9 +2,13 @@ import 'fake-indexeddb/auto'
 import type { SessionRowCommit, SessionRowSnapshot, SessionRows } from '@chatbox/core/ports'
 import { createSessionRowStoreContract } from '@chatbox/core/ports/testing/session-row-store-contract'
 import type { MessageRow, ThreadRow } from '@chatbox/core/session/session-tree'
-import { IDBFactory } from 'fake-indexeddb'
+import { IDBFactory, IDBIndex, IDBObjectStore } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { IndexedDBSessionRowStore } from '../SessionRowStorage'
+import {
+  contextSession,
+  contextSnapshot,
+} from '../../../../packages/chatbox-core/src/persistence/session-context-read.test-support'
 
 function threadRow(sessionId: string, threadId: string, overrides: Partial<ThreadRow> = {}): ThreadRow {
   return {
@@ -73,6 +77,67 @@ describe('IndexedDBSessionRowStore shared behavior contract', () => {
 })
 
 describe('IndexedDBSessionRowStore', () => {
+  it('requests only retained context bodies and reads an individual message without prefix scans', async () => {
+    const store = new IndexedDBSessionRowStore()
+    const snapshot = contextSnapshot(contextSession(1000))
+    await store.writeRows(snapshot)
+    const get = vi.spyOn(IDBObjectStore.prototype, 'get')
+    const getAll = vi.spyOn(IDBIndex.prototype, 'getAll')
+    try {
+      const context = await store.readContext({ sessionId: snapshot.record.id, targetMessageId: 'target' })
+      expect(context?.mode).toBe('compacted')
+      const ids = get.mock.calls.map(([key]) => (key as string[])[1])
+      expect([...new Set(ids)].sort()).toEqual(['boundary', 'question', 'summary', 'system', 'target'])
+      const bytes = ids.reduce(
+        (total, id) =>
+          total + JSON.stringify(snapshot.rows.messages.find((row) => row.messageId === id)!.message).length,
+        0
+      )
+      expect(bytes).toBeLessThan(4096)
+      expect(getAll.mock.contexts.every((index) => (index as IDBIndex).objectStore.name === 'threads')).toBe(true)
+      get.mockClear()
+      await store.readMessages({ sessionId: snapshot.record.id, messageIds: ['question', 'question', 'missing'] })
+      expect(get.mock.calls.map(([key]) => (key as string[])[1])).toEqual(['question', 'missing'])
+    } finally {
+      get.mockRestore()
+      getAll.mockRestore()
+    }
+  })
+  it('reads a window by primary key without scanning session messages or threads', async () => {
+    const store = new IndexedDBSessionRowStore()
+    const messages = Array.from({ length: 100 }, (_, index) =>
+      messageRow('session-1', 'thread-active', `m${index}`, {
+        seq: index,
+        parentMessageId: index === 0 ? null : `m${index - 1}`,
+        activeChildId: index === 99 ? null : `m${index + 1}`,
+      })
+    )
+    await store.writeRows(
+      snapshot(
+        {
+          sessionId: 'session-1',
+          threads: [threadRow('session-1', 'thread-active', { rootMessageId: 'm0', activeLeafMessageId: 'm99' })],
+          messages,
+        },
+        1
+      )
+    )
+    const get = vi.spyOn(IDBObjectStore.prototype, 'get')
+    const indexGetAll = vi.spyOn(IDBIndex.prototype, 'getAll')
+    const storeGetAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+    try {
+      const tail = await store.readMessageWindow({ sessionId: 'session-1', limit: 5 })
+      expect(tail?.messages).toEqual(messages.slice(-5))
+      expect(get).toHaveBeenCalledTimes(8)
+      expect(indexGetAll).not.toHaveBeenCalled()
+      expect(storeGetAll).not.toHaveBeenCalled()
+    } finally {
+      get.mockRestore()
+      indexGetAll.mockRestore()
+      storeGetAll.mockRestore()
+    }
+  })
+
   it('keeps the stored rows when a full write fails inside the transaction', async () => {
     const store = new IndexedDBSessionRowStore()
     await store.initialize()

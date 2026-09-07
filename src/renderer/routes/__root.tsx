@@ -35,8 +35,8 @@ import { useSetAtom } from 'jotai'
 import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
-import { trackJkViewEvent } from '@/analytics/jk'
-import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
+import { JK_PAGE_NAMES } from '@/analytics/jk-events'
+import { trackPageView } from '@/analytics/page-view'
 import { createPageViewVisitGate } from '@/analytics/page-view-visit-gate'
 import { AppProviders } from '@/components/AppProviders'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
@@ -68,7 +68,7 @@ import Sidebar from '@/Sidebar'
 import * as atoms from '@/stores/atoms'
 import { getRendererDevLaunchOptions } from '@/utils/dev-launch'
 
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
+const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSessionHeader(sessionId)
 
 function getSessionIdFromPathname(pathname: string): string | null {
   if (!pathname.startsWith('/session/')) return null
@@ -364,23 +364,7 @@ function Root() {
 
     if (!pageName || !shouldTrackPageView) return
 
-    const trackPageView = async () => {
-      let content: string | undefined
-
-      if (pageViewSessionLoadTarget) {
-        const session = await rendererApplication.sessionQueryBridge
-          .getSession(pageViewSessionLoadTarget)
-          .catch(() => null)
-        content = session?.name
-      }
-
-      trackJkViewEvent(JK_EVENTS.PAGE_VIEW, {
-        pageName,
-        content,
-      })
-    }
-
-    trackPageView()
+    void trackPageView(pageName, pageViewSessionLoadTarget ?? undefined)
   }, [location.pathname, pageViewSessionLoadTarget, settingsSearch])
 
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()

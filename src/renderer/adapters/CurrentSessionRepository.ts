@@ -1,7 +1,17 @@
 import { RowBackedSessionRepository, type SessionMigrationOutcome } from '@chatbox/core/application/session'
+import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '@chatbox/core/ports'
 import {
+  type SessionContextRequest,
+  type SessionContextSource,
   type SessionDataWriteOptions,
+  type SessionMessageDerivedPatch,
+  type SessionMessageDerivedWriteResult,
+  type SessionMessagesRequest,
+  type SessionMessagesSource,
+  type SessionMessageWindow,
+  type SessionMessageWindowRequest,
   type SessionMetaRepositoryPort,
+  type SessionReadModel,
   SessionRepositoryError,
   type SessionRepositoryOperation,
   type SessionRepositoryPort,
@@ -143,6 +153,15 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
  * UI side effects.
  */
 export class CurrentSessionRepository implements SessionRepositoryPort {
+  getCompleteSessionSource(sessionId: string) {
+    return this.getData().getCompleteSessionSource(sessionId)
+  }
+  acceptSessionTextTokenResults(
+    sessionId: string,
+    results: readonly SessionTextTokenResult[]
+  ): Promise<SessionTextTokenWriteResult> {
+    return this.getData().acceptSessionTextTokenResults(sessionId, results)
+  }
   readonly meta: SessionMetaRepositoryPort
 
   private readonly records: CurrentSessionRecordStore
@@ -183,6 +202,29 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
 
   getSession(id: string): Promise<Session | null> {
     return normalizeRepositoryError('get-session', () => this.getData().getSession(id), id)
+  }
+
+  getSessionReadModel(id: string): Promise<SessionReadModel | null> {
+    return normalizeRepositoryError('get-session', () => this.getData().getSessionReadModel(id), id)
+  }
+
+  getSessionContextSource(request: SessionContextRequest): Promise<SessionContextSource | null> {
+    return this.getData().getSessionContextSource(request)
+  }
+
+  readSessionMessages(request: SessionMessagesRequest): Promise<SessionMessagesSource | null> {
+    return this.getData().readSessionMessages(request)
+  }
+
+  patchSessionMessageDerivedData(
+    sessionId: string,
+    patches: SessionMessageDerivedPatch[]
+  ): Promise<SessionMessageDerivedWriteResult> {
+    return this.getData().patchSessionMessageDerivedData(sessionId, patches)
+  }
+
+  readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {
+    return this.getData().readSessionMessageWindow(request)
   }
 
   setSession(session: Session, options?: SessionDataWriteOptions): Promise<void> {

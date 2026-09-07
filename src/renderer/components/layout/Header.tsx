@@ -1,3 +1,4 @@
+import type { SessionHeader } from '@chatbox/core/ports'
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Flex, Text } from '@mantine/core'
 import type { Session } from '@shared/types'
@@ -6,16 +7,17 @@ import clsx from 'clsx'
 import { PencilIcon } from 'lucide-react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { rendererApplication } from '@/app/renderer-application'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { syncSessionAutoTitle } from '@/stores/session/naming'
+import { syncSessionAutoTitleOnOpen } from '@/stores/session/naming'
 import { useUIStore } from '@/stores/uiStore'
 import Divider from '../common/Divider'
 import Toolbar from './Toolbar'
 import WindowControls from './WindowControls'
 
-export default function Header(props: { session: Session }) {
+export default function Header(props: { session: Session | SessionHeader }) {
   const { t } = useTranslation()
   const showSidebar = useUIStore((s) => s.showSidebar)
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
@@ -28,14 +30,20 @@ export default function Header(props: { session: Session }) {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: sync only when the visible session id changes; message-driven naming is handled by session-updated in registerSessionUiEffects
   useEffect(() => {
-    syncSessionAutoTitle(currentSession)
+    let active = true
+    void syncSessionAutoTitleOnOpen(currentSession, () => active)
+    return () => {
+      active = false
+    }
   }, [visibleSessionId])
 
   const editCurrentSession = () => {
     if (!currentSession) {
       return
     }
-    NiceModal.show('session-settings', { session: currentSession })
+    void rendererApplication.sessionQueryBridge.getSession(currentSession.id).then((session) => {
+      if (session) void NiceModal.show('session-settings', { session })
+    })
   }
 
   return (

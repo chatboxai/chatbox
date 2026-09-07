@@ -6,6 +6,8 @@ import type {
   SessionRows,
   SessionRowsDiff,
 } from '../session-row-store'
+import { SessionRowConflictError } from '../session-row-store'
+import { contextSnapshot, expectedContextMessage } from '../../persistence/session-context-read.test-support'
 
 export type SessionRowStoreContractFactory = () => SessionRowStorePort | Promise<SessionRowStorePort>
 
@@ -74,6 +76,40 @@ function rowSnapshot(rows: SessionRows, revision: number): SessionRowSnapshot {
   return { rows, ...rowCommit(rows.sessionId, revision, rows.threads.find((thread) => thread.seq === -1)?.threadId) }
 }
 
+function windowSnapshot(): SessionRowSnapshot {
+  const messages = Array.from({ length: 5 }, (_, index) =>
+    messageRow('session-window', 'thread-active', `m${index}`, {
+      seq: index * 2,
+      parentMessageId: index === 0 ? null : `m${index - 1}`,
+      activeChildId: index === 4 ? null : `m${index + 1}`,
+      kind: index === 2 ? 'summary' : 'message',
+    })
+  )
+  messages.push(
+    messageRow('session-window', 'thread-active', 'inactive', {
+      seq: 7,
+      parentMessageId: 'm1',
+      branchId: 'fork-inactive',
+    })
+  )
+  messages.push(messageRow('session-window', 'thread-archived', 'archived'))
+  return rowSnapshot(
+    {
+      sessionId: 'session-window',
+      threads: [
+        threadRow('session-window', 'thread-active', { rootMessageId: 'm0', activeLeafMessageId: 'm4' }),
+        threadRow('session-window', 'thread-archived', {
+          seq: 0,
+          rootMessageId: 'archived',
+          activeLeafMessageId: 'archived',
+        }),
+      ],
+      messages,
+    },
+    1
+  )
+}
+
 async function readRows(store: SessionRowStorePort, sessionId: string): Promise<SessionRows | null> {
   return (await store.readSnapshot(sessionId))?.rows ?? null
 }
@@ -139,6 +175,299 @@ export function createSessionRowStoreContract(
   createStore: SessionRowStoreContractFactory
 ): SessionRowStoreContractCase[] {
   return [
+    {
+      name: 'reads selected ids in request order from one revision and skips missing ids',
+      run: async () => {
+        const store = await prepareStore(createStore)
+        const snapshot = windowSnapshot()
+        await store.writeRows(snapshot)
+        const requested = [snapshot.rows.messages.at(-1)!.messageId, 'missing', 'm1', 'm1']
+        const selected = await store.readMessages({
+          sessionId: snapshot.record.id,
+          messageIds: requested,
+          expectedRevision: snapshot.revision,
+        })
+        assertEqual(selected?.revision, snapshot.revision, 'Selected rows must carry their committed revision')
+        assertDeepEqual(
+          selected?.messages.map((row) => row.messageId),
+          [requested[0], 'm1'],
+          'Read ids must be unique and ordered'
+        )
+        await assertRejects(
+          () =>
+            store.readMessages({
+              sessionId: snapshot.record.id,
+              messageIds: requested,
+              expectedRevision: snapshot.revision + 1,
+            }),
+          'Stale selection revisions must fail'
+        )
+        assertDeepEqual(
+          (await store.readMessages({ sessionId: snapshot.record.id, messageIds: [] }))?.messages,
+          [],
+          'Empty selection must not load bodies'
+        )
+      },
+    },
+    {
+      name: 'hydrates context from the effective checkpoint and returns full-path fallback for older targets',
+      run: async () => {
+        const store = await prepareStore(createStore)
+        const snapshot = contextSnapshot()
+        await store.writeRows(snapshot)
+        const compacted = await store.readContext({ sessionId: snapshot.record.id, targetMessageId: 'target' })
+        assertEqual(compacted?.mode, 'compacted', 'Valid checkpoint must bound the context read')
+        assertDeepEqual(
+          compacted?.messages.map((row) => row.messageId),
+          ['system', 'boundary', 'summary', 'question'],
+          'Context must preserve real system and boundary rows'
+        )
+        assertDeepEqual(
+          compacted?.messages,
+          snapshot.rows.messages
+            .filter((row) => ['system', 'boundary', 'summary', 'question'].includes(row.messageId))
+            .map(expectedContextMessage),
+          'Context must expose causal identity and complete message content'
+        )
+        const older = await store.readContext({ sessionId: snapshot.record.id, targetMessageId: 'prefix-2' })
+        assertEqual(older?.mode, 'full-path', 'A future point must not prune an older request')
+        assertDeepEqual(
+          older?.messages.map((row) => row.messageId),
+          ['system', 'prefix-0', 'prefix-1'],
+          'Older target must keep its own causal prefix'
+        )
+        assertDeepEqual(
+          older?.messages,
+          snapshot.rows.messages.slice(0, 3).map(expectedContextMessage),
+          'Full-path fallback must use the same context message shape'
+        )
+        const append = await store.readContext({
+          sessionId: snapshot.record.id,
+          targetMessageId: 'target',
+          includeTarget: true,
+        })
+        assertEqual(append?.messages.at(-1)?.messageId, 'target', 'Append must include its target')
+        assertDeepEqual(
+          append?.beforeTarget,
+          compacted?.beforeTarget,
+          'Append facts must still describe the strict target prefix'
+        )
+        await assertRejects(
+          () => store.readContext({ sessionId: snapshot.record.id, expectedRevision: 2 }),
+          'Stale context revisions must fail'
+        )
+      },
+    },
+    {
+      name: 'paginates only the active parent path, including summaries, without gaps or duplicate anchors',
+      run: async () => {
+        const store = await prepareStore(createStore)
+        const snapshot = windowSnapshot()
+        await store.writeRows(snapshot)
+        const tail = await store.readMessageWindow({ sessionId: 'session-window', limit: 2 })
+        assertDeepEqual(
+          tail?.messages.map((row) => row.messageId),
+          ['m3', 'm4'],
+          'tail must exclude inactive forks'
+        )
+        assertDeepEqual(tail?.record, snapshot.record, 'window includes committed record')
+        assertDeepEqual(tail?.thread, snapshot.rows.threads[0], 'window includes selected thread')
+        assertEqual(tail?.revision, 1, 'window includes committed revision')
+        if (!tail?.older) throw new Error('tail must have an older cursor')
+        const middle = await store.readMessageWindow({ sessionId: 'session-window', limit: 2, cursor: tail.older })
+        assertDeepEqual(
+          middle?.messages.map((row) => row.messageId),
+          ['m1', 'm2'],
+          'middle must exclude cursor anchor'
+        )
+        assertEqual(middle?.messages[1].kind, 'summary', 'summary remains in path')
+        if (!middle?.older) throw new Error('middle must have an older cursor')
+        const head = await store.readMessageWindow({ sessionId: 'session-window', limit: 2, cursor: middle.older })
+        assertDeepEqual(
+          head?.messages.map((row) => row.messageId),
+          ['m0'],
+          'short final page reaches root'
+        )
+        assertEqual(head?.older, null, 'root ends pagination')
+        const archived = await store.readMessageWindow({
+          sessionId: 'session-window',
+          threadId: 'thread-archived',
+          limit: 2,
+        })
+        assertDeepEqual(
+          archived?.messages.map((row) => row.messageId),
+          ['archived'],
+          'archived tree stays isolated'
+        )
+        assertEqual(archived?.older, null, 'archived root ends pagination')
+      },
+    },
+    {
+      name: 'opens at the root and pages in both directions along the active path',
+      run: async () => {
+        const store = await prepareStore(createStore)
+        await store.writeRows(windowSnapshot())
+        const head = await store.readMessageWindow({ sessionId: 'session-window', edge: 'head', limit: 2 })
+        assertDeepEqual(
+          head?.messages.map((row) => row.messageId),
+          ['m0', 'm1'],
+          'head starts at root'
+        )
+        assertEqual(head?.older, null, 'head has no older messages')
+        if (!head?.newer) throw new Error('head must have a newer cursor')
+        const middle = await store.readMessageWindow({ sessionId: 'session-window', cursor: head.newer, limit: 2 })
+        assertDeepEqual(
+          middle?.messages.map((row) => row.messageId),
+          ['m2', 'm3'],
+          'forward excludes anchor and inactive forks'
+        )
+        if (!middle?.older || !middle.newer) throw new Error('middle requires both cursors')
+        const previous = await store.readMessageWindow({ sessionId: 'session-window', cursor: middle.older, limit: 2 })
+        assertDeepEqual(previous?.messages, head.messages, 'backward returns the same head')
+        const tail = await store.readMessageWindow({ sessionId: 'session-window', cursor: middle.newer, limit: 2 })
+        assertDeepEqual(
+          tail?.messages.map((row) => row.messageId),
+          ['m4'],
+          'forward reaches leaf'
+        )
+        assertEqual(tail?.newer, null, 'leaf ends forward pagination')
+        await store.writeRows({ ...windowSnapshot(), revision: 2 }, 1)
+        await assertRejects(
+          () => store.readMessageWindow({ sessionId: 'session-window', cursor: head.newer ?? undefined, limit: 2 }),
+          'forward cursors are revision-bound'
+        )
+        await assertRejects(
+          () =>
+            store.readMessageWindow({
+              sessionId: 'session-window',
+              cursor: head.newer ?? undefined,
+              edge: 'head',
+              limit: 2,
+            }),
+          'a cursor cannot be combined with an edge'
+        )
+      },
+    },
+    {
+      name: 'distinguishes a missing session, an empty thread, and an unknown thread',
+      run: async () => {
+        const store = await prepareStore(createStore)
+        assertEqual(await store.readMessageWindow({ sessionId: 'missing', limit: 1 }), null, 'missing session')
+        await store.writeRows(
+          rowSnapshot({ sessionId: 'empty', threads: [threadRow('empty', 'empty')], messages: [] }, 1)
+        )
+        const empty = await store.readMessageWindow({ sessionId: 'empty', limit: 1 })
+        assertDeepEqual(empty?.messages, [], 'empty thread has an empty page')
+        assertEqual(empty?.older, null, 'empty thread has no cursor')
+        await assertRejects(
+          () => store.readMessageWindow({ sessionId: 'empty', threadId: 'unknown', limit: 1 }),
+          'unknown thread must reject'
+        )
+      },
+    },
+    {
+      name: 'rejects window cursors after checkpoint, branch mutation, deletion, and recreation',
+      run: async () => {
+        for (const mutation of ['checkpoint', 'commit', 'delete', 'recreate']) {
+          const store = await prepareStore(createStore)
+          const snapshot = windowSnapshot()
+          await store.writeRows(snapshot)
+          const tail = await store.readMessageWindow({ sessionId: snapshot.rows.sessionId, limit: 1 })
+          if (!tail?.older) throw new Error('expected cursor')
+          if (mutation === 'checkpoint')
+            await store.applyDiff(
+              {
+                ...emptyDiff(snapshot.rows.sessionId),
+                messages: { upsert: [{ ...snapshot.rows.messages[4], updatedAt: 2000 }], delete: [] },
+              },
+              { record: snapshot.record, revision: 2 },
+              1
+            )
+          if (mutation === 'commit') await store.writeRows({ ...snapshot, revision: 2 }, 1)
+          if (mutation === 'delete' || mutation === 'recreate') await store.deleteRows(snapshot.rows.sessionId, 1)
+          if (mutation === 'recreate') await store.writeRows({ ...snapshot, revision: 3 }, 2)
+          try {
+            await store.readMessageWindow({ sessionId: snapshot.rows.sessionId, limit: 1, cursor: tail.older })
+          } catch (error) {
+            if (!(error instanceof SessionRowConflictError)) throw error
+            assertEqual(error.expectedRevision, 1, 'stale cursor identifies expected revision')
+            continue
+          }
+          throw new Error(`${mutation} must invalidate the cursor`)
+        }
+      },
+    },
+    {
+      name: 'validates window limits and cursor identity before reading',
+      run: async () => {
+        const store = await prepareStore(createStore)
+        for (const limit of [0, -1, 201, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+          await assertRejects(
+            () => store.readMessageWindow({ sessionId: 'missing', limit }),
+            'invalid limit must reject'
+          )
+        }
+        await store.writeRows(windowSnapshot())
+        const tail = await store.readMessageWindow({ sessionId: 'session-window', limit: 1 })
+        if (!tail?.older) throw new Error('expected cursor')
+        const cursor = tail.older
+        await assertRejects(
+          () => store.readMessageWindow({ sessionId: 'other', limit: 1, cursor }),
+          'cross-session cursor must reject'
+        )
+        await assertRejects(
+          () => store.readMessageWindow({ sessionId: 'session-window', threadId: 'thread-archived', limit: 1, cursor }),
+          'cross-thread cursor must reject'
+        )
+      },
+    },
+    {
+      name: 'rejects broken, cross-thread, cyclic, and inconsistent parent paths',
+      run: async () => {
+        const overrides: Partial<MessageRow>[] = [
+          { parentMessageId: 'missing' },
+          { parentMessageId: 'archived' },
+          { parentMessageId: 'm4' },
+          { seq: 0 },
+        ]
+        for (const override of overrides) {
+          const store = await prepareStore(createStore)
+          const snapshot = windowSnapshot()
+          snapshot.rows.messages[4] = { ...snapshot.rows.messages[4], ...override }
+          await store.writeRows(snapshot)
+          await assertRejects(
+            () => store.readMessageWindow({ sessionId: 'session-window', limit: 10 }),
+            'corrupt path must reject'
+          )
+        }
+        const store = await prepareStore(createStore)
+        const snapshot = windowSnapshot()
+        snapshot.rows.messages[3].activeChildId = 'inactive'
+        await store.writeRows(snapshot)
+        const tail = await store.readMessageWindow({ sessionId: 'session-window', limit: 1 })
+        if (!tail?.older) throw new Error('expected cursor')
+        await assertRejects(
+          () => store.readMessageWindow({ sessionId: 'session-window', limit: 1, cursor: tail.older ?? undefined }),
+          'page boundary must validate parent-child consistency'
+        )
+      },
+    },
+    {
+      name: 'returns detached window values that cannot mutate persisted data',
+      run: async () => {
+        const store = await prepareStore(createStore)
+        await store.writeRows(windowSnapshot())
+        const window = await store.readMessageWindow({ sessionId: 'session-window', limit: 1 })
+        if (!window) throw new Error('expected window')
+        window.record.name = 'changed'
+        window.thread.name = 'changed'
+        window.messages[0].message.contentParts.push({ type: 'text', text: 'changed' })
+        const next = await store.readMessageWindow({ sessionId: 'session-window', limit: 1 })
+        assertEqual(next?.record.name, 'session-window', 'record remains unchanged')
+        assertEqual(next?.thread.name, 'thread-active', 'thread remains unchanged')
+        assertDeepEqual(next?.messages[0].message.contentParts, [], 'payload remains unchanged')
+      },
+    },
     {
       name: 'reports an empty store for sessions that hold no rows',
       run: async () => {
@@ -330,14 +659,22 @@ export function createSessionRowStoreContract(
         await store.writeRows(rowSnapshot({ sessionId: 'session-1', threads: [thread], messages: [first] }, 1))
 
         const inserted = messageRow('session-1', 'thread-active', 'm2', { parentMessageId: 'm1', seq: 1 })
-        await store.upsertMessage(inserted)
+        await store.applyDiff(
+          { ...emptyDiff('session-1'), messages: { upsert: [inserted], delete: [] } },
+          rowCommit('session-1', 2),
+          1
+        )
         const updated = { ...inserted, status: 'generating' as const, updatedAt: 2_000 }
-        await store.upsertMessage(updated)
+        await store.applyDiff(
+          { ...emptyDiff('session-1'), messages: { upsert: [updated], delete: [] } },
+          rowCommit('session-1', 3),
+          2
+        )
 
         assertDeepEqual(
           sortRows(await readRows(store, 'session-1')),
           sortRows({ sessionId: 'session-1', threads: [thread], messages: [first, updated] }),
-          'upsertMessage must insert then update only its own row'
+          'single-message commits must insert then update only their own row'
         )
       },
     },

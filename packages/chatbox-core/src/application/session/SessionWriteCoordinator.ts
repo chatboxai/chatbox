@@ -1,6 +1,11 @@
 import { type SessionRepositoryPort, SessionWriteConflictError } from '../../ports'
+import type { SessionMessageDerivedWriteResult } from '../../ports/session-message-source'
+import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '../../ports/session-text-tokens'
 import type { Session, SessionMeta, SessionMetaRecord, Updater } from '../../types'
+import type { SessionMessageDerivedPatch } from './message-derived-data'
+import { applySessionDerivedPatches } from './session-derived-data'
 import { projectSessionMetaUpdate } from './session-metadata'
+import { clearChangedTextTokenSeeds, textTokenPatches } from './session-text-tokens'
 
 export interface SessionWriteResult {
   session: Session
@@ -91,6 +96,59 @@ export class SessionWriteCoordinator {
       return Promise.reject(new SessionNotFoundError(sessionId))
     }
     return this.enqueue(sessionId, () => this.performUpdate(sessionId, updater, options))
+  }
+
+  patchMessageDerivedData(
+    sessionId: string,
+    patches: SessionMessageDerivedPatch[]
+  ): Promise<SessionMessageDerivedWriteResult> {
+    if (this.unavailable.has(sessionId)) return Promise.reject(new SessionNotFoundError(sessionId))
+    return this.enqueue(sessionId, async () => {
+      if (!this.repository.patchSessionMessageDerivedData) {
+        let accepted: SessionMessageDerivedPatch[] = []
+        await this.performUpdate(
+          sessionId,
+          (session) => {
+            if (!session) throw new SessionNotFoundError(sessionId)
+            const result = applySessionDerivedPatches(session, patches)
+            accepted = result.patches
+            return result.session
+          },
+          { updateMeta: false }
+        )
+        return { sessionId, previousRevision: null, revision: null, patches: accepted }
+      }
+      try {
+        const result = await this.repository.patchSessionMessageDerivedData(sessionId, patches)
+        const current = this.current.get(sessionId)
+        if (current && result.patches.length) {
+          this.current.set(sessionId, applySessionDerivedPatches(current, result.patches).session)
+        }
+        return result
+      } catch (error) {
+        if (error instanceof SessionWriteConflictError || error instanceof SessionNotFoundError) {
+          this.current.delete(sessionId)
+          this.discardCurrentSession(sessionId)
+        }
+        throw error
+      }
+    })
+  }
+
+  acceptTextTokenResults(
+    sessionId: string,
+    results: readonly SessionTextTokenResult[]
+  ): Promise<SessionTextTokenWriteResult> {
+    if (this.unavailable.has(sessionId)) return Promise.resolve({ sessionId, results: [] })
+    return this.enqueue(sessionId, async () => {
+      if (!this.repository.acceptSessionTextTokenResults)
+        throw new Error('Source-bound text token results are unavailable')
+      const result = await this.repository.acceptSessionTextTokenResults(sessionId, results)
+      const current = this.current.get(sessionId)
+      if (current)
+        this.current.set(sessionId, applySessionDerivedPatches(current, textTokenPatches(result.results)).session)
+      return result
+    })
   }
 
   /**
@@ -277,7 +335,9 @@ export class SessionWriteCoordinator {
     }
 
     const next = typeof updater === 'function' ? updater(previous) : { ...previous, ...updater }
-    const updated = recoveryArchivedAt === undefined ? next : { ...next, hidden: true, archivedAt: recoveryArchivedAt }
+    const content = this.repository.acceptSessionTextTokenResults ? clearChangedTextTokenSeeds(next, previous) : next
+    const updated =
+      recoveryArchivedAt === undefined ? content : { ...content, hidden: true, archivedAt: recoveryArchivedAt }
     try {
       await this.repository.setSession(updated, { changedMessageId: options.changedMessageId, baseSession: previous })
     } catch (error) {

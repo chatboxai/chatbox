@@ -125,7 +125,7 @@ describe('useContextTokens recompute guards', () => {
       ({ session, draft }: { session: Session; draft?: Message }) =>
         useContextTokens({
           sessionId: session.id,
-          session,
+          source: { candidateMessages: session.messages, compactionPoints: session.compactionPoints },
           settings: {},
           model: undefined,
           modelSupportToolUseForFile: false,

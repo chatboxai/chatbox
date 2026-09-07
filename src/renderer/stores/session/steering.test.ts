@@ -2,10 +2,10 @@ import type { Message } from '@shared/types'
 import type { ModelMessage } from 'ai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock } = vi.hoisted(() => ({ getSessionMock: vi.fn() }))
+const { getSessionMock, warnMock } = vi.hoisted(() => ({ getSessionMock: vi.fn(), warnMock: vi.fn() }))
 
 vi.mock('@/lib/utils', () => ({
-  getLogger: () => ({ error: vi.fn() }),
+  getLogger: () => ({ error: vi.fn(), warn: warnMock }),
 }))
 vi.mock('@/app/renderer-application', async () => {
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
@@ -20,6 +20,8 @@ vi.mock('@/app/renderer-application', async () => {
 import {
   enqueueUserMessage,
   messageQueueStore,
+  pauseQueue,
+  removeQueuedMessage,
   requestSteerQueuedMessage,
   resetMessageQueueForTests,
 } from './message-queue'
@@ -86,6 +88,82 @@ describe('steering consumer', () => {
     resetMessageQueueForTests()
     resetSteeringForTests()
     vi.useRealTimers()
+  })
+
+  it('loads scope only for a requested anchored item and freezes it once', async () => {
+    const load = vi.fn(async () => conversationIds)
+    const consumer = registerSteeringConsumer('session-1', load, persistMock)
+    await consumer?.inject(baseMessages, 'a1')
+    await enqueueStamped('session-1', userMessage('m1'))
+    await consumer?.inject(baseMessages, 'a1')
+    expect(load).not.toHaveBeenCalled()
+    requestSteerQueuedMessage('session-1', 'm1')
+    await consumer?.inject(baseMessages, 'a1')
+    await enqueueRequested('session-1', userMessage('m2'))
+    await consumer?.inject(baseMessages, 'a1')
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(persistMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps ordinary queued messages when the initial topology no longer matches', async () => {
+    await enqueueRequested('session-1', userMessage('m1'))
+    const consumer = registerSteeringConsumer('session-1', async () => null, persistMock)
+    await consumer?.inject(baseMessages, 'a1')
+    expect(persistMock).not.toHaveBeenCalled()
+    expect(messageQueueStore.getState().queues['session-1']?.[0]).toMatchObject({ id: 'm1' })
+    expect(messageQueueStore.getState().queues['session-1']?.[0].steerRequested).toBeUndefined()
+    expect(warnMock).toHaveBeenCalledWith(expect.any(String), { reason: 'scope-changed' })
+  })
+
+  it.each(['paused', 'replaced'] as const)('does not mutate a %s queue after awaiting scope', async (change) => {
+    let resolveScope: (scope: null) => void = () => undefined
+    const scope = new Promise<null>((resolve) => {
+      resolveScope = resolve
+    })
+    await enqueueRequested('session-1', userMessage('m1'))
+    const consumer = registerSteeringConsumer('session-1', () => scope, persistMock)
+    const pending = consumer?.inject(baseMessages, 'a1')
+    if (change === 'paused') pauseQueue('session-1', 'stopped')
+    else {
+      consumer?.release()
+      register()
+      requestSteerQueuedMessage('session-1', 'm1')
+    }
+    resolveScope(null)
+    await pending
+    expect(persistMock).not.toHaveBeenCalled()
+    expect(messageQueueStore.getState().queues['session-1']?.[0].steerRequested).toBe(true)
+    expect(warnMock).not.toHaveBeenCalled()
+  })
+
+  it('reselects the queue atomically after the scope read', async () => {
+    let resolveScope: (scope: ReadonlySet<string>) => void = () => undefined
+    const scope = new Promise<ReadonlySet<string>>((resolve) => {
+      resolveScope = resolve
+    })
+    await enqueueRequested('session-1', userMessage('m1'))
+    const consumer = registerSteeringConsumer('session-1', () => scope, persistMock)
+    const pending = consumer?.inject(baseMessages, 'a1')
+    removeQueuedMessage('session-1', 'm1')
+    await enqueueRequested('session-1', userMessage('m2'))
+    resolveScope(conversationIds)
+    await pending
+    expect(persistMock).toHaveBeenCalledTimes(1)
+    expect(persistMock.mock.calls[0][0].id).toBe('m2')
+  })
+
+  it('retains the request and retries a transient scope read failure', async () => {
+    await enqueueRequested('session-1', userMessage('m1'))
+    const load = vi
+      .fn<() => Promise<ReadonlySet<string>>>()
+      .mockRejectedValueOnce(new Error('read failed'))
+      .mockResolvedValue(conversationIds)
+    const consumer = registerSteeringConsumer('session-1', load, persistMock)
+    await consumer?.inject(baseMessages, 'a1')
+    expect(messageQueueStore.getState().queues['session-1']?.[0].steerRequested).toBe(true)
+    await consumer?.inject(baseMessages, 'a1')
+    expect(persistMock).toHaveBeenCalledTimes(1)
+    expect(load).toHaveBeenCalledTimes(2)
   })
 
   it('release clears steer requests the generation never consumed', async () => {

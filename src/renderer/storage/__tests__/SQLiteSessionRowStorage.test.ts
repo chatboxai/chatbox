@@ -2,6 +2,7 @@ import { CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL } from '@chatbox/core'
 import type { SessionRowCommit, SessionRowSnapshot, SessionRows } from '@chatbox/core/ports'
 import type { MessageRow, ThreadRow } from '@chatbox/core/session/session-tree'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SESSION_TEXT_TOKEN_SCHEMA_SQL } from '../../../../packages/chatbox-core/src/persistence/session-text-token-sql'
 import { SQLiteSessionRowStore } from '../SQLiteSessionRowStorage'
 
 const mockDatabase = vi.hoisted(() => ({
@@ -83,6 +84,18 @@ function statementsOf(call: number): string[] {
   return set.map((entry) => entry.statement)
 }
 
+function insertedRows(table: string, width: number): unknown[][] {
+  return mockDatabase.executeSet.mock.calls.flatMap((call) =>
+    (call[0] as Array<{ statement: string; values: unknown[] }>)
+      .filter((entry) => entry.statement.startsWith(`INSERT OR REPLACE INTO ${table} (`))
+      .flatMap((entry) =>
+        Array.from({ length: entry.values.length / width }, (_, index) =>
+          entry.values.slice(index * width, (index + 1) * width)
+        )
+      )
+  )
+}
+
 describe('SQLiteSessionRowStore', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -105,7 +118,7 @@ describe('SQLiteSessionRowStore', () => {
 
     expect(mockConnection.createConnection).toHaveBeenCalledWith('chatbox-messages', false, 'no-encryption', 1, false)
     expect(mockDatabase.execute).toHaveBeenCalledTimes(1)
-    expect(mockDatabase.execute).toHaveBeenCalledWith(CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL)
+    expect(mockDatabase.execute).toHaveBeenCalledWith(CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL + SESSION_TEXT_TOKEN_SCHEMA_SQL)
   })
 
   it('waits for a previous connection to close before creating a replacement', async () => {
@@ -283,12 +296,85 @@ describe('SQLiteSessionRowStore', () => {
     expect(mockDatabase.beginTransaction).not.toHaveBeenCalled()
     expect(mockDatabase.commitTransaction).not.toHaveBeenCalled()
     expect(mockDatabase.rollbackTransaction).not.toHaveBeenCalled()
-    const writtenIds = mockDatabase.executeSet.mock.calls.flatMap((call) =>
-      (call[0] as Array<{ values: unknown[] }>)
-        .filter((entry) => entry.values.length === 15)
-        .map((entry) => entry.values[2])
-    )
+    const writtenIds = insertedRows('session_messages_staging', 15).map((values) => values[2])
     expect(writtenIds).toEqual(['m1', 'm2', 'm3'])
+  })
+
+  it.each([1000, 2000])('keeps serialization work linear for %i staged messages', async (count) => {
+    const store = new SQLiteSessionRowStore()
+    const encode = TextEncoder.prototype.encode
+    let serializedStatementCharacters = 0
+    const encoding = vi.spyOn(TextEncoder.prototype, 'encode').mockImplementation(function (this: TextEncoder, value) {
+      if (value?.includes('"statement":')) serializedStatementCharacters += value.length
+      return encode.call(this, value)
+    })
+    try {
+      await store.writeRows(
+        snapshot({
+          sessionId: 'session-1',
+          threads: [threadRow('thread-active')],
+          messages: Array.from({ length: count }, (_, index) => messageRow(`m${index}`, { seq: index })),
+        })
+      )
+    } finally {
+      encoding.mockRestore()
+    }
+    const sentCharacters = mockDatabase.executeSet.mock.calls.reduce(
+      (total, call) => total + JSON.stringify(call[0]).length,
+      0
+    )
+    expect(serializedStatementCharacters).toBeLessThan(sentCharacters * 4)
+    expect(mockDatabase.executeSet.mock.calls.every((call) => call[1] === true)).toBe(true)
+    for (const call of mockDatabase.executeSet.mock.calls) {
+      expect(new TextEncoder().encode(JSON.stringify(call[0])).byteLength).toBeLessThanOrEqual(512 * 1024)
+    }
+  })
+
+  it('serializes replacement messages only as the bridge consumes each bounded batch', async () => {
+    const store = new SQLiteSessionRowStore()
+    const count = 100
+    const contentParts = [{ type: 'text' as const, text: 'x'.repeat(64 * 1024) }]
+    let serializedMessages = 0
+    const messages = Array.from({ length: count }, (_, index) => {
+      const row = messageRow(`m${index}`, { seq: index })
+      Object.defineProperty(row.message, 'contentParts', {
+        enumerable: true,
+        get: () => {
+          serializedMessages += 1
+          return contentParts
+        },
+      })
+      return row
+    })
+    let releaseBatch: () => void = () => {}
+    const batchPending = new Promise<void>((resolve) => {
+      releaseBatch = resolve
+    })
+    let batchStarted = false
+    mockDatabase.executeSet.mockImplementation(async (batch: Array<{ statement: string }>) => {
+      if (
+        !batchStarted &&
+        batch.some((entry) => entry.statement.includes('INSERT OR REPLACE INTO session_messages_staging'))
+      ) {
+        batchStarted = true
+        await batchPending
+      }
+      return { changes: { changes: 1 } }
+    })
+
+    const writing = store.writeRows(
+      snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages })
+    )
+    try {
+      await vi.waitFor(() => expect(batchStarted).toBe(true))
+      expect(serializedMessages).toBeGreaterThan(0)
+      // One native batch plus its lookahead message, not the remaining session.
+      expect(serializedMessages).toBeLessThanOrEqual(9)
+    } finally {
+      releaseBatch()
+      await writing
+    }
+    expect(serializedMessages).toBe(count)
   })
 
   it('preserves a multi-megabyte unicode payload across code-point-safe chunks', async () => {
@@ -300,12 +386,9 @@ describe('SQLiteSessionRowStore', () => {
 
     await store.writeRows(snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [row] }))
 
-    const chunks = mockDatabase.executeSet.mock.calls.flatMap((call) =>
-      (call[0] as Array<{ statement: string; values: unknown[] }>)
-        .filter((entry) => entry.statement.startsWith('INSERT OR REPLACE INTO session_message_payload_chunks'))
-        .sort((left, right) => Number(left.values[2]) - Number(right.values[2]))
-        .map((entry) => String(entry.values[3]))
-    )
+    const chunks = insertedRows('session_message_payload_chunks', 4)
+      .sort((left, right) => Number(left[2]) - Number(right[2]))
+      .map((values) => String(values[3]))
     expect(JSON.parse(chunks.join(''))).toEqual(row.message)
     expect(mockDatabase.executeSet.mock.calls.every((call) => call[1] === true)).toBe(true)
     for (const call of mockDatabase.executeSet.mock.calls) {
@@ -396,6 +479,7 @@ describe('SQLiteSessionRowStore', () => {
       expect.stringContaining('UPDATE session_row_heads SET revision = revision + 1'),
       'DELETE FROM session_threads WHERE session_id = ?',
       'DELETE FROM session_messages WHERE session_id = ?',
+      expect.stringContaining('DELETE FROM session_text_tokens'),
       expect.stringContaining('DELETE FROM session_message_payload_chunks'),
       expect.stringContaining('INSERT OR REPLACE INTO session_row_delete_receipts'),
     ])
@@ -455,6 +539,7 @@ describe('SQLiteSessionRowStore', () => {
     const store = new SQLiteSessionRowStore()
     const record = commit(1).record
     const serializedRecord = JSON.stringify(record)
+    const serializedMessage = JSON.stringify({ id: 'm1', role: 'user', contentParts: [] })
     mockDatabase.query
       .mockResolvedValueOnce({ values: [{ commit_revision: 1 }] })
       .mockResolvedValueOnce({
@@ -477,7 +562,6 @@ describe('SQLiteSessionRowStore', () => {
       .mockResolvedValueOnce({ values: [{ value: 'thread-active' }] })
       .mockResolvedValueOnce({ values: [{ value: '[]' }] })
       .mockResolvedValueOnce({ values: [{ value: serializedRecord }] })
-      .mockResolvedValueOnce({ values: [{ page_count: 1, remaining_count: 1 }] })
       .mockResolvedValueOnce({
         values: [
           {
@@ -494,16 +578,18 @@ describe('SQLiteSessionRowStore', () => {
             branch_id: null,
             payload_id: 'payload-m1',
             payload_chunk_count: 1,
-            payload_utf8_length: 43,
+            payload_utf8_length: new TextEncoder().encode(serializedMessage).byteLength,
           },
         ],
       })
+      .mockResolvedValueOnce({ values: [] })
       .mockResolvedValueOnce({
         values: [
           {
-            payload_id: 'payload-m1',
-            chunk_index: 0,
-            value: '{"id":"m1","role":"user","contentParts":[]}',
+            i: 0,
+            c: 0,
+            v: serializedMessage,
+            x: 0,
           },
         ],
       })
@@ -523,7 +609,7 @@ describe('SQLiteSessionRowStore', () => {
     mockDatabase.query
       .mockResolvedValueOnce({ values: [] })
       .mockResolvedValueOnce({ values: [] })
-      .mockResolvedValueOnce({ values: [{ page_count: 1, remaining_count: 0 }] })
+      .mockResolvedValueOnce({ values: [] })
       .mockResolvedValueOnce({ values: [] })
       .mockResolvedValueOnce({ values: [] })
 

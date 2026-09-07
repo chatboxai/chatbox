@@ -1,3 +1,4 @@
+import type { SessionContextBeforeTarget, SessionHeader } from '@chatbox/core/ports'
 import { buildAgentPersonaPrompt, buildMemoriesSection } from '@shared/agent-persona/prompt'
 import { buildContext, flattenToolCallPartsToText, selectContextMessages } from '@shared/context'
 import type { AttachmentResolver } from '@shared/context/types'
@@ -14,7 +15,6 @@ import type {
   KnowledgeBase,
   Message,
   MessageContentParts,
-  Session,
   SessionPromptContextSnapshot,
   SessionSettings,
   Settings,
@@ -72,12 +72,13 @@ export interface AgentGenerationSideEffects {
 }
 
 export interface PrepareAgentGenerationHarnessOptions {
-  session: Session
+  session: SessionHeader
   settings: SessionSettings
   globalSettings: Settings
   configs: Config
   messages: Message[]
   targetMsgIx: number
+  history?: SessionContextBeforeTarget
   model: ModelInterface
   dependencies: ModelDependencies
   knowledgeBase?: Pick<KnowledgeBase, 'id' | 'name'>
@@ -89,7 +90,7 @@ export interface PrepareAgentGenerationHarnessOptions {
   providerOptions?: SessionSettings['providerOptions']
   /**
    * Points of the conversation being generated (thread-level when the target
-   * message lives in an archived thread). Defaults to session.compactionPoints.
+   * message lives in an archived thread).
    */
   compactionPoints?: CompactionPoint[]
   preserveLastPromptMessageToolCalls?: boolean
@@ -215,6 +216,7 @@ export async function prepareAgentGenerationHarness(
     configs,
     messages,
     targetMsgIx,
+    history,
     model,
     dependencies,
     knowledgeBase,
@@ -224,7 +226,7 @@ export async function prepareAgentGenerationHarness(
     agentModeSupported,
     signal,
     providerOptions,
-    compactionPoints = session.compactionPoints,
+    compactionPoints,
     preserveLastPromptMessageToolCalls = false,
     attachmentResolver = createAttachmentResolver(),
     sideEffects,
@@ -263,6 +265,7 @@ export async function prepareAgentGenerationHarness(
     settings,
     messages,
     targetMsgIx,
+    history,
     persist: sideEffects?.persistSessionPromptContextSnapshot,
     copilotId: session.copilotId,
   })
@@ -357,7 +360,9 @@ export async function prepareAgentGenerationHarness(
       ? {
           sessionId: session.id,
           provider: sandboxProvider,
-          files: allMessages.flatMap((message) => message.files?.map(toSandboxSeedAttachment) || []),
+          files:
+            history?.sandboxSeedAttachments ??
+            allMessages.flatMap((message) => message.files?.map(toSandboxSeedAttachment) || []),
         }
       : undefined
 
@@ -412,7 +417,8 @@ export async function prepareAgentGenerationHarness(
   // Conversation-start anchor shared by the frozen system-prompt line and the
   // time-gap reminder walk below: snapshot capture when one exists, otherwise
   // the first surface message.
-  const conversationStartedAt = promptContextSnapshot?.capturedAt ?? messages[0]?.timestamp
+  const conversationStartedAt =
+    promptContextSnapshot?.capturedAt ?? (history ? history.firstMessageTimestamp : messages[0]?.timestamp)
 
   let injectedMessages: Message[]
   let systemPrompt: string

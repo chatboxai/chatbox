@@ -1,4 +1,3 @@
-import type { Session } from '@shared/types'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
@@ -36,8 +35,6 @@ export async function executeTask(task: ComputationTask): Promise<TaskResult> {
     return { success: false, error: 'session_cancelled', silent: true }
   }
 
-  log.debug('Executing task', { taskId: task.id, type: task.type })
-
   if (task.type === 'message-text') {
     return await executeMessageTextTask(task)
   }
@@ -47,34 +44,43 @@ export async function executeTask(task: ComputationTask): Promise<TaskResult> {
 async function executeMessageTextTask(task: ComputationTask): Promise<TaskResult> {
   const { sessionId, messageId, tokenizerType } = task
 
-  const session = await getSessionForTokenEstimation(sessionId)
-  if (!session) {
-    log.debug('Session not found', { taskId: task.id, sessionId })
-    return { success: false, error: 'session_not_found', silent: true }
-  }
-
-  let message = session.messages.find((m) => m.id === messageId)
-  if (!message && 'threads' in session && session.threads) {
-    for (const thread of session.threads) {
-      message = thread.messages.find((m) => m.id === messageId)
-      if (message) break
+  let text: string
+  let textSource = task.textSource === 'read-current' ? undefined : task.textSource
+  if (task.textSnapshot !== undefined && task.textSource !== 'read-current') {
+    text = task.textSnapshot
+  } else {
+    const source = await rendererApplication.sessions.readSessionMessages({ sessionId, messageIds: [messageId] })
+    if (!source) {
+      log.debug('Session not found', { taskId: task.id, sessionId })
+      return { success: false, error: 'session_not_found', silent: true }
     }
+
+    const message = source.messages.find((m) => m.id === messageId)
+
+    if (!message) {
+      log.debug('Message not found', { taskId: task.id, messageId })
+      return { success: false, error: 'message_not_found', silent: true }
+    }
+    text = getDraftTokenizationText(message)
+    if (task.textSnapshot !== undefined && task.textSnapshot !== text)
+      return { success: false, error: 'stale_message_text', silent: true }
+    textSource = source.textTokens?.sources[messageId]
   }
 
-  if (!message) {
-    log.debug('Message not found', { taskId: task.id, messageId })
-    return { success: false, error: 'message_not_found', silent: true }
-  }
-
-  const text = getDraftTokenizationText(message)
   const textDigest = getTokenizationTextDigest(text)
-  if (task.textDigest && task.textDigest !== textDigest) {
+  if (
+    (task.textSnapshot !== undefined && task.textDigest === undefined) ||
+    (task.textDigest !== undefined && task.textDigest !== textDigest) ||
+    (textSource !== undefined &&
+      (textSource.text !== text ||
+        textSource.textDigest !== textDigest ||
+        textSource.sessionId !== sessionId ||
+        textSource.messageId !== messageId))
+  ) {
     log.debug('Message text task source changed before execution', { taskId: task.id, messageId })
     return { success: false, error: 'stale_message_text', silent: true }
   }
   const { tokens, approximate } = await tokenizeMessageText(text, tokenizerType)
-
-  log.debug('Message text task completed', { taskId: task.id, tokens, approximate })
 
   return {
     success: true,
@@ -88,6 +94,7 @@ async function executeMessageTextTask(task: ComputationTask): Promise<TaskResult
       // applied; the digest lets the persister drop it if the message text
       // changed in that window.
       textDigest,
+      textSource,
       approximate,
       calculatedAt: Date.now(),
     },
@@ -130,19 +137,13 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
     return { success: false, error: 'missing_attachment_info' }
   }
 
-  const session = await getSessionForTokenEstimation(sessionId)
-  if (!session) {
+  const source = await rendererApplication.sessions.readSessionMessages({ sessionId, messageIds: [messageId] })
+  if (!source) {
     log.debug('Session not found', { taskId: task.id, sessionId })
     return { success: false, error: 'session_not_found', silent: true }
   }
 
-  let message = session.messages.find((m) => m.id === messageId)
-  if (!message && 'threads' in session && session.threads) {
-    for (const thread of session.threads) {
-      message = thread.messages.find((m) => m.id === messageId)
-      if (message) break
-    }
-  }
+  const message = source.messages.find((m) => m.id === messageId)
 
   if (!message) {
     log.debug('Message not found', { taskId: task.id, messageId })
@@ -167,32 +168,19 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
     log.debug('No storage key', { taskId: task.id, attachmentId })
     return { success: false, error: 'no_storage_key' }
   }
+  const sourceName = attachmentType === 'file' ? (attachment.name ?? '') : (attachment.title ?? '')
 
   let content: string | null = null
   try {
     content = await currentBlobStorage.get(storageKey)
   } catch (error) {
     log.debug('Failed to retrieve attachment content', { taskId: task.id, attachmentId, error })
-    return {
-      success: true,
-      result: {
-        type: 'attachment',
-        sessionId,
-        messageId,
-        attachmentId,
-        attachmentType,
-        tokenizerType,
-        contentMode,
-        tokens: 0,
-        lineCount: 0,
-        byteLength: 0,
-        calculatedAt: Date.now(),
-      },
-    }
+    return { success: false, error: 'attachment_read_failed', retryable: true }
   }
 
-  if (!content) {
-    log.debug('Attachment content is empty', { taskId: task.id, attachmentId })
+  if (content === null) return { success: false, error: 'attachment_content_missing', retryable: true }
+
+  if (content === '') {
     return {
       success: true,
       result: {
@@ -201,6 +189,8 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
         messageId,
         attachmentId,
         attachmentType,
+        sourceStorageKey: storageKey,
+        sourceName,
         tokenizerType,
         contentMode,
         tokens: 0,
@@ -240,8 +230,6 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
   const contentTokens = estimateTokensForTokenizerType(tokenContent, tokenizerType)
   const tokens = wrapperTokens + contentTokens
 
-  log.debug('Attachment task completed', { taskId: task.id, tokens, lineCount, byteLength })
-
   return {
     success: true,
     result: {
@@ -250,6 +238,8 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
       messageId,
       attachmentId,
       attachmentType,
+      sourceStorageKey: storageKey,
+      sourceName,
       tokenizerType,
       contentMode,
       tokens,
@@ -258,12 +248,6 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
       calculatedAt: Date.now(),
     },
   }
-}
-
-type TokenEstimationSession = Pick<Session, 'messages' | 'threads'>
-
-async function getSessionForTokenEstimation(sessionId: string): Promise<TokenEstimationSession | null> {
-  return await rendererApplication.sessionQueryBridge.getSession(sessionId)
 }
 
 export function initializeExecutor(): void {

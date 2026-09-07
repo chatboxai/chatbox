@@ -64,6 +64,7 @@ import platform from '@/platform'
 import { listCopilotMemories, listMemories } from '@/stores/agentPersonaStore'
 import { useAutoValidate } from '@/stores/premiumActions'
 import { setSessionAgentMode, useSessionAgentMode } from '@/stores/session/agent-mode'
+import { useSessionPresentation } from '@/hooks/useSessionPresentation'
 import { useMcpSettings, useSettingsStore } from '@/stores/settingsStore'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
@@ -79,8 +80,6 @@ import {
   useCommandApprovalModeState,
   useWorkingDirectoriesState,
 } from './useAgentModeSettingsState'
-
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 
 function isNestedRowControlEvent(event: { target: EventTarget | null }) {
   return event.target instanceof Element && Boolean(event.target.closest('[data-row-control]'))
@@ -238,7 +237,7 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
   const [subPanelPosition, setSubPanelPosition] = useState<SubPanelPosition | null>(null)
   const settleFrameRef = useRef<number>()
   const isNewSession = sessionId === 'new'
-  const { session: currentSession } = useSession(isNewSession ? null : sessionId)
+  const { header: currentSession, readModel } = useSessionPresentation(isNewSession ? null : sessionId)
 
   // Agent mode state
   const setAgentModeSmartSwitchingDefault = useUIStore((s) => s.setAgentModeSmartSwitchingDefault)
@@ -648,8 +647,11 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
   // direction. Same-mode toggles are unaffected; the store enforces the same
   // rule in setSessionAgentMode.
   const conversationStarted = useMemo(
-    () => (currentSession ? hasConversationStarted(currentSession) : false),
-    [currentSession]
+    () =>
+      readModel?.kind === 'full'
+        ? hasConversationStarted(readModel.session)
+        : readModel?.kind === 'window' && readModel.summary.userMessageCount > 0,
+    [readModel]
   )
 
   // --- Mode button ---
@@ -691,7 +693,10 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
   const isChatModeSelected = agentModeUIState.displayValue === 'off'
   const smartSwitchingEnabled = entry.value === 'auto' && isChatModeSelected
   const smartSwitchingExpired =
-    !isNewSession && Boolean(currentSession?.messages.some((message) => message.role === 'user'))
+    !isNewSession &&
+    (readModel?.kind === 'full'
+      ? readModel.session.messages.some((message) => message.role === 'user')
+      : readModel?.kind === 'window' && readModel.summary.userMessageCount > 0)
   const isSmartSwitchingDisabled = entry.locked || !modelSupportsAgentMode || smartSwitchingExpired
   const modeDescription = agentModeUIState.isActive
     ? t('Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.')

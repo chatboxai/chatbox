@@ -3,6 +3,7 @@ import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Button, Flex } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { Session } from '@shared/types'
+import type { SessionHeader } from '@chatbox/core/ports'
 import {
   IconClearAll,
   IconCode,
@@ -37,7 +38,7 @@ import LayoutShrink from '../icons/LayoutShrink'
  * 顶部标题工具栏（右侧）
  * @returns
  */
-export default function Toolbar({ session }: { session: Session }) {
+export default function Toolbar({ session }: { session: Session | SessionHeader }) {
   const { t } = useTranslation()
   const sessionId = session.id
   const isSmallScreen = useIsSmallScreen()
@@ -48,7 +49,10 @@ export default function Toolbar({ session }: { session: Session }) {
   const widthFull = useUIStore((s) => s.widthFull)
   const setWidthFull = useUIStore((s) => s.setWidthFull)
   const agentModeEntry = useSessionAgentMode(sessionId)
-  const showThreadHistory = isThreadHistoryAvailable(session, resolveSessionMode(agentModeEntry.value))
+  const showThreadHistory = isThreadHistoryAvailable(
+    'threads' in session ? session : {},
+    resolveSessionMode(agentModeEntry.value)
+  )
 
   const handleExportAndSave = () => {
     NiceModal.show('export-chat')

@@ -85,14 +85,16 @@ export function getPriority(
  */
 export class ComputationQueue {
   private state: QueueState = {
+    // Reverse execution order keeps dequeues at the array tail.
     pending: [],
     running: new Map(),
     completed: new Set(),
   }
 
-  private maxConcurrency = 1
-  /** Interval between task executions (ms) - helps visualize progress */
-  private taskIntervalMs = 5
+  private pendingIds = new Set<string>()
+  private processing = false
+  private readonly sliceBudgetMs = 8
+  private readonly maxTasksPerSlice = 512
   private listeners = new Set<() => void>()
   private taskExecutor: ((task: ComputationTask) => Promise<TaskResult>) | null = null
 
@@ -119,7 +121,7 @@ export class ComputationQueue {
 
     if (this.state.completed.has(id)) return
     if (this.state.running.has(id)) return
-    if (this.state.pending.some((t) => t.id === id)) return
+    if (this.pendingIds.has(id)) return
 
     const fullTask: ComputationTask = {
       ...task,
@@ -127,9 +129,9 @@ export class ComputationQueue {
       createdAt: Date.now(),
     }
 
-    log.debug('Task enqueued', { taskId: id, type: task.type, priority: task.priority })
-
+    this.state.pending.reverse()
     this.state.pending.push(fullTask)
+    this.pendingIds.add(id)
     this.sortPending()
     this.processQueue()
     this.notifyListeners()
@@ -151,24 +153,18 @@ export class ComputationQueue {
     }
 
     let added = 0
-    let skippedCompleted = 0
-    let skippedRunning = 0
-    let skippedPending = 0
     const now = Date.now()
 
     for (const task of tasks) {
       const id = generateTaskId(task)
 
       if (this.state.completed.has(id)) {
-        skippedCompleted++
         continue
       }
       if (this.state.running.has(id)) {
-        skippedRunning++
         continue
       }
-      if (this.state.pending.some((t) => t.id === id)) {
-        skippedPending++
+      if (this.pendingIds.has(id)) {
         continue
       }
 
@@ -178,7 +174,9 @@ export class ComputationQueue {
         createdAt: now,
       }
 
+      if (added === 0) this.state.pending.reverse()
       this.state.pending.push(fullTask)
+      this.pendingIds.add(id)
       added++
     }
 
@@ -196,7 +194,7 @@ export class ComputationQueue {
    */
   cancelBySession(sessionId: string): void {
     const beforeCount = this.state.pending.length
-    this.state.pending = this.state.pending.filter((t) => t.sessionId !== sessionId)
+    this.filterPending((t) => t.sessionId !== sessionId)
 
     for (const [, task] of this.state.running) {
       if (task.sessionId === sessionId) {
@@ -214,9 +212,7 @@ export class ComputationQueue {
    */
   retainOnlyMessages(sessionId: string, allowedMessageIds: Set<string>): void {
     const beforeCount = this.state.pending.length
-    this.state.pending = this.state.pending.filter(
-      (t) => t.sessionId !== sessionId || allowedMessageIds.has(t.messageId)
-    )
+    this.filterPending((t) => t.sessionId !== sessionId || allowedMessageIds.has(t.messageId))
 
     if (beforeCount !== this.state.pending.length) {
       this.notifyListeners()
@@ -229,9 +225,7 @@ export class ComputationQueue {
    */
   retainOnlyTokenizerType(sessionId: string, tokenizerType: string): void {
     const beforeCount = this.state.pending.length
-    this.state.pending = this.state.pending.filter(
-      (t) => t.sessionId !== sessionId || t.tokenizerType === tokenizerType
-    )
+    this.filterPending((t) => t.sessionId !== sessionId || t.tokenizerType === tokenizerType)
 
     if (beforeCount !== this.state.pending.length) {
       this.notifyListeners()
@@ -288,7 +282,11 @@ export class ComputationQueue {
    * Get all pending tasks (for debugging/testing)
    */
   getPendingTasks(): ComputationTask[] {
-    return [...this.state.pending]
+    return [...this.state.pending].reverse()
+  }
+
+  hasPendingTask(taskId: string): boolean {
+    return this.pendingIds.has(taskId)
   }
 
   /**
@@ -338,63 +336,88 @@ export class ComputationQueue {
   }
 
   /**
-   * Process the queue - start tasks up to max concurrency
+   * Run one task at a time, yielding between bounded slices for UI and cancellation.
    */
   private processQueue(): void {
-    if (!this.taskExecutor) return
+    if (!this.taskExecutor || this.processing || this.state.pending.length === 0) return
+    this.processing = true
+    void this.processTasks(this.state)
+  }
 
-    while (this.state.running.size < this.maxConcurrency && this.state.pending.length > 0) {
-      const task = this.state.pending.shift()
-      if (!task) break
+  private async processTasks(state: QueueState): Promise<void> {
+    let sliceStart = performance.now()
+    let processed = 0
+    try {
+      while (state === this.state && this.taskExecutor && state.pending.length > 0) {
+        const task = state.pending.pop()
+        if (!task) break
+        this.pendingIds.delete(task.id)
 
-      if (this.cancelledSessions.has(task.sessionId)) {
-        continue
+        if (!this.cancelledSessions.has(task.sessionId)) {
+          state.running.set(task.id, task)
+          await this.executeTask(task, state)
+          if (state !== this.state) return
+        }
+
+        this.notifyListeners()
+        processed++
+        if (
+          state.pending.length > 0 &&
+          (processed >= this.maxTasksPerSlice || performance.now() - sliceStart >= this.sliceBudgetMs)
+        ) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0))
+          sliceStart = performance.now()
+          processed = 0
+        }
       }
-
-      this.state.running.set(task.id, task)
-      void this.executeTask(task)
+    } finally {
+      if (state === this.state) this.processing = false
     }
   }
 
   /**
    * Execute a single task
    */
-  private async executeTask(task: ComputationTask): Promise<void> {
+  private async executeTask(task: ComputationTask, state: QueueState): Promise<void> {
     if (!this.taskExecutor) return
 
-    log.debug('Task execution started', { taskId: task.id, type: task.type })
-
     try {
-      await this.taskExecutor(task)
-      log.debug('Task execution completed', { taskId: task.id })
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (state !== this.state || this.cancelledSessions.has(task.sessionId)) break
+        const result = await this.taskExecutor(task)
+        if (result.success || !result.retryable || attempt === 2) break
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)))
+      }
     } catch (error) {
       log.error('Task execution failed', { taskId: task.id, error })
     } finally {
-      this.state.running.delete(task.id)
-
-      if (!this.cancelledSessions.has(task.sessionId)) {
-        this.state.completed.add(task.id)
+      if (state === this.state) {
+        state.running.delete(task.id)
+        if (!this.cancelledSessions.has(task.sessionId)) state.completed.add(task.id)
       }
-
-      if (this.taskIntervalMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, this.taskIntervalMs))
-      }
-
-      this.processQueue()
-      this.notifyListeners()
     }
+  }
+
+  private filterPending(keep: (task: ComputationTask) => boolean): void {
+    this.state.pending = this.state.pending.filter((task) => {
+      if (keep(task)) return true
+      this.pendingIds.delete(task.id)
+      return false
+    })
   }
 
   /**
    * Sort pending tasks by priority (lower = higher priority)
    */
   private sortPending(): void {
+    // Arrivals are appended in execution order; stable ties retain FIFO after reversal.
     this.state.pending.sort((a, b) => {
       if (a.priority !== b.priority) {
         return a.priority - b.priority
       }
       return a.createdAt - b.createdAt
     })
+    this.state.pending.reverse()
   }
 
   /**
@@ -451,6 +474,8 @@ export class ComputationQueue {
       running: new Map(),
       completed: new Set(),
     }
+    this.pendingIds.clear()
+    this.processing = false
     this.cancelledSessions.clear()
     this.listeners.clear()
     this.taskExecutor = null

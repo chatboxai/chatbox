@@ -1,4 +1,8 @@
 import type { Session, SessionMetaPage, SessionMetaRecord } from '../types/session'
+import type { SessionContextRepositoryPort } from './session-context-source'
+import type { SessionMessageRepositoryPort } from './session-message-source'
+import type { SessionReadRepositoryPort } from './session-read-model'
+import type { SessionTextTokenRepositoryPort } from './session-text-tokens'
 
 export type SessionRepositoryOperation =
   | 'initialize'
@@ -58,7 +62,11 @@ export interface SessionDataWriteOptions {
   baseSession?: Session
 }
 
-export interface SessionDataRepositoryPort {
+export interface SessionDataRepositoryPort
+  extends Partial<SessionReadRepositoryPort>,
+    Partial<SessionContextRepositoryPort>,
+    Partial<SessionTextTokenRepositoryPort>,
+    Partial<SessionMessageRepositoryPort> {
   initialize(): Promise<void>
   getSession(id: string): Promise<Session | null>
   setSession(session: Session, options?: SessionDataWriteOptions): Promise<void>

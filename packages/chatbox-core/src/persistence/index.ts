@@ -1,4 +1,5 @@
 export * from './capacitor-compatible-schema'
+export * from './session-context-read'
 export {
   ACTIVE_SESSION_THREAD_KEY,
   type PersistedForkBranchRow,
@@ -13,6 +14,12 @@ export {
   SessionGraphCodecError,
   type SessionGraphCodecOptions,
 } from './session-graph'
+export * from './session-message-selection'
+export {
+  assertMessageWindowRevision,
+  SessionMessageWindowTraversal,
+  validateMessageWindowRequest,
+} from './session-message-window'
 export {
   type SessionRowSqlBatchOptions,
   type SessionRowSqlBindValue,
@@ -20,3 +27,4 @@ export {
   type SessionRowSqlStatement,
   SqlSessionRowStore,
 } from './session-row-sql'
+export { textTokenCleanupStatement } from './session-text-token-sql'

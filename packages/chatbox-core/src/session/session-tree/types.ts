@@ -1,4 +1,5 @@
 import type { CompactionPoint, Message, Session, SessionThread } from '../../types/session'
+import type { SessionContextReadProjection } from './context-read-projection'
 
 export type MessageRowStatus = 'generating' | 'settled'
 export type MessageRowKind = 'message' | 'summary'
@@ -50,6 +51,23 @@ export type SessionRecordV2 = Omit<
   storageFormat: 'rows'
   /** Fork creation timestamps keyed by pivot message id. */
   forkCreatedAt?: Record<string, number>
+  /** Derived read projection; absent projections require a complete-session read. */
+  presentation?: SessionPresentationSummary
+  contextReadProjection?: SessionContextReadProjection
+  topologyFingerprint?: string
+}
+
+export interface SessionPresentationSummary {
+  messageCount: number
+  userMessageCount: number
+  fileMessageCount: number
+  generatingMessageCount: number
+  pausedMessageCount: number
+  hasThreads: boolean
+  hasForks: boolean
+  /** Rebuildable active-conversation facts used by the search sign-in warning. */
+  webSearchSignInErrorCount?: number
+  latestMessageHasWebSearchSignInError?: boolean
 }
 
 export interface SessionTree {

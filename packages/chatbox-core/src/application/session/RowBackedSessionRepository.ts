@@ -1,4 +1,14 @@
-import { isRowsSessionRecord, type SessionRecordStorePort } from '../../ports/session-record-store'
+import { findMessageLocation } from '@shared/session/message-forks'
+import { validateSessionContextRequest } from '../../persistence/session-context-read'
+import { assertSessionReadRevision, validateSessionMessagesRequest } from '../../persistence/session-message-selection'
+import type { SessionContextRequest, SessionContextSource } from '../../ports/session-context-source'
+import type { SessionMessageDerivedWriteResult, SessionMessagesSource } from '../../ports/session-message-source'
+import type { SessionReadModel } from '../../ports/session-read-model'
+import {
+  isRowsSessionRecord,
+  type SessionRecordStorePort,
+  type StoredSessionRecord,
+} from '../../ports/session-record-store'
 import {
   type SessionDataRepositoryPort,
   type SessionDataWriteOptions,
@@ -6,6 +16,11 @@ import {
   type SessionRepositoryOperation,
   SessionWriteConflictError,
 } from '../../ports/session-repository'
+import type {
+  SessionMessagesRequest,
+  SessionMessageWindow,
+  SessionMessageWindowRequest,
+} from '../../ports/session-row-store'
 import {
   SessionRowConflictError,
   type SessionRowSnapshot,
@@ -13,6 +28,11 @@ import {
   type SessionRows,
   type SessionRowsDiff,
 } from '../../ports/session-row-store'
+import type {
+  SessionTextTokenRead,
+  SessionTextTokenResult,
+  SessionTextTokenWriteResult,
+} from '../../ports/session-text-tokens'
 import {
   decodeSessionTree,
   deriveSessionRecord,
@@ -26,24 +46,31 @@ import {
 } from '../../session/session-tree'
 import type { Session } from '../../types/session'
 import { migrateSession } from './compatibility/session-load'
+import { applySessionMessageDerivedPatch, type SessionMessageDerivedPatch } from './message-derived-data'
+import { applyMessageUpdate } from './message-tree'
 import {
   type KnownRowState,
   type PersistedSessionState,
   type PersistedSessionVersion,
   SessionPersistenceProtocol,
-  sessionContentFingerprint,
 } from './SessionPersistenceProtocol'
+import { SessionNotFoundError } from './SessionWriteCoordinator'
+import { contextRecordHeader, contextSourceFromRows, contextSourceFromSession } from './session-context-source'
+import { overlaySessionTextTokens, overlayTextTokenMessages, restorePersistedTextTokens } from './session-text-tokens'
 
 /** Most recently touched sessions whose last persisted rows stay in memory. */
 const BASELINE_LIMIT = 32
 const VERSION_TOKEN_LIMIT = BASELINE_LIMIT * 4
 
 interface SessionBaseline {
+  textTokens?: SessionTextTokenRead
   rows: SessionRows
   record: SessionRecordV2
   revision: number
   version: PersistedSessionVersion
   session: Session
+  /** Set only after decoding persisted rows, including canonical V1 load normalization. */
+  decoded: boolean
 }
 
 interface SessionWriteContext {
@@ -71,14 +98,6 @@ function hasSameThreadStructure(previous: Session, next: Session): boolean {
  * `missing` for an id that has no record.
  */
 export type SessionMigrationOutcome = 'migrated' | 'skipped' | 'already' | 'missing'
-
-/** A session that was just written as rows, and the baseline those rows form. */
-interface MigratedSession {
-  rows: SessionRows
-  record: SessionRecordV2
-  revision: number
-  session: Session
-}
 
 export interface RowBackedSessionRepositoryOptions {
   records: SessionRecordStorePort
@@ -116,6 +135,7 @@ function findLastIndex<Item>(items: Item[], match: (item: Item) => boolean): num
 interface SingleMessageWrite {
   row: MessageRow
   rows: SessionRows
+  previousMessage: Session['messages'][number]
 }
 
 /**
@@ -172,7 +192,7 @@ function planSingleMessageWrite(
   }
   const messages = [...baseline.rows.messages]
   messages[rowIndex] = row
-  return { row, rows: { ...baseline.rows, messages } }
+  return { row, rows: { ...baseline.rows, messages }, previousMessage: previous.messages[index] }
 }
 
 function toSessionRows(tree: SessionTree): SessionRows {
@@ -181,7 +201,12 @@ function toSessionRows(tree: SessionTree): SessionRows {
 
 function toKnownRowState(baseline: SessionBaseline): KnownRowState {
   return {
-    snapshot: { rows: baseline.rows, record: baseline.record, revision: baseline.revision },
+    snapshot: {
+      rows: baseline.rows,
+      record: baseline.record,
+      revision: baseline.revision,
+      textTokens: baseline.textTokens,
+    },
     session: baseline.session,
     version: baseline.version,
   }
@@ -230,8 +255,221 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     return this.enqueueSessionOperation(id, () => this.getSessionNow(id))
   }
 
-  private async getSessionNow(id: string): Promise<Session | null> {
-    const state = await this.inspectPersistedState('get-session', id, null)
+  getCompleteSessionSource(id: string) {
+    return this.enqueueSessionOperation(id, async () => {
+      const session = await this.getSessionNow(id)
+      return session ? { session, textTokens: this.baselines.get(id)?.textTokens } : null
+    })
+  }
+
+  acceptSessionTextTokenResults(
+    sessionId: string,
+    results: readonly SessionTextTokenResult[]
+  ): Promise<SessionTextTokenWriteResult> {
+    return this.enqueueSessionOperation(sessionId, async () => {
+      if (!this.rows.acceptTextTokenResults) throw new Error('Source-bound text token results are unavailable')
+      return {
+        sessionId,
+        results: await this.rows.acceptTextTokenResults(
+          results.filter((result) => result.source.sessionId === sessionId)
+        ),
+      }
+    })
+  }
+
+  getSessionContextSource(request: SessionContextRequest): Promise<SessionContextSource | null> {
+    return this.enqueueSessionOperation(request.sessionId, async () => {
+      validateSessionContextRequest(request)
+      const marker = await this.records.getRecord(request.sessionId)
+      if (!marker) return null
+      if (isRowsSessionRecord(marker)) {
+        const context = await this.rows.readContext(request)
+        if (!context) throw new Error(`session ${request.sessionId} is stored as rows but has none`)
+        return contextSourceFromRows(context)
+      }
+      assertSessionReadRevision(request, null)
+      const session = await this.getSessionNow(request.sessionId, { record: marker })
+      return session ? contextSourceFromSession(session, request) : null
+    })
+  }
+
+  getSessionReadModel(id: string): Promise<SessionReadModel | null> {
+    return this.enqueueSessionOperation(id, async () => {
+      const marker = await this.records.getRecord(id)
+      if (!marker) {
+        this.forgetSessionState(id)
+        return null
+      }
+      if (isRowsSessionRecord(marker)) {
+        let window = await this.rows.readMessageWindow({ sessionId: id, limit: 50 })
+        if (!window) throw new Error(`session ${id} is stored as rows but has none`)
+        window = this.overlayWindow(window)
+        const {
+          presentation,
+          storageFormat: _format,
+          activeThreadId: _active,
+          forkCreatedAt: _forks,
+          contextReadProjection: _contextReadProjection,
+          topologyFingerprint: _topologyFingerprint,
+          ...header
+        } = window.record
+        // These consumers need the complete graph: archive/fork cards, paused
+        // tool decisions, live off-path controls, and work-mode cache warnings.
+        if (
+          presentation &&
+          presentation.hasThreads === false &&
+          presentation.hasForks === false &&
+          Number.isSafeInteger(presentation.messageCount) &&
+          presentation.messageCount >= window.messages.length &&
+          presentation.generatingMessageCount === 0 &&
+          presentation.pausedMessageCount === 0 &&
+          header.type !== 'picture' &&
+          (header.settings?.agentMode?.value === 'off' || header.settings?.agentMode?.value === 'auto')
+        ) {
+          return {
+            kind: 'window',
+            header: { ...header, threadName: window.thread.name ?? undefined },
+            summary: presentation,
+            window,
+          }
+        }
+      }
+      const session = await this.getSessionNow(id, { record: marker })
+      return session ? { kind: 'full', session, textTokens: this.baselines.get(id)?.textTokens } : null
+    })
+  }
+
+  readSessionMessages(request: SessionMessagesRequest): Promise<SessionMessagesSource | null> {
+    return this.enqueueSessionOperation(request.sessionId, async () => {
+      validateSessionMessagesRequest(request)
+      const marker = await this.records.getRecord(request.sessionId)
+      if (!marker) return null
+      if (isRowsSessionRecord(marker)) {
+        const snapshot = await this.rows.readMessages(request)
+        if (!snapshot) throw new Error(`session ${request.sessionId} is stored as rows but has none`)
+        return {
+          header: contextRecordHeader(snapshot.record),
+          revision: snapshot.revision,
+          messages: overlayTextTokenMessages(
+            snapshot.messages.map((row) => row.message),
+            snapshot.textTokens
+          ),
+          textTokens: snapshot.textTokens,
+        }
+      }
+      assertSessionReadRevision(request, null)
+      const session = await this.getSessionNow(request.sessionId, { record: marker })
+      if (!session) return null
+      const {
+        messages: _messages,
+        threads: _threads,
+        messageForksHash: _forks,
+        compactionPoints: _points,
+        ...header
+      } = session
+      return {
+        header,
+        revision: null,
+        messages: [...new Set(request.messageIds)].flatMap((id) => {
+          const location = findMessageLocation(session, id)
+          return location ? [location.list[location.index]] : []
+        }),
+      }
+    })
+  }
+
+  patchSessionMessageDerivedData(
+    sessionId: string,
+    patches: SessionMessageDerivedPatch[]
+  ): Promise<SessionMessageDerivedWriteResult> {
+    return this.enqueueSessionOperation(sessionId, async () => {
+      try {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const marker = await this.records.getRecord(sessionId)
+          if (!marker) throw new SessionNotFoundError(sessionId)
+          if (!isRowsSessionRecord(marker)) {
+            const session = await this.getSessionNow(sessionId, { record: marker })
+            if (!session) throw new SessionNotFoundError(sessionId)
+            let updated = session
+            const accepted: SessionMessageDerivedPatch[] = []
+            for (const patch of patches) {
+              const location = findMessageLocation(updated, patch.messageId)
+              const result = location ? applySessionMessageDerivedPatch(location.list[location.index], patch) : null
+              if (!result) continue
+              updated = applyMessageUpdate(updated, sessionId, patch.messageId, result.message)
+              accepted.push(result.patch)
+            }
+            if (accepted.length) await this.setSessionNow(updated, { baseSession: session })
+            const committedMarker = accepted.length ? await this.records.getRecord(sessionId) : marker
+            const revision =
+              committedMarker && isRowsSessionRecord(committedMarker) ? await this.rows.getRevision(sessionId) : null
+            return { sessionId, previousRevision: null, revision, patches: accepted }
+          }
+          const snapshot = await this.rows.readMessages({
+            sessionId,
+            messageIds: patches.map((patch) => patch.messageId),
+          })
+          if (!snapshot) throw new SessionNotFoundError(sessionId)
+          const current = new Map(snapshot.messages.map((row) => [row.messageId, row]))
+          const changed = new Map<string, MessageRow>()
+          const accepted: SessionMessageDerivedPatch[] = []
+          for (const patch of patches) {
+            const row = current.get(patch.messageId)
+            const result = row ? applySessionMessageDerivedPatch(row.message, patch) : null
+            if (!row || !result) continue
+            const updated = { ...row, message: result.message }
+            current.set(row.messageId, updated)
+            changed.set(row.messageId, updated)
+            accepted.push(result.patch)
+          }
+          if (!accepted.length)
+            return { sessionId, previousRevision: snapshot.revision, revision: snapshot.revision, patches: [] }
+          try {
+            const commit = await this.persistence.commitSelectedMessages(
+              sessionId,
+              [...changed.values()],
+              snapshot.record,
+              snapshot.revision
+            )
+            this.forgetSessionState(sessionId)
+            return { sessionId, previousRevision: snapshot.revision, revision: commit.revision, patches: accepted }
+          } catch (error) {
+            if (error instanceof SessionRowConflictError && attempt < 2) continue
+            throw error
+          }
+        }
+        throw new Error(`session ${sessionId} changed repeatedly during its derived write`)
+      } catch (error) {
+        this.forgetSessionState(sessionId)
+        if (error instanceof SessionRowConflictError)
+          throw new SessionWriteConflictError(sessionId, error.expectedRevision, error.actualRevision)
+        throw error
+      }
+    })
+  }
+
+  async readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {
+    // Read-only windows use the row store's atomic snapshot/revision fence and
+    // must not queue behind full-context hydration. They never update a write baseline.
+    const marker = await this.records.getRecord(request.sessionId)
+    if (!marker) return null
+    if (!isRowsSessionRecord(marker))
+      throw new SessionRowConflictError(request.sessionId, request.cursor?.revision ?? null, null)
+    const window = await this.rows.readMessageWindow(request)
+    return window ? this.overlayWindow(window) : null
+  }
+
+  private async getSessionNow(
+    id: string,
+    observedRecord?: { record: StoredSessionRecord | null }
+  ): Promise<Session | null> {
+    const baseline = this.baselines.get(id)
+    const state = await this.inspectPersistedState(
+      'get-session',
+      id,
+      baseline?.decoded ? baseline : null,
+      observedRecord
+    )
     if (state.kind === 'missing') {
       this.forgetSessionState(id)
       return null
@@ -240,34 +478,51 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     this.rememberVersion(state.version)
     if (state.kind === 'rows') {
       this.rememberRowsState(id, state)
+      const read = state.snapshot.textTokens
+      if (read && this.rows.readTextTokenResults) {
+        const textTokens =
+          baseline?.decoded && baseline.revision === state.snapshot.revision
+            ? { ...read, results: await this.rows.readTextTokenResults(Object.values(read.sources)) }
+            : read
+        const remembered = this.baselines.get(id)
+        if (remembered) remembered.textTokens = textTokens
+        return overlaySessionTextTokens(state.session, textTokens)
+      }
     }
     return state.session
   }
 
   setSession(session: Session, options: SessionDataWriteOptions = {}): Promise<void> {
-    return this.enqueueSessionOperation(session.id, async () => {
-      try {
-        const version = await this.setSessionNow(session, options)
-        this.rememberObservedVersion(session.id, version)
-        this.rememberVersion(version)
-      } catch (error) {
-        this.forgetSessionState(session.id)
-        throw error
-      }
-    })
+    return this.enqueueSessionOperation(session.id, () => this.setSessionNow(session, options))
   }
 
-  private async setSessionNow(session: Session, options: SessionDataWriteOptions): Promise<PersistedSessionVersion> {
+  private async setSessionNow(session: Session, options: SessionDataWriteOptions): Promise<void> {
+    try {
+      const version = await this.persistSession(session, options)
+      this.rememberObservedVersion(session.id, version)
+      this.rememberVersion(version)
+    } catch (error) {
+      this.forgetSessionState(session.id)
+      throw error
+    }
+  }
+
+  private async persistSession(session: Session, options: SessionDataWriteOptions): Promise<PersistedSessionVersion> {
     const id = session.id
     const context = await this.resolveWriteContext(id, options)
     const baseline = context.baseline
+    if (baseline && this.rows.acceptTextTokenResults) session = restorePersistedTextTokens(session, baseline.session)
     if (baseline && hasUnchangedRows(baseline, session)) {
       return await this.completeWrite(id, session, baseline)
     }
     if (baseline && options.changedMessageId) {
       const planned = planSingleMessageWrite(baseline, session, options.changedMessageId)
       if (planned) {
-        const record = deriveSessionRecord(session, id)
+        const record = deriveSessionRecord(session, id, {
+          record: baseline.record,
+          before: planned.previousMessage,
+          after: planned.row.message,
+        })
         const diff = diffSessionRows(baseline.rows, planned.rows)
         const snapshot = await this.commitDiff(id, diff, record, baseline.revision, planned.rows)
         return this.rememberSnapshot(id, snapshot, session)
@@ -282,9 +537,14 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     const nextRows = toSessionRows(encoded.tree)
     if (baseline) {
       const diff = diffSessionRows(baseline.rows, nextRows)
-      const fingerprint = sessionContentFingerprint(session)
+      const fingerprint = this.fingerprint(session)
       if (isEmptyDiff(diff) && fingerprint === baseline.version.fingerprint) {
-        return this.rememberBaseline(id, { ...baseline, session, version: { ...baseline.version, fingerprint } })
+        return this.rememberBaseline(id, {
+          ...baseline,
+          session,
+          decoded: false,
+          version: { ...baseline.version, fingerprint },
+        })
       }
       const snapshot = await this.commitDiff(id, diff, encoded.tree.session, baseline.revision, nextRows)
       return this.rememberSnapshot(id, snapshot, session)
@@ -295,7 +555,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     )
     if (result.kind === 'anchored') {
       this.onMigrationSkipped?.(id, 'row-backed publish failed; kept the complete V1 session record')
-      return { fingerprint: sessionContentFingerprint(session), revision: null }
+      return { fingerprint: this.fingerprint(session), revision: null }
     }
     return this.rememberSnapshot(id, result.snapshot, session)
   }
@@ -380,11 +640,13 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     session: Session,
     baseline: SessionBaseline
   ): Promise<PersistedSessionVersion> {
-    const fingerprint = sessionContentFingerprint(session)
+    const fingerprint = this.fingerprint(session)
     if (fingerprint === baseline.version.fingerprint) {
-      return this.rememberBaseline(id, { ...baseline, session })
+      return this.rememberBaseline(id, { ...baseline, session, decoded: false })
     }
     const record = deriveSessionRecord(session, id)
+    record.contextReadProjection = baseline.record.contextReadProjection
+    record.topologyFingerprint = baseline.record.topologyFingerprint
     const diff = diffSessionRows(baseline.rows, baseline.rows)
     const snapshot = await this.commitDiff(id, diff, record, baseline.revision, baseline.rows)
     return this.rememberSnapshot(id, snapshot, session)
@@ -433,27 +695,20 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     id: string,
     state: Extract<PersistedSessionState, { kind: 'legacy' | 'interrupted-promotion' }>,
     session: Session
-  ): Promise<MigratedSession | null> {
+  ): Promise<boolean> {
     const verified = verifySessionTreeRoundTrip(session, { activeThreadId: session.id, now: this.now() })
     if (!verified.ok) {
       this.onMigrationSkipped?.(id, verified.reason)
-      return null
+      return false
     }
-    const decoded = decodeSessionTree(verified.tree)
-    if (!decoded.ok) throw new SessionRepositoryError('get-session', new Error(decoded.reason), id)
     const result = await this.run('get-session', id, () =>
       this.persistence.promote(state, session, toSessionRows(verified.tree), verified.tree.session)
     )
     if (result.kind === 'anchored') {
       this.onMigrationSkipped?.(id, 'row-backed publish failed; kept the complete V1 session record')
-      return null
+      return false
     }
-    return {
-      rows: result.snapshot.rows,
-      record: result.snapshot.record,
-      revision: result.snapshot.revision,
-      session: migrateSession(decoded.session),
-    }
+    return true
   }
 
   private async resolveWriteContext(id: string, options: SessionDataWriteOptions): Promise<SessionWriteContext> {
@@ -462,7 +717,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     const baseFingerprint = options.baseSession
       ? cached?.session === options.baseSession
         ? cached.version.fingerprint
-        : sessionContentFingerprint(options.baseSession)
+        : this.fingerprint(options.baseSession)
       : undefined
     const expectedRevision = baseFingerprint
       ? (this.revisionsByFingerprint.get(baseFingerprint) ??
@@ -508,7 +763,8 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
         record: state.snapshot.record,
         revision: state.snapshot.revision,
         version: state.version,
-        session: options.baseSession ?? state.session,
+        session: this.rows.acceptTextTokenResults ? state.session : (options.baseSession ?? state.session),
+        decoded: Boolean(this.rows.acceptTextTokenResults) || !options.baseSession,
       },
     }
   }
@@ -541,7 +797,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     this.onMigrationSkipped?.(session.id, reason)
     await this.run('set-session', session.id, () => this.records.setRecord(session))
     return {
-      fingerprint: sessionContentFingerprint(session),
+      fingerprint: this.fingerprint(session),
       revision: null,
     }
   }
@@ -549,20 +805,23 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
   private inspectPersistedState(
     operation: 'get-session' | 'set-session' | 'delete-session',
     id: string,
-    baseline: SessionBaseline | null = this.baselines.get(id) ?? null
+    baseline: SessionBaseline | null = this.baselines.get(id) ?? null,
+    observedRecord?: { record: StoredSessionRecord | null }
   ): Promise<PersistedSessionState> {
     return this.run(operation, id, () =>
-      this.persistence.inspectPersistedState(id, baseline ? toKnownRowState(baseline) : undefined)
+      this.persistence.inspectPersistedState(id, baseline ? toKnownRowState(baseline) : undefined, observedRecord)
     )
   }
 
   private rememberRowsState(id: string, state: Extract<PersistedSessionState, { kind: 'rows' }>): void {
     this.rememberBaseline(id, {
       rows: state.snapshot.rows,
+      textTokens: state.snapshot.textTokens,
       record: state.snapshot.record,
       revision: state.snapshot.revision,
       version: state.version,
       session: state.session,
+      decoded: true,
     })
   }
 
@@ -571,8 +830,9 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
       rows: snapshot.rows,
       record: snapshot.record,
       revision: snapshot.revision,
-      version: { fingerprint: sessionContentFingerprint(session), revision: snapshot.revision },
+      version: { fingerprint: this.fingerprint(session), revision: snapshot.revision },
       session,
+      decoded: false,
     })
   }
 
@@ -585,6 +845,23 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
       this.baselines.delete(oldest.value)
     }
     return baseline.version
+  }
+
+  private fingerprint(session: Session): string {
+    return this.persistence.fingerprint(session)
+  }
+
+  private overlayWindow(window: SessionMessageWindow): SessionMessageWindow {
+    const messages = overlayTextTokenMessages(
+      window.messages.map((row) => row.message),
+      window.textTokens
+    )
+    return {
+      ...window,
+      messages: window.messages.map((row, index) =>
+        messages[index] === row.message ? row : { ...row, message: messages[index] }
+      ),
+    }
   }
 
   private rememberObservedVersion(id: string, version: PersistedSessionVersion): void {

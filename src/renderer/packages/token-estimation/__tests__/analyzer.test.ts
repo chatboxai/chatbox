@@ -63,6 +63,29 @@ describe('analyzeTokenRequirements', () => {
   })
 
   describe('message text analysis', () => {
+    it.each(['complete', 'empty'])('queues the exact %s context text projection in memory', (shape) => {
+      const message = createMessage({
+        contentParts:
+          shape === 'empty'
+            ? []
+            : [
+                { type: 'text', text: 'first' },
+                { type: 'reasoning', text: 'reasoning' },
+                { type: 'image', storageKey: 'image:one' },
+                { type: 'text', text: 'last' },
+              ],
+      })
+      const text = getDraftTokenizationText(message)
+      const result = analyzeContextTokens({
+        contextMessages: [message],
+        tokenizerType: 'default',
+        modelSupportToolUseForFile: false,
+      })
+      expect(result.pendingTasks).toHaveLength(1)
+      expect(result.pendingTasks[0]).toMatchObject({ textSnapshot: text, textDigest: getTokenizationTextDigest(text) })
+      expect(text).toBe(shape === 'empty' ? '' : 'first\nreasoning\n[image]\nlast')
+    })
+
     // Note: For constructedMessage (current input), tokens are ALWAYS calculated inline.
     // This is because constructedMessage only exists in React state, not in the store,
     // so async task execution would fail. Cache is ignored for current input.
@@ -691,6 +714,7 @@ describe('approximate persisted counts', () => {
     expect(result.pendingTasks[0]).toMatchObject({
       type: 'message-text',
       messageId: 'ctx-approx',
+      textSnapshot: getDraftTokenizationText(message),
       textDigest,
       retryAttempt: 0,
     })
@@ -747,6 +771,7 @@ describe('approximate persisted counts', () => {
     }).pendingTasks[0]
 
     expect(retryTask.retryAttempt).toBe(1)
+    expect(retryTask).toMatchObject({ textSnapshot: getDraftTokenizationText(message), textDigest })
     expect(generateTaskId({ ...retryTask, sessionId: 'session-1' })).not.toBe(
       generateTaskId({ ...firstTask, sessionId: 'session-1' })
     )

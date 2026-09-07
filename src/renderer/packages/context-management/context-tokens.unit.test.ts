@@ -36,6 +36,7 @@ vi.mock('@/packages/token-estimation', () => ({
 import {
   type ContextTokensCacheKeyParams,
   getContextMessagesForTokenEstimation,
+  getContextMessagesForTokenSource,
   getContextTokensCacheKey,
   getLatestCompactionBoundaryId,
 } from './context-tokens'
@@ -60,6 +61,27 @@ function createTestSession(overrides?: Partial<Session>): Session {
 }
 
 describe('getContextMessagesForTokenEstimation', () => {
+  it('keeps bounded source selection identical to full history across compaction and limits', () => {
+    const messages = [
+      createMessage('system', 'system'),
+      createMessage('old', 'user'),
+      createMessage('boundary', 'assistant'),
+      { ...createMessage('summary', 'assistant'), isSummary: true },
+      createMessage('tail', 'user'),
+      { ...createMessage('stream', 'assistant'), generating: true },
+    ]
+    const compactionPoints: CompactionPoint[] = [
+      { boundaryMessageId: 'boundary', summaryMessageId: 'summary', createdAt: 1 },
+    ]
+    const session = createTestSession({ messages, compactionPoints })
+    const source = { candidateMessages: messages.filter((message) => message.id !== 'old'), compactionPoints }
+    for (const maxContextMessageCount of [0, 1, 2, 100]) {
+      const options = { settings: { maxContextMessageCount } }
+      expect(getContextMessagesForTokenSource(source, options)).toEqual(
+        getContextMessagesForTokenEstimation(session, options)
+      )
+    }
+  })
   it('applies maxContextMessageCount', () => {
     const session = createTestSession({
       messages: [

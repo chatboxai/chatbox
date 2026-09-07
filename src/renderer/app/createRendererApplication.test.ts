@@ -196,7 +196,8 @@ describe('Renderer Composition Roots', () => {
     const pendingUpdate = application.sessions.updateSession(original.id, { name: 'After update' })
 
     try {
-      await vi.waitFor(() => expect(repository.getSession).toHaveBeenCalledTimes(2))
+      // A cancelled explicit reader can retry while the writer loads its own current snapshot.
+      await vi.waitFor(() => expect(repository.getSession).toHaveBeenNthCalledWith(2, original.id))
 
       resolveFirstRead(original)
       await Promise.all([pendingQueryResult, pendingUpdate])

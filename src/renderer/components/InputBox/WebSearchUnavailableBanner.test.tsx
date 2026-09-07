@@ -9,7 +9,12 @@ const mocks = vi.hoisted(() => ({
   isSmallScreen: false,
   licenseKey: '',
   navigateToSettings: vi.fn(),
+  useSession: vi.fn(),
   webSearchProvider: 'build-in' as 'build-in' | 'tavily',
+}))
+
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: { sessionHooks: { useSession: mocks.useSession } },
 }))
 
 Object.defineProperty(window, 'matchMedia', {
@@ -129,6 +134,68 @@ describe('WebSearchUnavailableBanner', () => {
     mocks.licenseKey = ''
     mocks.webSearchProvider = 'build-in'
     mocks.navigateToSettings.mockReset()
+    mocks.useSession.mockReset().mockReturnValue({ session: null })
+  })
+
+  it('uses the historical error projection on an unsigned window without subscribing to full history', () => {
+    const view = render(
+      <MantineProvider>
+        <WebSearchUnavailableBanner
+          sessionId="window"
+          summary={{ messageCount: 1000, webSearchSignInErrorCount: 0, latestMessageHasWebSearchSignInError: false }}
+        />
+      </MantineProvider>
+    )
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(mocks.useSession).toHaveBeenLastCalledWith('window', { enabled: false })
+    view.rerender(
+      <MantineProvider>
+        <WebSearchUnavailableBanner
+          sessionId="window"
+          summary={{ messageCount: 1000, webSearchSignInErrorCount: 1, latestMessageHasWebSearchSignInError: false }}
+        />
+      </MantineProvider>
+    )
+    expect(screen.getByRole('status')).toBeTruthy()
+    expect(mocks.useSession).toHaveBeenLastCalledWith('window', { enabled: false })
+    view.rerender(
+      <MantineProvider>
+        <WebSearchUnavailableBanner
+          sessionId="window"
+          summary={{ messageCount: 1000, webSearchSignInErrorCount: 1, latestMessageHasWebSearchSignInError: true }}
+        />
+      </MantineProvider>
+    )
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('reads legacy history only while its missing projection can affect the sign-in warning', () => {
+    mocks.licenseKey = 'present'
+    const view = render(
+      <MantineProvider>
+        <WebSearchUnavailableBanner sessionId="legacy-window" summary={{ messageCount: 1000 }} />
+      </MantineProvider>
+    )
+    expect(mocks.useSession).toHaveBeenLastCalledWith('legacy-window', { enabled: false })
+    mocks.licenseKey = ''
+    mocks.webSearchProvider = 'tavily'
+    view.rerender(
+      <MantineProvider>
+        <WebSearchUnavailableBanner sessionId="legacy-window" summary={{ messageCount: 1000 }} />
+      </MantineProvider>
+    )
+    expect(mocks.useSession).toHaveBeenLastCalledWith('legacy-window', { enabled: false })
+    mocks.webSearchProvider = 'build-in'
+    mocks.useSession.mockReturnValue({ session: sessionAfterConversationContinues('legacy-window') })
+    view.rerender(
+      <MantineProvider>
+        <WebSearchUnavailableBanner sessionId="legacy-window" summary={{ messageCount: 1000 }} />
+      </MantineProvider>
+    )
+    expect(mocks.useSession).toHaveBeenLastCalledWith('legacy-window', { enabled: true })
+    expect(screen.getByRole('status')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(mocks.useSession).toHaveBeenLastCalledWith('legacy-window', { enabled: false })
   })
 
   it('finds only the actionable built-in search sign-in error', () => {

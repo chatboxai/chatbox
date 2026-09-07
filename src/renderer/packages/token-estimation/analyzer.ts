@@ -5,6 +5,7 @@
  * Returns known token counts and a list of pending computation tasks.
  */
 
+import { SESSION_TEXT_TOKEN_VERSION, type SessionTextTokenRead, type SessionTextTokenSource } from '@chatbox/core/ports'
 import { estimateMessageToolCallTokens } from '@shared/context/tool-tokens'
 import type { Message, MessageFile, MessageLink } from '@shared/types/session'
 import { MAX_INLINE_FILE_LINES } from '@/packages/context-management/attachment-payload'
@@ -208,6 +209,10 @@ export function analyzeContextTokens(options: {
   tokenizerType: TokenizerType
   modelSupportToolUseForFile: boolean
   sandboxMode?: boolean
+  sessionId?: string
+  textSources?: SessionTextTokenRead['sources']
+  /** Bounded loaded-message previews can estimate text before the complete source is available. */
+  estimateMissingText?: boolean
 }): PartialAnalysisResult {
   const { contextMessages, tokenizerType, modelSupportToolUseForFile, sandboxMode = false } = options
 
@@ -225,9 +230,20 @@ export function analyzeContextTokens(options: {
     // Reverse priority: newest message (last in array) gets priority 0
     const priorityIndex = contextLength - 1 - index
 
-    const textResult = analyzeMessageText(msg, tokenizerType, false, priorityIndex)
-    text += textResult.tokens
-    if (textResult.approximate) {
+    const source = options.textSources?.[msg.id]
+    const textResult = analyzeMessageText(
+      msg,
+      tokenizerType,
+      false,
+      priorityIndex,
+      undefined,
+      options.sessionId && source?.sessionId === options.sessionId ? source : undefined
+    )
+    const estimateMissingText = options.estimateMissingText && textResult.needsCalculation && textResult.tokens === 0
+    text += estimateMissingText
+      ? estimateDraftTokensImmediately(textResult.task?.textSnapshot ?? getDraftTokenizationText(msg), tokenizerType)
+      : textResult.tokens
+    if (textResult.approximate || estimateMissingText) {
       hasApproximateText = true
     }
     if (textResult.needsCalculation && textResult.task) {
@@ -257,6 +273,21 @@ export function analyzeContextTokens(options: {
 // Helper Functions
 // ============================================================================
 
+function getAnalyzedTextDigest(messageId: string, text: string, source?: SessionTextTokenSource): string {
+  // Committed read sources already carry the canonical digest; verify the live text before reusing it.
+  if (
+    source?.messageId === messageId &&
+    source.calculationVersion === SESSION_TEXT_TOKEN_VERSION &&
+    typeof source.payloadId === 'string' &&
+    source.payloadId.length > 0 &&
+    source.text === text &&
+    typeof source.textDigest === 'string' &&
+    source.textDigest.startsWith(`${text.length}:`)
+  )
+    return source.textDigest
+  return getTokenizationTextDigest(text)
+}
+
 /**
  * Analyze a message's text content for token calculation
  *
@@ -271,7 +302,8 @@ function analyzeMessageText(
   tokenizerType: TokenizerType,
   isCurrentInput: boolean,
   messageIndex: number,
-  currentInputTextTokens?: number
+  currentInputTextTokens?: number,
+  source?: SessionTextTokenSource
 ): MessageTextAnalysisResult {
   if (isCurrentInput) {
     const tokens =
@@ -292,7 +324,8 @@ function analyzeMessageText(
     // value but keep it marked approximate. An exact encode is re-attempted
     // only while the bounded per-run budget lasts (the next launch retries
     // afresh), so a broken worker runtime cannot loop the queue forever.
-    const textDigest = getTokenizationTextDigest(getDraftTokenizationText(message))
+    const textSnapshot = getDraftTokenizationText(message)
+    const textDigest = getAnalyzedTextDigest(message.id, textSnapshot, source)
     if (!canRetryExactTokenization(message.id, tokenizerType, textDigest)) {
       return { tokens: cachedValue ?? 0, needsCalculation: false, approximate: true }
     }
@@ -304,6 +337,7 @@ function analyzeMessageText(
         type: 'message-text',
         messageId: message.id,
         tokenizerType,
+        textSnapshot,
         textDigest,
         retryAttempt: getExactTokenizationFallbackCount(message.id, tokenizerType, textDigest),
         priority: getPriority(isCurrentInput, 'message-text', messageIndex),
@@ -311,7 +345,8 @@ function analyzeMessageText(
     }
   }
 
-  const textDigest = getTokenizationTextDigest(getDraftTokenizationText(message))
+  const textSnapshot = getDraftTokenizationText(message)
+  const textDigest = getAnalyzedTextDigest(message.id, textSnapshot, source)
   return {
     tokens: 0,
     needsCalculation: true,
@@ -319,6 +354,7 @@ function analyzeMessageText(
       type: 'message-text',
       messageId: message.id,
       tokenizerType,
+      textSnapshot,
       textDigest,
       retryAttempt: getExactTokenizationFallbackCount(message.id, tokenizerType, textDigest),
       priority: getPriority(isCurrentInput, 'message-text', messageIndex),

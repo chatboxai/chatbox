@@ -1,9 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
+import { SESSION_TEXT_TOKEN_VERSION, type SessionTextTokenSource } from '@chatbox/core/ports'
 import type { Message } from '@shared/types/session'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as analyzer from '../analyzer'
 import { computationQueue } from '../computation-queue'
 import {
   estimateDraftTokensImmediately,
@@ -63,6 +65,118 @@ describe('useTokenEstimation', () => {
   })
 
   describe('basic functionality', () => {
+    it('estimates a bounded preview immediately and starts exact context work only for the complete source', () => {
+      const message = createMessage()
+      const enqueue = vi.spyOn(computationQueue, 'enqueueBatch')
+      const view = renderHook(
+        ({ pending, messages }) =>
+          useTokenEstimation({
+            sessionId: 'preview-session',
+            contextSourcePending: pending,
+            contextMessages: messages,
+            constructedMessage: undefined,
+            modelSupportToolUseForFile: false,
+          }),
+        { initialProps: { pending: true, messages: [message] } }
+      )
+      try {
+        expect(view.result.current.contextTokens).toBeGreaterThan(0)
+        expect(view.result.current.isContextCalculating).toBe(true)
+        expect(view.result.current.isContextApproximate).toBe(true)
+        expect(enqueue).not.toHaveBeenCalled()
+        view.rerender({ pending: false, messages: [message] })
+        expect(enqueue).toHaveBeenCalledTimes(1)
+        const tokens = estimateDraftTokensImmediately(getDraftTokenizationText(message), 'default')
+        view.rerender({
+          pending: false,
+          messages: [{ ...message, tokenCountMap: { default: tokens }, tokenCalculatedAt: { default: Date.now() } }],
+        })
+        expect(view.result.current.contextTokens).toBe(tokens)
+        expect(view.result.current.isContextApproximate).toBe(false)
+      } finally {
+        view.unmount()
+        enqueue.mockRestore()
+      }
+    })
+
+    it('forwards the current session and source to context analysis when either changes', () => {
+      const messages = [createMessage()]
+      const text = getDraftTokenizationText(messages[0])
+      const source: SessionTextTokenSource = {
+        sessionId: 'session-1',
+        messageId: messages[0].id,
+        payloadId: 'payload',
+        calculationVersion: SESSION_TEXT_TOKEN_VERSION,
+        text,
+        textDigest: getTokenizationTextDigest(text),
+      }
+      const first = { sources: { [messages[0].id]: source }, results: [] }
+      const analyze = vi.spyOn(analyzer, 'analyzeContextTokens')
+      const view = renderHook(
+        ({ sessionId, textTokens }) =>
+          useTokenEstimation({
+            sessionId,
+            textTokens,
+            contextMessages: messages,
+            constructedMessage: undefined,
+            modelSupportToolUseForFile: false,
+          }),
+        { initialProps: { sessionId: 'session-1', textTokens: first } }
+      )
+      try {
+        expect(analyze).toHaveBeenLastCalledWith(
+          expect.objectContaining({ sessionId: 'session-1', textSources: first.sources })
+        )
+        const beforeResultsOnly = analyze.mock.calls.length
+        view.rerender({ sessionId: 'session-1', textTokens: { ...first, results: [] } })
+        expect(analyze.mock.calls.length).toBe(beforeResultsOnly)
+        const next = { ...first, sources: { [messages[0].id]: { ...source, payloadId: 'next-payload' } } }
+        view.rerender({ sessionId: 'session-1', textTokens: next })
+        expect(analyze).toHaveBeenLastCalledWith(
+          expect.objectContaining({ sessionId: 'session-1', textSources: next.sources })
+        )
+        view.rerender({ sessionId: 'session-2', textTokens: next })
+        expect(analyze).toHaveBeenLastCalledWith(
+          expect.objectContaining({ sessionId: 'session-2', textSources: next.sources })
+        )
+      } finally {
+        view.unmount()
+        analyze.mockRestore()
+      }
+    })
+
+    it.each(['matching', 'edited', 'missing'] as const)(
+      'passes only the paired read source to queued text work: %s',
+      (mode) => {
+        const text = 'Hello world'
+        const source: SessionTextTokenSource = {
+          sessionId: 'session-1',
+          messageId: 'msg-1',
+          payloadId: 's:m:00000000-0000-4000-8000-000000000000',
+          calculationVersion: SESSION_TEXT_TOKEN_VERSION,
+          text,
+          textDigest: getTokenizationTextDigest(text),
+        }
+        const enqueue = vi.spyOn(computationQueue, 'enqueueBatch')
+        const view = renderHook(() =>
+          useTokenEstimation({
+            sessionId: 'session-1',
+            constructedMessage: undefined,
+            contextMessages: [
+              createMessage({ contentParts: [{ type: 'text', text: mode === 'edited' ? 'edited' : text }] }),
+            ],
+            modelSupportToolUseForFile: false,
+            textTokens: { sources: mode === 'missing' ? {} : { 'msg-1': source }, results: [] },
+          })
+        )
+        const task = enqueue.mock.calls.flatMap(([tasks]) => tasks).find((task) => task.type === 'message-text')
+        expect(task).toBeDefined()
+        expect(task?.textSource).toEqual(mode === 'matching' ? source : mode === 'edited' ? 'read-current' : undefined)
+        view.unmount()
+        enqueue.mockRestore()
+      }
+    )
+
     it('returns zero values when no messages provided', () => {
       const { result } = renderHook(() =>
         useTokenEstimation({

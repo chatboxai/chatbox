@@ -33,6 +33,7 @@ vi.mock('@/app/renderer-application', async () => {
   }
 })
 vi.mock('./session-settings', () => ({
+  getSessionHeader: getSessionMock,
   getSessionSettings: getSessionSettingsMock,
   getSessionTokenModel: () => undefined,
 }))

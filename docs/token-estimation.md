@@ -32,7 +32,7 @@ Token 预估系统用于异步计算聊天消息和附件的 token 数量，在�
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  task-executor.ts                                                   │
-│    ├── 读取消息/附件内容                                             │
+│    ├── 按 messageId 读取消息，再读取附件内容                          │
 │    ├── 调用 tokenizer 计算 token                                    │
 │    └── 将结果发送到 resultPersister                                 │
 └─────────────────────────────────────────────────────────────────────┘
@@ -41,15 +41,15 @@ Token 预估系统用于异步计算聊天消息和附件的 token 数量，在�
 ┌─────────────────────────────────────────────────────────────────────┐
 │  result-persister.ts                                                │
 │    ├── 累积计算结果                                                  │
-│    ├── Throttle 机制 (1000ms) - 保证每秒至少 flush 一次             │
-│    └── 调用 chatStore.updateMessages() 持久化                       │
+│    ├── Throttle (1000ms)，写入串行                                  │
+│    └── patchSessionMessageDerivedData() 提交派生字段                │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  chatStore.ts                                                       │
-│    ├── 更新 storage (IndexedDB)                                     │
-│    └── setQueryData() 更新 React Query 缓存 → UI 重新渲染           │
+│  SessionWriteCoordinator / SessionQueryBridge                       │
+│    ├── 行级协议提交，校验来源与 revision                            │
+│    └── setQueryData() 更新已加载消息和分页游标版本                   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -145,48 +145,20 @@ PRIORITY = {
 **位置**: `task-executor.ts`
 
 执行具体的 token 计算：
-- 读取消息文本或附件内容
+- 按 `messageId` 读取消息，附件内容随后按 `storageKey` 读取
 - 调用 tokenizer 计算 token 数；≥4096 字符的消息文本交给草稿 Worker（低优先级，交互式草稿请求会抢占正在执行的低优先级 encode）精算，Worker 不可用/失败/超时则返回标记为近似的采样估算，避免在渲染线程全量编码
-- message-text 结果携带源文本投影的 digest 与 `approximate` 标记，并在 `exact-retry.ts` 记录/清除 Worker 回退次数
+- message-text 结果携带源文本投影的 digest 与 `approximate` 标记；持久化成功且补丁被接受后才记录/清除 Worker 回退次数
 - 将结果发送到 `resultPersister`
 
 ### 5. Result Persister
 
 **位置**: `result-persister.ts`
 
-批量持久化计算结果，使用 **throttle** 机制：
-
-```typescript
-// Throttle 而非 Debounce
-// - Debounce: 每次调用重置计时器，可能导致长时间不 flush
-// - Throttle: 保证每 1000ms 至少 flush 一次
-
-private throttleMs = 1000
-private lastFlushTime = 0
-
-private scheduleFlush(): void {
-  const now = Date.now()
-  const timeSinceLastFlush = now - this.lastFlushTime
-
-  if (timeSinceLastFlush >= this.throttleMs) {
-    // 距离上次 flush 已超过 1s，立即 flush
-    this.doFlush()
-  } else if (!this.flushTimer) {
-    // 安排在剩余时间后 flush
-    this.flushTimer = setTimeout(() => {
-      this.doFlush()
-    }, this.throttleMs - timeSinceLastFlush)
-  }
-  // 如果已有计时器，不做任何事（throttle 行为）
-}
-```
-
-**为什么用 Throttle？**
-- 计算 100 条消息时，任务会连续完成
-- Debounce 会不断重置计时器，直到所有任务完成才 flush
-- Throttle 保证用户每秒都能看到中间进度
+按会话和消息 ID 聚合计算结果，使用 1000ms **throttle** 间隔。新结果不会推迟已安排的提交；前一批仍在写入时只积累下一批，完成后再调度，因此写入不会重叠。`flushNow()` 会等到在途和待提交结果都排空，`cancel()` 清除尚未提交的结果。
 
 **落盘时的 digest 校验**：message-text 结果从 encode 到 flush 之间隔着 Worker 等待与 throttle 窗口，期间消息可能被编辑（编辑路径先清空计数）。apply 时用消息当前投影的 digest 与结果携带的源 digest 比对，不一致的条目直接丢弃——缓存保持缺失，analyzer 会为新文本重新入队；`approximate` 标记也只随通过校验的条目写入/清除。
+
+附件结果携带附件类型、ID、storageKey、名称与计算时间；落盘和缓存重放都校验这些来源信息。行数和字节数只随足够新的计算写入。Blob 不存在或读取失败时最多尝试三次，不持久化零值；确实存在的空内容可以缓存零值。
 
 ### 6. Tokenizer
 
@@ -204,13 +176,13 @@ Token 计算结果缓存在消息对象的 `tokenCountMap` 字段：
 interface Message {
   // ...
   tokenCountMap?: {
-    tiktoken?: number           // 文本 token (tiktoken)
-    tiktoken_preview?: number   // 预览模式 token
+    default?: number           // 文本 token (tiktoken)
+    default_preview?: number   // 预览模式 token
     deepseek?: number           // 文本 token (deepseek)
     deepseek_preview?: number   // 预览模式 token
   }
   tokenCalculatedAt?: {
-    tiktoken?: number           // 计算时间戳
+    default?: number            // 计算时间戳
     // ...
   }
 }
@@ -230,23 +202,21 @@ interface MessageFile {
 
 ## React Query 集成
 
-系统通过 `chatStore` 与 React Query 集成：
+输入框通过独立 `SessionContextSource` 估算上下文，窗口分页本身不是完整 Session。已存在的完整视图直接复用其消息；历史窗口通过上下文查询读取压缩边界及所需尾部，安全回退可以读取完整路径。
+
+结果通过 SessionService 的派生补丁接口持久化：
 
 ```typescript
 // result-persister.ts
-await chatStore.updateMessages(sessionId, (messages) => {
-  return messages.map((msg) => {
-    const update = sessionUpdates.find((u) => u.messageId === msg.id)
-    if (!update) return msg
-    return applyUpdates(msg, update.updates)
-  })
-})
-
-// chatStore.ts - updateMessages 内部
-queryClient.setQueryData(QueryKeys.ChatSession(sessionId), updated)
-// ↑ 直接更新缓存，触发 UI 重新渲染
-// 不使用 invalidateQueries，避免不必要的重新获取
+const committed = await rendererApplication.sessions.patchSessionMessageDerivedData(sessionId, patches)
+// committed 仅包含校验后接受的派生字段，以及前后 revision。
 ```
+
+`SessionWriteCoordinator` 让派生补丁与完整写入、删除共享同一会话队列。行存储通过 revision/CAS 和持久化协议提交选定消息；V1 仓库使用完整安全路径。该接口不能修改正文、工具状态、树结构或 provider usage。
+
+`session-derived-data-patched` 事件只在现有缓存中重放接受的字段：窗口仍是窗口，不创建完整缓存；同版本的已加载各页与游标一起迁移到新 revision。旧异步读取会被取消；若缓存与事件有版本间隙，只使相关有界查询过期。完整 Session 已缓存时，整批补丁通过一次树遍历合并，并保留未改变的对象引用。
+
+完整历史 UI 保留各自的读取边界：手动压缩在打开弹窗时加载完整视图；搜索登录提示使用历史错误摘要，旧摘要缺字段且该提示可能显示时才读取完整历史。
 
 ## 初始化
 

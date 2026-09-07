@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSmoothFollowOutputController } from './smooth-follow-output'
+import { createSmoothFollowOutputController, isLayoutClampedScroll } from './smooth-follow-output'
 
 function createHarness(behavior: 'auto' | 'smooth' = 'smooth') {
   const frames = new Map<number, FrameRequestCallback>()
@@ -30,6 +30,87 @@ function createHarness(behavior: 'auto' | 'smooth' = 'smooth') {
 }
 
 describe('smooth follow output controller', () => {
+  it.each([0, 7900])('honors upward navigation to %s when measurement also shrinks by one pixel', (scrollTop) => {
+    const { controller, frames, runFrames, scrollToBottom, stopScrolling } = createHarness('auto')
+    controller.handleScroll(8124, 8125)
+    controller.handleHeightChange(8700)
+    controller.handleHeightChange(8750)
+    expect(frames.size).toBe(1)
+
+    expect(controller.handleScroll(scrollTop, 8124)).toBe(true)
+    expect(frames.size).toBe(0)
+    controller.handleHeightChange(9000)
+    runFrames()
+
+    expect(controller.isFollowing()).toBe(false)
+    expect(stopScrolling).toHaveBeenCalledWith(scrollTop)
+    expect(scrollToBottom).not.toHaveBeenCalled()
+  })
+
+  it('recognizes only a bottom position clamped by a smaller scroll range', () => {
+    expect(isLayoutClampedScroll(8124, 8125, 0, 8124)).toBe(false)
+    expect(isLayoutClampedScroll(200, 200, 150, 150)).toBe(true)
+    expect(isLayoutClampedScroll(200, 200, 150.25, 150)).toBe(true)
+    expect(isLayoutClampedScroll(100, 200, 90, 150)).toBe(false)
+  })
+
+  it.each([7000, 6997])(
+    'follows measured growth after an initial bottom scroll at %s before the delayed bottom signal',
+    (scrollTop) => {
+      const { controller, runFrames, scrollToBottom } = createHarness('auto')
+
+      controller.handleHeightChange(7532)
+      controller.handleScroll(scrollTop, 7000)
+      controller.handleHeightChange(8591)
+      // Virtuoso coalesces bottom state notifications for 50ms; growth can replace the initial true signal.
+      controller.handleAtBottomChange(false)
+      runFrames()
+
+      expect(controller.isFollowing()).toBe(true)
+      expect(scrollToBottom).toHaveBeenCalledWith('auto')
+    }
+  )
+
+  it('does not start following from the zero position before a list is measured', () => {
+    const { controller, runFrames, scrollToBottom } = createHarness()
+
+    controller.handleScroll(0, 0)
+    controller.handleHeightChange(7532)
+    controller.handleScroll(3000, 7000)
+    controller.handleHeightChange(8591)
+    runFrames()
+
+    expect(controller.isFollowing()).toBe(false)
+    expect(scrollToBottom).not.toHaveBeenCalled()
+  })
+
+  it('lets an upward scroll cancel initial following before the delayed bottom signal', () => {
+    const { controller, runFrames, scrollToBottom } = createHarness()
+
+    controller.handleHeightChange(7532)
+    controller.handleScroll(7000, 7000)
+    controller.handleScroll(6900, 7000)
+    controller.handleAtBottomChange(true)
+    controller.handleHeightChange(8591)
+    runFrames()
+
+    expect(controller.isFollowing()).toBe(false)
+    expect(scrollToBottom).not.toHaveBeenCalled()
+  })
+
+  it('does not follow a restored middle position before the delayed bottom signal', () => {
+    const { controller, runFrames, scrollToBottom } = createHarness()
+
+    controller.handleHeightChange(7532)
+    controller.handleScroll(3000, 7000)
+    controller.handleHeightChange(8591)
+    controller.handleAtBottomChange(false)
+    runFrames()
+
+    expect(controller.isFollowing()).toBe(false)
+    expect(scrollToBottom).not.toHaveBeenCalled()
+  })
+
   it('smoothly follows height growth after reaching the bottom', () => {
     const { controller, runFrames, scrollToBottom } = createHarness()
 
@@ -147,6 +228,46 @@ describe('smooth follow output controller', () => {
     expect(controller.handleScroll(150, 200)).toBe(true)
 
     expect(stopScrolling).not.toHaveBeenCalled()
+  })
+
+  it.each([7000, 6999.75])('preserves explicit navigation pause after a first scroll at %s', (firstScrollTop) => {
+    const { controller, runFrames, scrollToBottom, stopScrolling } = createHarness()
+
+    controller.handleAtBottomChange(true)
+    controller.handleScroll(7000, 7000)
+    controller.pause()
+    controller.handleScroll(firstScrollTop, 7000)
+    expect(controller.isFollowing()).toBe(false)
+
+    controller.handleScroll(6990, 7000)
+    controller.handleAtBottomChange(true)
+    controller.handleHeightChange(7532)
+    controller.handleHeightChange(8591)
+    runFrames()
+
+    expect(controller.isFollowing()).toBe(false)
+    expect(stopScrolling).not.toHaveBeenCalled()
+    expect(scrollToBottom).not.toHaveBeenCalled()
+  })
+
+  it('resumes an explicitly paused view after downward movement reaches the bottom', () => {
+    const { controller } = createHarness()
+
+    controller.handleScroll(7000, 7000)
+    controller.pause()
+    controller.handleScroll(6900, 7000)
+    controller.handleScroll(6998, 7000)
+
+    expect(controller.isFollowing()).toBe(true)
+  })
+
+  it('allows explicit resume after a navigation pause', () => {
+    const { controller } = createHarness()
+
+    controller.pause()
+    controller.resume()
+
+    expect(controller.isFollowing()).toBe(true)
   })
 
   it('keeps following when a layout shrink clamps the scroll position upward', () => {

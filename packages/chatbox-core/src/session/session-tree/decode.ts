@@ -219,6 +219,9 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
     activeThreadId: _activeThreadId,
     storageFormat: _storageFormat,
     forkCreatedAt: _forkCreatedAt,
+    presentation: _presentation,
+    contextReadProjection: _contextReadProjection,
+    topologyFingerprint: _topologyFingerprint,
     ...record
   } = tree.session
 

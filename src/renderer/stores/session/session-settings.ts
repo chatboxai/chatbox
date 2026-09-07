@@ -1,3 +1,4 @@
+import type { SessionHeader } from '@chatbox/core/ports'
 import { type Session, type SessionSettings, SessionSettingsSchema } from '@shared/types'
 import { useMemo } from 'react'
 import { rendererApplication } from '@/app/renderer-application'
@@ -5,9 +6,9 @@ import type { TokenModel } from '@/packages/token'
 import * as defaults from '../../../shared/defaults'
 import { settingsStore, useSettingsStore } from '../settingsStore'
 
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
+const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSessionHeader(sessionId)
 
-function mergeDefaultSessionSettings(session: Session): SessionSettings {
+function mergeDefaultSessionSettings(session: Pick<Session, 'type' | 'settings'>): SessionSettings {
   if (session.type === 'picture') {
     return SessionSettingsSchema.parse({
       ...defaults.pictureSessionSettings(),
@@ -36,8 +37,12 @@ export function useSessionSettings(sessionId: string | null) {
   return { sessionSettings }
 }
 
-export async function getSessionSettings(sessionId: string) {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+export async function getSessionHeader(sessionId: string): Promise<SessionHeader | null> {
+  return (await rendererApplication.sessions.readSessionMessages({ sessionId, messageIds: [] }))?.header ?? null
+}
+
+export async function getSessionSettings(sessionId: string, header?: SessionHeader) {
+  const session = header ?? (await getSessionHeader(sessionId))
   if (!session) {
     const globalSettings = settingsStore.getState().getSettings()
     return SessionSettingsSchema.parse(globalSettings)

@@ -32,6 +32,18 @@ function createHarness(
 }
 
 describe('SessionService', () => {
+  test('repairs a complete read model without reading its session a second time', async () => {
+    const repair = vi.fn((session: Session) => ({ session, changed: false }))
+    const harness = createHarness(repair)
+    const session = createTestSession('read-once')
+    const readModel = vi.fn(async () => ({ kind: 'full' as const, session }))
+    Object.assign(harness.repository, { getSessionReadModel: readModel })
+    const fullRead = vi.spyOn(harness.repository, 'getSession')
+    expect(await harness.service.getSessionReadModel(session.id)).toEqual({ kind: 'full', session })
+    expect(readModel).toHaveBeenCalledTimes(1)
+    expect(fullRead).not.toHaveBeenCalled()
+    expect(repair).toHaveBeenCalledWith(session)
+  })
   test('names the changed message only for writes that replace one message in place', async () => {
     const harness = createHarness()
     const persisted: Session = {

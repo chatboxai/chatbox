@@ -3,12 +3,42 @@
 import { MantineProvider } from '@mantine/core'
 import type { Message, Session } from '@shared/types'
 import { MessageRoleEnum } from '@shared/types'
-import { type CSSProperties, createRef, type ReactNode, type UIEventHandler } from 'react'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { act, render } from '@/test-utils'
-import MessageList, { type MessageListRef } from './MessageList'
+import { type CSSProperties, createRef, type ReactNode, StrictMode, type UIEventHandler } from 'react'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { scrollToIndex as navigateToIndex } from '@/stores/scrollActions'
+import type { TranscriptNavigation } from '@/stores/uiStore'
+import { act, cleanup, fireEvent, render, waitFor } from '@/test-utils'
+import MessageList, { clearScrollPositionCache, type MessageListRef } from './MessageList'
+import { getWindowScrollPosition } from './window-scroll-cache'
 
 const virtuosoScrollToIndexMock = vi.hoisted(() => vi.fn())
+const virtuosoScrollToMock = vi.hoisted(() => vi.fn())
+const virtuosoAtBottom = vi.hoisted(() => ({ value: true }))
+const virtuosoGetStateMock = vi.hoisted(() => vi.fn())
+const virtuosoMountedGetStates = vi.hoisted(() => [] as ReturnType<typeof vi.fn>[])
+const virtuosoRestoreStates = vi.hoisted(() => [] as unknown[])
+const virtuosoPositioning = vi.hoisted(
+  () =>
+    [] as Array<{
+      initialTopMostItemIndex?: unknown
+      initialScrollTop?: number
+      rangeChanged?: (range: { startIndex: number }) => void
+      totalListHeightChanged?: (height: number) => void
+      firstItemIndex?: number
+    }>
+)
+const navigationState = vi.hoisted(() => ({
+  transcriptNavigation: null as TranscriptNavigation | null,
+  setTranscriptNavigation: (value: TranscriptNavigation | null) => {
+    navigationState.transcriptNavigation = value
+  },
+  setMessageListElement: vi.fn(),
+  widthFull: true,
+  sessionAgentModeMap: {},
+  agentModeSmartSwitchingDefault: false,
+  agentModeLastSelected: 'off',
+  promptCacheBreakConfirmDismissed: {},
+}))
 
 vi.mock('react-i18next', () => ({
   initReactI18next: {
@@ -30,32 +60,56 @@ vi.mock('react-virtuoso', async () => {
           atBottomStateChange?: (value: boolean) => void
           onScroll?: UIEventHandler<HTMLDivElement>
           style?: CSSProperties
+          firstItemIndex?: number
+          restoreStateFrom?: unknown
+          initialTopMostItemIndex?: unknown
+          initialScrollTop?: number
+          rangeChanged?: (range: { startIndex: number }) => void
+          totalListHeightChanged?: (height: number) => void
+          components?: {
+            Header?: React.ComponentType<{ context?: object }>
+            Footer?: React.ComponentType<{ context?: object }>
+          }
+          context?: object
         },
         ref
       ) => {
+        virtuosoRestoreStates.push(props.restoreStateFrom)
+        virtuosoPositioning.push(props)
+        const [getState] = React.useState(() => {
+          const method = vi.fn((callback: (state: unknown) => void) => virtuosoGetStateMock(callback))
+          virtuosoMountedGetStates.push(method)
+          return method
+        })
         React.useImperativeHandle(ref, () => ({
-          scrollTo: vi.fn(),
+          scrollTo: virtuosoScrollToMock,
           scrollToIndex: virtuosoScrollToIndexMock,
-          getState: vi.fn(),
+          getState,
         }))
         React.useEffect(() => {
           props.atTopStateChange?.(false)
-          props.atBottomStateChange?.(true)
+          props.atBottomStateChange?.(virtuosoAtBottom.value)
         }, [props])
+        const Header = props.components?.Header
+        const Footer = props.components?.Footer
         return (
-          <div data-testid="virtuoso" onScroll={props.onScroll} style={props.style}>
-            {props.data.map((item, index) => {
-              const itemKey =
-                item && typeof item === 'object' && 'key' in item && typeof item.key === 'string'
-                  ? item.key
-                  : `item-${index}`
+          <div data-testid="virtuoso" data-virtuoso-scroller onScroll={props.onScroll} style={props.style}>
+            {Header && <Header context={props.context} />}
+            <div data-testid="virtuoso-item-list">
+              {props.data.map((item, index) => {
+                const itemKey =
+                  item && typeof item === 'object' && 'key' in item && typeof item.key === 'string'
+                    ? item.key
+                    : `item-${index}`
 
-              return (
-                <div data-index={index} key={itemKey}>
-                  {props.itemContent(index, item)}
-                </div>
-              )
-            })}
+                return (
+                  <div data-index={index} key={itemKey}>
+                    {props.itemContent(index + (props.firstItemIndex ?? 0), item)}
+                  </div>
+                )
+              })}
+            </div>
+            {Footer && <Footer context={props.context} />}
           </div>
         )
       }
@@ -189,27 +243,8 @@ vi.mock('@/stores/settingsStore', () => ({
 }))
 
 vi.mock('@/stores/uiStore', () => ({
-  useUIStore: (
-    selector: (state: {
-      widthFull: boolean
-      setMessageListElement: () => void
-      setMessageScrolling: () => void
-    }) => unknown
-  ) =>
-    selector({
-      widthFull: true,
-      setMessageListElement: vi.fn(),
-      setMessageScrolling: vi.fn(),
-    }),
-  // getSessionAgentModeEntry falls back to the legacy per-session mode map.
-  uiStore: {
-    getState: () => ({
-      sessionAgentModeMap: {},
-      agentModeSmartSwitchingDefault: false,
-      agentModeLastSelected: 'off',
-      promptCacheBreakConfirmDismissed: {},
-    }),
-  },
+  useUIStore: (selector: (state: typeof navigationState) => unknown) => selector(navigationState),
+  uiStore: { getState: () => navigationState },
 }))
 
 vi.mock('@/stores/session/forks', () => ({
@@ -269,6 +304,605 @@ function message(id: string, role: Message['role'], content: string): Message {
 }
 
 describe('MessageList new message layout', () => {
+  function navigation() {
+    const current = navigationState.transcriptNavigation
+    if (!current) throw new Error('Missing transcript navigation')
+    return current
+  }
+
+  function navigationView(id: string, complete = true) {
+    const header = { id, name: 'Chat' }
+    const messages = [message(`${id}-reply`, MessageRoleEnum.Assistant, 'Reply')]
+    return (
+      <MantineProvider>
+        {complete ? (
+          <MessageList currentSession={{ ...header, messages }} />
+        ) : (
+          <MessageList transcript={{ header, messages }} />
+        )}
+      </MantineProvider>
+    )
+  }
+
+  test('keeps only the latest mounted owner active and does not clear it during an older cleanup', () => {
+    const first = render(navigationView('owner-first'))
+    const oldOwner = navigation()
+    const second = render(navigationView('owner-second'))
+    const newOwner = navigation()
+    expect(oldOwner.scrollToIndex({ index: 0, align: 'start', behavior: 'smooth' })).toBe(false)
+    first.unmount()
+    expect(navigation()).toBe(newOwner)
+    expect(newOwner.scrollToIndex({ index: 0, align: 'start', behavior: 'smooth' })).toBe(true)
+    second.unmount()
+    expect(navigationState.transcriptNavigation).toBeNull()
+    expect(newOwner.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })).toBe(false)
+  })
+
+  test('invalidates capabilities across session and window-to-complete view changes', () => {
+    const mounted = render(navigationView('owner-a', false))
+    const windowOwner = navigation()
+    mounted.rerender(navigationView('owner-a'))
+    const completeOwner = navigation()
+    expect(completeOwner.view).toBe('complete')
+    expect(completeOwner.owner).toBe(windowOwner.owner)
+    expect(windowOwner.scrollToIndex({ index: 0, align: 'start', behavior: 'auto' })).toBe(false)
+    mounted.rerender(navigationView('owner-b'))
+    mounted.rerender(navigationView('owner-a'))
+    expect(navigation().owner).not.toBe(completeOwner.owner)
+    expect(completeOwner.scrollToIndex({ index: 0, align: 'start', behavior: 'auto' })).toBe(false)
+    expect(navigation().scrollToIndex({ index: 0, align: 'start', behavior: 'auto' })).toBe(true)
+  })
+
+  test('registers a usable owner after StrictMode setup and cleanup replay', () => {
+    const mounted = render(<StrictMode>{navigationView('strict-owner')}</StrictMode>)
+    expect(navigation().scrollToIndex({ index: 0, align: 'start', behavior: 'auto' })).toBe(true)
+    mounted.unmount()
+    expect(navigationState.transcriptNavigation).toBeNull()
+  })
+
+  test('LAST resumes follow while an actual upward user scroll still stops it', () => {
+    const mounted = render(navigationView('resume-owner'))
+    const scroller = mounted.getByTestId('virtuoso')
+    Object.defineProperties(scroller, {
+      scrollTop: { configurable: true, writable: true, value: 7000 },
+      scrollHeight: { configurable: true, value: 7532 },
+      clientHeight: { configurable: true, value: 532 },
+    })
+    fireEvent.scroll(scroller)
+    virtuosoAtBottom.value = false
+    act(() => navigateToIndex(0, 'start', 'smooth'))
+    scroller.scrollTop = 6990
+    fireEvent.scroll(scroller)
+    expect(virtuosoScrollToMock).not.toHaveBeenCalled()
+    act(() => navigateToIndex('LAST', 'end', 'smooth'))
+    expect(virtuosoScrollToIndexMock).toHaveBeenLastCalledWith({ index: 'LAST', align: 'end', behavior: 'smooth' })
+    scroller.scrollTop = 6980
+    fireEvent.scroll(scroller)
+    expect(virtuosoScrollToMock).toHaveBeenCalledWith({ top: 6980, behavior: 'auto' })
+  })
+
+  test('does not retarget history on measured growth until LAST resumes follow', async () => {
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame')
+    try {
+      render(navigationView('measured-history'))
+      act(() => navigateToIndex(0, 'start', 'smooth'))
+      requestFrame.mockClear()
+      act(() => {
+        virtuosoPositioning.at(-1)?.totalListHeightChanged?.(7532)
+        virtuosoPositioning.at(-1)?.totalListHeightChanged?.(8591)
+      })
+      expect(requestFrame).not.toHaveBeenCalled()
+      expect(virtuosoScrollToMock).not.toHaveBeenCalled()
+      act(() => {
+        navigateToIndex('LAST', 'end', 'smooth')
+        virtuosoPositioning.at(-1)?.totalListHeightChanged?.(9000)
+      })
+      await waitFor(() => expect(virtuosoScrollToMock).toHaveBeenCalledWith(expect.objectContaining({ top: Infinity })))
+    } finally {
+      requestFrame.mockRestore()
+    }
+  })
+
+  function measuredWindow(sessionId: string, scrollTop: number, count = 50) {
+    clearScrollPositionCache(sessionId)
+    const header = { id: sessionId, name: 'Chat' }
+    const messages = Array.from({ length: count }, (_, index) =>
+      message(`warm-${index}`, MessageRoleEnum.Assistant, 'Reply')
+    )
+    const windowIdentity = { threadId: 'thread', revision: 1 }
+    const view = (identity = windowIdentity, rows = messages, position?: { id: number; edge: 'head' | 'tail' }) => (
+      <MantineProvider env="test">
+        <MessageList transcript={{ header, messages: rows }} windowIdentity={identity} windowPosition={position} />
+      </MantineProvider>
+    )
+    const mounted = render(view())
+    const viewport = mounted.container.querySelector<HTMLElement>('[data-session-view]')
+    if (!viewport) throw new Error('Missing viewport')
+    const scroller = mounted.getByTestId('virtuoso')
+    Object.defineProperties(scroller, {
+      scrollTop: { configurable: true, writable: true, value: count * 100 - 600 },
+      scrollHeight: { configurable: true, value: count * 100 },
+      clientHeight: { configurable: true, value: 600 },
+    })
+    const bounds = (top: number, height: number): DOMRect => ({
+      top,
+      bottom: top + height,
+      height,
+      left: 0,
+      right: 400,
+      width: 400,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    })
+    vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(bounds(0, 600))
+    for (const item of Array.from(mounted.container.querySelectorAll<HTMLElement>('[data-index]'))) {
+      vi.spyOn(item, 'getBoundingClientRect').mockImplementation(() =>
+        bounds(Number(item.dataset.index) * 100 - scroller.scrollTop, 100)
+      )
+    }
+    fireEvent.scroll(scroller)
+    scroller.scrollTop = scrollTop
+    fireEvent.scroll(scroller)
+    virtuosoGetStateMock.mockImplementation((callback: (state: unknown) => void) =>
+      callback({
+        ranges: [{ startIndex: 0, endIndex: Infinity, size: 100 }],
+        scrollTop: scroller.scrollTop,
+      })
+    )
+    return { mounted, view, viewport, scroller, messages, windowIdentity }
+  }
+
+  test.each([2012, 4400])('restores a warm window at the saved reading position %s', (scrollTop) => {
+    const first = measuredWindow(`warm-position-${scrollTop}`, scrollTop)
+    first.mounted.unmount()
+    expect(getWindowScrollPosition(`warm-position-${scrollTop}`)?.snapshot?.scrollTop).toBe(scrollTop)
+    const unrelated = render(
+      <MantineProvider>
+        <MessageList transcript={{ header: { id: 'other', name: 'Other' }, messages: [] }} />
+      </MantineProvider>
+    )
+    unrelated.unmount()
+    virtuosoScrollToMock.mockClear()
+    const returned = render(first.view())
+    expect(virtuosoRestoreStates.at(-1)).toEqual({ ranges: [{ startIndex: 0, endIndex: 49, size: 100 }], scrollTop })
+    expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toBeUndefined()
+    expect(returned.container.querySelectorAll('[data-index]')).toHaveLength(50)
+    expect(virtuosoScrollToMock).not.toHaveBeenCalled()
+  })
+
+  test('saves the current Virtuoso instance after an edge jump remount', () => {
+    const first = measuredWindow('jump-remount-cache', 2012)
+    const oldGetState = virtuosoMountedGetStates.at(-1)!
+    oldGetState.mockImplementation((callback: (state: unknown) => void) =>
+      callback({ ranges: [{ startIndex: 0, endIndex: 49, size: 100 }], scrollTop: 2012 })
+    )
+    first.mounted.rerender(first.view(first.windowIdentity, first.messages, { id: 1, edge: 'head' }))
+    const currentGetState = virtuosoMountedGetStates.at(-1)!
+    expect(currentGetState).not.toBe(oldGetState)
+    const scroller = first.mounted.getByTestId('virtuoso')
+    Object.defineProperties(scroller, {
+      scrollTop: { configurable: true, writable: true, value: 1012 },
+      scrollHeight: { configurable: true, value: 5000 },
+      clientHeight: { configurable: true, value: 600 },
+    })
+    for (const item of Array.from(first.mounted.container.querySelectorAll<HTMLElement>('[data-index]'))) {
+      vi.spyOn(item, 'getBoundingClientRect').mockImplementation(() => {
+        const top = Number(item.dataset.index) * 100 - scroller.scrollTop
+        return {
+          x: 0,
+          y: top,
+          top,
+          bottom: top + 100,
+          left: 0,
+          right: 400,
+          width: 400,
+          height: 100,
+          toJSON: () => ({}),
+        }
+      })
+    }
+    currentGetState.mockImplementation((callback: (state: unknown) => void) =>
+      callback({ ranges: [{ startIndex: 0, endIndex: 49, size: 100 }], scrollTop: 1012 })
+    )
+    oldGetState.mockClear()
+    first.mounted.unmount()
+    expect(oldGetState).not.toHaveBeenCalled()
+    expect(currentGetState).toHaveBeenCalledOnce()
+    expect(getWindowScrollPosition('jump-remount-cache')?.snapshot?.scrollTop).toBe(1012)
+    render(first.view())
+    expect(virtuosoRestoreStates.at(-1)).toEqual({
+      ranges: [{ startIndex: 0, endIndex: 49, size: 100 }],
+      scrollTop: 1012,
+    })
+  })
+
+  test.each(['revision', 'layout', 'range', 'schema'])('does not reuse warm geometry after a %s change', (change) => {
+    const sessionId = `warm-mismatch-${change}`
+    const first = measuredWindow(sessionId, 2012)
+    first.mounted.unmount()
+    if (change === 'layout')
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 380 })
+    if (change === 'schema') {
+      const entry = getWindowScrollPosition(sessionId)
+      if (!entry) throw new Error('Missing window snapshot')
+      entry.version = 2
+    }
+    render(
+      first.view(
+        change === 'revision' ? { ...first.windowIdentity, revision: 2 } : first.windowIdentity,
+        change === 'range' ? first.messages.slice(10) : first.messages
+      )
+    )
+    expect(virtuosoRestoreStates.at(-1)).toBeUndefined()
+    expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toEqual({
+      index: change === 'range' ? 10 : 20,
+      align: 'start',
+    })
+  })
+
+  test('keeps the reading anchor after local message expansion', () => {
+    const first = measuredWindow('warm-expanded', 2012)
+    fireEvent.click(first.mounted.getByTestId('message-warm-20'))
+    first.mounted.unmount()
+    render(first.view())
+    expect(virtuosoRestoreStates.at(-1)).toBeUndefined()
+    expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toEqual({ index: 20, align: 'start' })
+  })
+
+  test('does not repopulate an explicitly cleared session when its window unmounts', () => {
+    const first = measuredWindow('warm-cleared', 2012)
+    clearScrollPositionCache('warm-cleared')
+    first.mounted.unmount()
+    expect(getWindowScrollPosition('warm-cleared')).toBeUndefined()
+  })
+
+  test('keeps a large paged window anchor with bounded cache metadata', () => {
+    const first = measuredWindow('warm-large', 2012, 1000)
+    virtuosoGetStateMock.mockClear()
+    first.mounted.unmount()
+    expect(virtuosoGetStateMock).not.toHaveBeenCalled()
+    expect(getWindowScrollPosition('warm-large')?.snapshot).toBeNull()
+    expect(getWindowScrollPosition('warm-large')?.key.signature).toBeNull()
+    render(first.view())
+    expect(virtuosoRestoreStates.at(-1)).toBeUndefined()
+    expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toEqual({ index: 20, align: 'start' })
+  })
+
+  test('uses the reading anchor instead of dimensions while a warm viewport is unmeasured', () => {
+    const first = measuredWindow('warm-unmeasured-return', 2012)
+    first.mounted.unmount()
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 0 })
+    render(first.view())
+    expect(virtuosoRestoreStates.at(-1)).toBeUndefined()
+    expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toEqual({ index: 20, align: 'start' })
+  })
+
+  test.each(['hidden', 'zero', 'empty', 'stale'])('does not save an unready %s window', (state) => {
+    const sessionId = `warm-unready-${state}`
+    const first = measuredWindow(sessionId, 2012)
+    if (state === 'hidden') first.mounted.getByTestId('virtuoso-item-list').style.visibility = 'hidden'
+    if (state === 'zero') Object.defineProperty(first.viewport, 'clientWidth', { configurable: true, value: 0 })
+    if (state === 'empty')
+      virtuosoGetStateMock.mockImplementation((callback: (value: unknown) => void) =>
+        callback({ ranges: [], scrollTop: 0 })
+      )
+    if (state === 'stale')
+      virtuosoGetStateMock.mockImplementation((callback: (value: unknown) => void) =>
+        callback({ ranges: [{ startIndex: 0, endIndex: Infinity, size: 100 }], scrollTop: 0 })
+      )
+    first.mounted.unmount()
+    expect(getWindowScrollPosition(sessionId)).toBeUndefined()
+    render(first.view())
+    expect(virtuosoRestoreStates.at(-1)).toBeUndefined()
+  })
+
+  test.each([
+    ['local', 7000],
+    ['local', 6999.75],
+    ['global', 7000],
+    ['global', 6999.75],
+    ['global', 6990],
+  ] as const)('does not pin %s smooth message navigation after a first scroll at %s', (entry, firstScrollTop) => {
+    const ref = createRef<MessageListRef>()
+    const mounted = render(
+      <MantineProvider>
+        <MessageList
+          ref={ref}
+          transcript={{
+            header: { id: 'smooth-message-navigation', name: 'Chat' },
+            messages: Array.from({ length: 50 }, (_, index) =>
+              message(`navigation-${index}`, MessageRoleEnum.Assistant, 'Reply')
+            ),
+          }}
+        />
+      </MantineProvider>
+    )
+    const scroller = mounted.getByTestId('virtuoso')
+    Object.defineProperties(scroller, {
+      scrollTop: { configurable: true, writable: true, value: 7000 },
+      scrollHeight: { configurable: true, value: 7532 },
+      clientHeight: { configurable: true, value: 532 },
+    })
+    fireEvent.scroll(scroller)
+    virtuosoAtBottom.value = false
+    act(() =>
+      entry === 'local'
+        ? ref.current?.scrollToMessage('navigation-40', 'smooth')
+        : navigateToIndex(40, 'center', 'smooth')
+    )
+    expect(virtuosoScrollToIndexMock).toHaveBeenCalledWith({ index: 40, align: 'center', behavior: 'smooth' })
+
+    scroller.scrollTop = firstScrollTop
+    fireEvent.scroll(scroller)
+    scroller.scrollTop = 6990
+    fireEvent.scroll(scroller)
+
+    expect(virtuosoScrollToMock).not.toHaveBeenCalled()
+  })
+
+  test('follows a cold tail measurement when the delayed bottom notification only reports false', async () => {
+    virtuosoAtBottom.value = false
+    const mounted = render(
+      <MantineProvider>
+        <MessageList
+          transcript={{
+            header: { id: 'cold-measured-tail', name: 'Chat' },
+            messages: Array.from({ length: 50 }, (_, index) =>
+              message(`measured-${index}`, MessageRoleEnum.Assistant, 'Reply')
+            ),
+          }}
+        />
+      </MantineProvider>
+    )
+    const scroller = mounted.getByTestId('virtuoso')
+    Object.defineProperties(scroller, {
+      scrollTop: { configurable: true, value: 7000 },
+      scrollHeight: { configurable: true, value: 7532 },
+      clientHeight: { configurable: true, value: 532 },
+    })
+    act(() => virtuosoPositioning.at(-1)?.totalListHeightChanged?.(7532))
+    fireEvent.scroll(scroller)
+    act(() => virtuosoPositioning.at(-1)?.totalListHeightChanged?.(8591))
+
+    await waitFor(() => expect(virtuosoScrollToMock).toHaveBeenCalledWith(expect.objectContaining({ top: Infinity })))
+    expect(mounted.container.querySelectorAll('[data-index]')).toHaveLength(50)
+  })
+
+  test('keeps a tail view at the tail when complete data replaces a window', () => {
+    const header = { id: 'tail-view-transition', name: 'Chat' }
+    const messages = Array.from({ length: 100 }, (_, index) =>
+      message(`tail-${index}`, MessageRoleEnum.Assistant, 'Reply')
+    )
+    virtuosoGetStateMock.mockImplementation((callback: (snapshot: unknown) => void) =>
+      callback({ ranges: [{ startIndex: 0, endIndex: 99, size: 40 }], scrollTop: 400 })
+    )
+    const earlierVisit = render(
+      <MantineProvider>
+        <MessageList currentSession={{ ...header, messages }} />
+      </MantineProvider>
+    )
+    earlierVisit.unmount()
+    virtuosoGetStateMock.mockReset()
+    const mounted = render(
+      <MantineProvider>
+        <MessageList transcript={{ header, messages: messages.slice(-50) }} />
+      </MantineProvider>
+    )
+    act(() => {
+      virtuosoPositioning.at(-1)?.rangeChanged?.({ startIndex: 1000000000 - 12 })
+    })
+
+    mounted.rerender(
+      <MantineProvider>
+        <MessageList currentSession={{ ...header, messages }} />
+      </MantineProvider>
+    )
+
+    expect(virtuosoRestoreStates.at(-1)).toBeUndefined()
+    expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toEqual({ index: 'LAST', align: 'end' })
+  })
+  test('preserves the visible item and its offset when a window reader receives complete data', () => {
+    const header = { id: 'reading-view-transition', name: 'Chat' }
+    const messages = Array.from({ length: 100 }, (_, index) =>
+      message(`reading-${index}`, MessageRoleEnum.Assistant, 'Reply')
+    )
+    const mounted = render(
+      <MantineProvider>
+        <MessageList transcript={{ header, messages: messages.slice(-50) }} />
+      </MantineProvider>
+    )
+    const container = mounted.container.querySelector<HTMLElement>('[data-session-id]')
+    if (!container) throw new Error('Missing session viewport')
+    const scroller = mounted.getByTestId('virtuoso')
+    const bounds = (top: number, bottom: number): DOMRect => ({
+      top,
+      bottom,
+      left: 0,
+      right: 100,
+      width: 100,
+      height: bottom - top,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    })
+    vi.spyOn(container, 'getBoundingClientRect').mockReturnValue(bounds(0, 60))
+    for (const item of Array.from(mounted.container.querySelectorAll<HTMLElement>('[data-index]'))) {
+      const top = (Number(item.dataset.index) - 44) * 40 - 20
+      vi.spyOn(item, 'getBoundingClientRect').mockReturnValue(bounds(top, top + 40))
+    }
+    Object.defineProperties(scroller, {
+      scrollTop: { configurable: true, writable: true, value: 2000 },
+      scrollHeight: { configurable: true, value: 2060 },
+      clientHeight: { configurable: true, value: 60 },
+    })
+    fireEvent.scroll(scroller)
+    scroller.scrollTop = 1900
+    fireEvent.scroll(scroller)
+
+    mounted.rerender(
+      <MantineProvider>
+        <MessageList currentSession={{ ...header, messages }} />
+      </MantineProvider>
+    )
+
+    expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toEqual({ index: 94, align: 'start', offset: 20 })
+  })
+  test('does not restore a window snapshot into a later complete list', () => {
+    virtuosoGetStateMock.mockImplementation((callback: (snapshot: unknown) => void) =>
+      callback({ ranges: [{ startIndex: 0, endIndex: 49, size: 40 }], scrollTop: 1000 })
+    )
+    const header = { id: 'scroll-cache-isolation', name: 'Chat' }
+    const messages = [message('last', MessageRoleEnum.User, 'Question')]
+    const mounted = render(
+      <MantineProvider>
+        <MessageList transcript={{ header, messages }} />
+      </MantineProvider>
+    )
+    mounted.unmount()
+    expect(virtuosoGetStateMock).not.toHaveBeenCalled()
+    const complete = render(
+      <MantineProvider>
+        <MessageList currentSession={{ ...header, messages }} />
+      </MantineProvider>
+    )
+    expect(virtuosoRestoreStates.at(-1)).toBeUndefined()
+    complete.unmount()
+    expect(virtuosoGetStateMock).toHaveBeenCalled()
+    virtuosoGetStateMock.mockReset()
+  })
+  test('renders window messages with normal actions and explicitly expands off-window navigation', () => {
+    const requireComplete = vi.fn()
+    const ref = createRef<MessageListRef>()
+    render(
+      <MantineProvider>
+        <MessageList
+          ref={ref}
+          transcript={{
+            header: {
+              id: 'window-session',
+              name: 'Window',
+              type: 'chat',
+              settings: { agentMode: { value: 'off', locked: false, lockReason: null } },
+            },
+            messages: [
+              message('tail-user', MessageRoleEnum.User, 'Question'),
+              message('tail-reply', MessageRoleEnum.Assistant, 'Reply'),
+            ],
+          }}
+          hasOlder
+          onRequireComplete={requireComplete}
+        />
+      </MantineProvider>
+    )
+    expect(messageRenderLog.at(-1)).toEqual({ id: 'tail-reply', readOnly: false })
+    expect(messageButtonGroupLog.at(-1)).toEqual({ id: 'tail-reply', buttonGroup: 'always' })
+    expect(ref.current?.scrollToMessage('old-message')).toBe(true)
+    expect(requireComplete).toHaveBeenCalledWith('old-message')
+    act(() => ref.current?.scrollToTop())
+    expect(requireComplete).toHaveBeenCalledWith()
+  })
+  test('uses bounded edge navigation and displays loading and the true conversation boundary', () => {
+    const jump = vi.fn()
+    const requireComplete = vi.fn()
+    const ref = createRef<MessageListRef>()
+    const transcript = {
+      header: { id: 'edges', name: 'Edges' },
+      messages: [message('m0', MessageRoleEnum.User, 'First')],
+    }
+    const view = render(
+      <MantineProvider>
+        <MessageList
+          ref={ref}
+          transcript={transcript}
+          hasOlder
+          hasNewer
+          isLoadingOlder
+          onJumpToEdge={jump}
+          onRequireComplete={requireComplete}
+        />
+      </MantineProvider>
+    )
+    expect(view.getByText('Loading...')).toBeTruthy()
+    act(() => ref.current?.scrollToTop())
+    act(() => ref.current?.scrollToBottom())
+    expect(jump.mock.calls).toEqual([['head'], ['tail']])
+    expect(requireComplete).not.toHaveBeenCalled()
+    view.rerender(
+      <MantineProvider>
+        <MessageList
+          ref={ref}
+          transcript={transcript}
+          hasNewer
+          windowPosition={{ id: 1, edge: 'head' }}
+          onJumpToEdge={jump}
+        />
+      </MantineProvider>
+    )
+    expect(view.getByText('Beginning of conversation')).toBeTruthy()
+    expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toBeUndefined()
+    expect(virtuosoPositioning.at(-1)?.initialScrollTop).toBe(0)
+  })
+
+  test('keeps existing virtual indices on append and moves only the first index on prepend', () => {
+    const header = { id: 'bidirectional', name: 'Bidirectional' }
+    const messages = [message('m1', MessageRoleEnum.User, 'One'), message('m2', MessageRoleEnum.Assistant, 'Two')]
+    const view = render(
+      <MantineProvider>
+        <MessageList transcript={{ header, messages }} />
+      </MantineProvider>
+    )
+    const initialIndex = virtuosoPositioning.at(-1)?.firstItemIndex
+    const appended = [...messages, message('m3', MessageRoleEnum.User, 'Three')]
+    view.rerender(
+      <MantineProvider>
+        <MessageList transcript={{ header, messages: appended }} />
+      </MantineProvider>
+    )
+    expect(virtuosoPositioning.at(-1)?.firstItemIndex).toBe(initialIndex)
+    view.rerender(
+      <MantineProvider>
+        <MessageList
+          transcript={{ header, messages: [message('m0', MessageRoleEnum.Assistant, 'Zero'), ...appended] }}
+        />
+      </MantineProvider>
+    )
+    expect(virtuosoPositioning.at(-1)?.firstItemIndex).toBe(initialIndex! - 1)
+  })
+
+  test('does not follow page growth after scrolling to the loaded boundary with newer messages remaining', () => {
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame')
+    try {
+      const transcript = {
+        header: { id: 'page-follow', name: 'History' },
+        messages: [message('p0', MessageRoleEnum.User, 'First')],
+      }
+      const mounted = render(
+        <MantineProvider>
+          <MessageList transcript={transcript} hasNewer />
+        </MantineProvider>
+      )
+      const scroller = mounted.getByTestId('virtuoso')
+      Object.defineProperties(scroller, {
+        scrollTop: { configurable: true, writable: true, value: 6500 },
+        scrollHeight: { configurable: true, value: 7532 },
+        clientHeight: { configurable: true, value: 532 },
+      })
+      fireEvent.scroll(scroller)
+      scroller.scrollTop = 7000
+      fireEvent.scroll(scroller)
+      requestFrame.mockClear()
+      act(() => {
+        virtuosoPositioning.at(-1)?.totalListHeightChanged?.(7532)
+        virtuosoPositioning.at(-1)?.totalListHeightChanged?.(15000)
+      })
+      expect(requestFrame).not.toHaveBeenCalled()
+      expect(virtuosoScrollToMock).not.toHaveBeenCalled()
+    } finally {
+      requestFrame.mockRestore()
+    }
+  })
+
   beforeEach(() => {
     settingsState.hideSystemPromptMessage = false
     isSmallScreenMock.value = false
@@ -277,6 +911,9 @@ describe('MessageList new message layout', () => {
     promptCacheDeleteResolversLog.length = 0
     actionMenuItemsLog.length = 0
     virtuosoScrollToIndexMock.mockClear()
+    virtuosoScrollToMock.mockClear()
+    virtuosoAtBottom.value = true
+    virtuosoGetStateMock.mockClear()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -295,6 +932,7 @@ describe('MessageList new message layout', () => {
       configurable: true,
       value: 600,
     })
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 400 })
 
     class ResizeObserverMock {
       observe() {}
@@ -331,6 +969,137 @@ describe('MessageList new message layout', () => {
 
     expect(getByTestId('virtuoso').style.scrollbarGutter).toBe('stable')
     expect(container.querySelector<HTMLElement>('[data-index="0"] > div')?.style.paddingInlineEnd).toBe('')
+    const desktopViewport = container.querySelector<HTMLElement>('[data-session-view]')
+    expect(desktopViewport?.classList.contains('h-full')).toBe(true)
+    expect(desktopViewport?.parentElement?.classList.contains('flex-col')).toBe(false)
+  })
+
+  describe('readable mobile navigation', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      isSmallScreenMock.value = true
+      virtuosoAtBottom.value = false
+    })
+
+    afterEach(() => {
+      cleanup()
+      vi.useRealTimers()
+    })
+
+    function openNavigation(complete = true, instantTransitions = true) {
+      const session: Session = {
+        id: 'readable-navigation',
+        name: 'Chat',
+        messages: [0, 1, 2].map((index) => message(`question-${index}`, MessageRoleEnum.User, 'Question')),
+      }
+      const view = () => (
+        <MantineProvider env={instantTransitions ? 'test' : undefined}>
+          {complete ? (
+            <MessageList currentSession={{ ...session }} />
+          ) : (
+            <MessageList transcript={{ header: { id: session.id, name: session.name }, messages: session.messages }} />
+          )}
+        </MantineProvider>
+      )
+      const mounted = render(view())
+      const viewport = mounted.container.querySelector<HTMLElement>('[data-session-view]')
+      if (!viewport) throw new Error('Missing body viewport')
+      const scroller = mounted.getByTestId('virtuoso')
+      Object.defineProperties(scroller, {
+        scrollTop: { configurable: true, writable: true, value: 8000 },
+        scrollHeight: { configurable: true, value: 8500 },
+        clientHeight: { configurable: true, writable: true, value: 500 },
+      })
+      const scroll = (top: number) => {
+        scroller.scrollTop = top
+        fireEvent.scroll(scroller)
+        act(() => vi.advanceTimersByTime(256))
+      }
+      scroll(8000)
+      scroll(7900)
+      return { ...mounted, scroller, scroll, viewport, view }
+    }
+
+    test.each([true, false])('keeps navigation outside the stable body scrollport (complete: %s)', (complete) => {
+      const mounted = openNavigation(complete)
+      const { viewport } = mounted
+      const row = mounted.getByRole('button', { name: 'Return to the top' }).parentElement
+      if (!row) throw new Error('Missing navigation row')
+      expect(viewport.contains(row)).toBe(false)
+      expect(row.nextElementSibling).toBe(viewport)
+      expect(row.classList.contains('absolute')).toBe(false)
+      expect(row.classList.contains('shrink-0')).toBe(true)
+      expect(viewport.parentElement?.classList.contains('flex-col')).toBe(true)
+      expect(viewport.classList.contains('min-h-0')).toBe(true)
+      expect(viewport.classList.contains('flex-1')).toBe(true)
+      virtuosoScrollToMock.mockClear()
+      virtuosoScrollToIndexMock.mockClear()
+      act(() => vi.advanceTimersByTime(4000))
+      expect(mounted.queryByRole('button', { name: 'Return to the top' })).toBeNull()
+      expect(mounted.getByTestId('virtuoso')).toBe(mounted.scroller)
+      expect(mounted.container.querySelector('[data-session-view]')).toBe(viewport)
+      expect(mounted.scroller.scrollTop).toBe(7900)
+      expect(virtuosoScrollToMock).not.toHaveBeenCalled()
+      expect(virtuosoScrollToIndexMock).not.toHaveBeenCalled()
+    })
+
+    test('aligns previous-message navigation to the body viewport', () => {
+      const mounted = openNavigation()
+      const { viewport } = mounted
+      vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 120, 400, 480))
+      const items = mounted.container.querySelectorAll<HTMLElement>('[data-index]')
+      vi.spyOn(items[0], 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 60, 400, 50))
+      vi.spyOn(items[1], 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 110, 400, 100))
+      fireEvent.click(mounted.getByRole('button', { name: 'Back to previous message' }))
+      expect(virtuosoScrollToIndexMock).toHaveBeenLastCalledWith({ index: 1, align: 'start', behavior: 'smooth' })
+    })
+
+    test('ignores a bottom clamp when the scrollport grows, while retaining real upward scroll cancellation', () => {
+      const mounted = openNavigation()
+      act(() => navigateToIndex('LAST', 'end', 'auto'))
+      mounted.scroll(8000)
+      expect(mounted.queryByRole('button', { name: 'Return to the top' })).toBeNull()
+      Object.defineProperty(mounted.scroller, 'clientHeight', { configurable: true, value: 530 })
+      virtuosoScrollToMock.mockClear()
+      mounted.scroll(7970)
+      expect(mounted.queryByRole('button', { name: 'Return to the top' })).toBeNull()
+      expect(virtuosoScrollToMock).not.toHaveBeenCalled()
+      mounted.scroll(7960)
+      expect(mounted.getByRole('button', { name: 'Return to the top' })).toBeDefined()
+      expect(virtuosoScrollToMock).toHaveBeenCalledWith({ top: 7960, behavior: 'auto' })
+    })
+
+    test('saves the reading anchor and warm layout against the body scrollport', () => {
+      const first = measuredWindow('mobile-toolbar-anchor', 2012)
+      act(() => vi.advanceTimersByTime(256))
+      expect(first.mounted.getByRole('button', { name: 'Return to the top' })).toBeDefined()
+      Object.defineProperty(first.viewport, 'clientHeight', { configurable: true, value: 570 })
+      vi.spyOn(first.viewport, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 30, 400, 570))
+      for (const item of Array.from(first.viewport.querySelectorAll<HTMLElement>('[data-index]'))) {
+        vi.spyOn(item, 'getBoundingClientRect').mockImplementation(
+          () => new DOMRect(0, 30 + Number(item.dataset.index) * 100 - first.scroller.scrollTop, 400, 100)
+        )
+      }
+      first.mounted.unmount()
+      const saved = getWindowScrollPosition('mobile-toolbar-anchor')
+      expect(saved?.anchor).toEqual({ messageId: 'warm-20', offset: 12 })
+      expect(saved && JSON.parse(saved.layout).slice(0, 2)).toEqual([400, 570])
+      render(first.view())
+      expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toEqual({ index: 20, align: 'start' })
+    })
+
+    test('removes an animated navigation row immediately when the viewport becomes desktop-sized', () => {
+      const mounted = openNavigation(true, false)
+      for (let frame = 0; frame < 3; frame++) act(() => vi.advanceTimersByTime(150))
+      const row = mounted.getByRole('button', { name: 'Return to the top' }).parentElement
+      expect(row?.style.transitionProperty).toContain('opacity')
+      isSmallScreenMock.value = false
+      mounted.rerender(mounted.view())
+      expect(mounted.queryByRole('button', { name: 'Return to the top' })).toBeNull()
+      expect(mounted.viewport.classList.contains('h-full')).toBe(true)
+      expect(mounted.viewport.parentElement?.classList.contains('flex-col')).toBe(false)
+      expect(mounted.getByTestId('virtuoso')).toBe(mounted.scroller)
+    })
   })
 
   test('renders legacy picture session messages as read-only', () => {

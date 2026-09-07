@@ -1,4 +1,6 @@
 import type { MessageRow, MessageRowStatus, SessionRecordV2, ThreadRow } from '../session/session-tree/types'
+import type { SessionContextRequest, SessionContextRows } from './session-context-source'
+import type { SessionTextTokenRead, SessionTextTokenStorePort } from './session-text-tokens'
 
 export interface SessionRows {
   sessionId: string
@@ -21,6 +23,50 @@ export interface SessionRowCommit {
 /** One complete, internally consistent row-store snapshot. */
 export interface SessionRowSnapshot extends SessionRowCommit {
   rows: SessionRows
+  textTokens?: SessionTextTokenRead
+}
+
+/** Opaque continuation of one thread's active path at one committed revision. */
+interface SessionMessageWindowIdentity {
+  sessionId: string
+  threadId: string
+  revision: number
+}
+
+export type SessionMessageWindowCursor = SessionMessageWindowIdentity &
+  ({ beforeMessageId: string; afterMessageId?: never } | { afterMessageId: string; beforeMessageId?: never })
+
+export interface SessionMessageWindowRequest {
+  sessionId: string
+  /** Defaults to the active thread for a first page, or the cursor's thread. */
+  threadId?: string
+  /** Number of messages, from 1 to 200. Payload bytes may vary per message. */
+  limit: number
+  /** First window origin; mutually exclusive with a continuation cursor. Defaults to tail. */
+  edge?: 'head' | 'tail'
+  cursor?: SessionMessageWindowCursor
+}
+
+/** Read-only partial view; never pass a window to a complete-session write API. */
+export interface SessionMessageWindow extends SessionRowCommit {
+  textTokens?: SessionTextTokenRead
+  thread: ThreadRow
+  /** Active-path messages in chronological order, including summary rows. */
+  messages: MessageRow[]
+  older: SessionMessageWindowCursor | null
+  newer: SessionMessageWindowCursor | null
+}
+
+export interface SessionMessagesRequest {
+  sessionId: string
+  messageIds: string[]
+  expectedRevision?: number
+}
+
+/** A read-only selection from one committed revision; missing ids are omitted. */
+export interface SessionMessagesSnapshot extends SessionRowCommit {
+  textTokens?: SessionTextTokenRead
+  messages: MessageRow[]
 }
 
 export interface GeneratingMessageRef {
@@ -32,13 +78,15 @@ export interface GeneratingMessageRef {
 export type SessionRowStoreOperation =
   | 'initialize'
   | 'read-rows'
+  | 'read-message-window'
+  | 'read-messages'
+  | 'read-context'
   | 'write-rows'
   | 'apply-diff'
   | 'delete-rows'
   | 'has-rows'
   | 'get-revision'
   | 'list-session-ids'
-  | 'upsert-message'
   | 'find-messages-by-status'
 
 export class SessionRowStoreError extends Error {
@@ -70,11 +118,16 @@ export class SessionRowConflictError extends Error {
  * either the complete old snapshot or the complete new snapshot; drivers may
  * use invisible staging transactions before one atomic publish transaction.
  */
-export interface SessionRowStorePort {
+export interface SessionRowStorePort extends Partial<SessionTextTokenStorePort> {
   initialize(): Promise<void>
   /** Rows, record and revision from one committed snapshot; null when the session has no visible rows. */
   readSnapshot(sessionId: string): Promise<SessionRowSnapshot | null>
-  /** Replaces the session's rows and commit metadata atomically. */
+  /** Reads only the selected path window. Stale cursors throw SessionRowConflictError; restart at the tail. */
+  readMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null>
+  /** Returns rows in deduplicated request order, across active, archived and fork paths. */
+  readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null>
+  readContext(request: SessionContextRequest): Promise<SessionContextRows | null>
+  /** Replaces rows and commit metadata atomically. Callers keep the snapshot immutable until the write settles. */
   writeRows(snapshot: SessionRowSnapshot, expectedRevision?: number | null): Promise<void>
   /** Applies a diff and publishes its commit metadata atomically. */
   applyDiff(diff: SessionRowsDiff, commit: SessionRowCommit, expectedRevision?: number): Promise<void>
@@ -85,8 +138,6 @@ export interface SessionRowStorePort {
   getRevision(sessionId: string): Promise<number | null>
   /** Ids of sessions holding at least one thread row or message row. */
   listSessionIds(): Promise<string[]>
-  /** Single-row fast path for streaming checkpoints; inserts when absent. */
-  upsertMessage(row: MessageRow): Promise<void>
   /** Startup repair scan; returns references only, without loading payloads. */
   findMessagesByStatus(status: MessageRowStatus): Promise<GeneratingMessageRef[]>
 }

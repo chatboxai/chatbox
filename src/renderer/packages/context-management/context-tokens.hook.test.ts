@@ -75,6 +75,22 @@ describe('context-tokens hook tests', () => {
     testQueryClient.clear()
   })
 
+  it('does not publish a partial or zero context while complete session data is pending', () => {
+    renderHook(
+      () =>
+        useContextTokens({
+          sessionId: 'windowed-session',
+          source: undefined,
+          settings: {},
+          model: undefined,
+          modelSupportToolUseForFile: false,
+        }),
+      { wrapper: createWrapper() }
+    )
+    expect(queryClient.setQueryData).not.toHaveBeenCalled()
+    expect(vi.mocked(useTokenEstimation).mock.calls.at(-1)?.[0].contextMessages).toEqual([])
+  })
+
   it('cache key consistency - InputBox and Compaction generate same key', () => {
     const session = createTestSession()
     const params = {
@@ -98,7 +114,7 @@ describe('context-tokens hook tests', () => {
       () =>
         useContextTokens({
           sessionId: 'test-session',
-          session,
+          source: { candidateMessages: session.messages, compactionPoints: session.compactionPoints },
           settings: {},
           model: undefined,
           modelSupportToolUseForFile: false,
@@ -113,7 +129,7 @@ describe('context-tokens hook tests', () => {
     expect(queryClient.setQueryData).toHaveBeenCalled()
   })
 
-  it('uses existing cache during recalculation (isCalculating=true)', () => {
+  it('publishes live accumulation instead of a previous completed cache during recalculation', () => {
     const session = createTestSession()
     getContextTokensCacheKey({
       sessionId: 'test-session',
@@ -152,7 +168,7 @@ describe('context-tokens hook tests', () => {
       () =>
         useContextTokens({
           sessionId: 'test-session',
-          session,
+          source: { candidateMessages: session.messages, compactionPoints: session.compactionPoints },
           settings: {},
           model: undefined,
           modelSupportToolUseForFile: true,
@@ -160,9 +176,24 @@ describe('context-tokens hook tests', () => {
       { wrapper: createWrapper() }
     )
 
-    expect(result.current.contextTokens).toBe(50000)
+    expect(result.current.contextTokens).toBe(100)
+    expect(result.current.totalTokens).toBe(100)
     expect(result.current.isCalculating).toBe(true)
     expect(result.current.isContextCalculating).toBe(true)
+  })
+
+  it('never caches a loaded-message preview as a complete context', () => {
+    const session = createTestSession()
+    renderHook(() =>
+      useContextTokens({
+        sessionId: session.id,
+        source: { candidateMessages: session.messages, isPartial: true },
+        settings: {},
+        modelSupportToolUseForFile: false,
+      })
+    )
+    expect(queryClient.setQueryData).not.toHaveBeenCalled()
+    expect(vi.mocked(useTokenEstimation).mock.calls.at(-1)?.[0].contextSourcePending).toBe(true)
   })
 
   it('completes the context cache while only the draft is calculating', () => {
@@ -195,7 +226,7 @@ describe('context-tokens hook tests', () => {
       () =>
         useContextTokens({
           sessionId: 'test-session',
-          session,
+          source: { candidateMessages: session.messages, compactionPoints: session.compactionPoints },
           settings: {},
           model: undefined,
           modelSupportToolUseForFile: false,
@@ -233,7 +264,7 @@ describe('context-tokens hook tests', () => {
       () =>
         useContextTokens({
           sessionId: 'new',
-          session,
+          source: { candidateMessages: session.messages, compactionPoints: session.compactionPoints },
           settings: {},
           model: undefined,
           modelSupportToolUseForFile: false,
@@ -249,7 +280,7 @@ describe('context-tokens hook tests', () => {
       () =>
         useContextTokens({
           sessionId: 'test-session',
-          session: null,
+          source: null,
           settings: {},
           model: undefined,
           modelSupportToolUseForFile: false,

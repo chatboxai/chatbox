@@ -4,6 +4,39 @@ import type { ComputationTask, TaskResult } from '../types'
 
 type TaskInput = Omit<ComputationTask, 'id' | 'createdAt'>
 
+describe('retryable task failures', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('retries transient failures at most three times and stops after success', async () => {
+    vi.useFakeTimers()
+    const queue = new ComputationQueue()
+    const executor = vi.fn().mockResolvedValue({ success: false, retryable: true, error: 'attachment_content_missing' })
+    queue.setExecutor(executor)
+    queue.enqueue(createAttachmentTask())
+    await vi.runAllTimersAsync()
+    expect(executor).toHaveBeenCalledTimes(3)
+    expect(queue.getStatus().running).toBe(0)
+    executor.mockClear().mockResolvedValueOnce({ success: false, retryable: true }).mockResolvedValue({ success: true })
+    queue.enqueue(createAttachmentTask({ messageId: 'next' }))
+    await vi.runAllTimersAsync()
+    expect(executor).toHaveBeenCalledTimes(2)
+    queue._reset()
+  })
+
+  it('does not retry after session cancellation during backoff', async () => {
+    vi.useFakeTimers()
+    const queue = new ComputationQueue()
+    const executor = vi.fn().mockResolvedValue({ success: false, retryable: true })
+    queue.setExecutor(executor)
+    queue.enqueue(createAttachmentTask())
+    await vi.advanceTimersByTimeAsync(0)
+    queue.cancelBySession('session-1')
+    await vi.runAllTimersAsync()
+    expect(executor).toHaveBeenCalledTimes(1)
+    queue._reset()
+  })
+})
+
 function createMessageTextTask(overrides: Partial<TaskInput> = {}): TaskInput {
   return {
     type: 'message-text',
@@ -199,6 +232,42 @@ describe('ComputationQueue', () => {
   })
 
   describe('enqueueBatch', () => {
+    it('preserves FIFO across same-time single and batch arrivals', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(1000)
+      const shift = vi.spyOn(queue._getState().pending, 'shift')
+      const tasks = Array.from({ length: 8 }, (_, index) => createMessageTextTask({ messageId: `fifo-${index}` }))
+      const executed: string[] = []
+      const snapshots: string[][] = []
+      try {
+        queue.enqueueBatch(tasks.slice(0, 2))
+        queue.enqueue(tasks[2])
+        queue.enqueueBatch([tasks[1], tasks[3], tasks[4]])
+        queue.enqueueBatch(tasks.slice(0, 5))
+        expect(queue.getPendingTasks().map((task) => task.messageId)).toEqual(
+          tasks.slice(0, 5).map((task) => task.messageId)
+        )
+        queue.enqueue(tasks[5])
+        queue.setExecutor((task) => {
+          executed.push(task.messageId)
+          if (task.messageId === tasks[0].messageId) {
+            queue.enqueue(tasks[6])
+            queue.enqueueBatch([tasks[7], tasks[2]])
+            snapshots.push(queue.getPendingTasks().map((pending) => pending.messageId))
+          }
+          return Promise.resolve({ success: true })
+        })
+        await vi.runAllTimersAsync()
+        expect(executed).toEqual(tasks.map((task) => task.messageId))
+        expect(snapshots).toEqual([tasks.slice(1).map((task) => task.messageId)])
+        expect(queue.getStatus()).toEqual({ pending: 0, running: 0 })
+        expect(shift).not.toHaveBeenCalled()
+      } finally {
+        shift.mockRestore()
+        vi.useRealTimers()
+      }
+    })
+
     it('adds multiple tasks at once', () => {
       queue.enqueueBatch([
         createMessageTextTask({ messageId: 'msg-1' }),

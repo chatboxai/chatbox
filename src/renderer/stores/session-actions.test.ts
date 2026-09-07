@@ -185,7 +185,7 @@ vi.mock('@/stores/uiStore', () => ({
   uiStore: {
     getState: () => ({
       widthFull: false,
-      messageScrolling: null,
+      transcriptNavigation: null,
       sessionAgentModeMap: sessionAgentModeMapMock,
       setSessionAgentMode: setSessionAgentModeMock,
       lockSessionAgentMode: lockSessionAgentModeMock,

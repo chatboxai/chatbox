@@ -7,12 +7,22 @@ import type {
   Toast,
 } from '@shared/types'
 import type { RefObject } from 'react'
-import type { VirtuosoHandle } from 'react-virtuoso'
 import { v4 as uuidv4 } from 'uuid'
 import { createStore, useStore } from 'zustand'
 import { combine, persist } from 'zustand/middleware'
 import platform from '@/platform'
 import { safeStorage } from './safeStorage'
+
+export interface TranscriptNavigation {
+  readonly owner: symbol
+  readonly sessionId: string
+  readonly view: 'window' | 'complete'
+  scrollToIndex(location: {
+    index: number | 'LAST'
+    align: 'start' | 'center' | 'end'
+    behavior: 'auto' | 'smooth'
+  }): boolean
+}
 
 const isSmallScreenViewport = () => {
   return (
@@ -44,7 +54,7 @@ export const uiStore = createStore(
         quote: '',
         realTheme: localStorage.getItem('initial-theme') === 'dark' ? 'dark' : ('light' as 'light' | 'dark'),
         messageListElement: null as RefObject<HTMLDivElement> | null,
-        messageScrolling: null as RefObject<VirtuosoHandle> | null,
+        transcriptNavigation: null as TranscriptNavigation | null,
         messageScrollingAtTop: false,
         messageScrollingAtBottom: false,
         showSidebar: platform.type !== 'mobile' && !isSmallScreenViewport(),
@@ -138,8 +148,8 @@ export const uiStore = createStore(
           set({ messageListElement })
         },
 
-        setMessageScrolling: (messageScrolling: RefObject<VirtuosoHandle> | null) => {
-          set({ messageScrolling })
+        setTranscriptNavigation: (transcriptNavigation: TranscriptNavigation | null) => {
+          set({ transcriptNavigation })
         },
 
         setMessageScrollingAtTop: (messageScrollingAtTop: boolean) => {

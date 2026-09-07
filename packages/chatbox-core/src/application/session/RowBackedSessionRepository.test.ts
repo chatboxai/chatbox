@@ -229,6 +229,38 @@ describe('RowBackedSessionRepository', () => {
     await expect(harness.rows.hasRows(session.id)).resolves.toBe(false)
   })
 
+  test('reads a bounded window while full context is hydrating, without releasing queued writes', async () => {
+    const { repository, rows } = await createHarness()
+    const session = createPlainSession()
+    await repository.setSession(session)
+    const readContext = rows.readContext.bind(rows)
+    let release: (() => void) | undefined
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const started = vi.fn()
+    vi.spyOn(rows, 'readContext').mockImplementation(async (request) => {
+      started()
+      await barrier
+      return readContext(request)
+    })
+    const context = repository.getSessionContextSource({ sessionId: session.id })
+    await vi.waitFor(() => expect(started).toHaveBeenCalled())
+    let written = false
+    const write = repository.setSession({ ...session, name: 'Updated' }).then(() => {
+      written = true
+    })
+    try {
+      const head = await repository.readSessionMessageWindow({ sessionId: session.id, edge: 'head', limit: 1 })
+      expect(head?.messages.map((row) => row.messageId)).toEqual([session.messages[0].id])
+      expect(written).toBe(false)
+    } finally {
+      release?.()
+      await context
+      await write
+    }
+    expect(written).toBe(true)
+  })
   describe('SessionRepositoryPort contract', () => {
     const createRepository = (): SessionRepositoryPort => {
       const meta = new InMemorySessionRepository().meta
@@ -262,6 +294,45 @@ describe('RowBackedSessionRepository', () => {
 
     beforeEach(async () => {
       harness = await createHarness()
+    })
+
+    test('reuses a decoded row snapshot only while its persisted revision is unchanged', async () => {
+      const session = createRichSession()
+      await harness.repository.setSession(session)
+      const readSnapshot = vi.spyOn(harness.rows, 'readSnapshot')
+      const getRevision = vi.spyOn(harness.rows, 'getRevision')
+
+      const first = await harness.repository.getSession(session.id)
+      expect(first).toEqual(normalized(session))
+      expect(await harness.repository.getSession(session.id)).toBe(first)
+      expect(readSnapshot).toHaveBeenCalledTimes(1)
+      expect(getRevision).toHaveBeenCalledTimes(2)
+
+      const writer = new RowBackedSessionRepository({ records: harness.records, rows: harness.rows })
+      const current = await writer.getSession(session.id)
+      await writer.setSession({ ...current!, name: 'Changed elsewhere' }, { baseSession: current! })
+      readSnapshot.mockClear()
+
+      const refreshed = await harness.repository.getSession(session.id)
+      expect(refreshed?.name).toBe('Changed elsewhere')
+      expect(refreshed).not.toBe(first)
+      expect(readSnapshot).toHaveBeenCalledTimes(1)
+      expect(await harness.repository.getSession(session.id)).toBe(refreshed)
+      expect(readSnapshot).toHaveBeenCalledTimes(1)
+
+      await harness.records.removeRecord(session.id)
+      expect(await harness.repository.getSession(session.id)).toBeNull()
+    })
+
+    test('keeps normalized reads after a representation-equivalent write', async () => {
+      const session = createPlainSession()
+      await harness.repository.setSession(session)
+      const loaded = await harness.repository.getSession(session.id)
+      const raw = { ...session, threads: [], messageForksHash: {} }
+      await harness.repository.setSession(raw, { baseSession: loaded! })
+
+      expect(await harness.repository.getSession(session.id)).toEqual(normalized(session))
+      expect((await harness.repository.getSession(session.id))?.threads).toBeUndefined()
     })
 
     test('returns a V1 record without waiting for row promotion', async () => {
@@ -401,7 +472,15 @@ describe('RowBackedSessionRepository', () => {
     test.each(['legacy-shape', 'row-write-failure', 'marker-write-failure'] as const)(
       'can delete immediately after an accepted %s V1 write',
       async (fallback) => {
+        const acceptTextTokens =
+          vi.fn<NonNullable<import('../../ports').SessionRowStorePort['acceptTextTokenResults']>>()
+        Object.assign(harness.rows, { acceptTextTokenResults: acceptTextTokens })
         const original = createPlainSession()
+        original.messages[0] = {
+          ...original.messages[0],
+          tokenCountMap: { default: 3 },
+          tokenCalculatedAt: { default: 1 },
+        }
         if (fallback === 'legacy-shape') original.messages.push({ ...original.messages[0] })
         await harness.records.setRecord(original)
         const loaded = await harness.repository.getSession(original.id)
@@ -421,6 +500,7 @@ describe('RowBackedSessionRepository', () => {
         await expect(harness.repository.deleteSession(original.id)).resolves.toBeUndefined()
         await expect(harness.records.getRecord(original.id)).resolves.toBeNull()
         await expect(harness.rows.hasRows(original.id)).resolves.toBe(false)
+        expect(acceptTextTokens).not.toHaveBeenCalled()
       }
     )
 
@@ -584,7 +664,6 @@ describe('RowBackedSessionRepository', () => {
       const applyDiff = vi.spyOn(harness.rows, 'applyDiff')
       const writeRows = vi.spyOn(harness.rows, 'writeRows')
       const setRecord = vi.spyOn(harness.records, 'setRecord')
-      const upsertMessage = vi.spyOn(harness.rows, 'upsertMessage')
       encoding.calls = 0
 
       const settled = { ...generating, generating: false }
@@ -597,7 +676,6 @@ describe('RowBackedSessionRepository', () => {
       expect(applyDiff).toHaveBeenCalledOnce()
       expect(writeRows).not.toHaveBeenCalled()
       expect(setRecord).not.toHaveBeenCalled()
-      expect(upsertMessage).not.toHaveBeenCalled()
       expect(applyDiff.mock.calls[0][0].threads.upsert).toEqual([])
       expect(applyDiff.mock.calls[0][0].messages.upsert.map((entry) => entry.messageId)).toEqual(['assistant-1'])
       const row = storedRows(harness, session.id).messages.find((candidate) => candidate.messageId === 'assistant-1')
@@ -618,7 +696,6 @@ describe('RowBackedSessionRepository', () => {
         throw new Error('session was not loaded')
       }
       const edited = { ...loaded.messages[1], contentParts: [{ type: 'text' as const, text: 'edited' }] }
-      const upsertMessage = vi.spyOn(harness.rows, 'upsertMessage')
       const applyDiff = vi.spyOn(harness.rows, 'applyDiff')
       encoding.calls = 0
 
@@ -628,7 +705,6 @@ describe('RowBackedSessionRepository', () => {
       )
 
       expect(encoding.calls).toBe(1)
-      expect(upsertMessage).not.toHaveBeenCalled()
       expect(applyDiff).toHaveBeenCalledOnce()
       await expect(harness.repository.getSession(session.id)).resolves.toEqual({
         ...normalized(session),
@@ -648,7 +724,6 @@ describe('RowBackedSessionRepository', () => {
         throw new Error('loaded session is missing its fork')
       }
       const edited = { ...fork.lists[1].messages[0], contentParts: [{ type: 'text' as const, text: 'edited' }] }
-      const upsertMessage = vi.spyOn(harness.rows, 'upsertMessage')
       encoding.calls = 0
 
       await harness.repository.setSession(
@@ -663,7 +738,6 @@ describe('RowBackedSessionRepository', () => {
       )
 
       expect(encoding.calls).toBe(1)
-      expect(upsertMessage).not.toHaveBeenCalled()
       expect(
         storedRows(harness, session.id).messages.find((candidate) => candidate.messageId === 'fork-answer')?.message
       ).toEqual(edited)

@@ -1,5 +1,9 @@
 import {
   type GeneratingMessageRef,
+  type SessionMessageWindow,
+  type SessionMessageWindowRequest,
+  type SessionMessagesRequest,
+  type SessionMessagesSnapshot,
   SessionRowConflictError,
   type SessionRowCommit,
   type SessionRowSnapshot,
@@ -9,6 +13,20 @@ import {
   type SessionRowsDiff,
 } from '../ports/session-row-store'
 import type { MessageRow, MessageRowStatus, ThreadRow } from '../session/session-tree/types'
+import { assertSessionReadRevision, validateSessionMessagesRequest } from '../persistence/session-message-selection'
+import type { SessionContextRequest, SessionContextRows } from '../ports/session-context-source'
+import {
+  finishSessionContextRead,
+  planSessionContextRead,
+  SessionContextPathTraversal,
+  validateSessionContextRequest,
+  type SessionContextReadPlan,
+} from '../persistence/session-context-read'
+import {
+  assertMessageWindowRevision,
+  SessionMessageWindowTraversal,
+  validateMessageWindowRequest,
+} from '../persistence/session-message-window'
 
 interface SessionRowState {
   threads: Map<string, ThreadRow>
@@ -113,6 +131,85 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
     })
   }
 
+  async readMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {
+    try {
+      validateMessageWindowRequest(request)
+      const state = this.sessions.get(request.sessionId)
+      assertMessageWindowRevision(request, this.revisions.get(request.sessionId) ?? null)
+      if (!state) return null
+      const thread = state.threads.get(request.threadId ?? request.cursor?.threadId ?? state.record.activeThreadId)
+      if (!thread) throw new Error('Message window thread is missing')
+      const traversal = new SessionMessageWindowTraversal(
+        request,
+        { record: state.record, revision: state.revision },
+        thread
+      )
+      const messages: MessageRow[] = []
+      while (traversal.nextMessageId !== null && traversal.remaining > 0) {
+        const row = state.messages.get(traversal.nextMessageId)
+        if (traversal.accept(row) && row) messages.push(clone(row))
+      }
+      return clone(traversal.finish(messages))
+    } catch (error) {
+      if (error instanceof SessionRowConflictError) throw error
+      throw new SessionRowStoreError('read-message-window', error, request.sessionId)
+    }
+  }
+
+  async readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null> {
+    try {
+      validateSessionMessagesRequest(request)
+      const state = this.sessions.get(request.sessionId)
+      assertSessionReadRevision(request, this.revisions.get(request.sessionId) ?? null)
+      if (!state) return null
+      return clone({
+        record: state.record,
+        revision: state.revision,
+        messages: [...new Set(request.messageIds)].flatMap((id) => {
+          const row = state.messages.get(id)
+          return row ? [row] : []
+        }),
+      })
+    } catch (error) {
+      if (error instanceof SessionRowConflictError) throw error
+      throw new SessionRowStoreError('read-messages', error, request.sessionId)
+    }
+  }
+
+  async readContext(request: SessionContextRequest): Promise<SessionContextRows | null> {
+    try {
+      validateSessionContextRequest(request)
+      const state = this.sessions.get(request.sessionId)
+      assertSessionReadRevision(request, this.revisions.get(request.sessionId) ?? null)
+      if (!state) return null
+      const commit = { record: state.record, revision: state.revision }
+      const thread = state.threads.get(request.threadId ?? state.record.activeThreadId)
+      const targetId = request.targetMessageId ?? thread?.activeLeafMessageId
+      const target = targetId ? state.messages.get(targetId) : undefined
+      const plan = planSessionContextRead(request, commit, [...state.threads.values()], target)
+      const readPlan = (current: SessionContextReadPlan) => {
+        const traversal = new SessionContextPathTraversal(request.sessionId, current)
+        const path: MessageRow[] = []
+        while (traversal.nextMessageId !== null) {
+          const row = state.messages.get(traversal.nextMessageId)
+          traversal.accept(row)
+          if (row) path.push(row)
+        }
+        const extra = current.checkpoint
+          ? [current.checkpoint.point.summaryMessageId, current.checkpoint.systemMessageId].flatMap((id) => {
+              const row = id ? state.messages.get(id) : undefined
+              return row ? [row] : []
+            })
+          : []
+        return finishSessionContextRead(request, commit, current, path.reverse(), extra)
+      }
+      return clone(readPlan(plan) ?? readPlan({ ...plan, checkpoint: undefined }))
+    } catch (error) {
+      if (error instanceof SessionRowConflictError) throw error
+      throw new SessionRowStoreError('read-context', error, request.sessionId)
+    }
+  }
+
   writeRows(snapshot: SessionRowSnapshot, expectedRevision?: number | null): Promise<void> {
     const { rows, record, revision } = snapshot
     if (!rows.sessionId) {
@@ -210,29 +307,6 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
 
   listSessionIds(): Promise<string[]> {
     return Promise.resolve([...this.sessions.keys()])
-  }
-
-  upsertMessage(row: MessageRow): Promise<void> {
-    try {
-      requireIdentity(row.sessionId, row.threadId, row.messageId)
-    } catch (error) {
-      return Promise.reject(new SessionRowStoreError('upsert-message', error, row.sessionId))
-    }
-    const current = this.sessions.get(row.sessionId)
-    if (!current) {
-      return Promise.reject(
-        new SessionRowStoreError('upsert-message', new Error('session has no committed row snapshot'), row.sessionId)
-      )
-    }
-    const next: SessionRowState = {
-      threads: new Map(current?.threads),
-      messages: new Map(current?.messages),
-      record: clone(current.record),
-      revision: current.revision,
-    }
-    next.messages.set(row.messageId, clone(row))
-    this.publish(row.sessionId, next)
-    return Promise.resolve()
   }
 
   findMessagesByStatus(status: MessageRowStatus): Promise<GeneratingMessageRef[]> {

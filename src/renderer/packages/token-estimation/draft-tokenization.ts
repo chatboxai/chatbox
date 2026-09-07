@@ -1,5 +1,8 @@
+import { getSessionMessageTokenizationText } from '@chatbox/core/application/session'
 import type { Message } from '@shared/types'
-import { getMessageText } from '@shared/utils/message'
+
+export { getTokenizationTextDigest } from '@chatbox/core/application/session'
+
 import { CJK_CHARACTER_PATTERN, estimateTokensForTokenizerType } from './tokenizer'
 import type { ExactDraftTokens, TokenizerType } from './types'
 
@@ -12,7 +15,7 @@ export const LONG_DRAFT_TOKENIZATION_THRESHOLD = 4096
  * their texts stay comparable byte for byte.
  */
 export function getDraftTokenizationText(message: Message): string {
-  return getMessageText(message, true, true)
+  return getSessionMessageTokenizationText(message)
 }
 
 /**
@@ -25,22 +28,6 @@ export function getDraftTokenizationText(message: Message): string {
 export function seedExactDraftTokens(message: Message, exact: ExactDraftTokens | null): Message {
   if (!exact || getDraftTokenizationText(message) !== exact.text) return message
   return { ...message, tokenCountMap: { ...message.tokenCountMap, [exact.tokenizerType]: exact.tokens } }
-}
-
-/**
- * Cheap content digest (length + FNV-1a over UTF-16 code units) of a
- * tokenization text projection. Token results computed asynchronously carry
- * it so a consumer can verify, at apply time, that the result still describes
- * the text the message holds now — an edit in between must invalidate the
- * result rather than attach counts of text the message no longer contains.
- */
-export function getTokenizationTextDigest(text: string): string {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < text.length; index++) {
-    hash ^= text.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return `${text.length}:${(hash >>> 0).toString(36)}`
 }
 
 const QUICK_ESTIMATE_SAMPLE_SIZE = 512

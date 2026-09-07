@@ -75,7 +75,7 @@ describe('setSessionAgentMode', () => {
 
     await setSessionAgentMode('session-1', 'on')
 
-    expect(updateSessionCacheSyncMock).toHaveBeenCalledTimes(1)
+    expect(updateSessionCacheSyncMock).not.toHaveBeenCalled()
     expect(updateSessionMock).toHaveBeenCalledTimes(1)
     expect(sessionsById.get('session-1')?.settings?.agentMode).toEqual({
       value: 'on',

@@ -150,7 +150,6 @@ export function persistSessionPromptContextSnapshotGuarded(
       settings: { ...(session.settings || {}), sessionPromptContextSnapshot: snapshot },
     } as T
   }
-  rendererApplication.sessionQueryBridge.updateSessionCache(sessionId, (current) => applySnapshot(current))
   void rendererApplication.sessions.updateSession(sessionId, (current) => applySnapshot(current))
 }
 
@@ -189,12 +188,6 @@ export async function setSessionAgentMode(
     return next
   }
 
-  rendererApplication.sessionQueryBridge.updateSessionCache(sessionId, (currentSession) => {
-    const resolved = resolveSetAgentMode(sessionId, currentSession, value)
-    next = resolved.entry
-    return resolved.session
-  })
-
   await rendererApplication.sessions.updateSession(sessionId, (currentSession) => {
     const resolved = resolveSetAgentMode(sessionId, currentSession, value)
     next = resolved.entry
@@ -218,9 +211,6 @@ export async function lockSessionAgentMode(
   }
 
   const next: AgentModeEntry = { value: 'on', locked: true, lockReason: reason }
-  rendererApplication.sessionQueryBridge.updateSessionCache(sessionId, (currentSession) =>
-    applyAgentMode(currentSession, next)
-  )
   await rendererApplication.sessions.updateSession(sessionId, (currentSession) => applyAgentMode(currentSession, next))
   uiStore.getState().clearSessionAgentMode(sessionId)
   return next

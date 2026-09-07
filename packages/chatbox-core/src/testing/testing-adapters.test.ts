@@ -4,15 +4,21 @@ import type { Session, Settings } from '../types'
 import {
   InMemoryBlobStorage,
   InMemorySessionRepository,
+  InMemorySessionRowStore,
   InMemorySettingsRepository,
   InMemorySettingsStorage,
   MockModelFactory,
   runSessionRepositoryContract,
+  runSessionRowStoreContract,
 } from './index'
 
 describe('portable testing adapters', () => {
   test('provides a reusable SessionRepository contract suite', async () => {
     await runSessionRepositoryContract(() => new InMemorySessionRepository())
+  })
+
+  test('provides a reusable SessionRowStore contract suite', async () => {
+    await runSessionRowStoreContract(() => new InMemorySessionRowStore())
   })
 
   test('retain sessions, metadata, raw settings and blobs in memory', async () => {

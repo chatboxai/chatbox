@@ -65,6 +65,12 @@ export interface BackupExportOptions {
   exportedAt?: Date
   storage: BackupStorage
   metaStorage: BackupMetaStorage | Promise<BackupMetaStorage>
+  /**
+   * Reads one whole session. Hosts whose session records hold no messages must
+   * pass their repository here; without it a session is read straight from the
+   * key-value storage.
+   */
+  readSession?: (sessionId: string) => Promise<Session | null>
   application: { version: string | Promise<string>; platform: string | Promise<string> }
   signal?: AbortSignal
   onProgress?: (progress: BackupProgress) => void
@@ -286,7 +292,9 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           label: metaById.get(sessionId)?.name,
         })
         try {
-          const session = await options.storage.getItem<Session | null>(backupSessionStorageKey(sessionId), null)
+          const session = options.readSession
+            ? await options.readSession(sessionId)
+            : await options.storage.getItem<Session | null>(backupSessionStorageKey(sessionId), null)
           if (session === null && !metaById.has(sessionId)) continue
           if (!isBackupSession(session)) throw new Error('Session is missing or invalid')
           if (session.id !== sessionId) throw new Error('Session id does not match its storage key')

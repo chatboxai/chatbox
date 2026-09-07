@@ -19,7 +19,7 @@ import { migrateMessage } from '@shared/utils/message'
 import { BrowserAttachmentAdapter } from '@/adapters/BrowserAttachmentAdapter'
 import { CapacitorAttachmentAdapter } from '@/adapters/CapacitorAttachmentAdapter'
 import { DesktopAttachmentAdapter } from '@/adapters/DesktopAttachmentAdapter'
-import { rendererApplication } from '@/app/renderer-application'
+import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { PREVIEW_LINES } from '@/packages/context-management/attachment-payload'
 import * as localParser from '@/packages/local-parser'
@@ -1009,7 +1009,7 @@ export async function searchSessions(searchInput: string, sessionId?: string, on
   }
 
   if (sessionId) {
-    const session = await storage.getItem<Session | null>(StorageKeyGenerator.session(sessionId), null)
+    const session = await sessionRepository.getSession(sessionId)
     if (session) {
       const matchedMessages = _searchSessions(searchInput, session)
       matchedMessageTotal += matchedMessages.length
@@ -1025,9 +1025,7 @@ export async function searchSessions(searchInput: string, sessionId?: string, on
     const page = await metaStorage.getPage(cursor, SEARCH_PAGE_SIZE)
 
     // Load full sessions for this page in parallel to amortize I/O latency.
-    const sessions = await Promise.all(
-      page.items.map((meta) => storage.getItem<Session | null>(StorageKeyGenerator.session(meta.id), null))
-    )
+    const sessions = await Promise.all(page.items.map((meta) => sessionRepository.getSession(meta.id)))
 
     const batch: Session[] = []
     for (const session of sessions) {

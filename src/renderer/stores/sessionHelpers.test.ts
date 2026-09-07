@@ -19,6 +19,8 @@ const {
   mockGetItem,
   mockReportError,
   mockCleanupOrphanedBlobs,
+  mockGetSession,
+  sessionMetaStorage,
 } = vi.hoisted(() => {
   const blobs = new Map<string, string>()
   const license = { key: 'licensed-key' as string | undefined }
@@ -57,6 +59,8 @@ const {
     }),
     mockSetItem: vi.fn(async () => undefined),
     mockGetItem: vi.fn(async <T>(_key: string, initialValue: T) => initialValue),
+    mockGetSession: vi.fn(),
+    sessionMetaStorage: { getPage: vi.fn() },
     mockReportError: vi.fn(),
     mockCleanupOrphanedBlobs: vi.fn(async () => 0),
   }
@@ -156,10 +160,12 @@ vi.mock('@/i18n', () => ({
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessions: { initialize: vi.fn(), repository: { meta: {} } },
+    sessions: { initialize: vi.fn(), repository: { meta: sessionMetaStorage } },
   },
+  sessionRepository: { getSession: mockGetSession },
 }))
 
+import type { Session } from '@shared/types'
 import {
   isSessionAttachmentRagAuthError,
   isSessionAttachmentRagIndexingError,
@@ -167,6 +173,7 @@ import {
   SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING,
   SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH,
   SESSION_ATTACHMENT_RAG_REQUIRES_CHATBOX_AI_ERROR,
+  searchSessions,
 } from './sessionHelpers'
 
 function createFile(name: string, content = 'binary-content'): File {
@@ -883,5 +890,50 @@ describe('preprocessFile local parser fallback', () => {
     expect(result.lineCount).toBeUndefined()
     expect(mockSetItem).not.toHaveBeenCalledWith(`${storageKey}_parserType`, 'sandbox-raw')
     expect(blobStore.get(rawStorageKey)).toMatch(/^data:application\/pdf;base64,/)
+  })
+})
+
+describe('searchSessions', () => {
+  function storedSession(id: string, text: string): Session {
+    return {
+      id,
+      name: `Session ${id}`,
+      type: 'chat',
+      messages: [{ id: `${id}-message`, role: 'user', contentParts: [{ type: 'text', text }] }],
+    }
+  }
+
+  beforeEach(() => {
+    mockGetItem.mockClear()
+    mockGetSession.mockReset()
+    sessionMetaStorage.getPage.mockReset()
+  })
+
+  it('reads a single session through the repository rather than its storage key', async () => {
+    mockGetSession.mockResolvedValue(storedSession('one', 'needle in a haystack'))
+    const batches: Session[][] = []
+
+    await searchSessions('needle', 'one', (batch) => batches.push(batch))
+
+    expect(mockGetSession).toHaveBeenCalledWith('one')
+    expect(mockGetItem).not.toHaveBeenCalled()
+    expect(batches.flat().map(({ id }) => id)).toEqual(['one'])
+  })
+
+  it('loads every listed session of a page through the repository', async () => {
+    sessionMetaStorage.getPage.mockResolvedValue({
+      items: [{ id: 'one' }, { id: 'two' }],
+      nextCursor: null,
+      total: 2,
+    })
+    mockGetSession.mockImplementation(async (id: string) =>
+      id === 'one' ? storedSession('one', 'needle here') : storedSession('two', 'nothing')
+    )
+    const batches: Session[][] = []
+
+    await searchSessions('needle', undefined, (batch) => batches.push(batch))
+
+    expect(mockGetSession.mock.calls.map(([id]) => id)).toEqual(['one', 'two'])
+    expect(batches.flat().map(({ id }) => id)).toEqual(['one'])
   })
 })

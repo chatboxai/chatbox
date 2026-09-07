@@ -1,14 +1,19 @@
 import 'fake-indexeddb/auto'
-import { type SessionMetaRepositoryPort, SessionRepositoryError, type SessionRepositoryPort } from '@chatbox/core/ports'
+import { type SessionMetaRepositoryPort, SessionRepositoryError } from '@chatbox/core/ports'
 import {
   createSessionRepositoryContract,
   runSessionRepositoryContract,
 } from '@chatbox/core/ports/testing/session-repository-contract'
 import { InMemorySessionRepository } from '@chatbox/core/testing'
-import type { Session, SessionMetaPage, SessionMetaRecord } from '@shared/types'
+import type { Message, Session, SessionMetaPage, SessionMetaRecord } from '@shared/types'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { IndexedDBSessionMetaStorage } from '@/storage/SessionMetaStorage'
+import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { type CurrentSessionDataStorage, CurrentSessionRepository } from './CurrentSessionRepository'
+
+function message(id: string, role: Message['role'], timestamp: number): Message {
+  return { id, role, contentParts: [{ type: 'text', text: id }], timestamp }
+}
 
 function createSession(id = 'session-1'): Session {
   return {
@@ -16,6 +21,13 @@ function createSession(id = 'session-1'): Session {
     name: 'Session',
     type: 'chat',
     messages: [],
+  }
+}
+
+function createSessionWithMessages(id = 'session-1'): Session {
+  return {
+    ...createSession(id),
+    messages: [message('user-1', 'user', 100), message('assistant-1', 'assistant', 200)],
   }
 }
 
@@ -72,9 +84,11 @@ function createHarness(metaStorage: SessionMetaRepositoryPort = createMetaStorag
     removeItem,
     getAllKeys,
   }
-  const repository: SessionRepositoryPort = new CurrentSessionRepository({
+  const rowStore = new IndexedDBSessionRowStore()
+  const repository = new CurrentSessionRepository({
     dataStorage,
     metaStorage,
+    rowStore,
   })
 
   return {
@@ -84,8 +98,19 @@ function createHarness(metaStorage: SessionMetaRepositoryPort = createMetaStorag
     removeItem,
     metaStorage,
     repository,
+    rowStore,
     values,
   }
+}
+
+function storedRecord(harness: ReturnType<typeof createHarness>, id: string): Record<string, unknown> {
+  return harness.values.get(`session:${id}`) as Record<string, unknown>
+}
+
+/** Rows come back in primary-key order, so ids are compared sorted. */
+async function messageRowIds(harness: ReturnType<typeof createHarness>, id: string): Promise<string[]> {
+  const snapshot = await harness.rowStore.readSnapshot(id)
+  return (snapshot?.rows.messages ?? []).map((row) => row.messageId).sort()
 }
 
 describe('CurrentSessionRepository contract', () => {
@@ -113,6 +138,7 @@ describe('CurrentSessionRepository contract', () => {
         getAllKeys: () => Promise.resolve([...values.keys()]),
       },
       metaStorage: inMemoryMeta.meta,
+      rowStore: new IndexedDBSessionRowStore(),
     })
 
     await runSessionRepositoryContract(() => repository)
@@ -124,13 +150,19 @@ describe('CurrentSessionRepository contract', () => {
     expect(harness.metaStorage.initialize).toHaveBeenCalledOnce()
   })
 
-  test('writes full sessions under the existing session storage key', async () => {
-    const session = createSession()
+  test('writes a session as a record without messages plus its message rows', async () => {
+    const session = createSessionWithMessages('session-write')
 
     await harness.repository.setSession(session)
 
-    expect(harness.values.get('session:session-1')).toBe(session)
-    expect(harness.setItemNow).toHaveBeenCalledWith('session:session-1', session)
+    const record = storedRecord(harness, 'session-write')
+    expect(record.storageFormat).toBe('rows')
+    expect(record).not.toHaveProperty('messages')
+    expect(record).not.toHaveProperty('threads')
+    expect(await messageRowIds(harness, 'session-write')).toEqual(['assistant-1', 'user-1'])
+    await expect(harness.repository.getSession('session-write')).resolves.toMatchObject({
+      messages: [{ id: 'user-1' }, { id: 'assistant-1' }],
+    })
   })
 
   test('reports full-session write failures with operation and session context', async () => {
@@ -147,32 +179,37 @@ describe('CurrentSessionRepository contract', () => {
     })
   })
 
-  test('reads and migrates sessions using the current compatibility path', async () => {
-    const persisted = createSession()
-    harness.values.set('session:session-1', persisted)
+  test('reads a legacy whole-session record immediately and converts it when migration is scheduled', async () => {
+    harness.values.set('session:legacy', createSessionWithMessages('legacy'))
 
-    const result = await harness.repository.getSession('session-1')
+    const result = await harness.repository.getSession('legacy')
 
-    expect(result).toEqual({
-      ...persisted,
-      settings: { temperature: undefined },
-      messageForksHash: {},
+    expect(result).toMatchObject({
+      id: 'legacy',
+      name: 'Session',
+      messages: [{ id: 'user-1' }, { id: 'assistant-1' }],
     })
-    expect(harness.getItem).toHaveBeenCalledWith('session:session-1', null)
-    expect(harness.setItemNow).not.toHaveBeenCalled()
+    expect(storedRecord(harness, 'legacy')).toHaveProperty('messages')
+    await expect(harness.repository.migrateSession('legacy')).resolves.toBe('migrated')
+
+    const record = storedRecord(harness, 'legacy')
+    expect(record.storageFormat).toBe('rows')
+    expect(record).not.toHaveProperty('messages')
+    expect(await messageRowIds(harness, 'legacy')).toEqual(['assistant-1', 'user-1'])
   })
 
   test('returns null for a missing session', async () => {
     await expect(harness.repository.getSession('missing')).resolves.toBeNull()
   })
 
-  test('deletes the existing full-session storage key', async () => {
-    harness.values.set('session:session-1', createSession())
+  test('deletes the full-session storage key together with its rows', async () => {
+    await harness.repository.setSession(createSessionWithMessages('session-delete'))
 
-    await harness.repository.deleteSession('session-1')
+    await harness.repository.deleteSession('session-delete')
 
-    expect(harness.values.has('session:session-1')).toBe(false)
-    expect(harness.removeItem).toHaveBeenCalledWith('session:session-1')
+    expect(harness.values.has('session:session-delete')).toBe(false)
+    expect(harness.removeItem).toHaveBeenCalledWith('session:session-delete')
+    await expect(harness.rowStore.readSnapshot('session-delete')).resolves.toBeNull()
   })
 
   test('lists only valid full-session identifiers', async () => {
@@ -183,6 +220,14 @@ describe('CurrentSessionRepository contract', () => {
     harness.values.set('settings', {})
 
     await expect(harness.repository.getAllSessionIds()).resolves.toEqual(['one', 'two'])
+  })
+
+  test('leaves out the draft held under the not-yet-created chat id', async () => {
+    harness.values.set('session:one', createSession('one'))
+    harness.values.set('session:new', createSession('new'))
+
+    await expect(harness.repository.getAllSessionIds()).resolves.toEqual(['one'])
+    await expect(harness.repository.listUnmigratedSessionIds()).resolves.toEqual(['one'])
   })
 
   test('delegates meta operations without changing their arguments', async () => {

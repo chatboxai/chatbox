@@ -1,3 +1,4 @@
+export * from './capacitor-compatible-schema'
 export {
   ACTIVE_SESSION_THREAD_KEY,
   type PersistedForkBranchRow,
@@ -12,4 +13,10 @@ export {
   SessionGraphCodecError,
   type SessionGraphCodecOptions,
 } from './session-graph'
-export * from './capacitor-compatible-schema'
+export {
+  type SessionRowSqlBatchOptions,
+  type SessionRowSqlBindValue,
+  type SessionRowSqlDatabase,
+  type SessionRowSqlStatement,
+  SqlSessionRowStore,
+} from './session-row-sql'

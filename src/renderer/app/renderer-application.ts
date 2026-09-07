@@ -10,6 +10,7 @@ import platform from '@/platform'
 import { createRendererQueryLifecycle } from '@/react-bindings/renderer-query-lifecycle'
 import { authInfoStore } from '@/stores/authInfoStore'
 import { initLastUsedModelStore, lastUsedModelStore } from '@/stores/lastUsedModelStore'
+import { reportError } from '@/utils/sentry'
 import { recoverSessionOnLoad } from '@/utils/session-utils'
 import {
   type CreateRendererApplicationOptions,
@@ -18,7 +19,13 @@ import {
 } from './createRendererApplication'
 
 const queryClient = createChatQueryClient()
-const sessionRepository = new CurrentSessionRepository()
+
+/**
+ * The single row-backed repository of this host. Every reader or writer of a
+ * whole session must go through it: a session record on its own carries no
+ * messages, and writes past it invalidate the repository's row baselines.
+ */
+export const sessionRepository = new CurrentSessionRepository()
 const settingsStorage = new RendererSettingsStorage()
 
 const settingsEffectsHost = {
@@ -55,7 +62,16 @@ const common: Omit<CreateRendererApplicationOptions, 'host'> = {
   },
   settingsLogger: getLogger('settings-service'),
   settingsEffectsHost,
-  bootstrapTasks: [async () => void (await initLastUsedModelStore())],
+  bootstrapTasks: [
+    // Open the session record, row and meta stores up front so a database this
+    // build cannot read raises its guard dialog before the first session read.
+    // The failure must not reject bootstrap, or that dialog never renders.
+    () =>
+      sessionRepository.initialize().catch((error: unknown) => {
+        reportError(error, { domain: 'storage', operation: 'initialize-session-repository', priority: 'high' })
+      }),
+    async () => void (await initLastUsedModelStore()),
+  ],
 }
 
 function getRendererHostKind(): RendererHostKind {

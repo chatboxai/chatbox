@@ -1,25 +1,49 @@
+import { RowBackedSessionRepository, type SessionMigrationOutcome } from '@chatbox/core/application/session'
 import {
+  type SessionDataWriteOptions,
   type SessionMetaRepositoryPort,
   SessionRepositoryError,
   type SessionRepositoryOperation,
   type SessionRepositoryPort,
+  type SessionRowStorePort,
+  SessionWriteConflictError,
 } from '@chatbox/core/ports'
+import * as Sentry from '@sentry/react'
 import type { Session, SessionMetaPage, SessionMetaRecord } from '@shared/types'
+import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import storage from '@/storage'
-import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { migrateSession } from '@/utils/session-utils'
+import { type CurrentSessionDataStorage, CurrentSessionRecordStore } from './CurrentSessionRecordStore'
 
-export interface CurrentSessionDataStorage {
-  getItem<T>(key: string, initialValue: T): Promise<T>
-  setItemNow<T>(key: string, value: T): Promise<void>
-  removeItem(key: string): Promise<void>
-  getAllKeys(): Promise<string[]>
-}
+export type { CurrentSessionDataStorage } from './CurrentSessionRecordStore'
 
 export interface CurrentSessionRepositoryOptions {
   dataStorage?: CurrentSessionDataStorage
   metaStorage?: SessionMetaRepositoryPort
+  rowStore?: SessionRowStorePort
+}
+
+const log = getLogger('session-repository')
+const SESSION_STORAGE_LOCK = 'chatbox-session-storage'
+
+/** Prevents session writes in every renderer context while raw backup data is replaced. */
+export async function withExclusiveSessionStorageLock<Result>(action: () => Promise<Result>): Promise<Result> {
+  if (typeof navigator === 'undefined' || !navigator.locks) return action()
+  return await navigator.locks.request(SESSION_STORAGE_LOCK, { mode: 'exclusive' }, action)
+}
+
+/**
+ * A session whose encoding does not round-trip keeps working in its legacy
+ * whole-session form, so this is a compatibility signal rather than a failure.
+ */
+function reportMigrationSkipped(sessionId: string, reason: string): void {
+  log.warn(`session ${sessionId} was not converted to message rows: ${reason}`)
+  Sentry.addBreadcrumb({
+    category: 'session-storage',
+    level: 'warning',
+    message: `session row migration skipped: ${reason}`,
+    data: { sessionId, reason },
+  })
 }
 
 async function normalizeRepositoryError<T>(
@@ -30,7 +54,7 @@ async function normalizeRepositoryError<T>(
   try {
     return await action()
   } catch (error) {
-    if (error instanceof SessionRepositoryError) throw error
+    if (error instanceof SessionRepositoryError || error instanceof SessionWriteConflictError) throw error
     throw new SessionRepositoryError(operation, error, sessionId)
   }
 }
@@ -114,56 +138,81 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
 
 /**
  * Session repository backed by the storage implementations used by the current
- * Renderer. It intentionally owns no QueryClient or UI side effects.
+ * Renderer: session records live in the key-value storage, their threads and
+ * messages in the platform row store. It intentionally owns no QueryClient or
+ * UI side effects.
  */
 export class CurrentSessionRepository implements SessionRepositoryPort {
   readonly meta: SessionMetaRepositoryPort
 
-  private readonly dataStorage: CurrentSessionDataStorage
+  private readonly records: CurrentSessionRecordStore
+  private readonly createRowStore: () => SessionRowStorePort
+  private data: RowBackedSessionRepository | null = null
 
   constructor(options: CurrentSessionRepositoryOptions = {}) {
-    this.dataStorage = options.dataStorage ?? storage
+    this.records = new CurrentSessionRecordStore(options.dataStorage ?? storage)
+    this.createRowStore = () => options.rowStore ?? platform.getSessionRowStore()
     this.meta = new CurrentSessionMetaRepository(() => options.metaStorage ?? platform.getSessionMetaStorage())
   }
 
+  private getData(): RowBackedSessionRepository {
+    if (!this.data) {
+      this.data = new RowBackedSessionRepository({
+        records: this.records,
+        rows: this.createRowStore(),
+        onMigrationSkipped: reportMigrationSkipped,
+        serializeSessionOperation: async (sessionId, action) => {
+          if (typeof navigator === 'undefined' || !navigator.locks) {
+            return action()
+          }
+          return await navigator.locks.request(SESSION_STORAGE_LOCK, { mode: 'shared' }, async () =>
+            navigator.locks.request(`chatbox-session-storage:${sessionId}`, { mode: 'exclusive' }, action)
+          )
+        },
+      })
+    }
+    return this.data
+  }
+
   initialize(): Promise<void> {
-    return this.meta.initialize()
+    return normalizeRepositoryError('initialize', async () => {
+      await this.getData().initialize()
+      await this.meta.initialize()
+    })
   }
 
   getSession(id: string): Promise<Session | null> {
-    return normalizeRepositoryError(
-      'get-session',
-      async () => {
-        const value = await this.dataStorage.getItem<Session | null>(StorageKeyGenerator.session(id), null)
-        return value ? migrateSession(value) : null
-      },
-      id
-    )
+    return normalizeRepositoryError('get-session', () => this.getData().getSession(id), id)
   }
 
-  setSession(session: Session): Promise<void> {
-    return normalizeRepositoryError(
-      'set-session',
-      () => this.dataStorage.setItemNow(StorageKeyGenerator.session(session.id), session),
-      session.id
-    )
+  setSession(session: Session, options?: SessionDataWriteOptions): Promise<void> {
+    return normalizeRepositoryError('set-session', () => this.getData().setSession(session, options), session.id)
   }
 
   deleteSession(id: string): Promise<void> {
-    return normalizeRepositoryError(
-      'delete-session',
-      () => this.dataStorage.removeItem(StorageKeyGenerator.session(id)),
-      id
-    )
+    return normalizeRepositoryError('delete-session', () => this.getData().deleteSession(id), id)
   }
 
   getAllSessionIds(): Promise<string[]> {
-    return normalizeRepositoryError('list-session-ids', async () => {
-      const keys = await this.dataStorage.getAllKeys()
-      return keys
-        .filter((key) => key.startsWith('session:'))
-        .map((key) => key.slice('session:'.length))
-        .filter((id) => id.length > 0 && id !== 'undefined')
-    })
+    return normalizeRepositoryError('list-session-ids', () => this.getData().getAllSessionIds())
+  }
+
+  /** Ids of stored sessions that hold no rows yet. */
+  listUnmigratedSessionIds(shouldSkip?: (id: string) => Promise<boolean>): Promise<string[]> {
+    return normalizeRepositoryError('list-session-ids', () => this.getData().listUnmigratedSessionIds(shouldSkip))
+  }
+
+  /** Converts one stored session to rows, without caching anything about it. */
+  migrateSession(id: string): Promise<SessionMigrationOutcome> {
+    return normalizeRepositoryError('get-session', () => this.getData().migrateSession(id), id)
+  }
+
+  /** Must be called after a session's record or rows are written past this repository. */
+  forgetBaseline(id: string): void {
+    this.getData().forgetBaseline(id)
+  }
+
+  forgetAllBaselines(): void {
+    this.getData().forgetAllBaselines()
   }
 }

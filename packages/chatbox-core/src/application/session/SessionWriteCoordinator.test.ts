@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
+import { SessionWriteConflictError } from '../../ports'
 import type { Message, Session } from '../../types'
 import { createTestRecord, createTestSession, MemorySessionRepository } from './__tests__/memory-session-repository'
 import { SessionMetadataUpdateError, SessionNotFoundError, SessionWriteCoordinator } from './SessionWriteCoordinator'
@@ -62,6 +63,23 @@ describe('SessionWriteCoordinator', () => {
   })
 
 
+  test('passes the changed message hint through to the repository write', async () => {
+    const repository = new MemorySessionRepository()
+    const persisted = createTestSession('session-1')
+    repository.sessions.set(persisted.id, persisted)
+    const coordinator = new SessionWriteCoordinator(repository)
+
+    const first = await coordinator.update(persisted.id, (session) => appendMessage(session, 'first'), {
+      changedMessageId: 'first',
+    })
+    await coordinator.update(persisted.id, (session) => appendMessage(session, 'second'))
+
+    expect(repository.writeOptions).toEqual([
+      { changedMessageId: 'first', baseSession: persisted },
+      { changedMessageId: undefined, baseSession: first.session },
+    ])
+  })
+
   test('starts from the injected read model and serializes concurrent writes', async () => {
     const repository = new MemorySessionRepository()
     const persisted = createTestSession('session-1')
@@ -120,6 +138,26 @@ describe('SessionWriteCoordinator', () => {
 
     await coordinator.update(session.id, { name: 'Recovered' })
     expect(repository.sessions.get(session.id)?.name).toBe('Recovered')
+  })
+
+  test('discards retained and external snapshots after a write conflict', async () => {
+    const repository = new MemorySessionRepository()
+    const session = createTestSession('session-1')
+    repository.sessions.set(session.id, session)
+    const discardCurrentSession = vi.fn()
+    const originalSetSession = repository.setSession.bind(repository)
+    vi.spyOn(repository, 'setSession')
+      .mockRejectedValueOnce(new SessionWriteConflictError(session.id, 1, 2))
+      .mockImplementation(originalSetSession)
+    const coordinator = new SessionWriteCoordinator(repository, { discardCurrentSession })
+
+    await expect(coordinator.update(session.id, { name: 'stale' })).rejects.toBeInstanceOf(SessionWriteConflictError)
+    expect(discardCurrentSession).toHaveBeenCalledWith(session.id)
+
+    repository.sessions.set(session.id, { ...session, name: 'fresh' })
+    await expect(coordinator.update(session.id, { name: 'retry' })).resolves.toMatchObject({
+      session: { name: 'retry' },
+    })
   })
 
   test('projects hasPausedToolCall into the metadata and clears it when the pause resolves', async () => {

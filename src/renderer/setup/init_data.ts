@@ -1,4 +1,4 @@
-import { CurrentSessionRepository } from '@/adapters/CurrentSessionRepository'
+import { sessionRepository } from '@/app/renderer-application'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import platform from '@/platform'
 import { getMetaStorage, getSessionMeta } from '@/stores/sessionHelpers'
@@ -17,7 +17,6 @@ async function initSessionsIfNeeded() {
 
   const lang = await platform.getLocale().catch(() => 'en')
   const defaultSessions = lang.startsWith('zh') ? defaultSessionsForCN : defaultSessionsForEN
-  const sessionRepository = new CurrentSessionRepository({ metaStorage })
 
   for (const session of defaultSessions) {
     await sessionRepository.setSession(session)

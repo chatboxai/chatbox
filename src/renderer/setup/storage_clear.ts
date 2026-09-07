@@ -1,7 +1,8 @@
-import type { CopilotDetail, Session } from '@shared/types'
+import type { CopilotDetail } from '@shared/types'
 import { getDefaultStore } from 'jotai'
+import { sessionRepository } from '@/app/renderer-application'
 import { collectGlobalResourceReferences, collectSessionResourceReferences } from '@/packages/backup/resources'
-import { StorageKey, StorageKeyGenerator } from '@/storage/StoreStorage'
+import { StorageKey } from '@/storage/StoreStorage'
 import { inputBoxPreConstructedMessageFamily } from '@/stores/atoms/uiAtoms'
 import { getMetaStorage } from '@/stores/sessionHelpers'
 import { settingsStore } from '@/stores/settingsStore'
@@ -47,15 +48,54 @@ type CleanupOptions = {
   deadlineMs?: number
 }
 
-// 启动时执行消息图片清理
-// 只有网页版本需要清理，桌面版本存在本地、空间足够大无需清理
-// 同时也避免了桌面端疑似出现的“图片丢失”问题（可能不是bug，与开发环境有关？）
-if (platform.type !== 'desktop') {
-  setTimeout(() => {
-    cleanupOrphanedBlobs({ deadlineMs: STARTUP_CLEANUP_DEADLINE_MS }).catch((e) =>
-      console.error('storage_clear: startup cleanup failed', e)
-    )
-  }, 10 * 1000) // 防止水合状态
+interface StartupStorageCleanupOptions {
+  sessionMigrationReady: Promise<boolean>
+  delayMs?: number
+  schedule?: (run: () => void, delayMs: number) => () => void
+  cleanup?: () => Promise<unknown>
+}
+
+export interface StartupStorageCleanupHandle {
+  stop(): void
+}
+
+/**
+ * Starts the web/mobile startup cleanup after the row migration has drained.
+ * The scan reads every session, so running it first would turn the trickle
+ * migration back into a bulk startup migration.
+ */
+export function startStartupStorageCleanup(options: StartupStorageCleanupOptions): StartupStorageCleanupHandle {
+  const delayMs = options.delayMs ?? 10 * 1000
+  const schedule =
+    options.schedule ??
+    ((run: () => void, delay: number) => {
+      const timer = setTimeout(run, delay)
+      return () => clearTimeout(timer)
+    })
+  const cleanup =
+    options.cleanup ?? (() => cleanupOrphanedBlobs({ deadlineMs: STARTUP_CLEANUP_DEADLINE_MS }).then(() => undefined))
+  let stopped = false
+  let cancelPending: (() => void) | null = null
+
+  void options.sessionMigrationReady
+    .catch((error: unknown) => {
+      console.error('storage_clear: session migration wait failed', error)
+    })
+    .then((ready) => {
+      if (stopped || !ready) return
+      cancelPending = schedule(() => {
+        cancelPending = null
+        void cleanup().catch((error: unknown) => console.error('storage_clear: startup cleanup failed', error))
+      }, delayMs)
+    })
+
+  return {
+    stop(): void {
+      stopped = true
+      cancelPending?.()
+      cancelPending = null
+    },
+  }
 }
 
 /**
@@ -150,7 +190,7 @@ async function doCleanupOrphanedBlobs(options?: CleanupOptions): Promise<number>
     }
     await yieldIfNeeded()
     // 不从 atom 中获取，避免水合状态
-    const session = await storage.getItem<Session | null>(StorageKeyGenerator.session(sessionMeta.id), null)
+    const session = await sessionRepository.getSession(sessionMeta.id)
     if (!session) {
       continue
     }

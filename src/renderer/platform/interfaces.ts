@@ -1,4 +1,6 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
+
+import type { SessionRowStorePort } from '@chatbox/core/ports'
 import type { LocalMemoryScanResult } from '@shared/agent-persona/memory-import'
 import type { AnalyticsEventParams } from '@shared/analytics'
 import type { PlatformType as SharedPlatformType } from '@shared/platform'
@@ -150,6 +152,8 @@ export interface Platform extends Storage {
   getImageGenerationStorage(): ImageGenerationStorage
 
   getSessionMetaStorage(): SessionMetaStorage
+
+  getSessionRowStore(): SessionRowStorePort
 
   // Sandbox operations (Desktop only)
   // Single code-execution entry point for all platforms: code is fed to the sandboxed process

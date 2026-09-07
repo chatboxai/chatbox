@@ -32,6 +32,30 @@ function createHarness(
 }
 
 describe('SessionService', () => {
+  test('names the changed message only for writes that replace one message in place', async () => {
+    const harness = createHarness()
+    const persisted: Session = {
+      ...createTestSession('session-1'),
+      messages: [{ id: 'assistant-1', role: 'assistant', contentParts: [{ type: 'text', text: 'hi' }] }],
+    }
+    harness.repository.sessions.set(persisted.id, persisted)
+    harness.repository.records.set(persisted.id, createTestRecord(persisted, 1))
+
+    await harness.service.updateMessage(persisted.id, 'assistant-1', { generating: false })
+    await harness.service.insertMessage(persisted.id, { id: 'user-2', role: 'user', contentParts: [] })
+    await harness.service.removeMessage(persisted.id, 'user-2')
+    await harness.service.updateSession(persisted.id, { name: 'Renamed' })
+
+    expect(harness.repository.writeOptions.map((options) => ({ changedMessageId: options?.changedMessageId }))).toEqual(
+      [
+        { changedMessageId: 'assistant-1' },
+        { changedMessageId: undefined },
+        { changedMessageId: undefined },
+        { changedMessageId: undefined },
+      ]
+    )
+  })
+
   test('logs session read failures before rethrowing the repository error', async () => {
     const harness = createHarness()
     const error = new Error('read failed')

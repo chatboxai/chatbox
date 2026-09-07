@@ -1,6 +1,8 @@
+import { InMemorySessionRepository, InMemorySessionRowStore } from '@chatbox/core/testing'
 import type { CopilotDetail, Session, SessionMetaRecord, Settings } from '@shared/types'
 import { unzipSync, zipSync } from 'fflate'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CurrentSessionRepository } from '@/adapters/CurrentSessionRepository'
 import { bytesToBase64, sha256Checksum } from './codec'
 import { exportBackupArchive } from './export-backup'
 import { importBackupArchive } from './import-backup'
@@ -255,6 +257,84 @@ describe('ZIP backup round trip', () => {
     expect(destinationMeta.records.size).toBe(2)
     expect(nativeRandomValues).not.toHaveBeenCalled()
     expect(nativeDigest).not.toHaveBeenCalled()
+  })
+
+  it('exports a row-backed session as a whole V1 session.json', async () => {
+    const source = new MemoryStorage()
+    const sourceMeta = new MemoryMetaStorage()
+    const session = createSession('rows')
+    const repository = new CurrentSessionRepository({
+      dataStorage: source,
+      metaStorage: new InMemorySessionRepository().meta,
+      rowStore: new InMemorySessionRowStore(),
+    })
+    await repository.setSession(session)
+    sourceMeta.records.set(session.id, createMeta(session, 1))
+    source.blobs.set('picture:shared', 'data:image/png;base64,AAECAw==')
+    // The stored record alone has no messages; only the repository can rebuild them.
+    expect(source.values.get(backupSessionStorageKey(session.id))).not.toHaveProperty('messages')
+
+    const chunks: Uint8Array[] = []
+    const exported = await exportBackupArchive({
+      exportItems: ['conversations'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: sourceMeta,
+      readSession: (sessionId) => repository.getSession(sessionId),
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (dataCallback) => {
+        for await (const chunk of dataCallback()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+
+    const entries = unzipSync(combine(chunks))
+    const exportedSession = JSON.parse(new TextDecoder().decode(entries[exported.manifest.sessions[0].path])) as Session
+    expect(exportedSession).toMatchObject({
+      id: 'rows',
+      name: 'Session rows',
+      messages: [{ id: 'message-rows', role: 'user' }],
+    })
+    expect(exported.manifest.resources).toHaveLength(1)
+
+    const destination = new MemoryStorage()
+    const destinationMeta = new MemoryMetaStorage()
+    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'rows.zip'), {
+      storage: destination,
+      metaStorage: destinationMeta,
+    })
+    const restored = destination.values.get(backupSessionStorageKey('rows')) as Session
+    expect(restored.messages.map(({ id }) => id)).toEqual(['message-rows'])
+  })
+
+  it('recomputes hasPausedToolCall from the restored session when the backup meta lacks it', async () => {
+    const source = new MemoryStorage()
+    const sourceMeta = new MemoryMetaStorage()
+    const pausedSession = createPausedSession('paused')
+    source.values.set(backupSessionStorageKey(pausedSession.id), pausedSession)
+    // A pre-change backup meta has no hasPausedToolCall field.
+    sourceMeta.records.set(pausedSession.id, createMeta(pausedSession, 1))
+
+    const chunks: Uint8Array[] = []
+    await exportBackupArchive({
+      exportItems: ['conversations'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: sourceMeta,
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (dataCallback) => {
+        for await (const chunk of dataCallback()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+
+    const destinationMeta = new MemoryMetaStorage()
+    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'backup.zip'), {
+      storage: new MemoryStorage(),
+      metaStorage: destinationMeta,
+    })
+
+    expect(destinationMeta.records.get(pausedSession.id)?.hasPausedToolCall).toBe(true)
   })
 
   it('rebases conversation-only snapshots without replacing frozen memories', async () => {

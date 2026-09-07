@@ -34,10 +34,34 @@ export class SessionRepositoryError extends Error {
   }
 }
 
+export class SessionWriteConflictError extends Error {
+  readonly name = 'SessionWriteConflictError'
+
+  constructor(
+    readonly sessionId: string,
+    readonly expectedRevision: number | null,
+    readonly actualRevision: number | null
+  ) {
+    super(`Session ${sessionId} changed before the write could be committed`)
+  }
+}
+
+export interface SessionDataWriteOptions {
+  /**
+   * The caller guarantees that, against the last persisted state, only this
+   * message's content differs: the set of messages, their parent/child links,
+   * the selected branches and the threads are all unchanged. Implementations
+   * may use it to write less, and may ignore it.
+   */
+  changedMessageId?: string
+  /** Snapshot the caller used to derive this write, for optimistic concurrency control. */
+  baseSession?: Session
+}
+
 export interface SessionDataRepositoryPort {
   initialize(): Promise<void>
   getSession(id: string): Promise<Session | null>
-  setSession(session: Session): Promise<void>
+  setSession(session: Session, options?: SessionDataWriteOptions): Promise<void>
   deleteSession(id: string): Promise<void>
   getAllSessionIds(): Promise<string[]>
 }

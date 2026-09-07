@@ -47,6 +47,12 @@ function describeError(error: unknown): unknown {
 
 export interface UpdateSessionOptions {
   preserveCachedGeneratingMessages?: boolean
+  /**
+   * Only this message's content differs from the session as it was last
+   * persisted; the storage layer may use it to write a single row. Entry points
+   * that insert, remove or move messages must leave it unset.
+   */
+  changedMessageId?: string
   /** Runs once the full Session is durable, even if its metadata projection fails afterward. */
   onFullSessionPersisted?: (session: Session) => void
   /** Internal recovery path: a successful full write supersedes a metadata-only archive. */
@@ -227,6 +233,7 @@ export class SessionService {
       result = await this.writes.update(sessionId, updater, {
         updateMeta,
         clearRecoveryArchive: options.clearRecoveryArchive,
+        changedMessageId: options.changedMessageId,
       })
     } catch (error) {
       if (!(error instanceof SessionMetadataUpdateError)) throw error
@@ -272,7 +279,7 @@ export class SessionService {
     await this.updateSessionWithMessages(
       sessionId,
       (session) => applyMessageUpdate(session, sessionId, messageId, updater),
-      { preserveCachedGeneratingMessages: true }
+      { preserveCachedGeneratingMessages: true, changedMessageId: messageId }
     )
   }
 

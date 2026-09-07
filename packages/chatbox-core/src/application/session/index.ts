@@ -1,5 +1,7 @@
 export * from './ForkService'
 export * from './message-tree'
+export * from './RowBackedSessionRepository'
+export * from './SessionPersistenceProtocol'
 export * from './SessionNamingService'
 export * from './SessionService'
 export * from './SessionWriteCoordinator'

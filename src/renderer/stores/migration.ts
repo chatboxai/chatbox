@@ -1,4 +1,5 @@
-import { hasPausedToolCall } from '@chatbox/core'
+import { hasPausedToolCall, migrateSession } from '@chatbox/core'
+import { isRowsSessionRecord, type SessionDataWriteOptions, type StoredSessionRecord } from '@chatbox/core/ports'
 import {
   LEGACY_PROVIDER_MODEL_KEYS,
   type LegacyFlatSettings,
@@ -14,9 +15,10 @@ import {
 } from '@shared/types'
 import dayjs from 'dayjs'
 import { getDefaultStore } from 'jotai'
-import { difference, intersection, keyBy, uniq } from 'lodash'
+import { difference, intersection, uniq } from 'lodash'
 import oldStore from 'store'
 import { v4 as uuidv4 } from 'uuid'
+import { sessionRepository } from '@/app/renderer-application'
 import {
   artifactSessionCN,
   artifactSessionEN,
@@ -34,7 +36,7 @@ import WebPlatform from '@/platform/web_platform'
 import { initData } from '@/setup/init_data'
 import storage, { StorageKey } from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { createSessionMetaRecordsFromLegacyList, migrateSession } from '@/utils/session-utils'
+import { createSessionMetaRecordsFromLegacyList } from '@/utils/session-utils'
 import * as defaults from '../../shared/defaults'
 import { getLogger } from '../lib/utils'
 import { migrationProcessAtom } from './atoms/utilAtoms'
@@ -50,6 +52,8 @@ export async function migrate() {
       getData: storage.getItem.bind(storage),
       setData: storage.setItemNow.bind(storage),
       setAll: storage.setAll.bind(storage),
+      getSession: (id) => sessionRepository.getSession(id),
+      setSession: (session, options) => sessionRepository.setSession(session, options),
       setBlob: storage.setBlob.bind(storage),
     },
     true
@@ -60,6 +64,9 @@ type MigrateStore = {
   getData: <T>(key: StorageKey | string, defaultValue: T) => Promise<T>
   setData: <T>(key: StorageKey | string, value: T) => Promise<void>
   setAll: (data: { [key: string]: unknown }) => Promise<void>
+  /** Whole sessions are addressed by id, never by storage key: their messages may live in the row store. */
+  getSession: (id: string) => Promise<Session | null>
+  setSession: (session: Session, options?: SessionDataWriteOptions) => Promise<void>
   setBlob?: (key: string, value: string) => Promise<void>
 }
 
@@ -352,9 +359,9 @@ async function migrate_7_to_8(dataStore: MigrateStore): Promise<boolean> {
   await dataStore.setData(StorageKey.ChatSessionsList, sessionList)
   log.info(`migrate_7_to_8, sessionList: ${sessionList.length}`)
 
-  // 一次写入所有 session， 提升性能
-  const sessionMap = keyBy(sessions, (session) => StorageKeyGenerator.session(session.id))
-  await dataStore.setAll(sessionMap)
+  for (const session of sessions) {
+    await dataStore.setSession(session)
+  }
   log.info(`migrate_7_to_8, done`)
   return true
 }
@@ -397,8 +404,9 @@ async function migrate_8_to_9(dataStore: MigrateStore): Promise<boolean> {
 
   // 写入 chat-sessions-list
   await dataStore.setData(StorageKey.ChatSessionsList, [...sessionList, ...missedSessionList])
-  const missedSessionMap = keyBy(missedSessions, (session) => StorageKeyGenerator.session(session.id))
-  await dataStore.setAll(missedSessionMap)
+  for (const session of missedSessions) {
+    await dataStore.setSession(session)
+  }
   log.info(`migrate_8_to_9 done`)
 
   return true
@@ -432,18 +440,17 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
   const chatSessionList = await dataStore.getData<SessionMeta[]>(StorageKey.ChatSessionsList, [])
   log.info(`migrate_9_to_10, chatSessionList: ${chatSessionList.length}`)
 
-  const sessionMap: { [key: string]: Session } = {}
   for (let i = 0; i < chatSessionList.length; i++) {
     const sessionMeta = chatSessionList[i]
     try {
-      const session: Session = await dataStore.getData(StorageKeyGenerator.session(sessionMeta.id) as any, {} as any)
+      const session = await dataStore.getSession(sessionMeta.id)
 
-      if (session.id) {
+      if (session?.id) {
         const oldSessionSettings = (session.settings || {}) as any
         const sessionProvider: ModelProvider = oldSessionSettings.aiProvider ?? oldSettings.aiProvider
         const modelKey = LEGACY_PROVIDER_MODEL_KEYS[sessionProvider]
         const modelId: string = oldSessionSettings[modelKey!] ?? oldSettings[modelKey!]
-        session.settings =
+        const settings: Session['settings'] =
           session.type === 'chat'
             ? {
                 provider: sessionProvider,
@@ -463,19 +470,12 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
                 dalleStyle: oldSessionSettings.dalleStyle ?? 'vivid',
               }
 
-        sessionMap[StorageKeyGenerator.session(session.id)] = session
+        await dataStore.setSession({ ...session, settings }, { baseSession: session })
       }
       log.info(`migrate session [${i + 1}/${chatSessionList.length}] settings done`)
     } catch (e) {
       log.info(`migrate session [${i + 1}/${chatSessionList.length}] settings failed, ${sessionMeta.name}`)
     }
-  }
-
-  try {
-    await dataStore.setAll(sessionMap)
-    log.info('migrate sessions settings done')
-  } catch (e) {
-    log.info('save sessions settings to store failed.')
   }
 
   log.info(`migrate_9_to_10, done`)
@@ -529,8 +529,7 @@ async function migrate_13_to_14(dataStore: MigrateStore) {
 
   for (const sessionMeta of pictureSessions) {
     try {
-      const sessionKey = StorageKeyGenerator.session(sessionMeta.id)
-      const session = (await dataStore.getData(sessionKey, null)) as Session | null
+      const session = await dataStore.getSession(sessionMeta.id)
 
       if (!session || !session.messages) {
         continue
@@ -624,11 +623,15 @@ async function migrate_15_to_16(dataStore: MigrateStore) {
   const records = await sessionMetaStorage.getAll()
   let updated = 0
   for (const record of records) {
-    const rawSession = await dataStore.getData<Session | null>(StorageKeyGenerator.session(record.id), null)
-    if (!rawSession) continue
-    // Normalize legacy message shapes (e.g. `content` without `contentParts`)
-    // before scanning so hasPausedToolCall never touches undefined contentParts.
-    const session = migrateSession(rawSession)
+    // Version 15 still stores complete sessions in the KV record. Reading
+    // through SessionRepository here would synchronously promote every session
+    // to row storage before the renderer can start, defeating lazy migration.
+    const stored = await dataStore.getData<StoredSessionRecord | null>(StorageKeyGenerator.session(record.id), null)
+    if (!stored) continue
+    // A prior interrupted attempt may already have promoted this particular
+    // session. Loading an existing row marker is recovery, not eager promotion.
+    const session = isRowsSessionRecord(stored) ? await dataStore.getSession(record.id) : migrateSession(stored)
+    if (!session) continue
     const hasPaused = hasPausedToolCall(session)
     if (hasPaused !== (record.hasPausedToolCall === true)) {
       await sessionMetaStorage.update(record.id, { hasPausedToolCall: hasPaused })

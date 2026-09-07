@@ -9,6 +9,8 @@ export interface LegacyBackupDataStore {
   getData<T>(key: string, defaultValue: T): Promise<T>
   setData<T>(key: string, value: T): Promise<void>
   setAll(data: Record<string, unknown>): Promise<void>
+  getSession(id: string): Promise<Session | null>
+  setSession(session: Session): Promise<void>
 }
 
 export interface LegacyBackupImportOptions {
@@ -52,6 +54,14 @@ export async function importLegacyJsonBackup(
     },
     setAll: (data) => {
       Object.assign(importData, data)
+      return Promise.resolve()
+    },
+    getSession: (id) => {
+      const value = importData[backupSessionStorageKey(id)]
+      return Promise.resolve(value && typeof value === 'object' ? migrateSession(value as Session) : null)
+    },
+    setSession: (session) => {
+      importData[backupSessionStorageKey(session.id)] = session
       return Promise.resolve()
     },
   })

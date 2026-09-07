@@ -296,6 +296,7 @@ function rawStorageOwnerGroups(root) {
       name: 'typed storage adapters',
       files: [
         'src/renderer/adapters/CurrentBlobStorage.ts',
+        'src/renderer/adapters/CurrentSessionRecordStore.ts',
         'src/renderer/adapters/CurrentSessionRepository.ts',
         'src/renderer/adapters/RendererSettingsStorage.ts',
       ],
@@ -1015,6 +1016,7 @@ function containsSessionCapableStorageWrite(sourceFile, root) {
 
 function findSessionStorageViolations(root, readSourceFile) {
   const sessionWriterOwners = new Set([
+    join(root, 'src/renderer/adapters/CurrentSessionRecordStore.ts'),
     join(root, 'src/renderer/adapters/CurrentSessionRepository.ts'),
     join(root, 'src/renderer/stores/migration.ts'),
     join(root, 'src/renderer/packages/backup/import-backup.ts'),

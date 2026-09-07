@@ -1,4 +1,4 @@
-import type { SessionRepositoryPort } from '../../../ports'
+import type { SessionDataWriteOptions, SessionRepositoryPort } from '../../../ports'
 import type { Session, SessionMetaPage, SessionMetaRecord } from '../../../types'
 import { sortSessionRecords } from '../../../utils/session-sort'
 
@@ -14,6 +14,8 @@ function page(items: SessionMetaRecord[], cursor: number, limit: number): Sessio
 export class MemorySessionRepository implements SessionRepositoryPort {
   readonly sessions = new Map<string, Session>()
   readonly records = new Map<string, SessionMetaRecord>()
+  /** Write options of every `setSession`, in call order. */
+  readonly writeOptions: Array<SessionDataWriteOptions | undefined> = []
   initializeCount = 0
 
   readonly meta = {
@@ -47,8 +49,9 @@ export class MemorySessionRepository implements SessionRepositoryPort {
     return Promise.resolve(this.sessions.get(id) ?? null)
   }
 
-  setSession(session: Session): Promise<void> {
+  setSession(session: Session, options?: SessionDataWriteOptions): Promise<void> {
     this.sessions.set(session.id, session)
+    this.writeOptions.push(options)
     return Promise.resolve()
   }
 

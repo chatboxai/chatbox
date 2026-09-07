@@ -7,6 +7,7 @@
  * - 可导出会话结果到文件
  */
 
+import { InMemorySessionRowStore } from '@chatbox/core/testing'
 import type { AnalyticsEventParams } from '@shared/analytics'
 import * as defaults from '@shared/defaults'
 import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
@@ -143,6 +144,7 @@ export default class TestPlatform implements Platform {
 
   private storage = new InMemoryStorage()
   private _sessionMetaStorage: SessionMetaStorage | null = null
+  private _sessionRowStore: InMemorySessionRowStore | null = null
   private _imageGenerationStorage: ImageGenerationStorage | null = null
   private blobs = new Map<string, string>()
   private configs: Config | null = null
@@ -366,6 +368,13 @@ export default class TestPlatform implements Platform {
     return this._sessionMetaStorage
   }
 
+  public getSessionRowStore(): InMemorySessionRowStore {
+    if (!this._sessionRowStore) {
+      this._sessionRowStore = new InMemorySessionRowStore()
+    }
+    return this._sessionRowStore
+  }
+
   public async minimize(): Promise<void> {
     // no-op
   }
@@ -432,6 +441,8 @@ export default class TestPlatform implements Platform {
     this.configs = null
     this.settings = null
     this._sessionMetaStorage = null
+    this._sessionRowStore?.clear()
+    this._sessionRowStore = null
     this._imageGenerationStorage = null
   }
 

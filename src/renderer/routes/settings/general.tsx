@@ -35,7 +35,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { rendererApplication } from '@/app/renderer-application'
+import { withExclusiveSessionStorageLock } from '@/adapters/CurrentSessionRepository'
+import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { InterfaceColorInput } from '@/components/common/InterfaceColorInput'
 import LazySlider from '@/components/common/LazySlider'
@@ -704,6 +705,7 @@ const ImportExportDataSection = () => {
         exportedAt: date,
         storage,
         metaStorage: getMetaStorage(),
+        readSession: (sessionId) => sessionRepository.getSession(sessionId),
         application: { version: platform.getVersion(), platform: platform.getPlatform() },
         signal: abortController.signal,
         onProgress: setProgress,
@@ -781,19 +783,33 @@ const ImportExportDataSection = () => {
     setImportRequiresRestart(false)
     setProgress(null)
     try {
+      // Both import paths write session records straight to storage. Discard
+      // every retained session view before the warning path can keep running
+      // without the restart below.
+      const forgetImportedSessionState = async () => {
+        sessionRepository.forgetAllBaselines()
+        const sessionIds = await sessionRepository.getAllSessionIds()
+        for (const sessionId of sessionIds) {
+          rendererApplication.sessionWrites.forget(sessionId)
+          rendererApplication.sessionQueryBridge.discardSessionCache(sessionId)
+        }
+      }
       if (await isZipBackupFile(file)) {
         // Restoring writes agent-soul/agent-memories directly through storage;
         // holding the persona locks queues concurrent save_memory / Soul edits
         // until the import transaction finishes so neither side is clobbered.
-        const result = await withAgentPersonaLocks(async () =>
-          importBackupArchive(file, {
-            storage,
-            metaStorage: await getMetaStorage(),
-            signal: abortController.signal,
-            onProgress: setProgress,
-            rehydrateSession: rehydrateImportedSession,
-          })
+        const result = await withExclusiveSessionStorageLock(async () =>
+          withAgentPersonaLocks(async () =>
+            importBackupArchive(file, {
+              storage,
+              metaStorage: await getMetaStorage(),
+              signal: abortController.signal,
+              onProgress: setProgress,
+              rehydrateSession: rehydrateImportedSession,
+            })
+          )
         )
+        await forgetImportedSessionState()
         if (result.warnings.length > 0) {
           const warningSummary = result.warnings
             .slice(0, 3)
@@ -814,14 +830,22 @@ const ImportExportDataSection = () => {
           return
         }
       } else {
-        await importLegacyJsonBackup(file, {
-          storage,
-          metaStorage: await getMetaStorage(),
-          migrateData: (dataStore) => migrateOnData(dataStore, false),
-          recoverSessionList: async () => {
-            await rendererApplication.sessions.recoverSessionList()
-          },
-        })
+        let recoverSessionList = false
+        await withExclusiveSessionStorageLock(async () =>
+          importLegacyJsonBackup(file, {
+            storage,
+            metaStorage: await getMetaStorage(),
+            migrateData: (dataStore) => migrateOnData(dataStore, false),
+            recoverSessionList: () => {
+              recoverSessionList = true
+              return Promise.resolve()
+            },
+          })
+        )
+        await forgetImportedSessionState()
+        if (recoverSessionList) {
+          await rendererApplication.sessions.recoverSessionList()
+        }
       }
       await platform.relaunch()
     } catch (error) {

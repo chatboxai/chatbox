@@ -1,6 +1,7 @@
 import { App } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
 import { Device } from '@capacitor/device'
+import type { SessionRowStorePort } from '@chatbox/core/ports'
 import { type AnalyticsEventParams, GOOGLE_ANALYTICS_MEASUREMENT_ID } from '@shared/analytics'
 import * as defaults from '@shared/defaults'
 import type { Config, Settings, ShortcutSetting } from '@shared/types'
@@ -11,6 +12,7 @@ import type { ImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type { SessionMetaStorage } from '@/storage/SessionMetaStorage'
 import { SQLiteImageGenerationStorage } from '@/storage/SQLiteImageGenerationStorage'
 import { SQLiteSessionMetaStorage } from '@/storage/SQLiteSessionMetaStorage'
+import { SQLiteSessionRowStore } from '@/storage/SQLiteSessionRowStorage'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
 import { getBrowser, getOS } from '../packages/navigator'
 import type { Platform, PlatformType } from './interfaces'
@@ -30,6 +32,7 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   private navigationCallback: ((path: string) => void) | null = null
   private _imageGenerationStorage: ImageGenerationStorage | null = null
   private _sessionMetaStorage: SessionMetaStorage | null = null
+  private _sessionRowStore: SessionRowStorePort | null = null
 
   constructor() {
     super()
@@ -326,6 +329,13 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
       this._sessionMetaStorage = new SQLiteSessionMetaStorage()
     }
     return this._sessionMetaStorage
+  }
+
+  public getSessionRowStore(): SessionRowStorePort {
+    if (!this._sessionRowStore) {
+      this._sessionRowStore = new SQLiteSessionRowStore()
+    }
+    return this._sessionRowStore
   }
 
   public minimize() {

@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
 
+import type { SessionRowStorePort } from '@chatbox/core/ports'
 import type { AnalyticsEventParams } from '@shared/analytics'
 import type { ElectronIPC } from '@shared/electron-types'
 import type {
@@ -17,6 +18,7 @@ import { parseLocale } from '@/i18n/parser'
 import { getLogger } from '@/lib/utils'
 import { type ImageGenerationStorage, IndexedDBImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/SessionMetaStorage'
+import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { rememberFileNativePath } from '@/utils/file-native-path'
 import { getOS } from '../packages/navigator'
 import type { Platform, PlatformType } from './interfaces'
@@ -39,6 +41,7 @@ export default class DesktopPlatform implements Platform {
   private _sessionAttachmentRagController?: DesktopSessionAttachmentRagController
   private _imageGenerationStorage: ImageGenerationStorage | null = null
   private _sessionMetaStorage: SessionMetaStorage | null = null
+  private _sessionRowStore: SessionRowStorePort | null = null
 
   public ipc: ElectronIPC
   constructor(ipc: ElectronIPC) {
@@ -389,6 +392,13 @@ export default class DesktopPlatform implements Platform {
       this._sessionMetaStorage = new IndexedDBSessionMetaStorage()
     }
     return this._sessionMetaStorage
+  }
+
+  public getSessionRowStore(): SessionRowStorePort {
+    if (!this._sessionRowStore) {
+      this._sessionRowStore = new IndexedDBSessionRowStore()
+    }
+    return this._sessionRowStore
   }
 
   public async sandboxExecCode(params: {

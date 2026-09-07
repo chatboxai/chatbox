@@ -253,8 +253,24 @@ function removeMessageFromSavedForks(
     return undefined
   }
 
+  const removedForkIds = new Set<string>()
+  const pendingForkIds = [messageId]
+  while (pendingForkIds.length > 0) {
+    const forkId = pendingForkIds.pop()
+    if (!forkId || removedForkIds.has(forkId)) continue
+    const fork = messageForksHash[forkId]
+    if (!fork) continue
+    removedForkIds.add(forkId)
+    for (const list of fork.lists) {
+      for (const message of list.messages) {
+        if (messageForksHash[message.id]) pendingForkIds.push(message.id)
+      }
+    }
+  }
+
   const nextHash: NonNullable<Session['messageForksHash']> = {}
   for (const [forkMessageId, fork] of Object.entries(messageForksHash)) {
+    if (removedForkIds.has(forkMessageId)) continue
     const removedListIndex = fork.lists.findIndex((list) => list.messages.some((message) => message.id === messageId))
     if (removedListIndex < 0) {
       nextHash[forkMessageId] = fork

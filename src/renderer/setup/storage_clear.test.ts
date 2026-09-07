@@ -44,6 +44,12 @@ vi.mock('../storage/blob-write-tracker', () => ({
   isBlobRecentlyWritten: vi.fn((key: string) => recentBlobKeys.includes(key) || lateTouchedBlobKeys.has(key)),
 }))
 
+vi.mock('@/app/renderer-application', () => ({
+  sessionRepository: {
+    getSession: vi.fn(async (id: string) => sessionStore.get(`session:${id}`) ?? null),
+  },
+}))
+
 vi.mock('@/stores/sessionHelpers', () => ({
   getMetaStorage: async () => ({
     getAllIncludingHidden: async () => metaRecords,
@@ -58,7 +64,7 @@ vi.mock('@/stores/settingsStore', () => ({
   },
 }))
 
-import { cleanupOrphanedBlobs } from './storage_clear'
+import { cleanupOrphanedBlobs, startStartupStorageCleanup } from './storage_clear'
 
 function seedSession(id: string, options: { hidden?: boolean; fileStorageKeys?: string[] }) {
   metaRecords.push({ id, hidden: options.hidden })
@@ -101,6 +107,46 @@ describe('cleanupOrphanedBlobs', () => {
     expect(blobStore.has('picture:image-gen:rec-1:uuid-1')).toBe(true)
     expect(blobStore.has('parseFile-in-flight')).toBe(true)
     expect(blobStore.has('picture:orphan')).toBe(false)
+  })
+
+  it('defers startup cleanup until the row migration has finished', async () => {
+    let finishMigration: () => void = () => {}
+    const migrationDone = new Promise<void>((resolve) => {
+      finishMigration = resolve
+    })
+    let scheduledRun: (() => void) | undefined
+    const cleanup = vi.fn(async () => undefined)
+    const handle = startStartupStorageCleanup({
+      sessionMigrationReady: migrationDone.then(() => true),
+      schedule: (run) => {
+        scheduledRun = run
+        return () => {
+          scheduledRun = undefined
+        }
+      },
+      cleanup,
+    })
+
+    await Promise.resolve()
+    expect(scheduledRun).toBeUndefined()
+
+    finishMigration()
+    await migrationDone
+    await vi.waitFor(() => expect(scheduledRun).toBeTypeOf('function'))
+
+    scheduledRun?.()
+    await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce())
+    handle.stop()
+  })
+
+  it('skips startup cleanup when the row migration did not finish safely', async () => {
+    const schedule = vi.fn(() => () => undefined)
+
+    startStartupStorageCleanup({ sessionMigrationReady: Promise.resolve(false), schedule })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(schedule).not.toHaveBeenCalled()
   })
 
   it('honors a blob touched after the scan via the pre-delete recheck', async () => {

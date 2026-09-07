@@ -876,4 +876,134 @@ describe('migrateStorage test', () => {
 
     expect(initData).not.toHaveBeenCalled()
   })
+
+  it('upgrades provider settings for more sessions than the row repository cache can retain', async () => {
+    const { RowBackedSessionRepository } = await import('@chatbox/core/application/session')
+    const { InMemorySessionRecordStore, InMemorySessionRowStore, InMemorySessionRepository } = await import(
+      '@chatbox/core/testing'
+    )
+    const repository = new RowBackedSessionRepository({
+      records: new InMemorySessionRecordStore(),
+      rows: new InMemorySessionRowStore(),
+    })
+    await repository.initialize()
+    const sessions = Array.from({ length: 33 }, (_, index) => ({
+      id: `upgrade-${index}`,
+      type: 'chat',
+      name: `Upgrade ${index}`,
+      messages: [],
+      settings: { aiProvider: 'openai', model: `model-${index}` },
+    }))
+    const data = new Map<string, unknown>([
+      [StorageKey.ConfigVersion, 7],
+      [StorageKey.ChatSessions, sessions],
+      [StorageKey.Settings, { aiProvider: 'openai', model: 'default-model' }],
+    ])
+    vi.spyOn(currentPlatform, 'getSessionMetaStorage').mockReturnValue(new InMemorySessionRepository().meta as never)
+    const { migrateOnData } = await import('@/stores/migration')
+    await migrateOnData(
+      {
+        getData: async <T>(key: string, fallback: T): Promise<T> => (data.get(key) as T | undefined) ?? fallback,
+        setData: async (key, value) => {
+          data.set(key, value)
+        },
+        setAll: async (values) => {
+          for (const [key, value] of Object.entries(values)) data.set(key, value)
+        },
+        getSession: (id) => repository.getSession(id),
+        setSession: (value, options) => repository.setSession(value, options),
+      },
+      false
+    )
+    for (const [index, session] of sessions.entries()) {
+      expect((await repository.getSession(session.id))?.settings).toMatchObject({
+        provider: 'openai',
+        modelId: `model-${index}`,
+      })
+    }
+    expect(data.get(StorageKey.ConfigVersion)).toBe(16)
+  })
+
+  it('backfills paused metadata from legacy KV sessions without promoting every session to row storage', async () => {
+    const sessionMetaStorage = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      getAll: vi.fn().mockResolvedValue([
+        {
+          id: 'session-1',
+          name: 'Session 1',
+          sortOrder: 0,
+          createdAt: 1_000,
+          hasPausedToolCall: true,
+        },
+      ]),
+      update: vi.fn().mockResolvedValue(undefined),
+    }
+    vi.spyOn(currentPlatform, 'getSessionMetaStorage').mockReturnValue(sessionMetaStorage as never)
+
+    const legacySession = {
+      id: 'session-1',
+      name: 'Session 1',
+      messages: [{ id: 'legacy-message', role: 'assistant', content: 'legacy content without contentParts' }],
+    }
+    const getData = vi.fn(async (key: string, defaultValue: unknown) => {
+      if (key === StorageKey.ConfigVersion) return 15
+      if (key === 'session:session-1') return legacySession
+      return defaultValue
+    })
+    const getSession = vi.fn().mockRejectedValue(new Error('must not promote rows during startup migration'))
+    const setData = vi.fn().mockResolvedValue(undefined)
+    const migration = await import('@/stores/migration')
+
+    await migration.migrateOnData(
+      {
+        getData,
+        setData,
+        setAll: vi.fn().mockResolvedValue(undefined),
+        getSession,
+        setSession: vi.fn().mockResolvedValue(undefined),
+        setBlob: vi.fn().mockResolvedValue(undefined),
+      } as never,
+      false
+    )
+
+    expect(getSession).not.toHaveBeenCalled()
+    expect(getData).toHaveBeenCalledWith('session:session-1', null)
+    expect(sessionMetaStorage.update).toHaveBeenCalledWith('session-1', { hasPausedToolCall: false })
+    expect(setData).toHaveBeenCalledWith(StorageKey.ConfigVersion, 16)
+  })
+
+  it('resumes the metadata backfill from rows already promoted by an interrupted attempt', async () => {
+    const sessionMetaStorage = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      getAll: vi
+        .fn()
+        .mockResolvedValue([
+          { id: 'session-1', name: 'Session 1', sortOrder: 0, createdAt: 1_000, hasPausedToolCall: true },
+        ]),
+      update: vi.fn().mockResolvedValue(undefined),
+    }
+    vi.spyOn(currentPlatform, 'getSessionMetaStorage').mockReturnValue(sessionMetaStorage as never)
+    const getData = vi.fn(async (key: string, defaultValue: unknown) => {
+      if (key === StorageKey.ConfigVersion) return 15
+      if (key === 'session:session-1') return { id: 'session-1', storageFormat: 'rows' }
+      return defaultValue
+    })
+    const getSession = vi.fn().mockResolvedValue({ id: 'session-1', name: 'Session 1', messages: [] })
+    const migration = await import('@/stores/migration')
+
+    await migration.migrateOnData(
+      {
+        getData,
+        setData: vi.fn().mockResolvedValue(undefined),
+        setAll: vi.fn().mockResolvedValue(undefined),
+        getSession,
+        setSession: vi.fn().mockResolvedValue(undefined),
+        setBlob: vi.fn().mockResolvedValue(undefined),
+      } as never,
+      false
+    )
+
+    expect(getSession).toHaveBeenCalledWith('session-1')
+    expect(sessionMetaStorage.update).toHaveBeenCalledWith('session-1', { hasPausedToolCall: false })
+  })
 })

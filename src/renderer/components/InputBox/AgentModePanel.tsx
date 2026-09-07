@@ -375,6 +375,22 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
     [skills, enabledSkillNames]
   )
 
+  const [pendingMode, setPendingMode] = useState<AgentModeValue | null>(null)
+  const saveMode = useCallback(
+    async (value: AgentModeValue) => {
+      setPendingMode(value)
+      try {
+        await setSessionAgentMode(sessionId, value)
+      } catch (error) {
+        console.error('Failed to save chat mode', error)
+        toastActions.add(t('Failed to save settings'))
+      } finally {
+        setPendingMode(null)
+      }
+    },
+    [sessionId, t]
+  )
+
   const handleModeChange = useCallback(
     (value: AgentModeValue) => {
       if (value === 'on' && !platform.isDesktopLike) {
@@ -392,9 +408,9 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
       if (value !== 'auto') {
         setAgentModeLastSelected(value)
       }
-      void setSessionAgentMode(sessionId, value)
+      void saveMode(value)
     },
-    [entry.value, modelId, providerId, sessionId, setAgentModeLastSelected, t]
+    [entry.value, modelId, providerId, sessionId, setAgentModeLastSelected, saveMode, t]
   )
   const handleSmartSwitchingChange = useCallback(
     (enabled: boolean) => {
@@ -408,9 +424,9 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
         enabled
       )
       setAgentModeSmartSwitchingDefault(enabled)
-      void setSessionAgentMode(sessionId, enabled ? 'auto' : 'off')
+      void saveMode(enabled ? 'auto' : 'off')
     },
-    [modelId, providerId, sessionId, setAgentModeSmartSwitchingDefault]
+    [modelId, providerId, sessionId, setAgentModeSmartSwitchingDefault, saveMode]
   )
 
   // Command approval + working directories are shared with the composer status row
@@ -658,7 +674,8 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
             variant={isActive ? 'filled' : 'default'}
             color={isActive ? 'chatbox-brand' : undefined}
             fullWidth
-            disabled={isDisabled}
+            disabled={isDisabled || pendingMode !== null}
+            loading={pendingMode === value}
             leftSection={<AgentModeStatusIcon mode={value} size={14} />}
             // Long locales (fr/pt/ru) wrap onto a second line instead of being clipped mid-word
             styles={{ root: { height: 'auto', minHeight: 26 }, label: { whiteSpace: 'normal', paddingBlock: 4 } }}
@@ -1230,8 +1247,10 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
                 </Stack>
                 <Switch
                   size="xs"
-                  checked={smartSwitchingEnabled}
-                  disabled={isSmartSwitchingDisabled}
+                  checked={pendingMode === 'auto' || (pendingMode === null && smartSwitchingEnabled)}
+                  disabled={isSmartSwitchingDisabled || pendingMode !== null}
+                  aria-busy={pendingMode !== null}
+                  thumbIcon={pendingMode !== null ? <Loader size={10} /> : undefined}
                   onChange={(e) => handleSmartSwitchingChange(e.currentTarget.checked)}
                 />
               </Flex>

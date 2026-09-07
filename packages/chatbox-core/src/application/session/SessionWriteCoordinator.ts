@@ -1,4 +1,4 @@
-import type { SessionRepositoryPort } from '../../ports'
+import { type SessionRepositoryPort, SessionWriteConflictError } from '../../ports'
 import type { Session, SessionMeta, SessionMetaRecord, Updater } from '../../types'
 import { projectSessionMetaUpdate } from './session-metadata'
 
@@ -11,6 +11,11 @@ export interface SessionWriteOptions {
   updateMeta?: boolean
   /** Explicit restore/import paths may clear a metadata-only recovery archive. */
   clearRecoveryArchive?: boolean
+  /**
+   * Passed to the repository: the updater changes only this message's content,
+   * leaving the message set, the branch selection and the threads alone.
+   */
+  changedMessageId?: string
 }
 
 export interface SessionWriteCoordinatorOptions {
@@ -273,7 +278,15 @@ export class SessionWriteCoordinator {
 
     const next = typeof updater === 'function' ? updater(previous) : { ...previous, ...updater }
     const updated = recoveryArchivedAt === undefined ? next : { ...next, hidden: true, archivedAt: recoveryArchivedAt }
-    await this.repository.setSession(updated)
+    try {
+      await this.repository.setSession(updated, { changedMessageId: options.changedMessageId, baseSession: previous })
+    } catch (error) {
+      if (error instanceof SessionWriteConflictError) {
+        this.current.delete(sessionId)
+        this.discardCurrentSession(sessionId)
+      }
+      throw error
+    }
     this.current.set(sessionId, updated)
 
     if (recoveryArchivedAt !== undefined || options.clearRecoveryArchive) {

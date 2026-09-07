@@ -10,10 +10,11 @@ import {
   Typography,
   useTheme,
 } from '@mui/material'
-import type { Settings } from '@shared/types'
+import type { Session, Settings } from '@shared/types'
 import { uniqBy } from 'lodash'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { sessionRepository } from '@/app/renderer-application'
 import { Accordion, AccordionDetails, AccordionSummary } from '@/components/Accordion'
 import TextFieldReset from '@/components/common/TextFieldReset'
 import { ShortcutConfig } from '@/components/Shortcut'
@@ -23,6 +24,7 @@ import platform from '@/platform'
 import storage, { StorageKey } from '@/storage'
 import { migrateOnData } from '@/stores/migration'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
+import { migrateSession } from '@/utils/session-utils'
 
 interface Props {
   settingsEdit: Settings
@@ -163,6 +165,14 @@ function ExportAndImport(props: { onCancel: () => void }) {
   const [importTips, setImportTips] = useState('')
   const onExport = async () => {
     const data = await storage.getAll()
+    // A stored session record carries no messages, so every session entry is
+    // replaced by the whole session the repository decodes from the row store.
+    for (const key of Object.keys(data)) {
+      if (!key.startsWith('session:')) continue
+      const session = await sessionRepository.getSession(key.slice('session:'.length))
+      if (session) data[key] = session
+      else delete data[key]
+    }
     delete data[StorageKey.Configs] // 不导出 uuid
     ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // 不导出license认证数据
     ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // 不导出license设备数据，导入数据的新设备也应该计入设备数
@@ -218,6 +228,13 @@ function ExportAndImport(props: { onCancel: () => void }) {
               },
               setAll: async (data) => {
                 Object.assign(importData, data)
+              },
+              getSession: async (id) => {
+                const value = importData[`session:${id}`]
+                return value && typeof value === 'object' ? migrateSession(value as Session) : null
+              },
+              setSession: async (session) => {
+                importData[`session:${session.id}`] = session
               },
             },
             false

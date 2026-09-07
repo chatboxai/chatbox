@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { toDbOpenError, useDbSchemaGuardStore, watchDbVersionChange } from '../db-schema-guard'
 import { IndexedDBImageGenerationStorage } from '../ImageGenerationStorage'
 import { IndexedDBSessionMetaStorage } from '../SessionMetaStorage'
+import { IndexedDBSessionRowStore } from '../SessionRowStorage'
 
 type RetryableStorageInternals = {
   openDatabase: () => Promise<void>
@@ -34,6 +35,7 @@ describe('IndexedDB lifecycle', () => {
   it.each([
     ['session metadata', () => new IndexedDBSessionMetaStorage()],
     ['image generation', () => new IndexedDBImageGenerationStorage()],
+    ['session rows', () => new IndexedDBSessionRowStore()],
   ] as const)('retries %s initialization after a transient failure', async (_name, createStorage) => {
     const storage = createStorage()
     const internals = storage as unknown as RetryableStorageInternals

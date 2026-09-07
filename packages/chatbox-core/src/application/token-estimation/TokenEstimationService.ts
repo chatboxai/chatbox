@@ -8,6 +8,8 @@ import {
   type TokenizerType,
 } from '@shared/token-estimation/tokenizer'
 import { getMessageText } from '@shared/utils/message'
+import type { SessionContextSource } from '../../ports/session-context-source'
+import type { SessionTextTokenRepositoryPort, SessionTextTokenResult } from '../../ports/session-text-tokens'
 import type { BlobStoragePort } from '../../ports'
 import type { Message, Session, Settings } from '../../types'
 import { findLastCompactionBoundaryMessage } from '../context/compaction-boundary'
@@ -52,6 +54,7 @@ export interface PortableTokenEstimationResult {
 }
 
 export interface TokenEstimationRequest {
+  contextSource?: SessionContextSource | null
   session?: Session | null
   constructedMessage?: Message
   model?: TokenEstimationModel
@@ -119,13 +122,20 @@ function estimateBoundedText(text: string, tokenizerType: TokenizerType): { appr
     : { approximate: false, tokens: estimateTokensForTokenizerType(text, tokenizerType) }
 }
 
-function estimateBoundedMessagesText(messages: Message[], tokenizerType: TokenizerType) {
+function estimateBoundedMessagesText(messages: Message[], tokenizerType: TokenizerType, useCached = false) {
   let tokens = 0
   let approximate = false
   const texts: string[] = []
   for (const message of messages) {
     const text = getMessageText(message, true, true)
-    const estimate = estimateBoundedText(text, tokenizerType)
+    const cached = useCached ? message.tokenCountMap?.[tokenizerType] : undefined
+    const estimate =
+      cached === undefined
+        ? estimateBoundedText(text, tokenizerType)
+        : {
+            tokens: cached,
+            approximate: message.tokenCountApproximate?.[tokenizerType] === true,
+          }
     texts.push(text)
     tokens += estimate.tokens
     approximate ||= estimate.approximate
@@ -138,7 +148,7 @@ function hydratedBreakdown(
   withAttachments: Message[],
   tokenizerType: TokenizerType
 ): HydratedBreakdown {
-  const textWithoutAttachments = estimateBoundedMessagesText(original, tokenizerType)
+  const textWithoutAttachments = estimateBoundedMessagesText(original, tokenizerType, true)
   const imageTokens = original.reduce((total, message) => total + imageTokenEstimate(message), 0)
   const hydratedTexts = withAttachments.map((message) => getMessageText(message, true, true))
   const textWithAttachments = textWithoutAttachments.texts.every((text, index) => text === hydratedTexts[index])
@@ -163,6 +173,7 @@ function messageContentFingerprint(message: Message): string | null {
       links: message.links,
       role: message.role,
       tokenCountMap: message.tokenCountMap,
+      tokenCountApproximate: message.tokenCountApproximate,
     })
   } catch {
     return null
@@ -176,12 +187,12 @@ function messageContentFingerprint(message: Message): string | null {
   return `${serialized.length}:${hash >>> 0}`
 }
 
-function canCompactSession(session: Session | null | undefined): boolean {
+function canCompactSession(session: Pick<Session, 'messages' | 'compactionPoints'> | null | undefined): boolean {
   return Boolean(findLastCompactionBoundaryMessage(selectTokenEstimationContext(session)))
 }
 
 export function selectTokenEstimationContext(
-  session: Session | null | undefined,
+  session: Pick<Session, 'messages' | 'compactionPoints'> | null | undefined,
   maxContextMessageCount?: number,
   constructedMessage?: Message
 ): Message[] {
@@ -249,18 +260,33 @@ export function getRawTailTokenBudget(options: {
   return Math.floor(getCompactionThresholdTokens(options) * RAW_TAIL_BUDGET_RATIO)
 }
 
+function estimationContext(request: TokenEstimationRequest) {
+  const source = request.contextSource
+  return source ? { messages: source.candidateMessages, compactionPoints: source.compactionPoints } : request.session
+}
+
+function assertEstimationActive(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  const error = new Error('Token estimation was cancelled')
+  error.name = 'AbortError'
+  throw signal.reason ?? error
+}
+
 export class TokenEstimationService {
   private readonly immediateHistoricalByObject = new WeakMap<Message, Map<TokenizerType, TokenBreakdown>>()
   private readonly immediateHistoricalByIdentity = new Map<string, { fingerprint: string; value: TokenBreakdown }>()
   private readonly historicalByObject = new WeakMap<Message, Map<TokenizerType, Promise<HydratedBreakdown>>>()
   private readonly historicalByIdentity = new Map<string, { fingerprint: string; value: Promise<HydratedBreakdown> }>()
 
-  constructor(private readonly blobs: Pick<BlobStoragePort, 'get'>) {}
+  constructor(
+    private readonly blobs: Pick<BlobStoragePort, 'get'>,
+    private readonly textTokenRepository?: SessionTextTokenRepositoryPort
+  ) {}
 
   estimateImmediately(request: TokenEstimationRequest): PortableTokenEstimationResult {
     const tokenizerType = getTokenizerType(request.model)
     const contextMessages = selectTokenEstimationContext(
-      request.session,
+      estimationContext(request),
       request.maxContextMessageCount,
       request.constructedMessage
     )
@@ -277,7 +303,7 @@ export class TokenEstimationService {
       contextTokens,
       totalTokens: currentInputTokens + contextTokens,
       contextMessageCount: contextMessages.length,
-      canManualCompact: canCompactSession(request.session),
+      canManualCompact: canCompactSession(estimationContext(request)),
       breakdown: { currentInput, context },
       approximation: {
         currentInput: Boolean(
@@ -290,18 +316,84 @@ export class TokenEstimationService {
     }
   }
 
-  async estimate(request: TokenEstimationRequest): Promise<PortableTokenEstimationResult> {
+  async estimate(
+    request: TokenEstimationRequest,
+    options: {
+      signal?: AbortSignal
+      onProgress?: (result: PortableTokenEstimationResult, completed: number, total: number) => void
+    } = {}
+  ): Promise<PortableTokenEstimationResult> {
     const tokenizerType = getTokenizerType(request.model)
     const contextMessages = selectTokenEstimationContext(
-      request.session,
+      estimationContext(request),
       request.maxContextMessageCount,
       request.constructedMessage
     )
+    const canManualCompact = canCompactSession(estimationContext(request))
     const currentMessages = request.constructedMessage ? [request.constructedMessage] : []
-    const [currentInputEstimate, contextEstimates] = await Promise.all([
-      this.estimateDraftMessages(currentMessages, tokenizerType),
-      Promise.all(contextMessages.map((message) => this.estimateHistoricalMessage(message, tokenizerType))),
-    ])
+    assertEstimationActive(options.signal)
+    const currentInputEstimate = await this.estimateDraftMessages(currentMessages, tokenizerType)
+    assertEstimationActive(options.signal)
+    const contextEstimates: HydratedBreakdown[] = []
+    const textResults: SessionTextTokenResult[] = []
+    let progressiveContext = emptyBreakdown()
+    let lastYieldAt = Date.now()
+    for (let offset = 0; offset < contextMessages.length; offset += 16) {
+      assertEstimationActive(options.signal)
+      const batch = await Promise.all(
+        contextMessages
+          .slice(offset, offset + 16)
+          .map((message) => this.estimateHistoricalMessage(message, tokenizerType))
+      )
+      contextEstimates.push(...batch)
+      if (this.textTokenRepository && request.contextSource?.textTokens) {
+        for (let index = 0; index < batch.length; index++) {
+          const message = contextMessages[offset + index]
+          const source = request.contextSource.textTokens.sources[message.id]
+          if (!source || message.tokenCountMap?.[tokenizerType] !== undefined) continue
+          if (source.text !== getMessageText(message, true, true)) continue
+          textResults.push({
+            source,
+            value: {
+              tokenizerType,
+              sourceDigest: source.textDigest,
+              tokens: batch[index].breakdown.text,
+              calculatedAt: Date.now(),
+              approximate: source.text.length >= LONG_DRAFT_TOKENIZATION_THRESHOLD,
+            },
+          })
+        }
+      }
+      assertEstimationActive(options.signal)
+      const context = mergeExactBreakdowns([progressiveContext, ...batch.map((estimate) => estimate.breakdown)])
+      progressiveContext = context
+      const currentInputTokens = totalBreakdown(currentInputEstimate.breakdown)
+      const contextTokens = totalBreakdown(context)
+      options.onProgress?.(
+        {
+          currentInputTokens,
+          contextTokens,
+          totalTokens: currentInputTokens + contextTokens,
+          contextMessageCount: contextMessages.length,
+          canManualCompact,
+          breakdown: { currentInput: currentInputEstimate.breakdown, context },
+          approximation: { currentInput: currentInputEstimate.approximate, context: true },
+        },
+        contextEstimates.length,
+        contextMessages.length
+      )
+      if (offset + 16 < contextMessages.length && Date.now() - lastYieldAt >= 8) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+        lastYieldAt = Date.now()
+      }
+    }
+    assertEstimationActive(options.signal)
+    if (textResults.length && request.contextSource && this.textTokenRepository) {
+      // Numerical caches are source-bound and rebuildable; a failed cache write must not fail estimation.
+      await this.textTokenRepository
+        .acceptSessionTextTokenResults(request.contextSource.header.id, textResults)
+        .catch(() => undefined)
+    }
     const currentInput = currentInputEstimate.breakdown
     const contextBreakdowns = contextEstimates.map((estimate) => estimate.breakdown)
     const context = mergeExactBreakdowns(contextBreakdowns)
@@ -312,7 +404,7 @@ export class TokenEstimationService {
       contextTokens,
       totalTokens: currentInputTokens + contextTokens,
       contextMessageCount: contextMessages.length,
-      canManualCompact: canCompactSession(request.session),
+      canManualCompact,
       breakdown: { currentInput, context },
       approximation: {
         currentInput: currentInputEstimate.approximate,

@@ -62,6 +62,38 @@ describe('SessionWriteCoordinator', () => {
     expect(repository.records.get(session.id)?.hasPausedToolCall).toBe(true)
   })
 
+  test('restores backups after queued writes and primes subsequent edits from the restored value', async () => {
+    const repository = new MemorySessionRepository()
+    const original = createTestSession('restore')
+    repository.sessions.set(original.id, original)
+    const coordinator = new SessionWriteCoordinator(repository)
+    coordinator.prime(original)
+    const queued = coordinator.update(original.id, (session) => appendMessage(session, 'queued'))
+    const restored = { ...original, messages: [message('backup')] }
+    await Promise.all([queued, coordinator.replaceFromBackup(restored)])
+    await coordinator.update(original.id, (session) => appendMessage(session, 'after-restore'))
+    expect(repository.sessions.get(original.id)?.messages.map(({ id }) => id)).toEqual(['backup', 'after-restore'])
+    await coordinator.delete(original.id, async () => {
+      repository.sessions.delete(original.id)
+    })
+    await coordinator.replaceFromBackup(restored)
+    await coordinator.update(original.id, (session) => appendMessage(session, 'revived'))
+    expect(repository.sessions.get(original.id)?.messages.map(({ id }) => id)).toEqual(['backup', 'revived'])
+  })
+
+  test('keeps the previous write baseline when backup persistence fails', async () => {
+    const repository = new MemorySessionRepository()
+    const original = createTestSession('restore-failure')
+    repository.sessions.set(original.id, original)
+    const coordinator = new SessionWriteCoordinator(repository)
+    coordinator.prime(original)
+    vi.spyOn(repository, 'setSession').mockRejectedValueOnce(new Error('disk full'))
+    await expect(coordinator.replaceFromBackup({ ...original, messages: [message('failed')] })).rejects.toThrow(
+      'disk full'
+    )
+    await coordinator.update(original.id, (session) => appendMessage(session, 'surviving'))
+    expect(repository.sessions.get(original.id)?.messages.map(({ id }) => id)).toEqual(['surviving'])
+  })
 
   test('passes the changed message hint through to the repository write', async () => {
     const repository = new MemorySessionRepository()

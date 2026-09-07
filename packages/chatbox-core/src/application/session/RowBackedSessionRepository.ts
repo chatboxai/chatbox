@@ -103,6 +103,10 @@ export interface RowBackedSessionRepositoryOptions {
   records: SessionRecordStorePort
   rows: SessionRowStorePort
   now?: () => number
+  /** Convert the selected legacy record before exposing its first UI read model. */
+  migrateLegacyBeforeRead?: boolean
+  /** Hosts with interactive work-mode controls need the complete graph for those controls. */
+  requiresCompleteWorkModeView?: boolean
   /** Called when a V1 record fails its round-trip self-check; that session keeps working in V1 form. */
   onMigrationSkipped?: (sessionId: string, reason: string) => void
   /** Serializes one session across renderer contexts that share the same stores. */
@@ -224,6 +228,8 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
   private readonly rows: SessionRowStorePort
   private readonly persistence: SessionPersistenceProtocol
   private readonly now: () => number
+  private readonly migrateLegacyBeforeRead: boolean
+  private readonly requiresCompleteWorkModeView: boolean
   private readonly onMigrationSkipped?: (sessionId: string, reason: string) => void
   private readonly serializeSessionOperation?: RowBackedSessionRepositoryOptions['serializeSessionOperation']
   private readonly baselines = new Map<string, SessionBaseline>()
@@ -237,6 +243,8 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     this.rows = options.rows
     this.persistence = new SessionPersistenceProtocol(options.records, options.rows)
     this.now = options.now ?? (() => Date.now())
+    this.migrateLegacyBeforeRead = options.migrateLegacyBeforeRead ?? false
+    this.requiresCompleteWorkModeView = options.requiresCompleteWorkModeView ?? true
     this.onMigrationSkipped = options.onMigrationSkipped
     this.serializeSessionOperation = options.serializeSessionOperation
   }
@@ -295,10 +303,15 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
 
   getSessionReadModel(id: string): Promise<SessionReadModel | null> {
     return this.enqueueSessionOperation(id, async () => {
-      const marker = await this.records.getRecord(id)
+      let marker = await this.records.getRecord(id)
       if (!marker) {
         this.forgetSessionState(id)
         return null
+      }
+      if (this.migrateLegacyBeforeRead && !isRowsSessionRecord(marker)) {
+        await this.migrateSessionNow(id, { record: marker })
+        marker = await this.records.getRecord(id)
+        if (!marker) return null
       }
       if (isRowsSessionRecord(marker)) {
         let window = await this.rows.readMessageWindow({ sessionId: id, limit: 50 })
@@ -324,7 +337,9 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
           presentation.generatingMessageCount === 0 &&
           presentation.pausedMessageCount === 0 &&
           header.type !== 'picture' &&
-          (header.settings?.agentMode?.value === 'off' || header.settings?.agentMode?.value === 'auto')
+          (!this.requiresCompleteWorkModeView ||
+            header.settings?.agentMode?.value === 'off' ||
+            header.settings?.agentMode?.value === 'auto')
         ) {
           return {
             kind: 'window',
@@ -617,8 +632,11 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     return this.enqueueSessionOperation(id, () => this.migrateSessionNow(id))
   }
 
-  private async migrateSessionNow(id: string): Promise<SessionMigrationOutcome> {
-    const state = await this.inspectPersistedState('get-session', id)
+  private async migrateSessionNow(
+    id: string,
+    observedRecord?: { record: StoredSessionRecord | null }
+  ): Promise<SessionMigrationOutcome> {
+    const state = await this.inspectPersistedState('get-session', id, null, observedRecord)
     if (state.kind === 'missing') return 'missing'
     if (state.kind === 'rows') return 'already'
     const migrated = await this.writeMigratedSession(id, state, state.session)

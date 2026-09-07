@@ -1,4 +1,8 @@
 {
+  "Return to top": "回到顶部",
+  "Load earlier messages": "加载更早的消息",
+  "Load newer messages": "加载更新的消息",
+  "Failed to load messages. Tap to retry.": "消息加载失败，点击重试。",
   "Import failed": "导入失败",
   "A six-digit code will be sent to this email.": "我们会向该邮箱发送一个 6 位验证码。",
   "A valid Chatbox License is required for built-in web search.": "内置网络搜索需要有效的 Chatbox 许可证。",

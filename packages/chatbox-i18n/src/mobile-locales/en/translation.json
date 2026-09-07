@@ -1,4 +1,8 @@
 {
+  "Return to top": "Return to top",
+  "Load earlier messages": "Load earlier messages",
+  "Load newer messages": "Load newer messages",
+  "Failed to load messages. Tap to retry.": "Failed to load messages. Tap to retry.",
   "Import failed": "Import failed",
   "A six-digit code will be sent to this email.": "A six-digit code will be sent to this email.",
   "A valid Chatbox License is required for built-in web search.": "A valid Chatbox License is required for built-in web search.",

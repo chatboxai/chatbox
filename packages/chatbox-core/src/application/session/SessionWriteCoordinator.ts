@@ -299,6 +299,16 @@ export class SessionWriteCoordinator {
     this.loadedRecoveryArchiveState.add(session.id)
   }
 
+  /** Explicit backup restoration replaces a record, including a missing or deleted id, after queued writes drain. */
+  replaceFromBackup(session: Session): Promise<void> {
+    return this.enqueue(session.id, async () => {
+      const baseSession = await this.repository.getSession(session.id)
+      await this.repository.setSession(session, { baseSession: baseSession ?? undefined })
+      this.prime(session)
+      this.discardCurrentSession(session.id)
+    })
+  }
+
   forget(sessionId: string): void {
     this.unavailable.delete(sessionId)
     this.current.delete(sessionId)

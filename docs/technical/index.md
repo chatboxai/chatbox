@@ -11,6 +11,7 @@
 | 文档 | 描述 |
 |------|------|
 | [跨平台架构](./architecture.md) | 应用整体架构、平台抽象层、进程模型、模块划分 |
+| [React Native 会话行存储与窗口读取](./react-native-session-row-storage.md) | 共享持久化协议、双向分页、压缩点上下文、备份兼容性与真机验证边界 |
 | [AI 供应商系统](./ai-providers.md) | 模型供应商注册表、OAuth 登录集成、模型类层级、能力声明、自建供应商 |
 | [Provider 网络兼容性请求](./provider-networking.md) | 改善网络兼容性的跨平台传输矩阵、Desktop 主进程直连、relay 与取消边界 |
 | [Cursor / OpenCode 订阅登录](./subscription-oauth-research.md) | 两个订阅产品的官方登录机制、Cursor 无私有 API 接入、OpenCode Zen / Go API Key 网关 |

@@ -21,6 +21,45 @@ afterEach(() => {
 })
 
 describe('TokenEstimationService', () => {
+  it('supports native AbortSignals without throwIfAborted', async () => {
+    const controller = new AbortController()
+    Object.defineProperty(controller.signal, 'throwIfAborted', { value: undefined })
+    await expect(service.estimate({}, { signal: controller.signal })).resolves.toMatchObject({ totalTokens: 0 })
+    controller.abort()
+    await expect(service.estimate({}, { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('publishes cumulative batches and stops work after cancellation', async () => {
+    const session: Session = {
+      id: 'progress',
+      name: 'Progress',
+      messages: Array.from({ length: 40 }, (_, index) => ({
+        id: `progress-${index}`,
+        role: 'user',
+        contentParts: [{ type: 'text', text: 'batch content' }],
+      })),
+    }
+    const progress = vi.fn()
+    const result = await service.estimate({ session }, { onProgress: progress })
+    expect(progress.mock.calls.map(([, completed, total]) => [completed, total])).toEqual([
+      [16, 40],
+      [32, 40],
+      [40, 40],
+    ])
+    expect(progress.mock.calls.map(([partial]) => partial.contextTokens)).toEqual([
+      (result.contextTokens * 16) / 40,
+      (result.contextTokens * 32) / 40,
+      result.contextTokens,
+    ])
+    expect(progress.mock.calls.every(([partial]) => partial.approximation.context)).toBe(true)
+    const controller = new AbortController()
+    const cancelled = vi.fn(() => controller.abort())
+    await expect(
+      service.estimate({ session }, { signal: controller.signal, onProgress: cancelled })
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(cancelled).toHaveBeenCalledTimes(1)
+  })
+
   it('counts draft, selected context, tool payloads, and inline attachments with v2 semantics', async () => {
     blobs.set('attachment:1', 'attachment body '.repeat(40))
     const toolMessage: Message = {

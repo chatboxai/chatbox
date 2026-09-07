@@ -13,6 +13,19 @@ function createListener<T extends unknown[]>(channel: string) {
   }
 }
 
+function addMcpStdioTransportEventListener<Args extends unknown[]>(
+  transportId: string,
+  event: string,
+  callback?: (...args: Args) => void
+) {
+  const channel = `mcp:stdio-transport:${transportId}:${event}`
+  const listener = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => {
+    callback?.(...(args as Args))
+  }
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}
+
 const electronHandler: ElectronIPC = {
   invoke: ipcRenderer.invoke,
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
@@ -36,11 +49,7 @@ const electronHandler: ElectronIPC = {
     ipcRenderer.on('update-downloaded', callback)
     return () => ipcRenderer.off('update-downloaded', callback)
   },
-  addMcpStdioTransportEventListener: (transportId: string, event: string, callback?: (...args: any[]) => void) => {
-    ipcRenderer.on(`mcp:stdio-transport:${transportId}:${event}`, (_event, ...args) => {
-      callback?.(...args)
-    })
-  },
+  addMcpStdioTransportEventListener,
   onNavigate: (callback: (path: string) => void) => {
     const listener = (_event: unknown, path: string) => {
       callback(path)

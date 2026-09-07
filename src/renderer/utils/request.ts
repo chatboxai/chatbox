@@ -1,6 +1,7 @@
 import platform from '@/platform'
 import { ApiError, BaseError, NetworkError } from '../../shared/models/errors'
 import { isLocalHost } from '../../shared/utils/network_utils'
+import { desktopDirectRequestFromWindow } from './desktop-direct-request'
 import { handleMobileRequest } from './mobile-request'
 
 interface RequestOptions {
@@ -19,8 +20,9 @@ async function retryRequest<T>(fn: () => Promise<T>, retry: number, url: string)
     try {
       return await fn()
     } catch (e) {
-      // 对 ApiError（通常代表 4xx/业务错误）不重试
-      if (e instanceof ApiError) {
+      // ApiError represents an upstream response and AbortError is an explicit
+      // caller cancellation; neither belongs in the network retry path.
+      if (e instanceof ApiError || (e instanceof Error && e.name === 'AbortError')) {
         throw e
       }
       let origin = 'unknown'
@@ -42,7 +44,7 @@ function buildHeaders(options: RequestOptions, url: string): Headers {
   const headers = new Headers(options.headers)
   headers.set('Content-Type', 'application/json')
 
-  if (options.useProxy && !isLocalHost(url) && platform.type !== 'mobile') {
+  if (options.useProxy && !isLocalHost(url) && platform.type !== 'mobile' && platform.type !== 'desktop') {
     headers.set('CHATBOX-TARGET-URI', url)
     headers.set('CHATBOX-PLATFORM', platform.type)
   }
@@ -55,18 +57,22 @@ async function doRequest(url: string, options: RequestOptions): Promise<Response
   let requestUrl = url
   const headers = buildHeaders(options, url)
 
-  if (useProxy && !isLocalHost(url) && platform.type !== 'mobile') {
+  if (useProxy && !isLocalHost(url) && platform.type !== 'mobile' && platform.type !== 'desktop') {
     const version = await platform.getVersion()
     headers.set('CHATBOX-VERSION', version || 'unknown')
     requestUrl = 'https://cors-proxy.chatboxai.app/proxy-api/completions'
   }
 
   const makeRequest = async () => {
+    let res: Response
     if (platform.type === 'mobile' && useProxy) {
-      return handleMobileRequest(requestUrl, method, headers, body, signal)
+      res = await handleMobileRequest(requestUrl, method, headers, body, signal)
+    } else if (platform.type === 'desktop' && useProxy && !isLocalHost(url)) {
+      res = await desktopDirectRequestFromWindow(requestUrl, method, headers, body, signal)
+    } else {
+      res = await fetch(requestUrl, { method, headers, body, signal })
     }
 
-    const res = await fetch(requestUrl, { method, headers, body, signal })
     if (!res.ok) {
       const err = await res.text().catch(() => null)
       throw new ApiError(`Status Code ${res.status}`, err ?? undefined)

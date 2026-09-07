@@ -206,6 +206,231 @@ describe('ZIP backup round trip', () => {
     expect(nativeRandomUuid).not.toHaveBeenCalled()
   })
 
+  it('rebases conversation-only snapshots without replacing frozen memories', async () => {
+    const frozenSnapshot = {
+      version: 1,
+      soul: '',
+      memories: [{ id: 'm1', content: 'Frozen source memory', createdAt: 1 }],
+      memoryEnabled: true,
+      memoryStateToken: 'source-global',
+      workspaceInstructions: '',
+      workspaceDirectories: [],
+      capturedAt: 1,
+      scope: 'chat' as const,
+    }
+    const session: Session = {
+      id: 'memory-snapshot',
+      name: 'Memory snapshot',
+      messages: [{ id: 'user-1', role: 'user', contentParts: [{ type: 'text', text: 'hello' }] }],
+      settings: { sessionPromptContextSnapshot: frozenSnapshot },
+      threads: [
+        {
+          id: 'thread-1',
+          name: 'Earlier thread',
+          messages: [],
+          createdAt: 1,
+          sessionPromptContextSnapshot: frozenSnapshot,
+        },
+      ],
+    }
+    const source = new MemoryStorage()
+    const sourceMeta = new MemoryMetaStorage()
+    source.values.set(backupSessionStorageKey(session.id), session)
+    sourceMeta.records.set(session.id, createMeta(session, 1))
+    const chunks: Uint8Array[] = []
+    await exportBackupArchive({
+      exportItems: ['conversations'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: sourceMeta,
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (dataCallback) => {
+        for await (const chunk of dataCallback()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+
+    const destination = new MemoryStorage()
+    destination.values.set(BackupStorageKey.Settings, { memoryEnabled: true, memoryStateToken: 'destination-global' })
+    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'conversations.zip'), {
+      storage: destination,
+      metaStorage: new MemoryMetaStorage(),
+    })
+
+    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    expect(restored.settings?.sessionPromptContextSnapshot).toEqual({
+      ...frozenSnapshot,
+      memoryStateToken: ':destination-global',
+    })
+    expect(restored.threads?.[0].sessionPromptContextSnapshot).toEqual({
+      ...frozenSnapshot,
+      memoryStateToken: ':destination-global',
+    })
+  })
+
+  it('translates only current snapshots when settings and conversations are restored together', async () => {
+    const currentSnapshot = {
+      version: 1,
+      soul: '',
+      memories: [{ id: 'm1', content: 'Current source memory', createdAt: 1 }],
+      memoryEnabled: true,
+      memoryStateToken: ':source-global',
+      workspaceInstructions: '',
+      workspaceDirectories: [],
+      capturedAt: 1,
+      scope: 'chat' as const,
+    }
+    const pendingSnapshot = {
+      ...currentSnapshot,
+      memories: [{ id: 'm0', content: 'Pending source memory', createdAt: 0 }],
+      memoryStateToken: ':source-stale',
+    }
+    const session: Session = {
+      ...createSession('full-memory-state'),
+      settings: { sessionPromptContextSnapshot: pendingSnapshot },
+      threads: [
+        {
+          id: 'thread-1',
+          name: 'Earlier thread',
+          messages: [],
+          createdAt: 1,
+          sessionPromptContextSnapshot: currentSnapshot,
+        },
+      ],
+    }
+    const source = new MemoryStorage()
+    const sourceMeta = new MemoryMetaStorage()
+    source.values.set(BackupStorageKey.Settings, { memoryEnabled: true, memoryStateToken: 'source-global' })
+    source.values.set(backupSessionStorageKey(session.id), session)
+    sourceMeta.records.set(session.id, createMeta(session, 1))
+    const chunks: Uint8Array[] = []
+    await exportBackupArchive({
+      exportItems: ['setting', 'conversations'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: sourceMeta,
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (dataCallback) => {
+        for await (const chunk of dataCallback()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+
+    const destination = new MemoryStorage()
+    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'full.zip'), {
+      storage: destination,
+      metaStorage: new MemoryMetaStorage(),
+    })
+
+    const restoredSettings = destination.values.get(BackupStorageKey.Settings) as Settings
+    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    expect(restoredSettings.memoryStateToken).toEqual(expect.any(String))
+    expect(restoredSettings.memoryStateToken).not.toBe('source-global')
+    expect(restored.settings?.sessionPromptContextSnapshot).toEqual(pendingSnapshot)
+    expect(restored.threads?.[0].sessionPromptContextSnapshot).toEqual({
+      ...currentSnapshot,
+      memoryStateToken: `:${restoredSettings.memoryStateToken}`,
+    })
+  })
+
+  it('gives imported Global Memory settings a fresh token even when the source and destination tokens match', async () => {
+    const source = new MemoryStorage()
+    source.values.set(BackupStorageKey.Settings, { memoryEnabled: false, memoryStateToken: 'same-global' })
+    const chunks: Uint8Array[] = []
+    await exportBackupArchive({
+      exportItems: ['setting'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: new MemoryMetaStorage(),
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (dataCallback) => {
+        for await (const chunk of dataCallback()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+
+    const existingSession: Session = {
+      ...createSession('destination-global-session'),
+      settings: {
+        sessionPromptContextSnapshot: {
+          version: 1,
+          soul: '',
+          memories: [],
+          memoryEnabled: true,
+          memoryStateToken: ':same-global',
+          workspaceInstructions: '',
+          workspaceDirectories: [],
+          capturedAt: 1,
+        },
+      },
+    }
+    const destination = new MemoryStorage()
+    destination.values.set(BackupStorageKey.Settings, { memoryEnabled: true, memoryStateToken: 'same-global' })
+    destination.values.set(backupSessionStorageKey(existingSession.id), existingSession)
+    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'settings.zip'), {
+      storage: destination,
+      metaStorage: new MemoryMetaStorage(),
+    })
+
+    const restoredSettings = destination.values.get(BackupStorageKey.Settings) as Settings
+    expect(restoredSettings.memoryStateToken).toEqual(expect.any(String))
+    expect(restoredSettings.memoryStateToken).not.toBe('same-global')
+    expect(destination.values.get(backupSessionStorageKey(existingSession.id))).toEqual(existingSession)
+  })
+
+  it('gives imported Copilot Memory state fresh tokens without rewriting destination conversations', async () => {
+    const source = new MemoryStorage()
+    source.values.set(BackupStorageKey.MyCopilots, [{ id: 'copilot-1', name: 'Copilot', prompt: 'Help' }])
+    source.values.set(BackupStorageKey.CopilotMemoryOwners, [{ id: 'copilot-1', name: 'Copilot' }])
+    source.values.set(BackupStorageKey.CopilotMemoryTokens, [{ id: 'copilot-1', token: 'same-copilot' }])
+    const chunks: Uint8Array[] = []
+    await exportBackupArchive({
+      exportItems: ['copilot'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: new MemoryMetaStorage(),
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (dataCallback) => {
+        for await (const chunk of dataCallback()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+
+    const existingSession: Session = {
+      ...createSession('destination-copilot-session'),
+      copilotId: 'copilot-1',
+      settings: {
+        sessionPromptContextSnapshot: {
+          version: 1,
+          soul: '',
+          memories: [],
+          memoryCopilotId: 'copilot-1',
+          memoryEnabled: true,
+          memoryStateToken: 'same-copilot:',
+          workspaceInstructions: '',
+          workspaceDirectories: [],
+          capturedAt: 1,
+        },
+      },
+    }
+    const destination = new MemoryStorage()
+    destination.values.set(BackupStorageKey.CopilotMemoryOwners, [{ id: 'copilot-1', name: 'Copilot' }])
+    destination.values.set(BackupStorageKey.CopilotMemoryTokens, [{ id: 'copilot-1', token: 'same-copilot' }])
+    destination.values.set(backupSessionStorageKey(existingSession.id), existingSession)
+    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'copilot.zip'), {
+      storage: destination,
+      metaStorage: new MemoryMetaStorage(),
+    })
+
+    const restoredTokens = destination.values.get(BackupStorageKey.CopilotMemoryTokens) as Array<{
+      id: string
+      token: string
+    }>
+    expect(restoredTokens).toEqual([{ id: 'copilot-1', token: expect.any(String) }])
+    expect(restoredTokens[0].token).not.toBe('same-copilot')
+    expect(destination.values.get(backupSessionStorageKey(existingSession.id))).toEqual(existingSession)
+  })
+
   it('round-trips global settings, copilots, and session settings while pruning unavailable images', async () => {
     const source = new MemoryStorage()
     const sourceSettings = {
@@ -227,6 +452,18 @@ describe('ZIP backup round trip', () => {
     source.values.set(BackupStorageKey.MyCopilots, copilots)
     source.values.set(BackupStorageKey.ChatSessionSettings, { model: 'model-a' })
     source.values.set(BackupStorageKey.PictureSessionSettings, { model: 'model-b' })
+    source.values.set(BackupStorageKey.AgentSoul, {
+      content: '# Soul\n\nDirect and concise.',
+      updatedAt: 1700000000000,
+    })
+    source.values.set(BackupStorageKey.AgentMemories, [
+      { id: 'm1', content: 'User prefers pnpm', createdAt: 1700000000000 },
+    ])
+    source.values.set(BackupStorageKey.CopilotMemories, {
+      'copilot-1': [{ id: 'cm1', content: 'Use short lessons', createdAt: 1700000000000 }],
+    })
+    source.values.set(BackupStorageKey.CopilotMemoryOwners, [{ id: 'copilot-1', name: 'Copilot' }])
+    source.values.set(BackupStorageKey.CopilotMemoryTokens, [{ id: 'copilot-1', token: 'source-copilot' }])
     source.blobs.set('picture:kept', 'data:image/png;base64,AAECAw==')
     const chunks: Uint8Array[] = []
 
@@ -254,6 +491,7 @@ describe('ZIP backup round trip', () => {
     expect(destination.values.get(BackupStorageKey.Settings)).toEqual({
       defaultAssistantAvatarKey: 'picture:kept',
       providers: { custom: { apiHost: 'https://example.com' } },
+      memoryStateToken: expect.any(String),
     })
     expect(destination.values.get(BackupStorageKey.MyCopilots)).toEqual([
       {
@@ -265,6 +503,20 @@ describe('ZIP backup round trip', () => {
     ])
     expect(destination.values.get(BackupStorageKey.ChatSessionSettings)).toEqual({ model: 'model-a' })
     expect(destination.values.get(BackupStorageKey.PictureSessionSettings)).toEqual({ model: 'model-b' })
+    expect(destination.values.get(BackupStorageKey.AgentSoul)).toEqual({
+      content: '# Soul\n\nDirect and concise.',
+      updatedAt: 1700000000000,
+    })
+    expect(destination.values.get(BackupStorageKey.AgentMemories)).toEqual([
+      { id: 'm1', content: 'User prefers pnpm', createdAt: 1700000000000 },
+    ])
+    expect(destination.values.get(BackupStorageKey.CopilotMemories)).toEqual({
+      'copilot-1': [{ id: 'cm1', content: 'Use short lessons', createdAt: 1700000000000 }],
+    })
+    expect(destination.values.get(BackupStorageKey.CopilotMemoryOwners)).toEqual([{ id: 'copilot-1', name: 'Copilot' }])
+    const restoredCopilotTokens = destination.values.get(BackupStorageKey.CopilotMemoryTokens)
+    expect(restoredCopilotTokens).toEqual([{ id: 'copilot-1', token: expect.any(String) }])
+    expect(restoredCopilotTokens).not.toEqual([{ id: 'copilot-1', token: 'source-copilot' }])
     expect(destination.blobs.get('picture:kept')).toBe('data:image/png;base64,AAECAw==')
   })
 

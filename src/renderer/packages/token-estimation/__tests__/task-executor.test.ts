@@ -1,11 +1,18 @@
 import type { Message, Session } from '@shared/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computationQueue } from '../computation-queue'
+import { estimateDraftTokensImmediately, getTokenizationTextDigest } from '../draft-tokenization'
+import { _resetExactTokenizationFallbacks, getExactTokenizationFallbackCount } from '../exact-retry'
 import { executeTask, initializeExecutor, setResultPersister } from '../task-executor'
 import type { ComputationTask } from '../types'
 
-vi.mock('@/stores/chatStore', () => ({
-  getSession: vi.fn(),
+const { getSessionMock, tokenizeDraftMock } = vi.hoisted(() => ({
+  getSessionMock: vi.fn(),
+  tokenizeDraftMock: vi.fn(),
+}))
+
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: { sessionQueryBridge: { getSession: getSessionMock } },
 }))
 
 vi.mock('@/storage', () => ({
@@ -14,10 +21,13 @@ vi.mock('@/storage', () => ({
   },
 }))
 
-import storage from '@/storage'
-import * as chatStore from '@/stores/chatStore'
+vi.mock('../draft-tokenizer-worker-client', () => ({
+  tokenizeDraftOffMainThread: tokenizeDraftMock,
+}))
 
-const mockGetSession = vi.mocked(chatStore.getSession)
+import storage from '@/storage'
+
+const mockGetSession = getSessionMock
 const mockGetBlob = vi.mocked(storage.getBlob)
 
 function createMessage(overrides: Partial<Message> = {}): Message {
@@ -72,10 +82,12 @@ describe('executeTask', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     computationQueue._reset()
+    _resetExactTokenizationFallbacks()
   })
 
   afterEach(() => {
     computationQueue._reset()
+    _resetExactTokenizationFallbacks()
   })
 
   describe('session cancellation', () => {
@@ -192,6 +204,76 @@ describe('executeTask', () => {
 
       expect(result.success).toBe(true)
       expect(result.result?.tokenizerType).toBe('deepseek')
+    })
+  })
+
+  describe('long message text', () => {
+    // Long enough for the draft worker; spaced words keep the sampling
+    // fallback comparison cheap.
+    const longText = 'queued draft word '.repeat(300)
+
+    function sessionWithLongMessage(): Session {
+      return createSession({
+        messages: [createMessage({ id: 'msg-1', contentParts: [{ type: 'text', text: longText }] })],
+      })
+    }
+
+    it('encodes in the draft worker at low priority instead of on this thread', async () => {
+      mockGetSession.mockResolvedValue(sessionWithLongMessage())
+      tokenizeDraftMock.mockResolvedValue(424242)
+
+      const result = await executeTask(createMessageTextTask())
+
+      expect(result.success).toBe(true)
+      expect(result.result?.tokens).toBe(424242)
+      expect(result.result?.approximate).toBe(false)
+      expect(result.result?.textDigest).toBe(getTokenizationTextDigest(longText))
+      expect(tokenizeDraftMock).toHaveBeenCalledWith(longText, 'default', expect.any(AbortSignal), {
+        lowPriority: true,
+      })
+    })
+
+    it('persists the bounded sampling estimate marked approximate when the worker fails', async () => {
+      mockGetSession.mockResolvedValue(sessionWithLongMessage())
+      tokenizeDraftMock.mockRejectedValue(new Error('worker unavailable'))
+
+      const result = await executeTask(createMessageTextTask())
+
+      expect(result.success).toBe(true)
+      expect(result.result?.tokens).toBe(estimateDraftTokensImmediately(longText, 'default'))
+      expect(result.result?.approximate).toBe(true)
+      expect(result.result?.textDigest).toBe(getTokenizationTextDigest(longText))
+      expect(result.result?.calculatedAt).toBeDefined()
+    })
+
+    it('leaves retry budget accounting to the persister', async () => {
+      mockGetSession.mockResolvedValue(sessionWithLongMessage())
+      tokenizeDraftMock.mockRejectedValue(new Error('worker unavailable'))
+      const textDigest = getTokenizationTextDigest(longText)
+
+      await executeTask(createMessageTextTask())
+      await executeTask(createMessageTextTask())
+      expect(getExactTokenizationFallbackCount('msg-1', 'default', textDigest)).toBe(0)
+    })
+
+    it('drops a task whose analyzed source changed before execution', async () => {
+      mockGetSession.mockResolvedValue(sessionWithLongMessage())
+      const result = await executeTask(
+        createMessageTextTask({ textDigest: getTokenizationTextDigest('the previous text') })
+      )
+
+      expect(result).toEqual({ success: false, error: 'stale_message_text', silent: true })
+      expect(tokenizeDraftMock).not.toHaveBeenCalled()
+    })
+
+    it('keeps short text on the synchronous encoder', async () => {
+      mockGetSession.mockResolvedValue(createSession())
+
+      const result = await executeTask(createMessageTextTask())
+
+      expect(result.success).toBe(true)
+      expect(result.result?.approximate).toBe(false)
+      expect(tokenizeDraftMock).not.toHaveBeenCalled()
     })
   })
 

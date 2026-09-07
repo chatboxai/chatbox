@@ -9,6 +9,7 @@ import GeminiColor from '@lobehub/icons/es/Gemini/components/Color'
 import GrokMono from '@lobehub/icons/es/Grok/components/Mono'
 import HunyuanColor from '@lobehub/icons/es/Hunyuan/components/Color'
 import KimiMono from '@lobehub/icons/es/Kimi/components/Mono'
+import LongCatColor from '@lobehub/icons/es/LongCat/components/Color'
 import MetaColor from '@lobehub/icons/es/Meta/components/Color'
 import MinimaxColor from '@lobehub/icons/es/Minimax/components/Color'
 import MistralColor from '@lobehub/icons/es/Mistral/components/Color'
@@ -62,6 +63,7 @@ const BRAND_ICONS: Record<ModelBrand, ModelLogoConfig> = {
   grok: { icon: GrokMono, darkModeColor: '#fff' },
   perplexity: { icon: PerplexityColor },
   xiaomi: { icon: XiaomiMiMoMono, darkModeColor: '#fff' },
+  longcat: { icon: LongCatColor },
 }
 
 /**

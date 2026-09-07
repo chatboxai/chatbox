@@ -2,6 +2,14 @@ import type { JSONValue } from '@ai-sdk/provider'
 import type { ReasoningPart } from '@ai-sdk/provider-utils'
 import type { FilePart, ImagePart, ModelMessage, TextPart, ToolCallPart } from 'ai'
 import { compact } from 'lodash'
+import { pickPersistableProviderMetadata } from '../models/provider-part-metadata'
+import { DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT, getToolResultImageReference } from '../tool-result-image'
+import {
+  buildViewImageToolResultContent,
+  buildViewImageUserMessage,
+  type ViewImageInjection,
+  viewImageAttachmentNotice,
+} from '../tools/view-image'
 import type { Message, MessageContentParts, MessageContentToolCallPart } from '../types'
 import { getMessageText } from '../utils/message'
 
@@ -14,9 +22,36 @@ export type ModelImageResolver = (storageKey: string) => Promise<string | null>
 
 export interface ConvertToModelMessagesOptions {
   modelSupportVision: boolean
-  preserveReasoning?: boolean
+  /**
+   * Whether historical assistant reasoning survives conversion.
+   * - `false`/omitted: reasoning is dropped (most providers reject or mangle it).
+   * - `true` / `'all-turns'` (equivalent): reasoning is kept on every assistant
+   *   turn (DeepSeek thinking mode, and Anthropic Messages signed replay —
+   *   the documented pattern: send everything back, the API filters per model).
+   */
+  preserveReasoning?: boolean | 'all-turns'
+  /**
+   * When true, only reasoning parts that carry whitelisted replay metadata
+   * (Anthropic `signature` / `redactedData`) go on the wire. This is the
+   * Cherry-style source filter: Kimi/DeepSeek/Gemini thoughts have no
+   * Anthropic signature and are omitted, while Claude signatures survive a
+   * same-realm model or host switch (Claude API / Bedrock Messages / Vertex
+   * signatures are cross-compatible).
+   */
+  signedReasoningOnly?: boolean
   ensureGoogleFunctionCallSignatures?: boolean
+  /**
+   * The model's wire protocol accepts images inside tool results (see
+   * `supportsToolResultImages`). Explicit true embeds stored `view_image` results
+   * in tool output; explicit false injects follow-up user image messages. Omission
+   * keeps compact JSON for auxiliary callers such as naming and summarization.
+   */
+  supportToolResultImages?: boolean
+  /** Maximum number of most-recent stored tool images to inline into one request. */
+  maxInlineToolResultImages?: number
 }
+
+export const DEFAULT_MAX_INLINE_TOOL_RESULT_IMAGES = DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT
 
 const GOOGLE_THOUGHT_SIGNATURE_VALIDATOR_BYPASS = 'skip_thought_signature_validator'
 
@@ -159,7 +194,7 @@ async function convertContentParts<T extends TextPart | ImagePart | FilePart>(
   )
 }
 
-async function convertUserContentParts(
+function convertUserContentParts(
   contentParts: MessageContentParts,
   resolveImage: ModelImageResolver,
   options?: { modelSupportVision: boolean }
@@ -167,10 +202,18 @@ async function convertUserContentParts(
   return convertContentParts<TextPart | ImagePart>(contentParts, 'image', resolveImage, options)
 }
 
+/**
+ * Reasoning replay mode after option resolution: `'text'` keeps reasoning text
+ * with optional metadata (DeepSeek all-turns), `'signed-only'` keeps only
+ * blocks carrying whitelisted replay metadata (Anthropic Messages signature
+ * replay), `false` drops reasoning.
+ */
+type EffectiveReasoningReplay = false | 'text' | 'signed-only'
+
 async function convertAssistantContentParts(
   contentParts: MessageContentParts,
   resolveImage: ModelImageResolver,
-  options?: { preserveReasoning?: boolean }
+  options?: { preserveReasoning?: EffectiveReasoningReplay }
 ): Promise<Array<TextPart | FilePart | ToolCallPart | ReasoningPart>> {
   const results: Array<TextPart | FilePart | ToolCallPart | ReasoningPart | null> = await Promise.all(
     contentParts.map(async (c) => {
@@ -186,15 +229,36 @@ async function convertAssistantContentParts(
         } satisfies ToolCallPart
       }
       if (c.type === 'text') {
+        // Empty text parts never reach the wire: the Anthropic Messages API rejects
+        // empty text blocks outright, and no other protocol needs them. Blocks kept
+        // only for structure (`protocolOnly`) are equally invisible to providers
+        // until a route that requires them (Bedrock Converse) opts in explicitly.
+        if (!c.text || c.protocolOnly) return null
         return { type: 'text', text: c.text } as TextPart
       }
-      // Reasoning is opt-in per provider. DeepSeek V4 thinking mode requires it on every
-      // assistant turn, but other providers reject (xAI Grok 400s on unknown
-      // `reasoning_content`) or merge it into text content (Mistral concatenates without
-      // a separator). Default off keeps prior behavior; orchestration enables it for DeepSeek.
+      // Reasoning is opt-in per provider. DeepSeek thinking mode requires it on follow-up
+      // requests, including when routed through an OpenAI-compatible provider, but other
+      // providers reject it (xAI Grok 400s on unknown `reasoning_content`) or merge it into
+      // text content (Mistral concatenates without a separator). Default off keeps prior
+      // behavior; orchestration enables it only for positively identified DeepSeek and
+      // Anthropic Messages routes that require reasoning history on follow-up requests.
       if (c.type === 'reasoning') {
-        if (!options?.preserveReasoning || !c.text) return null
-        return { type: 'reasoning', text: c.text } satisfies ReasoningPart
+        const mode = options?.preserveReasoning
+        if (!mode) return null
+        // Only whitelisted replay metadata (Anthropic signature / redactedData) goes
+        // back out; anything else persisted on the part must not leak onto the wire.
+        const replayMetadata = pickPersistableProviderMetadata(c.providerMetadata)
+        // The signed-replay channel (Anthropic Messages) carries only blocks
+        // that can pass upstream signature validation; unsigned reasoning —
+        // e.g. saved by app versions predating metadata capture — is omitted,
+        // matching Cherry-style "skip foreign thinking, keep it in the UI".
+        if (mode === 'signed-only' && !replayMetadata) return null
+        if (!c.text && !replayMetadata) return null
+        return {
+          type: 'reasoning',
+          text: c.text,
+          ...(replayMetadata ? { providerOptions: replayMetadata } : {}),
+        } satisfies ReasoningPart
       }
       if (c.type === 'image') {
         const resolved = await resolveImageData(c.storageKey, resolveImage)
@@ -212,11 +276,125 @@ async function convertAssistantContentParts(
  * the correct message sequence: assistant(pre-tool + tool-call) → tool(result) → assistant(post-tool).
  * This preserves the ordering that providers expect for multi-turn tool use.
  */
+type ToolResultModelOutput =
+  | { type: 'error-text'; value: string }
+  | { type: 'text'; value: string }
+  | { type: 'json'; value: JSONValue }
+  | {
+      type: 'content'
+      value: Array<{ type: 'text'; text: string } | { type: 'image-data'; data: string; mediaType: string }>
+    }
+
+function truncatedToolResultOutput(toolCallPart: MessageContentToolCallPart): ToolResultModelOutput {
+  return {
+    type: 'json',
+    value: {
+      _truncated: true,
+      preview: String(toolCallPart.result ?? ''),
+      fullResultFileKey: toolCallPart.resultStorageKey,
+      hint: 'Result was too large and has been truncated. Use the read_file tool with the fullResultFileKey above to read the complete result.',
+    } as JSONValue,
+  }
+}
+
+function appendTruncatedResultNotice(
+  output: ToolResultModelOutput,
+  toolCallPart: MessageContentToolCallPart
+): ToolResultModelOutput {
+  const notice = `Additional tool result data was truncated. Preview: ${String(toolCallPart.result ?? '')}. Full result file key: ${toolCallPart.resultStorageKey}.`
+  if (output.type === 'content') {
+    return { ...output, value: [...output.value, { type: 'text', text: notice }] }
+  }
+  if (output.type === 'text') {
+    return { ...output, value: `${output.value}\n${notice}` }
+  }
+  return output
+}
+
+/**
+ * Re-deliver a stored tool result image as an actual image on history resends.
+ * Protocols that accept media in tool results get it embedded there; other vision models
+ * get a text tool output plus a follow-up user message with a real image part (the same
+ * shape as a user-uploaded image — never base64-as-text). Returns null when the part is
+ * not a usable image result, the model has no vision, or the stored blob is gone
+ * (callers fall back to the plain JSON output, which still carries the file path).
+ */
+async function toToolResultImageOutput(
+  toolCallPart: MessageContentToolCallPart,
+  resolveImage: ModelImageResolver,
+  options?: {
+    modelSupportVision?: boolean
+    supportToolResultImages?: boolean
+    inlineImage?: boolean
+  }
+): Promise<{ output: ToolResultModelOutput; injection?: ViewImageInjection } | null> {
+  if (options?.modelSupportVision === false) return null
+  // Re-inlining tool image data is agent-generation behavior. Auxiliary callers such as
+  // summaries and naming omit this option and must retain the compact JSON result.
+  if (options?.supportToolResultImages === undefined) return null
+  if (!options.inlineImage) return null
+  const imageReference = getToolResultImageReference(toolCallPart)
+  if (!imageReference) return null
+  const resolved = await resolveImageData(imageReference.storageKey, resolveImage)
+  if (!resolved) return null
+  if (options?.supportToolResultImages) {
+    return {
+      output: buildViewImageToolResultContent({
+        filePath: imageReference.filePath ?? toolCallPart.toolName,
+        ...resolved,
+      }),
+    }
+  }
+  return {
+    output: {
+      type: 'text',
+      value: viewImageAttachmentNotice(imageReference.filePath ?? toolCallPart.toolName),
+    },
+    injection: {
+      filePath: imageReference.filePath ?? toolCallPart.toolName,
+      base64Data: resolved.base64Data,
+      mediaType: resolved.mediaType,
+    },
+  }
+}
+
+function collectRecentToolResultImagePositions(
+  messages: Message[],
+  limit: number
+): ReadonlyMap<number, ReadonlySet<number>> {
+  const selected = new Map<number, Set<number>>()
+  const normalizedLimit = Math.max(0, Math.floor(limit))
+  if (normalizedLimit === 0) return selected
+
+  let selectedCount = 0
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const parts = messages[messageIndex].contentParts ?? []
+    for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = parts[partIndex]
+      if (part.type !== 'tool-call' || part.state !== 'result') continue
+      if (!getToolResultImageReference(part)) continue
+      const selectedPartIndexes = selected.get(messageIndex) ?? new Set<number>()
+      selectedPartIndexes.add(partIndex)
+      selected.set(messageIndex, selectedPartIndexes)
+      selectedCount += 1
+      if (selectedCount >= normalizedLimit) return selected
+    }
+  }
+
+  return selected
+}
+
 async function emitAssistantMessages(
   contentParts: MessageContentParts,
   resolveImage: ModelImageResolver,
   output: ModelMessage[],
-  options?: { preserveReasoning?: boolean; ensureGoogleFunctionCallSignatures?: boolean }
+  options?: {
+    preserveReasoning?: EffectiveReasoningReplay
+    ensureGoogleFunctionCallSignatures?: boolean
+    modelSupportVision?: boolean
+    supportToolResultImages?: boolean
+    inlineToolResultImagePartIndexes?: ReadonlySet<number>
+  }
 ): Promise<void> {
   let cursor = 0
   while (cursor < contentParts.length) {
@@ -225,11 +403,13 @@ async function emitAssistantMessages(
 
     // Collect the contiguous run of completed tool calls that belong to the same batch.
     const toolCallParts: MessageContentToolCallPart[] = []
+    const toolCallPartIndexes: number[] = []
     for (let index = tcIdx; index < contentParts.length; index += 1) {
       const part = contentParts[index]
       if (!isCompletedToolCall(part)) break
       if (toolCallParts.length > 0 && !isSameToolCallBatch(toolCallParts[0], part)) break
       toolCallParts.push(part)
+      toolCallPartIndexes.push(index)
     }
     const batchEnd = tcIdx + toolCallParts.length
 
@@ -245,39 +425,53 @@ async function emitAssistantMessages(
       output.push({ role: 'assistant' as const, content: converted })
     }
 
-    const toolResults = toolCallParts.map((tc) => {
-      let toolOutput: { type: 'error-text'; value: string } | { type: 'json'; value: JSONValue }
-      if (tc.state === 'error') {
-        toolOutput = { type: 'error-text' as const, value: stringifyErrorResult(tc.result) }
-      } else if (tc.resultStorageKey) {
-        // The full result was offloaded to blob storage — send the preview + a hint.
-        // tc.result is always a plain string here (truncated from the serialized form).
-        const preview = String(tc.result ?? '')
-        toolOutput = {
-          type: 'json' as const,
-          value: {
-            _truncated: true,
-            preview,
-            fullResultFileKey: tc.resultStorageKey,
-            hint: 'Result was too large and has been truncated. Use the read_file tool with the fullResultFileKey above to read the complete result.',
-          } as JSONValue,
+    const convertedToolResults = await Promise.all(
+      toolCallParts.map(async (tc, index) => {
+        let toolOutput: ToolResultModelOutput
+        let injection: ViewImageInjection | undefined
+        if (tc.state === 'error') {
+          toolOutput = { type: 'error-text' as const, value: stringifyErrorResult(tc.result) }
+        } else {
+          const toolResultImageOutput = await toToolResultImageOutput(tc, resolveImage, {
+            modelSupportVision: options?.modelSupportVision,
+            supportToolResultImages: options?.supportToolResultImages,
+            inlineImage: options?.inlineToolResultImagePartIndexes?.has(toolCallPartIndexes[index]),
+          })
+          injection = toolResultImageOutput?.injection
+          if (toolResultImageOutput) {
+            toolOutput = tc.resultStorageKey
+              ? appendTruncatedResultNotice(toolResultImageOutput.output, tc)
+              : toolResultImageOutput.output
+          } else {
+            toolOutput = tc.resultStorageKey
+              ? truncatedToolResultOutput(tc)
+              : ({ type: 'json' as const, value: toSafeJSONValue(tc.result) } as ToolResultModelOutput)
+          }
         }
-      } else {
-        toolOutput = { type: 'json' as const, value: toSafeJSONValue(tc.result) }
-      }
-      return {
-        type: 'tool-result' as const,
-        toolCallId: tc.toolCallId,
-        toolName: tc.toolName,
-        output: toolOutput,
-        providerOptions: tc.resultProviderMetadata,
-      }
-    })
+        return {
+          toolResult: {
+            type: 'tool-result' as const,
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            output: toolOutput,
+            providerOptions: tc.resultProviderMetadata,
+          },
+          injection,
+        }
+      })
+    )
 
     output.push({
       role: 'tool' as const,
-      content: toolResults,
+      content: convertedToolResults.map((entry) => entry.toolResult),
     })
+
+    // Vision models on protocols without tool-result media get the image as a follow-up
+    // user message with real image parts — the same shape as a user-uploaded image.
+    const imageInjections = compact(convertedToolResults.map((entry) => entry.injection))
+    if (imageInjections.length > 0) {
+      output.push(buildViewImageUserMessage(imageInjections))
+    }
 
     cursor = batchEnd
   }
@@ -307,8 +501,19 @@ export async function convertToModelMessages(
   options?: ConvertToModelMessagesOptions
 ): Promise<ModelMessage[]> {
   const output: ModelMessage[] = []
+  const effectiveReasoningReplay: EffectiveReasoningReplay = !options?.preserveReasoning
+    ? false
+    : options?.signedReasoningOnly
+      ? 'signed-only'
+      : 'text'
+  const inlineToolResultImagePositions = collectRecentToolResultImagePositions(
+    messages,
+    options?.supportToolResultImages === undefined
+      ? 0
+      : (options.maxInlineToolResultImages ?? DEFAULT_MAX_INLINE_TOOL_RESULT_IMAGES)
+  )
 
-  for (const m of messages) {
+  for (const [messageIndex, m] of messages.entries()) {
     switch (m.role) {
       case 'system':
         output.push({
@@ -326,8 +531,11 @@ export async function convertToModelMessages(
       }
       case 'assistant':
         await emitAssistantMessages(m.contentParts || [], resolveImage, output, {
-          preserveReasoning: options?.preserveReasoning,
+          preserveReasoning: effectiveReasoningReplay,
           ensureGoogleFunctionCallSignatures: options?.ensureGoogleFunctionCallSignatures,
+          modelSupportVision: options?.modelSupportVision,
+          supportToolResultImages: options?.supportToolResultImages,
+          inlineToolResultImagePartIndexes: inlineToolResultImagePositions.get(messageIndex),
         })
         break
       case 'tool':

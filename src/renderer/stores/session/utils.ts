@@ -1,42 +1,38 @@
 import { isExpectedGenerationError } from '@shared/models/error-classification'
 import { ApiError, BaseError, NetworkError, OCRError } from '@shared/models/errors'
+import { extractStreamErrorMessage } from '@shared/models/utils/stream-error-message'
 import { findMessageContext, findMessageSourceThread } from '@shared/session/message-forks'
 import type {
   AgentModeValue,
   CompactionPoint,
   Message,
-  ModelProvider,
   Session,
   SessionSettings,
   SessionType,
   Settings,
 } from '@shared/types'
-import { ModelProviderEnum } from '@shared/types'
+import { resolveCommandApprovalMode } from '@shared/types/command-execution'
+import { normalizeErrorForSentry } from '@shared/utils/sentry_policy'
 import { identity, pickBy } from 'lodash'
-import {
-  type AgentModeEntrySource,
-  bucketCount,
-  captureAgentModeException,
-  toBooleanString,
-} from '@/analytics/agent-mode'
+import { normalizePlausibleModel, normalizePlausibleProvider } from '@/analytics/plausible'
+import { bucketCount, toBooleanString } from '@/analytics/values'
+import { captureAgentModeException } from '@/observability/agent-mode'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
 import platform from '@/platform'
 import { reportError } from '@/utils/sentry'
 import { trackEvent } from '@/utils/track'
 import { uiStore } from '../uiStore'
 import { getSessionAgentModeEntry } from './agent-mode'
+import type { AgentModeEntrySource } from './types'
+import { resolveWebBrowsingMode } from './web-browsing'
 
 /**
  * Get session-level web browsing setting
  * Returns user's explicit setting if set, otherwise returns default based on provider
  */
 export function getSessionWebBrowsing(sessionId: string, provider: string | undefined): boolean {
-  const sessionValue = uiStore.getState().sessionWebBrowsingMap[sessionId]
-  if (sessionValue !== undefined) {
-    return sessionValue
-  }
-  // Default: true for ChatboxAI, false for others
-  return provider === ModelProviderEnum.ChatboxAI
+  const { sessionWebBrowsingMap, newSessionWebBrowsingDefault } = uiStore.getState()
+  return resolveWebBrowsingMode(sessionId, provider, sessionWebBrowsingMap, newSessionWebBrowsingDefault)
 }
 
 /**
@@ -51,24 +47,12 @@ export function trackGenerateEvent(
   options?: { operationType?: 'send_message' | 'regenerate'; agentModeEntrySource?: AgentModeEntrySource }
 ) {
   try {
-    let providerIdentifier: ModelProvider = settings.provider || 'unknown'
-    if (settings.provider?.startsWith('custom-provider-')) {
-      const providerSettings = globalSettings.providers?.[settings.provider]
-      if (providerSettings?.apiHost) {
-        try {
-          const url = new URL(providerSettings.apiHost)
-          providerIdentifier = `custom:${url.hostname}`
-        } catch {
-          providerIdentifier = `custom:${providerSettings.apiHost}`
-        }
-      } else {
-        providerIdentifier = 'custom:unknown'
-      }
-    }
+    const providerIdentifier = normalizePlausibleProvider(settings.provider)
+    const modelIdentifier = normalizePlausibleModel(settings.provider, settings.modelId)
 
     const webBrowsing = getSessionWebBrowsing(sessionId, settings.provider)
     const agentModeEntry = getSessionAgentModeEntry(sessionId, { settings })
-    const agentModeActive = platform.type === 'desktop' && agentModeEntry.value === 'on'
+    const agentModeActive = platform.isDesktopLike && agentModeEntry.value === 'on'
     const agentModeEntrySource: AgentModeEntrySource =
       options?.agentModeEntrySource ??
       (agentModeActive ? (agentModeEntry.locked ? 'locked_session' : 'manual') : 'none')
@@ -82,14 +66,14 @@ export function trackGenerateEvent(
 
     trackEvent('generate', {
       provider: providerIdentifier,
-      model: settings.modelId || 'unknown',
+      model: modelIdentifier,
       operation_type: options?.operationType || 'unknown',
       web_browsing_enabled: webBrowsing ? 'true' : 'false',
       session_type: sessionType || 'chat',
       agent_mode: agentModeEntry.value,
       agent_mode_active: toBooleanString(agentModeActive),
       agent_mode_entry_source: agentModeEntrySource,
-      agent_full_access_enabled: toBooleanString(settings.agentFullAccess === true),
+      agent_full_access_enabled: toBooleanString(resolveCommandApprovalMode(settings) === 'full_access'),
       has_knowledge_base: toBooleanString(knowledgeBaseEnabled),
       enabled_mcp_count: bucketCount(enabledMcpCount),
       enabled_skill_count: bucketCount(enabledSkillCount),
@@ -132,11 +116,16 @@ export async function initializeTargetMessage(
   globalSettings: Settings,
   sessionType: SessionType | undefined
 ): Promise<Message> {
+  // Keep thinking signatures on disk across provider/model restamps. The
+  // converter decides what goes on the wire (signed Anthropic subset vs omit).
+  // Wiping storage here would prevent switching back to the minting realm.
   return {
     ...targetMsg,
-    cancel: undefined,
     aiProvider: settings.provider,
     model: await getModelDisplayName(settings, globalSettings, sessionType || 'chat'),
+    // Raw id alongside the display name: display names are neither stable nor
+    // parseable, so this is the message's machine-readable provenance.
+    modelId: settings.modelId,
     generating: true,
     errorCode: undefined,
     error: undefined,
@@ -156,15 +145,16 @@ export function handleGenerationError(
   settings: SessionSettings,
   sentryContext?: { operationType?: 'send_message' | 'regenerate'; agentMode?: AgentModeValue }
 ): Message {
-  const error = !(err instanceof Error) ? new Error(`${err}`) : err
-  if (!isExpectedGenerationError(error)) {
+  const error = normalizeErrorForSentry(err)
+  const userFacingErrorMessage = extractStreamErrorMessage(err)
+  if (!isExpectedGenerationError(err)) {
     if (sentryContext?.agentMode === 'on') {
       captureAgentModeException(error, {
         operation: 'generation',
         provider: settings.provider,
         model: settings.modelId,
         agentMode: sentryContext.agentMode,
-        fullAccess: settings.agentFullAccess === true,
+        fullAccess: resolveCommandApprovalMode(settings) === 'full_access',
         operationType: sentryContext.operationType,
       })
     } else {
@@ -192,9 +182,8 @@ export function handleGenerationError(
   return {
     ...targetMsg,
     generating: false,
-    cancel: undefined,
     errorCode,
-    error: `${error.message}`,
+    error: userFacingErrorMessage,
     errorExtra: pickBy(
       {
         aiProvider: ocrError ? ocrError.ocrProvider : settings.provider,

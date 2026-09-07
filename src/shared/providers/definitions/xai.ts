@@ -7,7 +7,7 @@ export const xaiProvider = defineProvider({
   name: 'xAI',
   type: ModelProviderType.OpenAI,
   modelsDevProviderId: 'xai',
-  curatedModelIds: ['grok-4.3', 'grok-4-1-fast', 'grok-4-1-fast-non-reasoning', 'grok-4-fast', 'grok-4'],
+  curatedModelIds: ['grok-4.6', 'grok-4.3', 'grok-4-1-fast', 'grok-4-fast', 'grok-4', 'grok-build-0.1'],
   urls: {
     website: 'https://x.ai/',
   },
@@ -15,18 +15,13 @@ export const xaiProvider = defineProvider({
     apiHost: 'https://api.x.ai',
     models: [
       {
+        modelId: 'grok-4.6',
+        contextWindow: 500_000,
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+      },
+      {
         modelId: 'grok-4.3',
-        contextWindow: 256_000,
-        capabilities: ['vision', 'tool_use', 'reasoning'],
-      },
-      {
-        modelId: 'grok-4',
-        contextWindow: 256_000,
-        capabilities: ['vision', 'tool_use', 'reasoning'],
-      },
-      {
-        modelId: 'grok-4-fast',
-        contextWindow: 2_000_000,
+        contextWindow: 1_000_000,
         capabilities: ['vision', 'tool_use', 'reasoning'],
       },
       {
@@ -35,9 +30,19 @@ export const xaiProvider = defineProvider({
         capabilities: ['vision', 'tool_use', 'reasoning'],
       },
       {
-        modelId: 'grok-4-1-fast-non-reasoning',
+        modelId: 'grok-4-fast',
         contextWindow: 2_000_000,
-        capabilities: ['vision', 'tool_use'],
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+      },
+      {
+        modelId: 'grok-4',
+        contextWindow: 256_000,
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+      },
+      {
+        modelId: 'grok-build-0.1',
+        contextWindow: 256_000,
+        capabilities: ['vision', 'tool_use', 'reasoning'],
       },
     ],
   },

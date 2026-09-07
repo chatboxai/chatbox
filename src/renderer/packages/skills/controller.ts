@@ -7,6 +7,8 @@ interface SkillScriptResult {
   stderr: string
   exitCode: number | null
   cancelled?: boolean
+  cwd?: string
+  outputFile?: string
 }
 
 interface SkillInstallResult {
@@ -84,9 +86,27 @@ export const skillsController = {
       sessionId?: string
       toolCallId?: string
       approvalSource?: UserExecApprovalSource
+      retryOf?: string
+      shell?: 'bash' | 'powershell'
+      baseCwd?: string
+      injectBundledNode?: boolean
     }
   ): Promise<SkillScriptResult> {
     return window.electronAPI.invoke('skills:user-exec', { command, ...options })
+  },
+
+  resolveUserExecCwd(options: { cwd?: string; baseCwd?: string }): Promise<string> {
+    return window.electronAPI.invoke('skills:resolve-user-exec-cwd', options)
+  },
+
+  resolveCommandRetry(options: {
+    sessionId: string
+    retryOf?: string
+    command: string
+    cwd: string
+    shell: 'bash' | 'powershell'
+  }): Promise<{ valid: true; retryOf: string } | { valid: false; error: string }> {
+    return window.electronAPI.invoke('skills:resolve-command-retry', options)
   },
 
   cancelUserExec(options: { sessionId?: string; toolCallId: string }): Promise<{ killed: boolean }> {

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import { app } from 'electron'
+import { CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR } from '../../shared/file-parse-errors'
 import { KNOWLEDGE_BASE_MAX_FILE_SIZE } from '../../shared/knowledge-base'
 import { getChatboxAPIOrigin } from '../../shared/request/chatboxai_pool'
 import { createAfetch } from '../../shared/request/request'
@@ -142,7 +143,7 @@ async function createAndParseFile(
 export async function parseFileRemotely(filePath: string, filename: string, mimeType: string): Promise<string> {
   const licenseKey = getLicenseKey()
   if (!licenseKey) {
-    throw new Error('License key not found for remote parsing')
+    throw new Error(CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR)
   }
 
   const stats = await fs.promises.stat(filePath)

@@ -1,10 +1,11 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
 import { Button, Input } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
 import { type ChangeEvent, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import { trackingEvent } from '@/packages/event'
-import { clearConversationList } from '@/stores/sessionActions'
+import { clearConversationList } from '@/stores/session/crud'
 
 const ClearSessionList = NiceModal.create(() => {
   const modal = useModal()
@@ -57,6 +58,7 @@ const ClearSessionList = NiceModal.create(() => {
             input: (
               <Input
                 key={'0'}
+                data-testid={TestId.settings.clearSessionListKeep}
                 value={value}
                 onChange={handleInput}
                 className="inline-block w-[4em]"
@@ -69,7 +71,7 @@ const ClearSessionList = NiceModal.create(() => {
 
       <AdaptiveModal.Actions>
         <AdaptiveModal.CloseButton onClick={handleClose} />
-        <Button onClick={clean} loading={cleaning}>
+        <Button data-testid={TestId.settings.clearSessionListConfirm} onClick={clean} loading={cleaning}>
           {t('Archive')}
         </Button>
       </AdaptiveModal.Actions>

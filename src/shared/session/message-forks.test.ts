@@ -3,6 +3,8 @@ import type { Message, Session } from '../types'
 import {
   buildCreateForkPatch,
   buildCreateInactiveForkPatch,
+  buildDeleteForkPatch,
+  buildSaveAndResendForkPatch,
   buildSwitchForkToPatch,
   findMessageContext,
   findMessageLocation,
@@ -18,6 +20,146 @@ function summaryMessage(id: string): Message {
   return { ...message(id, 'assistant'), isSummary: true }
 }
 
+let identitySequence = 0
+const identity = {
+  createId: () => `test-fork-${++identitySequence}`,
+  now: () => 1,
+}
+
+describe('buildSaveAndResendForkPatch', () => {
+  test('versions the edited message under its predecessor', () => {
+    const before = [message('user-1', 'user'), message('assistant-1', 'assistant')]
+    const original = message('user-2', 'user')
+    const oldReply = message('assistant-2', 'assistant')
+    const replacement = message('user-2-edited', 'user')
+    const session: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [...before, original, oldReply],
+    }
+
+    const patch = buildSaveAndResendForkPatch(session, original.id, replacement, identity)
+
+    expect(patch?.messages).toEqual([...before, replacement])
+    const fork = patch?.messageForksHash?.['assistant-1']
+    expect(fork?.position).toBe(1)
+    expect(fork?.lists).toHaveLength(2)
+    expect(fork?.lists[0].messages).toEqual([original, oldReply])
+    expect(fork?.lists[1].messages).toEqual([])
+  })
+
+  test('keeps anchored summaries in the shared prefix and pivots past them', () => {
+    const reply = message('assistant-1', 'assistant')
+    const summary = summaryMessage('summary-1')
+    const original = message('user-2', 'user')
+    const oldReply = message('assistant-2', 'assistant')
+    const replacement = message('user-2-edited', 'user')
+    const session: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [message('user-1', 'user'), reply, summary, original, oldReply],
+    }
+
+    const patch = buildSaveAndResendForkPatch(session, original.id, replacement, identity)
+
+    // The pivot is the reply, never the summary (deleting the summary must not
+    // orphan the fork), and the summary stays in the shared prefix.
+    expect(patch?.messages?.map((m) => m.id)).toEqual(['user-1', 'assistant-1', 'summary-1', 'user-2-edited'])
+    const fork = patch?.messageForksHash?.['assistant-1']
+    expect(fork?.lists[0].messages).toEqual([original, oldReply])
+    expect(patch?.messageForksHash?.['summary-1']).toBeUndefined()
+  })
+
+  test('appends a branch to an existing fork at the pivot', () => {
+    const pivot = message('assistant-1', 'assistant')
+    const original = message('user-2', 'user')
+    const oldReply = message('assistant-2', 'assistant')
+    const existingAlternative = message('assistant-alt', 'assistant')
+    const replacement = message('user-2-edited', 'user')
+    const session: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [message('user-1', 'user'), pivot, original, oldReply],
+      messageForksHash: {
+        [pivot.id]: {
+          position: 0,
+          lists: [
+            { id: 'current', messages: [] },
+            { id: 'existing', messages: [existingAlternative] },
+          ],
+          createdAt: 1,
+        },
+      },
+    }
+
+    const patch = buildSaveAndResendForkPatch(session, original.id, replacement, identity)
+    const fork = patch?.messageForksHash?.[pivot.id]
+
+    expect(patch?.messages?.at(-1)).toEqual(replacement)
+    expect(fork?.position).toBe(2)
+    expect(fork?.lists.map((list) => list.messages)).toEqual([[original, oldReply], [existingAlternative], []])
+  })
+
+  test('versions a message inside an archived thread', () => {
+    const threadPrefix = [message('thread-user', 'user'), message('thread-reply', 'assistant')]
+    const original = message('thread-user-2', 'user')
+    const oldReply = message('thread-reply-2', 'assistant')
+    const replacement = message('thread-user-2-edited', 'user')
+    const session: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [message('active-user', 'user')],
+      threads: [
+        {
+          id: 'thread-1',
+          name: 'Thread',
+          createdAt: 1,
+          messages: [...threadPrefix, original, oldReply],
+        },
+      ],
+    }
+
+    const patch = buildSaveAndResendForkPatch(session, original.id, replacement, identity)
+
+    expect(patch?.messages).toBeUndefined()
+    expect(patch?.threads?.[0].messages).toEqual([...threadPrefix, replacement])
+    expect(patch?.messageForksHash?.['thread-reply']?.lists[0].messages).toEqual([original, oldReply])
+  })
+
+  test('returns null for a conversation-first message', () => {
+    const original = message('user-1', 'user')
+    const session: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [original, message('assistant-1', 'assistant')],
+    }
+
+    expect(buildSaveAndResendForkPatch(session, original.id, message('edited', 'user'), identity)).toBeNull()
+  })
+
+  test('returns null when only summaries precede the target', () => {
+    const original = message('user-1', 'user')
+    const session: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [summaryMessage('summary-1'), original, message('assistant-1', 'assistant')],
+    }
+
+    expect(buildSaveAndResendForkPatch(session, original.id, message('edited', 'user'), identity)).toBeNull()
+  })
+
+  test('returns null for a summary target', () => {
+    const summary = summaryMessage('summary-1')
+    const session: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [message('user-1', 'user'), summary],
+    }
+
+    expect(buildSaveAndResendForkPatch(session, summary.id, message('edited', 'assistant'), identity)).toBeNull()
+  })
+})
+
 describe('buildCreateInactiveForkPatch', () => {
   test('adds an alternative without changing the active conversation', () => {
     const pivot = message('user-1', 'user')
@@ -29,7 +171,7 @@ describe('buildCreateInactiveForkPatch', () => {
       messages: [pivot, currentReply],
     }
 
-    const patch = buildCreateInactiveForkPatch(session, pivot.id, [candidate])
+    const patch = buildCreateInactiveForkPatch(session, pivot.id, [candidate], identity)
 
     expect(patch?.messages).toEqual(session.messages)
     const fork = patch?.messageForksHash?.[pivot.id]
@@ -61,7 +203,7 @@ describe('buildCreateInactiveForkPatch', () => {
       },
     }
 
-    const patch = buildCreateInactiveForkPatch(session, pivot.id, [candidate])
+    const patch = buildCreateInactiveForkPatch(session, pivot.id, [candidate], identity)
     const fork = patch?.messageForksHash?.[pivot.id]
 
     expect(patch?.messages).toEqual(session.messages)
@@ -78,9 +220,12 @@ describe('buildCreateInactiveForkPatch', () => {
     }
 
     expect(
-      buildCreateInactiveForkPatch(session, pivot.id, [
-        { ...message('assistant-candidate', 'assistant'), generating: true },
-      ])
+      buildCreateInactiveForkPatch(
+        session,
+        pivot.id,
+        [{ ...message('assistant-candidate', 'assistant'), generating: true }],
+        identity
+      )
     ).toBeNull()
   })
 
@@ -124,6 +269,45 @@ describe('buildCreateInactiveForkPatch', () => {
   })
 })
 
+describe('buildDeleteForkPatch', () => {
+  test('prunes nested fork entries whose parent branch was deleted', () => {
+    const rootPivot = message('root-pivot', 'user')
+    const removedReply = message('removed-reply', 'assistant')
+    const nestedPivot = message('nested-pivot', 'user')
+    const nestedReply = message('nested-reply', 'assistant')
+    const keptReply = message('kept-reply', 'assistant')
+    const session: Session = {
+      id: 'session-delete-nested',
+      name: 'Session',
+      messages: [rootPivot, removedReply, nestedPivot],
+      messageForksHash: {
+        [rootPivot.id]: {
+          position: 0,
+          lists: [
+            { id: 'root-current', messages: [] },
+            { id: 'root-saved', messages: [keptReply] },
+          ],
+          createdAt: 1,
+        },
+        [nestedPivot.id]: {
+          position: 0,
+          lists: [
+            { id: 'nested-current', messages: [] },
+            { id: 'nested-saved', messages: [nestedReply] },
+          ],
+          createdAt: 2,
+        },
+      },
+    }
+
+    const patch = buildDeleteForkPatch(session, rootPivot.id)
+
+    expect(patch?.messages?.map((item) => item.id)).toEqual([rootPivot.id, keptReply.id])
+    expect(patch?.messageForksHash?.[rootPivot.id]).toBeDefined()
+    expect(patch?.messageForksHash?.[nestedPivot.id]).toBeUndefined()
+  })
+})
+
 describe('buildSwitchForkToPatch', () => {
   test('switches directly to the selected saved branch', () => {
     const pivot = message('user-1', 'user')
@@ -159,6 +343,41 @@ describe('buildSwitchForkToPatch', () => {
         { id: 'selected', messages: [] },
       ],
     })
+  })
+
+  test('switches a fork whose active tail lives inside another saved branch', () => {
+    const outerPivot = message('outer-pivot', 'user')
+    const currentReply = message('current-reply', 'assistant')
+    const innerPivot = message('inner-pivot', 'user')
+    const innerSavedReply = message('inner-saved-reply', 'assistant')
+    const session: Session = {
+      id: 'nested-switch',
+      name: 'Session',
+      messages: [outerPivot, currentReply],
+      messageForksHash: {
+        [outerPivot.id]: {
+          position: 0,
+          lists: [
+            { id: 'outer-active', messages: [] },
+            { id: 'outer-saved', messages: [innerPivot] },
+          ],
+          createdAt: 1,
+        },
+        [innerPivot.id]: {
+          position: 0,
+          lists: [
+            { id: 'inner-active', messages: [] },
+            { id: 'inner-saved', messages: [innerSavedReply] },
+          ],
+          createdAt: 2,
+        },
+      },
+    }
+
+    const patch = buildSwitchForkToPatch(session, innerPivot.id, 1)
+
+    expect(patch?.messageForksHash?.[outerPivot.id].lists[1].messages).toEqual([innerPivot, innerSavedReply])
+    expect(patch?.messageForksHash?.[innerPivot.id]).toBeUndefined()
   })
 
   test('ignores the active branch and invalid positions', () => {
@@ -206,7 +425,7 @@ describe('compaction summaries anchored to the fork pivot', () => {
       messages: [pivot, summary, currentReply],
     }
 
-    const patch = buildCreateForkPatch(session, pivot.id)
+    const patch = buildCreateForkPatch(session, pivot.id, identity)
 
     expect(patch?.messages).toEqual([pivot, summary])
     const fork = patch?.messageForksHash?.[pivot.id]
@@ -252,7 +471,7 @@ describe('compaction summaries anchored to the fork pivot', () => {
       messages: [pivot, summary, currentReply],
     }
 
-    const patch = buildCreateInactiveForkPatch(session, pivot.id, [candidate])
+    const patch = buildCreateInactiveForkPatch(session, pivot.id, [candidate], identity)
 
     expect(patch?.messages).toEqual(session.messages)
     expect(patch?.messageForksHash?.[pivot.id]?.lists[1].messages).toEqual([candidate])
@@ -268,7 +487,7 @@ describe('compaction summaries anchored to the fork pivot', () => {
       messages: [pivot, summary],
     }
 
-    expect(buildCreateInactiveForkPatch(session, pivot.id, [candidate])).toBeNull()
+    expect(buildCreateInactiveForkPatch(session, pivot.id, [candidate], identity)).toBeNull()
   })
 
   test('findMessageContext reconstructs branch paths with the summary in the prefix', () => {

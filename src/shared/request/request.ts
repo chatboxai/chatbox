@@ -9,6 +9,8 @@ interface PlatformInfo {
   version: string
 }
 
+export type FetchImplementation = (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
 function getRequestOrigin(url: RequestInfo | URL): string {
   if (url instanceof Request) {
     return new URL(url.url).origin
@@ -60,6 +62,11 @@ function getChatboxErrorCode(response: string): string | undefined {
   return getStringProperty(getChatboxErrorPayload(response), 'code')
 }
 
+function isAccountUnavailableError(error: BaseError): boolean {
+  const response = error instanceof ApiError ? error.responseBody : error.message
+  return response ? getChatboxErrorCode(response) === 'account_unavailable' : false
+}
+
 function getChatboxRequestId(response: string, headers?: Headers): string | undefined {
   return headers?.get('x-request-id') || getStringProperty(getChatboxErrorPayload(response), 'request_id')
 }
@@ -88,7 +95,10 @@ function sanitizeResponseBody(status: number, response: string): string {
   return response
 }
 
-export function createAfetch(platformInfo: PlatformInfo) {
+export function createAfetch(
+  platformInfo: PlatformInfo,
+  fetchImplementation: FetchImplementation = (url, init) => fetch(url, init)
+) {
   return async function afetch(
     url: RequestInfo | URL,
     init?: RequestInit,
@@ -113,7 +123,7 @@ export function createAfetch(platformInfo: PlatformInfo) {
             },
           }
         }
-        const res = await fetch(url, init)
+        const res = await fetchImplementation(url, init)
         // 状态码不在 200～299 之间，一般是接口报错了，这里也需要抛错后重试
         if (!res.ok) {
           const response = await res.text().catch((e: unknown) => {
@@ -146,6 +156,9 @@ export function createAfetch(platformInfo: PlatformInfo) {
           const err = toError(e)
           const origin = getRequestOrigin(url)
           requestError = new NetworkError(err.message, origin)
+        }
+        if (isAccountUnavailableError(requestError)) {
+          throw requestError
         }
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
@@ -345,6 +358,9 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
           const err = toError(e)
           const origin = getRequestOrigin(url)
           requestError = new NetworkError(err.message, origin)
+        }
+        if (isAccountUnavailableError(requestError)) {
+          throw requestError
         }
         await new Promise((resolve) => setTimeout(resolve, 500))
       }

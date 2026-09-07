@@ -16,6 +16,9 @@ export const LOCAL_PARSER_FILE_TOO_LARGE_ERROR = 'local_parser_file_too_large'
 /** File preprocessing completed without producing any readable attachment content. */
 export const EMPTY_ATTACHMENT_CONTENT_ERROR = 'empty_attachment_content'
 
+/** Chatbox AI cloud parsing was requested, but no license key is configured. */
+export const CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR = 'chatbox_ai_parser_license_key_required'
+
 /**
  * Upper bound on PDF size for local parsing. pdfjs reads the whole file into a
  * Buffer and keeps another copy internally, so a very large PDF can hold 2-3x its

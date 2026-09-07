@@ -8,11 +8,13 @@ export const groqProvider = defineProvider({
   type: ModelProviderType.OpenAI,
   modelsDevProviderId: 'groq',
   curatedModelIds: [
+    'openai/gpt-oss-120b',
+    'openai/gpt-oss-20b',
+    'groq/compound',
+    'groq/compound-mini',
     'meta-llama/llama-4-scout-17b-16e-instruct',
-    'meta-llama/llama-4-maverick-17b-128e-instruct',
-    'llama-3.3-70b-versatile',
-    'moonshotai/kimi-k2-instruct-0905',
     'qwen/qwen3-32b',
+    'llama-3.3-70b-versatile',
     'llama-3.1-8b-instant',
   ],
   urls: {
@@ -22,27 +24,41 @@ export const groqProvider = defineProvider({
     apiHost: 'https://api.groq.com/openai',
     models: [
       {
+        modelId: 'openai/gpt-oss-120b',
+        contextWindow: 131_072,
+        maxOutput: 65_536,
+        capabilities: ['reasoning', 'tool_use'],
+      },
+      {
+        modelId: 'openai/gpt-oss-20b',
+        contextWindow: 131_072,
+        maxOutput: 65_536,
+        capabilities: ['reasoning', 'tool_use'],
+      },
+      {
+        modelId: 'groq/compound',
+        contextWindow: 131_072,
+        maxOutput: 8_192,
+        capabilities: ['reasoning', 'tool_use'],
+      },
+      {
+        modelId: 'groq/compound-mini',
+        contextWindow: 131_072,
+        maxOutput: 8_192,
+        capabilities: ['reasoning', 'tool_use'],
+      },
+      {
         modelId: 'meta-llama/llama-4-scout-17b-16e-instruct',
         contextWindow: 131_072,
         capabilities: ['vision', 'tool_use'],
       },
       {
-        modelId: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+        modelId: 'qwen/qwen3-32b',
         contextWindow: 131_072,
-        capabilities: ['vision', 'tool_use'],
+        capabilities: ['tool_use'],
       },
       {
         modelId: 'llama-3.3-70b-versatile',
-        contextWindow: 131_072,
-        capabilities: ['tool_use'],
-      },
-      {
-        modelId: 'moonshotai/kimi-k2-instruct-0905',
-        contextWindow: 262_144,
-        capabilities: ['tool_use'],
-      },
-      {
-        modelId: 'qwen/qwen3-32b',
         contextWindow: 131_072,
         capabilities: ['tool_use'],
       },

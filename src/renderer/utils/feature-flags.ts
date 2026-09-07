@@ -1,7 +1,8 @@
 import platform from '@/platform'
 
 export const featureFlags = {
-  mcp: platform.type === 'desktop',
-  knowledgeBase: platform.type === 'desktop',
-  skills: platform.type === 'desktop',
+  mcp: platform.isDesktopLike,
+  knowledgeBase: platform.isDesktopLike,
+  skills: platform.isDesktopLike,
+  agentMode: platform.isDesktopLike,
 }

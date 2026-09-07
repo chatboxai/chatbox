@@ -1,5 +1,28 @@
 import { ApiError, MidStreamApiError } from '../errors'
 
+interface ByteTransformController {
+  enqueue(chunk: Uint8Array): void
+}
+
+interface ByteTransformer {
+  transform(chunk: Uint8Array, controller: ByteTransformController): void
+  flush(controller: ByteTransformController): void
+}
+
+type TransformStreamConstructor = new (transformer: ByteTransformer) => unknown
+
+function getTransformStreamConstructor(): TransformStreamConstructor | undefined {
+  return (globalThis as typeof globalThis & { TransformStream?: TransformStreamConstructor }).TransformStream
+}
+
+function getResponseBody(response: Response): unknown | null {
+  return (response as Response & { body?: unknown | null }).body ?? null
+}
+
+function canPipeThrough(body: unknown): body is { pipeThrough(transform: unknown): unknown } {
+  return Boolean(body && typeof body === 'object' && 'pipeThrough' in body && typeof body.pipeThrough === 'function')
+}
+
 /**
  * Locate the next SSE event boundary. Spec allows both LF (`\n\n`) and CRLF
  * (`\r\n\r\n`) blank-line terminators; pick whichever appears first.
@@ -41,7 +64,12 @@ export function findSseFrameBoundary(buffer: string): { index: number; length: n
  * MidStreamApiError so the retry layer does not silently re-run a generation
  * whose partial output already reached the UI (and may already be billed).
  */
-export function wrapGeminiStreamDetectingError(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+export function wrapGeminiStreamDetectingError<TStream>(body: TStream): TStream {
+  const TransformStreamImpl = getTransformStreamConstructor()
+  if (!TransformStreamImpl || !canPipeThrough(body)) {
+    return body
+  }
+
   const decoder = new TextDecoder()
   const encoder = new TextEncoder()
   let buffer = ''
@@ -88,7 +116,7 @@ export function wrapGeminiStreamDetectingError(body: ReadableStream<Uint8Array>)
   }
 
   return body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
+    new TransformStreamImpl({
       transform(chunk, controller) {
         buffer += decoder.decode(chunk, { stream: true })
 
@@ -118,11 +146,15 @@ export function wrapGeminiStreamDetectingError(body: ReadableStream<Uint8Array>)
         controller.enqueue(encoder.encode(buffer))
       },
     })
-  )
+  ) as TStream
 }
 
 export function shouldWrapGeminiErrorStream(url: string, response: Response): boolean {
-  if (!response.body || !response.ok) {
+  const body = getResponseBody(response)
+  // React Native does not currently expose Web Streams/TransformStream. Keep
+  // the response untouched there; a native host may opt into this protection
+  // later by installing a compatible Web Streams implementation.
+  if (!body || !canPipeThrough(body) || !getTransformStreamConstructor() || !response.ok) {
     return false
   }
   // Scope to Google's streaming REST verb: mid-stream error frames only occur
@@ -143,10 +175,11 @@ export function shouldWrapGeminiErrorStream(url: string, response: Response): bo
  * throws ApiError when a mid-stream Google error SSE is observed.
  */
 export function maybeWrapGeminiErrorResponse(url: string, response: Response): Response {
-  if (!shouldWrapGeminiErrorStream(url, response) || !response.body) {
+  const body = getResponseBody(response)
+  if (!shouldWrapGeminiErrorStream(url, response) || !body) {
     return response
   }
-  return new Response(wrapGeminiStreamDetectingError(response.body), {
+  return new Response(wrapGeminiStreamDetectingError(body) as never, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,

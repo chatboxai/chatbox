@@ -7,9 +7,14 @@ import type { SandboxProvider } from '@shared/sandbox-provider'
 // sandbox working directory instead, matching the model's intent.
 //
 // The list is intentionally conservative: only paths that are effectively never real user
-// paths on a desktop host. The working directory's HOME is also pointed here at exec time,
-// so `~`/`$HOME` inside code_execution already resolve correctly; this shim covers the
-// structured filesystem tools where the model passes the literal path string.
+// paths on a desktop host. Note the deliberate asymmetry with command execution: on the
+// OS-sandboxed platforms (macOS/Linux) `~`/`$HOME` inside run_command/code_execution
+// resolve to the user's real home (like any normal shell — writes there are then denied by
+// the OS sandbox), while platforms without an OS sandbox (native Windows, HarmonyOS) keep
+// code_execution's HOME pointed at the working directory. The structured filesystem tools
+// remap `~/x` into the working directory everywhere, because a model addressing a sandbox
+// file tool with `~/report.txt` almost always means the sandbox workspace, and a literal
+// `~` segment would otherwise be created under the working directory.
 const PHANTOM_HOME_PREFIXES = ['/home/user', '/home/sandbox']
 
 // ChatGPT's code interpreter exposes uploads and outputs under /mnt/data, so models trained

@@ -21,7 +21,13 @@ vi.mock('@/packages/token-estimation/hooks/useTokenEstimation', () => ({
     currentInputTokens: 100,
     totalTokens: 50100,
     isCalculating: false,
+    isDraftCalculating: false,
+    isCurrentInputApproximate: false,
+    isTotalApproximate: false,
+    isContextApproximate: false,
+    isContextCalculating: false,
     pendingTasks: 0,
+    pendingContextMessages: 0,
   })),
 }))
 
@@ -128,8 +134,18 @@ describe('context-tokens hook tests', () => {
       currentInputTokens: 0,
       totalTokens: 100,
       isCalculating: true,
+      isDraftCalculating: false,
+      isCurrentInputApproximate: false,
+      isTotalApproximate: true,
+      isContextApproximate: false,
+      isContextCalculating: true,
       pendingTasks: 5,
-      breakdown: { currentInput: { text: 0, attachments: 0 }, context: { text: 100, attachments: 0 } },
+      pendingContextMessages: 2,
+      exactDraftTokens: null,
+      breakdown: {
+        currentInput: { text: 0, attachments: 0, toolCalls: 0 },
+        context: { text: 100, attachments: 0, toolCalls: 0 },
+      },
     })
 
     const { result } = renderHook(
@@ -146,6 +162,58 @@ describe('context-tokens hook tests', () => {
 
     expect(result.current.contextTokens).toBe(50000)
     expect(result.current.isCalculating).toBe(true)
+    expect(result.current.isContextCalculating).toBe(true)
+  })
+
+  it('completes the context cache while only the draft is calculating', () => {
+    const session = createTestSession()
+    vi.mocked(queryClient.getQueryData).mockReturnValue({
+      contextTokens: 50000,
+      messageCount: 2,
+      timestamp: Date.now() - 5000,
+    } satisfies ContextTokensCacheValue)
+    vi.mocked(useTokenEstimation).mockReturnValue({
+      contextTokens: 50000,
+      currentInputTokens: 100,
+      totalTokens: 50100,
+      isCalculating: true,
+      isDraftCalculating: true,
+      isCurrentInputApproximate: true,
+      isTotalApproximate: true,
+      isContextApproximate: false,
+      isContextCalculating: false,
+      pendingTasks: 1,
+      pendingContextMessages: 0,
+      exactDraftTokens: null,
+      breakdown: {
+        currentInput: { text: 100, attachments: 0, toolCalls: 0 },
+        context: { text: 50000, attachments: 0, toolCalls: 0 },
+      },
+    })
+
+    const { result } = renderHook(
+      () =>
+        useContextTokens({
+          sessionId: 'test-session',
+          session,
+          settings: {},
+          model: undefined,
+          modelSupportToolUseForFile: false,
+        }),
+      { wrapper: createWrapper() }
+    )
+
+    expect(result.current.contextTokens).toBe(50000)
+    expect(result.current.isCalculating).toBe(true)
+    expect(result.current.isDraftCalculating).toBe(true)
+    expect(result.current.isCurrentInputApproximate).toBe(true)
+    expect(result.current.isTotalApproximate).toBe(true)
+    expect(result.current.isContextCalculating).toBe(false)
+    expect(result.current.pendingContextMessages).toBe(0)
+    expect(queryClient.setQueryData).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ contextTokens: 50000, messageCount: 2 })
+    )
   })
 
   it('tokenizerType consistency between InputBox and Compaction', () => {

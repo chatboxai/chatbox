@@ -1,6 +1,6 @@
 import type { Message, Session, SessionThread } from '@shared/types'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
-import * as chatStore from './chatStore'
+import { rendererApplication } from '@/app/renderer-application'
 import { hasSuccessfulUserAssistantTurn } from './session/message-success'
 
 export const FIRST_SUCCESSFUL_CHAT_KEY = 'chatbox:first-successful-chat:v1'
@@ -70,13 +70,13 @@ export function hasSuccessfulConversation(session: Session): boolean {
 }
 
 async function inferFirstSuccessfulChatCompletedFromSessions(): Promise<boolean> {
-  const sessionMetas = await chatStore.listAllSessionsMeta()
+  const sessionMetas = await rendererApplication.sessions.listAllSessionsMeta()
   for (const meta of sessionMetas) {
     if (builtInTemplateSessionIds.has(meta.id)) continue
     if (meta.hidden) continue
     if (meta.type && meta.type !== 'chat') continue
 
-    const session = await chatStore.getSession(meta.id)
+    const session = await rendererApplication.sessionQueryBridge.getSession(meta.id)
     if (!session) continue
     if (hasSuccessfulConversation(session)) {
       return true

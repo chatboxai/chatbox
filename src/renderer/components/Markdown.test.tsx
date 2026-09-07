@@ -1,14 +1,36 @@
 // @vitest-environment jsdom
 
+import { MantineProvider } from '@mantine/core'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@/test-utils'
 
-const { openViewer, sandboxPersistArtifact, sandboxExportFile } = vi.hoisted(() => ({
-  openViewer: vi.fn(),
-  sandboxPersistArtifact: vi.fn(),
-  sandboxExportFile: vi.fn(),
-}))
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: vi.fn(
+    (query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(() => false),
+    })
+  ),
+})
+
+const { openViewer, sandboxPersistArtifact, sandboxExportFile, highlight, highlightSync, preloadLanguage } = vi.hoisted(
+  () => ({
+    openViewer: vi.fn(),
+    sandboxPersistArtifact: vi.fn(),
+    sandboxExportFile: vi.fn(),
+    highlight: vi.fn(async () => '<pre class="shiki"><code>highlighted async</code></pre>'),
+    highlightSync: vi.fn((): string | null => '<pre class="shiki"><code>highlighted sync</code></pre>'),
+    preloadLanguage: vi.fn(async () => {}),
+  })
+)
 
 vi.mock('@/platform', () => ({
   default: {
@@ -20,6 +42,12 @@ vi.mock('@/platform', () => ({
 }))
 
 vi.mock('@/utils/track', () => ({ trackEvent: vi.fn() }))
+
+vi.mock('../packages/shiki', () => ({
+  highlight,
+  highlightSync,
+  preloadLanguage,
+}))
 
 vi.mock('./Artifact', () => ({
   isRenderableCodeLanguage: () => false,
@@ -57,13 +85,103 @@ vi.mock('react-photoswipe-gallery', () => ({
   ),
 }))
 
-import Markdown from './Markdown'
+import Markdown, { BlockCodeCollapsedStateProvider } from './Markdown'
 
 afterEach(() => {
   cleanup()
   openViewer.mockReset()
   sandboxPersistArtifact.mockReset()
   sandboxExportFile.mockReset()
+  highlight.mockClear()
+  highlightSync.mockClear()
+  preloadLanguage.mockClear()
+})
+
+describe('Markdown streaming code highlighting', () => {
+  const renderStreamingMarkdown = (source: string) => (
+    <MantineProvider forceColorScheme="dark">
+      <BlockCodeCollapsedStateProvider>
+        <Markdown generating hiddenCodeActions forceColorScheme="dark">
+          {source}
+        </Markdown>
+      </BlockCodeCollapsedStateProvider>
+    </MantineProvider>
+  )
+
+  it('defers highlighting the active code fence until streaming completes', async () => {
+    const view = render(renderStreamingMarkdown('```html\n<div>one</div>'))
+
+    expect(document.querySelector('.shiki-code-fallback')?.textContent).toContain('<div>one</div>')
+    expect(highlightSync).not.toHaveBeenCalled()
+    expect(highlight).not.toHaveBeenCalled()
+    await waitFor(() => expect(preloadLanguage).toHaveBeenCalledWith('html'))
+
+    view.rerender(renderStreamingMarkdown('```html\n<div>one</div>\n<p>two</p>'))
+    expect(document.querySelector('.shiki-code-fallback')?.textContent).toContain('<p>two</p>')
+    const streamingLines = document.querySelectorAll('.shiki-streaming-plain .line')
+    expect(streamingLines).toHaveLength(3)
+    expect(streamingLines[2]?.textContent).toBe('')
+    expect(highlightSync).not.toHaveBeenCalled()
+    expect(highlight).not.toHaveBeenCalled()
+
+    view.rerender(renderStreamingMarkdown('```html\n<div>one</div>\n<p>two</p>\n```'))
+    await waitFor(() => expect(highlightSync).toHaveBeenCalledOnce())
+    expect(highlightSync).toHaveBeenCalledWith('<div>one</div>\n<p>two</p>\n', 'html', 'one-dark-pro')
+    expect(document.querySelector('.shiki')?.textContent).toBe('highlighted sync')
+    expect(highlight).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['tilde fence', '~~~html\n<div>one</div>'],
+    ['longer backtick fence with embedded backticks', '````html\n<div data-marker="```">one</div>'],
+  ])('recognizes an unclosed %s using Markdown fence semantics', async (_name, source) => {
+    render(renderStreamingMarkdown(source))
+
+    expect(document.querySelector('.shiki-streaming-plain')?.textContent).toContain('<div')
+    expect(highlightSync).not.toHaveBeenCalled()
+    expect(highlight).not.toHaveBeenCalled()
+    await waitFor(() => expect(preloadLanguage).toHaveBeenCalledWith('html'))
+  })
+})
+
+describe('Markdown code block font size', () => {
+  const renderCodeBlock = (source: string, generating = false) =>
+    render(
+      <MantineProvider forceColorScheme="dark">
+        <BlockCodeCollapsedStateProvider>
+          <Markdown generating={generating} hiddenCodeActions forceColorScheme="dark">
+            {source}
+          </Markdown>
+        </BlockCodeCollapsedStateProvider>
+      </MantineProvider>
+    )
+
+  it('does not override the message font size for highlighted code', () => {
+    renderCodeBlock('```ts\nconst answer = 42\n```')
+
+    const codeWrapper = document.querySelector('.shiki-code-wrapper:not(.shiki-code-fallback)')
+    expect(codeWrapper).not.toBeNull()
+    expect(codeWrapper?.classList.contains('text-xs')).toBe(false)
+  })
+
+  it('does not override the message font size while code is streaming', () => {
+    renderCodeBlock('```ts\nconst answer = 42', true)
+
+    const codeWrapper = document.querySelector('.shiki-streaming-plain')?.closest('.shiki-code-wrapper')
+    expect(codeWrapper).not.toBeNull()
+    expect(codeWrapper?.classList.contains('text-xs')).toBe(false)
+  })
+
+  it('does not override the message font size while highlighting loads', () => {
+    highlightSync.mockReturnValueOnce(null)
+    highlight.mockReturnValueOnce(new Promise<string>(() => {}))
+    renderCodeBlock('```ts\nconst answer = 42\n```')
+
+    const codeWrapper = document.querySelector('.shiki-code-fallback')
+    expect(codeWrapper).not.toBeNull()
+    expect(codeWrapper?.querySelector('.shiki-streaming-plain')).toBeNull()
+    expect(codeWrapper?.classList.contains('text-xs')).toBe(false)
+  })
 })
 
 describe('Markdown images', () => {
@@ -107,6 +225,24 @@ describe('Markdown images', () => {
 
     expect(screen.getAllByTestId('image-viewer')).toHaveLength(1)
     expect(screen.getAllByTestId('image-viewer-item')).toHaveLength(2)
+  })
+})
+
+describe('Markdown LaTeX equation tags', () => {
+  it('renders \\tag as a display-math equation number', () => {
+    render(
+      <Markdown>
+        {`$$
+s+\\sum_{j=1}^{k}R_j\\le \\ell_k.
+\\tag{1}
+$$`}
+      </Markdown>
+    )
+
+    const displayMath = document.querySelector('.katex-display')
+    const tag = displayMath?.querySelector('.tag')
+    expect(displayMath).not.toBeNull()
+    expect(tag?.textContent).toContain('(1)')
   })
 })
 

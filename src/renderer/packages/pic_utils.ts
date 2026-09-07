@@ -3,16 +3,50 @@
  * @param file 图片文件
  * @returns 图片base64
  */
-export async function getImageBase64AndResize(file: File) {
+export const MODEL_IMAGE_MAX_DIMENSION = 1568
+
+export function calculateImageResizeSize(
+  originalWidth: number,
+  originalHeight: number
+): {
+  width: number
+  height: number
+} {
+  if (
+    !Number.isFinite(originalWidth) ||
+    !Number.isFinite(originalHeight) ||
+    originalWidth <= 0 ||
+    originalHeight <= 0
+  ) {
+    throw new Error('Image has invalid dimensions')
+  }
+
+  let scale = Math.min(1, MODEL_IMAGE_MAX_DIMENSION / originalWidth, MODEL_IMAGE_MAX_DIMENSION / originalHeight)
+  let width = Math.max(1, Math.floor(originalWidth * scale))
+  let height = Math.max(1, Math.floor(originalHeight * scale))
+
+  // OpenAI high-resolution inputs should keep their short side at or below 768px.
+  const maxShortDimension = 768
+  const shortDimension = Math.min(width, height)
+  if (shortDimension > maxShortDimension) {
+    scale = maxShortDimension / shortDimension
+    width = Math.max(1, Math.floor(width * scale))
+    height = Math.max(1, Math.floor(height * scale))
+  }
+  return { width, height }
+}
+
+export interface ImageResizeOptions {
+  outputType?: 'image/jpeg' | 'image/png' | 'image/webp'
+  quality?: number
+}
+
+export async function getImageBase64AndResize(file: File, options: ImageResizeOptions = {}) {
   if (!file.type.startsWith('image/')) {
     throw new Error('file is not an image')
   }
   // Claude: To improve time-to-first-token, we recommend resizing images to no more than 1.15 megapixels (and within 1568 pixels in both dimensions).
   // https://docs.anthropic.com/en/docs/build-with-claude/vision
-  const maxPixelL1 = 1568
-  // OpenAI: For high res mode, the short side of the image should be less than 768px and the long side should be less than 2,000px.
-  // https://platform.openai.com/docs/guides/vision
-  const maxPixelL2 = 768
   return new Promise<string>((resolve, reject) => {
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
@@ -25,33 +59,22 @@ export async function getImageBase64AndResize(file: File) {
     img.onload = () => {
       // 释放 object URL
       URL.revokeObjectURL(objectUrl)
-      // 获取原始图片尺寸
-      const originalWidth = img.width
-      const originalHeight = img.height
-      // 计算目标尺寸,保持宽高比
-      let newWidth = originalWidth
-      let newHeight = originalHeight
-      // 如果图片尺寸超过限制,则按比例缩小
-      if (originalWidth > maxPixelL1 || originalHeight > maxPixelL1) {
-        const scale = Math.min(maxPixelL1 / originalWidth, maxPixelL1 / originalHeight)
-        newWidth = Math.floor(originalWidth * scale)
-        newHeight = Math.floor(originalHeight * scale)
-      }
-      // 确保短边不超过 maxPixelL2
-      const minSide = Math.min(newWidth, newHeight)
-      if (minSide > maxPixelL2) {
-        const scale = maxPixelL2 / minSide
-        newWidth = Math.floor(newWidth * scale)
-        newHeight = Math.floor(newHeight * scale)
+      let resizeSize: { width: number; height: number }
+      try {
+        resizeSize = calculateImageResizeSize(img.width, img.height)
+      } catch (error) {
+        reject(error)
+        return
       }
       // 设置canvas尺寸为缩放后的尺寸
-      canvas.width = newWidth
-      canvas.height = newHeight
+      canvas.width = resizeSize.width
+      canvas.height = resizeSize.height
       // 绘制缩放后的图片
-      ctx.drawImage(img, 0, 0, newWidth, newHeight)
-      // 转换为base64,jpeg使用0.9质量以减小文件大小
-      const base64 =
-        file.type === 'image/jpeg' ? canvas.toDataURL('image/jpeg', 0.9) : canvas.toDataURL('image/png', 1.0)
+      ctx.drawImage(img, 0, 0, resizeSize.width, resizeSize.height)
+      // Callers may request a bounded lossy format; user-upload behavior keeps the legacy default.
+      const outputType = options.outputType ?? (file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png')
+      const quality = options.quality ?? (outputType === 'image/jpeg' ? 0.9 : 1)
+      const base64 = canvas.toDataURL(outputType, quality)
       resolve(base64)
     }
     img.onerror = (error) => {
@@ -67,15 +90,157 @@ export function svgCodeToBase64(svgCode: string) {
   return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgCode)))
 }
 
-export async function svgToPngBase64(svgBase64: string): Promise<string> {
+export interface SvgRasterizeOptions {
+  /** Maximum width or height of the allocated output canvas. */
+  maxOutputDimension?: number
+  /** Restrict SVG content to elements and references that cannot load nested resources. */
+  strictResourceIsolation?: boolean
+}
+
+export function calculateSvgRasterSize(
+  sourceWidth: number,
+  sourceHeight: number,
+  options: SvgRasterizeOptions = {}
+): { width: number; height: number } {
+  if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
+    throw new Error('SVG has invalid dimensions')
+  }
+  const maxOutputDimension = options.maxOutputDimension ?? Number.POSITIVE_INFINITY
+  if (Number.isNaN(maxOutputDimension) || maxOutputDimension <= 0) {
+    throw new Error('SVG raster limit must be positive')
+  }
+  const scale = Math.min(2, maxOutputDimension / sourceWidth, maxOutputDimension / sourceHeight)
+  return {
+    width: Math.max(1, Math.floor(sourceWidth * scale)),
+    height: Math.max(1, Math.floor(sourceHeight * scale)),
+  }
+}
+
+function parseSvgDataUrl(svgDataUrl: string): Document {
+  const separatorIndex = svgDataUrl.indexOf(',')
+  if (separatorIndex < 0 || !svgDataUrl.slice(0, separatorIndex).endsWith(';base64')) {
+    throw new Error('SVG must be a base64 data URL')
+  }
+  const svgCode = atob(svgDataUrl.slice(separatorIndex + 1))
+  if (/<!doctype|<\?xml-stylesheet/i.test(svgCode)) {
+    throw new Error('SVG external document declarations are not supported')
+  }
+  const svgDoc = new DOMParser().parseFromString(svgCode, 'image/svg+xml')
+  if (svgDoc.getElementsByTagName('parsererror').length > 0) {
+    throw new Error('SVG is not valid XML')
+  }
+  return svgDoc
+}
+
+const SAFE_SVG_ELEMENT_NAMES = new Set([
+  'a',
+  'circle',
+  'clippath',
+  'defs',
+  'desc',
+  'ellipse',
+  'feblend',
+  'fecolormatrix',
+  'fecomponenttransfer',
+  'fecomposite',
+  'feconvolvematrix',
+  'fediffuselighting',
+  'fedisplacementmap',
+  'fedistantlight',
+  'fedropshadow',
+  'feflood',
+  'fefunca',
+  'fefuncb',
+  'fefuncg',
+  'fefuncr',
+  'fegaussianblur',
+  'femerge',
+  'femergenode',
+  'femorphology',
+  'feoffset',
+  'fepointlight',
+  'fespecularlighting',
+  'fespotlight',
+  'fetile',
+  'feturbulence',
+  'filter',
+  'g',
+  'line',
+  'lineargradient',
+  'marker',
+  'mask',
+  'path',
+  'pattern',
+  'polygon',
+  'polyline',
+  'radialgradient',
+  'rect',
+  'stop',
+  'style',
+  'svg',
+  'switch',
+  'symbol',
+  'text',
+  'textpath',
+  'title',
+  'tspan',
+  'use',
+  'view',
+])
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
+const XMLNS_NAMESPACE = 'http://www.w3.org/2000/xmlns/'
+const RESOURCE_ATTRIBUTE_NAMES = new Set(['background', 'data', 'href', 'poster', 'src'])
+
+function hasUnsafeSvgResourceValue(value: string): boolean {
+  if (/\\|\/\*|@import|(?:data|blob|file|https?|javascript):|(?:image|image-set|cross-fade)\s*\(/i.test(value)) {
+    return true
+  }
+  const withoutLocalReferences = value.replace(/url\s*\(\s*(['"]?)#[^\s)'"\\]+\1\s*\)/gi, '')
+  return /url\s*\(/i.test(withoutLocalReferences)
+}
+
+/** Enforce a strict subset that cannot load nested documents, rasters, or stylesheets. */
+export function svgHasUnsafeResources(svgDoc: Pick<Document, 'getElementsByTagName'>): boolean {
+  for (const element of Array.from(svgDoc.getElementsByTagName('*'))) {
+    const namespace = element.namespaceURI
+    const elementName = element.localName.toLowerCase()
+    if (
+      (namespace !== null && namespace !== '' && namespace !== SVG_NAMESPACE) ||
+      !SAFE_SVG_ELEMENT_NAMES.has(elementName)
+    ) {
+      return true
+    }
+    if (elementName === 'style' && hasUnsafeSvgResourceValue(element.textContent ?? '')) return true
+
+    for (const attribute of Array.from(element.attributes)) {
+      if (
+        attribute.namespaceURI === XMLNS_NAMESPACE ||
+        attribute.name === 'xmlns' ||
+        attribute.name.startsWith('xmlns:')
+      ) {
+        continue
+      }
+      const attributeName = attribute.localName.toLowerCase()
+      const value = attribute.value.trim()
+      if (attributeName.startsWith('on') || hasUnsafeSvgResourceValue(value)) return true
+      if (RESOURCE_ATTRIBUTE_NAMES.has(attributeName) && !/^#[^\s]+$/.test(value)) return true
+    }
+  }
+  return false
+}
+
+export async function svgToPngBase64(svgBase64: string, options: SvgRasterizeOptions = {}): Promise<string> {
+  const svgDoc = parseSvgDataUrl(svgBase64)
+  if (options.strictResourceIsolation && svgHasUnsafeResources(svgDoc)) {
+    throw new Error('SVG contains resources that are not supported for safe rasterization')
+  }
+
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
       let width = img.width
       let height = img.height
       try {
-        const parser = new DOMParser()
-        const svgDoc = parser.parseFromString(atob(svgBase64.split(',')[1]), 'image/svg+xml')
         const svgElement = svgDoc.documentElement
         const viewBox = svgElement.getAttribute('viewBox')
         if (viewBox) {
@@ -96,17 +261,22 @@ export async function svgToPngBase64(svgBase64: string): Promise<string> {
       // console.log('img.width', img.width, 'img.height', img.height)
       // console.log('width', width, 'height', height)
 
+      let rasterSize: { width: number; height: number }
+      try {
+        rasterSize = calculateSvgRasterSize(width, height, options)
+      } catch (error) {
+        reject(error)
+        return
+      }
       const canvas = document.createElement('canvas')
-      const scale = 2
-      canvas.width = width * scale
-      canvas.height = height * scale
+      canvas.width = rasterSize.width
+      canvas.height = rasterSize.height
       const ctx = canvas.getContext('2d')
       if (!ctx) {
         reject(new Error('cannot get canvas context'))
         return
       }
-      ctx.scale(scale, scale)
-      ctx.drawImage(img, 0, 0, width, height)
+      ctx.drawImage(img, 0, 0, rasterSize.width, rasterSize.height)
       try {
         const pngBase64 = canvas.toDataURL('image/png', 1.0) // 使用最高质量设置
         resolve(pngBase64)

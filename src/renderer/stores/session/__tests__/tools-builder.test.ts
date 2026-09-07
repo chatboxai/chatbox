@@ -11,11 +11,14 @@ const {
   isProMock,
   webSearchProvider,
   buildCodeExecutionToolsMock,
+  buildRunCommandToolMock,
   getSessionAttachmentRagToolSetMock,
   skillsChangedListeners,
   requestUserExecApprovalMock,
   cancelUserExecMock,
   userExecMock,
+  readWorkspaceInstructionsMock,
+  platformName,
 } = vi.hoisted(() => ({
   discoverSkillsMock: vi.fn(),
   installFromSandboxMock: vi.fn(),
@@ -31,11 +34,14 @@ const {
   isProMock: vi.fn(),
   webSearchProvider: { current: 'build-in' },
   buildCodeExecutionToolsMock: vi.fn(),
+  buildRunCommandToolMock: vi.fn(),
   getSessionAttachmentRagToolSetMock: vi.fn(),
   skillsChangedListeners: new Set<() => void>(),
   requestUserExecApprovalMock: vi.fn(),
   cancelUserExecMock: vi.fn(),
   userExecMock: vi.fn(),
+  readWorkspaceInstructionsMock: vi.fn(),
+  platformName: { current: 'darwin' },
 }))
 
 vi.hoisted(() => {
@@ -55,7 +61,13 @@ vi.hoisted(() => {
 })
 
 vi.mock('@/platform', () => ({
-  default: { type: 'web' },
+  default: {
+    type: 'web',
+    getPlatform: vi.fn().mockImplementation(() => Promise.resolve(platformName.current)),
+    readWorkspaceInstructions: readWorkspaceInstructionsMock,
+    // Presence enables view_image registration (isViewImageAvailable).
+    fsReadImage: vi.fn(),
+  },
 }))
 
 const trackAgentModeFullAccessBypassMock = vi.fn()
@@ -87,6 +99,18 @@ vi.mock('@/packages/skills/controller', () => ({
 
 vi.mock('@/packages/user-exec-approval', () => ({
   requestUserExecApproval: requestUserExecApprovalMock,
+  UserExecApprovalPausedError: class UserExecApprovalPausedError extends Error {
+    constructor(
+      readonly toolCallId: string,
+      readonly command: string,
+      readonly explanation?: string,
+      readonly explanationError?: boolean,
+      readonly workdir?: string
+    ) {
+      super(`User approval required before executing command: ${command}`)
+      this.name = 'UserExecApprovalPausedError'
+    }
+  },
 }))
 
 vi.mock('@/stores/settingsStore', () => ({
@@ -116,6 +140,10 @@ vi.mock('@/stores/settingActions', () => ({
 
 vi.mock('@/packages/model-calls/toolsets/code-execution', () => ({
   buildCodeExecutionTools: buildCodeExecutionToolsMock,
+}))
+
+vi.mock('@/packages/model-calls/toolsets/run-command', () => ({
+  buildRunCommandTool: buildRunCommandToolMock,
 }))
 
 vi.mock('@/packages/model-calls/toolsets/web-search', () => {
@@ -219,6 +247,7 @@ beforeEach(() => {
   settingsState.licenseActivationMethod = undefined
   settingsState.hasExpiredLicense = false
   webSearchProvider.current = 'build-in'
+  platformName.current = 'darwin'
   isProMock.mockReturnValue(true)
   buildCodeExecutionToolsMock.mockReturnValue({
     description: 'code execution toolset',
@@ -226,6 +255,11 @@ beforeEach(() => {
       code_execution: { execute: async () => ({}) },
       parse_file: { execute: async () => ({}) },
     },
+    ensureSandbox: vi.fn().mockResolvedValue({ success: true }),
+  })
+  buildRunCommandToolMock.mockReturnValue({
+    description: 'run command toolset',
+    tool: { execute: async () => ({}) },
   })
   getSessionAttachmentRagToolSetMock.mockResolvedValue({
     description: 'session attachment rag toolset',
@@ -233,6 +267,12 @@ beforeEach(() => {
   })
   requestUserExecApprovalMock.mockResolvedValue('ai')
   userExecMock.mockResolvedValue({ success: true, exitCode: 0, stdout: 'ok', stderr: '' })
+  readWorkspaceInstructionsMock.mockResolvedValue({
+    directories: [],
+    files: [],
+    skippedDirectoryCount: 0,
+    budgetExhausted: false,
+  })
   cancelUserExecMock.mockResolvedValue({ killed: true })
   installFromSandboxMock.mockResolvedValue({ success: true, skillName: 'new-skill' })
   discoverSkillsMock.mockResolvedValue([
@@ -266,11 +306,43 @@ describe('buildToolsForSession', () => {
     expect(result.tools.mcp_tool).toBeUndefined()
     expect(result.instructions).not.toContain('## Skills')
     expect(result.instructions).not.toContain('Chatbox Account CLI')
-    expect(result.instructions).not.toContain('## Tool-use Communication')
+    // Memory tools are mode-independent, so tool-use communication guidance stays.
+    expect(result.tools.save_memory).toBeDefined()
+    expect(result.instructions).toContain('## Persistent Memory')
+    expect(result.instructions).not.toContain('## Workspace Instructions')
+    expect(result.instructions).not.toContain('Co-authored-by: Chatbox <chatbox@chatboxai.com>')
+    expect(readWorkspaceInstructionsMock).not.toHaveBeenCalled()
     expect(discoverSkillsMock).not.toHaveBeenCalled()
     for (const name of sandboxToolNames) {
       expect(result.tools[name]).toBeUndefined()
     }
+  })
+
+  test('memory tools follow the copilot scope even when the global switch is off', async () => {
+    const model = createMockModel()
+    const globalSettings = { memoryEnabled: false, language: 'en' } as Parameters<
+      typeof buildToolsForSession
+    >[1]['globalSettings']
+
+    const withoutScope = await buildToolsForSession(model, {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      globalSettings,
+    })
+    expect(withoutScope.tools.save_memory).toBeUndefined()
+    expect(withoutScope.tools.delete_memory).toBeUndefined()
+
+    const withCopilotScope = await buildToolsForSession(model, {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      globalSettings,
+      memoryScope: { type: 'copilot', copilotId: 'cp1', epoch: 0 },
+    })
+    expect(withCopilotScope.tools.save_memory).toBeDefined()
+    expect(withCopilotScope.tools.delete_memory).toBeDefined()
+    expect(withCopilotScope.instructions).toContain('## Persistent Memory')
   })
 
   test('agentMode="off" exposes selected Knowledge Base without Work Mode tools', async () => {
@@ -331,6 +403,134 @@ describe('buildToolsForSession', () => {
       expect(result.tools[name]).toBeUndefined()
     }
     expect(result.tools.code_execution).toBeDefined()
+    expect(result.instructions).toContain('## Git')
+    expect(result.instructions).toContain('prefix its name with `chatbox/`')
+    expect(result.instructions).toContain('Co-authored-by: Chatbox <chatbox@chatboxai.com>')
+  })
+
+  test('v2 command contract exposes run_command and retires legacy command tools', async () => {
+    const provider = createMockSandboxProvider()
+    vi.mocked(provider.resolveWorkingDirectory).mockResolvedValue('/sandbox/session-1')
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      agentToolContractVersion: 2,
+      sessionSettings: { commandApprovalMode: 'smart', workingDirectories: ['/workspace/project'] },
+      codeExecution: { sessionId: 'session-1', provider, files: [] },
+      commandExecution: { sessionId: 'session-1', provider },
+    })
+
+    expect(result.tools.run_command).toBeDefined()
+    expect(result.tools.code_execution).toBeUndefined()
+    expect(result.tools.user_exec).toBeUndefined()
+    expect(result.tools.parse_file).toBeDefined()
+    expect(result.instructions).toContain('run_command')
+    expect(result.instructions).toContain('workdir set to /sandbox/session-1')
+    expect(result.tools.install_skill.description).toContain('Set run_command workdir to /sandbox/session-1')
+    expect(buildRunCommandToolMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session-1',
+        platform: 'darwin',
+        approvalMode: 'smart',
+        workingDirectories: ['/workspace/project'],
+      })
+    )
+  })
+
+  test('v2 command contract preserves Node code_execution on HarmonyOS', async () => {
+    platformName.current = 'harmony'
+    const provider = createMockSandboxProvider()
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      agentToolContractVersion: 2,
+      sessionSettings: { commandApprovalMode: 'smart', workingDirectories: ['/workspace/project'] },
+      codeExecution: { sessionId: 'session-1', provider, files: [] },
+      commandExecution: { sessionId: 'session-1', provider },
+    })
+
+    expect(result.tools.code_execution).toBeDefined()
+    expect(result.tools.run_command).toBeUndefined()
+    expect(result.tools.user_exec).toBeUndefined()
+    expect(result.tools.install_skill.description).toContain('code_execution (sandbox)')
+    expect(result.instructions).toContain('HarmonyOS currently supports sandboxed Node.js through code_execution')
+    expect(result.instructions).not.toContain('Use run_command')
+    expect(buildRunCommandToolMock).not.toHaveBeenCalled()
+  })
+
+  test('v2 Windows command instructions describe PowerShell host execution without Bash claims', async () => {
+    platformName.current = 'win32'
+    const provider = createMockSandboxProvider()
+    vi.mocked(provider.resolveWorkingDirectory).mockResolvedValue('C:\\sandbox\\session-1')
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      agentToolContractVersion: 2,
+      sessionSettings: { commandApprovalMode: 'smart' },
+      codeExecution: { sessionId: 'session-1', provider, files: [] },
+      commandExecution: { sessionId: 'session-1', provider },
+    })
+
+    expect(result.instructions).toContain('run_command executes PowerShell on the host')
+    expect(result.instructions).toContain('session approval policy')
+    expect(result.instructions).toContain('Bash is unavailable')
+    expect(result.instructions).not.toContain('sandboxed environment for lightweight code execution')
+  })
+
+  test.each(['web', 'ios', 'android'])('v2 command contract does not expose Electron commands on %s', async (name) => {
+    platformName.current = name
+    const provider = createMockSandboxProvider()
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      agentToolContractVersion: 2,
+      sessionSettings: { commandApprovalMode: 'smart', workingDirectories: ['/workspace/project'] },
+      codeExecution: { sessionId: 'session-1', provider, files: [] },
+      commandExecution: { sessionId: 'session-1', provider },
+    })
+
+    expect(result.tools.code_execution).toBeDefined()
+    expect(result.tools.run_command).toBeUndefined()
+    expect(result.tools.user_exec).toBeUndefined()
+    expect(result.instructions).toContain('Host command execution is unavailable')
+    expect(result.instructions).not.toContain('Use run_command')
+    expect(buildRunCommandToolMock).not.toHaveBeenCalled()
+  })
+
+  test('Windows legacy code_execution pauses before unconstrained execution', async () => {
+    platformName.current = 'win32'
+    const originalExecute = vi.fn().mockResolvedValue({ stdout: 'ok', stderr: '', exitCode: 0 })
+    buildCodeExecutionToolsMock.mockReturnValue({
+      description: 'code execution toolset',
+      tools: { code_execution: { execute: originalExecute } },
+      ensureSandbox: vi.fn().mockResolvedValue({ success: true }),
+    })
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      codeExecution: { sessionId: 'session-1', provider: createMockSandboxProvider(), files: [] },
+    })
+    if (!result.tools.code_execution.execute) throw new Error('code_execution execute missing')
+
+    await expect(
+      result.tools.code_execution.execute({ code: 'console.log(1)', language: 'node' }, {
+        toolCallId: 'tool-call-code',
+        messages: [],
+      } as never)
+    ).rejects.toMatchObject({ name: 'UserExecApprovalPausedError', toolCallId: 'tool-call-code' })
+    expect(originalExecute).not.toHaveBeenCalled()
+
+    await result.tools.code_execution.execute({ code: 'console.log(1)', language: 'node' }, {
+      toolCallId: 'tool-call-code',
+      messages: [],
+      approved: true,
+    } as never)
+    expect(originalExecute).toHaveBeenCalledTimes(1)
   })
 
   test('agentMode="on" keeps Knowledge Base alongside Work Mode tools', async () => {
@@ -346,6 +546,66 @@ describe('buildToolsForSession', () => {
     expect(result.tools.mcp_tool).toBeDefined()
     expect(result.tools.load_skill).toBeDefined()
     expect(result.tools.list_files).toBeDefined()
+  })
+
+  test('agentMode="on" proactively injects root AGENTS.md from selected working directories', async () => {
+    readWorkspaceInstructionsMock.mockResolvedValue({
+      directories: ['/workspace/alpha', 'C:\\workspace\\beta'],
+      files: [
+        { filePath: '/workspace/alpha/AGENTS.md', content: 'Use pnpm for checks.', truncated: false },
+        {
+          filePath: 'C:\\workspace\\beta\\AGENTS.md',
+          content: 'Keep Windows paths portable.',
+          truncated: false,
+        },
+      ],
+      skippedDirectoryCount: 0,
+      budgetExhausted: false,
+    })
+
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      sessionSettings: {
+        workingDirectories: ['/workspace/alpha/', 'C:\\workspace\\beta', '/workspace/alpha/'],
+      },
+    })
+
+    expect(result.instructions).toContain('## Workspace Instructions')
+    expect(result.instructions).toContain('Chatbox automatically checks each user-selected working directory')
+    expect(result.instructions).toContain('check whether a closer AGENTS.md applies')
+    expect(result.instructions).toContain('- /workspace/alpha')
+    expect(result.instructions).toContain('- C:/workspace/beta')
+    expect(result.instructions).toContain('<AGENTS_MD path="/workspace/alpha/AGENTS.md">')
+    expect(result.instructions).toContain('Use pnpm for checks.')
+    expect(result.instructions).toContain('<AGENTS_MD path="C:/workspace/beta/AGENTS.md">')
+    expect(result.instructions).toContain('Keep Windows paths portable.')
+    expect(readWorkspaceInstructionsMock).toHaveBeenCalledWith([
+      '/workspace/alpha/',
+      'C:\\workspace\\beta',
+      '/workspace/alpha/',
+    ])
+  })
+
+  test('reports shared-budget truncation and skipped unsafe directories', async () => {
+    readWorkspaceInstructionsMock.mockResolvedValue({
+      directories: ['/workspace/large'],
+      files: [{ filePath: '/workspace/large/AGENTS.md', content: 'partial instructions', truncated: true }],
+      skippedDirectoryCount: 2,
+      budgetExhausted: true,
+    })
+
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      sessionSettings: { workingDirectories: ['/workspace/large', '/unsafe', '/overflow'] },
+    })
+
+    expect(result.instructions).toContain('partial instructions')
+    expect(result.instructions).toContain('truncated or omitted to stay within the shared context budget')
+    expect(result.instructions).toContain('2 working directories were skipped')
   })
 
   test('normalizes Windows paths and prefers PowerShell without redundant directory changes', async () => {
@@ -526,6 +786,26 @@ describe('buildToolsForSession', () => {
       approvalSource: 'ai',
     })
     expect(trackAgentModeFullAccessBypassMock).not.toHaveBeenCalled()
+  })
+
+  test('always_ask pauses legacy user_exec without running smart approval', async () => {
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      sessionSettings: { commandApprovalMode: 'always_ask', workingDirectories: ['/workspace/project'] },
+    })
+    if (!result.tools.user_exec.execute) throw new Error('user_exec execute missing')
+
+    await expect(
+      result.tools.user_exec.execute({ command: 'pwd' }, { toolCallId: 'tool-call-always', messages: [] } as never)
+    ).rejects.toMatchObject({
+      name: 'UserExecApprovalPausedError',
+      toolCallId: 'tool-call-always',
+      workdir: '/workspace/project',
+    })
+    expect(requestUserExecApprovalMock).not.toHaveBeenCalled()
+    expect(userExecMock).not.toHaveBeenCalled()
   })
 
   test('records whitelist auto-approval as the execution source', async () => {
@@ -1099,6 +1379,27 @@ describe('user_exec tool', () => {
     })
   })
 
+  test('exposes retained legacy command output captures to the model', async () => {
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+
+    await expect(
+      toModelOutput(result.tools.user_exec, {
+        success: true,
+        exitCode: 0,
+        stdout: 'preview',
+        stderr: '',
+        outputFile: '/tmp/chatbox-command-output/capture.txt',
+      })
+    ).resolves.toEqual({
+      type: 'text',
+      value: 'Exit code: 0\n\nStdout:\npreview\n\nOutput capture: /tmp/chatbox-command-output/capture.txt',
+    })
+  })
+
   test('maps command success with no output to an explicit no-output result', async () => {
     const model = createMockModel()
     const result = await buildToolsForSession(model, {
@@ -1113,5 +1414,65 @@ describe('user_exec tool', () => {
       type: 'text',
       value: 'Exit code: 0\n\n(no output)',
     })
+  })
+})
+
+describe('buildToolsForSession — view_image gating', () => {
+  test('registers view_image for vision models on media-capable protocols in agent mode', async () => {
+    const model = createMockModel({ apiStyle: 'anthropic' } as Partial<ModelInterface>)
+    const result = await buildToolsForSession(model, {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+    expect(result.tools.view_image).toBeDefined()
+    expect(result.instructions).toContain('view_image')
+  })
+
+  test('registers view_image with user-message injection for chat-completions style providers', async () => {
+    const model = createMockModel({ apiStyle: 'openai' } as Partial<ModelInterface>)
+    const result = await buildToolsForSession(model, {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+    // Chat-completions protocols cannot embed images in tool results, so the image is
+    // delivered via the prepareStep messages rewrite instead of being dropped.
+    expect(result.tools.view_image).toBeDefined()
+    expect(result.prepareStepMessages).toBeDefined()
+  })
+
+  test('media-capable protocols use the step-message rewrite to bound image replay', async () => {
+    const model = createMockModel({ apiStyle: 'anthropic' } as Partial<ModelInterface>)
+    const result = await buildToolsForSession(model, {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+    expect(result.tools.view_image).toBeDefined()
+    expect(result.prepareStepMessages).toBeDefined()
+  })
+
+  test('omits view_image without vision support', async () => {
+    const model = createMockModel({
+      apiStyle: 'anthropic',
+      isSupportVision: vi.fn().mockReturnValue(false),
+    } as Partial<ModelInterface>)
+    const result = await buildToolsForSession(model, {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+    expect(result.tools.view_image).toBeUndefined()
+  })
+
+  test('omits view_image outside agent mode', async () => {
+    const model = createMockModel({ apiStyle: 'anthropic' } as Partial<ModelInterface>)
+    const result = await buildToolsForSession(model, {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+    })
+    expect(result.tools.view_image).toBeUndefined()
   })
 })

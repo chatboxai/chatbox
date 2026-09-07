@@ -29,7 +29,7 @@ import { FORCE_ENABLE_DEV_PAGES } from './dev/devToolsConfig'
 import useNeedRoomForMacWinControls from './hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen, useSidebarWidth } from './hooks/useScreenChange'
 import useVersion from './hooks/useVersion'
-import { navigateToSettings } from './modals/Settings'
+import { navigateToSettings } from './modals/settings-navigation'
 import { trackingEvent } from './packages/event'
 import { getSidebarModalSx } from './sidebar-drawer'
 import icon from './static/icon.png'
@@ -220,6 +220,8 @@ export default function Sidebar() {
             </Tooltip>
             <Tooltip label={t('Collapse')} openDelay={1000} withArrow>
               <ActionIcon
+                data-testid={TestId.sidebar.collapse}
+                aria-label={t('Collapse') || undefined}
                 variant="subtle"
                 color="chatbox-tertiary"
                 size={26}

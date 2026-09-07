@@ -1,11 +1,11 @@
-import type { LanguageModelV3 } from '@ai-sdk/provider'
-import type { Provider } from 'ai'
+import type { LanguageModelV3, LanguageModelV3CallOptions } from '@ai-sdk/provider'
+import { jsonSchema, type ModelMessage, type PrepareStepFunction, type Provider, type ToolSet } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelDependencies } from '../types/adapters'
 import type { SentryScope } from '../utils/sentry_adapter'
 import AbstractAISDKModel, { isRetryableStatusError } from './abstract-ai-sdk'
-import { ApiError, MidStreamApiError } from './errors'
-import type { CallChatCompletionOptions } from './types'
+import { ApiError, ChatboxAIAPIError, MidStreamApiError } from './errors'
+import type { CallChatCompletionOptions, CallSettings } from './types'
 
 const aiMocks = vi.hoisted(() => ({
   streamText: vi.fn(),
@@ -29,6 +29,8 @@ const languageModel: LanguageModelV3 = {
 }
 
 class TestModel extends AbstractAISDKModel {
+  public callSettings: CallSettings = {}
+
   protected getProvider(
     _options: CallChatCompletionOptions
   ): Pick<Provider, 'languageModel'> & Partial<Pick<Provider, 'embeddingModel' | 'imageModel'>> {
@@ -39,6 +41,10 @@ class TestModel extends AbstractAISDKModel {
 
   protected getChatModel(_options: CallChatCompletionOptions): LanguageModelV3 {
     return languageModel
+  }
+
+  protected override getCallSettings(): CallSettings {
+    return this.callSettings
   }
 }
 
@@ -65,8 +71,8 @@ function createDependencies(): ModelDependencies {
   }
 }
 
-function createModel(modelId = 'test-model'): TestModel {
-  return new TestModel(
+function createModel(modelId = 'test-model', callSettings: CallSettings = {}): TestModel {
+  const model = new TestModel(
     {
       model: {
         modelId,
@@ -76,7 +82,49 @@ function createModel(modelId = 'test-model'): TestModel {
     },
     createDependencies()
   )
+  model.callSettings = callSettings
+  return model
 }
+
+function mockEmptyStream(): void {
+  aiMocks.streamText.mockReturnValue({
+    fullStream: {
+      [Symbol.asyncIterator]() {
+        return { next: () => Promise.resolve({ done: true as const, value: undefined }) }
+      },
+    },
+    totalUsage: Promise.resolve({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
+    finishReason: Promise.resolve('stop'),
+  })
+}
+
+describe('AbstractAISDKModel max output tokens', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockEmptyStream()
+  })
+
+  it.each([0, -1, 0.5, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'omits invalid maxOutputTokens %s before calling the AI SDK',
+    async (maxOutputTokens) => {
+      const model = createModel('test-model', { maxOutputTokens })
+
+      await model.chatStream([], {}).next()
+
+      const sdkCallSettings = aiMocks.streamText.mock.calls[0]?.[0]
+      expect(sdkCallSettings).toBeDefined()
+      expect(sdkCallSettings).not.toHaveProperty('maxOutputTokens')
+    }
+  )
+
+  it.each([undefined, 1, 4096])('preserves valid maxOutputTokens %s', async (maxOutputTokens) => {
+    const model = createModel('test-model', { maxOutputTokens })
+
+    await model.chatStream([], {}).next()
+
+    expect(aiMocks.streamText.mock.calls[0]?.[0]?.maxOutputTokens).toBe(maxOutputTokens)
+  })
+})
 
 describe('AbstractAISDKModel tool errors', () => {
   beforeEach(() => {
@@ -162,6 +210,37 @@ describe('AbstractAISDKModel tool errors', () => {
       resultProviderMetadata: errorMetadata,
     })
   })
+
+  it('preserves a Chatbox AI error code for actionable tool guidance', async () => {
+    const error = ChatboxAIAPIError.fromCodeName(
+      'chatbox_search_license_key_required',
+      'chatbox_search_license_key_required'
+    )
+    aiMocks.streamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield {
+          type: 'tool-error',
+          toolCallId: 'tc1',
+          toolName: 'web_search',
+          input: { query: 'weather' },
+          error,
+          dynamic: true,
+        }
+      })(),
+      totalUsage: Promise.resolve({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
+      finishReason: Promise.resolve('stop'),
+    })
+
+    const result = await createModel().chat([], {})
+
+    expect(result.contentParts[0]).toMatchObject({
+      state: 'error',
+      result: {
+        errorCode: 20024,
+        error: { errorCode: 20024 },
+      },
+    })
+  })
 })
 
 describe('AbstractAISDKModel completed response normalization', () => {
@@ -225,6 +304,84 @@ describe('AbstractAISDKModel chatStream closure', () => {
 
     await stream.return(undefined)
     expect(providerStreamClosed).toBe(true)
+  })
+
+  it('awaits the resolved-request checkpoint before the provider stream starts', async () => {
+    const checkpointError = new Error('checkpoint failed')
+    const onRequestResolved = vi.fn(() => Promise.reject(checkpointError))
+    const providerStarted = vi.fn()
+    const effectiveMessages: ModelMessage[] = [{ role: 'user', content: 'steered' }]
+    const tools: ToolSet = {
+      tool_a: { inputSchema: jsonSchema({ type: 'object' }) },
+      tool_b: { inputSchema: jsonSchema({ type: 'object' }) },
+    }
+    aiMocks.streamText.mockImplementation((options: { prepareStep?: PrepareStepFunction<ToolSet> }) => ({
+      fullStream: (async function* () {
+        await options.prepareStep?.({
+          steps: [],
+          stepNumber: 0,
+          model: languageModel,
+          messages: [{ role: 'user', content: 'original' }],
+          experimental_context: undefined,
+        })
+        providerStarted()
+        yield* []
+      })(),
+      totalUsage: Promise.resolve({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
+      finishReason: Promise.resolve('stop'),
+    }))
+
+    const stream = createModel().chatStream([], {
+      tools,
+      prepareStep: () => ({ messages: effectiveMessages, activeTools: ['tool_b'] }),
+      onRequestResolved,
+    })
+
+    await expect(stream.next()).rejects.toBe(checkpointError)
+    expect(onRequestResolved).toHaveBeenCalledWith({
+      callSettings: {},
+      modelMessages: effectiveMessages,
+      tools: { tool_b: tools.tool_b },
+      stream: true,
+    })
+    expect(providerStarted).not.toHaveBeenCalled()
+  })
+
+  it('resolves the request for every provider step', async () => {
+    const order: string[] = []
+    vi.mocked(languageModel.doStream).mockImplementation(() => {
+      order.push('provider')
+      return Promise.resolve({ stream: new ReadableStream() })
+    })
+    aiMocks.streamText.mockImplementation(
+      (options: { model: LanguageModelV3; prepareStep?: PrepareStepFunction<ToolSet> }) => ({
+        fullStream: (async function* () {
+          for (const stepNumber of [0, 1]) {
+            await options.prepareStep?.({
+              steps: [],
+              stepNumber,
+              model: languageModel,
+              messages: [{ role: 'user', content: `step-${stepNumber}` }],
+              experimental_context: undefined,
+            })
+            await options.model.doStream({ prompt: [] } as LanguageModelV3CallOptions)
+          }
+          yield* []
+        })(),
+        totalUsage: Promise.resolve({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
+        finishReason: Promise.resolve('stop'),
+      })
+    )
+
+    const stream = createModel().chatStream([], {
+      onRequestResolved: ({ modelMessages }) => {
+        order.push(`checkpoint:${String(modelMessages[0]?.content)}`)
+      },
+    })
+
+    await stream.next()
+
+    expect(order).toEqual(['checkpoint:step-0', 'provider', 'checkpoint:step-1', 'provider'])
   })
 })
 

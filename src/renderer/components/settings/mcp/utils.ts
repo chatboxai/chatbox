@@ -124,6 +124,7 @@ export function getConfigFromFormValues(values: MCPServerConfigFormValues): MCPS
     id: values.id,
     name: values.name,
     enabled: values.enabled,
+    protocolMode: values.protocolMode ?? 'legacy',
     transport,
   }
 }
@@ -147,6 +148,7 @@ export function getFormValuesFromConfig(config: MCPServerConfig): MCPServerConfi
     id: config.id,
     name: config.name,
     enabled: config.enabled,
+    protocolMode: config.protocolMode ?? 'legacy',
     transport,
   }
 }
@@ -176,6 +178,7 @@ export function parseServerFromJson(text: string): MCPServerConfig | undefined {
     id: uuid(),
     name: parsed.name ?? '',
     enabled: true,
+    protocolMode: 'auto',
     transport: parsed,
   }
 }
@@ -191,6 +194,7 @@ export function parseServersFromJson(text: string): MCPServerConfig[] {
           id: uuid(),
           name: parsed.name ?? key,
           enabled: false,
+          protocolMode: 'auto',
           transport: parsed,
         })
       } catch (err) {

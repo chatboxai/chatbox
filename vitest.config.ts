@@ -7,6 +7,11 @@ export default defineConfig(({ mode }) => {
   // Live-API suite must be opted into explicitly (set by the test:model-provider script);
   // an argv/path heuristic could silently run real API calls with keys auto-loaded from .env
   const isModelProviderRun = process.env.RUN_MODEL_PROVIDER_TESTS === '1'
+  const defaultInclude = [
+    'src/**/*.{test,spec}.{ts,tsx}',
+    'packages/**/*.{test,spec}.{ts,tsx}',
+    'test/integration/**/*.{test,spec}.{ts,tsx}',
+  ]
 
   return {
     plugins: [
@@ -24,13 +29,16 @@ export default defineConfig(({ mode }) => {
         ...loadEnv(mode, process.cwd(), ''),
         NODE_ENV: 'test',
       },
-      include: ['src/**/*.{test,spec}.{ts,tsx}', 'test/integration/**/*.{test,spec}.{ts,tsx}'],
+      include: defaultInclude,
       exclude: [
-        'node_modules',
-        'dist',
-        'release',
-        '.erb',
-        ...(isModelProviderRun ? [] : ['test/integration/model-provider']),
+        // Workspace packages are symlinked into `packages/*/node_modules`, so a bare
+        // `node_modules` glob (which only matches the repo root entry) would collect
+        // every `packages/chatbox-core` suite a second time through the symlink.
+        '**/node_modules/**',
+        '**/dist/**',
+        'release/**',
+        '.erb/**',
+        ...(isModelProviderRun ? [] : ['test/integration/model-provider/**']),
       ],
       setupFiles: [],
       testTimeout: 10000,
@@ -45,6 +53,9 @@ export default defineConfig(({ mode }) => {
         src: path.resolve(__dirname, './src'),
         '@shared': path.resolve(__dirname, 'src/shared'),
       },
+      // Vite defaults plus `.cjs`, so vendored CommonJS modules (e.g. src/main/mcp/shell-env.cjs)
+      // resolve from extensionless imports the same way they do in the electron-vite build.
+      extensions: ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json', '.cjs'],
     },
   }
 })

@@ -2,6 +2,7 @@ import type {
   SessionAttachment,
   SessionAttachmentRagDebugSnapshot,
   SessionAttachmentRagMaintenanceResult,
+  SessionAttachmentRagMaintenanceScope,
   SessionAttachmentParent,
   SessionAttachmentQueryPlan,
   SessionAttachmentSearchResult,
@@ -27,7 +28,7 @@ export interface SessionAttachmentRagController {
   cleanupOrphans(params: { sessionIds: string[]; messageIds: string[] }): Promise<number[]>
   getDebugSnapshot(): Promise<SessionAttachmentRagDebugSnapshot>
   clearAll(): Promise<number>
-  runMaintenance(params: { sessionIds: string[]; messageIds: string[] }): Promise<SessionAttachmentRagMaintenanceResult>
+  runMaintenance(params: SessionAttachmentRagMaintenanceScope): Promise<SessionAttachmentRagMaintenanceResult>
   query(params: {
     attachmentIds: number[]
     query: string

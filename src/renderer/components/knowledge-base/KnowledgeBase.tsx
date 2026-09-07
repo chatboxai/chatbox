@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { Modal } from '@/components/layout/Overlay'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useProviders } from '@/hooks/useProviders'
-import { navigateToSettings } from '@/modals/Settings'
+import { navigateToSettings } from '@/modals/settings-navigation'
 import * as remote from '@/packages/remote'
 import { toastError } from '@/packages/toast'
 import platform from '@/platform'
@@ -353,11 +353,9 @@ const KnowledgeBasePage: React.FC = () => {
 
       trackEvent('knowledge_base_created', {
         provider_mode: newProviderMode,
-        embedding_model: embeddingModel,
-        rerank_model: rerankModel || null,
-        vision_model: visionModel || null,
         document_parser: documentParser?.type || 'global',
-        knowledge_base_name: newKbName,
+        has_rerank_model: Boolean(rerankModel),
+        has_vision_model: Boolean(visionModel),
       })
 
       // Reset form

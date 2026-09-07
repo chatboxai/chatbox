@@ -3,6 +3,7 @@ import type { StopCondition, ToolSet } from 'ai'
 const PERSISTENT_TOOL_CALL_PAUSE_ERROR_NAMES = new Set([
   'ToolCallLimitPausedError',
   'UserExecApprovalPausedError',
+  'CommandEscalationApprovalPausedError',
   'FileMutationApprovalPausedError',
   'AppActionApprovalPausedError',
 ])

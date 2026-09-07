@@ -20,6 +20,10 @@ export const focusMessageInput = () => {
   document.getElementById(messageInputID)?.focus()
 }
 
+export const blurMessageInput = () => {
+  document.getElementById(messageInputID)?.blur()
+}
+
 // 将光标位置设置为文本末尾
 export function setMessageInputCursorToEnd() {
   const dom = document.getElementById(messageInputID) as HTMLTextAreaElement

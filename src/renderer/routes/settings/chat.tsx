@@ -2,7 +2,6 @@ import { Box, Button, FileButton, Flex, Slider, Stack, Switch, Text, Textarea, T
 import { TestId } from '@shared/automation/testids'
 import { chatSessionSettings, getDefaultPrompt } from '@shared/defaults'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION } from '@shared/utils/tool-call-limit-pause'
-import { IconInfoCircle } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -10,8 +9,8 @@ import { AssistantAvatar, UserAvatar } from '@/components/common/Avatar'
 import { Divider } from '@/components/common/Divider'
 import MaxContextMessageCountSlider from '@/components/common/MaxContextMessageCountSlider'
 import { MessageLayoutSelector } from '@/components/common/MessageLayoutPreview'
-import { ScalableIcon } from '@/components/common/ScalableIcon'
 import SliderWithInput from '@/components/common/SliderWithInput'
+import { TooltipInfoTrigger } from '@/components/common/TooltipInfoTrigger'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import storage from '@/storage'
@@ -133,6 +132,7 @@ export function RouteComponent() {
         <Stack gap="xxs">
           <Text fw="500">{t('Prompt')}</Text>
           <Textarea
+            data-testid={TestId.settings.defaultPrompt}
             value={settings.defaultPrompt || ''}
             autosize
             minRows={1}
@@ -161,6 +161,7 @@ export function RouteComponent() {
 
         {/* Max Context Message Count */}
         <MaxContextMessageCountSlider
+          inputTestId={TestId.settings.maxContext}
           wrapperProps={{ gap: 'xxs' }}
           labelProps={{ fw: undefined }}
           value={
@@ -181,12 +182,18 @@ export function RouteComponent() {
               maw={320}
               className="!whitespace-normal"
               zIndex={3000}
+              openOnTouch
             >
-              <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
+              <TooltipInfoTrigger label={t('Temperature')} />
             </Tooltip>
           </Flex>
 
-          <SliderWithInput value={settings?.temperature} onChange={(v) => setSettings({ temperature: v })} max={2} />
+          <SliderWithInput
+            inputTestId={TestId.settings.temperature}
+            value={settings?.temperature}
+            onChange={(v) => setSettings({ temperature: v })}
+            max={2}
+          />
         </Stack>
 
         {/* Top P */}
@@ -201,12 +208,18 @@ export function RouteComponent() {
               maw={320}
               className="!whitespace-normal"
               zIndex={3000}
+              openOnTouch
             >
-              <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
+              <TooltipInfoTrigger label="Top P" />
             </Tooltip>
           </Flex>
 
-          <SliderWithInput value={settings?.topP} onChange={(v) => setSettings({ topP: v })} max={1} />
+          <SliderWithInput
+            inputTestId={TestId.settings.topP}
+            value={settings?.topP}
+            onChange={(v) => setSettings({ topP: v })}
+            max={1}
+          />
         </Stack>
 
         {/* Background Image */}
@@ -297,6 +310,26 @@ export function RouteComponent() {
             onChange={() =>
               setSettings((draft) => {
                 draft.showAvatar = !(draft.showAvatar ?? true)
+              })
+            }
+          />
+
+          <Switch
+            label={t('Hide system prompt')}
+            checked={settings.hideSystemPromptMessage}
+            onChange={() =>
+              setSettings({
+                hideSystemPromptMessage: !settings.hideSystemPromptMessage,
+              })
+            }
+          />
+
+          <Switch
+            label={t('Auto-scroll new messages to top')}
+            checked={settings.autoScrollNewMessagesToTop}
+            onChange={() =>
+              setSettings({
+                autoScrollNewMessagesToTop: !settings.autoScrollNewMessagesToTop,
               })
             }
           />
@@ -518,8 +551,9 @@ function ContextManagementSection() {
               maw={320}
               className="!whitespace-normal"
               zIndex={3000}
+              openOnTouch
             >
-              <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
+              <TooltipInfoTrigger label={t('Auto Compaction')} />
             </Tooltip>
           </Flex>
           <Switch
@@ -548,8 +582,9 @@ function ContextManagementSection() {
             maw={320}
             className="!whitespace-normal"
             zIndex={3000}
+            openOnTouch
           >
-            <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
+            <TooltipInfoTrigger label={t('Compaction Threshold')} />
           </Tooltip>
         </Flex>
 

@@ -21,6 +21,12 @@ export {
   computeContextAfterCompaction,
   getContextMessageIds,
 } from './context-builder'
+export type { AssessContextPressureOptions, ContextPressureAssessment } from './context-pressure'
+export {
+  assessContextPressure,
+  getConfiguredContextWindow,
+  TOOL_RESULT_STUB_PRESSURE_RATIO,
+} from './context-pressure'
 export type {
   ContextTokensCacheKeyParams,
   ContextTokensCacheValue,
@@ -33,7 +39,7 @@ export {
   getContextTokensCacheKey,
   getLatestCompactionBoundaryId,
   useContextTokens,
+  useStableEligibleMessages,
 } from './context-tokens'
 export type { SummaryGeneratorOptions, SummaryResult } from './summary-generator'
 export { generateSummary, generateSummaryWithStream, isSummaryGenerationAvailable } from './summary-generator'
-export { cleanToolCalls } from './tool-cleanup'

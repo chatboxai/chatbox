@@ -19,10 +19,13 @@ interface Options {
   maxOutputTokens?: number
   stream?: boolean
   useProxy?: boolean
+  extraHeaders?: Record<string, string>
   customFetch?: typeof globalThis.fetch
   listModelsFallback?: ProviderModelInfo[]
   /** Skip remote model fetching and use listModelsFallback directly (e.g. OAuth tokens that can't access /models) */
   skipRemoteModelList?: boolean
+  /** Skip host normalization (e.g. for Copilot API which doesn't use /v1 prefix) */
+  skipHostNormalization?: boolean
 }
 
 type FetchFunction = typeof globalThis.fetch
@@ -35,8 +38,12 @@ export default class OpenAIResponses extends AbstractAISDKModel {
     dependencies: ModelDependencies
   ) {
     super(options, dependencies)
-    const { apiHost, apiPath } = normalizeOpenAIResponsesHostAndPath(options)
-    this.options = { ...options, apiHost, apiPath }
+    if (options.skipHostNormalization) {
+      this.options = { ...options, apiPath: options.apiPath || '/responses' }
+    } else {
+      const { apiHost, apiPath } = normalizeOpenAIResponsesHostAndPath(options)
+      this.options = { ...options, apiHost, apiPath }
+    }
   }
 
   protected getCallSettings(options: CallChatCompletionOptions) {
@@ -68,20 +75,25 @@ export default class OpenAIResponses extends AbstractAISDKModel {
   }
 
   protected getProvider(_options: CallChatCompletionOptions, fetchFunction?: FetchFunction) {
+    let headers: Record<string, string> | undefined
+    if (this.options.extraHeaders && Object.keys(this.options.extraHeaders).length > 0) {
+      headers = this.options.extraHeaders
+    } else if (this.options.apiHost.includes('openrouter.ai')) {
+      headers = {
+        'HTTP-Referer': 'https://chatboxai.app',
+        'X-Title': 'Chatbox AI',
+      }
+    } else if (this.options.apiHost.includes('aihubmix.com')) {
+      headers = {
+        'APP-Code': 'VAFU9221',
+      }
+    }
+
     return createOpenAI({
       apiKey: this.options.apiKey,
       baseURL: this.options.apiHost,
       fetch: fetchFunction || this.options.customFetch,
-      headers: this.options.apiHost.includes('openrouter.ai')
-        ? {
-            'HTTP-Referer': 'https://chatboxai.app',
-            'X-Title': 'Chatbox AI',
-          }
-        : this.options.apiHost.includes('aihubmix.com')
-          ? {
-              'APP-Code': 'VAFU9221',
-            }
-          : undefined,
+      headers,
     })
   }
 
@@ -107,6 +119,7 @@ export default class OpenAIResponses extends AbstractAISDKModel {
         apiHost: this.options.apiHost,
         apiKey: this.options.apiKey,
         useProxy: this.options.useProxy,
+        extraHeaders: this.options.extraHeaders,
         customFetch: this.options.customFetch,
       },
       this.dependencies

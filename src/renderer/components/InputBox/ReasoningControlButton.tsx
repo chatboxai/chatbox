@@ -1,4 +1,4 @@
-import { Menu, Text, UnstyledButton } from '@mantine/core'
+import { Menu, UnstyledButton } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { ProviderModelInfo, ProviderOptions } from '@shared/types'
 import {
@@ -19,7 +19,6 @@ interface ReasoningControlButtonProps {
   model?: ProviderModelInfo | null
   providerOptions?: ProviderOptions
   iconSize: number
-  compact?: boolean
   onChange: (level: ReasoningControlLevel) => void
 }
 
@@ -36,7 +35,6 @@ export default function ReasoningControlButton({
   model,
   providerOptions,
   iconSize,
-  compact = false,
   onChange,
 }: ReasoningControlButtonProps) {
   const { t } = useTranslation()
@@ -93,16 +91,9 @@ export default function ReasoningControlButton({
               style={{ color: LEVEL_COLORS[level] }}
               aria-label={t('Thinking: {{level}}', { level: levelLabel })}
             >
-              {compact ? (
-                <CompactReasoningLevelIcon level={level} size={iconSize} />
-              ) : (
-                <>
-                  <IconBrain size={iconSize} strokeWidth={1.8} />
-                  <Text span size="xs" fw={500} className="whitespace-nowrap" c="inherit">
-                    {levelLabel}
-                  </Text>
-                </>
-              )}
+              {/* Icon-only collapsed state: the level text lives in the menu items,
+                  keeping ~40px of toolbar width. */}
+              <CompactReasoningLevelIcon level={level} size={iconSize} />
             </UnstyledButton>
           </Tooltip>
         </span>

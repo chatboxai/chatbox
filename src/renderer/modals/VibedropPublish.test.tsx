@@ -58,7 +58,7 @@ vi.mock('@/hooks/useScreenChange', () => ({
   useIsSmallScreen: () => false,
 }))
 
-vi.mock('@/modals/Settings', () => ({
+vi.mock('@/modals/settings-navigation', () => ({
   navigateToSettings: vi.fn(),
 }))
 

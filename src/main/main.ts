@@ -3,8 +3,11 @@
 // this as the very first import. See pdfjs-globals.ts for details.
 import './pdfjs-globals'
 
+// Validate QA profile and task isolation before any Electron module can touch userData.
+import { CHATBOX_QA_PREFLIGHT } from './qa-preflight'
+
 // solve electron breaking changes, see https://www.electronjs.org/docs/latest/breaking-changes#behavior-changed-directory-databases-in-userdata-will-be-deleted
-// since 1.21.0, and this NEEDS to be imported before any other module, specifically before `app` inited.
+// since 1.21.0, and this NEEDS to be the first import that initializes Electron's app module.
 import './legacy-database-migration'
 
 /* eslint global-require: off, no-console: off, promise/always-return: off */
@@ -28,11 +31,15 @@ import path from 'path'
 import * as sourceMapSupport from 'source-map-support'
 import type { ShortcutSetting } from 'src/shared/types'
 import { KNOWN_LOCAL_PARSER_ERROR_CODES } from '../shared/file-parse-errors'
+import { VIEW_IMAGE_MAX_READ_BYTES } from '../shared/tools/view-image'
 import { flushSentry, sentry } from './adapters/sentry'
+import { registerAgentPersonaHandlers } from './agent-persona/ipc-handlers'
 import * as analystic from './analystic-node'
 import { AppUpdater } from './app-updater'
 import * as autoLauncher from './autoLauncher'
+import { formatTooLargeFileRead, readRegularFileBytesBounded } from './bounded-file-read'
 import { handleDeepLink } from './deeplinks'
+import { registerDesktopDirectRequestHandlers } from './desktop-direct-request'
 import { parseFile } from './file-parser'
 import { isQuitForInstallRequested } from './installer-command'
 import Locale from './locales'
@@ -40,8 +47,10 @@ import * as mcpIpc from './mcp/ipc-stdio-transport'
 import MenuBuilder from './menu'
 import { registerOAuthHandlers } from './oauth'
 import * as proxy from './proxy'
+import { getMainRuntimePolicy } from './qa-runtime'
 import { runRipgrepSearch } from './ripgrep-search'
 import { registerSandboxHandlers } from './sandbox'
+import { bufferToArrayBuffer } from './sandbox/read-file-base64'
 import { registerSkillsHandlers } from './skills'
 import {
   delStoreBlob,
@@ -53,6 +62,44 @@ import {
   store,
 } from './store-node'
 import * as windowState from './window_state'
+import { loadWorkspaceInstructions } from './workspace-instructions'
+
+const IS_HARMONY_BUILD = process.env.CHATBOX_BUILD_TARGET === 'harmony_app'
+const IS_HARMONY_KB_ENABLED = process.env.CHATBOX_HARMONY_KB_ENABLED === 'true'
+const MAIN_RUNTIME_POLICY = getMainRuntimePolicy(process.env, {
+  isHarmonyBuild: IS_HARMONY_BUILD,
+  isPackaged: app.isPackaged,
+})
+const QA_RUNTIME_PATHS = CHATBOX_QA_PREFLIGHT.paths
+const QA_LAUNCH_ARGUMENTS = CHATBOX_QA_PREFLIGHT.launchArguments
+
+if (QA_RUNTIME_PATHS && QA_LAUNCH_ARGUMENTS && MAIN_RUNTIME_POLICY.qaTaskId) {
+  for (const directory of [
+    QA_RUNTIME_PATHS.logsDir,
+    QA_RUNTIME_PATHS.tempDir,
+    QA_RUNTIME_PATHS.sandboxTmpRoot,
+    QA_RUNTIME_PATHS.sandboxArtifactsRoot,
+  ]) {
+    fs.mkdirSync(directory, { recursive: true })
+  }
+
+  process.env.CHATBOX_QA_TASK_ROOT = QA_RUNTIME_PATHS.taskRoot
+  process.env.TMPDIR = QA_RUNTIME_PATHS.tempDir
+  process.env.TMP = QA_RUNTIME_PATHS.tempDir
+  process.env.TEMP = QA_RUNTIME_PATHS.tempDir
+  app.setPath('temp', QA_RUNTIME_PATHS.tempDir)
+  app.setAppLogsPath(QA_RUNTIME_PATHS.logsDir)
+
+  const qaLogPrefix = `[QA:${MAIN_RUNTIME_POLICY.qaTaskId}]`
+  log.transports.console.format = `${qaLogPrefix} {h}:{i}:{s}.{ms} › {text}`
+  log.transports.file.format = `${qaLogPrefix} [{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}`
+  log.transports.file.resolvePathFn = () => QA_RUNTIME_PATHS.mainLogFile
+  log.info('QA runtime initialized', {
+    cdpPort: QA_LAUNCH_ARGUMENTS.cdpPort,
+    taskRoot: QA_RUNTIME_PATHS.taskRoot,
+    userDataDir: QA_LAUNCH_ARGUMENTS.userDataDir,
+  })
+}
 
 function reportMainProcessError(
   error: unknown,
@@ -94,15 +141,21 @@ process.on('uncaughtException', (error) => {
   void flushSentry(2000).finally(() => process.exit(1))
 })
 
-const knowledgeBaseInitPromise = import('./knowledge-base/index.js')
-  .then((mod) => mod.getInitPromise())
-  .catch((error) => {
-    log.error('[KB] Failed to initialize knowledge base during bootstrap:', error)
-  })
+const knowledgeBaseInitPromise =
+  IS_HARMONY_BUILD && !IS_HARMONY_KB_ENABLED
+    ? Promise.resolve()
+    : import('./knowledge-base/index.js')
+        .then((mod) => mod.getInitPromise())
+        .catch((error) => {
+          log.error('[KB] Failed to initialize knowledge base during bootstrap:', error)
+        })
 
 const TRUTHY_ENV_VALUES = new Set(['1', 'true', 'yes', 'on'])
 
 function initializeSessionAttachmentRagAfterAppReady() {
+  if (IS_HARMONY_BUILD) {
+    return Promise.resolve()
+  }
   return import('./session-attachment-rag/index.js')
     .then((mod) => mod.getInitPromise())
     .catch((error) => {
@@ -155,7 +208,7 @@ function getLinuxRuntimeFlags(): LinuxRuntimeFlags {
 // - Keep GPU enabled on normal Linux desktops for better rendering performance.
 // - Use /tmp instead of /dev/shm only in CI/container environments.
 // Must run before app.whenReady().
-if (process.platform === 'linux') {
+if (process.platform === 'linux' && !IS_HARMONY_BUILD) {
   const linuxRuntimeFlags = getLinuxRuntimeFlags()
   if (linuxRuntimeFlags.disableGpu) {
     app.disableHardwareAcceleration()
@@ -185,15 +238,18 @@ const getAssetPath = (...paths: string[]): string => {
 // 开发环境使用 chatbox-dev:// 协议，避免和正式版冲突
 const PROTOCOL_SCHEME = process.defaultApp ? 'chatbox-dev' : 'chatbox'
 
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [path.resolve(process.argv[1])])
+if (MAIN_RUNTIME_POLICY.registerProtocolClient) {
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [path.resolve(process.argv[1])])
+    }
+  } else {
+    app.setAsDefaultProtocolClient(PROTOCOL_SCHEME)
   }
+  log.info(`📱 URL Scheme registered: ${PROTOCOL_SCHEME}://`)
 } else {
-  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME)
+  log.info('URL Scheme registration skipped in QA mode')
 }
-
-log.info(`📱 URL Scheme registered: ${PROTOCOL_SCHEME}://`)
 
 // --------- 全局变量 ---------
 
@@ -257,6 +313,9 @@ function isValidShortcut(shortcut: string): boolean {
 }
 
 function registerShortcuts(shortcutSetting?: ShortcutSetting) {
+  if (!MAIN_RUNTIME_POLICY.registerGlobalShortcuts) {
+    return
+  }
   if (!shortcutSetting) {
     shortcutSetting = getSettings().shortcuts
   }
@@ -274,6 +333,9 @@ function registerShortcuts(shortcutSetting?: ShortcutSetting) {
 }
 
 function unregisterShortcuts() {
+  if (!MAIN_RUNTIME_POLICY.registerGlobalShortcuts) {
+    return
+  }
   return globalShortcut.unregisterAll()
 }
 
@@ -311,6 +373,9 @@ function createTray() {
 }
 
 function ensureTray() {
+  if (!MAIN_RUNTIME_POLICY.createTray) {
+    return
+  }
   if (tray) {
     log.info('tray: already exists')
     return tray
@@ -372,8 +437,11 @@ async function createWindow() {
 
   const [state] = windowState.getState()
 
+  const qaWindowTitle = MAIN_RUNTIME_POLICY.qaTaskId ? `[QA:${MAIN_RUNTIME_POLICY.qaTaskId}] Chatbox` : undefined
+
   mainWindow = new BrowserWindow({
     show: false,
+    ...(qaWindowTitle ? { title: qaWindowTitle } : {}),
     // remove the default titlebar
     titleBarStyle: 'hidden',
     // expose window controlls in Windows/Linux
@@ -390,11 +458,21 @@ async function createWindow() {
       spellcheck: true,
       webSecurity: false, // 其中一个作用是解决跨域问题
       allowRunningInsecureContent: false,
-      preload: app.isPackaged
-        ? path.join(__dirname, '../preload/index.js')
-        : path.join(__dirname, '../../out/preload/index.js'),
+      preload:
+        app.isPackaged || IS_HARMONY_BUILD
+          ? path.join(__dirname, '../preload/index.js')
+          : path.join(__dirname, '../../out/preload/index.js'),
     },
   })
+
+  if (qaWindowTitle) {
+    // Only block page overwrites — do not setTitle here. setTitle / document.title
+    // re-emit page-title-updated and can re-enter under SPA navigations.
+    mainWindow.on('page-title-updated', (event) => {
+      event.preventDefault()
+    })
+    mainWindow.setTitle(qaWindowTitle)
+  }
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     reportMainProcessError(new Error(`Renderer process exited unexpectedly: ${details.reason}`), {
@@ -409,18 +487,26 @@ async function createWindow() {
     })
   })
 
-  // Load the local URL for development or the local
-  // html file for production
-  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  if (IS_HARMONY_BUILD) {
+    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      if (level >= 2) {
+        log.error(`[Harmony renderer] ${message} (${sourceId}:${line})`)
+      }
+    })
+    mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+      log.error(`[Harmony renderer] did-fail-load ${errorCode}: ${errorDescription}`)
+    })
   }
 
-  mainWindow.on('ready-to-show', () => {
+  let hasShownMainWindow = false
+  const showMainWindow = () => {
+    if (hasShownMainWindow) {
+      return
+    }
     if (!mainWindow) {
       throw new Error('"mainWindow" is not defined')
     }
+    hasShownMainWindow = true
     if (process.env.START_MINIMIZED) {
       mainWindow.minimize()
     } else {
@@ -432,7 +518,22 @@ async function createWindow() {
       }
       mainWindow.show()
     }
-  })
+  }
+
+  mainWindow.once('ready-to-show', showMainWindow)
+
+  // Load the local URL for development or the local
+  // html file for production
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    // Vite can spend a while re-optimizing dependencies during development,
+    // especially under x64 emulation on Windows ARM64. Show the window while
+    // navigation is in progress instead of leaving it accessible only through
+    // the tray until the renderer has finished its first paint.
+    showMainWindow()
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  }
 
   // 窗口关闭时保存窗口大小与位置
   mainWindow.on('close', () => {
@@ -519,7 +620,7 @@ async function showOrHideWindow() {
 // --------- 应用管理 ---------
 
 const quitForInstallRequested = process.platform === 'win32' && isQuitForInstallRequested(process.argv)
-const gotTheLock = app.isPackaged ? app.requestSingleInstanceLock() : true
+const gotTheLock = MAIN_RUNTIME_POLICY.requestSingleInstanceLock ? app.requestSingleInstanceLock() : true
 
 if (quitForInstallRequested) {
   log.info('installer: quit helper instance exiting')
@@ -583,9 +684,10 @@ if (quitForInstallRequested) {
       await createWindow()
       await initializeSessionAttachmentRagAfterAppReady()
       ensureTray()
-      // Remove this if your app does not use auto updates
-      // eslint-disable-next-line
-      new AppUpdater(() => mainWindow)
+      // HarmonyOS HAP updates are distributed outside electron-updater.
+      if (MAIN_RUNTIME_POLICY.startAppUpdater) {
+        new AppUpdater(() => mainWindow)
+      }
 
       // 处理启动时的 Deep Link (Windows/Linux)
       // macOS 会通过 open-url 事件处理，不需要在这里处理
@@ -718,7 +820,7 @@ ipcMain.handle('getVersion', () => {
   return app.getVersion()
 })
 ipcMain.handle('getPlatform', () => {
-  return process.platform
+  return IS_HARMONY_BUILD ? 'harmony' : process.platform
 })
 ipcMain.handle('getArch', () => {
   return process.arch
@@ -897,6 +999,28 @@ ipcMain.handle('fs:read', async (_event, params: { filePath: string; offset?: nu
   }
 })
 
+// Same read-only trust level as fs:read; the renderer downscales before anything is
+// stored or sent, so the cap only guards against reading a huge file into memory.
+ipcMain.handle('fs:read-image', async (_event, params: { filePath: string }) => {
+  try {
+    const resolved = path.resolve(params.filePath)
+    const result = await readRegularFileBytesBounded(resolved, VIEW_IMAGE_MAX_READ_BYTES)
+    if (!result.success && result.reason === 'not-regular-file') {
+      return { success: false, error: 'Path is not a file' }
+    }
+    if (!result.success) {
+      return { success: false, error: formatTooLargeFileRead(result, 'Image file') }
+    }
+    return { success: true, bytes: bufferToArrayBuffer(result.bytes) }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+ipcMain.handle('workspace:read-instructions', async (_event, directories: string[]) => {
+  return loadWorkspaceInstructions(directories)
+})
+
 ipcMain.handle('fs:list', async (_event, params: { dirPath: string }) => {
   try {
     const resolved = path.resolve(params.dirPath)
@@ -1053,3 +1177,7 @@ ipcMain.handle('window:is-maximized', () => {
 registerSandboxHandlers()
 registerSkillsHandlers()
 registerOAuthHandlers()
+registerAgentPersonaHandlers()
+if (!IS_HARMONY_BUILD) {
+  registerDesktopDirectRequestHandlers()
+}

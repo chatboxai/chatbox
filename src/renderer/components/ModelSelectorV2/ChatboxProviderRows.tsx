@@ -191,8 +191,8 @@ export function ChatboxProviderRows({
                 c="chatbox-brand"
                 onClick={(event) => {
                   event.stopPropagation()
-                  if (pageName) {
-                    trackUpgradeModelClick(pageName, 'list_model', null)
+                  if (pageName && selectedModelId) {
+                    trackUpgradeModelClick(pageName, 'list_model', selectedModelId)
                   }
                   platform.openLink(catalog.links?.upgrade || FALLBACK_UPGRADE_URL)
                 }}

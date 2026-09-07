@@ -3,6 +3,14 @@ import { getModelContextWindowSync } from '../model-registry'
 
 const OUTPUT_RESERVE_TOKENS = 32_000
 const DEFAULT_COMPACTION_THRESHOLD = 0.6
+/**
+ * Assumed context window for models the registry does not know (custom /
+ * self-hosted). Without a fallback these models never trigger compaction at
+ * all and grow until the provider rejects the request. 128k is the common
+ * floor for current models; genuinely smaller models are no worse off than
+ * before (compaction previously never fired for them either).
+ */
+const FALLBACK_CONTEXT_WINDOW_TOKENS = 128_000
 
 export interface OverflowCheckOptions {
   tokens: number
@@ -35,11 +43,9 @@ export function checkOverflow(options: OverflowCheckOptions): OverflowCheckResul
     return { isOverflow: false, contextWindow: null, thresholdTokens: null, currentTokens: tokens }
   }
 
-  // Use provided contextWindow (from provider settings) if available, otherwise fall back to model registry
-  const contextWindow = providedContextWindow ?? getModelContextWindowSync(modelId)
-  if (contextWindow === null) {
-    return { isOverflow: false, contextWindow: null, thresholdTokens: null, currentTokens: tokens }
-  }
+  // Use provided contextWindow (from provider settings) if available, otherwise fall back to
+  // model registry, then to a conservative assumed window for unknown models.
+  const contextWindow = providedContextWindow ?? getModelContextWindowSync(modelId) ?? FALLBACK_CONTEXT_WINDOW_TOKENS
 
   const availableWindow = Math.max(contextWindow - OUTPUT_RESERVE_TOKENS, Math.floor(contextWindow * 0.5))
   if (availableWindow <= 0) {
@@ -66,8 +72,7 @@ export function getCompactionThresholdTokens(
   settings?: Partial<Pick<Settings, 'compactionThreshold'>>,
   providedContextWindow?: number
 ): number | null {
-  const contextWindow = providedContextWindow ?? getModelContextWindowSync(modelId)
-  if (contextWindow === null) return null
+  const contextWindow = providedContextWindow ?? getModelContextWindowSync(modelId) ?? FALLBACK_CONTEXT_WINDOW_TOKENS
 
   const availableWindow = Math.max(contextWindow - OUTPUT_RESERVE_TOKENS, Math.floor(contextWindow * 0.5))
   if (availableWindow <= 0) return null
@@ -76,4 +81,4 @@ export function getCompactionThresholdTokens(
   return Math.floor(availableWindow * compactionThreshold)
 }
 
-export { OUTPUT_RESERVE_TOKENS, DEFAULT_COMPACTION_THRESHOLD }
+export { OUTPUT_RESERVE_TOKENS, DEFAULT_COMPACTION_THRESHOLD, FALLBACK_CONTEXT_WINDOW_TOKENS }

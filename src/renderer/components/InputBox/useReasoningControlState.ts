@@ -1,17 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import * as chatStore from '@/stores/chatStore'
-import { apiStyleFromProviderType } from '../../../shared/providers/api-style'
-import type { ProviderInfo, ProviderModelInfo, ProviderOptions, SessionSettings } from '../../../shared/types'
+import { withResolvedModelApiStyle } from '@shared/providers/api-style'
+import type { ProviderInfo, ProviderModelInfo, ProviderOptions, SessionSettings } from '@shared/types'
 import {
   getReasoningProviderOptions,
   type ReasoningControlLevel,
   setReasoningProviderOptionsForModel,
-} from '../../../shared/utils/reasoning-control'
+} from '@shared/utils/reasoning-control'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { rendererApplication } from '@/app/renderer-application'
 
 type SelectedModel = {
   provider: string
   modelId: string
 }
+
+type ReasoningProviderInfo = Pick<ProviderInfo, 'id' | 'type' | 'models' | 'defaultSettings'>
 
 interface UseReasoningControlStateOptions {
   currentSessionId?: string
@@ -33,18 +35,22 @@ interface ReasoningControlState {
   waitForPendingPersist: () => Promise<void>
 }
 
-function withProviderApiStyleFallback(modelInfo: ProviderModelInfo, providerType?: string): ProviderModelInfo {
-  if (modelInfo.apiStyle) return modelInfo
-  const apiStyle = apiStyleFromProviderType(providerType)
-  return apiStyle ? { ...modelInfo, apiStyle } : modelInfo
+function withProviderApiStyleFallback(
+  modelInfo: ProviderModelInfo,
+  providerInfo?: Pick<ReasoningProviderInfo, 'id' | 'type'>
+): ProviderModelInfo {
+  return withResolvedModelApiStyle(modelInfo, {
+    providerId: providerInfo?.id,
+    providerType: providerInfo?.type,
+  })
 }
 
-function findProviderModelInfo(model: SelectedModel | undefined, providerInfo: ProviderInfo | undefined) {
+function findProviderModelInfo(model: SelectedModel | undefined, providerInfo: ReasoningProviderInfo | undefined) {
   if (!model) return null
   const foundModel = (providerInfo?.models || providerInfo?.defaultSettings?.models)?.find(
     (item) => item.modelId === model.modelId
   )
-  return foundModel ? withProviderApiStyleFallback(foundModel, providerInfo?.type) : undefined
+  return foundModel ? withProviderApiStyleFallback(foundModel, providerInfo) : undefined
 }
 
 /**
@@ -55,12 +61,12 @@ function findProviderModelInfo(model: SelectedModel | undefined, providerInfo: P
  */
 export function resolveReasoningModelInfo(
   model: SelectedModel | undefined,
-  providerInfo: ProviderInfo | undefined
+  providerInfo: ReasoningProviderInfo | undefined
 ): ProviderModelInfo | null {
   if (!model) return null
   const found = findProviderModelInfo(model, providerInfo)
   if (found) return found
-  return withProviderApiStyleFallback({ modelId: model.modelId }, providerInfo?.type)
+  return withProviderApiStyleFallback({ modelId: model.modelId }, providerInfo)
 }
 
 interface DraftReasoningEntry {
@@ -134,8 +140,8 @@ export function useReasoningControlState({
     if (lastResolvedModelRef.current?.key === modelKey) {
       return lastResolvedModelRef.current.modelInfo
     }
-    return withProviderApiStyleFallback({ modelId: model.modelId }, selectedProviderInfo?.type)
-  }, [model, modelInfo, modelKey, selectedProviderInfo?.type])
+    return withProviderApiStyleFallback({ modelId: model.modelId }, selectedProviderInfo)
+  }, [model, modelInfo, modelKey, selectedProviderInfo])
 
   const currentDraft = isNewSession ? draftByModel[modelKey] : undefined
   const effectiveProviderOptions = currentDraft
@@ -159,7 +165,7 @@ export function useReasoningControlState({
 
   const persistProviderOptions = useCallback(
     async (sessionId: string, nextProviderOptions?: ProviderOptions) => {
-      await chatStore.updateSession(sessionId, (session) => {
+      await rendererApplication.sessions.updateSession(sessionId, (session) => {
         if (!session) {
           throw new Error('Session not found')
         }

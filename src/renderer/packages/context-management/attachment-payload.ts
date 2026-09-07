@@ -23,7 +23,6 @@ export interface SelectMessagesForSendContextParams {
   msgs: Message[]
   compactionPoints?: CompactionPoint[]
   preserveLastUserMessage?: boolean
-  keepToolCallRounds?: number
 }
 
 export function buildAttachmentWrapperPrefix(params: AttachmentWrapperPrefixParams): string {
@@ -55,7 +54,7 @@ export function buildAttachmentWrapperSuffix(params: AttachmentWrapperSuffixPara
 }
 
 export function selectMessagesForSendContext(params: SelectMessagesForSendContextParams): Message[] {
-  const { settings, msgs, compactionPoints, preserveLastUserMessage = true, keepToolCallRounds = 2 } = params
+  const { settings, msgs, preserveLastUserMessage = true } = params
 
   if (msgs.length === 0) {
     return []

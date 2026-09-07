@@ -55,6 +55,9 @@ function createSession(): Session {
                 toolCallId: 'tool-1',
                 toolName: 'search',
                 resultStorageKey: 'tool:result',
+                resultImageStorageKey: 'picture:tool-image',
+                resultImageMediaType: 'image/webp',
+                result: { file_path: 'chart.webp', media_type: 'image/webp' },
               },
             ],
           },
@@ -76,6 +79,7 @@ describe('backup resource graph', () => {
         'file:raw',
         'link:parsed',
         'tool:result',
+        'picture:tool-image',
         'picture:avatar',
         'picture:background',
       ])
@@ -144,6 +148,7 @@ describe('backup resource graph', () => {
         ['file:raw', 'file:raw:restored'],
         ['link:parsed', 'link:restored'],
         ['tool:result', 'tool:restored'],
+        ['picture:tool-image', 'picture:tool-image:restored'],
         ['picture:avatar', 'picture:avatar:restored'],
         ['picture:background', 'picture:background:restored'],
       ])
@@ -154,7 +159,11 @@ describe('backup resource graph', () => {
       rawStorageKey: 'file:raw:restored',
     })
     expect(remapped.messages[0].files?.[0].sessionAttachmentId).toBeUndefined()
-    expect(remapped.threads?.[0].messages[0].contentParts[0]).toMatchObject({ resultStorageKey: 'tool:restored' })
+    expect(remapped.threads?.[0].messages[0].contentParts[0]).toMatchObject({
+      resultStorageKey: 'tool:restored',
+      resultImageStorageKey: 'picture:tool-image:restored',
+      resultImageMediaType: 'image/webp',
+    })
     expect(remapped.assistantAvatarKey).toBe('picture:avatar:restored')
     expect(source.messages[0].contentParts[1]).toMatchObject({ storageKey: 'picture:shared' })
     expect(source.messages[0].files?.[0].sessionAttachmentId).toBe(42)
@@ -169,8 +178,27 @@ describe('backup resource graph', () => {
     expect(cleaned.messages[0].links?.[0]).toMatchObject({ url: 'https://example.com', title: 'Example' })
     expect(cleaned.messages[0].links?.[0].storageKey).toBeUndefined()
     expect(cleaned.threads?.[0].messages[0].contentParts[0]).not.toHaveProperty('resultStorageKey')
+    expect(cleaned.threads?.[0].messages[0].contentParts[0]).not.toHaveProperty('resultImageStorageKey')
     expect(cleaned.assistantAvatarKey).toBeUndefined()
     expect(cleaned.backgroundImage).toBeUndefined()
+  })
+
+  it('remaps legacy image references still stored in tool result JSON', () => {
+    const session = createSession()
+    const toolPart = session.threads?.[0].messages[0].contentParts[0]
+    if (!toolPart || toolPart.type !== 'tool-call') throw new Error('missing tool fixture')
+    delete toolPart.resultImageStorageKey
+    delete toolPart.resultImageMediaType
+    toolPart.result = {
+      file_path: 'legacy.png',
+      image_storage_key: 'picture:legacy',
+      media_type: 'image/png',
+    }
+
+    const restored = restoreSessionResourceKeys(session, new Map([['picture:legacy', 'picture:legacy:restored']]))
+    expect(restored.threads?.[0].messages[0].contentParts[0]).toMatchObject({
+      result: { image_storage_key: 'picture:legacy:restored' },
+    })
   })
 
   it('keeps a legacy picture URL when its managed storage key is unavailable', () => {

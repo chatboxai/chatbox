@@ -50,3 +50,7 @@ export const safeStorage: PersistStorage<unknown> = {
     }
   },
 }
+
+export function getSafeStorage<T>(): PersistStorage<T> {
+  return safeStorage as PersistStorage<T>
+}

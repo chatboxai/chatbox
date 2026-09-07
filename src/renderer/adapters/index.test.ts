@@ -13,15 +13,14 @@ vi.mock('@shared/models', () => ({
   }),
 }))
 
-vi.mock('@/stores/settingsStore', () => ({
-  settingsStore: {
-    getState: () => ({
-      getSettings: () => ({
-        language: 'en',
-        providers: {},
-        theme: 'light',
-      }),
+vi.mock('@/settings-runtime', () => ({
+  settingsService: {
+    getSettings: () => ({
+      language: 'en',
+      providers: {},
+      theme: 'light',
     }),
+    updateSettings: vi.fn(),
   },
 }))
 

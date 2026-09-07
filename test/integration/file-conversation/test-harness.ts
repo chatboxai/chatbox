@@ -227,7 +227,7 @@ export class FileConversationTestRunner {
       // 动态导入模型相关模块（避免在模块加载时就初始化 platform）
       const { getModel } = await import('../../../src/shared/models')
       const { streamText } = await import('../../../src/renderer/packages/model-calls/stream-text')
-      const { genMessageContext } = await import('../../../src/renderer/stores/sessionActions')
+      const { genMessageContext } = await import('../../../src/renderer/stores/session/generation')
 
       // 获取配置
       const config = await this.context.platform.getConfig()
@@ -576,7 +576,7 @@ export async function runConversationTest(options: RunConversationTestOptions): 
     // 动态导入模型相关模块
     const { getModel } = await import('../../../src/shared/models')
     const { streamText } = await import('../../../src/renderer/packages/model-calls/stream-text')
-    const { genMessageContext } = await import('../../../src/renderer/stores/sessionActions')
+    const { genMessageContext } = await import('../../../src/renderer/stores/session/generation')
 
     // 创建模型
     const model = getModel(sessionSettings, globalSettings, config, dependencies)

@@ -1,5 +1,5 @@
 import { Image, useComputedColorScheme } from '@mantine/core'
-import type { ModelProvider } from '@shared/types'
+import { type ModelProvider, ModelProviderEnum } from '@shared/types'
 import { renderModelIcon } from '@/utils/modelLogo'
 import { getProviderIconSrc } from '@/utils/providerIconSrc'
 import ProviderIcon from './ProviderIcon'
@@ -42,6 +42,12 @@ export function ModelIcon({ modelId, providerId, size = 16, className }: ModelIc
         {icon}
       </div>
     )
+  }
+
+  // Chatbox AI's own models use the monochrome brand icon rather than the
+  // orange provider image used in settings and other provider-level surfaces.
+  if (providerId === ModelProviderEnum.ChatboxAI && modelId.startsWith('chatboxai-')) {
+    return <ProviderIcon provider={providerId} size={size} className={className} />
   }
 
   // Fallback to bundled provider PNG resources if no model-specific icon.

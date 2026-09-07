@@ -1,6 +1,6 @@
 import { Haptics, ImpactStyle } from '@capacitor/haptics'
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Box, Flex, Text } from '@mantine/core'
+import { ActionIcon, Box, Flex, Input, Text } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
 import { IconArchive, IconArrowsMoveVertical, IconLoader2, IconPinned, IconPinnedFilled } from '@tabler/icons-react'
@@ -10,11 +10,11 @@ import { type MouseEvent, memo, type PointerEvent, useRef, useState } from 'reac
 import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { navigateToSettings } from '@/modals/Settings'
+import { navigateToSettings } from '@/modals/settings-navigation'
 import platform from '@/platform'
 import { router } from '@/router'
-import { archiveSession, countArchivedSessionsMeta, updateSession as updateSessionStore } from '@/stores/chatStore'
-import { switchCurrentSession } from '@/stores/sessionActions'
+import { rendererApplication } from '@/app/renderer-application'
+import { switchCurrentSession } from '@/stores/session/crud'
 import { useSessionActivity } from '@/stores/sessionActivityStore'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
@@ -65,7 +65,7 @@ function SessionItem(props: Props) {
   const archiveActionLabel = t('Archive')
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const onClick = () => {
-    if (props.isReordering) {
+    if (props.isReordering || renaming) {
       return
     }
     if (longPressTriggeredRef.current) {
@@ -84,9 +84,12 @@ function SessionItem(props: Props) {
   const [actionTooltipDismissed, setActionTooltipDismissed] = useState(false)
   const [mobileMenuOpened, setMobileMenuOpened] = useState(false)
   const [longPressing, setLongPressing] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [draftName, setDraftName] = useState('')
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressTriggeredRef = useRef(false)
   const longPressStartPointRef = useRef<{ x: number; y: number } | null>(null)
+  const renameClickStartedOnSelectedSessionRef = useRef(selected)
 
   const stopItemClick = (event: MouseEvent | PointerEvent) => {
     event.stopPropagation()
@@ -95,6 +98,32 @@ function SessionItem(props: Props) {
 
   const dismissActionTooltip = () => {
     setActionTooltipDismissed(true)
+  }
+
+  const startRenaming = (event: MouseEvent) => {
+    event.stopPropagation()
+    event.preventDefault()
+    if (
+      isSmallScreen ||
+      platform.type === 'mobile' ||
+      props.isReordering ||
+      !renameClickStartedOnSelectedSessionRef.current
+    ) {
+      return
+    }
+    setDraftName(session.name)
+    setRenaming(true)
+  }
+
+  const finishRenaming = () => {
+    const name = draftName.trim()
+    setRenaming(false)
+    if (!name || name === session.name) {
+      return
+    }
+    void rendererApplication.sessions.updateSession(session.id, { name }).catch((error) => {
+      console.error('Failed to rename session:', error)
+    })
   }
 
   const showArchiveTipOncePerDay = () => {
@@ -116,11 +145,11 @@ function SessionItem(props: Props) {
     }
     setArchiving(true)
     try {
-      await archiveSession(session.id)
+      await rendererApplication.sessions.archiveSession(session.id)
       if (selected) {
         await router.navigate({ to: '/', replace: true })
       }
-      const archivedSessionCount = await countArchivedSessionsMeta()
+      const archivedSessionCount = await rendererApplication.sessions.countArchivedSessionsMeta()
       if (archivedSessionCount > ARCHIVED_SESSION_CLEANUP_THRESHOLD) {
         const confirmed = await NiceModal.show('confirm', {
           title: t('Too many archived chats'),
@@ -202,7 +231,7 @@ function SessionItem(props: Props) {
       text: pinActionLabel || '',
       icon: session.starred ? IconPinnedFilled : IconPinned,
       onClick: () => {
-        void updateSessionStore(session.id, { starred: !session.starred })
+        void rendererApplication.sessions.updateSession(session.id, { starred: !session.starred })
       },
     },
     {
@@ -229,7 +258,7 @@ function SessionItem(props: Props) {
       className={clsx(
         'cursor-pointer rounded-lg group/session-item',
         'select-none',
-        props.isReordering && 'cursor-default',
+        props.isReordering && 'cursor-grab active:cursor-grabbing',
         isSmallScreen
           ? props.isReordering
             ? 'bg-chatbox-background-primary'
@@ -240,7 +269,8 @@ function SessionItem(props: Props) {
             ? 'bg-chatbox-background-brand-secondary'
             : 'hover:bg-chatbox-background-gray-secondary'
       )}
-      mx="xs"
+      ml="xs"
+      mr={isSmallScreen ? 'xs' : 0}
       pl="xs"
       pr={props.isReordering ? 44 : 'xs'}
       py={8}
@@ -262,18 +292,59 @@ function SessionItem(props: Props) {
         c={selected ? 'chatbox-brand' : 'chatbox-primary'}
       />
 
-      <Text
-        data-testid={TestId.sidebar.sessionTitle}
-        span
-        flex={1}
-        lineClamp={1}
-        c={selected ? 'chatbox-brand' : 'chatbox-primary'}
-        fw={activity === 'completed' ? 600 : undefined}
-      >
-        {session.name}
-      </Text>
+      {renaming ? (
+        <Input
+          data-testid={TestId.sidebar.sessionTitle}
+          aria-label={t('Name') || undefined}
+          autoFocus
+          flex={1}
+          size="xs"
+          value={draftName}
+          onChange={(event) => setDraftName(event.currentTarget.value)}
+          onFocus={(event) => event.currentTarget.select()}
+          onBlur={finishRenaming}
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              finishRenaming()
+            } else if (event.key === 'Escape') {
+              event.preventDefault()
+              setRenaming(false)
+            }
+          }}
+          className="min-w-0"
+          classNames={{
+            input: clsx(
+              '!h-6 !min-h-6 !px-1.5 !text-sm',
+              selected ? '!text-chatbox-tint-brand' : '!text-chatbox-tint-primary'
+            ),
+          }}
+        />
+      ) : (
+        <Text
+          data-testid={TestId.sidebar.sessionTitle}
+          span
+          flex={1}
+          lineClamp={1}
+          c={selected ? 'chatbox-brand' : 'chatbox-primary'}
+          fw={activity === 'completed' ? 600 : undefined}
+          onMouseDown={(event) => {
+            if (event.detail === 1) {
+              renameClickStartedOnSelectedSessionRef.current = selected
+            }
+          }}
+          onDoubleClick={startRenaming}
+        >
+          {session.name}
+        </Text>
+      )}
 
-      {activity !== 'idle' && (
+      {activity !== 'idle' && !renaming && (
         <Box
           component="span"
           data-session-activity={activity}
@@ -293,7 +364,7 @@ function SessionItem(props: Props) {
         </Box>
       )}
 
-      {!isSmallScreen && activity === 'idle' && (
+      {!isSmallScreen && !renaming && activity === 'idle' && (
         <Text
           span
           c="chatbox-disabled"
@@ -303,7 +374,7 @@ function SessionItem(props: Props) {
         </Text>
       )}
 
-      <Flex gap={2} className={clsx(isSmallScreen ? 'hidden' : 'group-hover/session-item:flex hidden')}>
+      <Flex gap={2} className={clsx(isSmallScreen || renaming ? 'hidden' : 'group-hover/session-item:flex hidden')}>
         <Tooltip label={pinActionLabel} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
           <ActionIcon
             data-testid={TestId.sidebar.sessionPin}
@@ -315,7 +386,7 @@ function SessionItem(props: Props) {
             onClick={(event) => {
               stopItemClick(event)
               dismissActionTooltip()
-              void updateSessionStore(session.id, { starred: !session.starred })
+              void rendererApplication.sessions.updateSession(session.id, { starred: !session.starred })
             }}
           >
             {session.starred ? (

@@ -34,6 +34,22 @@ function createCompactionPoint(
 }
 
 describe('buildContextForAI', () => {
+  it('restores causal order of legacy steered records like the send path', () => {
+    // Legacy steering stored the steered user AFTER the assistant it
+    // interrupted; the send path reorders it in front. The compaction boundary
+    // derives from this list, so the orders must match — otherwise the same
+    // reply can land in both the summary and the raw tail.
+    const messages: Message[] = [
+      createMessage('u1', 'user', 'Q1'),
+      { ...createMessage('a1', 'assistant', 'A1'), finishReason: 'stop' },
+      { ...createMessage('u2', 'user', 'steer'), steered: true },
+    ]
+
+    const result = buildContextForAI({ messages })
+
+    expect(result.map((m) => m.id)).toEqual(['u1', 'u2', 'a1'])
+  })
+
   describe('no compaction points', () => {
     it('should return empty array for empty messages', () => {
       const result = buildContextForAI({ messages: [] })
@@ -74,7 +90,7 @@ describe('buildContextForAI', () => {
       expect(result).toHaveLength(2)
     })
 
-    it('should apply tool call cleanup on all messages', () => {
+    it('should keep tool-call parts at full fidelity (cleanup is a send-path concern)', () => {
       const messages: Message[] = [
         createMessage('m1', 'user', 'Search for X'),
         {
@@ -89,10 +105,10 @@ describe('buildContextForAI', () => {
         createMessage('m4', 'assistant', 'Welcome'),
       ]
 
-      const result = buildContextForAI({ messages, keepToolCallRounds: 1 })
+      const result = buildContextForAI({ messages })
 
-      expect(result[1].contentParts).toHaveLength(1)
-      expect(result[1].contentParts[0].type).toBe('text')
+      expect(result[1].contentParts).toHaveLength(2)
+      expect(result[1].contentParts.map((part) => part.type)).toEqual(['text', 'tool-call'])
     })
   })
 
@@ -222,7 +238,7 @@ describe('buildContextForAI', () => {
       expect(result.map((m) => m.id)).toEqual(['summary-1', 'm3', 'm4', 'm5'])
     })
 
-    it('should apply tool call cleanup to context messages', () => {
+    it('should keep tool-call parts of context messages after compaction', () => {
       const messages: Message[] = [
         createMessage('m1', 'user', 'Old search'),
         {
@@ -249,11 +265,11 @@ describe('buildContextForAI', () => {
       const allMessages = [...messages, summary]
       const compactionPoints = [createCompactionPoint('summary-1', 'm2', Date.now())]
 
-      const result = buildContextForAI({ messages: allMessages, compactionPoints, keepToolCallRounds: 1 })
+      const result = buildContextForAI({ messages: allMessages, compactionPoints })
 
       const m4Result = result.find((m) => m.id === 'm4')
-      expect(m4Result?.contentParts).toHaveLength(1)
-      expect(m4Result?.contentParts[0].type).toBe('text')
+      expect(m4Result?.contentParts).toHaveLength(2)
+      expect(m4Result?.contentParts.map((part) => part.type)).toEqual(['text', 'tool-call'])
     })
   })
 
@@ -444,7 +460,7 @@ describe('buildContextForSession', () => {
     expect(result[0].id).toBe('m1')
   })
 
-  it('should respect keepToolCallRounds option', () => {
+  it('should keep tool-call parts untouched', () => {
     const session: Session = {
       id: 'session-1',
       name: 'Test Session',
@@ -460,9 +476,10 @@ describe('buildContextForSession', () => {
       ],
     }
 
-    const result = buildContextForSession(session, { keepToolCallRounds: 0 })
+    const result = buildContextForSession(session)
 
-    expect(result[1].contentParts).toHaveLength(0)
+    expect(result[1].contentParts).toHaveLength(1)
+    expect(result[1].contentParts[0].type).toBe('tool-call')
   })
 })
 
@@ -514,7 +531,7 @@ describe('buildContextForThread', () => {
     expect(result).toEqual([])
   })
 
-  it('should respect options', () => {
+  it('should keep tool-call parts untouched', () => {
     const thread: SessionThread = {
       id: 'thread-1',
       name: 'Thread',
@@ -532,9 +549,10 @@ describe('buildContextForThread', () => {
     }
     const sessionSettings: SessionSettings = { autoCompaction: false }
 
-    const result = buildContextForThread(thread, { keepToolCallRounds: 1, sessionSettings })
+    const result = buildContextForThread(thread, { sessionSettings })
 
-    expect(result[1].contentParts).toHaveLength(0)
+    expect(result[1].contentParts).toHaveLength(1)
+    expect(result[1].contentParts[0].type).toBe('tool-call')
   })
 })
 

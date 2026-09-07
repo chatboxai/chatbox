@@ -1,7 +1,7 @@
 import type { MessageFile, MessageLink } from '@shared/types'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import platform from '@/platform'
 import * as toastActions from '@/stores/toastActions'
@@ -18,7 +18,8 @@ interface MessageAttachmentGridProps {
 export function MessageAttachmentGrid({ files, links, align = 'start' }: MessageAttachmentGridProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
-  const [retryingIds, setRetryingIds] = useState<number[]>([])
+  const [recoveringIds, setRecoveringIds] = useState<number[]>([])
+  const recoveringIdsRef = useRef(new Set<number>())
 
   const fileItems = files ?? []
   const linkItems = links ?? []
@@ -31,13 +32,13 @@ export function MessageAttachmentGrid({ files, links, align = 'start' }: Message
   )
   const { data: sessionAttachments, refetch: refetchSessionAttachments } = useQuery({
     queryKey: ['session-attachment-rag-attachments', ...sessionAttachmentIds],
-    queryFn: async () => {
-      if (platform.type !== 'desktop' || sessionAttachmentIds.length === 0) {
+    queryFn: () => {
+      if (!platform.isDesktopLike || sessionAttachmentIds.length === 0) {
         return []
       }
       return platform.getSessionAttachmentRagController().getAttachments(sessionAttachmentIds)
     },
-    enabled: platform.type === 'desktop' && sessionAttachmentIds.length > 0,
+    enabled: platform.isDesktopLike && sessionAttachmentIds.length > 0,
     staleTime: 3000,
     refetchInterval: (query) => {
       const attachments = query.state.data ?? []
@@ -45,6 +46,9 @@ export function MessageAttachmentGrid({ files, links, align = 'start' }: Message
         ? 3000
         : false
     },
+    networkMode: 'always',
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: 'always',
   })
   const attachmentStatusMap = new Map(sessionAttachments?.map((attachment) => [attachment.id, attachment.status]) ?? [])
   const attachmentAvailabilityMap = new Map(
@@ -69,6 +73,9 @@ export function MessageAttachmentGrid({ files, links, align = 'start' }: Message
     sessionAttachments?.map((attachment) => [attachment.id, attachment.processingStartedAt]) ?? []
   )
   const attachmentErrorMap = new Map(sessionAttachments?.map((attachment) => [attachment.id, attachment.error]) ?? [])
+  const attachmentResumableMap = new Map(
+    sessionAttachments?.map((attachment) => [attachment.id, attachment.resumable]) ?? []
+  )
   const totalCount = fileItems.length + linkItems.length
 
   if (totalCount === 0) return null
@@ -80,23 +87,21 @@ export function MessageAttachmentGrid({ files, links, align = 'start' }: Message
   const visibleTotalCount = visibleFileCount + visibleLinkCount
   const shouldRightAlignLastItem = align === 'end' && visibleTotalCount % 2 === 1 && visibleTotalCount > 1
 
-  const retryAttachment = async (attachmentId: number) => {
-    if (platform.type !== 'desktop') {
+  const recoverAttachment = async (attachmentId: number) => {
+    if (!platform.isDesktopLike || recoveringIdsRef.current.has(attachmentId)) {
       return
     }
-    setRetryingIds((prev) => [...prev, attachmentId])
+    recoveringIdsRef.current.add(attachmentId)
+    setRecoveringIds((prev) => [...prev, attachmentId])
     try {
       await platform.getSessionAttachmentRagController().retryAttachment(attachmentId)
-      toastActions.add(t('Retry queued'))
+      toastActions.add(t('Queued'))
       await refetchSessionAttachments()
     } catch (error) {
-      toastActions.add(
-        t('Retry failed: {{error}}', {
-          error: error instanceof Error ? error.message : String(error),
-        })
-      )
+      toastActions.add(`${t('Failed')}: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
-      setRetryingIds((prev) => prev.filter((id) => id !== attachmentId))
+      recoveringIdsRef.current.delete(attachmentId)
+      setRecoveringIds((prev) => prev.filter((id) => id !== attachmentId))
     }
   }
 
@@ -107,74 +112,80 @@ export function MessageAttachmentGrid({ files, links, align = 'start' }: Message
           ' '
         )}
       >
-        {fileItems.slice(0, visibleFileCount).map((file, index) => (
-          <div
-            key={file.id}
-            className={[
-              'group/attachment min-w-0 overflow-hidden',
-              shouldRightAlignLastItem && index === visibleTotalCount - 1 ? 'col-start-2' : '',
-            ].join(' ')}
-          >
-            <MessageAttachment
-              label={file.name}
-              filename={file.name}
-              fileType={file.fileType}
-              byteLength={file.byteLength}
-              parserType={file.parserType}
-              storageKey={file.storageKey}
-              ragMode={file.ragMode}
-              sessionAttachmentAvailability={
-                file.sessionAttachmentId
-                  ? (attachmentAvailabilityMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentAvailability)
-                  : file.sessionAttachmentAvailability
-              }
-              sessionAttachmentIndexStatus={
-                file.sessionAttachmentId
-                  ? (attachmentIndexStatusMap.get(file.sessionAttachmentId) ??
-                    file.sessionAttachmentIndexStatus ??
-                    file.sessionAttachmentStatus)
-                  : (file.sessionAttachmentIndexStatus ?? file.sessionAttachmentStatus)
-              }
-              sessionAttachmentBlockedReason={file.sessionAttachmentBlockedReason}
-              sessionAttachmentStatus={
-                file.sessionAttachmentId
-                  ? (attachmentStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentStatus)
-                  : file.sessionAttachmentStatus
-              }
-              sessionAttachmentChunkCount={
-                file.sessionAttachmentId ? attachmentChunkCountMap.get(file.sessionAttachmentId) : undefined
-              }
-              sessionAttachmentTotalChunks={
-                file.sessionAttachmentId
-                  ? (attachmentTotalChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentTotalChunks)
-                  : file.sessionAttachmentTotalChunks
-              }
-              sessionAttachmentEmbeddedChunks={
-                file.sessionAttachmentId
-                  ? (attachmentEmbeddedChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentEmbeddedChunks)
-                  : file.sessionAttachmentEmbeddedChunks
-              }
-              sessionAttachmentIndexingStage={
-                file.sessionAttachmentId
-                  ? (attachmentIndexingStageMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentIndexingStage)
-                  : file.sessionAttachmentIndexingStage
-              }
-              sessionAttachmentProcessingStartedAt={
-                file.sessionAttachmentId ? attachmentProcessingStartedAtMap.get(file.sessionAttachmentId) : undefined
-              }
-              sessionAttachmentError={
-                file.sessionAttachmentId ? attachmentErrorMap.get(file.sessionAttachmentId) : undefined
-              }
-              onRetry={
-                file.sessionAttachmentId &&
-                (attachmentStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentStatus) === 'failed'
-                  ? () => retryAttachment(file.sessionAttachmentId as number)
-                  : undefined
-              }
-              retrying={file.sessionAttachmentId ? retryingIds.includes(file.sessionAttachmentId) : false}
-            />
-          </div>
-        ))}
+        {fileItems.slice(0, visibleFileCount).map((file, index) => {
+          const attachmentId = file.sessionAttachmentId
+          const attachmentStatus = attachmentId
+            ? (attachmentStatusMap.get(attachmentId) ?? file.sessionAttachmentStatus)
+            : file.sessionAttachmentStatus
+          const resumable = attachmentId ? attachmentResumableMap.get(attachmentId) : undefined
+          const recoveryAction =
+            attachmentStatus === 'failed' && resumable !== undefined ? (resumable ? 'continue' : 'retry') : undefined
+          return (
+            <div
+              key={file.id}
+              className={[
+                'group/attachment min-w-0 overflow-hidden',
+                shouldRightAlignLastItem && index === visibleTotalCount - 1 ? 'col-start-2' : '',
+              ].join(' ')}
+            >
+              <MessageAttachment
+                label={file.name}
+                filename={file.name}
+                fileType={file.fileType}
+                byteLength={file.byteLength}
+                parserType={file.parserType}
+                storageKey={file.storageKey}
+                ragMode={file.ragMode}
+                sessionAttachmentAvailability={
+                  file.sessionAttachmentId
+                    ? (attachmentAvailabilityMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentAvailability)
+                    : file.sessionAttachmentAvailability
+                }
+                sessionAttachmentIndexStatus={
+                  file.sessionAttachmentId
+                    ? (attachmentIndexStatusMap.get(file.sessionAttachmentId) ??
+                      file.sessionAttachmentIndexStatus ??
+                      file.sessionAttachmentStatus)
+                    : (file.sessionAttachmentIndexStatus ?? file.sessionAttachmentStatus)
+                }
+                sessionAttachmentBlockedReason={file.sessionAttachmentBlockedReason}
+                sessionAttachmentStatus={
+                  file.sessionAttachmentId
+                    ? (attachmentStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentStatus)
+                    : file.sessionAttachmentStatus
+                }
+                sessionAttachmentChunkCount={
+                  file.sessionAttachmentId ? attachmentChunkCountMap.get(file.sessionAttachmentId) : undefined
+                }
+                sessionAttachmentTotalChunks={
+                  file.sessionAttachmentId
+                    ? (attachmentTotalChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentTotalChunks)
+                    : file.sessionAttachmentTotalChunks
+                }
+                sessionAttachmentEmbeddedChunks={
+                  file.sessionAttachmentId
+                    ? (attachmentEmbeddedChunksMap.get(file.sessionAttachmentId) ??
+                      file.sessionAttachmentEmbeddedChunks)
+                    : file.sessionAttachmentEmbeddedChunks
+                }
+                sessionAttachmentIndexingStage={
+                  file.sessionAttachmentId
+                    ? (attachmentIndexingStageMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentIndexingStage)
+                    : file.sessionAttachmentIndexingStage
+                }
+                sessionAttachmentProcessingStartedAt={
+                  file.sessionAttachmentId ? attachmentProcessingStartedAtMap.get(file.sessionAttachmentId) : undefined
+                }
+                sessionAttachmentError={
+                  file.sessionAttachmentId ? attachmentErrorMap.get(file.sessionAttachmentId) : undefined
+                }
+                recoveryAction={recoveryAction}
+                onRecover={attachmentId && recoveryAction ? () => recoverAttachment(attachmentId) : undefined}
+                recovering={attachmentId ? recoveringIds.includes(attachmentId) : false}
+              />
+            </div>
+          )
+        })}
         {linkItems.slice(0, visibleLinkCount).map((link, index) => {
           const overallIndex = visibleFileCount + index
           return (

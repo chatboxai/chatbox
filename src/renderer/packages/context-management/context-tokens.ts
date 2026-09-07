@@ -1,7 +1,9 @@
+import { isContextEligibleMessage } from '@shared/context'
 import type { CompactionPoint, Message, Session, Settings } from '@shared/types'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { getTokenizerType } from '@/packages/token-estimation'
 import { useTokenEstimation } from '@/packages/token-estimation/hooks/useTokenEstimation'
+import type { ExactDraftTokens } from '@/packages/token-estimation/types'
 import queryClient from '@/stores/queryClient'
 import { selectMessagesForSendContext } from './attachment-payload'
 import { buildContextForSession } from './context-builder'
@@ -34,7 +36,15 @@ export interface UseContextTokensResult {
   currentInputTokens: number
   totalTokens: number
   isCalculating: boolean
+  isDraftCalculating: boolean
+  isCurrentInputApproximate: boolean
+  isTotalApproximate: boolean
+  isContextApproximate: boolean
+  isContextCalculating: boolean
   pendingTasks: number
+  pendingContextMessages: number
+  /** Exact worker count for the current draft, for seeding the outgoing message at submit. */
+  exactDraftTokens: ExactDraftTokens | null
 }
 
 /**
@@ -64,11 +74,15 @@ export interface ContextTokensCacheValue {
 export interface GetContextMessagesForTokenEstimationOptions {
   settings?: Partial<Settings>
   preserveLastUserMessage?: boolean
-  keepToolCallRounds?: number
 }
 
 /**
- * Get context messages for token estimation
+ * Get context messages for token estimation and compaction.
+ *
+ * Returns the context selection at full fidelity — tool calls and results are
+ * NOT cleaned up here. Pressure decisions (stub relief, compaction trigger)
+ * must be driven by the size of the un-relieved context, and the compaction
+ * summarizer must see everything it is about to replace.
  *
  * Algorithm:
  * 1. Call buildContextForSession to get base context messages
@@ -78,17 +92,17 @@ export interface GetContextMessagesForTokenEstimationOptions {
  *    - Apply maxContextMessageCount limit
  *
  * @param session - The session to extract context from
- * @param options - Options including settings, preserveLastUserMessage, keepToolCallRounds
+ * @param options - Options including settings, preserveLastUserMessage
  * @returns Filtered messages for token estimation
  */
 export function getContextMessagesForTokenEstimation(
   session: Session,
   options: GetContextMessagesForTokenEstimationOptions = {}
 ): Message[] {
-  const { settings = {}, keepToolCallRounds = 2, preserveLastUserMessage = false } = options
+  const { settings = {}, preserveLastUserMessage = false } = options
 
   // Step 1: Call buildContextForSession to get base context messages
-  const baseMessages = buildContextForSession(session, { keepToolCallRounds, settings })
+  const baseMessages = buildContextForSession(session, { settings })
 
   // Step 2: Apply selectMessagesForSendContext filtering
   // - Filter out error/errorCode messages
@@ -100,7 +114,6 @@ export function getContextMessagesForTokenEstimation(
     msgs: baseMessages,
     compactionPoints: session.compactionPoints,
     preserveLastUserMessage,
-    keepToolCallRounds,
   })
 
   return filteredMessages
@@ -118,6 +131,10 @@ export function getContextMessagesForTokenEstimation(
 export function getContextTokensCacheKey(params: ContextTokensCacheKeyParams): readonly [string, ...unknown[]] {
   return [
     'context-tokens',
+    // Estimation semantics version: v2 counts tool-call parts and stops
+    // pre-cleaning tool calls, so cached values from older semantics must not
+    // be read back.
+    'v2',
     params.sessionId,
     params.maxContextMessageCount,
     params.latestContextMessageId,
@@ -146,6 +163,33 @@ export function getLatestCompactionBoundaryId(compactionPoints?: CompactionPoint
   )
 }
 
+const EMPTY_MESSAGES: Message[] = []
+
+/**
+ * Return the context-eligible subset of `messages`, preserving array identity
+ * across renders when the eligible subset did not actually change.
+ *
+ * During streaming, every chunk replaces `session.messages` (and the
+ * generating message object) with new identities while all other message
+ * objects keep theirs. The generating message is context-ineligible anyway,
+ * so filtering first and reusing the previous array when the elements are
+ * reference-equal keeps the downstream O(n) work (context building + token
+ * analysis) from re-running on every chunk. Token cache writes DO replace the
+ * affected message objects, so those still invalidate as expected.
+ */
+export function useStableEligibleMessages(messages: Message[] | undefined): Message[] {
+  const prevRef = useRef<Message[]>(EMPTY_MESSAGES)
+  return useMemo(() => {
+    const next = messages ? messages.filter(isContextEligibleMessage) : EMPTY_MESSAGES
+    const prev = prevRef.current
+    if (next.length === prev.length && next.every((message, i) => message === prev[i])) {
+      return prev
+    }
+    prevRef.current = next
+    return next
+  }, [messages])
+}
+
 /**
  * React Query cache layer for context tokens
  *
@@ -156,17 +200,19 @@ export function getLatestCompactionBoundaryId(compactionPoints?: CompactionPoint
  * Does NOT cache:
  * - currentInputTokens (changes with constructedMessage)
  * - totalTokens (derived from currentInputTokens + contextTokens)
- * - isCalculating (real-time queue status)
- * - pendingTasks (real-time queue status)
+ * - calculation and progress status (real-time draft and context work)
  */
 export function useContextTokens(options: UseContextTokensOptions): UseContextTokensResult {
   const { sessionId, session, settings, model, modelSupportToolUseForFile, sandboxMode, constructedMessage } = options
 
-  // 1. contextMessages must be stable
+  // 1. contextMessages must be stable — keyed off the eligible subset so
+  // per-chunk streaming updates (which only touch the generating message)
+  // don't re-run context building and analysis.
+  const eligibleMessages = useStableEligibleMessages(session?.messages)
   const contextMessages = useMemo(() => {
     if (!session) return []
-    return getContextMessagesForTokenEstimation(session, { settings })
-  }, [session?.messages, session?.compactionPoints, settings.maxContextMessageCount])
+    return getContextMessagesForTokenEstimation({ ...session, messages: eligibleMessages }, { settings })
+  }, [eligibleMessages, session?.compactionPoints, settings.maxContextMessageCount])
 
   // 2. tokenizerType must be stable
   const tokenizerType = useMemo(() => getTokenizerType(model), [model?.provider, model?.modelId])
@@ -193,7 +239,7 @@ export function useContextTokens(options: UseContextTokensOptions): UseContextTo
     sandboxMode,
   })
 
-  const isCalculating = tokenResult.isCalculating
+  const isContextCalculating = tokenResult.isContextCalculating
 
   // 5. Read existing cache value (for recalculation consistency)
   const existingCacheValue = useMemo(() => {
@@ -203,13 +249,13 @@ export function useContextTokens(options: UseContextTokensOptions): UseContextTo
 
   // 6. New cache value (only when calculation complete)
   const newCacheValue = useMemo<ContextTokensCacheValue | null>(() => {
-    if (!cacheKey || isCalculating) return null
+    if (!cacheKey || isContextCalculating) return null
     return {
       contextTokens: tokenResult.contextTokens,
       messageCount: contextMessages.length,
       timestamp: Date.now(),
     }
-  }, [cacheKey, isCalculating, tokenResult.contextTokens, contextMessages.length])
+  }, [cacheKey, isContextCalculating, tokenResult.contextTokens, contextMessages.length])
 
   // 7. Write to cache when calculation completes
   useEffect(() => {
@@ -224,6 +270,13 @@ export function useContextTokens(options: UseContextTokensOptions): UseContextTo
     currentInputTokens: tokenResult.currentInputTokens,
     totalTokens: tokenResult.totalTokens,
     isCalculating: tokenResult.isCalculating,
+    isDraftCalculating: tokenResult.isDraftCalculating,
+    isCurrentInputApproximate: tokenResult.isCurrentInputApproximate,
+    isTotalApproximate: tokenResult.isTotalApproximate,
+    isContextApproximate: tokenResult.isContextApproximate,
+    isContextCalculating: tokenResult.isContextCalculating,
     pendingTasks: tokenResult.pendingTasks,
+    pendingContextMessages: tokenResult.pendingContextMessages,
+    exactDraftTokens: tokenResult.exactDraftTokens,
   }
 }

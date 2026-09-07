@@ -12,7 +12,11 @@ type Props = {
   contextTokens: number
   totalTokens: number
   isCalculating?: boolean
-  pendingTasks?: number
+  isCurrentInputApproximate?: boolean
+  isTotalApproximate?: boolean
+  isContextApproximate?: boolean
+  isContextCalculating?: boolean
+  pendingContextMessages?: number
   totalContextMessages?: number
   contextWindow?: number
   currentMessageCount?: number
@@ -31,7 +35,11 @@ const TokenCountMenu: FC<Props> = ({
   contextTokens,
   totalTokens,
   isCalculating = false,
-  pendingTasks,
+  isCurrentInputApproximate = false,
+  isTotalApproximate = isCalculating,
+  isContextApproximate = false,
+  isContextCalculating = false,
+  pendingContextMessages,
   totalContextMessages,
   contextWindow,
   currentMessageCount,
@@ -69,10 +77,12 @@ const TokenCountMenu: FC<Props> = ({
             withArrow
             position="top"
           >
+            {/* Unknown-window models now compact against a fallback window, so the
+                toggle stays usable; the tooltip still surfaces that the window is unknown. */}
             <Switch
               size="xs"
               checked={autoCompactionEnabled}
-              disabled={!contextWindowKnown || isCompacting}
+              disabled={isCompacting}
               onChange={(e) => onAutoCompactionChange(e.currentTarget.checked)}
             />
           </Tooltip>
@@ -106,6 +116,7 @@ const TokenCountMenu: FC<Props> = ({
           <Flex justify="space-between" align="center" gap="xs">
             <Text size="sm">{t('Current input')}:</Text>
             <Text size="sm" fw={500}>
+              {isCurrentInputApproximate ? '~' : ''}
               {formatNumber(currentInputTokens)}
             </Text>
           </Flex>
@@ -116,15 +127,15 @@ const TokenCountMenu: FC<Props> = ({
             <Text size="sm">{t('Context')}:</Text>
             <Flex align="center" gap="xs">
               <Text size="sm" fw={500}>
-                {isCalculating ? '~' : ''}
+                {isContextCalculating || isContextApproximate ? '~' : ''}
                 {formatNumber(contextTokens)}
               </Text>
-              {isCalculating &&
-                pendingTasks !== undefined &&
+              {isContextCalculating &&
+                pendingContextMessages !== undefined &&
                 totalContextMessages !== undefined &&
                 totalContextMessages > 0 && (
                   <Text size="xs" c="dimmed">
-                    ({Math.max(0, totalContextMessages - pendingTasks)}/{totalContextMessages})
+                    ({Math.max(0, totalContextMessages - pendingContextMessages)}/{totalContextMessages})
                   </Text>
                 )}
             </Flex>
@@ -151,9 +162,13 @@ const TokenCountMenu: FC<Props> = ({
             <Text size="sm" fw={600}>
               {t('Total')}:
             </Text>
-            <Text size="sm" fw={600}>
-              {formatNumber(totalTokens)}
-            </Text>
+            <Flex align="center" gap="xs">
+              {isCalculating && <Loader size="xs" />}
+              <Text size="sm" fw={600}>
+                {isTotalApproximate ? '~' : ''}
+                {formatNumber(totalTokens)}
+              </Text>
+            </Flex>
           </Flex>
         </Menu.Item>
 

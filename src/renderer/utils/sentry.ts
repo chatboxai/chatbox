@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/react'
-import type { SentryErrorPriority } from '@shared/utils/sentry_policy'
+import { normalizeErrorForSentry, type SentryErrorPriority } from '@shared/utils/sentry_policy'
 
 export interface ReportErrorContext {
   domain: string
@@ -30,6 +30,6 @@ export function reportError(error: unknown, context: ReportErrorContext): void {
       scope.setExtra(key, value)
     }
 
-    Sentry.captureException(error instanceof Error ? error : new Error(String(error)))
+    Sentry.captureException(normalizeErrorForSentry(error))
   })
 }

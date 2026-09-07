@@ -14,6 +14,22 @@ export const bedrockProvider = defineProvider({
     region: 'us-east-1',
     models: [
       {
+        modelId: 'us.anthropic.claude-opus-5',
+        nickname: 'Claude Opus 5 (US)',
+        type: 'chat',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_000_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'us.anthropic.claude-sonnet-5',
+        nickname: 'Claude Sonnet 5 (US)',
+        type: 'chat',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_000_000,
+        maxOutput: 128_000,
+      },
+      {
         modelId: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
         nickname: 'Claude Sonnet 4.5 (US)',
         type: 'chat',
@@ -28,6 +44,12 @@ export const bedrockProvider = defineProvider({
         capabilities: ['vision', 'tool_use'],
         contextWindow: 200_000,
         maxOutput: 64_000,
+      },
+      {
+        modelId: 'us.amazon.nova-2-lite-v1:0',
+        nickname: 'Amazon Nova 2 Lite (US)',
+        type: 'chat',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
       },
       {
         modelId: 'us.amazon.nova-pro-v1:0',

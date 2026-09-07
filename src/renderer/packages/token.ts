@@ -1,4 +1,5 @@
 import { reportError } from '@/utils/sentry'
+import { estimateMessageToolCallTokens } from '../../shared/context/tool-tokens'
 import type { Message, MessageFile, MessageLink } from '../../shared/types'
 import { TOKEN_CACHE_KEYS, type TokenCacheKey } from '../../shared/types/session'
 import { getMessageText, isEmptyMessage } from '../../shared/utils/message'
@@ -7,6 +8,7 @@ import {
   buildAttachmentWrapperSuffix,
   MAX_INLINE_FILE_LINES,
 } from './context-management/attachment-payload'
+import { estimateDraftTokensImmediately, shouldTokenizeDraftOffMainThread } from './token-estimation/draft-tokenization'
 import {
   estimateDeepSeekTokens,
   estimateTokens,
@@ -41,6 +43,27 @@ export function getTokenCountForModel(
   return 0
 }
 
+/**
+ * Message text tokens. An exact per-tokenizer count already carried on the
+ * message — filled by the computation queue, or seeded at submit from the
+ * draft worker (`seedExactDraftTokens`) — is trusted over re-encoding. Without
+ * one, text long enough for the draft worker gets the bounded sampling
+ * estimate instead of a full encode: every caller here sits on the main
+ * thread, where encoding a very long unseeded submit is exactly the stall
+ * this pipeline exists to avoid. The computation queue later replaces the
+ * estimate with the worker's exact count. Write paths must clear
+ * `tokenCountMap` before re-estimating edited text.
+ */
+function estimateMessageTextTokens(msg: Message, type: 'output' | 'input', model?: TokenModel): number {
+  const carried = msg.tokenCountMap?.[getTokenCacheKey(model)]
+  if (carried) return carried
+  const text = getMessageText(msg, false, type === 'output')
+  if (shouldTokenizeDraftOffMainThread(text)) {
+    return estimateDraftTokensImmediately(text, getTokenizerType(model))
+  }
+  return estimateTokens(text, model)
+}
+
 // 参考: https://github.com/pkoukk/tiktoken-go#counting-tokens-for-chat-api-calls
 // OpenAI Cookbook: https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
 export function estimateTokensFromMessages(
@@ -60,7 +83,7 @@ export function estimateTokensFromMessages(
         continue
       }
       ret += tokensPerMessage
-      ret += estimateTokens(getMessageText(msg, false, type === 'output'), model)
+      ret += estimateMessageTextTokens(msg, type, model)
       ret += estimateTokens(msg.role, model)
       if (msg.name) {
         ret += estimateTokens(msg.name, model)
@@ -122,7 +145,13 @@ export function sumCachedTokensFromMessages(messages: Message[], model?: TokenMo
   let total = 0
 
   for (const msg of messages) {
-    if (isEmptyMessage(msg)) {
+    // Text token caches never cover tool-call parts, which dominate agent
+    // sessions; without this the pressure/compaction checks blindly undercount.
+    // Computed before the empty check: a tool-call-only assistant message has
+    // no text and would otherwise be skipped as "empty".
+    const toolCallTokens = estimateMessageToolCallTokens(msg)
+
+    if (isEmptyMessage(msg) && toolCallTokens === 0) {
       continue
     }
 
@@ -131,6 +160,8 @@ export function sumCachedTokensFromMessages(messages: Message[], model?: TokenMo
 
     // Read cached message text tokens (tokenCountMap preferred, tokenCount as fallback)
     total += msg.tokenCountMap?.[cacheKey] ?? msg.tokenCount ?? 0
+
+    total += toolCallTokens
 
     // Add role tokens
     total += estimateTokens(msg.role, model)
@@ -302,7 +333,7 @@ export function estimateTokensFromMessagesForSendPayload(
       }
 
       total += tokensPerMessage
-      total += estimateTokens(getMessageText(msg, false, type === 'output'), model)
+      total += estimateMessageTextTokens(msg, type, model)
       total += estimateTokens(msg.role, model)
 
       if (msg.name) {

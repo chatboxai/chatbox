@@ -2,42 +2,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   approvalAttentionStore,
-  clearApprovalInputNudge,
   flashApprovalCardHighlight,
-  notifyApprovalInputNudge,
-  setApprovalActionsVisible,
+  pulsePendingActionBar,
+  registerPausedStepElement,
+  revealPausedStep,
+  unregisterPausedStepElement,
 } from './approvalAttentionStore'
 
 beforeEach(() => {
-  approvalAttentionStore.setState({ visibleActionInstances: {}, highlightedToolCallId: null, nudgedToolCallId: null })
-})
-
-describe('approval actions visibility', () => {
-  it('tracks visibility per tool call and instance', () => {
-    setApprovalActionsVisible('tc-1', 'a', true)
-    expect(approvalAttentionStore.getState().visibleActionInstances).toEqual({ 'tc-1': { a: true } })
-    setApprovalActionsVisible('tc-1', 'a', false)
-    expect(approvalAttentionStore.getState().visibleActionInstances).toEqual({})
-  })
-
-  it('keeps the card visible while any instance still reports visible', () => {
-    // The same card can be mounted twice (message list + search dialog); one
-    // instance unmounting must not hide the other's visibility.
-    setApprovalActionsVisible('tc-1', 'list', true)
-    setApprovalActionsVisible('tc-1', 'search', true)
-    setApprovalActionsVisible('tc-1', 'search', false)
-    expect(approvalAttentionStore.getState().visibleActionInstances).toEqual({ 'tc-1': { list: true } })
-  })
+  approvalAttentionStore.setState({ highlightedPausedStep: null, barPulseToken: 0 })
 })
 
 describe('highlight flash', () => {
   it('flashes the highlight and clears it after the timeout', () => {
     vi.useFakeTimers()
     try {
-      flashApprovalCardHighlight('tc-1')
-      expect(approvalAttentionStore.getState().highlightedToolCallId).toBe('tc-1')
+      flashApprovalCardHighlight('session-1', 'message-1', 'tc-1')
+      expect(approvalAttentionStore.getState().highlightedPausedStep).toEqual({
+        sessionId: 'session-1',
+        messageId: 'message-1',
+        toolCallId: 'tc-1',
+      })
       vi.advanceTimersByTime(5100)
-      expect(approvalAttentionStore.getState().highlightedToolCallId).toBeNull()
+      expect(approvalAttentionStore.getState().highlightedPausedStep).toBeNull()
     } finally {
       vi.useRealTimers()
     }
@@ -46,24 +33,54 @@ describe('highlight flash', () => {
   it('keeps the latest highlight when re-flashed before the timeout', () => {
     vi.useFakeTimers()
     try {
-      flashApprovalCardHighlight('tc-1')
+      flashApprovalCardHighlight('session-1', 'message-1', 'tc-1')
       vi.advanceTimersByTime(4000)
-      flashApprovalCardHighlight('tc-2')
+      flashApprovalCardHighlight('session-1', 'message-2', 'tc-2')
       vi.advanceTimersByTime(4500)
-      expect(approvalAttentionStore.getState().highlightedToolCallId).toBe('tc-2')
+      expect(approvalAttentionStore.getState().highlightedPausedStep).toEqual({
+        sessionId: 'session-1',
+        messageId: 'message-2',
+        toolCallId: 'tc-2',
+      })
       vi.advanceTimersByTime(700)
-      expect(approvalAttentionStore.getState().highlightedToolCallId).toBeNull()
+      expect(approvalAttentionStore.getState().highlightedPausedStep).toBeNull()
     } finally {
       vi.useRealTimers()
     }
   })
 })
 
-describe('input nudge', () => {
-  it('is keyed by tool call id and cleared explicitly', () => {
-    notifyApprovalInputNudge('tc-1')
-    expect(approvalAttentionStore.getState().nudgedToolCallId).toBe('tc-1')
-    clearApprovalInputNudge()
-    expect(approvalAttentionStore.getState().nudgedToolCallId).toBeNull()
+describe('paused-step reveal', () => {
+  it('targets the current message when another message reuses the same tool call id', async () => {
+    vi.useFakeTimers()
+    const historical = document.createElement('div')
+    const current = document.createElement('div')
+    historical.scrollIntoView = vi.fn()
+    current.scrollIntoView = vi.fn()
+    registerPausedStepElement('session-1', 'message-old', 'tc-reused', 'old', historical)
+    registerPausedStepElement('session-1', 'message-current', 'tc-reused', 'current', current)
+
+    try {
+      const reveal = revealPausedStep('session-1', 'message-current', 'tc-reused')
+      await vi.advanceTimersByTimeAsync(300)
+      await reveal
+
+      expect(current.scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' })
+      expect(historical.scrollIntoView).not.toHaveBeenCalled()
+    } finally {
+      unregisterPausedStepElement('session-1', 'message-old', 'tc-reused', 'old')
+      unregisterPausedStepElement('session-1', 'message-current', 'tc-reused', 'current')
+      await vi.runAllTimersAsync()
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('pending-action bar pulse', () => {
+  it('increments the token on every pulse so the animation can restart', () => {
+    pulsePendingActionBar()
+    expect(approvalAttentionStore.getState().barPulseToken).toBe(1)
+    pulsePendingActionBar()
+    expect(approvalAttentionStore.getState().barPulseToken).toBe(2)
   })
 })

@@ -1,5 +1,5 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
-import { Button, Checkbox, Flex, Loader, NumberInput, Stack, Text, TextInput } from '@mantine/core'
+import { Button, Checkbox, Flex, Loader, NumberInput, Stack, Text, TextInput, UnstyledButton } from '@mantine/core'
 import type { ProviderModelInfo } from '@shared/types'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -224,10 +224,15 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
               {t('Test successful')}
             </Text>
           ) : testState.basicTest?.status === 'error' ? (
-            <Tooltip label={testState.basicTest.error} multiline maw={300}>
-              <Text c="chatbox-error" style={{ cursor: 'help' }} className="text-center">
+            <Tooltip label={testState.basicTest.error} multiline maw={300} zIndex={3000} openOnTouch>
+              <UnstyledButton
+                type="button"
+                c="chatbox-error"
+                style={{ cursor: 'help', textAlign: 'center' }}
+                className="inline-block"
+              >
                 {t('Test failed')}
-              </Text>
+              </UnstyledButton>
             </Tooltip>
           ) : null}
           <AdaptiveModal.CloseButton onClick={handleCancel} />

@@ -18,10 +18,13 @@ export const JK_EVENTS = {
   WORK_MODE_SUGGEST: 'work_mode_suggest',
   WORK_MODE_SUGGESTION_ACT: 'work_mode_suggestion_act',
   WEB_SEARCH_CLICK: 'web_search_click',
+  MEMORY_CLICK: 'memory_click',
   WORK_MODE_PAUSE_ACT: 'work_mode_pause_act',
   AGENT_MODE_FREE_POINTS_CARD: 'agent_mode_free_points_card',
   AGENT_MODE_FREE_POINTS_CARD_CLICK: 'agent_mode_free_points_card_click',
   AGENT_MODE_FREE_POINTS_CLAIM_SUCCESS: 'agent_mode_free_points_claim_success',
+  TOKEN_EXHAUSTED_CARD: 'token_exhausted_card',
+  TOKEN_EXHAUSTED_CARD_CLICK: 'token_exhausted_card_click',
   MERMAID_RENDER_FAILED: 'mermaid_render_failed',
 } as const
 

@@ -32,7 +32,7 @@ vi.mock('react-i18next', () => ({
 
 const model: ProviderModelInfo = { modelId: 'gpt-5.1' }
 
-function renderButton(compact: boolean, reasoningEffort: 'low' | 'medium' | 'high' = 'high') {
+function renderButton(reasoningEffort: 'low' | 'medium' | 'high' = 'high') {
   const providerOptions: ProviderOptions = { openai: { reasoningEffort } }
   return render(
     <MantineProvider>
@@ -41,7 +41,6 @@ function renderButton(compact: boolean, reasoningEffort: 'low' | 'medium' | 'hig
         model={model}
         providerOptions={providerOptions}
         iconSize={22}
-        compact={compact}
         onChange={vi.fn()}
       />
     </MantineProvider>
@@ -49,8 +48,8 @@ function renderButton(compact: boolean, reasoningEffort: 'low' | 'medium' | 'hig
 }
 
 describe('ReasoningControlButton', () => {
-  test('shows a state icon instead of the level text in compact mode', () => {
-    const view = renderButton(true)
+  test('shows a state icon instead of the level text', () => {
+    const view = renderButton()
 
     expect(screen.getByRole('button', { name: 'Thinking: High' })).toBeTruthy()
     expect(view.container.querySelector('[data-reasoning-level="high"]')).toBeTruthy()
@@ -62,25 +61,21 @@ describe('ReasoningControlButton', () => {
     ['medium', 2],
     ['high', 3],
   ] as const)('shows %s effort with %i active dots', (level, activeDotCount) => {
-    const view = renderButton(true, level)
+    const view = renderButton(level)
     const status = view.container.querySelector(`[data-reasoning-status="${level}"]`)
 
     expect(status?.querySelectorAll('[data-reasoning-dot="active"]')).toHaveLength(activeDotCount)
     expect(status?.querySelectorAll('[data-reasoning-dot="inactive"]')).toHaveLength(3 - activeDotCount)
   })
 
-  test('keeps the level text in regular mode', () => {
-    renderButton(false)
-
-    expect(screen.getByRole('button', { name: 'Thinking: High' }).textContent).toBe('High')
-  })
-
-  test('opens the effort menu when the trigger is clicked', async () => {
-    renderButton(false)
+  test('opens the effort menu with level labels when the trigger is clicked', async () => {
+    renderButton()
 
     fireEvent.click(screen.getByRole('button', { name: 'Thinking: High' }))
 
     await waitFor(() => expect(screen.getByTestId(TestId.reasoning.menu)).toBeTruthy())
     expect(screen.getByTestId(TestId.reasoning.level('default'))).toBeTruthy()
+    // The level text lives in the menu items now that the trigger is icon-only.
+    expect(screen.getByTestId(TestId.reasoning.level('high')).textContent).toContain('High')
   })
 })

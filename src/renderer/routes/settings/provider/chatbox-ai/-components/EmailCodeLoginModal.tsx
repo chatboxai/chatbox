@@ -3,6 +3,8 @@ import { IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal } from '@/components/layout/Overlay'
+import platform from '@/platform'
+import { LOGIN_SUPPORT_EMAIL } from './loginErrorMessage'
 import { useLogin } from './useLogin'
 
 interface EmailCodeLoginModalProps {
@@ -10,6 +12,31 @@ interface EmailCodeLoginModalProps {
   onClose: () => void
   language: string
   onLoginSuccess: (tokens: { accessToken: string; refreshToken: string }) => Promise<void>
+}
+
+function LoginErrorMessage({ message }: { message: string }) {
+  const emailIndex = message.indexOf(LOGIN_SUPPORT_EMAIL)
+  if (emailIndex < 0) {
+    return message
+  }
+
+  const emailEnd = emailIndex + LOGIN_SUPPORT_EMAIL.length
+  return (
+    <>
+      {message.slice(0, emailIndex)}
+      <Anchor
+        size="sm"
+        href={`mailto:${LOGIN_SUPPORT_EMAIL}`}
+        onClick={(event) => {
+          event.preventDefault()
+          platform.openLink(`mailto:${LOGIN_SUPPORT_EMAIL}`)
+        }}
+      >
+        {LOGIN_SUPPORT_EMAIL}
+      </Anchor>
+      {message.slice(emailEnd)}
+    </>
+  )
 }
 
 export function EmailCodeLoginModal({ opened, onClose, language, onLoginSuccess }: EmailCodeLoginModalProps) {
@@ -135,8 +162,8 @@ export function EmailCodeLoginModal({ opened, onClose, language, onLoginSuccess 
         </Stack>
 
         {loginError && (
-          <Alert color="red" variant="light" title={t('Verification failed')}>
-            {loginError}
+          <Alert color="red" variant="light" title={loginError.title || t('Verification failed')}>
+            <LoginErrorMessage message={loginError.message} />
           </Alert>
         )}
 

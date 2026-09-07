@@ -1,5 +1,6 @@
 import log from 'electron-log/main'
 import path from 'path'
+import { getChatboxQaPaths, getChatboxQaTaskId } from './qa-runtime'
 
 export function resolveHtmlPath(htmlFileName: string) {
   if (process.env.NODE_ENV === 'development') {
@@ -26,7 +27,14 @@ export function sliceTextWithEllipsis(text: string, maxLength: number) {
 
 export function getLogger(logId: string) {
   const logger = log.create({ logId })
-  logger.transports.console.format = '{h}:{i}:{s}.{ms} › [{logId}] › {text}'
-  logger.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] [{logId}] {text}'
+  const qaTaskId = getChatboxQaTaskId()
+  const qaPrefix = qaTaskId ? `[QA:${qaTaskId}] ` : ''
+  logger.transports.console.format = `${qaPrefix}{h}:{i}:{s}.{ms} › [{logId}] › {text}`
+  logger.transports.file.format = `${qaPrefix}[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] [{logId}] {text}`
+
+  const qaPaths = getChatboxQaPaths()
+  if (qaPaths) {
+    logger.transports.file.resolvePathFn = () => qaPaths.mainLogFile
+  }
   return logger
 }

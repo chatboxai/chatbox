@@ -3,6 +3,7 @@ import { getModel } from '@shared/providers'
 import type { ImageGeneration, ImageGenerationModel, ImageGenerationSource } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types'
 import { createModelDependencies } from '@/adapters'
+import { normalizePlausibleModel, normalizePlausibleProvider } from '@/analytics/plausible'
 import { getLogger } from '@/lib/utils'
 import {
   IMAGE_GENERATION_POLL_INTERVAL_MS,
@@ -206,8 +207,8 @@ async function generateImages(recordId: string, params: GenerateImageParams): Pr
     }
 
     trackEvent('generate_image', {
-      provider: params.model.provider,
-      model: params.model.modelId,
+      provider: normalizePlausibleProvider(params.model.provider),
+      model: normalizePlausibleModel(params.model.provider, params.model.modelId),
       num_images: num,
       has_reference: params.referenceImages.length > 0,
     })
@@ -336,8 +337,8 @@ async function generateImagesDirect(recordId: string, params: GenerateImageParam
     }
 
     trackEvent('generate_image', {
-      provider: params.model.provider,
-      model: params.model.modelId,
+      provider: normalizePlausibleProvider(params.model.provider),
+      model: normalizePlausibleModel(params.model.provider, params.model.modelId),
       num_images: num,
       has_reference: params.referenceImages.length > 0,
       path: 'direct',

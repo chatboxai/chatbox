@@ -1,0 +1,32 @@
+{
+  "name": "@chatbox/react",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./query": "./src/query/index.ts",
+    "./stores": "./src/stores/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@chatbox/core": "workspace:*",
+    "immer": "^10.1.1"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": ">=5",
+    "react": ">=18",
+    "zustand": ">=5"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.74.4",
+    "@types/react": "^18.3.31",
+    "react": "^18.2.0",
+    "typescript": "^5.8.3",
+    "zustand": "^5.0.6"
+  }
+}

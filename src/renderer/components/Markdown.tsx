@@ -1,5 +1,6 @@
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { useTheme } from '@mui/material'
+import type { Code, Root } from 'mdast'
 import {
   type ComponentProps,
   type CSSProperties,
@@ -60,7 +61,7 @@ import clsx from 'clsx'
 import { visit } from 'unist-util-visit'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
-import { highlight, highlightSync, type ShikiTheme } from '../packages/shiki'
+import { highlight, highlightSync, preloadLanguage, type ShikiTheme } from '../packages/shiki'
 import { ScalableIcon } from './common/ScalableIcon'
 import { ImageViewer, ImageViewerItem } from './ImageViewer'
 import IconDart from './icons/Dart'
@@ -73,15 +74,42 @@ import './shiki-code.css'
 
 const CODE_BLOCK_COLLAPSE_LINE_THRESHOLD = 7
 type RehypePlugins = NonNullable<ComponentProps<typeof ReactMarkdown>['rehypePlugins']>
+type RemarkPlugins = NonNullable<ComponentProps<typeof ReactMarkdown>['remarkPlugins']>
+type CodeNodeData = NonNullable<Code['data']> & { hProperties?: Record<string, unknown> }
 
-function remarkAddCodeIndex() {
-  // biome-ignore lint/suspicious/noExplicitAny: remark AST nodes lack a friendly type here
-  return (tree: any) => {
+function isUnclosedFencedCode(node: Code, source: string): boolean {
+  const startOffset = node.position?.start.offset
+  const endOffset = node.position?.end.offset
+  if (startOffset === undefined || endOffset !== source.length) return false
+
+  const openingLineEnd = source.indexOf('\n', startOffset)
+  const openingLine = source
+    .slice(startOffset, openingLineEnd === -1 ? source.length : openingLineEnd)
+    .replace(/\r$/, '')
+  const openingFence = openingLine.match(/^ {0,3}(`{3,}|~{3,})/)
+  if (!openingFence) return false
+  if (node.position?.start.line === node.position?.end.line) return true
+
+  const fence = openingFence[1]
+  const endingLineStart = source.lastIndexOf('\n', Math.max(startOffset, endOffset - 1)) + 1
+  const endingLine = source.slice(endingLineStart, endOffset).replace(/\r$/, '')
+  const closingFence = new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[\\t ]*$`)
+  return !closingFence.test(endingLine)
+}
+
+function remarkAddCodeIndex(options: { generating?: boolean } = {}) {
+  return (tree: Root, file: { value: unknown }) => {
+    const source = typeof file.value === 'string' ? file.value : ''
     let counter = 0
-    visit(tree, 'code', (node) => {
-      node.data = node.data || {}
-      node.data.hProperties = node.data.hProperties || {}
-      node.data.hProperties['data-code-index'] = counter++
+    visit(tree, 'code', (node: Code) => {
+      if (!node.data) node.data = {}
+      const data = node.data as CodeNodeData
+      if (!data.hProperties) data.hProperties = {}
+      const hProperties = data.hProperties
+      hProperties['data-code-index'] = counter++
+      if (options.generating && isUnclosedFencedCode(node, source)) {
+        hProperties['data-code-generating'] = true
+      }
     })
   }
 }
@@ -121,11 +149,16 @@ function Markdown(props: {
     onPreviewWebpage,
   } = props
 
-  const codeFences = useMemo(() => (children.match(/```/g) || []).length, [children])
-  const generatingCodeIndex = useMemo(() => (codeFences % 2 === 0 ? -1 : Math.floor(codeFences / 2)), [codeFences])
   const processedChildren = useMemo(
     () => (enableLaTeXRendering ? latex.processLaTeX(children) : children),
     [children, enableLaTeXRendering]
+  )
+  const remarkPlugins = useMemo<RemarkPlugins>(
+    () =>
+      enableLaTeXRendering
+        ? [remarkGfm, remarkMath, remarkBreaks, [remarkAddCodeIndex, { generating }]]
+        : [remarkGfm, remarkBreaks, [remarkAddCodeIndex, { generating }]],
+    [enableLaTeXRendering, generating]
   )
   const streamingSegments = useStreamingTextSegments(processedChildren, generating, uniqueId)
   const rehypePlugins = useMemo<RehypePlugins>(
@@ -138,11 +171,7 @@ function Markdown(props: {
     <ImageViewer>
       <ReactMarkdown
         className={`break-words [overflow-wrap:anywhere] ${className || ''}`}
-        remarkPlugins={
-          enableLaTeXRendering
-            ? [remarkGfm, remarkMath, remarkBreaks, remarkAddCodeIndex]
-            : [remarkGfm, remarkBreaks, remarkAddCodeIndex]
-        }
+        remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
         // react-markdown's default defaultUrlTransform will incorrectly encode query parameters in URLs (e.g. & becomes &amp;)
         // Use sanitizeUrl here to avoid that and to prevent XSS attacks
@@ -160,7 +189,7 @@ function Markdown(props: {
                   hiddenCodeActions={hiddenCodeActions}
                   hiddenCodeCopyButton={hiddenCodeCopyButton}
                   enableMermaidRendering={enableMermaidRendering}
-                  generating={generating && generatingCodeIndex === codeIndex}
+                  generating={generating && Boolean(props['data-code-generating'])}
                   forceColorScheme={forceColorScheme}
                   onCodeCopy={onCodeCopy}
                   onPreviewWebpage={onPreviewWebpage}
@@ -202,7 +231,6 @@ function Markdown(props: {
             hiddenCodeCopyButton,
             enableMermaidRendering,
             generating,
-            generatingCodeIndex,
             forceColorScheme,
             onCodeCopy,
             onPreviewWebpage,
@@ -490,9 +518,14 @@ function useShikiHtml(code: string, language: string, theme: ShikiTheme): string
   useEffect(() => {
     if (syncHtml !== null) return
     let cancelled = false
-    void highlight(code, language, theme).then((result) => {
-      if (!cancelled) setAsyncHtml(result)
-    })
+    highlight(code, language, theme)
+      .then((result) => {
+        if (!cancelled && result !== null) setAsyncHtml(result)
+      })
+      .catch(() => {
+        // highlight resolves null on failure; keep the plain fallback rendered
+        // even if a rejection ever slips through.
+      })
     return () => {
       cancelled = true
     }
@@ -501,35 +534,92 @@ function useShikiHtml(code: string, language: string, theme: ShikiTheme): string
   return syncHtml ?? asyncHtml
 }
 
-const ShikiCodeBlock = memo(({ code, language, theme }: { code: string; language: string; theme: ShikiTheme }) => {
-  const html = useShikiHtml(code, language, theme)
-  const lineNumberStyle = useMemo(() => {
-    const lines = code.split('\n').length
-    const lineNumberWidth = `${Math.max(1, lines).toString().length - 0.5}em`
-    return {
-      '--shiki-line-number-width': lineNumberWidth,
-    } as CSSProperties
-  }, [code])
+const HighlightedShikiCodeBlock = memo(
+  ({
+    code,
+    language,
+    theme,
+    lineNumberStyle,
+  }: {
+    code: string
+    language: string
+    theme: ShikiTheme
+    lineNumberStyle: CSSProperties
+  }) => {
+    const html = useShikiHtml(code, language, theme)
 
-  if (!html) {
+    if (!html) {
+      return (
+        <div className="shiki-code-wrapper shiki-code-fallback max-w-full min-w-0" style={lineNumberStyle}>
+          <pre>
+            <code>{code}</code>
+          </pre>
+        </div>
+      )
+    }
+
     return (
-      <div className="shiki-code-wrapper shiki-code-fallback max-w-full min-w-0 text-xs" style={lineNumberStyle}>
-        <pre>
-          <code>{code}</code>
+      <div
+        className="shiki-code-wrapper max-w-full min-w-0"
+        style={lineNumberStyle}
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki generates safe HTML from code tokenization
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    )
+  }
+)
+
+const StreamingPlainCodeBlock = memo(
+  ({ lines, language, lineNumberStyle }: { lines: string[]; language: string; lineNumberStyle: CSSProperties }) => {
+    useEffect(() => {
+      void preloadLanguage(language)
+    }, [language])
+
+    return (
+      <div className="shiki-code-wrapper shiki-code-fallback max-w-full min-w-0" style={lineNumberStyle}>
+        <pre className="shiki shiki-streaming-plain">
+          <code>
+            {lines.map((line, lineIndex) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: streaming lines only append, so existing indexes stay stable
+              <span className="line" key={lineIndex}>
+                {line}
+                {lineIndex < lines.length - 1 ? '\n' : null}
+              </span>
+            ))}
+          </code>
         </pre>
       </div>
     )
   }
+)
 
-  return (
-    <div
-      className="shiki-code-wrapper max-w-full min-w-0 text-xs"
-      style={lineNumberStyle}
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki generates safe HTML from code tokenization
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  )
-})
+const ShikiCodeBlock = memo(
+  ({
+    code,
+    language,
+    theme,
+    generating,
+  }: {
+    code: string
+    language: string
+    theme: ShikiTheme
+    generating?: boolean
+  }) => {
+    const lines = useMemo(() => code.split('\n'), [code])
+    const lineNumberStyle = useMemo(() => {
+      const lineNumberWidth = `${Math.max(1, lines.length).toString().length - 0.5}em`
+      return {
+        '--shiki-line-number-width': lineNumberWidth,
+      } as CSSProperties
+    }, [lines.length])
+
+    if (generating) {
+      return <StreamingPlainCodeBlock lines={lines} language={language} lineNumberStyle={lineNumberStyle} />
+    }
+
+    return <HighlightedShikiCodeBlock code={code} language={language} theme={theme} lineNumberStyle={lineNumberStyle} />
+  }
+)
 
 const BlockCode = memo(
   ({
@@ -683,7 +773,7 @@ const BlockCode = memo(
             needCollapse && collapsed && !generating ? 'h-[10rem] overflow-auto' : ''
           )}
         >
-          <ShikiCodeBlock code={children} language={language} theme={shikiTheme} />
+          <ShikiCodeBlock code={children} language={language} theme={shikiTheme} generating={generating} />
         </Stack>
       </Stack>
     )

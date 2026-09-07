@@ -1,3 +1,4 @@
+import { applyRegistryOverlays } from './legacy-overrides'
 import { MODELS_DEV_SNAPSHOT } from './snapshot.generated'
 import type { ModelMetadata, ModelRegistryData, ProviderModelRegistry } from './types'
 
@@ -12,7 +13,7 @@ let runtimeRegistry: ModelRegistryData | null = null
  * Called by the renderer layer after fetching fresh data from models.dev.
  * This allows the shared-layer enrichment to use the freshest available data.
  */
-export function setRuntimeRegistry(registry: ModelRegistryData): void {
+export function setRuntimeRegistry(registry: ModelRegistryData | null): void {
   runtimeRegistry = registry
 }
 
@@ -24,8 +25,7 @@ export function setRuntimeRegistry(registry: ModelRegistryData): void {
  * from platform-specific blob storage (file on desktop, IndexedDB on web/mobile).
  */
 function getRegistry(): ModelRegistryData {
-  if (runtimeRegistry) return runtimeRegistry
-  return MODELS_DEV_SNAPSHOT
+  return applyRegistryOverlays(runtimeRegistry ?? MODELS_DEV_SNAPSHOT)
 }
 
 /**

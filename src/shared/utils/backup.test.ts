@@ -46,6 +46,7 @@ function credentialSettings(): Settings {
           id: 'stdio',
           name: 'stdio',
           enabled: true,
+          protocolMode: 'auto',
           transport: { type: 'stdio', command: 'server', args: [], env: { TOKEN: 'stdio-token' } },
         },
         {
@@ -90,6 +91,7 @@ describe('cleanSettingsForBackup', () => {
           id: 'stdio',
           name: 'stdio',
           enabled: true,
+          protocolMode: 'auto',
           transport: { type: 'stdio', command: 'server', args: [] },
         },
         {

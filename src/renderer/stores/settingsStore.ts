@@ -1,193 +1,63 @@
-/** biome-ignore-all lint/suspicious/noExplicitAny: any */
-/** biome-ignore-all lint/suspicious/noFallthroughSwitchClause: migrate */
-
-import * as defaults from '@shared/defaults'
-import { type Settings, SettingsSchema } from '@shared/types'
+import { getDefaultDocumentParser } from '@chatbox/core/domain/settings'
+import {
+  type SettingsStoreState,
+  selectLanguage,
+  selectMcpSettings,
+  selectTheme,
+  useSettingsStore as useSharedSettingsStore,
+} from '@chatbox/react/stores'
 import type { DocumentParserConfig } from '@shared/types/settings'
-import deepmerge from 'deepmerge'
-import type { WritableDraft } from 'immer'
-import { createStore, useStore } from 'zustand'
-import { createJSONStorage, persist, subscribeWithSelector } from 'zustand/middleware'
-import { immer } from 'zustand/middleware/immer'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
-import storage from '@/storage'
+import { settingsService, settingsStore } from '@/settings-runtime'
 import { mergeProviderSettings, type ProviderSettingsUpdate } from './providerSettings'
 
 const log = getLogger('settings-store')
 
+export { settingsService, settingsStore }
+
 /**
- * Returns platform-specific default document parser configuration.
- * - Desktop: 'local' (has full Node.js environment for local parsing)
- * - Mobile/Web: 'chatbox-ai' (local-first parsing with Chatbox AI cloud fallback)
+ * Returns the same host-specific parser default used by Settings migrations.
  */
 export function getPlatformDefaultDocumentParser(): DocumentParserConfig {
-  return platform.type === 'desktop' ? { type: 'local' } : { type: 'chatbox-ai' }
+  return getDefaultDocumentParser({ isDesktopLike: platform.isDesktopLike })
 }
 
-type Action = {
-  setSettings: (nextStateOrUpdater: Partial<Settings> | ((state: WritableDraft<Settings>) => void)) => void
-  getSettings: () => Settings
-}
+let initSettingsStorePromise: Promise<SettingsStoreState> | null = null
 
-function mergeWithDefaultSettings(persisted: unknown): Settings {
-  const persistedSettings =
-    persisted && typeof persisted === 'object' && !Array.isArray(persisted) ? (persisted as Partial<Settings>) : {}
-  const mergedSettings = deepmerge<Settings, Partial<Settings>>(defaults.settings(), persistedSettings, {
-    arrayMerge: (_target, source) => source,
-  })
-  const parsedSettings = SettingsSchema.safeParse(mergedSettings)
-  return parsedSettings.success ? parsedSettings.data : mergedSettings
-}
-
-export const settingsStore = createStore<Settings & Action>()(
-  subscribeWithSelector(
-    persist(
-      immer((set, get) => ({
-        ...SettingsSchema.parse(defaults.settings()),
-        setSettings: (val) => set(val),
-        getSettings: () => {
-          const store = get()
-          return SettingsSchema.parse(store)
-        },
-      })),
-      {
-        name: 'settings',
-        storage: createJSONStorage(() => ({
-          getItem: async (key) => {
-            const res = await storage.getItem<(Settings & { __version?: number }) | null>(key, null)
-            if (res) {
-              const { __version = 0, ...state } = res
-              return JSON.stringify({
-                state,
-                version: __version,
-              })
-            }
-
-            return null
-          },
-          setItem: async (name, value) => {
-            const { state, version } = JSON.parse(value) as { state: Settings; version?: number }
-            await storage.setItem(name, { ...state, __version: version || 0 })
-          },
-          removeItem: async (name) => await storage.removeItem(name),
-        })),
-        version: 5,
-        partialize: (state) => {
-          try {
-            return SettingsSchema.parse(state)
-          } catch {
-            return state
-          }
-        },
-        merge: (persisted, current) => ({
-          ...current,
-          ...mergeWithDefaultSettings(persisted),
-        }),
-        migrate: (persisted: any, version) => {
-          // merge the newly added fields in defaults.settings() into the persisted values (deep merge).
-          const settings: any = deepmerge(defaults.settings(), persisted, {
-            arrayMerge: (_target, source) => source,
-          })
-
-          switch (version) {
-            case 0:
-              // fix typo
-              settings.shortcuts.inputBoxSendMessage =
-                settings.shortcuts.inpubBoxSendMessage || settings.shortcuts.inputBoxSendMessage
-              settings.shortcuts.inputBoxSendMessageWithoutResponse =
-                settings.shortcuts.inpubBoxSendMessageWithoutResponse ||
-                settings.shortcuts.inputBoxSendMessageWithoutResponse
-            case 1:
-              if (settings.licenseKey && !settings.licenseActivationMethod) {
-                settings.licenseActivationMethod = 'manual'
-                settings.memorizedManualLicenseKey = settings.licenseKey
-              }
-            case 2:
-              // Add skills defaults for existing users upgrading from before skills feature
-              if (!settings.skills) {
-                settings.skills = defaults.settings().skills
-              } else if (settings.skills.translationEnabled === undefined) {
-                settings.skills.translationEnabled = true
-              }
-            case 3:
-            case 4:
-              if (platform.type !== 'desktop' && settings.extension?.documentParser?.type === 'none') {
-                settings.extension.documentParser.type = 'chatbox-ai'
-              }
-            default:
-              break
-          }
-
-          // Apply platform-specific default for documentParser if not set
-          if (!settings.extension?.documentParser) {
-            settings.extension = {
-              ...settings.extension,
-              documentParser: getPlatformDefaultDocumentParser(),
-            }
-          }
-
-          return SettingsSchema.parse(settings)
-        },
-        skipHydration: true,
-      }
-    )
-  )
-)
-
-let _initSettingsStorePromise: Promise<Settings> | undefined
-export const initSettingsStore = async () => {
-  if (!_initSettingsStorePromise) {
-    _initSettingsStorePromise = new Promise<Settings>((resolve) => {
-      const unsub = settingsStore.persist.onFinishHydration((val) => {
-        const providers = val?.providers
+export function initSettingsStore() {
+  if (!initSettingsStorePromise) {
+    initSettingsStorePromise = settingsStore
+      .getState()
+      .hydrate()
+      .then(() => {
+        const state = settingsStore.getState()
+        const providers = state.providers
         const providersCount =
           providers && typeof providers === 'object' && !Array.isArray(providers) ? Object.keys(providers).length : 0
         if (providersCount === 0) {
-          log.info(`[CONFIG_DEBUG] onFinishHydration: providersCount=0`)
+          log.info('[CONFIG_DEBUG] onFinishHydration: providersCount=0')
         }
-        unsub()
-        resolve(val)
+        return state
       })
-      settingsStore.persist.rehydrate()
-    })
   }
-
-  return await _initSettingsStorePromise
+  return initSettingsStorePromise
 }
 
-settingsStore.subscribe((state, prevState) => {
-  // 如果快捷键配置发生变化，需要重新注册快捷键
-  if (state.shortcuts !== prevState.shortcuts) {
-    platform.ensureShortcutConfig(state.shortcuts)
-  }
-  // 如果代理配置发生变化，需要重新注册代理
-  if (state.proxy !== prevState.proxy) {
-    platform.ensureProxyConfig({ proxy: state.proxy })
-  }
-  // 如果开机自启动配置发生变化，需要重新设置开机自启动
-  if (Boolean(state.autoLaunch) !== Boolean(prevState.autoLaunch)) {
-    platform.ensureAutoLaunch(state.autoLaunch)
-  }
-})
-
-export function useSettingsStore<U>(selector: Parameters<typeof useStore<typeof settingsStore, U>>[1]) {
-  return useStore<typeof settingsStore, U>(settingsStore, selector)
+export function useSettingsStore<U>(selector: (state: SettingsStoreState) => U): U {
+  return useSharedSettingsStore(settingsStore, selector)
 }
 
-export const useLanguage = () => useSettingsStore((state) => state.language)
-export const useTheme = () => useSettingsStore((state) => state.theme)
-export const useMcpSettings = () => useSettingsStore((state) => state.mcp)
+export const useLanguage = () => useSettingsStore(selectLanguage)
+export const useTheme = () => useSettingsStore(selectTheme)
+export const useMcpSettings = () => useSettingsStore(selectMcpSettings)
 
-export const useProviderSettings = (providerId: string) => {
+export function useProviderSettings(providerId: string) {
   const providers = useSettingsStore((state) => state.providers)
-
   const providerSettings = providers?.[providerId]
 
-  const setProviderSettings = (val: ProviderSettingsUpdate) => {
-    settingsStore.setState((currentSettings) => {
-      return mergeProviderSettings(currentSettings, providerId, val)
-    })
+  const setProviderSettings = (value: ProviderSettingsUpdate) => {
+    settingsStore.setState((currentSettings) => mergeProviderSettings(currentSettings, providerId, value))
   }
 
   return {

@@ -1,24 +1,38 @@
 import type { ModelInterface } from '@shared/models/types'
+import type { SandboxSeedAttachment } from '@shared/sandbox/attachment-path'
 import type { SandboxProvider } from '@shared/sandbox-provider'
-import type { KnowledgeBase, Message, SessionSettings } from '@shared/types'
+import { supportsToolResultImages } from '@shared/tools/view-image'
+import type { KnowledgeBase, Message, SessionSettings, Settings } from '@shared/types'
+import type { MemoryScope } from '@shared/types/agent-persona'
+import { resolveCommandApprovalMode } from '@shared/types/command-execution'
 import type { UserExecApprovalSource } from '@shared/types/user-exec'
 import { getMessageText } from '@shared/utils/message'
-import { jsonSchema, type ToolSet } from 'ai'
+import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
 import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
+import { languageNameMap } from '@/i18n/locales'
 import { mcpController } from '@/packages/mcp/controller'
 import { generateCommandExplanation } from '@/packages/model-calls/command-explanation'
+import { buildAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
 import { buildChatboxCliToolSet } from '@/packages/model-calls/toolsets/chatbox-cli'
 import { buildCodeExecutionTools } from '@/packages/model-calls/toolsets/code-execution'
 import fileToolSet from '@/packages/model-calls/toolsets/file'
 import { buildFilesystemTools } from '@/packages/model-calls/toolsets/filesystem'
 import { getToolSet as getKBToolSet } from '@/packages/model-calls/toolsets/knowledge-base'
 import { asRecord, numberField, stringField, toTextModelOutput } from '@/packages/model-calls/toolsets/model-output'
+import { buildRunCommandTool } from '@/packages/model-calls/toolsets/run-command'
 import { remapPhantomHomePath } from '@/packages/model-calls/toolsets/sandbox-paths'
 import { getToolSet as getSessionAttachmentRagToolSet } from '@/packages/model-calls/toolsets/session-attachment-rag'
+import { buildViewImageToolSet, isViewImageAvailable } from '@/packages/model-calls/toolsets/view-image'
 import { getToolSetDescription, parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
+import { buildWorkspaceInstructions } from '@/packages/model-calls/workspace-instructions'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
-import { type ExplanationContext, requestUserExecApproval } from '@/packages/user-exec-approval'
+import {
+  type ExplanationContext,
+  requestUserExecApproval,
+  UserExecApprovalPausedError,
+} from '@/packages/user-exec-approval'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
+import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
 import { settingsStore } from '@/stores/settingsStore'
 
@@ -56,14 +70,43 @@ export interface BuildToolsOptions {
   codeExecution?: {
     sessionId: string
     provider: SandboxProvider
-    files: Array<{ storageKey: string; rawStorageKey?: string; name: string }>
+    files: SandboxSeedAttachment[]
   }
+  commandExecution?: {
+    sessionId: string
+    provider?: SandboxProvider
+  }
+  agentToolContractVersion?: 1 | 2
   onAgentModeActivated?: () => void
+  /**
+   * Settings snapshot from the generation request. Keeps tool registration and
+   * prompt assembly on the same view of memoryEnabled/language within one
+   * request; falls back to the live store for callers without one.
+   */
+  globalSettings?: Pick<Settings, 'memoryEnabled' | 'language'>
+  /**
+   * Frozen workspace-instructions text from the session's SessionPromptContextSnapshot.
+   * When set (agent mode), it is used verbatim instead of re-reading AGENTS.md
+   * from disk, keeping the system prompt prefix stable for provider caches.
+   */
+  workspaceInstructionsOverride?: string
+  /**
+   * Memory store the save/delete tools target. Copilot scope means the session's
+   * copilot has its own memory enabled, which also supersedes the global memory
+   * switch for tool registration. Defaults to the global store.
+   */
+  memoryScope?: MemoryScope
 }
 
 export interface BuildToolsResult {
   tools: ToolSet
   instructions: string
+  /**
+   * Step-message rewrite for protocols that cannot embed images in tool results:
+   * inserts view_image results as follow-up user messages with real image parts.
+   * Callers wire it into prepareStep's `messages` override.
+   */
+  prepareStepMessages?: (messages: ModelMessage[]) => Promise<ModelMessage[]>
 }
 
 /**
@@ -98,6 +141,30 @@ ${dirLine}
 ${grantedDirsBlock}`
 }
 
+function buildRunCommandFileProcessingInstruction(
+  commandPlatform: 'darwin' | 'linux' | 'win32',
+  workingDir: string | null,
+  userWorkingDirectories?: string[]
+): string {
+  const formatPath = (filePath: string) => filePath.replace(/\\/g, '/')
+  const directories = userWorkingDirectories?.length
+    ? `\nUser-selected working directories:\n${userWorkingDirectories.map((dir) => `- ${formatPath(dir)}`).join('\n')}`
+    : ''
+  const runtime =
+    commandPlatform === 'win32'
+      ? 'run_command executes PowerShell on the host under the session approval policy. Use PowerShell syntax and native Windows paths; Bash is unavailable.'
+      : 'run_command executes Bash in the file sandbox first. Use Bash syntax and request a host retry only after a real sandbox failure.'
+  return `
+## Working Directory & File Processing
+Sandbox working directory: ${workingDir ? formatPath(workingDir) : '(created when first needed)'}${directories}
+- ${runtime}
+- Commands start in the selected workdir; do not prepend cd or Set-Location.
+- Prefer write_file and edit_file for file changes. For reusable Node.js work, write a script file and run it with node through run_command.
+- Use read_file for sandbox files and explicitly provided absolute user paths. Use create_download to deliver generated files to the user.
+- Do not assume Python, extra packages, or package installation is available.
+`
+}
+
 function buildToolUseCommunicationInstruction(): string {
   return `
 ## Tool-use Communication
@@ -112,7 +179,11 @@ When you are about to call one or more tools, first include one short visible se
 function buildSkillToolsInstruction(
   enabledSkills: Array<{ name: string; description: string }>,
   agentFullAccess: boolean,
-  userExecWorkingDirectory?: string
+  userExecWorkingDirectory: string | undefined,
+  legacyCommandTools: boolean,
+  harmonyNodeExecution: boolean,
+  sandboxCodeExecutionFallback: boolean,
+  skillStagingDirectory: string | null
 ): string {
   let instruction = `
 ## Skills
@@ -131,6 +202,48 @@ Loading a skill activates agent mode.
     instruction += `
 No skills are currently enabled.
 `
+  }
+
+  if (harmonyNodeExecution) {
+    instruction += `
+### Running Code
+HarmonyOS currently supports sandboxed Node.js through code_execution. Use it for file processing and JavaScript tasks; Bash, PowerShell, and host command execution are unavailable.
+
+### Installing Skills
+Use code_execution to download and unpack skill files, ensure the directory contains a valid SKILL.md, then call install_skill.
+`
+    return instruction
+  }
+
+  if (sandboxCodeExecutionFallback) {
+    instruction += `
+### Running Code
+This platform supports sandboxed code_execution for file processing and scripts. Host command execution is unavailable.
+
+### Installing Skills
+Use code_execution to download and unpack skill files, ensure the directory contains a valid SKILL.md, then call install_skill.
+`
+    return instruction
+  }
+
+  if (!legacyCommandTools) {
+    const defaultWorkdir = userExecWorkingDirectory
+      ? `The default workdir is ${userExecWorkingDirectory.replace(/\\/g, '/')}.`
+      : ''
+    const fullAccessNotice = agentFullAccess
+      ? 'Full Access is enabled, so commands run without per-command approval.'
+      : ''
+    const stagingDirectory = skillStagingDirectory?.replace(/\\/g, '/')
+    instruction += `
+### Running Commands
+Use run_command for project commands and commands required by loaded skills. It runs sandbox-first where confinement is available and applies the session approval policy before host execution.
+${defaultWorkdir}
+${fullAccessNotice}
+
+### Installing Skills
+Use run_command with workdir set to ${stagingDirectory ?? 'the internal sandbox working directory shown above'} to download and unpack skill files. Keep the prepared skill directory beneath that sandbox root, ensure it contains a valid SKILL.md, then call install_skill with that path. User-granted working directories are not valid install_skill staging roots.
+`
+    return instruction
   }
 
   instruction += `
@@ -186,11 +299,13 @@ function formatUserExecOutput(output: unknown): string {
   const record = asRecord(output)
   const stdout = stringField(record, 'stdout') ?? ''
   const stderr = stringField(record, 'stderr') ?? ''
+  const outputFile = stringField(record, 'outputFile')
   const exitCode = numberField(record, 'exitCode')
   const sections = [`Exit code: ${exitCode ?? 'unknown'}`]
   if (stdout) sections.push(`Stdout:\n${stdout}`)
   if (stderr) sections.push(`Stderr:\n${stderr}`)
   if (!stdout && !stderr) sections.push('(no output)')
+  if (outputFile) sections.push(`Output capture: ${outputFile}`)
   return sections.join('\n\n')
 }
 
@@ -223,6 +338,9 @@ export async function buildToolsForSession(
   options: BuildToolsOptions
 ): Promise<BuildToolsResult> {
   const { webBrowsing, knowledgeBase, messages, agentMode, codeExecution } = options
+  const agentToolContractVersion = options.agentToolContractVersion ?? 1
+  const legacyCommandTools = agentToolContractVersion === 1
+  const commandApprovalMode = resolveCommandApprovalMode(options.sessionSettings ?? {})
 
   // Agent mode tools require model to support the 'agent' scope.
   // Models with weak function calling (e.g. DeepSeek V3/R1) return false here,
@@ -261,11 +379,23 @@ export async function buildToolsForSession(
     }
   }
 
+  const userWorkingDirectories = options.sessionSettings?.workingDirectories?.filter((dir) => dir.trim().length > 0)
   let instructions = includeAgentTools
     ? `## Context Management
 In long conversations, earlier tool call results may be automatically compressed or summarized to stay within the context window. When you receive important results from tool calls, always include the key findings and essential data in your text response — do not rely on being able to re-read previous tool outputs later.
 `
     : ''
+  if (includeAgentTools) {
+    instructions += options.workspaceInstructionsOverride ?? (await buildWorkspaceInstructions(userWorkingDirectories))
+    instructions += `
+## Git
+When you create a Git branch, prefix its name with \`chatbox/\` (for example \`chatbox/fix-login-retry\`).
+
+When you create a Git commit that includes code changes, append this exact trailer to the commit message:
+
+\`Co-authored-by: Chatbox <chatbox@chatboxai.com>\`
+`
+  }
   if (kbToolSet && kbSupported) {
     instructions += kbToolSet.description
   }
@@ -280,12 +410,30 @@ In long conversations, earlier tool call results may be automatically compressed
   }
 
   let codeExecToolSet: ReturnType<typeof buildCodeExecutionTools> | null = null
+  let sandboxWorkingDirectory: string | null = null
+  const commandPlatform =
+    includeAgentTools && (codeExecution || (!legacyCommandTools && options.commandExecution))
+      ? await platform.getPlatform()
+      : undefined
+  const commandRunnerAvailable =
+    commandPlatform === 'darwin' || commandPlatform === 'linux' || commandPlatform === 'win32'
+  const sandboxCodeExecutionFallback = !legacyCommandTools && !commandRunnerAvailable && codeExecution !== undefined
+  const harmonyNodeExecution = sandboxCodeExecutionFallback && commandPlatform === 'harmony'
   if (includeAgentTools && codeExecution) {
     codeExecToolSet = buildCodeExecutionTools(codeExecution)
-    const workingDir = await codeExecution.provider.resolveWorkingDirectory(codeExecution.sessionId).catch(() => null)
-    const userWorkingDirectories = options.sessionSettings?.workingDirectories?.filter((dir) => dir.trim().length > 0)
-    instructions += buildWorkingDirectoryInstruction(workingDir, userWorkingDirectories)
-    instructions += codeExecToolSet.description
+    sandboxWorkingDirectory = await codeExecution.provider
+      .resolveWorkingDirectory(codeExecution.sessionId)
+      .catch(() => null)
+    if (legacyCommandTools || sandboxCodeExecutionFallback) {
+      instructions += buildWorkingDirectoryInstruction(sandboxWorkingDirectory, userWorkingDirectories)
+      instructions += codeExecToolSet.description
+    } else if (commandRunnerAvailable) {
+      instructions += buildRunCommandFileProcessingInstruction(
+        commandPlatform,
+        sandboxWorkingDirectory,
+        userWorkingDirectories
+      )
+    }
   }
 
   let tools: ToolSet = {}
@@ -318,7 +466,77 @@ In long conversations, earlier tool call results may be automatically compressed
   }
 
   if (codeExecToolSet) {
-    tools = { ...tools, ...codeExecToolSet.tools }
+    if (legacyCommandTools || sandboxCodeExecutionFallback) {
+      tools = { ...tools, ...codeExecToolSet.tools }
+      const legacyCodeExecution = tools.code_execution
+      if (commandPlatform === 'win32' && commandApprovalMode !== 'full_access' && legacyCodeExecution?.execute) {
+        const executeLegacyCode = legacyCodeExecution.execute
+        tools.code_execution = {
+          ...legacyCodeExecution,
+          execute: async (input, toolOptions) => {
+            const alreadyApproved = (toolOptions as typeof toolOptions & { approved?: boolean }).approved === true
+            if (!alreadyApproved) {
+              const codeInput = input as { code: string; language?: string }
+              const language = codeInput.language ?? 'node'
+              throw new UserExecApprovalPausedError(
+                toolOptions.toolCallId,
+                `${language} (legacy code_execution):\n${codeInput.code}`
+              )
+            }
+            return await executeLegacyCode(input, toolOptions)
+          },
+        }
+      }
+    } else {
+      const nonCommandTools = { ...codeExecToolSet.tools }
+      delete nonCommandTools.code_execution
+      tools = { ...tools, ...nonCommandTools }
+    }
+  }
+
+  if (includeAgentTools && !legacyCommandTools && commandRunnerAvailable && options.commandExecution) {
+    const sessionSettings = options.sessionSettings
+    const recentUserMsgs = messages
+      .filter((message) => message.role === 'user')
+      .slice(-3)
+      .map((message) => getMessageText(message, true, false).slice(0, 500))
+    const userContext = recentUserMsgs.join('\n---\n')
+    const runCommand = buildRunCommandTool({
+      sessionId: options.commandExecution.sessionId,
+      platform: commandPlatform,
+      provider: options.commandExecution.provider,
+      ensureSandbox: codeExecToolSet?.ensureSandbox,
+      workingDirectories: userWorkingDirectories ?? [],
+      approvalMode: commandApprovalMode,
+      requestSmartApproval: (toolCallId, command, signal, workdir) => {
+        const explanationCtx: ExplanationContext | undefined = sessionSettings
+          ? {
+              userContext,
+              generateExplanation: (cmd, ctx, onStream, explanationSignal) =>
+                generateCommandExplanation(sessionSettings, cmd, ctx, onStream, explanationSignal),
+            }
+          : undefined
+        return requestUserExecApproval(toolCallId, command, explanationCtx, signal, workdir)
+      },
+      onUsed: options.onAgentModeActivated,
+    })
+    tools.run_command = runCommand.tool
+    instructions += runCommand.description
+  }
+
+  // Image viewing: agent mode + vision. prepareStepMessages bounds replay for every
+  // protocol; chat-completions style protocols also use it to inject real user image parts.
+  let prepareStepMessages: BuildToolsResult['prepareStepMessages']
+  const includeViewImageTool = includeAgentTools && model.isSupportVision() && isViewImageAvailable()
+  if (includeViewImageTool) {
+    const viewImageToolSet = buildViewImageToolSet({
+      sessionId: options.sessionId ?? codeExecution?.sessionId,
+      provider: codeExecution?.provider,
+      toolResultImages: supportsToolResultImages(model.apiStyle),
+    })
+    instructions += viewImageToolSet.description
+    tools = { ...tools, ...viewImageToolSet.tools }
+    prepareStepMessages = viewImageToolSet.injectImagesIntoStepMessages
   }
 
   if (includeAgentTools) {
@@ -326,7 +544,7 @@ In long conversations, earlier tool call results may be automatically compressed
       sessionId: codeExecution?.sessionId,
       provider: codeExecution?.provider,
       userWorkingDirectories: options.sessionSettings?.workingDirectories?.filter((dir) => dir.trim().length > 0),
-      fullAccess: options.sessionSettings?.agentFullAccess === true,
+      fullAccess: commandApprovalMode === 'full_access',
     })
     instructions += filesystemToolSet.description
     tools = { ...tools, ...filesystemToolSet.tools }
@@ -340,8 +558,12 @@ In long conversations, earlier tool call results may be automatically compressed
     const userExecWorkingDirectory = options.sessionSettings?.workingDirectories?.find((dir) => dir.trim().length > 0)
     instructions += buildSkillToolsInstruction(
       enabledSkills,
-      options.sessionSettings?.agentFullAccess === true,
-      userExecWorkingDirectory
+      commandApprovalMode === 'full_access',
+      userExecWorkingDirectory,
+      legacyCommandTools,
+      harmonyNodeExecution,
+      sandboxCodeExecutionFallback,
+      sandboxWorkingDirectory
     )
     tools.load_skill = buildLoadSkillTool(options)
     if (enabledSkills.some((skill) => skill.name === 'chatbox-product-info')) {
@@ -352,17 +574,39 @@ In long conversations, earlier tool call results may be automatically compressed
       instructions += chatboxCliToolSet.description
       tools = { ...tools, ...chatboxCliToolSet.tools }
     }
-    tools.user_exec = buildUserExecTool(options)
+    if (legacyCommandTools) tools.user_exec = buildUserExecTool(options)
     if (codeExecution) {
-      tools.install_skill = buildInstallSkillTool(options)
+      tools.install_skill = buildInstallSkillTool(
+        options,
+        legacyCommandTools || sandboxCodeExecutionFallback,
+        sandboxWorkingDirectory
+      )
     }
+  }
+
+  // Persistent memory: independent of agent mode (chat mode can save/recall too),
+  // gated on the memory switch that applies to this session — the copilot's own
+  // switch when its memory scope is active, the global switch otherwise. Writes
+  // persist immediately but the running session keeps its frozen persona
+  // snapshot, so they only affect future sessions. The 'agent' tool-use scope
+  // keeps weak function-calling models tool-free.
+  const globalSettingsForTools = options.globalSettings ?? settingsStore.getState().getSettings()
+  const memoryScope = options.memoryScope ?? { type: 'global' as const }
+  const memoryToolsEnabled = memoryScope.type === 'copilot' || globalSettingsForTools.memoryEnabled !== false
+  if (memoryToolsEnabled && modelSupportsAgentTools) {
+    const memoryToolSet = buildAgentMemoryTools({
+      languageName: languageNameMap[globalSettingsForTools.language],
+      scope: memoryScope,
+    })
+    instructions += memoryToolSet.description
+    tools = { ...tools, ...memoryToolSet.tools }
   }
 
   if (Object.keys(tools).length > 0) {
     instructions = buildToolUseCommunicationInstruction() + instructions
   }
 
-  return { tools, instructions }
+  return { tools, instructions, ...(prepareStepMessages ? { prepareStepMessages } : {}) }
 }
 
 function buildLoadSkillTool(options: BuildToolsOptions): ToolSet[string] {
@@ -412,12 +656,21 @@ function buildLoadSkillTool(options: BuildToolsOptions): ToolSet[string] {
   }
 }
 
-function buildInstallSkillTool(options: BuildToolsOptions): ToolSet[string] {
+function buildInstallSkillTool(
+  options: BuildToolsOptions,
+  legacyCommandTools: boolean,
+  skillStagingDirectory: string | null
+): ToolSet[string] {
+  const stagingRequirement =
+    !legacyCommandTools && skillStagingDirectory
+      ? ` Set run_command workdir to ${skillStagingDirectory.replace(/\\/g, '/')} and keep the prepared directory beneath it; user-granted working directories are not accepted.`
+      : ''
   return {
     description:
       'Install a skill from a prepared directory. ' +
-      'First use code_execution (sandbox) to download/unpack the skill files, ensure the directory ' +
+      `First use ${legacyCommandTools ? 'code_execution (sandbox)' : 'run_command'} to download/unpack the skill files, ensure the directory ` +
       'contains a valid SKILL.md with name and description fields, then call this tool. ' +
+      stagingRequirement +
       'The skill will be auto-enabled after installation.',
     inputSchema: jsonSchema({
       type: 'object',
@@ -483,7 +736,8 @@ function buildInstallSkillTool(options: BuildToolsOptions): ToolSet[string] {
 }
 
 function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
-  const agentFullAccess = options.sessionSettings?.agentFullAccess === true
+  const commandApprovalMode = resolveCommandApprovalMode(options.sessionSettings ?? {})
+  const agentFullAccess = commandApprovalMode === 'full_access'
   const userExecWorkingDirectory = options.sessionSettings?.workingDirectories?.find((dir) => dir.trim().length > 0)
   type UserExecResult = {
     success: boolean
@@ -497,12 +751,14 @@ function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
   return {
     description:
       "Execute a command in the user's real environment (not sandbox). " +
-      'RESTRICTED: Only use when a loaded skill explicitly requires running a command in the user environment. ' +
-      'Do NOT use for general tasks — use code_execution (sandbox) instead. ' +
+      "Use when the task requires the user's host environment, including when a loaded skill instructs you to run a host command; it is not limited to skill-driven tasks. " +
+      'Prefer code_execution (sandbox) for work that does not need the host environment. ' +
       'Runs PowerShell on Windows and Bash on macOS/Linux with full system access. ' +
       (agentFullAccess
         ? 'Full Access is enabled, so commands run without per-command approval.'
-        : 'Clearly safe commands may be approved automatically; other commands require user approval.'),
+        : commandApprovalMode === 'always_ask'
+          ? 'Every command requires user approval.'
+          : 'Clearly safe commands may be approved automatically; other commands require user approval.'),
     inputSchema: jsonSchema({
       type: 'object',
       properties: {
@@ -524,7 +780,8 @@ function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
         return existingExecution.promise
       }
 
-      const alreadyApproved = (toolOptions as typeof toolOptions & { approved?: boolean }).approved
+      const approvalContext = toolOptions as typeof toolOptions & { approved?: boolean; approvalWorkdir?: string }
+      const alreadyApproved = approvalContext.approved
       let hostExecutionStarted = false
       const execution = Promise.resolve().then(async (): Promise<UserExecResult> => {
         const recentUserMsgs = options.messages
@@ -543,10 +800,18 @@ function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
           : undefined
 
         let approvalSource: UserExecApprovalSource
-        if (alreadyApproved) {
+        if (alreadyApproved && approvalContext.approvalWorkdir === userExecWorkingDirectory) {
           approvalSource = 'user'
         } else if (agentFullAccess) {
           approvalSource = 'full_access'
+        } else if (commandApprovalMode === 'always_ask') {
+          throw new UserExecApprovalPausedError(
+            toolOptions.toolCallId,
+            execInput.command,
+            undefined,
+            undefined,
+            userExecWorkingDirectory
+          )
         } else {
           approvalSource = await requestUserExecApproval(
             toolOptions.toolCallId,
@@ -591,6 +856,7 @@ function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
           exitCode: result.exitCode,
           stdout: result.stdout,
           stderr: result.stderr,
+          ...(result.outputFile ? { outputFile: result.outputFile } : {}),
           ...(result.cancelled ? { cancelled: true } : {}),
         }
       })

@@ -11,12 +11,8 @@ import { appendFileSync } from 'node:fs'
 import { type ToolSet, tool } from 'ai'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
+import { createInitialState, processStreamChunk, type StreamProcessorState } from '@chatbox/core/generation'
 import TestPlatform from '../../../src/renderer/platform/test_platform'
-import {
-  createInitialState,
-  processStreamChunk,
-  type StreamProcessorState,
-} from '../../../src/renderer/stores/session/stream-chunk-processor'
 import { settings as getDefaultSettings, newConfigs, SystemProviders } from '../../../src/shared/defaults'
 import type AbstractAISDKModel from '../../../src/shared/models/abstract-ai-sdk'
 import type { ModelStreamPart } from '../../../src/shared/models/types'

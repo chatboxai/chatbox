@@ -12,8 +12,10 @@ import {
   fixMessageRoleSequence,
   getMessageText,
   isEmptyMessage,
+  isStaleGeneratingMessage,
   mergeMessages,
   migrateMessage,
+  orderSteeredMessagesForModel,
   sequenceMessages,
 } from './message'
 import { countWord } from './word_count'
@@ -317,13 +319,20 @@ describe('cloneMessage', () => {
     })
 
     const cloned = cloneMessage(original)
+    const clonedFile = cloned.files?.[0]
+    const clonedLink = cloned.links?.[0]
+    const originalFile = original.files?.[0]
+    const originalLink = original.links?.[0]
+    if (!clonedFile || !clonedLink || !originalFile || !originalLink) {
+      throw new Error('Expected cloned message attachments')
+    }
     cloned.contentParts[0] = { type: 'text', text: 'changed' }
-    cloned.files![0].name = 'b.txt'
-    cloned.links![0].title = 'Changed'
+    clonedFile.name = 'b.txt'
+    clonedLink.title = 'Changed'
 
     expect(original.contentParts[0]).toEqual({ type: 'text', text: 'source' })
-    expect(original.files![0].name).toBe('a.txt')
-    expect(original.links![0].title).toBe('Example')
+    expect(originalFile.name).toBe('a.txt')
+    expect(originalLink.title).toBe('Example')
   })
 
   it('deep clones nested fields', () => {
@@ -637,6 +646,155 @@ describe('sequenceMessages', () => {
     expect(result[2].contentParts).toEqual([{ type: 'text', text: 'u3' }])
   })
 
+  it('restores steered users before the assistant they affected instead of replaying them', () => {
+    // Shape produced by steering: user → assistant(tool calls) → steered user → queued user
+    const toolCallPart = {
+      type: 'tool-call' as const,
+      state: 'result' as const,
+      toolCallId: 'tool-1',
+      toolName: 'search',
+      args: {},
+      result: { ok: true },
+    }
+    const input = [
+      createMessage({ id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'do the task' }] }),
+      createMessage({ id: 'a1', role: 'assistant', contentParts: [toolCallPart, { type: 'text', text: 'done' }] }),
+      createMessage({
+        id: 'steered-1',
+        role: 'user',
+        steered: true,
+        contentParts: [{ type: 'text', text: 'also check X' }],
+      }),
+      createMessage({
+        id: 'steered-2',
+        role: 'user',
+        steered: true,
+        contentParts: [{ type: 'text', text: 'then check Z' }],
+      }),
+      createMessage({ id: 'queued', role: 'user', contentParts: [{ type: 'text', text: 'and Y' }] }),
+    ]
+
+    const result = sequenceMessages(input)
+
+    expect(result.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+    expect(result[0].contentParts).toEqual([
+      { type: 'text', text: 'do the task' },
+      { type: 'text', text: 'also check X' },
+      { type: 'text', text: 'then check Z' },
+    ])
+    expect(result[1].contentParts).toEqual([toolCallPart, { type: 'text', text: 'done' }])
+    expect(result[2].contentParts).toEqual([{ type: 'text', text: 'and Y' }])
+  })
+
+  it('keeps true-order steering records unchanged (finalized segment before steered user)', () => {
+    // Shape produced by split-at-steer persistence: the interrupted segment is
+    // finalized with finishReason 'steered', the steered user follows it, and
+    // the continuation streams below — storage order is already causal order.
+    const toolCallPart = {
+      type: 'tool-call' as const,
+      state: 'result' as const,
+      toolCallId: 'tool-1',
+      toolName: 'search',
+      args: {},
+      result: 'done',
+    }
+    const input = [
+      createMessage({ id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'start' }] }),
+      createMessage({
+        id: 'a1',
+        role: 'assistant',
+        finishReason: 'steered',
+        contentParts: [{ type: 'text', text: 'before' }, toolCallPart],
+      }),
+      createMessage({
+        id: 'steered',
+        role: 'user',
+        steered: true,
+        contentParts: [{ type: 'text', text: 'change direction' }],
+      }),
+      createMessage({ id: 'a2', role: 'assistant', contentParts: [{ type: 'text', text: 'after' }] }),
+    ]
+
+    const result = orderSteeredMessagesForModel(input)
+
+    expect(result.map((message) => message.id)).toEqual(['u1', 'a1', 'steered', 'a2'])
+    expect(orderSteeredMessagesForModel(result)).toEqual(result)
+
+    const requestSequence = sequenceMessages(input)
+    expect(requestSequence.map((message) => message.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(requestSequence[1].contentParts).toEqual([{ type: 'text', text: 'before' }, toolCallPart])
+    expect(requestSequence[2].id).toBe('steered')
+    expect(requestSequence[3].contentParts).toEqual([{ type: 'text', text: 'after' }])
+  })
+
+  it('reorders only legacy steering records that trail a normally finished assistant', () => {
+    const input = [
+      createMessage({
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [textPart('legacy reply')],
+      }),
+      createMessage({
+        id: 'legacy-steer',
+        role: 'user',
+        steered: true,
+        contentParts: [textPart('legacy')],
+      }),
+      createMessage({
+        id: 'a2',
+        role: 'assistant',
+        finishReason: 'steered',
+        contentParts: [textPart('segment')],
+      }),
+      createMessage({
+        id: 'true-order-steer',
+        role: 'user',
+        steered: true,
+        contentParts: [textPart('true order')],
+      }),
+      createMessage({ id: 'a3', role: 'assistant', contentParts: [textPart('continuation')] }),
+    ]
+
+    const result = orderSteeredMessagesForModel(input)
+
+    // The legacy record (stored after its reply) moves before it; the
+    // true-order record after a 'steered'-finalized segment stays in place.
+    expect(result.map((message) => message.id)).toEqual(['legacy-steer', 'a1', 'a2', 'true-order-steer', 'a3'])
+    expect(orderSteeredMessagesForModel(result)).toEqual(result)
+  })
+
+  it('restores legacy steering order through an inserted compaction summary', () => {
+    // A compaction summary is persisted right after its boundary message; when
+    // the boundary is the assistant a legacy steered user interrupted, the
+    // summary lands between them. The causal restore must look through it,
+    // otherwise the steered user stays after the boundary and shows up in both
+    // the summary and the post-boundary context.
+    const input = [
+      createMessage({ id: 'u1', role: 'user', contentParts: [textPart('question')] }),
+      createMessage({ id: 'a1', role: 'assistant', contentParts: [textPart('interrupted reply')] }),
+      createMessage({ id: 'summary', role: 'assistant', isSummary: true, contentParts: [textPart('summary')] }),
+      createMessage({ id: 'legacy-steer', role: 'user', steered: true, contentParts: [textPart('steer')] }),
+    ]
+
+    const result = orderSteeredMessagesForModel(input)
+
+    expect(result.map((message) => message.id)).toEqual(['u1', 'legacy-steer', 'a1', 'summary'])
+    expect(orderSteeredMessagesForModel(result)).toEqual(result)
+  })
+
+  it('leaves a steered user alone when only a summary precedes it', () => {
+    // Post-compaction context shape: [summary, steered, ...]. Nothing to
+    // restore — the interrupted assistant is already inside the summary.
+    const input = [
+      createMessage({ id: 'summary', role: 'assistant', isSummary: true, contentParts: [textPart('summary')] }),
+      createMessage({ id: 'steer', role: 'user', steered: true, contentParts: [textPart('steer')] }),
+    ]
+
+    const result = orderSteeredMessagesForModel(input)
+
+    expect(result.map((message) => message.id)).toEqual(['summary', 'steer'])
+  })
+
   it('quotes first assistant message into first user message', () => {
     const input = [
       createMessage({ id: 'a1', role: 'assistant', contentParts: [{ type: 'text', text: 'line1\nline2' }] }),
@@ -841,5 +999,21 @@ describe('finalizeStaleGeneratingMessage', () => {
     })
 
     expect(finalizeStaleGeneratingMessage(message, bootTime)).toBe(message)
+  })
+})
+
+describe('isStaleGeneratingMessage', () => {
+  const bootTime = 1_000_000
+
+  it('identifies generating messages persisted before boot or without a timestamp', () => {
+    expect(isStaleGeneratingMessage(createMessage({ generating: true, timestamp: bootTime - 1 }), bootTime)).toBe(true)
+    expect(isStaleGeneratingMessage(createMessage({ generating: true, timestamp: undefined }), bootTime)).toBe(true)
+  })
+
+  it('ignores current-process and completed messages', () => {
+    expect(isStaleGeneratingMessage(createMessage({ generating: true, timestamp: bootTime }), bootTime)).toBe(false)
+    expect(isStaleGeneratingMessage(createMessage({ generating: false, timestamp: bootTime - 1 }), bootTime)).toBe(
+      false
+    )
   })
 })

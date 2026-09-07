@@ -16,7 +16,12 @@ import {
   prepareSessionForBackup,
   type ResourceReference,
 } from './resources'
-import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
+import {
+  AGENT_PERSONA_BACKUP_KEYS,
+  BackupStorageKey,
+  backupSessionStorageKey,
+  COPILOT_BACKUP_KEYS,
+} from './storage-keys'
 import {
   BACKUP_FORMAT,
   BACKUP_FORMAT_VERSION,
@@ -223,19 +228,34 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
       }
     }
 
-    if (options.exportItems.includes('conversations')) {
-      const sessionSettings: Record<string, unknown> = {}
-      for (const key of [BackupStorageKey.ChatSessionSettings, BackupStorageKey.PictureSessionSettings]) {
+    // The session-settings entry is a generic storage key-value map. It also
+    // carries the agent persona keys (exported with 'setting'): older importers
+    // read the map through a fixed key allowlist and ignore unknown keys, so no
+    // new archive entry or format bump is needed.
+    const keyValueEntries: Record<string, unknown> = {}
+    const collectKeyValueEntries = async (keys: readonly string[]) => {
+      for (const key of keys) {
         if (!allStorageKeys.includes(key)) continue
         const value = await options.storage.getItem<unknown>(key, null)
-        if (value !== null) sessionSettings[key] = value
+        if (value !== null) keyValueEntries[key] = value
       }
-      if (Object.keys(sessionSettings).length > 0) {
-        const { archive, descriptor } = await jsonEntry(BACKUP_SESSION_SETTINGS_PATH, sessionSettings)
-        data.sessionSettings = descriptor
-        yield archive
-      }
+    }
+    if (options.exportItems.includes('conversations')) {
+      await collectKeyValueEntries([BackupStorageKey.ChatSessionSettings, BackupStorageKey.PictureSessionSettings])
+    }
+    if (options.exportItems.includes('setting')) {
+      await collectKeyValueEntries(AGENT_PERSONA_BACKUP_KEYS)
+    }
+    if (options.exportItems.includes('copilot')) {
+      await collectKeyValueEntries(COPILOT_BACKUP_KEYS)
+    }
+    if (Object.keys(keyValueEntries).length > 0) {
+      const { archive, descriptor } = await jsonEntry(BACKUP_SESSION_SETTINGS_PATH, keyValueEntries)
+      data.sessionSettings = descriptor
+      yield archive
+    }
 
+    if (options.exportItems.includes('conversations')) {
       const metaStorage = await options.metaStorage
       const allMeta = await metaStorage.getAllIncludingHidden()
       const metaById = new Map(allMeta.map((meta) => [meta.id, meta]))

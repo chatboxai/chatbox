@@ -1,5 +1,5 @@
 import type { Session } from '@shared/types'
-import { getMessageText } from '@shared/utils/message'
+import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import {
   buildAttachmentWrapperPrefix,
@@ -7,9 +7,15 @@ import {
   PREVIEW_LINES,
 } from '@/packages/context-management/attachment-payload'
 import storage from '@/storage'
-import * as chatStore from '@/stores/chatStore'
 import { computationQueue } from './computation-queue'
-import { estimateTokens } from './tokenizer'
+import {
+  estimateDraftTokensImmediately,
+  getDraftTokenizationText,
+  getTokenizationTextDigest,
+  shouldTokenizeDraftOffMainThread,
+} from './draft-tokenization'
+import { tokenizeDraftOffMainThread } from './draft-tokenizer-worker-client'
+import { estimateTokensForTokenizerType } from './tokenizer'
 import type { ComputationTask, TaskResult, TokenizerType } from './types'
 
 const log = getLogger('token-estimation:executor')
@@ -60,10 +66,15 @@ async function executeMessageTextTask(task: ComputationTask): Promise<TaskResult
     return { success: false, error: 'message_not_found', silent: true }
   }
 
-  const text = getMessageText(message, true, true)
-  const tokens = estimateTokens(text, getTokenModel(tokenizerType))
+  const text = getDraftTokenizationText(message)
+  const textDigest = getTokenizationTextDigest(text)
+  if (task.textDigest && task.textDigest !== textDigest) {
+    log.debug('Message text task source changed before execution', { taskId: task.id, messageId })
+    return { success: false, error: 'stale_message_text', silent: true }
+  }
+  const { tokens, approximate } = await tokenizeMessageText(text, tokenizerType)
 
-  log.debug('Message text task completed', { taskId: task.id, tokens })
+  log.debug('Message text task completed', { taskId: task.id, tokens, approximate })
 
   return {
     success: true,
@@ -73,8 +84,41 @@ async function executeMessageTextTask(task: ComputationTask): Promise<TaskResult
       messageId,
       tokenizerType,
       tokens,
+      // The result crosses the worker and the persister throttle before it is
+      // applied; the digest lets the persister drop it if the message text
+      // changed in that window.
+      textDigest,
+      approximate,
       calculatedAt: Date.now(),
     },
+  }
+}
+
+/**
+ * Queue tasks execute on the renderer thread, so text long enough for the
+ * draft worker encodes there too — a full synchronous encode of it would be
+ * the same stall the draft path avoids. Low priority keeps a batch of these
+ * behind any interactive draft request. When the worker cannot deliver
+ * (unavailable runtime, failure, timeout), the bounded sampling estimate is
+ * returned marked approximate: it is persisted as the best available count,
+ * shown with the approximate marker, and re-attempted within the bounded
+ * per-run budget tracked in `exact-retry`.
+ */
+async function tokenizeMessageText(
+  text: string,
+  tokenizerType: TokenizerType
+): Promise<{ tokens: number; approximate: boolean }> {
+  if (!shouldTokenizeDraftOffMainThread(text)) {
+    return { tokens: estimateTokensForTokenizerType(text, tokenizerType), approximate: false }
+  }
+  try {
+    const tokens = await tokenizeDraftOffMainThread(text, tokenizerType, new AbortController().signal, {
+      lowPriority: true,
+    })
+    return { tokens, approximate: false }
+  } catch (error) {
+    log.debug('Draft tokenizer worker unavailable for message text; keeping the bounded estimate', { error })
+    return { tokens: estimateDraftTokensImmediately(text, tokenizerType), approximate: true }
   }
 }
 
@@ -192,9 +236,8 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
     fileKey: contentMode === 'preview' ? fileKey : undefined,
   })
 
-  const model = getTokenModel(tokenizerType)
-  const wrapperTokens = estimateTokens(wrapperPrefix + wrapperSuffix, model)
-  const contentTokens = estimateTokens(tokenContent, model)
+  const wrapperTokens = estimateTokensForTokenizerType(wrapperPrefix + wrapperSuffix, tokenizerType)
+  const contentTokens = estimateTokensForTokenizerType(tokenContent, tokenizerType)
   const tokens = wrapperTokens + contentTokens
 
   log.debug('Attachment task completed', { taskId: task.id, tokens, lineCount, byteLength })
@@ -217,17 +260,10 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
   }
 }
 
-function getTokenModel(tokenizerType: TokenizerType): { provider: string; modelId: string } | undefined {
-  if (tokenizerType === 'deepseek') {
-    return { provider: 'deepseek', modelId: 'deepseek-chat' }
-  }
-  return undefined
-}
-
 type TokenEstimationSession = Pick<Session, 'messages' | 'threads'>
 
 async function getSessionForTokenEstimation(sessionId: string): Promise<TokenEstimationSession | null> {
-  return await chatStore.getSession(sessionId)
+  return await rendererApplication.sessionQueryBridge.getSession(sessionId)
 }
 
 export function initializeExecutor(): void {

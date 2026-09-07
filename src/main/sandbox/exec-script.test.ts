@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { describe, expect, test } from 'vitest'
 import { shellQuote } from '../../shared/utils/shell'
-import { buildSandboxStdinScript, stripCodesignNoise } from './exec-script'
+import { buildPowerShellStdinScript, buildSandboxStdinScript, stripCodesignNoise } from './exec-script'
 
 describe('stripCodesignNoise', () => {
   test('removes the Electron code-signing warning while preserving user stderr', () => {
@@ -30,14 +30,14 @@ describe('buildSandboxStdinScript', () => {
     const script = buildSandboxStdinScript(code, 'powershell', 'unused', false, true)
     expect(script).toContain('[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)')
     expect(script).toContain('[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)')
-    expect(script.endsWith(code)).toBe(true)
+    expect(script.endsWith(`${code}\n`)).toBe(true)
   })
 
   test('bash language prepends a node() shim and executes the parsed program with stdin closed', () => {
     const nodePath = '/Applications/My App/electron'
     const script = buildSandboxStdinScript('node -e "1"', 'bash', nodePath, true)
     expect(script).toBe(
-      `node() { ELECTRON_RUN_AS_NODE=1 ${shellQuote(nodePath)} "$@"; }\n{\n:\nnode -e "1"\n\n} </dev/null`
+      `node() { ELECTRON_RUN_AS_NODE=1 ${shellQuote(nodePath)} "$@"; }\nset -o pipefail\n{\n:\nnode -e "1"\n\n} </dev/null`
     )
     // The bundled path must be shell-quoted so paths with spaces still resolve.
     expect(script).toContain(shellQuote(nodePath))
@@ -49,7 +49,7 @@ describe('buildSandboxStdinScript', () => {
     const script = buildSandboxStdinScript('node -e "1"', 'bash', 'C:\\Program Files\\Chatbox.exe', false)
     expect(script).not.toContain('node()')
     expect(script).not.toContain('Chatbox.exe')
-    expect(script).toBe('{\n:\nnode -e "1"\n\n} </dev/null')
+    expect(script).toBe('set -o pipefail\n{\n:\nnode -e "1"\n\n} </dev/null')
   })
 
   test.skipIf(process.platform === 'win32')('converts native Windows paths passed to the Bash cd builtin', () => {
@@ -84,6 +84,12 @@ describe('buildSandboxStdinScript', () => {
     expect(result.status).toBe(7)
   })
 
+  test.skipIf(process.platform === 'win32')('preserves a failed pipeline command exit status', () => {
+    const script = buildSandboxStdinScript('bash -c "exit 7" | tail -1', 'bash', process.execPath, false)
+    const result = spawnSync('bash', [], { input: script, encoding: 'utf8' })
+    expect(result.status).toBe(7)
+  })
+
   test.skipIf(process.platform === 'win32')('preserves a trailing backslash at the end of the program', () => {
     const script = buildSandboxStdinScript('printf x \\', 'bash', process.execPath, false)
     const result = spawnSync('bash', [], { input: script, encoding: 'utf8' })
@@ -99,5 +105,35 @@ describe('buildSandboxStdinScript', () => {
     expect(result.status).toBe(0)
     expect(result.stdout).toBe('after\n')
     expect(result.stderr).toBe('')
+  })
+})
+
+describe('buildPowerShellStdinScript', () => {
+  test('uses real newline separators and terminates the complete stdin payload', () => {
+    const code = "Write-Output 'PS_STDOUT_PROBE'"
+    const script = buildPowerShellStdinScript(code)
+
+    expect(script).toBe(
+      [
+        '[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)',
+        '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)',
+        '$OutputEncoding = [Console]::OutputEncoding',
+        code,
+        '',
+      ].join('\n')
+    )
+    expect(script.charCodeAt(script.length - 1)).toBe(10)
+  })
+
+  test('can expose the bundled Electron runtime as node', () => {
+    const script = buildPowerShellStdinScript('node script.mjs', "C:\\Program Files\\Chatbox's\\Chatbox.exe")
+
+    expect(script).toContain('function node {')
+    expect(script).toContain("$env:ELECTRON_RUN_AS_NODE = '1'")
+    expect(script).toContain("& 'C:\\Program Files\\Chatbox''s\\Chatbox.exe' @args")
+    expect(script).toContain('$chatboxNodeExitCode = $LASTEXITCODE')
+    expect(script).toContain('$global:LASTEXITCODE = $chatboxNodeExitCode')
+    expect(script).toContain('}\n\nnode script.mjs\n')
+    expect(script.endsWith('node script.mjs\n')).toBe(true)
   })
 })

@@ -295,10 +295,17 @@ vi.mock('../platform/storages', () => ({
   },
 }))
 
-vi.mock('../../shared/defaults', () => ({
-  settings: vi.fn(() => ({})),
-  SystemProviders: vi.fn(() => []),
-}))
+// Keep the real settings() defaults: settingsStore (pulled in transitively via
+// platform → remote → vibedrop) parses them with SettingsSchema at module load,
+// and an empty object fails validation. Only SystemProviders stays stubbed so
+// provider migrations run against a deterministic empty list.
+vi.mock('../../shared/defaults', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../shared/defaults')>()
+  return {
+    ...original,
+    SystemProviders: vi.fn(() => []),
+  }
+})
 
 vi.mock('../lib/utils', () => ({
   getLogger: () => ({

@@ -1,6 +1,6 @@
 # 会话管理系统（Session Management）
 
-> Last updated: 2026-02
+> Last updated: 2026-07
 
 本文档描述 Chatbox 的会话管理系统设计，涵盖数据模型、模块拆分、新会话机制、线程历史、消息分叉等核心功能。聚焦于**产品设计与架构决策**，具体实现请参阅源码 `src/renderer/stores/session/`。
 
@@ -41,6 +41,58 @@ Chatbox 的会话系统围绕四个核心实体构建：
 ### Fork（分叉）
 
 分叉是消息级别的分支机制。当用户对某条消息重新生成回复或手动创建分支时，系统会在该消息位置创建一个分叉点，存储多个可选的后续消息。通过 `messageForksHash` 索引管理，用户可以在不同分支之间切换浏览。
+
+## Session 持久化与 React read model
+
+Session 生命周期已经拆成无 React 的 Application 层、宿主 Adapter、React Query bindings 和
+Renderer Presentation：
+
+```text
+现有组件 / stores/session/*
+          │
+          ▼
+rendererApplication（组合根）/ stores/session/* 域模块
+          │
+          ├──────────────► SessionService ──► SessionWriteCoordinator
+          │                        │                    │
+          │                        ▼                    ▼
+          │                Session application events  CurrentSessionRepository
+          │                        │                    │
+          ▼                        ▼                    ▼
+共享 hooks ◄── SessionQueryBridge / Query definitions  当前 storage + Session meta
+                                   │
+                                   ▼
+                         Renderer Presentation effects
+```
+
+| 层 | 路径 | 职责 |
+|----|------|------|
+| Application | `packages/chatbox-core/src/application/session/` | Session 创建、更新、归档、恢复、删除、事件和串行写入 |
+| Adapter | `src/renderer/adapters/CurrentSessionRepository.ts` | 沿用当前 storage key、migration 和 Session meta 实现 |
+| React bindings | `packages/chatbox-react/src/query/` | Query keys/options/hooks、分页 read model 和应用事件投影 |
+| Presentation | `src/renderer/presentation/session/` | 删除确认、滚动缓存、UI/Jotai 状态和宿主资源清理 |
+| Composition | `src/renderer/app/renderer-application.ts`、`session-bootstrap.ts` | 组装应用图（`rendererApplication`）并在 Renderer 启动时注册 Presentation effects |
+| Session 域模块 | `src/renderer/stores/session/`（crud / messages / session-settings 等） | 调用方直接 import 域模块或 `rendererApplication`（chatStore 兼容 facade 已删除） |
+
+### 写入一致性
+
+`SessionWriteCoordinator` 按 Session id 串行执行 read-modify-write。当前 Renderer 为首次写入注入
+React Query-backed reader，因此流式生成期间只存在于 cache 的新消息不会被随后的元数据写入覆盖。
+完整 Session 写入成功后才更新协调器内存状态，再更新 Session meta。
+
+`SessionService` 不 import QueryClient、React、Modal、Router 或组件。它在持久化操作完成后发布精确
+事件；`SessionQueryBridge` 使用传入的 QueryClient 和 `setQueryData` 更新 read model。批量删除会在
+storage/meta 操作完成后重新读取第一页，避免仅过滤已加载 pages 而留下错误的 `total` 或
+`nextCursor`。
+
+### 删除副作用
+
+删除确认保留在 `session-deletion-confirmation.ts`。SessionService 发布 `session-will-delete` 后，
+Renderer effects 先清理 Session attachment RAG；持久化删除完成后再通过 `session-deleted` 清理
+Web browsing、知识库、Agent Mode、Jotai atom、滚动位置和 Sandbox artifacts。
+
+`session-bootstrap.ts` 由 Renderer 入口初始化，使 session 数据依赖链不再反向 import
+`MessageList`。
 
 ---
 
@@ -160,7 +212,7 @@ Chatbox 的会话系统围绕四个核心实体构建：
 - **上下文构建**（`genMessageContext`）：收集当前消息、线程历史、系统提示词、知识库检索结果等，构建发送给模型的完整上下文。
 - **流式生成**（`generate`）：调用 AI 模型生成回复，支持流式响应、工具调用、图片生成等多种模式。
 - **继续生成**（`generateMore`）：在当前消息后继续生成新回复。
-- **分叉生成**（`generateMoreInNewFork` / `regenerateInNewFork`）：创建新分支后在分支中生成，保留原始回复。
+- **分叉生成**（`regenerateInNewFork` / `saveAndResendMessage`）：以前驱消息为 pivot 把旧回复存入分支后生成；编辑重发（Save & Resend）会把原始提问连同旧回复一起留在分支里，编辑后的内容以新消息进入活跃路径。
 
 ---
 

@@ -19,12 +19,13 @@ const log = getLogger('token-estimation:queue')
 
 /**
  * Generate a unique task ID for deduplication
- * - Message text: `msg:{sessionId}:{messageId}:{tokenizerType}`
+ * - Message text: `msg:{sessionId}:{messageId}:{tokenizerType}:{textDigest}:{retryAttempt}`
  * - Attachment: `att:{sessionId}:{messageId}:{attachmentId}:{tokenizerType}:{contentMode}`
  */
 export function generateTaskId(task: Omit<ComputationTask, 'id' | 'createdAt'>): string {
   if (task.type === 'message-text') {
-    return `msg:${task.sessionId}:${task.messageId}:${task.tokenizerType}`
+    const sourceSuffix = task.textDigest ? `:${task.textDigest}:${task.retryAttempt ?? 0}` : ''
+    return `msg:${task.sessionId}:${task.messageId}:${task.tokenizerType}${sourceSuffix}`
   }
   return `att:${task.sessionId}:${task.messageId}:${task.attachmentId}:${task.tokenizerType}:${task.contentMode}`
 }
@@ -267,6 +268,20 @@ export class ComputationQueue {
       }
     }
     return { pending, running }
+  }
+
+  /**
+   * Get distinct message IDs with pending or running tasks for a session.
+   */
+  getUnfinishedMessageIdsForSession(sessionId: string): Set<string> {
+    const messageIds = new Set<string>()
+    for (const task of this.state.pending) {
+      if (task.sessionId === sessionId) messageIds.add(task.messageId)
+    }
+    for (const task of this.state.running.values()) {
+      if (task.sessionId === sessionId) messageIds.add(task.messageId)
+    }
+    return messageIds
   }
 
   /**

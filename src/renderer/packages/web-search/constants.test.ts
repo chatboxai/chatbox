@@ -4,7 +4,7 @@ import { WEB_SEARCH_PROVIDERS } from './constants'
 describe('WEB_SEARCH_PROVIDERS', () => {
   it('contains all expected provider values', () => {
     const values = WEB_SEARCH_PROVIDERS.map((p) => p.value)
-    expect(values).toEqual(['build-in', 'bing', 'tavily', 'bocha', 'querit'])
+    expect(values).toEqual(['build-in', 'bing', 'tavily', 'bocha', 'querit', 'searxng'])
   })
 
   it('each provider has a non-empty label', () => {

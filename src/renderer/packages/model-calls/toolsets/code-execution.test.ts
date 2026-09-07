@@ -1,5 +1,6 @@
 // @ts-nocheck — test file with heavily mocked types
 
+import { sandboxAttachmentParsedRelPath, sandboxAttachmentRelPath } from '@shared/sandbox/attachment-path'
 import { SANDBOX_EXEC_ERROR_CODES } from '@shared/sandbox-provider'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -412,6 +413,63 @@ describe('buildCodeExecutionTools', () => {
       type: 'text',
       value: 'Exit code: 127\n\nError code: BASH_NOT_AVAILABLE\n\nStderr:\nbash is not available',
     })
+  })
+
+  test('seeds attachments in one batch when the provider supports it', async () => {
+    const seedBlobsIn = vi.fn().mockResolvedValue({
+      success: true,
+      results: [
+        { targetFilename: sandboxAttachmentRelPath('report.html', 'raw-1'), success: true, skipped: false },
+        { targetFilename: sandboxAttachmentRelPath('report.html', 'raw-2'), success: true, skipped: true },
+      ],
+    })
+    const { tools } = buildCodeExecutionTools({
+      sessionId: 'test-session',
+      files: [
+        { storageKey: 'parsed-1', rawStorageKey: 'raw-1', id: 'id-1', name: 'report.html' },
+        { storageKey: 'parsed-2', rawStorageKey: 'raw-2', id: 'id-2', name: 'report.html' },
+      ],
+      provider: { ...mockProvider, seedBlobsIn },
+    })
+    const tool = tools.code_execution as {
+      execute: (input: Record<string, unknown>, opts: Record<string, unknown>) => Promise<unknown>
+    }
+
+    await tool.execute({ code: 'console.log(1)', language: 'node' }, {})
+
+    expect(seedBlobsIn).toHaveBeenCalledTimes(1)
+    expect(seedBlobsIn).toHaveBeenCalledWith([
+      { blobKey: 'raw-1', targetFilename: sandboxAttachmentRelPath('report.html', 'raw-1') },
+      { blobKey: 'raw-2', targetFilename: sandboxAttachmentRelPath('report.html', 'raw-2') },
+    ])
+    expect(mockProvider.copyBlobIn).not.toHaveBeenCalled()
+  })
+
+  test('seeds same-named attachments to distinct identity paths', async () => {
+    const { tools } = buildCodeExecutionTools({
+      sessionId: 'test-session',
+      files: [
+        { storageKey: 'parsed-1', rawStorageKey: 'raw-1', id: 'id-1', name: 'report.html' },
+        { storageKey: 'parsed-2', rawStorageKey: 'raw-2', id: 'id-2', name: 'report.html' },
+        { storageKey: 'parsed-xlsx', rawStorageKey: 'raw-xlsx', id: 'id-3', name: 'budget.xlsx' },
+      ],
+      provider: mockProvider,
+    })
+    const tool = tools.code_execution as {
+      execute: (input: Record<string, unknown>, opts: Record<string, unknown>) => Promise<unknown>
+    }
+
+    await tool.execute({ code: 'console.log(1)', language: 'node' }, {})
+
+    const destA = sandboxAttachmentRelPath('report.html', 'raw-1')
+    const destB = sandboxAttachmentRelPath('report.html', 'raw-2')
+    const destXlsx = sandboxAttachmentRelPath('budget.xlsx', 'raw-xlsx')
+    expect(destA).not.toBe(destB)
+    expect(mockProvider.copyBlobIn).toHaveBeenCalledWith('raw-1', destA)
+    expect(mockProvider.copyBlobIn).toHaveBeenCalledWith('raw-2', destB)
+    expect(mockProvider.copyBlobIn).toHaveBeenCalledWith('raw-xlsx', destXlsx)
+    expect(mockProvider.copyBlobIn).toHaveBeenCalledWith('parsed-xlsx', sandboxAttachmentParsedRelPath(destXlsx))
+    expect(mockProvider.copyBlobIn).not.toHaveBeenCalledWith('raw-1', 'report.html')
   })
 
   test('provider.init is called only once across multiple executions', async () => {

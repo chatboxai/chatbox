@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   checkOverflow,
   DEFAULT_COMPACTION_THRESHOLD,
+  FALLBACK_CONTEXT_WINDOW_TOKENS,
   getCompactionThresholdTokens,
   isOverflow,
   OUTPUT_RESERVE_TOKENS,
@@ -43,11 +44,17 @@ describe('compaction-detector', () => {
         expect(result.currentTokens).toBe(-100)
       })
 
-      it('returns no overflow for unknown model', () => {
-        const result = checkOverflow({ tokens: 50_000, modelId: 'unknown-model-xyz' })
-        expect(result.isOverflow).toBe(false)
-        expect(result.contextWindow).toBeNull()
-        expect(result.thresholdTokens).toBeNull()
+      it('assumes the fallback window for unknown models', () => {
+        const availableWindow = FALLBACK_CONTEXT_WINDOW_TOKENS - OUTPUT_RESERVE_TOKENS
+        const threshold = Math.floor(availableWindow * DEFAULT_COMPACTION_THRESHOLD)
+
+        const below = checkOverflow({ tokens: threshold, modelId: 'unknown-model-xyz' })
+        expect(below.isOverflow).toBe(false)
+        expect(below.contextWindow).toBe(FALLBACK_CONTEXT_WINDOW_TOKENS)
+        expect(below.thresholdTokens).toBe(threshold)
+
+        const above = checkOverflow({ tokens: threshold + 1, modelId: 'unknown-model-xyz' })
+        expect(above.isOverflow).toBe(true)
       })
 
       it('handles small context models with available window fallback', () => {
@@ -266,9 +273,9 @@ describe('compaction-detector', () => {
       expect(result).toBe(false)
     })
 
-    it('returns false for unknown model', () => {
+    it('overflows past the fallback window for unknown model', () => {
       const result = isOverflow({ tokens: 999_999, modelId: 'unknown-xyz' })
-      expect(result).toBe(false)
+      expect(result).toBe(true)
     })
   })
 
@@ -282,9 +289,10 @@ describe('compaction-detector', () => {
       expect(result).toBe(expectedThreshold)
     })
 
-    it('returns null for unknown model', () => {
+    it('returns the fallback-window threshold for unknown model', () => {
+      const availableWindow = FALLBACK_CONTEXT_WINDOW_TOKENS - OUTPUT_RESERVE_TOKENS
       const result = getCompactionThresholdTokens('unknown-model')
-      expect(result).toBeNull()
+      expect(result).toBe(Math.floor(availableWindow * DEFAULT_COMPACTION_THRESHOLD))
     })
 
     it('uses custom threshold from settings', () => {

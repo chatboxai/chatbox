@@ -6,10 +6,14 @@ const { getSessionMock, listSessionsMetaPageMock, searchSessionsMock } = vi.hois
   searchSessionsMock: vi.fn(),
 }))
 
-vi.mock('@/stores/chatStore', () => ({
-  getSession: getSessionMock,
-  listSessionsMetaPage: listSessionsMetaPageMock,
-  listArchivedSessionsMetaPage: vi.fn(),
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: {
+    sessions: {
+      listSessionsMetaPage: listSessionsMetaPageMock,
+      listArchivedSessionsMetaPage: vi.fn(),
+    },
+    sessionQueryBridge: { getSession: getSessionMock },
+  },
 }))
 vi.mock('@/stores/sessionHelpers', () => ({ searchSessions: searchSessionsMock }))
 

@@ -1,6 +1,6 @@
 import { Button, Snackbar } from '@mui/material'
 import { useStore } from 'zustand'
-import { navigateToSettings } from '@/modals/Settings'
+import { navigateToSettings } from '@/modals/settings-navigation'
 import { uiStore } from '@/stores/uiStore'
 import * as toastActions from '../../stores/toastActions'
 

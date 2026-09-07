@@ -31,6 +31,7 @@ export type SessionAttachmentIndexingState = {
   sessionAttachmentChunkCount?: number
   sessionAttachmentTotalChunks?: number
   sessionAttachmentEmbeddedChunks?: number
+  sessionAttachmentResumable?: boolean
   sessionAttachmentIndexingStage?: SessionAttachmentIndexingStage
 }
 

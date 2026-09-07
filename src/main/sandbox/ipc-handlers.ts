@@ -1,5 +1,3 @@
-import { lstat as fsLstat, readFile as fsReadFile, realpath as fsRealpath } from 'node:fs/promises'
-import path from 'node:path'
 import { ipcMain } from 'electron'
 import type { SandboxExecLanguage } from '../../shared/sandbox-provider'
 import { getLogger } from '../util'
@@ -13,19 +11,20 @@ import {
   findFiles,
   getSandboxAllowedRoots,
   getStatus,
-  hasSessionArtifacts,
   initSandboxWithTempDir,
   killRunningCommand,
   listDir,
-  persistSandboxArtifact,
   readFile,
-  removeSessionArtifacts,
   resetSandbox,
   resolveSandboxWorkingDir,
+  runSandboxCommand,
   searchFiles,
+  seedBlobsToSandbox,
   writeFile,
 } from './manager'
+import { hasSessionArtifacts, persistSandboxArtifact, removeSessionArtifacts } from './persist-artifact'
 import { createSandboxHtmlPreviewUrl } from './preview-server'
+import { bufferToArrayBuffer, readSandboxFileBase64, readSandboxFileBytes } from './read-file-base64'
 
 const log = getLogger('sandbox:ipc-handlers')
 
@@ -52,6 +51,30 @@ export function registerSandboxIPCHandlers() {
         const msg = error instanceof Error ? error.message : String(error)
         log.error('sandbox:exec-code failed', msg)
         return { stdout: '', stderr: msg, exitCode: 1 }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'sandbox:run-command',
+    async (
+      _event,
+      params: {
+        command: string
+        shell: 'bash' | 'powershell'
+        workdir?: string
+        timeout?: number
+        sessionId?: string
+        toolCallId: string
+      }
+    ) => {
+      try {
+        log.debug(`sandbox:run-command shell=${params.shell} bytes=${params.command.length}`)
+        return await runSandboxCommand(params)
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error)
+        log.error('sandbox:run-command failed', msg)
+        return { stdout: '', stderr: msg, exitCode: 1, cwd: params.workdir }
       }
     }
   )
@@ -228,6 +251,20 @@ export function registerSandboxIPCHandlers() {
     }
   )
 
+  ipcMain.handle(
+    'sandbox:seed-blobs',
+    async (_event, params: { items: Array<{ blobKey: string; targetFilename: string }>; sessionId?: string }) => {
+      try {
+        log.debug(`sandbox:seed-blobs count=${params.items.length}`)
+        return await seedBlobsToSandbox(params.items, params.sessionId)
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error)
+        log.error('sandbox:seed-blobs failed', msg)
+        return { success: false, error: msg, results: [] }
+      }
+    }
+  )
+
   ipcMain.handle('sandbox:export-file', async (_event, params: { sandboxPath: string; suggestedName?: string }) => {
     try {
       log.debug(`sandbox:export-file path=${params.sandboxPath}`)
@@ -272,21 +309,24 @@ export function registerSandboxIPCHandlers() {
 
   // Read a file as base64 directly from disk (no sandbox init required).
   // Restricted to files within a known sandbox root (temp working dirs or persisted artifacts).
-  ipcMain.handle('sandbox:read-file-base64', async (_event, params: { filePath: string }) => {
+  ipcMain.handle('sandbox:read-file-base64', async (_event, params: { filePath: string; maxBytes?: number }) => {
     try {
       const sandboxRoots = getSandboxAllowedRoots()
-      // Check for symlinks before resolving — defense-in-depth
-      const stat = await fsLstat(params.filePath)
-      if (stat.isSymbolicLink()) {
-        return { success: false, error: 'Access denied: symlinks not allowed' }
-      }
-      const resolved = await fsRealpath(params.filePath)
-      const isInsideSandbox = sandboxRoots.some((root) => resolved === root || resolved.startsWith(root + path.sep))
-      if (!isInsideSandbox) {
-        return { success: false, error: 'Access denied: path outside sandbox directory' }
-      }
-      const buffer = await fsReadFile(resolved)
-      return { success: true, base64: buffer.toString('base64') }
+      return await readSandboxFileBase64(params, sandboxRoots)
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      return { success: false, error: msg }
+    }
+  })
+
+  // Binary transport for image decoding. Avoids expanding large files into base64 in the
+  // main process and synchronously decoding that string again on the renderer main thread.
+  ipcMain.handle('sandbox:read-file-bytes', async (_event, params: { filePath: string; maxBytes?: number }) => {
+    try {
+      const sandboxRoots = getSandboxAllowedRoots()
+      const result = await readSandboxFileBytes(params, sandboxRoots)
+      if (!result.success) return result
+      return { success: true, bytes: bufferToArrayBuffer(result.bytes) }
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error)
       return { success: false, error: msg }

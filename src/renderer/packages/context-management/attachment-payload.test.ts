@@ -245,18 +245,6 @@ describe('attachment-payload', () => {
       expect(result).toHaveLength(1)
     })
 
-    it('should respect custom keepToolCallRounds', () => {
-      const messages: Message[] = [createMessage('user', 'hello', 'msg1')]
-
-      const result = selectMessagesForSendContext({
-        settings: { maxContextMessageCount: 10 },
-        msgs: messages,
-        keepToolCallRounds: 3,
-      })
-
-      expect(result).toHaveLength(1)
-    })
-
     it('should handle system message at start', () => {
       const messages: Message[] = [
         createMessage('system', 'You are helpful', 'sys'),

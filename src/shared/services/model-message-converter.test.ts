@@ -1,6 +1,6 @@
-import type { Message } from '@shared/types'
+import type { Message, MessageContentToolCallPart } from '@shared/types'
 import { modelMessageSchema } from 'ai'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { convertToModelMessages } from './model-message-converter'
 
 // Tool-call fixtures below never reference images, so the resolver is never called.
@@ -446,5 +446,434 @@ describe('convertToModelMessages — tool result sanitization', () => {
       { type: 'text', text: 'final answer' },
     ])
     expect(() => modelMessageSchema.parse(preservedAssistant)).not.toThrow()
+  })
+})
+
+describe('convertToModelMessages — Anthropic thinking replay', () => {
+  const signedContinuationParts = (): Message['contentParts'] => [
+    {
+      type: 'reasoning',
+      text: '',
+      providerMetadata: { anthropic: { signature: 'signature-a' } },
+      protocolOnly: true,
+    },
+    {
+      type: 'reasoning',
+      text: 'Let me look that up.',
+      providerMetadata: { anthropic: { signature: 'signature-b' } },
+    },
+    {
+      type: 'tool-call',
+      state: 'result',
+      toolCallId: 'tool-1',
+      toolName: 'lookup',
+      args: {},
+      result: { value: 'found' },
+    },
+  ]
+
+  it('replays signatures and redacted thinking in their original order', async () => {
+    const messages: Message[] = [
+      { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Look this up.' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [
+          {
+            type: 'reasoning',
+            text: '',
+            providerMetadata: { anthropic: { redactedData: 'encrypted-thinking' } },
+            protocolOnly: true,
+          },
+          ...signedContinuationParts(),
+        ],
+      },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+    })
+    const assistant = output.find((message) => message.role === 'assistant')
+
+    expect(assistant?.content).toMatchObject([
+      { type: 'reasoning', text: '', providerOptions: { anthropic: { redactedData: 'encrypted-thinking' } } },
+      { type: 'reasoning', text: '', providerOptions: { anthropic: { signature: 'signature-a' } } },
+      {
+        type: 'reasoning',
+        text: 'Let me look that up.',
+        providerOptions: { anthropic: { signature: 'signature-b' } },
+      },
+      { type: 'tool-call', toolCallId: 'tool-1', toolName: 'lookup' },
+    ])
+    expect(() => modelMessageSchema.parse(assistant)).not.toThrow()
+  })
+
+  it('never emits empty or protocol-only text parts', async () => {
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [
+          { type: 'text', text: '' },
+          { type: 'text', text: '', protocolOnly: true },
+          { type: 'text', text: 'visible answer' },
+        ],
+      },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+    })
+    const assistant = output.find((message) => message.role === 'assistant')
+
+    expect(assistant?.content).toEqual([{ type: 'text', text: 'visible answer' }])
+  })
+
+  it('only replays whitelisted provider metadata', async () => {
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [
+          {
+            type: 'reasoning',
+            text: 'thought',
+            providerMetadata: {
+              anthropic: { signature: 'signature-a', cacheControl: { type: 'ephemeral' } },
+              openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
+            },
+          },
+          { type: 'reasoning', text: '', providerMetadata: { openai: { itemId: 'rs_2' } } },
+        ],
+      },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+    })
+    const assistant = output.find((message) => message.role === 'assistant')
+
+    expect(assistant?.content).toEqual([
+      {
+        type: 'reasoning',
+        text: 'thought',
+        providerOptions: { anthropic: { signature: 'signature-a' } },
+      },
+    ])
+  })
+
+  it('replays signed thinking from earlier turns when asked for all-turns signed replay', async () => {
+    const messages: Message[] = [
+      { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'First question' }] },
+      { id: 'a1', role: 'assistant', contentParts: signedContinuationParts() },
+      { id: 'u2', role: 'user', contentParts: [{ type: 'text', text: 'Second question' }] },
+      { id: 'a2', role: 'assistant', contentParts: signedContinuationParts() },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+    })
+    const assistants = output.filter((message) => message.role === 'assistant')
+
+    expect(assistants[0].content).toMatchObject([
+      { type: 'reasoning', providerOptions: { anthropic: { signature: 'signature-a' } } },
+      { type: 'reasoning', providerOptions: { anthropic: { signature: 'signature-b' } } },
+      { type: 'tool-call', toolCallId: 'tool-1' },
+    ])
+    expect(assistants[1].content).toMatchObject([
+      { type: 'reasoning', providerOptions: { anthropic: { signature: 'signature-a' } } },
+      { type: 'reasoning', providerOptions: { anthropic: { signature: 'signature-b' } } },
+      { type: 'tool-call', toolCallId: 'tool-1' },
+    ])
+  })
+
+  it('keeps Anthropic signatures when the current model id differs from the minting model', async () => {
+    const messages: Message[] = [
+      { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Question' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        aiProvider: 'claude',
+        model: 'Claude API (claude-sonnet-4-5)',
+        modelId: 'claude-sonnet-4-5',
+        contentParts: signedContinuationParts(),
+      },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+    })
+    expect(output.find((message) => message.role === 'assistant')?.content).toMatchObject([
+      { type: 'reasoning', providerOptions: { anthropic: { signature: 'signature-a' } } },
+      { type: 'reasoning', providerOptions: { anthropic: { signature: 'signature-b' } } },
+      { type: 'tool-call', toolCallId: 'tool-1' },
+    ])
+  })
+
+  it('omits unsigned reasoning from the signed replay channel', async () => {
+    // Reasoning saved by app versions predating metadata capture has text but no
+    // signature; replaying it unsigned could not pass upstream validation.
+    const messages: Message[] = [
+      { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Look this up.' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [
+          { type: 'reasoning', text: 'Legacy unsigned thought' },
+          {
+            type: 'reasoning',
+            text: 'Signed thought',
+            providerMetadata: { anthropic: { signature: 'signature-a' } },
+          },
+          {
+            type: 'tool-call',
+            state: 'result',
+            toolCallId: 'tool-1',
+            toolName: 'lookup',
+            args: {},
+            result: { value: 'found' },
+          },
+        ],
+      },
+    ]
+
+    const signedOnly = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+    })
+    expect(signedOnly.find((message) => message.role === 'assistant')?.content).toMatchObject([
+      { type: 'reasoning', text: 'Signed thought', providerOptions: { anthropic: { signature: 'signature-a' } } },
+      { type: 'tool-call', toolCallId: 'tool-1' },
+    ])
+
+    // The DeepSeek all-turns text channel still carries unsigned reasoning.
+    const allTurns = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+    })
+    const allTurnsAssistant = allTurns.find((message) => message.role === 'assistant')
+    expect(allTurnsAssistant?.content).toMatchObject([
+      { type: 'reasoning', text: 'Legacy unsigned thought' },
+      { type: 'reasoning', text: 'Signed thought' },
+      { type: 'tool-call', toolCallId: 'tool-1' },
+    ])
+  })
+
+  it('keeps signed replay intact when a synthetic trailing user message follows the paused turn', async () => {
+    // Stale resumes append a trailing time-gap reminder after the paused
+    // assistant turn. All-turns replay is boundary-free, so the reminder must
+    // not affect which thinking blocks go back on the wire.
+    const messages: Message[] = [
+      { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Look this up.' }] },
+      { id: 'a1', role: 'assistant', contentParts: signedContinuationParts() },
+      {
+        id: 'time-gap-reminder-1',
+        role: 'user',
+        contentParts: [{ type: 'text', text: '<system-reminder>Current date and time: ...</system-reminder>' }],
+      },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+    })
+    expect(output.find((message) => message.role === 'assistant')?.content).toMatchObject([
+      { type: 'reasoning', providerOptions: { anthropic: { signature: 'signature-a' } } },
+      { type: 'reasoning', providerOptions: { anthropic: { signature: 'signature-b' } } },
+      { type: 'tool-call', toolCallId: 'tool-1' },
+    ])
+  })
+})
+
+describe('convertToModelMessages — view_image tool results', () => {
+  const viewImageMessage = (result: unknown, fields: Partial<MessageContentToolCallPart> = {}): Message => ({
+    id: 'a1',
+    role: 'assistant',
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'call-1',
+        toolName: 'view_image',
+        args: { file_path: 'chart.png' },
+        result,
+        ...fields,
+      },
+    ],
+  })
+
+  const viewImageResult = {
+    file_path: 'chart.png',
+    image_storage_key: 'picture:view-image:s1:uuid',
+    media_type: 'image/png',
+  }
+
+  const resolveStored = (storageKey: string) =>
+    Promise.resolve(storageKey === 'picture:view-image:s1:uuid' ? 'data:image/png;base64,SU1BR0U=' : null)
+
+  it('re-inlines the stored image when the model supports tool-result images', async () => {
+    const output = await convertToModelMessages([viewImageMessage(viewImageResult)], resolveStored, {
+      modelSupportVision: true,
+      supportToolResultImages: true,
+    })
+
+    const toolMsg = output.find((m) => m.role === 'tool')
+    const part = (toolMsg?.content as Array<{ type: string; output: unknown }>)[0]
+    expect(part.output).toEqual({
+      type: 'content',
+      value: [
+        { type: 'text', text: 'Viewed image: chart.png' },
+        { type: 'image-data', data: 'SU1BR0U=', mediaType: 'image/png' },
+      ],
+    })
+    for (const msg of output) {
+      expect(() => modelMessageSchema.parse(msg)).not.toThrow()
+    }
+  })
+
+  it('re-inlines a first-class image reference from any image-producing tool', async () => {
+    const output = await convertToModelMessages(
+      [
+        viewImageMessage(
+          { file_path: 'chart.png', media_type: 'image/png' },
+          {
+            toolName: 'render_chart',
+            resultImageStorageKey: 'picture:view-image:s1:uuid',
+            resultImageMediaType: 'image/png',
+          }
+        ),
+      ],
+      resolveStored,
+      { modelSupportVision: true, supportToolResultImages: true }
+    )
+
+    const toolMsg = output.find((message) => message.role === 'tool')
+    const part = (toolMsg?.content as Array<{ output: { type: string } }>)[0]
+    expect(part.output.type).toBe('content')
+  })
+
+  it('re-inlines an image even when auxiliary tool result data was offloaded', async () => {
+    const output = await convertToModelMessages(
+      [
+        viewImageMessage('truncated preview', {
+          toolName: 'render_chart',
+          resultStorageKey: 'blob:large-result',
+          resultImageStorageKey: 'picture:view-image:s1:uuid',
+          resultImageMediaType: 'image/png',
+        }),
+      ],
+      resolveStored,
+      { modelSupportVision: true, supportToolResultImages: true }
+    )
+
+    const toolMsg = output.find((message) => message.role === 'tool')
+    const part = (toolMsg?.content as Array<{ output: { type: string; value: Array<{ type: string }> } }>)[0]
+    expect(part.output.type).toBe('content')
+    expect(part.output.value.some((value) => value.type === 'image-data')).toBe(true)
+  })
+
+  it('delivers the image as a follow-up user message when tool-result images are unsupported', async () => {
+    const output = await convertToModelMessages([viewImageMessage(viewImageResult)], resolveStored, {
+      modelSupportVision: true,
+      supportToolResultImages: false,
+    })
+
+    // The tool output is a plain text notice — never base64-as-text.
+    const toolIndex = output.findIndex((m) => m.role === 'tool')
+    const part = (output[toolIndex]?.content as Array<{ type: string; output: { type: string; value: unknown } }>)[0]
+    expect(part.output.type).toBe('text')
+    expect(String(part.output.value)).toContain('attached in the user message')
+    expect(JSON.stringify(part.output)).not.toContain('SU1BR0U=')
+
+    // The image itself follows as a real user-message image part (same as a user upload).
+    const followUp = output[toolIndex + 1]
+    expect(followUp).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: '[Image from view_image tool: chart.png]' },
+        { type: 'image', image: 'SU1BR0U=', mediaType: 'image/png' },
+      ],
+    })
+    for (const msg of output) {
+      expect(() => modelMessageSchema.parse(msg)).not.toThrow()
+    }
+  })
+
+  it('keeps compact json when view_image re-inlining is not explicitly enabled', async () => {
+    const resolver = vi.fn(resolveStored)
+    const output = await convertToModelMessages([viewImageMessage(viewImageResult)], resolver, {
+      modelSupportVision: true,
+    })
+
+    const toolIndex = output.findIndex((message) => message.role === 'tool')
+    const part = (output[toolIndex]?.content as Array<{ output: { type: string; value: unknown } }>)[0]
+    expect(part.output).toEqual({ type: 'json', value: viewImageResult })
+    expect(output[toolIndex + 1]).toBeUndefined()
+    expect(resolver).not.toHaveBeenCalled()
+  })
+
+  it('falls back to json output when the model has no vision', async () => {
+    const output = await convertToModelMessages([viewImageMessage(viewImageResult)], resolveStored, {
+      modelSupportVision: false,
+      supportToolResultImages: true,
+    })
+    const toolMsg = output.find((m) => m.role === 'tool')
+    const part = (toolMsg?.content as Array<{ type: string; output: { type: string } }>)[0]
+    expect(part.output.type).toBe('json')
+  })
+
+  it('falls back to json output when the stored blob is gone', async () => {
+    const output = await convertToModelMessages(
+      [viewImageMessage({ ...viewImageResult, image_storage_key: 'picture:missing' })],
+      resolveStored,
+      { modelSupportVision: true, supportToolResultImages: true }
+    )
+    const toolMsg = output.find((m) => m.role === 'tool')
+    const part = (toolMsg?.content as Array<{ type: string; output: { type: string } }>)[0]
+    expect(part.output.type).toBe('json')
+  })
+
+  it('only inlines the most recent image occurrences when tool call IDs repeat', async () => {
+    const resolver = vi.fn((storageKey: string) => Promise.resolve(`data:image/webp;base64,${storageKey}`))
+    const messages = ['oldest', 'middle', 'latest'].map(
+      (name): Message =>
+        viewImageMessage(
+          { file_path: `${name}.webp`, media_type: 'image/webp' },
+          {
+            toolCallId: 'call-0',
+            toolName: 'render_chart',
+            resultImageStorageKey: `picture:${name}`,
+            resultImageMediaType: 'image/webp',
+          }
+        )
+    )
+
+    const output = await convertToModelMessages(messages, resolver, {
+      modelSupportVision: true,
+      supportToolResultImages: false,
+      maxInlineToolResultImages: 2,
+    })
+
+    expect(resolver.mock.calls.map(([storageKey]) => storageKey)).toEqual(['picture:middle', 'picture:latest'])
+    const imageParts = output.flatMap((message) =>
+      message.role === 'user' && Array.isArray(message.content)
+        ? message.content.filter((part) => part.type === 'image')
+        : []
+    )
+    expect(imageParts).toHaveLength(2)
+    const firstTool = output.find((message) => message.role === 'tool')
+    expect((firstTool?.content as Array<{ output: { type: string } }>)[0].output.type).toBe('json')
   })
 })

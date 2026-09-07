@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ApiError, MidStreamApiError } from '../errors'
 import {
   findSseFrameBoundary,
@@ -216,5 +216,18 @@ describe('shouldWrapGeminiErrorStream / maybeWrapGeminiErrorResponse', () => {
       headers: { 'content-type': 'application/json' },
     })
     expect(maybeWrapGeminiErrorResponse('https://api.chatboxai.app/gateway/openai/v1/x', response)).toBe(response)
+  })
+
+  it('returns the original response when the host has no TransformStream', () => {
+    const response = new Response(new ReadableStream(), {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+    vi.stubGlobal('TransformStream', undefined)
+    try {
+      expect(maybeWrapGeminiErrorResponse(streamUrl, response)).toBe(response)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

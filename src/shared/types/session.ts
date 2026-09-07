@@ -1,6 +1,7 @@
 import type { JSONValue, LanguageModelUsage, ProviderMetadata } from 'ai'
 import { z } from 'zod'
 import { SessionSettingsSchema } from '../types/settings'
+import { SessionPromptContextSnapshotSchema } from './agent-persona'
 import { ModelProviderEnum } from './provider'
 
 // Re-export for backward compatibility
@@ -29,6 +30,20 @@ export const TokenCalculatedAtSchema = z
   .optional()
 
 export type TokenCalculatedAt = z.infer<typeof TokenCalculatedAtSchema>
+
+// Marks tokenizer entries whose count is a sampling fallback rather than an
+// exact encode (e.g. the tokenizer worker was unavailable). Absent for exact
+// entries and for historical data, which is always exact.
+export const TokenCountApproximateSchema = z
+  .object({
+    default: z.boolean().optional(),
+    deepseek: z.boolean().optional(),
+    default_preview: z.boolean().optional(),
+    deepseek_preview: z.boolean().optional(),
+  })
+  .optional()
+
+export type TokenCountApproximate = z.infer<typeof TokenCountApproximateSchema>
 
 // Search result schemas
 export const SearchResultItemSchema = z.object({
@@ -108,6 +123,12 @@ const MessageProviderMetadataSchema: z.ZodType<ProviderMetadata> = z.record(
 export const MessageTextPartSchema = z.object({
   type: z.literal('text'),
   text: z.string(),
+  /**
+   * The part exists only to keep the provider's block structure intact for
+   * request replay (e.g. an empty Anthropic text block between thinking
+   * blocks). Never rendered, exported, or counted as a work step.
+   */
+  protocolOnly: z.literal(true).optional(),
 })
 
 export const MessageImagePartSchema = z.object({
@@ -130,6 +151,18 @@ export const MessageAgentModeSuggestionPartSchema = z.object({
 export const MessageReasoningPartSchema = z.object({
   type: z.literal('reasoning'),
   text: z.string(),
+  /**
+   * Replay-critical provider metadata (whitelisted in
+   * `models/provider-part-metadata.ts`), e.g. Anthropic thinking signatures and
+   * redacted thinking payloads required to resume a paused tool-use turn.
+   */
+  providerMetadata: MessageProviderMetadataSchema.optional(),
+  /**
+   * The part carries only protocol replay data and no visible reasoning text
+   * (e.g. Anthropic `redacted_thinking`, or a signed empty thinking block).
+   * Never rendered, exported, or counted as a work step.
+   */
+  protocolOnly: z.literal(true).optional(),
   startTime: z.number().optional(),
   duration: z.number().optional(),
 })
@@ -155,6 +188,18 @@ export const ImageGenerationApprovalDetailsSchema = z.object({
 })
 
 export const AppActionApprovalDetailsSchema = z.discriminatedUnion('type', [ImageGenerationApprovalDetailsSchema])
+
+/**
+ * Line counts for a pending file mutation. `mode` tells the UI whether to show
+ * an edit delta (`+N -M`) or the number of lines in a whole-file write.
+ */
+export const FileMutationApprovalStatsSchema = z.object({
+  mode: z.enum(['write', 'edit']).catch('edit'),
+  /** Number of search-and-replace edits in the call; absent for a whole-file write. */
+  edits: z.number().optional(),
+  addedLines: z.number(),
+  removedLines: z.number(),
+})
 
 export const MessageToolCallPartSchema = z.object({
   type: z.literal('tool-call'),
@@ -186,11 +231,25 @@ export const MessageToolCallPartSchema = z.object({
         command: z.string(),
         explanation: z.string().optional(),
         explanationError: z.boolean().optional(),
+        workdir: z.string().optional(),
+      }),
+      z.object({
+        type: z.literal('command_escalation_approval'),
+        command: z.string(),
+        retryOf: z.string(),
+        justification: z.string(),
+        workdir: z.string(),
       }),
       z.object({
         type: z.literal('file_mutation_approval'),
         title: z.string(),
         preview: z.string(),
+        /**
+         * Change magnitude, computed from the untruncated tool arguments so the
+         * approval bar can summarize instead of rendering the whole preview.
+         * Absent on approvals paused by builds before this existed.
+         */
+        stats: FileMutationApprovalStatsSchema.optional().catch(undefined),
       }),
       z.object({
         type: z.literal('app_action_approval'),
@@ -203,6 +262,9 @@ export const MessageToolCallPartSchema = z.object({
     .optional(),
   /** When the original result exceeded the size limit, the full result is stored in blob storage under this key. */
   resultStorageKey: z.string().optional(),
+  /** Image produced by this tool result, promoted out of private result JSON for generic consumers. */
+  resultImageStorageKey: z.string().optional(),
+  resultImageMediaType: z.string().optional(),
 })
 
 export const MessageContentPartSchema = z.discriminatedUnion('type', [
@@ -267,13 +329,6 @@ export const MessageBackgroundTaskSchema = z.object({
   summary: z.string(),
 })
 
-// Main Message schema
-// Define a custom function type for cancel
-const CancelFunctionSchema = z.custom<((stoppedAt?: number) => void) | undefined>(
-  (val) => val === undefined || typeof val === 'function',
-  { message: 'Must be a function or undefined' }
-)
-
 const MessageUsageSchema = z.object({
   inputTokens: z.number().optional().catch(undefined),
   /**
@@ -300,10 +355,16 @@ export const MessageSchema = z.object({
   id: z.string(),
   role: z.nativeEnum(MessageRoleEnum),
   name: z.string().optional(),
-  cancel: CancelFunctionSchema.optional(),
   generating: z.boolean().optional(),
   aiProvider: z.union([ModelProviderSchema, z.string()]).optional(),
+  /** Display name of the generating model (e.g. "Claude API (claude-sonnet-4-6)"), for the UI only. */
   model: z.string().optional(),
+  /**
+   * Raw model id of the generating model (`settings.modelId`). Display names
+   * are neither stable nor parseable, so this is the machine-readable
+   * provenance record for a message.
+   */
+  modelId: z.string().optional(),
   style: z.string().optional(),
   files: z.array(MessageFileSchema).optional(),
   links: z.array(MessageLinkSchema).optional(),
@@ -316,6 +377,8 @@ export const MessageSchema = z.object({
   status: z.array(MessageStatusSchema).optional(),
   /** App-generated wake-up metadata. The message remains user-role for model turn sequencing. */
   backgroundTask: MessageBackgroundTaskSchema.optional(),
+  /** User message injected mid-generation via queue jumping (steering). */
+  steered: z.boolean().optional(),
   wordCount: z.number().optional(),
   tokenCount: z.number().optional(), // output token count
   tokensUsed: z.number().optional(), // deprecated, use `usage` instead
@@ -327,6 +390,7 @@ export const MessageSchema = z.object({
   finishReason: z.string().optional(),
   tokenCountMap: TokenCountMapSchema.optional(), // estimate token count as input
   tokenCalculatedAt: TokenCalculatedAtSchema,
+  tokenCountApproximate: TokenCountApproximateSchema,
   updatedAt: z.number().optional(),
   isSummary: z.boolean().optional(), // Marks message as a compaction summary
   isForkMarker: z.boolean().optional(), // Marks a UI-only fork boundary message
@@ -360,6 +424,10 @@ export const SessionThreadSchema = z.object({
   messages: z.array(MessageSchema),
   createdAt: z.number(),
   compactionPoints: z.array(CompactionPointSchema).optional(),
+  // The frozen session prompt-context snapshot travels with its conversation, like
+  // compaction points: an archived thread restored later keeps the exact
+  // Soul/memories it was generated with instead of recapturing the latest.
+  sessionPromptContextSnapshot: SessionPromptContextSnapshotSchema.optional().catch(undefined),
 })
 
 // Image source schema
@@ -432,6 +500,7 @@ export type MessageAgentModeSuggestionPart = z.infer<typeof MessageAgentModeSugg
 export type MessageReasoningPart = z.infer<typeof MessageReasoningPartSchema>
 export type ImageGenerationApprovalDetails = z.infer<typeof ImageGenerationApprovalDetailsSchema>
 export type AppActionApprovalDetails = z.infer<typeof AppActionApprovalDetailsSchema>
+export type FileMutationApprovalStats = z.infer<typeof FileMutationApprovalStatsSchema>
 export type MessageToolCallPart<Args = unknown, Result = unknown> = Omit<
   z.infer<typeof MessageToolCallPartSchema>,
   'args' | 'result'
@@ -439,6 +508,8 @@ export type MessageToolCallPart<Args = unknown, Result = unknown> = Omit<
   args?: Args
   result?: Result
   resultStorageKey?: string
+  resultImageStorageKey?: string
+  resultImageMediaType?: string
 }
 export type MessageContentParts = z.infer<typeof MessageContentPartsSchema>
 /** The tool-call member of the content-part union, as stored inside MessageContentParts. */

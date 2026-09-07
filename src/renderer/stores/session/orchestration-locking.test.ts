@@ -1,38 +1,28 @@
+// @vitest-environment jsdom
 import type { Message } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { wakeBackgroundTaskFollowUpsMock, withSessionGenerationLockMock } = vi.hoisted(() => {
-  const storage = {
-    getItem: () => null,
-    setItem: () => undefined,
-    removeItem: () => undefined,
-    clear: () => undefined,
-  }
-  ;(globalThis as unknown as { localStorage: typeof storage }).localStorage = storage
-  ;(globalThis as unknown as { window: { localStorage: typeof storage } }).window = { localStorage: storage }
+const serviceMocks = vi.hoisted(() => {
   return {
-    wakeBackgroundTaskFollowUpsMock: vi.fn(),
-    withSessionGenerationLockMock: vi.fn(() => Promise.resolve()),
+    retryFromLastToolCallAfterApiError: vi.fn(() => Promise.resolve()),
   }
 })
 
-vi.mock('@/packages/chatbox-cli/background-follow-up', () => ({
-  wakeBackgroundTaskFollowUps: wakeBackgroundTaskFollowUpsMock,
+vi.mock('@/adapters/CurrentGenerationService', () => ({
+  currentGenerationService: serviceMocks,
 }))
-vi.mock('./generation-lock', () => ({
-  withSessionGenerationLock: withSessionGenerationLockMock,
-}))
-vi.mock('../chatStore', () => ({}))
+// The retry entry point consults the session action guard, which reads the
+// session; resolving null keeps the guard permissive so the delegation
+// behavior under test is exercised.
+vi.mock('../chatStore', () => ({ getSession: vi.fn(() => Promise.resolve(null)) }))
 
 import {
   applyPersistentToolCallPause,
-  continuePausedToolCall,
+  createInitialState,
   createPausedToolCallExecutionContext,
   finishPausedToolCallContinuation,
-  retryFromLastToolCallAfterApiError,
-  stopPausedToolCall,
-} from './orchestration'
-import { createInitialState } from './stream-chunk-processor'
+} from '@chatbox/core/generation'
+import { retryFromLastToolCallAfterApiError } from './generation'
 
 const approvalDetails = {
   type: 'image_generation' as const,
@@ -43,31 +33,16 @@ const approvalDetails = {
   billing: 'chatbox_quota' as const,
 }
 
-describe('paused tool-call generation entry-point locking', () => {
+describe('retryFromLastToolCallAfterApiError', () => {
   beforeEach(() => {
-    wakeBackgroundTaskFollowUpsMock.mockClear()
-    withSessionGenerationLockMock.mockClear()
+    vi.clearAllMocks()
   })
 
-  it.each([
-    ['approval denial', stopPausedToolCall],
-    ['approval continuation', continuePausedToolCall],
-    ['API retry', retryFromLastToolCallAfterApiError],
-  ])('serializes %s with other generation work', async (_name, run) => {
-    await run('session-1', 'message-1', 'tool-1')
+  it('runs the session action gate before delegating to the shared GenerationService', async () => {
+    await retryFromLastToolCallAfterApiError('session-1', 'message-1', 'tool-1')
 
-    expect(withSessionGenerationLockMock).toHaveBeenCalledOnce()
-    expect(withSessionGenerationLockMock).toHaveBeenCalledWith('session-1', expect.any(Function))
-  })
-
-  it.each([
-    ['approval denial', stopPausedToolCall],
-    ['approval continuation', continuePausedToolCall],
-  ])('wakes deferred background follow-ups after %s releases the generation lock', async (_name, run) => {
-    await run('session-1', 'message-1', 'tool-1')
-
-    expect(wakeBackgroundTaskFollowUpsMock).toHaveBeenCalledOnce()
-    expect(wakeBackgroundTaskFollowUpsMock).toHaveBeenCalledWith('session-1')
+    expect(serviceMocks.retryFromLastToolCallAfterApiError).toHaveBeenCalledOnce()
+    expect(serviceMocks.retryFromLastToolCallAfterApiError).toHaveBeenCalledWith('session-1', 'message-1', 'tool-1')
   })
 })
 
@@ -77,13 +52,18 @@ describe('paused tool-call approval binding', () => {
     const context = createPausedToolCallExecutionContext(
       {
         toolCallId: 'tool-1',
-        pauseReason: { type: 'user_exec_approval', command: 'sleep 30' },
+        pauseReason: { type: 'user_exec_approval', command: 'sleep 30', workdir: '/workspace/project' },
       },
       'tool-1',
       controller.signal
     )
 
-    expect(context).toMatchObject({ toolCallId: 'tool-1', approved: true, abortSignal: controller.signal })
+    expect(context).toMatchObject({
+      toolCallId: 'tool-1',
+      approved: true,
+      approvalWorkdir: '/workspace/project',
+      abortSignal: controller.signal,
+    })
   })
 
   it('authorizes only the tool call explicitly approved by the user', () => {
@@ -133,19 +113,16 @@ describe('paused tool-call approval binding', () => {
 
 describe('paused tool-call continuation cancellation', () => {
   it('clears runtime generation controls when continuation stops', () => {
-    const cancel = vi.fn()
     const message = {
       id: 'message-1',
       role: 'assistant',
       contentParts: [],
       generating: true,
-      cancel,
       finishReason: 'tool-call-paused',
     } as Message
 
     expect(finishPausedToolCallContinuation(message, 'canceled')).toMatchObject({
       generating: false,
-      cancel: undefined,
       finishReason: 'canceled',
     })
   })

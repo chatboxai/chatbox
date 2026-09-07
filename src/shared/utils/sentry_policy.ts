@@ -12,20 +12,20 @@ interface SentryExceptionValueLike {
   mechanism?: SentryExceptionMechanismLike
   stacktrace?: {
     frames?: Array<{
-      abs_path?: string
-      filename?: string
-      module?: string
+      abs_path?: unknown
+      filename?: unknown
+      module?: unknown
     }>
   }
-  type?: string
-  value?: string
+  type?: unknown
+  value?: unknown
 }
 
 interface SentryEventLike {
   breadcrumbs?: Array<{
     category?: string
     data?: Record<string, unknown>
-    message?: string
+    message?: unknown
     type?: string
   }>
   contexts?: Record<string, unknown>
@@ -34,11 +34,11 @@ interface SentryEventLike {
   }
   extra?: Record<string, unknown>
   level?: string
-  message?: string
+  message?: unknown
   request?: {
     data?: unknown
     headers?: Record<string, string>
-    url?: string
+    url?: unknown
   }
   tags?: Record<string, SentryTagValue>
   user?: unknown
@@ -121,6 +121,65 @@ const IGNORED_ERROR_MESSAGES = [
   /resizeobserver loop (?:completed with undelivered notifications|limit exceeded)/i,
 ]
 
+const SAFE_ERROR_DESCRIPTOR_PATTERN = /^[a-z0-9][a-z0-9._:/-]{0,63}$/i
+
+function valueKind(value: unknown): string {
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'array'
+  return typeof value
+}
+
+function safeErrorDescriptor(value: unknown): string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  if (typeof value === 'string' && SAFE_ERROR_DESCRIPTOR_PATTERN.test(value)) return value
+  return undefined
+}
+
+/**
+ * Turn values thrown by third-party/provider code into a real Error without
+ * copying the original object, message, request body, credentials, or user data.
+ */
+export function normalizeErrorForSentry(error: unknown): Error {
+  if (error instanceof Error) return error
+
+  const descriptors: string[] = [valueKind(error)]
+  if (typeof error === 'number') {
+    const value = safeErrorDescriptor(error)
+    if (value) {
+      descriptors.push(`value=${value}`)
+    }
+  }
+  if (error && typeof error === 'object' && !Array.isArray(error)) {
+    try {
+      const record = error as Record<string, unknown>
+      const nested = record.error && typeof record.error === 'object' ? (record.error as Record<string, unknown>) : null
+      const sources = nested ? [record, nested] : [record]
+      const fields = [
+        ['name', 'name'],
+        ['type', 'type'],
+        ['code', 'code'],
+        ['status', 'status'],
+        ['statusCode', 'status_code'],
+      ] as const
+
+      for (const source of sources) {
+        for (const [field, label] of fields) {
+          const value = safeErrorDescriptor(source[field])
+          if (value && !descriptors.includes(`${label}=${value}`)) {
+            descriptors.push(`${label}=${value}`)
+          }
+        }
+      }
+    } catch {
+      // Proxies and throwing getters are intentionally reduced to their type.
+    }
+  }
+
+  const normalized = new Error(`Non-Error exception (${descriptors.join('; ')})`)
+  normalized.name = 'NonErrorException'
+  return normalized
+}
+
 function isWeakSetValue(value: unknown): value is object {
   return (typeof value === 'object' && value !== null) || typeof value === 'function'
 }
@@ -137,7 +196,9 @@ function getExceptionValue(event: SentryEventLike): SentryExceptionValueLike | u
 }
 
 function getErrorMessage(event: SentryEventLike): string {
-  return getExceptionValue(event)?.value ?? event.message ?? ''
+  const exceptionValue = getExceptionValue(event)?.value
+  if (typeof exceptionValue === 'string') return exceptionValue
+  return typeof event.message === 'string' ? event.message : ''
 }
 
 function shouldIgnoreEvent(event: SentryEventLike): boolean {
@@ -229,7 +290,10 @@ function sanitizeUrl(value: string): string {
   }
 }
 
-function sanitizeText(value: string): string {
+function sanitizeText(value: unknown): string {
+  if (typeof value !== 'string') {
+    return `[non-string ${valueKind(value)}]`
+  }
   return value
     .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
     .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, '[redacted]')
@@ -305,21 +369,21 @@ function sanitizeEvent(event: SentryEventLike): void {
   event.user = undefined
   event.extra = sanitizeRecord(event.extra)
   event.contexts = sanitizeRecord(event.contexts)
-  if (event.message) {
+  if (event.message !== undefined) {
     event.message = sanitizeText(event.message)
   }
   for (const exception of event.exception?.values ?? []) {
-    if (exception.value) {
+    if (exception.value !== undefined) {
       exception.value = sanitizeText(exception.value)
     }
     for (const frame of exception.stacktrace?.frames ?? []) {
-      if (frame.filename) {
+      if (frame.filename !== undefined) {
         frame.filename = sanitizeText(frame.filename)
       }
-      if (frame.abs_path) {
+      if (frame.abs_path !== undefined) {
         frame.abs_path = sanitizeText(frame.abs_path)
       }
-      if (frame.module) {
+      if (frame.module !== undefined) {
         frame.module = sanitizeText(frame.module)
       }
     }
@@ -327,8 +391,10 @@ function sanitizeEvent(event: SentryEventLike): void {
 
   if (event.request) {
     event.request.data = undefined
-    if (event.request.url) {
+    if (typeof event.request.url === 'string') {
       event.request.url = sanitizeUrl(event.request.url)
+    } else if (event.request.url !== undefined) {
+      event.request.url = sanitizeText(event.request.url)
     }
   }
   if (event.request?.headers) {
@@ -342,7 +408,7 @@ function sanitizeEvent(event: SentryEventLike): void {
   for (const breadcrumb of event.breadcrumbs ?? []) {
     const sanitizedData = sanitizeRecord(breadcrumb.data)
     breadcrumb.data = sanitizedData
-    if (breadcrumb.message) {
+    if (breadcrumb.message !== undefined) {
       breadcrumb.message = sanitizeText(breadcrumb.message)
     }
     for (const key of URL_BREADCRUMB_KEYS) {
@@ -359,46 +425,51 @@ export function createSentryEventProcessor(options: SentryEventProcessorOptions)
   const random = options.random ?? Math.random
 
   return <T>(rawEvent: T, rawHint?: unknown): T | null => {
-    const event = rawEvent as SentryEventLike
-    const hint = rawHint as SentryEventHintLike | undefined
+    try {
+      const event = rawEvent as SentryEventLike
+      const hint = rawHint as SentryEventHintLike | undefined
 
-    if (shouldIgnoreEvent(event)) {
+      if (shouldIgnoreEvent(event)) {
+        return null
+      }
+
+      const originalException = hint?.originalException
+      if (
+        options.dedupeOriginalExceptions &&
+        isWeakSetValue(originalException) &&
+        seenExceptions.has(originalException)
+      ) {
+        return null
+      }
+
+      const tags = event.tags ?? {}
+      const operation = inferOperation(event, tags)
+      const priority = inferPriority(event, tags, operation)
+      const sampleRate = priority === 'normal' ? options.normalSampleRate : 1
+
+      if (sampleRate < 1 && random() >= sampleRate) {
+        return null
+      }
+
+      event.tags = {
+        ...tags,
+        error_domain: inferDomain(tags),
+        error_handled: String(inferHandled(event, tags)),
+        error_operation: operation,
+        error_priority: priority,
+        error_sample_rate: String(sampleRate),
+        error_source: options.source,
+      }
+      sanitizeEvent(event)
+
+      if (options.dedupeOriginalExceptions && isWeakSetValue(originalException)) {
+        seenExceptions.add(originalException)
+      }
+
+      return rawEvent
+    } catch {
+      // A malformed event must never break the app or bypass privacy filtering.
       return null
     }
-
-    const originalException = hint?.originalException
-    if (
-      options.dedupeOriginalExceptions &&
-      isWeakSetValue(originalException) &&
-      seenExceptions.has(originalException)
-    ) {
-      return null
-    }
-
-    const tags = event.tags ?? {}
-    const operation = inferOperation(event, tags)
-    const priority = inferPriority(event, tags, operation)
-    const sampleRate = priority === 'normal' ? options.normalSampleRate : 1
-
-    if (sampleRate < 1 && random() >= sampleRate) {
-      return null
-    }
-
-    event.tags = {
-      ...tags,
-      error_domain: inferDomain(tags),
-      error_handled: String(inferHandled(event, tags)),
-      error_operation: operation,
-      error_priority: priority,
-      error_sample_rate: String(sampleRate),
-      error_source: options.source,
-    }
-    sanitizeEvent(event)
-
-    if (options.dedupeOriginalExceptions && isWeakSetValue(originalException)) {
-      seenExceptions.add(originalException)
-    }
-
-    return rawEvent
   }
 }

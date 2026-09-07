@@ -1,4 +1,10 @@
 import type { CopilotDetail, Session, Settings } from '@shared/types'
+import {
+  combineMemoryStateTokens,
+  createMemoryStateToken,
+  isMemoryStateToken,
+  parseCopilotMemoryStateTokens,
+} from '@shared/types/agent-persona'
 import { v4 as uuidv4 } from 'uuid'
 import {
   BACKUP_MANIFEST_PATH,
@@ -15,7 +21,12 @@ import {
   restoreSessionResourceKeys,
   restoreSettingsResourceKeys,
 } from './resources'
-import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
+import {
+  AGENT_PERSONA_BACKUP_KEYS,
+  BackupStorageKey,
+  backupSessionStorageKey,
+  COPILOT_BACKUP_KEYS,
+} from './storage-keys'
 import {
   type BackupManifest,
   BackupManifestSchema,
@@ -47,6 +58,235 @@ interface PreviousValue {
   key: string
   existed: boolean
   rollbackKey?: string
+}
+
+interface ImportedMemoryState {
+  globalImported: boolean
+  sourceGlobalEnabled: boolean
+  finalGlobalEnabled: boolean
+  sourceGlobalToken: string
+  finalGlobalToken: string
+  affectedCopilotIds: Set<string>
+  sourceCopilotOwners: Set<string>
+  finalCopilotOwners: Set<string>
+  sourceCopilotTokens: Map<string, string>
+  finalCopilotTokens: Map<string, string>
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+function parseCopilotOwnerIds(value: unknown): Set<string> {
+  if (!Array.isArray(value)) return new Set()
+  return new Set(
+    value.flatMap((entry) => {
+      const id = objectRecord(entry)?.id
+      return typeof id === 'string' ? [id] : []
+    })
+  )
+}
+
+function parseCopilotMemoryIds(value: unknown): Set<string> {
+  return new Set(Object.keys(objectRecord(value) ?? {}))
+}
+
+function memoryTokenMap(value: unknown): Map<string, string> {
+  return new Map(parseCopilotMemoryStateTokens(value).map((entry) => [entry.id, entry.token]))
+}
+
+interface EffectiveMemoryState {
+  scope: 'global' | 'copilot'
+  copilotId?: string
+  enabled: boolean
+  token: string
+}
+
+function effectiveMemoryState(
+  session: Session,
+  owners: Set<string>,
+  tokens: Map<string, string>,
+  globalEnabled: boolean,
+  globalToken: string
+): EffectiveMemoryState {
+  const copilotToken = session.copilotId ? (tokens.get(session.copilotId) ?? '') : ''
+  if (session.copilotId && owners.has(session.copilotId)) {
+    return {
+      scope: 'copilot',
+      copilotId: session.copilotId,
+      enabled: true,
+      token: combineMemoryStateTokens(copilotToken, ''),
+    }
+  }
+  return {
+    scope: 'global',
+    enabled: globalEnabled,
+    token: combineMemoryStateTokens(copilotToken, globalToken),
+  }
+}
+
+function snapshotMatchesEffectiveMemoryState(
+  snapshot: NonNullable<NonNullable<Session['settings']>['sessionPromptContextSnapshot']>,
+  state: EffectiveMemoryState
+): boolean {
+  return (
+    snapshot.memoryCopilotId === state.copilotId &&
+    (snapshot.memoryEnabled ?? true) === state.enabled &&
+    (snapshot.memoryStateToken ?? '') === state.token
+  )
+}
+
+async function resolveImportedMemoryState(
+  manifest: BackupManifest,
+  stagedEntries: Map<string, StagedEntry>,
+  storage: BackupStorage
+): Promise<ImportedMemoryState> {
+  const [destinationSettingsValue, destinationOwnersValue, destinationTokensValue, destinationMemoriesValue] =
+    await Promise.all([
+      storage.getItem<unknown>(BackupStorageKey.Settings, null),
+      storage.getItem<unknown>(BackupStorageKey.CopilotMemoryOwners, null),
+      storage.getItem<unknown>(BackupStorageKey.CopilotMemoryTokens, null),
+      storage.getItem<unknown>(BackupStorageKey.CopilotMemories, null),
+    ])
+  const destinationSettings = objectRecord(destinationSettingsValue)
+  const destinationGlobalEnabled = destinationSettings?.memoryEnabled !== false
+  const destinationGlobalToken = isMemoryStateToken(destinationSettings?.memoryStateToken)
+    ? destinationSettings.memoryStateToken
+    : ''
+
+  const globalImported = Boolean(manifest.data.settings)
+  const settingsEntry = manifest.data.settings ? stagedEntries.get(manifest.data.settings.path) : undefined
+  const sourceSettings = objectRecord(settingsEntry?.value)
+  const sourceGlobalEnabled = globalImported ? sourceSettings?.memoryEnabled !== false : destinationGlobalEnabled
+  const sourceGlobalToken = globalImported
+    ? isMemoryStateToken(sourceSettings?.memoryStateToken)
+      ? sourceSettings.memoryStateToken
+      : ''
+    : destinationGlobalToken
+  const finalGlobalToken = globalImported ? createMemoryStateToken() : destinationGlobalToken
+  if (globalImported && settingsEntry && sourceSettings) {
+    settingsEntry.value = { ...sourceSettings, memoryStateToken: finalGlobalToken }
+  }
+
+  const sessionSettingsEntry = manifest.data.sessionSettings
+    ? stagedEntries.get(manifest.data.sessionSettings.path)
+    : undefined
+  const sessionSettings = objectRecord(sessionSettingsEntry?.value)
+  const ownersImported = Boolean(
+    sessionSettings && Object.hasOwn(sessionSettings, BackupStorageKey.CopilotMemoryOwners)
+  )
+  const tokensImported = Boolean(
+    sessionSettings && Object.hasOwn(sessionSettings, BackupStorageKey.CopilotMemoryTokens)
+  )
+  const memoriesImported = Boolean(sessionSettings && Object.hasOwn(sessionSettings, BackupStorageKey.CopilotMemories))
+
+  const destinationOwners = parseCopilotOwnerIds(destinationOwnersValue)
+  const destinationTokens = memoryTokenMap(destinationTokensValue)
+  const destinationMemoryIds = parseCopilotMemoryIds(destinationMemoriesValue)
+  const sourceOwners = ownersImported
+    ? parseCopilotOwnerIds(sessionSettings?.[BackupStorageKey.CopilotMemoryOwners])
+    : destinationOwners
+  const sourceTokens = tokensImported
+    ? memoryTokenMap(sessionSettings?.[BackupStorageKey.CopilotMemoryTokens])
+    : destinationTokens
+  const sourceMemoryIds = memoriesImported
+    ? parseCopilotMemoryIds(sessionSettings?.[BackupStorageKey.CopilotMemories])
+    : destinationMemoryIds
+
+  const affectedCopilotIds = new Set<string>()
+  if (ownersImported) {
+    for (const id of destinationOwners) affectedCopilotIds.add(id)
+    for (const id of sourceOwners) affectedCopilotIds.add(id)
+  }
+  if (tokensImported) {
+    for (const id of destinationTokens.keys()) affectedCopilotIds.add(id)
+    for (const id of sourceTokens.keys()) affectedCopilotIds.add(id)
+  }
+  if (memoriesImported) {
+    for (const id of destinationMemoryIds) affectedCopilotIds.add(id)
+    for (const id of sourceMemoryIds) affectedCopilotIds.add(id)
+  }
+
+  const finalTokens = new Map(destinationTokens)
+  for (const id of affectedCopilotIds) finalTokens.set(id, createMemoryStateToken())
+  if (affectedCopilotIds.size > 0 && sessionSettings && sessionSettingsEntry) {
+    sessionSettingsEntry.value = {
+      ...sessionSettings,
+      [BackupStorageKey.CopilotMemoryTokens]: Array.from(finalTokens, ([id, token]) => ({ id, token })),
+    }
+  }
+
+  return {
+    globalImported,
+    sourceGlobalEnabled,
+    finalGlobalEnabled: globalImported ? sourceGlobalEnabled : destinationGlobalEnabled,
+    sourceGlobalToken,
+    finalGlobalToken,
+    affectedCopilotIds,
+    sourceCopilotOwners: sourceOwners,
+    finalCopilotOwners: sourceOwners,
+    sourceCopilotTokens: sourceTokens,
+    finalCopilotTokens: finalTokens,
+  }
+}
+
+function translateImportedSessionMemoryState(session: Session, state: ImportedMemoryState): Session {
+  const sourceState = effectiveMemoryState(
+    session,
+    state.sourceCopilotOwners,
+    state.sourceCopilotTokens,
+    state.sourceGlobalEnabled,
+    state.sourceGlobalToken
+  )
+  const finalState = effectiveMemoryState(
+    session,
+    state.finalCopilotOwners,
+    state.finalCopilotTokens,
+    state.finalGlobalEnabled,
+    state.finalGlobalToken
+  )
+  const contributingStateImported = session.copilotId
+    ? sourceState.scope === 'copilot'
+      ? [state.affectedCopilotIds.has(session.copilotId)]
+      : [state.affectedCopilotIds.has(session.copilotId), state.globalImported]
+    : [state.globalImported]
+  const allContributingStateImported = contributingStateImported.every(Boolean)
+  const noContributingStateImported = contributingStateImported.every((imported) => !imported)
+  const translateSnapshot = (
+    snapshot: NonNullable<NonNullable<Session['settings']>['sessionPromptContextSnapshot']>
+  ) => {
+    if (
+      noContributingStateImported ||
+      (allContributingStateImported && snapshotMatchesEffectiveMemoryState(snapshot, sourceState))
+    ) {
+      return { ...snapshot, memoryStateToken: finalState.token }
+    }
+    return snapshot
+  }
+  const currentSnapshot = session.settings?.sessionPromptContextSnapshot
+  const threads = session.threads?.map((thread) =>
+    thread.sessionPromptContextSnapshot
+      ? {
+          ...thread,
+          sessionPromptContextSnapshot: translateSnapshot(thread.sessionPromptContextSnapshot),
+        }
+      : thread
+  )
+
+  return {
+    ...session,
+    ...(currentSnapshot
+      ? {
+          settings: {
+            ...session.settings,
+            sessionPromptContextSnapshot: translateSnapshot(currentSnapshot),
+          },
+        }
+      : {}),
+    ...(threads ? { threads } : {}),
+  }
 }
 
 export interface BackupImportOptions {
@@ -262,6 +502,7 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
     const manifest = BackupManifestSchema.parse(manifestValue)
     validateManifestEntries(manifest, stagedEntries)
     const { plans: resourcePlans, resourceKeyMap } = await createResourcePlans(manifest, stagedEntries, options.storage)
+    const importedMemoryState = await resolveImportedMemoryState(manifest, stagedEntries, options.storage)
     options.onProgress?.({ phase: 'validating', current: 1, total: 1 })
 
     const existingStoreKeys = new Set(await options.storage.getAllKeys())
@@ -270,7 +511,12 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
       ...(manifest.data.settings ? [BackupStorageKey.Settings] : []),
       ...(manifest.data.copilots ? [BackupStorageKey.MyCopilots] : []),
       ...(manifest.data.sessionSettings
-        ? [BackupStorageKey.ChatSessionSettings, BackupStorageKey.PictureSessionSettings]
+        ? [
+            BackupStorageKey.ChatSessionSettings,
+            BackupStorageKey.PictureSessionSettings,
+            ...AGENT_PERSONA_BACKUP_KEYS,
+            ...COPILOT_BACKUP_KEYS,
+          ]
         : []),
     ]
     for (const key of new Set(changedKeys)) {
@@ -321,6 +567,7 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
         importWarnings.push(...rehydrated.warnings)
         if (rehydrated.rollback) rehydrationRollbacks.push(rehydrated.rollback)
       }
+      session = translateImportedSessionMemoryState(session, importedMemoryState)
       await options.storage.setItemNow(backupSessionStorageKey(session.id), session)
 
       const meta = restoreSessionMetaResourceKeys(descriptor.meta, resourceKeyMap)
@@ -357,7 +604,12 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
       const value = stagedEntries.get(manifest.data.sessionSettings.path)?.value
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid session settings entry')
       const sessionSettings = value as Record<string, unknown>
-      for (const key of [BackupStorageKey.ChatSessionSettings, BackupStorageKey.PictureSessionSettings]) {
+      for (const key of [
+        BackupStorageKey.ChatSessionSettings,
+        BackupStorageKey.PictureSessionSettings,
+        ...AGENT_PERSONA_BACKUP_KEYS,
+        ...COPILOT_BACKUP_KEYS,
+      ]) {
         if (key in sessionSettings) await options.storage.setItemNow(key, sessionSettings[key])
       }
     }

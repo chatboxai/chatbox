@@ -7,4 +7,9 @@ describe('matchModelBrand', () => {
     expect(matchModelBrand('mimo-v2.5-pro')).toBe('xiaomi')
     expect(matchModelBrand('xiaomi/mimo-v2-flash')).toBe('xiaomi')
   })
+
+  it('matches LongCat model ids to the LongCat brand', () => {
+    expect(matchModelBrand('LongCat-2.0')).toBe('longcat')
+    expect(matchModelBrand('meituan/longcat-2.0')).toBe('longcat')
+  })
 })

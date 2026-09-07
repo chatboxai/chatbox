@@ -1,6 +1,18 @@
+import { getSessionActionGate } from '@chatbox/core/session/action-gates'
+import {
+  isActionAvailableInMode,
+  isThreadHistoryAvailable,
+  resolveSessionMode,
+  type SessionMode,
+} from '@chatbox/core/session/mode-policy'
+import {
+  type PromptCacheDeleteTarget,
+  shouldConfirmPromptCacheBreakForDelete,
+} from '@chatbox/core/session/prompt-cache-policy'
 import NiceModal from '@ebay/nice-modal-react'
 import { Button, Flex, Stack, Transition } from '@mantine/core'
 import { useThrottledCallback } from '@mantine/hooks'
+import { TestId } from '@shared/automation/testids'
 import type { Session, Message as SessionMessage, SessionThreadBrief } from '@shared/types'
 import {
   IconArrowBarToUp,
@@ -29,20 +41,19 @@ import { type StateSnapshot, Virtuoso, type VirtuosoHandle } from 'react-virtuos
 import { buildMessageRenderItems, type MessageRenderItem } from '@/components/chat/message-render-items'
 import { platformTypeAtom } from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { useSessionLockState } from '@/hooks/useSessionLockState'
 import { cn } from '@/lib/utils'
 import platform from '@/platform'
 import * as atoms from '@/stores/atoms'
-import {
-  countCancellableGeneratingAssistantMessages,
-  getGenerationControlMessages,
-} from '@/stores/session/generation-state'
-import { moveThreadToConversations, removeMessage, removeThread, switchThread } from '@/stores/sessionActions'
+import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
+import { removeMessage } from '@/stores/session/messages'
+import { moveThreadToConversations, removeThread, switchThread } from '@/stores/session/threads'
 import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/sessionHelpers'
-import { settingsStore } from '@/stores/settingsStore'
-import * as toastActions from '@/stores/toastActions'
+import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
+import { evaluatePromptCacheDeleteContext } from '@/utils/prompt-cache-confirm'
+import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu from '../ActionMenu'
-
 import { ErrorBoundary } from '../common/ErrorBoundary'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { BlockCodeCollapsedStateProvider } from '../Markdown'
@@ -51,7 +62,12 @@ import ForkMarkerMessage from './ForkMarkerMessage'
 import Message from './Message'
 import MessageMinimapRail, { type MessageMinimapAnchor } from './MessageMinimapRail'
 import MessageNavigation, { ScrollToBottomButton } from './MessageNavigation'
-import { areMinimapAnchorsEqual, getMessagePreviewText, isUserNavigationMessage } from './message-navigation-utils'
+import {
+  areMinimapAnchorsEqual,
+  canReuseMinimapAnchorsDuringGeneration,
+  getMessagePreviewText,
+  isUserNavigationMessage,
+} from './message-navigation-utils'
 import SummaryMessage from './SummaryMessage'
 import { createSmoothFollowOutputController } from './smooth-follow-output'
 
@@ -83,6 +99,7 @@ export function clearScrollPositionCache(sessionId: string) {
 export interface MessageListRef {
   scrollToTop: (behavior?: ScrollBehavior) => void
   scrollToBottom: (behavior?: ScrollBehavior) => void
+  scrollToMessage: (messageId: string, behavior?: 'auto' | 'smooth') => boolean
   setIsNewMessage: (flag: boolean) => void
 }
 
@@ -95,6 +112,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
   const widthFull = useUIStore((s) => s.widthFull)
+  const hideSystemPromptMessage = useSettingsStore((s) => s.hideSystemPromptMessage)
 
   const { currentSession } = props
 
@@ -103,12 +121,39 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     [currentSession]
   )
   const currentMessageList = useMemo(() => getAllMessageList(currentSession), [currentSession])
-  const generationControlMessages = useMemo(() => getGenerationControlMessages(currentSession), [currentSession])
-  const generatingReplyCount = useMemo(
-    () => countCancellableGeneratingAssistantMessages(generationControlMessages),
-    [generationControlMessages]
+  const sessionLocks = useSessionLockState(currentSession)
+  // Resolved once per session snapshot and passed down as a plain prop: with
+  // multi-thousand-row sessions, per-row store subscriptions would re-run a
+  // selector on every streaming chunk. Mode changes rewrite session.settings,
+  // so the session prop already re-renders this component when it matters.
+  const sessionMode = useMemo(
+    () => resolveSessionMode(getSessionAgentModeEntry(currentSession.id, currentSession).value),
+    [currentSession]
   )
-  const generationLocked = generatingReplyCount > 0
+  const promptCacheContextRef = useRef({
+    mode: sessionMode,
+    messages: currentSession.messages,
+    compactionPoints: currentSession.compactionPoints,
+    maxContextMessageCount: currentSession.settings?.maxContextMessageCount,
+  })
+  promptCacheContextRef.current = {
+    mode: sessionMode,
+    messages: currentSession.messages,
+    compactionPoints: currentSession.compactionPoints,
+    maxContextMessageCount: currentSession.settings?.maxContextMessageCount,
+  }
+  const shouldConfirmPromptCacheDelete = useCallback((messageId: string, target: PromptCacheDeleteTarget) => {
+    const { mode, messages, compactionPoints, maxContextMessageCount } = promptCacheContextRef.current
+    const context = evaluatePromptCacheDeleteContext(messages, messageId, {
+      compactionPoints,
+      maxContextMessageCount,
+    })
+    return shouldConfirmPromptCacheBreakForDelete(mode, messages, messageId, target, {
+      contextMessages: context.messages,
+      hasStartedAssistantRequest: context.hasStartedAssistantRequest,
+      deletionChangesContext: context.deletionChangesContext,
+    })
+  }, [])
 
   const latestSummaryMessageId = useMemo(() => {
     for (let i = currentMessageList.length - 1; i >= 0; i--) {
@@ -124,16 +169,37 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     [currentMessageList]
   )
 
-  // Anchors carry only short preview prefixes and reuse the previous array
-  // when nothing visible changed, so per-chunk session cache updates neither
-  // re-join the whole conversation text nor re-render the memoized rail.
-  const previousAnchorsRef = useRef<MessageMinimapAnchor[]>([])
+  // A streaming reply replaces the session object for every chunk. Build the
+  // minimap once when generation starts, freeze it while chunks arrive, then
+  // refresh it once with the final assistant preview after generation ends.
+  const previousMinimapStateRef = useRef<{
+    sessionId: string
+    generationRunning: boolean
+    messages: SessionMessage[]
+    anchors: MessageMinimapAnchor[]
+  }>({ sessionId: currentSession.id, generationRunning: false, messages: [], anchors: [] })
   const userMessageAnchors = useMemo<MessageMinimapAnchor[]>(() => {
+    const previousState = previousMinimapStateRef.current
+
     // Small screens never show the rail, so skip the anchor scan entirely
     // (it would otherwise run on every streaming chunk on mobile).
     if (isSmallScreen) {
-      previousAnchorsRef.current = EMPTY_MINIMAP_ANCHORS
+      previousMinimapStateRef.current = {
+        sessionId: currentSession.id,
+        generationRunning: false,
+        messages: currentMessageList,
+        anchors: EMPTY_MINIMAP_ANCHORS,
+      }
       return EMPTY_MINIMAP_ANCHORS
+    }
+
+    if (
+      sessionLocks.anyReplyGenerating &&
+      previousState.sessionId === currentSession.id &&
+      previousState.generationRunning &&
+      canReuseMinimapAnchorsDuringGeneration(previousState.messages, currentMessageList)
+    ) {
+      return previousState.anchors
     }
 
     const assistantTextByUserId = new Map<string, string>()
@@ -150,7 +216,11 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
           break
         }
         if (nextMessage.role === 'assistant' && !nextMessage.isSummary && !nextMessage.isForkMarker) {
-          assistantTextByUserId.set(message.id, getMessagePreviewText(nextMessage))
+          // Do not expose a transient partial preview. The completed text is
+          // loaded by the first render after `anyReplyGenerating` becomes false.
+          if (!nextMessage.generating) {
+            assistantTextByUserId.set(message.id, getMessagePreviewText(nextMessage))
+          }
           break
         }
       }
@@ -165,12 +235,18 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
       }))
     )
 
-    if (areMinimapAnchorsEqual(previousAnchorsRef.current, anchors)) {
-      return previousAnchorsRef.current
+    const stableAnchors =
+      previousState.sessionId === currentSession.id && areMinimapAnchorsEqual(previousState.anchors, anchors)
+        ? previousState.anchors
+        : anchors
+    previousMinimapStateRef.current = {
+      sessionId: currentSession.id,
+      generationRunning: sessionLocks.anyReplyGenerating,
+      messages: currentMessageList,
+      anchors: stableAnchors,
     }
-    previousAnchorsRef.current = anchors
-    return anchors
-  }, [currentMessageList, renderItems, isSmallScreen])
+    return stableAnchors
+  }, [currentMessageList, currentSession.id, renderItems, sessionLocks.anyReplyGenerating, isSmallScreen])
   const showMinimap = !isSmallScreen && userMessageAnchors.length > 0
 
   const virtuoso = useRef<VirtuosoHandle>(null)
@@ -185,6 +261,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const messageListRef = useRef<HTMLDivElement>(null)
   const [messageViewportHeight, setMessageViewportHeight] = useState(0)
   const [isNewMessage, setIsNewMessage] = useState(false)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const setMessageListElement = useUIStore((s) => s.setMessageListElement)
   const setMessageScrolling = useUIStore((s) => s.setMessageScrolling)
@@ -298,6 +376,9 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
       if (timerRef.current) {
         clearTimeout(timerRef.current)
       }
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current)
+      }
     }
   }, [])
 
@@ -393,13 +474,55 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
 
   const platformType = useAtomValue(platformTypeAtom)
 
+  // Work Mode drops the conversation's system prompt when building the request —
+  // identity comes from the frozen Soul — so showing it would misrepresent what the
+  // model receives, whatever the display setting says.
+  const hideSystemPrompt = hideSystemPromptMessage || !isActionAvailableInMode('session-system-prompt', sessionMode)
+  const showThreadHistory = isThreadHistoryAvailable(currentSession, sessionMode)
+
   const renderMessageBlock = useCallback(
     (msg: SessionMessage, options: { isFirstItem: boolean; isLastItem: boolean }) => {
+      // Keep system messages in renderItems so thread anchors and Virtuoso indices stay stable.
+      const shouldHideSystemPrompt = hideSystemPrompt && msg.role === 'system'
+      const thread = showThreadHistory ? currentThreadHash[msg.id] : undefined
+      // Saved alternatives stay inside the pivot block (newest-first in ForkGroup), so the active
+      // branch appears last. Forks can pivot on a system message ("Reply Again Below", first-reply
+      // retries), so the switcher must stay reachable even while the system prompt is hidden.
+      const forkGroup = currentSession.messageForksHash?.[msg.id] &&
+        currentSession.messageForksHash[msg.id].lists.length > 1 && (
+          <ForkGroup
+            sessionId={currentSession.id}
+            sessionType={currentSession.type || 'chat'}
+            msgId={msg.id}
+            forks={currentSession.messageForksHash[msg.id]}
+            sessionLocks={sessionLocks}
+            sessionMode={sessionMode}
+            assistantAvatarKey={currentSession.assistantAvatarKey}
+            sessionPicUrl={currentSession.picUrl}
+          />
+        )
+
+      if (shouldHideSystemPrompt) {
+        return (
+          <Stack key={msg.id} gap={0}>
+            {thread && <ThreadLabel thread={thread} sessionId={currentSession.id} sessionMode={sessionMode} />}
+            {/* Virtuoso items must keep a measurable height so their canonical message indices
+                remain stable; the placeholder also carries the first/last paddings the hidden
+                message would have contributed, keeping the visible transcript's spacing. */}
+            {!thread && (
+              <div
+                aria-hidden="true"
+                className={cn('h-px', options.isFirstItem && 'pt-4', options.isLastItem && 'pb-4')}
+              />
+            )}
+            {forkGroup}
+          </Stack>
+        )
+      }
+
       return (
         <Stack key={msg.id} gap={0} pt={msg.role === 'user' ? 4 : 0}>
-          {currentThreadHash[msg.id] && (
-            <ThreadLabel thread={currentThreadHash[msg.id]} sessionId={currentSession.id} />
-          )}
+          {thread && <ThreadLabel thread={thread} sessionId={currentSession.id} sessionMode={sessionMode} />}
           <ErrorBoundary name={`message-item`}>
             {msg.isForkMarker ? (
               <ForkMarkerMessage
@@ -410,15 +533,23 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
               <SummaryMessage
                 msg={msg}
                 className={options.isFirstItem ? 'pt-4' : options.isLastItem ? '!pb-4' : ''}
-                isLatestSummary={msg.id === latestSummaryMessageId}
-                onDelete={() => {
-                  if (generationLocked) {
-                    toastActions.add(t('Wait for the current replies to finish'), 2500)
-                    return
-                  }
-                  void removeMessage(currentSession.id, msg.id)
-                }}
+                isLatestSummary={currentSession.type !== 'picture' && msg.id === latestSummaryMessageId}
+                onDelete={
+                  currentSession.type === 'picture'
+                    ? undefined
+                    : () => {
+                        const gate = getSessionActionGate('delete-summary', sessionLocks)
+                        if (!gate.allowed) {
+                          void notifySessionLockBlocked(gate.reason, t)
+                          return
+                        }
+                        void removeMessage(currentSession.id, msg.id)
+                      }
+                }
                 sessionId={currentSession.id}
+                sessionMode={sessionMode}
+                shouldConfirmPromptCacheDelete={shouldConfirmPromptCacheDelete}
+                highlighted={msg.id === highlightedMessageId}
               />
             ) : (
               <Message
@@ -426,33 +557,35 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                 msg={msg}
                 sessionId={currentSession.id}
                 sessionType={currentSession.type || 'chat'}
+                readOnly={currentSession.type === 'picture'}
                 className={options.isFirstItem ? 'pt-4' : options.isLastItem ? '!pb-4' : ''}
                 collapseThreshold={msg.role === 'system' ? 150 : undefined}
                 buttonGroup={options.isLastItem && msg.role === 'assistant' ? 'always' : 'auto'}
-                generatingReplyCount={generatingReplyCount}
-                generationLocked={generationLocked}
+                sessionLocks={sessionLocks}
+                sessionMode={sessionMode}
+                shouldConfirmPromptCacheDelete={shouldConfirmPromptCacheDelete}
+                allowGeneratingStop
                 assistantAvatarKey={currentSession.assistantAvatarKey}
                 sessionPicUrl={currentSession.picUrl}
               />
             )}
           </ErrorBoundary>
-          {/* Saved alternatives stay inside the pivot block (newest-first in ForkGroup), so the active branch appears last. */}
-          {currentSession.messageForksHash?.[msg.id] && currentSession.messageForksHash[msg.id].lists.length > 1 && (
-            <ForkGroup
-              sessionId={currentSession.id}
-              sessionType={currentSession.type || 'chat'}
-              msgId={msg.id}
-              forks={currentSession.messageForksHash[msg.id]}
-              generatingReplyCount={generatingReplyCount}
-              generationLocked={generationLocked}
-              assistantAvatarKey={currentSession.assistantAvatarKey}
-              sessionPicUrl={currentSession.picUrl}
-            />
-          )}
+          {forkGroup}
         </Stack>
       )
     },
-    [currentSession, currentThreadHash, generatingReplyCount, generationLocked, latestSummaryMessageId, t]
+    [
+      currentSession,
+      currentThreadHash,
+      hideSystemPrompt,
+      sessionLocks,
+      sessionMode,
+      shouldConfirmPromptCacheDelete,
+      showThreadHistory,
+      latestSummaryMessageId,
+      highlightedMessageId,
+      t,
+    ]
   )
 
   useImperativeHandle(ref, () => ({
@@ -463,6 +596,19 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     scrollToBottom: (behavior = 'auto') => {
       smoothFollowOutput.resume()
       virtuoso.current?.scrollTo({ top: Infinity, behavior })
+    },
+    scrollToMessage: (messageId, behavior = 'smooth') => {
+      const itemIndex = renderItems.findIndex((item) => item.messages.some((message) => message.id === messageId))
+      if (itemIndex < 0) return false
+
+      smoothFollowOutput.pause()
+      setHighlightedMessageId(messageId)
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current)
+      }
+      highlightTimerRef.current = setTimeout(() => setHighlightedMessageId(null), 2500)
+      virtuoso.current?.scrollToIndex({ index: itemIndex, align: 'center', behavior })
+      return true
     },
     setIsNewMessage: (value: boolean) => setIsNewMessage(value),
   }))
@@ -476,9 +622,15 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
         >
           {/* Virtuoso smooths appended items but snaps same-item height growth; the controller below owns both cases. */}
           <Virtuoso
-            style={{ scrollbarGutter: 'stable' }}
+            style={{ scrollbarGutter: isSmallScreen ? 'auto' : 'stable' }}
             className={platformType === 'win32' ? 'scrollbar-custom' : ''}
             data={renderItems}
+            // MessageRenderItem already carries a stable key (message id / group ids).
+            // Without computeItemKey, Virtuoso reconciles by index and reuses DOM nodes
+            // across positions; when a message is inserted or removed mid-list (steering,
+            // fork switching, compaction), React's keyed inner <Stack> then tries to remove
+            // a node Virtuoso already moved, throwing "Failed to execute 'removeChild'".
+            computeItemKey={(_, item) => item.key}
             ref={virtuoso}
             followOutput={false}
             {...(sessionScrollPositionCache.has(currentSession.id)
@@ -493,12 +645,13 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
             increaseViewportBy={{ top: 2000, bottom: 2000 }}
             itemContent={(index, item) => {
               const itemClassName = widthFull ? 'w-full' : 'max-w-4xl mx-auto'
+              const itemStyle = isSmallScreen ? { paddingInlineEnd: 16 } : undefined
               const isFirstItem = index === 0
               const isLastItem = index === renderItems.length - 1
 
               if (item.type === 'group') {
                 return (
-                  <div className={itemClassName}>
+                  <div className={itemClassName} style={itemStyle}>
                     <div
                       className="flex flex-col pt-5"
                       style={
@@ -520,7 +673,9 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
               }
 
               return (
-                <div className={itemClassName}>{renderMessageBlock(item.messages[0], { isFirstItem, isLastItem })}</div>
+                <div className={itemClassName} style={itemStyle}>
+                  {renderMessageBlock(item.messages[0], { isFirstItem, isLastItem })}
+                </div>
               )
             }}
             atTopStateChange={setAtTop}
@@ -594,9 +749,10 @@ export default memo(MessageList)
 
 type ThreadLabelProps = {
   sessionId: string
+  sessionMode: SessionMode
   thread: SessionThreadBrief
 }
-const ThreadLabel: FC<ThreadLabelProps> = memo(({ thread, sessionId }) => {
+const ThreadLabel: FC<ThreadLabelProps> = memo(({ thread, sessionId, sessionMode }) => {
   const { t } = useTranslation()
   const setShowHistoryDrawer = useSetAtom(atoms.showThreadHistoryDrawerAtom)
 
@@ -639,26 +795,31 @@ const ThreadLabel: FC<ThreadLabelProps> = memo(({ thread, sessionId }) => {
             icon: IconListTree,
             onClick: handleOpenHistoryDrawer,
           },
-          {
-            text: t('Continue this thread'),
-            icon: IconSwitch3,
-            onClick: handleContinueThread,
-          },
-          {
-            text: t('Move to Conversations'),
-            icon: IconMessagePlus,
-            onClick: handleMoveToConversations,
-          },
-          { divider: true },
-          {
-            doubleCheck: true,
-            text: t('delete'),
-            icon: IconTrash,
-            onClick: handleDeleteThread,
-          },
+          ...(sessionMode === 'chat'
+            ? [
+                {
+                  text: t('Continue this thread'),
+                  icon: IconSwitch3,
+                  onClick: handleContinueThread,
+                },
+                {
+                  text: t('Move to Conversations'),
+                  icon: IconMessagePlus,
+                  onClick: handleMoveToConversations,
+                },
+                { divider: true as const },
+                {
+                  doubleCheck: true,
+                  text: t('delete'),
+                  icon: IconTrash,
+                  onClick: handleDeleteThread,
+                },
+              ]
+            : []),
         ]}
       >
         <span
+          data-testid={TestId.message.threadLabel}
           className="cursor-pointer font-bold border-solid border rounded-xxl py-2 px-3 border-slate-400/25"
           onDoubleClick={handleOpenHistoryDrawer}
           // onClick={onClick}

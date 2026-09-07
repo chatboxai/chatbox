@@ -1,3 +1,4 @@
+import type { PlatformType } from '../platform'
 import type { BuiltinProviderBaseInfo } from '../types'
 import type { ProviderDefinition, ProviderDefinitionInput } from './types'
 
@@ -21,6 +22,11 @@ export function getAllProviders(): ProviderDefinition[] {
 
 export function hasProvider(id: string): boolean {
   return providerRegistry.has(id)
+}
+
+export function isProviderAvailableOnPlatform(id: string, platformType: PlatformType): boolean {
+  const platforms = providerRegistry.get(id)?.platforms
+  return !platforms || platforms.includes(platformType)
 }
 
 export function clearProviderRegistry(): void {

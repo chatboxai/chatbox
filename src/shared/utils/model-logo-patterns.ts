@@ -27,6 +27,7 @@ export type ModelBrand =
   | 'grok'
   | 'perplexity'
   | 'xiaomi'
+  | 'longcat'
 
 export const MODEL_BRAND_PATTERNS: ReadonlyArray<readonly [RegExp, ModelBrand]> = [
   [/\b(o1|o3|o4|gpt|chatgpt)/i, 'openai'],
@@ -43,13 +44,14 @@ export const MODEL_BRAND_PATTERNS: ReadonlyArray<readonly [RegExp, ModelBrand]> 
   [/doubao|ep-202/i, 'doubao'],
   [/baichuan/i, 'baichuan'],
   [/yi-/i, 'yi'],
-  [/hunyuan/i, 'hunyuan'],
+  [/hunyuan|(?:^|[/:_.-])hy4(?:$|[/:_.-])/i, 'hunyuan'],
   [/minimax|abab/i, 'minimax'],
   [/step-/i, 'stepfun'],
   [/cohere|command-r/i, 'cohere'],
   [/grok/i, 'grok'],
   [/perplexity|sonar/i, 'perplexity'],
   [/(^|[/:_-])(mimo|xiaomi)([/:_-]|$)/i, 'xiaomi'],
+  [/longcat/i, 'longcat'],
 ]
 
 export function matchModelBrand(modelId: string): ModelBrand | undefined {

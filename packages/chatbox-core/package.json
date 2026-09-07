@@ -1,0 +1,43 @@
+{
+  "name": "@chatbox/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./application/attachments": "./src/application/attachments/index.ts",
+    "./application/context": "./src/application/context/index.ts",
+    "./application/model": "./src/application/model/index.ts",
+    "./application/session": "./src/application/session/index.ts",
+    "./application/settings": "./src/application/settings/index.ts",
+    "./domain/settings": "./src/domain/settings/index.ts",
+    "./domain/settings/settings-schema": "./src/domain/settings/settings-schema.ts",
+    "./generation": "./src/generation/index.ts",
+    "./message-approval": "./src/message-approval.ts",
+    "./model": "./src/model.ts",
+    "./ports": "./src/ports/index.ts",
+    "./ports/testing/session-repository-contract": "./src/ports/testing/session-repository-contract.ts",
+    "./session/action-gates": "./src/session/action-gates.ts",
+    "./session/generation-state": "./src/session/generation-state.ts",
+    "./session/mode-policy": "./src/session/mode-policy.ts",
+    "./session/prompt-cache-policy": "./src/session/prompt-cache-policy.ts",
+    "./session/message-success": "./src/session/message-success.ts",
+    "./testing": "./src/testing/index.ts",
+    "./testing/generation-stream": "./src/testing/generation-stream.ts",
+    "./utils/chat-export": "./src/utils/chat-export.ts",
+    "./utils/session-sort": "./src/utils/session-sort.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "ai": "^6.0.11",
+    "deepmerge": "^4.3.1",
+    "zod": "^4.0.17"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,9 +1,8 @@
 import { Flex, Slider, Stack, type StackProps, Text, TextInput, type TextProps } from '@mantine/core'
-import { IconInfoCircle } from '@tabler/icons-react'
 import { type ChangeEvent, type KeyboardEvent, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
-import { ScalableIcon } from '../common/ScalableIcon'
+import { TooltipInfoTrigger } from './TooltipInfoTrigger'
 
 export function toBeRemoved_getContextMessageCount(
   openaiMaxContextMessageCount: number,
@@ -22,11 +21,23 @@ export interface Props {
   className?: string
   wrapperProps?: StackProps
   labelProps?: TextProps
+  inputTestId?: string
 }
 
 const MESSAGE_COUNT_OPTIONS = [0, 2, 4, 6, 8, 10, 20, 50, 100, 200, 500, Number.MAX_SAFE_INTEGER]
-export default function MaxContextMessageCountSlider({ value, onChange, className, wrapperProps, labelProps }: Props) {
+export default function MaxContextMessageCountSlider({
+  value,
+  onChange,
+  className,
+  wrapperProps,
+  labelProps,
+  inputTestId,
+}: Props) {
   const { t } = useTranslation()
+  const settingLabel = t('Max Message Count in Context')
+  const tooltipLabel = t(
+    'Regulate the volume of historical messages sent to the AI, striking a harmonious balance between depth of comprehension and the efficiency of responses.'
+  )
 
   const [tempSliderValue, setTempSliderValue] = useState<number>()
   const sliderValue = useMemo(() => {
@@ -88,18 +99,17 @@ export default function MaxContextMessageCountSlider({ value, onChange, classNam
     <Stack gap="xs" {...wrapperProps}>
       <Flex align="center" gap="xs">
         <Text size="sm" fw={'600'} {...labelProps}>
-          {t('Max Message Count in Context')}
+          {settingLabel}
         </Text>
         <Tooltip
-          label={t(
-            'Regulate the volume of historical messages sent to the AI, striking a harmonious balance between depth of comprehension and the efficiency of responses.'
-          )}
+          label={tooltipLabel}
           withArrow={true}
           maw={320}
           className="!whitespace-normal"
           zIndex={3000}
+          openOnTouch
         >
-          <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
+          <TooltipInfoTrigger label={settingLabel} />
         </Tooltip>
       </Flex>
       <Flex gap="sm" align="center" className={className}>
@@ -120,6 +130,7 @@ export default function MaxContextMessageCountSlider({ value, onChange, classNam
           onChangeEnd={handleSliderChangeEnd}
         />
         <TextInput
+          data-testid={inputTestId}
           w={64}
           size="sm"
           value={inputValue}

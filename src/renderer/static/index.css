@@ -19,6 +19,31 @@ body {
   overscroll-behavior: none;
 }
 
+::-webkit-scrollbar,
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--chatbox-tint-secondary) 70%, transparent);
+  background-clip: content-box;
+  border: 4px solid transparent;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--chatbox-tint-secondary) 90%, transparent);
+}
+
+.sidebar-session-list::-webkit-scrollbar {
+  width: 12px;
+}
+
+.sidebar-session-list::-webkit-scrollbar-thumb {
+  border-width: 3px;
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
 }
@@ -42,50 +67,6 @@ html[data-theme="dark"] {
     background-color: var(--chatbox-background-primary);
   }
 
-  /* // ------------ 滚动条 --------------- */
-
-  /* 默认隐藏滚动条，滚动时显示 */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-    background-color: transparent;
-    border-radius: 6px;
-  }
-  ::scrollbar {
-    width: 6px;
-    height: 6px;
-    background-color: transparent;
-    border-radius: 6px;
-  }
-  &.scrollbar-scrolling::-webkit-scrollbar:hover,
-  .scrollbar-scrolling::-webkit-scrollbar:hover {
-    background-color: #333333;
-  }
-  ::scrollbar:hover {
-    background-color: #333333;
-  }
-  /* 滚动条上的滑块 */
-  ::-webkit-scrollbar-thumb {
-    background-color: transparent;
-    border-radius: 6px;
-  }
-  &.scrollbar-scrolling::-webkit-scrollbar-thumb,
-  .scrollbar-scrolling::-webkit-scrollbar-thumb {
-    background-color: #b1b1b1;
-  }
-  &.scrollbar-scrolling::-webkit-scrollbar-thumb:hover,
-  .scrollbar-scrolling::-webkit-scrollbar-thumb:hover {
-    background-color: #8c8c8c;
-  }
-  /* 滚动条的轨道 */
-  ::-webkit-scrollbar-track {
-    border-radius: 6px;
-  }
-  /* 滚动条上下按钮 */
-  ::-webkit-scrollbar-button {
-    display: none;
-  }
-
   a {
     color: #fff;
   }
@@ -98,50 +79,6 @@ html[data-theme="dark"] {
 html[data-theme="light"] {
   .ToolBar {
     background-color: var(--chatbox-background-primary);
-  }
-
-  /* // ------------ 滚动条 --------------- */
-
-  /* 默认隐藏滚动条，滚动时显示 */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-    background-color: transparent;
-    border-radius: 6px;
-  }
-  ::scrollbar {
-    width: 6px;
-    height: 6px;
-    background-color: transparent;
-    border-radius: 6px;
-  }
-  &.scrollbar-scrolling::-webkit-scrollbar:hover,
-  .scrollbar-scrolling::-webkit-scrollbar:hover {
-    background-color: #f5f5f5;
-  }
-  ::scrollbar:hover {
-    background-color: #f5f5f5;
-  }
-  /* 滚动条上的滑块 */
-  ::-webkit-scrollbar-thumb {
-    background-color: transparent;
-    border-radius: 6px;
-  }
-  &.scrollbar-scrolling::-webkit-scrollbar-thumb,
-  .scrollbar-scrolling::-webkit-scrollbar-thumb {
-    background-color: #c6c6c6;
-  }
-  &.scrollbar-scrolling::-webkit-scrollbar-thumb:hover,
-  .scrollbar-scrolling::-webkit-scrollbar-thumb:hover {
-    background-color: #a0a0a0;
-  }
-  /* 滚动条的轨道 */
-  ::-webkit-scrollbar-track {
-    border-radius: 6px;
-  }
-  /* 滚动条上下按钮 */
-  ::-webkit-scrollbar-button {
-    display: none;
   }
 
   a {

@@ -5,6 +5,8 @@ import { authInfoStore } from '@/stores/authInfoStore'
 import { settingsStore } from '@/stores/settingsStore'
 import { handleMobileRequest } from '@/utils/mobile-request'
 
+export { VibedropEmailRequiredError } from './vibedrop-errors'
+
 // VibeDrop publishing API. The client publishes HTML artifacts directly to
 // VibeDrop using a per-user key obtained from chatbox-backend
 // (see issueVibedropKey in remote.ts). Replaces the old anonymous EdgeOne flow.
@@ -34,8 +36,6 @@ export interface VibedropPublication extends VibedropSite {
   updatedAt: number
 }
 
-/** The Chatbox account has no email — publishing requires one (VibeDrop is email-identified). */
-export class VibedropEmailRequiredError extends Error {}
 /** VibeDrop rejected the key (revoked/invalid) — caller should clear cache and re-issue. */
 export class VibedropAuthError extends Error {}
 /** An update targeted a slug the current key no longer owns. */

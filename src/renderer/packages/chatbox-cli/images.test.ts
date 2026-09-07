@@ -4,6 +4,7 @@ const {
   getAvailableImageModelsMock,
   getImageGenerationByIdMock,
   getImageGenerationPageMock,
+  getSessionMock,
   queueBackgroundTaskNotificationMock,
   requestAppActionApprovalMock,
   executionStorage,
@@ -14,6 +15,7 @@ const {
   getAvailableImageModelsMock: vi.fn(),
   getImageGenerationByIdMock: vi.fn(),
   getImageGenerationPageMock: vi.fn(),
+  getSessionMock: vi.fn(),
   queueBackgroundTaskNotificationMock: vi.fn(),
   requestAppActionApprovalMock: vi.fn(),
   executionStorage: new Map<string, unknown>(),
@@ -23,6 +25,9 @@ const {
 }))
 
 vi.mock('@/packages/app-action-approval', () => ({ requestAppActionApproval: requestAppActionApprovalMock }))
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: { sessionQueryBridge: { getSession: getSessionMock } },
+}))
 vi.mock('@/packages/image-model-catalog', () => ({
   getAvailableImageModels: getAvailableImageModelsMock,
 }))
@@ -86,6 +91,36 @@ function context(argv: string[], options: ChatboxCliToolContext = {}): ChatboxCl
   }
 }
 
+// The persisted result shape of a successfully accepted generate tool call — the
+// condition under which the chat UI binds the inline gallery to that tool step.
+function acceptedGenerateResult(recordId: string): Record<string, unknown> {
+  return {
+    ok: true,
+    command: 'image generate',
+    accepted: true,
+    background: true,
+    recordId,
+    status: 'pending',
+    startedAt: 1_000,
+    wait: { mode: 'callback', managedBy: 'chatbox', modelShouldPoll: false },
+  }
+}
+
+function sessionWithToolCall(toolCallId: string, result: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: 'session-1',
+    name: 'QA session',
+    type: 'chat',
+    messages: [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        contentParts: [{ type: 'tool-call', toolCallId, state: 'result', toolName: 'chatbox_cli', args: {}, result }],
+      },
+    ],
+  }
+}
+
 describe('Chatbox CLI image commands', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -101,6 +136,7 @@ describe('Chatbox CLI image commands', () => {
     getAvailableImageModelsMock.mockResolvedValue([
       { provider: 'chatbox-ai', modelId: 'manifest-image', nickname: 'Manifest Image' },
     ])
+    getSessionMock.mockResolvedValue(null)
   })
 
   it('selects the first available catalog model and anchors the completion follow-up', async () => {
@@ -167,6 +203,137 @@ describe('Chatbox CLI image commands', () => {
       command('generate').execute(context(['--prompt', 'red fox', '--provider', 'openai', '--model', 'gpt-4o']))
     ).rejects.toThrow('Image model is not available')
     expect(startImageGenerationMock).not.toHaveBeenCalled()
+  })
+
+  it('resolves case, display-name, and punctuation variants of --model to the exact catalog id', async () => {
+    getAvailableImageModelsMock.mockResolvedValue([
+      { provider: 'chatbox-ai', modelId: 'gemini-3.1-flash-image', nickname: 'Gemini 3.1 Flash Image' },
+      { provider: 'chatbox-ai', modelId: 'gpt-image-2', nickname: 'GPT Image 2' },
+    ])
+    const pause = new Error('approval required')
+    requestAppActionApprovalMock.mockRejectedValue(pause)
+
+    for (const reference of ['gpt-image-2', 'GPT-IMAGE-2', 'GPT Image 2', 'gpt image 2']) {
+      requestAppActionApprovalMock.mockClear()
+      await expect(
+        command('generate').execute(context(['--prompt', 'red fox', '--model', reference], { approved: false }))
+      ).rejects.toBe(pause)
+      expect(requestAppActionApprovalMock).toHaveBeenCalledWith(
+        expect.any(String),
+        'image.generate',
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({ provider: 'chatbox-ai', modelId: 'gpt-image-2' })
+      )
+    }
+  })
+
+  it('resolves --provider case-insensitively and defaults to its first model', async () => {
+    getAvailableImageModelsMock.mockResolvedValue([
+      { provider: 'chatbox-ai', modelId: 'gemini-3.1-flash-image', nickname: 'Gemini 3.1 Flash Image' },
+      { provider: 'openai', modelId: 'gpt-image-1', nickname: 'GPT Image 1' },
+    ])
+    const pause = new Error('approval required')
+    requestAppActionApprovalMock.mockRejectedValueOnce(pause)
+
+    await expect(
+      command('generate').execute(context(['--prompt', 'red fox', '--provider', 'OpenAI'], { approved: false }))
+    ).rejects.toBe(pause)
+    expect(requestAppActionApprovalMock).toHaveBeenCalledWith(
+      expect.any(String),
+      'image.generate',
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ provider: 'openai', modelId: 'gpt-image-1' })
+    )
+  })
+
+  it('lists the available models when a requested model cannot be resolved', async () => {
+    await expect(
+      command('generate').execute(context(['--prompt', 'red fox', '--model', 'gpt-image-9'], { approved: false }))
+    ).rejects.toThrow(
+      'Image model is not available: "gpt-image-9". Available image models: chatbox-ai/manifest-image ("Manifest Image").'
+    )
+    expect(requestAppActionApprovalMock).not.toHaveBeenCalled()
+    expect(startImageGenerationMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a model reference that matches several different model ids instead of guessing', async () => {
+    getAvailableImageModelsMock.mockResolvedValue([
+      { provider: 'chatbox-ai', modelId: 'flux-pro', nickname: 'Fast Image' },
+      { provider: 'openai', modelId: 'gpt-image-1', nickname: 'Fast Image' },
+    ])
+
+    await expect(
+      command('generate').execute(context(['--prompt', 'red fox', '--model', 'Fast Image'], { approved: false }))
+    ).rejects.toThrow('Image model "Fast Image" is ambiguous: chatbox-ai/flux-pro, openai/gpt-image-1')
+    expect(requestAppActionApprovalMock).not.toHaveBeenCalled()
+  })
+
+  it('accepts approval continuations whose --model flag is a display-name variant of the approved model', async () => {
+    getAvailableImageModelsMock.mockResolvedValue([
+      { provider: 'chatbox-ai', modelId: 'gpt-image-2', nickname: 'GPT Image 2' },
+    ])
+    const approvalDetails = {
+      type: 'image_generation' as const,
+      provider: 'chatbox-ai',
+      modelId: 'gpt-image-2',
+      prompt: 'red fox',
+      count: 1,
+      billing: 'chatbox_quota' as const,
+    }
+    startImageGenerationMock.mockResolvedValue({
+      recordId: 'record-2',
+      startedAt: 1_000,
+      monitoring: { mode: 'direct' },
+      completion: Promise.resolve(null),
+    })
+
+    await expect(
+      command('generate').execute(context(['--prompt', 'red fox', '--model', 'GPT Image 2'], { approvalDetails }))
+    ).resolves.toMatchObject({
+      accepted: true,
+      model: { provider: 'chatbox-ai', modelId: 'gpt-image-2' },
+    })
+    expect(startImageGenerationMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model: { provider: 'chatbox-ai', modelId: 'gpt-image-2' } }),
+      expect.anything()
+    )
+  })
+
+  it('does not reject continuations whose provider was inferred rather than explicitly passed', async () => {
+    // The approved model id exists under two providers and the approval bound the one
+    // that is not first in catalog order. Only --model is replayed, so the inferred
+    // provider must not count as an explicit request in the post-approval guard.
+    getAvailableImageModelsMock.mockResolvedValue([
+      { provider: 'gemini', modelId: 'nano-banana', nickname: 'Nano Banana' },
+      { provider: 'gemini-custom', modelId: 'nano-banana', nickname: 'Nano Banana' },
+    ])
+    const approvalDetails = {
+      type: 'image_generation' as const,
+      provider: 'gemini-custom',
+      modelId: 'nano-banana',
+      prompt: 'red fox',
+      count: 1,
+      billing: 'provider' as const,
+    }
+    startImageGenerationMock.mockResolvedValue({
+      recordId: 'record-3',
+      startedAt: 1_000,
+      monitoring: { mode: 'direct' },
+      completion: Promise.resolve(null),
+    })
+
+    await expect(
+      command('generate').execute(context(['--prompt', 'red fox', '--model', 'nano-banana'], { approvalDetails }))
+    ).resolves.toMatchObject({
+      accepted: true,
+      model: { provider: 'gemini-custom', modelId: 'nano-banana' },
+    })
+    expect(startImageGenerationMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model: { provider: 'gemini-custom', modelId: 'nano-banana' } }),
+      expect.anything()
+    )
   })
 
   it('requests structured approval with quota and compute-point context', async () => {
@@ -362,6 +529,148 @@ describe('Chatbox CLI image commands', () => {
         modelShouldPoll: false,
         location: 'original chat or Image Creator',
       },
+    })
+  })
+
+  it('masks result references whose images are already displayed inline in this chat', async () => {
+    getSessionMock.mockResolvedValue(sessionWithToolCall('tool-origin', acceptedGenerateResult('record-1')))
+    getImageGenerationByIdMock.mockResolvedValue({
+      id: 'record-1',
+      status: 'done',
+      createdAt: 1_000,
+      prompt: 'red fox',
+      referenceImages: [],
+      generatedImages: ['https://example.com/image-1.png', 'https://example.com/image-2.png'],
+      generatedImageThumbnails: ['https://example.com/thumb-1.png', 'https://example.com/thumb-2.png'],
+      model: { provider: 'chatbox-ai', modelId: 'manifest-image' },
+      taskId: 'task-1',
+      source: { type: 'chatbox_cli', sessionId: 'session-1', toolCallId: 'tool-origin' },
+    })
+
+    const result = await command('status').execute(context(['record-1']))
+    expect(result).toMatchObject({
+      id: 'record-1',
+      status: 'done',
+      generatedImages: [
+        '[image 1 already shown to the user in this chat]',
+        '[image 2 already shown to the user in this chat]',
+      ],
+      note: expect.stringContaining('Do not render them again'),
+    })
+    expect(result.generatedImageThumbnails).toBeUndefined()
+  })
+
+  it('keeps result references readable for records that are not displayed in the current chat', async () => {
+    getImageGenerationByIdMock.mockResolvedValue({
+      id: 'record-2',
+      status: 'done',
+      createdAt: 1_000,
+      prompt: 'red fox',
+      referenceImages: [],
+      generatedImages: ['https://example.com/image-1.png'],
+      model: { provider: 'chatbox-ai', modelId: 'manifest-image' },
+      taskId: 'task-2',
+      source: { type: 'chatbox_cli', sessionId: 'session-other', toolCallId: 'tool-origin' },
+    })
+
+    const result = await command('status').execute(context(['record-2']))
+    expect(result).toMatchObject({ generatedImages: ['https://example.com/image-1.png'] })
+    expect(result.note).toBeUndefined()
+  })
+
+  it('keeps result references when the originating tool call left the active thread', async () => {
+    // Switching or clearing threads archives the originating tool call while the
+    // session id stays the same; nothing in the active view shows the gallery then.
+    getSessionMock.mockResolvedValue({
+      id: 'session-1',
+      name: 'QA session',
+      type: 'chat',
+      messages: [],
+      threads: [sessionWithToolCall('tool-origin', acceptedGenerateResult('record-1'))],
+    })
+    getImageGenerationByIdMock.mockResolvedValue({
+      id: 'record-1',
+      status: 'done',
+      createdAt: 1_000,
+      prompt: 'red fox',
+      referenceImages: [],
+      generatedImages: ['https://example.com/image-1.png'],
+      model: { provider: 'chatbox-ai', modelId: 'manifest-image' },
+      taskId: 'task-1',
+      source: { type: 'chatbox_cli', sessionId: 'session-1', toolCallId: 'tool-origin' },
+    })
+
+    const result = await command('status').execute(context(['record-1']))
+    expect(result).toMatchObject({ generatedImages: ['https://example.com/image-1.png'] })
+    expect(result.note).toBeUndefined()
+  })
+
+  it('keeps result references when the originating tool call has a non-gallery restored result', async () => {
+    // A restored completed execution is not an accepted-pending result, so the tool
+    // step does not bind the inline gallery; the references are the only display.
+    getSessionMock.mockResolvedValue(
+      sessionWithToolCall('tool-origin', {
+        ok: true,
+        command: 'image generate',
+        restored: true,
+        recordId: 'record-1',
+        status: 'done',
+      })
+    )
+    getImageGenerationByIdMock.mockResolvedValue({
+      id: 'record-1',
+      status: 'done',
+      createdAt: 1_000,
+      prompt: 'red fox',
+      referenceImages: [],
+      generatedImages: ['https://example.com/image-1.png'],
+      model: { provider: 'chatbox-ai', modelId: 'manifest-image' },
+      taskId: 'task-1',
+      source: { type: 'chatbox_cli', sessionId: 'session-1', toolCallId: 'tool-origin' },
+    })
+
+    const result = await command('status').execute(context(['record-1']))
+    expect(result).toMatchObject({ generatedImages: ['https://example.com/image-1.png'] })
+    expect(result.note).toBeUndefined()
+  })
+
+  it('masks only the history items whose images are displayed in the current chat', async () => {
+    getSessionMock.mockResolvedValue(sessionWithToolCall('tool-origin', acceptedGenerateResult('record-here')))
+    getImageGenerationPageMock.mockResolvedValue({
+      items: [
+        {
+          id: 'record-here',
+          status: 'done',
+          createdAt: 1_000,
+          prompt: 'red fox',
+          referenceImages: [],
+          generatedImages: ['https://example.com/image-here.png'],
+          model: { provider: 'chatbox-ai', modelId: 'manifest-image' },
+          source: { type: 'chatbox_cli', sessionId: 'session-1', toolCallId: 'tool-origin' },
+        },
+        {
+          id: 'record-creator',
+          status: 'done',
+          createdAt: 2_000,
+          prompt: 'blue bird',
+          referenceImages: [],
+          generatedImages: ['https://example.com/image-creator.png'],
+          model: { provider: 'chatbox-ai', modelId: 'manifest-image' },
+        },
+      ],
+      nextCursor: null,
+      total: 2,
+    })
+
+    await expect(command('history').execute(context([]))).resolves.toMatchObject({
+      items: [
+        {
+          id: 'record-here',
+          generatedImages: ['[image 1 already shown to the user in this chat]'],
+          note: expect.stringContaining('Do not render them again'),
+        },
+        { id: 'record-creator', generatedImages: ['https://example.com/image-creator.png'] },
+      ],
     })
   })
 

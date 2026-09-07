@@ -1,16 +1,22 @@
 import type { CopilotDetail } from '@shared/types'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { useAtom } from 'jotai'
-import { atomWithStorage } from 'jotai/utils'
-import { useMemo } from 'react'
+import { useAtomValue } from 'jotai'
+import { useCallback, useMemo } from 'react'
 import * as remote from '@/packages/remote'
-import storage, { StorageKey } from '@/storage'
+import {
+  addOrUpdateMyCopilot,
+  type CopilotMemoryOwner,
+  copilotMemoryOwnersAtom,
+  disableCopilotMemory,
+  enableCopilotMemory,
+  myCopilotsAtom,
+  readCopilotMemoryEnabled,
+  removeMyCopilot,
+} from '@/stores/copilotStore'
 import { useLanguage } from '@/stores/settingsStore'
 
-const myCopilotsAtom = atomWithStorage<CopilotDetail[]>(StorageKey.MyCopilots, [], storage)
-
 export function useMyCopilots() {
-  const [copilots, setCopilots] = useAtom(myCopilotsAtom)
+  const copilots = useAtomValue(myCopilotsAtom)
 
   // Sort my copilots: starred first
   const sortedCopilots = useMemo(() => {
@@ -18,36 +24,11 @@ export function useMyCopilots() {
   }, [copilots])
 
   const addOrUpdate = (target: CopilotDetail) => {
-    setCopilots(async (prev) => {
-      const copilots = await prev
-      let found = false
-      const newCopilots = copilots.map((c) => {
-        if (c.id === target.id) {
-          found = true
-          return {
-            ...c,
-            ...target,
-            updatedAt: Date.now(),
-          }
-        }
-        return c
-      })
-      if (!found) {
-        newCopilots.unshift({
-          ...target,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        })
-      }
-      return newCopilots
-    })
+    addOrUpdateMyCopilot(target).catch((error) => console.error('useMyCopilots: failed to save copilot', error))
   }
 
   const remove = (id: string) => {
-    setCopilots(async (prev) => {
-      const copilots = await prev
-      return copilots.filter((c) => c.id !== id)
-    })
+    removeMyCopilot(id).catch((error) => console.error('useMyCopilots: failed to remove copilot', error))
   }
 
   return {
@@ -55,6 +36,20 @@ export function useMyCopilots() {
     addOrUpdate,
     remove,
   }
+}
+
+/** Which copilots keep their own memory list, and how to change that. */
+export function useCopilotMemory() {
+  const owners = useAtomValue(copilotMemoryOwnersAtom)
+
+  const isEnabled = useCallback((copilotId: string) => owners.some((owner) => owner.id === copilotId), [owners])
+
+  const setEnabled = (owner: CopilotMemoryOwner, enabled: boolean) => {
+    const update = enabled ? enableCopilotMemory(owner) : disableCopilotMemory(owner.id)
+    update.catch((error) => console.error('useCopilotMemory: failed to save memory ownership', error))
+  }
+
+  return { owners, isEnabled, readEnabled: readCopilotMemoryEnabled, setEnabled }
 }
 
 export function useRemoteCopilotTags() {

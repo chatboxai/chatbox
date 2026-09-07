@@ -63,10 +63,7 @@ const SAFE_COMMANDS = new Set([
   'ag',
   'ack',
 
-  // text processing (sed -i / sed --in-place blocked by DANGEROUS_FLAGS)
-  'sed',
-  'awk',
-  'gawk',
+  // structured text processing
   'jq',
   'yq',
   'xq',

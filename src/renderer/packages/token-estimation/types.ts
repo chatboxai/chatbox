@@ -29,6 +29,17 @@ export type ContentMode = 'full' | 'preview'
  */
 export type TokenCacheKey = 'default' | 'deepseek' | 'default_preview' | 'deepseek_preview'
 
+/**
+ * An exact draft text count from the tokenizer worker, addressed by the draft
+ * projection it was computed against so a consumer can verify it still
+ * describes the text at hand.
+ */
+export interface ExactDraftTokens {
+  text: string
+  tokenizerType: TokenizerType
+  tokens: number
+}
+
 // ============================================================================
 // Computation Task Types
 // ============================================================================
@@ -65,6 +76,10 @@ export interface ComputationTask {
   attachmentType?: AttachmentType
   /** Tokenizer to use */
   tokenizerType: TokenizerType
+  /** Digest of the message text projection this task describes. */
+  textDigest?: string
+  /** Number of accepted sampling fallbacks for this text projection. */
+  retryAttempt?: number
   /** Content mode (full or preview, for attachments) */
   contentMode?: ContentMode
   /** Task priority (lower = more urgent, 0 is highest) */
@@ -105,6 +120,17 @@ export interface TaskResult {
     contentMode?: ContentMode
     /** Computed token count */
     tokens: number
+    /**
+     * Digest of the text projection the count was computed against
+     * (message-text tasks). The persister verifies it against the message's
+     * current text at apply time and drops the result on mismatch.
+     */
+    textDigest?: string
+    /**
+     * The count is a sampling fallback rather than an exact encode
+     * (message-text tasks whose worker attempt failed).
+     */
+    approximate?: boolean
     /** Line count (for attachments) */
     lineCount?: number
     /** Byte length (for attachments) */
@@ -142,6 +168,8 @@ export interface TokenBreakdown {
   text: number
   /** Tokens from attachments (files + links) */
   attachments: number
+  /** Tokens from tool-call parts (args + inline results), estimated synchronously */
+  toolCalls: number
 }
 
 /**
@@ -156,8 +184,26 @@ export interface TokenEstimationResult {
   totalTokens: number
   /** Whether any calculations are in progress */
   isCalculating: boolean
-  /** Number of pending computation tasks */
+  /** Whether long-draft text tokenization is in progress */
+  isDraftCalculating: boolean
+  /** Whether the current input token count is an estimate rather than an exact result */
+  isCurrentInputApproximate: boolean
+  /** Whether the total token count includes any estimated values */
+  isTotalApproximate: boolean
+  /** Whether the context token count includes persisted sampling fallbacks */
+  isContextApproximate: boolean
+  /** Whether any context message calculations are in progress */
+  isContextCalculating: boolean
+  /** Number of pending computation tasks, including draft tokenization */
   pendingTasks: number
+  /** Number of distinct context messages with unfinished calculations */
+  pendingContextMessages: number
+  /**
+   * The worker's exact count for the current draft, for seeding the outgoing
+   * message at submit (`seedExactDraftTokens`); null while the draft is short,
+   * still being counted, or fell back to an approximation.
+   */
+  exactDraftTokens: ExactDraftTokens | null
   /** Detailed breakdown of token sources */
   breakdown: {
     /** Breakdown for current input */

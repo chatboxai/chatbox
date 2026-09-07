@@ -1,7 +1,21 @@
-import { ModelProviderType } from '../../types'
 import { createCopilotOAuthFetch, createOAuthCredentialManager } from '../../oauth'
+import type { ProviderModelInfo } from '../../types'
+import { ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
+import {
+  applyGitHubCopilotModelMetadata,
+  getGitHubCopilotApiStyle,
+  stampGitHubCopilotCatalog,
+} from './github-copilot-routing'
 import OpenAI from './models/openai'
+import OpenAIResponses from './models/openai-responses'
+
+export {
+  applyGitHubCopilotModelMetadata,
+  getGitHubCopilotApiStyle,
+  githubCopilotUsesResponsesApi,
+  type GitHubCopilotApiStyle,
+} from './github-copilot-routing'
 
 // The Copilot API base URL (no /v1 prefix)
 const COPILOT_API_HOST = 'https://api.githubcopilot.com'
@@ -9,6 +23,29 @@ const COPILOT_API_HOST = 'https://api.githubcopilot.com'
 // Headers required by GitHub Copilot API on every request
 const COPILOT_API_HEADERS: Record<string, string> = {
   'Openai-Intent': 'conversation-edits',
+}
+
+function copilotModel(
+  modelId: string,
+  capabilities: NonNullable<ProviderModelInfo['capabilities']>
+): ProviderModelInfo {
+  return {
+    modelId,
+    capabilities,
+    apiStyle: getGitHubCopilotApiStyle(modelId),
+  }
+}
+
+class GitHubCopilotChat extends OpenAI {
+  public async listModels(): Promise<ProviderModelInfo[]> {
+    return stampGitHubCopilotCatalog(await super.listModels())
+  }
+}
+
+class GitHubCopilotResponses extends OpenAIResponses {
+  public async listModels(): Promise<ProviderModelInfo[]> {
+    return stampGitHubCopilotCatalog(await super.listModels())
+  }
 }
 
 export const githubCopilotProvider = defineProvider({
@@ -21,79 +58,53 @@ export const githubCopilotProvider = defineProvider({
   defaultSettings: {
     apiHost: COPILOT_API_HOST,
     models: [
-      {
-        modelId: 'gpt-4o',
-        capabilities: ['vision', 'tool_use'],
-        contextWindow: 128_000,
-        maxOutput: 4_096,
-      },
-      {
-        modelId: 'gpt-4o-mini',
-        capabilities: ['vision', 'tool_use'],
-        contextWindow: 128_000,
-        maxOutput: 4_096,
-      },
-      {
-        modelId: 'o4-mini',
-        capabilities: ['vision', 'tool_use', 'reasoning'],
-        contextWindow: 200_000,
-        maxOutput: 100_000,
-      },
-      {
-        modelId: 'o3-mini',
-        capabilities: ['vision', 'tool_use', 'reasoning'],
-        contextWindow: 200_000,
-        maxOutput: 200_000,
-      },
-      {
-        modelId: 'claude-sonnet-4',
-        capabilities: ['vision', 'reasoning', 'tool_use'],
-        contextWindow: 200_000,
-        maxOutput: 64_000,
-      },
-      {
-        modelId: 'claude-haiku-3.5',
-        capabilities: ['vision', 'tool_use'],
-        contextWindow: 200_000,
-        maxOutput: 8_192,
-      },
-      {
-        modelId: 'gemini-2.0-flash',
-        capabilities: ['vision', 'tool_use'],
-        contextWindow: 1_048_576,
-        maxOutput: 8_192,
-      },
+      copilotModel('gpt-5.6-sol', ['vision', 'reasoning', 'tool_use']),
+      copilotModel('gpt-5.6-terra', ['vision', 'reasoning', 'tool_use']),
+      copilotModel('gpt-5.6-luna', ['vision', 'tool_use', 'reasoning']),
+      copilotModel('gpt-5.3-codex', ['vision', 'reasoning', 'tool_use']),
+      copilotModel('claude-sonnet-5', ['vision', 'reasoning', 'tool_use']),
+      copilotModel('claude-haiku-4.5', ['vision', 'reasoning', 'tool_use']),
+      copilotModel('gemini-3.6-flash', ['vision', 'reasoning', 'tool_use']),
+      copilotModel('gemini-3.7-flash', ['vision', 'reasoning', 'tool_use']),
+      copilotModel('kimi-k2.7-code', ['vision', 'reasoning', 'tool_use']),
     ],
   },
   createModel: (config) => {
+    const model = applyGitHubCopilotModelMetadata(config.model)
     const isOAuth = config.providerSetting.activeAuthMode === 'oauth' && !!config.providerSetting.oauth?.accessToken
     const credentialManager = createOAuthCredentialManager(
       'github-copilot',
       config.providerSetting,
       config.dependencies
     )
-    return new OpenAI(
+    const shared = {
+      apiKey: isOAuth ? 'oauth-placeholder' : config.effectiveApiKey,
+      apiHost: COPILOT_API_HOST,
+      model,
+      temperature: config.settings.temperature,
+      topP: config.settings.topP,
+      maxOutputTokens: config.settings.maxTokens,
+      stream: config.settings.stream,
+      useProxy: false,
+      skipHostNormalization: true,
+      extraHeaders: COPILOT_API_HEADERS,
+      customFetch:
+        isOAuth && credentialManager ? createCopilotOAuthFetch(config.dependencies, credentialManager) : undefined,
+      listModelsFallback: isOAuth
+        ? config.providerSetting.models || githubCopilotProvider.defaultSettings?.models
+        : undefined,
+      skipRemoteModelList: isOAuth,
+    }
+
+    if (model.apiStyle === 'openai-responses') {
+      return new GitHubCopilotResponses({ ...shared, apiPath: '/responses' }, config.dependencies)
+    }
+
+    return new GitHubCopilotChat(
       {
-        apiKey: isOAuth ? 'oauth-placeholder' : config.effectiveApiKey,
-        apiHost: COPILOT_API_HOST,
-        model: config.model,
+        ...shared,
         dalleStyle: 'vivid',
-        temperature: config.settings.temperature,
-        topP: config.settings.topP,
-        maxOutputTokens: config.settings.maxTokens,
         injectDefaultMetadata: config.globalSettings.injectDefaultMetadata,
-        useProxy: false,
-        stream: config.settings.stream,
-        // Copilot API doesn't use /v1 prefix
-        skipHostNormalization: true,
-        // Copilot API requires these headers
-        extraHeaders: COPILOT_API_HEADERS,
-        customFetch:
-          isOAuth && credentialManager ? createCopilotOAuthFetch(config.dependencies, credentialManager) : undefined,
-        listModelsFallback: isOAuth
-          ? config.providerSetting.models || githubCopilotProvider.defaultSettings?.models
-          : undefined,
-        skipRemoteModelList: isOAuth,
       },
       config.dependencies
     )

@@ -78,7 +78,7 @@ export const WebSearchSuccess: StoryObj<typeof ToolCallPartUI> = {
           {
             title: 'Next.js App Router and Server Components',
             snippet: 'The App Router in Next.js 13+ uses React Server Components by default for all pages...',
-            link: 'https://example.com/nextjs-app-router',
+            link: 'https://example.com/docs/very-long-path/that-has-no-spaces-and-would-overflow-the-viewport-if-the-card-grew-with-its-content/nextjs-app-router?token=abcdefghijklmnopqrstuvwxyz0123456789',
           },
         ],
       },
@@ -187,6 +187,25 @@ export const ParseLinkLoading: StoryObj<typeof ToolCallPartUI> = {
   },
 }
 
+export const ParseLinkSuccess: StoryObj<typeof ToolCallPartUI> = {
+  name: 'Parse Link — Success',
+  args: {
+    part: makeToolCallPart({
+      toolName: 'parse_link',
+      state: 'result',
+      args: {
+        url: 'https://example.com/docs/very-long-path/that-has-no-spaces-and-would-overflow-the-viewport-if-unwrapped?token=abcdefghijklmnopqrstuvwxyz0123456789',
+      },
+      result: {
+        url: 'https://example.com/docs/very-long-path/that-has-no-spaces-and-would-overflow-the-viewport-if-unwrapped?token=abcdefghijklmnopqrstuvwxyz0123456789',
+        title: 'Understanding React Server Components',
+        content:
+          'React Server Components allow rendering on the server without sending JS to the client.\n\nSee also https://example.com/docs/very-long-path/that-has-no-spaces-and-would-overflow-the-viewport-if-unwrapped?token=abcdefghijklmnopqrstuvwxyz0123456789',
+      },
+    }),
+  },
+}
+
 // ─── Step Timeline (reasoning + tool calls on one connected line) ───
 
 function makeMessage(parts: StepTimelinePart[], overrides: Partial<Message> = {}): Message {
@@ -229,7 +248,7 @@ export const StepTimelineReasoningAndTools: StoryObj = {
             {
               title: 'OAuth token refresh patterns',
               snippet: 'How to rotate refresh tokens…',
-              link: 'https://example.com/oauth',
+              link: 'https://example.com/docs/very-long-path/that-has-no-spaces-and-would-overflow-the-viewport-if-the-card-grew-with-its-content/oauth?token=abcdefghijklmnopqrstuvwxyz0123456789',
             },
             {
               title: 'Silent refresh in SPAs',
@@ -296,9 +315,9 @@ export const StepTimelinePausedAtStepLimit: StoryObj = {
     docs: {
       description: {
         story:
-          'After a run of consecutive tool calls the generation pauses for confirmation. Continue is a split ' +
-          'button: the main segment continues once, while the chevron menu offers "Continue, and don\'t pause ' +
-          'this chat / any chat again" (both can be re-enabled in the corresponding settings).',
+          'After a run of consecutive tool calls the generation pauses for confirmation. The paused step stays ' +
+          'collapsed and read-only here; Continue/Stop and the "don\'t pause again" options render in the ' +
+          'pending-action bar above the input box (see the PendingActionBar stories).',
       },
     },
   },

@@ -76,6 +76,11 @@ export const BackupManifestSchema = z.object({
   data: z.object({
     settings: BackupJsonEntrySchema.optional(),
     copilots: BackupJsonEntrySchema.optional(),
+    // Key-value map entry (session-settings.json). Besides per-type session
+    // settings it also carries the agent persona keys (agent-soul,
+    // agent-memories): older importers read this map through a fixed key
+    // allowlist, so unknown keys are ignored and both directions stay
+    // compatible without a new archive entry or format bump.
     sessionSettings: BackupJsonEntrySchema.optional(),
   }),
   sessions: z.array(BackupSessionEntrySchema).max(50_000),

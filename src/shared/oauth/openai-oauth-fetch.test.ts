@@ -29,6 +29,33 @@ function createDependencies() {
 }
 
 describe('createOpenAIOAuthFetch', () => {
+  it('handles URL string inputs used by the AI SDK', async () => {
+    const { apiRequest, dependencies } = createDependencies()
+    const fetcher = createOpenAIOAuthFetch(dependencies, {
+      getCredential: vi.fn().mockResolvedValue({
+        accessToken: 'oauth-token',
+      }),
+      getAccessToken: vi.fn(),
+      clear: vi.fn(),
+    })
+
+    const response = await fetcher('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ input: 'hello' }),
+    })
+
+    expect(await response.json()).toEqual({ id: 'resp_1' })
+    expect(apiRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://chatgpt.com/backend-api/codex/responses',
+        method: 'POST',
+      })
+    )
+  })
+
   it('preserves request metadata and rewrites codex-compatible requests', async () => {
     const { apiRequest, dependencies } = createDependencies()
     const fetcher = createOpenAIOAuthFetch(

@@ -1,21 +1,24 @@
+import {
+  type AttachmentAnalysis,
+  type AttachmentPreparationOptions,
+  AttachmentService,
+  type ParsedAttachmentContent,
+  type PickedAsset,
+} from '@chatbox/core/application/attachments'
+import { projectSessionMeta } from '@chatbox/core/application/session'
 import { isSessionAttachmentRagSupportedFilePath, isSupportedFile, isTextFilePath } from '@shared/file-extensions'
-import { EMPTY_ATTACHMENT_CONTENT_ERROR, NON_RECOVERABLE_LOCAL_PARSER_ERROR_CODES } from '@shared/file-parse-errors'
+import {
+  CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR,
+  EMPTY_ATTACHMENT_CONTENT_ERROR,
+  NON_RECOVERABLE_LOCAL_PARSER_ERROR_CODES,
+} from '@shared/file-parse-errors'
 import { searchSessionMessages } from '@shared/services/native-session-search'
-import type {
-  ExportChatFormat,
-  ExportChatScope,
-  Session,
-  SessionMeta,
-  SessionSettings,
-  SessionThread,
-  SessionThreadBrief,
-  Settings,
-} from '@shared/types'
+import type { Session, SessionMeta, SessionSettings, SessionThreadBrief, Settings } from '@shared/types'
 import type { DocumentParserConfig } from '@shared/types/settings'
-import { getMessageText, migrateMessage } from '@shared/utils/message'
-import { pick } from 'lodash'
-import i18n from '@/i18n'
-import { formatChatAsHtml, formatChatAsMarkdown, formatChatAsTxt } from '@/lib/format-chat'
+import { migrateMessage } from '@shared/utils/message'
+import { BrowserAttachmentAdapter } from '@/adapters/BrowserAttachmentAdapter'
+import { CapacitorAttachmentAdapter } from '@/adapters/CapacitorAttachmentAdapter'
+import { DesktopAttachmentAdapter } from '@/adapters/DesktopAttachmentAdapter'
 import { getLogger } from '@/lib/utils'
 import { PREVIEW_LINES } from '@/packages/context-management/attachment-payload'
 import * as localParser from '@/packages/local-parser'
@@ -23,21 +26,18 @@ import * as remote from '@/packages/remote'
 import { estimateTokens } from '@/packages/token'
 import platform from '@/platform'
 import storage from '@/storage'
-import { StorageKey, StorageKeyGenerator } from '@/storage/StoreStorage'
+import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { authInfoStore } from '@/stores/authInfoStore'
-import { getMetaStorage } from '@/stores/chatStore'
+import { rendererApplication } from '@/app/renderer-application'
 import { reportError } from '@/utils/sentry'
-import { migrateSession, sortSessions } from '@/utils/session-utils'
+import { migrateSession } from '@/utils/session-utils'
 import * as defaults from '../../shared/defaults'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
 import { createMessage, type Message, SessionSettingsSchema, TOKEN_CACHE_KEYS } from '../../shared/types'
 import type { AttachmentPreparationResult, PreprocessedFile } from '../types/input-box'
 import { resolveChatboxLicenseDefaultModel } from './defaultChatModel'
 import { lastUsedModelStore } from './lastUsedModelStore'
-import {
-  SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING,
-  SESSION_ATTACHMENT_RAG_PARSED_CONTENT_TOO_LARGE_ERROR,
-} from './sessionAttachmentRagErrors'
+import { SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING } from './sessionAttachmentRagErrors'
 import * as settingActions from './settingActions'
 import { getPlatformDefaultDocumentParser, settingsStore } from './settingsStore'
 
@@ -50,6 +50,12 @@ export {
   SESSION_ATTACHMENT_RAG_REQUIRES_KNOWLEDGE_BASE_ERROR,
   SESSION_ATTACHMENT_RAG_REQUIRES_TOOL_USE_MODEL_ERROR,
 } from './sessionAttachmentRagErrors'
+
+/** Session meta repository access for maintenance/setup flows (initializes the service first). */
+export async function getMetaStorage() {
+  await rendererApplication.sessions.initialize()
+  return rendererApplication.sessions.repository.meta
+}
 
 const log = getLogger('session-helpers')
 const FILE_STORAGE_QUOTA_EXCEEDED_ERROR = 'file_storage_quota_exceeded'
@@ -67,11 +73,6 @@ type ContentStats = {
   lineCount: number
   byteLength: number
   previewContent: string
-}
-
-type AttachmentPreparationOptions = {
-  agentMode?: boolean
-  source?: 'pasted-text'
 }
 
 type FilePreprocessStage =
@@ -96,8 +97,10 @@ class FilePreprocessFailure extends Error {
 
 const EXPECTED_FILE_PREPROCESS_ERROR_CODES = new Set([
   'chatbox_ai_parser_failed',
+  CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR,
   'document_parser_not_configured',
   EMPTY_ATTACHMENT_CONTENT_ERROR,
+  'license_key_required',
   'local_parser_failed',
   'mineru_api_token_required',
   'parsing_cancelled',
@@ -146,7 +149,36 @@ function createSafeReportedError(error: unknown, errorCode: string): Error {
   return reportedError
 }
 
-function reportFilePreprocessFailure(file: File, failure: FilePreprocessFailure): void {
+function getStorageEstimateBucket(bytes: number | undefined): string {
+  if (bytes === undefined) return 'unknown'
+  if (bytes < 100 * 1024 * 1024) return 'under_100_mb'
+  if (bytes < 1024 * 1024 * 1024) return '100_mb_to_1_gb'
+  if (bytes < 10 * 1024 * 1024 * 1024) return '1_gb_to_10_gb'
+  return 'over_10_gb'
+}
+
+async function getStorageEstimateTags(): Promise<Record<string, string>> {
+  try {
+    const estimate = await navigator.storage?.estimate?.()
+    if (!estimate) return {}
+    const quota = estimate.quota ?? 0
+    const usage = estimate.usage ?? 0
+    return {
+      storage_quota_bucket: getStorageEstimateBucket(estimate.quota),
+      storage_usage_bucket: getStorageEstimateBucket(estimate.usage),
+      storage_usage_ratio: quota > 0 ? String(Math.min(100, Math.round((usage / quota) * 100))) : 'unknown',
+    }
+  } catch {
+    return {}
+  }
+}
+
+async function reportFilePreprocessFailure(
+  file: File,
+  failure: FilePreprocessFailure,
+  extraTags?: Record<string, string | number>
+): Promise<void> {
+  const storageTags = failure.code === FILE_STORAGE_QUOTA_EXCEEDED_ERROR ? await getStorageEstimateTags() : {}
   reportError(createSafeReportedError(failure.originalError, failure.code), {
     domain: 'file-attachment',
     operation: 'preprocess-file',
@@ -158,22 +190,20 @@ function reportFilePreprocessFailure(file: File, failure: FilePreprocessFailure)
       platform_type: platform.type,
       preprocess_stage: failure.stage,
       user_error_code: failure.code,
+      ...storageTags,
+      ...extraTags,
     },
   })
 }
 
 function normalizeFilePreprocessFailure(error: unknown, stage: FilePreprocessStage): FilePreprocessFailure | undefined {
-  if (error instanceof FilePreprocessFailure) {
-    return error
-  }
+  if (error instanceof FilePreprocessFailure) return error
   if (isStorageQuotaError(error)) {
     return new FilePreprocessFailure(FILE_STORAGE_QUOTA_EXCEEDED_ERROR, stage, error)
   }
 
   const errorCode = error instanceof Error ? error.message : ''
-  if (EXPECTED_FILE_PREPROCESS_ERROR_CODES.has(errorCode)) {
-    return undefined
-  }
+  if (EXPECTED_FILE_PREPROCESS_ERROR_CODES.has(errorCode)) return undefined
   return new FilePreprocessFailure(FILE_PREPROCESS_FAILED_ERROR, stage, error)
 }
 
@@ -188,48 +218,6 @@ function getContentStats(content: string): ContentStats {
 
 function isParsedContentVeryLarge(stats: ContentStats): boolean {
   return stats.byteLength > SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH
-}
-
-async function storeRawFileBlob(file: File, rawKey: string): Promise<boolean> {
-  try {
-    const arrayBuffer = await file.arrayBuffer()
-    const bytes = new Uint8Array(arrayBuffer)
-    // Chunked base64 encoding to avoid call stack overflow on large files.
-    const CHUNK_SIZE = 8192
-    let binary = ''
-    for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
-      const chunk = bytes.subarray(i, Math.min(i + CHUNK_SIZE, bytes.length))
-      binary += String.fromCharCode(...chunk)
-    }
-    const dataURL = `data:${file.type || 'application/octet-stream'};base64,${btoa(binary)}`
-    await storage.setBlob(rawKey, dataURL)
-    log.debug(`Stored raw binary for non-text file: ${file.name}`)
-    return true
-  } catch (err) {
-    log.warn(`Failed to store raw binary for ${file.name}:`, err)
-    return false
-  }
-}
-
-function buildParsedContentTooLargeAttachmentResult(
-  file: File,
-  content: string,
-  storageKey: string,
-  parserType: string | undefined,
-  stats: ContentStats
-): AttachmentPreparationResult {
-  return {
-    file,
-    content,
-    storageKey,
-    ragMode: 'session-retrieval',
-    parserType,
-    lineCount: stats.lineCount,
-    byteLength: stats.byteLength,
-    sessionAttachmentAvailability: 'blocked',
-    sessionAttachmentBlockedReason: SESSION_ATTACHMENT_RAG_PARSED_CONTENT_TOO_LARGE_ERROR,
-    error: SESSION_ATTACHMENT_RAG_PARSED_CONTENT_TOO_LARGE_ERROR,
-  }
 }
 
 export function computePreviewMetadata(
@@ -280,8 +268,21 @@ function hasParsedText(content: string): boolean {
   return content.trim().length > 0
 }
 
+type LocalParserFallbackOptions = {
+  allowChatboxAIFallback?: boolean
+  forceChatboxAIFallback?: boolean
+}
+
 function canFallbackToChatboxAI(): boolean {
   return Boolean(settingActions.getLicenseKey())
+}
+
+function isChatboxAIFallbackAllowed(options: LocalParserFallbackOptions): boolean {
+  return Boolean(options.forceChatboxAIFallback) || options.allowChatboxAIFallback !== false
+}
+
+function requireChatboxAIParserLicense(): never {
+  throw new Error(CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR)
 }
 
 function hasUsableSessionAttachmentRagLicense(): boolean {
@@ -349,10 +350,7 @@ async function canUseSessionAttachmentRag(): Promise<boolean> {
 /**
  * Parse file using local parser
  */
-async function parseFileWithLocalParser(
-  file: File,
-  uniqKey: string
-): Promise<{ content: string; storageKey: string; tokenCountMap: Record<string, number>; parserType: string }> {
+async function parseFileWithLocalParser(file: File): Promise<ParsedAttachmentContent> {
   const result = await platform.parseFileLocally(file)
 
   if (!result.isSupported || !result.key) {
@@ -364,59 +362,54 @@ async function parseFileWithLocalParser(
   // Get content from temporary storage
   const content = (await storage.getBlob(result.key).catch(() => '')) || ''
 
-  // Store content to unique key
-  if (content) {
-    await storage.setBlob(uniqKey, content)
+  try {
+    return { content, tokenCountMap: {}, parserType: 'local' }
+  } finally {
+    await storage.delBlob(result.key).catch(() => undefined)
   }
-
-  return { content, storageKey: uniqKey, tokenCountMap: {}, parserType: 'local' }
 }
 
 async function fallbackToChatboxAIParser(
   file: File,
-  uniqKey: string,
   reason: 'local_parser_failed' | 'empty_content'
-): Promise<{ content: string; storageKey: string; tokenCountMap: Record<string, number>; parserType: string }> {
+): Promise<ParsedAttachmentContent> {
   log.warn(`Falling back to Chatbox AI parser for "${file.name}" due to ${reason}`)
 
   try {
-    return await parseFileWithChatboxAI(file, uniqKey)
+    return await parseFileWithChatboxAI(file)
   } catch (error) {
     log.error(`Chatbox AI fallback parsing failed for "${file.name}":`, error)
-    // A full client-side storage database is not a cloud-parser problem — persisting the
-    // parsed content fails the same way. Preserve it for the quota-specific user message
-    // and sanitized Sentry report at the outer boundary.
     if (isStorageQuotaError(error)) {
       throw new FilePreprocessFailure(FILE_STORAGE_QUOTA_EXCEEDED_ERROR, 'cloud_parse', error)
     }
-    if (error instanceof Error && error.message === EMPTY_ATTACHMENT_CONTENT_ERROR) {
+    if (
+      error instanceof Error &&
+      (error.message === EMPTY_ATTACHMENT_CONTENT_ERROR ||
+        error.message === CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR ||
+        error.message === 'license_key_required')
+    ) {
       throw error
     }
     throw new Error('chatbox_ai_parser_failed')
   }
 }
 
-type LocalParserFallbackOptions = {
-  allowChatboxAIFallback?: boolean
-  forceChatboxAIFallback?: boolean
-}
-
 function shouldFallbackToChatboxAI(options: LocalParserFallbackOptions): boolean {
-  return (
-    Boolean(options.forceChatboxAIFallback) || (options.allowChatboxAIFallback !== false && canFallbackToChatboxAI())
-  )
+  return isChatboxAIFallbackAllowed(options) && canFallbackToChatboxAI()
 }
 
 async function parseFileWithLocalFallback(
   file: File,
-  uniqKey: string,
   options: LocalParserFallbackOptions = {}
-): Promise<{ content: string; storageKey: string; tokenCountMap: Record<string, number>; parserType: string }> {
+): Promise<ParsedAttachmentContent> {
   try {
-    const result = await parseFileWithLocalParser(file, uniqKey)
+    const result = await parseFileWithLocalParser(file)
     if (!hasParsedText(result.content)) {
       if (shouldFallbackToChatboxAI(options)) {
-        return await fallbackToChatboxAIParser(file, uniqKey, 'empty_content')
+        return await fallbackToChatboxAIParser(file, 'empty_content')
+      }
+      if (isChatboxAIFallbackAllowed(options)) {
+        requireChatboxAIParserLicense()
       }
       throw new FilePreprocessFailure(
         EMPTY_ATTACHMENT_CONTENT_ERROR,
@@ -428,9 +421,11 @@ async function parseFileWithLocalFallback(
   } catch (error) {
     log.error(`Local parsing failed for "${file.name}":`, error)
 
-    // Already classified (e.g. a storage-quota failure from the empty-content cloud
-    // fallback above) — propagate as-is instead of re-classifying or retrying.
     if (error instanceof FilePreprocessFailure) {
+      throw error
+    }
+
+    if (error instanceof Error && error.message === CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR) {
       throw error
     }
 
@@ -441,14 +436,16 @@ async function parseFileWithLocalFallback(
       throw error
     }
 
-    // Cloud parsing cannot recover from a full client-side storage database.
-    // Preserve the original exception for a sanitized Sentry report at the outer boundary.
     if (isStorageQuotaError(error)) {
       throw new FilePreprocessFailure(FILE_STORAGE_QUOTA_EXCEEDED_ERROR, 'local_parse', error)
     }
 
     if (shouldFallbackToChatboxAI(options)) {
-      return await fallbackToChatboxAIParser(file, uniqKey, 'local_parser_failed')
+      return await fallbackToChatboxAIParser(file, 'local_parser_failed')
+    }
+
+    if (isChatboxAIFallbackAllowed(options)) {
+      requireChatboxAIParserLicense()
     }
 
     if (errorCode === 'local_parser_failed') {
@@ -461,34 +458,30 @@ async function parseFileWithLocalFallback(
 /**
  * Parse file using Chatbox AI cloud service
  */
-async function parseFileWithChatboxAI(
-  file: File,
-  uniqKey: string
-): Promise<{ content: string; storageKey: string; tokenCountMap: Record<string, number>; parserType: string }> {
+async function parseFileWithChatboxAI(file: File): Promise<ParsedAttachmentContent> {
   const licenseKey = settingActions.getLicenseKey()
-  const uploadedKey = await remote.uploadAndCreateUserFile(licenseKey || '', file)
+  if (!licenseKey) {
+    requireChatboxAIParserLicense()
+  }
+  const uploadedKey = await remote.uploadAndCreateUserFile(licenseKey, file)
 
   // Get uploaded file content
   const content = (await storage.getBlob(uploadedKey).catch(() => '')) || ''
 
-  if (!hasParsedText(content)) {
-    throw new Error(EMPTY_ATTACHMENT_CONTENT_ERROR)
+  try {
+    if (!hasParsedText(content)) {
+      throw new Error(EMPTY_ATTACHMENT_CONTENT_ERROR)
+    }
+    return { content, tokenCountMap: {}, parserType: 'chatbox-ai' }
+  } finally {
+    await storage.delBlob(uploadedKey).catch(() => undefined)
   }
-
-  // Store content to unique key
-  await storage.setBlob(uniqKey, content)
-
-  return { content, storageKey: uniqKey, tokenCountMap: {}, parserType: 'chatbox-ai' }
 }
 
 /**
  * Parse file using MinerU service (Desktop only)
  */
-async function parseFileWithMineruService(
-  file: File,
-  uniqKey: string,
-  apiToken: string
-): Promise<{ content: string; storageKey: string; tokenCountMap: Record<string, number>; parserType: string }> {
+async function parseFileWithMineruService(file: File, apiToken: string): Promise<ParsedAttachmentContent> {
   // Check if platform supports MinerU parsing
   if (!platform.parseFileWithMineru) {
     throw new Error('third_party_parser_not_supported_in_chat')
@@ -506,236 +499,234 @@ async function parseFileWithMineruService(
     throw new Error(EMPTY_ATTACHMENT_CONTENT_ERROR)
   }
 
-  const content = result.content
+  return { content: result.content, tokenCountMap: {}, parserType: 'mineru' }
+}
 
-  // Store content to unique key
-  await storage.setBlob(uniqKey, content)
+function createPickedAssetAdapter(): BrowserAttachmentAdapter {
+  if (platform.type === 'mobile') {
+    return new CapacitorAttachmentAdapter()
+  }
+  if (platform.isDesktopLike && typeof platform.getLocalFilePath === 'function') {
+    return new DesktopAttachmentAdapter((file) => platform.getLocalFilePath(file))
+  }
+  return new BrowserAttachmentAdapter()
+}
 
-  return { content, storageKey: uniqKey, tokenCountMap: {}, parserType: 'mineru' }
+const pickedAssetAdapter = createPickedAssetAdapter()
+
+async function parsePickedAsset(
+  asset: PickedAsset,
+  options: AttachmentPreparationOptions
+): Promise<ParsedAttachmentContent> {
+  const file = pickedAssetAdapter.getFile(asset)
+  const isTextFile = isTextFilePath(asset.name)
+
+  // In agent mode, skip content parsing when no parser can produce text. The
+  // shared service has already stored the raw bytes for sandbox execution.
+  if (
+    options.agentMode &&
+    !isTextFile &&
+    (!isSupportedFile(asset.name) || getEffectiveDocumentParserConfig().type === 'none')
+  ) {
+    log.debug(`Agent mode: skipping content parsing for sandbox-only file: ${asset.name}`)
+    return {
+      content: `[File: ${asset.name} (${(asset.size / 1024).toFixed(1)} KB)]`,
+      tokenCountMap: {},
+      parserType: 'sandbox-raw',
+      skipAnalysisAndMetadata: true,
+    }
+  }
+
+  if (isTextFile) {
+    log.debug(`Text file detected, using local parser: ${asset.name}`)
+    return parseFileWithLocalFallback(file, {
+      allowChatboxAIFallback: options.source !== 'pasted-text',
+    })
+  }
+
+  const parserConfig = getEffectiveDocumentParserConfig()
+  log.debug(`Using document parser: ${parserConfig.type} for file: ${asset.name}`)
+  switch (parserConfig.type) {
+    case 'none':
+      throw new Error('document_parser_not_configured')
+    case 'local':
+      return parseFileWithLocalFallback(file)
+    case 'chatbox-ai':
+      return parseFileWithLocalFallback(file, { forceChatboxAIFallback: true })
+    case 'mineru': {
+      const apiToken = parserConfig.mineru?.apiToken
+      if (!apiToken) {
+        throw new Error('mineru_api_token_required')
+      }
+      try {
+        return await parseFileWithMineruService(file, apiToken)
+      } catch (error) {
+        log.error(`MinerU parsing failed for "${asset.name}":`, error)
+        if (
+          error instanceof Error &&
+          (error.message === EMPTY_ATTACHMENT_CONTENT_ERROR || error.message.startsWith('third_party_parser'))
+        ) {
+          throw error
+        }
+        throw new Error('third_party_parser_failed')
+      }
+    }
+    default:
+      throw new Error('document_parser_not_configured')
+  }
+}
+
+async function analyzePickedAsset(input: {
+  asset: PickedAsset
+  content: string
+  parserType?: string
+  existingTokenCountMap: Record<string, number>
+}): Promise<AttachmentAnalysis> {
+  const { asset, content, parserType, existingTokenCountMap } = input
+  const stats = getContentStats(content)
+  const sessionAttachmentWarningReason = isParsedContentVeryLarge(stats)
+    ? SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING
+    : undefined
+  if (sessionAttachmentWarningReason) {
+    log.info(
+      `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Parsed content is very large: file="${asset.name}", parser=${parserType ?? 'unknown'}, bytes=${stats.byteLength}, limit=${SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH}`
+    )
+  }
+
+  const isSessionAttachmentRagFileType = isSessionAttachmentRagSupportedFilePath(asset.name)
+  const exceedsSessionAttachmentRagThreshold =
+    platform.isDesktopLike &&
+    isSessionAttachmentRagFileType &&
+    stats.byteLength > SESSION_ATTACHMENT_RAG_INLINE_BYTE_THRESHOLD
+  const sessionAttachmentRagAllowed = exceedsSessionAttachmentRagThreshold ? await canUseSessionAttachmentRag() : false
+  const shouldUseSessionAttachmentRag =
+    exceedsSessionAttachmentRagThreshold && sessionAttachmentRagAllowed && !sessionAttachmentWarningReason
+  const { lineCount, byteLength, tokenCountMap } = computePreviewMetadata(content, existingTokenCountMap, {
+    includeFullTokenCounts: !shouldUseSessionAttachmentRag,
+    stats,
+  })
+
+  log.debug(
+    `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Preprocess decision: file="${asset.name}", parser=${parserType ?? 'unknown'}, bytes=${stats.byteLength}, tokens=${tokenCountMap[TOKEN_CACHE_KEYS.default] ?? 0}, ragFileType=${isSessionAttachmentRagFileType}, exceedsThreshold=${exceedsSessionAttachmentRagThreshold}, ragMode=${shouldUseSessionAttachmentRag ? 'session-retrieval' : 'inline'}, allowed=${sessionAttachmentRagAllowed}`
+  )
+
+  return {
+    ragMode: shouldUseSessionAttachmentRag ? 'session-retrieval' : 'inline',
+    tokenCountMap,
+    lineCount,
+    byteLength,
+    sessionAttachmentAvailability: 'allowed',
+    sessionAttachmentWarningReason,
+  }
+}
+
+const attachmentService = new AttachmentService({
+  blobs: {
+    get: (key) => storage.getBlob(key),
+    set: (key, value) => storage.setBlob(key, value),
+  },
+  metadata: {
+    get: <T>(key: string) => storage.getItem<T | null>(key, null),
+    async set(key, value) {
+      try {
+        await storage.setItem(key, value)
+      } catch (error) {
+        throw normalizeFilePreprocessFailure(error, 'metadata_storage') ?? error
+      }
+    },
+  },
+  content: pickedAssetAdapter,
+  parser: { parse: parsePickedAsset },
+  analysis: { analyze: analyzePickedAsset },
+  logger: {
+    log(level, message, context) {
+      const error = context?.error
+      if (level === 'error') log.error(message, error)
+      else if (level === 'warn') log.warn(message, error)
+      else if (level === 'info') log.info(message, error)
+      else log.debug(message, error)
+    },
+  },
+})
+
+async function prepareFileAttachmentOnce(
+  file: File,
+  asset: PickedAsset,
+  options?: AttachmentPreparationOptions
+): Promise<AttachmentPreparationResult> {
+  try {
+    const { asset: _preparedAsset, ...prepared } = await attachmentService.prepareOrThrow(asset, options)
+    return { file, ...prepared }
+  } catch (error) {
+    log.error(`${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Failed to preprocess file "${file.name}":`, error)
+    throw normalizeFilePreprocessFailure(error, 'parse') ?? error
+  }
+}
+
+function buildFilePreprocessErrorResult(file: File, error: unknown): AttachmentPreparationResult {
+  const failure = error instanceof FilePreprocessFailure ? error : undefined
+  return {
+    file,
+    content: '',
+    storageKey: '',
+    error: failure?.code ?? (error instanceof Error ? error.message : FILE_PREPROCESS_FAILED_ERROR),
+  }
+}
+
+async function tryFreeOrphanedBlobs(): Promise<number | undefined> {
+  try {
+    const { cleanupOrphanedBlobs } = await import('@/setup/storage_clear')
+    return await cleanupOrphanedBlobs()
+  } catch (cleanupError) {
+    log.warn('Orphaned blob cleanup after a storage quota failure did not complete:', cleanupError)
+    return undefined
+  }
 }
 
 /**
- * 预处理文件以获取内容和存储键
- * @param file 文件对象
- * @param settings 会话设置
- * @returns 预处理后的文件信息
+ * Keep the Renderer File API stable while converting it to a host-neutral
+ * PickedAsset before application orchestration. Storage quota exhaustion
+ * triggers one orphan-cleanup and retry before returning a stable error code.
  */
 export async function prepareFileAttachment(
   file: File,
   _settings: SessionSettings,
   options?: AttachmentPreparationOptions
 ): Promise<AttachmentPreparationResult> {
-  let stage: FilePreprocessStage = 'cache_read'
+  const asset = pickedAssetAdapter.fromFile(file)
   try {
-    const uniqKey = StorageKeyGenerator.fileUniqKey(file)
-
-    const rawKey = `${uniqKey}_raw`
-    const isTextFile = isTextFilePath(file.name)
-
-    // Check if file has already been processed (cache hit)
-    const existingContent = await storage.getBlob(uniqKey).catch(() => null)
-    if (existingContent && hasParsedText(existingContent)) {
-      log.debug(`File already preprocessed: ${file.name}, using cached content.`)
-      const existingTokenMap: Record<string, number> = (await storage.getItem(`${uniqKey}_tokenMap`, {})) as Record<
-        string,
-        number
-      >
-      const existingParserType = (await storage.getItem<string | undefined>(`${uniqKey}_parserType`, undefined)) as
-        | string
-        | undefined
-
-      stage = 'content_analysis'
-      const stats = getContentStats(existingContent)
-      const sessionAttachmentWarningReason = isParsedContentVeryLarge(stats)
-        ? SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING
-        : undefined
-      if (sessionAttachmentWarningReason) {
-        log.info(
-          `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Cached parsed content is very large: file="${file.name}", bytes=${stats.byteLength}, limit=${SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH}`
-        )
+    try {
+      return await prepareFileAttachmentOnce(file, asset, options)
+    } catch (error) {
+      const failure = error instanceof FilePreprocessFailure ? error : undefined
+      if (failure?.code !== FILE_STORAGE_QUOTA_EXCEEDED_ERROR) {
+        if (failure) await reportFilePreprocessFailure(file, failure)
+        return buildFilePreprocessErrorResult(file, error)
       }
 
-      const isSessionAttachmentRagFileType = isSessionAttachmentRagSupportedFilePath(file.name)
-      const exceedsSessionAttachmentRagThreshold =
-        platform.type === 'desktop' &&
-        isSessionAttachmentRagFileType &&
-        stats.byteLength > SESSION_ATTACHMENT_RAG_INLINE_BYTE_THRESHOLD
-      const sessionAttachmentRagAllowed = exceedsSessionAttachmentRagThreshold
-        ? await canUseSessionAttachmentRag()
-        : false
-      const shouldUseSessionAttachmentRag =
-        exceedsSessionAttachmentRagThreshold && sessionAttachmentRagAllowed && !sessionAttachmentWarningReason
-      stage = 'token_estimation'
-      const { lineCount, byteLength, tokenCountMap } = computePreviewMetadata(existingContent, existingTokenMap, {
-        includeFullTokenCounts: !shouldUseSessionAttachmentRag,
-        stats,
-      })
-      log.debug(
-        `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Cached preprocess decision: file="${file.name}", bytes=${stats.byteLength}, tokens=${tokenCountMap[TOKEN_CACHE_KEYS.default] ?? 0}, ragFileType=${isSessionAttachmentRagFileType}, exceedsThreshold=${exceedsSessionAttachmentRagThreshold}, ragMode=${shouldUseSessionAttachmentRag ? 'session-retrieval' : 'inline'}, allowed=${sessionAttachmentRagAllowed}`
-      )
+      const freedBlobCount = await tryFreeOrphanedBlobs()
+      const cleanupTags: Record<string, string | number> =
+        freedBlobCount === undefined ? { cleanup_outcome: 'cleanup_failed' } : { freed_blob_count: freedBlobCount }
 
-      stage = 'metadata_storage'
-      await storage.setItem(`${uniqKey}_tokenMap`, tokenCountMap)
-
-      // Ensure cached non-text files still have the raw binary needed by sandbox code execution.
-      const hasRaw = !isTextFile
-        ? Boolean((await storage.getBlob(rawKey).catch(() => null)) ?? (await storeRawFileBlob(file, rawKey)))
-        : false
-
-      return {
-        file,
-        content: existingContent,
-        storageKey: uniqKey,
-        ragMode: shouldUseSessionAttachmentRag ? 'session-retrieval' : 'inline',
-        parserType: existingParserType,
-        rawStorageKey: hasRaw ? rawKey : undefined,
-        tokenCountMap,
-        lineCount,
-        byteLength,
-        sessionAttachmentAvailability: 'allowed',
-        sessionAttachmentWarningReason,
+      try {
+        const result = await prepareFileAttachmentOnce(file, asset, options)
+        await reportFilePreprocessFailure(file, failure, {
+          quota_recovery: 'recovered',
+          ...cleanupTags,
+        })
+        return result
+      } catch (retryError) {
+        if (retryError instanceof FilePreprocessFailure) {
+          await reportFilePreprocessFailure(file, retryError, {
+            quota_recovery: 'retry_failed',
+            ...cleanupTags,
+          })
+        }
+        return buildFilePreprocessErrorResult(file, retryError)
       }
     }
-
-    // Store raw binary for non-text files (used by sandbox code execution path)
-    if (!isTextFile) {
-      await storeRawFileBlob(file, rawKey)
-    }
-
-    let result: { content: string; storageKey: string; tokenCountMap: Record<string, number>; parserType: string }
-
-    // In agent mode, skip content parsing when no parser can produce text.
-    // The raw binary is already stored above — the sandbox can use it directly.
-    // Store a short descriptor as the "parsed content" so the storageKey is valid.
-    if (
-      options?.agentMode &&
-      !isTextFile &&
-      (!isSupportedFile(file.name) || getEffectiveDocumentParserConfig().type === 'none')
-    ) {
-      log.debug(`Agent mode: skipping content parsing for sandbox-only file: ${file.name}`)
-      const sizeKB = (file.size / 1024).toFixed(1)
-      const descriptor = `[File: ${file.name} (${sizeKB} KB)]`
-      await storage.setBlob(uniqKey, descriptor)
-      return {
-        file,
-        content: descriptor,
-        storageKey: uniqKey,
-        rawStorageKey: rawKey,
-        ragMode: 'inline',
-        parserType: 'sandbox-raw',
-      }
-    }
-
-    stage = 'parse'
-    if (isTextFilePath(file.name)) {
-      log.debug(`Text file detected, using local parser: ${file.name}`)
-      result = await parseFileWithLocalFallback(file, uniqKey, {
-        allowChatboxAIFallback: options?.source !== 'pasted-text',
-      })
-    } else {
-      const parserConfig = getEffectiveDocumentParserConfig()
-      log.debug(`Using document parser: ${parserConfig.type} for file: ${file.name}`)
-
-      switch (parserConfig.type) {
-        case 'none': {
-          throw new Error('document_parser_not_configured')
-        }
-
-        case 'local': {
-          result = await parseFileWithLocalFallback(file, uniqKey)
-          break
-        }
-
-        case 'chatbox-ai': {
-          result = await parseFileWithLocalFallback(file, uniqKey, { forceChatboxAIFallback: true })
-          break
-        }
-
-        case 'mineru': {
-          const apiToken = parserConfig.mineru?.apiToken
-          if (!apiToken) {
-            throw new Error('mineru_api_token_required')
-          }
-          try {
-            result = await parseFileWithMineruService(file, uniqKey, apiToken)
-          } catch (error) {
-            log.error(`MinerU parsing failed for "${file.name}":`, error)
-            if (
-              error instanceof Error &&
-              (error.message === EMPTY_ATTACHMENT_CONTENT_ERROR || error.message.startsWith('third_party_parser'))
-            ) {
-              throw error
-            }
-            throw new Error('third_party_parser_failed')
-          }
-          break
-        }
-
-        default: {
-          throw new Error('document_parser_not_configured')
-        }
-      }
-    }
-
-    stage = 'content_analysis'
-    const stats = getContentStats(result.content)
-    const sessionAttachmentWarningReason = isParsedContentVeryLarge(stats)
-      ? SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING
-      : undefined
-    if (sessionAttachmentWarningReason) {
-      log.info(
-        `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Parsed content is very large: file="${file.name}", parser=${result.parserType}, bytes=${stats.byteLength}, limit=${SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH}`
-      )
-    }
-
-    const isSessionAttachmentRagFileType = isSessionAttachmentRagSupportedFilePath(file.name)
-    const exceedsSessionAttachmentRagThreshold =
-      platform.type === 'desktop' &&
-      isSessionAttachmentRagFileType &&
-      stats.byteLength > SESSION_ATTACHMENT_RAG_INLINE_BYTE_THRESHOLD
-    const sessionAttachmentRagAllowed = exceedsSessionAttachmentRagThreshold
-      ? await canUseSessionAttachmentRag()
-      : false
-    const shouldUseSessionAttachmentRag =
-      exceedsSessionAttachmentRagThreshold && sessionAttachmentRagAllowed && !sessionAttachmentWarningReason
-    stage = 'token_estimation'
-    const { lineCount, byteLength, tokenCountMap } = computePreviewMetadata(result.content, result.tokenCountMap, {
-      includeFullTokenCounts: !shouldUseSessionAttachmentRag,
-      stats,
-    })
-    stage = 'metadata_storage'
-    await storage.setItem(`${result.storageKey}_tokenMap`, tokenCountMap)
-    await storage.setItem(`${result.storageKey}_parserType`, result.parserType)
-
-    log.debug(
-      `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Preprocess decision: file="${file.name}", parser=${result.parserType}, bytes=${stats.byteLength}, tokens=${tokenCountMap[TOKEN_CACHE_KEYS.default] ?? 0}, ragFileType=${isSessionAttachmentRagFileType}, exceedsThreshold=${exceedsSessionAttachmentRagThreshold}, ragMode=${shouldUseSessionAttachmentRag ? 'session-retrieval' : 'inline'}, allowed=${sessionAttachmentRagAllowed}`
-    )
-
-    return {
-      file,
-      content: result.content,
-      storageKey: result.storageKey,
-      ragMode: shouldUseSessionAttachmentRag ? 'session-retrieval' : 'inline',
-      parserType: result.parserType,
-      rawStorageKey: !isTextFile ? rawKey : undefined,
-      tokenCountMap,
-      lineCount,
-      byteLength,
-      sessionAttachmentAvailability: 'allowed',
-      sessionAttachmentWarningReason,
-    }
-  } catch (error) {
-    log.error(`${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Failed to preprocess file "${file.name}":`, error)
-    const failure = normalizeFilePreprocessFailure(error, stage)
-    if (failure) {
-      reportFilePreprocessFailure(file, failure)
-    }
-    return {
-      file,
-      content: '',
-      storageKey: '',
-      error: failure?.code ?? (error instanceof Error ? error.message : FILE_PREPROCESS_FAILED_ERROR),
-    }
+  } finally {
+    pickedAssetAdapter.release(asset)
   }
 }
 
@@ -944,27 +935,6 @@ export function constructUserMessage(
   return msg
 }
 
-export async function exportChat(session: Session, scope: ExportChatScope, format: ExportChatFormat) {
-  const threads: SessionThread[] = scope === 'all_threads' ? [...(session.threads || [])] : []
-  threads.push({
-    id: session.id,
-    name: session.threadName || session.name,
-    messages: session.messages,
-    createdAt: Date.now(),
-  })
-
-  if (format === 'Markdown') {
-    const content = formatChatAsMarkdown(session.name, threads)
-    platform.exporter.exportTextFile(`${session.name}.md`, content)
-  } else if (format === 'TXT') {
-    const content = formatChatAsTxt(session.name, threads)
-    platform.exporter.exportTextFile(`${session.name}.txt`, content)
-  } else if (format === 'HTML') {
-    const content = await formatChatAsHtml(session.name, threads)
-    platform.exporter.exportTextFile(`${session.name}.html`, content)
-  }
-}
-
 export function mergeSettings(
   globalSettings: Settings,
   sessionSetting?: SessionSettings,
@@ -999,6 +969,7 @@ export function initEmptyChatSession(): Omit<Session, 'id'> {
   const newSession: Omit<Session, 'id'> = {
     name: 'Untitled',
     type: 'chat',
+    threadName: '',
     messages: [],
     settings: {
       maxContextMessageCount: settings.maxContextMessageCount ?? Number.MAX_SAFE_INTEGER,
@@ -1013,31 +984,8 @@ export function initEmptyChatSession(): Omit<Session, 'id'> {
   return newSession
 }
 
-export function initEmptyPictureSession(): Omit<Session, 'id'> {
-  const { picture: lastUsedPictureModel } = lastUsedModelStore.getState()
-
-  return {
-    name: 'Untitled',
-    type: 'picture',
-    messages: [createMessage('system', i18n.t('Image Creator Intro') || '')],
-    settings: {
-      ...lastUsedPictureModel,
-    },
-  }
-}
-
 export function getSessionMeta(session: SessionMeta) {
-  return pick(session, [
-    'id',
-    'name',
-    'starred',
-    'hidden',
-    'archivedAt',
-    'assistantAvatarKey',
-    'picUrl',
-    'backgroundImage',
-    'type',
-  ])
+  return projectSessionMeta(session)
 }
 
 function _searchSessions(query: string, s: Session) {

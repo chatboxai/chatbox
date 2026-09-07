@@ -1,4 +1,6 @@
+import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { Dialog, DialogContent, useTheme } from '@mui/material'
+import { TestId } from '@shared/automation/testids'
 import type { Session } from '@shared/types'
 import { useAtomValue } from 'jotai'
 import { Loader2, ScanSearch } from 'lucide-react'
@@ -11,12 +13,43 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { currentSessionIdAtom } from '@/stores/atoms'
+import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
 import { searchSessions } from '@/stores/sessionHelpers'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import * as scrollActions from '../stores/scrollActions'
-import { switchCurrentSession } from '../stores/sessionActions'
+import { switchCurrentSession } from '../stores/session/crud'
 
 type Props = {}
+
+function resolveSearchResultSessionMode(session: Session) {
+  return resolveSessionMode(getSessionAgentModeEntry(session.id, session).value)
+}
+
+// Hidden system prompts render as an invisible 1px placeholder in the chat, so a search hit
+// pointing at one would jump to nothing; keep those hits out of the result list instead.
+// Work Mode hides the prompt on its own, so its sessions are filtered whatever the setting says.
+export function filterHiddenSystemPromptHits(results: Session[], hideSystemPromptMessage?: boolean): Session[] {
+  const visible: Session[] = []
+  let changed = false
+  for (const session of results) {
+    const hidesSystemPrompt =
+      hideSystemPromptMessage ||
+      !isActionAvailableInMode('session-system-prompt', resolveSearchResultSessionMode(session))
+    const messages = hidesSystemPrompt
+      ? session.messages.filter((message) => message.role !== 'system')
+      : session.messages
+    if (messages.length === session.messages.length) {
+      visible.push(session)
+      continue
+    }
+    changed = true
+    if (messages.length > 0) {
+      visible.push({ ...session, messages })
+    }
+  }
+  return changed ? visible : results
+}
 
 export default function SearchDialog(props: Props) {
   const isSmallScreen = useIsSmallScreen()
@@ -33,6 +66,8 @@ export default function SearchDialog(props: Props) {
   const ref = useRef<HTMLInputElement>(null)
 
   const currentSessionId = useAtomValue(currentSessionIdAtom)
+  const hideSystemPromptMessage = useSettingsStore((s) => s.hideSystemPromptMessage)
+  const visibleSearchResult = filterHiddenSystemPromptHits(searchResult, hideSystemPromptMessage)
 
   useEffect(() => {
     if (open) {
@@ -85,6 +120,7 @@ export default function SearchDialog(props: Props) {
             value={searchInput}
             onInput={onSearchInput}
             onKeyDown={onKeyDown}
+            data-testid={TestId.session.searchInput}
             className={cn('border-none', 'shadow-none', theme.palette.mode === 'dark' ? 'text-white' : 'text-black')}
             placeholder={globalOnly ? t('Search conversations') + '...' : t('Type a command or search') + '...'}
           />
@@ -94,6 +130,7 @@ export default function SearchDialog(props: Props) {
               <CommandGroup heading={t('Search')}>
                 <CommandItem
                   value="search-current-session"
+                  data-testid={TestId.session.searchCurrent}
                   className={cn(
                     theme.palette.mode === 'dark' ? 'aria-selected:bg-slate-500' : 'aria-selected:bg-slate-100'
                   )}
@@ -107,6 +144,7 @@ export default function SearchDialog(props: Props) {
                 </CommandItem>
                 <CommandItem
                   value="search-global"
+                  data-testid={TestId.session.searchAll}
                   className={cn(
                     theme.palette.mode === 'dark' ? 'aria-selected:bg-slate-500' : 'aria-selected:bg-slate-100'
                   )}
@@ -159,7 +197,7 @@ export default function SearchDialog(props: Props) {
               <Mark marks={[searchInput]}>
                 <CommandList>
                   <CommandEmpty>{t('No results found')}</CommandEmpty>
-                  {searchResult.map((result, i) => (
+                  {visibleSearchResult.map((result, i) => (
                     <CommandGroup
                       key={i}
                       heading={`${t('Chat')} "${result.name}":`}
@@ -216,6 +254,7 @@ export default function SearchDialog(props: Props) {
                             msg={message}
                             className="w-full"
                             buttonGroup="none"
+                            sessionMode={resolveSearchResultSessionMode(result)}
                             small
                             assistantAvatarKey={result.assistantAvatarKey}
                             sessionPicUrl={result.picUrl}

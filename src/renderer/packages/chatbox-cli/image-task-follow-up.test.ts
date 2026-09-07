@@ -58,6 +58,7 @@ describe('image task follow-up', () => {
         id: 'image-generation:record-1:done',
         status: 'completed',
         recordId: 'record-1',
+        summary: expect.stringContaining('do not show the images again'),
       })
     )
   })

@@ -42,6 +42,25 @@ describe('reportError', () => {
   test('normalizes non-Error values', () => {
     reportError('failed', { domain: 'application', operation: 'startup' })
 
-    expect(captureException).toHaveBeenCalledWith(expect.objectContaining({ message: 'failed' }))
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'NonErrorException', message: 'Non-Error exception (string)' })
+    )
+  })
+
+  test('does not forward fields from provider error objects', () => {
+    reportError(
+      {
+        type: 'server_error',
+        code: 'server_shutdown',
+        message: 'private provider response',
+        apiKey: 'sk-private-secret',
+      },
+      { domain: 'ai-generation', operation: 'send_message' }
+    )
+
+    const captured = captureException.mock.calls[0][0]
+    expect(captured).toBeInstanceOf(Error)
+    expect(captured.message).toBe('Non-Error exception (object; type=server_error; code=server_shutdown)')
+    expect(captured.message).not.toMatch(/private|secret|\[object Object\]/)
   })
 })

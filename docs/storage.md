@@ -29,6 +29,8 @@ Chatbox 跨平台存储方案和版本迁移机制说明。
 | v1.13.1 | 9-10 | - | - | Provider/Session 设置重构 |
 | v1.16.1 | 11-12 | **Sessions → IndexedDB**<br/>Configs 保持 File | **→ IndexedDB** | Desktop 分离存储<br/>Mobile 统一到 IndexedDB |
 | **v1.17.0** | **12-13** | Sessions 保持 IndexedDB<br/>Configs 保持 File | **→ SQLite** | Desktop 无变化<br/>Mobile 性能优化 |
+| v1.19.0 | 13-14 | 图片生成记录 → IndexedDB | 图片生成记录 → SQLite | 旧图片会话迁移到独立记录 |
+| v1.21.0 | 14-15 | 会话元数据 → IndexedDB | 会话元数据 → SQLite | 会话元数据从单一列表改为逐条存储 |
 
 **关键历史事实**：
 - Desktop 的 `configVersion`/`settings`/`configs` **从未** 存储在 IndexedDB 中
@@ -159,7 +161,7 @@ A: IndexedDB 在某些 WebView 环境存在数据被清理问题，SQLite 更稳
 A: 捕获异常并记录，应用仍可运行（初始化默认数据）。
 
 **Q: 如何添加新版本？**  
-A: 增加 `CurrentVersion`，在 `migrateFunctions` 添加迁移函数，更新文档。
+A: 仅当持久化数据确实需要转换时，才增加 `CurrentVersion`、实现对应的迁移函数并注册到 `migrateFunctions`，同时补充测试和文档。应用版本升级本身不需要提升 `configVersion`。
 
 ## 参考
 
@@ -169,5 +171,4 @@ A: 增加 `CurrentVersion`，在 `migrateFunctions` 添加迁移函数，更新�
 
 ---
 
-**最后更新**: 2025-10-25 | **当前版本**: v1.17.0 (Config Version 13)
-
+**最后更新**: 2026-08-28 | **当前 Config Version**: 15

@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 
 const ITEM_HEIGHT = 12
 const BASE_LINE_WIDTH = 6
-const MAX_LINE_WIDTH = 26
+const MAX_LINE_WIDTH = 24
 const HOVER_DISTANCE = 60
 const HOVER_FALLOFF_POWER = 2
 const PREVIEW_MARGIN = 28
@@ -316,7 +316,7 @@ const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailPr
   return (
     <div
       className={cn(
-        'pointer-events-none absolute left-4 top-[46%] z-10 h-[42vh] min-h-24 max-h-[360px] w-[72px]',
+        'pointer-events-none absolute left-2 top-[46%] z-10 h-[42vh] min-h-24 max-h-[360px] w-5',
         '-translate-y-1/2 overflow-visible',
         className
       )}
@@ -325,7 +325,7 @@ const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailPr
       <div
         ref={scrollAreaRef}
         className={cn(
-          'pointer-events-auto mr-auto h-full w-12 overflow-y-auto overflow-x-visible py-1',
+          'pointer-events-auto mr-auto h-full w-5 overflow-y-auto overflow-x-visible py-1',
           '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
         )}
         onMouseEnter={handleMouseEnter}
@@ -358,7 +358,7 @@ const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailPr
                 key={anchor.messageId}
                 type="button"
                 className={cn(
-                  'absolute left-0 flex h-3 w-12 cursor-default items-center justify-start border-0 bg-transparent p-0 pl-2 outline-none',
+                  'absolute left-0 flex h-3 w-5 cursor-default items-center justify-start border-0 bg-transparent p-0 outline-none',
                   'focus-visible:ring-1 focus-visible:ring-[var(--chatbox-border-brand)]'
                 )}
                 style={{ top: index * ITEM_HEIGHT }}
@@ -392,7 +392,7 @@ const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailPr
         <div
           aria-hidden="true"
           data-testid="message-minimap-top-fade"
-          className="pointer-events-none absolute left-0 top-0 z-10 h-8 w-12 bg-gradient-to-b from-chatbox-background-primary to-transparent"
+          className="pointer-events-none absolute left-0 top-0 z-10 h-8 w-5 bg-gradient-to-b from-chatbox-background-primary to-transparent"
           style={edgeFadeBlurStyle}
         />
       )}
@@ -400,7 +400,7 @@ const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailPr
         <div
           aria-hidden="true"
           data-testid="message-minimap-bottom-fade"
-          className="pointer-events-none absolute left-0 bottom-0 z-10 h-8 w-12 bg-gradient-to-t from-chatbox-background-primary to-transparent"
+          className="pointer-events-none absolute left-0 bottom-0 z-10 h-8 w-5 bg-gradient-to-t from-chatbox-background-primary to-transparent"
           style={edgeFadeBlurStyle}
         />
       )}

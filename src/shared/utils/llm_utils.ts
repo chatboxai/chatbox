@@ -112,12 +112,18 @@ export function normalizeGeminiHost(apiHost: string) {
 }
 
 export function normalizeAzureEndpoint(endpoint: string) {
-  let origin = endpoint
+  const value = endpoint.trim()
+  const hasScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(value)
+  const looksLikeHost = value === 'localhost' || value.includes('.') || value.includes(':') || value.startsWith('[')
+  const endpointUrl = hasScheme ? value : looksLikeHost ? `https://${value}` : `https://${value}.openai.azure.com`
+  let origin = endpointUrl
   try {
-    origin = new URL(endpoint.trim()).origin
-  } catch (_error) {
-    origin = `https://${origin}.openai.azure.com`
+    origin = new URL(endpointUrl).origin
+  } catch {
+    // Keep placeholders and partially entered settings renderable. The actual
+    // request path will still surface an invalid URL when the user tests it.
   }
+
   return {
     endpoint: `${origin}/openai`,
     apiPath: '/chat/completions',

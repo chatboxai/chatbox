@@ -1,6 +1,6 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
-import { Avatar, Button, FileButton, Flex, Stack, Text, Textarea, TextInput } from '@mantine/core'
-import type { CopilotDetail } from '@shared/types'
+import { Avatar, Button, FileButton, Flex, Stack, Switch, Text, Textarea, TextInput } from '@mantine/core'
+import { COPILOT_PROMPT_MAX_CHARS, type CopilotDetail } from '@shared/types'
 import { IconMessageCircle2Filled, IconPhoto, IconUpload } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -8,10 +8,12 @@ import { v4 as uuidv4 } from 'uuid'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
+import { useCopilotMemory } from '@/hooks/useCopilots'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { trackingEvent } from '@/packages/event'
 import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
+import { CopilotMemoriesList } from './CopilotMemoriesList'
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024 // 5MB
 
@@ -29,22 +31,38 @@ const CopilotSettingsModal = NiceModal.create(
     const isSmallScreen = useIsSmallScreen()
     const [formData, setFormData] = useState<CopilotDetail | null>(null)
     const [errors, setErrors] = useState<Record<string, string>>({})
+    const { readEnabled: readCopilotMemoryEnabled, setEnabled: setCopilotMemory } = useCopilotMemory()
+    const [memoryEnabled, setMemoryEnabled] = useState<boolean>()
 
     useEffect(() => {
-      if (modal.visible) {
-        if (copilot) {
-          setFormData({ ...copilot })
-        } else {
-          setFormData({
-            id: uuidv4(),
-            name: '',
-            prompt: '',
-            description: '',
+      if (!modal.visible) return
+
+      let active = true
+      if (copilot) {
+        setFormData({ ...copilot })
+        setMemoryEnabled(undefined)
+        readCopilotMemoryEnabled(copilot.id)
+          .then((enabled) => {
+            if (active) setMemoryEnabled(enabled)
           })
-        }
-        setErrors({})
+          .catch((error) => console.error('CopilotSettingsModal: failed to load memory ownership', error))
+      } else {
+        setFormData({
+          id: uuidv4(),
+          name: '',
+          prompt: '',
+          description: '',
+        })
+        setMemoryEnabled(false)
       }
-    }, [modal.visible, copilot])
+      setErrors({})
+
+      // Snapshot the switch when the modal opens; it is applied on save like every
+      // other field, so later changes elsewhere must not overwrite the draft.
+      return () => {
+        active = false
+      }
+    }, [modal.visible, copilot, readCopilotMemoryEnabled])
 
     const updateField = <K extends keyof CopilotDetail>(field: K, value: CopilotDetail[K]) => {
       if (!formData) return
@@ -98,6 +116,8 @@ const CopilotSettingsModal = NiceModal.create(
       }
       if (!formData.prompt?.trim()) {
         newErrors.prompt = t('cannot be empty')
+      } else if (formData.prompt.trim().length > COPILOT_PROMPT_MAX_CHARS) {
+        newErrors.prompt = t('Prompt cannot exceed {{max}} characters', { max: COPILOT_PROMPT_MAX_CHARS })
       }
 
       setErrors(newErrors)
@@ -110,7 +130,7 @@ const CopilotSettingsModal = NiceModal.create(
     }
 
     const handleSave = () => {
-      if (!formData) return
+      if (!formData || memoryEnabled === undefined) return
       if (!validate()) return
 
       const trimmedData = {
@@ -123,6 +143,7 @@ const CopilotSettingsModal = NiceModal.create(
       }
 
       onSave(trimmedData)
+      setCopilotMemory({ id: trimmedData.id, name: trimmedData.name }, memoryEnabled)
       trackingEvent(mode === 'edit' ? 'edit_copilot' : 'create_copilot', { event_category: 'user' })
       modal.resolve(trimmedData)
       modal.hide()
@@ -298,10 +319,35 @@ const CopilotSettingsModal = NiceModal.create(
             value={formData.prompt || ''}
             onChange={(e) => updateField('prompt', e.currentTarget.value)}
             error={errors.prompt}
+            description={t('{{count}} / {{max}} characters', {
+              count: (formData.prompt || '').length,
+              max: COPILOT_PROMPT_MAX_CHARS,
+            })}
+            maxLength={COPILOT_PROMPT_MAX_CHARS}
             minRows={5}
             maxRows={10}
             autosize
           />
+
+          {/* Memory */}
+          <Stack gap="xs">
+            <Flex justify="space-between" align="center" gap="md" wrap="nowrap">
+              <Stack gap={2} className="min-w-0">
+                <Text size="sm" fw={500}>
+                  {t('Copilot Memory')}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {t('All chats with this Copilot use its shared memory when on, or follow Global Memory when off.')}
+                </Text>
+              </Stack>
+              <Switch
+                checked={memoryEnabled ?? false}
+                disabled={memoryEnabled === undefined}
+                onChange={(e) => setMemoryEnabled(e.currentTarget.checked)}
+              />
+            </Flex>
+            {mode === 'edit' && <CopilotMemoriesList copilotId={formData.id} />}
+          </Stack>
         </Stack>
 
         {/* Footer Actions */}
@@ -310,7 +356,9 @@ const CopilotSettingsModal = NiceModal.create(
             <Button variant="outline" onClick={handleClose}>
               {t('cancel')}
             </Button>
-            <Button onClick={handleSave}>{t('save')}</Button>
+            <Button disabled={memoryEnabled === undefined} onClick={handleSave}>
+              {t('save')}
+            </Button>
           </Flex>
         </Flex>
       </AdaptiveModal>

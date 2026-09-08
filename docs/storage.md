@@ -2,6 +2,8 @@
 
 Chatbox 跨平台存储方案和版本迁移机制说明。
 
+本文保留 KV 后端选型与 `configVersion` 迁移机制。当前会话的 rows 格式、窗口读取、RN/Capacitor 差异及备份边界见 [存储架构](./technical/storage.md#会话行存储与读取范围)，阶段进度见 [会话消息窗口化计划](./plans/session-window-read.md)。
+
 ## 跨平台存储方案
 
 ### 存储类型
@@ -11,7 +13,7 @@ Chatbox 跨平台存储方案和版本迁移机制说明。
 - **LOCAL_STORAGE**: localStorage（已弃用）
 - **MOBILE_SQLITE**: SQLite 数据库（通过 Capacitor）
 
-### 当前方案（v1.17.0）
+### v1.17.0 的 KV 后端方案
 
 | 平台 | Settings/Configs | Sessions | 原因 |
 |------|-----------------|----------|------|

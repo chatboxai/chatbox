@@ -86,7 +86,8 @@ function realBridge() {
   connection.closeConnection.mockResolvedValue(undefined)
   connection.createConnection.mockResolvedValue({
     open: async () => {},
-    execute: (sql: string) => database.execute(sql),
+    // Capacitor SQLite iOS removes newlines from execute() batches containing deletes.
+    execute: (sql: string) => database.execute(/DELETE FROM/i.test(sql) ? sql.replaceAll('\n', '') : sql),
     query: async (sql: string, values: SessionRowSqlBindValue[]) => ({ values: await database.query(sql, values) }),
     executeSet: async (batch: NativeStatement[], transaction: boolean) => {
       expect(transaction).toBe(true)
@@ -162,6 +163,21 @@ afterEach(() => {
 })
 
 describe('Capacitor staging transport on real SQLite', () => {
+  it('initializes a fresh database through iOS delete-batch preprocessing', async () => {
+    const { store, database } = realBridge()
+    await store.initialize()
+    const tables = await database.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
+    expect(tables.map((table) => table.name)).toEqual(
+      expect.arrayContaining([
+        'session_messages',
+        'session_threads',
+        'session_message_payload_chunks',
+        'session_text_tokens',
+      ])
+    )
+    await expect(store.readSnapshot('missing')).resolves.toBeNull()
+  })
+
   it('acknowledges numerical batches through the native transaction and retries a lost acknowledgement', async () => {
     const { store, calls, hooks, database } = realBridge()
     await store.writeRows(snapshot(1000), null)

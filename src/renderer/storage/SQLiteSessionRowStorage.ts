@@ -198,7 +198,8 @@ class CapacitorSessionRowSqlDatabase implements SessionRowSqlDatabase {
   execute(sql: string): Promise<void> {
     return this.enqueue(async () => {
       const database = await this.connect()
-      await database.execute(sql)
+      // iOS strips newlines from batches containing DELETE FROM; retain SQL token boundaries.
+      await database.execute(sql.replaceAll('\n', ' '))
     })
   }
 

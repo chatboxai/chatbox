@@ -20,6 +20,7 @@
 | [Gemini 流式错误拦截与重试安全](./gemini-stream-error-handling.md) | mid-stream 错误帧检测、MidStreamApiError 重试安全分类、网关范围决策与依赖升级维护清单 |
 | [会话管理系统](./session-management.md) | 数据模型、模块拆分、新会话机制、线程历史、消息分叉 |
 | [聊天/工作模式分化](./chat-work-mode-split.md) | 在下方回答平铺回退、模式策略（mode-policy）、队列/steering 聊天禁用、生成中切分支、性能与兼容性决策 |
+| [App 存储地图](./storage-map.md) | 业务分类、平台介质、关键 key、附件与备份范围 |
 | [存储架构](./storage.md) | 混合存储策略、跨平台方案、版本迁移历史 |
 | [数据备份归档](./data-backup.md) | ZIP v2 格式、资源范围、流式导入导出、事务恢复与安全限制 |
 | [Token 估算系统](./token-estimation.md) | 异步队列架构、优先级调度、Real Context 一致性 |

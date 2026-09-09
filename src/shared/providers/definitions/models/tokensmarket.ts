@@ -6,6 +6,9 @@ type Options = Omit<OpenAICompatibleSettings, 'apiHost'>
 export default class TokenMarket extends OpenAICompatible {
   public name = 'Token Market'
 
+  /**
+   * Indicates whether Token Market supports text embedding models.
+   */
   static isSupportTextEmbedding() {
     return false
   }

@@ -544,7 +544,11 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
       }
     }
 
-    const encoded = verifySessionTreeRoundTrip(session, { activeThreadId: id, now: this.now() })
+    const encoded = verifySessionTreeRoundTrip(session, {
+      activeThreadId: id,
+      now: this.now(),
+      previousMessages: baseline?.rows.messages,
+    })
     if (!encoded.ok) {
       return await this.writeUnmigratedSession(context.state, session, encoded.reason)
     }

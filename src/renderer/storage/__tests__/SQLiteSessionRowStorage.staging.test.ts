@@ -163,6 +163,49 @@ afterEach(() => {
 })
 
 describe('Capacitor staging transport on real SQLite', () => {
+  it.each([false, true])(
+    'reuses payloads and token results through staged metadata writes (delete=%s)',
+    async (removeTail) => {
+      const { store, database, calls } = realBridge()
+      const old = snapshot(1000)
+      await store.writeRows(old, null)
+      await store.acceptTextTokenResults(await tokenResults(store))
+      const before = await database.query<{ message_id: string; payload_id: string }>(
+        'SELECT message_id, payload_id FROM session_messages ORDER BY seq'
+      )
+      const messages = (removeTail ? old.rows.messages.slice(0, -1) : old.rows.messages).map((row) => ({
+        ...row,
+        seq: row.seq + 10,
+        activeChildId: removeTail && row.messageId === 'm998' ? null : row.activeChildId,
+      }))
+      const threads = removeTail ? [{ ...old.rows.threads[0], activeLeafMessageId: 'm998' }] : old.rows.threads
+      calls.length = 0
+      await store.applyDiff(
+        {
+          sessionId: 'session',
+          threads: { upsert: removeTail ? threads : [], delete: [] },
+          messages: { upsert: messages, delete: removeTail ? ['m999'] : [] },
+          unchangedPayloadMessageIds: messages.map((row) => row.messageId),
+        },
+        { record: old.record, revision: 2 },
+        1
+      )
+      expect(calls.some(isStaging)).toBe(true)
+      expect(
+        calls.flat().some((row) => row.statement.startsWith('INSERT OR REPLACE INTO session_message_payload_chunks'))
+      ).toBe(false)
+      expect(await database.query('SELECT message_id, payload_id FROM session_messages ORDER BY seq')).toEqual(
+        removeTail ? before.slice(0, -1) : before
+      )
+      const read = await store.readSnapshot('session')
+      expect(read?.revision).toBe(2)
+      expect(read?.rows.messages.map((row) => [row.messageId, row.seq])).toEqual(
+        messages.map((row) => [row.messageId, row.seq])
+      )
+      expect((await database.query('SELECT * FROM session_text_tokens')).length).toBe(messages.length)
+    }
+  )
+
   it('initializes a fresh database through iOS delete-batch preprocessing', async () => {
     const { store, database } = realBridge()
     await store.initialize()

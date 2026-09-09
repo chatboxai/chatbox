@@ -57,6 +57,7 @@ export interface SessionRowSqlStatement {
     | 'update-session-commit'
     | 'upsert-thread'
     | 'upsert-message'
+    | 'upsert-message-metadata'
     | 'insert-message-payload-chunk'
     | 'delete-orphan-message-payloads'
     | 'delete-stale-text-tokens'
@@ -543,6 +544,38 @@ function* splitPayload(value: string): Generator<string> {
   if (current || value.length === 0) yield current
 }
 
+/** Scalar subqueries preserve the payload manifest; a missing source violates its NOT NULL constraint. */
+function messageMetadataStatement(message: MessageRow): SessionRowSqlStatement {
+  return {
+    kind: 'upsert-message-metadata',
+    sql: `INSERT OR REPLACE INTO session_messages (${MESSAGE_COLUMNS}) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      (SELECT payload_id FROM session_messages WHERE session_id = ? AND message_id = ?),
+      (SELECT payload_chunk_count FROM session_messages WHERE session_id = ? AND message_id = ?),
+      (SELECT payload_utf8_length FROM session_messages WHERE session_id = ? AND message_id = ?)
+    )`,
+    params: [
+      message.sessionId,
+      message.messageId,
+      message.threadId,
+      message.parentMessageId,
+      message.activeChildId,
+      message.seq,
+      message.kind,
+      message.status,
+      message.createdAt,
+      message.updatedAt,
+      message.branchId,
+      message.sessionId,
+      message.messageId,
+      message.sessionId,
+      message.messageId,
+      message.sessionId,
+      message.messageId,
+    ],
+  }
+}
+
 function* messageStatements(message: MessageRow): Generator<SessionRowSqlStatement> {
   const serialized = serializeJson(message.message, `message ${message.messageId}`)
   const payloadId = createPayloadId(message)
@@ -1001,7 +1034,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
   }
 
   async applyDiff(diff: SessionRowsDiff, commit: SessionRowCommit, expectedRevision?: number): Promise<void> {
-    const statements = this.buildDiffStatements(diff, commit)
+    const statements = this.buildDiffStatements(diff, commit, expectedRevision !== undefined)
     await this.run('apply-diff', diff.sessionId, () =>
       this.database.executeBatch(statements, {
         sessionId: diff.sessionId,
@@ -1092,7 +1125,11 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     }
   }
 
-  private buildDiffStatements(diff: SessionRowsDiff, commit: SessionRowCommit): SessionRowSqlStatement[] {
+  private buildDiffStatements(
+    diff: SessionRowsDiff,
+    commit: SessionRowCommit,
+    reusePayload: boolean
+  ): SessionRowSqlStatement[] {
     try {
       requireSessionId(diff.sessionId, 'diff')
       if (!Number.isSafeInteger(commit.revision) || commit.revision <= 0 || commit.record.id !== diff.sessionId) {
@@ -1103,9 +1140,14 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         validateThreadRow(thread, diff.sessionId)
         statements.push(threadStatement(thread, commit))
       }
+      const unchangedPayloadIds = new Set(reusePayload ? diff.unchangedPayloadMessageIds : [])
       for (const message of diff.messages.upsert) {
         validateMessageRow(message, diff.sessionId)
-        statements.push(...messageStatements(message))
+        if (unchangedPayloadIds.has(message.messageId)) {
+          statements.push(messageMetadataStatement(message))
+        } else {
+          statements.push(...messageStatements(message))
+        }
       }
       for (const threadId of diff.threads.delete) {
         statements.push({ kind: 'delete-thread', sql: DELETE_THREAD_SQL, params: [diff.sessionId, threadId] })
@@ -1113,7 +1155,12 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       for (const messageId of diff.messages.delete) {
         statements.push({ kind: 'delete-message', sql: DELETE_MESSAGE_SQL, params: [diff.sessionId, messageId] })
       }
-      const changedIds = new Set([...diff.messages.upsert.map((message) => message.messageId), ...diff.messages.delete])
+      const changedIds = new Set([
+        ...diff.messages.upsert
+          .filter((message) => !unchangedPayloadIds.has(message.messageId))
+          .map((message) => message.messageId),
+        ...diff.messages.delete,
+      ])
       for (const messageId of changedIds) statements.push(textTokenCleanupStatement(diff.sessionId, messageId))
       statements.push(updateCommitStatement(diff.sessionId, commit))
       statements.push({

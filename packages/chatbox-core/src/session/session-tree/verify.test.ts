@@ -211,9 +211,16 @@ function createRandomSession(seed: number): Session {
 }
 
 describe('verifySessionTreeRoundTrip', () => {
-  test('round-trips a session covering every carried field', () => {
+  test.each([false, true])('round-trips all fields with forks, archives and compaction (sparse=%s)', (sparse) => {
     const source = createRichSession()
-    const result = verifySessionTreeRoundTrip(source, OPTIONS)
+    const baseline = verifySessionTreeRoundTrip(source, OPTIONS)
+    if (!baseline.ok) throw new Error(baseline.reason)
+    const previousMessages = sparse
+      ? baseline.tree.messages.map((row) => ({ ...row, seq: row.seq * 4 + 2 }))
+      : undefined
+    const result = verifySessionTreeRoundTrip(source, { ...OPTIONS, previousMessages })
+    if (sparse && result.ok)
+      expect(result.tree.messages.map((row) => row.seq)).toEqual(previousMessages?.map((row) => row.seq))
 
     expect(result).toMatchObject({ ok: true })
     if (!result.ok) {

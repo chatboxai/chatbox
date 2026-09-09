@@ -108,7 +108,7 @@ function canStageSelectedMessages(statements: SessionRowSqlStatement[], options:
   let messageCount = 0
   for (let index = 0; index < statements.length - 2; index += 1) {
     const statement = statements[index]
-    if (statement.kind === 'upsert-message') messageCount += 1
+    if (statement.kind === 'upsert-message' || statement.kind === 'upsert-message-metadata') messageCount += 1
     else if (statement.kind === 'delete-stale-text-tokens' && statement.params.length === 2) continue
     else if (statement.kind !== 'insert-message-payload-chunk') return false
   }
@@ -429,6 +429,18 @@ class CapacitorSessionRowSqlDatabase implements SessionRowSqlDatabase {
             params: [mutationId, ...params],
           }
           yield* appends
+          break
+        }
+        case 'upsert-message-metadata': {
+          yield {
+            sql: statement.sql
+              .replace(
+                'INSERT OR REPLACE INTO session_messages (',
+                'INSERT OR REPLACE INTO session_messages_staging (mutation_id, '
+              )
+              .replace(') VALUES (', ') VALUES (?, '),
+            params: [mutationId, ...statement.params],
+          }
           break
         }
         case 'upsert-message': {

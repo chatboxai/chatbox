@@ -156,6 +156,48 @@ function rowSnapshot(rows: SessionRows, revision: number): SessionRowSnapshot {
 }
 
 describe('RowBackedSessionRepository', () => {
+  test('removes a saved branch without renumbering the active or archived paths', async () => {
+    const harness = await createHarness()
+    const source = createRichSession()
+    await harness.repository.setSession(source)
+    const before = new Map(storedRows(harness, source.id).messages.map((row) => [row.messageId, row.seq]))
+    const apply = vi.spyOn(harness.rows, 'applyDiff')
+    await harness.repository.setSession({ ...source, messageForksHash: {} })
+    const diff = apply.mock.calls[0][0]
+    expect(diff.messages.delete).toEqual(['fork-answer'])
+    for (const row of storedRows(harness, source.id).messages) expect(row.seq).toBe(before.get(row.messageId))
+    expect((await harness.repository.getSession(source.id))?.threads).toEqual(normalized(source).threads)
+  })
+
+  test.each([0, 500, 999])('deletes message %i without rewriting the surviving suffix', async (index) => {
+    const harness = await createHarness()
+    const source: Session = {
+      ...createPlainSession(),
+      messages: Array.from({ length: 1000 }, (_, index) => message(`m${index}`, 'user', index + 1)),
+    }
+    await harness.repository.setSession(source)
+    const apply = vi.spyOn(harness.rows, 'applyDiff')
+    const next = { ...source, messages: source.messages.filter((_, at) => at !== index) }
+    await harness.repository.setSession(next)
+    const diff = apply.mock.calls[0][0]
+    expect(diff.messages.delete).toEqual([`m${index}`])
+    expect(diff.messages.upsert.length).toBeLessThanOrEqual(2)
+    expect(diff.unchangedPayloadMessageIds?.length).toBe(diff.messages.upsert.length)
+    expect(storedRows(harness, source.id).messages.map((row) => row.seq)).toEqual(
+      next.messages.map((message) => Number(message.id.slice(1)))
+    )
+
+    const reopened = new RowBackedSessionRepository({ records: harness.records, rows: harness.rows, now: () => NOW })
+    await reopened.initialize()
+    const loaded = await reopened.getSession(source.id)
+    expect(loaded?.messages.map((message) => message.id)).toEqual(next.messages.map((message) => message.id))
+    if (!loaded) throw new Error('missing session')
+    apply.mockClear()
+    await reopened.setSession({ ...loaded, messages: [...loaded.messages, message('appended', 'assistant', 2000)] })
+    expect(apply.mock.calls[0][0].messages.upsert).toHaveLength(2)
+    expect(storedRows(harness, source.id).messages.at(-1)?.seq).toBe(index === 999 ? 999 : 1000)
+  })
+
   test('keeps a session created between startup record and row enumeration', async () => {
     const harness = await createHarness()
     const session = createPlainSession('created-during-startup')

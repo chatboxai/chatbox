@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { SessionRowSnapshot } from '../ports/session-row-store'
 import type { MessageRow } from '../session/session-tree/types'
+import { encodeSessionTree } from '../session/session-tree/encode'
+import { diffSessionRows } from '../session/session-tree/diff'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
 import { contextSession, contextSnapshot, expectedContextMessage } from './session-context-read.test-support'
 import { type SessionRowSqlBindValue, SqlSessionRowStore } from './session-row-sql'
@@ -116,6 +118,32 @@ afterEach(() => {
 })
 
 describe('SQL context ancestry response planning on real SQLite', () => {
+  it('reads compacted context and both window directions after a middle deletion', async () => {
+    const session = contextSession()
+    const before = contextSnapshot(session)
+    const { reader } = await measuredStore(before)
+    const beforeContext = await reader.readContext({ sessionId: session.id })
+    const next = { ...session, messages: session.messages.filter((message) => message.id !== 'prefix-3') }
+    const encoded = encodeSessionTree(next, {
+      activeThreadId: session.id,
+      now: 1,
+      previousMessages: before.rows.messages,
+    })
+    if (!encoded.ok) throw new Error(encoded.reason)
+    const rows = { sessionId: session.id, threads: encoded.tree.threads, messages: encoded.tree.messages }
+    await reader.applyDiff(diffSessionRows(before.rows, rows), { record: encoded.tree.session, revision: 2 }, 1)
+    const context = await reader.readContext({ sessionId: session.id })
+    expect(context?.messages.map((row) => row.messageId)).toEqual(beforeContext?.messages.map((row) => row.messageId))
+    const head = await reader.readMessageWindow({ sessionId: session.id, edge: 'head', limit: 4 })
+    expect(head?.messages.map((row) => row.messageId)).toEqual(['system', 'prefix-0', 'prefix-1', 'prefix-2'])
+    if (!head?.newer) throw new Error('missing forward cursor')
+    const page = await reader.readMessageWindow({ sessionId: session.id, cursor: head.newer, limit: 4 })
+    expect(page?.messages.map((row) => row.messageId)).toEqual(['prefix-4', 'prefix-5', 'prefix-6', 'prefix-7'])
+    if (!page?.older) throw new Error('missing backward cursor')
+    const back = await reader.readMessageWindow({ sessionId: session.id, cursor: page.older, limit: 4 })
+    expect(back?.messages.map((row) => row.messageId)).toEqual(head.messages.map((row) => row.messageId))
+  })
+
   it.each([1_000, 10_000, 100_000])(
     'reads all %i uncompacted ancestors in byte-bounded batches',
     async (count) => {

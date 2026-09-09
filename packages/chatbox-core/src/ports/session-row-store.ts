@@ -9,6 +9,8 @@ export interface SessionRows {
 }
 
 export interface SessionRowsDiff {
+  /** Upserted rows with payloads identical to the expected revision. Stores may reuse those payloads only under CAS. */
+  unchangedPayloadMessageIds?: string[]
   sessionId: string
   threads: { upsert: ThreadRow[]; delete: string[] }
   messages: { upsert: MessageRow[]; delete: string[] }

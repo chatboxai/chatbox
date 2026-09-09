@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { SessionRowCommit, SessionRowSnapshot, SessionRows } from '../ports/session-row-store'
+import type { SessionRowCommit, SessionRowSnapshot, SessionRows, SessionRowsDiff } from '../ports/session-row-store'
 import { createSessionRowStoreContract } from '../ports/testing/session-row-store-contract'
 import type { MessageRow, SessionRecordV2, ThreadRow } from '../session/session-tree/types'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
@@ -840,5 +840,82 @@ describe('SqlSessionRowStore SQL shape', () => {
       rows: { messages: [currentMessage] },
       revision: 2,
     })
+  })
+})
+
+describe('metadata-only payload reuse', () => {
+  it('preserves payload identity and contents under CAS, but replaces changed contents', async () => {
+    const { store, database } = createStore()
+    const row = messageRow('thread-active', 'm1', {
+      message: { id: 'm1', role: 'user', contentParts: [{ type: 'text', text: '正文'.repeat(100000) }] },
+    })
+    await store.writeRows(
+      snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [row] }, 1)
+    )
+    const manifest = () =>
+      database.query('SELECT payload_id, payload_chunk_count, payload_utf8_length FROM session_messages')
+    const before = await manifest()
+    database.reset()
+    const diff: SessionRowsDiff = {
+      sessionId: 'session-1',
+      threads: { upsert: [], delete: [] },
+      messages: { upsert: [{ ...row, seq: 42 }], delete: [] },
+      unchangedPayloadMessageIds: ['m1'],
+    }
+    await store.applyDiff(diff, commit(2), 1)
+    expect(database.executed.some((sql) => sql.startsWith('INSERT INTO session_message_payload_chunks'))).toBe(false)
+    expect(database.executed.some((sql) => sql.startsWith('DELETE FROM session_text_tokens'))).toBe(false)
+    expect(await manifest()).toEqual(before)
+    expect((await store.readSnapshot('session-1'))?.rows.messages[0]).toEqual({ ...row, seq: 42 })
+    await expect(store.applyDiff(diff, commit(3), 1)).rejects.toThrow('revision conflict')
+    expect(await manifest()).toEqual(before)
+    await store.applyDiff(
+      {
+        ...diff,
+        unchangedPayloadMessageIds: undefined,
+        messages: {
+          upsert: [{ ...row, message: { ...row.message, contentParts: [{ type: 'text', text: 'edited' }] } }],
+          delete: [],
+        },
+      },
+      commit(3),
+      2
+    )
+    expect(await manifest()).not.toEqual(before)
+    expect((await store.readSnapshot('session-1'))?.rows.messages[0].message.contentParts).toEqual([
+      { type: 'text', text: 'edited' },
+    ])
+  })
+
+  it('requires the original row and rolls back a missing payload source', async () => {
+    const { store } = createStore()
+    await store.writeRows(snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [] }, 1))
+    await expect(
+      store.applyDiff(
+        {
+          sessionId: 'session-1',
+          threads: { upsert: [], delete: [] },
+          messages: { upsert: [messageRow('thread-active', 'missing')], delete: [] },
+          unchangedPayloadMessageIds: ['missing'],
+        },
+        commit(2),
+        1
+      )
+    ).rejects.toThrow()
+    expect((await store.readSnapshot('session-1'))?.revision).toBe(1)
+  })
+
+  it('ignores reuse hints without an expected revision', async () => {
+    const { store } = createStore()
+    await store.applyDiff(
+      {
+        sessionId: 'session-1',
+        threads: { upsert: [threadRow('thread-active')], delete: [] },
+        messages: { upsert: [messageRow('thread-active', 'new')], delete: [] },
+        unchangedPayloadMessageIds: ['new'],
+      },
+      commit(1)
+    )
+    expect((await store.readSnapshot('session-1'))?.rows.messages[0].messageId).toBe('new')
   })
 })

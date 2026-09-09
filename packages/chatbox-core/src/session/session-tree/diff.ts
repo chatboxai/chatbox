@@ -101,9 +101,19 @@ export function diffSessionRows(previous: SessionRows | null, next: SessionRows)
   const previousThreads: ThreadRow[] = previous ? previous.threads : []
   const previousMessages: MessageRow[] = previous ? previous.messages : []
 
+  const messages = diffRows(previousMessages, next.messages, (row) => row.messageId, messageRowsEqual)
+  const previousById = new Map(previousMessages.map((row) => [row.messageId, row]))
+  const unchangedPayloadMessageIds = messages.upsert
+    .filter((row) => {
+      const before = previousById.get(row.messageId)
+      return before !== undefined && deepEqual(before.message, row.message)
+    })
+    .map((row) => row.messageId)
+
   return {
+    ...(unchangedPayloadMessageIds.length ? { unchangedPayloadMessageIds } : {}),
     sessionId: next.sessionId,
     threads: diffRows(previousThreads, next.threads, (row) => row.threadId, deepEqual),
-    messages: diffRows(previousMessages, next.messages, (row) => row.messageId, messageRowsEqual),
+    messages,
   }
 }

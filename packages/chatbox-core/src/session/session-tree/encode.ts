@@ -15,6 +15,8 @@ export interface EncodeSessionTreeOptions {
   activeThreadId: string
   /** Fallback timestamp for a new empty active thread. */
   now: number
+  /** Committed rows whose ordering labels can be retained during structural edits. */
+  previousMessages?: readonly MessageRow[]
 }
 
 export type EncodeSessionTreeResult =
@@ -251,6 +253,31 @@ export function encodeSessionTree(session: Session, options: EncodeSessionTreeOp
         ? {}
         : { sessionPromptContextSnapshot: thread.sessionPromptContextSnapshot }),
     })
+  }
+
+  if (options.previousMessages) {
+    const previous = new Map(options.previousMessages.map((row) => [row.messageId, row]))
+    const byThread = new Map<string, MessageRow[]>()
+    for (const row of messages) {
+      const rows = byThread.get(row.threadId)
+      if (rows) rows.push(row)
+      else byThread.set(row.threadId, [row])
+    }
+    for (const rows of byThread.values()) {
+      let nextSeq = 0
+      for (const row of rows) {
+        const before = previous.get(row.messageId)
+        row.seq = Math.max(
+          nextSeq,
+          before?.sessionId === row.sessionId && before.threadId === row.threadId ? before.seq : nextSeq
+        )
+        nextSeq = row.seq + 1
+      }
+      // Context projections need a safe exclusive upper bound after the final row.
+      if (!Number.isSafeInteger(nextSeq)) {
+        for (const [index, row] of rows.entries()) row.seq = index
+      }
+    }
   }
 
   const sessionRecord = deriveSessionRecord(normalized, options.activeThreadId)

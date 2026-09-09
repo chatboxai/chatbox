@@ -8,6 +8,7 @@ import ZhipuColor from '@lobehub/icons/es/Zhipu/components/Color'
 import { type ModelProvider, ModelProviderEnum } from '@shared/types'
 import BrandGithub from './BrandGithub'
 
+/** Renders the icon associated with a model provider. */
 export default function ProviderIcon(props: { className?: string; size?: number; provider: ModelProvider | string }) {
   const { className, size = 24, provider } = props
 

@@ -389,7 +389,7 @@ function Root() {
               }`}
               sx={{
                 borderRadius: { xs: 0, sm: '16px' },
-                boxShadow: { xs: 'none', sm: '0 0 22px rgba(0, 0, 0, 0.11)' },
+                boxShadow: { xs: 'none', sm: platform.type === 'web' ? 'none' : '0 0 22px rgba(0, 0, 0, 0.11)' },
               }}
             >
               <ErrorBoundary name="main">

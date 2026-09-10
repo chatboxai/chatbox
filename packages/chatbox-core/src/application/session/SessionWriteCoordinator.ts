@@ -151,6 +151,15 @@ export class SessionWriteCoordinator {
       return Promise.reject(new SessionNotFoundError(sessionId))
     }
     return this.enqueue(sessionId, async () => {
+      const existing = await this.repository.meta.getById(sessionId)
+      if (!existing) return null
+      if (
+        (!existing.recoveryArchived && existing.archivedAt !== undefined) ||
+        this.current.get(sessionId)?.archivedAt !== undefined
+      ) {
+        await this.performUpdate(sessionId, { hidden: false, archivedAt: undefined }, { clearRecoveryArchive: true })
+        return this.repository.meta.getById(sessionId)
+      }
       const updated = await this.repository.meta.update(sessionId, {
         hidden: false,
         archivedAt: undefined,

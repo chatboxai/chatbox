@@ -102,6 +102,27 @@ describe('SessionWriteCoordinator', () => {
     expect(repository.sessions.get(session.id)?.messages.map(({ id }) => id)).toEqual(['persisted', 'next'])
   })
 
+  test.each([true, false])(
+    'recovery undo restores the full session after a queued write (updateMeta=%s)',
+    async (updateMeta) => {
+      const repository = new MemorySessionRepository()
+      const session = createTestSession('session-1')
+      repository.sessions.set(session.id, session)
+      repository.records.set(session.id, createTestRecord(session, 1))
+      const coordinator = new SessionWriteCoordinator(repository)
+
+      await coordinator.archiveMetadataOnly(session.id, 50)
+      await coordinator.update(session.id, { name: 'Final generation write' }, { updateMeta })
+      await coordinator.restoreMetadataOnly(session.id)
+      await coordinator.update(session.id, { name: 'Next write' })
+
+      expect(repository.sessions.get(session.id)).toMatchObject({ hidden: false })
+      expect(repository.sessions.get(session.id)?.archivedAt).toBeUndefined()
+      expect(repository.records.get(session.id)?.hidden).toBe(false)
+      expect(repository.records.get(session.id)?.archivedAt).toBeUndefined()
+    }
+  )
+
   test('serializes metadata-only recovery archives and preserves them across later projections', async () => {
     const repository = new MemorySessionRepository()
     const session = createTestSession('session-1')

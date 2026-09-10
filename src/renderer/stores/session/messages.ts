@@ -313,7 +313,7 @@ export async function submitNewUserMessageUnlocked(
   // Run compaction check before sending message (blocking)
   // Only for chat sessions with auto-compaction enabled
   if (session.type === 'chat' || session.type === undefined) {
-    const compactionResult = await runCompactionWithUIState(sessionId)
+    const compactionResult = await runCompactionWithUIState(sessionId, { pendingMessage: params.newUserMsg })
     if (!compactionResult.success) {
       throw compactionResult.error ?? new Error('Compaction failed')
     }

@@ -19,14 +19,18 @@ export interface CompactionPolicyPort {
     session: Session
     sessionSettings: SessionSettings
     globalSettings: Settings
+    pendingMessage?: Message
   }): Promise<boolean>
   /**
-   * The current context selection at full fidelity (tool calls and results
-   * intact, no cleanup, no message-count limit). The service derives both the
-   * compaction boundary and the summarizer input from this list, so anything
-   * missing here is unrecoverable by the summary.
+   * The host's send-context selection, including its message-count limit and
+   * tool-result cleanup. The summary covers this window through its latest
+   * eligible message; persisted history remains available in the conversation.
    */
-  getCompactionContext(session: Session, sessionSettings: SessionSettings): Message[]
+  getCompactionContext(
+    session: Session,
+    sessionSettings: SessionSettings,
+    pendingMessage?: Message
+  ): Message[] | Promise<Message[]>
 }
 
 export interface CompactionSummaryPort {
@@ -86,7 +90,7 @@ export class CompactionService {
     return this.ongoing.has(sessionId)
   }
 
-  async needsCompaction(sessionId: string): Promise<boolean> {
+  async needsCompaction(sessionId: string, pendingMessage?: Message): Promise<boolean> {
     const session = await this.options.sessions.getSession(sessionId)
     if (!session) return false
 
@@ -97,17 +101,22 @@ export class CompactionService {
     if (!modelId) return false
 
     const sessionSettings = await this.options.sessions.getSessionSettings(sessionId)
-    return this.options.policy.shouldCompact({ sessionId, session, sessionSettings, globalSettings })
+    return this.options.policy.shouldCompact({ sessionId, session, sessionSettings, globalSettings, pendingMessage })
   }
 
   async run(
     sessionId: string,
-    options: { force?: boolean; prompt?: string; onStreamUpdate?: (text: string) => void } = {}
+    options: {
+      force?: boolean
+      prompt?: string
+      onStreamUpdate?: (text: string) => void
+      pendingMessage?: Message
+    } = {}
   ): Promise<CompactionServiceResult> {
     if (this.ongoing.has(sessionId)) {
       return { success: true, compacted: false, alreadyRunning: true }
     }
-    if (!options.force && !(await this.needsCompaction(sessionId))) {
+    if (!options.force && !(await this.needsCompaction(sessionId, options.pendingMessage))) {
       return { success: true, compacted: false }
     }
     if (this.ongoing.has(sessionId)) {
@@ -131,7 +140,11 @@ export class CompactionService {
       // Summarize the full selected context through its latest eligible message.
       // Capture the boundary before generation so messages arriving during
       // streaming remain after the summary and available to the next request.
-      const contextMessages = this.options.policy.getCompactionContext(session, sessionSettings)
+      const contextMessages = await this.options.policy.getCompactionContext(
+        session,
+        sessionSettings,
+        options.pendingMessage
+      )
       const boundary = findLastCompactionBoundaryMessage(contextMessages)
       if (!boundary) {
         return this.failure('no_messages', 'No messages to compact')

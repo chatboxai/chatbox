@@ -3,7 +3,7 @@
  * Platform abstraction for attachment handling
  */
 
-import type { CompactionPoint } from '@shared/types'
+import type { CompactionPoint, Message } from '@shared/types'
 
 /**
  * Platform abstraction for reading attachments
@@ -39,6 +39,13 @@ export type ToolCleanupMode = 'none' | 'stub-old-results'
 export interface ContextSelectionOptions {
   compactionPoints?: CompactionPoint[]
   maxContextMessageCount?: number
+}
+
+/** Shared message window and tool cleanup used by sending and compaction. */
+export interface ContextPreparationOptions extends ContextSelectionOptions {
+  toolCleanupMode: ToolCleanupMode | ((messages: Message[]) => ToolCleanupMode)
+  keepToolCallRounds?: number
+  preserveToolCallMessageIds?: string[]
 }
 
 /**

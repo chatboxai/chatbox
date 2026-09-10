@@ -42,6 +42,9 @@ function createHarness(
     autoCompaction: true,
     defaultChatModel: { provider: 'openai', model: 'gpt-4.1' },
   } as Settings
+  const getCompactionContext = vi.fn(
+    (current: Session, _settings: SessionSettings, _pendingMessage?: Message) => current.messages
+  )
   const shouldCompact = vi.fn(() => Promise.resolve(true))
   const generate = vi.fn(
     (input: {
@@ -64,7 +67,7 @@ function createHarness(
     settings: { getSettings: () => globalSettings },
     policy: {
       shouldCompact,
-      getCompactionContext: (current: Session) => current.messages,
+      getCompactionContext,
     },
     summaries: { generate },
     logger: options.logger,
@@ -73,6 +76,7 @@ function createHarness(
   })
   return {
     service,
+    getCompactionContext,
     shouldCompact,
     generate,
     get session() {
@@ -117,6 +121,19 @@ describe('CompactionService', () => {
         createdAt: 123,
       },
     ])
+  })
+
+  test('uses the pending turn for the threshold without including it in the summary boundary', async () => {
+    const harness = createHarness()
+    const pendingMessage = message('pending-user', 'user')
+
+    await harness.service.run('session-1', { pendingMessage })
+
+    expect(harness.shouldCompact).toHaveBeenCalledWith(expect.objectContaining({ pendingMessage }))
+    expect(harness.getCompactionContext).toHaveBeenCalledWith(expect.any(Object), expect.any(Object), pendingMessage)
+    expect(harness.generate.mock.calls[0]?.[0]).toMatchObject({
+      messages: expect.not.arrayContaining([pendingMessage]),
+    })
   })
 
   test('summarizes through the latest message with tool calls flattened', async () => {

@@ -1,14 +1,23 @@
+import { buildContext } from '@shared/context'
+import { estimateTokensForTokenizerType } from '@shared/token-estimation/tokenizer'
 import type { Message, Session } from '@shared/types'
 import { getDefaultStore } from 'jotai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { compactionUIStateMapAtom, getCompactionUIState } from '@/stores/atoms/compactionAtoms'
 
-const { generateSummaryWithStreamMock, getSessionMock, updateSessionWithMessagesMock } = vi.hoisted(() => ({
-  generateSummaryWithStreamMock: vi.fn(),
-  getSessionMock: vi.fn(),
-  updateSessionWithMessagesMock: vi.fn(),
-}))
+const { generateSummaryWithStreamMock, getSessionMock, updateSessionWithMessagesMock, getSessionSettingsMock } =
+  vi.hoisted(() => ({
+    generateSummaryWithStreamMock: vi.fn(),
+    getSessionMock: vi.fn(),
+    getSessionSettingsMock: vi.fn(),
+    updateSessionWithMessagesMock: vi.fn(),
+  }))
 
+vi.mock('@/adapters', () => ({ createModel: vi.fn() }))
+vi.mock('@/platform', () => ({ default: { isDesktopLike: false } }))
+vi.mock('@/sandbox', () => ({ createSandboxProvider: vi.fn() }))
+vi.mock('@/stores/session/agent-mode', () => ({ getSessionAgentModeEntry: () => ({ value: 'off' }) }))
+vi.mock('@/stores/settingActions', () => ({ isPro: () => true }))
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
     sessions: { updateSessionWithMessages: updateSessionWithMessagesMock },
@@ -16,7 +25,7 @@ vi.mock('@/app/renderer-application', () => ({
   },
 }))
 vi.mock('@/stores/session/session-settings', () => ({
-  getSessionSettings: vi.fn(async () => ({})),
+  getSessionSettings: getSessionSettingsMock,
 }))
 vi.mock('@/settings-runtime', () => ({
   settingsService: { getSettings: () => ({ defaultChatModel: { model: 'test-model' } }) },
@@ -56,10 +65,78 @@ describe('runCompactionWithUIState', () => {
     vi.clearAllMocks()
     getDefaultStore().set(compactionUIStateMapAtom, {})
     getSessionMock.mockResolvedValue(testSession())
+    getSessionSettingsMock.mockResolvedValue({})
     updateSessionWithMessagesMock.mockImplementation((_id: string, updater: (s: Session) => Session) => {
       updater(testSession())
       return Promise.resolve()
     })
+  })
+
+  it('keeps long-history compaction within the normal send window', async () => {
+    const oldText = ' historical'.repeat(100_001)
+    const textTokenCounts = new Map<string, number>([[oldText, estimateTokensForTokenizerType(oldText, 'default')]])
+    const countInputTokens = (messages: Message[]) =>
+      messages.reduce(
+        (total, message) =>
+          total +
+          message.contentParts.reduce((subtotal, part) => {
+            if (part.type !== 'text') return subtotal
+            const count = textTokenCounts.get(part.text) ?? estimateTokensForTokenizerType(part.text, 'default')
+            textTokenCounts.set(part.text, count)
+            return subtotal + count
+          }, 0),
+        0
+      )
+    const session: Session = {
+      ...testSession(),
+      settings: { provider: 'openai', modelId: 'test-model', maxContextMessageCount: 4 },
+      messages: [
+        ...Array.from({ length: 12 }, (_, index) =>
+          message(`old-${index}`, {
+            role: index % 2 === 0 ? 'user' : 'assistant',
+            contentParts: [{ type: 'text', text: oldText }],
+          })
+        ),
+        ...Array.from({ length: 4 }, (_, index) =>
+          message(`recent-${index}`, {
+            role: index % 2 === 0 ? 'user' : 'assistant',
+            contentParts: [{ type: 'text', text: `recent ${index}` }],
+          })
+        ),
+      ],
+    }
+    const pending = message('pending', { role: 'user', contentParts: [{ type: 'text', text: 'next question' }] })
+    const sendContext = await buildContext([...session.messages, pending], {
+      attachmentResolver: { read: async () => null },
+      maxContextMessageCount: 4,
+      toolCleanupMode: 'none',
+    })
+    expect(countInputTokens(session.messages)).toBeGreaterThan(1_000_000)
+    expect(countInputTokens(sendContext)).toBeLessThan(100)
+    getSessionMock.mockResolvedValue(session)
+    getSessionSettingsMock.mockResolvedValue(session.settings)
+    updateSessionWithMessagesMock.mockImplementation((_id: string, updater: (current: Session) => Session) =>
+      Promise.resolve(updater(session))
+    )
+    let summarizedMessages: Message[] = []
+    generateSummaryWithStreamMock.mockImplementation(({ messages }: { messages: Message[] }) => {
+      summarizedMessages = messages
+      if (countInputTokens(messages) > 1_000_000) {
+        return {
+          success: false,
+          error: new Error('InternalError.Algo.InvalidParameter: Range of input length should be [1, 1000000]'),
+        }
+      }
+      return Promise.resolve({ success: true, summary: 'Summary' })
+    })
+    const result = await runCompactionWithUIState(session.id, { force: true, pendingMessage: pending })
+    expect(result, `Summary input tokens (cl100k_base): ${countInputTokens(summarizedMessages)}`).toMatchObject({
+      success: true,
+      compacted: true,
+    })
+    expect(countInputTokens(summarizedMessages)).toBe(12)
+    expect(summarizedMessages).toEqual(sendContext.filter((message) => message.id !== pending.id))
+    expect(getCompactionUIState(session.id).status).toBe('completed')
   })
 
   it('keeps the running UI state when a duplicate request arrives mid-stream', async () => {

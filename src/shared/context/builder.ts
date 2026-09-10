@@ -9,7 +9,13 @@ import { orderSteeredMessagesForModel } from '../utils/message'
 import { findLatestApplicableCompactionPoint } from './compaction-points'
 import { isContextEligibleMessage } from './message-eligibility'
 import { findRecentRoundsStartIndex } from './rounds'
-import type { AttachmentResolver, ContextBuilderOptions, ContextSelectionOptions, ToolCleanupMode } from './types'
+import type {
+  AttachmentResolver,
+  ContextBuilderOptions,
+  ContextPreparationOptions,
+  ContextSelectionOptions,
+  ToolCleanupMode,
+} from './types'
 
 const MAX_INLINE_FILE_LINES = 500
 const PREVIEW_LINES = 100
@@ -23,37 +29,23 @@ const STUB_ARGS_PREVIEW_CHARS = 500
  * Pure function - does not mutate inputs, no side effects.
  */
 export async function buildContext(messages: Message[], options: ContextBuilderOptions): Promise<Message[]> {
-  const {
-    attachmentResolver,
-    maxContextMessageCount,
-    compactionPoints,
-    toolCleanupMode,
-    keepToolCallRounds = 2,
-    preserveToolCallMessageIds,
-    modelSupportToolUseForFile = false,
-    sandboxMode = false,
-  } = options
+  const { attachmentResolver, modelSupportToolUseForFile = false, sandboxMode = false } = options
+  const contextMessages = prepareContextMessages(messages, options)
+  return await injectAttachments(contextMessages, attachmentResolver, modelSupportToolUseForFile, sandboxMode)
+}
 
-  if (messages.length === 0) {
-    return []
-  }
-
-  let contextMessages = selectContextMessages(messages, { compactionPoints, maxContextMessageCount })
-
-  if (contextMessages.length === 0) {
-    return []
-  }
-
-  contextMessages = applyToolCleanup(contextMessages, toolCleanupMode, keepToolCallRounds, preserveToolCallMessageIds)
-
-  contextMessages = await injectAttachments(
+/** The shared send window, with tool cleanup applied before attachment injection. */
+export function prepareContextMessages(messages: Message[], options: ContextPreparationOptions): Message[] {
+  const contextMessages = selectContextMessages(messages, options)
+  if (contextMessages.length === 0) return []
+  const toolCleanupMode =
+    typeof options.toolCleanupMode === 'function' ? options.toolCleanupMode(contextMessages) : options.toolCleanupMode
+  return applyToolCleanup(
     contextMessages,
-    attachmentResolver,
-    modelSupportToolUseForFile,
-    sandboxMode
+    toolCleanupMode,
+    options.keepToolCallRounds ?? 2,
+    options.preserveToolCallMessageIds
   )
-
-  return contextMessages
 }
 
 /**

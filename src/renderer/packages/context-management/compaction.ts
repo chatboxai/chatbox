@@ -3,15 +3,23 @@ import {
   type CompactionServiceResult,
   isAutoCompactionEnabled,
 } from '@chatbox/core/application/context'
+import type { Message } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
+import { createModel } from '@/adapters'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { getTokenizerType } from '@/packages/token-estimation'
+import platform from '@/platform'
+import { createSandboxProvider } from '@/sandbox'
+import { resolveContextSandbox } from '@/sandbox/context'
 import { settingsService } from '@/settings-runtime'
 import { setCompactionUIState } from '@/stores/atoms/compactionAtoms'
 import queryClient from '@/stores/queryClient'
+import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
 import { getSessionSettings } from '@/stores/session/session-settings'
+import { isPro } from '@/stores/settingActions'
 import { sumCachedTokensFromMessages } from '../token'
+import { getCompactionContext } from './compaction-context'
 import { checkOverflow } from './compaction-detector'
 import { getConfiguredContextWindow } from './context-pressure'
 import {
@@ -67,16 +75,21 @@ const compactionService = new CompactionService({
         contextWindow: getConfiguredContextWindow(globalSettings, providerId, modelId),
       }).isOverflow
     },
-    // Full-fidelity context: the service derives the boundary and the
-    // summarizer input from this list, so tool calls/results must be intact
-    // and the message-count limit must NOT apply — the compaction point cuts
-    // everything before the boundary in the persisted list, so the summary has
-    // to be able to cover messages outside the current send window (otherwise
-    // raising maxContextMessageCount later can never bring them back).
-    getCompactionContext: (session, sessionSettings) =>
-      getContextMessagesForTokenEstimation(session, {
-        settings: { ...sessionSettings, maxContextMessageCount: undefined },
-      }),
+    async getCompactionContext(session, sessionSettings, pendingMessage) {
+      let sandboxMode = false
+      if (platform.isDesktopLike && getSessionAgentModeEntry(session.id, session).value === 'on') {
+        const model = await createModel(sessionSettings)
+        const capabilities = await resolveContextSandbox({
+          enabled: model.isSupportToolUse('agent'),
+          model,
+          settings: sessionSettings,
+          createProvider: createSandboxProvider,
+          isPro,
+        })
+        sandboxMode = capabilities.canExecuteCode
+      }
+      return getCompactionContext(session, sessionSettings, settingsService.getSettings(), pendingMessage, sandboxMode)
+    },
   },
   summaries: {
     generate: (input) => generateSummaryWithStream(input),
@@ -90,6 +103,7 @@ const compactionService = new CompactionService({
 })
 
 export interface CompactionOptions {
+  pendingMessage?: Message
   force?: boolean
   prompt?: string
 }
@@ -138,6 +152,7 @@ export async function runCompactionWithUIState(
     await compactionService.run(sessionId, {
       force: options.force === true,
       prompt: options.prompt,
+      pendingMessage: options.pendingMessage,
       onStreamUpdate: (text) => setCompactionUIState(sessionId, { streamingText: text }),
     })
   )

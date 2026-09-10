@@ -47,6 +47,7 @@ import {
 import { getOS } from '@/packages/navigator'
 import platform from '@/platform'
 import { createSandboxProvider } from '@/sandbox'
+import { resolveContextSandbox } from '@/sandbox/context'
 import { getCopilotMemorySelection } from '@/stores/copilotStore'
 
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attachment-rag/logging'
@@ -266,25 +267,13 @@ export async function prepareAgentGenerationHarness(
     copilotId: session.copilotId,
   })
 
-  const sandboxProvider = effectiveAgentMode !== 'off' ? sandboxProviderFactory() : null
-  // Grant the sandbox read/write access to any user-bound working directories before it
-  // initializes lazily on the first tool call (desktop only; cloud provider no-ops).
-  const userWorkingDirectories = settings.workingDirectories?.filter((dir) => dir.trim().length > 0) ?? []
-  if (sandboxProvider && userWorkingDirectories.length > 0) {
-    sandboxProvider.setExtraWritableDirs(userWorkingDirectories)
-  }
-  let canExecuteCode = Boolean(sandboxProvider && model.isSupportToolUse('agent'))
-
-  if (canExecuteCode && sandboxProvider?.type === 'cloud' && !isPro()) {
-    canExecuteCode = false
-  }
-
-  if (canExecuteCode && sandboxProvider) {
-    const availability = await sandboxProvider.checkAvailability()
-    if (!availability.available) {
-      canExecuteCode = false
-    }
-  }
+  const { sandboxProvider, canExecuteCode } = await resolveContextSandbox({
+    enabled: effectiveAgentMode !== 'off',
+    model,
+    settings,
+    createProvider: sandboxProviderFactory,
+    isPro,
+  })
 
   const messagesForPrompt = (await refreshSessionAttachmentStatuses(messages.slice(0, targetMsgIx))).map((message) =>
     // A resumed continuation keeps its target message flagged `generating` for the UI,

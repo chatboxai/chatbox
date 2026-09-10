@@ -5,21 +5,24 @@ import {
   type TransportSendOptions,
 } from '@modelcontextprotocol/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { settingsStore } from '@/stores/settingsStore'
 import { MCPServer, mcpController } from './controller'
 import { IPCStdioTransport } from './ipc-stdio-transport'
 
 interface RecordedRequest {
+  url: string
   method: string
   body?: Record<string, unknown>
   headers: Headers
 }
 
 function recordRequest(input: RequestInfo | URL, init?: RequestInit): RecordedRequest {
+  const url = input instanceof Request ? input.url : String(input)
   const method = init?.method ?? (input instanceof Request ? input.method : 'GET')
   const headers = new Headers(input instanceof Request ? input.headers : undefined)
   new Headers(init?.headers).forEach((value, key) => headers.set(key, value))
   const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : undefined
-  return { method, body, headers }
+  return { url, method, body, headers }
 }
 
 function modernResponse(
@@ -526,9 +529,111 @@ describe('MCPServer HTTP transport', () => {
 
     expect(server.status.state).toBe('idle')
     expect(server.status.error).toContain(String(status))
-    expect(requests).toHaveLength(1)
-    expect(requests[0].body?.method).toBe('server/discover')
-    expect(requests[0].method).toBe('POST')
+    // A 401 additionally triggers OAuth discovery (.well-known lookups and a registration attempt);
+    // the MCP endpoint itself must only see the discover probe, never an SSE fallback.
+    const endpointRequests = requests.filter((request) => request.url === `https://http-${status}.example.com/mcp`)
+    expect(endpointRequests).toHaveLength(1)
+    expect(endpointRequests[0].body?.method).toBe('server/discover')
+    expect(endpointRequests[0].method).toBe('POST')
+  })
+
+  it('falls back to the initialize handshake when the probe is rejected with 401 despite a valid token', async () => {
+    const origin = 'https://probe-401.example.com'
+    const serverId = 'probe-401-http'
+    settingsStore.getState().setSettings((draft) => {
+      draft.mcp.oauth = {
+        [serverId]: {
+          clientInformation: { client_id: 'chatbox-client' },
+          tokens: { access_token: 'stale-token', refresh_token: 'refresh-1', token_type: 'bearer' },
+        },
+      }
+    })
+
+    const requests: RecordedRequest[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const request = recordRequest(input, init)
+        requests.push(request)
+        const url = new URL(request.url)
+
+        if (url.pathname.startsWith('/.well-known/oauth-protected-resource')) {
+          return Response.json({ resource: `${origin}/mcp`, authorization_servers: [origin] })
+        }
+        if (url.pathname.startsWith('/.well-known/oauth-authorization-server')) {
+          return Response.json({
+            issuer: origin,
+            authorization_endpoint: `${origin}/authorize`,
+            token_endpoint: `${origin}/token`,
+            response_types_supported: ['code'],
+            grant_types_supported: ['authorization_code', 'refresh_token'],
+            code_challenge_methods_supported: ['S256'],
+          })
+        }
+        if (url.pathname === '/token') {
+          return Response.json({ access_token: 'fresh-token', refresh_token: 'refresh-2', token_type: 'bearer' })
+        }
+        if (request.method === 'GET') {
+          return new Response(null, { status: 405, statusText: 'Method Not Allowed' })
+        }
+
+        const body = request.body
+        // Mirrors gateways that route by JSON-RPC method and never see the bearer on the probe
+        if (body?.method === 'server/discover') {
+          return Response.json({ error: 'Authorization header is missing' }, { status: 401 })
+        }
+        if (request.headers.get('authorization') !== 'Bearer fresh-token') {
+          return Response.json({ error: 'Access token validation failed' }, { status: 401 })
+        }
+        if (body?.method === 'initialize') {
+          return Response.json({
+            jsonrpc: '2.0',
+            id: body.id,
+            result: {
+              protocolVersion: '2025-11-25',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'probe-401-fixture', version: '1.0.0' },
+            },
+          })
+        }
+        if (body?.method === 'notifications/initialized') {
+          return new Response(null, { status: 202 })
+        }
+        if (body?.method === 'tools/list') {
+          return Response.json({ jsonrpc: '2.0', id: body.id, result: { tools: [] } })
+        }
+        return new Response(null, { status: 500 })
+      })
+    )
+
+    const server = new MCPServer({
+      id: serverId,
+      name: 'Probe 401 HTTP',
+      enabled: true,
+      protocolMode: 'auto',
+      transport: { type: 'http', url: `${origin}/mcp` },
+    })
+
+    try {
+      await server.start()
+
+      expect(server.status).toEqual({ state: 'running' })
+      const rpcMethods = requests.filter((request) => request.body?.method).map((request) => request.body?.method)
+      expect(rpcMethods).toEqual([
+        'server/discover',
+        'server/discover',
+        'initialize',
+        'notifications/initialized',
+        'tools/list',
+      ])
+      expect(requests.some((request) => request.url === `${origin}/token`)).toBe(true)
+      expect(settingsStore.getState().mcp.oauth?.[serverId]?.tokens?.access_token).toBe('fresh-token')
+      await server.stop()
+    } finally {
+      settingsStore.getState().setSettings((draft) => {
+        draft.mcp.oauth = undefined
+      })
+    }
   })
 
   it('preserves the Streamable HTTP error when the legacy SSE fallback also fails', async () => {

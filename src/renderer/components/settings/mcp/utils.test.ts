@@ -102,4 +102,22 @@ describe('MCP stdio command form conversion', () => {
     expect(single?.protocolMode).toBe('auto')
     expect(bulk[0]?.protocolMode).toBe('auto')
   })
+
+  it('accepts vendor one-click JSON with baseUrl inside an mcpServers wrapper', () => {
+    const config = parseServerFromJson(
+      JSON.stringify({
+        mcpServers: {
+          'openapi-mcp-core': {
+            type: 'streamableHttp',
+            isActive: true,
+            baseUrl: 'https://openapi-mcp.example.com/id/abc/mcp',
+          },
+        },
+      })
+    )
+
+    expect(config?.name).toBe('openapi-mcp-core')
+    expect(config?.transport).toEqual({ type: 'http', url: 'https://openapi-mcp.example.com/id/abc/mcp' })
+    expect(() => parseServerFromJson(JSON.stringify({ headers: {} }))).toThrow()
+  })
 })

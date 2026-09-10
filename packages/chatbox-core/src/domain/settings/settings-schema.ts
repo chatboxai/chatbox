@@ -386,9 +386,18 @@ const MCPServerConfigSchema = z.object({
   transport: MCPTransportConfigSchema,
 })
 
+// Per-server OAuth state written by the MCP client during the authorization flow.
+// Payload shapes are owned by @modelcontextprotocol/client, so they are stored opaquely.
+const MCPOAuthStateSchema = z.object({
+  clientInformation: z.record(z.string(), z.unknown()).optional(),
+  tokens: z.record(z.string(), z.unknown()).optional(),
+  codeVerifier: z.string().optional(),
+})
+
 const MCPSettingsSchema = z.object({
   servers: z.array(MCPServerConfigSchema),
   enabledBuiltinServers: z.array(z.string()),
+  oauth: z.record(z.string(), MCPOAuthStateSchema).optional().catch(undefined),
 })
 
 const VibedropPublicationSchema = z.object({
@@ -622,6 +631,7 @@ export type ShortcutSetting = z.infer<typeof ShortcutSettingSchema>
 export type ExtensionSettings = z.infer<typeof ExtensionSettingsSchema>
 export type MCPTransportConfig = z.infer<typeof MCPTransportConfigSchema>
 export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>
+export type MCPOAuthState = z.infer<typeof MCPOAuthStateSchema>
 export type MCPSettings = z.infer<typeof MCPSettingsSchema>
 
 // Re-export SkillSettings for convenience

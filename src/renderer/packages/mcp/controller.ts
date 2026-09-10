@@ -6,12 +6,15 @@ import {
   SSEClientTransport as NegotiatingSSEClientTransport,
   type Transport as NegotiatingTransport,
   SdkHttpError,
+  type StreamableHTTPClientTransportOptions,
+  UnauthorizedError,
 } from '@modelcontextprotocol/client'
 import { StreamableHTTPClientTransport as LegacyHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { type JSONValue as AIToolJSONValue, dynamicTool, jsonSchema, type ToolSet } from 'ai'
 import Emittery from 'emittery'
 import { isEqual } from 'lodash'
 import { IPCStdioTransport } from './ipc-stdio-transport'
+import { MCPOAuthProvider } from './oauth-provider'
 import type { MCPProtocolMode, MCPServerConfig, MCPServerStatus } from './types'
 
 type TransportConfig = MCPServerConfig['transport']
@@ -124,17 +127,55 @@ async function connectNegotiatingClient(
   }
 }
 
-async function createAutoClient(transportConfig: TransportConfig, name: string): Promise<MCPClient> {
+type HttpTransportOptions = StreamableHTTPClientTransportOptions & { authProvider: MCPOAuthProvider }
+
+async function connectStreamableHttpClient(
+  url: URL,
+  options: HttpTransportOptions,
+  name: string,
+  protocolMode: MCPProtocolMode = 'auto'
+): Promise<MCPClient> {
+  const transport = new NegotiatingHTTPClientTransport(url, options)
+  try {
+    return await connectNegotiatingClient(transport, name, protocolMode)
+  } catch (error) {
+    if (error instanceof SdkHttpError && error.status === 401 && protocolMode === 'auto') {
+      // Some gateways reject the `server/discover` negotiation probe with 401 even though the bearer
+      // token is valid. Skip the probe and open the session with the `initialize` handshake instead.
+      return connectStreamableHttpClient(url, options, name, 'legacy')
+    }
+    if (!(error instanceof UnauthorizedError)) {
+      throw error
+    }
+    // The SDK has already discovered the authorization server, registered this client and
+    // opened the browser. Wait for the redirect, exchange the code, then connect with the token.
+    const pendingCode = options.authProvider.waitForAuthorizationCode()
+    if (!pendingCode) {
+      throw error
+    }
+    await transport.finishAuth(await pendingCode)
+    return connectStreamableHttpClient(url, options, name, protocolMode)
+  }
+}
+
+async function createAutoClient(config: MCPServerConfig, name: string, interactive: boolean): Promise<MCPClient> {
+  const transportConfig = config.transport
   if (transportConfig.type === 'stdio') {
     const transport = await IPCStdioTransport.create(transportConfig)
     return connectNegotiatingClient(transport, name, 'auto')
   }
 
-  const transport = new NegotiatingHTTPClientTransport(new URL(transportConfig.url), {
+  const url = new URL(transportConfig.url)
+  const transportOptions: HttpTransportOptions = {
     requestInit: { headers: transportConfig.headers },
-  })
+    authProvider: new MCPOAuthProvider(config.id, interactive),
+    // Vendors commonly publish an `issuer` that differs from the advertised authorization server
+    // URL (for example the bare origin of a path-scoped server), which the RFC 8414 §3.3 echo
+    // check rejects. Compatibility with those servers matters more than this check here.
+    skipIssuerMetadataValidation: true,
+  }
   try {
-    return await connectNegotiatingClient(transport, name, 'auto')
+    return await connectStreamableHttpClient(url, transportOptions, name)
   } catch (error) {
     if (!(error instanceof SdkHttpError) || (error.status !== 404 && error.status !== 405)) {
       throw error
@@ -142,9 +183,7 @@ async function createAutoClient(transportConfig: TransportConfig, name: string):
 
     console.error('Streamable HTTP connection failed, trying legacy SSE', error)
     try {
-      const fallbackTransport = new NegotiatingSSEClientTransport(new URL(transportConfig.url), {
-        requestInit: { headers: transportConfig.headers },
-      })
+      const fallbackTransport = new NegotiatingSSEClientTransport(url, transportOptions)
       return await connectNegotiatingClient(fallbackTransport, name, 'legacy')
     } catch (fallbackError) {
       const streamableMessage = error.message
@@ -224,11 +263,16 @@ async function createLegacyClient(transportConfig: TransportConfig, name: string
   throw new Error('Unknown transport type')
 }
 
-function createClient(config: MCPServerConfig, name = 'chatbox-mcp-client'): Promise<MCPClient> {
+function createClient(config: MCPServerConfig, interactive: boolean, name = 'chatbox-mcp-client'): Promise<MCPClient> {
   if (config.protocolMode === 'auto') {
-    return createAutoClient(config.transport, name)
+    return createAutoClient(config, name, interactive)
   }
   return createLegacyClient(config.transport, name)
+}
+
+export interface MCPServerStartOptions {
+  /** Allow an OAuth browser round trip. Defaults to true; app bootstrap passes false. */
+  interactive?: boolean
 }
 
 export class MCPServer extends Emittery<{ status: MCPServerStatus }> {
@@ -249,13 +293,13 @@ export class MCPServer extends Emittery<{ status: MCPServerStatus }> {
     this.emit('status', status)
   }
 
-  async start() {
+  async start(options: MCPServerStartOptions = {}) {
     if (this.status.state !== 'idle') {
       return
     }
     this.status = { state: 'starting' }
     try {
-      this.client = await createClient(this.config)
+      this.client = await createClient(this.config, options.interactive ?? true)
       this.tools = await this.client.tools()
     } catch (err) {
       console.error('mcp:client:start', err)
@@ -298,12 +342,12 @@ export const mcpController = {
   bootstrap(serverConfigs: MCPServerConfig[]) {
     for (const serverConfig of serverConfigs) {
       if (serverConfig.enabled) {
-        void this.startServer(serverConfig)
+        void this.startServer(serverConfig, { interactive: false })
       }
     }
   },
 
-  async startServer(serverConfig: MCPServerConfig) {
+  async startServer(serverConfig: MCPServerConfig, options?: MCPServerStartOptions) {
     if (!serverConfig.enabled) {
       return
     }
@@ -318,7 +362,7 @@ export const mcpController = {
       })
     }
 
-    await server.start()
+    await server.start(options)
   },
 
   async stopServer(id: string) {

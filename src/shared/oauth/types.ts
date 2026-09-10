@@ -28,6 +28,8 @@ export const OAuthIpcChannels = {
   CANCEL: 'oauth:cancel',
   REFRESH: 'oauth:refresh',
   GET_SUPPORTED_PROVIDERS: 'oauth:get-supported-providers',
+  /** MCP servers: listen on a loopback port and resolve with the authorization code from the redirect */
+  MCP_WAIT_CALLBACK: 'oauth:mcp-wait-callback',
 } as const
 
 /**

@@ -88,6 +88,7 @@ const CustomServersSection: FC<Props> = (props) => {
     }
     setSettings((draft) => {
       draft.mcp.servers = draft.mcp.servers.filter((s) => s.id !== id)
+      delete draft.mcp.oauth?.[id]
     })
     mcpController.stopServer(id)
     setModal(null)

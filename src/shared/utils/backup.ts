@@ -57,6 +57,7 @@ export function cleanSettingsForBackup(settings: Settings, includeKeys: boolean)
     if (settings.mcp) {
       cleaned.mcp = {
         ...settings.mcp,
+        oauth: undefined,
         servers: settings.mcp.servers.map((server) => {
           if (server.transport.type === 'stdio') {
             const transport = { ...server.transport }

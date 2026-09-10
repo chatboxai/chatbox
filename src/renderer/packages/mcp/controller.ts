@@ -332,6 +332,15 @@ export class MCPServer extends Emittery<{ status: MCPServerStatus }> {
     }
     return this.tools || {}
   }
+
+  /** Re-lists tools from the connected server so a changed tool set is picked up without reconnecting. */
+  async refreshTools(): Promise<ToolSet> {
+    if (!this.client || this.status.state !== 'running') {
+      throw new Error('MCP server is not running')
+    }
+    this.tools = await this.client.tools()
+    return this.tools
+  }
 }
 
 // 根据用户配置管理MCP服务器的实际运行

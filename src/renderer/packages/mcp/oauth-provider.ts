@@ -5,7 +5,7 @@ import type {
   StoredOAuthClientInformation,
   StoredOAuthTokens,
 } from '@modelcontextprotocol/client'
-import { OAuthIpcChannels } from '@shared/oauth'
+import { type MCPAuthorizationCallback, OAuthIpcChannels } from '@shared/oauth'
 import { t } from 'i18next'
 import platform from '@/platform'
 import { settingsStore } from '@/stores/settingsStore'
@@ -22,7 +22,7 @@ const REDIRECT_URL = `http://127.0.0.1:${MCP_OAUTH_CALLBACK_PORT}/callback`
  */
 
 export class MCPOAuthProvider implements OAuthClientProvider {
-  private pendingCode?: Promise<string>
+  private pendingCallback?: Promise<MCPAuthorizationCallback>
 
   /**
    * @param interactive Whether a browser round trip may be started. App bootstrap connects
@@ -37,6 +37,11 @@ export class MCPOAuthProvider implements OAuthClientProvider {
   get redirectUrl() {
     return REDIRECT_URL
   }
+
+  // Client ID Metadata Document (SEP-991): the SDK uses this URL as client_id when the
+  // authorization server advertises client_id_metadata_document_supported, and falls back
+  // to dynamic client registration otherwise. The hosted document must mirror clientMetadata.
+  readonly clientMetadataUrl = 'https://chatboxai.app/.well-known/oauth-client'
 
   get clientMetadata(): OAuthClientMetadata {
     return {
@@ -108,14 +113,14 @@ export class MCPOAuthProvider implements OAuthClientProvider {
       throw new Error(t('Authorization required. Open this server in MCP settings and click Connect to sign in.')!)
     }
     // Start listening before the browser opens so the redirect can never race the server.
-    this.pendingCode = window.electronAPI.invoke(OAuthIpcChannels.MCP_WAIT_CALLBACK, MCP_OAUTH_CALLBACK_PORT)
+    this.pendingCallback = window.electronAPI.invoke(OAuthIpcChannels.MCP_WAIT_CALLBACK, MCP_OAUTH_CALLBACK_PORT)
     await platform.openLink(authorizationUrl.toString())
   }
 
-  /** Resolves with the authorization code once the user finishes in the browser; undefined if no redirect was started. */
-  waitForAuthorizationCode(): Promise<string> | undefined {
-    const pending = this.pendingCode
-    this.pendingCode = undefined
+  /** Resolves with the redirect parameters once the user finishes in the browser; undefined if no redirect was started. */
+  waitForAuthorizationCallback(): Promise<MCPAuthorizationCallback> | undefined {
+    const pending = this.pendingCallback
+    this.pendingCallback = undefined
     return pending
   }
 }

@@ -273,15 +273,15 @@ export function registerOAuthHandlers(): void {
   // MCP servers run their OAuth flow in the renderer; main only owns the loopback port that
   // receives the browser redirect. A new wait replaces any pending one so retries never hit EADDRINUSE.
   let mcpCallbackFlow: AbortController | null = null
-  ipcMain.handle(OAuthIpcChannels.MCP_WAIT_CALLBACK, async (_event, port: number): Promise<string> => {
+  ipcMain.handle(OAuthIpcChannels.MCP_WAIT_CALLBACK, async (_event, port: number) => {
     mcpCallbackFlow?.abort()
     await new Promise((resolve) => setImmediate(resolve))
     const controller = new AbortController()
     mcpCallbackFlow = controller
     try {
       log.info(`[OAuth] Waiting for MCP authorization callback on port ${port}`)
-      const { code } = await createCallbackServer(port, controller.signal).promise
-      return code
+      const { code, iss } = await createCallbackServer(port, controller.signal).promise
+      return { code, iss }
     } finally {
       if (mcpCallbackFlow === controller) {
         mcpCallbackFlow = null

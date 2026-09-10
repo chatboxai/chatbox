@@ -149,11 +149,12 @@ async function connectStreamableHttpClient(
     }
     // The SDK has already discovered the authorization server, registered this client and
     // opened the browser. Wait for the redirect, exchange the code, then connect with the token.
-    const pendingCode = options.authProvider.waitForAuthorizationCode()
-    if (!pendingCode) {
+    const pendingCallback = options.authProvider.waitForAuthorizationCallback()
+    if (!pendingCallback) {
       throw error
     }
-    await transport.finishAuth(await pendingCode)
+    const { code, iss } = await pendingCallback
+    await transport.finishAuth(code, iss)
     return connectStreamableHttpClient(url, options, name, protocolMode)
   }
 }

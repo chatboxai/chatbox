@@ -108,6 +108,50 @@ describe('ChatMessageService', () => {
     expect(harness.sessions.size).toBe(1)
   })
 
+  it('persists a Copilot snapshot on the first successful send and keeps it after generation fails', async () => {
+    const harness = createHarness()
+    harness.createSession.mockRejectedValueOnce(new Error('database busy'))
+    harness.generation.mockRejectedValueOnce(new Error('provider unavailable'))
+    const persisted = vi.fn()
+    const request = {
+      idempotencyKey: 'copilot-draft',
+      copilot: {
+        copilotId: 'writing-coach',
+        assistantAvatarKey: 'copilot-avatar',
+        picUrl: 'https://example.com/legacy.png',
+        backgroundImage: { type: 'storage-key' as const, storageKey: 'copilot-background' },
+      },
+      input: { text: 'Please review this paragraph' },
+      name: 'Writing coach',
+      systemPrompt: 'Help improve my writing',
+      sessionSettings: { provider: 'openai', modelId: 'gpt-test', temperature: 0.4 },
+      onSessionPersisted: persisted,
+    }
+
+    await expect(harness.service.sendNewSession(request)).rejects.toThrow('database busy')
+    expect(harness.sessions.size).toBe(0)
+    expect(persisted).not.toHaveBeenCalled()
+
+    await expect(harness.service.sendNewSession(request)).rejects.toThrow('provider unavailable')
+    const session = [...harness.sessions.values()][0]
+    expect(session).toMatchObject({
+      ...request.copilot,
+      name: request.name,
+      settings: request.sessionSettings,
+      messages: [
+        { role: 'system', contentParts: [{ type: 'text', text: request.systemPrompt }] },
+        { role: 'user' },
+        { role: 'assistant' },
+      ],
+    })
+    expect(persisted).toHaveBeenCalledTimes(1)
+
+    await expect(harness.service.sendNewSession(request)).rejects.toThrow('provider unavailable')
+    expect(harness.sessions.size).toBe(1)
+    expect(harness.createSession).toHaveBeenCalledTimes(2)
+    expect(harness.generation).toHaveBeenCalledTimes(1)
+  })
+
   it('persists an existing user and assistant turn before generation starts', async () => {
     const session: Session = {
       id: 'existing',

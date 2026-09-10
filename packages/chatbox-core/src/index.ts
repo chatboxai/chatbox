@@ -105,6 +105,24 @@ export {
   generateCompactionSummaryWithModel,
   isAutoCompactionEnabled,
 } from './application/context'
+export {
+  COPILOT_PREFERENCES_STORAGE_KEY,
+  type CopilotDetail,
+  CopilotPreferences,
+  type CopilotPreferencesSnapshot,
+  CopilotService,
+  type CopilotServiceOptions,
+  type CopilotSnapshot,
+  type CopilotStorageScope,
+  type CopilotUsageAction,
+  FeaturedCopilotClient,
+  type FeaturedCopilotClientOptions,
+  type FeaturedCopilotFilters,
+  type FeaturedCopilotPage,
+  type ImageSource,
+  MY_COPILOTS_STORAGE_KEY,
+  searchCopilots,
+} from './application/copilots'
 export { ModelFactory, type ModelFactoryOptions, type ModelResolver } from './application/model'
 export {
   assertNoMessageDataUpdate,

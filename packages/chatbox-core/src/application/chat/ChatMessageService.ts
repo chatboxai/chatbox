@@ -40,6 +40,7 @@ export interface ChatMessageInput {
 }
 
 export interface SendNewSessionRequest {
+  copilot?: Pick<Session, 'copilotId' | 'assistantAvatarKey' | 'picUrl' | 'backgroundImage'>
   idempotencyKey: string
   input: ChatMessageInput
   sessionSettings: SessionSettings
@@ -361,6 +362,10 @@ export class ChatMessageService {
       : [userMessage, assistantMessage]
     const session = await this.dependencies.sessions.createSession(
       {
+        copilotId: request.copilot?.copilotId,
+        assistantAvatarKey: request.copilot?.assistantAvatarKey,
+        picUrl: request.copilot?.picUrl,
+        backgroundImage: request.copilot?.backgroundImage,
         name: request.name?.trim() || defaultSessionName(request.input),
         type: 'chat',
         settings: request.sessionSettings,

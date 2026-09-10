@@ -40,7 +40,7 @@ vi.mock('../packages/navigator', () => ({
 
 vi.mock('../platform', () => ({
   default: {
-    isDesktopLike: true,
+    type: 'desktop',
     onWindowFocused: (handler: () => void) => {
       mocks.windowFocusedHandler = handler
       return vi.fn()

@@ -13,11 +13,7 @@ import { ModelProviderEnum } from '../../types/provider'
 const KIMI_FIXED_SAMPLING_MODEL_PATTERN = /(?:^|\/)kimi-k[23]/i
 const KIMI_LATEST_OPENROUTER_ALIAS = '~moonshotai/kimi-latest'
 
-const LOCAL_PROVIDER_IDS = new Set<string>([
-  ModelProviderEnum.Local,
-  ModelProviderEnum.LMStudio,
-  ModelProviderEnum.Ollama,
-])
+const LOCAL_PROVIDER_IDS = new Set<string>([ModelProviderEnum.LMStudio, ModelProviderEnum.Ollama])
 
 export function isKimiFixedSamplingModel(modelId: string, providerId?: string): boolean {
   return (

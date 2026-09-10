@@ -544,6 +544,7 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
     'it-IT',
     'sv',
     'nb-NO',
+    'tr',
   ]),
   languageInited: z.boolean().optional(),
   fontSize: z.number().catch(14),

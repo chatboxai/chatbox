@@ -1,13 +1,23 @@
 import type { QueryResult } from '@mastra/core/vector'
 import type { RerankerFunctionOptions, RerankResult } from '@mastra/rag/dist/rerank'
-import type { CohereClient } from 'cohere-ai'
 
-// Takes in a list of results from a vector store and reranks them based on Cohere's rerank API
+/**
+ * Minimal contract shared by the Cohere SDK client and the DashScope rerank client.
+ * Both expose a `rerank()` method returning `{ results: [{ index, relevanceScore }] }`.
+ */
+export interface RerankClientLike {
+  rerank(args: { query: string; documents: string[]; model: string; topN?: number }): Promise<{
+    results: Array<{ index: number; relevanceScore: number }>
+  }>
+}
+
+// Takes in a list of results from a vector store and reranks them based on the
+// configured rerank provider (Cohere-compatible API or Alibaba Cloud DashScope).
 export async function rerank(
   results: QueryResult[],
   query: string,
   model: {
-    client: CohereClient
+    client: RerankClientLike
     modelId: string
   },
   options: RerankerFunctionOptions

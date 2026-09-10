@@ -1,6 +1,7 @@
 import type { EmbeddingModel } from 'ai'
 import { CohereClient } from 'cohere-ai'
 import { getProviderSettings } from '../../shared/models'
+import { DashScopeRerankClient, isDashScopeHost } from './dashscope-rerank-client'
 import type { CallChatCompletionOptions, ModelInterface } from '../../shared/models/types'
 import { getChatboxAPIOrigin } from '../../shared/request/chatboxai_pool'
 import { SessionSettingsSchema } from '../../shared/types'
@@ -277,10 +278,12 @@ export async function getRerankProvider(kbId: number) {
           token = store.get('settings.licenseKey')
         }
 
-        const client = new CohereClient({
-          environment: apiHost,
-          token,
-        })
+        const client = isDashScopeHost(apiHost)
+          ? new DashScopeRerankClient({ apiHost, token })
+          : new CohereClient({
+              environment: apiHost,
+              token,
+            })
         return { client, modelId }
       } catch (error: unknown) {
         const errMsg =

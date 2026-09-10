@@ -46,6 +46,63 @@ describe('reasoning-control', () => {
     expect(getReasoningControlCapabilities(ModelProviderEnum.OpenAIResponses, model('gpt-5.1')).supported).toBe(true)
   })
 
+  it.each([
+    [ModelProviderEnum.OpenAI, 'gpt-6-astra', 'openai'],
+    [ModelProviderEnum.OpenAIResponses, 'gpt-6-astra', 'openai-responses'],
+    [ModelProviderEnum.ChatboxAI, 'gpt-6-astra', 'openai-responses'],
+    ['my-openai-proxy', 'openai/gpt-6-astra', 'openai'],
+    ['github-copilot', 'gpt-6-astra', 'openai-responses'],
+  ] as const)('supports Astra effort controls through %s', (provider, modelId, apiStyle) => {
+    const astra = model(modelId, apiStyle)
+
+    expect(getReasoningControlCapabilities(provider, astra)).toEqual({ supported: true, kind: 'openai-effort' })
+    expect(getReasoningControlOptions(provider, astra).map((option) => option.level)).toEqual([
+      'default',
+      'low',
+      'medium',
+      'high',
+    ])
+    for (const level of ['low', 'medium', 'high'] as const) {
+      const options = getReasoningProviderOptions(provider, astra, level)
+      expect(options?.openai?.reasoningEffort).toBe(level)
+      expect(getReasoningControlLevel(provider, astra, options)).toBe(level)
+    }
+    expect(normalizeOpenAIReasoningOptions(modelId, { reasoningEffort: 'minimal' })).toBeUndefined()
+    expect(normalizeOpenAIReasoningOptions(modelId, { reasoningEffort: 'none' })).toBeUndefined()
+  })
+
+  it('disables Astra controls for an incompatible API style', () => {
+    expect(getReasoningControlCapabilities('my-proxy', model('gpt-6-astra', 'anthropic'))).toEqual({
+      supported: false,
+      kind: 'toggle',
+      disabledReason: 'requires-openai-api-style',
+    })
+  })
+
+  it.each(['gpt-6', 'gpt-6-astra', 'gpt-6.1', 'gpt-6-mini', 'openai/gpt-6-astra', 'gpt-7', 'GPT-10.2-mini'])(
+    'offers effort controls for GPT generation model %s',
+    (modelId) => {
+      const info = model(modelId, 'openai-responses')
+      expect(getReasoningControlCapabilities(ModelProviderEnum.OpenAIResponses, info).supported).toBe(true)
+      expect(getReasoningControlCapabilities(ModelProviderEnum.OpenRouter, info).supported).toBe(true)
+      expect(
+        getReasoningProviderOptions(ModelProviderEnum.OpenAIResponses, info, 'medium')?.openai?.reasoningEffort
+      ).toBe('medium')
+      expect(
+        getReasoningControlOptions(ModelProviderEnum.OpenAIResponses, info).some((option) => option.level === 'off')
+      ).toBe(false)
+    }
+  )
+
+  it.each(['gpt-4.1', 'gpt-4o', 'gpt-6-chat-latest', 'openai/gpt-6.1-chat', 'gpt-10-chat', 'gpt-6astra'])(
+    'does not infer effort support for %s',
+    (modelId) => {
+      for (const provider of [ModelProviderEnum.OpenAIResponses, ModelProviderEnum.OpenRouter]) {
+        expect(getReasoningControlCapabilities(provider, model(modelId)).supported).toBe(false)
+      }
+    }
+  )
+
   it('writes Responses reasoning options for Copilot GPT-5.6 Luna once apiStyle is routed', () => {
     const luna = model('gpt-5.6-luna', 'openai-responses')
     luna.capabilities = ['reasoning']

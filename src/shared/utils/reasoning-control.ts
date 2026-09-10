@@ -141,14 +141,12 @@ const QWEN_THINKING_BUDGET_BY_LEVEL: Record<ReasoningEffortLevel, number> = {
   high: 8192,
 }
 
-const GPT_EFFORT_MODELS = [/(?:^|\/)gpt-5(?:[.-]|$)/i, /(?:^|\/)gpt-oss(?:[.-]|$)/i, /(?:^|\/)o[1-9](?:[.-]|$)/i]
-// o-series models only accept reasoning_effort low/medium/high — there is no
-// minimal/none, so reasoning cannot be turned off for them.
+const GPT_VERSION_PATTERN = /(?:^|\/)gpt-(\d+)(?=[.-]|$)/i
+const GPT_EFFORT_MODELS = [/(?:^|\/)gpt-oss(?:[.-]|$)/i, /(?:^|\/)o[1-9](?:[.-]|$)/i]
+// o-series models do not accept minimal/none to disable thinking.
 const OPENAI_NO_DISABLE_MODELS = [/(?:^|\/)o[1-9](?:[.-]|$)/i]
-// Chat-tuned gpt-5 variants (gpt-5-chat-latest, gpt-5.1-chat, gpt-5.2-chat-latest, ...)
-// are non-reasoning models; sending reasoning_effort to them is rejected upstream
-// ("Unrecognized request argument supplied: reasoning_effort").
-const GPT_NON_REASONING_CHAT_MODELS = [/(?:^|\/)gpt-5[\w.-]*[.-]chat(?:[.-]|$)/i]
+// Chat-tuned GPT variants are excluded from the generation-based effort fallback.
+const GPT_NON_REASONING_CHAT_MODELS = [/(?:^|\/)gpt-\d+[\w.-]*[.-]chat(?:[.-]|$)/i]
 // o1-preview and o1-mini predate the reasoning_effort parameter — the API rejects it
 // for them entirely, so they must not get effort controls at all.
 const OPENAI_NO_EFFORT_PARAM_MODELS = [/(?:^|\/)o1-(?:preview|mini)(?:[.-]|$)/i]
@@ -191,15 +189,25 @@ function supportsExplicitDisable(
   if (kind === 'anthropic-adaptive-effort' || kind === 'anthropic-effort') {
     return false
   }
-  if (isOpenAIStyleEffectiveProvider(effectiveProvider) && matchesAny(modelId, OPENAI_NO_DISABLE_MODELS)) {
+  if (isOpenAIStyleEffectiveProvider(effectiveProvider) && !supportsOpenAIThinkingDisable(modelId)) {
     return false
   }
   return true
 }
 
+function getGptMajorVersion(modelId: string): number {
+  return Number(GPT_VERSION_PATTERN.exec(modelId)?.[1] ?? 0)
+}
+
+function supportsOpenAIThinkingDisable(modelId: string): boolean {
+  // New GPT generations inherit effort controls, but an accepted off value must be
+  // established separately before offering minimal/none in the UI or request options.
+  return getGptMajorVersion(modelId) <= 5 && !matchesAny(modelId, OPENAI_NO_DISABLE_MODELS)
+}
+
 function isGptEffortModel(modelId: string): boolean {
   return (
-    matchesAny(modelId, GPT_EFFORT_MODELS) &&
+    (getGptMajorVersion(modelId) >= 5 || matchesAny(modelId, GPT_EFFORT_MODELS)) &&
     !matchesAny(modelId, GPT_NON_REASONING_CHAT_MODELS) &&
     !matchesAny(modelId, OPENAI_NO_EFFORT_PARAM_MODELS)
   )
@@ -256,7 +264,7 @@ export function isOpenAIReasoningEffortSupported(modelId: string, effort: string
   // Responses path branches off before this check, so it is never affected.
   if (effort === 'max') return false
   if (matchesAny(modelId, OPENAI_NO_EFFORT_PARAM_MODELS)) return false
-  if (matchesAny(modelId, OPENAI_NO_DISABLE_MODELS) && (effort === 'minimal' || effort === 'none')) return false
+  if (!supportsOpenAIThinkingDisable(modelId) && (effort === 'minimal' || effort === 'none')) return false
   return true
 }
 

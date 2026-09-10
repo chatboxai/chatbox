@@ -1424,5 +1424,12 @@
   "Prompt cache duration": "Varighet for promptbuffer",
   "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "Velg hvor lenge Claude beholder oppføringer i promptbufferen. Auto bruker Claudes standardverdi.",
   "5 min": "5 min",
-  "1 hour": "1 time"
+  "1 hour": "1 time",
+  "For example, preserve all file paths and unfinished tasks.": "For eksempel: Behold alle filstier og uferdige oppgaver.",
+  "Changes here apply only to this compression.": "Endringer her gjelder bare denne komprimeringen.",
+  "Additional Instructions": "Tilleggsinstruksjoner",
+  "Restore Default": "Gjenopprett standard",
+  "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Brukes til automatisk og manuell komprimering. La stå tomt for å bruke den innebygde prompten.",
+  "Compaction Prompt": "Komprimeringsprompt",
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Oppsummer tidligere meldinger for å redusere kontekstbruken. Samtaleloggen vil fortsatt være tilgjengelig."
 }

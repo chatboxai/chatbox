@@ -1424,5 +1424,12 @@
   "Prompt cache duration": "프롬프트 캐시 유지 시간",
   "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "Claude가 프롬프트 캐시 항목을 유지하는 시간을 선택하세요. 자동은 Claude의 기본값을 사용합니다.",
   "5 min": "5분",
-  "1 hour": "1시간"
+  "1 hour": "1시간",
+  "For example, preserve all file paths and unfinished tasks.": "예: 모든 파일 경로와 완료되지 않은 작업을 보존하세요.",
+  "Changes here apply only to this compression.": "여기서 변경한 내용은 이번 압축에만 적용됩니다.",
+  "Additional Instructions": "추가 지침",
+  "Restore Default": "기본값 복원",
+  "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "자동 및 수동 압축에 사용됩니다. 비워 두면 기본 프롬프트를 사용합니다.",
+  "Compaction Prompt": "압축 프롬프트",
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "이전 메시지를 요약하여 컨텍스트 사용량을 줄입니다. 대화 기록은 계속 확인할 수 있습니다."
 }

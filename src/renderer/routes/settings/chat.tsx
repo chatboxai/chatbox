@@ -1,6 +1,7 @@
 import { Box, Button, FileButton, Flex, Slider, Stack, Switch, Text, Textarea, Title } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import { chatSessionSettings, getDefaultPrompt } from '@shared/defaults'
+import { getDefaultCompactionPrompt } from '@shared/prompts'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION } from '@shared/utils/tool-call-limit-pause'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo } from 'react'
@@ -13,6 +14,7 @@ import SliderWithInput from '@/components/common/SliderWithInput'
 import { TooltipInfoTrigger } from '@/components/common/TooltipInfoTrigger'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
+import { languageNameMap } from '@/i18n/locales'
 import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -568,6 +570,23 @@ function ContextManagementSection() {
         <Text c="chatbox-tertiary" size="xs">
           {t('When enabled, conversations will be automatically summarized to manage context window usage.')}
         </Text>
+      </Stack>
+
+      <Stack gap="sm">
+        <Textarea
+          label={t('Compaction Prompt')}
+          description={t('Used for automatic and manual compression. Leave empty to use the built-in prompt.')}
+          value={settings.compactionPrompt ?? getDefaultCompactionPrompt(languageNameMap[settings.language])}
+          onChange={(event) => setSettings({ compactionPrompt: event.currentTarget.value })}
+          autosize
+          minRows={5}
+          maxRows={10}
+        />
+        <Flex justify="flex-end">
+          <Button variant="subtle" size="xs" onClick={() => setSettings({ compactionPrompt: undefined })}>
+            {t('Restore Default')}
+          </Button>
+        </Flex>
       </Stack>
 
       {/* Compaction Threshold Slider */}

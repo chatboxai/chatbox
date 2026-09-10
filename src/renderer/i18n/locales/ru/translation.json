@@ -1424,5 +1424,12 @@
   "Prompt cache duration": "Срок хранения кэша промпта",
   "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "Выберите, как долго Claude хранит записи кэша промпта. В режиме «Авто» используется значение Claude по умолчанию.",
   "5 min": "5 мин",
-  "1 hour": "1 час"
+  "1 hour": "1 час",
+  "For example, preserve all file paths and unfinished tasks.": "Например: сохранить все пути к файлам и незавершённые задачи.",
+  "Changes here apply only to this compression.": "Эти изменения применяются только к текущему сжатию.",
+  "Additional Instructions": "Дополнительные инструкции",
+  "Restore Default": "Восстановить по умолчанию",
+  "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Используется для автоматического и ручного сжатия. Оставьте пустым, чтобы использовать встроенный промпт.",
+  "Compaction Prompt": "Промпт сжатия",
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Создайте сводку предыдущих сообщений, чтобы уменьшить объём контекста. История разговора останется доступной."
 }

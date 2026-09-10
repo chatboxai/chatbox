@@ -46,6 +46,12 @@ function testSession(): Session {
 }
 
 describe('runCompactionWithUIState', () => {
+  it('forwards a one-time prompt to the summary generator', async () => {
+    generateSummaryWithStreamMock.mockResolvedValue({ success: true, summary: 'Summary' })
+    await runCompactionWithUIState('session-1', { force: true, prompt: 'Keep exact paths.' })
+    expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'Keep exact paths.' }))
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     getDefaultStore().set(compactionUIStateMapAtom, {})

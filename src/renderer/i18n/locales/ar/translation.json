@@ -1424,5 +1424,12 @@
   "Prompt cache duration": "مدة التخزين المؤقت للمطالبة",
   "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "اختر المدة التي يحتفظ فيها Claude بإدخالات التخزين المؤقت للمطالبة. يستخدم الوضع التلقائي القيمة الافتراضية لـ Claude.",
   "5 min": "5 دقائق",
-  "1 hour": "ساعة واحدة"
+  "1 hour": "ساعة واحدة",
+  "For example, preserve all file paths and unfinished tasks.": "مثلاً: احتفظ بجميع مسارات الملفات والمهام غير المكتملة.",
+  "Changes here apply only to this compression.": "تنطبق التغييرات هنا على عملية الضغط هذه فقط.",
+  "Additional Instructions": "تعليمات إضافية",
+  "Restore Default": "استعادة الإعداد الافتراضي",
+  "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "تُستخدم للضغط التلقائي واليدوي. اتركها فارغة لاستخدام التعليمات المدمجة.",
+  "Compaction Prompt": "تعليمات ضغط المحادثة",
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "لخّص الرسائل السابقة لتقليل استخدام السياق. سيظل سجل المحادثة متاحًا."
 }

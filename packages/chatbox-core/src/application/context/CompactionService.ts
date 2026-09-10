@@ -61,6 +61,7 @@ export interface CompactionSummaryPort {
     messages: Message[]
     sessionSettings?: SessionSettings
     language: Settings['language']
+    prompt?: string
     onStreamUpdate?: (text: string) => void
   }): Promise<{ success: boolean; summary?: string; error?: Error }>
 }
@@ -127,7 +128,7 @@ export class CompactionService {
 
   async run(
     sessionId: string,
-    options: { force?: boolean; onStreamUpdate?: (text: string) => void } = {}
+    options: { force?: boolean; prompt?: string; onStreamUpdate?: (text: string) => void } = {}
   ): Promise<CompactionServiceResult> {
     if (this.ongoing.has(sessionId)) {
       return { success: true, compacted: false, alreadyRunning: true }
@@ -185,6 +186,7 @@ export class CompactionService {
         messages: flattenToolCallPartsToText(contextMessages.slice(0, boundaryIndex + 1)),
         sessionSettings: session.settings,
         language: globalSettings.language,
+        prompt: options.prompt?.trim() || globalSettings.compactionPrompt,
         onStreamUpdate: options.onStreamUpdate,
       })
       if (!summaryResult.success || !summaryResult.summary) {

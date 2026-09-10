@@ -13,6 +13,7 @@ export interface SummaryGeneratorOptions {
   messages: Message[]
   language?: Language
   sessionSettings?: SessionSettings
+  prompt?: string
 }
 
 export interface SummaryResult {
@@ -37,7 +38,7 @@ export async function generateSummary(options: SummaryGeneratorOptions): Promise
   try {
     const model = await createModel(settings)
 
-    const promptMessages = promptFormat.summarizeConversation(messages, languageName)
+    const promptMessages = promptFormat.summarizeConversation(messages, languageName, options.prompt)
     const result = await generateText(model, promptMessages)
 
     const summary =
@@ -140,7 +141,7 @@ export async function generateSummaryWithStream(options: StreamingSummaryOptions
   try {
     const model = await createModel(settings)
 
-    const promptMessages = promptFormat.summarizeConversation(messages, languageName)
+    const promptMessages = promptFormat.summarizeConversation(messages, languageName, options.prompt)
     const coreMessages = await convertToModelMessages(promptMessages, { modelSupportVision: model.isSupportVision() })
 
     const result = await model.chat(coreMessages, {

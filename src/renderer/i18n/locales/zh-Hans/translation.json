@@ -1423,5 +1423,12 @@
   "Prompt cache duration": "提示词缓存时长",
   "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "选择 Claude 保留提示词缓存条目的时长。“自动”使用 Claude 的默认设置。",
   "5 min": "5 分钟",
-  "1 hour": "1 小时"
+  "1 hour": "1 小时",
+  "For example, preserve all file paths and unfinished tasks.": "例如：保留所有文件路径和未完成的任务。",
+  "Changes here apply only to this compression.": "此处修改仅对本次压缩生效。",
+  "Additional Instructions": "附加要求",
+  "Restore Default": "恢复默认",
+  "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "用于自动和手动压缩。留空则使用内置提示词。",
+  "Compaction Prompt": "压缩提示词",
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "将较早的消息汇总为摘要，减少上下文占用。原始对话记录仍可查看。"
 }

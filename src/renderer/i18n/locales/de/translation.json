@@ -1424,5 +1424,12 @@
   "Prompt cache duration": "Speicherdauer des Prompt-Caches",
   "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "Wähle aus, wie lange Claude Einträge im Prompt-Cache vorhält. „Automatisch“ verwendet Claudes Standardeinstellung.",
   "5 min": "5 Min.",
-  "1 hour": "1 Stunde"
+  "1 hour": "1 Stunde",
+  "For example, preserve all file paths and unfinished tasks.": "Zum Beispiel: Alle Dateipfade und unerledigten Aufgaben beibehalten.",
+  "Changes here apply only to this compression.": "Änderungen hier gelten nur für diese Komprimierung.",
+  "Additional Instructions": "Zusätzliche Anweisungen",
+  "Restore Default": "Standard wiederherstellen",
+  "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Wird für automatische und manuelle Komprimierung verwendet. Leer lassen, um den integrierten Prompt zu verwenden.",
+  "Compaction Prompt": "Komprimierungs-Prompt",
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Frühere Nachrichten zusammenfassen, um die Kontextnutzung zu reduzieren. Der Gesprächsverlauf bleibt verfügbar."
 }

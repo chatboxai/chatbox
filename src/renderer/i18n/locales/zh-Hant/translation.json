@@ -1423,5 +1423,12 @@
   "Prompt cache duration": "提示詞快取時長",
   "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "選擇 Claude 保留提示詞快取項目的時長。「自動」使用 Claude 的預設值。",
   "5 min": "5 分鐘",
-  "1 hour": "1 小時"
+  "1 hour": "1 小時",
+  "For example, preserve all file paths and unfinished tasks.": "例如：保留所有檔案路徑和未完成的任務。",
+  "Changes here apply only to this compression.": "此處修改僅對本次壓縮生效。",
+  "Additional Instructions": "附加要求",
+  "Restore Default": "恢復預設",
+  "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "用於自動和手動壓縮。留空則使用內建提示詞。",
+  "Compaction Prompt": "壓縮提示詞",
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "將較早的訊息彙整為摘要，減少上下文用量。原始對話記錄仍可查看。"
 }

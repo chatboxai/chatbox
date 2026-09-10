@@ -29,6 +29,7 @@ vi.mock('@/stores/settingsStore', () => ({
 }))
 vi.mock('@/utils/sentry', () => ({ reportError: vi.fn() }))
 
+import { summarizeConversation } from '@/packages/prompts'
 import { generateSummaryWithStream } from './summary-generator'
 
 describe('generateSummaryWithStream', () => {
@@ -39,6 +40,12 @@ describe('generateSummaryWithStream', () => {
       isSupportVision: () => false,
       chat: chatMock,
     })
+  })
+
+  it('passes the custom prompt to the conversation formatter', async () => {
+    const messages: Message[] = [{ id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Conversation' }] }]
+    await generateSummaryWithStream({ sessionId: 's1', messages, language: 'en', prompt: 'Keep all decisions.' })
+    expect(summarizeConversation).toHaveBeenCalledWith(messages, 'English', 'Keep all decisions.')
   })
 
   it('passes the owning session id to the model request', async () => {

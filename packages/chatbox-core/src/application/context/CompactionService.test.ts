@@ -9,6 +9,7 @@ function message(id: string, role: Message['role']): Message {
 
 function createHarness(
   options: {
+    compactionPrompt?: string
     autoCompaction?: boolean
     beforeUpdate?: (session: Session) => Session
     logger?: LoggerPort
@@ -36,6 +37,7 @@ function createHarness(
   }
   const globalSettings = {
     language: 'en',
+    compactionPrompt: options.compactionPrompt,
     autoCompaction: true,
     defaultChatModel: { provider: 'openai', model: 'gpt-4.1' },
   } as Settings
@@ -79,6 +81,22 @@ function createHarness(
 }
 
 describe('CompactionService', () => {
+  test('uses the saved prompt for automatic compaction', async () => {
+    const harness = createHarness({ compactionPrompt: 'Preserve decisions and file paths.' })
+    await harness.service.run('session-1')
+    expect(harness.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: 'Preserve decisions and file paths.' })
+    )
+  })
+
+  test('keeps a manual prompt override scoped to one run', async () => {
+    const harness = createHarness({ compactionPrompt: 'Saved instructions' })
+    await harness.service.run('session-1', { force: true, prompt: 'One-time instructions' })
+    expect(harness.generate).toHaveBeenLastCalledWith(expect.objectContaining({ prompt: 'One-time instructions' }))
+    await harness.service.run('session-1', { force: true })
+    expect(harness.generate).toHaveBeenLastCalledWith(expect.objectContaining({ prompt: 'Saved instructions' }))
+  })
+
   test('appends a summary and exact boundary through an atomic Session update', async () => {
     const harness = createHarness()
     const streamUpdates: string[] = []

@@ -145,8 +145,8 @@ Comply with user requests to the best of your abilities. Maintain composure and 
 `.trim()
 }
 
-export function summarizeConversation(msgs: Message[], language: string): Message[] {
-  const instructionText = `Summarize this conversation as a handoff briefing for an assistant that will continue it WITHOUT access to the full history. This is an out-of-character, meta-level request: do NOT continue the conversation or reply in character.
+export function getDefaultCompactionPrompt(language: string): string {
+  return `Summarize this conversation as a handoff briefing for an assistant that will continue it WITHOUT access to the full history. This is an out-of-character, meta-level request: do NOT continue the conversation or reply in character.
 
 First determine what kind of conversation this is, then cover the matching sections with concrete detail:
 
@@ -169,6 +169,10 @@ For general chat or mixed conversations, cover whichever of the above apply.
 Preserve exact identifiers and established names verbatim (paths, code symbols, keys, numbers, character names). Skip sections that do not apply.
 Write in ${language}; if the conversation itself is mainly in a different language, use that language instead.
 Be concise but complete. Do NOT include prefaces or meta-commentary.`
+}
+
+export function summarizeConversation(msgs: Message[], language: string, prompt?: string): Message[] {
+  const instructionText = prompt?.trim() || getDefaultCompactionPrompt(language)
 
   const instructionMessage: Message = {
     id: `summary-instruction-${Date.now()}`,

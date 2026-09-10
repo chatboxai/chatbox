@@ -108,8 +108,7 @@ const compactionService = new CompactionService({
     },
   },
   summaries: {
-    generate: ({ sessionId, messages, sessionSettings, language, onStreamUpdate }) =>
-      generateSummaryWithStream({ sessionId, messages, sessionSettings, language, onStreamUpdate }),
+    generate: (input) => generateSummaryWithStream(input),
   },
   logger: {
     log(level, message, context) {
@@ -121,6 +120,7 @@ const compactionService = new CompactionService({
 
 export interface CompactionOptions {
   force?: boolean
+  prompt?: string
 }
 
 export interface CompactionResult {
@@ -166,6 +166,7 @@ export async function runCompactionWithUIState(
   const result = mapResult(
     await compactionService.run(sessionId, {
       force: options.force === true,
+      prompt: options.prompt,
       onStreamUpdate: (text) => setCompactionUIState(sessionId, { streamingText: text }),
     })
   )

@@ -1,24 +1,8 @@
 import { flattenToolCallPartsToText } from '@shared/context/tool-flatten'
 import type { LoggerPort, SettingsRepositoryPort } from '../../ports'
 import type { Message, Session, SessionSettings, Settings } from '../../types'
-import {
-  type CompactionBoundaryOptions,
-  findCompactionBoundaryMessage,
-  findLastCompactionBoundaryMessage,
-} from './compaction-boundary'
+import { findLastCompactionBoundaryMessage } from './compaction-boundary'
 import { buildCompactionCommitPatch } from './compaction-commit'
-
-/**
- * Upper bound on messages one compaction may cover. The compaction context is
- * unlimited by design (the point cuts everything before the boundary, so the
- * summary must cover it), but a very old, never-compacted session could blow
- * the summarizer's own window. Instead of truncating the summarizer INPUT
- * (which would let the point silently cut content — possibly the previous
- * summary itself — that no summary ever saw), the BOUNDARY is capped: each
- * compaction absorbs at most this many messages, and long histories converge
- * over successive compactions, one chunk per submit.
- */
-const MAX_SUMMARY_COVERED_MESSAGES = 200
 
 export interface CompactionSessionPort {
   getSession(sessionId: string): Promise<Session | null>
@@ -43,16 +27,6 @@ export interface CompactionPolicyPort {
    * missing here is unrecoverable by the summary.
    */
   getCompactionContext(session: Session, sessionSettings: SessionSettings): Message[]
-  /**
-   * Token budget and estimator for the raw tail kept after compaction; without
-   * it the tail is rounds-only and a huge recent round could keep the
-   * post-compaction context over the window.
-   */
-  getBoundaryOptions?(
-    session: Session,
-    sessionSettings: SessionSettings,
-    globalSettings: Settings
-  ): Pick<CompactionBoundaryOptions, 'maxTailTokens' | 'estimateMessagesTokens'>
 }
 
 export interface CompactionSummaryPort {
@@ -154,33 +128,15 @@ export class CompactionService {
       }
 
       const sessionSettings = await this.options.sessions.getSessionSettings(sessionId)
-      // Boundary is chosen before summarizing so the summary covers exactly the
-      // messages it will replace: everything up to the boundary, while the last
-      // rounds after it stay raw in context. Selecting over the already-applied
-      // context list (previous summary + messages after its boundary) makes the
-      // new point always advance past the previous one.
+      // Summarize the full selected context through its latest eligible message.
+      // Capture the boundary before generation so messages arriving during
+      // streaming remain after the summary and available to the next request.
       const contextMessages = this.options.policy.getCompactionContext(session, sessionSettings)
-      // The tail budget is an optimization: a failure resolving it must degrade
-      // to rounds-only tails, never abort the compaction itself.
-      let boundaryOptions: CompactionBoundaryOptions | undefined
-      try {
-        boundaryOptions = this.options.policy.getBoundaryOptions?.(session, sessionSettings, globalSettings)
-      } catch {
-        boundaryOptions = undefined
-      }
-      const roundsBoundary = findCompactionBoundaryMessage(contextMessages, boundaryOptions)
-      if (!roundsBoundary) {
+      const boundary = findLastCompactionBoundaryMessage(contextMessages)
+      if (!boundary) {
         return this.failure('no_messages', 'No messages to compact')
       }
-      const roundsBoundaryIndex = contextMessages.findIndex((message) => message.id === roundsBoundary.id)
-      const cappedBoundary =
-        roundsBoundaryIndex + 1 > MAX_SUMMARY_COVERED_MESSAGES
-          ? findLastCompactionBoundaryMessage(contextMessages.slice(0, MAX_SUMMARY_COVERED_MESSAGES))
-          : undefined
-      const boundary = cappedBoundary ?? roundsBoundary
-      const boundaryIndex = cappedBoundary
-        ? contextMessages.findIndex((message) => message.id === cappedBoundary.id)
-        : roundsBoundaryIndex
+      const boundaryIndex = contextMessages.findIndex((message) => message.id === boundary.id)
       const summaryResult = await this.options.summaries.generate({
         sessionId,
         messages: flattenToolCallPartsToText(contextMessages.slice(0, boundaryIndex + 1)),

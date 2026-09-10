@@ -12,7 +12,7 @@ import { setCompactionUIState } from '@/stores/atoms/compactionAtoms'
 import queryClient from '@/stores/queryClient'
 import { getSessionSettings } from '@/stores/session/session-settings'
 import { sumCachedTokensFromMessages } from '../token'
-import { checkOverflow, getCompactionThresholdTokens } from './compaction-detector'
+import { checkOverflow } from './compaction-detector'
 import { getConfiguredContextWindow } from './context-pressure'
 import {
   type ContextTokensCacheValue,
@@ -23,13 +23,6 @@ import {
 import { generateSummaryWithStream } from './summary-generator'
 
 const log = getLogger('compaction')
-
-/**
- * Fraction of the compaction threshold the raw tail may occupy after a
- * compaction. Keeps "summary + tail" comfortably below the threshold so a
- * single compaction per submit is always enough.
- */
-const RAW_TAIL_BUDGET_RATIO = 0.5
 
 const compactionService = new CompactionService({
   sessions: {
@@ -84,28 +77,6 @@ const compactionService = new CompactionService({
       getContextMessagesForTokenEstimation(session, {
         settings: { ...sessionSettings, maxContextMessageCount: undefined },
       }),
-    getBoundaryOptions(session, _sessionSettings, globalSettings) {
-      const providerId = session.settings?.provider ?? globalSettings.defaultChatModel?.provider
-      const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
-      if (!modelId) return {}
-      const thresholdTokens = getCompactionThresholdTokens(
-        modelId,
-        { compactionThreshold: globalSettings.compactionThreshold },
-        getConfiguredContextWindow(globalSettings, providerId, modelId)
-      )
-      if (thresholdTokens === null) return {}
-      const tokenModel = providerId ? { provider: providerId, modelId } : undefined
-      return {
-        maxTailTokens: Math.floor(thresholdTokens * RAW_TAIL_BUDGET_RATIO),
-        // sandboxMode=false on purpose: whether attachments go out as sandbox
-        // metadata depends on code-execution availability, which this layer
-        // cannot know. Counting full inline weight is the conservative
-        // direction for a budget — sandbox sessions merely get a slightly
-        // shorter tail, while metadata-weight estimation would let a huge
-        // attachment ride in the tail and keep the request over the window.
-        estimateMessagesTokens: (messages) => sumCachedTokensFromMessages(messages, tokenModel, false),
-      }
-    },
   },
   summaries: {
     generate: (input) => generateSummaryWithStream(input),

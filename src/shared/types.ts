@@ -115,6 +115,7 @@ export interface Toast {
   action?: {
     label: string
     settingsPath?: string
+    onClick?: () => void
   }
   duration?: number
 }

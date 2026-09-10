@@ -3,13 +3,28 @@
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-const { isSmallScreenMock, platformMock, switchCurrentSessionMock, updateSessionMock } = vi.hoisted(() => ({
+const {
+  archiveSessionMock,
+  countArchivedSessionsMetaMock,
+  isSmallScreenMock,
+  platformMock,
+  restoreSessionMock,
+  routerNavigateMock,
+  switchCurrentSessionMock,
+  toastAddMock,
+  updateSessionMock,
+} = vi.hoisted(() => ({
+  archiveSessionMock: vi.fn(),
+  countArchivedSessionsMetaMock: vi.fn(),
   isSmallScreenMock: vi.fn(() => false),
   platformMock: { type: 'desktop' },
+  restoreSessionMock: vi.fn(),
+  routerNavigateMock: vi.fn(),
   switchCurrentSessionMock: vi.fn(),
+  toastAddMock: vi.fn(),
   updateSessionMock: vi.fn(),
 }))
 
@@ -20,22 +35,23 @@ vi.mock('react-i18next', () => ({
 vi.mock('@/components/ui/tooltip', () => ({ AppTooltip: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: isSmallScreenMock }))
 vi.mock('@/platform', () => ({ default: platformMock }))
-vi.mock('@/router', () => ({ router: { navigate: vi.fn() }, navigateToDynamicPath: vi.fn() }))
+vi.mock('@/router', () => ({ router: { navigate: routerNavigateMock }, navigateToDynamicPath: vi.fn() }))
 vi.mock('@/app/renderer-application', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/app/renderer-application')>()
   return {
     rendererApplication: {
       ...actual.rendererApplication,
       sessions: {
-        archiveSession: vi.fn(),
-        countArchivedSessionsMeta: vi.fn(),
+        archiveSession: archiveSessionMock,
+        countArchivedSessionsMeta: countArchivedSessionsMetaMock,
+        restoreSession: restoreSessionMock,
         updateSession: updateSessionMock,
       },
     },
   }
 })
 vi.mock('@/stores/session/crud', () => ({ switchCurrentSession: switchCurrentSessionMock }))
-vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
+vi.mock('@/stores/toastActions', () => ({ add: toastAddMock }))
 vi.mock('@/stores/uiStore', () => ({
   useUIStore: (selector: (state: { setShowSidebar: () => void }) => unknown) => selector({ setShowSidebar: vi.fn() }),
 }))
@@ -61,13 +77,17 @@ function renderItem(selected = true) {
   )
 }
 
-describe('SessionItem inline rename', () => {
+describe('SessionItem', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     generationRuntimeStore.clear(session.id)
     resetSessionActivityStore()
     isSmallScreenMock.mockReturnValue(false)
     platformMock.type = 'desktop'
+    archiveSessionMock.mockResolvedValue(undefined)
+    countArchivedSessionsMetaMock.mockResolvedValue(0)
+    restoreSessionMock.mockResolvedValue(undefined)
+    routerNavigateMock.mockResolvedValue(undefined)
     updateSessionMock.mockResolvedValue(undefined)
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -186,5 +206,102 @@ describe('SessionItem inline rename', () => {
 
     expect(screen.getByRole('status', { name: 'Completed' })).toBeTruthy()
     view.unmount()
+  })
+
+  test('always offers undo after archiving and offers to open the restored chat', async () => {
+    renderItem(false)
+
+    fireEvent.click(screen.getByTestId(TestId.sidebar.sessionArchive))
+
+    await waitFor(() => expect(archiveSessionMock).toHaveBeenCalledWith(session.id))
+    await waitFor(() =>
+      expect(toastAddMock).toHaveBeenCalledWith(
+        'Archived. Manage archived chats in Settings.',
+        8000,
+        expect.objectContaining({ label: 'Undo', onClick: expect.any(Function) })
+      )
+    )
+
+    const undoAction = toastAddMock.mock.calls[0]?.[2] as { onClick?: () => void }
+    undoAction.onClick?.()
+
+    await waitFor(() => expect(restoreSessionMock).toHaveBeenCalledWith(session.id))
+    await waitFor(() =>
+      expect(toastAddMock).toHaveBeenCalledWith(
+        'Chat restored',
+        5000,
+        expect.objectContaining({ label: 'Open', onClick: expect.any(Function) })
+      )
+    )
+
+    const openAction = toastAddMock.mock.calls[1]?.[2] as { onClick?: () => void }
+    openAction.onClick?.()
+    expect(switchCurrentSessionMock).toHaveBeenCalledWith(session.id)
+  })
+
+  test('keeps the undo action when the cleanup check fails after a successful archive', async () => {
+    const cleanupError = new Error('count failed')
+    countArchivedSessionsMetaMock.mockRejectedValueOnce(cleanupError)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    renderItem(false)
+
+    fireEvent.click(screen.getByTestId(TestId.sidebar.sessionArchive))
+
+    await waitFor(() => expect(countArchivedSessionsMetaMock).toHaveBeenCalledOnce())
+    expect(toastAddMock).toHaveBeenCalledWith(
+      'Archived. Manage archived chats in Settings.',
+      8000,
+      expect.objectContaining({ label: 'Undo' })
+    )
+    expect(toastAddMock).not.toHaveBeenCalledWith('Failed to archive chat. Please try again.')
+    expect(consoleError).toHaveBeenCalledWith('Failed to check archived session cleanup:', cleanupError)
+    consoleError.mockRestore()
+  })
+
+  test('offers retry when undo cannot restore the chat on the first attempt', async () => {
+    restoreSessionMock.mockRejectedValueOnce(new Error('restore failed')).mockResolvedValueOnce(undefined)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    renderItem(false)
+
+    fireEvent.click(screen.getByTestId(TestId.sidebar.sessionArchive))
+    await waitFor(() => expect(toastAddMock).toHaveBeenCalledWith(expect.any(String), 8000, expect.anything()))
+    const undoAction = toastAddMock.mock.calls[0]?.[2] as { onClick?: () => void }
+    undoAction.onClick?.()
+
+    await waitFor(() =>
+      expect(toastAddMock).toHaveBeenCalledWith(
+        'Failed to restore chat. Please try again.',
+        8000,
+        expect.objectContaining({ label: 'Retry', onClick: expect.any(Function) })
+      )
+    )
+    const retryCall = toastAddMock.mock.calls.find(
+      ([content]) => content === 'Failed to restore chat. Please try again.'
+    )
+    const retryAction = retryCall?.[2] as { onClick?: () => void }
+    retryAction.onClick?.()
+
+    await waitFor(() => expect(restoreSessionMock).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(toastAddMock).toHaveBeenCalledWith('Chat restored', 5000, expect.anything()))
+    consoleError.mockRestore()
+  })
+
+  test('reports archive failures without offering undo', async () => {
+    const archiveError = new Error('archive failed')
+    archiveSessionMock.mockRejectedValueOnce(archiveError)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    renderItem(false)
+
+    fireEvent.click(screen.getByTestId(TestId.sidebar.sessionArchive))
+
+    await waitFor(() => expect(toastAddMock).toHaveBeenCalledWith('Failed to archive chat. Please try again.'))
+    expect(toastAddMock).not.toHaveBeenCalledWith(
+      'Archived. Manage archived chats in Settings.',
+      8000,
+      expect.anything()
+    )
+    expect(countArchivedSessionsMetaMock).not.toHaveBeenCalled()
+    expect(consoleError).toHaveBeenCalledWith('Failed to archive session:', archiveError)
+    consoleError.mockRestore()
   })
 })

@@ -356,6 +356,30 @@ describe('SessionService', () => {
     })
   })
 
+  test('restores a recovery archive through metadata without loading its full record', async () => {
+    const harness = createHarness()
+    const session = createTestSession('session-1')
+    harness.repository.sessions.set(session.id, session)
+    harness.repository.records.set(session.id, createTestRecord(session, 1))
+    await harness.service.archiveSessionWithoutLoading(session.id)
+    const getSession = vi.spyOn(harness.repository, 'getSession').mockRejectedValue(new Error('read failed'))
+    const setSession = vi.spyOn(harness.repository, 'setSession')
+
+    await harness.service.restoreSessionWithoutLoading(session.id)
+
+    expect(getSession).not.toHaveBeenCalled()
+    expect(setSession).not.toHaveBeenCalled()
+    expect(harness.repository.sessions.get(session.id)).not.toHaveProperty('archivedAt')
+    expect(harness.repository.records.get(session.id)).toMatchObject({ hidden: false })
+    expect(harness.repository.records.get(session.id)?.archivedAt).toBeUndefined()
+    expect(harness.repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
+    expect(harness.published.at(-1)).toMatchObject({
+      type: 'session-list-reset',
+      visible: { items: [{ id: session.id }] },
+      archived: { items: [] },
+    })
+  })
+
   test('preserves a metadata-only archive when rebuilding the session list', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')

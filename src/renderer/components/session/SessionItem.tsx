@@ -8,12 +8,13 @@ import clsx from 'clsx'
 import dayjs from 'dayjs'
 import { type MouseEvent, memo, type PointerEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { rendererApplication } from '@/app/renderer-application'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { navigateToSettings } from '@/modals/settings-navigation'
 import platform from '@/platform'
+import { showSessionArchiveUndo } from '@/presentation/session/session-archive-notification'
 import { router } from '@/router'
-import { rendererApplication } from '@/app/renderer-application'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { useSessionActivity } from '@/stores/sessionActivityStore'
 import * as toastActions from '@/stores/toastActions'
@@ -22,8 +23,6 @@ import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { AssistantAvatar } from '../common/Avatar'
 import { ScalableIcon } from '../common/ScalableIcon'
 
-const ARCHIVE_TIP_STORAGE_KEY = 'chatbox:lastArchiveSessionTipAt'
-const ARCHIVE_TIP_INTERVAL = 24 * 60 * 60 * 1000
 const ARCHIVED_SESSION_CLEANUP_THRESHOLD = 600
 const MOBILE_LONG_PRESS_DELAY = 550
 const MOBILE_LONG_PRESS_MOVE_TOLERANCE = 10
@@ -126,19 +125,6 @@ function SessionItem(props: Props) {
     })
   }
 
-  const showArchiveTipOncePerDay = () => {
-    const now = Date.now()
-    const lastTipAt = Number(localStorage.getItem(ARCHIVE_TIP_STORAGE_KEY) || 0)
-    if (now - lastTipAt < ARCHIVE_TIP_INTERVAL) {
-      return
-    }
-    localStorage.setItem(ARCHIVE_TIP_STORAGE_KEY, String(now))
-    toastActions.add(t('Archived. Manage archived chats in Settings.') || '', 8000, {
-      label: t('Manage') || '',
-      settingsPath: '/archive',
-    })
-  }
-
   const archiveCurrentSession = async () => {
     if (archiving) {
       return
@@ -146,9 +132,26 @@ function SessionItem(props: Props) {
     setArchiving(true)
     try {
       await rendererApplication.sessions.archiveSession(session.id)
-      if (selected) {
-        await router.navigate({ to: '/', replace: true })
-      }
+    } catch (error) {
+      console.error('Failed to archive session:', error)
+      toastActions.add(t('Failed to archive chat. Please try again.') || '')
+      setArchiving(false)
+      return
+    }
+
+    showSessionArchiveUndo({
+      t,
+      restore: () => rendererApplication.sessions.restoreSession(session.id),
+      openSession: () => switchCurrentSession(session.id),
+    })
+
+    if (selected) {
+      await router.navigate({ to: '/', replace: true }).catch((error) => {
+        console.error('Failed to navigate after archiving session:', error)
+      })
+    }
+
+    try {
       const archivedSessionCount = await rendererApplication.sessions.countArchivedSessionsMeta()
       if (archivedSessionCount > ARCHIVED_SESSION_CLEANUP_THRESHOLD) {
         const confirmed = await NiceModal.show('confirm', {
@@ -161,13 +164,11 @@ function SessionItem(props: Props) {
         if (confirmed === true) {
           navigateToSettings('/archive')
         }
-      } else {
-        showArchiveTipOncePerDay()
       }
     } catch (error) {
-      console.error('Failed to archive session:', error)
-      setArchiving(false)
+      console.error('Failed to check archived session cleanup:', error)
     }
+    setArchiving(false)
   }
 
   const clearLongPressTimer = () => {

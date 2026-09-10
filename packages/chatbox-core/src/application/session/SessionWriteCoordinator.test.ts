@@ -128,6 +128,24 @@ describe('SessionWriteCoordinator', () => {
     expect(repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
   })
 
+  test('restores a metadata-only recovery archive before a later full write', async () => {
+    const repository = new MemorySessionRepository()
+    const session = createTestSession('session-1')
+    repository.sessions.set(session.id, session)
+    repository.records.set(session.id, createTestRecord(session, 1))
+    const coordinator = new SessionWriteCoordinator(repository)
+
+    await coordinator.archiveMetadataOnly(session.id, 50)
+    await coordinator.restoreMetadataOnly(session.id)
+    await coordinator.update(session.id, { name: 'Written after restore' })
+
+    expect(repository.sessions.get(session.id)).toMatchObject({ name: 'Written after restore' })
+    expect(repository.sessions.get(session.id)?.hidden).not.toBe(true)
+    expect(repository.records.get(session.id)).toMatchObject({ hidden: false })
+    expect(repository.records.get(session.id)?.archivedAt).toBeUndefined()
+    expect(repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
+  })
+
   test('loads a persisted recovery archive before the first write after restart', async () => {
     const repository = new MemorySessionRepository()
     const session = createTestSession('session-1')

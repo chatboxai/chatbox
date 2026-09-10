@@ -26,10 +26,12 @@ import {
   useSessionStartupLoadTarget,
   useSessionStartupQueryFailure,
 } from '@/packages/session-startup-recovery'
+import { showSessionArchiveUndo } from '@/presentation/session/session-archive-notification'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { applyChatboxLicenseDefaultModelToSession } from '@/stores/defaultChatModel'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
+import { switchCurrentSession } from '@/stores/session/crud'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { removeCurrentThread, startNewThread } from '@/stores/session/threads'
 import { clearSessionActivity } from '@/stores/sessionActivityStore'
@@ -241,6 +243,11 @@ function RouteComponent() {
     try {
       await rendererApplication.sessions.archiveSessionWithoutLoading(currentSessionId)
       sessionStartupRecovery.completeArchive(currentSessionId)
+      showSessionArchiveUndo({
+        t,
+        restore: () => rendererApplication.sessions.restoreSessionWithoutLoading(currentSessionId),
+        openSession: () => switchCurrentSession(currentSessionId),
+      })
       goHome()
     } catch (error) {
       console.error('Failed to archive session:', error)

@@ -356,6 +356,14 @@ export class SessionService {
     await this.publishListReset({ visible: true, archived: true })
   }
 
+  /** Restores a session archived through the metadata-only recovery path. */
+  async restoreSessionWithoutLoading(sessionId: string): Promise<void> {
+    await this.initialize()
+    const updated = await this.writes.restoreMetadataOnly(sessionId)
+    if (!updated) throw new SessionNotFoundError(sessionId)
+    await this.publishListReset({ visible: true, archived: true })
+  }
+
   async archiveSessions(sessionIds: string[]): Promise<void> {
     const uniqueIds = [...new Set(sessionIds)]
     if (uniqueIds.length === 0) return

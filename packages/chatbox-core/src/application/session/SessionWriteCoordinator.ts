@@ -145,6 +145,25 @@ export class SessionWriteCoordinator {
     })
   }
 
+  /** Restores a metadata-only recovery archive without reading the full session. */
+  restoreMetadataOnly(sessionId: string): Promise<SessionMetaRecord | null> {
+    if (this.unavailable.has(sessionId)) {
+      return Promise.reject(new SessionNotFoundError(sessionId))
+    }
+    return this.enqueue(sessionId, async () => {
+      const updated = await this.repository.meta.update(sessionId, {
+        hidden: false,
+        archivedAt: undefined,
+        recoveryArchived: undefined,
+      })
+      if (updated) {
+        this.recoveryArchives.delete(sessionId)
+        this.loadedRecoveryArchiveState.add(sessionId)
+      }
+      return updated
+    })
+  }
+
   delete(sessionId: string, operation: () => Promise<void>): Promise<void> {
     return this.deleteMany([sessionId], operation)
   }

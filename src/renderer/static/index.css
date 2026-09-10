@@ -134,6 +134,8 @@ html[data-theme="light"] {
 }
 
 .Snackbar {
+  -webkit-app-region: no-drag;
+
   /* 移动端异形屏的显示问题 */
   padding-top: env(safe-area-inset-top);
   padding-right: env(safe-area-inset-right);

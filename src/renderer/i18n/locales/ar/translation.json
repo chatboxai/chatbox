@@ -1431,5 +1431,6 @@
   "Restore Default": "استعادة الإعداد الافتراضي",
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "تُستخدم للضغط التلقائي واليدوي. اتركها فارغة لاستخدام التعليمات المدمجة.",
   "Compaction Prompt": "تعليمات ضغط المحادثة",
-  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "لخّص الرسائل السابقة لتقليل استخدام السياق. سيظل سجل المحادثة متاحًا."
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "لخّص الرسائل السابقة لتقليل استخدام السياق. سيظل سجل المحادثة متاحًا.",
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "لا يستخدم وضع العمل مطالبات النظام الخاصة بالمحادثة. لاستخدام مطالبة مخصصة، أنشئ Copilot واضبط مطالبته."
 }

@@ -1430,5 +1430,6 @@
   "Restore Default": "恢复默认",
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "用于自动和手动压缩。留空则使用内置提示词。",
   "Compaction Prompt": "压缩提示词",
-  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "将较早的消息汇总为摘要，减少上下文占用。原始对话记录仍可查看。"
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "将较早的消息汇总为摘要，减少上下文占用。原始对话记录仍可查看。",
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "工作模式不使用对话的系统提示词。如需使用自定义提示词，请创建 Copilot 并设置其提示词。"
 }

@@ -1431,5 +1431,6 @@
   "Restore Default": "기본값 복원",
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "자동 및 수동 압축에 사용됩니다. 비워 두면 기본 프롬프트를 사용합니다.",
   "Compaction Prompt": "압축 프롬프트",
-  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "이전 메시지를 요약하여 컨텍스트 사용량을 줄입니다. 대화 기록은 계속 확인할 수 있습니다."
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "이전 메시지를 요약하여 컨텍스트 사용량을 줄입니다. 대화 기록은 계속 확인할 수 있습니다.",
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "작업 모드에서는 대화의 시스템 프롬프트를 사용하지 않습니다. 사용자 지정 프롬프트를 사용하려면 Copilot을 만들고 프롬프트를 설정하세요."
 }

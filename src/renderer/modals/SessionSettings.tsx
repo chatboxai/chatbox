@@ -218,7 +218,7 @@ const SessionSettingsModal = NiceModal.create(
 
             {isChatSession(session) && (
               <>
-                {showSystemPrompt && (
+                {showSystemPrompt ? (
                   <Textarea
                     data-testid={TestId.settings.sessionPrompt}
                     label={t('Instruction (System Prompt)')}
@@ -235,6 +235,17 @@ const SessionSettingsModal = NiceModal.create(
                       input: { touchAction: 'manipulation' },
                     }}
                   />
+                ) : (
+                  <Stack gap={4}>
+                    <Text size="sm" fw={500}>
+                      {t('Instruction (System Prompt)')}
+                    </Text>
+                    <Text size="sm" c="dimmed">
+                      {t(
+                        'Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.'
+                      )}
+                    </Text>
+                  </Stack>
                 )}
 
                 <Stack gap="xs">

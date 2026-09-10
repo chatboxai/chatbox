@@ -1431,5 +1431,6 @@
   "Restore Default": "Ripristina predefinito",
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Usato per la compressione automatica e manuale. Lascia vuoto per usare il prompt integrato.",
   "Compaction Prompt": "Prompt di compressione",
-  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Riassumi i messaggi precedenti per ridurre il contesto utilizzato. La cronologia della conversazione resterà disponibile."
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Riassumi i messaggi precedenti per ridurre il contesto utilizzato. La cronologia della conversazione resterà disponibile.",
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "La modalità lavoro non utilizza i prompt di sistema della conversazione. Per utilizzare un prompt personalizzato, crea un Copilot e imposta il suo prompt."
 }

@@ -1431,5 +1431,6 @@
   "Restore Default": "既定に戻す",
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "自動・手動の圧縮に使用します。空欄の場合は標準のプロンプトを使用します。",
   "Compaction Prompt": "圧縮プロンプト",
-  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "以前のメッセージを要約し、コンテキストの使用量を減らします。会話履歴は引き続き閲覧できます。"
+  "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "以前のメッセージを要約し、コンテキストの使用量を減らします。会話履歴は引き続き閲覧できます。",
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "作業モードでは会話のシステムプロンプトは使用されません。カスタムプロンプトを使用するには、Copilot を作成してプロンプトを設定してください。"
 }

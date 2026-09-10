@@ -1,4 +1,15 @@
 const changelog = `
+## v1.23.2 - 2026.09.10
+1. Added OAuth authorization for remote MCP servers, with connection controls and a refreshable tool list in server settings
+2. Added custom conversation compaction prompts and one-time instructions, with improved compaction scope and trigger accuracy
+3. Added cached token usage to message statistics and configurable prompt cache duration for Claude
+4. Added support for more plain-text uploads, including Typst, Patch, and Diff files
+5. Added one-click undo for archived chats and improved recovery when a conversation fails to load at startup
+6. Fixed replies sometimes remaining in the generating state after completion
+7. Improved generated image loading, with an option to reload images that fail to display
+8. Added reasoning effort controls for GPT-6 and later models, and improved Kimi, OpenCode, and model catalog compatibility
+9. Fixed backup exports on HarmonyOS and improved window focus, small-screen layouts, and translations
+
 ## v1.23.1 - 2026.09.02
 1. In long conversations, you'll be asked to confirm before deleting older messages or switching models if that would reset the cached context
 2. Copilot prompts can now be up to 40,000 characters

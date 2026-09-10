@@ -1444,5 +1444,9 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "用於自動和手動壓縮。留空則使用內建提示詞。",
   "Compaction Prompt": "壓縮提示詞",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "將較早的訊息彙整為摘要，減少上下文用量。原始對話記錄仍可查看。",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "工作模式不使用對話的系統提示詞。如需使用自訂提示詞，請建立 Copilot 並設定其提示詞。"
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "工作模式不使用對話的系統提示詞。如需使用自訂提示詞，請建立 Copilot 並設定其提示詞。",
+  "App icon": "應用程式圖示",
+  "Flat gradient": "扁平漸層",
+  "Unable to change the app icon. Please try again.": "無法更換應用程式圖示，請重試。",
+  "Sculpted": "立體"
 }

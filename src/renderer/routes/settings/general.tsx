@@ -38,6 +38,7 @@ import { useTranslation } from 'react-i18next'
 import { withExclusiveSessionStorageLock } from '@/adapters/CurrentSessionRepository'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
+import { AppIconPicker } from '@/components/common/AppIconPicker'
 import { InterfaceColorInput } from '@/components/common/InterfaceColorInput'
 import LazySlider from '@/components/common/LazySlider'
 import { languageNameMap, languages } from '@/i18n/locales'
@@ -247,6 +248,7 @@ export function RouteComponent() {
             }}
           />
         </SimpleGrid>
+        <AppIconPicker />
 
         <Stack gap="md">
           <Stack gap="xxs">

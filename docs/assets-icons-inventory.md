@@ -69,6 +69,16 @@ Electron Builder 配置(`electron-builder.yml`)关键项:
 
 > Android 图标的目录结构与 inset/白边细节见 `docs/android-app-icons.md`。
 
+### iOS 可选图标
+
+普通版在「设置 → 通用 → 应用图标」提供经典、扁平渐变和立体三种样式，经典为默认图标。`AppIconPlugin` 使用系统 `alternateIconName` 读取当前选择，使用 `setAlternateIconName` 切换；选择由 iOS 保存，不进入设置同步或聊天备份。
+
+- 立体图标直接导出自 [Figma `chatbox logo_2.0_classic`（658:1345）](https://www.figma.com/design/rXievlhKAqDxyN8Y4y7CmY/Chatbox-Marketing?node-id=658-1345)，导出 PNG 去除画板外透明边缘，截取 `(29, 0, 1024, 1024)`，源 PNG 为 `resources/icon-sculpted.png`，同步到 `Sculpted.appiconset/1024.png` 和 `src/renderer/static/app-icons/sculpted.png`。
+- Xcode 的 Debug / Release 配置都将 `FlatGradient` 和 `Sculpted` 注册为 Alternate App Icon Set，保留 `AppIcon` 为 Primary App Icon Set。
+- 设置预览 `src/renderer/static/app-icons/default.png` 来自经典 `AppIcon.appiconset/180.png`。
+- 切换入口仅在 iOS 且系统支持备用图标时显示。验证应覆盖切换、恢复经典、重启后回读以及 iPhone / iPad 主屏幕显示。
+
+
 ---
 
 ## 3. Web ——`src/renderer/`(不在 `assets/`)

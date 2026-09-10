@@ -1444,5 +1444,9 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Brukes til automatisk og manuell komprimering. La stå tomt for å bruke den innebygde prompten.",
   "Compaction Prompt": "Komprimeringsprompt",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Oppsummer tidligere meldinger for å redusere kontekstbruken. Samtaleloggen vil fortsatt være tilgjengelig.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Arbeidsmodus bruker ikke samtalens systemprompter. For å bruke en egendefinert prompt, opprett en Copilot og angi prompten for den."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Arbeidsmodus bruker ikke samtalens systemprompter. For å bruke en egendefinert prompt, opprett en Copilot og angi prompten for den.",
+  "App icon": "Appikon",
+  "Flat gradient": "Flat gradient",
+  "Unable to change the app icon. Please try again.": "Kunne ikke endre appikonet. Prøv igjen.",
+  "Sculpted": "Tredimensjonal"
 }

@@ -1444,5 +1444,9 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Utilisé pour la compression automatique et manuelle. Laissez vide pour utiliser le prompt intégré.",
   "Compaction Prompt": "Prompt de compression",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Résumez les anciens messages pour réduire le contexte utilisé. Votre historique de conversation restera accessible.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Le mode travail n’utilise pas les prompts système de la conversation. Pour utiliser un prompt personnalisé, créez un Copilot et définissez son prompt."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Le mode travail n’utilise pas les prompts système de la conversation. Pour utiliser un prompt personnalisé, créez un Copilot et définissez son prompt.",
+  "App icon": "Icône de l’application",
+  "Flat gradient": "Dégradé plat",
+  "Unable to change the app icon. Please try again.": "Impossible de changer l’icône de l’application. Veuillez réessayer.",
+  "Sculpted": "Relief"
 }

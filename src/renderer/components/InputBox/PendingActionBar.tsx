@@ -4,7 +4,7 @@ import {
   type PendingPauseInteraction,
 } from '@chatbox/core/message-approval'
 import { Box, Button, Group, Menu, Spoiler, Text, UnstyledButton } from '@mantine/core'
-import { TestId } from '@shared/automation/testids'
+import { AutomationStateAttr, TestId } from '@shared/automation/testids'
 import type { ImageGenerationApprovalDetails, Session } from '@shared/types'
 import {
   IconAlertCircle,
@@ -340,6 +340,14 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
   if (!armingRef.current || armingRef.current.key !== currentKey) {
     armingRef.current = { key: currentKey, until: Date.now() + PENDING_ACTION_ARMING_MS }
   }
+  const [isArmed, setIsArmed] = useState(false)
+  useEffect(() => {
+    setIsArmed(false)
+    const timer = window.setTimeout(() => {
+      if (armingRef.current?.key === currentKey) setIsArmed(true)
+    }, PENDING_ACTION_ARMING_MS)
+    return () => window.clearTimeout(timer)
+  }, [currentKey])
 
   // Progress across a review episode: total holds steady while items resolve, so
   // acting reads 1/3 → 2/3 → 3/3 instead of always showing "1 of what's left".
@@ -457,6 +465,7 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
   return (
     <Box
       data-testid={TestId.toolCall.actionBar}
+      {...{ [AutomationStateAttr.actionBarArmed]: isArmed ? 'true' : 'false' }}
       onClickCapture={handleSurfaceClick}
       className={clsx(
         INPUT_SURFACE_CLASS_NAME,

@@ -3,7 +3,8 @@
  *
  * IDs describe user-facing semantics rather than component libraries, copy, or layout.
  * Dynamic domain identity belongs in adjacent data-* attributes (see
- * AutomationAdjacentAttr), never in a generated test ID.
+ * AutomationAdjacentAttr), never in a generated test ID. Removing or renaming
+ * those attributes is a contract change, same as renaming a TestId.
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
@@ -15,6 +16,14 @@ export const AutomationAdjacentAttr = {
   sessionId: 'data-session-id',
   modelId: 'data-model-id',
   providerId: 'data-provider-id',
+  shortcutName: 'data-shortcut-name',
+  shortcutValue: 'data-shortcut-value',
+} as const
+
+/** Dynamic state attributes hosted on stable TestId elements. */
+export const AutomationStateAttr = {
+  actionBarArmed: 'data-automation-armed',
+  sessionPinned: 'data-session-pinned',
 } as const
 
 export type AutomationReasoningLevel = 'default' | 'off' | 'low' | 'medium' | 'high'
@@ -47,6 +56,7 @@ export const TestId = {
     selectorTrigger: 'model-selector-trigger',
     selectorPanel: 'model-selector-panel',
     searchInput: 'model-search-input',
+    /** Hosts AutomationAdjacentAttr.modelId. */
     option: 'model-option',
     optionName: 'model-option-name',
   },
@@ -71,10 +81,12 @@ export const TestId = {
     newChat: 'new-chat-button',
     newImage: 'new-image-button',
     settingsTrigger: 'settings-trigger',
+    /** Hosts AutomationAdjacentAttr.sessionId. */
     sessionItem: 'session-item',
     sessionTitle: 'session-title',
     sessionPin: 'session-pin',
     sessionArchive: 'session-archive',
+    pinnedSection: 'sidebar-pinned-section',
     collapse: 'sidebar-collapse',
   },
   session: {
@@ -160,6 +172,11 @@ export const TestId = {
     providerModelItem: 'settings-provider-model-item',
     providerModelEdit: 'settings-provider-model-edit',
     providerModelDelete: 'settings-provider-model-delete',
+    providerModelEditor: 'settings-provider-model-editor',
+    providerModelEditorId: 'settings-provider-model-editor-id',
+    providerModelEditorNickname: 'settings-provider-model-editor-nickname',
+    providerModelEditorToolUse: 'settings-provider-model-editor-tool-use',
+    providerModelEditorSave: 'settings-provider-model-editor-save',
     close: 'settings-close',
     navChat: 'settings-nav-chat',
     navGeneral: 'settings-nav-general',
@@ -169,6 +186,8 @@ export const TestId = {
     topP: 'settings-top-p',
     maxContext: 'settings-max-context',
     defaultChatModel: 'settings-default-chat-model',
+    shortcutRow: 'settings-shortcut-row',
+    shortcutSelect: 'settings-shortcut-select',
     sessionName: 'session-settings-name',
     sessionPrompt: 'session-settings-prompt',
     sessionTemperature: 'session-settings-temperature',

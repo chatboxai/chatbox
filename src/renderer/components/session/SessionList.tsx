@@ -20,19 +20,20 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Button, Flex, Text } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
 import { IconArrowsMoveVertical, IconGripVertical, IconLoader2 } from '@tabler/icons-react'
 import { useRouterState } from '@tanstack/react-router'
 import { type CSSProperties, type MutableRefObject, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Virtuoso } from 'react-virtuoso'
+import { rendererApplication } from '@/app/renderer-application'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform from '@/platform'
-import { rendererApplication } from '@/app/renderer-application'
-
-const useSessionList = () => rendererApplication.sessionHooks.useSessionList()
 import { reorderSessions } from '@/stores/session/crud'
 import SessionItem from './SessionItem'
+
+const useSessionList = () => rendererApplication.sessionHooks.useSessionList()
 
 export interface Props {
   sessionListViewportRef: MutableRefObject<HTMLDivElement | null>
@@ -194,7 +195,15 @@ export default function SessionList(props: Props) {
             itemContent={(_index, item) => {
               if (item.type === 'section') {
                 return (
-                  <Text px="md" pt="sm" pb={4} size="xs" fw={600} c="chatbox-tertiary">
+                  <Text
+                    {...(item.id === 'section:pinned' ? { 'data-testid': TestId.sidebar.pinnedSection } : {})}
+                    px="md"
+                    pt="sm"
+                    pb={4}
+                    size="xs"
+                    fw={600}
+                    c="chatbox-tertiary"
+                  >
                     {item.label}
                   </Text>
                 )

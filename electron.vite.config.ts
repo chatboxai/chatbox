@@ -315,6 +315,12 @@ export default defineConfig(({ mode }) => {
               const isNodeModulePackage = (pkg: string) => normalizedId.includes(`/node_modules/${pkg}/`)
 
               if (normalizedId.includes('/node_modules/')) {
+                // Keep a single Zod instance. If Zod is pulled into vendor-ai with
+                // the Vercel AI SDK, SettingsSchema.parse() treats sibling schemas
+                // as non-schemas and renderer bootstrap never leaves the splash.
+                if (isNodeModulePackage('zod')) {
+                  return 'vendor-zod'
+                }
                 // Split large vendor chunks
                 if (isNodeModulePackage('@ai-sdk') || isNodeModulePackage('ai')) {
                   return 'vendor-ai'

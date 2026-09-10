@@ -1,7 +1,7 @@
 import { Haptics, ImpactStyle } from '@capacitor/haptics'
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Box, Flex, Input, Text } from '@mantine/core'
-import { TestId } from '@shared/automation/testids'
+import { AutomationAdjacentAttr, AutomationStateAttr, TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
 import {
   IconArchive,
@@ -263,7 +263,8 @@ function SessionItem(props: Props) {
   const content = (
     <Flex
       data-testid={TestId.sidebar.sessionItem}
-      data-session-id={session.id}
+      {...{ [AutomationAdjacentAttr.sessionId]: session.id }}
+      {...{ [AutomationStateAttr.sessionPinned]: String(Boolean(session.starred)) }}
       align="center"
       className={clsx(
         'cursor-pointer rounded-lg group/session-item',

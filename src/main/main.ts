@@ -22,7 +22,19 @@ import './legacy-database-migration'
  */
 
 import fs from 'node:fs'
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme, session, shell, Tray } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  screen,
+  session,
+  shell,
+  Tray,
+} from 'electron'
 import electronDebug from 'electron-debug'
 import log from 'electron-log/main'
 import os from 'os'
@@ -49,6 +61,7 @@ import MenuBuilder from './menu'
 import { registerOAuthHandlers } from './oauth'
 import * as proxy from './proxy'
 import { getMainRuntimePolicy } from './qa-runtime'
+import { getQaWindowPlacementMode, resolveQaWindowBounds } from './qa-window'
 import { runRipgrepSearch } from './ripgrep-search'
 import { cleanupSandboxResources, registerSandboxHandlers } from './sandbox'
 import { bufferToArrayBuffer } from './sandbox/read-file-base64'
@@ -71,6 +84,11 @@ const MAIN_RUNTIME_POLICY = getMainRuntimePolicy(process.env, {
   isHarmonyBuild: IS_HARMONY_BUILD,
   isPackaged: app.isPackaged,
 })
+if (process.platform === 'darwin' && MAIN_RUNTIME_POLICY.isQa) {
+  // Must run before ready. Accessory keeps a new Electron process from
+  // becoming the frontmost app; showInactive() alone is not enough on macOS.
+  app.setActivationPolicy('accessory')
+}
 const QA_RUNTIME_PATHS = CHATBOX_QA_PREFLIGHT.paths
 const QA_LAUNCH_ARGUMENTS = CHATBOX_QA_PREFLIGHT.launchArguments
 const DEV_LAUNCH_OPTIONS = parseDevLaunchOptions({
@@ -451,6 +469,17 @@ async function createWindow() {
   }
 
   const [state] = windowState.getState()
+  if (MAIN_RUNTIME_POLICY.isQa) {
+    const bounds = resolveQaWindowBounds({
+      displays: screen.getAllDisplays().map((display) => ({ id: display.id, workArea: display.workArea })),
+      cursor: screen.getCursorScreenPoint(),
+      mode: getQaWindowPlacementMode({ CHATBOX_QA_WINDOW: process.env.CHATBOX_QA_WINDOW }),
+    })
+    state.x = bounds.x
+    state.y = bounds.y
+    state.width = bounds.width
+    state.height = bounds.height
+  }
 
   const qaWindowTitle = MAIN_RUNTIME_POLICY.qaTaskId ? `[QA:${MAIN_RUNTIME_POLICY.qaTaskId}] Chatbox` : undefined
 
@@ -531,6 +560,9 @@ async function createWindow() {
     hasShownMainWindow = true
     if (process.env.START_MINIMIZED) {
       mainWindow.minimize()
+    } else if (MAIN_RUNTIME_POLICY.isQa) {
+      // Map the window for Playwright without activating the app.
+      mainWindow.showInactive()
     } else {
       if (state.mode === windowState.WindowMode.Maximized) {
         mainWindow.maximize()

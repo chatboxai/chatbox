@@ -1,4 +1,5 @@
 import { Box, Combobox, Flex, InputBase, Kbd, Table, useCombobox } from '@mantine/core'
+import { AutomationAdjacentAttr, TestId } from '@shared/automation/testids'
 import {
   type Settings,
   type ShortcutName,
@@ -199,7 +200,11 @@ export function ShortcutConfig(props: {
 
         <Table.Tbody>
           {items.map(({ name, label, keys, options }) => (
-            <Table.Tr key={name ?? label}>
+            <Table.Tr
+              key={name ?? label}
+              data-testid={TestId.settings.shortcutRow}
+              {...(name ? { [AutomationAdjacentAttr.shortcutName]: name } : {})}
+            >
               <Table.Td>{label}</Table.Td>
               <Table.Td>
                 {options ? (
@@ -267,6 +272,8 @@ function ShortcutSelect({
     >
       <Combobox.Target targetType="button">
         <InputBase
+          data-testid={TestId.settings.shortcutSelect}
+          {...{ [AutomationAdjacentAttr.shortcutValue]: value }}
           maw={160}
           component="button"
           type="button"
@@ -282,7 +289,7 @@ function ShortcutSelect({
       <Combobox.Dropdown>
         <Combobox.Options>
           {options.map((o) => (
-            <Combobox.Option key={o} value={o}>
+            <Combobox.Option key={o} value={o} {...{ [AutomationAdjacentAttr.shortcutValue]: o }}>
               <ShortcutText shortcut={o} />
             </Combobox.Option>
           ))}

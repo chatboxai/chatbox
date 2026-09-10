@@ -39,7 +39,10 @@ vi.mock('@/platform', () => ({
     }),
   },
 }))
-vi.mock('@/stores/imageGenerationActions', () => ({ startImageGeneration: startImageGenerationMock }))
+vi.mock('@/stores/imageGenerationActions', () => ({
+  startImageGeneration: startImageGenerationMock,
+  getImageGenerationService: () => ({ getRecord: getImageGenerationByIdMock, getPage: getImageGenerationPageMock }),
+}))
 vi.mock('@/stores/imageGenerationStore', () => ({
   imageGenerationStore: { getState: () => ({ currentGeneratingId: null }) },
 }))
@@ -484,59 +487,63 @@ describe('Chatbox CLI image commands', () => {
     )
   })
 
-  it('reuses the durable image record after the in-memory execution cache is lost', async () => {
-    const approvalDetails = {
-      type: 'image_generation' as const,
-      provider: 'chatbox-ai',
-      modelId: 'manifest-image',
-      prompt: 'red fox',
-      count: 1,
-      billing: 'chatbox_quota' as const,
-    }
-    const createdRecord: ImageGeneration = {
-      id: 'record-persisted',
-      prompt: 'red fox',
-      referenceImages: [],
-      generatedImages: [],
-      createdAt: 1_000,
-      model: { provider: 'chatbox-ai', modelId: 'manifest-image' },
-      imageGenerateNum: 1,
-      status: 'generating',
-      taskId: 'task-persisted',
-    }
-    startImageGenerationMock.mockImplementationOnce(
-      async (_params: unknown, options: { onRecordCreated?: (record: ImageGeneration) => Promise<void> }) => {
-        await options.onRecordCreated?.(createdRecord)
-        return {
-          recordId: createdRecord.id,
-          startedAt: createdRecord.createdAt,
-          monitoring: { mode: 'polling', intervalMs: 2_000 },
-          completion: Promise.resolve(null),
-        }
+  it.each(['generating', 'error'] as const)(
+    'reuses a %s image record after the in-memory execution cache is lost',
+    async (status) => {
+      const approvalDetails = {
+        type: 'image_generation' as const,
+        provider: 'chatbox-ai',
+        modelId: 'manifest-image',
+        prompt: 'red fox',
+        count: 1,
+        billing: 'chatbox_quota' as const,
       }
-    )
+      const createdRecord: ImageGeneration = {
+        id: 'record-persisted',
+        prompt: 'red fox',
+        referenceImages: [],
+        generatedImages: [],
+        createdAt: 1_000,
+        model: { provider: 'chatbox-ai', modelId: 'manifest-image' },
+        imageGenerateNum: 1,
+        status,
+        ...(status === 'error' ? { errorCode: 'image_task_persistence_failed' } : {}),
+        taskId: 'task-persisted',
+      }
+      startImageGenerationMock.mockImplementationOnce(
+        async (_params: unknown, options: { onRecordCreated?: (record: ImageGeneration) => Promise<void> }) => {
+          await options.onRecordCreated?.(createdRecord)
+          return {
+            recordId: createdRecord.id,
+            startedAt: createdRecord.createdAt,
+            monitoring: { mode: 'polling', intervalMs: 2_000 },
+            completion: Promise.resolve(null),
+          }
+        }
+      )
 
-    await command('generate').execute(context(['--prompt', 'red fox'], { approvalDetails }))
-    expect(setStorageItemNowMock).toHaveBeenCalledOnce()
+      await command('generate').execute(context(['--prompt', 'red fox'], { approvalDetails }))
+      expect(setStorageItemNowMock).toHaveBeenCalledOnce()
 
-    resetImageCommandExecutionsForTests()
-    const catalogCallsBeforeRestore = getAvailableImageModelsMock.mock.calls.length
-    getAvailableImageModelsMock.mockRejectedValue(new Error('catalog unavailable'))
-    getImageGenerationByIdMock.mockResolvedValueOnce(createdRecord)
+      resetImageCommandExecutionsForTests()
+      const catalogCallsBeforeRestore = getAvailableImageModelsMock.mock.calls.length
+      getAvailableImageModelsMock.mockRejectedValue(new Error('catalog unavailable'))
+      getImageGenerationByIdMock.mockResolvedValueOnce(createdRecord)
 
-    await expect(command('generate').execute(context(['--prompt', 'red fox']))).resolves.toMatchObject({
-      restored: true,
-      recordId: 'record-persisted',
-      status: 'generating',
-      wait: {
-        mode: 'manual_resume',
-        managedBy: 'chatbox',
-        modelShouldPoll: false,
-      },
-    })
-    expect(startImageGenerationMock).toHaveBeenCalledTimes(1)
-    expect(getAvailableImageModelsMock).toHaveBeenCalledTimes(catalogCallsBeforeRestore)
-  })
+      await expect(command('generate').execute(context(['--prompt', 'red fox']))).resolves.toMatchObject({
+        restored: true,
+        recordId: 'record-persisted',
+        status,
+        wait: {
+          mode: 'manual_resume',
+          managedBy: 'chatbox',
+          modelShouldPoll: false,
+        },
+      })
+      expect(startImageGenerationMock).toHaveBeenCalledTimes(1)
+      expect(getAvailableImageModelsMock).toHaveBeenCalledTimes(catalogCallsBeforeRestore)
+    }
+  )
 
   it('uses the shared image model catalog for model discovery', async () => {
     getAvailableImageModelsMock.mockResolvedValueOnce([
@@ -796,5 +803,25 @@ describe('Chatbox CLI image commands', () => {
       nextCursor: null,
       total: 0,
     })
+  })
+  it('reports manual resume for a submitted task retained by the service after persistence fails', async () => {
+    getImageGenerationByIdMock.mockResolvedValue({
+      id: 'unsaved-task',
+      prompt: 'image',
+      referenceImages: [],
+      generatedImages: [],
+      createdAt: 1,
+      model: { provider: 'chatbox-ai', modelId: 'gpt-image-1' },
+      status: 'error',
+      taskId: 'submitted-task',
+      errorCode: 'image_task_persistence_failed',
+      error: 'An image task was submitted but could not be saved.',
+    })
+    await expect(command('status').execute(context(['unsaved-task']))).resolves.toMatchObject({
+      taskId: 'submitted-task',
+      status: 'error',
+      wait: { mode: 'manual_resume', modelShouldPoll: false },
+    })
+    expect(startImageGenerationMock).not.toHaveBeenCalled()
   })
 })

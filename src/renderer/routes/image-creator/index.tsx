@@ -506,7 +506,7 @@ function ImageCreatorPage() {
                     referenceImageCount={currentRecord.referenceImages.length}
                   />
 
-                  {currentRecord.status === 'generating' && currentRecord.taskId && !isCurrentlyGenerating && (
+                  {currentRecord.status !== 'done' && currentRecord.taskId && !isCurrentlyGenerating && (
                     <Flex justify="center" w="100%">
                       <Button variant="light" onClick={() => void resumeImageGenerationWithFollowUp(currentRecord.id)}>
                         {t('Resume Generation')}

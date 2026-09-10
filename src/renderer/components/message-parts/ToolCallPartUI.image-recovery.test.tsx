@@ -130,24 +130,30 @@ describe('CLI image recovery timeline', () => {
 
   afterEach(cleanup)
 
-  it('resumes an interrupted backend task from the original chat', async () => {
-    useImageGenerationRecordMock.mockReturnValue({ data: record(), isFetched: true })
-
-    render(
-      <MantineProvider>
-        <StepTimelineUI parts={[toolCall]} sessionId="session-1" messageId="message-1" />
-      </MantineProvider>
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Resume Generation' }))
-
-    await waitFor(() => {
-      expect(resumeImageGenerationWithFollowUpMock).toHaveBeenCalledWith('record-1', {
-        sessionId: 'session-1',
-        toolCallId: 'tool-1',
+  it.each(['generating', 'error'] as const)(
+    'resumes an interrupted %s backend task from the original chat',
+    async (status) => {
+      useImageGenerationRecordMock.mockReturnValue({
+        data: record({ status, errorCode: status === 'error' ? 'image_task_persistence_failed' : undefined }),
+        isFetched: true,
       })
-    })
-  })
+
+      render(
+        <MantineProvider>
+          <StepTimelineUI parts={[toolCall]} sessionId="session-1" messageId="message-1" />
+        </MantineProvider>
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Resume Generation' }))
+
+      await waitFor(() => {
+        expect(resumeImageGenerationWithFollowUpMock).toHaveBeenCalledWith('record-1', {
+          sessionId: 'session-1',
+          toolCallId: 'tool-1',
+        })
+      })
+    }
+  )
 
   it('shows an interrupted state without a recovery action when the request has no backend task id', () => {
     useImageGenerationRecordMock.mockReturnValue({ data: record({ taskId: undefined }), isFetched: true })

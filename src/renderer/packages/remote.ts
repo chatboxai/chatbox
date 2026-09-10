@@ -1,3 +1,9 @@
+import {
+  createImageGenerationAsyncClient,
+  IMAGE_GENERATION_POLL_INTERVAL_MS,
+  type ImageCompletionRequest,
+  type ImageGenerationAPIResponse,
+} from '@chatbox/core/application/image-generation'
 import { ofetch } from 'ofetch'
 import { z } from 'zod'
 import { getLogger } from '@/lib/utils'
@@ -1122,99 +1128,40 @@ export async function claimFreeAgentModeReward(licenseKey: string): Promise<Clai
 
 const IMAGE_GEN_API_ORIGIN = getAPIOrigin()
 
-export interface ImageCompletionRequest {
-  model: string
-  prompt: string
-  response_format: 'b64_json'
-  style?: string
-  aspect_ratio?: string
-  quantity?: number
-  images?: Array<{ image_url: string }>
+export type { ImageCompletionRequest, ImageGenerationItem } from '@chatbox/core/application/image-generation'
+export type ImageGenerationTaskResponse = ImageGenerationAPIResponse
+export { IMAGE_GENERATION_POLL_INTERVAL_MS }
+
+function imageGenerationClient(licenseKey: string) {
+  return createImageGenerationAsyncClient({
+    apiOrigin: IMAGE_GEN_API_ORIGIN,
+    getLicenseKey: () => licenseKey,
+    getHeaders: getChatboxHeaders,
+    request: { fetchWithOptions: async (...args) => (await getAfetch())(...args) },
+  })
 }
 
-// Zod schemas for runtime validation
-// 后端异步生图任务的单个图片 item 状态；不要和客户端本地状态 ImageGeneration.status 混淆。
-// 这些状态来自接口，客户端会在 imageGenerationActions.ts 中聚合成一条本地生成记录的整体状态。
-const ImageGenerationItemSchema = z.object({
-  uuid: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  created_at: z.string(),
-  image_url: z.string().optional(),
-  thumbnail_url: z.string().optional(),
-  generated_at: z.string().optional(),
-  error_code: z.string().optional(),
-  error_message: z.string().optional(),
-})
-
-const ImageGenerationTaskResponseSchema = z.object({
-  // 接口结构预留为数组，但当前产品功能层面不支持一次异步生成多张图。
-  // 现阶段后端也写死item 为 1；
-  items: z.array(ImageGenerationItemSchema),
-  is_finished: z.boolean(),
-  task_id: z.string(),
-})
-
-export type ImageGenerationItem = z.infer<typeof ImageGenerationItemSchema>
-export type ImageGenerationTaskResponse = z.infer<typeof ImageGenerationTaskResponseSchema>
-
-export async function submitImageGeneration(
+export function submitImageGeneration(
   params: ImageCompletionRequest,
   licenseKey: string
 ): Promise<ImageGenerationTaskResponse> {
-  const afetch = await getAfetch()
-  const res = await afetch(
-    `${IMAGE_GEN_API_ORIGIN}/api/images/async_generations`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${licenseKey}`,
-        'Content-Type': 'application/json',
-        ...(await getChatboxHeaders()),
-      },
-      body: JSON.stringify(params),
-    },
-    {
-      parseChatboxRemoteError: true,
-      retry: 2,
-    }
-  )
-  const json = await res.json()
-  return ImageGenerationTaskResponseSchema.parse(json)
+  return imageGenerationClient(licenseKey).submit(params)
 }
 
-export async function pollImageTask(
+export function pollImageTask(
   taskId: string,
   licenseKey: string,
   signal?: AbortSignal
 ): Promise<ImageGenerationTaskResponse> {
-  const afetch = await getAfetch()
-  const res = await afetch(
-    `${IMAGE_GEN_API_ORIGIN}/api/images/async_generations/${taskId}`,
-    {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${licenseKey}`,
-        ...(await getChatboxHeaders()),
-      },
-      signal,
-    },
-    {
-      parseChatboxRemoteError: true,
-      retry: 2,
-    }
-  )
-  const json = await res.json()
-  return ImageGenerationTaskResponseSchema.parse(json)
+  return imageGenerationClient(licenseKey).poll(taskId, signal)
 }
-
-export const IMAGE_GENERATION_POLL_INTERVAL_MS = 2000
 
 export async function pollTaskUntilComplete(
   taskId: string,
   licenseKey: string,
   options?: {
     signal?: AbortSignal
-    onPoll?: (response: ImageGenerationTaskResponse) => void
+    onPoll?: (response: ImageGenerationTaskResponse) => void | Promise<void>
   }
 ): Promise<ImageGenerationTaskResponse> {
   while (true) {
@@ -1223,7 +1170,7 @@ export async function pollTaskUntilComplete(
     }
 
     const result = await pollImageTask(taskId, licenseKey, options?.signal)
-    options?.onPoll?.(result)
+    await options?.onPoll?.(result)
 
     if (result.is_finished) {
       return result

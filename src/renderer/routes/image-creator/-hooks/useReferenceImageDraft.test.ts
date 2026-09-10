@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   key: 0,
 }))
 
+vi.mock('@/stores/imageGenerationActions', () => ({
+  getImageGenerationService: () => ({ protectReferences: () => () => {} }),
+}))
 vi.mock('@/adapters/CurrentBlobStorage', () => ({ currentBlobStorage: mocks }))
 vi.mock('@/stores/queryClient', () => ({ queryClient: { setQueryData: vi.fn() } }))
 vi.mock('@/lib/utils', () => ({ getLogger: () => ({ error: vi.fn() }) }))

@@ -1,13 +1,11 @@
+import type { ImageModelOption } from '@chatbox/core/application/image-generation'
 import { fetchOpenRouterImageModels } from '@shared/providers/definitions/models/openrouter-image-api'
-import { type ImageModelCapabilities, ModelProviderEnum } from '@shared/types'
+import { ModelProviderEnum } from '@shared/types'
+
+export type { ImageModelOption } from '@chatbox/core/application/image-generation'
+
 import { createModelDependencies } from '@/adapters'
 import { getModelManifest } from '@/packages/remote'
-export interface ImageModelOption {
-  modelId: string
-  displayName: string
-  capabilities?: ImageModelCapabilities
-}
-
 export interface ImageModelCatalogOptions {
   apiKey?: string
   licenseKey?: string

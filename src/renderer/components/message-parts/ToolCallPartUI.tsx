@@ -1531,7 +1531,10 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
   )
   const currentGeneratingId = useCurrentGeneratingId()
   const imageStatus = imageRecord?.status ?? acceptedImageTask?.status
-  const isBackgroundWaiting = imageStatus === 'pending' || imageStatus === 'generating'
+  const isBackgroundWaiting =
+    imageStatus === 'pending' ||
+    imageStatus === 'generating' ||
+    imageRecord?.errorCode === 'image_task_persistence_failed'
   const isBackgroundActive =
     Boolean(acceptedImageTask) && isBackgroundWaiting && currentGeneratingId === acceptedImageTask?.recordId
   const isBackgroundInterrupted = Boolean(acceptedImageTask) && isBackgroundWaiting && !isBackgroundActive

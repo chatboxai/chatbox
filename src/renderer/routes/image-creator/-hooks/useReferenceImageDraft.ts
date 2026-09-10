@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { getLogger } from '@/lib/utils'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
+import { getImageGenerationService } from '@/stores/imageGenerationActions'
 import { queryClient } from '@/stores/queryClient'
 import { MAX_REFERENCE_IMAGES } from '../-components/constants'
 
@@ -24,9 +25,14 @@ export function useReferenceImageDraft() {
     revision: 0,
     uploadEpoch: 0,
     mounted: true,
+    releaseReferences: () => {},
   })
 
   const updateImages = useCallback((next: ReferenceImage[]) => {
+    draft.current.releaseReferences()
+    draft.current.releaseReferences = getImageGenerationService().protectReferences(
+      next.map((image) => image.storageKey)
+    )
     draft.current.images = next
     draft.current.revision += 1
     if (draft.current.mounted) setImages(next)
@@ -132,6 +138,7 @@ export function useReferenceImageDraft() {
     const submitted = draft.current.images
     const revision = draft.current.revision
     const owner: SubmissionOwner = { state: 'submitting' }
+    const releaseSubmission = getImageGenerationService().protectReferences(submitted.map((image) => image.storageKey))
     const keys = submitted.map((image) => image.storageKey).filter((key) => draft.current.uploads.get(key) === 'draft')
     for (const key of keys) draft.current.uploads.set(key, owner)
     let committed = false
@@ -141,12 +148,14 @@ export function useReferenceImageDraft() {
       parentIds: [...new Set(submitted.map((image) => image.sourceRecordId).filter((id): id is string => !!id))],
       commit() {
         committed = true
+        releaseSubmission()
         for (const key of keys) {
           if (draft.current.uploads.get(key) === owner) draft.current.uploads.delete(key)
         }
       },
       async rollback() {
         if (committed) return
+        releaseSubmission()
         const selected = new Set(draft.current.images.map((image) => image.storageKey))
         const unowned: string[] = []
         for (const key of keys) {

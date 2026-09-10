@@ -43,7 +43,8 @@
     "./testing": "./src/testing/index.ts",
     "./testing/generation-stream": "./src/testing/generation-stream.ts",
     "./utils/chat-export": "./src/utils/chat-export.ts",
-    "./utils/session-sort": "./src/utils/session-sort.ts"
+    "./utils/session-sort": "./src/utils/session-sort.ts",
+    "./application/image-generation": "./src/application/image-generation/index.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json"
@@ -56,6 +57,7 @@
     "zod": "^4.0.17"
   },
   "devDependencies": {
+    "abort-controller": "3.0.0",
     "typescript": "^5.8.3"
   }
 }

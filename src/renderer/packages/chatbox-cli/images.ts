@@ -2,9 +2,8 @@ import { type ImageGeneration, ModelProviderEnum } from '@shared/types'
 import { rendererApplication } from '@/app/renderer-application'
 import { requestAppActionApproval } from '@/packages/app-action-approval'
 import { type AvailableImageModel, getAvailableImageModels } from '@/packages/image-model-catalog'
-import platform from '@/platform'
 import storage from '@/storage'
-import { startImageGeneration } from '@/stores/imageGenerationActions'
+import { getImageGenerationService, startImageGeneration } from '@/stores/imageGenerationActions'
 import { imageGenerationStore } from '@/stores/imageGenerationStore'
 import { settingsStore } from '@/stores/settingsStore'
 import { getAcceptedImageBackgroundTaskResult } from './background-task-result'
@@ -179,7 +178,10 @@ async function getDisplayedImageToolCallIds(sessionId: string): Promise<Readonly
 }
 
 function compactRecord(record: ImageGeneration, options?: { displayedInline?: boolean }): Record<string, unknown> {
-  const waitingForCompletion = record.status === 'pending' || record.status === 'generating'
+  const waitingForCompletion =
+    record.status === 'pending' ||
+    record.status === 'generating' ||
+    record.errorCode === 'image_task_persistence_failed'
   const hasActiveRunner = imageGenerationStore.getState().currentGeneratingId === record.id
   const displayedInline = options?.displayedInline === true && record.generatedImages.length > 0
   return {
@@ -221,7 +223,10 @@ function compactRecord(record: ImageGeneration, options?: { displayedInline?: bo
 }
 
 function restoredExecutionResult(record: ImageGeneration): Record<string, unknown> {
-  const waitingForCompletion = record.status === 'pending' || record.status === 'generating'
+  const waitingForCompletion =
+    record.status === 'pending' ||
+    record.status === 'generating' ||
+    record.errorCode === 'image_task_persistence_failed'
   const hasActiveRunner = imageGenerationStore.getState().currentGeneratingId === record.id
 
   if (waitingForCompletion && hasActiveRunner) {
@@ -386,7 +391,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
     if (persistedExecutionValue.signature !== signature) {
       throw new Error(`Tool call ${cacheKey} was reused with different image arguments.`)
     }
-    const persistedRecord = await platform.getImageGenerationStorage().getById(persistedExecutionValue.recordId)
+    const persistedRecord = await getImageGenerationService().getRecord(persistedExecutionValue.recordId)
     if (!persistedRecord) {
       throw new Error(
         'The image record linked to this approved tool call no longer exists. Start a new request and ask the user to approve it again.'
@@ -514,7 +519,7 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
     async execute({ parsed, sessionId }) {
       const recordId = parsed.positionals[0]
       if (!recordId) throw new ChatboxCliUsageError('Missing image generation record id.')
-      const record = await platform.getImageGenerationStorage().getById(recordId)
+      const record = await getImageGenerationService().getRecord(recordId)
       if (!record) throw new ChatboxCliUsageError(`Image generation record not found: ${recordId}`)
       const candidateToolCallId = displayCandidateToolCallId(record, sessionId)
       const displayedInline =
@@ -531,7 +536,7 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
     async execute({ parsed, sessionId }) {
       const limit = integerFlag(parsed, 'limit', { defaultValue: 10, min: 1, max: 20 })
       const cursor = integerFlag(parsed, 'cursor', { defaultValue: 0, min: 0, max: 10_000_000 })
-      const page = await platform.getImageGenerationStorage().getPage(cursor, limit)
+      const page = await getImageGenerationService().getPage(cursor, limit)
       const candidateIds = page.items.map((item) => displayCandidateToolCallId(item, sessionId))
       const displayedToolCallIds =
         sessionId !== undefined && candidateIds.some((id) => id !== undefined)

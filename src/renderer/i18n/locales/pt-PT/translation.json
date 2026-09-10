@@ -571,6 +571,8 @@
   "It will also invalidate the model's cached context, so the next reply may cost more and take longer.": "Também irá invalidar o contexto em cache do modelo, por isso a próxima resposta pode custar mais e demorar mais.",
   "iWork files (Pages, Keynote) are not supported. Please export to PDF or Office format.": "Ficheiros iWork (Pages, Keynote) não são suportados. Por favor, exporte para PDF ou formato Office.",
   "Jump to message {{index}}": "Ir para a mensagem {{index}}",
+  "Keenable API Key": "Chave API Keenable",
+  "Keenable works without an API key. Adding one only raises the rate limit.": "O Keenable funciona sem chave API. Adicionar uma apenas aumenta o limite de pedidos.",
   "Keep only the Top <input /> Conversations in List and Archive the Rest": "Manter apenas as <input /> principais conversas na lista e arquivar o resto",
   "Keyboard Shortcuts": "Atalhos de teclado",
   "Knowledge Base": "Base de Conhecimento",

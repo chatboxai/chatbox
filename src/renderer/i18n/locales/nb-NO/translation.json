@@ -571,6 +571,8 @@
   "It will also invalidate the model's cached context, so the next reply may cost more and take longer.": "Det vil også ugyldiggjøre modellens bufrede kontekst, så neste svar kan koste mer og ta lenger tid.",
   "iWork files (Pages, Keynote) are not supported. Please export to PDF or Office format.": "iWork-filer (Pages, Keynote) støttes ikke. Vennligst eksporter til PDF- eller Office-format.",
   "Jump to message {{index}}": "Gå til melding {{index}}",
+  "Keenable API Key": "Keenable API-nøkkel",
+  "Keenable works without an API key. Adding one only raises the rate limit.": "Keenable fungerer uten API-nøkkel. En nøkkel øker bare forespørselsgrensen.",
   "Keep only the Top <input /> Conversations in List and Archive the Rest": "Behold kun de øverste <input /> samtalene i listen og arkiver resten",
   "Keyboard Shortcuts": "Tastatursnarveier",
   "Knowledge Base": "Kunnskapsbase",

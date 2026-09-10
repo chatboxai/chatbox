@@ -45,6 +45,7 @@ export function cleanSettingsForBackup(settings: Settings, includeKeys: boolean)
         delete webSearch.tavilyApiKey
         delete webSearch.bochaApiKey
         delete webSearch.queritApiKey
+        delete webSearch.keenableApiKey
         extension.webSearch = webSearch
       }
       if (settings.extension.documentParser?.mineru) {

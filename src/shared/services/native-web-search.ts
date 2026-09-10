@@ -13,7 +13,7 @@ export interface NativeWebSearchResultItem {
 }
 
 /** Same provider set the renderer's Web Search settings expose. */
-export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit'
+export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'keenable'
 
 export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider; label: string }> = [
   { id: 'build-in', label: 'Chatbox AI' },
@@ -21,6 +21,7 @@ export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider
   { id: 'tavily', label: 'Tavily' },
   { id: 'bocha', label: 'BoCha' },
   { id: 'querit', label: 'Querit' },
+  { id: 'keenable', label: 'Keenable' },
 ]
 
 export interface NativeWebSearchSettings {
@@ -75,6 +76,7 @@ export interface NativeWebSearchOptions {
 }
 
 const TAVILY_DEFAULT_HOST = 'https://api.tavily.com'
+export const KEENABLE_DEFAULT_HOST = 'https://api.keenable.ai'
 const CHATBOX_DEFAULT_ORIGIN = 'https://api.chatboxai.app'
 const DEFAULT_MAX_RESULTS = 8
 
@@ -92,7 +94,7 @@ export function hasNativeWebSearchConfiguration(
     return Boolean(settings.apiKey.trim())
   }
   if (settings.provider === 'build-in') return Boolean(licenseKey?.trim())
-  return true // bing needs no credentials
+  return true // bing and keenable need no credentials
 }
 
 export async function searchNativeWeb(
@@ -104,6 +106,7 @@ export async function searchNativeWeb(
   if (provider === 'build-in') return searchNativeChatbox(query, options)
   if (provider === 'bocha') return searchNativeBocha(query, options)
   if (provider === 'querit') return searchNativeQuerit(query, options)
+  if (provider === 'keenable') return searchNativeKeenable(query, options)
   return searchNativeTavily(query, options)
 }
 
@@ -221,6 +224,67 @@ async function searchNativeQuerit(
     link: result.url,
     snippet: result.snippet,
   }))
+}
+
+// Keenable is keyless: `/v1/search/public` and `/v1/fetch/public` take no
+// credentials, and an API key only raises the rate limit. The keyless endpoints
+// require the caller to name itself in `X-Keenable-Title`.
+export const KEENABLE_ATTRIBUTION = 'Chatbox'
+
+/**
+ * Keenable returns whole page text per result, not a SERP blurb, so it is capped
+ * here. `snippet_max_length` is sent as well but the API treats it as a hint and
+ * rounds up to a word boundary, so the local cap is the one that holds.
+ */
+export const KEENABLE_SNIPPET_MAX_LENGTH = 500
+
+interface KeenableResponseItem {
+  title?: string
+  url?: string
+  /** The page text. */
+  snippet?: string
+  /** The page meta description, empty for most pages. */
+  description?: string
+}
+
+export function keenableHeaders(apiKey?: string): Record<string, string> {
+  const key = apiKey?.trim()
+  return {
+    'X-Keenable-Title': KEENABLE_ATTRIBUTION,
+    ...(key ? { 'X-API-Key': key } : {}),
+  }
+}
+
+export function keenableSnippet(item: Pick<KeenableResponseItem, 'snippet' | 'description'>): string {
+  return (item.snippet || item.description || '').replace(/\s+/g, ' ').trim().slice(0, KEENABLE_SNIPPET_MAX_LENGTH)
+}
+
+async function searchNativeKeenable(
+  query: string,
+  options: NativeWebSearchOptions
+): Promise<NativeWebSearchResultItem[]> {
+  const fetchFn = options.fetchFn ?? fetch
+  const host = (options.apiHost?.trim() || KEENABLE_DEFAULT_HOST).replace(/\/+$/, '')
+  const apiKey = options.apiKey?.trim()
+
+  const response = await fetchFn(`${host}${apiKey ? '/v1/search' : '/v1/search/public'}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...keenableHeaders(apiKey) },
+    body: JSON.stringify({ query, snippet_max_length: KEENABLE_SNIPPET_MAX_LENGTH }),
+    signal: options.signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Keenable search failed with status ${response.status}`)
+  }
+
+  const payload = (await response.json()) as { results?: KeenableResponseItem[] }
+  const results = Array.isArray(payload.results) ? payload.results : []
+  const items = results.map((item) => ({
+    title: item.title ?? '',
+    link: item.url ?? '',
+    snippet: keenableSnippet(item),
+  }))
+  return options.maxResults !== undefined ? items.slice(0, options.maxResults) : items
 }
 
 async function searchNativeTavily(

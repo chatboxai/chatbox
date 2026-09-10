@@ -571,6 +571,8 @@
   "It will also invalidate the model's cached context, so the next reply may cost more and take longer.": "Это также сбросит кэшированный контекст модели, поэтому следующий ответ может стоить дороже и занять больше времени.",
   "iWork files (Pages, Keynote) are not supported. Please export to PDF or Office format.": "Файлы iWork (Pages, Keynote) не поддерживаются. Пожалуйста, экспортируйте их в PDF или формат Office.",
   "Jump to message {{index}}": "Перейти к сообщению {{index}}",
+  "Keenable API Key": "API Key для Keenable",
+  "Keenable works without an API key. Adding one only raises the rate limit.": "Keenable работает без API Key. Ключ только повышает лимит запросов.",
   "Keep only the Top <input /> Conversations in List and Archive the Rest": "Оставить только <input /> верхних диалогов в списке, а остальные архивировать",
   "Keyboard Shortcuts": "Сочетания клавиш",
   "Knowledge Base": "База знаний",

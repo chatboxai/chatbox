@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 
-import { act, renderHook } from '@testing-library/react'
+import { Dialog } from '@mui/material'
+import { act, render, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import useShortcut from './useShortcut'
 
 const mocks = vi.hoisted(() => ({
   startNewThread: vi.fn(() => Promise.resolve()),
+  focusMessageInput: vi.fn(),
+  windowFocusedHandler: undefined as (() => void) | undefined,
+  windowShowHandler: undefined as (() => void) | undefined,
 }))
 
 vi.mock('jotai', () => ({
@@ -36,9 +40,15 @@ vi.mock('../packages/navigator', () => ({
 
 vi.mock('../platform', () => ({
   default: {
-    isDesktopLike: false,
-    onWindowFocused: vi.fn(),
-    onWindowShow: () => vi.fn(),
+    isDesktopLike: true,
+    onWindowFocused: (handler: () => void) => {
+      mocks.windowFocusedHandler = handler
+      return vi.fn()
+    },
+    onWindowShow: (handler: () => void) => {
+      mocks.windowShowHandler = handler
+      return vi.fn()
+    },
   },
 }))
 
@@ -67,7 +77,8 @@ vi.mock('../stores/settingsStore', () => ({
 }))
 
 vi.mock('./dom', () => ({
-  focusMessageInput: vi.fn(),
+  messageInputID: 'message-input',
+  focusMessageInput: mocks.focusMessageInput,
 }))
 
 vi.mock('./useScreenChange', () => ({
@@ -77,6 +88,9 @@ vi.mock('./useScreenChange', () => ({
 describe('useShortcut', () => {
   afterEach(() => {
     vi.clearAllMocks()
+    document.body.innerHTML = ''
+    mocks.windowFocusedHandler = undefined
+    mocks.windowShowHandler = undefined
   })
 
   test('handles keyboard shortcuts through the settings projection', () => {
@@ -88,5 +102,65 @@ describe('useShortcut', () => {
 
     expect(mocks.startNewThread).toHaveBeenCalledWith('session-1')
     unmount()
+  })
+
+  describe('auto-focus on window activation', () => {
+    test('focuses the composer when nothing else owns focus', () => {
+      const { unmount } = renderHook(() => useShortcut())
+
+      act(() => mocks.windowFocusedHandler?.())
+
+      expect(mocks.focusMessageInput).toHaveBeenCalledTimes(1)
+      unmount()
+    })
+
+    test('keeps focus away from the composer while a dialog is visible', () => {
+      document.body.innerHTML = '<div role="dialog"><textarea id="edit-message"></textarea></div>'
+      const { unmount } = renderHook(() => useShortcut())
+
+      act(() => mocks.windowFocusedHandler?.())
+
+      expect(mocks.focusMessageInput).not.toHaveBeenCalled()
+      unmount()
+    })
+
+    test('ignores a closed keep-mounted dialog', () => {
+      const dialog = render(
+        <Dialog open={false} keepMounted>
+          <div>Closed search dialog</div>
+        </Dialog>
+      )
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+      const { unmount } = renderHook(() => useShortcut())
+
+      act(() => mocks.windowFocusedHandler?.())
+
+      expect(mocks.focusMessageInput).toHaveBeenCalledTimes(1)
+      unmount()
+      dialog.unmount()
+    })
+
+    test('preserves focus in another editable control', () => {
+      document.body.innerHTML = '<input id="thread-name" />'
+      document.getElementById('thread-name')?.focus()
+      const { unmount } = renderHook(() => useShortcut())
+
+      act(() => mocks.windowFocusedHandler?.())
+
+      expect(document.activeElement?.id).toBe('thread-name')
+      expect(mocks.focusMessageInput).not.toHaveBeenCalled()
+      unmount()
+    })
+
+    test('allows the composer to regain focus when it was already active', () => {
+      document.body.innerHTML = '<textarea id="message-input"></textarea>'
+      document.getElementById('message-input')?.focus()
+      const { unmount } = renderHook(() => useShortcut())
+
+      act(() => mocks.windowShowHandler?.())
+
+      expect(mocks.focusMessageInput).toHaveBeenCalledTimes(1)
+      unmount()
+    })
   })
 })

@@ -1,11 +1,22 @@
 /**
  * Minimal rerank client for Alibaba Cloud Model Studio (DashScope / Bailian).
  *
- * Chatbox's built-in Cohere client speaks the Cohere `/v1/rerank` protocol, while
- * DashScope exposes its rerank models on
- *   POST {origin}/api/v1/services/rerank/text-rerank/text-rerank
- * with a DashScope-specific request/response shape. This client adapts that
- * endpoint to the same minimal interface used by `rerank()` in `@shared/models/rerank`.
+ * Bailian serves rerank models over two different HTTP protocols, picked per model:
+ *
+ *  1. `qwen3-rerank` — workspace OpenAI-compatible rerank API
+ *       POST {origin}/compatible-api/v1/reranks
+ *       body:   { model, query, documents, top_n, instruct? }
+ *       result: { object: 'list', results: [{ index, relevance_score }] }
+ *
+ *  2. everything else (`qwen3.7-text-rerank`, `qwen3-vl-rerank`, `gte-rerank-v2`) — DashScope native API
+ *       POST {origin}/api/v1/services/rerank/text-rerank/text-rerank
+ *       body:   { model, input: { query, documents }, parameters: { top_n, return_documents } }
+ *       result: { output: { results: [{ index, relevance_score }] } }
+ *
+ * Both responses are normalised into the minimal contract consumed by `rerank()`
+ * in `@shared/models/rerank`.
+ *
+ * Reference: https://help.aliyun.com/zh/model-studio/text-rerank-api
  */
 
 export interface RerankClientArgs {
@@ -21,6 +32,12 @@ export interface RerankClientResponse {
     relevanceScore: number
   }>
 }
+
+/** Request timeout so a hung rerank call cannot stall the RAG pipeline. */
+export const DASHSCOPE_RERANK_TIMEOUT_MS = 30_000
+
+/** Models served by the workspace OpenAI-compatible `/reranks` endpoint. */
+const COMPATIBLE_RERANK_MODELS = new Set(['qwen3-rerank'])
 
 /** Best-effort check for Alibaba Cloud DashScope / Bailian hosts. */
 export function isDashScopeHost(apiHost: string | undefined | null): boolean {
@@ -39,6 +56,66 @@ export function toDashScopeOrigin(apiHost: string): string {
   return h.replace(/\/+$/, '')
 }
 
+/** Whether the model is served by the OpenAI-compatible `/reranks` endpoint. */
+export function usesCompatibleRerankApi(model: string): boolean {
+  return COMPATIBLE_RERANK_MODELS.has((model || '').trim().toLowerCase())
+}
+
+/** Build the endpoint + request body for the given host and model. */
+export function buildRerankRequest(args: {
+  apiHost: string
+  model: string
+  query: string
+  documents: string[]
+  topN?: number
+}): { url: string; body: Record<string, unknown> } {
+  const origin = toDashScopeOrigin(args.apiHost)
+  const topN =
+    args.topN && args.topN > 0 ? Math.min(args.topN, args.documents.length) : args.documents.length
+
+  if (usesCompatibleRerankApi(args.model)) {
+    return {
+      url: `${origin}/compatible-api/v1/reranks`,
+      body: {
+        model: args.model,
+        query: args.query,
+        documents: args.documents,
+        top_n: topN,
+      },
+    }
+  }
+
+  return {
+    url: `${origin}/api/v1/services/rerank/text-rerank/text-rerank`,
+    body: {
+      model: args.model,
+      input: { query: args.query, documents: args.documents },
+      parameters: { top_n: topN, return_documents: false },
+    },
+  }
+}
+
+/** Normalise either protocol's response payload into the shared result shape. */
+export function parseRerankResponse(data: unknown): RerankClientResponse['results'] {
+  const payload = (data ?? {}) as { output?: { results?: unknown }; results?: unknown }
+  const raw = Array.isArray(payload.output?.results)
+    ? (payload.output?.results as unknown[])
+    : Array.isArray(payload.results)
+      ? (payload.results as unknown[])
+      : []
+
+  return raw
+    .map((item) => {
+      const r = (item ?? {}) as { index?: unknown; relevance_score?: unknown; relevanceScore?: unknown }
+      const score = typeof r.relevance_score === 'number' ? r.relevance_score : r.relevanceScore
+      return {
+        index: typeof r.index === 'number' ? r.index : -1,
+        relevanceScore: typeof score === 'number' ? score : 0,
+      }
+    })
+    .filter((item) => item.index >= 0)
+}
+
 export class DashScopeRerankClient {
   private readonly apiHost: string
   private readonly token: string
@@ -53,44 +130,53 @@ export class DashScopeRerankClient {
       return { results: [] }
     }
 
-    const url = `${toDashScopeOrigin(this.apiHost)}/api/v1/services/rerank/text-rerank/text-rerank`
-    const body = {
-      model,
-      input: { query, documents },
-      parameters: {
-        top_n: topN && topN > 0 ? Math.min(topN, documents.length) : documents.length,
-        return_documents: false,
-      },
+    const { url, body } = buildRerankRequest({ apiHost: this.apiHost, model, query, documents, topN })
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), DASHSCOPE_RERANK_TIMEOUT_MS)
+
+    let data: unknown
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.token}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '')
+        throw new Error(
+          `DashScope rerank request failed: HTTP ${response.status} ${detail.slice(0, 300)}`
+        )
+      }
+
+      data = await response.json()
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`DashScope rerank request timed out after ${DASHSCOPE_RERANK_TIMEOUT_MS}ms`)
+      }
+      throw error
+    } finally {
+      clearTimeout(timer)
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.token}`,
-      },
-      body: JSON.stringify(body),
-    })
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '')
-      throw new Error(`DashScope rerank request failed: HTTP ${response.status} ${detail.slice(0, 300)}`)
+    const payload = (data ?? {}) as { code?: string; message?: string }
+    if (payload.code) {
+      throw new Error(`DashScope rerank error: ${payload.code} ${payload.message ?? ''}`.trim())
     }
 
-    const data = (await response.json()) as {
-      output?: { results?: Array<{ index: number; relevance_score: number }> }
-      code?: string
-      message?: string
-    }
+    const results = parseRerankResponse(data)
 
-    if (data?.code) {
-      throw new Error(`DashScope rerank error: ${data.code} ${data.message ?? ''}`.trim())
+    // A 2xx response we cannot parse means the payload does not match the protocol
+    // we picked. Throwing lets the caller fall back to the un-reranked results
+    // instead of silently dropping the whole retrieval context.
+    if (results.length === 0) {
+      throw new Error('DashScope rerank returned no parsable results (unexpected response shape)')
     }
-
-    const results = (data?.output?.results ?? []).map((item) => ({
-      index: item.index,
-      relevanceScore: item.relevance_score,
-    }))
 
     return { results }
   }

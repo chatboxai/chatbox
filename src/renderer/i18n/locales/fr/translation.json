@@ -1415,5 +1415,9 @@
   "Setup required": "Configuration requise",
   "Chatbox AI Search needs sign-in. Web Search will be skipped while this setting is on.": "La recherche Chatbox AI nécessite une connexion. La recherche Web sera ignorée tant que ce paramètre restera activé.",
   "The selected Web Search provider needs to be configured before it can run.": "Le fournisseur de recherche Web sélectionné doit être configuré avant de pouvoir fonctionner.",
-  "Open Web Search settings": "Ouvrir les paramètres de recherche Web"
+  "Open Web Search settings": "Ouvrir les paramètres de recherche Web",
+  "Image generated, but failed to load": "Image générée, mais impossible à charger",
+  "Loading full-size image...": "Chargement de l’image en taille réelle…",
+  "Reload image": "Recharger l’image",
+  "Generated image": "Image générée"
 }

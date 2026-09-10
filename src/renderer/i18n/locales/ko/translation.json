@@ -1415,5 +1415,9 @@
   "Setup required": "설정 필요",
   "Chatbox AI Search needs sign-in. Web Search will be skipped while this setting is on.": "Chatbox AI 검색을 사용하려면 로그인해야 합니다. 이 설정이 켜져 있는 동안 웹 검색을 건너뜁니다.",
   "The selected Web Search provider needs to be configured before it can run.": "선택한 웹 검색 제공자를 실행하려면 먼저 설정해야 합니다.",
-  "Open Web Search settings": "웹 검색 설정 열기"
+  "Open Web Search settings": "웹 검색 설정 열기",
+  "Image generated, but failed to load": "이미지가 생성되었지만 불러오지 못했습니다",
+  "Loading full-size image...": "원본 이미지를 불러오는 중…",
+  "Reload image": "이미지 다시 불러오기",
+  "Generated image": "생성된 이미지"
 }

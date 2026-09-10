@@ -1415,5 +1415,9 @@
   "Setup required": "الإعداد مطلوب",
   "Chatbox AI Search needs sign-in. Web Search will be skipped while this setting is on.": "يتطلب بحث Chatbox AI تسجيل الدخول. سيتم تخطي بحث الويب ما دام هذا الإعداد مفعّلًا.",
   "The selected Web Search provider needs to be configured before it can run.": "يجب إعداد مزوّد بحث الويب المحدد قبل أن يتمكن من العمل.",
-  "Open Web Search settings": "فتح إعدادات بحث الويب"
+  "Open Web Search settings": "فتح إعدادات بحث الويب",
+  "Image generated, but failed to load": "تم إنشاء الصورة، لكن تعذّر تحميلها",
+  "Loading full-size image...": "جارٍ تحميل الصورة بالحجم الكامل…",
+  "Reload image": "إعادة تحميل الصورة",
+  "Generated image": "الصورة المُنشأة"
 }

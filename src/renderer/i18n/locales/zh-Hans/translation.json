@@ -1414,5 +1414,9 @@
   "Setup required": "需要配置",
   "Chatbox AI Search needs sign-in. Web Search will be skipped while this setting is on.": "Chatbox AI 搜索需要登录。此设置保持开启时，联网搜索会被跳过。",
   "The selected Web Search provider needs to be configured before it can run.": "所选联网搜索源需要完成配置后才能运行。",
-  "Open Web Search settings": "打开联网搜索设置"
+  "Open Web Search settings": "打开联网搜索设置",
+  "Image generated, but failed to load": "图片已生成，但加载失败",
+  "Loading full-size image...": "正在加载原图…",
+  "Reload image": "重新加载图片",
+  "Generated image": "生成的图片"
 }

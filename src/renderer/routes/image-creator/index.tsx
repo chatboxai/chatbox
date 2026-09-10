@@ -574,6 +574,7 @@ function ImageCreatorPage() {
                     <Flex justify="center" w="100%">
                       <GeneratedImagesGallery
                         images={currentRecord.generatedImages}
+                        thumbnails={currentRecord.generatedImageThumbnails}
                         onUseAsReference={(urlOrKey) => handleUseAsReference(urlOrKey, currentRecord.id)}
                         onReport={() => void handleReportGeneratedImage(currentRecord)}
                       />

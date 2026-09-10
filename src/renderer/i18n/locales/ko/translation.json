@@ -1419,5 +1419,6 @@
   "Image generated, but failed to load": "이미지가 생성되었지만 불러오지 못했습니다",
   "Loading full-size image...": "원본 이미지를 불러오는 중…",
   "Reload image": "이미지 다시 불러오기",
-  "Generated image": "생성된 이미지"
+  "Generated image": "생성된 이미지",
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "Copilot 메모리를 사용하려면 Copilot을 만들고 대화에서 사용해야 합니다."
 }

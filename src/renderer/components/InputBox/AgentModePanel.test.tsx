@@ -495,7 +495,13 @@ describe('AgentModePanel memory', () => {
     fireEvent.mouseEnter(memoryRow)
 
     const globalSwitch = screen.getByRole('switch', { name: 'Global Memory' })
+    expect(
+      screen.getByText('You must create a copilot and use it in a conversation to use Copilot Memory.')
+    ).toBeTruthy()
+    expect(screen.getByRole('switch', { name: 'Copilot Memory' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('switch', { name: 'Copilot Memory' })).toHaveProperty('checked', false)
     expect(globalSwitch).toHaveProperty('checked', true)
+    expect(globalSwitch).toHaveProperty('disabled', false)
     fireEvent.click(globalSwitch)
 
     expect(mocks.settingsState.setSettings).toHaveBeenCalledWith({ memoryEnabled: false })
@@ -535,6 +541,10 @@ describe('AgentModePanel memory', () => {
     expect(memoryRow.textContent).toContain('Off')
     fireEvent.mouseEnter(memoryRow)
 
+    expect(
+      screen.getByText('You must create a copilot and use it in a conversation to use Copilot Memory.')
+    ).toBeTruthy()
+    expect(screen.getByRole('switch', { name: 'Copilot Memory' })).toHaveProperty('disabled', true)
     expect(screen.getByRole('switch', { name: 'Global Memory' })).toHaveProperty('checked', false)
     expect(screen.getByText("Shared by chats that don't use Copilot Memory.")).toBeTruthy()
   })
@@ -549,6 +559,10 @@ describe('AgentModePanel memory', () => {
 
     const copilotSwitch = screen.getByRole('switch', { name: 'Copilot Memory' })
     const globalSwitch = screen.getByRole('switch', { name: 'Global Memory' })
+    expect(
+      screen.queryByText('You must create a copilot and use it in a conversation to use Copilot Memory.')
+    ).toBeNull()
+    expect(copilotSwitch).toHaveProperty('disabled', false)
     expect(copilotSwitch).toHaveProperty('checked', false)
     expect(globalSwitch).toHaveProperty('checked', true)
 
@@ -575,6 +589,9 @@ describe('AgentModePanel memory', () => {
     expect(
       screen.getByText('All chats with this Copilot use its shared memory when on, or follow Global Memory when off.')
     ).toBeTruthy()
+    expect(
+      screen.queryByText('You must create a copilot and use it in a conversation to use Copilot Memory.')
+    ).toBeNull()
     expect(screen.getByRole('switch', { name: 'Copilot Memory' })).toHaveProperty('checked', true)
     expect(screen.queryByRole('switch', { name: 'Global Memory' })).toBeNull()
     await vi.waitFor(() => {

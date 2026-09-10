@@ -1419,5 +1419,6 @@
   "Image generated, but failed to load": "Bilden har genererats, men kunde inte läsas in",
   "Loading full-size image...": "Läser in bilden i full storlek…",
   "Reload image": "Läs in bilden igen",
-  "Generated image": "Genererad bild"
+  "Generated image": "Genererad bild",
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "Du måste skapa en Copilot och använda den i en konversation för att använda Copilot-minne."
 }

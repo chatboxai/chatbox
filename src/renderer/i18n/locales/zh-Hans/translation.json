@@ -34,7 +34,7 @@
   "A serene mountain landscape at sunset": "宁静的日落山景",
   "About": "关于",
   "about-introduction": "一个简约强大的 AI 桌面客户端，支持最先进的多款大语言模型，让前沿的人工智能技术变成易于使用的生产力工具。",
-  "about-slogan": "用 AI 提高效率，工作学习的最佳拍档",
+  "about-slogan": "用 AI 提高效率，工作学习的最佳搭档",
   "Action": "动作",
   "Activate License": "激活许可证",
   "Add": "添加",
@@ -1366,8 +1366,8 @@
   "{{count}} saved": "已保存 {{count}} 条",
   "No memories saved yet.": "还没有保存任何记忆。",
   "Copilot Memory": "搭档记忆",
-  "All chats with this Copilot use its shared memory when on, or follow Global Memory when off.": "开启后，该 Copilot 的所有对话共享专属记忆；关闭后按全局记忆设置生效。",
-  "Shared by chats that don't use Copilot Memory.": "未使用 Copilot 记忆的对话共享。",
+  "All chats with this Copilot use its shared memory when on, or follow Global Memory when off.": "开启后，该搭档的所有对话共享专属记忆；关闭后按全局记忆设置生效。",
+  "Shared by chats that don't use Copilot Memory.": "未使用搭档记忆的对话共享。",
   "No memories yet. Chats with this copilot save durable facts here.": "还没有记忆。与该搭档的对话会把长期有用的事实保存在这里。",
   "Save facts from conversations and recall them in new chats. Works in both Chat and Work Mode.": "从对话中保存事实,并在新对话中调用。在聊天模式和工作模式下均可用。",
   "Import memories": "导入记忆",
@@ -1418,5 +1418,6 @@
   "Image generated, but failed to load": "图片已生成，但加载失败",
   "Loading full-size image...": "正在加载原图…",
   "Reload image": "重新加载图片",
-  "Generated image": "生成的图片"
+  "Generated image": "生成的图片",
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "必须创建搭档，在对话中使用搭档才能使用搭档记忆。"
 }

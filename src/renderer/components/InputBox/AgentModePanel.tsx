@@ -175,11 +175,12 @@ const MemorySettingRow: FC<{
   label: string
   description: string
   checked: boolean
+  disabled?: boolean
   onChange: (enabled: boolean) => void
-}> = ({ label, description, checked, onChange }) => (
+}> = ({ label, description, checked, disabled = false, onChange }) => (
   <Flex justify="space-between" align="center" gap="sm" px="sm" py="xs">
     <Stack gap={2} className="min-w-0">
-      <Text size="sm" fw={500}>
+      <Text size="sm" fw={500} c={disabled ? 'dimmed' : undefined}>
         {label}
       </Text>
       <Text size="xs" c="dimmed" className="leading-snug">
@@ -189,6 +190,7 @@ const MemorySettingRow: FC<{
     <Switch
       aria-label={label}
       checked={checked}
+      disabled={disabled}
       size="xs"
       className="shrink-0"
       onChange={(event) => onChange(event.currentTarget.checked)}
@@ -917,16 +919,17 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
               {sessionCopilotName}
             </Text>
           )}
-          {sessionCopilotId && (
-            <MemorySettingRow
-              label={t('Copilot Memory')}
-              description={t(
-                'All chats with this Copilot use its shared memory when on, or follow Global Memory when off.'
-              )}
-              checked={copilotMemoryEnabled}
-              onChange={handleCopilotMemoryEnabledChange}
-            />
-          )}
+          <MemorySettingRow
+            label={t('Copilot Memory')}
+            description={
+              sessionCopilotId
+                ? t('All chats with this Copilot use its shared memory when on, or follow Global Memory when off.')
+                : t('You must create a copilot and use it in a conversation to use Copilot Memory.')
+            }
+            checked={copilotMemoryEnabled}
+            disabled={!sessionCopilotId}
+            onChange={handleCopilotMemoryEnabledChange}
+          />
           {!copilotMemoryEnabled && (
             <MemorySettingRow
               label={t('Global Memory')}

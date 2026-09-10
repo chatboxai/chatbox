@@ -1418,5 +1418,6 @@
   "Image generated, but failed to load": "Image generated, but failed to load",
   "Loading full-size image...": "Loading full-size image...",
   "Reload image": "Reload image",
-  "Generated image": "Generated image"
+  "Generated image": "Generated image",
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "You must create a copilot and use it in a conversation to use Copilot Memory."
 }

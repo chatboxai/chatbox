@@ -1419,5 +1419,6 @@
   "Image generated, but failed to load": "تم إنشاء الصورة، لكن تعذّر تحميلها",
   "Loading full-size image...": "جارٍ تحميل الصورة بالحجم الكامل…",
   "Reload image": "إعادة تحميل الصورة",
-  "Generated image": "الصورة المُنشأة"
+  "Generated image": "الصورة المُنشأة",
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "يجب إنشاء Copilot واستخدامه في محادثة للاستفادة من ذاكرة Copilot."
 }

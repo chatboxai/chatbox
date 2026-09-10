@@ -1419,5 +1419,6 @@
   "Image generated, but failed to load": "Изображение создано, но не удалось его загрузить",
   "Loading full-size image...": "Загрузка полноразмерного изображения…",
   "Reload image": "Загрузить изображение повторно",
-  "Generated image": "Созданное изображение"
+  "Generated image": "Созданное изображение",
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "Чтобы использовать память Copilot, создайте Copilot и используйте его в разговоре."
 }

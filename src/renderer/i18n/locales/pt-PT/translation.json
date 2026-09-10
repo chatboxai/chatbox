@@ -1419,5 +1419,6 @@
   "Image generated, but failed to load": "Imagem gerada, mas não foi possível carregá-la",
   "Loading full-size image...": "A carregar a imagem em tamanho original…",
   "Reload image": "Recarregar imagem",
-  "Generated image": "Imagem gerada"
+  "Generated image": "Imagem gerada",
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "Tem de criar um Copilot e utilizá-lo numa conversa para usar a memória do Copilot."
 }

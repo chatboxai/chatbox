@@ -35,6 +35,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { trackJkViewEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
+import { createPageViewVisitGate } from '@/analytics/page-view-visit-gate'
 import { AppProviders } from '@/components/AppProviders'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
@@ -55,6 +56,7 @@ import { navigateToSettings } from '@/modals/settings-navigation'
 import { prefetchModelRegistry } from '@/packages/model-registry'
 import { getOS } from '@/packages/navigator'
 import * as remote from '@/packages/remote'
+import { sessionStartupRecovery, useSessionStartupLoadTarget } from '@/packages/session-startup-recovery'
 import PictureDialog from '@/pages/PictureDialog'
 import RemoteDialogWindow from '@/pages/RemoteDialogWindow'
 import SearchDialog from '@/pages/SearchDialog'
@@ -66,10 +68,17 @@ import * as atoms from '@/stores/atoms'
 
 const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 
+function getSessionIdFromPathname(pathname: string): string | null {
+  if (!pathname.startsWith('/session/')) return null
+  const sessionId = pathname.slice('/session/'.length)
+  return sessionId && sessionId !== 'new' ? sessionId : null
+}
+
 import { initOnboardingStore, onboardingStore } from '@/stores/onboardingStore'
 import * as premiumActions from '@/stores/premiumActions'
 import * as settingActions from '@/stores/settingActions'
 import { initSettingsStore, settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
+import { add as addToast } from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import { CHATBOX_BUILD_CHANNEL, CHATBOX_BUILD_PLATFORM } from '@/variables'
 import { blobToDataUrl } from './image-creator/-components/constants'
@@ -82,9 +91,9 @@ function BackgroundImageOverlay() {
   const sidebarWidth = useSidebarWidth()
   const isRootPage = location.pathname === '/'
   const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
-  const sessionId =
-    isSessionPage && location.pathname !== '/session/new' ? location.pathname.slice('/session/'.length) : null
-  const { session } = useSession(sessionId)
+  const sessionId = getSessionIdFromPathname(location.pathname)
+  const sessionLoadTarget = useSessionStartupLoadTarget(sessionId)
+  const { session } = useSession(sessionLoadTarget)
   const effectiveKey =
     session?.backgroundImage?.type === 'storage-key'
       ? session?.backgroundImage?.storageKey
@@ -145,9 +154,9 @@ function useHasBackgroundImage() {
   const globalBackgroundImageKey = useSettingsStore((s) => s.backgroundImageKey)
   const isRootPage = location.pathname === '/'
   const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
-  const sessionId =
-    isSessionPage && location.pathname !== '/session/new' ? location.pathname.slice('/session/'.length) : null
-  const { session } = useSession(sessionId)
+  const sessionId = getSessionIdFromPathname(location.pathname)
+  const sessionLoadTarget = useSessionStartupLoadTarget(sessionId)
+  const { session } = useSession(sessionLoadTarget)
 
   return (isRootPage || isSessionPage) && Boolean(session?.backgroundImage ?? globalBackgroundImageKey)
 }
@@ -168,12 +177,17 @@ function SettingsModalErrorFallback({ retry }: { error: Error; retry: () => void
 
 function Root() {
   useScreenChange()
+  const { t } = useTranslation()
+  const startupTranslation = useRef(t)
 
   const { isExceeded, isExceededResolved } = useVersion()
   const location = useLocation()
+  const startupPathname = useRef(location.pathname)
   const spellCheck = useSettingsStore((state) => state.spellCheck)
   const language = useLanguage()
   const hasBackgroundImage = useHasBackgroundImage()
+  const pageViewSessionLoadTarget = useSessionStartupLoadTarget(getSessionIdFromPathname(location.pathname))
+  const pageViewVisitGate = useRef(createPageViewVisitGate())
   const initialized = useRef(false)
 
   const setOpenAboutDialog = useUIStore((s) => s.setOpenAboutDialog)
@@ -256,16 +270,24 @@ function Root() {
   }, [_theme])
 
   useEffect(() => {
-    ;(() => {
-      const { startupPage } = settingsStore.getState()
-      const sid = JSON.parse(localStorage.getItem('_currentSessionIdCachedAtom') || '""') as string
-      if (sid && startupPage === 'session') {
-        navigateToDynamicPath({
-          to: `/session/${sid}`,
-          replace: true,
-        })
+    if (startupPathname.current !== '/') return
+    const { startupPage } = settingsStore.getState()
+    let sid = ''
+    try {
+      sid = JSON.parse(localStorage.getItem('_currentSessionIdCachedAtom') || '""') as string
+    } catch {
+      sid = ''
+    }
+    if (sid && startupPage === 'session') {
+      if (sessionStartupRecovery.shouldSkipAutoRestore(sid)) {
+        addToast(startupTranslation.current('Last chat failed to open. Opened the chat list instead.'))
+        return
       }
-    })()
+      navigateToDynamicPath({
+        to: `/session/${sid}`,
+        replace: true,
+      })
+    }
   }, [])
 
   useEffect(() => {
@@ -289,6 +311,7 @@ function Root() {
   const settingsSearch = getSettingsSearchParam(location.search)
   useEffect(() => {
     const pathname = location.pathname
+    const shouldTrackPageView = pageViewVisitGate.current.shouldTrack(pathname, settingsSearch)
     let pageName: string | undefined
 
     // 桌面端 settings 以 modal 方式打开，pathname 不变，通过 search.settings 控制
@@ -308,14 +331,15 @@ function Root() {
       pageName = JK_PAGE_NAMES.ABOUT_PAGE
     }
 
-    if (!pageName) return
+    if (!pageName || !shouldTrackPageView) return
 
     const trackPageView = async () => {
       let content: string | undefined
 
-      if (pathname.startsWith('/session/')) {
-        const sessionId = pathname.slice('/session/'.length)
-        const session = await rendererApplication.sessionQueryBridge.getSession(sessionId).catch(() => null)
+      if (pageViewSessionLoadTarget) {
+        const session = await rendererApplication.sessionQueryBridge
+          .getSession(pageViewSessionLoadTarget)
+          .catch(() => null)
         content = session?.name
       }
 
@@ -327,7 +351,7 @@ function Root() {
 
     // biome-ignore lint/nursery/noFloatingPromises: analytics tracking
     trackPageView()
-  }, [location.pathname, settingsSearch])
+  }, [location.pathname, pageViewSessionLoadTarget, settingsSearch])
 
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
   useEffect(() => {

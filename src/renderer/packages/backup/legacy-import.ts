@@ -69,11 +69,19 @@ export async function importLegacyJsonBackup(
       const record = normalizeMeta(item)
       if (!record) continue
       const existing = await options.metaStorage.getById(record.id)
-      if (existing) await options.metaStorage.update(record.id, record)
+      if (existing)
+        await options.metaStorage.update(record.id, { ...record, recoveryArchived: record.recoveryArchived })
       else await options.metaStorage.create(record)
       importedMetaCount++
     }
   } else if (entriesToImport.some(([key]) => key.startsWith('session:'))) {
+    for (const [key] of entriesToImport) {
+      if (!key.startsWith('session:')) continue
+      const sessionId = key.slice('session:'.length)
+      if (!sessionId) continue
+      const existing = await options.metaStorage.getById(sessionId)
+      if (existing) await options.metaStorage.update(sessionId, { recoveryArchived: undefined })
+    }
     await options.recoverSessionList()
     recoveredSessionList = true
   }

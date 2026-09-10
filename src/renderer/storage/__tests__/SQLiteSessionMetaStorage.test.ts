@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionMetaRecord } from '@shared/types'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SQLiteSessionMetaStorage } from '../SQLiteSessionMetaStorage'
 
 const mockDatabase = vi.hoisted(() => ({
@@ -56,11 +56,11 @@ describe('SQLiteSessionMetaStorage', () => {
       [
         {
           statement: expect.stringContaining('INSERT OR REPLACE INTO session_meta'),
-          values: ['a', 'Test Session', 0, 0, null, null, null, null, 'chat', 100, 100],
+          values: ['a', 'Test Session', 0, 0, null, null, null, null, 'chat', 100, 100, 0],
         },
         {
           statement: expect.stringContaining('INSERT OR REPLACE INTO session_meta'),
-          values: ['b', 'Test Session', 1, 0, null, null, null, null, 'chat', 100, 100],
+          values: ['b', 'Test Session', 1, 0, null, null, null, null, 'chat', 100, 100, 0],
         },
       ],
       true
@@ -104,13 +104,94 @@ describe('SQLiteSessionMetaStorage', () => {
     expect(mockDatabase.run).not.toHaveBeenCalledWith('ROLLBACK')
   })
 
-  it('adds archived_at column for existing mobile databases', async () => {
+  it('adds optional session metadata columns for existing mobile databases', async () => {
     const storage = new SQLiteSessionMetaStorage()
     mockDatabase.query.mockResolvedValueOnce({ values: [{ name: 'id' }, { name: 'hidden' }] })
 
     await storage.initialize()
 
     expect(mockDatabase.execute).toHaveBeenCalledWith('ALTER TABLE session_meta ADD COLUMN archived_at INTEGER')
+    expect(mockDatabase.execute).toHaveBeenCalledWith(
+      'ALTER TABLE session_meta ADD COLUMN recovery_archived INTEGER NOT NULL DEFAULT 0'
+    )
+  })
+
+  it('persists and restores the recovery archive marker', async () => {
+    const storage = new SQLiteSessionMetaStorage()
+
+    await storage.create(makeRecord({ id: 'recovery', hidden: true, archivedAt: 100, recoveryArchived: true }))
+
+    expect(mockDatabase.run).toHaveBeenCalledWith(expect.stringContaining('recovery_archived'), [
+      'recovery',
+      'Test Session',
+      0,
+      1,
+      100,
+      null,
+      null,
+      null,
+      'chat',
+      100,
+      100,
+      1,
+    ])
+
+    mockDatabase.query.mockResolvedValueOnce({
+      values: [
+        {
+          id: 'recovery',
+          name: 'Test Session',
+          hidden: 1,
+          archived_at: 100,
+          recovery_archived: 1,
+          sort_order: 100,
+          created_at: 100,
+        },
+      ],
+    })
+
+    await expect(storage.getById('recovery')).resolves.toMatchObject({
+      id: 'recovery',
+      recoveryArchived: true,
+    })
+  })
+
+  it('clears the recovery archive marker during a full metadata update', async () => {
+    const storage = new SQLiteSessionMetaStorage()
+    mockDatabase.query
+      .mockResolvedValueOnce({
+        values: [{ name: 'archived_at' }, { name: 'recovery_archived' }],
+      })
+      .mockResolvedValueOnce({
+        values: [
+          {
+            id: 'recovery',
+            name: 'Test Session',
+            hidden: 1,
+            archived_at: 100,
+            recovery_archived: 1,
+            sort_order: 100,
+            created_at: 100,
+          },
+        ],
+      })
+
+    await storage.update('recovery', { hidden: false, archivedAt: undefined, recoveryArchived: undefined })
+
+    expect(mockDatabase.run).toHaveBeenLastCalledWith(expect.stringContaining('recovery_archived = ?'), [
+      'Test Session',
+      0,
+      0,
+      null,
+      null,
+      null,
+      null,
+      null,
+      100,
+      100,
+      0,
+      'recovery',
+    ])
   })
 
   it('getArchivedPage queries archived rows with limit and offset', async () => {

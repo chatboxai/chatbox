@@ -102,6 +102,69 @@ describe('SessionWriteCoordinator', () => {
     expect(repository.sessions.get(session.id)?.messages.map(({ id }) => id)).toEqual(['persisted', 'next'])
   })
 
+  test('serializes metadata-only recovery archives and preserves them across later projections', async () => {
+    const repository = new MemorySessionRepository()
+    const session = createTestSession('session-1')
+    repository.sessions.set(session.id, session)
+    repository.records.set(session.id, createTestRecord(session, 1))
+    const coordinator = new SessionWriteCoordinator(repository)
+
+    const pendingWrite = coordinator.update(session.id, { name: 'Written before archive' })
+    const archive = coordinator.archiveMetadataOnly(session.id, 50)
+    await Promise.all([pendingWrite, archive])
+
+    expect(repository.records.get(session.id)).toMatchObject({
+      hidden: true,
+      archivedAt: 50,
+      recoveryArchived: true,
+    })
+
+    await coordinator.reprojectMeta(session.id)
+    expect(repository.records.get(session.id)?.recoveryArchived).toBe(true)
+
+    await coordinator.update(session.id, { name: 'Written after archive' })
+    expect(repository.sessions.get(session.id)).toMatchObject({ hidden: true, archivedAt: 50 })
+    expect(repository.records.get(session.id)).toMatchObject({ hidden: true, archivedAt: 50 })
+    expect(repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
+  })
+
+  test('loads a persisted recovery archive before the first write after restart', async () => {
+    const repository = new MemorySessionRepository()
+    const session = createTestSession('session-1')
+    repository.sessions.set(session.id, session)
+    repository.records.set(session.id, {
+      ...createTestRecord(session, 1),
+      hidden: true,
+      archivedAt: 50,
+      recoveryArchived: true,
+    })
+    const coordinator = new SessionWriteCoordinator(repository)
+
+    await coordinator.update(session.id, { name: 'Written after restart' })
+
+    expect(repository.sessions.get(session.id)).toMatchObject({ hidden: true, archivedAt: 50 })
+    expect(repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
+  })
+
+  test('reprojectMeta is a no-op without a snapshot or behind the deletion fence', async () => {
+    const repository = new MemorySessionRepository()
+    const session = createTestSession('session-1')
+    repository.sessions.set(session.id, session)
+    repository.records.set(session.id, createTestRecord(session, 1))
+    const coordinator = new SessionWriteCoordinator(repository)
+    const metaUpdate = vi.spyOn(repository.meta, 'update')
+
+    await expect(coordinator.reprojectMeta(session.id)).resolves.toBeNull()
+    expect(metaUpdate).not.toHaveBeenCalled()
+
+    await coordinator.update(session.id, (current) => appendMessage(current, 'persisted'))
+    await coordinator.delete(session.id, () => Promise.resolve())
+    metaUpdate.mockClear()
+
+    await expect(coordinator.reprojectMeta(session.id)).resolves.toBeNull()
+    expect(metaUpdate).not.toHaveBeenCalled()
+  })
+
   test('drains queued writes before deletion and fences later writes from recreating the session', async () => {
     const repository = new MemorySessionRepository()
     const session = createTestSession('session-1')

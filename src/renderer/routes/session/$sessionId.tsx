@@ -20,6 +20,12 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import useVersion from '@/hooks/useVersion'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import * as remote from '@/packages/remote'
+import {
+  sessionStartupRecovery,
+  useSessionStartupGuard,
+  useSessionStartupLoadTarget,
+  useSessionStartupQueryFailure,
+} from '@/packages/session-startup-recovery'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { applyChatboxLicenseDefaultModelToSession } from '@/stores/defaultChatModel'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
@@ -28,14 +34,24 @@ import { submitNewUserMessage } from '@/stores/session/messages'
 import { removeCurrentThread, startNewThread } from '@/stores/session/threads'
 import { clearSessionActivity } from '@/stores/sessionActivityStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { add as addToast } from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
 
 const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 
 export const Route = createFileRoute('/session/$sessionId')({
-  component: RouteComponent,
+  component: SessionRouteWithErrorBoundary,
 })
+
+function SessionRouteWithErrorBoundary() {
+  const { sessionId } = Route.useParams()
+  return (
+    <ErrorBoundary key={sessionId} name="session-route" onError={() => sessionStartupRecovery.fail(sessionId)}>
+      <RouteComponent />
+    </ErrorBoundary>
+  )
+}
 
 const builtInTemplateSessionIds = new Set(
   [...defaultSessionsForEN, ...defaultSessionsForCN].map((session) => session.id)
@@ -45,7 +61,12 @@ function RouteComponent() {
   const { t } = useTranslation()
   const { sessionId: currentSessionId } = Route.useParams()
   const navigate = useNavigate()
-  const { session: currentSession, isFetching } = useSession(currentSessionId)
+  const sessionLoadTarget = useSessionStartupLoadTarget(currentSessionId)
+  const recovering = sessionLoadTarget === null
+  const { session: currentSession, isFetching, isError } = useSession(sessionLoadTarget)
+  useSessionStartupQueryFailure(currentSessionId, sessionLoadTarget, isError && !currentSession)
+  const sessionLoadSettled = currentSession?.id === currentSessionId || (!isFetching && !isError)
+  useSessionStartupGuard(currentSessionId, sessionLoadSettled, recovering)
   const { providers } = useProviders()
   const licenseKey = useSettingsStore((s) => s.licenseKey)
   const hasLicense = Boolean(licenseKey)
@@ -97,10 +118,11 @@ function RouteComponent() {
   }, [navigate])
 
   useEffect(() => {
+    if (recovering) return
     setTimeout(() => {
       scrollActions.scrollToBottom('auto') // 每次启动时自动滚动到底部
     }, 200)
-  }, [])
+  }, [recovering])
 
   // currentSession变化时（包括session settings变化），存下当前的settings作为新Session的默认值
   useEffect(() => {
@@ -214,6 +236,41 @@ function RouteComponent() {
       modelId: currentSessionWithDefaultModel.settings.modelId,
     }
   }, [currentSessionWithDefaultModel?.settings?.provider, currentSessionWithDefaultModel?.settings?.modelId])
+
+  const onArchiveBrokenSession = useCallback(async () => {
+    try {
+      await rendererApplication.sessions.archiveSessionWithoutLoading(currentSessionId)
+      sessionStartupRecovery.completeArchive(currentSessionId)
+      goHome()
+    } catch (error) {
+      console.error('Failed to archive session:', error)
+      addToast(t('Failed to archive this chat. Try again or return to the chat list.'))
+    }
+  }, [currentSessionId, goHome, t])
+
+  if (recovering) {
+    return (
+      <Page title="">
+        <div className="flex flex-1 flex-col items-center justify-center min-h-[60vh] px-6 text-center">
+          <div className="text-2xl font-semibold mb-3">{t('This chat failed to open')}</div>
+          <div className="text-chatbox-tint-secondary mb-6 max-w-md">
+            {t(
+              'The last time this chat opened, the app had to stop loading it. You can go back to the chat list, archive it, or try again.'
+            )}
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button variant="outline" onClick={goHome}>
+              {t('Back to HomePage')}
+            </Button>
+            <Button variant="outline" onClick={() => void onArchiveBrokenSession()}>
+              {t('Archive')}
+            </Button>
+            <Button onClick={() => sessionStartupRecovery.retry(currentSessionId)}>{t('Try Again')}</Button>
+          </div>
+        </div>
+      </Page>
+    )
+  }
 
   return currentSession ? (
     <div className={`flex flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>

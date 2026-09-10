@@ -465,6 +465,8 @@ export const SessionMetaSchema = SessionSchema.pick({
   picUrl: true,
   backgroundImage: true,
   type: true,
+}).extend({
+  recoveryArchived: z.boolean().optional(),
 })
 
 export const SessionMetaRecordSchema = SessionMetaSchema.extend({

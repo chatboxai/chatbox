@@ -88,6 +88,10 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     if (!hasArchivedAt) {
       await this.database.execute('ALTER TABLE session_meta ADD COLUMN archived_at INTEGER')
     }
+    const hasRecoveryArchived = columns.values?.some((column) => column.name === 'recovery_archived')
+    if (!hasRecoveryArchived) {
+      await this.database.execute('ALTER TABLE session_meta ADD COLUMN recovery_archived INTEGER NOT NULL DEFAULT 0')
+    }
   }
 
   private recordToRow(record: SessionMetaRecord): Record<string, unknown> {
@@ -103,6 +107,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
       type: record.type || null,
       sort_order: record.sortOrder,
       created_at: record.createdAt,
+      recovery_archived: record.recoveryArchived ? 1 : 0,
     }
   }
 
@@ -117,6 +122,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
       picUrl: (row.pic_url as string) || undefined,
       backgroundImage: parseBackgroundImage(row.background_image as string),
       type: (row.type as SessionMetaRecord['type']) || undefined,
+      recoveryArchived: row.recovery_archived === 1 ? true : undefined,
       sortOrder: row.sort_order as number,
       createdAt: row.created_at as number,
     }
@@ -127,8 +133,8 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     const row = this.recordToRow(record)
     await this.database.run(
       `INSERT INTO session_meta
-       (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at, recovery_archived)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.name,
@@ -141,6 +147,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         row.type,
         row.sort_order,
         row.created_at,
+        row.recovery_archived,
       ]
     )
   }
@@ -150,8 +157,8 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     if (records.length === 0) return
 
     const statement = `INSERT OR REPLACE INTO session_meta
-      (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at, recovery_archived)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     const set: capSQLiteSet[] = records.map((record) => {
       const row = this.recordToRow(record)
       return {
@@ -168,6 +175,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
           row.type,
           row.sort_order,
           row.created_at,
+          row.recovery_archived,
         ],
       }
     })
@@ -186,7 +194,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     await this.database.run(
       `UPDATE session_meta SET
        name = ?, starred = ?, hidden = ?, archived_at = ?, assistant_avatar_key = ?, pic_url = ?,
-       background_image = ?, type = ?, sort_order = ?, created_at = ?
+       background_image = ?, type = ?, sort_order = ?, created_at = ?, recovery_archived = ?
        WHERE id = ?`,
       [
         row.name,
@@ -199,6 +207,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         row.type,
         row.sort_order,
         row.created_at,
+        row.recovery_archived,
         id,
       ]
     )

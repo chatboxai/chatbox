@@ -30,6 +30,14 @@ export function projectSessionMeta(session: SessionMeta): SessionMeta {
   }
 }
 
+/** The full derived metadata patch a session write must project alongside itself. */
+export function projectSessionMetaUpdate(session: Session): SessionMeta {
+  return {
+    ...projectSessionMeta(session),
+    recoveryArchived: undefined,
+  }
+}
+
 export function createSessionMetaRecord(session: Session, sortOrder: number, createdAt: number): SessionMetaRecord {
   return {
     ...projectSessionMeta(session),

@@ -9,6 +9,7 @@ interface ErrorBoundaryProps {
   children: React.ReactNode
   fallback?: React.ComponentType<{ error: Error; retry: () => void }>
   name?: string
+  onError?: (error: Error) => void
 }
 
 /**
@@ -20,7 +21,12 @@ interface ErrorBoundaryProps {
  * - These errors are 100% reported to Sentry (see sentry_init.ts)
  * - Other errors are subject to 10% sampling
  */
-export function ErrorBoundary({ children, fallback: CustomFallback, name = 'ErrorBoundary' }: ErrorBoundaryProps) {
+export function ErrorBoundary({
+  children,
+  fallback: CustomFallback,
+  name = 'ErrorBoundary',
+  onError,
+}: ErrorBoundaryProps) {
   return (
     <Sentry.ErrorBoundary
       fallback={(fallbackProps) => {
@@ -38,6 +44,8 @@ export function ErrorBoundary({ children, fallback: CustomFallback, name = 'Erro
         return <DefaultErrorFallback error={errorObj} retry={resetError} />
       }}
       beforeCapture={(scope, error, componentStack) => {
+        onError?.(error instanceof Error ? error : new Error(String(error)))
+
         // Add custom context to Sentry
         scope.setTag('errorBoundary', name)
         scope.setTag('component', 'ui')

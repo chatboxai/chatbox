@@ -7,6 +7,7 @@ import type {
 } from '@shared/types'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
+import { sessionStartupRecovery } from '@/packages/session-startup-recovery'
 import platform from '@/platform'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
 import { collectAttachmentOwnershipClaims } from '../../shared/session-attachment-rag/ownership'
@@ -41,7 +42,7 @@ function collectSessionMessages(session: Session): Message[] {
   return messages
 }
 
-async function collectMaintenanceScope(): Promise<SessionAttachmentRagMaintenanceScope> {
+async function collectMaintenanceScope(): Promise<SessionAttachmentRagMaintenanceScope | null> {
   if (!platform.isDesktopLike) {
     return {
       sessionIds: [],
@@ -57,6 +58,9 @@ async function collectMaintenanceScope(): Promise<SessionAttachmentRagMaintenanc
   while (cursor !== null) {
     const page = await listSessionsMetaPage(cursor)
     for (const sessionMeta of page.items) {
+      if (sessionStartupRecovery.isRecoveryRequired(sessionMeta.id)) {
+        return null
+      }
       sessionIds.push(sessionMeta.id)
       const session = await getSession(sessionMeta.id)
       if (!session) {
@@ -84,6 +88,13 @@ const maintenanceTasks: SessionAttachmentRagMaintenanceTask[] = [
     intervalMs: ORPHAN_CLEANUP_INTERVAL_MS,
     run: async () => {
       const scope = await collectMaintenanceScope()
+      if (!scope) {
+        return {
+          interruptedFailedCount: 0,
+          canceledPurgedCount: 0,
+          orphanDeletedIds: [],
+        }
+      }
       const result = await platform.getSessionAttachmentRagController().runMaintenance(scope)
 
       if (result.interruptedFailedCount > 0 || result.canceledPurgedCount > 0 || result.orphanDeletedIds.length > 0) {

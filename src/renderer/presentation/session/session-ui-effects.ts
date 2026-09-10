@@ -1,6 +1,7 @@
 import type { SessionApplicationEvent, SessionEventBus } from '@chatbox/core/application/session'
 import { rendererApplication } from '@/app/renderer-application'
 import { clearScrollPositionCache } from '@/components/chat/MessageList'
+import { sessionStartupRecovery } from '@/packages/session-startup-recovery'
 import platform from '@/platform'
 import { cleanupSessionAtomCache } from '@/stores/atoms/throttleWriteSessionAtom'
 import { clearSessionNameGenerationState, syncSessionAutoTitle } from '@/stores/session/naming'
@@ -61,6 +62,7 @@ export function registerSessionUiEffects(events: SessionEventBus): () => void {
       return
     }
     if (event.type === 'session-deleted') {
+      sessionStartupRecovery.forget(event.ids)
       for (const sessionId of event.ids) {
         cleanupDeletedSessionRuntimeState(sessionId)
       }

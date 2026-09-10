@@ -9,6 +9,7 @@ import { StrictMode, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { bootstrapRenderer, initializeRenderer, rendererApplication, reportRendererInitializationError } from './app'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
+import { sessionStartupRecovery } from './packages/session-startup-recovery'
 import platform from './platform'
 import reportWebVitals from './reportWebVitals'
 import { router } from './router'
@@ -97,6 +98,7 @@ initializeRenderer()
   .finally(async () => {
     clearTimeout(tid)
 
+    sessionStartupRecovery.promotePreviousAttempt()
     // 等待settings和onboarding初始化完成，避免闪屏
     await bootstrapRenderer(rendererApplication)
     // Cleanup is intentionally not captured — listeners persist for the app lifetime

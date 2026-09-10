@@ -439,7 +439,20 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
       const previous = previousMeta.get(metaId)
       if (previous) {
         const existing = await options.metaStorage.getById(metaId).catch(() => null)
-        if (existing) await options.metaStorage.update(metaId, previous).catch(() => null)
+        if (existing)
+          await options.metaStorage
+            .update(metaId, {
+              ...previous,
+              starred: previous.starred,
+              hidden: previous.hidden,
+              archivedAt: previous.archivedAt,
+              assistantAvatarKey: previous.assistantAvatarKey,
+              picUrl: previous.picUrl,
+              backgroundImage: previous.backgroundImage,
+              type: previous.type,
+              recoveryArchived: previous.recoveryArchived,
+            })
+            .catch(() => null)
         else await options.metaStorage.create(previous).catch(() => undefined)
       } else {
         await options.metaStorage.delete(metaId).catch(() => undefined)
@@ -570,7 +583,10 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
       session = translateImportedSessionMemoryState(session, importedMemoryState)
       await options.storage.setItemNow(backupSessionStorageKey(session.id), session)
 
-      const meta = restoreSessionMetaResourceKeys(descriptor.meta, resourceKeyMap)
+      const meta = {
+        ...restoreSessionMetaResourceKeys(descriptor.meta, resourceKeyMap),
+        recoveryArchived: descriptor.meta.recoveryArchived,
+      }
       const existingMeta = await options.metaStorage.getById(session.id)
       previousMeta.set(session.id, existingMeta)
       changedMetaIds.push(session.id)

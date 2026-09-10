@@ -98,18 +98,29 @@ describe('legacy JSON backup import', () => {
   })
 
   it('rebuilds metadata for older backups that only contain session keys', async () => {
+    const metaStorage = new LegacyMemoryMetaStorage()
+    metaStorage.records.set('old', {
+      id: 'old',
+      name: 'Archived recovery',
+      sortOrder: 1,
+      createdAt: 1,
+      hidden: true,
+      archivedAt: 1,
+      recoveryArchived: true,
+    })
     const recoverSessionList = vi.fn(() => Promise.resolve())
     const result = await importLegacyJsonBackup(
       asJsonFile({ 'session:old': { id: 'old', name: 'Old', messages: [] } }),
       {
         storage: new LegacyMemoryStorage(),
-        metaStorage: new LegacyMemoryMetaStorage(),
+        metaStorage,
         recoverSessionList,
         migrateData: () => Promise.resolve(),
       }
     )
     expect(result.recoveredSessionList).toBe(true)
     expect(recoverSessionList).toHaveBeenCalledOnce()
+    expect(metaStorage.records.get('old')?.recoveryArchived).toBeUndefined()
   })
 
   it('rejects non-object JSON backups', async () => {

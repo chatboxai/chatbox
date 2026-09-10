@@ -47,6 +47,8 @@ export interface UpdateSessionOptions {
   preserveCachedGeneratingMessages?: boolean
   /** Runs once the full Session is durable, even if its metadata projection fails afterward. */
   onFullSessionPersisted?: (session: Session) => void
+  /** Internal recovery path: a successful full write supersedes a metadata-only archive. */
+  clearRecoveryArchive?: boolean
 }
 
 async function runInChunks<T>(items: T[], chunkSize: number, worker: (item: T) => Promise<void>): Promise<void> {
@@ -216,7 +218,10 @@ export class SessionService {
     const updateMeta = typeof updater === 'function' || hasSessionMetaFields(updater)
     let result: SessionWriteResult
     try {
-      result = await this.writes.update(sessionId, updater, { updateMeta })
+      result = await this.writes.update(sessionId, updater, {
+        updateMeta,
+        clearRecoveryArchive: options.clearRecoveryArchive,
+      })
     } catch (error) {
       if (!(error instanceof SessionMetadataUpdateError)) throw error
 
@@ -283,7 +288,11 @@ export class SessionService {
     )
   }
 
-  updateSession(sessionId: string, updater: Updater<SessionMetadataUpdate>): Promise<Session> {
+  updateSession(
+    sessionId: string,
+    updater: Updater<SessionMetadataUpdate>,
+    options: Pick<UpdateSessionOptions, 'clearRecoveryArchive'> = {}
+  ): Promise<Session> {
     return this.updateSessionWithMessages(
       sessionId,
       (session) => {
@@ -294,7 +303,7 @@ export class SessionService {
         assertNoMessageDataUpdate(update)
         return { ...session, ...update }
       },
-      { preserveCachedGeneratingMessages: true }
+      { preserveCachedGeneratingMessages: true, ...options }
     )
   }
 
@@ -335,6 +344,18 @@ export class SessionService {
     await this.publishListReset({ archived: true })
   }
 
+  /**
+   * Archives a session through its list metadata without reading the full record.
+   * This recovery path keeps unreadable conversation data intact for later repair or export.
+   */
+  async archiveSessionWithoutLoading(sessionId: string): Promise<void> {
+    await this.initialize()
+    const archivedAt = this.now()
+    const updated = await this.writes.archiveMetadataOnly(sessionId, archivedAt)
+    if (!updated) throw new SessionNotFoundError(sessionId)
+    await this.publishListReset({ visible: true, archived: true })
+  }
+
   async archiveSessions(sessionIds: string[]): Promise<void> {
     const uniqueIds = [...new Set(sessionIds)]
     if (uniqueIds.length === 0) return
@@ -368,13 +389,25 @@ export class SessionService {
   }
 
   async restoreSession(sessionId: string): Promise<void> {
-    await this.updateSession(sessionId, { hidden: false, archivedAt: undefined })
+    await this.updateSession(sessionId, { hidden: false, archivedAt: undefined }, { clearRecoveryArchive: true })
     await this.publishListReset({ visible: true, archived: true })
   }
 
   async recoverSessionList(): Promise<{ recovered: number; failed: number }> {
     await this.initialize()
     const sessionIds = await this.repository.getAllSessionIds()
+    let existingArchivedRecords = new Map<string, SessionMetaRecord>()
+    try {
+      existingArchivedRecords = new Map(
+        (await this.repository.meta.getAllIncludingHidden())
+          .filter((record) => record.recoveryArchived === true)
+          .map((record) => [record.id, record])
+      )
+    } catch (error) {
+      await this.log('warn', 'Failed to preserve archived metadata during session-list recovery', {
+        error: describeError(error),
+      })
+    }
     const sessionsWithTimestamp: Array<{ session: Session; timestamp: number }> = []
     const failedSessionIds: string[] = []
 
@@ -405,17 +438,32 @@ export class SessionService {
 
     sessionsWithTimestamp.sort((left, right) => left.timestamp - right.timestamp)
     const now = this.now()
-    const records = sessionsWithTimestamp.map(({ session, timestamp }, index) =>
-      createSessionMetaRecord(
+    const records = sessionsWithTimestamp.map(({ session, timestamp }, index) => {
+      const recoveredRecord = createSessionMetaRecord(
         session,
         timestamp || now - (sessionsWithTimestamp.length - index) * 1000,
         timestamp || now - (sessionsWithTimestamp.length - index) * 1000
       )
-    )
+      const existingArchivedRecord = existingArchivedRecords.get(session.id)
+      return existingArchivedRecord
+        ? {
+            ...recoveredRecord,
+            hidden: true,
+            archivedAt: existingArchivedRecord.archivedAt,
+            recoveryArchived: true,
+          }
+        : recoveredRecord
+    })
+    for (const sessionId of failedSessionIds) {
+      const existingArchivedRecord = existingArchivedRecords.get(sessionId)
+      if (existingArchivedRecord) {
+        records.push(existingArchivedRecord)
+      }
+    }
     await this.repository.meta.clear()
     await this.repository.meta.createMany(records)
     await this.publishListReset({ visible: true, archived: true })
-    return { recovered: records.length, failed: failedSessionIds.length }
+    return { recovered: sessionsWithTimestamp.length, failed: failedSessionIds.length }
   }
 
   private async log(level: 'error' | 'warn', message: string, context: Record<string, unknown>): Promise<void> {

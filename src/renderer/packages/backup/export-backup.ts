@@ -80,18 +80,20 @@ async function safeSessionPathComponent(sessionId: string): Promise<string> {
 }
 
 function deriveSessionMeta(session: Session, existing?: SessionMetaRecord): SessionMetaRecord {
+  const preserveRecoveryArchive = existing?.recoveryArchived === true
   return {
     id: session.id,
     name: session.name,
     starred: session.starred,
-    hidden: session.hidden,
-    archivedAt: session.archivedAt,
+    hidden: preserveRecoveryArchive ? true : session.hidden,
+    archivedAt: preserveRecoveryArchive ? existing.archivedAt : session.archivedAt,
     assistantAvatarKey: session.assistantAvatarKey,
     picUrl: session.picUrl,
     backgroundImage: session.backgroundImage,
     type: session.type,
     sortOrder: existing?.sortOrder ?? Date.now(),
     createdAt: existing?.createdAt ?? Date.now(),
+    recoveryArchived: preserveRecoveryArchive || undefined,
   }
 }
 

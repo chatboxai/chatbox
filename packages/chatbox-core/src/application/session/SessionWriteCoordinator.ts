@@ -1,6 +1,6 @@
 import type { SessionRepositoryPort } from '../../ports'
-import type { Session, SessionMeta, Updater } from '../../types'
-import { projectSessionMeta } from './session-metadata'
+import type { Session, SessionMeta, SessionMetaRecord, Updater } from '../../types'
+import { projectSessionMetaUpdate } from './session-metadata'
 
 export interface SessionWriteResult {
   session: Session
@@ -9,6 +9,8 @@ export interface SessionWriteResult {
 
 export interface SessionWriteOptions {
   updateMeta?: boolean
+  /** Explicit restore/import paths may clear a metadata-only recovery archive. */
+  clearRecoveryArchive?: boolean
 }
 
 export interface SessionWriteCoordinatorOptions {
@@ -64,6 +66,8 @@ export class SessionWriteCoordinator {
   private readonly current = new Map<string, Session>()
   private readonly tails = new Map<string, Promise<void>>()
   private readonly unavailable = new Set<string>()
+  private readonly recoveryArchives = new Map<string, number>()
+  private readonly loadedRecoveryArchiveState = new Set<string>()
   private readonly readCurrentSession: (sessionId: string) => Promise<Session | null>
   private readonly discardCurrentSession: (sessionId: string) => void
 
@@ -97,6 +101,50 @@ export class SessionWriteCoordinator {
     return this.enqueue(snapshot.id, () => this.performUpdate(snapshot.id, updater, options, snapshot))
   }
 
+  /**
+   * Re-derives and persists the metadata projection from the retained snapshot,
+   * serialized behind already queued writes. Repairs a failed projection write
+   * after the full session itself was persisted; returns null when there is no
+   * snapshot to project (session deleted, fenced, or never written here).
+   */
+  reprojectMeta(sessionId: string): Promise<SessionWriteResult | null> {
+    if (this.unavailable.has(sessionId)) {
+      return Promise.resolve(null)
+    }
+    return this.enqueue(sessionId, async () => {
+      if (this.unavailable.has(sessionId)) return null
+      const current = this.current.get(sessionId)
+      if (!current) return null
+      const recoveryArchivedAt = await this.loadRecoveryArchive(sessionId)
+      const meta = this.projectMeta(current, recoveryArchivedAt)
+      await this.repository.meta.update(sessionId, meta)
+      return { session: current, meta }
+    })
+  }
+
+  /**
+   * Serializes a recovery archive behind pending full-session writes without
+   * reading the potentially corrupt session. The next successful full write
+   * converts it to an ordinary durable archive before clearing the marker.
+   */
+  archiveMetadataOnly(sessionId: string, archivedAt: number): Promise<SessionMetaRecord | null> {
+    if (this.unavailable.has(sessionId)) {
+      return Promise.reject(new SessionNotFoundError(sessionId))
+    }
+    return this.enqueue(sessionId, async () => {
+      const updated = await this.repository.meta.update(sessionId, {
+        hidden: true,
+        archivedAt,
+        recoveryArchived: true,
+      })
+      if (updated) {
+        this.recoveryArchives.set(sessionId, archivedAt)
+        this.loadedRecoveryArchiveState.add(sessionId)
+      }
+      return updated
+    })
+  }
+
   delete(sessionId: string, operation: () => Promise<void>): Promise<void> {
     return this.deleteMany([sessionId], operation)
   }
@@ -117,6 +165,8 @@ export class SessionWriteCoordinator {
       await operation()
       for (const sessionId of uniqueIds) {
         this.current.delete(sessionId)
+        this.recoveryArchives.delete(sessionId)
+        this.loadedRecoveryArchiveState.delete(sessionId)
       }
     })
     const nextTail = deletion.then(
@@ -140,6 +190,8 @@ export class SessionWriteCoordinator {
         // later step failed. Drop every cached snapshot before reopening writes
         // so a surviving id is re-read and a removed id cannot be resurrected.
         this.current.delete(sessionId)
+        this.recoveryArchives.delete(sessionId)
+        this.loadedRecoveryArchiveState.delete(sessionId)
         this.discardCurrentSession(sessionId)
         this.unavailable.delete(sessionId)
       }
@@ -150,11 +202,15 @@ export class SessionWriteCoordinator {
   prime(session: Session): void {
     this.unavailable.delete(session.id)
     this.current.set(session.id, session)
+    this.recoveryArchives.delete(session.id)
+    this.loadedRecoveryArchiveState.add(session.id)
   }
 
   forget(sessionId: string): void {
     this.unavailable.delete(sessionId)
     this.current.delete(sessionId)
+    this.recoveryArchives.delete(sessionId)
+    this.loadedRecoveryArchiveState.delete(sessionId)
   }
 
   private enqueue<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
@@ -179,16 +235,23 @@ export class SessionWriteCoordinator {
     options: SessionWriteOptions,
     fallbackSnapshot?: Session
   ): Promise<SessionWriteResult> {
+    const recoveryArchivedAt = options.clearRecoveryArchive ? undefined : await this.loadRecoveryArchive(sessionId)
     const previous = this.current.get(sessionId) ?? fallbackSnapshot ?? (await this.readCurrentSession(sessionId))
     if (!previous) {
       throw new SessionNotFoundError(sessionId)
     }
 
-    const updated = typeof updater === 'function' ? updater(previous) : { ...previous, ...updater }
+    const next = typeof updater === 'function' ? updater(previous) : { ...previous, ...updater }
+    const updated = recoveryArchivedAt === undefined ? next : { ...next, hidden: true, archivedAt: recoveryArchivedAt }
     await this.repository.setSession(updated)
     this.current.set(sessionId, updated)
 
-    const meta = options.updateMeta === false ? null : projectSessionMeta(updated)
+    if (recoveryArchivedAt !== undefined || options.clearRecoveryArchive) {
+      this.recoveryArchives.delete(sessionId)
+      this.loadedRecoveryArchiveState.add(sessionId)
+    }
+
+    const meta = options.updateMeta === false ? null : projectSessionMetaUpdate(updated)
     if (meta) {
       try {
         await this.repository.meta.update(sessionId, meta)
@@ -197,5 +260,23 @@ export class SessionWriteCoordinator {
       }
     }
     return { session: updated, meta }
+  }
+
+  private async loadRecoveryArchive(sessionId: string): Promise<number | undefined> {
+    if (!this.loadedRecoveryArchiveState.has(sessionId)) {
+      const meta = await this.repository.meta.getById(sessionId)
+      if (meta?.recoveryArchived && meta.archivedAt !== undefined) {
+        this.recoveryArchives.set(sessionId, meta.archivedAt)
+      }
+      this.loadedRecoveryArchiveState.add(sessionId)
+    }
+    return this.recoveryArchives.get(sessionId)
+  }
+
+  private projectMeta(session: Session, recoveryArchivedAt?: number): SessionMeta {
+    const meta = projectSessionMetaUpdate(session)
+    return recoveryArchivedAt === undefined
+      ? meta
+      : { ...meta, hidden: true, archivedAt: recoveryArchivedAt, recoveryArchived: true }
   }
 }

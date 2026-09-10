@@ -1062,7 +1062,12 @@ describe('ZIP backup round trip', () => {
     const sourceMeta = new MemoryMetaStorage()
     const importedSession = createSession('rollback')
     source.values.set(backupSessionStorageKey(importedSession.id), importedSession)
-    sourceMeta.records.set(importedSession.id, createMeta(importedSession, 2))
+    sourceMeta.records.set(importedSession.id, {
+      ...createMeta(importedSession, 2),
+      hidden: true,
+      archivedAt: 2,
+      recoveryArchived: true,
+    })
     source.blobs.set('picture:shared', 'data:image/png;base64,AAECAw==')
     const chunks: Uint8Array[] = []
     await exportBackupArchive({
@@ -1093,7 +1098,12 @@ describe('ZIP backup round trip', () => {
       })
     ).rejects.toThrow('Injected metadata write failure')
     expect(destination.values.get(backupSessionStorageKey(previousSession.id))).toEqual(previousSession)
-    expect(destinationMeta.records.get(previousSession.id)).toEqual(previousMeta)
+    expect(destinationMeta.records.get(previousSession.id)).toMatchObject(previousMeta)
+    expect(destinationMeta.records.get(previousSession.id)).toMatchObject({
+      hidden: undefined,
+      archivedAt: undefined,
+      recoveryArchived: undefined,
+    })
     expect(destination.blobs.has('picture:shared')).toBe(false)
     expect(Array.from(destination.values.keys()).some((key) => key.startsWith('__chatbox_backup_import:'))).toBe(false)
     expect(Array.from(destination.blobs.keys()).some((key) => key.startsWith('__chatbox_backup_import:'))).toBe(false)

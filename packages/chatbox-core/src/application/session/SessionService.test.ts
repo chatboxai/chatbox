@@ -322,12 +322,118 @@ describe('SessionService', () => {
     await harness.service.archiveSession(session.id)
     expect(harness.repository.sessions.get(session.id)).toMatchObject({ hidden: true, archivedAt: 100 })
     expect(harness.repository.records.get(session.id)).toMatchObject({ hidden: true, archivedAt: 100 })
+    expect(harness.repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
 
     await harness.service.restoreSession(session.id)
     expect(harness.repository.sessions.get(session.id)?.hidden).toBe(false)
     expect(harness.repository.sessions.get(session.id)?.archivedAt).toBeUndefined()
     expect(harness.repository.records.get(session.id)?.hidden).toBe(false)
     expect(harness.repository.records.get(session.id)?.archivedAt).toBeUndefined()
+  })
+
+  test('archives an unreadable session through metadata without loading its full record', async () => {
+    const harness = createHarness()
+    const session = createTestSession('session-1')
+    harness.repository.sessions.set(session.id, session)
+    harness.repository.records.set(session.id, createTestRecord(session, 1))
+    const getSession = vi.spyOn(harness.repository, 'getSession').mockRejectedValue(new Error('read failed'))
+    const setSession = vi.spyOn(harness.repository, 'setSession')
+
+    await harness.service.archiveSessionWithoutLoading(session.id)
+
+    expect(getSession).not.toHaveBeenCalled()
+    expect(setSession).not.toHaveBeenCalled()
+    expect(harness.repository.sessions.get(session.id)).not.toHaveProperty('archivedAt')
+    expect(harness.repository.records.get(session.id)).toMatchObject({
+      hidden: true,
+      archivedAt: 100,
+      recoveryArchived: true,
+    })
+    expect(harness.published.at(-1)).toMatchObject({
+      type: 'session-list-reset',
+      visible: { items: [] },
+      archived: { items: [{ id: session.id }] },
+    })
+  })
+
+  test('preserves a metadata-only archive when rebuilding the session list', async () => {
+    const harness = createHarness()
+    const session = createTestSession('session-1')
+    harness.repository.sessions.set(session.id, session)
+    harness.repository.records.set(session.id, createTestRecord(session, 1))
+
+    await harness.service.archiveSessionWithoutLoading(session.id)
+    await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 1, failed: 0 })
+
+    expect(harness.repository.records.get(session.id)).toMatchObject({
+      hidden: true,
+      archivedAt: 100,
+      recoveryArchived: true,
+    })
+  })
+
+  test('clears the recovery archive marker when the full session is restored', async () => {
+    const harness = createHarness()
+    const session = createTestSession('session-1')
+    harness.repository.sessions.set(session.id, session)
+    harness.repository.records.set(session.id, createTestRecord(session, 1))
+    await harness.service.archiveSessionWithoutLoading(session.id)
+
+    await harness.service.restoreSession(session.id)
+
+    expect(harness.repository.sessions.get(session.id)?.hidden).toBe(false)
+    expect(harness.repository.records.get(session.id)?.hidden).toBe(false)
+    expect(harness.repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
+  })
+
+  test('does not preserve an ordinary archived projection over readable full data', async () => {
+    const harness = createHarness()
+    const session = createTestSession('session-1')
+    harness.repository.sessions.set(session.id, session)
+    harness.repository.records.set(session.id, {
+      ...createTestRecord(session, 1),
+      hidden: true,
+      archivedAt: 50,
+    })
+
+    await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 1, failed: 0 })
+
+    expect(harness.repository.records.get(session.id)).not.toHaveProperty('archivedAt')
+    expect(harness.repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
+  })
+
+  test('retains archived metadata for an unreadable session when rebuilding the session list', async () => {
+    const harness = createHarness()
+    const session = createTestSession('session-1')
+    harness.repository.sessions.set(session.id, session)
+    harness.repository.records.set(session.id, createTestRecord(session, 1))
+    await harness.service.archiveSessionWithoutLoading(session.id)
+    vi.spyOn(harness.repository, 'getSession').mockRejectedValue(new Error('read failed'))
+
+    await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 0, failed: 1 })
+
+    expect(harness.repository.records.get(session.id)).toMatchObject({
+      hidden: true,
+      archivedAt: 100,
+      recoveryArchived: true,
+    })
+  })
+
+  test('rebuilds readable metadata when the archived metadata snapshot cannot be read', async () => {
+    const harness = createHarness()
+    const session = createTestSession('session-1')
+    harness.repository.sessions.set(session.id, session)
+    vi.spyOn(harness.repository.meta, 'getAllIncludingHidden').mockRejectedValue(new Error('meta read failed'))
+
+    await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 1, failed: 0 })
+
+    expect(harness.repository.records.get(session.id)).toMatchObject({ id: session.id })
+    expect(harness.repository.records.get(session.id)).not.toHaveProperty('archivedAt')
+    expect(harness.log).toHaveBeenCalledWith(
+      'warn',
+      'Failed to preserve archived metadata during session-list recovery',
+      expect.objectContaining({ error: expect.objectContaining({ message: 'meta read failed' }) })
+    )
   })
 
   test('deletes persistence only after awaited pre-delete effects', async () => {

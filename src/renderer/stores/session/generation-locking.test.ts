@@ -23,9 +23,15 @@ const {
   guardSessionActionMock: vi.fn(),
 }))
 
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: { sessionQueryBridge: { getSession: getSessionMock } },
-}))
+vi.mock('@/app/renderer-application', async () => {
+  const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
+  return {
+    rendererApplication: {
+      generationRuntime: new GenerationRuntimeStore(),
+      sessionQueryBridge: { getSession: getSessionMock },
+    },
+  }
+})
 vi.mock('./session-settings', () => ({
   getSessionSettings: getSessionSettingsMock,
   getSessionTokenModel: () => undefined,
@@ -45,7 +51,11 @@ vi.mock('./utils', () => ({ getSessionWebBrowsing: vi.fn() }))
 vi.mock('@/packages/token', () => ({ estimateTokensFromMessages: () => 0 }))
 
 import { resetSessionGenerationLocksForTests } from '@chatbox/core/generation'
+import { rendererApplication } from '@/app/renderer-application'
 import { generate, generateMore, regenerateInNewFork, saveAndResendMessage } from './generation'
+import { type GenerationCancellationDependencies, stopAllMessageGenerations } from './generation-cancellation'
+
+const generationRuntime = rendererApplication.generationRuntime
 
 function message(id: string): Message {
   return { id, role: 'assistant', contentParts: [], generating: true }
@@ -59,6 +69,7 @@ describe('generation entry-point locking', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetSessionGenerationLocksForTests()
+    generationRuntime.dispose()
     getSessionMock.mockResolvedValue({ id: 'session-1', name: 'Session', messages: [] })
     getSessionSettingsMock.mockResolvedValue({})
     guardSessionActionMock.mockResolvedValue(true)
@@ -140,6 +151,91 @@ describe('generation entry-point locking', () => {
     await generateMore('session-1', 'user-1')
 
     expect(insertMessageAfterMock).not.toHaveBeenCalled()
+    expect(orchestrateGenerationMock).not.toHaveBeenCalled()
+  })
+
+  it('does not insert Reply Again Below while a Session Stop gate is active', async () => {
+    const gate = generationRuntime.beginSessionStop('session-1', 'stopped')
+
+    await generateMore('session-1', 'user-1')
+
+    expect(insertMessageAfterMock).not.toHaveBeenCalled()
+    expect(orchestrateGenerationMock).not.toHaveBeenCalled()
+    generationRuntime.clearSessionStop('session-1', gate)
+  })
+
+  it('waits for a pending reply insertion before Stop-all captures its placeholder', async () => {
+    let releaseInsert!: () => void
+    const insertGate = new Promise<void>((resolve) => {
+      releaseInsert = resolve
+    })
+    let currentSession: Session = { id: 'session-1', name: 'Session', messages: [] }
+    getSessionMock.mockImplementation(() => Promise.resolve(currentSession))
+    insertMessageAfterMock.mockImplementationOnce(async (_sessionId, inserted: Message) => {
+      await insertGate
+      currentSession = { ...currentSession, messages: [inserted] }
+    })
+    const getStopSession = vi.fn(() => Promise.resolve(currentSession))
+    const removeMessage = vi.fn<GenerationCancellationDependencies['removeMessage']>(async (_sessionId, messageId) => {
+      currentSession = {
+        ...currentSession,
+        messages: currentSession.messages.filter((candidate) => candidate.id !== messageId),
+      }
+    })
+    const dependencies: GenerationCancellationDependencies = {
+      runtime: generationRuntime,
+      getSession: getStopSession,
+      removeMessage,
+      persistMessage: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const generation = generateMore('session-1', 'user-1')
+    await vi.waitFor(() => expect(insertMessageAfterMock).toHaveBeenCalledOnce())
+    const stop = stopAllMessageGenerations('session-1', dependencies, 20_000)
+    await Promise.resolve()
+
+    expect(getStopSession).not.toHaveBeenCalled()
+    releaseInsert()
+    await Promise.all([generation, stop])
+
+    const insertedMessageId = insertMessageAfterMock.mock.calls[0][1].id
+    expect(removeMessage).toHaveBeenCalledWith('session-1', insertedMessageId)
+    expect(currentSession.messages).toEqual([])
+    expect(generationRuntime.isSessionStopRequested('session-1')).toBe(false)
+  })
+
+  it('releases reply preparation after insertion fails so Stop-all can finish', async () => {
+    let releaseInsert!: () => void
+    const insertGate = new Promise<void>((resolve) => {
+      releaseInsert = resolve
+    })
+    const insertError = new Error('insert failed')
+    insertMessageAfterMock.mockImplementationOnce(async () => {
+      await insertGate
+      throw insertError
+    })
+    const session: Session = { id: 'session-1', name: 'Session', messages: [] }
+    const getStopSession = vi.fn(() => Promise.resolve(session))
+    const dependencies: GenerationCancellationDependencies = {
+      runtime: generationRuntime,
+      getSession: getStopSession,
+      removeMessage: vi.fn().mockResolvedValue(undefined),
+      persistMessage: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const generation = generateMore('session-1', 'user-1')
+    const generationResult = expect(generation).rejects.toBe(insertError)
+    await vi.waitFor(() => expect(insertMessageAfterMock).toHaveBeenCalledOnce())
+    const stop = stopAllMessageGenerations('session-1', dependencies, 20_000)
+    await Promise.resolve()
+
+    expect(getStopSession).not.toHaveBeenCalled()
+    releaseInsert()
+    await generationResult
+    await stop
+
+    expect(getStopSession).toHaveBeenCalledOnce()
+    expect(generationRuntime.isSessionStopRequested('session-1')).toBe(false)
     expect(orchestrateGenerationMock).not.toHaveBeenCalled()
   })
 

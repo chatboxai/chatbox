@@ -16,6 +16,7 @@ import platform from '@/platform'
 import { navigateToDynamicPath, router } from '@/router'
 import { sortSessionRecords } from '@/storage/SessionMetaStorage'
 import * as atoms from '../atoms'
+import { clearSessionGenerationStopOperations } from '../generationStopOperations'
 import * as scrollActions from '../scrollActions'
 import { clearSessionActivity } from '../sessionActivityStore'
 import { getMetaStorage, initEmptyChatSession } from '../sessionHelpers'
@@ -73,6 +74,8 @@ export async function deleteSession(sessionId: string): Promise<void> {
   // Clear only after the deletion succeeded: queued messages are the sole copy
   // of the user's text, and a failed deletion leaves the session (and queue) alive.
   await rendererApplication.sessions.deleteSession(sessionId)
+  rendererApplication.generationRuntime.clearSessionStop(sessionId)
+  clearSessionGenerationStopOperations(sessionId)
   await clearMessageQueues([sessionId])
 }
 
@@ -81,6 +84,10 @@ export async function deleteSessions(sessionIds: string[]): Promise<void> {
     abortGenerationsBeforeDeletion(sessionId)
   }
   await rendererApplication.sessions.deleteSessions(sessionIds)
+  for (const sessionId of sessionIds) {
+    rendererApplication.generationRuntime.clearSessionStop(sessionId)
+    clearSessionGenerationStopOperations(sessionId)
+  }
   await clearMessageQueues(sessionIds)
 }
 

@@ -24,6 +24,7 @@ import {
   normalizeDeepSeekReasoningEffort,
 } from '../../../models/utils/deepseek'
 import { maybeWrapGeminiErrorResponse } from '../../../models/utils/gemini-stream-error'
+import { maybeWrapOpenAIChatCompletionSseResponse } from '../../../models/utils/openai-chat-sse-termination'
 import { getChatboxAPIOrigin } from '../../../request/chatboxai_pool'
 import type { StreamTextResult, ToolUseScope } from '../../../types'
 import { type ChatboxAILicenseDetail, ModelProviderEnum, type ProviderModelInfo } from '../../../types'
@@ -112,7 +113,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
     // backend's graceful-shutdown coordination (chatbox-backend #548). Direct Gemini
     // providers (gemini.ts / custom-gemini.ts) don't route through this fetch and are
     // out of scope until the same frame shape is confirmed from Google's own API.
-    return maybeWrapGeminiErrorResponse(urlString, response)
+    return maybeWrapOpenAIChatCompletionSseResponse(url, options, maybeWrapGeminiErrorResponse(urlString, response))
   }
 
   static isSupportTextEmbedding() {

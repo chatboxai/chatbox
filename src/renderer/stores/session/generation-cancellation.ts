@@ -6,11 +6,22 @@ import {
 import { getCurrentConversationMessages } from '@chatbox/core/session/generation-state'
 import { findMessageLocation } from '@shared/session/message-forks'
 import type { Message, Session } from '@shared/types'
+import { rendererApplication } from '@/app/renderer-application'
 
 export { cancelRunningToolCallBatch, finishAbortedGeneration } from '@chatbox/core/generation'
 
 export interface GenerationCancellationDependencies {
-  runtime: Pick<GenerationRuntimeStore, 'beginStop' | 'clear' | 'get' | 'list' | 'requestAbort'>
+  runtime: Pick<
+    GenerationRuntimeStore,
+    | 'beginSessionStop'
+    | 'beginStop'
+    | 'clear'
+    | 'clearSessionStop'
+    | 'get'
+    | 'list'
+    | 'requestAbort'
+    | 'waitForGenerationPreparationLeases'
+  >
   getSession: (sessionId: string) => Promise<Session | null>
   removeMessage: (sessionId: string, messageId: string) => Promise<void>
   persistMessage: (sessionId: string, message: Message) => Promise<void>
@@ -21,8 +32,7 @@ const sessionStopTasks = new Map<string, Promise<void>>()
 function serializeSessionStop(sessionId: string, operation: () => Promise<void>): Promise<void> {
   const previous = sessionStopTasks.get(sessionId)
   const task = previous ? previous.catch(() => {}).then(operation) : operation()
-  let trackedTask: Promise<void>
-  trackedTask = task.finally(() => {
+  const trackedTask = task.finally(() => {
     if (sessionStopTasks.get(sessionId) === trackedTask) sessionStopTasks.delete(sessionId)
   })
   sessionStopTasks.set(sessionId, trackedTask)
@@ -30,15 +40,12 @@ function serializeSessionStop(sessionId: string, operation: () => Promise<void>)
 }
 
 async function getDefaultDependencies(): Promise<GenerationCancellationDependencies> {
-  const [{ rendererApplication }, { modifyMessage, removeMessage }] = await Promise.all([
-    import('@/app/renderer-application'),
-    import('./messages'),
-  ])
+  const { persistStreamingMessage, removeMessage } = await import('./messages')
   return {
     runtime: rendererApplication.generationRuntime,
     getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
     removeMessage,
-    persistMessage: (sessionId, message) => modifyMessage(sessionId, message, true),
+    persistMessage: (sessionId, message) => persistStreamingMessage(sessionId, message, { refreshCounting: true }),
   }
 }
 
@@ -75,18 +82,25 @@ export function stopMessageGeneration(
   dependencies?: GenerationCancellationDependencies,
   stoppedAt = Date.now()
 ): Promise<void> {
+  const runtime = dependencies?.runtime ?? rendererApplication.generationRuntime
+  const initialRuntime = runtime.get(sessionId, messageId)
+  if (initialRuntime?.phase === 'paused') return Promise.resolve()
+  let stoppingRuntime = initialRuntime ? runtime.beginStop(sessionId, messageId, stoppedAt, initialRuntime) : undefined
+
   return serializeSessionStop(sessionId, async () => {
     const resolvedDependencies = dependencies ?? (await getDefaultDependencies())
-    const initialRuntime = resolvedDependencies.runtime.get(sessionId, messageId)
-    if (initialRuntime?.phase === 'paused') return
-    let stoppingRuntime = initialRuntime
-      ? resolvedDependencies.runtime.beginStop(sessionId, messageId, stoppedAt, initialRuntime)
-      : undefined
+    let canReleaseRuntime = false
     try {
       const session = await resolvedDependencies.getSession(sessionId)
-      if (!session) return
+      if (!session) {
+        canReleaseRuntime = true
+        return
+      }
       const location = findMessageLocation(session, messageId)
-      if (!location?.list[location.index].generating) return
+      if (!location?.list[location.index].generating) {
+        canReleaseRuntime = true
+        return
+      }
 
       // A placeholder can register its controller while the Session read is in
       // flight. Re-read the runtime so that late registration also retains the
@@ -99,8 +113,9 @@ export function stopMessageGeneration(
         resolvedDependencies.runtime.requestAbort(sessionId, messageId, stoppedAt)
       }
       await finalizeMessages(sessionId, new Set([messageId]), session, resolvedDependencies, stoppedAt)
+      canReleaseRuntime = true
     } finally {
-      if (stoppingRuntime) {
+      if (canReleaseRuntime && stoppingRuntime) {
         resolvedDependencies.runtime.clear(sessionId, messageId, stoppingRuntime)
       }
     }
@@ -112,26 +127,50 @@ export function stopAllMessageGenerations(
   dependencies?: GenerationCancellationDependencies,
   stoppedAt = Date.now()
 ): Promise<void> {
+  const runtime = dependencies?.runtime ?? rendererApplication.generationRuntime
+  const stopGate = runtime.beginSessionStop(sessionId, stoppedAt)
+  const preparationBarrier = runtime.waitForGenerationPreparationLeases(sessionId)
+  const activeRuntimes = runtime.list(sessionId).filter((candidate) => candidate.phase !== 'paused')
+  const stoppingRuntimes = new Map<string, GenerationRuntimeState>()
+  for (const activeRuntime of activeRuntimes) {
+    const stopping = runtime.beginStop(sessionId, activeRuntime.messageId, stoppedAt, activeRuntime)
+    if (stopping) stoppingRuntimes.set(activeRuntime.messageId, stopping)
+  }
+
   return serializeSessionStop(sessionId, async () => {
     const resolvedDependencies = dependencies ?? (await getDefaultDependencies())
-    const activeRuntimes = resolvedDependencies.runtime.list(sessionId).filter((runtime) => runtime.phase !== 'paused')
-    const stoppingRuntimes = new Map<string, GenerationRuntimeState>()
-    for (const runtime of activeRuntimes) {
-      const stopping = resolvedDependencies.runtime.beginStop(sessionId, runtime.messageId, stoppedAt, runtime)
-      if (stopping) stoppingRuntimes.set(runtime.messageId, stopping)
+    await preparationBarrier
+    for (const currentRuntime of resolvedDependencies.runtime.list(sessionId)) {
+      if (currentRuntime.phase === 'paused') continue
+      const stopping = resolvedDependencies.runtime.beginStop(
+        sessionId,
+        currentRuntime.messageId,
+        stoppedAt,
+        currentRuntime
+      )
+      if (stopping) stoppingRuntimes.set(currentRuntime.messageId, stopping)
     }
 
+    let canReleaseRuntimes = false
     try {
       // Read after aborting so the terminal write is derived from the freshest
       // cache projection instead of a Message snapshot captured by the UI.
       const session = await resolvedDependencies.getSession(sessionId)
-      if (!session) return
-      const messageIds = new Set(activeRuntimes.map((runtime) => runtime.messageId))
-      for (const runtime of resolvedDependencies.runtime.list(sessionId)) {
-        if (runtime.phase === 'paused') continue
-        const stopping = resolvedDependencies.runtime.beginStop(sessionId, runtime.messageId, stoppedAt, runtime)
-        if (stopping) stoppingRuntimes.set(runtime.messageId, stopping)
-        messageIds.add(runtime.messageId)
+      if (!session) {
+        canReleaseRuntimes = true
+        return
+      }
+      const messageIds = new Set(activeRuntimes.map((activeRuntime) => activeRuntime.messageId))
+      for (const currentRuntime of resolvedDependencies.runtime.list(sessionId)) {
+        if (currentRuntime.phase === 'paused') continue
+        const stopping = resolvedDependencies.runtime.beginStop(
+          sessionId,
+          currentRuntime.messageId,
+          stoppedAt,
+          currentRuntime
+        )
+        if (stopping) stoppingRuntimes.set(currentRuntime.messageId, stopping)
+        messageIds.add(currentRuntime.messageId)
       }
       const activeRuntimeMessageIds = new Set(messageIds)
       for (const message of getCurrentConversationMessages(session)) {
@@ -143,9 +182,13 @@ export function stopAllMessageGenerations(
         }
       }
       await finalizeMessages(sessionId, messageIds, session, resolvedDependencies, stoppedAt)
+      canReleaseRuntimes = true
     } finally {
-      for (const [messageId, runtime] of stoppingRuntimes) {
-        resolvedDependencies.runtime.clear(sessionId, messageId, runtime)
+      if (canReleaseRuntimes) {
+        for (const [messageId, runtime] of stoppingRuntimes) {
+          resolvedDependencies.runtime.clear(sessionId, messageId, runtime)
+        }
+        resolvedDependencies.runtime.clearSessionStop(sessionId, stopGate)
       }
     }
   })

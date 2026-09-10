@@ -7,6 +7,17 @@ export interface GenerationRuntimeState {
   readonly abortController: AbortController
 }
 
+export interface GenerationSessionStopGate {
+  readonly sessionId: string
+  readonly token: number
+  readonly reason?: unknown
+}
+
+export interface GenerationPreparationLease {
+  readonly sessionId: string
+  readonly token: number
+}
+
 export interface GenerationRuntimeStoreOptions {
   createAbortController?: () => AbortController
 }
@@ -23,21 +34,25 @@ export interface GenerationRuntimeStoreOptions {
 export class GenerationRuntimeStore {
   private readonly states = new Map<string, Map<string, GenerationRuntimeState>>()
   private readonly pendingAbortReasons = new Map<string, Map<string, unknown>>()
+  private readonly sessionStopGates = new Map<string, GenerationSessionStopGate>()
+  private readonly preparationLeases = new Map<string, Set<GenerationPreparationLease>>()
+  private readonly preparationWaiters = new Map<string, Set<() => void>>()
   private readonly unsettledStreamDrains = new Map<string, Set<Promise<void>>>()
   private readonly listeners = new Set<() => void>()
   private readonly createAbortController: () => AbortController
   private version = 0
+  private nextSessionStopToken = 0
+  private nextPreparationToken = 0
 
   constructor(options: GenerationRuntimeStoreOptions = {}) {
     this.createAbortController = options.createAbortController ?? (() => new AbortController())
   }
 
   start(sessionId: string, messageId: string): GenerationRuntimeState {
-    const sessionStates = this.getOrCreateSessionStates(sessionId)
-    sessionStates.get(messageId)?.abortController.abort()
     const pendingAbortReasons = this.pendingAbortReasons.get(sessionId)
     const hasPendingAbort = pendingAbortReasons?.has(messageId) ?? false
     const pendingAbortReason = pendingAbortReasons?.get(messageId)
+    const sessionStopGate = this.sessionStopGates.get(sessionId)
     if (hasPendingAbort) {
       pendingAbortReasons?.delete(messageId)
       if (pendingAbortReasons?.size === 0) this.pendingAbortReasons.delete(sessionId)
@@ -48,7 +63,16 @@ export class GenerationRuntimeStore {
       phase: 'preparing',
       abortController: this.createAbortController(),
     }
-    if (hasPendingAbort) state.abortController.abort(pendingAbortReason)
+    if (sessionStopGate || hasPendingAbort) {
+      state.abortController.abort(sessionStopGate?.reason ?? pendingAbortReason)
+    }
+    if (sessionStopGate) {
+      // The caller observes cancellation without publishing a late runtime that
+      // could outlive the Stop-all final scan.
+      return state
+    }
+    const sessionStates = this.getOrCreateSessionStates(sessionId)
+    sessionStates.get(messageId)?.abortController.abort()
     sessionStates.set(messageId, state)
     this.notify()
     return state
@@ -67,6 +91,72 @@ export class GenerationRuntimeStore {
 
   getActiveMessageIds(sessionId: string): ReadonlySet<string> {
     return new Set(this.list(sessionId).map((runtime) => runtime.messageId))
+  }
+
+  /**
+   * Prevent runtimes registered after Stop-all from escaping its persistence
+   * queue. Each call owns a fresh gate so an older completion cannot release a
+   * newer Stop-all attempt.
+   */
+  beginSessionStop(sessionId: string, reason?: unknown): GenerationSessionStopGate {
+    const gate: GenerationSessionStopGate = {
+      sessionId,
+      token: ++this.nextSessionStopToken,
+      reason,
+    }
+    this.sessionStopGates.set(sessionId, gate)
+    this.notify()
+    return gate
+  }
+
+  clearSessionStop(sessionId: string, expected?: GenerationSessionStopGate): boolean {
+    const current = this.sessionStopGates.get(sessionId)
+    if (!current || (expected && current !== expected)) return false
+    this.sessionStopGates.delete(sessionId)
+    this.notify()
+    return true
+  }
+
+  isSessionStopRequested(sessionId: string): boolean {
+    return this.sessionStopGates.has(sessionId)
+  }
+
+  acquireGenerationPreparationLease(sessionId: string): GenerationPreparationLease | undefined {
+    if (this.sessionStopGates.has(sessionId)) return undefined
+    const lease: GenerationPreparationLease = {
+      sessionId,
+      token: ++this.nextPreparationToken,
+    }
+    let leases = this.preparationLeases.get(sessionId)
+    if (!leases) {
+      leases = new Set()
+      this.preparationLeases.set(sessionId, leases)
+    }
+    leases.add(lease)
+    return lease
+  }
+
+  releaseGenerationPreparationLease(lease: GenerationPreparationLease): boolean {
+    const leases = this.preparationLeases.get(lease.sessionId)
+    if (!leases?.delete(lease)) return false
+    if (leases.size > 0) return true
+    this.preparationLeases.delete(lease.sessionId)
+    const waiters = this.preparationWaiters.get(lease.sessionId)
+    this.preparationWaiters.delete(lease.sessionId)
+    for (const resolve of waiters ?? []) resolve()
+    return true
+  }
+
+  waitForGenerationPreparationLeases(sessionId: string): Promise<void> | undefined {
+    if (!this.preparationLeases.has(sessionId)) return undefined
+    return new Promise((resolve) => {
+      let waiters = this.preparationWaiters.get(sessionId)
+      if (!waiters) {
+        waiters = new Set()
+        this.preparationWaiters.set(sessionId, waiters)
+      }
+      waiters.add(resolve)
+    })
   }
 
   /**
@@ -249,12 +339,18 @@ export class GenerationRuntimeStore {
   }
 
   dispose(): void {
-    const hadStates = this.states.size > 0 || this.pendingAbortReasons.size > 0
+    const hadStates = this.states.size > 0 || this.pendingAbortReasons.size > 0 || this.sessionStopGates.size > 0
     for (const sessionStates of this.states.values()) {
       for (const state of sessionStates.values()) state.abortController.abort()
     }
     this.states.clear()
     this.pendingAbortReasons.clear()
+    this.sessionStopGates.clear()
+    this.preparationLeases.clear()
+    for (const waiters of this.preparationWaiters.values()) {
+      for (const resolve of waiters) resolve()
+    }
+    this.preparationWaiters.clear()
     this.unsettledStreamDrains.clear()
     if (hadStates) this.notify()
     this.listeners.clear()

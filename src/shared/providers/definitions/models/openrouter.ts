@@ -3,6 +3,7 @@ import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
 import { fetchRemoteModels } from '../../../models/openai-compatible'
 import type { CallChatCompletionOptions } from '../../../models/types'
+import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 
@@ -46,7 +47,7 @@ export default class OpenRouter extends AbstractAISDKModel {
         'HTTP-Referer': 'https://chatboxai.app',
         'X-Title': 'Chatbox AI',
       },
-      fetch: this.options.customFetch,
+      fetch: createOpenAIChatCompletionSseFetch(this.options.customFetch),
     })
   }
 

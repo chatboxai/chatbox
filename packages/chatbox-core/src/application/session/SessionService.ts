@@ -268,14 +268,18 @@ export class SessionService {
     )
   }
 
-  async removeMessage(sessionId: string, messageId: string): Promise<Session> {
+  async removeMessage(
+    sessionId: string,
+    messageId: string,
+    onFullSessionPersisted?: (session: Session) => void
+  ): Promise<Session> {
     // Messages can be deleted while other replies stream; their cache-only chunk
     // updates must survive this full-session write. Preserving never resurrects
     // the removed message: the merge only maps over messages that still exist.
     return await this.updateSessionWithMessages(
       sessionId,
       (session) => applyMessageRemoval(session, sessionId, messageId),
-      { preserveCachedGeneratingMessages: true }
+      { preserveCachedGeneratingMessages: true, onFullSessionPersisted }
     )
   }
 

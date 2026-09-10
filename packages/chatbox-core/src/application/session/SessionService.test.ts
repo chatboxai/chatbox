@@ -281,6 +281,38 @@ describe('SessionService', () => {
     expect(harness.repository.records.has(created.id)).toBe(true)
   })
 
+  test.each(['success', 'metadata-failure', 'storage-failure'] as const)(
+    'only signals durable message removal after the session write: %s',
+    async (outcome) => {
+      const harness = createHarness()
+      const session = createTestSession('session-1')
+      session.messages = [{ id: 'reply-1', role: 'assistant', contentParts: [] }]
+      harness.repository.sessions.set(session.id, session)
+      harness.repository.records.set(session.id, createTestRecord(session, 1))
+      const onPersisted = vi.fn()
+      if (outcome === 'metadata-failure') {
+        vi.spyOn(harness.repository.meta, 'update').mockRejectedValueOnce(new Error('metadata failed'))
+      } else if (outcome === 'storage-failure') {
+        vi.spyOn(harness.repository, 'setSession').mockRejectedValueOnce(new Error('storage failed'))
+      }
+
+      const removal = harness.service.removeMessage(session.id, 'reply-1', onPersisted)
+      if (outcome === 'success') {
+        await removal
+      } else {
+        await expect(removal).rejects.toThrow(outcome === 'metadata-failure' ? 'metadata failed' : 'storage failed')
+      }
+      if (outcome === 'storage-failure') {
+        expect(onPersisted).not.toHaveBeenCalled()
+        expect(harness.repository.sessions.get(session.id)?.messages).toHaveLength(1)
+      } else {
+        expect(onPersisted).toHaveBeenCalledOnce()
+        expect(onPersisted).toHaveBeenCalledWith(expect.objectContaining({ messages: [] }))
+        expect(harness.repository.sessions.get(session.id)?.messages).toHaveLength(0)
+      }
+    }
+  )
+
   test('archives and restores full data and meta together', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')

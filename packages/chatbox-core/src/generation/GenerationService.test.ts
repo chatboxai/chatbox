@@ -858,6 +858,40 @@ describe('GenerationService', () => {
     expect(harness.runtime.get('session-1')).toBeUndefined()
   })
 
+  it('does not publish a generating checkpoint when Stop lands during async chunk processing', async () => {
+    let releaseBlob!: () => void
+    let chunkProcessingStarted!: () => void
+    const blobGate = new Promise<void>((resolve) => {
+      releaseBlob = resolve
+    })
+    const processingStarted = new Promise<void>((resolve) => {
+      chunkProcessingStarted = resolve
+    })
+    harness.storeBlob.mockImplementationOnce(async () => {
+      chunkProcessingStarted()
+      await blobGate
+    })
+    harness.setStreamFactory(() =>
+      stream([
+        { type: 'file', file: { mediaType: 'image/png', base64: 'encoded-image' } },
+        { type: 'finish', finishReason: 'stop' },
+      ] as ModelStreamPart<ToolSet>[])
+    )
+
+    const generation = harness.service.orchestrate('session-1', targetMessage())
+    await processingStarted
+    const persistedBeforeStop = harness.persisted.length
+    const activeRuntime = harness.runtime.get('session-1', 'assistant-1')
+    expect(activeRuntime).toBeDefined()
+    harness.runtime.beginStop('session-1', 'assistant-1', 900, activeRuntime)
+    releaseBlob()
+    await generation
+
+    expect(harness.cached).toEqual([])
+    expect(harness.persisted.slice(persistedBeforeStop).every((entry) => entry.message.generating === false)).toBe(true)
+    expect(lastPersisted(harness)).toMatchObject({ generating: false, finishReason: 'canceled' })
+  })
+
   it('wires steering into prepareStep and releases it when generation settles', async () => {
     const basePrepareStep = vi.fn(() => Promise.resolve({ activeTools: ['tool_a'] }))
     harness.setPrepareStep(basePrepareStep)

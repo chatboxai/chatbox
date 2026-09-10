@@ -2,29 +2,6 @@ import { CapacitorHttp } from '@capacitor/core'
 import { createNativeReadableStream } from '@/native/stream-http'
 import { ApiError } from '../../shared/models/errors'
 
-function isLockedStreamCancelError(error: unknown): boolean {
-  return (
-    error instanceof TypeError &&
-    (error.message.includes('Cannot cancel a locked stream') ||
-      error.message.includes('ReadableStream is locked') ||
-      error.message.includes('stream is locked'))
-  )
-}
-
-export function cancelReadableStreamOnAbort(stream: ReadableStream<Uint8Array>) {
-  try {
-    void stream.cancel('aborted').catch((error: unknown) => {
-      if (!isLockedStreamCancelError(error)) {
-        console.warn('Failed to cancel native stream', error)
-      }
-    })
-  } catch (error) {
-    if (!isLockedStreamCancelError(error)) {
-      console.warn('Failed to cancel native stream', error)
-    }
-  }
-}
-
 export async function handleMobileRequest(
   url: string,
   method: string,
@@ -47,21 +24,15 @@ export async function handleMobileRequest(
         Accept: 'text/event-stream',
       }
 
-      const stream = createNativeReadableStream({
-        url,
-        method,
-        headers: streamHeaders,
-        body: body as string,
-      })
-
-      // Handle abort signal for stream cancellation
-      if (signal) {
-        const onAbort = () => {
-          cancelReadableStreamOnAbort(stream)
-        }
-        if (signal.aborted) onAbort()
-        else signal.addEventListener('abort', onAbort, { once: true })
-      }
+      const stream = createNativeReadableStream(
+        {
+          url,
+          method,
+          headers: streamHeaders,
+          body: body as string,
+        },
+        { signal }
+      )
 
       // TODO: Once native plugin supports returning status/headers,
       // use them instead of hardcoded values

@@ -90,6 +90,71 @@ describe('GenerationRuntimeStore', () => {
     expect(retry.abortController.signal.aborted).toBe(false)
   })
 
+  it('aborts every runtime registered while a Session Stop gate is active', () => {
+    const store = createStore()
+    const gate = store.beginSessionStop('session-1', 123_456)
+
+    const first = store.start('session-1', 'message-1')
+    const second = store.start('session-1', 'message-2')
+
+    expect(first.abortController.signal).toMatchObject({ aborted: true, reason: 123_456 })
+    expect(second.abortController.signal).toMatchObject({ aborted: true, reason: 123_456 })
+    expect(store.list('session-1')).toEqual([])
+    expect(store.isSessionStopRequested('session-1')).toBe(true)
+    expect(store.clearSessionStop('session-1', gate)).toBe(true)
+    expect(store.start('session-1', 'message-3').abortController.signal.aborted).toBe(false)
+  })
+
+  it('lets only the latest Stop-all owner release the Session gate', () => {
+    const store = createStore()
+    const first = store.beginSessionStop('session-1', 'first')
+    const latest = store.beginSessionStop('session-1', 'latest')
+
+    expect(store.clearSessionStop('session-1', first)).toBe(false)
+    expect(store.start('session-1', 'late-message').abortController.signal).toMatchObject({
+      aborted: true,
+      reason: 'latest',
+    })
+    expect(store.clearSessionStop('session-1', latest)).toBe(true)
+  })
+
+  it('force-clears a retained Session Stop gate when its Session is deleted', () => {
+    const store = createStore()
+    store.beginSessionStop('session-1', 'stopped')
+
+    expect(store.clearSessionStop('session-1')).toBe(true)
+    expect(store.isSessionStopRequested('session-1')).toBe(false)
+    expect(store.clearSessionStop('session-1')).toBe(false)
+  })
+
+  it('blocks new preparation leases behind a Session Stop gate', () => {
+    const store = createStore()
+    store.beginSessionStop('session-1', 'stopped')
+
+    expect(store.acquireGenerationPreparationLease('session-1')).toBeUndefined()
+  })
+
+  it('waits for preparation leases acquired before the Session Stop gate', async () => {
+    const store = createStore()
+    const first = store.acquireGenerationPreparationLease('session-1')
+    const second = store.acquireGenerationPreparationLease('session-1')
+    expect(first).toBeDefined()
+    expect(second).toBeDefined()
+    store.beginSessionStop('session-1', 'stopped')
+    const barrier = store.waitForGenerationPreparationLeases('session-1')
+    const settled = vi.fn()
+    void barrier?.then(settled)
+
+    expect(store.releaseGenerationPreparationLease(first!)).toBe(true)
+    await Promise.resolve()
+    expect(settled).not.toHaveBeenCalled()
+
+    expect(store.releaseGenerationPreparationLease(second!)).toBe(true)
+    await barrier
+    expect(settled).toHaveBeenCalledOnce()
+    expect(store.releaseGenerationPreparationLease(second!)).toBe(false)
+  })
+
   it('clears pending abort requests with the rest of a Session runtime', () => {
     const store = createStore()
 

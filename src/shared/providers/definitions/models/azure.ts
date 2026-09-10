@@ -1,6 +1,7 @@
 import { createAzure } from '@ai-sdk/azure'
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
+import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 import { normalizeAzureEndpoint } from '../../../utils/llm_utils'
@@ -77,12 +78,14 @@ export default class AzureOpenAI extends AbstractAISDKModel {
     // v1 uses /openai/v1/*, while dated API versions use deployment URLs.
     const baseURL = !useDeploymentBasedUrls && !isStandardEndpoint ? `${normalizedEndpoint}/v1` : normalizedEndpoint
 
+    const fetch = !useDeploymentBasedUrls && !isStandardEndpoint ? createAzureV1Fetch(apiVersion) : undefined
+
     return createAzure({
       apiKey: this.options.azureApikey,
       apiVersion,
       baseURL,
       useDeploymentBasedUrls,
-      fetch: !useDeploymentBasedUrls && !isStandardEndpoint ? createAzureV1Fetch(apiVersion) : undefined,
+      fetch: createOpenAIChatCompletionSseFetch(fetch),
     })
   }
 

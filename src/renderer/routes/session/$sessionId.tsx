@@ -14,6 +14,7 @@ import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
 import ThreadHistoryDrawer from '@/components/session/ThreadHistoryDrawer'
+import { useGenerationStop } from '@/hooks/useGenerationStop'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import useVersion from '@/hooks/useVersion'
@@ -23,7 +24,6 @@ import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { applyChatboxLicenseDefaultModelToSession } from '@/stores/defaultChatModel'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
-import { stopAllMessageGenerations } from '@/stores/session/generation-cancellation'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { removeCurrentThread, startNewThread } from '@/stores/session/threads'
 import { clearSessionActivity } from '@/stores/sessionActivityStore'
@@ -199,15 +199,7 @@ function RouteComponent() {
     return true
   }, [currentSession])
 
-  const onStopGenerating = useCallback(() => {
-    if (!currentSession) {
-      return false
-    }
-    void stopAllMessageGenerations(currentSession.id).catch((error) => {
-      console.error('Failed to stop all message generations:', error)
-    })
-    return true
-  }, [currentSession])
+  const { requestStop: onStopGenerating, status: stopGenerationStatus } = useGenerationStop(currentSession?.id)
 
   const onViewCompactionSummary = useCallback((summaryMessageId: string) => {
     messageListRef.current?.scrollToMessage(summaryMessageId)
@@ -263,6 +255,7 @@ function RouteComponent() {
             onClickSessionSettings={onClickSessionSettings}
             onSubmit={onSubmit}
             onStopGenerating={onStopGenerating}
+            stopGenerationStatus={stopGenerationStatus}
             onViewCompactionSummary={onViewCompactionSummary}
           />
         </ErrorBoundary>

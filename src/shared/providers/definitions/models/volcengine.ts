@@ -1,10 +1,9 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
-import type { ProviderModelInfo, ToolUseScope } from '../../../types'
 import { isDeepSeekWeakToolUse } from '../../../models/utils/deepseek'
+import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
+import type { ProviderModelInfo, ToolUseScope } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
-
-type FetchFunction = typeof globalThis.fetch
 
 interface Options {
   apiKey: string
@@ -45,9 +44,7 @@ export default class VolcEngine extends AbstractAISDKModel {
       name: this.name,
       apiKey: this.options.apiKey,
       baseURL: Host,
-      fetch: async (_input, init) => {
-        return fetch(`${Host}${Path}`, init)
-      },
+      fetch: createOpenAIChatCompletionSseFetch(async (_input, init) => fetch(`${Host}${Path}`, init)),
     })
   }
   protected getChatModel() {

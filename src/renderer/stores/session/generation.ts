@@ -71,7 +71,13 @@ export function generate(
 async function generateReplyBelowWithoutSessionLock(sessionId: string, msgId: string) {
   const newAssistantMsg = createMessage('assistant', '')
   newAssistantMsg.generating = true // prevent estimating token count before generating done
-  await insertMessageAfter(sessionId, newAssistantMsg, msgId)
+  const preparationLease = rendererApplication.generationRuntime.acquireGenerationPreparationLease(sessionId)
+  if (!preparationLease) return
+  try {
+    await insertMessageAfter(sessionId, newAssistantMsg, msgId)
+  } finally {
+    rendererApplication.generationRuntime.releaseGenerationPreparationLease(preparationLease)
+  }
   await _generateWithoutSessionLock(sessionId, newAssistantMsg, { operationType: 'regenerate' })
 }
 

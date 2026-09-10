@@ -1,6 +1,7 @@
 import { createPerplexity } from '@ai-sdk/perplexity'
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
+import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 
@@ -26,6 +27,7 @@ export default class Perplexity extends AbstractAISDKModel {
   protected getProvider() {
     return createPerplexity({
       apiKey: this.options.perplexityApiKey,
+      fetch: createOpenAIChatCompletionSseFetch(),
     })
   }
 

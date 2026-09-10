@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { updateMessageCacheMock, updateMessageMock } = vi.hoisted(() => ({
+const { generationRuntimeMock, updateMessageCacheMock, updateMessageMock } = vi.hoisted(() => ({
+  generationRuntimeMock: { clear: vi.fn(), get: vi.fn() },
   updateMessageCacheMock: vi.fn().mockResolvedValue(undefined),
   updateMessageMock: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
+    generationRuntime: generationRuntimeMock,
     sessions: { updateMessage: updateMessageMock },
     sessionQueryBridge: { updateMessageCache: updateMessageCacheMock },
   },
@@ -64,11 +66,7 @@ describe('updateStreamingCache', () => {
   it('calls updateMessageCacheMock with correct args', () => {
     const msg = createTestMessage()
     updateStreamingCache('session-1', msg)
-    expect(updateMessageCacheMock).toHaveBeenCalledWith(
-      'session-1',
-      'test-msg-1',
-      expect.objectContaining({ id: 'test-msg-1' })
-    )
+    expect(updateMessageCacheMock).toHaveBeenCalledWith('session-1', 'test-msg-1', expect.any(Function))
   })
 
   it('sets message.timestamp', () => {
@@ -119,5 +117,34 @@ describe('persistStreamingMessage', () => {
     const msg = createTestMessage({ wordCount: 10 })
     await persistStreamingMessage('session-1', msg)
     expect(msg.wordCount).toBe(10)
+  })
+
+  it('supersedes a pending generating checkpoint with the terminal message', async () => {
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    updateMessageMock.mockImplementationOnce(() => firstGate)
+    const first = persistStreamingMessage(
+      'session-ordering',
+      createTestMessage({ id: 'message-ordering', generating: true }),
+      { checkpoint: true }
+    )
+    const pending = persistStreamingMessage(
+      'session-ordering',
+      createTestMessage({ id: 'message-ordering', generating: true, contentParts: [{ type: 'text', text: 'later' }] }),
+      { checkpoint: true }
+    )
+    const terminal = persistStreamingMessage(
+      'session-ordering',
+      createTestMessage({ id: 'message-ordering', generating: false, contentParts: [{ type: 'text', text: 'done' }] })
+    )
+
+    expect(updateMessageMock).toHaveBeenCalledOnce()
+    releaseFirst()
+    await Promise.all([first, pending, terminal])
+
+    expect(updateMessageMock).toHaveBeenCalledTimes(2)
+    expect(updateMessageMock.mock.calls[1]?.[2]).toMatchObject({ generating: false })
   })
 })

@@ -4,6 +4,7 @@ import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
 import { fetchRemoteModels } from '../../../models/openai-compatible'
 import type { CallChatCompletionOptions } from '../../../models/types'
 import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
+import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 import { normalizeOpenAIApiHostAndPath } from '../../../utils/llm_utils'
@@ -66,10 +67,11 @@ export default class OpenAI extends AbstractAISDKModel {
   }
 
   protected getProvider(options?: CallChatCompletionOptions) {
+    const fetch = this.options.customFetch || createFetchWithProxy(this.options.useProxy, this.dependencies)
     return createOpenAI({
       apiKey: this.options.apiKey,
       baseURL: this.options.apiHost,
-      fetch: this.options.customFetch || createFetchWithProxy(this.options.useProxy, this.dependencies),
+      fetch: createOpenAIChatCompletionSseFetch(fetch),
       headers: this.getRequestHeaders(options),
     })
   }

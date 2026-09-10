@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { generationRuntimeMock, sessionsMock, sessionQueryBridgeMock, clearQueueMock } = vi.hoisted(() => ({
   generationRuntimeMock: {
+    clearSessionStop: vi.fn(),
     getActiveMessageIds: vi.fn((_sessionId: string) => new Set<string>()),
     requestAbort: vi.fn(),
   },
@@ -70,6 +71,7 @@ describe('deleteSession', () => {
     const lastAbortOrder = Math.max(...generationRuntimeMock.requestAbort.mock.invocationCallOrder)
     expect(lastAbortOrder).toBeLessThan(sessionsMock.deleteSession.mock.invocationCallOrder[0])
     expect(clearQueueMock).toHaveBeenCalledWith('session-1')
+    expect(generationRuntimeMock.clearSessionStop).toHaveBeenCalledWith('session-1')
   })
 
   it('still deletes when the session surface is not cached', async () => {
@@ -106,6 +108,8 @@ describe('deleteSessions', () => {
     expect(sessionsMock.deleteSessions).toHaveBeenCalledWith(['session-1', 'session-2'])
     expect(clearQueueMock).toHaveBeenCalledWith('session-1')
     expect(clearQueueMock).toHaveBeenCalledWith('session-2')
+    expect(generationRuntimeMock.clearSessionStop).toHaveBeenCalledWith('session-1')
+    expect(generationRuntimeMock.clearSessionStop).toHaveBeenCalledWith('session-2')
   })
 })
 

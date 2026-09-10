@@ -1,32 +1,62 @@
-import { describe, expect, test, vi } from 'vitest'
-import { cancelReadableStreamOnAbort } from './mobile-request'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { createNativeReadableStream } from '@/native/stream-http'
+import { handleMobileRequest } from './mobile-request'
 
-describe('mobile request stream cancellation', () => {
-  test('swallows locked stream cancel rejections', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const stream = new ReadableStream<Uint8Array>()
-    const reader = stream.getReader()
+vi.mock('@/native/stream-http', () => ({
+  createNativeReadableStream: vi.fn(),
+}))
 
-    cancelReadableStreamOnAbort(stream)
-    await Promise.resolve()
-    await Promise.resolve()
-
-    expect(warnSpy).not.toHaveBeenCalled()
-    reader.releaseLock()
-    warnSpy.mockRestore()
+describe('mobile request native streaming', () => {
+  beforeEach(() => {
+    vi.mocked(createNativeReadableStream).mockReset()
+    vi.mocked(createNativeReadableStream).mockReturnValue(new ReadableStream<Uint8Array>())
   })
 
-  test('logs unexpected cancel failures', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const stream = {
-      cancel: vi.fn().mockRejectedValue(new Error('boom')),
-    } as Pick<ReadableStream<Uint8Array>, 'cancel'> as ReadableStream<Uint8Array>
+  test('passes the request signal directly to the native stream', async () => {
+    const abortController = new AbortController()
 
-    cancelReadableStreamOnAbort(stream)
-    await Promise.resolve()
-    await Promise.resolve()
+    await handleMobileRequest(
+      'https://example.com/stream',
+      'POST',
+      new Headers({ Authorization: 'Bearer test' }),
+      JSON.stringify({ stream: true }),
+      abortController.signal
+    )
 
-    expect(warnSpy).toHaveBeenCalledWith('Failed to cancel native stream', expect.any(Error))
-    warnSpy.mockRestore()
+    expect(createNativeReadableStream).toHaveBeenCalledWith(
+      {
+        url: 'https://example.com/stream',
+        method: 'POST',
+        headers: {
+          Accept: 'text/event-stream',
+          authorization: 'Bearer test',
+        },
+        body: JSON.stringify({ stream: true }),
+      },
+      { signal: abortController.signal }
+    )
+  })
+
+  test('passes an already-aborted signal to native stream setup', async () => {
+    const abortController = new AbortController()
+    abortController.abort(123_456)
+
+    await handleMobileRequest(
+      'https://example.com/stream',
+      'POST',
+      new Headers(),
+      JSON.stringify({ stream: true }),
+      abortController.signal
+    )
+
+    expect(createNativeReadableStream).toHaveBeenCalledWith(expect.any(Object), {
+      signal: abortController.signal,
+    })
+  })
+
+  test('passes an explicit undefined signal to native stream setup', async () => {
+    await handleMobileRequest('https://example.com/stream', 'POST', new Headers(), JSON.stringify({ stream: true }))
+
+    expect(createNativeReadableStream).toHaveBeenCalledWith(expect.any(Object), { signal: undefined })
   })
 })

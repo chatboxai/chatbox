@@ -126,6 +126,7 @@ describe('DeepSeek vision transport', () => {
       name: 'DeepSeek',
       apiKey: 'test-api-key',
       baseURL: 'https://api.deepseek.com',
+      fetch: expect.any(Function),
     })
     expect(providerMocks.createDeepSeek).not.toHaveBeenCalled()
   })

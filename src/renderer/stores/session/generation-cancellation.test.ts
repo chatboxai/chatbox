@@ -90,6 +90,36 @@ describe('main generation cancellation', () => {
     expect(runtime.get('session-1', latest.id)).toBeUndefined()
   })
 
+  it('keeps a failed terminal write locked until a retry succeeds', async () => {
+    const runtime = new GenerationRuntimeStore()
+    runtime.start('session-1', 'message-1')
+    let currentSession: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [message('message-1', { contentParts: [{ type: 'text', text: 'partial reply' }] })],
+    }
+    const getSession = vi.fn(() => Promise.resolve(currentSession))
+    const persistMessage = vi
+      .fn<GenerationCancellationDependencies['persistMessage']>()
+      .mockRejectedValueOnce(new Error('storage unavailable'))
+      .mockImplementationOnce((_sessionId, value) => {
+        currentSession = { ...currentSession, messages: [value] }
+        return Promise.resolve()
+      })
+    const harness = dependencies(currentSession, runtime, { getSession, persistMessage })
+
+    await expect(stopMessageGeneration('session-1', 'message-1', harness.value, 20_000)).rejects.toThrow(
+      'Failed to persist one or more stopped generations'
+    )
+    expect(runtime.get('session-1', 'message-1')?.phase).toBe('stopping')
+
+    await stopMessageGeneration('session-1', 'message-1', harness.value, 20_001)
+
+    expect(persistMessage).toHaveBeenCalledTimes(2)
+    expect(runtime.get('session-1', 'message-1')).toBeUndefined()
+    expect(runtime.start('session-1', 'message-1').abortController.signal.aborted).toBe(false)
+  })
+
   it('retains a runtime that registers while a placeholder Stop reads the Session', async () => {
     const runtime = new GenerationRuntimeStore()
     const latest = message('message-1', {
@@ -169,6 +199,7 @@ describe('main generation cancellation', () => {
     expect(state.abortController.signal.aborted).toBe(true)
     expect(harness.removeMessage).not.toHaveBeenCalled()
     expect(harness.persistMessage).not.toHaveBeenCalled()
+    expect(runtime.get('session-1', completed.id)).toBeUndefined()
   })
 
   it('serializes concurrent Stop requests without leaving an abort for the next runtime', async () => {
@@ -201,6 +232,113 @@ describe('main generation cancellation', () => {
     expect(getSession).toHaveBeenCalledTimes(2)
     expect(persistMessage).toHaveBeenCalledOnce()
     expect(runtime.start('session-1', 'message-1').abortController.signal.aborted).toBe(false)
+  })
+
+  it('aborts every current runtime before Stop-all waits for an earlier terminal write', async () => {
+    const runtime = new GenerationRuntimeStore()
+    const firstRuntime = runtime.start('session-1', 'message-1')
+    const secondRuntime = runtime.start('session-1', 'message-2')
+    let currentSession: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [
+        message('message-1', { contentParts: [{ type: 'text', text: 'first reply' }] }),
+        message('message-2', { contentParts: [{ type: 'text', text: 'second reply' }] }),
+      ],
+    }
+    let releaseFirstPersist!: () => void
+    const firstPersistGate = new Promise<void>((resolve) => {
+      releaseFirstPersist = resolve
+    })
+    const getSession = vi.fn(() => Promise.resolve(currentSession))
+    const persistMessage = vi.fn<GenerationCancellationDependencies['persistMessage']>(async (_sessionId, value) => {
+      if (value.id === 'message-1') await firstPersistGate
+      currentSession = {
+        ...currentSession,
+        messages: currentSession.messages.map((candidate) => (candidate.id === value.id ? value : candidate)),
+      }
+    })
+    const harness = dependencies(currentSession, runtime, { getSession, persistMessage })
+
+    const firstStop = stopMessageGeneration('session-1', 'message-1', harness.value, 20_000)
+    await vi.waitFor(() => expect(persistMessage).toHaveBeenCalledOnce())
+    const stopAll = stopAllMessageGenerations('session-1', harness.value, 20_001)
+    currentSession = {
+      ...currentSession,
+      messages: [
+        ...currentSession.messages,
+        message('message-late', { contentParts: [{ type: 'text', text: 'late reply' }] }),
+      ],
+    }
+    const lateRuntime = runtime.start('session-1', 'message-late')
+
+    expect(firstRuntime.abortController.signal.aborted).toBe(true)
+    expect(secondRuntime.abortController.signal.aborted).toBe(true)
+    expect(lateRuntime.abortController.signal.aborted).toBe(true)
+    expect(getSession).toHaveBeenCalledOnce()
+
+    releaseFirstPersist()
+    await Promise.all([firstStop, stopAll])
+
+    expect(getSession).toHaveBeenCalledTimes(2)
+    expect(persistMessage.mock.calls.map((call) => call[1].id)).toEqual(['message-1', 'message-2', 'message-late'])
+    expect(runtime.get('session-1')).toBeUndefined()
+    expect(runtime.isSessionStopRequested('session-1')).toBe(false)
+    expect(runtime.start('session-1', 'message-after-stop').abortController.signal.aborted).toBe(false)
+  })
+
+  it('retains a failed Stop-all gate until a retry persists terminal state', async () => {
+    const runtime = new GenerationRuntimeStore()
+    runtime.start('session-1', 'message-1')
+    let currentSession: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [message('message-1', { contentParts: [{ type: 'text', text: 'partial reply' }] })],
+    }
+    const getSession = vi.fn(() => Promise.resolve(currentSession))
+    const persistMessage = vi
+      .fn<GenerationCancellationDependencies['persistMessage']>()
+      .mockRejectedValueOnce(new Error('storage unavailable'))
+      .mockImplementationOnce((_sessionId, value) => {
+        currentSession = { ...currentSession, messages: [value] }
+        return Promise.resolve()
+      })
+    const harness = dependencies(currentSession, runtime, { getSession, persistMessage })
+
+    await expect(stopAllMessageGenerations('session-1', harness.value, 20_000)).rejects.toThrow(
+      'Failed to persist one or more stopped generations'
+    )
+    expect(runtime.isSessionStopRequested('session-1')).toBe(true)
+    expect(runtime.start('session-1', 'message-late').abortController.signal.aborted).toBe(true)
+
+    await stopAllMessageGenerations('session-1', harness.value, 20_001)
+
+    expect(persistMessage).toHaveBeenCalledTimes(2)
+    expect(runtime.isSessionStopRequested('session-1')).toBe(false)
+    expect(runtime.start('session-1', 'message-after-retry').abortController.signal.aborted).toBe(false)
+  })
+
+  it('does not retain a runtime registered after the final Stop-all scan', async () => {
+    const runtime = new GenerationRuntimeStore()
+    runtime.start('session-1', 'message-1')
+    const session: Session = {
+      id: 'session-1',
+      name: 'Session',
+      messages: [message('message-1', { contentParts: [{ type: 'text', text: 'partial reply' }] })],
+    }
+    let lateSignal: AbortSignal | undefined
+    const persistMessage = vi.fn<GenerationCancellationDependencies['persistMessage']>(() => {
+      lateSignal = runtime.start('session-1', 'message-after-scan').abortController.signal
+      return Promise.resolve()
+    })
+    const harness = dependencies(session, runtime, { persistMessage })
+
+    await stopAllMessageGenerations('session-1', harness.value, 20_000)
+
+    expect(lateSignal).toMatchObject({ aborted: true, reason: 20_000 })
+    expect(runtime.list('session-1')).toEqual([])
+    expect(runtime.isSessionStopRequested('session-1')).toBe(false)
+    expect(runtime.start('session-1', 'message-after-scan').abortController.signal.aborted).toBe(false)
   })
 
   it('stops every active runtime, preserves paused runtimes, and settles all terminal writes', async () => {

@@ -2,6 +2,7 @@ import { createMistral } from '@ai-sdk/mistral'
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
 import { fetchRemoteModels } from '../../../models/openai-compatible'
+import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 
@@ -46,6 +47,7 @@ export default class MistralAI extends AbstractAISDKModel {
     const mistral = createMistral({
       apiKey: this.options.apiKey,
       baseURL: 'https://api.mistral.ai/v1',
+      fetch: createOpenAIChatCompletionSseFetch(),
     })
 
     return {

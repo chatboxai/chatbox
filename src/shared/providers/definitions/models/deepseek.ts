@@ -10,6 +10,7 @@ import {
   isDeepSeekWeakToolUse,
   normalizeDeepSeekReasoningEffort,
 } from '../../../models/utils/deepseek'
+import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo, ToolUseScope } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 
@@ -42,11 +43,13 @@ export default class DeepSeek extends AbstractAISDKModel {
         name: this.name,
         apiKey: this.options.apiKey,
         baseURL: 'https://api.deepseek.com',
+        fetch: createOpenAIChatCompletionSseFetch(globalThis.fetch),
       })
     }
 
     return createDeepSeek({
       apiKey: this.options.apiKey,
+      fetch: createOpenAIChatCompletionSseFetch(globalThis.fetch),
     })
   }
 
@@ -56,12 +59,14 @@ export default class DeepSeek extends AbstractAISDKModel {
         name: this.name,
         apiKey: this.options.apiKey,
         baseURL: 'https://api.deepseek.com',
+        fetch: createOpenAIChatCompletionSseFetch(globalThis.fetch),
       })
       return provider.chatModel(this.options.model.modelId)
     }
 
     const provider = createDeepSeek({
       apiKey: this.options.apiKey,
+      fetch: createOpenAIChatCompletionSseFetch(globalThis.fetch),
     })
     return provider.chat(this.options.model.modelId)
   }

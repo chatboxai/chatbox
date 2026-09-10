@@ -17,6 +17,7 @@ import { runCompactionWithUIState } from '@/packages/context-management'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
 import { estimateTokensFromMessages } from '@/packages/token'
 import platform from '@/platform'
+import { clearMessageGenerationStopOperation } from '@/stores/generationStopOperations'
 import { reportError } from '@/utils/sentry'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attachment-rag/logging'
 import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndexing'
@@ -24,9 +25,19 @@ import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
 import { guardSessionAction } from './action-guard'
 import { getSessionSettings, getSessionTokenModel } from './session-settings'
+import { StreamingWriteCoordinator } from './streaming-write-coordinator'
 import { getSessionWebBrowsing } from './utils'
 
 const log = getLogger('session-messages')
+const streamingWriteCoordinator = new StreamingWriteCoordinator()
+
+function snapshotStreamingMessage(message: Message): Message {
+  return {
+    ...message,
+    contentParts: message.contentParts.map((part) => ({ ...part })),
+    status: message.status?.map((status) => ({ ...status })),
+  }
+}
 
 export async function attachLargeFileRagMetadata(sessionId: string, message: Message): Promise<Message> {
   if (!platform.isDesktopLike || !message.files?.length) {
@@ -152,9 +163,17 @@ export async function modifyMessage(
  */
 export function updateStreamingCache(sessionId: string, message: Message): void {
   message.timestamp = Date.now()
-  rendererApplication.sessionQueryBridge.updateMessageCache(sessionId, message.id, message).catch((err) => {
-    console.error('Failed to update streaming cache:', err)
-  })
+  const snapshot = snapshotStreamingMessage(message)
+  const key = `${sessionId}\u0000${message.id}`
+  streamingWriteCoordinator
+    .runCacheUpdate(key, () =>
+      rendererApplication.sessionQueryBridge.updateMessageCache(sessionId, snapshot.id, (current) =>
+        streamingWriteCoordinator.isTerminalRequested(key) ? (current ?? snapshot) : snapshot
+      )
+    )
+    .catch((err) => {
+      console.error('Failed to update streaming cache:', err)
+    })
 }
 
 /**
@@ -164,7 +183,7 @@ export function updateStreamingCache(sessionId: string, message: Message): void 
 export async function persistStreamingMessage(
   sessionId: string,
   message: Message,
-  options?: { refreshCounting?: boolean }
+  options?: { checkpoint?: boolean; refreshCounting?: boolean }
 ): Promise<void> {
   if (options?.refreshCounting) {
     message.wordCount = countMessageWords(message)
@@ -175,7 +194,24 @@ export async function persistStreamingMessage(
     message.tokenCount = estimateTokensFromMessages([message])
   }
   message.timestamp = Date.now()
-  await rendererApplication.sessions.updateMessage(sessionId, message.id, message)
+  const snapshot = snapshotStreamingMessage(message)
+  const write = () => rendererApplication.sessions.updateMessage(sessionId, snapshot.id, snapshot)
+  const key = `${sessionId}\u0000${message.id}`
+
+  if (options?.checkpoint) {
+    await streamingWriteCoordinator.scheduleCheckpoint(key, write)
+    return
+  }
+  if (message.generating === false) {
+    await streamingWriteCoordinator.persistTerminal(key, write)
+    const stoppingRuntime = rendererApplication.generationRuntime.get(sessionId, message.id)
+    if (stoppingRuntime?.phase === 'stopping') {
+      rendererApplication.generationRuntime.clear(sessionId, message.id, stoppingRuntime)
+    }
+    clearMessageGenerationStopOperation(sessionId, message.id)
+    return
+  }
+  await write()
 }
 
 /**
@@ -222,7 +258,17 @@ export async function removeMessage(sessionId: string, messageId: string) {
       console.warn('Failed to cleanup session attachment RAG entries for message deletion:', error)
     }
   }
-  await rendererApplication.sessions.removeMessage(sessionId, messageId)
+  await rendererApplication.sessions.removeMessage(sessionId, messageId, () => {
+    // Runs once the full-session removal is durable, including the
+    // partial-success path where the metadata projection fails afterward. A
+    // paused reply keeps its generation runtime (generating: false, so the
+    // delete path skips handleStop); discard it so an orphaned paused runtime
+    // doesn't outlive the tool call it was waiting on.
+    if (rendererApplication.generationRuntime.get(sessionId, messageId)) {
+      rendererApplication.generationRuntime.discard(sessionId, messageId, 'message-deleted')
+    }
+    clearMessageGenerationStopOperation(sessionId, messageId)
+  })
 }
 
 /**

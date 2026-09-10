@@ -26,6 +26,7 @@ import {
   IconCopy,
   IconDotsVertical,
   IconInfoCircle,
+  IconLoader2,
   IconMessageReport,
   IconPencil,
   IconPhotoPlus,
@@ -48,6 +49,7 @@ import { rendererApplication } from '@/app/renderer-application'
 import Markdown from '@/components/Markdown'
 import StreamingTextFade from '@/components/StreamingTextFade'
 import { AppTooltip as Tooltip1 } from '@/components/ui/tooltip'
+import { useMessageGenerationStop } from '@/hooks/useGenerationStop'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { formatElapsedTime } from '@/hooks/useThinkingTimer'
 import { cn } from '@/lib/utils'
@@ -65,7 +67,6 @@ import {
   regenerateInNewFork,
   retryFromLastToolCallAfterApiError,
 } from '@/stores/session/generation'
-import { stopMessageGeneration } from '@/stores/session/generation-cancellation'
 import { modifyMessage, removeMessage } from '@/stores/session/messages'
 import * as toastActions from '@/stores/toastActions'
 import { confirmPromptCacheBreakingAction, isPromptCacheBreakConfirmDismissed } from '@/utils/prompt-cache-confirm'
@@ -226,13 +227,24 @@ const _Message: FC<Props> = (props) => {
     setQuote(input)
   }, [msg, setQuote])
 
-  const handleStop = useCallback(async () => {
+  const {
+    requestStop: requestMessageStop,
+    status: messageStopStatus,
+    stopAndWait: stopMessageAndWait,
+  } = useMessageGenerationStop(sessionId, msg.id)
+
+  const handleStop = useCallback(async (): Promise<boolean> => {
     if (msg.generating) {
-      await stopMessageGeneration(sessionId, msg.id)
-      return
+      try {
+        await stopMessageAndWait()
+        return true
+      } catch {
+        return false
+      }
     }
     await modifyMessage(sessionId, { ...msg, generating: false }, true)
-  }, [sessionId, msg])
+    return true
+  }, [msg, sessionId, stopMessageAndWait])
 
   const generationLocked = isGenerationLocked(sessionLocks)
 
@@ -258,7 +270,7 @@ const _Message: FC<Props> = (props) => {
       notifyActionBlocked(gate.reason)
       return
     }
-    await handleStop()
+    if (!(await handleStop())) return
     await regenerateInNewFork(sessionId, msg)
   }, [sessionLocks, handleStop, msg, notifyActionBlocked, sessionId])
 
@@ -412,7 +424,7 @@ const _Message: FC<Props> = (props) => {
     // Deleting a still-streaming reply must stop it first: the stream writes by
     // message id and would keep running invisibly after the message is gone.
     if (msg.generating) {
-      await handleStop()
+      if (!(await handleStop())) return
     }
     await removeMessage(sessionId, msg.id)
   }, [confirmCacheBreakingDelete, handleStop, msg, sessionId, shouldConfirmPromptCacheDelete])
@@ -1081,12 +1093,20 @@ const _Message: FC<Props> = (props) => {
       )
     })
 
-  const showConcurrentReplyStop = shouldShowConcurrentReplyStop({
-    allowStop: allowGeneratingStop,
-    cancellable: isCancellableGeneratingAssistantMessage(msg, generationRuntimeActive),
-    generatingReplyCount: sessionLocks.generatingReplyCount,
-    sessionType: props.sessionType,
-  })
+  const showConcurrentReplyStop =
+    messageStopStatus !== 'idle' ||
+    shouldShowConcurrentReplyStop({
+      allowStop: allowGeneratingStop,
+      cancellable: isCancellableGeneratingAssistantMessage(msg, generationRuntimeActive),
+      generatingReplyCount: sessionLocks.generatingReplyCount,
+      sessionType: props.sessionType,
+    })
+  const messageStopLabel =
+    messageStopStatus === 'stopping'
+      ? t('Stopping this reply...')
+      : messageStopStatus === 'failed'
+        ? t('Retry stopping this reply')
+        : t('Stop generating this reply')
   const generatingActions = showConcurrentReplyStop && (
     <Flex gap={0} m="4px -4px -4px -4px" align="center" className={isSmallScreen ? 'sticky bottom-4' : ''}>
       <Flex
@@ -1097,7 +1117,20 @@ const _Message: FC<Props> = (props) => {
             : ''
         }
       >
-        <MessageActionIcon icon={IconPlayerStopFilled} tooltip={t('Stop generating this reply')} onClick={handleStop} />
+        {messageStopStatus === 'failed' && (
+          <Text size="xs" c="red" px={4} role="alert">
+            {t('Stop failed')}
+          </Text>
+        )}
+        <MessageActionIcon
+          icon={messageStopStatus === 'stopping' ? IconLoader2 : IconPlayerStopFilled}
+          tooltip={messageStopLabel}
+          iconClassName={messageStopStatus === 'stopping' ? 'animate-spin' : undefined}
+          disabled={messageStopStatus === 'stopping'}
+          onClick={() => {
+            requestMessageStop()
+          }}
+        />
       </Flex>
     </Flex>
   )
@@ -1399,10 +1432,11 @@ export const MessageActionIcon = forwardRef<
   ActionIconProps & {
     tooltip?: string | null
     testId?: string
+    iconClassName?: string
     onClick?: MouseEventHandler<HTMLButtonElement>
     icon: React.ElementType<IconProps>
   }
->(({ tooltip, icon, testId, ...props }, ref) => {
+>(({ tooltip, icon, iconClassName, testId, ...props }, ref) => {
   const isSmallScreen = useIsSmallScreen()
   const actionIcon = (
     <ActionIcon
@@ -1419,7 +1453,7 @@ export const MessageActionIcon = forwardRef<
       data-testid={testId}
       {...props}
     >
-      <ScalableIcon icon={icon} size={isSmallScreen ? 20 : 16} />
+      <ScalableIcon icon={icon} size={isSmallScreen ? 20 : 16} className={iconClassName} />
     </ActionIcon>
   )
 

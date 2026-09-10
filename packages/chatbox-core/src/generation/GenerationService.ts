@@ -107,7 +107,11 @@ export interface GenerationSessionPort extends Pick<SessionRepositoryPort, 'getS
     globalSettings: Settings,
     sessionType: Session['type']
   ): Promise<Message>
-  persistStreamingMessage(sessionId: string, message: Message, options?: { refreshCounting?: boolean }): Promise<void>
+  persistStreamingMessage(
+    sessionId: string,
+    message: Message,
+    options?: { checkpoint?: boolean; refreshCounting?: boolean }
+  ): Promise<void>
   /**
    * Insert a new durable message directly after an existing one (fork/thread
    * aware). Rejects rather than appending elsewhere when the anchor is
@@ -696,6 +700,13 @@ export class GenerationService<TContext> {
 
           const stateBeforeChunk = processorState
           const result = await processStreamChunk(chunk, processorState, streamCallbacks)
+          // Chunk processing can await blob storage or other host work. Stop may
+          // land during that await, so do not publish a stale generating
+          // checkpoint after the runtime has entered its terminal path.
+          if (controller.signal.aborted) {
+            if (processorState === stateBeforeChunk) processorState = result.state
+            break
+          }
           // A steering split can finalize the segment and hand the run a fresh
           // state while this chunk is still being processed. Its result belongs
           // to the segment that has already been persisted, so writing it back
@@ -738,17 +749,19 @@ export class GenerationService<TContext> {
             STREAM_PERSIST_INTERVAL_MS
           )
           if (shouldPersist) {
-            void sessions.persistStreamingMessage(sessionId, targetMessage).catch((error: unknown) => {
-              if (sessions.isSessionMissingError?.(error)) return
-              try {
-                const logged = this.dependencies.logger.log('error', 'Failed to persist generation checkpoint', {
-                  errorType: error instanceof Error ? error.name : typeof error,
-                })
-                void Promise.resolve(logged).catch(() => {})
-              } catch {
-                // Logging must not turn a handled checkpoint failure into an unhandled rejection.
-              }
-            })
+            void sessions
+              .persistStreamingMessage(sessionId, targetMessage, { checkpoint: true })
+              .catch((error: unknown) => {
+                if (sessions.isSessionMissingError?.(error)) return
+                try {
+                  const logged = this.dependencies.logger.log('error', 'Failed to persist generation checkpoint', {
+                    errorType: error instanceof Error ? error.name : typeof error,
+                  })
+                  void Promise.resolve(logged).catch(() => {})
+                } catch {
+                  // Logging must not turn a handled checkpoint failure into an unhandled rejection.
+                }
+              })
             lastPersistTimestamp = host.now()
           } else {
             sessions.updateStreamingCache(sessionId, targetMessage)

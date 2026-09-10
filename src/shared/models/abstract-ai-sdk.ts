@@ -49,6 +49,7 @@ import type {
   ModelStatus,
   ModelStreamPart,
 } from './types'
+import { isKimiFixedSamplingModel } from './utils/kimi'
 import { extractStreamErrorMessage } from './utils/stream-error-message'
 
 export type { CallSettings } from './types'
@@ -238,6 +239,11 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
   // (the generic `reasoning` capability flag is unreliable — some reasoning models, e.g.
   // qwen3.x, ship without it in their registry metadata). When the provider is unknown we
   // leave options untouched to avoid stripping anything we cannot positively classify.
+  //
+  // Kimi K2/K3 families pin temperature and top_p. Moonshot rejects any other
+  // value, so those fields are dropped here after subclass getCallSettings so
+  // every transport (Moonshot, aggregators, custom OpenAI hosts) sees the same
+  // request shape.
   private resolveCallSettings(options: CallChatCompletionOptions): CallSettings {
     const providerId = this.options.model.providerId
     const shouldStrip =
@@ -247,7 +253,15 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const sanitizedOptions = shouldStrip
       ? { ...options, providerOptions: stripReasoningProviderOptions(options.providerOptions) }
       : options
-    return sanitizeCallSettings(this.getCallSettings(sanitizedOptions))
+    const settings = this.getCallSettings(sanitizedOptions)
+    if (!isKimiFixedSamplingModel(this.options.model.modelId, providerId)) {
+      return sanitizeCallSettings(settings)
+    }
+    return sanitizeCallSettings({
+      maxOutputTokens: settings.maxOutputTokens,
+      providerOptions: settings.providerOptions,
+      system: settings.system,
+    })
   }
 
   public async chat(messages: ModelMessage[], options: CallChatCompletionOptions): Promise<StreamTextResult> {

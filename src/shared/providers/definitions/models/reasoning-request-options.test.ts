@@ -9,6 +9,7 @@ import CustomOpenAI from './custom-openai'
 import DeepSeek from './deepseek'
 import OpenAI from './openai'
 import OpenRouter from './openrouter'
+import Ollama from './ollama'
 import Qwen from './qwen'
 
 class TestDeepSeek extends DeepSeek {
@@ -44,7 +45,12 @@ type ClaudeFetchHarness = {
 }
 
 type ResolveCallSettingsHarness = {
-  resolveCallSettings(options: CallChatCompletionOptions): { providerOptions?: unknown }
+  resolveCallSettings(options: CallChatCompletionOptions): {
+    temperature?: number
+    topP?: number
+    maxOutputTokens?: number
+    providerOptions?: unknown
+  }
 }
 
 function createDependencies(): ModelDependencies {
@@ -559,5 +565,103 @@ describe('reasoning request options', () => {
         thinking_budget: 8192,
       },
     })
+  })
+
+  it('omits pinned Kimi sampling parameters at the request edge', () => {
+    const openai = new OpenAI(
+      {
+        apiKey: 'test-key',
+        apiHost: 'https://api.moonshot.cn/v1',
+        model: {
+          modelId: 'kimi-k3',
+          type: 'chat',
+          capabilities: ['reasoning', 'tool_use', 'vision'],
+          providerId: 'moonshot-cn',
+        },
+        dalleStyle: 'vivid',
+        temperature: 0.7,
+        topP: 1,
+        maxOutputTokens: 4096,
+        injectDefaultMetadata: false,
+        useProxy: false,
+      },
+      createDependencies()
+    )
+
+    const settings = (openai as unknown as ResolveCallSettingsHarness).resolveCallSettings({})
+
+    expect(settings.temperature).toBeUndefined()
+    expect(settings.topP).toBeUndefined()
+    expect(settings.maxOutputTokens).toBe(4096)
+  })
+
+  it('keeps sampling parameters for Moonshot models that accept them', () => {
+    const openai = new OpenAI(
+      {
+        apiKey: 'test-key',
+        apiHost: 'https://api.moonshot.cn/v1',
+        model: {
+          modelId: 'moonshot-v1-8k',
+          type: 'chat',
+          providerId: 'moonshot-cn',
+        },
+        dalleStyle: 'vivid',
+        temperature: 0.7,
+        topP: 1,
+        maxOutputTokens: 4096,
+        injectDefaultMetadata: false,
+        useProxy: false,
+      },
+      createDependencies()
+    )
+
+    const settings = (openai as unknown as ResolveCallSettingsHarness).resolveCallSettings({})
+
+    expect(settings.temperature).toBe(0.7)
+    expect(settings.topP).toBe(1)
+    expect(settings.maxOutputTokens).toBe(4096)
+  })
+
+  it('omits pinned Kimi sampling parameters for aggregator model ids', () => {
+    const openrouter = new TestOpenRouter(
+      {
+        apiKey: 'test-key',
+        model: {
+          modelId: 'moonshotai/kimi-k3',
+          type: 'chat',
+          capabilities: ['reasoning'],
+          providerId: 'openrouter',
+        },
+        temperature: 0.7,
+        topP: 0.9,
+      },
+      createDependencies()
+    )
+
+    const settings = (openrouter as unknown as ResolveCallSettingsHarness).resolveCallSettings({})
+
+    expect(settings.temperature).toBeUndefined()
+    expect(settings.topP).toBeUndefined()
+  })
+
+  it('keeps sampling parameters for locally hosted Kimi models', () => {
+    const ollama = new Ollama(
+      {
+        ollamaHost: 'http://127.0.0.1:11434',
+        model: {
+          modelId: 'kimi-k2:1t',
+          type: 'chat',
+          providerId: 'ollama',
+        },
+        temperature: 0.2,
+        topP: 0.8,
+      },
+      createDependencies()
+    )
+
+    const settings = (ollama as unknown as ResolveCallSettingsHarness).resolveCallSettings({})
+
+    expect(settings.temperature).toBe(0.2)
+    expect(settings.topP).toBe(0.8)
   })
 })

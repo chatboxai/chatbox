@@ -6,6 +6,7 @@ import type {
   StoredOAuthTokens,
 } from '@modelcontextprotocol/client'
 import { OAuthIpcChannels } from '@shared/oauth'
+import { t } from 'i18next'
 import platform from '@/platform'
 import { settingsStore } from '@/stores/settingsStore'
 
@@ -104,7 +105,7 @@ export class MCPOAuthProvider implements OAuthClientProvider {
 
   async redirectToAuthorization(authorizationUrl: URL) {
     if (!this.interactive) {
-      throw new Error('Authorization required. Open this server in MCP settings and run Test to sign in.')
+      throw new Error(t('Authorization required. Open this server in MCP settings and click Connect to sign in.')!)
     }
     // Start listening before the browser opens so the redirect can never race the server.
     this.pendingCode = window.electronAPI.invoke(OAuthIpcChannels.MCP_WAIT_CALLBACK, MCP_OAUTH_CALLBACK_PORT)

@@ -108,6 +108,7 @@
   "Audio files are not supported": "I file audio non sono supportati",
   "Authentication": "Autenticazione",
   "Authorization Code": "Codice di autorizzazione",
+  "Authorization required. Open this server in MCP settings and click Connect to sign in.": "Autorizzazione richiesta. Aprire questo server nelle impostazioni MCP e fare clic su «Connetti» per accedere.",
   "Auto": "Automatico",
   "Auto (Use Chat Model)": "Auto (Usa il modello di chat)",
   "Auto (Use Chatbox AI)": "Auto (Usa Chatbox AI)",

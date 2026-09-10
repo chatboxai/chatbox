@@ -108,6 +108,7 @@
   "Audio files are not supported": "Audio files are not supported",
   "Authentication": "Authentication",
   "Authorization Code": "Authorization Code",
+  "Authorization required. Open this server in MCP settings and click Connect to sign in.": "Authorization required. Open this server in MCP settings and click Connect to sign in.",
   "Auto": "Auto",
   "Auto (Use Chat Model)": "Auto (Use Chat Model)",
   "Auto (Use Chatbox AI)": "Auto (Use Chatbox AI)",

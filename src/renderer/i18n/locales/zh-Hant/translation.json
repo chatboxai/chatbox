@@ -108,6 +108,7 @@
   "Audio files are not supported": "不支援音訊檔案",
   "Authentication": "認證",
   "Authorization Code": "授權碼",
+  "Authorization required. Open this server in MCP settings and click Connect to sign in.": "需要授權。請在 MCP 設定中開啟此伺服器，點擊「連線」登入。",
   "Auto": "自動",
   "Auto (Use Chat Model)": "自動（使用聊天模型）",
   "Auto (Use Chatbox AI)": "自動（使用 Chatbox AI）",

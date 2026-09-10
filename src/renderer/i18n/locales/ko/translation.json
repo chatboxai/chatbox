@@ -108,6 +108,7 @@
   "Audio files are not supported": "오디오 파일은 지원되지 않습니다",
   "Authentication": "인증",
   "Authorization Code": "인가 코드",
+  "Authorization required. Open this server in MCP settings and click Connect to sign in.": "인가가 필요합니다. MCP 설정에서 이 서버를 열고 '연결'을 클릭하여 로그인하세요.",
   "Auto": "자동",
   "Auto (Use Chat Model)": "자동 (채팅 모델 사용)",
   "Auto (Use Chatbox AI)": "자동 (Chatbox AI 사용)",

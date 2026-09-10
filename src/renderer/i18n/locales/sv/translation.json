@@ -108,6 +108,7 @@
   "Audio files are not supported": "Ljudfiler stöds inte",
   "Authentication": "Autentisering",
   "Authorization Code": "Auktoriseringskod",
+  "Authorization required. Open this server in MCP settings and click Connect to sign in.": "Auktorisering krävs. Öppna den här servern i MCP-inställningarna och klicka på ”Anslut” för att logga in.",
   "Auto": "Auto",
   "Auto (Use Chat Model)": "Auto (Använd chattmodell)",
   "Auto (Use Chatbox AI)": "Auto (Använd Chatbox AI)",

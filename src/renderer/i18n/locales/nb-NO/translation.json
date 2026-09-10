@@ -108,6 +108,7 @@
   "Audio files are not supported": "Lydfiler støttes ikke",
   "Authentication": "Autentisering",
   "Authorization Code": "Autorisasjonskode",
+  "Authorization required. Open this server in MCP settings and click Connect to sign in.": "Autorisasjon kreves. Åpne denne serveren i MCP-innstillingene og klikk på «Koble til» for å logge inn.",
   "Auto": "Auto",
   "Auto (Use Chat Model)": "Auto (bruk chat-modell)",
   "Auto (Use Chatbox AI)": "Auto (bruk Chatbox AI)",

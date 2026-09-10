@@ -108,6 +108,7 @@
   "Audio files are not supported": "ملفات الصوت غير مدعومة",
   "Authentication": "المصادقة",
   "Authorization Code": "رمز التفويض",
+  "Authorization required. Open this server in MCP settings and click Connect to sign in.": "التفويض مطلوب. افتح هذا الخادم في إعدادات MCP وانقر على «اتصال» لتسجيل الدخول.",
   "Auto": "تلقائي",
   "Auto (Use Chat Model)": "تلقائي (استخدام نموذج المحادثة)",
   "Auto (Use Chatbox AI)": "تلقائي (استخدام Chatbox AI)",

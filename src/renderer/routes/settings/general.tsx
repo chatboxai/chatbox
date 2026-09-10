@@ -66,6 +66,21 @@ export const Route = createFileRoute('/settings/general')({
 const presetBadgeButtonClassName =
   'transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] motion-reduce:transform-none motion-reduce:transition-none'
 
+function serializeErrorForLog(error: unknown) {
+  if (error instanceof Error || error instanceof DOMException) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    }
+  }
+  return {
+    name: typeof error,
+    message: String(error),
+    stack: undefined,
+  }
+}
+
 export function RouteComponent() {
   const { t } = useTranslation()
   const { setSettings, ...settings } = useSettingsStore((state) => state)
@@ -744,7 +759,7 @@ const ImportExportDataSection = () => {
       if (error instanceof DOMException && error.name === 'AbortError') {
         setExportNotice({ color: 'yellow', title: String(t('Export canceled')) })
       } else {
-        console.error('Export failed:', error)
+        console.error('Export failed:', serializeErrorForLog(error))
         setExportNotice({ color: 'red', title: String(t('Export failed')), body: String(error) })
       }
     } finally {

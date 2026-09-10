@@ -140,4 +140,20 @@ describe('WebExporter.exportStreamingFile', () => {
     expect(showSaveFilePicker).not.toHaveBeenCalled()
     expect(result.pendingDownload?.filename).toBe('backup.zip')
   })
+
+  it('bypasses File System Access streaming when the platform disables it', async () => {
+    const showSaveFilePicker = vi.fn()
+    setSaveFilePicker(showSaveFilePicker)
+
+    const result = await new WebExporter({ allowFileSystemAccessStreaming: false }).exportStreamingFile(
+      'backup.zip',
+      chunks,
+      'application/zip'
+    )
+
+    expect(showSaveFilePicker).not.toHaveBeenCalled()
+    expect(result.boundedMemory).toBe(false)
+    expect(result.pendingDownload?.filename).toBe('backup.zip')
+    expect(Array.from(await readBlob(result.pendingDownload?.blob ?? new Blob()))).toEqual([1, 2, 3, 4])
+  })
 })

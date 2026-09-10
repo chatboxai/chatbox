@@ -10,7 +10,17 @@ function isAbortError(error: unknown): error is DOMException {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
+interface WebExporterOptions {
+  allowFileSystemAccessStreaming?: boolean
+}
+
 export default class WebExporter implements Exporter {
+  private readonly allowFileSystemAccessStreaming: boolean
+
+  constructor({ allowFileSystemAccessStreaming = true }: WebExporterOptions = {}) {
+    this.allowFileSystemAccessStreaming = allowFileSystemAccessStreaming
+  }
+
   exportBlob(filename: string, blob: Blob, _encoding?: 'utf8' | 'ascii' | 'utf16'): Promise<void> {
     const eleLink = document.createElement('a')
     eleLink.download = filename
@@ -105,7 +115,7 @@ export default class WebExporter implements Exporter {
     // Mobile browser implementations of showSaveFilePicker are inconsistent:
     // some expose the method but reject it before showing a usable save surface.
     // Build the Blob first and require a fresh user click to download it instead.
-    if (pickerWindow.showSaveFilePicker && !isMobileBrowser()) {
+    if (this.allowFileSystemAccessStreaming && pickerWindow.showSaveFilePicker && !isMobileBrowser()) {
       const extension = filename.includes('.') ? `.${filename.split('.').pop()}` : ''
       let writable: FileSystemWritableFileStream | undefined
       try {

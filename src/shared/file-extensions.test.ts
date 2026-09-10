@@ -32,6 +32,11 @@ describe('file-extensions', () => {
       expect(textExts).toContain('.md')
       expect(textExts).toContain('.json')
       expect(textExts).toContain('.tsx')
+      expect(textExts).toContain('.typ')
+      expect(textExts).toContain('.patch')
+      expect(textExts).toContain('.diff')
+      expect(textExts).toContain('.gitpatch')
+      expect(textExts).toContain('.gitignore')
     })
 
     it('contains expanded session attachment RAG whitelist extensions', () => {
@@ -102,6 +107,9 @@ describe('file-extensions', () => {
       expect(isTextFilePath('notes.txt')).toBe(true)
       expect(isTextFilePath('README.MD')).toBe(true)
       expect(isTextFilePath('src/app.TSX')).toBe(true)
+      expect(isTextFilePath('paper.typ')).toBe(true)
+      expect(isTextFilePath('fix.patch')).toBe(true)
+      expect(isTextFilePath('.gitignore')).toBe(true)
     })
 
     it('returns false for unsupported and extensionless files', () => {
@@ -165,6 +173,9 @@ describe('file-extensions', () => {
       expect(isSupportedFile('report.pdf')).toBe(true)
       expect(isSupportedFile('notes.md')).toBe(true)
       expect(isSupportedFile('novel.epub')).toBe(true)
+      expect(isSupportedFile('paper.typ')).toBe(true)
+      expect(isSupportedFile('fix.patch')).toBe(true)
+      expect(isSupportedFile('.gitignore')).toBe(true)
     })
 
     it('returns true for numbers files', () => {
@@ -218,6 +229,9 @@ describe('file-extensions', () => {
 
       expect(config['image/*']).toEqual(['.jpg', '.jpeg', '.png'])
       expect(config['text/plain']).toContain('.txt')
+      expect(config['text/plain']).toContain('.typ')
+      expect(config['text/plain']).toContain('.patch')
+      expect(config['text/plain']).toContain('.gitignore')
       expect(config['application/json']).toEqual(['.json'])
       expect(config['application/pdf']).toEqual(['.pdf'])
       expect(config['application/vnd.apple.numbers']).toEqual(['.numbers'])

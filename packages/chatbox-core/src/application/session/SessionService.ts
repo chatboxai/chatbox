@@ -9,6 +9,7 @@ import {
 } from './message-tree'
 import {
   SessionMetadataUpdateError,
+  SessionNotFoundError,
   type SessionWriteCoordinator,
   type SessionWriteResult,
 } from './SessionWriteCoordinator'

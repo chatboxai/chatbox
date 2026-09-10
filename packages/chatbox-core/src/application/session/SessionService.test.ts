@@ -331,6 +331,13 @@ describe('SessionService', () => {
     expect(harness.repository.records.get(session.id)?.archivedAt).toBeUndefined()
   })
 
+  test('rejects recovery archive and restore when metadata is missing', async () => {
+    const harness = createHarness()
+
+    await expect(harness.service.archiveSessionWithoutLoading('missing')).rejects.toBeInstanceOf(SessionNotFoundError)
+    await expect(harness.service.restoreSessionWithoutLoading('missing')).rejects.toBeInstanceOf(SessionNotFoundError)
+  })
+
   test('archives an unreadable session through metadata without loading its full record', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')

@@ -47,31 +47,35 @@ export default class OpenAI extends AbstractAISDKModel {
     return true
   }
 
-  protected getProvider() {
-    let headers: Record<string, string> | undefined
+  protected getRequestHeaders(_options?: CallChatCompletionOptions): Record<string, string> | undefined {
     if (this.options.extraHeaders && Object.keys(this.options.extraHeaders).length > 0) {
-      headers = this.options.extraHeaders
-    } else if (this.options.apiHost.includes('openrouter.ai')) {
-      headers = {
+      return this.options.extraHeaders
+    }
+    if (this.options.apiHost.includes('openrouter.ai')) {
+      return {
         'HTTP-Referer': 'https://chatboxai.app',
         'X-Title': 'Chatbox AI',
       }
-    } else if (this.options.apiHost.includes('aihubmix.com')) {
-      headers = {
+    }
+    if (this.options.apiHost.includes('aihubmix.com')) {
+      return {
         'APP-Code': 'VAFU9221',
       }
     }
+    return undefined
+  }
 
+  protected getProvider(options?: CallChatCompletionOptions) {
     return createOpenAI({
       apiKey: this.options.apiKey,
       baseURL: this.options.apiHost,
       fetch: this.options.customFetch || createFetchWithProxy(this.options.useProxy, this.dependencies),
-      headers,
+      headers: this.getRequestHeaders(options),
     })
   }
 
-  protected getChatModel() {
-    const provider = this.getProvider()
+  protected getChatModel(options?: CallChatCompletionOptions) {
+    const provider = this.getProvider(options)
     return wrapLanguageModel({
       model: provider.chat(this.options.model.modelId),
       middleware: extractReasoningMiddleware({ tagName: 'think' }),

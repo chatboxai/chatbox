@@ -120,11 +120,12 @@ export function isSummaryGenerationAvailable(): boolean {
 }
 
 export interface StreamingSummaryOptions extends SummaryGeneratorOptions {
+  sessionId: string
   onStreamUpdate?: (text: string) => void
 }
 
 export async function generateSummaryWithStream(options: StreamingSummaryOptions): Promise<SummaryResult> {
-  const { messages, sessionSettings, onStreamUpdate } = options
+  const { sessionId, messages, sessionSettings, onStreamUpdate } = options
 
   if (messages.length === 0) {
     return { success: true, summary: '' }
@@ -143,6 +144,7 @@ export async function generateSummaryWithStream(options: StreamingSummaryOptions
     const coreMessages = await convertToModelMessages(promptMessages, { modelSupportVision: model.isSupportVision() })
 
     const result = await model.chat(coreMessages, {
+      sessionId,
       onResultChange: (data) => {
         if (data.contentParts && onStreamUpdate) {
           const newText = data.contentParts

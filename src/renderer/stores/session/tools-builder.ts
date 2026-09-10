@@ -337,7 +337,7 @@ export async function buildToolsForSession(
   model: ModelInterface,
   options: BuildToolsOptions
 ): Promise<BuildToolsResult> {
-  const { webBrowsing, knowledgeBase, messages, agentMode, codeExecution } = options
+  const { webBrowsing, knowledgeBase, messages, agentMode, codeExecution, commandExecution } = options
   const agentToolContractVersion = options.agentToolContractVersion ?? 1
   const legacyCommandTools = agentToolContractVersion === 1
   const commandApprovalMode = resolveCommandApprovalMode(options.sessionSettings ?? {})
@@ -494,7 +494,7 @@ When you create a Git commit that includes code changes, append this exact trail
     }
   }
 
-  if (includeAgentTools && !legacyCommandTools && commandRunnerAvailable && options.commandExecution) {
+  if (includeAgentTools && !legacyCommandTools && commandRunnerAvailable && commandExecution) {
     const sessionSettings = options.sessionSettings
     const recentUserMsgs = messages
       .filter((message) => message.role === 'user')
@@ -502,9 +502,9 @@ When you create a Git commit that includes code changes, append this exact trail
       .map((message) => getMessageText(message, true, false).slice(0, 500))
     const userContext = recentUserMsgs.join('\n---\n')
     const runCommand = buildRunCommandTool({
-      sessionId: options.commandExecution.sessionId,
+      sessionId: commandExecution.sessionId,
       platform: commandPlatform,
-      provider: options.commandExecution.provider,
+      provider: commandExecution.provider,
       ensureSandbox: codeExecToolSet?.ensureSandbox,
       workingDirectories: userWorkingDirectories ?? [],
       approvalMode: commandApprovalMode,
@@ -513,7 +513,14 @@ When you create a Git commit that includes code changes, append this exact trail
           ? {
               userContext,
               generateExplanation: (cmd, ctx, onStream, explanationSignal) =>
-                generateCommandExplanation(sessionSettings, cmd, ctx, onStream, explanationSignal),
+                generateCommandExplanation(
+                  sessionSettings,
+                  commandExecution.sessionId,
+                  cmd,
+                  ctx,
+                  onStream,
+                  explanationSignal
+                ),
             }
           : undefined
         return requestUserExecApproval(toolCallId, command, explanationCtx, signal, workdir)
@@ -738,6 +745,7 @@ function buildInstallSkillTool(
 function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
   const commandApprovalMode = resolveCommandApprovalMode(options.sessionSettings ?? {})
   const agentFullAccess = commandApprovalMode === 'full_access'
+  const sessionId = options.sessionId ?? options.codeExecution?.sessionId
   const userExecWorkingDirectory = options.sessionSettings?.workingDirectories?.find((dir) => dir.trim().length > 0)
   type UserExecResult = {
     success: boolean
@@ -791,13 +799,14 @@ function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
         const userContext = recentUserMsgs.join('\n---\n')
 
         const sessionSettings = options.sessionSettings
-        const explanationCtx: ExplanationContext | undefined = sessionSettings
-          ? {
-              userContext,
-              generateExplanation: (cmd, ctx, onStream, signal) =>
-                generateCommandExplanation(sessionSettings, cmd, ctx, onStream, signal),
-            }
-          : undefined
+        const explanationCtx: ExplanationContext | undefined =
+          sessionSettings && sessionId
+            ? {
+                userContext,
+                generateExplanation: (cmd, ctx, onStream, signal) =>
+                  generateCommandExplanation(sessionSettings, sessionId, cmd, ctx, onStream, signal),
+              }
+            : undefined
 
         let approvalSource: UserExecApprovalSource
         if (alreadyApproved && approvalContext.approvalWorkdir === userExecWorkingDirectory) {
@@ -828,7 +837,6 @@ function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
         }
         throwIfAborted(toolOptions.abortSignal)
         hostExecutionStarted = true
-        const sessionId = options.sessionId ?? options.codeExecution?.sessionId
         const cancelHostExecution = () => {
           void skillsController.cancelUserExec({ sessionId, toolCallId: toolOptions.toolCallId })
         }

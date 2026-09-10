@@ -106,6 +106,7 @@ function formatCommandAssessment(assessment: CommandAssessment): string {
 
 export async function generateCommandExplanation(
   settings: SessionSettings,
+  sessionId: string,
   command: string,
   userContext: string,
   onStreamUpdate?: (text: string) => void,
@@ -121,6 +122,7 @@ export async function generateCommandExplanation(
   const coreMessages = await convertToModelMessages(messages, { modelSupportVision: model.isSupportVision() })
 
   const result = await model.chat(coreMessages, {
+    sessionId,
     signal,
     tools: commandAssessmentTools,
     maxSteps: 1,

@@ -35,6 +35,7 @@ export type LegacyCombinedSearchResult =
     }
 
 export interface LegacyToolFallbackOptions {
+  sessionId: string
   model: ModelInterface
   promptMsgs: Message[]
   knowledgeBase: { id: number } | undefined
@@ -47,12 +48,14 @@ export interface LegacyToolFallbackDependencies {
     model: ModelInterface,
     messages: Message[],
     knowledgeBaseId: number,
+    sessionId: string,
     signal: AbortSignal
   ) => Promise<LegacyCombinedSearchResult>
   knowledgeBaseSearchByPromptEngineering: (
     model: ModelInterface,
     messages: Message[],
-    knowledgeBaseId: number
+    knowledgeBaseId: number,
+    sessionId: string
   ) => Promise<{
     query: string
     searchResults: LegacyKnowledgeBaseSearchResult[]
@@ -60,6 +63,7 @@ export interface LegacyToolFallbackDependencies {
   searchByPromptEngineering: (
     model: ModelInterface,
     messages: Message[],
+    sessionId: string,
     signal: AbortSignal
   ) => Promise<{
     query: string
@@ -103,6 +107,7 @@ export async function applyLegacyToolFallback(
       model,
       promptMsgs,
       options.knowledgeBase.id,
+      options.sessionId,
       signal
     )
     if (callResult.searchResults.length && callResult.type !== 'none') {
@@ -124,7 +129,8 @@ export async function applyLegacyToolFallback(
     const callResult = await dependencies.knowledgeBaseSearchByPromptEngineering(
       model,
       promptMsgs,
-      options.knowledgeBase.id
+      options.knowledgeBase.id,
+      options.sessionId
     )
     if (callResult.searchResults.length) {
       fallbackToolCallPart = {
@@ -138,7 +144,7 @@ export async function applyLegacyToolFallback(
       promptMsgs = dependencies.constructMessagesWithKnowledgeBaseResults(promptMsgs, callResult.searchResults)
     }
   } else if (webNotSupported) {
-    const callResult = await dependencies.searchByPromptEngineering(model, promptMsgs, signal)
+    const callResult = await dependencies.searchByPromptEngineering(model, promptMsgs, options.sessionId, signal)
     if (callResult.searchResults.length) {
       fallbackToolCallPart = {
         type: 'tool-call',

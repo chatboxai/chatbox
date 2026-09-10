@@ -341,7 +341,7 @@ export async function prepareAgentGenerationHarness(
       throw ChatboxAIAPIError.fromCodeName('model_not_support_image_2', 'model_not_support_image_2')
     }
     try {
-      await ocrImagesInMessages(promptMsgs, ocrResult.model)
+      await ocrImagesInMessages(promptMsgs, ocrResult.model, session.id)
     } catch (err) {
       throw new OCRError(ocrResult.providerName, err instanceof Error ? err : new Error(`${err}`))
     }
@@ -354,6 +354,7 @@ export async function prepareAgentGenerationHarness(
   }
 
   const { promptMsgs: updatedMsgs, fallbackToolCallPart } = await applyLegacyToolFallback({
+    sessionId: session.id,
     model,
     promptMsgs,
     knowledgeBase,

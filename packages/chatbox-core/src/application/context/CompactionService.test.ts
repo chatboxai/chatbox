@@ -89,6 +89,7 @@ describe('CompactionService', () => {
 
     expect(result).toMatchObject({ success: true, compacted: true })
     expect(streamUpdates).toEqual(['streaming summary'])
+    expect(harness.generate).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }))
     expect(harness.session.messages.at(-1)).toMatchObject({ role: 'assistant', isSummary: true })
     expect(harness.session.compactionPoints).toEqual([
       {

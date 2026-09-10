@@ -67,6 +67,7 @@ describe('runCompactionWithUIState', () => {
     const first = runCompactionWithUIState('session-1', { force: true })
     await vi.waitFor(() => {
       expect(getCompactionUIState('session-1').status).toBe('running')
+      expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }))
     })
 
     // e.g. the manual Compress modal confirmed while auto-compaction streams

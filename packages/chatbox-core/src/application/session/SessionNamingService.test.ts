@@ -112,6 +112,7 @@ describe('SessionNamingService', () => {
 
     expect(harness.session?.name).toBe('北京旅行计划')
     expect(harness.session?.threadName).toBe('北京旅行计划')
+    expect(harness.chat).toHaveBeenCalledWith(expect.any(Array), { sessionId: 'session-1' })
     const prompt = harness.toModelMessages.mock.calls[0][0][0].contentParts[0]
     expect(prompt).toMatchObject({ type: 'text' })
     if (prompt.type === 'text') expect(prompt.text).toContain('Simplified Chinese')

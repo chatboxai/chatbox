@@ -108,8 +108,8 @@ const compactionService = new CompactionService({
     },
   },
   summaries: {
-    generate: ({ messages, sessionSettings, language, onStreamUpdate }) =>
-      generateSummaryWithStream({ messages, sessionSettings, language, onStreamUpdate }),
+    generate: ({ sessionId, messages, sessionSettings, language, onStreamUpdate }) =>
+      generateSummaryWithStream({ sessionId, messages, sessionSettings, language, onStreamUpdate }),
   },
   logger: {
     log(level, message, context) {

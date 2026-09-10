@@ -43,16 +43,21 @@ export default class CustomGemini extends AbstractAISDKModel {
     ].includes(this.options.model.modelId)
   }
 
-  protected getProvider() {
+  protected getRequestHeaders(_options?: CallChatCompletionOptions): Record<string, string> | undefined {
+    return undefined
+  }
+
+  protected getProvider(options?: CallChatCompletionOptions) {
     return createGoogleGenerativeAI({
       apiKey: this.options.apiKey,
       baseURL: normalizeGeminiHost(this.options.apiHost).apiHost,
       fetch: createFetchWithProxy(this.options.useProxy, this.dependencies),
+      headers: this.getRequestHeaders(options),
     })
   }
 
-  protected getChatModel(_options: CallChatCompletionOptions): LanguageModelV3 {
-    const provider = this.getProvider()
+  protected getChatModel(options: CallChatCompletionOptions): LanguageModelV3 {
+    const provider = this.getProvider(options)
     return provider.chat(this.options.model.modelId)
   }
 

@@ -253,7 +253,9 @@ export class SessionNamingService {
         session.messages.filter((message) => message.role !== 'system').slice(0, 4),
         this.dependencies.getLanguageName(language)
       )
-      const result = await model.chat(await this.dependencies.toModelMessages(prompt, model), {})
+      const result = await model.chat(await this.dependencies.toModelMessages(prompt, model), {
+        sessionId,
+      })
       const name = sanitizeGeneratedSessionName(
         (result.contentParts ?? [])
           .filter((part) => part.type === 'text')

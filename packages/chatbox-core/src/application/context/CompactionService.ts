@@ -57,6 +57,7 @@ export interface CompactionPolicyPort {
 
 export interface CompactionSummaryPort {
   generate(input: {
+    sessionId: string
     messages: Message[]
     sessionSettings?: SessionSettings
     language: Settings['language']
@@ -180,6 +181,7 @@ export class CompactionService {
         ? contextMessages.findIndex((message) => message.id === cappedBoundary.id)
         : roundsBoundaryIndex
       const summaryResult = await this.options.summaries.generate({
+        sessionId,
         messages: flattenToolCallPartsToText(contextMessages.slice(0, boundaryIndex + 1)),
         sessionSettings: session.settings,
         language: globalSettings.language,

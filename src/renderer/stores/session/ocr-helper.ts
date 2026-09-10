@@ -48,7 +48,11 @@ export function getOCRModel(
  * Mutates message contentParts in place (sets `ocrResult` on image parts).
  * Uses p-map with concurrency: 3 for parallel OCR processing.
  */
-export async function ocrImagesInMessages(messages: Message[], ocrModel: ModelInterface): Promise<void> {
+export async function ocrImagesInMessages(
+  messages: Message[],
+  ocrModel: ModelInterface,
+  sessionId: string
+): Promise<void> {
   const imageParts: Array<{ storageKey: string; part: Message['contentParts'][number] & { type: 'image' } }> = []
   for (const msg of messages) {
     for (const part of msg.contentParts) {
@@ -82,7 +86,7 @@ export async function ocrImagesInMessages(messages: Message[], ocrModel: ModelIn
           { type: 'image' as const, image: imageData },
         ],
       }
-      const chatResult = await ocrModel.chat([ocrMsg], {})
+      const chatResult = await ocrModel.chat([ocrMsg], { sessionId })
       const text = chatResult.contentParts
         .filter((p) => p.type === 'text')
         .map((p) => p.text)

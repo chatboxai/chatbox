@@ -5,6 +5,12 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getLogicalEndScrollLeft, getReasoningSummary, ReasoningInlineSummary } from './ReasoningInlineSummary'
 
+const { isSmallScreenMock } = vi.hoisted(() => ({
+  isSmallScreenMock: vi.fn(() => false),
+}))
+
+vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: isSmallScreenMock }))
+
 describe('reasoning inline summary', () => {
   beforeAll(() => {
     Object.defineProperty(window, 'matchMedia', {
@@ -25,10 +31,14 @@ describe('reasoning inline summary', () => {
   })
 
   beforeEach(() => {
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0)
-      return 1
-    })
+    isSmallScreenMock.mockReturnValue(false)
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn((callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      })
+    )
     vi.stubGlobal('cancelAnimationFrame', vi.fn())
   })
 
@@ -49,6 +59,19 @@ describe('reasoning inline summary', () => {
     const summary = screen.getByText('· The latest streaming line')
     expect(summary.getAttribute('data-follow-end')).not.toBeNull()
     expect(summary.scrollLeft).toBe(160)
+  })
+
+  it('does not render the preview on small screens', () => {
+    isSmallScreenMock.mockReturnValue(true)
+
+    render(
+      <MantineProvider>
+        <ReasoningInlineSummary content="Hidden preview" isThinking />
+      </MantineProvider>
+    )
+
+    expect(screen.queryByText('· Hidden preview')).toBeNull()
+    expect(requestAnimationFrame).not.toHaveBeenCalled()
   })
 
   it('uses a negative scroll offset to follow the logical end in RTL', () => {

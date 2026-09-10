@@ -48,6 +48,7 @@
     "test:integration": "vitest run test/integration --testTimeout=300000",
     "test:file-conversation": "vitest run test/integration/file-conversation --testTimeout=120000",
     "test:model-provider": "cross-env RUN_MODEL_PROVIDER_TESTS=1 vitest run test/integration/model-provider --testTimeout=120000",
+    "test:claude-prompt-cache-live": "cross-env RUN_MODEL_PROVIDER_TESTS=1 RUN_CLAUDE_PROMPT_CACHE_LIVE=1 vitest run test/integration/model-provider/claude-prompt-cache-live.test.ts --testTimeout=180000",
     "eval:session-rag": "node scripts/session-rag-eval/run-session-rag-eval.mjs",
     "eval:session-rag:chatbox": "node scripts/session-rag-eval/run-chatbox-flow-eval.mjs",
     "lint": "biome lint .",

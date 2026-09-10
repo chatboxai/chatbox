@@ -15,6 +15,7 @@ import { AssistantAvatar } from '@/components/common/Avatar'
 import LazyNumberInput from '@/components/common/LazyNumberInput'
 import MaxContextMessageCountSlider from '@/components/common/MaxContextMessageCountSlider'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
+import SegmentedControl from '@/components/common/SegmentedControl'
 import SliderWithInput from '@/components/common/SliderWithInput'
 import { TooltipInfoTrigger } from '@/components/common/TooltipInfoTrigger'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
@@ -468,6 +469,42 @@ export function ChatConfig({
           placeholder={t('Not set') || ''}
         />
       </Flex>
+
+      {settings?.provider === ModelProviderEnum.Claude && (
+        <Stack gap="xs">
+          <Flex align="center" gap="xs">
+            <Text size="sm" fw="600">
+              {t('Prompt cache duration')}
+            </Text>
+            <Tooltip
+              label={t("Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.")}
+              withArrow={true}
+              maw={320}
+              className="!whitespace-normal"
+              zIndex={3000}
+              openOnTouch
+            >
+              <TooltipInfoTrigger label={t('Prompt cache duration')} />
+            </Tooltip>
+          </Flex>
+
+          <SegmentedControl
+            data-testid={TestId.settings.sessionClaudePromptCacheTTL}
+            aria-label={t('Prompt cache duration') as string}
+            value={settings.claudePromptCacheTTL ?? 'auto'}
+            onChange={(value) =>
+              onSettingsChange({
+                claudePromptCacheTTL: value === '5m' || value === '1h' ? value : undefined,
+              })
+            }
+            data={[
+              { label: t('Auto'), value: 'auto' },
+              { label: t('5 min'), value: '5m' },
+              { label: t('1 hour'), value: '1h' },
+            ]}
+          />
+        </Stack>
+      )}
 
       {settings?.provider !== ModelProviderEnum.ChatboxAI && (
         <Stack gap="xs" py="xs">

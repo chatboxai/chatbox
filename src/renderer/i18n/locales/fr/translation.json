@@ -1420,5 +1420,9 @@
   "Loading full-size image...": "Chargement de l’image en taille réelle…",
   "Reload image": "Recharger l’image",
   "Generated image": "Image générée",
-  "You must create a copilot and use it in a conversation to use Copilot Memory.": "Vous devez créer un Copilot et l’utiliser dans une conversation pour utiliser la mémoire Copilot."
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "Vous devez créer un Copilot et l’utiliser dans une conversation pour utiliser la mémoire Copilot.",
+  "Prompt cache duration": "Durée du cache des prompts",
+  "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "Choisissez la durée pendant laquelle Claude conserve les entrées du cache des prompts. « Auto » utilise la valeur par défaut de Claude.",
+  "5 min": "5 min",
+  "1 hour": "1 heure"
 }

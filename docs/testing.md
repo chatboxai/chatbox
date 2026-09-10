@@ -178,3 +178,6 @@ The project has been successfully migrated from Jest to Vitest for better ESM su
 - [Vitest Documentation](https://vitest.dev/)
 - [AI SDK Testing Guide](https://sdk.vercel.ai/docs/testing)
 - [Testing Library](https://testing-library.com/)
+## Claude Prompt Cache live coverage
+
+Run `pnpm test:claude-prompt-cache-live` with `CLAUDE_API_KEY` and `CLAUDE_API_HOST=https://api.neorouter.ai/v1` available in the managed environment. The suite sends six real requests through the Claude provider: Auto, 5 min, and 1 hour, each in streaming and non-streaming modes. It checks outgoing cache controls, TTL, stream mode, endpoint, and response content. `TEST_CLAUDE_MODEL` can select the test model.

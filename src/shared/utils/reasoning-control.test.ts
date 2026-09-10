@@ -935,6 +935,21 @@ describe('reasoning-control', () => {
       ).toBeUndefined()
       expect(resolveReasoningProviderOptions(undefined, ModelProviderEnum.Claude, 'claude-sonnet-4-5')).toBeUndefined()
     })
+
+    it('does not clear the dedicated Claude prompt cache TTL when reasoning changes', () => {
+      const settings = {
+        claudePromptCacheTTL: '1h' as const,
+        providerOptions: claudeOptions,
+      }
+
+      const updated = {
+        ...settings,
+        ...setReasoningProviderOptionsForModel(settings, ModelProviderEnum.Claude, 'claude-sonnet-4-5', claudeOptions),
+      }
+
+      expect(updated.claudePromptCacheTTL).toBe('1h')
+      expect(updated.providerOptions).toBeUndefined()
+    })
   })
 
   describe('request-edge hardening for cross-model DeepSeek values', () => {

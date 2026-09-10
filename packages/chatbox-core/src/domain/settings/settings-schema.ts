@@ -196,6 +196,9 @@ export const GlobalSessionSettingsSchema = z.object({
 export const SessionSettingsSchema = GlobalSessionSettingsSchema.extend({
   provider: z.string().optional().catch(undefined),
   modelId: z.string().optional().catch(undefined),
+  // Claude prompt caching uses the provider default when omitted. Persist only
+  // explicit overrides here so reasoning option updates cannot clear them.
+  claudePromptCacheTTL: z.enum(['5m', '1h']).optional().catch(undefined),
   dalleStyle: z.enum(['vivid', 'natural']).optional().catch('vivid'),
   imageGenerateNum: z.number().optional().catch(1),
   // Legacy shared reasoning options; no longer read (superseded by

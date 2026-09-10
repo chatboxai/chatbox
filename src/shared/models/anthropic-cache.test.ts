@@ -18,6 +18,16 @@ describe('addAnthropicCacheControl', () => {
     const result = addAnthropicCacheControl(messages)
     expect(result).toHaveLength(1)
     expect(hasCacheControl(result[0])).toBe(true)
+    expect(result[0].providerOptions?.anthropic).toEqual({ cacheControl })
+  })
+
+  it.each(['5m', '1h'] as const)('adds an explicit %s TTL to cache control', (ttl) => {
+    const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }]
+
+    const result = addAnthropicCacheControl(messages, ttl)
+    const anthropic = result[0].providerOptions?.anthropic as Record<string, unknown>
+
+    expect(anthropic.cacheControl).toEqual({ type: 'ephemeral', ttl })
   })
 
   it('adds cache control to system message and last message', () => {

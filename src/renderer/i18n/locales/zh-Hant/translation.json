@@ -1419,5 +1419,9 @@
   "Loading full-size image...": "正在載入原圖…",
   "Reload image": "重新載入圖片",
   "Generated image": "生成的圖片",
-  "You must create a copilot and use it in a conversation to use Copilot Memory.": "必須建立搭檔，在對話中使用搭檔才能使用搭檔記憶。"
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "必須建立搭檔，在對話中使用搭檔才能使用搭檔記憶。",
+  "Prompt cache duration": "提示詞快取時長",
+  "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "選擇 Claude 保留提示詞快取項目的時長。「自動」使用 Claude 的預設值。",
+  "5 min": "5 分鐘",
+  "1 hour": "1 小時"
 }

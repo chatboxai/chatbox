@@ -1420,5 +1420,9 @@
   "Loading full-size image...": "元のサイズの画像を読み込み中…",
   "Reload image": "画像を再読み込み",
   "Generated image": "生成された画像",
-  "You must create a copilot and use it in a conversation to use Copilot Memory.": "Copilot メモリを使用するには、Copilot を作成し、会話で使用する必要があります。"
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "Copilot メモリを使用するには、Copilot を作成し、会話で使用する必要があります。",
+  "Prompt cache duration": "プロンプトキャッシュの保持時間",
+  "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "Claude がプロンプトキャッシュを保持する時間を選択します。「自動」では Claude のデフォルト値が使用されます。",
+  "5 min": "5分",
+  "1 hour": "1時間"
 }

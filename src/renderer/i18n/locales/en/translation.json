@@ -1419,5 +1419,9 @@
   "Loading full-size image...": "Loading full-size image...",
   "Reload image": "Reload image",
   "Generated image": "Generated image",
-  "You must create a copilot and use it in a conversation to use Copilot Memory.": "You must create a copilot and use it in a conversation to use Copilot Memory."
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "You must create a copilot and use it in a conversation to use Copilot Memory.",
+  "Prompt cache duration": "Prompt cache duration",
+  "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.",
+  "5 min": "5 min",
+  "1 hour": "1 hour"
 }

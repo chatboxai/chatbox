@@ -254,6 +254,17 @@ describe('SessionSettingsSchema per-model provider options', () => {
   })
 })
 
+describe('SessionSettingsSchema Claude prompt cache TTL', () => {
+  test.each(['5m', '1h'] as const)('accepts %s', (claudePromptCacheTTL) => {
+    expect(SessionSettingsSchema.parse({ claudePromptCacheTTL }).claudePromptCacheTTL).toBe(claudePromptCacheTTL)
+  })
+
+  test('uses the provider default for missing or invalid values', () => {
+    expect(SessionSettingsSchema.parse({}).claudePromptCacheTTL).toBeUndefined()
+    expect(SessionSettingsSchema.parse({ claudePromptCacheTTL: 'auto' }).claudePromptCacheTTL).toBeUndefined()
+  })
+})
+
 describe('SessionSettingsSchema command approval mode', () => {
   test.each(['always_ask', 'smart', 'full_access'] as const)('accepts %s', (commandApprovalMode) => {
     expect(SessionSettingsSchema.parse({ commandApprovalMode }).commandApprovalMode).toBe(commandApprovalMode)

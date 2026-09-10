@@ -38,6 +38,7 @@ describe('automation test ID contract', () => {
         TestId.session.clearMessages,
         TestId.session.delete,
         TestId.chat.sessionSettings,
+        TestId.settings.sessionClaudePromptCacheTTL,
         TestId.settings.sessionSave,
         TestId.settings.navChat,
         TestId.settings.providerList,

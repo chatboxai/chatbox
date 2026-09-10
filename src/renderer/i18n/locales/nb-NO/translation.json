@@ -1420,5 +1420,9 @@
   "Loading full-size image...": "Laster inn bildet i full størrelse…",
   "Reload image": "Last inn bildet på nytt",
   "Generated image": "Generert bilde",
-  "You must create a copilot and use it in a conversation to use Copilot Memory.": "Du må opprette en Copilot og bruke den i en samtale for å bruke Copilot-minne."
+  "You must create a copilot and use it in a conversation to use Copilot Memory.": "Du må opprette en Copilot og bruke den i en samtale for å bruke Copilot-minne.",
+  "Prompt cache duration": "Varighet for promptbuffer",
+  "Choose how long Claude keeps prompt cache entries. Auto uses Claude's default.": "Velg hvor lenge Claude beholder oppføringer i promptbufferen. Auto bruker Claudes standardverdi.",
+  "5 min": "5 min",
+  "1 hour": "1 time"
 }

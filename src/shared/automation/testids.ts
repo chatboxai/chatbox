@@ -7,7 +7,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.7.0'
+export const AUTOMATION_CONTRACT_VERSION = '1.7.2'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -174,6 +174,7 @@ export const TestId = {
     sessionTopP: 'session-settings-top-p',
     sessionMaxTokens: 'session-settings-max-tokens',
     sessionMaxContext: 'session-settings-max-context',
+    sessionClaudePromptCacheTTL: 'session-settings-claude-prompt-cache-ttl',
     sessionSave: 'session-settings-save',
     clearSessionListKeep: 'clear-session-list-keep-count',
     clearSessionListConfirm: 'clear-session-list-confirm',

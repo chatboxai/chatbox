@@ -5,7 +5,12 @@ function isPositiveTokenCount(value: number | undefined): value is number {
   return value !== undefined && Number.isFinite(value) && value > 0
 }
 
-export function getMessageTokenDisplay(message: Message): number | null {
+export interface MessageTokenDisplay {
+  totalTokens: number
+  cachedInputTokens?: number
+}
+
+export function getMessageTokenDisplay(message: Message): MessageTokenDisplay | null {
   if (!isSuccessfulAssistantReply(message)) return null
 
   // A provider-reported total is only presented as consumed after the stream
@@ -13,7 +18,11 @@ export function getMessageTokenDisplay(message: Message): number | null {
   // and local estimates from looking like confirmed billing.
   const totalTokens = message.usage?.totalTokens
   if (message.finishReason && isPositiveTokenCount(totalTokens)) {
-    return totalTokens
+    const cachedInputTokens = message.usage?.cachedInputTokens
+    return {
+      totalTokens,
+      ...(isPositiveTokenCount(cachedInputTokens) ? { cachedInputTokens } : {}),
+    }
   }
 
   return null

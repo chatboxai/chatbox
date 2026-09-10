@@ -52,8 +52,33 @@ describe('Message token display', () => {
           tokensUsed: 999,
         })
       )
-    ).toBe(15)
+    ).toEqual({ totalTokens: 15 })
   })
+
+  test('includes cached input tokens reported by the provider', () => {
+    expect(
+      getMessageTokenDisplay(
+        assistantMessage({
+          finishReason: 'stop',
+          usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, cachedInputTokens: 8 },
+        })
+      )
+    ).toEqual({ totalTokens: 15, cachedInputTokens: 8 })
+  })
+
+  test.each([0, Number.NaN, Number.POSITIVE_INFINITY])(
+    'hides an invalid cached input count: %s',
+    (cachedInputTokens) => {
+      expect(
+        getMessageTokenDisplay(
+          assistantMessage({
+            finishReason: 'stop',
+            usage: { totalTokens: 15, cachedInputTokens },
+          })
+        )
+      ).toEqual({ totalTokens: 15 })
+    }
+  )
 
   test.each([{ error: 'request failed' }, { errorCode: 500 }, { finishReason: 'error' }])(
     'hides residual usage and estimates for failed replies: %o',
@@ -62,7 +87,7 @@ describe('Message token display', () => {
         getMessageTokenDisplay(
           assistantMessage({
             ...failure,
-            usage: { totalTokens: 15 },
+            usage: { totalTokens: 15, cachedInputTokens: 8 },
             tokensUsed: 999,
           })
         )

@@ -466,12 +466,18 @@ const _Message: FC<Props> = (props) => {
       tips.push({ label: props.msg.model || 'unknown', tooltip: t('Model') as string })
     }
     if (showTokenUsed && msg.role === 'assistant' && !msg.generating) {
-      const consumedTokens = getMessageTokenDisplay(msg)
-      if (consumedTokens) {
+      const tokenDisplay = getMessageTokenDisplay(msg)
+      if (tokenDisplay) {
         tips.push({
-          label: `${consumedTokens} tokens`,
+          label: `${tokenDisplay.totalTokens} tokens`,
           tooltip: t('Total tokens consumed') as string,
         })
+        if (tokenDisplay.cachedInputTokens) {
+          tips.push({
+            label: `${tokenDisplay.cachedInputTokens} cached`,
+            tooltip: t('Cached input tokens') as string,
+          })
+        }
       }
     }
     if (showWordCount && !msg.generating) {

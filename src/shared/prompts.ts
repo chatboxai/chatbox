@@ -23,7 +23,7 @@ ${
 }
 \`\`\`
 
-Name this conversation in 10 characters or less.
+Name this conversation in 10 words or less.
 Use ${language}.
 Only give the name, nothing else.
 

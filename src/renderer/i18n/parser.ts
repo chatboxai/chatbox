@@ -57,5 +57,8 @@ export function parseLocale(locale: string): Language {
   if (locale.startsWith('nb')) {
     return 'nb-NO'
   }
+  if (locale.startsWith('tr')) {
+    return 'tr'
+  }
   return 'en'
 }

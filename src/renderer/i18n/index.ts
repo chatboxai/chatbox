@@ -17,6 +17,7 @@ import nbNO from './locales/nb-NO/translation.json'
 import ptPT from './locales/pt-PT/translation.json'
 import ru from './locales/ru/translation.json'
 import sv from './locales/sv/translation.json'
+import tr from './locales/tr/translation.json'
 import zhHans from './locales/zh-Hans/translation.json'
 import zhHant from './locales/zh-Hant/translation.json'
 
@@ -63,6 +64,9 @@ i18n.use(initReactI18next).init({
     },
     'nb-NO': {
       translation: nbNO,
+    },
+    tr: {
+      translation: tr,
     },
   },
   fallbackLng: 'en',

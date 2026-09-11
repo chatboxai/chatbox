@@ -309,5 +309,10 @@
   "Use": "使用",
   "View All": "查看全部",
   "View screenshot {{number}}": "查看第 {{number}} 张截图",
-  "{{name}} Copilot menu": "{{name}} 搭档菜单"
+  "{{name}} Copilot menu": "{{name}} 搭档菜单",
+  "Blue sculpted (default)": "蓝色立体（默认）",
+  "Blue flat": "蓝色扁平",
+  "Warm flat": "暖色扁平",
+  "Warm sculpted": "暖色立体",
+  "Your launcher may take time to update the icon. You may need to add the home screen shortcut again.": "桌面图标可能需要稍后才会更新，你可能需要重新添加主屏幕快捷方式。"
 }

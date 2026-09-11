@@ -36,6 +36,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.XiaomiMiMo]: 'Xiaomi MiMo API',
   [ModelProviderEnum.LongCat]: 'LongCat API',
   [ModelProviderEnum.ZhipuGLMCodingPlan]: 'GLM Coding Plan',
+  [ModelProviderEnum.Jalapeno]: 'Jalapeno Cloud 50% Off',
   [ModelProviderEnum.Custom]: 'Custom Provider',
 }
 
@@ -164,6 +165,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.OpenCodeZen,
     label: aiProviderNameHash[ModelProviderEnum.OpenCodeZen],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.Jalapeno,
+    label: aiProviderNameHash[ModelProviderEnum.Jalapeno],
     disabled: false,
   },
   {

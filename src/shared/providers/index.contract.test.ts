@@ -19,6 +19,7 @@ describe('provider control-plane contracts', () => {
       'moonshot',
       'moonshot-cn',
       'siliconflow',
+      'jalapeno',
       'openrouter',
       'ollama',
       'lm-studio',

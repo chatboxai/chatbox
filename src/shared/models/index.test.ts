@@ -1,5 +1,6 @@
 import { settings as getDefaultSettings, newConfigs } from 'src/shared/defaults'
 import { getModel } from 'src/shared/providers'
+import Jalapeno from 'src/shared/providers/definitions/models/jalapeno'
 import LongCat from 'src/shared/providers/definitions/models/longcat'
 import OpenAI from 'src/shared/providers/definitions/models/openai'
 import OpenAIResponses from 'src/shared/providers/definitions/models/openai-responses'
@@ -169,6 +170,7 @@ describe('getModel', () => {
     ],
     [ModelProviderEnum.XiaomiMiMo, 'mimo-v2.5-pro', 'https://api.xiaomimimo.com/v1', XiaomiMiMo],
     [ModelProviderEnum.LongCat, 'LongCat-2.0', 'https://api.longcat.chat/openai/v1', LongCat],
+    [ModelProviderEnum.Jalapeno, 'DeepSeek-V4-Pro', 'https://api.jalapeno-cloud.ai/v1', Jalapeno],
     [
       ModelProviderEnum.ZhipuGLMCodingPlan,
       'glm-5.3',

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelDependencies } from '../../types/adapters'
-import { tokenMarketProvider } from './tokensmarket'
-import TokenMarket from './models/tokensmarket'
+import { tokenMarketProvider } from './tokenmarket'
+import TokenMarket from './models/tokenmarket'
 
 const createDependencies = (apiRequest = vi.fn()): ModelDependencies => ({
   request: {
@@ -23,7 +23,7 @@ const createDependencies = (apiRequest = vi.fn()): ModelDependencies => ({
 describe('tokenMarketProvider', () => {
   it('registers the Token Market endpoint without hardcoded models', () => {
     expect(tokenMarketProvider).toMatchObject({
-      id: 'tokensmarket',
+      id: 'tokenmarket',
       name: 'Token Market',
       defaultSettings: {
         apiHost: 'https://api.tokensmarket.ai/v1',
@@ -36,7 +36,7 @@ describe('tokenMarketProvider', () => {
     const apiRequest = vi.fn().mockResolvedValue(
       Response.json({
         object: 'list',
-        data: [{ id: 'available-model', object: 'model', created: 0, owned_by: 'tokensmarket' }],
+        data: [{ id: 'available-model', object: 'model', created: 0, owned_by: 'tokenmarket' }],
       })
     )
     const model = new TokenMarket(

@@ -1,6 +1,6 @@
 import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
-import TokenMarket from './models/tokensmarket'
+import TokenMarket from './models/tokenmarket'
 
 export const tokenMarketProvider = defineProvider({
   id: ModelProviderEnum.TokenMarket,

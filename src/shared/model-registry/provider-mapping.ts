@@ -17,6 +17,7 @@ export const PROVIDER_ID_MAP: Record<string, string> = {
   'mistral-ai': 'mistral',
   perplexity: 'perplexity',
   openrouter: 'openrouter',
+  trustedrouter: 'trustedrouter',
   minimax: 'minimax',
   'minimax-cn': 'minimax-cn',
   moonshot: 'moonshotai',

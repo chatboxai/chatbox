@@ -25,6 +25,7 @@ export enum ModelProviderEnum {
   Perplexity = 'perplexity',
   XAI = 'xAI',
   OpenRouter = 'openrouter',
+  TrustedRouter = 'trustedrouter',
   Bedrock = 'bedrock',
   VercelAIGateway = 'vercel-ai-gateway',
   OpenCodeGo = 'opencode-go',

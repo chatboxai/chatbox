@@ -2,6 +2,8 @@ import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import Mizumi from './models/mizumi'
 
+const MIZUMI_API_HOST = 'https://api.mizumi.co'
+
 export const mizumiProvider = defineProvider({
   id: ModelProviderEnum.Mizumi,
   name: 'Mizumi',
@@ -11,7 +13,7 @@ export const mizumiProvider = defineProvider({
     docs: 'https://mizumi.co/docs',
   },
   defaultSettings: {
-    apiHost: 'https://api.mizumi.co',
+    apiHost: MIZUMI_API_HOST,
     models: [
       { modelId: 'gpt-5.6-sol', capabilities: ['tool_use'] },
       { modelId: 'gpt-5.6-terra', capabilities: ['tool_use'] },
@@ -25,6 +27,7 @@ export const mizumiProvider = defineProvider({
     return new Mizumi(
       {
         apiKey: config.providerSetting.apiKey || '',
+        apiHost: config.formattedApiHost || MIZUMI_API_HOST,
         model: config.model,
         temperature: config.settings.temperature,
         topP: config.settings.topP,

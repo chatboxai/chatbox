@@ -6,17 +6,15 @@ interface Options extends OpenAICompatibleSettings {}
 export default class Mizumi extends OpenAICompatible {
   public name = 'Mizumi'
   public options: Options
-  constructor(options: Omit<Options, 'apiHost'>, dependencies: ModelDependencies) {
-    const apiHost = 'https://api.mizumi.co/v1'
+  constructor(options: Options, dependencies: ModelDependencies) {
+    // The OpenAI-compatible endpoint contract requires the /v1 suffix; append it only when missing
+    // so custom apiHost overrides (with or without /v1) work correctly.
+    const trimmedApiHost = options.apiHost.replace(/\/+$/, '')
+    const apiHost = trimmedApiHost.endsWith('/v1') ? trimmedApiHost : `${trimmedApiHost}/v1`
     super(
       {
-        apiKey: options.apiKey,
+        ...options,
         apiHost,
-        model: options.model,
-        temperature: options.temperature,
-        topP: options.topP,
-        maxOutputTokens: options.maxOutputTokens,
-        stream: options.stream,
       },
       dependencies
     )

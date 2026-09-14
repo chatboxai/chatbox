@@ -24,7 +24,7 @@ describe('apiRouteProvider', () => {
   it('registers the API Route endpoint without hardcoded models', () => {
     expect(apiRouteProvider).toMatchObject({
       id: 'api-route',
-      name: 'API Route',
+      name: 'API-Route',
       defaultSettings: {
         apiHost: 'https://global.api-route.com/v1',
         models: [],

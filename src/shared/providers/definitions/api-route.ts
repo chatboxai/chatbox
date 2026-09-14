@@ -4,7 +4,7 @@ import ApiRoute from './models/api-route'
 
 export const apiRouteProvider = defineProvider({
   id: ModelProviderEnum.ApiRoute,
-  name: 'API Route',
+  name: 'API-Route',
   type: ModelProviderType.OpenAI,
   urls: {
     website: 'https://www.api-route.com/',
@@ -29,5 +29,5 @@ export const apiRouteProvider = defineProvider({
       config.dependencies
     ),
   getDisplayName: (modelId, providerSettings) =>
-    `API Route (${providerSettings?.models?.find((model) => model.modelId === modelId)?.nickname || modelId})`,
+    `API-Route (${providerSettings?.models?.find((model) => model.modelId === modelId)?.nickname || modelId})`,
 })

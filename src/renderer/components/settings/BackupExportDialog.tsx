@@ -1,4 +1,4 @@
-import { type BackupExportItem, updateBackupExportItemSelection } from '@chatbox/core/backup'
+import { type BackupExportItem, type BackupExportPlan, updateBackupExportItemSelection } from '@chatbox/core/backup'
 import type { BackupSessionSelection } from '@chatbox/react'
 import { Button, Checkbox, Group, Loader, Stack, Text } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
@@ -10,6 +10,8 @@ import { BackupConversationSelector } from './BackupConversationSelector'
 import classes from './BackupExportDialog.module.css'
 
 export function BackupExportDialog({
+  plan,
+  onConfirm,
   opened,
   onClose,
   selection,
@@ -22,6 +24,8 @@ export function BackupExportDialog({
   result,
   resultActions,
 }: {
+  plan?: BackupExportPlan
+  onConfirm?(): void
   opened: boolean
   onClose(): void
   selection: BackupSessionSelection
@@ -56,7 +60,44 @@ export function BackupExportDialog({
       }
       classNames={{ content: classes.content, header: classes.header, body: classes.body }}
     >
-      {exporting ? (
+      {plan ? (
+        <Stack p="lg" gap="md" flex={1} style={{ minHeight: 0, overflowY: 'auto' }}>
+          <Text fw={600}>{t('Ready to export')}</Text>
+          <Text size="sm">
+            {t('{{count}} selected · {{size}} MiB before compression', {
+              count: plan.sessions.length,
+              size: (plan.estimatedBytes / 1024 / 1024).toFixed(1),
+            })}
+          </Text>
+          <Text size="sm" c="dimmed">
+            {plan.formatVersion === 3
+              ? t(
+                  'This backup includes large conversations and requires a version of Chatbox that supports large backups. Older versions cannot import it.'
+                )
+              : t('This backup is compatible with Chatbox 1.22 or later.')}
+          </Text>
+          {plan.warnings.length > 0 && (
+            <Text size="sm" c="orange">
+              {t('{{count}} item(s) could not be included. See manifest.json in the backup for details.', {
+                count: plan.warnings.length,
+              })}
+            </Text>
+          )}
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+            {plan.sessions.slice(0, 100).map((session) => (
+              <Group key={session.id} justify="space-between" py={4}>
+                <Text size="sm" truncate style={{ flex: 1 }}>
+                  {session.name}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {(session.size / 1024 / 1024).toFixed(1)} MiB
+                  {session.layout === 'sharded' ? ` · ${t('Large conversation')}` : ''}
+                </Text>
+              </Group>
+            ))}
+          </div>
+        </Stack>
+      ) : exporting ? (
         <div className={classes.status} aria-live="polite">
           <Loader size="lg" />
           <Text fw={600}>{t('Exporting...')}</Text>
@@ -133,7 +174,14 @@ export function BackupExportDialog({
         </div>
       )}
       <div className={classes.footer}>
-        {exporting ? (
+        {plan ? (
+          <>
+            <Button variant="default" onClick={onCancel}>
+              {t('Cancel')}
+            </Button>
+            <Button onClick={onConfirm}>{t('Export')}</Button>
+          </>
+        ) : exporting ? (
           <Button variant="default" onClick={onCancel}>
             {t('Cancel')}
           </Button>

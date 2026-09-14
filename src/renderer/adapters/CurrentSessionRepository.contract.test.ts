@@ -1,3 +1,5 @@
+import { exportBackupArchive, importBackupArchive, prepareBackupExport } from '@chatbox/core/backup'
+import { MemoryStorage } from '../../../packages/chatbox-core/src/backup/sharded.test-support'
 import 'fake-indexeddb/auto'
 import { type SessionMetaRepositoryPort, SessionRepositoryError } from '@chatbox/core/ports'
 import {
@@ -280,4 +282,56 @@ describe('CurrentSessionRepository shared behavior contract', () => {
   )) {
     test(contractCase.name, contractCase.run)
   }
+})
+
+test('publishes restored row markers and rolls them back before normal repository reads resume', async () => {
+  const source = createHarness()
+  const original = {
+    ...createSessionWithMessages('restore-marker'),
+    name: 'Imported',
+    settings: { agentMode: { value: 'off' as const, locked: false, lockReason: null } },
+  }
+  original.messages.push({
+    id: 'summary',
+    role: 'assistant',
+    isSummary: true,
+    contentParts: [{ type: 'text', text: 'Summary' }],
+  })
+  await source.repository.setSession(original)
+  let archive = new Blob()
+  await source.repository.withBackupStorageAccess(async (_reader, metaStorage, sessionStore) => {
+    if (!sessionStore) throw new Error('Missing backup store')
+    const options = {
+      storage: new MemoryStorage(),
+      metaStorage,
+      sessionStore,
+      exportItems: ['conversations'] as ['conversations'],
+      includeKeys: false,
+      application: { version: 'test', platform: 'test' },
+    }
+    const prepared = await prepareBackupExport(options, { singleSessionBytes: 1 })
+    await exportBackupArchive({
+      ...options,
+      prepared,
+      writeArchive: async (stream) => {
+        const parts: Uint8Array<ArrayBuffer>[] = []
+        for await (const chunk of stream()) parts.push(new Uint8Array(chunk))
+        archive = new Blob(parts)
+        return { boundedMemory: true }
+      },
+    })
+  })
+  const target = createHarness()
+  await target.repository.withBackupStorageAccess(async (_reader, metaStorage, sessionStore) => {
+    if (!sessionStore) throw new Error('Missing backup store')
+    await importBackupArchive(archive, { storage: new MemoryStorage(), metaStorage, sharded: { store: sessionStore } })
+  })
+  expect((await target.repository.getSession(original.id))?.name).toBe('Imported')
+  expect(storedRecord(target, original.id).storageFormat).toBe('rows')
+  expect((await target.repository.getSessionReadModel(original.id))?.kind).toBe('window')
+  await target.repository.setSession({ ...original, name: 'After restore' })
+  expect((await target.repository.getSession(original.id))?.name).toBe('After restore')
+  expect([...target.values.keys()].filter((key) => key.startsWith('__chatbox_backup_import'))).toEqual([])
+  source.rowStore.close()
+  target.rowStore.close()
 })

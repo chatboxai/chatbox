@@ -21,10 +21,11 @@ import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/
 import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { rememberFileNativePath } from '@/utils/file-native-path'
 import { getOS } from '../packages/navigator'
-import type { Platform, PlatformType } from './interfaces'
+import type { Exporter, Platform, PlatformType } from './interfaces'
 import DesktopKnowledgeBaseController from './knowledge-base/desktop-controller'
 import DesktopSessionAttachmentRagController from './session-attachment-rag/desktop-controller'
-import WebExporter from './web_exporter'
+import DesktopExporter from './desktop_exporter'
+import { desktopBackupBlobs } from './desktop-backup-blobs'
 import { parseTextFileLocally } from './web_platform_utils'
 
 const log = getLogger('desktop-platform')
@@ -35,7 +36,8 @@ export default class DesktopPlatform implements Platform {
   public type: PlatformType = 'desktop'
   public readonly isDesktopLike = true
 
-  public exporter = new WebExporter()
+  public exporter: Exporter
+  public backupBlobStreams: ReturnType<typeof desktopBackupBlobs>
 
   private _kbController?: DesktopKnowledgeBaseController
   private _sessionAttachmentRagController?: DesktopSessionAttachmentRagController
@@ -46,6 +48,8 @@ export default class DesktopPlatform implements Platform {
   public ipc: ElectronIPC
   constructor(ipc: ElectronIPC) {
     this.ipc = ipc
+    this.exporter = new DesktopExporter(ipc)
+    this.backupBlobStreams = desktopBackupBlobs(ipc)
   }
 
   public getStorageType(): string {

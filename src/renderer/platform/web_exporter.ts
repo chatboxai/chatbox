@@ -104,7 +104,8 @@ export default class WebExporter implements Exporter {
     filename: string,
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
     mimeType: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    requirements?: { requiresStreaming: boolean; estimatedBytes: number }
   ): Promise<StreamingExportResult> {
     const pickerWindow = window as Window & {
       showSaveFilePicker?: (options: {
@@ -138,6 +139,7 @@ export default class WebExporter implements Exporter {
             if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
             await writable.write(Uint8Array.from(chunk).buffer)
           }
+          if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
           await writable.close()
           return { boundedMemory: true }
         } catch (error) {
@@ -150,9 +152,18 @@ export default class WebExporter implements Exporter {
     // Browsers without File System Access cannot stream a download to disk. Keep
     // chunks as Blob parts so we avoid a second concatenated byte array, and report
     // the capability downgrade to the caller.
+    const maxBufferedBytes = 64 * 1024 * 1024
+    if (requirements?.requiresStreaming || (requirements?.estimatedBytes ?? 0) > maxBufferedBytes)
+      throw new Error('This browser cannot save this backup safely. Select fewer conversations or use the desktop app.')
+    let bufferedBytes = 0
     const parts: BlobPart[] = []
     for await (const chunk of dataCallback()) {
       if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
+      bufferedBytes += chunk.byteLength
+      if (bufferedBytes > maxBufferedBytes)
+        throw new Error(
+          'Backup exceeds this browser’s 64 MiB download limit. Select fewer conversations or use the desktop app.'
+        )
       parts.push(chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer)
     }
     return {

@@ -1,5 +1,5 @@
 import { RowBackedSessionRepository, type SessionMigrationOutcome } from '@chatbox/core/application/session'
-import { BackupOperationBusyError, throwIfAborted } from '@chatbox/core/backup'
+import { BackupOperationBusyError, throwIfAborted, type BackupSessionStore } from '@chatbox/core/backup'
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '@chatbox/core/ports'
 import {
   type SessionContextRequest,
@@ -24,6 +24,7 @@ import type { Session, SessionMetaPage, SessionMetaRecord } from '@shared/types'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import storage from '@/storage'
+import { rendererBackupSessionStore } from './backup-session-store'
 import { type CurrentSessionDataStorage, CurrentSessionRecordStore } from './CurrentSessionRecordStore'
 
 export type { CurrentSessionDataStorage } from './CurrentSessionRecordStore'
@@ -212,7 +213,8 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
   withBackupStorageAccess<Result>(
     action: (
       readSession: (id: string) => Promise<Session | null>,
-      metaStorage: SessionMetaRepositoryPort
+      metaStorage: SessionMetaRepositoryPort,
+      backupStore?: BackupSessionStore
     ) => Promise<Result>,
     signal?: AbortSignal
   ): Promise<Result> {
@@ -224,7 +226,44 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
       })
       const metaStorage = this.createMetaStorage()
       await metaStorage.initialize()
-      return action((id) => reader.getSession(id), metaStorage)
+      const rows = this.createRowStore()
+      const supportsBackup = 'iterateBackupRows' in rows && 'beginBackupRestore' in rows
+      const dataStorage = this.backupDataStorage
+      const snapshots = {
+        capture: async (id: string, token: string) => {
+          if (dataStorage.copyItem) return dataStorage.copyItem(`session:${id}`, token)
+          const previous = await this.records.getRecord(id)
+          if (previous) await dataStorage.setItemNow(token, previous)
+          return previous !== null
+        },
+        restore: async (id: string, token: string, existed: boolean) => {
+          if (!existed) return this.records.removeRecord(id)
+          if (dataStorage.copyItem) {
+            if (!(await dataStorage.copyItem(token, `session:${id}`)))
+              throw new Error('Backup recovery record is missing')
+          } else {
+            const previous = await dataStorage.getItem<import('@chatbox/core/ports').StoredSessionRecord | null>(
+              token,
+              null
+            )
+            if (!previous) throw new Error('Backup recovery record is missing')
+            await this.records.setRecord(previous)
+          }
+        },
+        remove: (token: string) => dataStorage.removeItem(token),
+      }
+      const backupStore = supportsBackup
+        ? rendererBackupSessionStore(rows as SessionRowStorePort & BackupSessionStore, this.records, snapshots, {
+            listSessionIds: () => this.records.listIds(),
+            open: dataStorage.openBackupValue ? (id) => dataStorage.openBackupValue!(`session:${id}`) : undefined,
+            readValue: async (id) => {
+              const record = await this.records.getRecord(id)
+              if (!record || ('storageFormat' in record && record.storageFormat === 'rows')) return null
+              return record as Session
+            },
+          })
+        : undefined
+      return action((id) => reader.getSession(id), metaStorage, backupStore)
     }, signal)
   }
   getCompleteSessionSource(sessionId: string) {
@@ -238,12 +277,14 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
   }
   readonly meta: SessionMetaRepositoryPort
 
+  private readonly backupDataStorage: CurrentSessionDataStorage
   private readonly records: CurrentSessionRecordStore
   private readonly createRowStore: () => SessionRowStorePort
   private readonly createMetaStorage: () => SessionMetaRepositoryPort
   private data: RowBackedSessionRepository | null = null
 
   constructor(options: CurrentSessionRepositoryOptions = {}) {
+    this.backupDataStorage = options.dataStorage ?? storage
     this.records = new CurrentSessionRecordStore(options.dataStorage ?? storage)
     this.createRowStore = () => options.rowStore ?? platform.getSessionRowStore()
     this.createMetaStorage = () => options.metaStorage ?? platform.getSessionMetaStorage()

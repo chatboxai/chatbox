@@ -1,3 +1,4 @@
+import { BackupPresentation } from './restore-presentation'
 import { fitsInlineBackupJson, jsonUtf8Blocks } from './json-stream'
 import { prepareGlobalRestore } from './global-restore'
 import { encodeSessionTree } from '../session/session-tree/encode'
@@ -363,6 +364,7 @@ export async function importShardedBackup(
   let shardIndex = 0
   const observed = new Map<string, BackupJsonEntry>()
   const summaries = new Map<string, { threads: number; messages: number }>()
+  const presentations = new Map<string, BackupPresentation>()
   let manifest: BackupManifestV3 | undefined
   let current: { id: string; graph: BackupGraphValidator } | undefined
   let indexBytes = 0
@@ -494,6 +496,7 @@ export async function importShardedBackup(
           )
             throw new Error('Invalid backup session path')
           current = { id, graph: new BackupGraphValidator(id) }
+          presentations.set(id, new BackupPresentation())
         }
         if (!current || !entry.path.startsWith(`sessions/${await safeSessionPathComponent(current.id, checksum)}/`))
           throw new Error('Backup row appears outside its session')
@@ -502,6 +505,7 @@ export async function importShardedBackup(
         graphBytes += encoder.encode(JSON.stringify(structural)).length
         if (graphBytes > MAX_INDEX_BYTES) throw new Error('Backup graph index exceeds budget')
         current.graph.add(row)
+        presentations.get(current.id)!.add(row)
       }
     },
     {
@@ -773,7 +777,9 @@ export async function importShardedBackup(
             }
             row = prepareRow(row, active.id, keys)
           }
-          await active.candidate.append(fromLogicalBackupRow(row, active.id))
+          const stored = fromLogicalBackupRow(row, active.id)
+          if (stored.kind === 'header') stored.record.presentation = presentations.get(active.id)!.value
+          await active.candidate.append(stored)
         }
       },
       { ...readOptions, filter: (path) => !isBackupResourcePath(path) }

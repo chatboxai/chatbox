@@ -1,3 +1,4 @@
+import { prepareBackupExport, type BackupExportPlan, throwIfAborted } from '@chatbox/core/backup'
 import { useBackupSessionSelection } from '@chatbox/react'
 import { BackupExportDialog } from '@/components/settings/BackupExportDialog'
 import { confirmBackupInterruption } from '@/hooks/useBackupNavigationGuard'
@@ -45,7 +46,7 @@ import {
 } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import dayjs from 'dayjs'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
@@ -678,6 +679,8 @@ const ImportExportDataSection = () => {
   const [importDetails, setImportDetails] = useState('')
   const [importRequiresRestart, setImportRequiresRestart] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [exportPlan, setExportPlan] = useState<BackupExportPlan>()
+  const confirmExport = useRef<(() => void) | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [progress, setProgress] = useState<BackupProgress | null>(null)
@@ -746,30 +749,55 @@ const ImportExportDataSection = () => {
       const date = new Date()
       const result = await runRendererBackupOperation('export', (signal) =>
         rendererApplication.sessionWrites.withBackupAccess(() =>
-          sessionRepository.withBackupStorageAccess(
-            (readSession, metaStorage) =>
-              exportBackupArchive({
-                exportItems,
-                selectedSessionIds: selection.exportSessionIds,
-                listSessionIds: () => sessionRepository.getAllSessionIds(),
-                includeKeys: exportItems.includes(ExportDataItem.Key),
-                exportedAt: date,
-                storage,
-                metaStorage,
-                readSession,
-                application: { version: platform.getVersion(), platform: platform.getPlatform() },
-                signal,
-                onProgress: setProgress,
-                writeArchive: (dataCallback) =>
-                  platform.exporter.exportStreamingFile(
-                    getBackupFilename(date),
-                    dataCallback,
-                    'application/zip',
-                    signal
-                  ),
-              }),
-            signal
-          )
+          sessionRepository.withBackupStorageAccess(async (readSession, metaStorage, sessionStore) => {
+            const options = {
+              exportItems,
+              selectedSessionIds: selection.exportSessionIds,
+              listSessionIds: () => sessionRepository.getAllSessionIds(),
+              includeKeys: exportItems.includes(ExportDataItem.Key),
+              exportedAt: date,
+              storage,
+              metaStorage,
+              readSession,
+              sessionStore,
+              application: { version: platform.getVersion(), platform: platform.getPlatform() },
+              signal,
+              onProgress: setProgress,
+            }
+            const prepared = sessionStore ? await prepareBackupExport({ ...options, sessionStore }) : undefined
+            if (prepared) {
+              throwIfAborted(signal)
+              setExportPlan(prepared)
+              await new Promise<void>((resolve, reject) => {
+                const abort = () => {
+                  confirmExport.current = null
+                  reject(signal.reason ?? new DOMException('Export canceled', 'AbortError'))
+                }
+                signal.addEventListener('abort', abort, { once: true })
+                confirmExport.current = () => {
+                  signal.removeEventListener('abort', abort)
+                  confirmExport.current = null
+                  resolve()
+                }
+                if (signal.aborted) abort()
+              })
+              setExportPlan(undefined)
+            }
+            return exportBackupArchive({
+              ...options,
+              prepared,
+              writeArchive: (dataCallback) =>
+                platform.exporter.exportStreamingFile(
+                  getBackupFilename(date),
+                  dataCallback,
+                  'application/zip',
+                  signal,
+                  prepared
+                    ? { requiresStreaming: prepared.formatVersion === 3, estimatedBytes: prepared.estimatedBytes }
+                    : undefined
+                ),
+            })
+          }, signal)
         )
       )
       const warningCount = result.manifest.warnings.length
@@ -819,6 +847,8 @@ const ImportExportDataSection = () => {
       }
     } finally {
       setIsExporting(false)
+      setExportPlan(undefined)
+      confirmExport.current = null
       setProgress(null)
     }
   }
@@ -848,7 +878,7 @@ const ImportExportDataSection = () => {
           // holding the persona locks queues concurrent save_memory / Soul edits
           // until the import transaction finishes so neither side is clobbered.
           const result = await rendererApplication.sessionWrites.withBackupAccess(() =>
-            sessionRepository.withBackupStorageAccess(async (_readSession, metaStorage) => {
+            sessionRepository.withBackupStorageAccess(async (_readSession, metaStorage, sessionStore) => {
               try {
                 return await withAgentPersonaLocks(async () =>
                   importBackupArchive(file, {
@@ -857,6 +887,7 @@ const ImportExportDataSection = () => {
                     signal,
                     onProgress: setProgress,
                     rehydrateSession: rehydrateImportedSession,
+                    sharded: sessionStore ? { store: sessionStore } : undefined,
                   })
                 )
               } finally {
@@ -984,6 +1015,8 @@ const ImportExportDataSection = () => {
           onItemsChange={setExportItems}
           exporting={isExporting}
           onExport={() => void onExport()}
+          plan={exportPlan}
+          onConfirm={() => confirmExport.current?.()}
           onCancel={cancelOperation}
           progress={
             <Stack gap="xs" align="center">

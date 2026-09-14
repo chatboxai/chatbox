@@ -157,3 +157,40 @@ describe('WebExporter.exportStreamingFile', () => {
     expect(Array.from(await readBlob(result.pendingDownload?.blob ?? new Blob()))).toEqual([1, 2, 3, 4])
   })
 })
+
+it('refuses a sharded or oversized fallback before reading archive bytes', async () => {
+  setSaveFilePicker(undefined)
+  const source = vi.fn(chunks)
+  const exporter = new WebExporter()
+  await expect(
+    exporter.exportStreamingFile('backup.zip', source, 'application/zip', undefined, {
+      requiresStreaming: true,
+      estimatedBytes: 100,
+    })
+  ).rejects.toThrow('cannot save')
+  await expect(
+    exporter.exportStreamingFile('backup.zip', source, 'application/zip', undefined, {
+      requiresStreaming: false,
+      estimatedBytes: 65 * 1024 ** 2,
+    })
+  ).rejects.toThrow('cannot save')
+  expect(source).not.toHaveBeenCalled()
+})
+
+it('enforces the actual whole-archive fallback budget', async () => {
+  setSaveFilePicker(undefined)
+  let reads = 0
+  await expect(
+    new WebExporter().exportStreamingFile(
+      'backup.zip',
+      async function* () {
+        for (let i = 0; i < 66; i++) {
+          reads++
+          yield new Uint8Array(1024 ** 2)
+        }
+      },
+      'application/zip'
+    )
+  ).rejects.toThrow('64 MiB')
+  expect(reads).toBe(65)
+})

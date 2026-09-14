@@ -9,6 +9,7 @@ import { CHATBOX_QA_PREFLIGHT } from './qa-preflight'
 // solve electron breaking changes, see https://www.electronjs.org/docs/latest/breaking-changes#behavior-changed-directory-databases-in-userdata-will-be-deleted
 // since 1.21.0, and this NEEDS to be the first import that initializes Electron's app module.
 import './legacy-database-migration'
+import { registerBackupIpc } from './backup-ipc'
 
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
@@ -857,6 +858,8 @@ app.on('open-url', async (_event, url) => {
 })
 
 // --------- IPC 监听 ---------
+
+registerBackupIpc()
 
 ipcMain.handle('getStoreValue', (event, key) => {
   return store.get(key)

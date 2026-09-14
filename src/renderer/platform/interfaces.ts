@@ -34,6 +34,7 @@ export interface Platform extends Storage {
   /** Whether this platform is backed by the Electron main/preload bridge. */
   isDesktopLike: boolean
 
+  backupBlobStreams?: import('@chatbox/core/backup').BackupStorage['blobStreams']
   exporter: Exporter
 
   // 系统相关
@@ -297,6 +298,7 @@ export interface Exporter {
     filename: string,
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
     mimeType: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    requirements?: { requiresStreaming: boolean; estimatedBytes: number }
   ) => Promise<StreamingExportResult>
 }

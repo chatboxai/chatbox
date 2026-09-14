@@ -108,13 +108,14 @@ export function writeSoul(content: string): Promise<SoulRecord> {
 }
 
 /** Atomic read-modify-write on the Soul document (virtual-file edit_file path). */
-export function updateSoul(
-  updater: (content: string) => string | { error: string }
-): Promise<{ record: SoulRecord } | { error: string }> {
+export function updateSoul<E extends { error: string }>(
+  updater: (content: string) => string | E
+): Promise<{ record: SoulRecord } | E> {
   return withSoulLock(async () => {
     const current = await readSoul()
     const next = updater(current.content)
     if (typeof next !== 'string') return next
+    if (next === current.content) return { record: current }
     return { record: await writeSoulRecord(next) }
   })
 }

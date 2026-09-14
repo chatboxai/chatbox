@@ -44,6 +44,7 @@ import path from 'path'
 import * as sourceMapSupport from 'source-map-support'
 import type { ShortcutSetting } from 'src/shared/types'
 import { applyDevLaunchHashToUrl, buildDevLaunchHash, parseDevLaunchOptions } from '../shared/dev-launch'
+import type { FileEditRequest } from '../shared/file-edits'
 import { KNOWN_LOCAL_PARSER_ERROR_CODES } from '../shared/file-parse-errors'
 import { VIEW_IMAGE_MAX_READ_BYTES } from '../shared/tools/view-image'
 import { flushSentry, sentry } from './adapters/sentry'
@@ -54,6 +55,7 @@ import * as autoLauncher from './autoLauncher'
 import { formatTooLargeFileRead, readRegularFileBytesBounded } from './bounded-file-read'
 import { handleDeepLink } from './deeplinks'
 import { registerDesktopDirectRequestHandlers } from './desktop-direct-request'
+import { editTextFile, writeTextFile } from './file-mutations'
 import { parseFile } from './file-parser'
 import { isQuitForInstallRequested } from './installer-command'
 import Locale from './locales'
@@ -1137,54 +1139,14 @@ ipcMain.handle(
 ipcMain.handle('fs:write', async (_event, params: { filePath: string; content: string }) => {
   try {
     const resolved = path.resolve(params.filePath)
-    await fs.promises.mkdir(path.dirname(resolved), { recursive: true })
-    await fs.promises.writeFile(resolved, params.content, 'utf8')
+    await writeTextFile(resolved, params.content)
     return { success: true }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 })
 
-ipcMain.handle(
-  'fs:edit',
-  async (
-    _event,
-    params: {
-      filePath: string
-      search?: string
-      replace?: string
-      edits?: Array<{ search: string; replace: string }>
-    }
-  ) => {
-    try {
-      const edits = params.edits?.length
-        ? params.edits
-        : params.search !== undefined && params.replace !== undefined
-          ? [{ search: params.search, replace: params.replace }]
-          : []
-      if (edits.length === 0) {
-        return { success: false, error: 'No edits provided' }
-      }
-      const resolved = path.resolve(params.filePath)
-      let text = await fs.promises.readFile(resolved, 'utf8')
-      for (let index = 0; index < edits.length; index++) {
-        const edit = edits[index]
-        const first = text.indexOf(edit.search)
-        if (first === -1) {
-          return { success: false, error: `Edit ${index + 1}: search text not found` }
-        }
-        if (text.indexOf(edit.search, first + edit.search.length) !== -1) {
-          return { success: false, error: `Edit ${index + 1}: search text is not unique` }
-        }
-        text = text.slice(0, first) + edit.replace + text.slice(first + edit.search.length)
-      }
-      await fs.promises.writeFile(resolved, text, 'utf8')
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  }
-)
+ipcMain.handle('fs:edit', async (_event, params: FileEditRequest) => editTextFile(params))
 
 ipcMain.handle('parseUrl', async (event, url: string) => {
   // const result = await readability(url, { maxLength: 1000 })

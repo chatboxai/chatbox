@@ -309,6 +309,33 @@ describe('PendingActionBar', () => {
     expect(screen.queryByText('- retries: 3,')).toBeNull()
   })
 
+  it('lets the user inspect the diff bound to a file approval', () => {
+    renderBar(
+      makeSession([
+        pausedPart({
+          toolCallId: 'preview-edit',
+          toolName: 'edit_file',
+          pauseReason: {
+            type: 'file_mutation_approval',
+            title: 'Edit config.ts',
+            preview: '-retries: 3\n+retries: 5',
+            stats: { mode: 'edit', edits: 1, addedLines: 1, removedLines: 1 },
+            editPreview: { version: 'current-version', diffTruncated: true },
+          },
+        }),
+      ])
+    )
+    const summary = screen.getByText('View changes')
+    expect(summary.closest('details')?.open).toBe(false)
+    expect(screen.queryByText(/retries: 5/)).toBeNull()
+    summary.closest('details')!.open = true
+    fireEvent(summary.closest('details')!, new Event('toggle'))
+    expect(screen.getByText(/retries: 5/)).toBeTruthy()
+    expect(
+      screen.getByText('Diff preview is incomplete. Review the file before approving, or request smaller edits.')
+    ).toBeTruthy()
+  })
+
   it('derives line counts from a legacy file preview without rendering it', () => {
     const legacyFileApproval = pausedPart({
       toolCallId: 'tc-legacy-file',

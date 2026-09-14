@@ -7,3 +7,5 @@ export const INPUT_SURFACE_CLASS_NAME =
 export const INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME = 'min-h-[92px]'
 
 export const INPUT_SURFACE_STYLE = { border: '0.5px solid var(--chatbox-border-primary)' }
+
+export const INPUT_PAYLOAD_MAX_HEIGHT = 'min(200px, 30vh)'

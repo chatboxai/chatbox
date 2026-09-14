@@ -1530,6 +1530,41 @@ describe('GenerationService', () => {
     })
   })
 
+  it('forwards a persisted file preview version through approval continuation', async () => {
+    const execute = vi.fn(async () => ({ success: false, errorCode: 'STALE_CONTENT' }))
+    harness.setTools({ edit_file: { execute } } as unknown as ToolSet)
+    harness.session.messages[1] = {
+      ...targetMessage(),
+      generating: false,
+      finishReason: 'tool-call-paused',
+      contentParts: [
+        {
+          type: 'tool-call',
+          state: 'paused',
+          toolCallId: 'tool-1',
+          toolName: 'edit_file',
+          args: { file_path: '/workspace/config.ts', old_text: 'a', new_text: 'b' },
+          pauseReason: {
+            type: 'file_mutation_approval',
+            title: 'Edit config',
+            preview: '-a\n+b',
+            editPreview: { version: 'reviewed-version' },
+          },
+        },
+      ],
+    }
+    harness.runtime.start('session-1', 'assistant-1')
+    harness.runtime.setPhase('session-1', 'assistant-1', 'paused')
+    await harness.service.continuePausedToolCall('session-1', 'assistant-1', 'tool-1')
+    expect(execute).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ approved: true, approvalFileVersion: 'reviewed-version' })
+    )
+    expect(lastPersisted(harness).contentParts).toEqual([
+      expect.objectContaining({ result: { success: false, errorCode: 'STALE_CONTENT' } }),
+    ])
+  })
+
   it('continues an approved tool call, persists its result, and resumes generation', async () => {
     const execute = vi.fn(() => Promise.resolve({ stdout: '/workspace' }))
     harness.setTools({
@@ -1614,6 +1649,49 @@ describe('GenerationService', () => {
       expect.objectContaining({ toolCallId: 'tool-2', state: 'error', pauseReason: undefined }),
     ])
     expect(harness.runtime.get('session-1')).toBeUndefined()
+  })
+
+  it('restores approval UI when an interrupted legacy edit requires a fresh preview', async () => {
+    const execute = vi.fn().mockRejectedValue({
+      name: 'FileMutationApprovalPausedError',
+      toolCallId: 'tool-1',
+      title: 'Edit file: /workspace/a',
+      preview: '-a\n+b',
+      editPreview: { version: 'fresh' },
+      stats: { mode: 'edit', addedLines: 1, removedLines: 1, approximate: true },
+    })
+    harness.setTools({ edit_file: { execute } } as unknown as ToolSet)
+    harness.session.messages[1] = {
+      ...targetMessage(),
+      generating: false,
+      error: 'provider disconnected',
+      contentParts: [
+        {
+          type: 'tool-call',
+          state: 'call',
+          toolCallId: 'tool-1',
+          toolName: 'edit_file',
+          args: {},
+          pauseReason: { type: 'file_mutation_approval', title: 'Edit file: /workspace/a', preview: '' },
+        },
+      ],
+    }
+    await harness.service.retryFromLastToolCallAfterApiError('session-1', 'assistant-1', 'tool-1')
+    expect(lastPersisted(harness)).toMatchObject({
+      generating: false,
+      finishReason: 'tool-call-paused',
+      contentParts: [
+        {
+          state: 'paused',
+          toolCallId: 'tool-1',
+          pauseReason: {
+            type: 'file_mutation_approval',
+            editPreview: { version: 'fresh' },
+            stats: { approximate: true },
+          },
+        },
+      ],
+    })
   })
 
   it('retries the last interrupted tool call before resuming generation', async () => {

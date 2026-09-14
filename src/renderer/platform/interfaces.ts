@@ -1,3 +1,4 @@
+import type { FileEditRequest, FileEditResult } from '@shared/file-edits'
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
 
 import type { SessionRowStorePort } from '@chatbox/core/ports'
@@ -130,12 +131,7 @@ export interface Platform extends Storage {
   /** Read host image bytes (read-only, size-capped in the main process). */
   fsReadImage?(params: { filePath: string }): Promise<{ success: boolean; bytes?: ArrayBuffer; error?: string }>
   fsWrite?(params: { filePath: string; content: string }): Promise<{ success: boolean; error?: string }>
-  fsEdit?(params: {
-    filePath: string
-    search?: string
-    replace?: string
-    edits?: Array<{ search: string; replace: string }>
-  }): Promise<{ success: boolean; error?: string }>
+  fsEdit?(params: FileEditRequest): Promise<FileEditResult>
 
   // Parse file using MinerU service (Desktop only)
   parseFileWithMineru?(
@@ -190,13 +186,7 @@ export interface Platform extends Storage {
     content: string
     sessionId?: string
   }): Promise<{ success: boolean; error?: string }>
-  sandboxEdit?(params: {
-    filePath: string
-    search?: string
-    replace?: string
-    edits?: Array<{ search: string; replace: string }>
-    sessionId?: string
-  }): Promise<{ success: boolean; error?: string }>
+  sandboxEdit?(params: FileEditRequest & { sessionId?: string }): Promise<FileEditResult>
   sandboxLs?(params: { dirPath: string; sessionId?: string }): Promise<SandboxOperationResult>
   sandboxSearch?(params: {
     pattern: string

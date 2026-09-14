@@ -25,7 +25,13 @@ import { formatComputePointsRemainingRatio } from '@/packages/chatbox-cli/comput
 import { getFileMutationDisplayStats } from '@/packages/model-calls/toolsets/file-mutation-stats'
 import { pulsePendingActionBar, revealPausedStep, usePendingActionBarPulseToken } from '@/stores/approvalAttentionStore'
 import * as toastActions from '@/stores/toastActions'
-import { INPUT_SURFACE_CLASS_NAME, INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME, INPUT_SURFACE_STYLE } from './inputSurface'
+import { FileEditPreview } from './FileEditPreview'
+import {
+  INPUT_PAYLOAD_MAX_HEIGHT,
+  INPUT_SURFACE_CLASS_NAME,
+  INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME,
+  INPUT_SURFACE_STYLE,
+} from './inputSurface'
 
 // Every "the agent is waiting on a user decision" interaction renders here —
 // approvals (command / escalation / file / app action) and the tool-call-limit
@@ -36,7 +42,7 @@ import { INPUT_SURFACE_CLASS_NAME, INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME, INPUT_SU
 
 const log = getLogger('pending-action-bar')
 
-const PAYLOAD_MAX_HEIGHT = 'min(200px, 30vh)'
+const PAYLOAD_MAX_HEIGHT = INPUT_PAYLOAD_MAX_HEIGHT
 /** Explanations taller than this (px) start collapsed behind "Show more". */
 const EXPLANATION_SPOILER_HEIGHT = 44
 /** Above this, the segment strip turns into just the k/N counter. */
@@ -161,7 +167,7 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails 
   )
 }
 
-/** File approvals show magnitude only; the exact diff is intentionally omitted. */
+/** File edits expose the bounded diff associated with the approved version. */
 const FileMutationBody: FC<{ pauseReason: Extract<ApprovalPauseReason, { type: 'file_mutation_approval' }> }> = ({
   pauseReason,
 }) => {
@@ -169,27 +175,33 @@ const FileMutationBody: FC<{ pauseReason: Extract<ApprovalPauseReason, { type: '
   // Legacy pauses recover the counts by diffing the persisted preview — memoized
   // so acting/pulse re-renders don't redo that work.
   const stats = useMemo(() => getFileMutationDisplayStats(pauseReason), [pauseReason])
-  if (!stats) return null
-  const approximation = stats.approximate ? '~' : ''
+  const approximation = stats?.approximate ? '~' : ''
 
   return (
-    <Group gap={8} wrap="nowrap">
-      {stats.mode === 'write' ? (
-        <Text size="xs" c="chatbox-tertiary">
-          {stats.approximate && '~ '}
-          {t('Writing {{count}} lines', { count: stats.addedLines })}
-        </Text>
-      ) : (
-        <Text size="xs" className="tabular-nums">
-          <span style={{ color: 'var(--chatbox-tint-success)' }}>
-            {approximation}+{stats.addedLines}
-          </span>{' '}
-          <span style={{ color: 'var(--chatbox-tint-error)' }}>
-            {approximation}-{stats.removedLines}
-          </span>
-        </Text>
+    <>
+      {stats && (
+        <Group gap={8} wrap="nowrap">
+          {stats.mode === 'write' ? (
+            <Text size="xs" c="chatbox-tertiary">
+              {stats.approximate && '~ '}
+              {t('Writing {{count}} lines', { count: stats.addedLines })}
+            </Text>
+          ) : (
+            <Text size="xs" className="tabular-nums">
+              <span style={{ color: 'var(--chatbox-tint-success)' }}>
+                {approximation}+{stats.addedLines}
+              </span>{' '}
+              <span style={{ color: 'var(--chatbox-tint-error)' }}>
+                {approximation}-{stats.removedLines}
+              </span>
+            </Text>
+          )}
+        </Group>
       )}
-    </Group>
+      {pauseReason.editPreview && (pauseReason.preview || pauseReason.editPreview.diffTruncated) && (
+        <FileEditPreview preview={pauseReason.preview} incomplete={pauseReason.editPreview.diffTruncated} />
+      )}
+    </>
   )
 }
 

@@ -199,6 +199,7 @@ export const FileMutationApprovalStatsSchema = z.object({
   edits: z.number().optional(),
   addedLines: z.number(),
   removedLines: z.number(),
+  approximate: z.boolean().optional(),
 })
 
 export const MessageToolCallPartSchema = z.object({
@@ -250,6 +251,10 @@ export const MessageToolCallPartSchema = z.object({
          * Absent on approvals paused by builds before this existed.
          */
         stats: FileMutationApprovalStatsSchema.optional().catch(undefined),
+        editPreview: z
+          .object({ version: z.string(), diffTruncated: z.boolean().optional() })
+          .optional()
+          .catch(undefined),
       }),
       z.object({
         type: z.literal('app_action_approval'),

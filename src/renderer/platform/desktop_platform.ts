@@ -1,3 +1,4 @@
+import type { FileEditRequest, FileEditResult } from '@shared/file-edits'
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
 
 import type { SessionRowStorePort } from '@chatbox/core/ports'
@@ -21,11 +22,11 @@ import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/
 import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { rememberFileNativePath } from '@/utils/file-native-path'
 import { getOS } from '../packages/navigator'
+import DesktopExporter from './desktop_exporter'
+import { desktopBackupBlobs } from './desktop-backup-blobs'
 import type { Exporter, Platform, PlatformType } from './interfaces'
 import DesktopKnowledgeBaseController from './knowledge-base/desktop-controller'
 import DesktopSessionAttachmentRagController from './session-attachment-rag/desktop-controller'
-import DesktopExporter from './desktop_exporter'
-import { desktopBackupBlobs } from './desktop-backup-blobs'
 import { parseTextFileLocally } from './web_platform_utils'
 
 const log = getLogger('desktop-platform')
@@ -318,12 +319,7 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('fs:write', params)
   }
 
-  async fsEdit(params: {
-    filePath: string
-    search?: string
-    replace?: string
-    edits?: Array<{ search: string; replace: string }>
-  }) {
+  async fsEdit(params: FileEditRequest): Promise<FileEditResult> {
     return this.ipc.invoke('fs:edit', params)
   }
 
@@ -439,13 +435,7 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('sandbox:write', params)
   }
 
-  public async sandboxEdit(params: {
-    filePath: string
-    search?: string
-    replace?: string
-    edits?: Array<{ search: string; replace: string }>
-    sessionId?: string
-  }) {
+  public async sandboxEdit(params: FileEditRequest & { sessionId?: string }): Promise<FileEditResult> {
     return this.ipc.invoke('sandbox:edit', params)
   }
 

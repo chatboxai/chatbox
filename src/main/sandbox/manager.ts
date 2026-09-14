@@ -14,6 +14,7 @@ import { StringDecoder } from 'node:string_decoder'
 import { pathToFileURL } from 'node:url'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { app, type UtilityProcess, utilityProcess } from 'electron'
+import { type FileEditRequest, type FileEditResult, fileEditError } from '../../shared/file-edits'
 import { sandboxAttachmentRelPath } from '../../shared/sandbox/attachment-path'
 import {
   SANDBOX_EXEC_ERROR_CODES,
@@ -40,6 +41,7 @@ import {
   createCommandOutputCapturePath,
   getCommandOutputCaptureRoot,
 } from '../command-output-capture'
+import { editTextFile, writeTextFile } from '../file-mutations'
 import { buildOperationFinishLog, buildOperationStartLog, createOperationId } from '../operation-log'
 import { killProcessTree } from '../process-tree'
 import { getChatboxQaPaths } from '../qa-runtime'
@@ -1514,7 +1516,7 @@ export async function writeFile(
     if (!existsSync(parentDir)) {
       mkdirSync(parentDir, { recursive: true })
     }
-    await fsWriteFile(resolved, content, 'utf-8')
+    await writeTextFile(resolved, content)
     return { success: true }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) }
@@ -1523,25 +1525,13 @@ export async function writeFile(
 
 export async function editFile(
   filePath: string,
-  input: {
-    search?: string
-    replace?: string
-    edits?: Array<{ search: string; replace: string }>
-  },
+  input: Omit<FileEditRequest, 'filePath'>,
   sessionId?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<FileEditResult> {
   try {
-    const edits = input.edits?.length
-      ? input.edits
-      : input.search !== undefined && input.replace !== undefined
-        ? [{ search: input.search, replace: input.replace }]
-        : []
-    if (edits.length === 0) {
-      return { success: false, error: 'No edits provided' }
-    }
     const session = getSession(sessionId)
     if (!session?.workingDirectory) {
-      return { success: false, error: 'Sandbox not initialized' }
+      return fileEditError('SANDBOX_UNAVAILABLE')
     }
     const normalizedPath = normalizeWindowsShellPath(filePath)
     const resolved = path.isAbsolute(normalizedPath)
@@ -1549,24 +1539,11 @@ export async function editFile(
       : path.resolve(session.workingDirectory, normalizedPath)
     const validation = await validateSessionWritePath(session, resolved)
     if (!validation.valid) {
-      return { success: false, error: validation.error }
+      return fileEditError('PATH_REJECTED')
     }
-    let text = await fsReadFile(resolved, 'utf-8')
-    for (let index = 0; index < edits.length; index++) {
-      const edit = edits[index]
-      const first = text.indexOf(edit.search)
-      if (first === -1) {
-        return { success: false, error: `Edit ${index + 1}: search text not found` }
-      }
-      if (text.indexOf(edit.search, first + edit.search.length) !== -1) {
-        return { success: false, error: `Edit ${index + 1}: search text is not unique` }
-      }
-      text = text.slice(0, first) + edit.replace + text.slice(first + edit.search.length)
-    }
-    await fsWriteFile(resolved, text, 'utf-8')
-    return { success: true }
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : String(error) }
+    return await editTextFile({ ...input, filePath: resolved })
+  } catch {
+    return fileEditError('SANDBOX_UNAVAILABLE')
   }
 }
 

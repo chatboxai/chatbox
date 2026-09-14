@@ -87,6 +87,7 @@ type ExecutableTool = {
       approved?: boolean
       approvalWorkdir?: string
       approvalRetryOf?: string
+      approvalFileVersion?: string
       approvalDetails?: AppActionApprovalDetails
       abortSignal?: AbortSignal
     }
@@ -1228,8 +1229,12 @@ export class GenerationService<TContext> {
         (batchPart) => ({
           ...batchPart,
           state: 'call',
-          // Keep the reviewed app-action payload for an interrupted retry of this exact request.
-          pauseReason: batchPart.pauseReason?.type === 'app_action_approval' ? batchPart.pauseReason : undefined,
+          // Preserve approval bindings for an interrupted retry of this exact request.
+          pauseReason:
+            batchPart.pauseReason?.type === 'app_action_approval' ||
+            batchPart.pauseReason?.type === 'file_mutation_approval'
+              ? batchPart.pauseReason
+              : undefined,
           result: undefined,
           resultStorageKey: undefined,
           resultImageStorageKey: undefined,
@@ -1410,6 +1415,9 @@ export class GenerationService<TContext> {
         const result = await executableTool.execute(part.args, {
           toolCallId,
           approved: true,
+          ...(part.pauseReason?.type === 'file_mutation_approval' && part.pauseReason.editPreview
+            ? { approvalFileVersion: part.pauseReason.editPreview.version }
+            : {}),
           ...(part.pauseReason?.type === 'user_exec_approval' ||
           part.pauseReason?.type === 'command_escalation_approval'
             ? { approvalWorkdir: part.pauseReason.workdir }
@@ -1434,6 +1442,26 @@ export class GenerationService<TContext> {
           { operationType: 'regenerate', appendToMessage: true }
         )
       } catch (error) {
+        const pause = getToolCallPause(error)
+        if (pause) {
+          await sessions.modifyMessage(
+            sessionId,
+            finishPausedToolCallContinuation(
+              updateToolCallPart(retryMessage, toolCallId, (toolPart) => ({
+                ...toolPart,
+                state: 'paused',
+                pauseReason: pause.pauseReason,
+                result: undefined,
+                startTime: undefined,
+                duration: undefined,
+              })),
+              'tool-call-paused'
+            ),
+            true
+          )
+          return
+        }
+
         analytics.captureException(error, {
           operation: 'tool_retry',
           provider: settings.provider,

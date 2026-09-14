@@ -1,21 +1,33 @@
-import { isUploadedFilePath } from '@shared/uploaded-file-tools'
-import { validatedToolSchema } from '@shared/validated-tool-schema'
+import { compactFileEditSummary, summarizeFileEdit } from '@shared/file-edit-summary'
+import {
+  applyTextEdits,
+  FILE_EDIT_ERROR_MESSAGES,
+  type FileEditResult,
+  fileEditError,
+  MAX_EDIT_FILE_BYTES,
+  type TextEdit,
+} from '@shared/file-edits'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import { TASK_SANDBOX_EXTRA_WRITE_PATHS } from '@shared/task-sandbox'
+import { isUploadedFilePath } from '@shared/uploaded-file-tools'
 import {
   isWindowsAbsolutePath,
   isWindowsFilesystemRoot,
   isWindowsPathInside,
   normalizeWindowsAbsolutePath,
 } from '@shared/utils/windows-path'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { ToolSet } from 'ai'
 import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
+import { getLogger } from '@/lib/utils'
 import { requestFileMutationApproval } from '@/packages/user-exec-approval'
 import platform from '@/platform'
 import { buildEditStats, buildWriteStats } from './file-mutation-stats'
 import { asRecord, contentOrErrorText, numberField, stringField, toTextModelOutput } from './model-output'
 import { remapPhantomHomePathForProvider } from './sandbox-paths'
 import { editSoulVirtualFile, isSoulVirtualPath, writeSoulVirtualFile } from './soul-file'
+
+const log = getLogger('toolset:filesystem')
 
 interface FilesystemContext {
   sessionId?: string
@@ -94,11 +106,12 @@ function formatWriteFileOutput(output: unknown): string {
 function formatEditFileOutput(output: unknown): string {
   const record = asRecord(output)
   const error = stringField(record, 'error')
-  if (error) return `Error: ${error}`
+  if (error)
+    return `Error: ${error}${stringField(record, 'errorCode') ? `\nReason: ${stringField(record, 'errorCode')}` : ''}${Array.isArray(record?.candidateLines) && record.candidateLines.length ? `\nCandidate lines: ${record.candidateLines.join(', ')}` : ''}`
   const filePath = stringField(record, 'file_path')
   const edits = numberField(record, 'edits')
   if (filePath && edits !== undefined) {
-    return `Status: success\nAction: edit_file\nPath: ${filePath}\nEdits applied: ${edits}`
+    return `Status: ${record?.changed === false ? 'no_op' : 'success'}\nAction: edit_file\nPath: ${filePath}\nEdits applied: ${record?.changed === false ? 0 : edits}${stringField(record, 'diff') ? `\n\n${stringField(record, 'diff')}` : ''}${record?.diffTruncated ? '\nDiff preview is incomplete. Read the changed file to inspect further.' : ''}`
   }
   return contentOrErrorText(output)
 }
@@ -113,9 +126,22 @@ function normalizeEdits(input: EditFileInput): EditOperation[] {
 }
 
 function validateEditInput(input: EditFileInput): { edits: EditOperation[] } | { error: string } {
-  if (input.edits?.length) return { edits: input.edits }
-  if (input.old_text !== undefined && input.new_text !== undefined) return { edits: normalizeEdits(input) }
-  return { error: 'Provide edits[] or both old_text and new_text.' }
+  const edits = input.edits?.length
+    ? input.edits
+    : input.old_text !== undefined && input.new_text !== undefined
+      ? normalizeEdits(input)
+      : null
+  if (!edits) return { error: 'Provide edits[] or both old_text and new_text.' }
+  if (
+    !Array.isArray(edits) ||
+    edits.some(
+      (edit) =>
+        !edit || typeof edit.old_text !== 'string' || edit.old_text.length === 0 || typeof edit.new_text !== 'string'
+    )
+  ) {
+    return { error: 'Each edit requires a non-empty old_text and a string new_text.' }
+  }
+  return { edits }
 }
 
 function ensureSandbox(context: FilesystemContext): Promise<{ success: boolean; error?: string }> {
@@ -234,16 +260,38 @@ async function shouldUseSandbox(context: FilesystemContext, filePath: string): P
   return root ? isInsideRoot(root, filePath) : false
 }
 
-async function writeSandboxFile(context: FilesystemContext, filePath: string, content: string) {
-  const setup = await ensureSandbox(context)
-  if (!setup.success) return setup
-  if (!context.provider) return { success: false, error: 'Sandbox is not available' }
-  // Write via a node script with the content safely embedded through JSON.stringify (same pattern
-  // as editSandboxFile). The script is fed to node over stdin, so there is no shell escaping and no
-  // base64 round-trip, and the write still runs inside the sandbox (subject to allowWrite rules).
-  const result = await context.provider.exec({
-    language: 'node',
-    code: `
+// Node-script mutations share a session queue because their paths can be aliases.
+// Native host file operations coordinate separately in the main process.
+const sandboxMutations = new Map<string, Promise<void>>()
+async function withSandboxMutation<T>(context: FilesystemContext, action: () => Promise<T>): Promise<T> {
+  const key = context.sessionId ?? ''
+  const previous = sandboxMutations.get(key) ?? Promise.resolve()
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const tail = previous.then(() => gate)
+  sandboxMutations.set(key, tail)
+  await previous
+  try {
+    return await action()
+  } finally {
+    release()
+    if (sandboxMutations.get(key) === tail) sandboxMutations.delete(key)
+  }
+}
+
+function writeSandboxFile(context: FilesystemContext, filePath: string, content: string) {
+  return withSandboxMutation(context, async () => {
+    const setup = await ensureSandbox(context)
+    if (!setup.success) return setup
+    if (!context.provider) return { success: false, error: 'Sandbox is not available' }
+    // Write via a node script with the content safely embedded through JSON.stringify (same pattern
+    // as editSandboxFile). The script is fed to node over stdin, so there is no shell escaping and no
+    // base64 round-trip, and the write still runs inside the sandbox (subject to allowWrite rules).
+    const result = await context.provider.exec({
+      language: 'node',
+      code: `
 const fs = require('fs')
 const path = require('path')
 const filePath = ${JSON.stringify(filePath)}
@@ -251,40 +299,112 @@ const content = ${JSON.stringify(content)}
 fs.mkdirSync(path.dirname(filePath), { recursive: true })
 fs.writeFileSync(filePath, content)
 `,
-    timeout: 10_000,
+      timeout: 10_000,
+    })
+    if (result.exitCode === 0) return { success: true }
+    log.warn('Sandbox write failed', { exitCode: result.exitCode, stderr: result.stderr.slice(0, 2000) })
+    return fileEditError('RESULT_UNCONFIRMED')
   })
-  return result.exitCode === 0 ? { success: true } : { success: false, error: result.stderr || result.stdout }
 }
 
-async function editSandboxFile(context: FilesystemContext, filePath: string, edits: EditOperation[]) {
-  const setup = await ensureSandbox(context)
-  if (!setup.success) return setup
-  if (!context.provider) return { success: false, error: 'Sandbox is not available' }
-  const result = await context.provider.exec({
-    language: 'node',
-    code: `
+export const SANDBOX_EDIT_RESULT_PREFIX = 'CHATBOX_EDIT_RESULT:'
+
+function editSandboxFile(
+  context: FilesystemContext,
+  filePath: string,
+  edits: EditOperation[],
+  expectedVersion?: string
+): Promise<FileEditResult> {
+  return withSandboxMutation(context, async () => {
+    const setup = await ensureSandbox(context)
+    if (!setup.success || !context.provider) return fileEditError('SANDBOX_UNAVAILABLE')
+    const result = await context.provider.exec({
+      language: 'node',
+      code: `
 const fs = require('fs')
 const filePath = ${JSON.stringify(filePath)}
-const edits = ${JSON.stringify(edits)}
-let text = fs.readFileSync(filePath, 'utf8')
-for (let i = 0; i < edits.length; i++) {
-  const { old_text, new_text } = edits[i]
-  const first = text.indexOf(old_text)
-  if (first === -1) {
-    console.error('Edit ' + (i + 1) + ': search text not found')
-    process.exit(1)
-  }
-  if (text.indexOf(old_text, first + old_text.length) !== -1) {
-    console.error('Edit ' + (i + 1) + ': search text is not unique')
-    process.exit(1)
-  }
-  text = text.slice(0, first) + new_text + text.slice(first + old_text.length)
+const maxBytes = ${MAX_EDIT_FILE_BYTES}
+const errors = ${JSON.stringify(FILE_EDIT_ERROR_MESSAGES)}
+const resultPrefix = ${JSON.stringify(SANDBOX_EDIT_RESULT_PREFIX)}
+function emit(json) { process.stdout.write('\\n' + resultPrefix + json + '\\n') }
+function readBounded() {
+  const fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK)
+  try {
+    const stat = fs.fstatSync(fd)
+    if (!stat.isFile()) throw {errorCode:'NOT_REGULAR_FILE'}
+    if (stat.size > maxBytes) throw {errorCode:'FILE_TOO_LARGE'}
+    // The descriptor remains authoritative if the file grows after fstat.
+    const buffer = Buffer.alloc(maxBytes + 1)
+    let length = 0
+    while (length < buffer.length) {
+      const count = fs.readSync(fd, buffer, length, buffer.length - length, null)
+      if (!count) break
+      length += count
+    }
+    if (length > maxBytes) throw {errorCode:'FILE_TOO_LARGE'}
+    return buffer.toString('utf8', 0, length)
+  } finally { fs.closeSync(fd) }
 }
-fs.writeFileSync(filePath, text, 'utf8')
+let phase = 'READ_FAILED'
+try {
+const before = readBounded()
+const apply = (${applyTextEdits.toString()})
+const edits = ${JSON.stringify(edits.map((edit) => ({ search: edit.old_text, replace: edit.new_text })))}
+const expectedVersion = ${JSON.stringify(expectedVersion ?? null)}
+const stale = expectedVersion && require('crypto').createHash('sha256').update(before).digest('hex') !== expectedVersion
+const result = stale ? {success:false,errorCode:'STALE_CONTENT',error:errors.STALE_CONTENT} : apply(before, edits)
+if (!result.success) {
+  emit(JSON.stringify(result))
+} else {
+  if (readBounded() !== before) {
+    emit(JSON.stringify({success:false,errorCode:'STALE_CONTENT',error:errors.STALE_CONTENT}))
+  } else {
+    const changed = result.content !== before
+    phase = 'WRITE_FAILED'
+    if (changed) fs.writeFileSync(filePath, result.content, 'utf8')
+    const output = JSON.stringify({success:true,changed,edits:edits.length,before,after:result.content})
+    emit(Buffer.byteLength(output, 'utf8') + Buffer.byteLength(resultPrefix, 'utf8') + 2 <= 12000 ? output : JSON.stringify({success:true,changed,edits:edits.length,diffTruncated:changed}))
+  }
+}
+} catch (error) {
+  const errorCode = error && errors[error.errorCode] ? error.errorCode : phase === 'READ_FAILED' && error && error.code === 'ENOENT' ? 'FILE_NOT_FOUND' : phase
+  emit(JSON.stringify({success:false,errorCode,error:errors[errorCode]}))
+}
 `,
-    timeout: 10_000,
+      timeout: 10_000,
+    })
+    if (result.exitCode !== 0) {
+      log.warn('Sandbox edit failed', { exitCode: result.exitCode, stderr: result.stderr.slice(0, 2000) })
+      return fileEditError('RESULT_UNCONFIRMED')
+    }
+    try {
+      const line = result.stdout
+        .split('\n')
+        .reverse()
+        .find((line) => line.startsWith(SANDBOX_EDIT_RESULT_PREFIX))
+      if (!line) throw new Error('Missing sandbox edit result')
+      const output: unknown = JSON.parse(line.slice(SANDBOX_EDIT_RESULT_PREFIX.length))
+      const record = asRecord(output)
+      if (record?.success === false && typeof record.error === 'string') return record as unknown as FileEditResult
+      if (record?.success !== true || typeof record.changed !== 'boolean')
+        throw new Error('Invalid sandbox edit result')
+      if (typeof record.before === 'string' && typeof record.after === 'string')
+        return summarizeFileEdit(record.before, record.after, edits.length)
+      return { success: true, changed: record.changed, edits: edits.length, diffTruncated: record.changed }
+    } catch {
+      log.warn('Sandbox edit result could not be decoded', {
+        exitCode: result.exitCode,
+        stderr: result.stderr.slice(0, 2000),
+      })
+      return fileEditError('RESULT_UNCONFIRMED')
+    }
   })
-  return result.exitCode === 0 ? { success: true } : { success: false, error: result.stderr || result.stdout }
+}
+
+function editToolResult(result: FileEditResult, filePath: string) {
+  if (!result.success) return result
+  const { version: _version, ...summary } = result
+  return { ...compactFileEditSummary(summary), file_path: filePath }
 }
 
 export function buildFilesystemTools(context: FilesystemContext): { tools: ToolSet; description: string } {
@@ -491,6 +611,8 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
     inputSchema: editFileInputSchema,
     execute: async (input, toolOptions) => {
       const editInput = input as EditFileInput
+      if (!editInput || typeof editInput.file_path !== 'string' || !editInput.file_path.trim())
+        return { success: false, errorCode: 'INVALID_EDIT', error: 'file_path must be a non-empty string.' }
       if (isUploadedFilePath(editInput.file_path))
         return { error: 'Uploaded files are read-only. Write a copy to a filesystem path.' }
       const validatedForSoul = isSoulVirtualPath(editInput.file_path) ? validateEditInput(editInput) : null
@@ -501,7 +623,8 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
       }
       editInput.file_path = await remapPhantomHomePathForProvider(editInput.file_path, context.provider)
       editInput.file_path = normalizeToolPathForPlatform(editInput.file_path)
-      const alreadyApproved = (toolOptions as typeof toolOptions & { approved?: boolean }).approved
+      const approvalContext = toolOptions as typeof toolOptions & { approved?: boolean; approvalFileVersion?: string }
+      const alreadyApproved = approvalContext.approved
       const validatedInput = validateEditInput(editInput)
       if ('error' in validatedInput) return { error: validatedInput.error }
       const { edits } = validatedInput
@@ -519,41 +642,47 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
             filePath: editInput.file_path,
             edits: edits.map((edit) => ({ search: edit.old_text, replace: edit.new_text })),
             sessionId: context.sessionId,
+            ...(approvalContext.approvalFileVersion ? { expectedVersion: approvalContext.approvalFileVersion } : {}),
           })
-          return result.success
-            ? { success: true, file_path: editInput.file_path, edits: edits.length }
-            : { error: result.error }
+          return editToolResult(result, editInput.file_path)
         }
-        const result = await editSandboxFile(context, editInput.file_path, edits)
-        return result.success
-          ? { success: true, file_path: editInput.file_path, edits: edits.length }
-          : { error: result.error }
+        const result = await editSandboxFile(context, editInput.file_path, edits, approvalContext.approvalFileVersion)
+        return editToolResult(result, editInput.file_path)
       }
       const pathError = requireAbsoluteRealPath(editInput.file_path)
       if (pathError) return pathError
       if (!platform.fsEdit) return { error: 'Filesystem access is not available on this platform' }
+      const nativeEdits: TextEdit[] = edits.map((edit) => ({ search: edit.old_text, replace: edit.new_text }))
       const fullAccessBypassedApproval = !alreadyApproved && context.fullAccess === true
-      let approved = Boolean(alreadyApproved || context.fullAccess)
-      if (!approved) {
-        const editStats = buildEditStats(edits)
-        approved = await requestFileMutationApproval(
+      let expectedVersion = approvalContext.approvalFileVersion
+      // A persisted approval must carry the exact preview's version. Older
+      // approvals get a fresh preview before they can modify a file.
+      if (!context.fullAccess && (!alreadyApproved || !expectedVersion)) {
+        const preview = await platform.fsEdit({ filePath: editInput.file_path, edits: nativeEdits, dryRun: true })
+        if (!preview.success) return fileEditError(preview.errorCode, preview.editIndex)
+        if (!preview.changed) return editToolResult(preview, editInput.file_path)
+        if (!preview.version) return { error: 'This platform cannot bind an edit approval to the file version.' }
+        expectedVersion = preview.version
+        const approved = await requestFileMutationApproval(
           toolOptions.toolCallId,
           `Edit file: ${editInput.file_path}`,
-          '',
-          editStats
+          preview.diff ?? '',
+          preview.addedLines !== undefined && preview.removedLines !== undefined
+            ? { mode: 'edit', edits: edits.length, addedLines: preview.addedLines, removedLines: preview.removedLines }
+            : { ...buildEditStats(edits), approximate: true },
+          { version: preview.version, diffTruncated: preview.diffTruncated }
         )
+        if (!approved) return { success: false, error: 'File edit denied by user.' }
       }
-      if (!approved) return { success: false, error: 'File edit denied by user.' }
-      if (fullAccessBypassedApproval) {
-        trackAgentModeFullAccessBypass({ tool: 'edit_file' })
-      }
-      const result = await platform.fsEdit({
-        filePath: editInput.file_path,
-        edits: edits.map((edit) => ({ search: edit.old_text, replace: edit.new_text })),
-      })
-      return result.success
-        ? { success: true, file_path: editInput.file_path, edits: edits.length }
-        : { error: result.error }
+      if (fullAccessBypassedApproval) trackAgentModeFullAccessBypass({ tool: 'edit_file' })
+      return editToolResult(
+        await platform.fsEdit({
+          filePath: editInput.file_path,
+          edits: nativeEdits,
+          ...(expectedVersion ? { expectedVersion } : {}),
+        }),
+        editInput.file_path
+      )
     },
     toModelOutput: toTextModelOutput(formatEditFileOutput),
   }

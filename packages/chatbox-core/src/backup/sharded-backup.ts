@@ -1,6 +1,26 @@
+import { fitsInlineBackupJson, jsonUtf8Blocks } from './json-stream'
+import { prepareGlobalRestore } from './global-restore'
+import { encodeSessionTree } from '../session/session-tree/encode'
+import { SessionSchema, type Session, type Settings, type CopilotDetail } from '@shared/types'
+import { collectGlobalResourceReferences } from './resources'
+import { preparedSessionReader } from './preflight'
+import { backupGlobalEntries, deriveSessionMeta } from './export-backup'
+import { normalizeBackupExportItems } from './export-items'
+import { BackupSourceBudgetError, checkedBackupRows, inspectBackupSource } from './source-check'
+import { validateResourceReferences } from './resource-validation'
+import { BackupResourceCatalog } from './resource-catalog'
+import { BackupResourcePayloadTransform, prepareBackupMessagePayload } from './resource-payload'
+import { fingerprintResource, resourceExists, resourceHash, storedResourceChunks } from './blob-stream'
+import {
+  BACKUP_SETTINGS_PATH,
+  BACKUP_COPILOTS_PATH,
+  BACKUP_SESSION_SETTINGS_PATH,
+  isBackupResourcePath,
+} from './archive-layout'
+import { v4 as uuidv4 } from 'uuid'
 import { SessionMetaRecordSchema, type SessionMetaRecord } from '@shared/types'
 import type { BackupExportOptions, BackupExportResult } from './export-backup'
-import { safeSessionPathComponent } from './export-backup'
+import { safeSessionPathComponent, enforceArchiveLimits } from './export-backup'
 import type { BackupImportOptions, BackupImportResult } from './import-backup'
 import { throwIfAborted } from './abort'
 import { sha256Checksum } from './codec'
@@ -12,6 +32,7 @@ import {
   type BackupSessionStore,
 } from './session-port'
 import {
+  compareBackupIds,
   BackupGraphValidator,
   BackupManifestV3Schema,
   fromLogicalBackupRow,
@@ -20,11 +41,23 @@ import {
   toLogicalBackupRow,
   type BackupManifestV3,
 } from './sharded-format'
-import { collectSessionResourceReferences } from './resources'
-import { type BackupFile, type BackupJsonEntry, validateBackupManifestGraph } from './types'
+import {
+  collectSessionResourceReferences,
+  prepareSessionForBackup,
+  restoreSessionResourceKeys,
+  restoreSessionMetaResourceKeys,
+  rehydrateSessionAttachmentsAsInline,
+} from './resources'
+import {
+  type BackupFile,
+  type BackupJsonEntry,
+  MAX_BACKUP_RESOURCE_ENTRY_BYTES,
+  validateBackupManifestGraph,
+} from './types'
 import { createZipStream, DEFAULT_ZIP_LIMITS, readZipFileEntries, type ZipArchiveEntry } from './zip'
 
 export interface ShardedBackupOptions {
+  prepared?: import('./preflight').BackupExportPlan
   store: BackupSessionStore
   limits?: Partial<BackupPageLimits>
 }
@@ -40,34 +73,71 @@ function replacementMeta(meta: SessionMetaRecord): SessionMetaRecord {
   ) as SessionMetaRecord
 }
 
-function checkResources(row: LogicalBackupRow) {
+function rowResources(row: LogicalBackupRow, id: string) {
   const session =
     row.kind === 'header'
       ? { ...row.session, messages: [] }
       : row.kind === 'message'
-        ? { id: 'backup', name: '', messages: [row.value] }
+        ? { id, name: '', messages: [row.value] }
         : undefined
-  if (session) {
-    const collected = collectSessionResourceReferences(session)
-    if (collected.references.length || collected.warnings.length)
-      throw new Error('This backup data source requires managed-resource support')
-  }
+  return session ? collectSessionResourceReferences(session) : { references: [], warnings: [] }
+}
+function prepareRow(row: LogicalBackupRow, id: string, keys?: ReadonlyMap<string, string>): LogicalBackupRow {
+  if (row.kind === 'thread') return row
+  const session = row.kind === 'header' ? { ...row.session, messages: [] } : { id, name: '', messages: [row.value] }
+  const prepared = keys
+    ? rehydrateSessionAttachmentsAsInline(restoreSessionResourceKeys(session, keys))
+    : prepareSessionForBackup(session)
+  if (row.kind === 'message') return { ...row, value: prepared.messages[0] }
+  const { messages, ...header } = prepared
+  return { ...row, session: header }
 }
 
 export async function exportShardedBackup(
   options: BackupExportOptions,
   sharded: ShardedBackupOptions
 ): Promise<BackupExportResult> {
-  if (options.exportItems.length !== 1 || options.exportItems[0] !== 'conversations')
-    throw new Error('Sharded validation export requires conversations only')
   const limits = backupPageLimits(sharded.limits)
   const checksum = options.checksum ?? sha256Checksum
   const meta = await options.metaStorage
-  const ids = [...new Set(options.selectedSessionIds ?? (await sharded.store.listSessionIds()))]
+  const ids = sharded.prepared
+    ? sharded.prepared.sessions.map((session) => session.id)
+    : [...new Set(options.selectedSessionIds ?? (await sharded.store.listSessionIds()))]
   if (ids.length > 50_000) throw new Error('Backup contains too many sessions')
+  const sourceDigests = new Map<string, string>()
+  const sourceWarnings: import('./types').BackupWarning[] = []
+  if (sharded.prepared) {
+    sourceWarnings.push(
+      ...sharded.prepared.warnings.filter(
+        (warning) => warning.code === 'session-read-failed' || warning.code === 'external-resource-skipped'
+      )
+    )
+    for (const session of sharded.prepared.sessions) sourceDigests.set(session.id, session.sourceDigest)
+  } else
+    for (const [index, id] of ids.entries()) {
+      options.onProgress?.({ phase: 'sessions', current: index, total: ids.length })
+      try {
+        sourceDigests.set(id, await inspectBackupSource(sharded.store, id, limits, options.signal))
+      } catch (error) {
+        throwIfAborted(options.signal)
+        if (error instanceof BackupSourceBudgetError) throw error
+        sourceWarnings.push({
+          code: 'session-read-failed',
+          itemType: 'session',
+          itemId: id,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+  if (ids.length && !sourceDigests.size)
+    throw new Error(`No selected session can be read: ${sourceWarnings[0]?.message}`)
   let manifest: BackupManifestV3 | undefined
   const entries = async function* (): AsyncGenerator<ZipArchiveEntry> {
     const sessions: BackupManifestV3['sessions'] = []
+    const catalog = new BackupResourceCatalog()
+    catalog.warnings.push(...sourceWarnings)
+    const globalData: import('./types').BackupManifest['data'] = {}
+    yield* backupGlobalEntries(options, catalog, globalData, await options.storage.getAllKeys())
     let total = 0
     let entryCount = 0
     let indexBytes = 0
@@ -84,7 +154,32 @@ export async function exportShardedBackup(
       encodeBytes(path, encoder.encode(JSON.stringify(value)), budget)
     for (const [index, id] of ids.entries()) {
       options.onProgress?.({ phase: 'sessions', current: index, total: ids.length })
+      if (!sourceDigests.has(id)) continue
       const prefix = `sessions/${await safeSessionPathComponent(id, checksum)}`
+      const selected = sharded.prepared?.sessions.find((session) => session.id === id)
+      if (selected?.layout === 'single' && sharded.prepared) {
+        const session = await preparedSessionReader({ ...options, sessionStore: sharded.store }, sharded.prepared)(id)
+        const collected = collectSessionResourceReferences(session)
+        catalog.add(collected.references)
+        catalog.warnings.push(...collected.warnings)
+        const entry = await encode(`${prefix}/session.json`, session, 64 * 1024 * 1024)
+        let messages = session.messages.length
+        for (const thread of session.threads ?? []) messages += thread.messages.length
+        for (const fork of Object.values(session.messageForksHash ?? {}))
+          for (const list of fork.lists) messages += list.messages.length
+        sessions.push({
+          ...entry.descriptor,
+          id,
+          layout: 'single',
+          meta: deriveSessionMeta(session, (await meta.getById(id)) ?? undefined),
+          resourceIds: [],
+          shards: [],
+          payloads: [],
+          counts: { threads: (session.threads?.length ?? 0) + 1, messages },
+        })
+        yield entry.archive
+        continue
+      }
       const graph = new BackupGraphValidator(id)
       let session: BackupManifestV3['sessions'][number] | undefined
       let batch: LogicalBackupRow[] = []
@@ -106,7 +201,9 @@ export async function exportShardedBackup(
         batchBytes = 2
         return entry.archive
       }
-      for await (const row of sharded.store.iterateBackupRows(id, limits, options.signal)) {
+      for await (const row of checkedBackupRows(sharded.store, id, limits, options.signal, (digest) => {
+        if (digest !== sourceDigests.get(id)) throw new Error(`Backup source changed after preparation: ${id}`)
+      })) {
         throwIfAborted(options.signal)
         let logical = LogicalBackupRowSchema.parse(toLogicalBackupRow(row))
         if (row.kind === 'message' && row.payload) {
@@ -116,7 +213,17 @@ export async function exportShardedBackup(
           const validator = new BackupMessageValidator()
           const firstBlock = session.payloads.length
           let size = 0
-          for await (const data of backupPayloadBlocks(row.payload.chunks())) {
+          let rawSize = 0
+          const source = row.payload.chunks()
+          const originalValidator = new BackupMessageValidator()
+          const raw = (async function* () {
+            for await (const data of source) {
+              rawSize += data.length
+              originalValidator.write(data)
+              yield data
+            }
+          })()
+          for await (const data of prepareBackupMessagePayload(raw)) {
             validator.write(data)
             size += data.length
             const entry = await encodeBytes(
@@ -129,7 +236,9 @@ export async function exportShardedBackup(
             session.payloads.push(entry.descriptor)
             yield entry.archive
           }
-          if (row.payload.size !== undefined && size !== row.payload.size)
+          const originalResources = rowResources({ ...logical, value: originalValidator.finish() }, id)
+          catalog.warnings.push(...originalResources.warnings)
+          if (row.payload.size !== undefined && rawSize !== row.payload.size)
             throw new Error('Backup payload size mismatch')
           logical = LogicalBackupRowSchema.parse({
             ...logical,
@@ -138,7 +247,10 @@ export async function exportShardedBackup(
           })
         }
         graph.add(logical)
-        checkResources(logical)
+        const collected = rowResources(logical, id)
+        catalog.add(collected.references)
+        catalog.warnings.push(...collected.warnings)
+        if (!(logical.kind === 'message' && logical.payload)) logical = prepareRow(logical, id)
         if (logical.kind === 'header') {
           const entry = await encode(`${prefix}/header.json`, logical, limits.maxRecordBytes)
           headerBytes += entry.descriptor.size
@@ -184,6 +296,12 @@ export async function exportShardedBackup(
       if (!session) throw new Error('Backup session is missing')
       session.counts = graph.finish()
     }
+    yield* catalog.entries(options)
+    for (const session of sessions)
+      session.resourceIds = catalog.resources
+        .filter((resource) => resource.sessionIds.includes(session.id))
+        .map((resource) => resource.id)
+    const warnings = [...new Map(catalog.warnings.map((warning) => [JSON.stringify(warning), warning])).values()]
     manifest = BackupManifestV3Schema.parse({
       format: 'chatbox-backup',
       formatVersion: 3,
@@ -193,17 +311,22 @@ export async function exportShardedBackup(
         version: await options.application.version,
         platform: await options.application.platform,
       },
-      exportItems: ['conversations'],
-      data: {},
+      exportItems: normalizeBackupExportItems(options.exportItems),
+      data: globalData,
       sessions,
-      resources: [],
-      warnings: [],
-      stats: { sessionCount: sessions.length, resourceCount: 0, deduplicatedResourceCount: 0, warningCount: 0 },
+      resources: catalog.resources,
+      warnings,
+      stats: {
+        sessionCount: sessions.length,
+        resourceCount: catalog.resources.length,
+        deduplicatedResourceCount: catalog.successfulKeys - catalog.resources.length,
+        warningCount: warnings.length,
+      },
     })
     validateBackupManifestGraph(manifest)
     yield (await encode('manifest.json', manifest, MAX_MANIFEST_BYTES)).archive
   }
-  const result = await options.writeArchive(() => createZipStream(entries(), options.signal))
+  const result = await options.writeArchive(() => createZipStream(enforceArchiveLimits(entries()), options.signal))
   if (!manifest) throw new Error('Backup was not completely consumed')
   return { ...result, manifest }
 }
@@ -215,6 +338,7 @@ export async function importShardedBackup(
 ): Promise<BackupImportResult | undefined> {
   const limits = backupPageLimits(sharded.limits)
   const checksum = options.checksum ?? sha256Checksum
+  const referenceCatalog = new BackupResourceCatalog()
   let declaredVersion: unknown
   await readZipFileEntries(
     file,
@@ -233,6 +357,8 @@ export async function importShardedBackup(
   )
   if (declaredVersion === 2) return undefined
   if (declaredVersion !== 3) throw new Error('Unsupported backup version')
+  const globalValues = new Map<string, unknown>()
+  const globalPaths = new Set([BACKUP_SETTINGS_PATH, BACKUP_COPILOTS_PATH, BACKUP_SESSION_SETTINGS_PATH])
   const batchFacts = new Map<string, { kind: string; count: number; index: number }>()
   let shardIndex = 0
   const observed = new Map<string, BackupJsonEntry>()
@@ -253,8 +379,9 @@ export async function importShardedBackup(
     bounded: true,
     signal: options.signal,
     entryLimits: (path: string) => ({
-      maxEntryUncompressedBytes:
-        path === 'manifest.json'
+      maxEntryUncompressedBytes: isBackupResourcePath(path)
+        ? MAX_BACKUP_RESOURCE_ENTRY_BYTES
+        : path === 'manifest.json'
           ? MAX_MANIFEST_BYTES
           : path.endsWith('/session.json')
             ? 128 * 1024 * 1024
@@ -262,6 +389,14 @@ export async function importShardedBackup(
               ? BACKUP_PAYLOAD_BLOCK_BYTES
               : limits.maxPageBytes,
     }),
+  }
+  const singleTree = (data: Uint8Array) => {
+    const value = parse(data)
+    SessionSchema.parse(value)
+    const session = value as Session
+    const encoded = encodeSessionTree(session, { activeThreadId: `backup-active:${session.id}`, now: 0 })
+    if (!encoded.ok) throw new Error(encoded.reason)
+    return { session, tree: encoded.tree }
   }
   const rows = (data: Uint8Array, path: string) => {
     const value = parse(data)
@@ -286,6 +421,25 @@ export async function importShardedBackup(
         finishGraph()
         const value = parse(entry.data)
         manifest = BackupManifestV3Schema.parse(value)
+        return
+      }
+      if (globalPaths.has(entry.path)) {
+        if (manifest || entry.data.length > MAX_MANIFEST_BYTES) throw new Error('Invalid global backup entry')
+        globalValues.set(entry.path, parse(entry.data))
+        return
+      }
+      if (entry.path.endsWith('/session.json')) {
+        if (manifest) throw new Error('Backup manifest must be last')
+        finishGraph()
+        const { session, tree } = singleTree(entry.data)
+        const graph = new BackupGraphValidator(session.id)
+        graph.add(toLogicalBackupRow({ kind: 'header', record: tree.session }))
+        for (const thread of tree.threads.sort((a, b) => a.seq - b.seq))
+          graph.add(toLogicalBackupRow({ kind: 'thread', thread }))
+        for (const message of tree.messages.sort((a, b) => compareBackupIds(a.threadId, b.threadId) || a.seq - b.seq))
+          graph.add(toLogicalBackupRow({ kind: 'message', message }))
+        summaries.set(session.id, graph.finish())
+        referenceCatalog.add(collectSessionResourceReferences(session).references)
         return
       }
       if (/^sessions\/[^/]+\/payloads\/\d{6}\.bin$/.test(entry.path)) {
@@ -343,30 +497,49 @@ export async function importShardedBackup(
         }
         if (!current || !entry.path.startsWith(`sessions/${await safeSessionPathComponent(current.id, checksum)}/`))
           throw new Error('Backup row appears outside its session')
-        checkResources(row)
+        referenceCatalog.add(rowResources(row, current.id).references)
         const structural = row.kind === 'message' ? (({ value, payload, ...rest }) => rest)(row) : row
         graphBytes += encoder.encode(JSON.stringify(structural)).length
         if (graphBytes > MAX_INDEX_BYTES) throw new Error('Backup graph index exceeds budget')
         current.graph.add(row)
       }
     },
-    readOptions
+    {
+      ...readOptions,
+      streamEntry: isBackupResourcePath,
+      onStreamEntry: async (entry) => {
+        if (manifest) throw new Error('Backup manifest must be the final entry')
+        finishGraph()
+        const hash = resourceHash()
+        for await (const bytes of entry.data) {
+          throwIfAborted(options.signal)
+          hash.write(bytes)
+        }
+        const descriptor = { path: entry.path, ...hash.finish() }
+        indexBytes += encoder.encode(JSON.stringify(descriptor)).length
+        if (indexBytes > MAX_INDEX_BYTES) throw new Error('Backup entry index exceeds budget')
+        observed.set(entry.path, descriptor)
+      },
+    }
   )
   if (!manifest) throw new Error('Backup manifest is missing')
   const validated: BackupManifestV3 = manifest
   validateBackupManifestGraph(validated)
-  if (
-    validated.resources.length ||
-    Object.keys(validated.data).length ||
-    validated.exportItems.some((item) => item !== 'conversations')
+  referenceCatalog.add(
+    collectGlobalResourceReferences(
+      globalValues.get(BACKUP_SETTINGS_PATH) as Partial<Settings> | undefined,
+      globalValues.get(BACKUP_COPILOTS_PATH) as CopilotDetail[] | undefined
+    )
   )
-    throw new Error('This backup requires managed-resource support')
   const expected = new Map<string, BackupJsonEntry>()
   for (const session of validated.sessions) {
     if (JSON.stringify(session.counts) !== JSON.stringify(summaries.get(session.id)))
       throw new Error('Backup session counts mismatch')
     const prefix = `sessions/${await safeSessionPathComponent(session.id, checksum)}`
-    if (session.path !== `${prefix}/header.json`) throw new Error('Invalid backup header path')
+    if (session.path !== `${prefix}/${session.layout === 'single' ? 'session' : 'header'}.json`)
+      throw new Error('Invalid backup session path')
+    if (session.layout === 'single' && (session.shards.length || session.payloads.length))
+      throw new Error('Single-file session cannot contain shards')
     for (const [index, shard] of session.shards.entries()) {
       const fact = batchFacts.get(shard.path)
       if (!fact || fact.count !== shard.count || fact.kind !== shard.kind || fact.index !== index)
@@ -390,12 +563,118 @@ export async function importShardedBackup(
         throw new Error(`Backup entry missing or checksum mismatch: ${descriptor.path}`)
     }
   }
+  for (const [kind, descriptor] of Object.entries(validated.data)) {
+    const path = {
+      settings: BACKUP_SETTINGS_PATH,
+      copilots: BACKUP_COPILOTS_PATH,
+      sessionSettings: BACKUP_SESSION_SETTINGS_PATH,
+    }[kind]
+    if (descriptor.path !== path || expected.has(descriptor.path)) throw new Error('Invalid global backup path')
+    const actual = observed.get(descriptor.path)
+    if (!actual || actual.size !== descriptor.size || actual.checksum.value !== descriptor.checksum.value)
+      throw new Error('Global backup checksum mismatch')
+    expected.set(descriptor.path, descriptor)
+  }
+  for (const resource of validated.resources) {
+    if (!isBackupResourcePath(resource.path) || expected.has(resource.path))
+      throw new Error('Invalid backup resource path')
+    expected.set(resource.path, resource)
+    const actual = observed.get(resource.path)
+    if (!actual || actual.size !== resource.size || actual.checksum.value !== resource.checksum.value)
+      throw new Error(`Backup resource missing or checksum mismatch: ${resource.path}`)
+  }
   if (observed.size !== expected.size + 1) throw new Error('Backup contains undeclared entries')
+  const missingResources = validateResourceReferences(
+    validated,
+    [...referenceCatalog.candidates.values()].flatMap((candidate) => candidate.references)
+  )
   const candidates: Array<{ id: string; candidate: BackupSessionCandidate; oldMeta: SessionMetaRecord | null }> = []
   let active: (typeof candidates)[number] | undefined
   const preserveCandidates = new Set<BackupSessionCandidate>()
   const failures: unknown[] = []
+  const keys = new Map<string, string>()
+  const newResources: string[] = []
+  let globals: Awaited<ReturnType<typeof prepareGlobalRestore>> | undefined
+  let preserveGlobals = false
+  let activeSourceSession: Session | undefined
+  let payloadTransform: { transform: BackupResourcePayloadTransform; size: number } | undefined
   try {
+    const reserved = new Set<string>()
+    const targets = new Map<string, { key: string; write: boolean }>()
+    const allocate = async () => {
+      for (let i = 0; i < 100; i++) {
+        throwIfAborted(options.signal)
+        const key = `resource:imported:${await (options.createId ?? uuidv4)()}`
+        if (!reserved.has(key) && !(await resourceExists(options.storage, key))) {
+          reserved.add(key)
+          return key
+        }
+      }
+      throw new Error('Could not allocate backup resource key')
+    }
+    for (const resource of validated.resources) {
+      let chosen: { key: string; write: boolean } | undefined
+      for (const key of resource.originalStorageKeys) {
+        const existing = await fingerprintResource(options.storage, key, resource, options.signal)
+        if (
+          existing &&
+          existing.size === resource.size &&
+          existing.checksum.value === resource.checksum.value &&
+          existing.encoding === resource.encoding &&
+          existing.mimeType === resource.mimeType
+        ) {
+          chosen = { key, write: false }
+          break
+        }
+        if (!existing && !reserved.has(key) && !chosen) chosen = { key, write: true }
+      }
+      chosen ??= { key: await allocate(), write: true }
+      reserved.add(chosen.key)
+      targets.set(resource.path, chosen)
+      for (const key of resource.originalStorageKeys) keys.set(key, chosen.key)
+    }
+    for (const key of missingResources) keys.set(key, await allocate())
+    globals = await prepareGlobalRestore(validated, globalValues, options.storage, keys, options.signal)
+    await readZipFileEntries(
+      file,
+      () => {
+        throw new Error('Expected resource stream')
+      },
+      {
+        ...readOptions,
+        filter: isBackupResourcePath,
+        streamEntry: isBackupResourcePath,
+        onStreamEntry: async (entry) => {
+          const resource = validated.resources.find((resource) => resource.path === entry.path)!
+          const target = targets.get(entry.path)!
+          const hash = resourceHash()
+          const bytes = (async function* () {
+            for await (const chunk of entry.data) {
+              throwIfAborted(options.signal)
+              hash.write(chunk)
+              yield chunk
+            }
+            const actual = hash.finish()
+            if (actual.size !== resource.size || actual.checksum.value !== resource.checksum.value)
+              throw new Error('Backup resource changed during restore')
+          })()
+          if (target.write) {
+            if (options.storage.blobStreams) {
+              await options.storage.blobStreams.write(target.key, storedResourceChunks(bytes, resource))
+              newResources.push(target.key)
+            } else {
+              const parts: string[] = []
+              for await (const text of storedResourceChunks(bytes, resource)) parts.push(text)
+              newResources.push(target.key)
+              await options.storage.setBlob(target.key, parts.join(''))
+            }
+          } else {
+            for await (const _ of bytes) {
+            }
+          }
+        },
+      }
+    )
     await readZipFileEntries(
       file,
       async (entry) => {
@@ -403,41 +682,124 @@ export async function importShardedBackup(
         const known = observed.get(entry.path)
         if (!known || entry.data.length !== known.size || (await checksum(entry.data)).value !== known.checksum.value)
           throw new Error('Backup changed during restore')
-        if (entry.path === 'manifest.json') return
+        if (entry.path === 'manifest.json' || globalPaths.has(entry.path)) return
+        if (isBackupResourcePath(entry.path)) return
+        if (entry.path.endsWith('/session.json')) {
+          const restored = globals!.translate(
+            rehydrateSessionAttachmentsAsInline(restoreSessionResourceKeys(singleTree(entry.data).session, keys))
+          )
+          const encoded = encodeSessionTree(restored, { activeThreadId: `backup-active:${restored.id}`, now: 0 })
+          if (!encoded.ok) throw new Error(encoded.reason)
+          const oldMeta = await options.metaStorage.getById(restored.id)
+          const candidate = await sharded.store.beginBackupRestore(restored.id)
+          active = { id: restored.id, candidate, oldMeta }
+          candidates.push(active)
+          await candidate.append({ kind: 'header', record: encoded.tree.session })
+          for (const thread of encoded.tree.threads) {
+            throwIfAborted(options.signal)
+            await candidate.append({ kind: 'thread', thread })
+          }
+          for (const message of encoded.tree.messages) {
+            throwIfAborted(options.signal)
+            if (fitsInlineBackupJson({ kind: 'message', message }, limits.maxRecordBytes))
+              await candidate.append({ kind: 'message', message })
+            else {
+              if (!candidate.appendPayload) throw new Error('Backup storage does not support payload restoration')
+              const validator = new BackupMessageValidator()
+              let size = 0
+              for (const bytes of jsonUtf8Blocks(message.message)) {
+                throwIfAborted(options.signal)
+                validator.write(bytes)
+                size += bytes.length
+                await candidate.appendPayload(bytes)
+              }
+              await candidate.append({
+                kind: 'message',
+                message: { ...message, message: validator.finish() },
+                payload: { size },
+              })
+            }
+          }
+          return
+        }
         if (entry.path.endsWith('.bin')) {
           if (!active?.candidate.appendPayload) throw new Error('Backup storage does not support payload restoration')
-          await active.candidate.appendPayload(entry.data)
+          payloadTransform ??= { transform: new BackupResourcePayloadTransform(keys), size: 0 }
+          for (const bytes of payloadTransform.transform.write(entry.data)) {
+            payloadTransform.size += bytes.length
+            await active.candidate.appendPayload(bytes)
+          }
           return
         }
         const batch = rows(entry.data, entry.path)
         const descriptor = expected.get(entry.path)
         if (descriptor && 'count' in descriptor && batch.length !== descriptor.count)
           throw new Error('Backup shard count mismatch')
-        for (const row of batch) {
+        for (let row of batch) {
           if (row.kind === 'header') {
+            activeSourceSession = { ...row.session, messages: [] }
+            const { messages: _messages, threads: _threads, ...translated } = globals!.translate(activeSourceSession)
+            row = { ...row, session: translated }
             const id = row.session.id
             const oldMeta = await options.metaStorage.getById(id)
             active = { id, candidate: await sharded.store.beginBackupRestore(id), oldMeta }
             candidates.push(active)
           }
           if (!active) throw new Error('Backup header is missing')
+          if (row.kind === 'message' && row.payload) {
+            if (!payloadTransform || !active.candidate.appendPayload) throw new Error('Missing backup message payload')
+            const final = payloadTransform.transform.finish()
+            for (const bytes of final.bytes) {
+              payloadTransform.size += bytes.length
+              await active.candidate.appendPayload(bytes)
+            }
+            row = { ...row, value: final.message, payload: { ...row.payload, size: payloadTransform.size } }
+            payloadTransform = undefined
+          } else {
+            if (row.kind === 'thread' && row.sessionPromptContextSnapshot && activeSourceSession) {
+              const translated = globals!.translate({
+                ...activeSourceSession,
+                threads: [
+                  {
+                    id: row.id,
+                    name: row.name ?? '',
+                    createdAt: row.createdAt,
+                    messages: [],
+                    sessionPromptContextSnapshot: row.sessionPromptContextSnapshot,
+                  },
+                ],
+              })
+              row = { ...row, sessionPromptContextSnapshot: translated.threads![0].sessionPromptContextSnapshot }
+            }
+            row = prepareRow(row, active.id, keys)
+          }
           await active.candidate.append(fromLogicalBackupRow(row, active.id))
         }
       },
-      readOptions
+      { ...readOptions, filter: (path) => !isBackupResourcePath(path) }
     )
     for (const [index, item] of candidates.entries()) {
       throwIfAborted(options.signal)
       await item.candidate.publish(options.signal)
       throwIfAborted(options.signal)
-      const meta = validated.sessions.find((session) => session.id === item.id)!.meta
+      const meta = restoreSessionMetaResourceKeys(
+        validated.sessions.find((session) => session.id === item.id)!.meta,
+        keys
+      )
       if (item.oldMeta) await options.metaStorage.update(item.id, replacementMeta(meta))
       else await options.metaStorage.create(meta)
       options.onProgress?.({ phase: 'restoring', current: index + 1, total: candidates.length })
       throwIfAborted(options.signal)
     }
+    await globals!.publish()
   } catch (error) {
     failures.push(error)
+    try {
+      await globals?.rollback()
+    } catch (rollbackError) {
+      preserveGlobals = true
+      failures.push(rollbackError)
+    }
     for (const item of candidates.toReversed()) {
       try {
         await item.candidate.rollback()
@@ -448,7 +810,22 @@ export async function importShardedBackup(
         failures.push(rollbackError)
       }
     }
+    if (!preserveCandidates.size && !preserveGlobals) {
+      for (const key of newResources.reverse()) {
+        try {
+          await options.storage.delBlob(key)
+        } catch (cleanupError) {
+          failures.push(cleanupError)
+        }
+      }
+    }
   } finally {
+    if (!preserveGlobals)
+      try {
+        await globals?.dispose()
+      } catch (cleanupError) {
+        failures.push(cleanupError)
+      }
     for (const item of candidates) {
       if (!preserveCandidates.has(item.candidate)) {
         try {
@@ -459,12 +836,19 @@ export async function importShardedBackup(
       }
     }
   }
-  if (failures.length > 1) throw new AggregateError(failures, 'Backup restore or cleanup failed')
+  if (failures.length > 1)
+    throw new AggregateError(
+      failures,
+      `Backup restore or cleanup failed; retained sessions: ${candidates
+        .filter((item) => preserveCandidates.has(item.candidate))
+        .map((item) => item.id)
+        .join(', ')}`
+    )
   if (failures.length) throw failures[0]
   return {
     manifest: validated,
     warnings: validated.warnings,
     restoredSessionCount: candidates.length,
-    restoredResourceCount: 0,
+    restoredResourceCount: validated.resources.length,
   }
 }

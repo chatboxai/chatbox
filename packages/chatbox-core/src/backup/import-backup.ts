@@ -1,3 +1,13 @@
+import { collectSessionResourceReferences } from './resources'
+import {
+  decodeBase64Chunks,
+  encodeBase64Chunks,
+  fingerprintResource,
+  resourceExists,
+  resourceHash,
+  storedResourceChunks,
+} from './blob-stream'
+import { validateResourceReferences } from './resource-validation'
 import { importShardedBackup, type ShardedBackupOptions } from './sharded-backup'
 import type { BackupManifestV3 } from './sharded-format'
 import type { CopilotDetail, Session, Settings } from '@shared/types'
@@ -145,7 +155,7 @@ function snapshotMatchesEffectiveMemoryState(
   )
 }
 
-async function resolveImportedMemoryState(
+export async function resolveImportedMemoryState(
   manifest: BackupManifest,
   stagedEntries: Map<string, StagedEntry>,
   storage: BackupStorage
@@ -239,7 +249,7 @@ async function resolveImportedMemoryState(
   }
 }
 
-function translateImportedSessionMemoryState(session: Session, state: ImportedMemoryState): Session {
+export function translateImportedSessionMemoryState(session: Session, state: ImportedMemoryState): Session {
   const sourceState = effectiveMemoryState(
     session,
     state.sourceCopilotOwners,
@@ -357,9 +367,11 @@ async function findAvailableCollisionKey(
   storage: BackupStorage,
   originalKey: string,
   reserved: Set<string>,
-  createId: NonNullable<BackupImportOptions['createId']>
+  createId: NonNullable<BackupImportOptions['createId']>,
+  signal?: AbortSignal
 ) {
   for (let attempt = 0; attempt < 100; attempt++) {
+    throwIfAborted(signal)
     let candidatePrefix = 'resource:imported'
     for (const prefix of ['picture:', 'file:', 'link:', 'parseFile-', 'parseUrl-']) {
       if (originalKey.startsWith(prefix)) {
@@ -368,7 +380,7 @@ async function findAvailableCollisionKey(
       }
     }
     const candidate = `${candidatePrefix}:${await createId()}`
-    if (!reserved.has(candidate) && (await storage.getBlob(candidate)) === null) return candidate
+    if (!reserved.has(candidate) && !(await resourceExists(storage, candidate))) return candidate
   }
   throw new Error(`Could not allocate a resource key for: ${originalKey}`)
 }
@@ -377,7 +389,8 @@ async function createResourcePlans(
   manifest: BackupManifest,
   stagedEntries: Map<string, StagedEntry>,
   storage: BackupStorage,
-  createId: NonNullable<BackupImportOptions['createId']>
+  createId: NonNullable<BackupImportOptions['createId']>,
+  signal?: AbortSignal
 ) {
   const plans: ResourceWritePlan[] = []
   const resourceKeyMap = new Map<string, string>()
@@ -385,18 +398,30 @@ async function createResourcePlans(
   for (const resource of manifest.resources) {
     const staged = stagedEntries.get(resource.path)
     if (!staged?.tempKey) throw new Error(`Resource was not staged: ${resource.path}`)
-    const restoredValue = await readStagedResource(storage, { resource, tempKey: staged.tempKey })
+    const restoredValue = storage.blobStreams
+      ? undefined
+      : await readStagedResource(storage, { resource, tempKey: staged.tempKey })
     const targets: ResourceWritePlan['targets'] = []
     for (const originalKey of resource.originalStorageKeys) {
-      const existingValue = await storage.getBlob(originalKey)
+      const streamed = storage.blobStreams
+        ? await fingerprintResource(storage, originalKey, resource, signal)
+        : undefined
+      const existingValue = storage.blobStreams ? undefined : await storage.getBlob(originalKey)
+      const exists = storage.blobStreams ? streamed !== null : existingValue !== null
+      const matches = storage.blobStreams
+        ? streamed?.checksum.value === resource.checksum.value &&
+          streamed.size === resource.size &&
+          streamed.encoding === resource.encoding &&
+          streamed.mimeType === resource.mimeType
+        : existingValue === restoredValue
       let targetKey = originalKey
-      let needsWrite = existingValue === null
-      if (existingValue !== null && existingValue !== restoredValue) {
-        targetKey = await findAvailableCollisionKey(storage, originalKey, reserved, createId)
+      let needsWrite = !exists
+      if (exists && !matches) {
+        targetKey = await findAvailableCollisionKey(storage, originalKey, reserved, createId, signal)
         needsWrite = true
       }
       if (reserved.has(targetKey)) {
-        targetKey = await findAvailableCollisionKey(storage, originalKey, reserved, createId)
+        targetKey = await findAvailableCollisionKey(storage, originalKey, reserved, createId, signal)
         needsWrite = true
       }
       reserved.add(targetKey)
@@ -404,6 +429,18 @@ async function createResourcePlans(
       targets.push({ originalKey, targetKey, needsWrite })
     }
     plans.push({ resource, tempKey: staged.tempKey, targets })
+  }
+  for (const descriptor of manifest.sessions) {
+    const tempKey = stagedEntries.get(descriptor.path)?.tempKey
+    const session = tempKey ? await storage.getItem<Session | null>(tempKey, null) : null
+    if (!session) throw new Error('Staged session is missing')
+    const missing = validateResourceReferences(manifest, collectSessionResourceReferences(session).references)
+    for (const key of missing) {
+      if (resourceKeyMap.has(key)) continue
+      const target = await findAvailableCollisionKey(storage, key, reserved, createId, signal)
+      reserved.add(target)
+      resourceKeyMap.set(key, target)
+    }
   }
   return { plans, resourceKeyMap }
 }
@@ -440,10 +477,28 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
   let stagedSessionCount = 0
   let stagedResourceCount = 0
   let commitStarted = false
+  let commitCompleted = false
 
   const cleanupTemps = async () => {
-    for (const key of tempStoreKeys) await options.storage.removeItem(key).catch(() => undefined)
-    for (const key of tempBlobKeys) await options.storage.delBlob(key).catch(() => undefined)
+    const failures: unknown[] = []
+    const remaining: string[] = []
+    for (const [keys, remove] of [
+      [tempStoreKeys, (key: string) => options.storage.removeItem(key)],
+      [tempBlobKeys, (key: string) => options.storage.delBlob(key)],
+    ] as const) {
+      for (const key of keys)
+        try {
+          await remove(key)
+        } catch (error) {
+          failures.push(error)
+          remaining.push(key)
+        }
+    }
+    if (failures.length)
+      throw new AggregateError(
+        failures,
+        `Backup ${commitCompleted ? 'data restored; ' : ''}cleanup failed; retained keys: ${remaining.join(', ')}`
+      )
   }
 
   const rollback = async () => {
@@ -490,8 +545,14 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
         } else await options.storage.removeItem(previous.key)
       })
     }
+    if (failures.length)
+      throw new AggregateError(
+        failures,
+        `Backup rollback failed; recovery keys retained: ${previousValues.map((value) => value.key).join(', ')}`
+      )
     for (const key of newResourceKeys.reverse()) await restore(() => options.storage.delBlob(key))
-    if (failures.length) throw new AggregateError(failures, 'Backup rollback failed')
+    if (failures.length)
+      throw new AggregateError(failures, `Backup resource cleanup failed: ${newResourceKeys.join(', ')}`)
   }
 
   try {
@@ -530,7 +591,25 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
         stagedEntries.set(entry.path, staged)
       },
       {
+        bounded: Boolean(options.storage.blobStreams),
         signal: options.signal,
+        streamEntry: options.storage.blobStreams ? isBackupResourcePath : undefined,
+        onStreamEntry: async (entry) => {
+          const streams = options.storage.blobStreams
+          if (!streams) throw new Error('Resource streaming storage is unavailable')
+          const tempKey = `${tempPrefix}:resource:${stagedResourceCount++}`
+          const hash = resourceHash()
+          const bytes = (async function* () {
+            for await (const chunk of entry.data) {
+              throwIfAborted(options.signal)
+              hash.write(chunk)
+              yield chunk
+            }
+          })()
+          await streams.write(tempKey, encodeBase64Chunks(bytes))
+          tempBlobKeys.push(tempKey)
+          stagedEntries.set(entry.path, { path: entry.path, tempKey, ...hash.finish() })
+        },
         entryLimits: (path) => ({ maxEntryUncompressedBytes: backupEntryByteLimit(path) }),
       }
     )
@@ -543,7 +622,8 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       manifest,
       stagedEntries,
       options.storage,
-      createId
+      createId,
+      options.signal
     )
     const importedMemoryState = await resolveImportedMemoryState(manifest, stagedEntries, options.storage)
     options.onProgress?.({ phase: 'validating', current: 1, total: 1 })
@@ -579,11 +659,29 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
     let completedResources = 0
     for (const plan of resourcePlans) {
       throwIfAborted(options.signal)
-      const value = await readStagedResource(options.storage, plan)
+      const value = options.storage.blobStreams ? undefined : await readStagedResource(options.storage, plan)
       for (const target of plan.targets) {
         if (!target.needsWrite) continue
-        newResourceKeys.push(target.targetKey)
-        await options.storage.setBlob(target.targetKey, value)
+        if (options.storage.blobStreams) {
+          const source = await options.storage.blobStreams.read(plan.tempKey)
+          if (!source) throw new Error('Staged resource is missing')
+          const hash = resourceHash()
+          const bytes = (async function* () {
+            for await (const chunk of decodeBase64Chunks(source)) {
+              throwIfAborted(options.signal)
+              hash.write(chunk)
+              yield chunk
+            }
+            const actual = hash.finish()
+            if (actual.size !== plan.resource.size || actual.checksum.value !== plan.resource.checksum.value)
+              throw new Error('Staged resource changed during restore')
+          })()
+          await options.storage.blobStreams.write(target.targetKey, storedResourceChunks(bytes, plan.resource))
+          newResourceKeys.push(target.targetKey)
+        } else {
+          newResourceKeys.push(target.targetKey)
+          await options.storage.setBlob(target.targetKey, value!)
+        }
       }
       completedResources++
       options.onProgress?.({
@@ -663,6 +761,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
     }
 
     throwIfAborted(options.signal)
+    commitCompleted = true
     await cleanupTemps()
     return {
       manifest,
@@ -671,6 +770,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       restoredResourceCount: manifest.resources.length,
     }
   } catch (error) {
+    if (commitCompleted) throw error
     if (commitStarted) {
       try {
         await rollback()
@@ -678,7 +778,11 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
         throw new AggregateError([error, rollbackError], `Backup rollback failed; recovery data retained (${importId})`)
       }
     }
-    await cleanupTemps()
+    try {
+      await cleanupTemps()
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'Backup failed and temporary cleanup is incomplete')
+    }
     throw error
   }
 }

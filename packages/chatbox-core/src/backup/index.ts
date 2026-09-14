@@ -17,3 +17,8 @@ export * from './session-port'
 export * from './sharded-format'
 export { jsonUtf8Chunks, jsonUtf8Blocks, fitsInlineBackupJson } from './json-stream'
 export { backupPayloadBlocks } from './payload'
+
+export * from './legacy-source'
+export * from './sql-value-file'
+
+export * from './preflight'

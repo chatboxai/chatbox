@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto'
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
+  prepareBackupExport,
   exportBackupArchive,
   importBackupArchive,
   DEFAULT_BACKUP_PAGE_LIMITS,
@@ -444,3 +445,55 @@ it.each(['sql-to-indexeddb', 'indexeddb-to-sql'] as const)(
     }
   }
 )
+
+it('restores a mixed archive single layout message above the IndexedDB inline budget', async () => {
+  const database = openNodeSessionRowDatabase()
+  const target = new IndexedDBSessionRowStore()
+  try {
+    const source = new SqlSessionRowStore(database)
+    for (const [id, size] of [
+      ['small', 200000],
+      ['large', 300000],
+    ] as const) {
+      await source.writeRows(
+        contextSnapshot({
+          id,
+          name: id,
+          messages: [{ id: 'm', role: 'user', contentParts: [{ type: 'text', text: 'x'.repeat(size) }] }],
+        })
+      )
+    }
+    const options = {
+      storage: new MemoryStorage(),
+      metaStorage: new MemoryMetaStorage(),
+      sessionStore: source,
+      exportItems: ['conversations'] as ['conversations'],
+      includeKeys: false,
+      application: { version: 'test', platform: 'test' },
+    }
+    const prepared = await prepareBackupExport(options, { singleSessionBytes: 250000 })
+    expect(prepared.sessions.find((s) => s.id === 'small')?.layout).toBe('single')
+    let archive = new Blob()
+    await exportBackupArchive({
+      ...options,
+      prepared,
+      writeArchive: async (stream) => {
+        const parts: Uint8Array<ArrayBuffer>[] = []
+        for await (const part of stream()) parts.push(new Uint8Array(part))
+        archive = new Blob(parts)
+        return { boundedMemory: true }
+      },
+    })
+    await importBackupArchive(archive, {
+      storage: new MemoryStorage(),
+      metaStorage: new MemoryMetaStorage(),
+      sharded: { store: target },
+    })
+    expect(
+      (await target.readMessageWindow({ sessionId: 'small', limit: 1 }))?.messages[0].message.contentParts
+    ).toEqual([{ type: 'text', text: 'x'.repeat(200000) }])
+  } finally {
+    database.close()
+    target.close()
+  }
+})

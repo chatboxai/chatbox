@@ -176,7 +176,7 @@ export function prepareSessionForBackup(session: Session): Session {
   const prepared = JSON.parse(JSON.stringify(session)) as Session
   visitSessionFiles(prepared, (file) => {
     delete file.localPath
-    if (file.ragMode === 'session-retrieval') resetRagState(file)
+    resetRagState(file)
   })
   return prepared
 }
@@ -219,7 +219,7 @@ function restoreMessageResourceKeys(message: Message, resourceKeyMap: ReadonlyMa
       if (restoredStorageKey === undefined) delete file.rawStorageKey
       else file.rawStorageKey = restoredStorageKey
     }
-    if (file.ragMode === 'session-retrieval') resetRagState(file)
+    resetRagState(file)
   }
   for (const link of message.links ?? []) {
     if (link.storageKey === undefined) continue

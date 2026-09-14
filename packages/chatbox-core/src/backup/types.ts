@@ -211,6 +211,13 @@ export async function readBackupFileBytes(file: BackupFile, offset: number, leng
 }
 
 export interface BackupStorage {
+  /** Bounded stored-string I/O. Write consumes serially and only creates an absent key;
+   * a failed write removes its partial data. Reads belong to the frozen backup view. */
+  blobStreams?: {
+    has(key: string): Promise<boolean>
+    read(key: string): Promise<AsyncIterable<string> | null>
+    write(key: string, chunks: AsyncIterable<string>): Promise<void>
+  }
   getAllKeys(): Promise<string[]>
   getItem<T>(key: string, initialValue: T): Promise<T>
   setItemNow<T>(key: string, value: T): Promise<void>

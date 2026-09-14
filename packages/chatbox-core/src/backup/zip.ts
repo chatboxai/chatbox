@@ -27,6 +27,8 @@ export interface ZipReadLimits {
 }
 
 export interface ZipReadOptions {
+  streamEntry?: (path: string) => boolean
+  onStreamEntry?: (entry: Omit<ReadZipEntry, 'data'> & { data: AsyncIterable<Uint8Array> }) => Promise<void>
   limits?: ZipReadLimits
   entryLimits?: (path: string) => Partial<Pick<ZipReadLimits, 'maxEntryUncompressedBytes' | 'maxCompressionRatio'>>
   signal?: AbortSignal
@@ -301,34 +303,54 @@ async function readBoundedZipFileEntries(
     if (offset < previousEnd || dataEnd > directory.offset) throw new Error('ZIP entries overlap or are out of order')
     previousEnd = dataEnd
     if (options.filter && !options.filter(path)) continue
-    const chunks: Uint8Array[] = []
-    let entryBytes = 0
-    let inflateError: Error | undefined
-    const receive = (data: Uint8Array) => {
-      entryBytes += data.length
-      if (entryBytes > uncompressedSize || entryBytes > entryLimits.maxEntryUncompressedBytes) {
-        inflateError = new Error(`ZIP entry is too large or has an invalid size: ${path}`)
-        return
+    const streaming = options.streamEntry?.(path) === true
+    let consumed = false
+    const data = async function* (): AsyncGenerator<Uint8Array> {
+      const chunks: Uint8Array[] = []
+      let entryBytes = 0
+      let inflateError: Error | undefined
+      const receive = (chunk: Uint8Array) => {
+        entryBytes += chunk.length
+        if (entryBytes > uncompressedSize || entryBytes > entryLimits.maxEntryUncompressedBytes) {
+          inflateError = new Error(`ZIP entry is too large or has an invalid size: ${path}`)
+          return
+        }
+        if (chunk.length) chunks.push(chunk)
       }
-      if (data.length) chunks.push(data)
-      options.onBufferedBytes?.(entryBytes)
-    }
-    const inflate = method === 8 ? new Inflate(receive) : undefined
-    // A DEFLATE input push can expand about 1032-fold before returning. Small
-    // compressed slices bound that transient allocation even for forged sizes.
-    const inputSize = inflate ? 1024 : 64 * 1024
-    for (let cursor = dataStart; cursor < dataEnd; cursor += inputSize) {
-      throwIfAborted(options.signal)
-      const data = await readBackupFileBytes(file, cursor, Math.min(inputSize, dataEnd - cursor))
-      if (inflate) inflate.push(data, cursor + data.length === dataEnd)
-      else receive(data)
+      const inflate = method === 8 ? new Inflate(receive) : undefined
+      // A DEFLATE push can expand about 1032-fold. Bound each push before yielding.
+      const inputSize = inflate ? 1024 : 64 * 1024
+      for (let cursor = dataStart; cursor < dataEnd; cursor += inputSize) {
+        throwIfAborted(options.signal)
+        const input = await readBackupFileBytes(file, cursor, Math.min(inputSize, dataEnd - cursor))
+        if (inflate) inflate.push(input, cursor + input.length === dataEnd)
+        else receive(input)
+        if (inflateError) throw inflateError
+        options.onBufferedBytes?.(chunks.reduce((sum, chunk) => sum + chunk.length, 0))
+        for (const chunk of chunks) {
+          for (let i = 0; i < chunk.length; i += 64 * 1024) yield chunk.subarray(i, i + 64 * 1024)
+        }
+        chunks.length = 0
+      }
+      if (inflate && compressedSize === 0) inflate.push(EMPTY_BYTES, true)
       if (inflateError) throw inflateError
+      if (entryBytes !== uncompressedSize) throw new Error(`ZIP entry size mismatch: ${path}`)
+      consumed = true
     }
-    if (inflate && compressedSize === 0) inflate.push(EMPTY_BYTES, true)
-    if (entryBytes !== uncompressedSize) throw new Error(`ZIP entry size mismatch: ${path}`)
-    const data = combineChunks(chunks, entryBytes)
-    chunks.length = 0
-    await onEntry({ path, data, compressedSize, uncompressedSize })
+    if (streaming) {
+      if (!options.onStreamEntry) throw new Error('ZIP streaming consumer is missing')
+      await options.onStreamEntry({ path, data: data(), compressedSize, uncompressedSize })
+      if (!consumed) throw new Error('ZIP streaming entry was not fully consumed')
+    } else {
+      const chunks: Uint8Array[] = []
+      let size = 0
+      for await (const chunk of data()) {
+        chunks.push(chunk)
+        size += chunk.length
+        options.onBufferedBytes?.(size)
+      }
+      await onEntry({ path, data: combineChunks(chunks, size), compressedSize, uncompressedSize })
+    }
     options.onBufferedBytes?.(0)
   }
   if (position !== directory.offset + directory.size) throw new Error('ZIP central directory entry count mismatch')
@@ -341,7 +363,7 @@ export async function readZipFileEntries(
   onEntry: (entry: ReadZipEntry) => Promise<void> | void,
   options: ZipReadOptions = {}
 ): Promise<void> {
-  if (options.bounded) return readBoundedZipFileEntries(file, onEntry, options)
+  if (options.bounded || options.streamEntry) return readBoundedZipFileEntries(file, onEntry, options)
   await validateZipEndOfCentralDirectory(file)
   const limits = { ...DEFAULT_ZIP_LIMITS, ...options.limits }
   const seenPaths = new Set<string>()

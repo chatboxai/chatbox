@@ -1,3 +1,6 @@
+import { prepareBackupExport, preparedSessionReader, type BackupExportPlan } from './preflight'
+import type { BackupSessionStore } from './session-port'
+import { BackupResourceCatalog, BackupResourceBudgetError } from './resource-catalog'
 import { exportShardedBackup, type ShardedBackupOptions } from './sharded-backup'
 import type { BackupManifestV3 } from './sharded-format'
 import type { CopilotDetail, Session, SessionMetaRecord, Settings } from '@shared/types'
@@ -10,14 +13,9 @@ import {
   backupEntryByteLimit,
   isBackupSession,
 } from './archive-layout'
-import { encodeStoredBlob, sha256Checksum, shouldCompressMimeType } from './codec'
+import { sha256Checksum } from './codec'
 import { normalizeBackupExportItems } from './export-items'
-import {
-  collectGlobalResourceReferences,
-  collectSessionResourceReferences,
-  prepareSessionForBackup,
-  type ResourceReference,
-} from './resources'
+import { collectGlobalResourceReferences, collectSessionResourceReferences, prepareSessionForBackup } from './resources'
 import { settingsPayloadForBackup } from './settings-payload'
 import {
   AGENT_PERSONA_BACKUP_KEYS,
@@ -34,19 +32,12 @@ import {
   BackupManifestSchema,
   type BackupMetaStorage,
   type BackupProgress,
-  type BackupResourceEntry,
   type BackupSessionEntry,
   type BackupStorage,
-  type BackupWarning,
   MAX_BACKUP_JSON_ENTRY_BYTES,
-  MAX_BACKUP_RESOURCE_ENTRY_BYTES,
   validateBackupManifestGraph,
 } from './types'
 import { createZipStream, DEFAULT_ZIP_LIMITS, type ZipArchiveEntry } from './zip'
-
-interface ResourceCandidate {
-  references: ResourceReference[]
-}
 
 interface SessionEntryState {
   entry: BackupSessionEntry
@@ -62,6 +53,10 @@ export interface BackupExportWriteResult {
 }
 
 export interface BackupExportOptions {
+  sessionStore?: BackupSessionStore
+  prepared?: BackupExportPlan
+  sourceWarnings?: import('./types').BackupWarning[]
+  strictSessions?: boolean
   /** Controlled integration seam; public hosts enable this after platform acceptance. */
   sharded?: ShardedBackupOptions
   exportItems: BackupExportItem[]
@@ -97,7 +92,7 @@ export async function safeSessionPathComponent(sessionId: string, checksum: type
   return `id-${result.value}`
 }
 
-function deriveSessionMeta(session: Session, existing?: SessionMetaRecord): SessionMetaRecord {
+export function deriveSessionMeta(session: Session, existing?: SessionMetaRecord): SessionMetaRecord {
   const preserveRecoveryArchive = existing?.recoveryArchived === true
   return {
     id: session.id,
@@ -128,7 +123,7 @@ async function jsonEntry(
   }
 }
 
-async function* enforceArchiveLimits(
+export async function* enforceArchiveLimits(
   entries: AsyncIterable<ZipArchiveEntry>
 ): AsyncGenerator<ZipArchiveEntry, void, unknown> {
   let entryCount = 0
@@ -165,45 +160,94 @@ async function* enforceArchiveLimits(
   }
 }
 
-function addResourceReferences(resourceCandidates: Map<string, ResourceCandidate>, references: ResourceReference[]) {
-  for (const reference of references) {
-    const candidate = resourceCandidates.get(reference.storageKey)
-    if (candidate) {
-      candidate.references.push(reference)
-    } else {
-      resourceCandidates.set(reference.storageKey, { references: [reference] })
-    }
-  }
-}
-
 function unique(values: Iterable<string>): string[] {
   return Array.from(new Set(values))
 }
 
-function resolveResourceScope(candidate: ResourceCandidate): BackupResourceEntry['scope'] {
-  const sessionIds = unique(
-    candidate.references.flatMap((reference) => (reference.sessionId ? [reference.sessionId] : []))
-  )
-  const hasGlobalReference = candidate.references.some((reference) => !reference.sessionId)
-  if (sessionIds.length === 0) return 'global'
-  if (sessionIds.length === 1 && !hasGlobalReference) return 'session'
-  return 'shared'
-}
-
-async function resourcePath(
-  id: string,
-  extension: string,
-  scope: BackupResourceEntry['scope'],
-  sessionIds: string[],
-  checksum: typeof sha256Checksum
-): Promise<string> {
-  if (scope === 'session' && sessionIds.length === 1) {
-    return `sessions/${await safeSessionPathComponent(sessionIds[0], checksum)}/resources/${id}.${extension}`
+export async function* backupGlobalEntries(
+  options: Omit<BackupExportOptions, 'writeArchive'>,
+  catalog: BackupResourceCatalog,
+  data: BackupManifest['data'],
+  allStorageKeys: string[]
+): AsyncGenerator<ZipArchiveEntry> {
+  const exportItems = normalizeBackupExportItems(options.exportItems)
+  const checksum = options.checksum ?? sha256Checksum
+  let cleanedSettings: Record<string, unknown> | undefined
+  const includeSettings = exportItems.includes('setting')
+  const includeCredentials = exportItems.includes('key') && options.includeKeys
+  if (includeSettings) {
+    const settings = await options.storage.getItem<Settings | null>(BackupStorageKey.Settings, null)
+    if (settings) {
+      cleanedSettings = settingsPayloadForBackup(settings, includeSettings, includeCredentials)
+      catalog.add(collectGlobalResourceReferences(cleanedSettings as Partial<Settings>, undefined))
+      const { archive, descriptor } = await jsonEntry(BACKUP_SETTINGS_PATH, cleanedSettings, checksum)
+      data.settings = descriptor
+      yield archive
+    }
   }
-  return `resources/${id}.${extension}`
+
+  if (exportItems.includes('copilot')) {
+    const copilots = await options.storage.getItem<CopilotDetail[] | null>(BackupStorageKey.MyCopilots, null)
+    if (copilots) {
+      catalog.add(collectGlobalResourceReferences(undefined, copilots))
+      const { archive, descriptor } = await jsonEntry(BACKUP_COPILOTS_PATH, copilots, checksum)
+      data.copilots = descriptor
+      yield archive
+    }
+  }
+
+  // The session-settings entry is a generic storage key-value map. It also
+  // carries the agent persona keys (exported with 'setting'): older importers
+  // read the map through a fixed key allowlist and ignore unknown keys, so no
+  // new archive entry or format bump is needed.
+  const keyValueEntries: Record<string, unknown> = {}
+  const collectKeyValueEntries = async (keys: readonly string[]) => {
+    for (const key of keys) {
+      if (!allStorageKeys.includes(key)) continue
+      const value = await options.storage.getItem<unknown>(key, null)
+      if (value !== null) keyValueEntries[key] = value
+    }
+  }
+  if (exportItems.includes('conversations')) {
+    await collectKeyValueEntries([BackupStorageKey.ChatSessionSettings, BackupStorageKey.PictureSessionSettings])
+  }
+  if (exportItems.includes('setting')) {
+    await collectKeyValueEntries(AGENT_PERSONA_BACKUP_KEYS)
+  }
+  if (exportItems.includes('copilot')) {
+    await collectKeyValueEntries(COPILOT_BACKUP_KEYS)
+  }
+  if (Object.keys(keyValueEntries).length > 0) {
+    const { archive, descriptor } = await jsonEntry(BACKUP_SESSION_SETTINGS_PATH, keyValueEntries, checksum)
+    data.sessionSettings = descriptor
+    yield archive
+  }
 }
 
 export async function exportBackupArchive(options: BackupExportOptions): Promise<BackupExportResult> {
+  if (options.sessionStore) {
+    const prepared = options.prepared ?? (await prepareBackupExport({ ...options, sessionStore: options.sessionStore }))
+    if (
+      prepared.includeKeys !== options.includeKeys ||
+      JSON.stringify([...prepared.exportItems].sort()) !== JSON.stringify([...options.exportItems].sort()) ||
+      (options.selectedSessionIds &&
+        JSON.stringify([...new Set(options.selectedSessionIds)]) !== JSON.stringify(prepared.selectedSessionIds))
+    )
+      throw new Error('Backup selection changed; prepare the export again')
+    if (prepared.formatVersion === 3) return exportShardedBackup(options, { store: options.sessionStore, prepared })
+    return exportBackupArchive({
+      ...options,
+      sessionStore: undefined,
+      prepared: undefined,
+      sharded: undefined,
+      selectedSessionIds: prepared.sessions.map((session) => session.id),
+      sourceWarnings: prepared.warnings.filter(
+        (warning) => warning.code === 'session-read-failed' || warning.code === 'external-resource-skipped'
+      ),
+      strictSessions: true,
+      readSession: preparedSessionReader({ ...options, sessionStore: options.sessionStore }, prepared),
+    })
+  }
   if (options.sharded) return exportShardedBackup(options, options.sharded)
   let completedManifest: BackupManifest | undefined
   const exportedAt = options.exportedAt ?? new Date()
@@ -211,14 +255,13 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
   const exportItems = normalizeBackupExportItems(options.exportItems)
 
   const generateEntries = async function* (): AsyncGenerator<ZipArchiveEntry> {
-    const warnings: BackupWarning[] = []
+    const catalog = new BackupResourceCatalog()
+    const warnings = catalog.warnings
+    warnings.push(...(options.sourceWarnings ?? []))
     const sessions: SessionEntryState[] = []
-    const resources: BackupResourceEntry[] = []
-    const resourceCandidates = new Map<string, ResourceCandidate>()
-    const storageKeyToResourceId = new Map<string, string>()
-    const deduplicatedResources = new Map<string, BackupResourceEntry>()
+    const resources = catalog.resources
+    const storageKeyToResourceId = catalog.keys
     const data: BackupManifest['data'] = {}
-    let successfullyReadResourceKeys = 0
 
     throwIfAborted(options.signal)
     options.onProgress?.({ phase: 'preparing', current: 0, total: 1 })
@@ -228,59 +271,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
       undefined
     )
 
-    let cleanedSettings: Record<string, unknown> | undefined
-    const includeSettings = exportItems.includes('setting')
-    const includeCredentials = exportItems.includes('key') && options.includeKeys
-    if (includeSettings) {
-      const settings = await options.storage.getItem<Settings | null>(BackupStorageKey.Settings, null)
-      if (settings) {
-        cleanedSettings = settingsPayloadForBackup(settings, includeSettings, includeCredentials)
-        addResourceReferences(
-          resourceCandidates,
-          collectGlobalResourceReferences(cleanedSettings as Partial<Settings>, undefined)
-        )
-        const { archive, descriptor } = await jsonEntry(BACKUP_SETTINGS_PATH, cleanedSettings, checksum)
-        data.settings = descriptor
-        yield archive
-      }
-    }
-
-    if (exportItems.includes('copilot')) {
-      const copilots = await options.storage.getItem<CopilotDetail[] | null>(BackupStorageKey.MyCopilots, null)
-      if (copilots) {
-        addResourceReferences(resourceCandidates, collectGlobalResourceReferences(undefined, copilots))
-        const { archive, descriptor } = await jsonEntry(BACKUP_COPILOTS_PATH, copilots, checksum)
-        data.copilots = descriptor
-        yield archive
-      }
-    }
-
-    // The session-settings entry is a generic storage key-value map. It also
-    // carries the agent persona keys (exported with 'setting'): older importers
-    // read the map through a fixed key allowlist and ignore unknown keys, so no
-    // new archive entry or format bump is needed.
-    const keyValueEntries: Record<string, unknown> = {}
-    const collectKeyValueEntries = async (keys: readonly string[]) => {
-      for (const key of keys) {
-        if (!allStorageKeys.includes(key)) continue
-        const value = await options.storage.getItem<unknown>(key, null)
-        if (value !== null) keyValueEntries[key] = value
-      }
-    }
-    if (exportItems.includes('conversations')) {
-      await collectKeyValueEntries([BackupStorageKey.ChatSessionSettings, BackupStorageKey.PictureSessionSettings])
-    }
-    if (exportItems.includes('setting')) {
-      await collectKeyValueEntries(AGENT_PERSONA_BACKUP_KEYS)
-    }
-    if (exportItems.includes('copilot')) {
-      await collectKeyValueEntries(COPILOT_BACKUP_KEYS)
-    }
-    if (Object.keys(keyValueEntries).length > 0) {
-      const { archive, descriptor } = await jsonEntry(BACKUP_SESSION_SETTINGS_PATH, keyValueEntries, checksum)
-      data.sessionSettings = descriptor
-      yield archive
-    }
+    yield* backupGlobalEntries(options, catalog, data, allStorageKeys)
 
     if (exportItems.includes('conversations')) {
       const metaStorage = await options.metaStorage
@@ -315,7 +306,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           const path = `sessions/${await safeSessionPathComponent(session.id, checksum)}/session.json`
           const { archive, descriptor } = await jsonEntry(path, preparedSession, checksum)
           warnings.push(...collected.warnings)
-          addResourceReferences(resourceCandidates, collected.references)
+          catalog.add(collected.references)
           sessions.push({
             entry: {
               ...descriptor,
@@ -327,6 +318,8 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           })
           yield archive
         } catch (error) {
+          if (options.strictSessions || error instanceof BackupResourceBudgetError) throw error
+          throwIfAborted(options.signal)
           warnings.push({
             code: 'session-read-failed',
             itemType: 'session',
@@ -338,83 +331,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
       options.onProgress?.({ phase: 'sessions', current: sessionIds.length, total: sessionIds.length })
     }
 
-    const resourceCandidateEntries = Array.from(resourceCandidates.entries())
-    for (let index = 0; index < resourceCandidateEntries.length; index++) {
-      throwIfAborted(options.signal)
-      const [storageKey, candidate] = resourceCandidateEntries[index]
-      options.onProgress?.({
-        phase: 'resources',
-        current: index,
-        total: resourceCandidateEntries.length,
-        label: candidate.references.find((reference) => reference.filename)?.filename,
-      })
-      try {
-        const storedValue = await options.storage.getBlob(storageKey)
-        if (storedValue === null) throw new Error('Managed resource is missing from blob storage')
-        const firstReference = candidate.references[0]
-        const encoded = encodeStoredBlob(storedValue, firstReference)
-        if (encoded.bytes.length > MAX_BACKUP_RESOURCE_ENTRY_BYTES) {
-          throw new Error('Managed resource exceeds the backup size limit')
-        }
-        const resourceChecksum = await checksum(encoded.bytes)
-        successfullyReadResourceKeys++
-        const dedupeKey = `${resourceChecksum.value}:${encoded.encoding}:${encoded.mimeType}`
-        const existingResource = deduplicatedResources.get(dedupeKey)
-        const sessionIds = unique(
-          candidate.references.flatMap((reference) => (reference.sessionId ? [reference.sessionId] : []))
-        )
-        if (existingResource) {
-          existingResource.originalStorageKeys.push(storageKey)
-          existingResource.sessionIds = unique([...existingResource.sessionIds, ...sessionIds])
-          const candidateScope = resolveResourceScope(candidate)
-          if (
-            existingResource.scope !== candidateScope ||
-            (existingResource.scope === 'session' && existingResource.sessionIds.length !== 1)
-          ) {
-            existingResource.scope = 'shared'
-          }
-          storageKeyToResourceId.set(storageKey, existingResource.id)
-          continue
-        }
-
-        const id = `resource-${String(resources.length + 1).padStart(6, '0')}`
-        const scope = resolveResourceScope(candidate)
-        const path = await resourcePath(id, encoded.extension, scope, sessionIds, checksum)
-        const resource: BackupResourceEntry = {
-          id,
-          path,
-          originalStorageKeys: [storageKey],
-          sessionIds,
-          scope,
-          encoding: encoded.encoding,
-          mimeType: encoded.mimeType,
-          kind: firstReference.kind,
-          filename: firstReference.filename,
-          size: encoded.bytes.length,
-          checksum: resourceChecksum,
-        }
-        resources.push(resource)
-        deduplicatedResources.set(dedupeKey, resource)
-        storageKeyToResourceId.set(storageKey, id)
-        yield {
-          path,
-          data: encoded.bytes,
-          compress: shouldCompressMimeType(encoded.mimeType),
-        }
-      } catch (error) {
-        warnings.push({
-          code: 'resource-read-failed',
-          itemType: 'resource',
-          itemId: storageKey,
-          message: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-    options.onProgress?.({
-      phase: 'resources',
-      current: resourceCandidateEntries.length,
-      total: resourceCandidateEntries.length,
-    })
+    yield* catalog.entries(options)
 
     for (const session of sessions) {
       session.entry.resourceIds = unique(
@@ -442,7 +359,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
       stats: {
         sessionCount: sessions.length,
         resourceCount: resources.length,
-        deduplicatedResourceCount: Math.max(0, successfullyReadResourceKeys - resources.length),
+        deduplicatedResourceCount: Math.max(0, catalog.successfulKeys - resources.length),
         warningCount: warnings.length,
       },
     })

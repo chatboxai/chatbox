@@ -2,6 +2,7 @@ import { MessageSchema, type Message } from '@shared/types'
 
 export const BACKUP_PAYLOAD_BLOCK_BYTES = 128 * 1024
 type Frame = {
+  path: Array<string | number>
   value: Record<string, unknown> | unknown[]
   state: 'key-or-end' | 'key' | 'colon' | 'value' | 'value-or-end' | 'comma-or-end'
   key?: string
@@ -25,7 +26,18 @@ export class BackupMessageValidator {
   private retain(value: string) {
     this.stringLength += value.length
     if (this.key && this.stringLength > 1024) throw new Error('Backup JSON key exceeds budget')
-    if (this.text.length < 4096) this.text += value
+    const frame = this.stack.at(-1)
+    const path = frame?.path ?? []
+    const resource =
+      !this.key &&
+      typeof path[1] === 'number' &&
+      ((path.length === 2 &&
+        ['files', 'links', 'pictures', 'contentParts'].includes(String(path[0])) &&
+        ['storageKey', 'rawStorageKey', 'resultStorageKey', 'resultImageStorageKey'].includes(frame?.key ?? '')) ||
+        (path.length === 3 && path[0] === 'contentParts' && path[2] === 'result' && frame?.key === 'image_storage_key'))
+    const limit = resource ? 32768 : 4096
+    if (resource && this.stringLength > limit) throw new Error('Backup resource identifier exceeds budget')
+    if (this.text.length < limit) this.text += value
   }
   private accept(value: unknown) {
     this.budget += typeof value === 'string' ? value.length * 2 + 16 : 16
@@ -40,6 +52,7 @@ export class BackupMessageValidator {
       if (Array.isArray(frame.value)) frame.value.push(value)
       else {
         if (frame.key === undefined) throw new Error('Missing backup JSON key')
+        if (Object.hasOwn(frame.value, frame.key)) throw new Error('Duplicate backup JSON key')
         Object.defineProperty(frame.value, frame.key, { value, enumerable: true, configurable: true, writable: true })
       }
       frame.state = 'comma-or-end'
@@ -144,8 +157,9 @@ export class BackupMessageValidator {
       }
       if (c === '{' || c === '[') {
         const value = c === '[' ? [] : (Object.create(null) as Record<string, unknown>)
+        const path = frame ? [...frame.path, Array.isArray(frame.value) ? frame.value.length : frame.key!] : []
         this.accept(value)
-        this.stack.push({ value, state: c === '[' ? 'value-or-end' : 'key-or-end' })
+        this.stack.push({ value, path, state: c === '[' ? 'value-or-end' : 'key-or-end' })
         if (this.stack.length > 128) throw new Error('Backup JSON nesting exceeds budget')
         continue
       }
@@ -156,11 +170,24 @@ export class BackupMessageValidator {
   write(bytes: Uint8Array) {
     this.consume(this.decoder.decode(bytes, { stream: true }))
   }
-  finish(): Message {
+  private finishValue(): unknown {
     this.consume(this.decoder.decode())
     if (this.token && this.token !== 'string') this.endScalar()
     if (this.token || this.stack.length || !this.complete) throw new Error('Incomplete backup message JSON')
-    return MessageSchema.passthrough().parse(this.root)
+    return this.root
+  }
+  finish(): Message {
+    const value = this.finishValue()
+    MessageSchema.parse(value)
+    return value as Message
+  }
+  finishLegacy(): { message: Message; addContentParts: boolean } {
+    const value = this.finishValue()
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid legacy message')
+    const addContentParts = !Object.hasOwn(value, 'contentParts')
+    const message = addContentParts ? { ...value, contentParts: [] } : value
+    MessageSchema.parse(message)
+    return { message: message as Message, addContentParts }
   }
 }
 

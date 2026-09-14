@@ -938,7 +938,7 @@ describe('ZIP backup round trip', () => {
     expect(exported.manifest.sessions.every((entry) => entry.resourceIds.length === 1)).toBe(true)
   })
 
-  it('imports the available data and removes references to managed resources that could not be exported', async () => {
+  it('imports available data and preserves unavailable placeholders for declared missing resources', async () => {
     const source = new MemoryStorage()
     const sourceMeta = new MemoryMetaStorage()
     const session = createSession('missing')
@@ -969,7 +969,14 @@ describe('ZIP backup round trip', () => {
     )
     expect(imported.restoredSessionCount).toBe(1)
     expect(destination.values.get(backupSessionStorageKey(session.id))).toMatchObject({
-      messages: [{ contentParts: [{ type: 'text', text: 'look' }] }],
+      messages: [
+        {
+          contentParts: [
+            { type: 'text', text: 'look' },
+            { type: 'image', storageKey: expect.stringContaining('picture:imported:') },
+          ],
+        },
+      ],
     })
   })
 

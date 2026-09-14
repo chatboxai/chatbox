@@ -19,7 +19,7 @@ export function compareBackupIds(left: string, right: string): number {
   return a.length - b.length
 }
 
-export const LogicalBackupRowSchema = z.discriminatedUnion('kind', [
+const logicalBackupRowSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('header'),
@@ -90,10 +90,13 @@ export const LogicalBackupRowSchema = z.discriminatedUnion('kind', [
     })
     .strict(),
 ])
-export type LogicalBackupRow = z.infer<typeof LogicalBackupRowSchema>
+export type LogicalBackupRow = z.infer<typeof logicalBackupRowSchema>
+export const LogicalBackupRowSchema = z.custom<LogicalBackupRow>(
+  (value) => logicalBackupRowSchema.safeParse(value).success
+)
 
 export const ShardedSessionSchema = BackupSessionEntrySchema.extend({
-  layout: z.literal('sharded'),
+  layout: z.enum(['single', 'sharded']),
   payloads: z.array(BackupJsonEntrySchema).max(100_000).default([]),
   shards: z
     .array(

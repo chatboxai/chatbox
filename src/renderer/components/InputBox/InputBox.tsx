@@ -116,7 +116,7 @@ import { AdaptiveModal } from '../common/AdaptiveModal'
 import { CompressionModal } from '../common/CompressionModal'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Disclaimer from '../Disclaimer'
-import ProviderImageIcon from '../icons/ProviderImageIcon'
+import { ModelProviderIcon } from '../icons/ModelProviderIcon'
 import ModelSelectorV2 from '../ModelSelectorV2'
 import AgentModeButton from './AgentModeButton'
 import { FileMiniCard, getParserTypeLabel, ImageMiniCard } from './Attachments'
@@ -2090,7 +2090,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                         !model && 'animate-pulse bg-blue-500/20'
                       )}
                     >
-                      {!!model && <ProviderImageIcon size={18} provider={model.provider} />}
+                      {!!model && <ModelProviderIcon size={20} modelId={model.modelId} providerId={model.provider} />}
                       <Text
                         size="sm"
                         data-testid={TestId.model.selectorTrigger}

@@ -1448,5 +1448,9 @@
   "App icon": "Icono de la aplicación",
   "Flat gradient": "Degradado plano",
   "Unable to change the app icon. Please try again.": "No se ha podido cambiar el icono de la aplicación. Inténtalo de nuevo.",
-  "Sculpted": "Relieve"
+  "Sculpted": "Relieve",
+  "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Demasiadas solicitudes. Reintento en {{seconds}} s ({{attempt}}/{{maxAttempts}})",
+  "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Servicio no disponible. Reintento en {{seconds}} s ({{attempt}}/{{maxAttempts}})",
+  "Retrying request ({{attempt}}/{{maxAttempts}})": "Reintentando la solicitud ({{attempt}}/{{maxAttempts}})",
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Error de red. Reintento en {{seconds}} s ({{attempt}}/{{maxAttempts}})"
 }

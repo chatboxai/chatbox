@@ -1444,5 +1444,9 @@
   "App icon": "Uygulama simgesi",
   "Flat gradient": "Düz gradyan",
   "Sculpted": "Kabartmalı",
-  "Unable to change the app icon. Please try again.": "Uygulama simgesi değiştirilemedi. Lütfen tekrar deneyin."
+  "Unable to change the app icon. Please try again.": "Uygulama simgesi değiştirilemedi. Lütfen tekrar deneyin.",
+  "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Çok fazla istek. {{seconds}} sn sonra yeniden denenecek ({{attempt}}/{{maxAttempts}})",
+  "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Hizmet kullanılamıyor. {{seconds}} sn sonra yeniden denenecek ({{attempt}}/{{maxAttempts}})",
+  "Retrying request ({{attempt}}/{{maxAttempts}})": "İstek yeniden deneniyor ({{attempt}}/{{maxAttempts}})",
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Ağ hatası. {{seconds}} sn sonra yeniden denenecek ({{attempt}}/{{maxAttempts}})"
 }

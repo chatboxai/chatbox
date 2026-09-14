@@ -1448,5 +1448,9 @@
   "App icon": "Icône de l’application",
   "Flat gradient": "Dégradé plat",
   "Unable to change the app icon. Please try again.": "Impossible de changer l’icône de l’application. Veuillez réessayer.",
-  "Sculpted": "Relief"
+  "Sculpted": "Relief",
+  "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Trop de requêtes. Nouvel essai dans {{seconds}} s ({{attempt}}/{{maxAttempts}})",
+  "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Service indisponible. Nouvel essai dans {{seconds}} s ({{attempt}}/{{maxAttempts}})",
+  "Retrying request ({{attempt}}/{{maxAttempts}})": "Nouvel essai de la requête ({{attempt}}/{{maxAttempts}})",
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Erreur réseau. Nouvel essai dans {{seconds}} s ({{attempt}}/{{maxAttempts}})"
 }

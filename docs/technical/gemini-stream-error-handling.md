@@ -36,13 +36,13 @@ ChatboxAI Google 网关响应
 | `src/shared/models/abstract-ai-sdk.ts` | `isRetryableStatusError` 对 `MidStreamApiError` 返回 false;`handleError` 解包 ai-retry 的 `RetryError`、用 `extractStreamErrorMessage` 提取可读消息 |
 | `src/shared/models/utils/stream-error-message.ts` | 从各种错误对象形状提取可读消息,避免 `[object Object]` |
 
-## 重试安全分类(billing safety)
+## 重试边界
 
-自动重试的前提(PR 741 确立):5xx/429 发生在服务端开始生成之前,重试不会重复计费。mid-stream 错误恰好违反该前提——内容已流出,可能已计费,且静默重试的新输出会追加在已渲染的旧文本后造成重复。
+自动重试覆盖收到内容前的 5xx/429 和网络连接错误。尚未收到输出不能证明服务端未处理请求；网络重试可能再次触发服务端生成。内容已流出后的错误不自动重试，避免重复生成和重复展示。
 
 因此错误分两类,由 wrapper 依据 `forwardedContent`(是否已转发过含 `data:` 行的帧;注释/keepalive 帧不计)决定:
 
-- **`ApiError`(内容前)**:进入 `isRetryableStatusError` → ai-retry 静默重试,用户无感。
+- **`ApiError`(内容前)**:由共享重试策略判断 HTTP 状态后重试，并展示原因、倒计时和次数。
 - **`MidStreamApiError`(内容后)**:不自动重试,错误连同已流出的部分文本一起展示,用户手动重试。
 
 错误从 `transform()` 抛出后成为 stream 的 hard rejection,按引用穿过 `@ai-sdk/google` 的 pipe 链与 ai-retry 的 reader,`instanceof` 身份保持不变(已实证验证)。

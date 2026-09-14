@@ -15,8 +15,8 @@ export function createFetchWithProxy(useProxy: boolean | undefined, dependencies
     const headers = (init?.headers as Record<string, string>) || {}
 
     if (method === 'POST') {
-      // POST to AI providers may be billable; a transient network error can occur
-      // after the server already processed the request. Retrying would double-charge.
+      // The model wrapper owns retries and publishes their UI status.
+      // Transport retries would multiply attempts outside that shared budget.
       const response = await dependencies.request.apiRequest({
         url: url.toString(),
         method: 'POST',

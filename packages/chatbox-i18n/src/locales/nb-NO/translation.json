@@ -1448,5 +1448,9 @@
   "App icon": "Appikon",
   "Flat gradient": "Flat gradient",
   "Unable to change the app icon. Please try again.": "Kunne ikke endre appikonet. Prøv igjen.",
-  "Sculpted": "Tredimensjonal"
+  "Sculpted": "Tredimensjonal",
+  "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "For mange forespørsler. Prøver igjen om {{seconds}} s ({{attempt}}/{{maxAttempts}})",
+  "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Tjenesten er utilgjengelig. Prøver igjen om {{seconds}} s ({{attempt}}/{{maxAttempts}})",
+  "Retrying request ({{attempt}}/{{maxAttempts}})": "Prøver forespørselen på nytt ({{attempt}}/{{maxAttempts}})",
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Nettverksfeil. Prøver igjen om {{seconds}} s ({{attempt}}/{{maxAttempts}})"
 }

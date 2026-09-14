@@ -1448,5 +1448,9 @@
   "App icon": "App-Symbol",
   "Flat gradient": "Flacher Farbverlauf",
   "Unable to change the app icon. Please try again.": "Das App-Symbol konnte nicht geändert werden. Bitte versuche es erneut.",
-  "Sculpted": "Plastisch"
+  "Sculpted": "Plastisch",
+  "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Zu viele Anfragen. Neuer Versuch in {{seconds}} s ({{attempt}}/{{maxAttempts}})",
+  "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Dienst nicht verfügbar. Neuer Versuch in {{seconds}} s ({{attempt}}/{{maxAttempts}})",
+  "Retrying request ({{attempt}}/{{maxAttempts}})": "Anfrage wird erneut gesendet ({{attempt}}/{{maxAttempts}})",
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Netzwerkfehler. Neuer Versuch in {{seconds}} s ({{attempt}}/{{maxAttempts}})"
 }

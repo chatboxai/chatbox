@@ -75,7 +75,13 @@ async function doRequest(url: string, options: RequestOptions): Promise<Response
 
     if (!res.ok) {
       const err = await res.text().catch(() => null)
-      throw new ApiError(`Status Code ${res.status}`, err ?? undefined)
+      throw new ApiError(
+        `Status Code ${res.status}`,
+        err ?? undefined,
+        res.status,
+        undefined,
+        res.headers.get('retry-after') ?? undefined
+      )
     }
     return res
   }

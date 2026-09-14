@@ -169,7 +169,6 @@
   "Remove {{name}}": "Remove {{name}}",
   "Remove Favorite": "Remove Favorite",
   "Retry": "Retry",
-  "Retrying {{attempt}}/{{max}}": "Retrying {{attempt}}/{{max}}",
   "Reset": "Reset",
   "Routing and native navigation are ready; this form is not implemented yet.": "Routing and native navigation are ready; this form is not implemented yet.",
   "Saved image not found.": "Saved image not found.",

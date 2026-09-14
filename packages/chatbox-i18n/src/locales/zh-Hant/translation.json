@@ -1448,5 +1448,9 @@
   "App icon": "應用程式圖示",
   "Flat gradient": "扁平漸層",
   "Unable to change the app icon. Please try again.": "無法更換應用程式圖示，請重試。",
-  "Sculpted": "立體"
+  "Sculpted": "立體",
+  "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "請求過於頻繁，{{seconds}} 秒後重試（第 {{attempt}}/{{maxAttempts}} 次）",
+  "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "服務暫時無法使用，{{seconds}} 秒後重試（第 {{attempt}}/{{maxAttempts}} 次）",
+  "Retrying request ({{attempt}}/{{maxAttempts}})": "正在重試請求（第 {{attempt}}/{{maxAttempts}} 次）",
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "網路連線失敗，{{seconds}} 秒後重試（第 {{attempt}}/{{maxAttempts}} 次）"
 }

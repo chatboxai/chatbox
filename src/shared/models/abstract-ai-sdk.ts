@@ -23,7 +23,6 @@ import {
   type TypedToolResult,
   wrapLanguageModel,
 } from 'ai'
-import { createRetryable, isErrorAttempt, type RetryContext } from 'ai-retry'
 import type {
   MessageContentParts,
   MessageReasoningPart,
@@ -37,10 +36,11 @@ import { getReasoningControlCapabilities, stripReasoningProviderOptions } from '
 import { normalizeCompletedResponse } from './completed-response-normalizer'
 import { createMidRunToolResultRelief } from './context-pressure-relief'
 import { isExpectedGenerationError } from './error-classification'
-import { ApiError, BaseError, ChatboxAIAPIError, MidStreamApiError } from './errors'
+import { ApiError, BaseError, ChatboxAIAPIError, NetworkError } from './errors'
 import { wrapOpenAICompatibleNonStreamingModel } from './openai-compatible-non-streaming'
 import { stopWhenPersistentToolCallPause } from './persistent-tool-call-pause'
 import { mergeProviderMetadata, pickPersistableProviderMetadata } from './provider-part-metadata'
+import { createRetryableChatModel } from './retryable-chat-model'
 import { repairToolCallJson } from './tool-call-json-repair'
 import type {
   CallChatCompletionOptions,
@@ -55,12 +55,6 @@ import { extractStreamErrorMessage } from './utils/stream-error-message'
 
 export type { CallSettings } from './types'
 
-const RETRY_CONFIG = {
-  MAX_ATTEMPTS: 5,
-  INITIAL_DELAY_MS: 1000,
-  BACKOFF_FACTOR: 2,
-} as const
-
 function sanitizeCallSettings(callSettings: CallSettings): CallSettings {
   const maxOutputTokens = callSettings.maxOutputTokens
   if (maxOutputTokens === undefined || (Number.isInteger(maxOutputTokens) && maxOutputTokens >= 1)) {
@@ -72,39 +66,7 @@ function sanitizeCallSettings(callSettings: CallSettings): CallSettings {
   return sanitized
 }
 
-/**
- * Retryable from a billing-safety perspective: upstream rejected or crashed
- * before running the model, so retrying will not cause duplicate charges.
- * Covers 5xx (server-side failure) and 429 (rate-limited before processing).
- */
-function isRetryableStatusCode(code: number): boolean {
-  return code === 429 || (code >= 500 && code < 600)
-}
-
-export function isRetryableStatusError(error: unknown): boolean {
-  // A failure after part of the response streamed is never billing-safe to
-  // retry, regardless of status code: the partial generation may already be
-  // billed, and a silent re-run would append a fresh response after the
-  // already-rendered partial text.
-  if (error instanceof MidStreamApiError) {
-    return false
-  }
-  if (APICallError.isInstance(error)) {
-    const statusCode = error.statusCode
-    return statusCode !== undefined && isRetryableStatusCode(statusCode)
-  }
-  if (error && typeof error === 'object' && 'statusCode' in error) {
-    const statusCode = (error as { statusCode: unknown }).statusCode
-    return typeof statusCode === 'number' && isRetryableStatusCode(statusCode)
-  }
-  if (error instanceof ApiError && error.message) {
-    const match = error.message.match(/Status Code (\d+)/)
-    if (match) {
-      return isRetryableStatusCode(parseInt(match[1], 10))
-    }
-  }
-  return false
-}
+export { isRetryableStatusError } from './retryable-chat-model'
 
 class StatusQueue {
   private queue: ModelStatus[] = []
@@ -378,50 +340,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
 
     const statusQueue = new StatusQueue()
 
-    const retryableStatusAttempt = (context: RetryContext<LanguageModelV3>) => {
-      if (isErrorAttempt(context.current)) {
-        const { error } = context.current
-        if (isRetryableStatusError(error)) {
-          return {
-            model: baseModel,
-            maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
-            delay: RETRY_CONFIG.INITIAL_DELAY_MS,
-            backoffFactor: RETRY_CONFIG.BACKOFF_FACTOR,
-          }
-        }
-      }
-      return undefined
-    }
-    const model = createRetryable({
-      model: baseModel,
-      retries: [retryableStatusAttempt],
-      onError: (context) => {
-        if (isErrorAttempt(context.current)) {
-          const { error } = context.current
-          const errorMessage = error instanceof Error ? error.message : String(error)
-          console.debug(`[ai-retry] Error on attempt ${context.attempts.length}:`, errorMessage)
-        }
-      },
-      onRetry: (context) => {
-        const attemptNumber = context.attempts.length + 1
-        const lastError = context.attempts[context.attempts.length - 1]
-        const errorMessage =
-          lastError && 'error' in lastError
-            ? lastError.error instanceof Error
-              ? lastError.error.message
-              : String(lastError.error)
-            : 'Unknown error'
-
-        console.debug(`[ai-retry] Retrying attempt ${attemptNumber}/${RETRY_CONFIG.MAX_ATTEMPTS}`)
-
-        statusQueue.push({
-          type: 'retrying',
-          attempt: attemptNumber,
-          maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
-          error: errorMessage,
-        })
-      },
-    })
+    const model = createRetryableChatModel(baseModel, (status) => statusQueue.push(status))
 
     const result = streamText({
       model,
@@ -432,11 +351,8 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       experimental_repairToolCall: repairToolCallJson as ToolCallRepairFunction<T>,
       abortSignal: options.signal,
       ...callSettings,
-      // Billable POST retries are handled explicitly by the `ai-retry` wrapper above
-      // (covers 5xx and 429, which are safe because upstream hasn't processed the request).
-      // AI SDK's default retry (2x) would also fire on arbitrary network errors, which
-      // could double-charge if the server processed the request before the connection died.
-      // Kept last so provider `callSettings` cannot accidentally re-enable retries.
+      // The model wrapper owns retry limits, backoff and UI status for HTTP and
+      // network failures. Keep SDK retries disabled to avoid multiplying attempts.
       maxRetries: 0,
     })
 
@@ -915,7 +831,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     // ai-retry upgrades.)
     if (
       RetryError.isInstance(error) &&
-      (error.lastError instanceof ApiError || APICallError.isInstance(error.lastError))
+      (error.lastError instanceof Error || APICallError.isInstance(error.lastError))
     ) {
       return this.handleError(error.lastError, context)
     }
@@ -923,7 +839,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       const responseBody = this.sanitizeResponseBody(error.statusCode, error.responseBody)
       throw new ApiError(`Error from ${this.name}${context}`, responseBody, error.statusCode)
     }
-    if (error instanceof ApiError) {
+    if (error instanceof ApiError || error instanceof NetworkError) {
       throw error
     }
     if (error instanceof ChatboxAIAPIError) {
@@ -1002,12 +918,8 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       experimental_repairToolCall: repairToolCallJson as ToolCallRepairFunction<T>,
       abortSignal: options.signal,
       ...callSettings,
-      // Billable POST retries are handled explicitly by the `ai-retry` wrapper in
-      // _callChatCompletion (covers 5xx and 429, which are safe because upstream
-      // hasn't processed the request). AI SDK's default retry (2x) would fire on
-      // arbitrary network errors too, which could double-charge if the server
-      // processed the request before the connection died.
-      // Kept last so provider `callSettings` cannot accidentally re-enable retries.
+      // The model wrapper owns retry limits, backoff and UI status for HTTP and
+      // network failures. Keep SDK retries disabled to avoid multiplying attempts.
       maxRetries: 0,
     })
 
@@ -1064,51 +976,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const baseModel = this.prepareChatModel(this.getChatModel(options))
     const callSettings = this.resolveCallSettings(options)
 
-    const retryableStatusAttempt = (context: RetryContext<LanguageModelV3>) => {
-      if (isErrorAttempt(context.current)) {
-        const { error } = context.current
-        if (isRetryableStatusError(error)) {
-          return {
-            model: baseModel,
-            maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
-            delay: RETRY_CONFIG.INITIAL_DELAY_MS,
-            backoffFactor: RETRY_CONFIG.BACKOFF_FACTOR,
-          }
-        }
-      }
-      return undefined
-    }
-
-    const model = createRetryable({
-      model: baseModel,
-      retries: [retryableStatusAttempt],
-      onError: (context) => {
-        if (isErrorAttempt(context.current)) {
-          const { error } = context.current
-          const errorMessage = error instanceof Error ? error.message : String(error)
-          console.debug(`[ai-retry] Error on attempt ${context.attempts.length}:`, errorMessage)
-        }
-      },
-      onRetry: (context) => {
-        const attemptNumber = context.attempts.length + 1
-        const lastError = context.attempts[context.attempts.length - 1]
-        const errorMessage =
-          lastError && 'error' in lastError
-            ? lastError.error instanceof Error
-              ? lastError.error.message
-              : String(lastError.error)
-            : 'Unknown error'
-
-        console.debug(`[ai-retry] Retrying attempt ${attemptNumber}/${RETRY_CONFIG.MAX_ATTEMPTS}`)
-
-        options.onStatusChange?.({
-          type: 'retrying',
-          attempt: attemptNumber,
-          maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
-          error: errorMessage,
-        })
-      },
-    })
+    const model = createRetryableChatModel(baseModel, (status) => options.onStatusChange?.(status))
 
     try {
       const result = await this.handleStreamingCompletion(model, coreMessages, options, callSettings)

@@ -169,7 +169,6 @@
   "Remove {{name}}": "移除 {{name}}",
   "Remove Favorite": "取消收藏",
   "Retry": "重试",
-  "Retrying {{attempt}}/{{max}}": "正在重试 {{attempt}}/{{max}}",
   "Reset": "重置",
   "Routing and native navigation are ready; this form is not implemented yet.": "路由和原生导航已就绪；此表单尚未实现。",
   "Saved image not found.": "找不到已保存的图片。",

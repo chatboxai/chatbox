@@ -1448,5 +1448,9 @@
   "App icon": "应用图标",
   "Flat gradient": "扁平渐变",
   "Unable to change the app icon. Please try again.": "无法更换应用图标，请重试。",
-  "Sculpted": "立体"
+  "Sculpted": "立体",
+  "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "请求过于频繁，{{seconds}} 秒后重试（第 {{attempt}}/{{maxAttempts}} 次）",
+  "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "服务暂时不可用，{{seconds}} 秒后重试（第 {{attempt}}/{{maxAttempts}} 次）",
+  "Retrying request ({{attempt}}/{{maxAttempts}})": "正在重试请求（第 {{attempt}}/{{maxAttempts}} 次）",
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "网络连接失败，{{seconds}} 秒后重试（第 {{attempt}}/{{maxAttempts}} 次）"
 }

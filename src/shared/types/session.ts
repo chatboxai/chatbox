@@ -305,6 +305,8 @@ export const MessageStatusSchema = z.discriminatedUnion('type', [
     attempt: z.number(),
     maxAttempts: z.number(),
     error: z.string().optional(),
+    retryAt: z.number().optional(),
+    statusCode: z.number().optional(),
   }),
   z.object({
     type: z.literal('preparing_tool_call'),

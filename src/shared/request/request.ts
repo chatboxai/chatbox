@@ -143,7 +143,8 @@ export function createAfetch(
             `Status Code ${res.status}, ${sanitizeResponseBody(res.status, response)}`,
             response || undefined,
             res.status,
-            requestId
+            requestId,
+            res.headers.get('retry-after') ?? undefined
           )
         }
         return res
@@ -319,7 +320,8 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
               `Status Code ${retryRes.status}, ${sanitizeResponseBody(retryRes.status, response)}`,
               response || undefined,
               retryRes.status,
-              requestId
+              requestId,
+              retryRes.headers.get('retry-after') ?? undefined
             )
           }
 
@@ -344,7 +346,8 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
             `Status Code ${res.status}, ${sanitizeResponseBody(res.status, response)}`,
             response || undefined,
             res.status,
-            requestId
+            requestId,
+            res.headers.get('retry-after') ?? undefined
           )
         }
 

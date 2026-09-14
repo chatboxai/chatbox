@@ -1448,5 +1448,9 @@
   "App icon": "أيقونة التطبيق",
   "Flat gradient": "تدرج مسطح",
   "Unable to change the app icon. Please try again.": "تعذّر تغيير أيقونة التطبيق. يُرجى المحاولة مرة أخرى.",
-  "Sculpted": "مجسّم"
+  "Sculpted": "مجسّم",
+  "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "طلبات كثيرة جدًا. إعادة المحاولة خلال {{seconds}} ث ({{attempt}}/{{maxAttempts}})",
+  "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "الخدمة غير متاحة. إعادة المحاولة خلال {{seconds}} ث ({{attempt}}/{{maxAttempts}})",
+  "Retrying request ({{attempt}}/{{maxAttempts}})": "جارٍ إعادة محاولة الطلب ({{attempt}}/{{maxAttempts}})",
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "خطأ في الشبكة. إعادة المحاولة خلال {{seconds}} ث ({{attempt}}/{{maxAttempts}})"
 }

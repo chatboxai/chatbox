@@ -10,6 +10,7 @@ import { getToolName } from '@/packages/tools'
 import * as atoms from '@/stores/atoms'
 import * as settingActions from '@/stores/settingActions'
 import LinkTargetBlank from '../common/Link'
+import { RetryingIndicator } from './RetryingIndicator'
 
 export default function MessageStatuses(props: { statuses: Message['status'] }) {
   const { statuses } = props
@@ -94,7 +95,7 @@ function MessageStatus(props: { status: NonNullable<Message['status']>[number] }
     )
   }
   if (status.type === 'retrying') {
-    return <RetryingIndicator attempt={status.attempt} maxAttempts={status.maxAttempts} />
+    return <RetryingIndicator status={status} />
   }
   if (status.type === 'preparing_tool_call') {
     return <PreparingToolCallStatus status={status} />
@@ -136,17 +137,6 @@ function formatPreparingProgress(
     return t('{{count}} lines', { count: progress.value })
   }
   return `${progress.value.toFixed(1)} KB`
-}
-
-function RetryingIndicator(props: { attempt: number; maxAttempts: number }) {
-  const { attempt, maxAttempts } = props
-  const { t } = useTranslation()
-  return (
-    <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mb-1">
-      <Loader className="w-3 h-3 animate-spin" />
-      <span>{t('Retrying {{attempt}}/{{maxAttempts}}', { attempt, maxAttempts })}</span>
-    </div>
-  )
 }
 
 export function LoadingBubble(props: { children: React.ReactNode }) {

@@ -25,10 +25,12 @@ export class ApiError extends BaseError {
   public code = 10001
   public responseBody: string | undefined
   public statusCode: number | undefined
-  constructor(message: string, responseBody?: string, statusCode?: number, requestId?: string) {
+  public retryAfter: string | undefined
+  constructor(message: string, responseBody?: string, statusCode?: number, requestId?: string, retryAfter?: string) {
     super('API Error: ' + message, { requestId })
     this.responseBody = responseBody
     this.statusCode = statusCode
+    this.retryAfter = retryAfter
   }
 }
 

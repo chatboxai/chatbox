@@ -4,6 +4,7 @@ import { safeSessionPathComponent } from './export-backup'
 import type { BackupImportOptions, BackupImportResult } from './import-backup'
 import { throwIfAborted } from './abort'
 import { sha256Checksum } from './codec'
+import { BackupMessageValidator, backupPayloadBlocks, BACKUP_PAYLOAD_BLOCK_BYTES } from './payload'
 import {
   backupPageLimits,
   type BackupPageLimits,
@@ -71,15 +72,16 @@ export async function exportShardedBackup(
     let entryCount = 0
     let indexBytes = 0
     let headerBytes = 0
-    const encode = async (path: string, value: unknown, budget: number) => {
+    const encodeBytes = async (path: string, data: Uint8Array, budget: number) => {
       throwIfAborted(options.signal)
-      const data = encoder.encode(JSON.stringify(value))
       if (data.length > budget) throw new Error(`Backup entry exceeds budget: ${path}`)
       total += data.length
       if (++entryCount > DEFAULT_ZIP_LIMITS.maxEntries || total > DEFAULT_ZIP_LIMITS.maxTotalUncompressedBytes)
         throw new Error('Backup archive exceeds safety budget')
       return { archive: { path, data }, descriptor: { path, size: data.length, checksum: await checksum(data) } }
     }
+    const encode = (path: string, value: unknown, budget: number) =>
+      encodeBytes(path, encoder.encode(JSON.stringify(value)), budget)
     for (const [index, id] of ids.entries()) {
       options.onProgress?.({ phase: 'sessions', current: index, total: ids.length })
       const prefix = `sessions/${await safeSessionPathComponent(id, checksum)}`
@@ -106,7 +108,35 @@ export async function exportShardedBackup(
       }
       for await (const row of sharded.store.iterateBackupRows(id, limits, options.signal)) {
         throwIfAborted(options.signal)
-        const logical = LogicalBackupRowSchema.parse(toLogicalBackupRow(row))
+        let logical = LogicalBackupRowSchema.parse(toLogicalBackupRow(row))
+        if (row.kind === 'message' && row.payload) {
+          if (!session || !row.payload.chunks || logical.kind !== 'message')
+            throw new Error('Backup payload source is missing')
+          if (batch.length) yield await flush()
+          const validator = new BackupMessageValidator()
+          const firstBlock = session.payloads.length
+          let size = 0
+          for await (const data of backupPayloadBlocks(row.payload.chunks())) {
+            validator.write(data)
+            size += data.length
+            const entry = await encodeBytes(
+              `${prefix}/payloads/${String(session.payloads.length).padStart(6, '0')}.bin`,
+              data,
+              BACKUP_PAYLOAD_BLOCK_BYTES
+            )
+            indexBytes += encoder.encode(JSON.stringify(entry.descriptor)).length
+            if (indexBytes > MAX_MANIFEST_BYTES / 2) throw new Error('Backup manifest exceeds budget')
+            session.payloads.push(entry.descriptor)
+            yield entry.archive
+          }
+          if (row.payload.size !== undefined && size !== row.payload.size)
+            throw new Error('Backup payload size mismatch')
+          logical = LogicalBackupRowSchema.parse({
+            ...logical,
+            value: validator.finish(),
+            payload: { encoding: 'json-utf8', size, firstBlock, blockCount: session.payloads.length - firstBlock },
+          })
+        }
         graph.add(logical)
         checkResources(logical)
         if (logical.kind === 'header') {
@@ -121,6 +151,7 @@ export async function exportShardedBackup(
             id,
             resourceIds: [],
             shards: [],
+            payloads: [],
             counts: { threads: 1, messages: 0 },
             meta: existing ?? {
               id,
@@ -211,7 +242,10 @@ export async function importShardedBackup(
   let indexBytes = 0
   let graphBytes = 0
   let headerBytes = 0
+  let payloadIndex = 0
+  let pendingPayload: { validator: BackupMessageValidator; firstBlock: number; count: number; size: number } | undefined
   const finishGraph = () => {
+    if (pendingPayload) throw new Error('Backup payload has no owning message')
     if (current) summaries.set(current.id, current.graph.finish())
     current = undefined
   }
@@ -224,7 +258,9 @@ export async function importShardedBackup(
           ? MAX_MANIFEST_BYTES
           : path.endsWith('/session.json')
             ? 128 * 1024 * 1024
-            : limits.maxPageBytes,
+            : path.endsWith('.bin')
+              ? BACKUP_PAYLOAD_BLOCK_BYTES
+              : limits.maxPageBytes,
     }),
   }
   const rows = (data: Uint8Array, path: string) => {
@@ -252,12 +288,28 @@ export async function importShardedBackup(
         manifest = BackupManifestV3Schema.parse(value)
         return
       }
+      if (/^sessions\/[^/]+\/payloads\/\d{6}\.bin$/.test(entry.path)) {
+        if (
+          manifest ||
+          !current ||
+          entry.path !==
+            `sessions/${await safeSessionPathComponent(current.id, checksum)}/payloads/${String(payloadIndex).padStart(6, '0')}.bin`
+        )
+          throw new Error('Invalid backup payload order')
+        pendingPayload ??= { validator: new BackupMessageValidator(), firstBlock: payloadIndex, count: 0, size: 0 }
+        pendingPayload.validator.write(entry.data)
+        pendingPayload.count++
+        pendingPayload.size += entry.data.length
+        payloadIndex++
+        return
+      }
       if (!/^sessions\/[^/]+\/(header\.json|(?:threads|messages)\/\d{6}\.json)$/.test(entry.path)) return
       if (manifest) throw new Error('Backup manifest must be last')
       const batch = rows(entry.data, entry.path)
       if (entry.path.endsWith('/header.json')) {
         if (batch.length !== 1 || batch[0].kind !== 'header') throw new Error('Invalid backup header entry')
         shardIndex = 0
+        payloadIndex = 0
         graphBytes = 0
         headerBytes += entry.data.length
         if (headerBytes > MAX_INDEX_BYTES) throw new Error('Backup headers exceed budget')
@@ -267,6 +319,18 @@ export async function importShardedBackup(
         batchFacts.set(entry.path, { kind, count: batch.length, index: shardIndex++ })
       }
       for (const row of batch) {
+        if (row.kind === 'message' && row.payload) {
+          const p = row.payload
+          if (
+            !pendingPayload ||
+            p.firstBlock !== pendingPayload.firstBlock ||
+            p.blockCount !== pendingPayload.count ||
+            p.size !== pendingPayload.size ||
+            JSON.stringify(pendingPayload.validator.finish()) !== JSON.stringify(row.value)
+          )
+            throw new Error('Backup payload reference mismatch')
+          pendingPayload = undefined
+        } else if (pendingPayload) throw new Error('Backup payload has no owning message')
         if (row.kind === 'header') {
           finishGraph()
           const id = row.session.id
@@ -280,7 +344,7 @@ export async function importShardedBackup(
         if (!current || !entry.path.startsWith(`sessions/${await safeSessionPathComponent(current.id, checksum)}/`))
           throw new Error('Backup row appears outside its session')
         checkResources(row)
-        const structural = row.kind === 'message' ? (({ value, ...rest }) => rest)(row) : row
+        const structural = row.kind === 'message' ? (({ value, payload, ...rest }) => rest)(row) : row
         graphBytes += encoder.encode(JSON.stringify(structural)).length
         if (graphBytes > MAX_INDEX_BYTES) throw new Error('Backup graph index exceeds budget')
         current.graph.add(row)
@@ -310,7 +374,15 @@ export async function importShardedBackup(
       if (shard.index !== index || shard.path !== `${prefix}/${shard.kind}s/${String(index).padStart(6, '0')}.json`)
         throw new Error('Invalid backup shard order')
     }
-    for (const descriptor of [session, ...session.shards]) {
+    for (const [index, block] of session.payloads.entries()) {
+      if (
+        block.path !== `${prefix}/payloads/${String(index).padStart(6, '0')}.bin` ||
+        block.size < 1 ||
+        block.size > BACKUP_PAYLOAD_BLOCK_BYTES
+      )
+        throw new Error('Invalid backup payload descriptor')
+    }
+    for (const descriptor of [session, ...session.shards, ...session.payloads]) {
       if (expected.has(descriptor.path)) throw new Error('Duplicate backup descriptor')
       expected.set(descriptor.path, descriptor)
       const actual = observed.get(descriptor.path)
@@ -332,6 +404,11 @@ export async function importShardedBackup(
         if (!known || entry.data.length !== known.size || (await checksum(entry.data)).value !== known.checksum.value)
           throw new Error('Backup changed during restore')
         if (entry.path === 'manifest.json') return
+        if (entry.path.endsWith('.bin')) {
+          if (!active?.candidate.appendPayload) throw new Error('Backup storage does not support payload restoration')
+          await active.candidate.appendPayload(entry.data)
+          return
+        }
         const batch = rows(entry.data, entry.path)
         const descriptor = expected.get(entry.path)
         if (descriptor && 'count' in descriptor && batch.length !== descriptor.count)
@@ -351,11 +428,13 @@ export async function importShardedBackup(
     )
     for (const [index, item] of candidates.entries()) {
       throwIfAborted(options.signal)
-      await item.candidate.publish()
+      await item.candidate.publish(options.signal)
+      throwIfAborted(options.signal)
       const meta = validated.sessions.find((session) => session.id === item.id)!.meta
       if (item.oldMeta) await options.metaStorage.update(item.id, replacementMeta(meta))
       else await options.metaStorage.create(meta)
       options.onProgress?.({ phase: 'restoring', current: index + 1, total: candidates.length })
+      throwIfAborted(options.signal)
     }
   } catch (error) {
     failures.push(error)

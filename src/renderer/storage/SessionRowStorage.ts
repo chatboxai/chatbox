@@ -1,9 +1,18 @@
 import { iterateIndexedDBBackupRows, beginIndexedDBBackupRestore } from './session-row-idb-backup'
+import {
+  readStoredMessage,
+  putStoredMessages,
+  deleteStoredMessage,
+  type StoredMessageRow,
+} from './session-row-idb-payload'
 import type { BackupPageLimits } from '@chatbox/core/backup'
 import {
   SESSION_ROW_DB_NAME,
   SESSION_ROW_THREAD_STORE,
   SESSION_ROW_MESSAGE_STORE,
+  SESSION_ROW_PAYLOAD_STORE,
+  MESSAGE_ORDER_INDEX,
+  MESSAGE_PAYLOAD_INDEX,
   SESSION_INDEX,
   STATUS_INDEX,
   ROW_STORES,
@@ -50,7 +59,7 @@ import type { MessageRow, MessageRowStatus, ThreadRow } from '@chatbox/core/sess
 import { reportDbOpenSucceeded, toDbOpenError, watchDbOpenBlocked, watchDbVersionChange } from './db-schema-guard'
 
 export { SESSION_ROW_DB_NAME, SESSION_ROW_THREAD_STORE, SESSION_ROW_MESSAGE_STORE } from './session-row-idb-records'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 function assertCommit(sessionId: string, rows: SessionRows, commit: SessionRowCommit): void {
   if (!Number.isSafeInteger(commit.revision) || commit.revision <= 0) {
@@ -117,7 +126,9 @@ function clearSessionRows(store: IDBObjectStore, sessionId: string, onDone: () =
       onDone()
       return
     }
-    store.delete(cursor.primaryKey)
+    if (store.name === SESSION_ROW_MESSAGE_STORE)
+      deleteStoredMessage(store.transaction, sessionId, (cursor.primaryKey as string[])[1])
+    else store.delete(cursor.primaryKey)
     cursor.continue()
   }
 }
@@ -179,6 +190,15 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
           const messages = db.createObjectStore(SESSION_ROW_MESSAGE_STORE, { keyPath: ['sessionId', 'messageId'] })
           messages.createIndex(SESSION_INDEX, 'sessionId', { unique: false })
           messages.createIndex(STATUS_INDEX, ['status', 'sessionId', 'threadId', 'messageId'], { unique: false })
+        }
+        const messages = request.transaction!.objectStore(SESSION_ROW_MESSAGE_STORE)
+        if (!messages.indexNames.contains(MESSAGE_ORDER_INDEX))
+          messages.createIndex(MESSAGE_ORDER_INDEX, ['sessionId', 'threadId', 'seq', 'messageId'])
+        if (!messages.indexNames.contains(MESSAGE_PAYLOAD_INDEX))
+          messages.createIndex(MESSAGE_PAYLOAD_INDEX, ['sessionId', 'messageId', 'payload.id'])
+        if (!db.objectStoreNames.contains(SESSION_ROW_PAYLOAD_STORE)) {
+          const payloads = db.createObjectStore(SESSION_ROW_PAYLOAD_STORE, { keyPath: ['payloadId', 'index'] })
+          payloads.createIndex(SESSION_INDEX, 'sessionId')
         }
       }
     })
@@ -253,12 +273,26 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
       const tx = db.transaction(ROW_STORES, 'readonly')
       const threadRequest = tx.objectStore(SESSION_ROW_THREAD_STORE).index(SESSION_INDEX).getAll(sessionId)
       const messageRequest = tx.objectStore(SESSION_ROW_MESSAGE_STORE).index(SESSION_INDEX).getAll(sessionId)
+      const messages: MessageRow[] = []
+      messageRequest.onsuccess = () => {
+        for (const [index, row] of (messageRequest.result as StoredMessageRow[]).entries())
+          readStoredMessage(
+            tx,
+            row,
+            (message) => {
+              messages[index] = message
+            },
+            (error) => {
+              reject(error)
+              tx.abort()
+            }
+          )
+      }
 
       tx.oncomplete = () => {
         const storedThreads = threadRequest.result as Array<PersistedThreadRow | RevisionHeadRow>
         const head = storedThreads.find(isRevisionHeadRow)
         const persisted = storedThreads.filter((row): row is PersistedThreadRow => !isRevisionHeadRow(row))
-        const messages = messageRequest.result as MessageRow[]
         if (persisted.length === 0 && messages.length === 0) {
           resolve(null)
           return
@@ -310,9 +344,21 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
               const rowRequest = messages.get([sessionId, traversal.nextMessageId])
               rowRequest.onsuccess = () => {
                 try {
-                  const row = rowRequest.result as MessageRow | undefined
-                  if (traversal.accept(row) && row) selected.push(row)
-                  readNext()
+                  const row = rowRequest.result as StoredMessageRow | undefined
+                  if (!row) {
+                    traversal.accept(undefined)
+                    readNext()
+                    return
+                  }
+                  readStoredMessage(
+                    tx,
+                    row,
+                    (message) => {
+                      if (traversal.accept(message)) selected.push(message)
+                      readNext()
+                    },
+                    fail
+                  )
                 } catch (error) {
                   fail(error)
                 }
@@ -518,20 +564,24 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
       const read = tx.objectStore(SESSION_ROW_MESSAGE_STORE).get([sessionId, id])
       read.onsuccess = () => {
         try {
-          const row = read.result as MessageRow | undefined
-          if (row) {
-            assertMessageRow('read-messages', sessionId, row)
-            if (row.messageId !== id) throw new Error('Message selection returned an unexpected id')
-            rows.set(id, row)
+          const complete = (row?: MessageRow) => {
+            if (row) {
+              assertMessageRow('read-messages', sessionId, row)
+              if (row.messageId !== id) throw new Error('Message selection returned an unexpected id')
+              rows.set(id, row)
+            }
+            remaining -= 1
+            if (remaining === 0)
+              finish(
+                ids.flatMap((key) => {
+                  const row = rows.get(key)
+                  return row ? [row] : []
+                })
+              )
           }
-          remaining -= 1
-          if (remaining === 0)
-            finish(
-              ids.flatMap((key) => {
-                const row = rows.get(key)
-                return row ? [row] : []
-              })
-            )
+          const row = read.result as StoredMessageRow | undefined
+          if (row) readStoredMessage(tx, row, complete, fail)
+          else complete()
         } catch (error) {
           fail(error)
         }
@@ -561,10 +611,12 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
               for (const thread of rows.threads) {
                 threadStore.put(thread)
               }
-              for (const message of rows.messages) {
-                messageStore.put(message)
-              }
-              threadStore.put(revisionHead(sessionId, { record, revision }))
+              putStoredMessages(
+                tx,
+                rows.messages,
+                () => threadStore.put(revisionHead(sessionId, { record, revision })),
+                fail
+              )
             } catch (error) {
               fail(error)
             }
@@ -614,16 +666,18 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
           for (const thread of diff.threads.upsert) {
             threadStore.put(thread)
           }
-          for (const message of diff.messages.upsert) {
-            messageStore.put(message)
-          }
           for (const threadId of diff.threads.delete) {
             threadStore.delete([sessionId, threadId])
           }
-          for (const messageId of diff.messages.delete) {
-            messageStore.delete([sessionId, messageId])
-          }
-          threadStore.put(revisionHead(sessionId, commit))
+          putStoredMessages(
+            tx,
+            diff.messages.upsert,
+            () => {
+              for (const messageId of diff.messages.delete) deleteStoredMessage(tx, sessionId, messageId)
+              threadStore.put(revisionHead(sessionId, commit))
+            },
+            fail
+          )
         } catch (error) {
           fail(error)
         }

@@ -79,6 +79,14 @@ export const LogicalBackupRowSchema = z.discriminatedUnion('kind', [
       createdAt: z.number().finite(),
       updatedAt: z.number().finite(),
       value: MessageSchema.passthrough(),
+      payload: z
+        .object({
+          encoding: z.literal('json-utf8'),
+          size: order.positive(),
+          firstBlock: order.nonnegative(),
+          blockCount: order.positive(),
+        })
+        .optional(),
     })
     .strict(),
 ])
@@ -86,6 +94,7 @@ export type LogicalBackupRow = z.infer<typeof LogicalBackupRowSchema>
 
 export const ShardedSessionSchema = BackupSessionEntrySchema.extend({
   layout: z.literal('sharded'),
+  payloads: z.array(BackupJsonEntrySchema).max(100_000).default([]),
   shards: z
     .array(
       BackupJsonEntrySchema.extend({
@@ -175,6 +184,7 @@ export function fromLogicalBackupRow(row: LogicalBackupRow, sessionId: string): 
     }
   return {
     kind: 'message',
+    payload: row.payload ? { size: row.payload.size } : undefined,
     message: {
       sessionId,
       threadId: row.threadId,
@@ -196,7 +206,7 @@ export function fromLogicalBackupRow(row: LogicalBackupRow, sessionId: string): 
 export class BackupGraphValidator {
   private header?: Extract<LogicalBackupRow, { kind: 'header' }>
   private threads = new Map<string, Extract<LogicalBackupRow, { kind: 'thread' }>>()
-  private messages = new Map<string, Omit<Extract<LogicalBackupRow, { kind: 'message' }>, 'value'>>()
+  private messages = new Map<string, Omit<Extract<LogicalBackupRow, { kind: 'message' }>, 'value' | 'payload'>>()
   private indexBytes = 0
   private lastMessage?: { threadId: string; order: number }
   private lastThread = -2
@@ -205,7 +215,7 @@ export class BackupGraphValidator {
     private readonly maxIndexBytes = 16 * 1024 * 1024
   ) {}
   add(row: LogicalBackupRow) {
-    const index = row.kind === 'message' ? (({ value, ...rest }) => rest)(row) : row
+    const index = row.kind === 'message' ? (({ value, payload, ...rest }) => rest)(row) : row
     this.indexBytes += new TextEncoder().encode(JSON.stringify(index)).length
     if (this.indexBytes > this.maxIndexBytes) throw new Error('Backup graph index exceeds budget')
     if (row.kind === 'header') {
@@ -228,7 +238,7 @@ export class BackupGraphValidator {
       )
         throw new Error('Invalid backup message identity or order')
       this.lastMessage = { threadId: row.threadId, order: row.order }
-      const { value, ...structural } = row
+      const { value, payload, ...structural } = row
       this.messages.set(row.id, structural)
     }
   }

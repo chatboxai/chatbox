@@ -1,6 +1,9 @@
 import { v4 as uuid } from 'uuid'
 import {
   backupPageLimits,
+  fitsInlineBackupJson,
+  jsonUtf8Chunks,
+  backupPayloadBlocks,
   compareBackupIds,
   throwIfAborted,
   type BackupPageLimits,
@@ -13,6 +16,8 @@ import {
   SESSION_ROW_THREAD_STORE as THREADS,
   SESSION_ROW_MESSAGE_STORE as MESSAGES,
   SESSION_INDEX,
+  MESSAGE_ORDER_INDEX,
+  SESSION_ROW_PAYLOAD_STORE as PAYLOADS,
   REVISION_HEAD_THREAD_ID,
   ROW_STORES,
   isRevisionHeadRow,
@@ -23,6 +28,14 @@ import {
   type PersistedThreadRow,
   type RevisionHeadRow,
 } from './session-row-idb-records'
+
+import {
+  readBackupPayload,
+  payloadRange,
+  type StoredMessageRow,
+  type PayloadRef,
+  type PayloadChunk,
+} from './session-row-idb-payload'
 
 const encoder = new TextEncoder()
 const INDEX_BUDGET = 16 * 1024 * 1024
@@ -108,8 +121,16 @@ export async function* iterateIndexedDBBackupRows(
     let head: RevisionHeadRow | undefined
     let completed = 0
     let indexBytes = 0
+    let expectedMessages = 0
+    let messages = 0
+    const add = (ref: RowRef) => {
+      indexBytes += byteSize(ref)
+      if (indexBytes > INDEX_BUDGET) throw new Error('Backup structural index exceeds budget')
+      refs.push(ref)
+    }
     const done = () => {
-      if (++completed !== 2) return
+      if (++completed !== 3) return
+      if (messages !== expectedMessages) throw new Error('Backup message ordering index is incomplete')
       const commit = readStoredCommit(sessionId, active, head)
       const header: BackupRow = { kind: 'header', record: commit.record }
       if (byteSize(header) > limits.maxRecordBytes) throw new Error('Backup header requires payload blocks')
@@ -121,49 +142,48 @@ export async function* iterateIndexedDBBackupRows(
         activeThreadId: commit.record.activeThreadId,
       })
     }
-    for (const kind of ['thread', 'message'] as const) {
-      const request = tx
-        .objectStore(kind === 'thread' ? THREADS : MESSAGES)
-        .index(SESSION_INDEX)
-        .openCursor(IDBKeyRange.only(sessionId))
-      success(request, function next(cursor) {
+    success(tx.objectStore(MESSAGES).index(SESSION_INDEX).count(sessionId), (count) => {
+      expectedMessages = count
+      done()
+    })
+    success(tx.objectStore(THREADS).index(SESSION_INDEX).openCursor(sessionId), (cursor) => {
+      throwIfAborted(signal)
+      if (!cursor) {
+        done()
+        return
+      }
+      const value = cursor.value as PersistedThreadRow | RevisionHeadRow
+      if (isRevisionHeadRow(value)) head = value
+      else {
+        if (value.seq === -1) {
+          if (active.length) throw new Error('Backup session has multiple active threads')
+          active.push(value)
+        }
+        const bytes = byteSize({ kind: 'thread', thread: plainThreadRow(value) })
+        if (bytes > limits.maxRecordBytes) throw new Error('Backup record requires payload blocks')
+        add({ kind: 'thread', id: value.threadId, threadId: value.threadId, order: value.seq, bytes })
+      }
+      cursor.continue()
+    })
+    success(
+      tx
+        .objectStore(MESSAGES)
+        .index(MESSAGE_ORDER_INDEX)
+        .openKeyCursor(IDBKeyRange.bound([sessionId], [sessionId, []])),
+      (cursor) => {
         throwIfAborted(signal)
         if (!cursor) {
           done()
           return
         }
-        if (kind === 'thread') {
-          const value = cursor.value as PersistedThreadRow | RevisionHeadRow
-          if (isRevisionHeadRow(value)) {
-            head = value
-            cursor.continue()
-            return
-          }
-          if (value.seq === -1) {
-            if (active.length) throw new Error('Backup session has multiple active threads')
-            active.push(value)
-          }
-        }
-        const value = cursor.value as ThreadRow | MessageRow
-        const row: BackupRow =
-          kind === 'thread'
-            ? { kind, thread: plainThreadRow(value as PersistedThreadRow) }
-            : { kind, message: value as MessageRow }
-        const bytes = byteSize(row)
-        if (bytes > limits.maxRecordBytes) throw new Error('Backup record requires payload blocks')
-        const ref: RowRef = {
-          kind,
-          id: kind === 'thread' ? (value as ThreadRow).threadId : (value as MessageRow).messageId,
-          threadId: value.threadId,
-          order: value.seq,
-          bytes,
-        }
-        indexBytes += byteSize(ref)
-        if (indexBytes > INDEX_BUDGET) throw new Error('Backup structural index exceeds budget')
-        refs.push(ref)
+        const key = cursor.key as [string, string, number, string]
+        if (typeof key[1] !== 'string' || !Number.isSafeInteger(key[2]) || typeof key[3] !== 'string')
+          throw new Error('Invalid backup ordering key')
+        add({ kind: 'message', id: key[3], threadId: key[1], order: key[2], bytes: 0 })
+        messages++
         cursor.continue()
-      })
-    }
+      }
+    )
   })
   snapshot.refs.sort((left, right) => {
     if (left.kind !== right.kind) return left.kind === 'thread' ? -1 : 1
@@ -203,26 +223,42 @@ export async function* iterateIndexedDBBackupRows(
             ref.kind === 'thread'
               ? { kind: 'thread', thread: plainThreadRow(value) }
               : { kind: 'message', message: value }
-          if (byteSize(row) !== ref.bytes) throw new Error('Backup row changed during traversal')
+          if (ref.kind === 'thread' && byteSize(row) !== ref.bytes)
+            throw new Error('Backup row changed during traversal')
           rows.push(row)
           done()
         })
       }
     })
   yield snapshot.header
-  let offset = 0
-  while (offset < snapshot.refs.length) {
-    throwIfAborted(signal)
-    const page: RowRef[] = []
-    let bytes = 0
-    while (offset < snapshot.refs.length && page.length < limits.maxPageRows) {
-      const next = snapshot.refs[offset]
-      if (page.length && bytes + next.bytes > limits.maxPageBytes) break
-      page.push(next)
-      bytes += next.bytes
-      offset++
+  for (const ref of snapshot.refs) {
+    const [row] = await readPage([ref])
+    if (row.kind !== 'message') {
+      yield row
+      continue
     }
-    for (const row of await readPage(page)) yield row
+    const stored = row.message as StoredMessageRow
+    if (!stored.payload && fitsInlineBackupJson(row, limits.maxRecordBytes)) {
+      yield row
+      continue
+    }
+    const { message, payload, ...metadata } = stored
+    const chunks = async function* () {
+      await readPage([])
+      if (payload) yield* readBackupPayload(db, sessionId, payload, signal)
+      else {
+        for (const data of jsonUtf8Chunks(message)) {
+          throwIfAborted(signal)
+          yield data
+        }
+      }
+      await readPage([])
+    }
+    yield {
+      kind: 'message',
+      message: { ...metadata, message: { id: stored.messageId, role: 'user', contentParts: [] } },
+      payload: { size: payload?.size, chunks },
+    }
   }
   await readPage([])
 }
@@ -234,7 +270,7 @@ interface StagedRow {
   threadId: typeof REVISION_HEAD_THREAD_ID
   seq: -2
   store: typeof THREADS | typeof MESSAGES
-  value: PersistedThreadRow | RevisionHeadRow | MessageRow
+  value: PersistedThreadRow | RevisionHeadRow | StoredMessageRow
 }
 
 function candidateRange(id: string) {
@@ -259,6 +295,69 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
   let count = 0
   let activeThreadId: string | undefined
   let activeThreadCount = 0
+  let pendingPayload: PayloadRef | undefined
+  let prepared = false
+  const candidatePayloads = new Set<string>()
+  const previousPayloads = new Set<string>()
+  const originalPayloads = new Set<string>()
+  const appendChunk = async (ref: PayloadRef, data: Uint8Array) => {
+    if (!data.length || data.length > 128 * 1024) throw new Error('Backup payload block exceeds budget')
+    await transaction<void>(db, 'readwrite', ({ tx, finish }) => {
+      tx.objectStore(PAYLOADS).add({ payloadId: ref.id, index: ref.count, sessionId, data } satisfies PayloadChunk)
+      finish(undefined)
+    })
+    ref.count++
+    ref.size += data.length
+  }
+  const preparePrevious = async (signal?: AbortSignal) => {
+    if (prepared) return
+    let index = 0
+    for (const store of [THREADS, MESSAGES] as const) {
+      const keys = await transaction<IDBValidKey[]>(db, 'readonly', ({ tx, success, finish }) => {
+        const keys: IDBValidKey[] = []
+        let bytes = 0
+        success(tx.objectStore(store).index(SESSION_INDEX).openKeyCursor(sessionId), (cursor) => {
+          if (!cursor) {
+            finish(keys)
+            return
+          }
+          bytes += byteSize(cursor.primaryKey)
+          if (bytes > INDEX_BUDGET) throw new Error('Backup rollback index exceeds budget')
+          keys.push(cursor.primaryKey)
+          cursor.continue()
+        })
+      })
+      for (const key of keys) {
+        throwIfAborted(signal)
+        let value = await transaction<StagedRow['value']>(db, 'readonly', ({ tx, success, finish }) =>
+          success(tx.objectStore(store).get(key), finish)
+        )
+        if (!value) throw new Error('Backup source changed during rollback preparation')
+        if (store === MESSAGES) {
+          const row = value as StoredMessageRow
+          if (row.payload) originalPayloads.add(row.payload.id)
+          else if (!fitsInlineBackupJson(row, 128 * 1024)) {
+            const payload: PayloadRef = { id: uuid(), size: 0, count: 0 }
+            previousPayloads.add(payload.id)
+            const chunks = async function* () {
+              yield* jsonUtf8Chunks(row.message)
+            }
+            for await (const chunk of backupPayloadBlocks(chunks())) {
+              throwIfAborted(signal)
+              await appendChunk(payload, chunk)
+            }
+            const { message, ...metadata } = row
+            value = { ...metadata, payload }
+          }
+        }
+        await transaction<void>(db, 'readwrite', ({ tx, finish }) => {
+          tx.objectStore(THREADS).add(stage(previousId, index++, store, value))
+          finish(undefined)
+        })
+      }
+    }
+    prepared = true
+  }
 
   const replace = (rollback: boolean) =>
     transaction<void>(db, 'readwrite', (context) => {
@@ -279,22 +378,20 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
           cursor.continue()
         })
       }
-      let oldIndex = 0
       const preserveAndClear = (storeIndex: number) => {
-        if (storeIndex === ROW_STORES.length) {
+        if (storeIndex === 2) {
           copyCandidate()
           return
         }
-        const storeName = ROW_STORES[storeIndex]
+        const storeName = ([THREADS, MESSAGES] as const)[storeIndex]
         const store = tx.objectStore(storeName)
-        const request = store.index(SESSION_INDEX).openCursor(IDBKeyRange.only(sessionId))
+        const request = store.index(SESSION_INDEX).openKeyCursor(IDBKeyRange.only(sessionId))
         success(request, (cursor) => {
           if (!cursor) {
             preserveAndClear(storeIndex + 1)
             return
           }
-          if (!rollback) threads.put(stage(previousId, oldIndex++, storeName, cursor.value))
-          cursor.delete()
+          store.delete(cursor.primaryKey)
           cursor.continue()
         })
       }
@@ -306,6 +403,14 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
       })
     })
   return {
+    async appendPayload(data) {
+      if (phase !== 'collecting' || !count) throw new Error('Backup candidate is closed')
+      if (!pendingPayload) {
+        pendingPayload = { id: uuid(), size: 0, count: 0 }
+        candidatePayloads.add(pendingPayload.id)
+      }
+      await appendChunk(pendingPayload, data)
+    },
     async append(row) {
       if (phase !== 'collecting') throw new Error('Backup candidate is closed')
       if (byteSize(row) > 128 * 1024) throw new Error('Backup record requires payload blocks')
@@ -317,6 +422,12 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
       } else {
         if (!count) throw new Error('Backup header must precede rows')
         value = row.kind === 'thread' ? row.thread : row.message
+        if (row.kind === 'message' && row.payload) {
+          if (!pendingPayload || row.payload.size !== pendingPayload.size)
+            throw new Error('Backup payload is incomplete')
+          const { message, ...metadata } = row.message
+          value = { ...metadata, payload: pendingPayload }
+        } else if (pendingPayload) throw new Error('Backup payload has no owning message')
         if (value.sessionId !== sessionId || !value.threadId || value.threadId === REVISION_HEAD_THREAD_ID)
           throw new Error('Invalid backup row identity')
         if (row.kind === 'thread' && row.thread.seq === -1) {
@@ -330,11 +441,15 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
         finish(undefined)
       })
       count++
+      if (row.kind === 'message' && row.payload) pendingPayload = undefined
       if (row.kind === 'header') activeThreadId = row.record.activeThreadId
       if (active) activeThreadCount++
     },
-    async publish() {
-      if (phase !== 'collecting' || activeThreadCount !== 1) throw new Error('Backup candidate is not publishable')
+    async publish(signal) {
+      if (phase !== 'collecting' || activeThreadCount !== 1 || pendingPayload)
+        throw new Error('Backup candidate is not publishable')
+      await preparePrevious(signal)
+      throwIfAborted(signal)
       await replace(false)
       phase = 'published'
     },
@@ -346,6 +461,11 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
     },
     async dispose() {
       await transaction<void>(db, 'readwrite', ({ tx, success, finish }) => {
+        const remove = [
+          ...(phase === 'published' ? originalPayloads : candidatePayloads),
+          ...(phase === 'rolled-back' ? [] : previousPayloads),
+        ]
+        for (const id of remove) tx.objectStore(PAYLOADS).delete(payloadRange(id))
         let pending = 2
         const store = tx.objectStore(THREADS)
         for (const id of [candidateId, previousId]) {

@@ -32,6 +32,15 @@ export async function createSqlBackupCandidate(
   let commit: SessionRowCommit | undefined
   let published = false
   let disposed = false
+  let pending:
+    | {
+        id: string
+        decoder: { decode(input?: Uint8Array, options?: { stream?: boolean }): string }
+        count: number
+        bytes: number
+      }
+    | undefined
+  const payloadPrefix = `backup:${mutation}:`
   const guard = (value: number | null): SessionRowSqlStatement => ({
     sql:
       value === null
@@ -61,6 +70,29 @@ export async function createSqlBackupCandidate(
     }))
   )
   return {
+    async appendPayload(bytes) {
+      if (published || disposed || !commit) throw new Error('Backup candidate is closed')
+      if (!bytes.length || bytes.length > 128 * 1024) throw new Error('Backup payload block exceeds budget')
+      pending ??= {
+        id: payloadPrefix + uuid(),
+        decoder: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }),
+        count: 0,
+        bytes: 0,
+      }
+      pending.bytes += bytes.length
+      const text = pending.decoder.decode(bytes, { stream: true })
+      for (let offset = 0; offset < text.length; ) {
+        let end = Math.min(offset + 16 * 1024, text.length)
+        if (end < text.length && text.charCodeAt(end - 1) >= 0xd800 && text.charCodeAt(end - 1) <= 0xdbff) end--
+        await database.executeBatch([
+          {
+            sql: 'INSERT INTO session_message_payload_chunks (session_id, payload_id, chunk_index, value) VALUES (?, ?, ?, ?)',
+            params: [sessionId, pending.id, pending.count++, text.slice(offset, end)],
+          },
+        ])
+        offset = end
+      }
+    },
     async append(row: BackupRow) {
       if (published || disposed) throw new Error('Backup candidate is closed')
       if (row.kind === 'header') {
@@ -71,6 +103,36 @@ export async function createSqlBackupCandidate(
       if (!commit) throw new Error('Backup header must precede rows')
       if ((row.kind === 'thread' ? row.thread : row.message).sessionId !== sessionId)
         throw new Error('Backup row belongs to another session')
+      if (row.kind === 'message' && row.payload) {
+        if (!pending || pending.bytes !== row.payload.size || pending.decoder.decode())
+          throw new Error('Backup payload is incomplete')
+        const m = row.message
+        await database.executeBatch([
+          {
+            sql: `INSERT INTO session_messages_staging (mutation_id, ${columns.messages}) VALUES (${Array(15).fill('?').join(', ')})`,
+            params: [
+              mutation,
+              sessionId,
+              m.messageId,
+              m.threadId,
+              m.parentMessageId,
+              m.activeChildId,
+              m.seq,
+              m.kind,
+              m.status,
+              m.createdAt,
+              m.updatedAt,
+              m.branchId,
+              pending.id,
+              pending.count,
+              pending.bytes,
+            ],
+          },
+        ])
+        pending = undefined
+        return
+      }
+      if (pending) throw new Error('Backup payload has no owning message')
       const statements = row.kind === 'thread' ? [codec.thread(row.thread, commit)] : codec.message(row.message)
       const staged = function* (): Generator<SessionRowSqlStatement> {
         for (const statement of statements) {
@@ -90,7 +152,7 @@ export async function createSqlBackupCandidate(
       await database.executeBatch(staged())
     },
     async publish() {
-      if (!commit || published || disposed) throw new Error('Backup candidate is not publishable')
+      if (!commit || published || disposed || pending) throw new Error('Backup candidate is not publishable')
       const actual =
         (
           await database.query<{ revision: number | null }>(
@@ -134,7 +196,8 @@ export async function createSqlBackupCandidate(
         {
           sql: `DELETE FROM session_message_payload_chunks WHERE session_id = ?
           AND NOT EXISTS (SELECT 1 FROM session_messages WHERE session_messages.payload_id = session_message_payload_chunks.payload_id)
-          AND NOT EXISTS (SELECT 1 FROM session_messages_staging WHERE session_messages_staging.payload_id = session_message_payload_chunks.payload_id)`,
+          AND NOT EXISTS (SELECT 1 FROM session_messages_staging WHERE session_messages_staging.payload_id = session_message_payload_chunks.payload_id)
+          AND NOT EXISTS (SELECT 1 FROM session_row_staging_mutations WHERE session_message_payload_chunks.payload_id LIKE 'backup:' || mutation_id || ':%')`,
           params: [sessionId],
         },
       ])

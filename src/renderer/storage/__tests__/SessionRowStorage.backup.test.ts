@@ -44,7 +44,10 @@ const fixture = () =>
     },
   })
 
-async function exportFile(source: BackupSessionStore) {
+async function exportFile(
+  source: BackupSessionStore,
+  limits = { maxPageRows: 2, maxPageBytes: 4096, maxRecordBytes: 2048 }
+) {
   let file = new Blob()
   await exportBackupArchive({
     storage: new MemoryStorage(),
@@ -52,7 +55,7 @@ async function exportFile(source: BackupSessionStore) {
     exportItems: ['conversations'],
     includeKeys: false,
     application: { version: 'test', platform: 'web' },
-    sharded: { store: source, limits: { maxPageRows: 2, maxPageBytes: 4096, maxRecordBytes: 2048 } },
+    sharded: { store: source, limits },
     writeArchive: async (stream) => {
       const parts: Uint8Array<ArrayBuffer>[] = []
       for await (const part of stream()) parts.push(new Uint8Array(part))
@@ -62,6 +65,170 @@ async function exportFile(source: BackupSessionStore) {
   })
   return file
 }
+
+it('round trips a large IndexedDB message and resumes window reads, edits and reopening', async () => {
+  const store = new IndexedDBSessionRowStore()
+  const snapshot = contextSnapshot({
+    id: 'large-idb',
+    name: 'Large',
+    messages: [
+      {
+        id: 'body',
+        role: 'assistant',
+        contentParts: [{ type: 'text', text: '🙂中\\\"\n'.repeat(80_000) }],
+        errorExtra: { nested: ['x'.repeat(200_000), { small: 'kept' }] },
+      },
+    ],
+  })
+  await store.writeRows(snapshot)
+  const archive = await exportFile(store, DEFAULT_BACKUP_PAGE_LIMITS)
+  await importBackupArchive(archive, {
+    storage: new MemoryStorage(),
+    metaStorage: new MemoryMetaStorage(),
+    sharded: { store },
+  })
+  expect((await store.readSnapshot(snapshot.record.id))?.rows).toEqual(snapshot.rows)
+  const window = await store.readMessageWindow({ sessionId: snapshot.record.id, limit: 1 })
+  if (!window) throw new Error('Missing large message window')
+  expect(window.messages[0].message).toEqual(snapshot.rows.messages[0].message)
+  const updated = { ...window.messages[0], message: { ...window.messages[0].message, modelId: 'updated' } }
+  await store.applyDiff(
+    { sessionId: snapshot.record.id, threads: { upsert: [], delete: [] }, messages: { upsert: [updated], delete: [] } },
+    { record: window.record, revision: window.revision + 1 },
+    window.revision
+  )
+  store.close()
+  const reopened = new IndexedDBSessionRowStore()
+  expect((await reopened.readMessages({ sessionId: snapshot.record.id, messageIds: ['body'] }))?.messages[0]).toEqual(
+    updated
+  )
+  reopened.close()
+})
+
+it('upgrades a v1 database additively and exports its existing whole message', async () => {
+  const snapshot = contextSnapshot({
+    id: 'legacy-large',
+    name: 'Legacy',
+    messages: [{ id: 'whole', role: 'user', contentParts: [{ type: 'text', text: 'old'.repeat(100_000) }] }],
+  })
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('chatbox-messages', 1)
+    request.onupgradeneeded = () => {
+      const threads = request.result.createObjectStore('threads', { keyPath: ['sessionId', 'threadId'] })
+      threads.createIndex('bySession', 'sessionId')
+      const messages = request.result.createObjectStore('messages', { keyPath: ['sessionId', 'messageId'] })
+      messages.createIndex('bySession', 'sessionId')
+      messages.createIndex('byStatus', ['status', 'sessionId', 'threadId', 'messageId'])
+    }
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const db = request.result
+      const tx = db.transaction(['threads', 'messages'], 'readwrite')
+      for (const thread of snapshot.rows.threads)
+        tx.objectStore('threads').put({ ...thread, sessionRecord: snapshot.record, commitRevision: 1 })
+      for (const message of snapshot.rows.messages) tx.objectStore('messages').put(message)
+      tx.oncomplete = () => {
+        db.close()
+        resolve()
+      }
+      tx.onerror = () => reject(tx.error)
+    }
+  })
+  const store = new IndexedDBSessionRowStore()
+  const archive = await exportFile(store, DEFAULT_BACKUP_PAGE_LIMITS)
+  await importBackupArchive(archive, {
+    storage: new MemoryStorage(),
+    metaStorage: new MemoryMetaStorage(),
+    sharded: { store },
+  })
+  expect((await store.readSnapshot(snapshot.record.id))?.rows).toEqual(snapshot.rows)
+  store.close()
+  await expect(
+    new Promise<void>((resolve, reject) => {
+      const old = indexedDB.open('chatbox-messages', 1)
+      old.onerror = () => reject(old.error)
+      old.onsuccess = () => {
+        old.result.close()
+        resolve()
+      }
+    })
+  ).rejects.toMatchObject({ name: 'VersionError' })
+})
+
+it('keeps wide messages readable while allowing only one payload write in flight', async () => {
+  const store = new IndexedDBSessionRowStore()
+  const snapshot = contextSnapshot({
+    id: 'wide',
+    name: 'Wide',
+    messages: [
+      {
+        id: 'wide-body',
+        role: 'user',
+        contentParts: Array.from({ length: 6000 }, () => ({ type: 'text' as const, text: 'x' })),
+      },
+    ],
+  })
+  const add = IDBObjectStore.prototype.add
+  let active = 0
+  let peak = 0
+  let chunks = 0
+  vi.spyOn(IDBObjectStore.prototype, 'add').mockImplementation(function (this: IDBObjectStore, value, key) {
+    const request = add.call(this, value, key)
+    if (this.name === 'payloads') {
+      chunks++
+      active++
+      peak = Math.max(peak, active)
+      request.addEventListener('success', () => {
+        active--
+      })
+    }
+    return request
+  })
+  await store.writeRows(snapshot)
+  expect(peak).toBe(1)
+  expect(chunks).toBeLessThan(4)
+  expect((await store.readSnapshot(snapshot.record.id))?.rows).toEqual(snapshot.rows)
+})
+
+it('cancels while preparing rollback for a legacy large row and preserves the original session', async () => {
+  const store = new IndexedDBSessionRowStore()
+  const original = fixture()
+  await store.writeRows(original)
+  const archive = await exportFile(store)
+  original.rows.messages[0].message.contentParts = [{ type: 'text', text: 'old'.repeat(100_000) }]
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('chatbox-messages')
+    request.onsuccess = () => {
+      const db = request.result
+      const tx = db.transaction('messages', 'readwrite')
+      tx.objectStore('messages').put(original.rows.messages[0])
+      tx.oncomplete = () => {
+        db.close()
+        resolve()
+      }
+      tx.onerror = () => reject(tx.error)
+    }
+    request.onerror = () => reject(request.error)
+  })
+  const before = await store.readSnapshot(original.record.id)
+  const controller = new AbortController()
+  const add = IDBObjectStore.prototype.add
+  vi.spyOn(IDBObjectStore.prototype, 'add').mockImplementation(function (this: IDBObjectStore, value, key) {
+    const request = add.call(this, value, key)
+    if (this.name === 'payloads') controller.abort()
+    return request
+  })
+  await expect(
+    importBackupArchive(archive, {
+      storage: new MemoryStorage(),
+      metaStorage: new MemoryMetaStorage(),
+      signal: controller.signal,
+      sharded: { store },
+    })
+  ).rejects.toThrow()
+  expect(controller.signal.aborted).toBe(true)
+  expect(await store.readSnapshot(original.record.id)).toEqual(before)
+})
 
 it('round trips full branches through public ZIP backup and resumes ordinary IndexedDB reads and edits', async () => {
   const store = new IndexedDBSessionRowStore()
@@ -221,7 +388,7 @@ it('keeps the original and another candidate when a structured-clone batch fails
   expect((await store.readSnapshot('backup/session'))?.record.name).toBe('Imported')
 })
 
-it('rejects a revision change between backup pages and enforces the row byte budget', async () => {
+it('rejects a revision change between backup pages and streams oversized rows as payloads', async () => {
   const store = new IndexedDBSessionRowStore()
   const original = fixture()
   await store.writeRows(original)
@@ -237,7 +404,14 @@ it('rejects a revision change between backup pages and enforces the row byte bud
     maxPageBytes: 4096,
     maxRecordBytes: 2048,
   })
-  await expect(bounded.next()).rejects.toThrow('Backup record requires payload blocks')
+  let payloads = 0
+  for await (const row of bounded) {
+    if (row.kind === 'message' && row.payload?.chunks) {
+      payloads++
+      for await (const bytes of row.payload.chunks()) expect(bytes.length).toBeLessThanOrEqual(128 * 1024)
+    }
+  }
+  expect(payloads).toBe(1)
 })
 
 it.each(['sql-to-indexeddb', 'indexeddb-to-sql'] as const)(

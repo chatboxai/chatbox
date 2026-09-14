@@ -15,3 +15,5 @@ export * from './session-selection'
 
 export * from './session-port'
 export * from './sharded-format'
+export { jsonUtf8Chunks, jsonUtf8Blocks, fitsInlineBackupJson } from './json-stream'
+export { backupPayloadBlocks } from './payload'

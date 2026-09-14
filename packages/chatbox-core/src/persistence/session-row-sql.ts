@@ -784,7 +784,58 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       const page = await this.database.query<MessageRecord>(selectMessagePageSql(cursor !== undefined), params)
       if (!page.length) break
       for (const entry of page) {
-        if (entry.payload_utf8_length > limits.maxRecordBytes) throw new Error('Backup message requires payload blocks')
+        const shell = toMessageRow(entry, { id: entry.message_id, role: 'user', contentParts: [] })
+        const rowBytes =
+          textEncoder.encode(JSON.stringify({ kind: 'message', message: shell })).length -
+          textEncoder.encode(JSON.stringify(shell.message)).length +
+          entry.payload_utf8_length
+        if (rowBytes > limits.maxRecordBytes) {
+          const { chunkCount, expectedLength } = this.validatePayloadManifest(entry)
+          const database = this.database
+          const chunks = async function* () {
+            let bytes = 0
+            const [summary] = await database.query<{ count: number; size: number; first: number; last: number }>(
+              'SELECT COUNT(*) AS count, COALESCE(SUM(length(CAST(value AS BLOB))), 0) AS size, MIN(chunk_index) AS first, MAX(chunk_index) AS last FROM session_message_payload_chunks WHERE payload_id = ?',
+              [entry.payload_id]
+            )
+            if (
+              !summary ||
+              summary.count !== chunkCount ||
+              summary.size !== expectedLength ||
+              summary.first !== 0 ||
+              summary.last !== chunkCount - 1
+            )
+              throw new Error('Invalid backup payload manifest')
+            for (let index = 0; index < chunkCount; index++) {
+              let length: number | undefined
+              for (let offset = 1; length === undefined || offset <= length; offset += PAYLOAD_CHUNK_SLICE_CHARACTERS) {
+                await assertRevision()
+                const [slice] = await database.query<{ value: string | null; length: number; type: string }>(
+                  `SELECT typeof(value) AS type, length(value) AS length, CASE WHEN typeof(value) = 'text' THEN substr(value, ?, ?) ELSE NULL END AS value FROM session_message_payload_chunks WHERE payload_id = ? AND chunk_index = ?`,
+                  [offset, PAYLOAD_CHUNK_SLICE_CHARACTERS, entry.payload_id, index]
+                )
+                if (
+                  !slice ||
+                  slice.type !== 'text' ||
+                  typeof slice.value !== 'string' ||
+                  !Number.isSafeInteger(slice.length) ||
+                  slice.length < 0 ||
+                  (length !== undefined && length !== slice.length)
+                )
+                  throw new Error('Invalid backup payload slice')
+                length = slice.length
+                const data = textEncoder.encode(slice.value)
+                bytes += data.length
+                if (bytes > expectedLength) throw new Error('Backup payload size mismatch')
+                await assertRevision()
+                yield data
+              }
+            }
+            if (bytes !== expectedLength) throw new Error('Backup payload size mismatch')
+          }
+          yield bounded({ kind: 'message', message: shell, payload: { size: expectedLength, chunks } })
+          continue
+        }
         const [message] = await this.readMessageRows([entry], Object.create(null))
         await assertRevision()
         yield bounded({ kind: 'message', message })

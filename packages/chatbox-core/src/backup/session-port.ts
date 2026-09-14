@@ -25,11 +25,13 @@ export function backupPageLimits(limits?: Partial<BackupPageLimits>): BackupPage
 export type BackupRow =
   | { kind: 'header'; record: SessionRecordV2 }
   | { kind: 'thread'; thread: ThreadRow }
-  | { kind: 'message'; message: MessageRow }
+  // With a payload, message.message is a validation projection; chunks carry the complete JSON value.
+  | { kind: 'message'; message: MessageRow; payload?: { size?: number; chunks?: () => AsyncIterable<Uint8Array> } }
 
 export interface BackupSessionCandidate {
+  appendPayload?(chunk: Uint8Array): Promise<void>
   append(row: BackupRow): Promise<void>
-  publish(): Promise<void>
+  publish(signal?: AbortSignal): Promise<void>
   rollback(): Promise<void>
   dispose(): Promise<void>
 }

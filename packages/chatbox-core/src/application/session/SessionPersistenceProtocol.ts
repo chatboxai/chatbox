@@ -1,3 +1,4 @@
+import { sessionContentHash } from './session-content-hash'
 import {
   isRowsSessionRecord,
   type SessionRecordStorePort,
@@ -78,26 +79,6 @@ export type PromotionResult =
   | { kind: 'committed'; snapshot: SessionRowSnapshot }
   | { kind: 'anchored'; reason: unknown }
 
-function stableSerialize(value: unknown): string {
-  return (
-    JSON.stringify(value, (_key, item: unknown) => {
-      if (!item || typeof item !== 'object' || Array.isArray(item)) return item
-      return Object.fromEntries(
-        Object.entries(item as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))
-      )
-    }) ?? String(value)
-  )
-}
-
-function hash32(value: string, seed: number): string {
-  let hash = seed >>> 0
-  for (let index = 0; index < value.length; index += 1) {
-    hash = Math.imul(hash ^ value.charCodeAt(index), 0x01000193) >>> 0
-    hash ^= hash >>> 13
-  }
-  return hash.toString(16).padStart(8, '0')
-}
-
 /** Compact representation-independent token used before a V1 or V2 update. */
 export function sessionContentFingerprint(session: Session, excludeEstimatedTextTokens = false): string {
   if (excludeEstimatedTextTokens) session = mapSessionMessages(session, withoutEstimatedTextTokens)
@@ -118,8 +99,7 @@ export function sessionContentFingerprint(session: Session, excludeEstimatedText
           ),
         }
       : comparable
-  const serialized = stableSerialize(content)
-  return `${serialized.length.toString(36)}:${hash32(serialized, 0x811c9dc5)}:${hash32(serialized, 0x9e3779b9)}`
+  return sessionContentHash(content)
 }
 
 function decodeSnapshot(snapshot: SessionRowSnapshot): Session {

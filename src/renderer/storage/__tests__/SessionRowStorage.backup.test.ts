@@ -1,11 +1,13 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { unzipSync } from 'fflate'
 import {
   prepareBackupExport,
   exportBackupArchive,
   importBackupArchive,
   DEFAULT_BACKUP_PAGE_LIMITS,
+  BackupManifestV3Schema,
   type BackupSessionStore,
 } from '@chatbox/core/backup'
 import { contextSnapshot } from '../../../../packages/chatbox-core/src/persistence/session-context-read.test-support'
@@ -66,6 +68,45 @@ async function exportFile(
   })
   return file
 }
+
+it('batches 64 KiB stored payloads and restores mixed message sizes through SQLite and IndexedDB', async () => {
+  const source = new IndexedDBSessionRowStore()
+  const database = openNodeSessionRowDatabase()
+  const snapshot = contextSnapshot({
+    id: 'batch-small-payloads',
+    name: 'Batched messages',
+    messages: Array.from({ length: 17 }, (_, index) => ({
+      id: `message-${String(index).padStart(2, '0')}`,
+      role: 'user' as const,
+      contentParts: [{ type: 'text' as const, text: 'x'.repeat(index === 8 ? 1024 * 1024 : 64 * 1024) }],
+    })),
+  })
+  try {
+    await source.writeRows(snapshot)
+    const archive = await exportFile(source, DEFAULT_BACKUP_PAGE_LIMITS)
+    const entries = unzipSync(new Uint8Array(await archive.arrayBuffer()))
+    const manifest = BackupManifestV3Schema.parse(JSON.parse(new TextDecoder().decode(entries['manifest.json'])))
+    const session = manifest.sessions[0]
+    expect(session.payloads).toHaveLength(9)
+    expect(session.shards.filter((shard) => shard.kind === 'message').length).toBeLessThan(6)
+    const sql = new SqlSessionRowStore(database)
+    for (const target of [sql, source]) {
+      await importBackupArchive(archive, {
+        storage: new MemoryStorage(),
+        metaStorage: new MemoryMetaStorage(),
+        sharded: { store: target },
+      })
+      expect((await target.readSnapshot(snapshot.record.id))?.rows).toEqual(snapshot.rows)
+    }
+    const again = unzipSync(new Uint8Array(await (await exportFile(source, DEFAULT_BACKUP_PAGE_LIMITS)).arrayBuffer()))
+    const repeated = BackupManifestV3Schema.parse(JSON.parse(new TextDecoder().decode(again['manifest.json'])))
+    expect(repeated.sessions[0].payloads.length).toBe(session.payloads.length)
+    expect(repeated.sessions[0].shards.length).toBe(session.shards.length)
+  } finally {
+    source.close()
+    database.close()
+  }
+})
 
 it('round trips a large IndexedDB message and resumes window reads, edits and reopening', async () => {
   const store = new IndexedDBSessionRowStore()
@@ -496,4 +537,45 @@ it('restores a mixed archive single layout message above the IndexedDB inline bu
     database.close()
     target.close()
   }
+})
+
+it('publishes medium inline archive messages as payload references and preserves rollback bodies', async () => {
+  const store = new IndexedDBSessionRowStore()
+  await store.writeRows(fixture())
+  const original = await store.readSnapshot('backup/session')
+  const draft = await store.beginBackupRestore('backup/session')
+  const body = 'x'.repeat(64 * 1024)
+  for await (const row of store.iterateBackupRows('backup/session', DEFAULT_BACKUP_PAGE_LIMITS)) {
+    await draft.append(
+      row.kind === 'message'
+        ? {
+            ...row,
+            message: {
+              ...row.message,
+              message: { ...row.message.message, contentParts: [{ type: 'text', text: body }] },
+            },
+          }
+        : row
+    )
+  }
+  const put = IDBObjectStore.prototype.put
+  let published = 0
+  const spy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
+    if (this.name === 'messages') {
+      expect(value.message).toBeUndefined()
+      expect(value.payload.size).toBeGreaterThan(64 * 1024)
+      published++
+    }
+    return put.call(this, value, key)
+  })
+  await draft.publish()
+  spy.mockRestore()
+  expect(published).toBe(original?.rows.messages.length)
+  expect((await store.readSnapshot('backup/session'))?.rows.messages[0].message.contentParts).toEqual([
+    { type: 'text', text: body },
+  ])
+  await draft.rollback()
+  await draft.dispose()
+  expect(await store.readSnapshot('backup/session')).toEqual(original)
+  store.close()
 })

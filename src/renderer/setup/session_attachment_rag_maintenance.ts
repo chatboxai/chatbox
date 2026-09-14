@@ -1,18 +1,16 @@
 import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import type {
-  Message,
-  Session,
   SessionAttachmentOwnershipClaim,
   SessionAttachmentRagMaintenanceResult,
   SessionAttachmentRagMaintenanceScope,
   SessionMetaPage,
 } from '@shared/types'
-import { rendererApplication } from '@/app/renderer-application'
+import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { sessionStartupRecovery } from '@/packages/session-startup-recovery'
 import platform from '@/platform'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
-import { collectAttachmentOwnershipClaims } from '../../shared/session-attachment-rag/ownership'
+import type { SessionOwnership } from '@/adapters/session-ownership'
 
 const log = getLogger('session-attachment-rag-maintenance')
 const ORPHAN_CLEANUP_INTERVAL_MS = 30 * 60 * 1000
@@ -22,21 +20,20 @@ const FIRST_PASS_WAIT_MS = 10 * 60 * 1000
 let maintenanceStarted = false
 
 export interface SessionAttachmentRagMaintenanceSource {
-  getSession(sessionId: string): Promise<Session | null>
+  getSessionOwnership(sessionId: string): Promise<SessionOwnership>
   listSessionsMetaPage(cursor: number): Promise<SessionMetaPage>
 }
 
 const defaultSource: SessionAttachmentRagMaintenanceSource = {
-  getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
+  getSessionOwnership: (sessionId) => sessionRepository.collectSessionAttachmentOwnership(sessionId),
   listSessionsMetaPage: (cursor) => rendererApplication.sessions.listSessionsMetaPage(cursor),
 }
 
 export interface SessionAttachmentRagMaintenanceOptions {
   source?: SessionAttachmentRagMaintenanceSource
   /**
-   * Resolves once the background session row migration is over. Reading every
-   * session migrates the ones still stored in their legacy form, so the first
-   * pass waits instead of converting the whole library in one startup burst.
+   * Resolves once background session row migration is over. The first pass
+   * waits to avoid competing with migration for storage I/O.
    */
   sessionMigrationDone?: Promise<void>
   firstPassWaitMs?: number
@@ -46,22 +43,6 @@ type SessionAttachmentRagMaintenanceTask = {
   name: string
   intervalMs: number
   run: () => Promise<SessionAttachmentRagMaintenanceResult>
-}
-
-function collectSessionMessages(session: Session): Message[] {
-  const messages: Message[] = [...session.messages]
-
-  for (const thread of session.threads ?? []) {
-    messages.push(...thread.messages)
-  }
-
-  for (const fork of Object.values(session.messageForksHash ?? {})) {
-    for (const list of fork.lists) {
-      messages.push(...list.messages)
-    }
-  }
-
-  return messages
 }
 
 async function collectMaintenanceScope(
@@ -86,15 +67,9 @@ async function collectMaintenanceScope(
         return null
       }
       sessionIds.push(sessionMeta.id)
-      const session = await source.getSession(sessionMeta.id)
-      if (!session) {
-        continue
-      }
-      const messages = collectSessionMessages(session)
-      for (const message of messages) {
-        messageIds.add(message.id)
-      }
-      attachmentReferences.push(...collectAttachmentOwnershipClaims(sessionMeta.id, messages))
+      const ownership = await source.getSessionOwnership(sessionMeta.id)
+      for (const id of ownership.messageIds) messageIds.add(id)
+      for (const reference of ownership.attachmentReferences) attachmentReferences.push(reference)
     }
     cursor = page.nextCursor
   }
@@ -185,7 +160,9 @@ export function initSessionAttachmentRagMaintenance(options: SessionAttachmentRa
       await waitForSessionMigration(options.sessionMigrationDone, options.firstPassWaitMs ?? FIRST_PASS_WAIT_MS)
     }
     await runSessionAttachmentRagMaintenancePass({ source })
-  })()
+  })().catch((error: unknown) => {
+    log.warn(`${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [MAINTENANCE] Initial pass failed:`, error)
+  })
 
   for (const task of tasks) {
     setInterval(() => {

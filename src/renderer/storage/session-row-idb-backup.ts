@@ -36,6 +36,7 @@ import {
   type PayloadRef,
   type PayloadChunk,
 } from './session-row-idb-payload'
+import { prepareIndexedDBBackupMessage } from './session-row-idb-backup-source'
 
 const encoder = new TextEncoder()
 const INDEX_BUDGET = 16 * 1024 * 1024
@@ -238,11 +239,7 @@ export async function* iterateIndexedDBBackupRows(
       continue
     }
     const stored = row.message as StoredMessageRow
-    if (!stored.payload && fitsInlineBackupJson(row, limits.maxRecordBytes)) {
-      yield row
-      continue
-    }
-    const { message, payload, ...metadata } = stored
+    const { message, payload } = stored
     const chunks = async function* () {
       await readPage([])
       if (payload) yield* readBackupPayload(db, sessionId, payload, signal)
@@ -254,11 +251,7 @@ export async function* iterateIndexedDBBackupRows(
       }
       await readPage([])
     }
-    yield {
-      kind: 'message',
-      message: { ...metadata, message: { id: stored.messageId, role: 'user', contentParts: [] } },
-      payload: { size: payload?.size, chunks },
-    }
+    yield* prepareIndexedDBBackupMessage(stored, limits.maxRecordBytes, chunks, signal)
   }
   await readPage([])
 }
@@ -435,6 +428,17 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
             throw new Error('Invalid backup active thread')
           active = true
         }
+      }
+      // Keep the atomic publication transaction small: bodies live in independently written payload blocks.
+      if (row.kind === 'message' && !row.payload && !fitsInlineBackupJson(row.message, 128 * 1024)) {
+        const payload: PayloadRef = { id: uuid(), size: 0, count: 0 }
+        candidatePayloads.add(payload.id)
+        const chunks = async function* () {
+          yield* jsonUtf8Chunks(row.message.message)
+        }
+        for await (const chunk of backupPayloadBlocks(chunks())) await appendChunk(payload, chunk)
+        const { message, ...metadata } = row.message
+        value = { ...metadata, payload }
       }
       await transaction<void>(db, 'readwrite', ({ tx, finish }) => {
         tx.objectStore(THREADS).add(stage(candidateId, count, row.kind === 'message' ? MESSAGES : THREADS, value))

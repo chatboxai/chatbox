@@ -1,5 +1,10 @@
 import { RowBackedSessionRepository, type SessionMigrationOutcome } from '@chatbox/core/application/session'
-import { BackupOperationBusyError, throwIfAborted, type BackupSessionStore } from '@chatbox/core/backup'
+import {
+  BackupOperationBusyError,
+  legacyBackupSource,
+  throwIfAborted,
+  type BackupSessionStore,
+} from '@chatbox/core/backup'
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '@chatbox/core/ports'
 import {
   type SessionContextRequest,
@@ -24,6 +29,7 @@ import type { Session, SessionMetaPage, SessionMetaRecord } from '@shared/types'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import storage from '@/storage'
+import { collectSessionOwnership } from './session-ownership'
 import { rendererBackupSessionStore } from './backup-session-store'
 import { type CurrentSessionDataStorage, CurrentSessionRecordStore } from './CurrentSessionRecordStore'
 
@@ -265,6 +271,25 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
         : undefined
       return action((id) => reader.getSession(id), metaStorage, backupStore)
     }, signal)
+  }
+  collectSessionAttachmentOwnership(sessionId: string) {
+    return withSharedSessionStorageAccess(async () => {
+      const rows = this.createRowStore()
+      if (!('iterateBackupRows' in rows && 'beginBackupRestore' in rows)) {
+        throw new Error('Bounded session ownership reads are unavailable')
+      }
+      const storage = this.backupDataStorage
+      const source = legacyBackupSource(rows as SessionRowStorePort & BackupSessionStore, {
+        listSessionIds: () => this.records.listIds(),
+        open: storage.openBackupValue ? (id) => storage.openBackupValue!(`session:${id}`) : undefined,
+        readValue: async (id) => {
+          const record = await this.records.getRecord(id)
+          if (!record || ('storageFormat' in record && record.storageFormat === 'rows')) return null
+          return record as Session
+        },
+      })
+      return collectSessionOwnership(source, sessionId)
+    })
   }
   getCompleteSessionSource(sessionId: string) {
     return this.getData().getCompleteSessionSource(sessionId)

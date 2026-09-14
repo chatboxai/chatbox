@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import type { Session, SessionMetaPage } from '@shared/types'
+import type { SessionMetaPage } from '@shared/types'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SessionAttachmentRagMaintenanceSource } from './session_attachment_rag_maintenance'
 
@@ -12,6 +12,7 @@ const { runMaintenance } = vi.hoisted(() => ({
 vi.mock('@/platform', () => ({
   default: {
     isDesktopLike: true,
+    appLog: vi.fn(async () => {}),
     getSessionAttachmentRagController: () => ({ runMaintenance }),
   },
 }))
@@ -19,16 +20,17 @@ vi.mock('@/platform', () => ({
 vi.mock('@/app/renderer-application', async () => {
   const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
   return {
+    sessionRepository: { collectSessionAttachmentOwnership: vi.fn() },
     rendererApplication: {
       backupOperations: new BackupOperationCoordinator(),
-      sessionQueryBridge: { getSession: vi.fn(() => Promise.resolve(null)) },
+      sessionQueryBridge: { getSessionOwnership: vi.fn(() => Promise.resolve(null)) },
       sessions: { listSessionsMetaPage: vi.fn(() => Promise.resolve({ items: [], nextCursor: null, total: 0 })) },
     },
   }
 })
 
 function createSource(): SessionAttachmentRagMaintenanceSource & {
-  getSession: ReturnType<typeof vi.fn>
+  getSessionOwnership: ReturnType<typeof vi.fn>
   listSessionsMetaPage: ReturnType<typeof vi.fn>
 } {
   const page: SessionMetaPage = {
@@ -36,9 +38,9 @@ function createSource(): SessionAttachmentRagMaintenanceSource & {
     nextCursor: null,
     total: 1,
   }
-  const session: Session = { id: 'session-1', name: 'Session', type: 'chat', messages: [] }
+  const ownership = { messageIds: [], attachmentReferences: [] }
   return {
-    getSession: vi.fn(() => Promise.resolve(session)),
+    getSessionOwnership: vi.fn(() => Promise.resolve(ownership)),
     listSessionsMetaPage: vi.fn(() => Promise.resolve(page)),
   }
 }
@@ -71,7 +73,7 @@ describe('initSessionAttachmentRagMaintenance', () => {
       canceledPurgedCount: 0,
       orphanDeletedIds: [],
     })
-    expect(source.getSession).not.toHaveBeenCalled()
+    expect(source.getSessionOwnership).not.toHaveBeenCalled()
     expect(runMaintenance).not.toHaveBeenCalled()
   })
 
@@ -80,7 +82,7 @@ describe('initSessionAttachmentRagMaintenance', () => {
     const { runSessionAttachmentRagMaintenancePass, sessionStartupRecovery } = await loadMaintenance()
     sessionStartupRecovery.fail('deleted-session')
     await runSessionAttachmentRagMaintenancePass({ source })
-    expect(source.getSession).toHaveBeenCalledWith('session-1')
+    expect(source.getSessionOwnership).toHaveBeenCalledWith('session-1')
     expect(runMaintenance).toHaveBeenCalledWith({
       sessionIds: ['session-1'],
       messageIds: [],
@@ -95,7 +97,7 @@ describe('initSessionAttachmentRagMaintenance', () => {
     initSessionAttachmentRagMaintenance({ source, sessionMigrationDone: Promise.resolve() })
     await vi.advanceTimersByTimeAsync(0)
     expect(source.listSessionsMetaPage).toHaveBeenCalled()
-    expect(source.getSession).not.toHaveBeenCalled()
+    expect(source.getSessionOwnership).not.toHaveBeenCalled()
     expect(runMaintenance).not.toHaveBeenCalled()
   })
 
@@ -111,12 +113,12 @@ describe('initSessionAttachmentRagMaintenance', () => {
     await vi.advanceTimersByTimeAsync(60_000)
 
     expect(source.listSessionsMetaPage).not.toHaveBeenCalled()
-    expect(source.getSession).not.toHaveBeenCalled()
+    expect(source.getSessionOwnership).not.toHaveBeenCalled()
 
     finishMigration()
     await vi.advanceTimersByTimeAsync(0)
 
-    expect(source.getSession).toHaveBeenCalledWith('session-1')
+    expect(source.getSessionOwnership).toHaveBeenCalledWith('session-1')
     expect(runMaintenance).toHaveBeenCalledOnce()
   })
 
@@ -131,11 +133,11 @@ describe('initSessionAttachmentRagMaintenance', () => {
     })
     await vi.advanceTimersByTimeAsync(599_000)
 
-    expect(source.getSession).not.toHaveBeenCalled()
+    expect(source.getSessionOwnership).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(1000)
 
-    expect(source.getSession).toHaveBeenCalledWith('session-1')
+    expect(source.getSessionOwnership).toHaveBeenCalledWith('session-1')
     expect(runMaintenance).toHaveBeenCalledOnce()
   })
 
@@ -146,7 +148,32 @@ describe('initSessionAttachmentRagMaintenance', () => {
     initSessionAttachmentRagMaintenance({ source })
     await vi.advanceTimersByTimeAsync(0)
 
-    expect(source.getSession).toHaveBeenCalledWith('session-1')
+    expect(source.getSessionOwnership).toHaveBeenCalledWith('session-1')
     expect(runMaintenance).toHaveBeenCalledOnce()
   })
+})
+
+test('does not clean orphan attachments after an incomplete ownership scan', async () => {
+  const source = createSource()
+  source.getSessionOwnership.mockRejectedValue(new Error('Incomplete ownership'))
+  const { runSessionAttachmentRagMaintenancePass } = await loadMaintenance()
+  runMaintenance.mockClear()
+  await expect(runSessionAttachmentRagMaintenancePass({ source })).rejects.toThrow('Incomplete ownership')
+  expect(runMaintenance).not.toHaveBeenCalled()
+})
+
+test('contains initial maintenance failures without running cleanup', async () => {
+  vi.useFakeTimers()
+  try {
+    const source = createSource()
+    source.getSessionOwnership.mockRejectedValue(new Error('Incomplete ownership'))
+    const { initSessionAttachmentRagMaintenance } = await loadMaintenance()
+    runMaintenance.mockClear()
+    initSessionAttachmentRagMaintenance({ source })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(runMaintenance).not.toHaveBeenCalled()
+  } finally {
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  }
 })

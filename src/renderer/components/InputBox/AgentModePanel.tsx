@@ -122,6 +122,7 @@ export interface AgentModePanelProps {
   sessionId: string
   providerId?: string
   modelId?: string
+  hasDraftAttachments?: boolean
   modelSupportsAgentMode?: boolean
   webBrowsingMode: boolean
   onWebBrowsingChange: (enabled: boolean) => void

@@ -304,6 +304,9 @@ function Index() {
           // Bake the exact mode shown while the chat was "new" into the created session, so
           // remembered defaults and transient selections follow the same resolution path.
           agentMode: getSessionAgentModeEntry('new', undefined, sessionAgentModeMap),
+          ...(newSessionState.localWorkCapabilities !== undefined
+            ? { localWorkCapabilities: newSessionState.localWorkCapabilities }
+            : {}),
           // Working directories bound while the chat was still "new" (not yet persisted),
           // falling back to the remembered default from earlier chats.
           ...(effectiveWorkingDirectories?.length ? { workingDirectories: effectiveWorkingDirectories } : {}),
@@ -334,6 +337,7 @@ function Index() {
         addSessionKnowledgeBase(newSession.id, newSessionState.knowledgeBase)
       }
       if (
+        newSessionState.localWorkCapabilities !== undefined ||
         newSessionState.knowledgeBase ||
         newSessionState.workingDirectories?.length ||
         newSessionState.agentFullAccess ||
@@ -363,6 +367,7 @@ function Index() {
     [
       session,
       addSessionKnowledgeBase,
+      newSessionState.localWorkCapabilities,
       newSessionState.knowledgeBase,
       newSessionState.workingDirectories,
       newSessionState.agentFullAccess,

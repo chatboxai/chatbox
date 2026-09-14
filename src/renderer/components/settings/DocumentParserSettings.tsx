@@ -11,7 +11,7 @@ const ALL_PARSER_OPTIONS: {
   label: string
   desktopOnly?: boolean
 }[] = [
-  { value: 'local', label: 'Local', desktopOnly: true }, // Only available on desktop
+  { value: 'local', label: 'Local' },
   { value: 'chatbox-ai', label: 'Chatbox AI' },
   { value: 'mineru', label: 'MinerU', desktopOnly: true }, // Only available on desktop (requires IPC)
 ]
@@ -45,6 +45,7 @@ export function DocumentParserSettings({ showTitle = true }: DocumentParserSetti
     const isDesktop = platform.type === 'desktop'
     return ALL_PARSER_OPTIONS.filter((opt) => {
       if (opt.desktopOnly && !isDesktop) return false
+      if (opt.value === 'local' && !isDesktop && platform.type !== 'mobile') return false
       return true
     })
   }, [])
@@ -119,7 +120,11 @@ export function DocumentParserSettings({ showTitle = true }: DocumentParserSetti
       />
 
       <Text size="xs" c="chatbox-gray">
-        {t(PARSER_DESCRIPTIONS[currentParserType])}
+        {currentParserType === 'local' && platform.type === 'mobile'
+          ? t(
+              'Parses text, DOCX, XLSX, and PPTX files locally first (Office files up to 10 MB). If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.'
+            )
+          : t(PARSER_DESCRIPTIONS[currentParserType])}
       </Text>
 
       {currentParserType === 'mineru' && (

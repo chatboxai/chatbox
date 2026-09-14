@@ -114,4 +114,33 @@ describe('generated images in the artifacts area', () => {
     expect(screen.queryByText('Artifacts')).toBeNull()
     expect(screen.queryByTestId('picture-gallery')).toBeNull()
   })
+  it('shows mobile workspace downloads in the shared artifacts area', () => {
+    useImageGenerationRecordsMock.mockReturnValue([])
+    const part: MessageToolCallPart = {
+      type: 'tool-call',
+      state: 'result',
+      toolCallId: 'local-report',
+      toolName: 'create_download',
+      args: { path: 'report.html' },
+      result: {
+        artifacts: [
+          {
+            path: 'artifacts/run/report.html',
+            name: 'report.html',
+            mimeType: 'text/html',
+            size: 100,
+            storageKey: 'file:work:raw',
+          },
+        ],
+      },
+    }
+    render(
+      <MantineProvider>
+        <MessageArtifactsUI imageParts={[]} downloadParts={[part]} sessionId="s1" messageId="m1" />
+      </MantineProvider>
+    )
+    expect(screen.getByText('report.html')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save / Share' })).toBeTruthy()
+  })
 })

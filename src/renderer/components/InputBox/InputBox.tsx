@@ -1,3 +1,4 @@
+import { LOCAL_WORK_ATTACHMENT_ACCEPT } from '@/packages/mobile-work-mode/attachments'
 import { listPendingPauseInteractions } from '@chatbox/core/message-approval'
 import { getSubmitAvailability } from '@chatbox/core/session/action-gates'
 import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
@@ -71,6 +72,7 @@ import {
   useStableEligibleMessages,
 } from '@/packages/context-management'
 import { trackingEvent } from '@/packages/event'
+import { isLocalWorkAttachment, LOCAL_WORK_ATTACHMENT_MAX_BYTES } from '@/packages/mobile-work-mode/attachments'
 import {
   getModelContextWindowSync,
   getProviderModelContextWindowSync,
@@ -982,6 +984,14 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         // itself; the projection check inside skips a draft edited since.
         const outgoingMessage = seedExactDraftTokens(latestMessage, exactDraftTokens)
 
+        if (platform.type === 'mobile' && agentModeUIState.isActive) {
+          const [{ capacitorWorkspace }, { currentBlobStorage }] = await Promise.all([
+            import('@/packages/mobile-work-mode/runtime'),
+            import('@/adapters/CurrentBlobStorage'),
+          ])
+          await capacitorWorkspace.preflight(sessionId || 'new', [outgoingMessage], currentBlobStorage)
+        }
+
         const messageTextForHistory = latestMessage.contentParts.find((p) => p.type === 'text')?.text || ''
 
         const finalizeUserMessageDraft = () => {
@@ -1259,9 +1269,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         })
     }
 
-    // In agent mode, allow all file types (sandbox can handle archives, binaries, etc.)
-    // isActive is true only for 'on' — 'auto' and mobile/web behave like normal mode,
-    // so they keep the standard file-type validation and accept filter.
+    // Desktop execution accepts arbitrary files; mobile execution uses its local document formats.
     const isAgentModeActive = agentModeUIState.isActive
 
     const insertFiles = async (files: File[], options: InsertFilesOptions = {}) => {
@@ -1290,6 +1298,16 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           }))
           imageCount++
         } else {
+          if (platform.type === 'mobile' && isAgentModeActive) {
+            if (file.size > LOCAL_WORK_ATTACHMENT_MAX_BYTES) {
+              toastActions.add(t('Work Mode attachments must be {{limit}} or smaller.', { limit: '10 MB' }))
+              continue
+            }
+            if (!isLocalWorkAttachment(file.name)) {
+              toastActions.add(t('Work Mode supports text, Word (.docx), Excel (.xlsx), and PowerPoint (.pptx) files.'))
+              continue
+            }
+          }
           if (file.size > KNOWLEDGE_BASE_MAX_FILE_SIZE) {
             toastActions.add(
               t('Chat attachments must be {{limit}} or smaller.', {
@@ -1920,7 +1938,13 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 className="hidden"
                 onChange={onFileInputChange}
                 multiple
-                accept={isAgentModeActive ? undefined : getFileAcceptString()}
+                accept={
+                  isAgentModeActive
+                    ? platform.type === 'mobile'
+                      ? LOCAL_WORK_ATTACHMENT_ACCEPT
+                      : undefined
+                    : getFileAcceptString()
+                }
               />
 
               {/* Left Group: Tool Buttons */}
@@ -1942,6 +1966,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   iconSize={toolbarIconSize}
                   compact={isSmallScreen}
                   modelSupportsAgentMode={model ? modelSupportsAgentMode : true}
+                  hasDraftAttachments={attachments.length > 0 || pictureKeys.length > 0}
                   webBrowsingMode={webBrowsingMode}
                   onWebBrowsingChange={(v) => {
                     setWebBrowsingMode(v)

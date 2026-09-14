@@ -18,6 +18,31 @@ const allowedSharedImports = new Map([
     new Set(['@shared/providers/api-style', '@shared/utils/reasoning-control']),
   ],
 ])
+// Host-neutral execution and artifact contracts shared by RN and Capacitor.
+allowedSharedImports.set('apps/mobile/src/application/createPersistentMobileApplication.ts', new Set(['@shared/mobile-work/workspace-cleanup']))
+allowedSharedImports.set('apps/mobile/src/screens/HtmlPreviewScreen.tsx', new Set(['@shared/mobile-work/artifact-preview']))
+allowedSharedImports.set('apps/mobile/src/components/composer/ChatComposer.tsx', new Set(['@shared/mobile-work/capabilities', '@shared/models/utils/deepseek']))
+allowedSharedImports.set('apps/mobile/src/screens/SessionScreen.tsx', new Set(['@shared/mobile-work/capabilities']))
+allowedSharedImports.set('apps/mobile/src/work-mode/MobileExecutionHost.tsx', new Set(['@shared/mobile-work/generated/worker-source']))
+allowedSharedImports.set('apps/mobile/src/work-mode/MobileExecutionService.ts', new Set(['@shared/mobile-work/MobileExecutionService']))
+allowedSharedImports.set('apps/mobile/src/application/createMobileGeneration.ts', new Set(['@shared/mobile-work/model-disclosure']))
+allowedSharedImports.set('apps/mobile/src/work-mode/MobileWorkMode.ts', new Set(['@shared/mobile-work/model-disclosure', '@shared/mobile-work/LocalWorkMode', '@shared/mobile-work/view-image', '@shared/tools/view-image']))
+allowedSharedImports.set('apps/mobile/src/work-mode/MobileWorkspace.ts', new Set(['@shared/mobile-work/workspace-lifecycle', '@shared/mobile-work/workspace-inputs','@shared/work-artifacts']))
+allowedSharedImports.set('apps/mobile/src/work-mode/WorkMessageArtifacts.tsx', new Set(['@shared/work-artifacts']))
+allowedSharedImports.set('apps/mobile/src/work-mode/abort.ts', new Set(['@shared/mobile-work/abort']))
+allowedSharedImports.set('apps/mobile/src/work-mode/execution-html.ts', new Set(['@shared/mobile-work/execution-html']))
+allowedSharedImports.set('apps/mobile/src/work-mode/site-preview.ts', new Set(['@shared/mobile-work/site-preview']))
+allowedSharedImports.set('apps/mobile/src/work-mode/system-tools/index.ts', new Set(['@shared/mobile-work/system-tools']))
+allowedSharedImports.set('apps/mobile/src/work-mode/ui/WorkModeMenu.tsx', new Set(['@shared/mobile-work/capabilities']))
+allowedSharedImports.set('apps/mobile/src/work-mode/workspace-path.ts', new Set(['@shared/mobile-work/workspace-path']))
+
+allowedSharedImports.set('apps/mobile/src/work-mode/normalize-work-image.ts', new Set(['@shared/mobile-work/view-image']))
+
+allowedSharedImports.set('apps/mobile/src/components/message/MessageWorkTimeline.tsx', new Set(['@shared/mobile-work/execution-feedback']))
+allowedSharedImports.set('apps/mobile/src/screens/settings/SkillsSettingsScreen.tsx', new Set(['@shared/mobile-work/skill-settings']))
+allowedSharedImports.set('apps/mobile/src/work-mode/ui/WorkArtifactCards.tsx', new Set(['@shared/work-artifacts']))
+allowedSharedImports.set('apps/mobile/src/work-mode/ui/authorizeSystemTool.ts', new Set(['@shared/mobile-work/authorization-text', '@shared/mobile-work/system-tools']))
+
 const expectedRoutes = [
   '(chat)/_layout.tsx',
   '(chat)/session/[sessionId].tsx',

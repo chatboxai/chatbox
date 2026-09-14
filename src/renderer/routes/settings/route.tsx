@@ -71,7 +71,7 @@ const ITEMS = [
         },
       ]
     : []),
-  ...(featureFlags.skills
+  ...(featureFlags.skills || platform.type === 'mobile'
     ? [
         {
           key: 'skills',

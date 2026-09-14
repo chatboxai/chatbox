@@ -1,3 +1,4 @@
+import type { LocalWorkCapabilityId } from '@shared/mobile-work/capabilities'
 import type {
   AgentModeEntry,
   AgentModeValue,
@@ -72,6 +73,7 @@ export const uiStore = createStore(
         newSessionState: {} as {
           knowledgeBase?: Pick<KnowledgeBase, 'id' | 'name'>
           webBrowsing?: boolean
+          localWorkCapabilities?: LocalWorkCapabilityId[]
           // Working directories bound before the session is persisted; transferred into the
           // created session's settings on first submit (see routes/index.tsx).
           workingDirectories?: string[]

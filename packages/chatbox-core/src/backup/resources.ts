@@ -1,5 +1,6 @@
 import { isTextFilePath } from '@shared/file-extensions'
 import { getToolResultImageReference } from '@shared/tool-result-image'
+import { getWorkArtifacts } from '@shared/work-artifacts'
 import type { CopilotDetail, Message, MessageFile, Session, SessionMetaRecord, Settings } from '@shared/types'
 import type { BackupResourceEntry, BackupWarning } from './types'
 
@@ -76,6 +77,16 @@ function collectMessageReferences(
     if (part.type === 'image') {
       addReference(references, { storageKey: part.storageKey, kind: 'image', sessionId })
     } else if (part.type === 'tool-call') {
+      for (const artifact of getWorkArtifacts(part)) {
+        if (artifact.storageKey)
+          addReference(references, {
+            storageKey: artifact.storageKey,
+            kind: 'raw-attachment',
+            sessionId,
+            mimeType: artifact.mimeType,
+            filename: artifact.name,
+          })
+      }
       if (part.resultStorageKey) {
         addReference(references, {
           storageKey: part.resultStorageKey,
@@ -237,6 +248,13 @@ function restoreMessageResourceKeys(message: Message, resourceKeyMap: ReadonlyMa
         const restoredStorageKey = restoreResourceKey(part.resultStorageKey, resourceKeyMap)
         if (restoredStorageKey === undefined) delete part.resultStorageKey
         else part.resultStorageKey = restoredStorageKey
+      }
+      for (const artifact of getWorkArtifacts(part)) {
+        if (artifact.storageKey !== undefined) {
+          const restored = restoreResourceKey(artifact.storageKey, resourceKeyMap)
+          if (restored === undefined) delete artifact.storageKey
+          else artifact.storageKey = restored
+        }
       }
       const imageReference = getToolResultImageReference(part)
       if (imageReference) {

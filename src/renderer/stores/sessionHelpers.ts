@@ -24,6 +24,7 @@ import { rendererApplication, sessionRepository } from '@/app/renderer-applicati
 import { getLogger } from '@/lib/utils'
 import { PREVIEW_LINES } from '@/packages/context-management/attachment-payload'
 import * as localParser from '@/packages/local-parser'
+import { prepareLocalWorkAttachment } from '@/packages/mobile-work-mode/attachments'
 import * as remote from '@/packages/remote'
 import { estimateTokens } from '@/packages/token'
 import platform from '@/platform'
@@ -657,7 +658,15 @@ async function prepareFileAttachmentOnce(
   options?: AttachmentPreparationOptions
 ): Promise<AttachmentPreparationResult> {
   try {
-    const { asset: _preparedAsset, ...prepared } = await attachmentService.prepareOrThrow(asset, options)
+    const result =
+      platform.type === 'mobile' && options?.agentMode
+        ? await prepareLocalWorkAttachment(
+            asset,
+            () => pickedAssetAdapter.readDataUrl(asset),
+            (key, value) => storage.setBlob(key, value)
+          )
+        : await attachmentService.prepareOrThrow(asset, options)
+    const { asset: _preparedAsset, ...prepared } = result
     return { file, ...prepared }
   } catch (error) {
     log.error(`${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Failed to preprocess file "${file.name}":`, error)

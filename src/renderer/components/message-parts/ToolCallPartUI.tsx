@@ -1,3 +1,4 @@
+import { workExecutionFeedback } from '@shared/mobile-work/execution-feedback'
 import { isApprovalPauseReason } from '@chatbox/core/message-approval'
 import NiceModal from '@ebay/nice-modal-react'
 import {
@@ -18,6 +19,7 @@ import { ChatboxAIAPIError } from '@shared/models/errors'
 import { SANDBOX_EXEC_ERROR_CODES } from '@shared/sandbox-provider'
 import { getToolResultImageReference } from '@shared/tool-result-image'
 import type { Message, MessageReasoningPart, MessageTextPart, MessageToolCallPart } from '@shared/types'
+import { getWorkArtifacts } from '@shared/work-artifacts'
 import {
   IconBulb,
   IconCheck,
@@ -76,6 +78,7 @@ import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import { inlineSandboxHtmlAssets } from './html-artifact-assets'
 import { getLocalFileName, localFilePathToUrl } from './local-file-url'
+import { MobileWorkArtifactsUI } from './MobileWorkArtifactsUI'
 import { ReasoningInlineSummary } from './ReasoningInlineSummary'
 import { ToolUnavailableCard } from './ToolUnavailableCard'
 
@@ -162,7 +165,10 @@ function extractToolError(part: MessageToolCallPart): { errorCode?: number; erro
 
 function hasKnownToolError(part: MessageToolCallPart): boolean {
   const { errorCode } = extractToolError(part)
-  return errorCode !== undefined && ChatboxAIAPIError.getDetail(errorCode) !== null
+  return (
+    Boolean(workExecutionFeedback(part.result, (key: string) => key)) ||
+    (errorCode !== undefined && ChatboxAIAPIError.getDetail(errorCode) !== null)
+  )
 }
 
 const ToolCallErrorDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
@@ -182,7 +188,7 @@ const ToolCallErrorDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   }
   return (
     <Text size="sm" c="chatbox-error" style={WRAPPABLE_TEXT_STYLE}>
-      {errorText || t('Tool call failed')}
+      {workExecutionFeedback(part.result, t) || errorText || t('Tool call failed')}
     </Text>
   )
 }
@@ -820,7 +826,7 @@ function decodeBase64Utf8(base64: string): string {
   return new TextDecoder().decode(bytes)
 }
 
-const CreateDownloadUI: FC<{ part: MessageToolCallPart } & ToolCallActionContext> = ({
+const DesktopCreateDownloadUI: FC<{ part: MessageToolCallPart } & ToolCallActionContext> = ({
   part,
   sessionId,
   messageId,
@@ -1025,10 +1031,19 @@ const CreateDownloadUI: FC<{ part: MessageToolCallPart } & ToolCallActionContext
   )
 }
 
+const CreateDownloadUI: FC<{ part: MessageToolCallPart } & ToolCallActionContext> = (props) => {
+  const localArtifacts = getWorkArtifacts(props.part)
+  return localArtifacts.length > 0 ? (
+    <MobileWorkArtifactsUI artifacts={localArtifacts} sessionId={props.sessionId} />
+  ) : (
+    <DesktopCreateDownloadUI {...props} />
+  )
+}
+
 function isDownloadArtifact(part: MessageToolCallPart): boolean {
   if (part.toolName !== 'create_download' || part.state !== 'result') return false
   const result = part.result as Record<string, unknown> | undefined
-  return result?.downloadable === true
+  return result?.downloadable === true || getWorkArtifacts(part).length > 0
 }
 
 export const MessageArtifactsUI: FC<

@@ -1,3 +1,4 @@
+import { LOCAL_WORK_CAPABILITY_IDS } from '@shared/mobile-work/capabilities'
 import { z } from 'zod'
 import { DEFAULT_INTERFACE_COLORS, getDefaultInterfaceColors } from '../../theme-colors'
 import { MEMORY_STATE_TOKEN_MAX_CHARS, SessionPromptContextSnapshotSchema } from '../../types/agent-persona'
@@ -225,6 +226,7 @@ export const SessionSettingsSchema = GlobalSessionSettingsSchema.extend({
   // fall back to it when this newer field is missing or stripped during sync.
   commandApprovalMode: z.enum(COMMAND_APPROVAL_MODES).optional().catch(undefined),
   agentMode: AgentModeEntrySchema.optional().catch(undefined),
+  localWorkCapabilities: z.array(z.enum(LOCAL_WORK_CAPABILITY_IDS)).optional().catch(undefined),
   // Frozen session prompt-context inputs (Soul + memories + workspace AGENTS.md),
   // captured on the session's first agent-mode generation so the system prompt
   // prefix stays byte-stable for provider prompt caches. Cleared on new thread.
@@ -601,6 +603,15 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
 
   extension: ExtensionSettingsSchema,
   mcp: MCPSettingsSchema,
+  mobileSkillPreferences: z
+    .object({
+      documents: z.boolean().optional(),
+      spreadsheets: z.boolean().optional(),
+      presentations: z.boolean().optional(),
+      websites: z.boolean().optional(),
+    })
+    .optional()
+    .catch(undefined),
   skills: SkillSettingsSchema.catch({
     enabledSkillNames: [...DEFAULT_ENABLED_BUILTIN_SKILL_NAMES],
     translationEnabled: true,

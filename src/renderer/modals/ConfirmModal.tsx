@@ -9,6 +9,8 @@ export interface ConfirmModalProps {
   message: string
   confirmText?: string
   cancelText?: string
+  /** Runs inside the button click so browser APIs can retain the user gesture. */
+  onConfirm?(): void
   /** Style the confirm button as a destructive action. */
   danger?: boolean
   /** When set, show a "don't show again" checkbox and resolve an object on confirm. */
@@ -23,7 +25,7 @@ export type ConfirmModalResult = boolean | { confirmed: true; dontShowAgain: boo
  * `{ confirmed: true, dontShowAgain }`. Use via `await NiceModal.show('confirm', props)`.
  */
 const ConfirmModal = NiceModal.create(
-  ({ title, message, confirmText, cancelText, danger, dontShowAgainText }: ConfirmModalProps) => {
+  ({ title, message, confirmText, cancelText, danger, dontShowAgainText, onConfirm }: ConfirmModalProps) => {
     const modal = useModal()
     const { t } = useTranslation()
     const [dontShowAgain, setDontShowAgain] = useState(false)
@@ -63,7 +65,13 @@ const ConfirmModal = NiceModal.create(
           ) : (
             <AdaptiveModal.CloseButton onClick={() => close(false)}>{t('Cancel')}</AdaptiveModal.CloseButton>
           )}
-          <Button color={danger ? 'chatbox-error' : undefined} onClick={() => close(true)}>
+          <Button
+            color={danger ? 'chatbox-error' : undefined}
+            onClick={() => {
+              onConfirm?.()
+              close(true)
+            }}
+          >
             {confirmText || t('Confirm')}
           </Button>
         </AdaptiveModal.Actions>

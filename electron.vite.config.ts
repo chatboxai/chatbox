@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import path, { resolve } from 'node:path'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
@@ -6,6 +7,7 @@ import { defineConfig, type ElectronViteConfig, externalizeDepsPlugin } from 'el
 import { visualizer } from 'rollup-plugin-visualizer'
 import type { Plugin } from 'vite'
 import packageJson from './release/app/package.json'
+createRequire(import.meta.url)('./scripts/build-mobile-work-worker.cjs').buildWorkModeWorker()
 /**
  * Vite plugin to inject <base href="/"> for web builds
  * This ensures relative paths resolve correctly for SPA routes like /session/xxx

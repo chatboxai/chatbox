@@ -4,5 +4,5 @@ export const featureFlags = {
   mcp: platform.isDesktopLike,
   knowledgeBase: platform.isDesktopLike,
   skills: platform.isDesktopLike,
-  agentMode: platform.isDesktopLike,
+  agentMode: platform.isDesktopLike || platform.type === 'mobile',
 }

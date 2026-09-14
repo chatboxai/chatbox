@@ -1,3 +1,4 @@
+import { registerWorkspaceCleanup } from '@shared/mobile-work/workspace-cleanup'
 import type { SessionApplicationEvent, SessionEventBus } from '@chatbox/core/application/session'
 import { rendererApplication } from '@/app/renderer-application'
 import { clearScrollPositionCache } from '@/components/chat/MessageList'
@@ -40,7 +41,15 @@ function cleanupDeletedSessionRuntimeState(sessionId: string): void {
  * the Renderer composition root and is not part of the portable SessionService.
  */
 export function registerSessionUiEffects(events: SessionEventBus): () => void {
-  return events.subscribe(async (event) => {
+  const unregisterWorkspaceCleanup =
+    platform.type === 'mobile'
+      ? registerWorkspaceCleanup(
+          events,
+          async () => (await import('@/packages/mobile-work-mode/runtime')).capacitorWorkspace,
+          (sessionId) => rendererApplication.generationRuntime.abort(sessionId, undefined, 'session-deleted')
+        )
+      : undefined
+  const unsubscribe = events.subscribe(async (event) => {
     if (event.type === 'session-will-delete') {
       for (const sessionId of event.ids) {
         rendererApplication.generationRuntime.abort(sessionId, undefined, 'session-deleted')
@@ -66,4 +75,8 @@ export function registerSessionUiEffects(events: SessionEventBus): () => void {
       }
     }
   })
+  return () => {
+    unregisterWorkspaceCleanup?.()
+    unsubscribe()
+  }
 }

@@ -94,6 +94,7 @@ vi.mock('uuid', () => ({
 }))
 
 vi.mock('i18next', () => ({ t: (key: string) => key }))
+vi.mock('@/i18n', () => ({ default: { t: (key: string) => key, language: 'en' } }))
 
 vi.mock('@/app/renderer-application', async () => {
   const { BackupOperationCoordinator } = await import('@chatbox/core/backup')

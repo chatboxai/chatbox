@@ -1,3 +1,4 @@
+import { workModelDisclosure } from '@shared/mobile-work/model-disclosure'
 import { loadBranchFileMessages } from '@/packages/model-calls/toolsets/file-history'
 import { SessionNotFoundError } from '@chatbox/core/application/session'
 import {
@@ -114,6 +115,26 @@ async function buildToolsForPausedToolCall(source: SessionContextSource, setting
   const agentModeValue = agentModeSupported ? storedAgentModeValue : 'off'
   const effectiveAgentMode = agentModeSupported && agentModeValue === 'on' ? 'on' : 'off'
 
+  if (platform.type === 'mobile' && storedAgentModeValue === 'on' && model.isSupportToolUse('agent')) {
+    const { capacitorWorkMode, buildMobileWebTools, capacitorImageTools } = await import(
+      '@/packages/mobile-work-mode/runtime'
+    )
+    const web = buildMobileWebTools(model, getSessionWebBrowsing(session.id, settings.provider))
+    return (
+      await capacitorWorkMode.createTools(
+        {
+          sessionId: session.id,
+          capabilities: settings.localWorkCapabilities,
+          skillPreferences: settingsService.getSettings().mobileSkillPreferences,
+          ...workModelDisclosure(settings, settingsService.getSettings()),
+          signal: new AbortController().signal,
+        },
+        { ...web.tools, ...capacitorImageTools(model, session.id, new AbortController().signal)?.tools },
+        true
+      )
+    ).tools
+  }
+
   const sandboxProvider = effectiveAgentMode !== 'off' ? createSandboxProvider() : null
   const userWorkingDirectories = settings.workingDirectories?.filter((dir) => dir.trim().length > 0) ?? []
   if (sandboxProvider && userWorkingDirectories.length > 0) {
@@ -200,6 +221,10 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
   },
   preparation: {
     async prepare(request) {
+      if (platform.type === 'mobile' && request.agentModeValue === 'on' && request.agentModeSupported) {
+        const { prepareCapacitorWorkMode } = await import('@/packages/mobile-work-mode/runtime')
+        return prepareCapacitorWorkMode(request)
+      }
       const prepared = await prepareAgentGenerationHarness({
         session: request.session,
         settings: request.settings,

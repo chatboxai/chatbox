@@ -5,7 +5,7 @@ import '@mantine/spotlight/styles.css'
 import { RouterProvider } from '@tanstack/react-router'
 import { useAtomValue } from 'jotai'
 import 'photoswipe/dist/photoswipe.css'
-import { StrictMode, useState } from 'react'
+import { lazy, StrictMode, Suspense, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { bootstrapRenderer, initializeRenderer, rendererApplication, reportRendererInitializationError } from './app'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
@@ -18,6 +18,8 @@ import './static/index.css'
 import { initLogAtom, migrationProcessAtom } from './stores/atoms/utilAtoms'
 import { captureRendererDevLaunchOptions } from './utils/dev-launch'
 import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
+
+const MobileExecutionHost = lazy(() => import('./packages/mobile-work-mode/MobileExecutionHost'))
 
 // 按需加载 polyfill
 import './setup/load_polyfill'
@@ -115,6 +117,11 @@ initializeRenderer()
       <StrictMode>
         <ErrorBoundary>
           <ChatboxProvider application={rendererApplication}>
+            {platform.type === 'mobile' ? (
+              <Suspense fallback={null}>
+                <MobileExecutionHost />
+              </Suspense>
+            ) : null}
             <RouterProvider router={router} />
           </ChatboxProvider>
         </ErrorBoundary>

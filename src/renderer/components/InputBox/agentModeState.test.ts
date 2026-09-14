@@ -61,12 +61,24 @@ describe('getAgentModeUIState', () => {
     })
   })
 
-  test('forces off and inactive on mobile even when model supports agent mode', () => {
+  test('treats HarmonyOS as an Electron-backed platform', () => {
+    platformMock.type = 'harmony'
+    platformMock.isDesktopLike = true
+    expect(getAgentModeUIState(createEntry('on'), true)).toEqual({
+      displayValue: 'on',
+      isActive: true,
+      capabilitiesDisabled: false,
+      modelUnsupported: false,
+    })
+  })
+
+  test('enables selected work mode on mobile with a capable model', () => {
     platformMock.type = 'mobile'
-    expect(getAgentModeUIState(createEntry('auto'), true)).toEqual({
-      displayValue: 'off',
-      isActive: false,
-      capabilitiesDisabled: true,
+    platformMock.isDesktopLike = false
+    expect(getAgentModeUIState(createEntry('on'), true)).toEqual({
+      displayValue: 'on',
+      isActive: true,
+      capabilitiesDisabled: false,
       modelUnsupported: false,
     })
   })

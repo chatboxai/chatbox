@@ -312,6 +312,17 @@ export async function submitNewUserMessageUnlocked(
     return
   }
 
+  if (platform.type === 'mobile') {
+    const { getSessionAgentModeEntry } = await import('./agent-mode')
+    if (getSessionAgentModeEntry(sessionId, session).value === 'on') {
+      const [{ capacitorWorkspace }, { currentBlobStorage }] = await Promise.all([
+        import('@/packages/mobile-work-mode/runtime'),
+        import('@/adapters/CurrentBlobStorage'),
+      ])
+      await capacitorWorkspace.preflight(sessionId, [...session.messages, params.newUserMsg], currentBlobStorage)
+    }
+  }
+
   // Run compaction check before sending message (blocking)
   // Only for chat sessions with auto-compaction enabled
   if (session.type === 'chat' || session.type === undefined) {

@@ -1,6 +1,9 @@
 packages:
   - packages/*
 
+# Explicit empty hook list keeps dependency-state checks iterable in pnpm 10.33.
+pnpmfile: []
+
 # Developers on Windows ARM64 may use both native ARM64 and x64-emulated Node
 # processes against the same checkout. Keep native optional dependencies for
 # both architectures so tools such as esbuild work in either process.

@@ -5,6 +5,11 @@ import type { MessageToolCallPart } from '@shared/types'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('i18next', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('i18next')>()),
+  t: (key: string) => key,
+}))
+
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({
@@ -123,7 +128,7 @@ describe('tool call search result overflow', () => {
       </MantineProvider>
     )
 
-    expandByLabel('web_search')
+    expandByLabel('Web Search')
 
     const link = screen.getByRole('link', { name: /OAuth token refresh patterns/ })
     expect(link.getAttribute('href')).toBe(LONG_LINK)
@@ -146,7 +151,7 @@ describe('tool call search result overflow', () => {
       </MantineProvider>
     )
 
-    expandByLabel('parse_link')
+    expandByLabel('Parse Link')
 
     const url = screen.getByText(LONG_LINK)
     expect(url.getAttribute('style')).toContain('overflow-wrap: anywhere')
@@ -159,7 +164,7 @@ describe('tool call search result overflow', () => {
       </MantineProvider>
     )
 
-    expandByLabel('web_search')
+    expandByLabel('Web Search')
 
     const link = screen.getByRole('link', { name: /OAuth token refresh patterns/ })
     expect(link.getAttribute('href')).toBe(LONG_LINK)
@@ -184,7 +189,7 @@ describe('tool call search result overflow', () => {
       </MantineProvider>
     )
 
-    expandByLabel('query_knowledge_base')
+    expandByLabel('Query Knowledge Base')
 
     const blocks = Array.from(document.querySelectorAll('pre, code'))
     expect(blocks.length).toBeGreaterThanOrEqual(2)
@@ -212,7 +217,7 @@ describe('tool call search result overflow', () => {
       </MantineProvider>
     )
 
-    expandByLabel('read_file')
+    expandByLabel('Read File')
 
     const error = screen.getByText(`Failed to fetch ${LONG_LINK}`)
     expect(error.getAttribute('style')).toContain('overflow-wrap: anywhere')

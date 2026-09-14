@@ -199,3 +199,5 @@ tmp_*.*
 
 # Local pnpm store accidentally created by pnpm install in worktrees
 .pnpm-store/
+
+/src/shared/mobile-work/generated/

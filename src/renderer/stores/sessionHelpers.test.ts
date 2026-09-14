@@ -215,6 +215,48 @@ describe('preprocessFile local parser fallback', () => {
     mockCleanupOrphanedBlobs.mockResolvedValue(0)
   })
 
+  it.each(['local', 'chatbox-ai'] as const)(
+    'parses mobile Office uploads locally with %s selected and no license',
+    async (type) => {
+      const platform = (await import('@/platform')).default
+      const previous = { type: platform.type, isDesktopLike: platform.isDesktopLike }
+      Object.assign(platform, { type: 'mobile', isDesktopLike: false })
+      try {
+        parserState.type = type
+        licenseState.key = ''
+        blobStore.set('office-local', 'Local Office text')
+        mockParseFileLocally.mockResolvedValueOnce({ isSupported: true, key: 'office-local' })
+        const result = await prepareFileAttachment(createFile('report.docx'), { provider: '', modelId: '' })
+        expect(result.error).toBeUndefined()
+        expect(result.content).toBe('Local Office text')
+        expect(mockUploadAndCreateUserFile).not.toHaveBeenCalled()
+      } finally {
+        Object.assign(platform, previous)
+      }
+    }
+  )
+
+  it.each(['local', 'chatbox-ai'] as const)(
+    'falls back for a malformed mobile Office document with %s selected and a license',
+    async (type) => {
+      parserState.type = type
+      const platform = (await import('@/platform')).default
+      const previous = { type: platform.type, isDesktopLike: platform.isDesktopLike }
+      Object.assign(platform, { type: 'mobile', isDesktopLike: false })
+      try {
+        mockParseFileLocally.mockRejectedValueOnce(new Error('Invalid document archive'))
+        blobStore.set('office-remote', 'Cloud Office text')
+        mockUploadAndCreateUserFile.mockResolvedValueOnce('office-remote')
+        const result = await prepareFileAttachment(createFile('bad.docx'), { provider: '', modelId: '' })
+        expect(result.error).toBeUndefined()
+        expect(result.content).toBe('Cloud Office text')
+        expect(mockUploadAndCreateUserFile).toHaveBeenCalled()
+      } finally {
+        Object.assign(platform, previous)
+      }
+    }
+  )
+
   it('falls back to Chatbox AI when local parsing throws and a license is active', async () => {
     const file = createFile('report.pdf')
     blobStore.set('remote-key', 'remote parsed content')
@@ -843,6 +885,30 @@ describe('preprocessFile local parser fallback', () => {
     ).toBe(true)
     expect(isSessionAttachmentRagIndexingError('local_parser_failed')).toBe(false)
   })
+
+  it.each(['data.xlsx', 'slides.pptx', 'index.html'])(
+    'prepares mobile work attachment %s locally even when the cloud parser is selected',
+    async (name) => {
+      const { default: platform } = await import('@/platform')
+      const previousType = platform.type
+      const previousDesktop = platform.isDesktopLike
+      Object.assign(platform, { type: 'mobile', isDesktopLike: false })
+      try {
+        parserState.type = 'chatbox-ai'
+        licenseState.key = ''
+        const result = await prepareFileAttachment(createFile(name), { provider: '', modelId: '' }, { agentMode: true })
+        expect(result.error).toBeUndefined()
+        expect(result.parserType).toBe('local-workspace')
+        expect(result.rawStorageKey).toBeTruthy()
+        expect(blobStore.get(result.rawStorageKey!)).toMatch(/^data:[^,]*;base64,/)
+        expect(mockUploadAndCreateUserFile).not.toHaveBeenCalled()
+        expect(mockParseFileLocally).not.toHaveBeenCalled()
+        expect(mockGetSessionRagConfig).not.toHaveBeenCalled()
+      } finally {
+        Object.assign(platform, { type: previousType, isDesktopLike: previousDesktop })
+      }
+    }
+  )
 
   it('keeps documents inline with a warning when parsed text exceeds the session attachment limit', async () => {
     const file = createFile('dense.pdf')

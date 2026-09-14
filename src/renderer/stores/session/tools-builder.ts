@@ -1,3 +1,4 @@
+import { formatLoadSkillOutput, type LoadedSkill } from '@shared/skills/catalog'
 import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { ModelInterface } from '@shared/models/types'
 import type { SandboxSeedAttachment } from '@shared/sandbox/attachment-path'
@@ -268,25 +269,6 @@ You can install skills from any source:
 The skill will be auto-enabled after installation.
 `
   return instruction
-}
-
-function formatLoadSkillOutput(output: unknown): string {
-  const record = asRecord(output)
-  const error = stringField(record, 'error')
-  if (error) return `Error: ${error}`
-  const instructions = stringField(record, 'instructions') ?? JSON.stringify(output) ?? String(output)
-  const skillRoot = stringField(record, 'skillRoot')
-  const filesValue = record?.files
-  const files = Array.isArray(filesValue) ? filesValue.filter((file): file is string => typeof file === 'string') : []
-
-  const sections = [instructions]
-  if (skillRoot) {
-    sections.push(`Skill root: ${skillRoot}\nReplace <SKILL_ROOT> with this absolute path when using referenced files.`)
-  }
-  if (files.length > 0) {
-    sections.push(`Available skill files:\n${files.map((file) => `- ${file}`).join('\n')}`)
-  }
-  return sections.join('\n\n')
 }
 
 function formatInstallSkillOutput(output: unknown): string {
@@ -668,7 +650,7 @@ function buildLoadSkillTool(options: BuildToolsOptions): ToolSet[string] {
         instructions: result.body,
         skillRoot: result.skillRoot,
         files: result.files ?? [],
-      }
+      } satisfies LoadedSkill
     },
     toModelOutput: toTextModelOutput(formatLoadSkillOutput, { emptyFallback: 'Skill instructions are empty.' }),
   }

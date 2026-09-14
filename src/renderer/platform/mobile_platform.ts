@@ -283,6 +283,21 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   }
 
   async parseFileLocally(file: File): Promise<{ key?: string; isSupported: boolean; errorCode?: string }> {
+    if (/\.(docx|xlsx|pptx)$/i.test(file.name)) {
+      const { capacitorExecution } = await import('@/packages/mobile-work-mode/execution-service')
+      if (file.size > 10 * 1024 * 1024) return { isSupported: false, errorCode: 'local_parser_file_too_large' }
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      let binary = ''
+      for (let offset = 0; offset < bytes.length; offset += 8192)
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
+      const parsed = await capacitorExecution.parseDocument(file.name, btoa(binary), new AbortController().signal)
+      const key = `parseFile-${uuidv4()}`
+      await this.setStoreBlob(
+        key,
+        parsed.text + (parsed.truncated ? '\n[Document text truncated at the local parsing limit.]' : '')
+      )
+      return { key, isSupported: true }
+    }
     const result = await parseFileLocallyInBrowser(file)
     if (!result.isSupported) {
       return { isSupported: false, errorCode: result.errorCode }

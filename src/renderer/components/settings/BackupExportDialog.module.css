@@ -96,13 +96,13 @@
     border-radius: 0;
   }
   .header {
-    padding: 20px 20px 12px;
+    padding: calc(20px + var(--mobile-safe-area-inset-top, env(safe-area-inset-top, 0px))) 20px 12px;
   }
   .configuration {
     padding: 8px 20px 16px;
   }
   .footer {
-    padding: 14px 20px max(14px, env(safe-area-inset-bottom));
+    padding: 14px 20px max(14px, var(--mobile-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   }
   .footer > button {
     flex: 1;

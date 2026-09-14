@@ -51,35 +51,39 @@ it('retains new resources and the old value when session rollback fails', async 
   ).toBe(true)
 })
 
-it('declares unreadable selected sessions and aborts if a prepared source changes before output', async () => {
+it('reports classification failures and rejects an unreadable session once output has started', async () => {
   const { openNodeSessionRowDatabase } = await import('../persistence/node-sqlite.test-support')
   const { SqlSessionRowStore } = await import('../persistence/session-row-sql')
   const { contextSnapshot } = await import('../persistence/session-context-read.test-support')
   const database = openNodeSessionRowDatabase()
   try {
     const rows = new SqlSessionRowStore(database)
-    const original = contextSnapshot({
-      id: 'good',
-      name: 'Good',
-      messages: [{ id: 'm', role: 'user', contentParts: [{ type: 'text', text: 'before' }] }],
-    })
-    await rows.writeRows(original)
+    await rows.writeRows(
+      contextSnapshot({
+        id: 'good',
+        name: 'Good',
+        messages: [{ id: 'm', role: 'user', contentParts: [{ type: 'text', text: 'before' }] }],
+      })
+    )
+    let outputStarted = false
+    let failOutput = false
     const store: import('./session-port').BackupSessionStore = {
       listSessionIds: async () => ['bad', 'good'],
       beginBackupRestore: (id) => rows.beginBackupRestore(id),
       async *iterateBackupRows(id, limits, signal) {
-        if (id === 'bad') throw new Error('Source disk read failed')
+        if (id === 'bad' || (failOutput && outputStarted)) throw new Error('Source disk read failed')
         yield* rows.iterateBackupRows(id, limits, signal)
       },
     }
     const options: import('./export-backup').BackupExportOptions = {
       storage: new MemoryStorage(),
       metaStorage: new MemoryMetaStorage(),
-      sharded: { store },
+      sessionStore: store,
       exportItems: ['conversations'],
       includeKeys: false,
       application: { version: 'test', platform: 'test' },
       writeArchive: async (stream) => {
+        outputStarted = true
         for await (const part of stream()) void part
         return { boundedMemory: true }
       },
@@ -89,26 +93,9 @@ it('declares unreadable selected sessions and aborts if a prepared source change
     expect(result.manifest.warnings).toContainEqual(
       expect.objectContaining({ code: 'session-read-failed', itemId: 'bad' })
     )
-    await expect(
-      exportBackupArchive({
-        ...options,
-        writeArchive: async (stream) => {
-          await rows.writeRows(
-            {
-              ...contextSnapshot({
-                id: 'good',
-                name: 'Good',
-                messages: [{ id: 'm', role: 'user', contentParts: [{ type: 'text', text: 'changed' }] }],
-              }),
-              revision: original.revision + 1,
-            },
-            original.revision
-          )
-          for await (const part of stream()) void part
-          return { boundedMemory: true }
-        },
-      })
-    ).rejects.toThrow(/changed after preparation/)
+    outputStarted = false
+    failOutput = true
+    await expect(exportBackupArchive(options)).rejects.toThrow('Source disk read failed')
   } finally {
     database.close()
   }

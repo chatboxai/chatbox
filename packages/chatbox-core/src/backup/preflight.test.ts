@@ -55,6 +55,7 @@ it('uses each prepared v2 JSON byte size at the exact threshold and reclassifies
     }
     const exact = await prepareBackupExport(options, { singleSessionBytes: expected })
     expect(exact.formatVersion).toBe(2)
+    if (exact.sessions[0].layout !== 'single') throw new Error('Expected a single-file session')
     expect(exact.sessions[0].size).toBe(expected)
     expect((await prepareBackupExport(options, { singleSessionBytes: expected - 1 })).formatVersion).toBe(3)
     expect(
@@ -79,7 +80,7 @@ it('uses each prepared v2 JSON byte size at the exact threshold and reclassifies
     expect(archive.size).toBeGreaterThan(0)
     await rows.writeRows(contextSnapshot({ id: 'second', name: 'Second', messages: [] }))
     const multiple = await prepareBackupExport(options, { singleSessionBytes: expected })
-    expect(multiple.sessionBytes).toBeGreaterThan(expected)
+    expect(multiple.sessions).toHaveLength(2)
     expect(multiple.formatVersion).toBe(2)
   } finally {
     database.close()
@@ -210,6 +211,7 @@ it('measures escaped historical strings canonically and refuses a changed select
       application: { version: 'test', platform: 'test' },
     }
     const prepared = await prepareBackupExport(options)
+    if (prepared.sessions[0].layout !== 'single') throw new Error('Expected a single-file session')
     expect(prepared.sessions[0].size).toBe(new TextEncoder().encode(JSON.stringify(JSON.parse(raw))).length)
     await expect(
       exportBackupArchive({
@@ -251,6 +253,7 @@ it('keeps thousands of ordinary messages within the v2 budget', async () => {
       application: { version: 'test', platform: 'test' },
     })
     expect(plan.formatVersion).toBe(2)
+    if (plan.sessions[0].layout !== 'single') throw new Error('Expected a single-file session')
     expect(plan.sessions[0].size).toBe(
       new TextEncoder().encode(JSON.stringify(prepareSessionForBackup(decoded.session))).length
     )

@@ -1,3 +1,4 @@
+import { backupBinaryChunks } from './backup-binary-chunks'
 import { Directory, Encoding, Filesystem, type WriteFileOptions, type WriteFileResult } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import { Toast } from '@capacitor/toast'
@@ -582,7 +583,7 @@ export class AndroidFilterWriter extends FilterWriter {
     let tempUri: string | undefined
     let wroteAnyChunk = false
     try {
-      for await (const chunk of dataCallback()) {
+      for await (const chunk of backupBinaryChunks(dataCallback(), signal)) {
         if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
         if (!wroteAnyChunk) {
           const result = await Filesystem.writeFile({
@@ -610,6 +611,7 @@ export class AndroidFilterWriter extends FilterWriter {
         })
         tempUri = result.uri
       }
+      signal?.throwIfAborted()
       const saveResult = await AndroidDocumentSaver.saveFile({ sourceUri: tempUri, suggestedName: filename, mimeType })
       await this.handlePostWrite({ uri: saveResult.uri })
     } finally {

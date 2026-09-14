@@ -46,6 +46,7 @@ interface SessionEntryState {
 
 export interface BackupExportWriteResult {
   boundedMemory: boolean
+  delivery?: 'share-sheet'
   pendingDownload?: {
     filename: string
     blob: Blob
@@ -73,7 +74,10 @@ export interface BackupExportOptions {
    * pass their repository here; without it a session is read straight from the
    * key-value storage.
    */
-  readSession?: (sessionId: string) => Promise<Session | null>
+  readSession?: (
+    sessionId: string,
+    onWarnings?: (warnings: import('./types').BackupWarning[]) => void
+  ) => Promise<Session | null>
   application: { version: string | Promise<string>; platform: string | Promise<string> }
   signal?: AbortSignal
   onProgress?: (progress: BackupProgress) => void
@@ -296,7 +300,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
         })
         try {
           const session = options.readSession
-            ? await options.readSession(sessionId)
+            ? await options.readSession(sessionId, (sourceWarnings) => warnings.push(...sourceWarnings))
             : await options.storage.getItem<Session | null>(backupSessionStorageKey(sessionId), null)
           if (session === null && !metaById.has(sessionId) && !options.selectedSessionIds) continue
           if (!isBackupSession(session)) throw new Error('Session is missing or invalid')
@@ -378,6 +382,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
   return {
     manifest: completedManifest,
     boundedMemory: writeResult.boundedMemory,
+    delivery: writeResult.delivery,
     pendingDownload: writeResult.pendingDownload,
   }
 }

@@ -12,6 +12,7 @@ export const DEFAULT_ZIP_LIMITS = {
 const EMPTY_BYTES = new Uint8Array(0)
 const ZIP_INPUT_CHUNK_SIZE = 1024 * 1024
 const ZIP_OUTPUT_HIGH_WATER_MARK = 4 * 1024 * 1024
+const ZIP_RANGE_READ_BYTES = 64 * 1024
 
 export interface ZipArchiveEntry {
   path: string
@@ -320,17 +321,21 @@ async function readBoundedZipFileEntries(
       const inflate = method === 8 ? new Inflate(receive) : undefined
       // A DEFLATE push can expand about 1032-fold. Bound each push before yielding.
       const inputSize = inflate ? 1024 : 64 * 1024
-      for (let cursor = dataStart; cursor < dataEnd; cursor += inputSize) {
+      for (let cursor = dataStart; cursor < dataEnd; cursor += ZIP_RANGE_READ_BYTES) {
         throwIfAborted(options.signal)
-        const input = await readBackupFileBytes(file, cursor, Math.min(inputSize, dataEnd - cursor))
-        if (inflate) inflate.push(input, cursor + input.length === dataEnd)
-        else receive(input)
-        if (inflateError) throw inflateError
-        options.onBufferedBytes?.(chunks.reduce((sum, chunk) => sum + chunk.length, 0))
-        for (const chunk of chunks) {
-          for (let i = 0; i < chunk.length; i += 64 * 1024) yield chunk.subarray(i, i + 64 * 1024)
+        const block = await readBackupFileBytes(file, cursor, Math.min(ZIP_RANGE_READ_BYTES, dataEnd - cursor))
+        for (let offset = 0; offset < block.length; offset += inputSize) {
+          throwIfAborted(options.signal)
+          const input = block.subarray(offset, offset + inputSize)
+          if (inflate) inflate.push(input, cursor + offset + input.length === dataEnd)
+          else receive(input)
+          if (inflateError) throw inflateError
+          options.onBufferedBytes?.(chunks.reduce((sum, chunk) => sum + chunk.length, 0))
+          for (const chunk of chunks) {
+            for (let i = 0; i < chunk.length; i += 64 * 1024) yield chunk.subarray(i, i + 64 * 1024)
+          }
+          chunks.length = 0
         }
-        chunks.length = 0
       }
       if (inflate && compressedSize === 0) inflate.push(EMPTY_BYTES, true)
       if (inflateError) throw inflateError

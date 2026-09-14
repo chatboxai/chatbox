@@ -1,35 +1,25 @@
-import type { Session } from '@shared/types'
+import type { Message, Session } from '@shared/types'
 import { decodeSessionTree } from '../session/session-tree/decode'
 import type { SessionTree } from '../session/session-tree/types'
 import { throwIfAborted } from './abort'
 import type { BackupExportOptions } from './export-backup'
-import { BackupJsonSize } from './json-size'
-import { jsonUtf8Blocks } from './json-stream'
 import { BackupMessageValidator } from './payload'
 import { prepareBackupMessagePayload } from './resource-payload'
-import { BackupResourceCatalog, BackupResourceBudgetError } from './resource-catalog'
-import { backupGlobalEntries } from './export-backup'
+import { classifyBackupSession } from './format-classification'
 import { prepareSessionForBackup, collectSessionResourceReferences } from './resources'
 import { backupPageLimits, type BackupSessionStore } from './session-port'
-import { BackupSourceBudgetError, checkedBackupRows } from './source-check'
+import { BackupSourceBudgetError, checkedBackupRows, MAX_BACKUP_SESSION_STRUCTURE_BYTES } from './source-check'
 import type { BackupWarning } from './types'
 
 export const SINGLE_BACKUP_SESSION_BYTES = 64 * 1024 * 1024
-export interface PreparedBackupSession {
-  id: string
-  name: string
-  size: number
-  layout: 'single' | 'sharded'
-  sourceDigest: string
-}
+export type PreparedBackupSession = { id: string; name: string } & (
+  | { layout: 'single'; size: number }
+  | { layout: 'sharded' }
+)
 export interface BackupExportPlan {
   formatVersion: 2 | 3
   sessions: PreparedBackupSession[]
   warnings: BackupWarning[]
-  sessionBytes: number
-  resourceBytes: number
-  resourceCount: number
-  estimatedBytes: number
   selectedSessionIds: string[]
   exportItems: BackupExportOptions['exportItems']
   includeKeys: boolean
@@ -37,46 +27,30 @@ export interface BackupExportPlan {
 type PreparationOptions = Omit<BackupExportOptions, 'writeArchive'> & { sessionStore: BackupSessionStore }
 const encoder = new TextEncoder()
 
-const identityFields = new Set([
-  'id',
-  'storageKey',
-  'rawStorageKey',
-  'resultStorageKey',
-  'resultImageStorageKey',
-  'image_storage_key',
-  'name',
-  'fileType',
-  'mimeType',
-])
-function compactProjection(value: unknown, key = ''): unknown {
-  if (typeof value === 'string') return identityFields.has(key) ? value : value.slice(0, 64)
-  if (Array.isArray(value)) return value.map((item) => compactProjection(item))
-  if (value && typeof value === 'object')
-    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, compactProjection(item, name)]))
-  return value
-}
-
 /** Materialization is allowed only for an already measured, bounded single-file session. */
 export async function prepareSessionSource(
   store: BackupSessionStore,
   id: string,
   signal?: AbortSignal,
-  materializeLimit?: number
+  materializeLimit: number = SINGLE_BACKUP_SESSION_BYTES
 ) {
   const tree: Partial<SessionTree> & Pick<SessionTree, 'threads' | 'messages'> = { threads: [], messages: [] }
-  let difference = 0
-  let retainedBytes = 0
-  let digest = ''
+  let messageBytes = 0
+  let structureBytes = 0
   const sourceWarnings: BackupWarning[] = []
   let warningBytes = 0
   const keep = (value: unknown) => {
-    retainedBytes += encoder.encode(JSON.stringify(value)).length
-    if (retainedBytes > (materializeLimit ?? 16 * 1024 * 1024))
+    structureBytes += encoder.encode(JSON.stringify(value)).length
+    if (structureBytes > MAX_BACKUP_SESSION_STRUCTURE_BYTES)
       throw new BackupSourceBudgetError('Backup session structure exceeds budget')
   }
-  for await (const row of checkedBackupRows(store, id, backupPageLimits(), signal, (value) => {
-    digest = value
-  })) {
+  const warn = (message: Message) => {
+    const warnings = collectSessionResourceReferences({ id, name: '', messages: [message] }).warnings
+    warningBytes += encoder.encode(JSON.stringify(warnings)).length
+    if (warningBytes > 4 * 1024 * 1024) throw new BackupSourceBudgetError('Backup warning index exceeds budget')
+    sourceWarnings.push(...warnings)
+  }
+  for await (const row of checkedBackupRows(store, id, backupPageLimits(), signal)) {
     if (row.kind === 'header') {
       keep(row.record)
       tree.session = row.record
@@ -84,40 +58,30 @@ export async function prepareSessionSource(
       keep(row.thread)
       tree.threads.push(row.thread)
     } else {
-      const validator = new BackupMessageValidator()
-      const counter = new BackupJsonSize()
-      const parts: Uint8Array<ArrayBuffer>[] = []
-      let bytes = 0
-      const original = new BackupMessageValidator()
-      const input = row.payload?.chunks
-        ? row.payload.chunks()
-        : (async function* () {
-            yield* jsonUtf8Blocks(row.message.message)
-          })()
-      const source = (async function* () {
-        for await (const part of input) {
-          original.write(part)
-          yield part
-        }
-      })()
-      for await (const part of prepareBackupMessagePayload(source)) {
-        throwIfAborted(signal)
-        counter.write(part)
-        validator.write(part)
-        if (materializeLimit !== undefined) {
+      let message: Message
+      if (!row.payload) {
+        warn(row.message.message)
+        message = prepareSessionForBackup({ id, name: '', messages: [row.message.message] }).messages[0]
+      } else {
+        if (!row.payload.chunks) throw new Error('Backup payload source is missing')
+        const original = new BackupMessageValidator()
+        const input = row.payload.chunks()
+        const source = (async function* () {
+          for await (const part of input) {
+            original.write(part)
+            yield part
+          }
+        })()
+        const parts: Uint8Array<ArrayBuffer>[] = []
+        let bytes = 0
+        for await (const part of prepareBackupMessagePayload(source)) {
+          throwIfAborted(signal)
           bytes += part.length
-          if (bytes + retainedBytes > materializeLimit + 128 * 1024)
+          if (bytes + messageBytes > materializeLimit + 128 * 1024)
             throw new Error('Prepared session exceeded its single-file budget')
           parts.push(new Uint8Array(part))
         }
-      }
-      const rowWarnings = collectSessionResourceReferences({ id, name: '', messages: [original.finish()] }).warnings
-      warningBytes += encoder.encode(JSON.stringify(rowWarnings)).length
-      if (warningBytes > 4 * 1024 * 1024) throw new BackupSourceBudgetError('Backup warning index exceeds budget')
-      sourceWarnings.push(...rowWarnings)
-      let message = validator.finish()
-      if (materializeLimit === undefined) message = compactProjection(message) as typeof message
-      if (materializeLimit !== undefined) {
+        warn(original.finish())
         const data = new Uint8Array(bytes)
         let offset = 0
         for (const part of parts) {
@@ -126,23 +90,23 @@ export async function prepareSessionSource(
         }
         message = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(data))
       }
-      const preparedSize = counter.finish()
-      difference += preparedSize - encoder.encode(JSON.stringify(message)).length
       const projected = { ...row.message, message }
-      keep(projected)
+      keep({ ...row.message, message: { id: row.message.messageId, role: 'user', contentParts: [] } })
+      messageBytes += encoder.encode(JSON.stringify(message)).length
+      if (messageBytes > materializeLimit)
+        throw new BackupSourceBudgetError('Prepared session exceeded its single-file budget')
       tree.messages.push(projected)
     }
   }
   if (!tree.session) throw new Error('Backup session header is missing')
   const decoded = decodeSessionTree(tree as SessionTree)
   if (!decoded.ok) throw new Error(decoded.reason)
-  const session = prepareSessionForBackup(decoded.session)
-  const size = encoder.encode(JSON.stringify(session)).length + difference
-  if (!Number.isSafeInteger(size) || size < 0 || size > 4 * 1024 ** 3)
-    throw new BackupSourceBudgetError('Backup session exceeds archive budget')
-  return { session, size, digest, warnings: sourceWarnings }
+  const session = decoded.session
+  const size = encoder.encode(JSON.stringify(session)).length
+  return { session, size, warnings: sourceWarnings }
 }
 
+/** The caller holds write exclusion from classification through archive completion. */
 export async function prepareBackupExport(
   options: PreparationOptions,
   budgets: { singleSessionBytes?: number } = {}
@@ -154,10 +118,8 @@ export async function prepareBackupExport(
     ? [...new Set(options.selectedSessionIds ?? (await options.sessionStore.listSessionIds()))]
     : []
   if (ids.length > 50_000) throw new BackupSourceBudgetError('Too many selected sessions')
-  const catalog = new BackupResourceCatalog()
   const sessions: PreparedBackupSession[] = []
   const warnings: BackupWarning[] = []
-  let sessionBytes = 0
   let planBytes = 0
   const reserve = (value: unknown) => {
     planBytes += encoder.encode(JSON.stringify(value)).length
@@ -167,49 +129,26 @@ export async function prepareBackupExport(
     throwIfAborted(options.signal)
     options.onProgress?.({ phase: 'preparing', current: index, total: ids.length })
     try {
-      const prepared = await prepareSessionSource(options.sessionStore, id, options.signal)
-      catalog.add(collectSessionResourceReferences(prepared.session).references)
-      sessionBytes += prepared.size
-      if (sessionBytes > 4 * 1024 ** 3)
-        throw new BackupSourceBudgetError('Backup exceeds 4 GiB; select fewer conversations')
-      const descriptor: PreparedBackupSession = {
-        id,
-        name: prepared.session.name,
-        size: prepared.size,
-        layout: prepared.size > threshold ? 'sharded' : 'single',
-        sourceDigest: prepared.digest,
-      }
+      const descriptor = await classifyBackupSession(options.sessionStore, id, threshold, options.signal)
       reserve(descriptor)
-      reserve(prepared.warnings)
-      warnings.push(...prepared.warnings)
       sessions.push(descriptor)
     } catch (error) {
       throwIfAborted(options.signal)
-      if (error instanceof BackupSourceBudgetError || error instanceof BackupResourceBudgetError) throw error
+      if (error instanceof BackupSourceBudgetError) throw error
       const warning: BackupWarning = {
         code: 'session-read-failed',
         itemType: 'session',
         itemId: id,
+        itemName: await (await options.metaStorage)
+          .getById(id)
+          .then((meta) => meta?.name)
+          .catch(() => undefined),
         message: (error instanceof Error ? error.message : String(error)).slice(0, 1024),
       }
       reserve(warning)
       warnings.push(warning)
     }
   }
-  let globalBytes = 0
-  const globalData: import('./types').BackupManifest['data'] = {}
-  for await (const entry of backupGlobalEntries(options, catalog, globalData, await options.storage.getAllKeys())) {
-    if (!(entry.data instanceof Uint8Array) || entry.data.length > 4 * 1024 * 1024)
-      throw new BackupSourceBudgetError('Global backup data exceeds budget')
-    globalBytes += entry.data.length
-  }
-  for await (const entry of catalog.entries(options)) void entry
-  const resourceBytes = catalog.resources.reduce((size, resource) => size + resource.size, 0)
-  const estimatedBytes = sessionBytes + resourceBytes + globalBytes
-  if (estimatedBytes > 4 * 1024 ** 3)
-    throw new BackupSourceBudgetError('Backup exceeds 4 GiB; select fewer conversations')
-  reserve(catalog.warnings)
-  warnings.push(...catalog.warnings)
   options.onProgress?.({ phase: 'preparing', current: ids.length, total: ids.length })
   if (ids.length && !sessions.length)
     throw new Error(`No selected conversation can be backed up: ${warnings[0]?.message}`)
@@ -217,10 +156,6 @@ export async function prepareBackupExport(
     formatVersion: sessions.some((session) => session.layout === 'sharded') ? 3 : 2,
     sessions,
     warnings,
-    sessionBytes,
-    resourceBytes,
-    resourceCount: catalog.resources.length,
-    estimatedBytes,
     selectedSessionIds: ids,
     exportItems: [...options.exportItems],
     includeKeys: options.includeKeys,
@@ -230,13 +165,13 @@ export async function prepareBackupExport(
 export function preparedSessionReader(
   options: PreparationOptions,
   plan: BackupExportPlan
-): (id: string) => Promise<Session> {
-  return async (id) => {
+): (id: string, onWarnings?: (warnings: BackupWarning[]) => void) => Promise<Session> {
+  return async (id, onWarnings) => {
     const expected = plan.sessions.find((session) => session.id === id)
     if (!expected || expected.layout !== 'single') throw new Error('Session was not prepared for single-file export')
     const actual = await prepareSessionSource(options.sessionStore, id, options.signal, expected.size + 1024 * 1024)
-    if (actual.digest !== expected.sourceDigest || actual.size !== expected.size)
-      throw new Error('Backup source changed after preparation')
+    if (actual.size !== expected.size) throw new Error('Backup source changed after preparation')
+    onWarnings?.(actual.warnings)
     return actual.session
   }
 }

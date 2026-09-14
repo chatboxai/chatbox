@@ -118,9 +118,11 @@ describe('SQLiteSessionRowStore', () => {
 
     expect(mockConnection.createConnection).toHaveBeenCalledWith('chatbox-messages', false, 'no-encryption', 1, false)
     expect(mockDatabase.execute).toHaveBeenCalledTimes(1)
-    expect(mockDatabase.execute).toHaveBeenCalledWith(
-      (CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL + SESSION_TEXT_TOKEN_SCHEMA_SQL).replaceAll('\n', ' ')
+    const sql = mockDatabase.execute.mock.calls[0][0] as string
+    expect(sql.replace(/\s+/g, ' ').trim()).toBe(
+      (CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL + SESSION_TEXT_TOKEN_SCHEMA_SQL).replace(/\s+/g, ' ').trim()
     )
+    expect(sql).toContain(';\nCREATE TABLE')
   })
 
   it('waits for a previous connection to close before creating a replacement', async () => {

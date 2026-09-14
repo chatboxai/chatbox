@@ -105,7 +105,7 @@ export default class WebExporter implements Exporter {
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
     mimeType: string,
     signal?: AbortSignal,
-    requirements?: { requiresStreaming: boolean; estimatedBytes: number }
+    requirements?: { requiresStreaming: boolean; estimatedBytes?: number }
   ): Promise<StreamingExportResult> {
     const pickerWindow = window as Window & {
       showSaveFilePicker?: (options: {

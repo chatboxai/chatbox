@@ -1,3 +1,4 @@
+import { createBackupProgressReporter } from './progress'
 import { BackupPresentation } from './restore-presentation'
 import { fitsInlineBackupJson, jsonUtf8Blocks } from './json-stream'
 import { prepareGlobalRestore } from './global-restore'
@@ -7,7 +8,7 @@ import { collectGlobalResourceReferences } from './resources'
 import { preparedSessionReader } from './preflight'
 import { backupGlobalEntries, deriveSessionMeta } from './export-backup'
 import { normalizeBackupExportItems } from './export-items'
-import { BackupSourceBudgetError, checkedBackupRows, inspectBackupSource } from './source-check'
+import { checkedBackupRows } from './source-check'
 import { validateResourceReferences } from './resource-validation'
 import { BackupResourceCatalog } from './resource-catalog'
 import { BackupResourcePayloadTransform, prepareBackupMessagePayload } from './resource-payload'
@@ -51,11 +52,19 @@ import {
 } from './resources'
 import {
   type BackupFile,
+  type BackupProgress,
   type BackupJsonEntry,
+  MAX_BACKUP_JSON_ENTRY_BYTES,
   MAX_BACKUP_RESOURCE_ENTRY_BYTES,
   validateBackupManifestGraph,
 } from './types'
-import { createZipStream, DEFAULT_ZIP_LIMITS, readZipFileEntries, type ZipArchiveEntry } from './zip'
+import {
+  createZipStream,
+  DEFAULT_ZIP_LIMITS,
+  readZipFileEntries,
+  type ZipArchiveEntry,
+  type ZipReadOptions,
+} from './zip'
 
 export interface ShardedBackupOptions {
   prepared?: import('./preflight').BackupExportPlan
@@ -100,38 +109,14 @@ export async function exportShardedBackup(
 ): Promise<BackupExportResult> {
   const limits = backupPageLimits(sharded.limits)
   const checksum = options.checksum ?? sha256Checksum
+  const report = createBackupProgressReporter(options.onProgress)
+  let sessionProgress: BackupProgress = { phase: 'sessions', current: 0, total: 0, processedBytes: 0 }
   const meta = await options.metaStorage
   const ids = sharded.prepared
     ? sharded.prepared.sessions.map((session) => session.id)
     : [...new Set(options.selectedSessionIds ?? (await sharded.store.listSessionIds()))]
   if (ids.length > 50_000) throw new Error('Backup contains too many sessions')
-  const sourceDigests = new Map<string, string>()
-  const sourceWarnings: import('./types').BackupWarning[] = []
-  if (sharded.prepared) {
-    sourceWarnings.push(
-      ...sharded.prepared.warnings.filter(
-        (warning) => warning.code === 'session-read-failed' || warning.code === 'external-resource-skipped'
-      )
-    )
-    for (const session of sharded.prepared.sessions) sourceDigests.set(session.id, session.sourceDigest)
-  } else
-    for (const [index, id] of ids.entries()) {
-      options.onProgress?.({ phase: 'sessions', current: index, total: ids.length })
-      try {
-        sourceDigests.set(id, await inspectBackupSource(sharded.store, id, limits, options.signal))
-      } catch (error) {
-        throwIfAborted(options.signal)
-        if (error instanceof BackupSourceBudgetError) throw error
-        sourceWarnings.push({
-          code: 'session-read-failed',
-          itemType: 'session',
-          itemId: id,
-          message: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-  if (ids.length && !sourceDigests.size)
-    throw new Error(`No selected session can be read: ${sourceWarnings[0]?.message}`)
+  const sourceWarnings = sharded.prepared?.warnings ?? []
   let manifest: BackupManifestV3 | undefined
   const entries = async function* (): AsyncGenerator<ZipArchiveEntry> {
     const sessions: BackupManifestV3['sessions'] = []
@@ -149,17 +134,31 @@ export async function exportShardedBackup(
       total += data.length
       if (++entryCount > DEFAULT_ZIP_LIMITS.maxEntries || total > DEFAULT_ZIP_LIMITS.maxTotalUncompressedBytes)
         throw new Error('Backup archive exceeds safety budget')
-      return { archive: { path, data }, descriptor: { path, size: data.length, checksum: await checksum(data) } }
+      const digest = await checksum(data)
+      if (path.startsWith('sessions/')) {
+        sessionProgress = { ...sessionProgress, processedBytes: (sessionProgress.processedBytes ?? 0) + data.length }
+        report(sessionProgress)
+      }
+      return { archive: { path, data }, descriptor: { path, size: data.length, checksum: digest } }
     }
     const encode = (path: string, value: unknown, budget: number) =>
       encodeBytes(path, encoder.encode(JSON.stringify(value)), budget)
     for (const [index, id] of ids.entries()) {
-      options.onProgress?.({ phase: 'sessions', current: index, total: ids.length })
-      if (!sourceDigests.has(id)) continue
+      sessionProgress = {
+        phase: 'sessions',
+        current: index,
+        total: ids.length,
+        label: sharded.prepared?.sessions[index]?.name ?? (await meta.getById(id))?.name,
+        processedBytes: 0,
+      }
+      report(sessionProgress, true)
       const prefix = `sessions/${await safeSessionPathComponent(id, checksum)}`
       const selected = sharded.prepared?.sessions.find((session) => session.id === id)
       if (selected?.layout === 'single' && sharded.prepared) {
-        const session = await preparedSessionReader({ ...options, sessionStore: sharded.store }, sharded.prepared)(id)
+        const session = await preparedSessionReader({ ...options, sessionStore: sharded.store }, sharded.prepared)(
+          id,
+          (warnings) => catalog.warnings.push(...warnings)
+        )
         const collected = collectSessionResourceReferences(session)
         catalog.add(collected.references)
         catalog.warnings.push(...collected.warnings)
@@ -202,9 +201,7 @@ export async function exportShardedBackup(
         batchBytes = 2
         return entry.archive
       }
-      for await (const row of checkedBackupRows(sharded.store, id, limits, options.signal, (digest) => {
-        if (digest !== sourceDigests.get(id)) throw new Error(`Backup source changed after preparation: ${id}`)
-      })) {
+      for await (const row of checkedBackupRows(sharded.store, id, limits, options.signal)) {
         throwIfAborted(options.signal)
         let logical = LogicalBackupRowSchema.parse(toLogicalBackupRow(row))
         if (row.kind === 'message' && row.payload) {
@@ -258,6 +255,7 @@ export async function exportShardedBackup(
           if (headerBytes > MAX_INDEX_BYTES) throw new Error('Backup headers exceed budget')
           const existing = await meta.getById(id)
           const info = logical.session
+          sessionProgress = { ...sessionProgress, label: info.name }
           session = {
             ...entry.descriptor,
             layout: 'sharded',
@@ -297,6 +295,7 @@ export async function exportShardedBackup(
       if (!session) throw new Error('Backup session is missing')
       session.counts = graph.finish()
     }
+    report({ ...sessionProgress, current: ids.length, total: ids.length }, true)
     yield* catalog.entries(options)
     for (const session of sessions)
       session.resourceIds = catalog.resources
@@ -325,6 +324,7 @@ export async function exportShardedBackup(
       },
     })
     validateBackupManifestGraph(manifest)
+    report({ phase: 'finishing', current: 0, total: 0 }, true)
     yield (await encode('manifest.json', manifest, MAX_MANIFEST_BYTES)).archive
   }
   const result = await options.writeArchive(() => createZipStream(enforceArchiveLimits(entries()), options.signal))
@@ -337,11 +337,50 @@ export async function importShardedBackup(
   options: BackupImportOptions,
   sharded: ShardedBackupOptions
 ): Promise<BackupImportResult | undefined> {
+  const report = createBackupProgressReporter(options.onProgress)
+  let phase: BackupProgress['phase'] = 'reading'
+  let processedBytes = 0
+  const beginPhase = (next: BackupProgress['phase']) => {
+    phase = next
+    processedBytes = 0
+    report({ phase, current: 0, total: 0, processedBytes }, true)
+  }
+  const advance = (bytes: number) => {
+    processedBytes += bytes
+    report({ phase, current: 0, total: 0, processedBytes })
+  }
+  const readEntries: typeof readZipFileEntries = async (input, consume, readOptions = {}) => {
+    const streamConsumer = readOptions.onStreamEntry
+    const tracked: ZipReadOptions = {
+      ...readOptions,
+      onStreamEntry: streamConsumer
+        ? async (entry) => {
+            const data = (async function* () {
+              for await (const bytes of entry.data) {
+                yield bytes
+                advance(bytes.length)
+              }
+            })()
+            await streamConsumer({ ...entry, data })
+          }
+        : undefined,
+    }
+    await readZipFileEntries(
+      input,
+      async (entry) => {
+        await consume(entry)
+        advance(entry.data.length)
+      },
+      tracked
+    )
+    report({ phase, current: 0, total: 0, processedBytes }, true)
+  }
+  beginPhase('reading')
   const limits = backupPageLimits(sharded.limits)
   const checksum = options.checksum ?? sha256Checksum
   const referenceCatalog = new BackupResourceCatalog()
   let declaredVersion: unknown
-  await readZipFileEntries(
+  await readEntries(
     file,
     (entry) => {
       const value = parse(entry.data)
@@ -358,6 +397,7 @@ export async function importShardedBackup(
   )
   if (declaredVersion === 2) return undefined
   if (declaredVersion !== 3) throw new Error('Unsupported backup version')
+  beginPhase('validating')
   const globalValues = new Map<string, unknown>()
   const globalPaths = new Set([BACKUP_SETTINGS_PATH, BACKUP_COPILOTS_PATH, BACKUP_SESSION_SETTINGS_PATH])
   const batchFacts = new Map<string, { kind: string; count: number; index: number }>()
@@ -385,8 +425,8 @@ export async function importShardedBackup(
         ? MAX_BACKUP_RESOURCE_ENTRY_BYTES
         : path === 'manifest.json'
           ? MAX_MANIFEST_BYTES
-          : path.endsWith('/session.json')
-            ? 128 * 1024 * 1024
+          : globalPaths.has(path) || path.endsWith('/session.json')
+            ? MAX_BACKUP_JSON_ENTRY_BYTES
             : path.endsWith('.bin')
               ? BACKUP_PAYLOAD_BLOCK_BYTES
               : limits.maxPageBytes,
@@ -411,7 +451,7 @@ export async function importShardedBackup(
       return LogicalBackupRowSchema.parse(value)
     })
   }
-  await readZipFileEntries(
+  await readEntries(
     file,
     async (entry) => {
       throwIfAborted(options.signal)
@@ -426,7 +466,7 @@ export async function importShardedBackup(
         return
       }
       if (globalPaths.has(entry.path)) {
-        if (manifest || entry.data.length > MAX_MANIFEST_BYTES) throw new Error('Invalid global backup entry')
+        if (manifest || entry.data.length > MAX_BACKUP_JSON_ENTRY_BYTES) throw new Error('Invalid global backup entry')
         globalValues.set(entry.path, parse(entry.data))
         return
       }
@@ -603,6 +643,7 @@ export async function importShardedBackup(
   let activeSourceSession: Session | undefined
   let payloadTransform: { transform: BackupResourcePayloadTransform; size: number } | undefined
   try {
+    beginPhase('restoring')
     const reserved = new Set<string>()
     const targets = new Map<string, { key: string; write: boolean }>()
     const allocate = async () => {
@@ -639,7 +680,7 @@ export async function importShardedBackup(
     }
     for (const key of missingResources) keys.set(key, await allocate())
     globals = await prepareGlobalRestore(validated, globalValues, options.storage, keys, options.signal)
-    await readZipFileEntries(
+    await readEntries(
       file,
       () => {
         throw new Error('Expected resource stream')
@@ -679,7 +720,7 @@ export async function importShardedBackup(
         },
       }
     )
-    await readZipFileEntries(
+    await readEntries(
       file,
       async (entry) => {
         throwIfAborted(options.signal)
@@ -784,6 +825,7 @@ export async function importShardedBackup(
       },
       { ...readOptions, filter: (path) => !isBackupResourcePath(path) }
     )
+    beginPhase('finishing')
     for (const [index, item] of candidates.entries()) {
       throwIfAborted(options.signal)
       await item.candidate.publish(options.signal)
@@ -794,7 +836,7 @@ export async function importShardedBackup(
       )
       if (item.oldMeta) await options.metaStorage.update(item.id, replacementMeta(meta))
       else await options.metaStorage.create(meta)
-      options.onProgress?.({ phase: 'restoring', current: index + 1, total: candidates.length })
+      report({ phase: 'finishing', current: index + 1, total: candidates.length }, true)
       throwIfAborted(options.signal)
     }
     await globals!.publish()

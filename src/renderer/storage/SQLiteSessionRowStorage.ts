@@ -1,3 +1,4 @@
+import type { BackupPageLimits } from '@chatbox/core/backup'
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite'
 import {
   SessionRowConflictError,
@@ -198,8 +199,12 @@ class CapacitorSessionRowSqlDatabase implements SessionRowSqlDatabase {
   execute(sql: string): Promise<void> {
     return this.enqueue(async () => {
       const database = await this.connect()
-      // iOS strips newlines from batches containing DELETE FROM; retain SQL token boundaries.
-      await database.execute(sql.replaceAll('\n', ' '))
+      // Flatten schema statements for iOS token boundaries; Android splits batches on ';\n'.
+      const statements = sql
+        .split(/;\s*(?:\n|$)/)
+        .map((statement) => statement.replaceAll('\n', ' ').trim())
+        .filter(Boolean)
+      await database.execute(`${statements.join(';\n')};\n`)
     })
   }
 
@@ -571,6 +576,14 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
 
   getRevision(sessionId: string): Promise<number | null> {
     return this.store.getRevision(sessionId)
+  }
+
+  iterateBackupRows(sessionId: string, limits: BackupPageLimits, signal?: AbortSignal) {
+    return this.store.iterateBackupRows(sessionId, limits, signal)
+  }
+
+  beginBackupRestore(sessionId: string) {
+    return this.store.beginBackupRestore(sessionId)
   }
 
   listSessionIds(): Promise<string[]> {

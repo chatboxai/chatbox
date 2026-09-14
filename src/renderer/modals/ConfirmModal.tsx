@@ -56,9 +56,13 @@ const ConfirmModal = NiceModal.create(
         )}
 
         <AdaptiveModal.Actions>
-          <AdaptiveModal.CloseButton onClick={() => close(false)}>
-            {cancelText || t('Cancel')}
-          </AdaptiveModal.CloseButton>
+          {cancelText ? (
+            <Button color="chatbox-gray" variant="light" onClick={() => close(false)}>
+              {cancelText}
+            </Button>
+          ) : (
+            <AdaptiveModal.CloseButton onClick={() => close(false)}>{t('Cancel')}</AdaptiveModal.CloseButton>
+          )}
           <Button color={danger ? 'chatbox-error' : undefined} onClick={() => close(true)}>
             {confirmText || t('Confirm')}
           </Button>

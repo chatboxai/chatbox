@@ -1,3 +1,4 @@
+import { DEFAULT_BACKUP_PAGE_LIMITS } from '@chatbox/core/backup'
 import { type SessionRowSqlBindValue, type SessionRowSqlDatabase, SqlSessionRowStore } from '@chatbox/core'
 import type { SessionRowSnapshot, SessionTextTokenResult } from '@chatbox/core/ports'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -73,7 +74,7 @@ function snapshot(count: number, revision = 1): SessionRowSnapshot {
   }
 }
 
-function realBridge() {
+function realBridge(platform: 'ios' | 'android' = 'ios') {
   const database = openNodeSessionRowDatabase()
   databases.push(database)
   const calls: NativeStatement[][] = []
@@ -87,7 +88,10 @@ function realBridge() {
   connection.createConnection.mockResolvedValue({
     open: async () => {},
     // Capacitor SQLite iOS removes newlines from execute() batches containing deletes.
-    execute: (sql: string) => database.execute(/DELETE FROM/i.test(sql) ? sql.replaceAll('\n', '') : sql),
+    execute: async (sql: string) => {
+      if (platform === 'ios') return database.execute(/DELETE FROM/i.test(sql) ? sql.replaceAll('\n', '') : sql)
+      for (const statement of sql.split(';\n').filter((part) => part.trim())) await database.query(statement)
+    },
     query: async (sql: string, values: SessionRowSqlBindValue[]) => ({ values: await database.query(sql, values) }),
     executeSet: async (batch: NativeStatement[], transaction: boolean) => {
       expect(transaction).toBe(true)
@@ -821,4 +825,37 @@ describe('Capacitor staging transport on real SQLite', () => {
     expect(lost).toBe(true)
     expect(await readContentSnapshot(store)).toEqual(next)
   })
+})
+
+it('round-trips backup rows through the Capacitor transaction adapter and rolls publication back', async () => {
+  const { store } = realBridge()
+  const original = snapshot(3)
+  original.rows.messages[1].message.contentParts = [{ type: 'text', text: '🙂'.repeat(100_000) }]
+  await store.writeRows(original)
+  const candidate = await store.beginBackupRestore('session')
+  try {
+    for await (const row of store.iterateBackupRows('session', DEFAULT_BACKUP_PAGE_LIMITS)) {
+      if (row.kind === 'message' && row.payload?.chunks) {
+        for await (const chunk of row.payload.chunks()) await candidate.appendPayload!(chunk)
+      }
+      await candidate.append(row)
+    }
+    await candidate.publish()
+    expect((await store.readSnapshot('session'))?.rows.messages.map((row) => row.message)).toEqual(
+      original.rows.messages.map((row) => row.message)
+    )
+    await candidate.rollback()
+    expect((await store.readSnapshot('session'))?.rows.messages.map((row) => row.message)).toEqual(
+      original.rows.messages.map((row) => row.message)
+    )
+  } finally {
+    await candidate.dispose()
+  }
+})
+
+it('initializes all row tables with the Android native statement delimiter', async () => {
+  const { store } = realBridge('android')
+  expect(await store.listSessionIds()).toEqual([])
+  await store.writeRows(snapshot(1))
+  expect(await store.listSessionIds()).toEqual(['session'])
 })

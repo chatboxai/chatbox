@@ -38,6 +38,10 @@ export class BackupJsonSize {
       else this.size += token.value.length
     }
   }
+  /** Completed canonical bytes form a monotonic lower bound until finish. */
+  get bytes() {
+    return this.size
+  }
   write(bytes: Uint8Array) {
     this.consume(this.tokens.write(bytes))
   }

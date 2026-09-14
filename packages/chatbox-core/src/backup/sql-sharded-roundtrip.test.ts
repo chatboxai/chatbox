@@ -1,3 +1,4 @@
+import type { BackupProgress } from './types'
 import { decodeSessionTree } from '../session/session-tree/decode'
 import { createHash } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -109,12 +110,41 @@ it('round trips a SQL message larger than a shard and preserves Unicode, escaped
     ],
   })
   await source.writeRows(original)
-  const archive = await backup(source)
+  const exportEvents: BackupProgress[] = []
+  let archive = new Blob()
+  // Advance the reporter clock deterministically so even a fast run observes each chunk.
+  let clock = Date.UTC(2026, 0, 1)
+  vi.spyOn(Date, 'now').mockImplementation(() => (clock += 501))
+  await exportBackupArchive({
+    storage: new MemoryStorage(),
+    metaStorage: new MemoryMetaStorage(),
+    exportItems: ['conversations'],
+    includeKeys: false,
+    application: { version: 'test', platform: 'test' },
+    sharded: { store: source },
+    onProgress: (event) => exportEvents.push(event),
+    writeArchive: async (stream) => {
+      archive = await collect(stream())
+      return { boundedMemory: true }
+    },
+  })
+  const importEvents: BackupProgress[] = []
   await importBackupArchive(archive, {
     storage: new MemoryStorage(),
     metaStorage: new MemoryMetaStorage(),
     sharded: { store: target },
+    onProgress: (event) => importEvents.push(event),
   })
+  expect(
+    exportEvents.filter((event) => event.phase === 'sessions' && (event.processedBytes ?? 0) > 0).length
+  ).toBeGreaterThan(2)
+  for (const phase of ['validating', 'restoring'] as const) {
+    const bytes = importEvents.filter((event) => event.phase === phase).map((event) => event.processedBytes ?? 0)
+    expect(bytes.length).toBeGreaterThan(2)
+    expect(bytes.at(-1)).toBeGreaterThan(1_000_000)
+    expect(bytes).toEqual([...bytes].sort((a, b) => a - b))
+  }
+  expect(importEvents.at(-1)?.phase).toBe('finishing')
   const restored = await target.readSnapshot(original.record.id)
   expect(restored?.rows).toEqual(original.rows)
   if (!restored) throw new Error('Missing restored message')

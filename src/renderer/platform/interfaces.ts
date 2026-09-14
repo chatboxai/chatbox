@@ -20,6 +20,8 @@ import type { SessionAttachmentRagController } from './session-attachment-rag/in
 export type PlatformType = SharedPlatformType
 
 export interface Storage {
+  copyStoreValue?(source: string, destination: string): Promise<boolean>
+  openBackupValue?(key: string): Promise<import('@chatbox/core/backup').BackupFile | null>
   getStorageType(): string
   setStoreValue(key: string, value: any): Promise<void>
   getStoreValue(key: string): Promise<any>
@@ -282,6 +284,7 @@ export interface Platform extends Storage {
 
 export interface StreamingExportResult {
   boundedMemory: boolean
+  delivery?: 'share-sheet'
   pendingDownload?: {
     filename: string
     blob: Blob
@@ -299,6 +302,6 @@ export interface Exporter {
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
     mimeType: string,
     signal?: AbortSignal,
-    requirements?: { requiresStreaming: boolean; estimatedBytes: number }
+    requirements?: { requiresStreaming: boolean; estimatedBytes?: number }
   ) => Promise<StreamingExportResult>
 }

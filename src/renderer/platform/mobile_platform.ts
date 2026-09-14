@@ -1,3 +1,4 @@
+import { mobileBackupBlobs } from './mobile-backup-blobs'
 import { App } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
 import { Device } from '@capacitor/device'
@@ -28,6 +29,8 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   public readonly isDesktopLike = false
 
   public exporter = new MobileExporter()
+  private backupBlobs = mobileBackupBlobs(localforage, this.backupResourceStorage)
+  public backupBlobStreams = this.backupBlobs.streams
 
   private navigationCallback: ((path: string) => void) | null = null
   private _imageGenerationStorage: ImageGenerationStorage | null = null
@@ -231,13 +234,13 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   }
 
   public async getStoreBlob(key: string): Promise<string | null> {
-    return localforage.getItem<string>(key)
+    return this.backupBlobs.get(key)
   }
   public async setStoreBlob(key: string, value: string): Promise<void> {
-    await localforage.setItem(key, value)
+    await this.backupBlobs.set(key, value)
   }
   public async delStoreBlob(key: string) {
-    return localforage.removeItem(key)
+    return this.backupBlobs.remove(key)
   }
   public async listStoreBlobKeys(): Promise<string[]> {
     return localforage.keys()
@@ -290,7 +293,7 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   }
 
   getLocalFilePath(file: File): string {
-    return file.path || ''
+    return 'path' in file && typeof file.path === 'string' ? file.path : ''
   }
 
   public async parseUrl(url: string): Promise<{ key: string; title: string }> {

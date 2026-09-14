@@ -89,6 +89,13 @@ export default class BaseStorage {
   // - `file:*` / `file:<name>-<size>-<mtime>` 文件解析内容与缓存文本
   // - `link:*` 网页解析内容缓存
   // - 与附件/链接相关的 `*_tokenMap` 统计键（用于恢复 token 预估与预览元数据）
+  public get copyItem() {
+    return platform.copyStoreValue?.bind(platform)
+  }
+  public get openBackupValue() {
+    return platform.openBackupValue?.bind(platform)
+  }
+
   public get blobStreams() {
     return platform.backupBlobStreams
   }

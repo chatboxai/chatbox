@@ -1,4 +1,3 @@
-import { sha256 } from '@noble/hashes/sha2.js'
 import { throwIfAborted } from './abort'
 import { jsonUtf8Blocks } from './json-stream'
 import { BackupMessageValidator } from './payload'
@@ -6,21 +5,19 @@ import { BackupGraphValidator, LogicalBackupRowSchema, toLogicalBackupRow } from
 import type { BackupPageLimits, BackupRow, BackupSessionStore } from './session-port'
 
 export class BackupSourceBudgetError extends Error {}
-/** Checks one repeatable source; hashing includes topology and every original message byte. */
+export const MAX_BACKUP_SESSION_STRUCTURE_BYTES = 16 * 1024 * 1024
+/** Validates message bytes and topology while the archive writer consumes the source. */
 export async function* checkedBackupRows(
   store: BackupSessionStore,
   id: string,
   limits: BackupPageLimits,
-  signal: AbortSignal | undefined,
-  complete: (digest: string) => void
+  signal: AbortSignal | undefined
 ): AsyncGenerator<BackupRow> {
-  const hash = sha256.create()
   const graph = new BackupGraphValidator(id)
   let bytes = 0
   const update = (part: Uint8Array) => {
     bytes += part.length
     if (bytes > 4 * 1024 ** 3) throw new BackupSourceBudgetError('Backup session exceeds the archive budget')
-    hash.update(part)
   }
   for await (const row of store.iterateBackupRows(id, limits, signal)) {
     throwIfAborted(signal)
@@ -56,21 +53,4 @@ export async function* checkedBackupRows(
   }
   graph.finish()
   throwIfAborted(signal)
-  complete(Array.from(hash.digest(), (byte) => byte.toString(16).padStart(2, '0')).join(''))
-}
-
-export async function inspectBackupSource(
-  store: BackupSessionStore,
-  id: string,
-  limits: BackupPageLimits,
-  signal?: AbortSignal
-) {
-  let digest: string | undefined
-  for await (const row of checkedBackupRows(store, id, limits, signal, (value) => {
-    digest = value
-  })) {
-    if (row.kind === 'message' && row.payload?.chunks) for await (const part of row.payload.chunks()) void part
-  }
-  if (!digest) throw new Error('Backup source was not completely consumed')
-  return digest
 }

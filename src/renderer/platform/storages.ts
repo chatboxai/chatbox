@@ -1,3 +1,4 @@
+import { MAX_BACKUP_RESOURCE_ENTRY_BYTES, openSqlBackupValue } from '@chatbox/core/backup'
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite'
 import localforage from 'localforage'
 import { StorageKey } from '@/storage'
@@ -324,6 +325,113 @@ class SQLiteStorage {
     }
   }
 
+  async openBackupValue(key: string) {
+    await this.ensureInitialized()
+    return this.enqueueOperation(key, () =>
+      openSqlBackupValue(
+        {
+          query: async <T>(sql: string, params: Array<string | number | null> = []) =>
+            ((await this.database.query(sql, params)).values as T[]) ?? [],
+        },
+        key
+      )
+    )
+  }
+
+  async copyItem(source: string, destination: string): Promise<boolean> {
+    await this.ensureInitialized()
+    const copy = async () => {
+      const result = await this.database.query('SELECT 1 AS present FROM key_value WHERE key = ?', [source])
+      if (!result.values?.length) return false
+      if (source === destination) return true
+      await this.database.executeSet(
+        [
+          { statement: 'DELETE FROM key_value_chunks WHERE key = ?', values: [destination] },
+          {
+            statement:
+              'INSERT INTO key_value_chunks(key,generation,chunk_index,value) SELECT ?,generation,chunk_index,value FROM key_value_chunks WHERE key = ?',
+            values: [destination, source],
+          },
+          {
+            statement: 'INSERT OR REPLACE INTO key_value(key,value) SELECT ?,value FROM key_value WHERE key = ?',
+            values: [destination, source],
+          },
+        ],
+        true
+      )
+      return true
+    }
+    const [first, second] = [source, destination].sort()
+    return this.enqueueOperation(first, () => (first === second ? copy() : this.enqueueOperation(second, copy)))
+  }
+
+  /** Stage bounded native chunks, then publish one manifest for an absent key. */
+  async writeStream(key: string, chunks: AsyncIterable<string>): Promise<void> {
+    await this.ensureInitialized()
+    await this.enqueueOperation(key, async () => {
+      const existing = await this.database.query('SELECT 1 AS present FROM key_value WHERE key = ?', [key])
+      if (existing.values?.length) throw new Error('Backup resource already exists')
+      const generation = uuidv4()
+      let count = 0
+      let length = 0
+      const write = async (value: string) => {
+        if (!value) return
+        length += value.length
+        if (++count > 100_000 || length > Math.ceil(MAX_BACKUP_RESOURCE_ENTRY_BYTES / 3) * 4 + 4096)
+          throw new Error('Backup resource exceeds budget')
+        await this.database.executeSet(
+          [
+            {
+              statement: 'INSERT INTO key_value_chunks(key,generation,chunk_index,value) VALUES (?,?,?,?)',
+              values: [key, generation, count - 1, value],
+            },
+          ],
+          true
+        )
+      }
+      try {
+        let pending = ''
+        for await (const chunk of chunks) {
+          for (let offset = 0; offset < chunk.length; offset += 16384) {
+            const value = pending + chunk.slice(offset, offset + 16384)
+            const last = value.charCodeAt(value.length - 1)
+            pending = last >= 0xd800 && last <= 0xdbff ? value.slice(-1) : ''
+            await write(pending ? value.slice(0, -1) : value)
+          }
+        }
+        if (pending) throw new Error('Backup resource contains invalid Unicode')
+        await this.database.executeSet(
+          [
+            {
+              statement: 'INSERT INTO key_value(key,value) VALUES (?,?)',
+              values: [key, count ? this.createChunkManifest(generation, count, length) : ''],
+            },
+          ],
+          true
+        )
+      } catch (error) {
+        await this.database.executeSet(
+          [{ statement: 'DELETE FROM key_value_chunks WHERE key = ? AND generation = ?', values: [key, generation] }],
+          true
+        )
+        throw error
+      }
+    })
+  }
+
+  // 插入或更新数据
+  async setItem(key: string, value: string): Promise<void> {
+    if (typeof value !== 'string') {
+      // Fail with a diagnosable error instead of the opaque `undefined.length`
+      // TypeError inside the chunked writer (issue 1125).
+      throw new TypeError(
+        `SQLiteStorage.setItem expects a string value, got ${typeof value} for key "${sanitizeStoreKeyForDiagnostics(key)}"`
+      )
+    }
+    await this.ensureInitialized()
+    await this.enqueueOperation(key, () => this.writeItem(key, value))
+  }
+
   // 获取值
   async getItem(key: string): Promise<string | null> {
     await this.ensureInitialized()
@@ -439,6 +547,16 @@ export class MobileSQLiteStorage implements Storage {
     this.sqliteStorage = database
       ? new SQLiteStorage(database)
       : (MobileSQLiteStorage.sharedStorage ??= new SQLiteStorage())
+  }
+
+  public copyStoreValue(source: string, destination: string) {
+    return this.sqliteStorage.copyItem(source, destination)
+  }
+  public openBackupValue(key: string) {
+    return this.sqliteStorage.openBackupValue(key)
+  }
+  public get backupResourceStorage() {
+    return this.sqliteStorage
   }
 
   public async setStoreValue(key: string, value: any) {

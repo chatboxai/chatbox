@@ -58,6 +58,7 @@ export const BackupWarningSchema = z.object({
   code: z.enum(['session-read-failed', 'resource-read-failed', 'external-resource-skipped', 'rag-rebuild-failed']),
   itemType: z.enum(['session', 'resource']),
   itemId: z.string().optional(),
+  itemName: z.string().optional(),
   message: z.string(),
 })
 export type BackupWarning = z.infer<typeof BackupWarningSchema>
@@ -160,10 +161,12 @@ export function validateBackupManifestGraph(
 }
 
 export interface BackupProgress {
-  phase: 'preparing' | 'sessions' | 'resources' | 'packing' | 'reading' | 'validating' | 'restoring'
+  phase: 'preparing' | 'sessions' | 'resources' | 'packing' | 'reading' | 'validating' | 'restoring' | 'finishing'
   current: number
   total: number
   label?: string
+  /** Uncompressed bytes processed in this phase; not the ZIP file size. */
+  processedBytes?: number
 }
 
 export type BackupStreamReadResult =

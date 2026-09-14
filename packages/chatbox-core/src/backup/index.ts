@@ -22,3 +22,5 @@ export * from './legacy-source'
 export * from './sql-value-file'
 
 export * from './preflight'
+
+export { createBackupProgressReporter } from './progress'

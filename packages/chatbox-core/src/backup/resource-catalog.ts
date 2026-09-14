@@ -1,3 +1,4 @@
+import { createBackupProgressReporter } from './progress'
 import type { BackupExportOptions } from './export-backup'
 import { safeSessionPathComponent } from './export-backup'
 import { fingerprintResource, readResource, resourceHash } from './blob-stream'
@@ -80,16 +81,20 @@ export class BackupResourceCatalog {
     const storageKeyToResourceId = this.keys
     const deduplicatedResources = new Map<string, BackupResourceEntry>()
     const checksum = options.checksum ?? sha256Checksum
+    const report = createBackupProgressReporter(options.onProgress)
     let successfullyReadResourceKeys = 0
     const resourceCandidateEntries = Array.from(resourceCandidates.entries())
     for (let index = 0; index < resourceCandidateEntries.length; index++) {
       throwIfAborted(options.signal)
       const [storageKey, candidate] = resourceCandidateEntries[index]
-      options.onProgress?.({
+      let processedBytes = 0
+      const label = candidate.references.find((reference) => reference.filename)?.filename
+      report({
         phase: 'resources',
         current: index,
         total: resourceCandidateEntries.length,
-        label: candidate.references.find((reference) => reference.filename)?.filename,
+        label,
+        processedBytes,
       })
       try {
         const firstReference = candidate.references[0]
@@ -146,6 +151,14 @@ export class BackupResourceCatalog {
               throwIfAborted(options.signal)
               hash.write(bytes)
               yield bytes
+              processedBytes += bytes.length
+              report({
+                phase: 'resources',
+                current: index,
+                total: resourceCandidateEntries.length,
+                label,
+                processedBytes,
+              })
             }
             const actual = hash.finish()
             if (actual.size !== encoded.size || actual.checksum.value !== encoded.checksum.value)
@@ -158,6 +171,7 @@ export class BackupResourceCatalog {
           code: 'resource-read-failed',
           itemType: 'resource',
           itemId: storageKey,
+          itemName: candidate.references.find((reference) => reference.filename)?.filename,
           message: error instanceof Error ? error.message : String(error),
         })
       }

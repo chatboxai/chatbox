@@ -227,23 +227,12 @@ describe('MobileExporter', () => {
       new MobileExporter().exportStreamingFile('backup.zip', dataCallback, 'application/zip')
     ).resolves.toEqual({ boundedMemory: true })
 
-    expect(filesystemMock.writeFile).toHaveBeenCalledWith(
-      expect.objectContaining({
-        path: 'chatbox_ai_exports/backup.zip',
-        directory: 'DOCUMENTS',
-        recursive: true,
-      })
-    )
-    expect(filesystemMock.writeFile.mock.calls[0][0].data).toHaveLength(1_398_104)
-    expect(filesystemMock.appendFile).toHaveBeenCalledWith({
-      path: 'chatbox_ai_exports/backup.zip',
-      data: 'AQID',
-      directory: 'DOCUMENTS',
-    })
-    expect(filesystemMock.getUri).toHaveBeenCalledWith({
-      path: 'chatbox_ai_exports/backup.zip',
-      directory: 'DOCUMENTS',
-    })
+    expect(filesystemMock.writeFile.mock.calls[0][0].directory).toBe('CACHE')
+    const writes = [...filesystemMock.writeFile.mock.calls, ...filesystemMock.appendFile.mock.calls]
+    expect(writes).toHaveLength(17)
+    expect(Math.max(...writes.map(([options]) => options.data.length))).toBeLessThanOrEqual(87384)
+    expect(documentSaverMock.saveFile).toHaveBeenCalledWith(expect.objectContaining({ mimeType: 'application/zip' }))
+    expect(filesystemMock.deleteFile).toHaveBeenCalled()
   })
 
   test('cleans up a small iOS ZIP using its auto-renamed path', async () => {
@@ -256,7 +245,7 @@ describe('MobileExporter', () => {
 
     await expect(
       new MobileExporter().exportStreamingFile('backup.zip', dataCallback, 'application/zip')
-    ).resolves.toEqual({ boundedMemory: true })
+    ).resolves.toEqual({ boundedMemory: true, delivery: 'share-sheet' })
 
     expect(filesystemMock.writeFile).toHaveBeenCalledWith({
       path: 'backup_2.zip',
@@ -283,8 +272,7 @@ describe('MobileExporter', () => {
     expect(filesystemMock.deleteFile).toHaveBeenCalledWith({ path: 'backup.zip', directory: 'CACHE' })
   })
 
-  test('does not show a failure toast when the Android picker fallback is aborted', async () => {
-    filesystemMock.writeFile.mockRejectedValueOnce(new Error('documents failed'))
+  test('does not show a failure toast when the Android picker is aborted', async () => {
     documentSaverMock.saveFile.mockRejectedValueOnce(new DOMException('Operation canceled', 'AbortError'))
     const dataCallback = async function* () {
       await Promise.resolve()
@@ -296,9 +284,36 @@ describe('MobileExporter', () => {
     ).rejects.toMatchObject({ name: 'AbortError' })
 
     expect(filesystemMock.deleteFile).toHaveBeenCalledWith({
-      path: 'chatbox_ai_exports/backup.zip',
-      directory: 'DOCUMENTS',
+      path: expect.stringContaining('backup.zip'),
+      directory: 'CACHE',
     })
     expect(toastMock.show).not.toHaveBeenCalled()
+  })
+  test('cleans the Android cache and skips the picker when canceled after the last chunk', async () => {
+    const controller = new AbortController()
+    const dataCallback = async function* () {
+      yield new Uint8Array([1, 2, 3])
+      controller.abort(new DOMException('Canceled', 'AbortError'))
+    }
+    await expect(
+      new MobileExporter().exportStreamingFile('backup.zip', dataCallback, 'application/zip', controller.signal)
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(documentSaverMock.saveFile).not.toHaveBeenCalled()
+    expect(filesystemMock.deleteFile).toHaveBeenCalled()
+  })
+
+  test('does not replay a partially consumed archive after a native write failure', async () => {
+    let starts = 0
+    filesystemMock.appendFile.mockRejectedValueOnce(new Error('disk full'))
+    const dataCallback = async function* () {
+      starts++
+      yield new Uint8Array(65537)
+    }
+    await expect(
+      new MobileExporter().exportStreamingFile('backup.zip', dataCallback, 'application/zip')
+    ).rejects.toThrow('disk full')
+    expect(starts).toBe(1)
+    expect(documentSaverMock.saveFile).not.toHaveBeenCalled()
+    expect(filesystemMock.deleteFile).toHaveBeenCalled()
   })
 })

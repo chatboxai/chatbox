@@ -57,7 +57,7 @@ Schema 的单一实现位于 `src/renderer/packages/backup/types.ts`。导入端
 - Android：分块写入 Documents；权限或目录能力不足时流式写入 Cache，再交给系统文件选择器，结束后删除临时文件。
 - iOS：分块写入 Cache 后打开系统分享面板，完成或失败后清理临时文件。
 
-导出取消会终止 ZIP producer，并删除已创建的部分文件。资源或 session 读取失败不会被静默吞掉：manifest 和设置页都会显示 warning。导入包含缺失受管资源的归档时，会依据 manifest 中实际声明的资源清理所有不可用 storage key、图片和装饰引用，继续恢复其余数据，并在重启前向用户显示 warning。
+导出取消会终止 ZIP producer，并删除已创建的部分文件。资源或 session 读取失败不会被静默吞掉：manifest 和设置页都会显示 warning。导入包含缺失受管资源的归档时，会依据 manifest 中实际声明的资源清理所有不可用 storage key、图片和装饰引用，继续恢复其余数据，并向用户显示 warning。
 
 ## 导入事务
 
@@ -67,7 +67,7 @@ ZIP 导入分为三个阶段：
 2. **完整校验**：验证 manifest schema、entry/path 唯一性、大小、SHA-256、session/resource 双向映射和统计值。
 3. **提交**：先规划资源 key，再写资源、session、meta、设置和 Copilot。目标 key 已有不同内容时生成同类的新 key，并重写所有引用。
 
-提交前保存将被覆盖的 KV/meta 快照。提交中取消或失败时按逆序恢复快照、删除新资源，并清理所有暂存 key。导入成功后应用重启，使设置和查询缓存从持久化状态重新加载。
+提交前保存将被覆盖的 KV/meta 快照。提交中取消或失败时按逆序恢复快照、删除新资源，并清理所有暂存 key。仅包含会话和资源的 ZIP 导入成功后，清除旧会话缓存并刷新会话列表，直接在当前页面显示结果。含设置、Copilot 或 session-settings 全局条目的 ZIP，以及旧 JSON 备份，导入后重启应用，使全局状态从持久化数据重新加载；有 warning 时先展示详情，由用户点击 Continue 完成重启。
 
 ## ZIP 安全限制
 
@@ -89,3 +89,11 @@ ZIP 导入分为三个阶段：
 - `src/renderer/routes/settings/general.tsx`：导出范围、进度、取消、warning 和 legacy JSON 路由。
 - `src/renderer/platform/*_exporter.ts`：Desktop/Web/Mobile 输出能力。
 - `src/renderer/platform/filter_writer.ts`：Capacitor 分块写入、Android picker fallback 和临时文件清理。
+
+### 备份交互与进度
+
+导出弹窗依次展示范围选择、检查摘要、执行和结果。摘要页可返回修改，保留勾选和搜索；当前检查释放写入限制后才返回，再次继续时重新检查数据。摘要说明会话数量、额外数据和版本兼容性。
+
+分片导出、校验和恢复复用现有流式读写统计未压缩字节，不为进度增加全文扫描。界面每约 500 ms 更新一次数据量，阶段切换和阶段完成立即更新；只在有可靠总量时显示阶段进度条。等待已有工作、取消清理和最终收尾分别显示，清理完成前保持操作限制。
+
+缺失会话、缺失附件/图片和搜索索引恢复失败分别计数。检查摘要显示已发现的问题，最终结果补齐运行时发现的问题；明细按需展开、分批展示。warning 可带可选的 `itemName` 显示名称，旧备份缺少该字段时回退到可用元数据或标识符。损坏、缺片和 checksum 不匹配仍按恢复失败处理。

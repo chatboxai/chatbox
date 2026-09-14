@@ -1,8 +1,16 @@
-import { prepareBackupExport, type BackupExportPlan, throwIfAborted } from '@chatbox/core/backup'
+import {
+  createBackupProgressReporter,
+  prepareBackupExport,
+  type BackupExportPlan,
+  throwIfAborted,
+} from '@chatbox/core/backup'
 import { useBackupSessionSelection } from '@chatbox/react'
+import { BackupWarnings } from '@/components/settings/BackupWarnings'
+import { BackupProgressView } from '@/components/settings/BackupProgressView'
 import { BackupExportDialog } from '@/components/settings/BackupExportDialog'
 import { confirmBackupInterruption } from '@/hooks/useBackupNavigationGuard'
 import { runRendererBackupOperation } from '@/app/backup-operations'
+import { refreshBackupState } from '@/app/backup-restore-state'
 import { getBackupFilename } from '@chatbox/core/backup'
 import {
   ActionIcon,
@@ -643,44 +651,21 @@ const DataRecoverySection = () => {
 const ImportExportDataSection = () => {
   const { t } = useTranslation()
 
-  const formatBackupWarning = (warning: BackupWarning) => {
-    switch (warning.code) {
-      case 'session-read-failed':
-        return t('Conversation data could not be read and was not included.')
-      case 'resource-read-failed':
-        return t('Managed attachment or image data could not be read and was not included.')
-      case 'external-resource-skipped':
-        return t('The original external file is not managed by Chatbox and was not included.')
-      case 'rag-rebuild-failed':
-        return t('The attachment search index could not be restored.')
-    }
-  }
-
-  const formatBackupProgressPhase = (phase: BackupProgress['phase']) => {
-    switch (phase) {
-      case 'preparing':
-        return t('Preparing backup')
-      case 'sessions':
-        return t('Exporting conversations')
-      case 'resources':
-        return t('Exporting attachments')
-      case 'packing':
-        return t('Creating backup archive')
-      case 'reading':
-        return t('Reading backup')
-      case 'validating':
-        return t('Validating backup')
-      case 'restoring':
-        return t('Restoring data')
-    }
-  }
-
+  const backupOperation = useSyncExternalStore(
+    rendererApplication.backupOperations.subscribe,
+    rendererApplication.backupOperations.getSnapshot
+  )
+  const cancelling = backupOperation?.phase === 'cancelling'
+  const [returning, setReturning] = useState(false)
+  const [backupReady, setBackupReady] = useState(false)
   const [importTips, setImportTips] = useState('')
-  const [importDetails, setImportDetails] = useState('')
+  const [importWarnings, setImportWarnings] = useState<BackupWarning[]>([])
+  const [importNames, setImportNames] = useState<ReadonlyMap<string, string>>(new Map())
+  const [importSucceeded, setImportSucceeded] = useState(false)
   const [importRequiresRestart, setImportRequiresRestart] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [exportPlan, setExportPlan] = useState<BackupExportPlan>()
-  const confirmExport = useRef<(() => void) | null>(null)
+  const confirmExport = useRef<((proceed: boolean) => void) | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [progress, setProgress] = useState<BackupProgress | null>(null)
@@ -688,6 +673,7 @@ const ImportExportDataSection = () => {
     color: 'green' | 'yellow' | 'red'
     title: string
     body?: string
+    warnings?: BackupWarning[]
   }>()
   const [pendingDownload, setPendingDownload] = useState<{ filename: string; blob: Blob }>()
   const [pendingDownloadUrl, setPendingDownloadUrl] = useState<string>()
@@ -700,6 +686,10 @@ const ImportExportDataSection = () => {
   const selection = useBackupSessionSelection(
     sessionRepository,
     exportDialogOpen && exportItems.includes(ExportDataItem.Conversations)
+  )
+  const selectionNames = useMemo(
+    () => new Map(selection.options.map((option) => [option.id, option.name])),
+    [selection.options]
   )
   const selectionBlocked =
     exportItems.includes(ExportDataItem.Conversations) && (selection.isLoading || !!selection.error)
@@ -742,14 +732,18 @@ const ImportExportDataSection = () => {
     if (isLoading || selectionBlocked) return
 
     setIsExporting(true)
+    setReturning(false)
+    setBackupReady(false)
     setProgress(null)
     setExportNotice(undefined)
     setPendingDownload(undefined)
+    const onProgress = createBackupProgressReporter(setProgress)
     try {
       const date = new Date()
       const result = await runRendererBackupOperation('export', (signal) =>
         rendererApplication.sessionWrites.withBackupAccess(() =>
           sessionRepository.withBackupStorageAccess(async (readSession, metaStorage, sessionStore) => {
+            setBackupReady(true)
             const options = {
               exportItems,
               selectedSessionIds: selection.exportSessionIds,
@@ -762,26 +756,27 @@ const ImportExportDataSection = () => {
               sessionStore,
               application: { version: platform.getVersion(), platform: platform.getPlatform() },
               signal,
-              onProgress: setProgress,
+              onProgress,
             }
             const prepared = sessionStore ? await prepareBackupExport({ ...options, sessionStore }) : undefined
             if (prepared) {
               throwIfAborted(signal)
               setExportPlan(prepared)
-              await new Promise<void>((resolve, reject) => {
+              const proceed = await new Promise<boolean>((resolve, reject) => {
                 const abort = () => {
                   confirmExport.current = null
                   reject(signal.reason ?? new DOMException('Export canceled', 'AbortError'))
                 }
                 signal.addEventListener('abort', abort, { once: true })
-                confirmExport.current = () => {
+                confirmExport.current = (proceed) => {
                   signal.removeEventListener('abort', abort)
                   confirmExport.current = null
-                  resolve()
+                  resolve(proceed)
                 }
                 if (signal.aborted) abort()
               })
               setExportPlan(undefined)
+              if (!proceed) return undefined
             }
             return exportBackupArchive({
               ...options,
@@ -792,29 +787,20 @@ const ImportExportDataSection = () => {
                   dataCallback,
                   'application/zip',
                   signal,
-                  prepared
-                    ? { requiresStreaming: prepared.formatVersion === 3, estimatedBytes: prepared.estimatedBytes }
-                    : undefined
+                  prepared ? { requiresStreaming: prepared.formatVersion === 3 } : undefined
                 ),
             })
           }, signal)
         )
       )
+      if (!result) return
       const warningCount = result.manifest.warnings.length
-      const warningSummary = result.manifest.warnings
-        .slice(0, 3)
-        .map((warning) => `${warning.itemId ? `${warning.itemId}: ` : ''}${formatBackupWarning(warning)}`)
-        .join('\n')
       setPendingDownload(result.pendingDownload)
       const warningBody = [
-        warningCount > 0
-          ? String(
-              t('{{count}} item(s) could not be included. See manifest.json in the backup for details.', {
-                count: warningCount,
-              })
-            )
+        String(t('{{count}} conversations backed up', { count: result.manifest.sessions.length })),
+        result.delivery === 'share-sheet'
+          ? String(t('The share sheet has closed. Check that you saved a copy of your backup.'))
           : '',
-        warningSummary,
         result.pendingDownload
           ? String(t('Your backup is ready. Download it to save a copy.'))
           : !result.boundedMemory
@@ -823,21 +809,17 @@ const ImportExportDataSection = () => {
       ]
         .filter(Boolean)
         .join('\n')
-      setExportNotice(
-        result.pendingDownload
-          ? {
-              color: warningCount > 0 ? 'yellow' : 'green',
-              title: String(t('Backup ready to download')),
-              body: warningBody,
-            }
+      const notice = result.pendingDownload
+        ? {
+            color: warningCount ? ('yellow' as const) : ('green' as const),
+            title: String(t('Backup ready to download')),
+          }
+        : result.delivery === 'share-sheet'
+          ? { color: 'yellow' as const, title: String(t('Backup sharing finished')) }
           : warningCount > 0 || !result.boundedMemory
-            ? {
-                color: 'yellow',
-                title: String(t('Backup exported with warnings')),
-                body: warningBody,
-              }
-            : { color: 'green', title: String(t('Backup exported successfully')) }
-      )
+            ? { color: 'yellow' as const, title: String(t('Backup exported with warnings')) }
+            : { color: 'green' as const, title: String(t('Backup exported successfully')) }
+      setExportNotice({ ...notice, body: warningBody, warnings: result.manifest.warnings })
     } catch (error) {
       if (isAbortError(error)) {
         setExportNotice({ color: 'yellow', title: String(t('Export canceled')) })
@@ -847,6 +829,7 @@ const ImportExportDataSection = () => {
       }
     } finally {
       setIsExporting(false)
+      setReturning(false)
       setExportPlan(undefined)
       confirmExport.current = null
       setProgress(null)
@@ -857,14 +840,18 @@ const ImportExportDataSection = () => {
     if (isLoading || !file) return
     setIsImporting(true)
     setImportTips('')
-    setImportDetails('')
+    setImportWarnings([])
+    setImportNames(new Map())
+    setBackupReady(false)
+    setImportSucceeded(false)
     setImportRequiresRestart(false)
     setProgress(null)
+    const onProgress = createBackupProgressReporter(setProgress)
     try {
       const shouldRestart = await runRendererBackupOperation('import', async (signal) => {
-        // Both import paths write session records straight to storage. Discard
-        // every retained session view before the warning path can keep running
-        // without the restart below.
+        setBackupReady(true)
+        // Direct-to-storage imports must discard retained session views so
+        // subsequent reads use the newly published rows.
         const forgetImportedSessionState = async () => {
           sessionRepository.forgetAllBaselines()
           const sessionIds = await sessionRepository.getAllSessionIds()
@@ -885,7 +872,7 @@ const ImportExportDataSection = () => {
                     storage,
                     metaStorage,
                     signal,
-                    onProgress: setProgress,
+                    onProgress,
                     rehydrateSession: rehydrateImportedSession,
                     sharded: sessionStore ? { store: sessionStore } : undefined,
                   })
@@ -895,29 +882,28 @@ const ImportExportDataSection = () => {
               }
             }, signal)
           )
-          await rendererApplication.settings.reloadFromStorage()
-          await reloadCopilotState()
-          await storage.flushPendingWrites()
-          await rendererApplication.queryClient.resetQueries()
+          const requiresRestart = await refreshBackupState(result.manifest)
           if (result.warnings.length > 0) {
-            const warningSummary = result.warnings
-              .slice(0, 3)
-              .map((warning) => `${warning.itemId ? `${warning.itemId}: ` : ''}${formatBackupWarning(warning)}`)
-              .join('\n')
             setImportTips(
               String(
-                t(
-                  'Backup restore is almost complete, with {{count}} warning(s). Select Continue to restart Chatbox and finish restoring.',
-                  {
-                    count: result.warnings.length,
-                  }
-                )
+                requiresRestart
+                  ? t(
+                      'Backup restore is almost complete, with {{count}} warning(s). Select Continue to restart Chatbox and finish restoring.',
+                      { count: result.warnings.length }
+                    )
+                  : t('Backup restored with {{count}} warning(s).', { count: result.warnings.length })
               )
             )
-            setImportDetails(warningSummary)
-            setImportRequiresRestart(true)
+            setImportWarnings(result.warnings)
+            setImportNames(new Map(result.manifest.sessions.map((session) => [session.id, session.meta.name])))
+            setImportRequiresRestart(requiresRestart)
             return false
           }
+          if (!requiresRestart) {
+            setImportSucceeded(true)
+            setImportTips(String(t('Backup restored successfully')))
+          }
+          return requiresRestart
         } else {
           await rendererApplication.sessionWrites.withBackupAccess(() =>
             sessionRepository.withBackupStorageAccess(async (_readSession, metaStorage) => {
@@ -943,6 +929,7 @@ const ImportExportDataSection = () => {
       })
       if (shouldRestart) await platform.relaunch()
     } catch (error) {
+      setImportSucceeded(false)
       if (isAbortError(error)) setImportTips(String(t('Import canceled')))
       else {
         console.error('Import failed:', error)
@@ -1016,24 +1003,22 @@ const ImportExportDataSection = () => {
           exporting={isExporting}
           onExport={() => void onExport()}
           plan={exportPlan}
-          onConfirm={() => confirmExport.current?.()}
+          onConfirm={() => confirmExport.current?.(true)}
+          onBack={() => {
+            setReturning(true)
+            confirmExport.current?.(false)
+          }}
+          cancelling={cancelling}
+          returning={returning}
           onCancel={cancelOperation}
           progress={
             <Stack gap="xs" align="center">
-              <Text size="sm" c="dimmed">
-                {progress
-                  ? t('{{phase}}: {{current}} / {{total}}', {
-                      phase: formatBackupProgressPhase(progress.phase),
-                      current: progress.current,
-                      total: progress.total,
-                    })
-                  : t('Preparing backup')}
-              </Text>
-              {progress?.label && (
-                <Text size="sm" c="dimmed">
-                  {progress.label}
-                </Text>
-              )}
+              <BackupProgressView
+                progress={progress}
+                cancelling={cancelling}
+                returning={returning}
+                waiting={!backupReady}
+              />
               {platform.type === 'mobile' && (
                 <Text size="xs" c="dimmed">
                   {t(
@@ -1059,6 +1044,7 @@ const ImportExportDataSection = () => {
                 <Text size="sm" c="dimmed" style={{ whiteSpace: 'pre-line' }}>
                   {exportNotice.body}
                 </Text>
+                <BackupWarnings warnings={exportNotice.warnings ?? []} names={selectionNames} />
               </Stack>
             )
           }
@@ -1083,6 +1069,9 @@ const ImportExportDataSection = () => {
           <Text c="chatbox-tertiary">
             {t('Upon import, changes will take effect immediately and existing data will be overwritten')}
           </Text>
+          <Text size="sm" c="chatbox-tertiary">
+            {t('During restore, conversations cannot be changed. Leaving settings will interrupt the operation.')}
+          </Text>
           {platform.type === 'mobile' && (
             <Text size="sm" c="chatbox-tertiary">
               {t(
@@ -1091,22 +1080,16 @@ const ImportExportDataSection = () => {
             </Text>
           )}
         </Stack>
-        {isImporting && progress && (
-          <Text size="sm" c="dimmed">
-            {t('{{phase}}: {{current}} / {{total}}', {
-              phase: formatBackupProgressPhase(progress.phase),
-              current: progress.current,
-              total: progress.total,
-            })}
-          </Text>
-        )}
+        {isImporting && <BackupProgressView progress={progress} cancelling={cancelling} waiting={!backupReady} />}
         {importTips && (
-          <Alert className=" self-start" variant="light" color="yellow" title={importTips} icon={<IconInfoCircle />}>
-            {importDetails && (
-              <Text size="sm" style={{ whiteSpace: 'pre-line' }}>
-                {importDetails}
-              </Text>
-            )}
+          <Alert
+            className=" self-start"
+            variant="light"
+            color={importSucceeded ? 'green' : 'yellow'}
+            title={importTips}
+            icon={<IconInfoCircle />}
+          >
+            <BackupWarnings warnings={importWarnings} names={importNames} />
             {importRequiresRestart && (
               <Button mt="sm" variant="light" onClick={() => platform.relaunch()}>
                 {t('Continue')}
@@ -1121,7 +1104,7 @@ const ImportExportDataSection = () => {
                 {isImporting ? t('Importing...') : t('Import and Restore')}
               </Button>
               {isImporting && (
-                <Button variant="light" color="chatbox-gray" onClick={cancelOperation}>
+                <Button variant="light" color="chatbox-gray" disabled={cancelling} onClick={cancelOperation}>
                   {t('Cancel')}
                 </Button>
               )}

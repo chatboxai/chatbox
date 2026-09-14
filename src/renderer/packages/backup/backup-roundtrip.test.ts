@@ -188,6 +188,81 @@ function asNativeBackupFile(bytes: Uint8Array): BackupFile {
 describe('ZIP backup round trip', () => {
   afterEach(() => vi.restoreAllMocks())
 
+  it('restores only selected complete conversations and their resources', async () => {
+    const source = new MemoryStorage()
+    const meta = new MemoryMetaStorage()
+    const kept = createSession('kept')
+    kept.threads = [
+      {
+        id: 'history',
+        name: 'History',
+        createdAt: 1,
+        messages: [{ id: 'old', role: 'assistant', contentParts: [{ type: 'text', text: 'Historical reply' }] }],
+      },
+    ]
+    const other = createSession('other')
+    other.messages[0].contentParts = [{ type: 'image', storageKey: 'picture:unrelated' }]
+    for (const session of [kept, other]) {
+      source.values.set(backupSessionStorageKey(session.id), session)
+      meta.records.set(session.id, createMeta(session, 1))
+    }
+    source.blobs.set('picture:shared', 'data:image/png;base64,AAECAw==')
+    source.blobs.set('picture:unrelated', 'data:image/png;base64,/w==')
+    const chunks: Uint8Array[] = []
+    const exported = await exportBackupArchive({
+      exportItems: ['conversations'],
+      selectedSessionIds: ['kept'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: meta,
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (data) => {
+        for await (const chunk of data()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+    expect(exported.manifest.sessions.map((session) => session.id)).toEqual(['kept'])
+    expect(exported.manifest.warnings).toEqual([])
+    expect(exported.manifest.resources.flatMap((resource) => resource.originalStorageKeys)).toEqual(['picture:shared'])
+    const destination = new MemoryStorage()
+    await importBackupArchive(asNativeBackupFile(combine(chunks)), {
+      storage: destination,
+      metaStorage: new MemoryMetaStorage(),
+    })
+    expect(await destination.getItem(backupSessionStorageKey('kept'), null)).toMatchObject({ threads: kept.threads })
+    expect(await destination.getItem(backupSessionStorageKey('other'), null)).toBeNull()
+  })
+
+  it.each([
+    { selectedSessionIds: [], expectedIds: [] },
+    { selectedSessionIds: ['orphan'], expectedIds: ['orphan'] },
+    { selectedSessionIds: undefined, expectedIds: ['orphan'] },
+  ])(
+    'exports the explicit selection $selectedSessionIds even without list metadata',
+    async ({ selectedSessionIds, expectedIds }) => {
+      const source = new MemoryStorage()
+      const session = createSession('orphan')
+      source.blobs.set('picture:shared', 'data:image/png;base64,AAECAw==')
+      const result = await exportBackupArchive({
+        exportItems: ['conversations'],
+        selectedSessionIds,
+        includeKeys: false,
+        storage: source,
+        metaStorage: new MemoryMetaStorage(),
+        application: { version: 'test', platform: 'test' },
+        readSession: async (id) => (id === 'orphan' ? session : null),
+        listSessionIds: async () => ['orphan'],
+        writeArchive: async (data) => {
+          for await (const _chunk of data()) {
+          }
+          return { boundedMemory: true }
+        },
+      })
+      expect(result.manifest.sessions.map((item) => item.id)).toEqual(expectedIds)
+      expect(result.manifest.warnings).toEqual([])
+    }
+  )
+
   it('restores a native ZIP without Blob, Web Streams, Web Crypto, or crypto.getRandomValues', async () => {
     const nativeRandomValues = vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation(() => {
       throw new Error('Web Crypto getRandomValues is unavailable')
@@ -1239,6 +1314,47 @@ describe('ZIP backup round trip', () => {
     expect(Array.from(destination.values.keys()).some((key) => key.startsWith('__chatbox_backup_import:'))).toBe(false)
     expect(Array.from(destination.blobs.keys()).some((key) => key.startsWith('__chatbox_backup_import:'))).toBe(false)
     expect(rollbackRehydration).toHaveBeenCalledOnce()
+  })
+
+  it('reports rollback failure and retains the original session staging', async () => {
+    const source = new MemoryStorage()
+    const meta = new MemoryMetaStorage()
+    const session: Session = { id: 'rollback-failure', name: 'Restored', messages: [] }
+    source.values.set(backupSessionStorageKey(session.id), session)
+    meta.records.set(session.id, createMeta(session, 1))
+    const chunks: Uint8Array[] = []
+    await exportBackupArchive({
+      exportItems: ['conversations'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: meta,
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (data) => {
+        for await (const chunk of data()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+    const destination = new MemoryStorage()
+    const destinationMeta = new FailOnceMetaStorage()
+    const original = { ...session, name: 'Original' }
+    destination.values.set(backupSessionStorageKey(session.id), original)
+    destinationMeta.records.set(session.id, createMeta(original, 1))
+    vi.spyOn(destination, 'setItemNow').mockImplementation(async (key, value) => {
+      if (key === backupSessionStorageKey(session.id) && (value as Session).name === 'Original')
+        throw new Error('rollback disk failure')
+      destination.values.set(key, value)
+    })
+    await expect(
+      importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'rollback.zip'), {
+        storage: destination,
+        metaStorage: destinationMeta,
+      })
+    ).rejects.toThrow('rollback failed')
+    expect(
+      [...destination.values].some(
+        ([key, value]) => key.includes(':rollback:') && (value as Session).name === 'Original'
+      )
+    ).toBe(true)
   })
 
   it('cleans staged and newly written data when import is canceled during commit', async () => {

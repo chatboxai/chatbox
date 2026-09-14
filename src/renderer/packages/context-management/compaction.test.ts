@@ -18,12 +18,16 @@ vi.mock('@/platform', () => ({ default: { isDesktopLike: false } }))
 vi.mock('@/sandbox', () => ({ createSandboxProvider: vi.fn() }))
 vi.mock('@/stores/session/agent-mode', () => ({ getSessionAgentModeEntry: () => ({ value: 'off' }) }))
 vi.mock('@/stores/settingActions', () => ({ isPro: () => true }))
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: {
-    sessions: { updateSessionWithMessages: updateSessionWithMessagesMock },
-    sessionQueryBridge: { getSession: getSessionMock },
-  },
-}))
+vi.mock('@/app/renderer-application', async () => {
+  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+  return {
+    rendererApplication: {
+      backupOperations: new BackupOperationCoordinator(),
+      sessions: { updateSessionWithMessages: updateSessionWithMessagesMock },
+      sessionQueryBridge: { getSession: getSessionMock },
+    },
+  }
+})
 vi.mock('@/stores/session/session-settings', () => ({
   getSessionSettings: getSessionSettingsMock,
 }))
@@ -40,6 +44,7 @@ vi.mock('./context-tokens', () => ({
 }))
 vi.mock('./summary-generator', () => ({ generateSummaryWithStream: generateSummaryWithStreamMock }))
 
+import { rendererApplication } from '@/app/renderer-application'
 import { runCompactionWithUIState } from './compaction'
 
 function message(id: string, overrides: Partial<Message> = {}): Message {
@@ -55,6 +60,14 @@ function testSession(): Session {
 }
 
 describe('runCompactionWithUIState', () => {
+  it('does not admit compaction during backup', async () => {
+    await rendererApplication.backupOperations.run('export', async () => {
+      await runCompactionWithUIState('session-1', { force: true })
+      expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+      expect(updateSessionWithMessagesMock).not.toHaveBeenCalled()
+    })
+  })
+
   it('forwards a one-time prompt to the summary generator', async () => {
     generateSummaryWithStreamMock.mockResolvedValue({ success: true, summary: 'Summary' })
     await runCompactionWithUIState('session-1', { force: true, prompt: 'Keep exact paths.' })

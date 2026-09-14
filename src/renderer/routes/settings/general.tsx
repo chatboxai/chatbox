@@ -1,3 +1,7 @@
+import { useBackupSessionSelection } from '@chatbox/react'
+import { BackupExportDialog } from '@/components/settings/BackupExportDialog'
+import { confirmBackupInterruption } from '@/hooks/useBackupNavigationGuard'
+import { runRendererBackupOperation } from '@/app/backup-operations'
 import { getBackupFilename } from '@chatbox/core/backup'
 import {
   ActionIcon,
@@ -30,12 +34,19 @@ import {
 } from '@shared/theme-colors'
 import { type Language, Theme } from '@shared/types'
 import { formatFileSize } from '@shared/utils'
-import { IconCheck, IconDeviceFloppy, IconInfoCircle, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react'
+import {
+  IconCheck,
+  IconCircleCheck,
+  IconDeviceFloppy,
+  IconInfoCircle,
+  IconPencil,
+  IconPlus,
+  IconTrash,
+} from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import dayjs from 'dayjs'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
-import { withExclusiveSessionStorageLock } from '@/adapters/CurrentSessionRepository'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { AppIconPicker } from '@/components/common/AppIconPicker'
@@ -52,12 +63,12 @@ import {
   isAbortError,
   isZipBackupFile,
   rehydrateImportedSession,
-  updateBackupExportItemSelection,
 } from '@/packages/backup'
 import platform from '@/platform'
 import { canShareFile, shareFile } from '@/platform/web_file_share'
 import storage from '@/storage'
 import { withAgentPersonaLocks } from '@/stores/agentPersonaStore'
+import { reloadCopilotState } from '@/stores/copilotStore'
 import { migrateOnData } from '@/stores/migration'
 import { getMetaStorage } from '@/stores/sessionHelpers'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -86,6 +97,10 @@ function serializeErrorForLog(error: unknown) {
 }
 
 export function RouteComponent() {
+  const backupOperation = useSyncExternalStore(
+    rendererApplication.backupOperations.subscribe,
+    rendererApplication.backupOperations.getSnapshot
+  )
   const { t } = useTranslation()
   const { setSettings, ...settings } = useSettingsStore((state) => state)
   const realTheme = useUIStore((state) => state.realTheme)
@@ -196,337 +211,361 @@ export function RouteComponent() {
 
   return (
     <Stack p="md" gap="xl">
-      <Title order={5}>{t('General Settings')}</Title>
+      <fieldset
+        disabled={backupOperation !== null}
+        style={{
+          border: 0,
+          padding: 0,
+          margin: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--mantine-spacing-xl)',
+        }}
+      >
+        <Title order={5}>{t('General Settings')}</Title>
 
-      {/* Display Settings */}
-      <Stack gap="lg" maw={720}>
-        <Title order={5}>{t('Display Settings')}</Title>
+        {/* Display Settings */}
+        <Stack gap="lg" maw={720}>
+          <Title order={5}>{t('Display Settings')}</Title>
 
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-          <AdaptiveSelect
-            comboboxProps={{ withinPortal: true }}
-            value={settings.language}
-            data={languages.map((language) => ({
-              value: language,
-              label: languageNameMap[language],
-              // style: language === 'ar' ? { fontFamily: 'Cairo, Arial, sans-serif' } : {},
-            }))}
-            label={t('Language')}
-            styles={{
-              label: {
-                fontWeight: 400,
-              },
-            }}
-            onChange={(val) => {
-              if (val) {
-                setSettings({
-                  language: val as Language,
-                })
-              }
-            }}
-          />
-          <AdaptiveSelect
-            comboboxProps={{ withinPortal: true, withArrow: true }}
-            label={t('Theme')}
-            styles={{
-              label: {
-                fontWeight: 400,
-              },
-            }}
-            data={[
-              { value: `${Theme.System}`, label: t('Follow System') },
-              { value: `${Theme.Light}`, label: t('Light Mode') },
-              { value: `${Theme.Dark}`, label: t('Dark Mode') },
-            ]}
-            value={`${settings.theme}`}
-            onChange={(val) => {
-              if (val) {
-                setSettings({
-                  theme: parseInt(val),
-                })
-              }
-            }}
-          />
-        </SimpleGrid>
-        <AppIconPicker />
-
-        <Stack gap="md">
-          <Stack gap="xxs">
-            <Flex align="center" gap={2}>
-              <Text size="sm">{t('Color Presets')}</Text>
-              <ActionIcon
-                variant={isEditingInterfaceColorPresets ? 'light' : 'subtle'}
-                size="sm"
-                aria-label={isEditingInterfaceColorPresets ? t('Save') : t('Edit')}
-                disabled={
-                  isEditingInterfaceColorPresets &&
-                  Boolean(editingPresetId || isCreatingInterfaceColorPreset) &&
-                  !presetLabel.trim()
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            <AdaptiveSelect
+              comboboxProps={{ withinPortal: true }}
+              value={settings.language}
+              data={languages.map((language) => ({
+                value: language,
+                label: languageNameMap[language],
+                // style: language === 'ar' ? { fontFamily: 'Cairo, Arial, sans-serif' } : {},
+              }))}
+              label={t('Language')}
+              styles={{
+                label: {
+                  fontWeight: 400,
+                },
+              }}
+              onChange={(val) => {
+                if (val) {
+                  setSettings({
+                    language: val as Language,
+                  })
                 }
-                onClick={() => {
-                  if (isEditingInterfaceColorPresets) {
-                    if (editingPresetId) {
-                      saveEditedInterfaceColorPreset()
-                    } else if (isCreatingInterfaceColorPreset) {
-                      saveInterfaceColorPreset()
-                    } else {
-                      cancelEditingInterfaceColorPreset()
-                    }
-                  } else {
-                    setIsCreatingInterfaceColorPreset(false)
+              }}
+            />
+            <AdaptiveSelect
+              comboboxProps={{ withinPortal: true, withArrow: true }}
+              label={t('Theme')}
+              styles={{
+                label: {
+                  fontWeight: 400,
+                },
+              }}
+              data={[
+                { value: `${Theme.System}`, label: t('Follow System') },
+                { value: `${Theme.Light}`, label: t('Light Mode') },
+                { value: `${Theme.Dark}`, label: t('Dark Mode') },
+              ]}
+              value={`${settings.theme}`}
+              onChange={(val) => {
+                if (val) {
+                  setSettings({
+                    theme: parseInt(val),
+                  })
+                }
+              }}
+            />
+          </SimpleGrid>
+          <AppIconPicker />
+
+          <Stack gap="md">
+            <Stack gap="xxs">
+              <Flex align="center" gap={2}>
+                <Text size="sm">{t('Color Presets')}</Text>
+                <ActionIcon
+                  variant={isEditingInterfaceColorPresets ? 'light' : 'subtle'}
+                  size="sm"
+                  aria-label={isEditingInterfaceColorPresets ? t('Save') : t('Edit')}
+                  disabled={
+                    isEditingInterfaceColorPresets &&
+                    Boolean(editingPresetId || isCreatingInterfaceColorPreset) &&
+                    !presetLabel.trim()
                   }
-                  setIsEditingInterfaceColorPresets((value) => !value)
-                }}
+                  onClick={() => {
+                    if (isEditingInterfaceColorPresets) {
+                      if (editingPresetId) {
+                        saveEditedInterfaceColorPreset()
+                      } else if (isCreatingInterfaceColorPreset) {
+                        saveInterfaceColorPreset()
+                      } else {
+                        cancelEditingInterfaceColorPreset()
+                      }
+                    } else {
+                      setIsCreatingInterfaceColorPreset(false)
+                    }
+                    setIsEditingInterfaceColorPresets((value) => !value)
+                  }}
+                >
+                  {isEditingInterfaceColorPresets ? <IconCheck size={14} /> : <IconPencil size={14} />}
+                </ActionIcon>
+              </Flex>
+              <Flex
+                columnGap="xs"
+                rowGap={isEditingInterfaceColorPresets ? 12 : 'xs'}
+                py={isEditingInterfaceColorPresets ? 5 : 0}
+                wrap="wrap"
               >
-                {isEditingInterfaceColorPresets ? <IconCheck size={14} /> : <IconPencil size={14} />}
-              </ActionIcon>
-            </Flex>
-            <Flex
-              columnGap="xs"
-              rowGap={isEditingInterfaceColorPresets ? 12 : 'xs'}
-              py={isEditingInterfaceColorPresets ? 5 : 0}
-              wrap="wrap"
-            >
-              {colorPresets.map((preset) => (
-                <Box key={preset.id} pos="relative">
+                {colorPresets.map((preset) => (
+                  <Box key={preset.id} pos="relative">
+                    <Badge
+                      component="button"
+                      type="button"
+                      className={presetBadgeButtonClassName}
+                      variant="filled"
+                      style={{
+                        backgroundColor: withColorOpacity(preset.colors[realTheme].brand, 0.6),
+                        cursor: 'pointer',
+                        height: 30,
+                        maxWidth: 160,
+                      }}
+                      onClick={() => {
+                        if (isEditingInterfaceColorPresets && preset.isCustom) {
+                          startEditingInterfaceColorPreset(preset)
+                        } else {
+                          applyInterfaceColorPreset(preset.colors)
+                        }
+                      }}
+                    >
+                      {preset.isCustom ? preset.label : t(preset.label)}
+                    </Badge>
+                    {isEditingInterfaceColorPresets && preset.isCustom && (
+                      <ActionIcon
+                        pos="absolute"
+                        top={-5}
+                        right={-5}
+                        variant="filled"
+                        color="red"
+                        size={16}
+                        radius="xl"
+                        aria-label={t('Delete')}
+                        onClick={() => deleteInterfaceColorPreset(preset.id)}
+                      >
+                        <IconTrash size={10} />
+                      </ActionIcon>
+                    )}
+                  </Box>
+                ))}
+                {!isCreatingInterfaceColorPreset && (
                   <Badge
                     component="button"
                     type="button"
                     className={presetBadgeButtonClassName}
-                    variant="filled"
-                    style={{
-                      backgroundColor: withColorOpacity(preset.colors[realTheme].brand, 0.6),
-                      cursor: 'pointer',
-                      height: 30,
-                      maxWidth: 160,
-                    }}
+                    circle
+                    variant="outline"
+                    aria-label={t('New Preset')}
+                    style={{ cursor: 'pointer', height: 30, width: 30 }}
+                    styles={{ label: { display: 'flex', width: '100%', justifyContent: 'center' } }}
                     onClick={() => {
-                      if (isEditingInterfaceColorPresets && preset.isCustom) {
-                        startEditingInterfaceColorPreset(preset)
-                      } else {
-                        applyInterfaceColorPreset(preset.colors)
-                      }
+                      cancelEditingInterfaceColorPreset()
+                      setPresetLabel(`Custom Preset ${(settings.interfaceColorPresets?.length ?? 0) + 1}`)
+                      setIsCreatingInterfaceColorPreset(true)
                     }}
                   >
-                    {preset.isCustom ? preset.label : t(preset.label)}
+                    <IconPlus size={14} />
                   </Badge>
-                  {isEditingInterfaceColorPresets && preset.isCustom && (
-                    <ActionIcon
-                      pos="absolute"
-                      top={-5}
-                      right={-5}
-                      variant="filled"
-                      color="red"
-                      size={16}
-                      radius="xl"
-                      aria-label={t('Delete')}
-                      onClick={() => deleteInterfaceColorPreset(preset.id)}
-                    >
-                      <IconTrash size={10} />
-                    </ActionIcon>
-                  )}
-                </Box>
-              ))}
-              {!isCreatingInterfaceColorPreset && (
-                <Badge
-                  component="button"
-                  type="button"
-                  className={presetBadgeButtonClassName}
-                  circle
-                  variant="outline"
-                  aria-label={t('New Preset')}
-                  style={{ cursor: 'pointer', height: 30, width: 30 }}
-                  styles={{ label: { display: 'flex', width: '100%', justifyContent: 'center' } }}
-                  onClick={() => {
-                    cancelEditingInterfaceColorPreset()
-                    setPresetLabel(`Custom Preset ${(settings.interfaceColorPresets?.length ?? 0) + 1}`)
-                    setIsCreatingInterfaceColorPreset(true)
-                  }}
-                >
-                  <IconPlus size={14} />
-                </Badge>
-              )}
-            </Flex>
-          </Stack>
-          {(isCreatingInterfaceColorPreset || editingPresetId) && (
-            <Stack gap="md">
-              <TextInput
-                autoFocus
-                label={t('Name')}
-                value={presetLabel}
-                onChange={(event) => setPresetLabel(event.currentTarget.value)}
-              />
-              <SimpleGrid cols={2} spacing="md">
-                <Stack gap="md">
-                  <InterfaceColorInput
-                    label={t('Primary Background')}
-                    value={currentInterfaceColors.backgroundPrimary}
-                    onCommit={(value) => setInterfaceColor('backgroundPrimary', value)}
-                  />
-                  <InterfaceColorInput
-                    label={t('Secondary Background')}
-                    value={currentInterfaceColors.backgroundSecondary}
-                    onCommit={(value) => setInterfaceColor('backgroundSecondary', value)}
-                  />
-                </Stack>
-                <Stack gap="md">
-                  <InterfaceColorInput
-                    label={t('Tertiary Background')}
-                    value={currentInterfaceColors.backgroundTertiary}
-                    onCommit={(value) => setInterfaceColor('backgroundTertiary', value)}
-                  />
-                  <InterfaceColorInput
-                    label={t('Brand Color')}
-                    value={currentInterfaceColors.brand}
-                    isColorAllowed={isInterfaceBrandColorAllowed}
-                    onCommit={(value) => setInterfaceColor('brand', value)}
-                  />
-                </Stack>
-              </SimpleGrid>
-              <SimpleGrid cols={2} spacing="md">
-                <Button variant="outline" onClick={resetInterfaceColors}>
-                  {t('Reset Colors')}
-                </Button>
-                <Button
-                  leftSection={<IconDeviceFloppy size={14} />}
-                  disabled={!presetLabel.trim()}
-                  onClick={editingPresetId ? saveEditedInterfaceColorPreset : saveInterfaceColorPreset}
-                >
-                  {editingPresetId ? t('Save') : t('Save Preset')}
-                </Button>
-              </SimpleGrid>
+                )}
+              </Flex>
             </Stack>
-          )}
+            {(isCreatingInterfaceColorPreset || editingPresetId) && (
+              <Stack gap="md">
+                <TextInput
+                  autoFocus
+                  label={t('Name')}
+                  value={presetLabel}
+                  onChange={(event) => setPresetLabel(event.currentTarget.value)}
+                />
+                <SimpleGrid cols={2} spacing="md">
+                  <Stack gap="md">
+                    <InterfaceColorInput
+                      label={t('Primary Background')}
+                      value={currentInterfaceColors.backgroundPrimary}
+                      onCommit={(value) => setInterfaceColor('backgroundPrimary', value)}
+                    />
+                    <InterfaceColorInput
+                      label={t('Secondary Background')}
+                      value={currentInterfaceColors.backgroundSecondary}
+                      onCommit={(value) => setInterfaceColor('backgroundSecondary', value)}
+                    />
+                  </Stack>
+                  <Stack gap="md">
+                    <InterfaceColorInput
+                      label={t('Tertiary Background')}
+                      value={currentInterfaceColors.backgroundTertiary}
+                      onCommit={(value) => setInterfaceColor('backgroundTertiary', value)}
+                    />
+                    <InterfaceColorInput
+                      label={t('Brand Color')}
+                      value={currentInterfaceColors.brand}
+                      isColorAllowed={isInterfaceBrandColorAllowed}
+                      onCommit={(value) => setInterfaceColor('brand', value)}
+                    />
+                  </Stack>
+                </SimpleGrid>
+                <SimpleGrid cols={2} spacing="md">
+                  <Button variant="outline" onClick={resetInterfaceColors}>
+                    {t('Reset Colors')}
+                  </Button>
+                  <Button
+                    leftSection={<IconDeviceFloppy size={14} />}
+                    disabled={!presetLabel.trim()}
+                    onClick={editingPresetId ? saveEditedInterfaceColorPreset : saveInterfaceColorPreset}
+                  >
+                    {editingPresetId ? t('Save') : t('Save Preset')}
+                  </Button>
+                </SimpleGrid>
+              </Stack>
+            )}
+          </Stack>
+
+          {/* Font Size */}
+          <Stack>
+            <Text>{t('Font Size')}</Text>
+            <LazySlider
+              step={1}
+              min={10}
+              max={22}
+              maw={720}
+              marks={[
+                {
+                  value: 14,
+                },
+              ]}
+              value={settings.fontSize}
+              onChange={(val) =>
+                setSettings({
+                  fontSize: val,
+                })
+              }
+            />
+          </Stack>
+
+          {/* Startup Page */}
+          <Stack>
+            <Text>{t('Startup Page')}</Text>
+            <Radio.Group
+              value={settings.startupPage}
+              defaultValue="home"
+              onChange={(val) => {
+                if (val === 'home' || val === 'session') setSettings({ startupPage: val })
+              }}
+            >
+              <Flex gap="md">
+                <Radio label={t('Home Page')} value="home" />
+                <Radio label={t('Last Session')} value="session" />
+              </Flex>
+            </Radio.Group>
+          </Stack>
         </Stack>
 
-        {/* Font Size */}
-        <Stack>
-          <Text>{t('Font Size')}</Text>
-          <LazySlider
-            step={1}
-            min={10}
-            max={22}
-            maw={720}
-            marks={[
-              {
-                value: 14,
-              },
-            ]}
-            value={settings.fontSize}
-            onChange={(val) =>
+        <Divider />
+
+        {/* Network Proxy */}
+        <Stack gap="xs">
+          <Title order={5}>{t('Network Proxy')}</Title>
+          <TextInput
+            maw={320}
+            placeholder="socks5://127.0.0.1:6153"
+            value={settings.proxy}
+            onChange={(e) =>
               setSettings({
-                fontSize: val,
+                proxy: e.currentTarget.value,
               })
             }
           />
         </Stack>
 
-        {/* Startup Page */}
-        <Stack>
-          <Text>{t('Startup Page')}</Text>
-          <Radio.Group
-            value={settings.startupPage}
-            defaultValue="home"
-            onChange={(val) => {
-              if (val === 'home' || val === 'session') setSettings({ startupPage: val })
-            }}
-          >
-            <Flex gap="md">
-              <Radio label={t('Home Page')} value="home" />
-              <Radio label={t('Last Session')} value="session" />
-            </Flex>
-          </Radio.Group>
-        </Stack>
-      </Stack>
+        <Divider />
 
-      <Divider />
+        {/* Data Recovery */}
+        <DataRecoverySection />
 
-      {/* Network Proxy */}
-      <Stack gap="xs">
-        <Title order={5}>{t('Network Proxy')}</Title>
-        <TextInput
-          maw={320}
-          placeholder="socks5://127.0.0.1:6153"
-          value={settings.proxy}
-          onChange={(e) =>
-            setSettings({
-              proxy: e.currentTarget.value,
-            })
-          }
-        />
-      </Stack>
-
-      <Divider />
-
-      {/* Data Recovery */}
-      <DataRecoverySection />
-
-      <Divider />
+        <Divider />
+      </fieldset>
 
       {/* import and export data */}
       <ImportExportDataSection />
 
       <Divider />
 
-      {/* Export Logs */}
-      <ExportLogsSection />
+      <fieldset
+        disabled={backupOperation !== null}
+        style={{
+          border: 0,
+          padding: 0,
+          margin: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--mantine-spacing-xl)',
+        }}
+      >
+        {/* Export Logs */}
+        <ExportLogsSection />
 
-      <Divider />
+        <Divider />
 
-      {/* Error Reporting */}
-      <Stack gap="md">
-        <Stack gap="xxs">
-          <Title order={5}>{t('Error Reporting')}</Title>
-          <Text c="chatbox-tertiary">
-            {t(
-              'Chatbox respects your privacy and only uploads anonymous error data and events when necessary. You can change your preferences at any time in the settings.'
-            )}
-          </Text>
+        {/* Error Reporting */}
+        <Stack gap="md">
+          <Stack gap="xxs">
+            <Title order={5}>{t('Error Reporting')}</Title>
+            <Text c="chatbox-tertiary">
+              {t(
+                'Chatbox respects your privacy and only uploads anonymous error data and events when necessary. You can change your preferences at any time in the settings.'
+              )}
+            </Text>
+          </Stack>
+
+          <Checkbox
+            label={t('Enable optional anonymous reporting of crash and event data')}
+            checked={settings.allowReportingAndTracking}
+            onChange={(e) => setSettings({ allowReportingAndTracking: e.target.checked })}
+          />
         </Stack>
 
-        <Checkbox
-          label={t('Enable optional anonymous reporting of crash and event data')}
-          checked={settings.allowReportingAndTracking}
-          onChange={(e) => setSettings({ allowReportingAndTracking: e.target.checked })}
-        />
-      </Stack>
+        {/* others */}
+        {platform.type === 'desktop' && (
+          <>
+            <Divider />
 
-      {/* others */}
-      {platform.type === 'desktop' && (
-        <>
-          <Divider />
-
-          <Stack gap="xl">
-            <Switch
-              label={t('Launch at system startup')}
-              checked={settings.autoLaunch}
-              onChange={(e) =>
-                setSettings({
-                  autoLaunch: e.currentTarget.checked,
-                })
-              }
-            />
-            <Switch
-              label={t('Automatic updates')}
-              checked={settings.autoUpdate}
-              onChange={(e) =>
-                setSettings({
-                  autoUpdate: e.currentTarget.checked,
-                })
-              }
-            />
-            <Switch
-              label={t('Beta updates')}
-              checked={settings.betaUpdate}
-              onChange={(e) =>
-                setSettings({
-                  betaUpdate: e.currentTarget.checked,
-                })
-              }
-            />
-          </Stack>
-        </>
-      )}
+            <Stack gap="xl">
+              <Switch
+                label={t('Launch at system startup')}
+                checked={settings.autoLaunch}
+                onChange={(e) =>
+                  setSettings({
+                    autoLaunch: e.currentTarget.checked,
+                  })
+                }
+              />
+              <Switch
+                label={t('Automatic updates')}
+                checked={settings.autoUpdate}
+                onChange={(e) =>
+                  setSettings({
+                    autoUpdate: e.currentTarget.checked,
+                  })
+                }
+              />
+              <Switch
+                label={t('Beta updates')}
+                checked={settings.betaUpdate}
+                onChange={(e) =>
+                  setSettings({
+                    betaUpdate: e.currentTarget.checked,
+                  })
+                }
+              />
+            </Stack>
+          </>
+        )}
+      </fieldset>
     </Stack>
   )
 }
@@ -638,6 +677,7 @@ const ImportExportDataSection = () => {
   const [importTips, setImportTips] = useState('')
   const [importDetails, setImportDetails] = useState('')
   const [importRequiresRestart, setImportRequiresRestart] = useState(false)
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [progress, setProgress] = useState<BackupProgress | null>(null)
@@ -648,13 +688,18 @@ const ImportExportDataSection = () => {
   }>()
   const [pendingDownload, setPendingDownload] = useState<{ filename: string; blob: Blob }>()
   const [pendingDownloadUrl, setPendingDownloadUrl] = useState<string>()
-  const operationAbortRef = useRef<AbortController | null>(null)
   const [exportItems, setExportItems] = useState<BackupExportItem[]>([
     ExportDataItem.Setting,
     ExportDataItem.Conversations,
     ExportDataItem.Copilot,
   ])
 
+  const selection = useBackupSessionSelection(
+    sessionRepository,
+    exportDialogOpen && exportItems.includes(ExportDataItem.Conversations)
+  )
+  const selectionBlocked =
+    exportItems.includes(ExportDataItem.Conversations) && (selection.isLoading || !!selection.error)
   const isLoading = isExporting || isImporting || importRequiresRestart
   const pendingDownloadFile = useMemo(
     () =>
@@ -691,34 +736,42 @@ const ImportExportDataSection = () => {
   }
 
   const onExport = async () => {
-    if (isLoading) return
+    if (isLoading || selectionBlocked) return
 
-    const abortController = new AbortController()
-    operationAbortRef.current = abortController
     setIsExporting(true)
     setProgress(null)
     setExportNotice(undefined)
     setPendingDownload(undefined)
     try {
       const date = new Date()
-      const result = await exportBackupArchive({
-        exportItems,
-        includeKeys: exportItems.includes(ExportDataItem.Key),
-        exportedAt: date,
-        storage,
-        metaStorage: getMetaStorage(),
-        readSession: (sessionId) => sessionRepository.getSession(sessionId),
-        application: { version: platform.getVersion(), platform: platform.getPlatform() },
-        signal: abortController.signal,
-        onProgress: setProgress,
-        writeArchive: (dataCallback) =>
-          platform.exporter.exportStreamingFile(
-            getBackupFilename(date),
-            dataCallback,
-            'application/zip',
-            abortController.signal
-          ),
-      })
+      const result = await runRendererBackupOperation('export', (signal) =>
+        rendererApplication.sessionWrites.withBackupAccess(() =>
+          sessionRepository.withBackupStorageAccess(
+            (readSession, metaStorage) =>
+              exportBackupArchive({
+                exportItems,
+                selectedSessionIds: selection.exportSessionIds,
+                listSessionIds: () => sessionRepository.getAllSessionIds(),
+                includeKeys: exportItems.includes(ExportDataItem.Key),
+                exportedAt: date,
+                storage,
+                metaStorage,
+                readSession,
+                application: { version: platform.getVersion(), platform: platform.getPlatform() },
+                signal,
+                onProgress: setProgress,
+                writeArchive: (dataCallback) =>
+                  platform.exporter.exportStreamingFile(
+                    getBackupFilename(date),
+                    dataCallback,
+                    'application/zip',
+                    signal
+                  ),
+              }),
+            signal
+          )
+        )
+      )
       const warningCount = result.manifest.warnings.length
       const warningSummary = result.manifest.warnings
         .slice(0, 3)
@@ -735,13 +788,9 @@ const ImportExportDataSection = () => {
           : '',
         warningSummary,
         result.pendingDownload
-          ? String(
-              t(
-                "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads."
-              )
-            )
+          ? String(t('Your backup is ready. Download it to save a copy.'))
           : !result.boundedMemory
-            ? String(t('This browser does not support streaming downloads, so the backup was buffered before saving.'))
+            ? String(t('Check that your backup appears in your downloads.'))
             : '',
       ]
         .filter(Boolean)
@@ -769,7 +818,6 @@ const ImportExportDataSection = () => {
         setExportNotice({ color: 'red', title: String(t('Export failed')), body: String(error) })
       }
     } finally {
-      operationAbortRef.current = null
       setIsExporting(false)
       setProgress(null)
     }
@@ -777,79 +825,92 @@ const ImportExportDataSection = () => {
 
   const onImport = async (file: File | null) => {
     if (isLoading || !file) return
-    const abortController = new AbortController()
-    operationAbortRef.current = abortController
     setIsImporting(true)
     setImportTips('')
     setImportDetails('')
     setImportRequiresRestart(false)
     setProgress(null)
     try {
-      // Both import paths write session records straight to storage. Discard
-      // every retained session view before the warning path can keep running
-      // without the restart below.
-      const forgetImportedSessionState = async () => {
-        sessionRepository.forgetAllBaselines()
-        const sessionIds = await sessionRepository.getAllSessionIds()
-        for (const sessionId of sessionIds) {
-          rendererApplication.sessionWrites.forget(sessionId)
-          rendererApplication.sessionQueryBridge.discardSessionCache(sessionId)
+      const shouldRestart = await runRendererBackupOperation('import', async (signal) => {
+        // Both import paths write session records straight to storage. Discard
+        // every retained session view before the warning path can keep running
+        // without the restart below.
+        const forgetImportedSessionState = async () => {
+          sessionRepository.forgetAllBaselines()
+          const sessionIds = await sessionRepository.getAllSessionIds()
+          for (const sessionId of sessionIds) {
+            rendererApplication.sessionWrites.forget(sessionId)
+            rendererApplication.sessionQueryBridge.discardSessionCache(sessionId)
+          }
         }
-      }
-      if (await isZipBackupFile(file)) {
-        // Restoring writes agent-soul/agent-memories directly through storage;
-        // holding the persona locks queues concurrent save_memory / Soul edits
-        // until the import transaction finishes so neither side is clobbered.
-        const result = await withExclusiveSessionStorageLock(async () =>
-          withAgentPersonaLocks(async () =>
-            importBackupArchive(file, {
-              storage,
-              metaStorage: await getMetaStorage(),
-              signal: abortController.signal,
-              onProgress: setProgress,
-              rehydrateSession: rehydrateImportedSession,
-            })
+        if (await isZipBackupFile(file)) {
+          // Restoring writes agent-soul/agent-memories directly through storage;
+          // holding the persona locks queues concurrent save_memory / Soul edits
+          // until the import transaction finishes so neither side is clobbered.
+          const result = await rendererApplication.sessionWrites.withBackupAccess(() =>
+            sessionRepository.withBackupStorageAccess(async (_readSession, metaStorage) => {
+              try {
+                return await withAgentPersonaLocks(async () =>
+                  importBackupArchive(file, {
+                    storage,
+                    metaStorage,
+                    signal,
+                    onProgress: setProgress,
+                    rehydrateSession: rehydrateImportedSession,
+                  })
+                )
+              } finally {
+                await forgetImportedSessionState()
+              }
+            }, signal)
           )
-        )
-        await forgetImportedSessionState()
-        if (result.warnings.length > 0) {
-          const warningSummary = result.warnings
-            .slice(0, 3)
-            .map((warning) => `${warning.itemId ? `${warning.itemId}: ` : ''}${formatBackupWarning(warning)}`)
-            .join('\n')
-          setImportTips(
-            String(
-              t(
-                'Backup restore is almost complete, with {{count}} warning(s). Select Continue to restart Chatbox and finish restoring.',
-                {
-                  count: result.warnings.length,
-                }
+          await rendererApplication.settings.reloadFromStorage()
+          await reloadCopilotState()
+          await storage.flushPendingWrites()
+          await rendererApplication.queryClient.resetQueries()
+          if (result.warnings.length > 0) {
+            const warningSummary = result.warnings
+              .slice(0, 3)
+              .map((warning) => `${warning.itemId ? `${warning.itemId}: ` : ''}${formatBackupWarning(warning)}`)
+              .join('\n')
+            setImportTips(
+              String(
+                t(
+                  'Backup restore is almost complete, with {{count}} warning(s). Select Continue to restart Chatbox and finish restoring.',
+                  {
+                    count: result.warnings.length,
+                  }
+                )
               )
             )
+            setImportDetails(warningSummary)
+            setImportRequiresRestart(true)
+            return false
+          }
+        } else {
+          await rendererApplication.sessionWrites.withBackupAccess(() =>
+            sessionRepository.withBackupStorageAccess(async (_readSession, metaStorage) => {
+              try {
+                await importLegacyJsonBackup(file, {
+                  storage,
+                  metaStorage,
+                  signal,
+                  migrateData: (dataStore) => migrateOnData(dataStore, false),
+                  recoverSessionList: async () => {},
+                })
+              } finally {
+                await forgetImportedSessionState()
+              }
+            }, signal)
           )
-          setImportDetails(warningSummary)
-          setImportRequiresRestart(true)
-          return
+          await rendererApplication.settings.reloadFromStorage()
+          await reloadCopilotState()
+          await storage.flushPendingWrites()
+          await rendererApplication.queryClient.resetQueries()
         }
-      } else {
-        let recoverSessionList = false
-        await withExclusiveSessionStorageLock(async () =>
-          importLegacyJsonBackup(file, {
-            storage,
-            metaStorage: await getMetaStorage(),
-            migrateData: (dataStore) => migrateOnData(dataStore, false),
-            recoverSessionList: () => {
-              recoverSessionList = true
-              return Promise.resolve()
-            },
-          })
-        )
-        await forgetImportedSessionState()
-        if (recoverSessionList) {
-          await rendererApplication.sessions.recoverSessionList()
-        }
-      }
-      await platform.relaunch()
+        return true
+      })
+      if (shouldRestart) await platform.relaunch()
     } catch (error) {
       if (isAbortError(error)) setImportTips(String(t('Import canceled')))
       else {
@@ -863,14 +924,14 @@ const ImportExportDataSection = () => {
         )
       }
     } finally {
-      operationAbortRef.current = null
       setIsImporting(false)
+      selection.refresh()
       setProgress(null)
     }
   }
 
   const cancelOperation = () => {
-    operationAbortRef.current?.abort(new DOMException('Operation canceled', 'AbortError'))
+    void rendererApplication.backupOperations.cancelAndWait().catch(() => {})
   }
 
   const [showStorageInfo, setShowStorageInfo] = useState(false)
@@ -899,76 +960,86 @@ const ImportExportDataSection = () => {
             {storageInfo}
           </Text>
         )}
-        <Text c="chatbox-tertiary">
-          {t('ZIP backups include each conversation and its managed images and attachments.')}
-        </Text>
-        <Text size="sm" c="chatbox-tertiary">
-          {t('Backup files exported here can only be imported in Chatbox 1.22 or later.')}
-        </Text>
-        {[
-          { label: t('Settings'), value: ExportDataItem.Setting },
-          { label: t('API KEY & License'), value: ExportDataItem.Key },
-          { label: t('Chat History'), value: ExportDataItem.Conversations },
-          { label: t('My Copilots'), value: ExportDataItem.Copilot },
-        ].map(({ label, value }) => (
-          <Checkbox
-            key={value}
-            checked={exportItems.includes(value)}
-            label={label}
-            disabled={isLoading || (value === ExportDataItem.Setting && exportItems.includes(ExportDataItem.Key))}
-            onChange={(e) => {
-              setExportItems((current) => updateBackupExportItemSelection(current, value, e.currentTarget.checked))
-            }}
-          />
-        ))}
-        <Flex gap="sm">
-          <Button className="self-start" onClick={onExport} disabled={isLoading} loading={isExporting}>
-            {isExporting ? t('Exporting...') : t('Export Selected Data')}
-          </Button>
-          {isExporting && (
-            <Button variant="light" color="chatbox-gray" onClick={cancelOperation}>
-              {t('Cancel')}
-            </Button>
-          )}
-        </Flex>
-        {progress && (
-          <Text size="sm" c="chatbox-tertiary">
-            {t('{{phase}}: {{current}} / {{total}}', {
-              phase: formatBackupProgressPhase(progress.phase),
-              current: progress.current,
-              total: progress.total,
-            })}
-            {progress.label ? ` · ${progress.label}` : ''}
-          </Text>
-        )}
-        {exportNotice && (
-          <Alert
-            className="self-start"
-            variant="light"
-            color={exportNotice.color}
-            title={exportNotice.title}
-            icon={<IconInfoCircle />}
-          >
-            {exportNotice.body && (
-              <Text size="sm" style={{ whiteSpace: 'pre-line' }}>
-                {exportNotice.body}
+        <Button
+          className="self-start"
+          disabled={isLoading}
+          onClick={() => {
+            setExportNotice(undefined)
+            setPendingDownload(undefined)
+            selection.setQuery('')
+            setExportDialogOpen(true)
+          }}
+        >
+          {t('Export Data')}
+        </Button>
+        <BackupExportDialog
+          opened={exportDialogOpen}
+          onClose={() => {
+            void (async () => {
+              if (!isExporting || (await confirmBackupInterruption())) setExportDialogOpen(false)
+            })()
+          }}
+          selection={selection}
+          items={exportItems}
+          onItemsChange={setExportItems}
+          exporting={isExporting}
+          onExport={() => void onExport()}
+          onCancel={cancelOperation}
+          progress={
+            <Stack gap="xs" align="center">
+              <Text size="sm" c="dimmed">
+                {progress
+                  ? t('{{phase}}: {{current}} / {{total}}', {
+                      phase: formatBackupProgressPhase(progress.phase),
+                      current: progress.current,
+                      total: progress.total,
+                    })
+                  : t('Preparing backup')}
               </Text>
-            )}
-            {pendingDownload && pendingDownloadUrl && (
-              <Flex gap="sm" mt="sm">
+              {progress?.label && (
+                <Text size="sm" c="dimmed">
+                  {progress.label}
+                </Text>
+              )}
+              {platform.type === 'mobile' && (
+                <Text size="xs" c="dimmed">
+                  {t(
+                    'Keep Chatbox in the foreground and ensure your device has sufficient battery during import or export.'
+                  )}
+                </Text>
+              )}
+            </Stack>
+          }
+          result={
+            exportNotice && (
+              <Stack align="center" gap="md">
+                <Box c={exportNotice.color === 'green' ? 'teal' : exportNotice.color === 'red' ? 'red' : 'blue'}>
+                  {exportNotice.color === 'green' ? (
+                    <IconCircleCheck size={44} stroke={1.5} />
+                  ) : (
+                    <IconInfoCircle size={44} stroke={1.5} />
+                  )}
+                </Box>
+                <Text fw={600} size="lg">
+                  {exportNotice.title}
+                </Text>
+                <Text size="sm" c="dimmed" style={{ whiteSpace: 'pre-line' }}>
+                  {exportNotice.body}
+                </Text>
+              </Stack>
+            )
+          }
+          resultActions={
+            pendingDownload && pendingDownloadUrl ? (
+              <>
                 {canSharePendingDownload && <Button onClick={onSharePendingDownload}>{t('Save')}</Button>}
-                <Button
-                  component="a"
-                  variant={canSharePendingDownload ? 'light' : 'filled'}
-                  href={pendingDownloadUrl}
-                  download={pendingDownload.filename}
-                >
+                <Button component="a" href={pendingDownloadUrl} download={pendingDownload.filename}>
                   {t('Download')}
                 </Button>
-              </Flex>
-            )}
-          </Alert>
-        )}
+              </>
+            ) : undefined
+          }
+        />
       </Stack>
 
       <Divider />
@@ -979,7 +1050,23 @@ const ImportExportDataSection = () => {
           <Text c="chatbox-tertiary">
             {t('Upon import, changes will take effect immediately and existing data will be overwritten')}
           </Text>
+          {platform.type === 'mobile' && (
+            <Text size="sm" c="chatbox-tertiary">
+              {t(
+                'Keep Chatbox in the foreground and ensure your device has sufficient battery during import or export.'
+              )}
+            </Text>
+          )}
         </Stack>
+        {isImporting && progress && (
+          <Text size="sm" c="dimmed">
+            {t('{{phase}}: {{current}} / {{total}}', {
+              phase: formatBackupProgressPhase(progress.phase),
+              current: progress.current,
+              total: progress.total,
+            })}
+          </Text>
+        )}
         {importTips && (
           <Alert className=" self-start" variant="light" color="yellow" title={importTips} icon={<IconInfoCircle />}>
             {importDetails && (

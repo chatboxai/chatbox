@@ -1,3 +1,4 @@
+import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import {
   type AttachmentAnalysis,
   type AttachmentPreparationOptions,
@@ -689,7 +690,17 @@ async function tryFreeOrphanedBlobs(): Promise<number | undefined> {
  * PickedAsset before application orchestration. Storage quota exhaustion
  * triggers one orphan-cleanup and retry before returning a stable error code.
  */
-export async function prepareFileAttachment(
+export function prepareFileAttachment(
+  file: File,
+  settings: SessionSettings,
+  options?: AttachmentPreparationOptions
+): Promise<AttachmentPreparationResult> {
+  return rendererApplication.backupOperations.runWrite(() =>
+    withSessionWorkAccess(() => prepareFileAttachmentAccepted(file, settings, options))
+  )
+}
+
+async function prepareFileAttachmentAccepted(
   file: File,
   _settings: SessionSettings,
   options?: AttachmentPreparationOptions
@@ -737,7 +748,13 @@ export async function prepareFileAttachment(
  * @param settings 会话设置
  * @returns 预处理后的链接信息
  */
-export async function preprocessLink(
+export function preprocessLink(url: string, settings: SessionSettings) {
+  return rendererApplication.backupOperations.runWrite(() =>
+    withSessionWorkAccess(() => preprocessLinkAccepted(url, settings))
+  )
+}
+
+async function preprocessLinkAccepted(
   url: string,
   _settings: SessionSettings
 ): Promise<{
@@ -893,7 +910,9 @@ export function constructUserMessage(
       const localPath =
         f.ragMode === 'session-retrieval'
           ? undefined
-          : f.localPath || platform.getLocalFilePath(f.file) || f.file.path || undefined
+          : f.localPath ||
+            platform.getLocalFilePath(f.file) ||
+            ('path' in f.file && typeof f.file.path === 'string' ? f.file.path : undefined)
 
       return {
         id: f.storageKey || f.file.name,

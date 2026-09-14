@@ -1,3 +1,4 @@
+import { BackupOperationBusyError } from '@chatbox/core/backup'
 import type { SessionMigrationOutcome } from '@chatbox/core/application/session'
 
 /** Delay before the first session of a run is touched, keeping startup clear. */
@@ -40,6 +41,10 @@ export interface SessionMigrationTrickleOptions {
 
 export interface SessionMigrationTrickleHandle {
   stop(): void
+  /** Prevents new work immediately and waits for the active scan or migration. */
+  pauseAndDrain(): Promise<void>
+  /** Continues a paused run. Call only after pauseAndDrain has resolved. */
+  resume(): void
   /** Resolves once the run is over, whatever ended it: an empty or drained queue, a failed scan, too many failures, or `stop()`. */
   done: Promise<void>
   /** True only after a complete scan with no failed migration or recovery-protected session. */
@@ -100,10 +105,13 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
     settleReadyForFullScan = resolve
   })
   let stopped = false
+  let paused = false
+  let running: Promise<void> | null = null
+  let continuation: (() => Promise<void>) | null = null
   let cancelPending: CancelScheduled | null = null
   let consecutiveFailures = 0
   let delayMs = intervalMs
-  let startedAt = 0
+  let startedAt = Date.now()
   let skippedProtectedSession = false
 
   async function shouldSkip(id: string): Promise<boolean> {
@@ -113,13 +121,25 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
   }
 
   function scheduleNext(delay: number, run: () => Promise<void>): void {
+    continuation = run
+    if (paused || stopped) return
     cancelPending = schedule(() => {
       cancelPending = null
-      void run()
+      if (paused || stopped) return
+      continuation = null
+      running = run().finally(() => {
+        running = null
+      })
     }, delay)
   }
 
   function finish(): void {
+    if (paused) {
+      scheduleNext(delayMs, async () => {
+        finish()
+      })
+      return
+    }
     stopped = true
     settle()
     settleReadyForFullScan(counts.failed === 0 && !skippedProtectedSession)
@@ -136,17 +156,18 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
     try {
       pending = await repository.listUnmigratedSessionIds(options.shouldSkipSession ? shouldSkip : undefined)
     } catch (error) {
+      if (error instanceof BackupOperationBusyError) {
+        scheduleNext(delayMs, begin)
+        return
+      }
       log?.warn('session row migration could not list the sessions to migrate', error)
-      stopped = true
-      settle()
-      settleReadyForFullScan(false)
+      counts.failed += 1
+      finish()
       return
     }
     if (stopped) return
     if (pending.length === 0) {
-      stopped = true
-      settle()
-      settleReadyForFullScan(!skippedProtectedSession)
+      finish()
       return
     }
     queue.push(...pending)
@@ -169,13 +190,25 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
 
     const migrationStartedAt = Date.now()
     try {
-      const outcome = (await shouldSkip(id)) ? 'skipped' : await repository.migrateSession(id)
+      const skip = await shouldSkip(id)
+      if (stopped) return
+      if (paused) {
+        queue.unshift(id)
+        scheduleNext(delayMs, tick)
+        return
+      }
+      const outcome = skip ? 'skipped' : await repository.migrateSession(id)
       counts[outcome] += 1
       consecutiveFailures = 0
       if (outcome === 'skipped') {
         log?.warn(`session row migration skipped session ${id}`)
       }
     } catch (error) {
+      if (error instanceof BackupOperationBusyError) {
+        queue.unshift(id)
+        scheduleNext(delayMs, tick)
+        return
+      }
       counts.failed += 1
       consecutiveFailures += 1
       log?.warn(`session row migration failed for session ${id}`, error)
@@ -188,6 +221,10 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
 
     delayMs = Date.now() - migrationStartedAt > SLOW_MIGRATION_MS ? Math.min(delayMs * 2, MAX_INTERVAL_MS) : intervalMs
     if (stopped) return
+    if (paused) {
+      scheduleNext(delayMs, tick)
+      return
+    }
     if (queue.length === 0) {
       finish()
       return
@@ -200,6 +237,17 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
   return {
     done,
     readyForFullScan,
+    async pauseAndDrain(): Promise<void> {
+      paused = true
+      cancelPending?.()
+      cancelPending = null
+      await running
+    },
+    resume(): void {
+      if (!paused || stopped) return
+      paused = false
+      if (continuation) scheduleNext(delayMs, continuation)
+    },
     stop(): void {
       stopped = true
       settle()

@@ -144,6 +144,7 @@ export class GenerationRuntimeStore {
     const waiters = this.preparationWaiters.get(lease.sessionId)
     this.preparationWaiters.delete(lease.sessionId)
     for (const resolve of waiters ?? []) resolve()
+    this.notify()
     return true
   }
 
@@ -318,6 +319,7 @@ export class GenerationRuntimeStore {
       if (drains.size === 0 && this.unsettledStreamDrains.get(sessionId) === drains) {
         this.unsettledStreamDrains.delete(sessionId)
       }
+      this.notify()
     }
     drain.then(cleanup, cleanup)
   }
@@ -332,6 +334,35 @@ export class GenerationRuntimeStore {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  /** Waits for active replies and accepted preparation/persistence work; paused tools are idle. */
+  waitForIdle(signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const cancel = () => {
+        unsubscribe()
+        signal?.removeEventListener('abort', cancel)
+        const error = new Error('Waiting for generation was canceled')
+        error.name = 'AbortError'
+        reject(signal?.reason ?? error)
+      }
+      const check = () => {
+        if (signal?.aborted) {
+          cancel()
+          return
+        }
+        if (this.preparationLeases.size || this.unsettledStreamDrains.size) return
+        for (const states of this.states.values()) {
+          if ([...states.values()].some((state) => state.phase !== 'paused')) return
+        }
+        unsubscribe()
+        signal?.removeEventListener('abort', cancel)
+        resolve()
+      }
+      const unsubscribe = this.subscribe(check)
+      signal?.addEventListener('abort', cancel, { once: true })
+      check()
+    })
   }
 
   getVersion(): number {

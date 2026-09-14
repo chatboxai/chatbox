@@ -2,6 +2,44 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GenerationRuntimeStore } from './runtime-store'
 
 describe('GenerationRuntimeStore', () => {
+  it('cancels an idle wait without cancelling the existing generation', async () => {
+    const store = new GenerationRuntimeStore()
+    const runtime = store.start('active', 'reply')
+    const controller = new AbortController()
+    const waiting = store.waitForIdle(controller.signal)
+    controller.abort()
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' })
+    expect(runtime.abortController.signal.aborted).toBe(false)
+    expect(store.get('active', 'reply')).toBe(runtime)
+    store.dispose()
+  })
+
+  it('waits for generation, preparation, and stream drains without stopping replies', async () => {
+    const store = new GenerationRuntimeStore()
+    const runtime = store.start('active', 'reply')
+    const preparation = store.acquireGenerationPreparationLease('preparing')!
+    let finishDrain = () => {}
+    store.registerUnsettledStreamDrain(
+      'draining',
+      new Promise<void>((resolve) => {
+        finishDrain = resolve
+      })
+    )
+    let idle = false
+    const waiting = store.waitForIdle().then(() => {
+      idle = true
+    })
+    store.finishActive('active', 'reply', runtime)
+    store.releaseGenerationPreparationLease(preparation)
+    await Promise.resolve()
+    expect(idle).toBe(false)
+    expect(runtime.abortController.signal.aborted).toBe(false)
+    finishDrain()
+    await waiting
+    expect(idle).toBe(true)
+    store.dispose()
+  })
+
   const stores: GenerationRuntimeStore[] = []
 
   function createStore(): GenerationRuntimeStore {

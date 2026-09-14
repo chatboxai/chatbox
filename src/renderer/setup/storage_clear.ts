@@ -1,6 +1,7 @@
+import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import type { CopilotDetail } from '@shared/types'
 import { getDefaultStore } from 'jotai'
-import { sessionRepository } from '@/app/renderer-application'
+import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { collectGlobalResourceReferences, collectSessionResourceReferences } from '@/packages/backup/resources'
 import { StorageKey } from '@/storage/StoreStorage'
 import { inputBoxPreConstructedMessageFamily } from '@/stores/atoms/uiAtoms'
@@ -293,8 +294,15 @@ let totalDeletedCount = 0
  * quota-recovery callers still observe the space just freed for them.
  */
 export function cleanupOrphanedBlobs(options?: CleanupOptions): Promise<number> {
-  const deletedBefore = totalDeletedCount
-  const run = cleanupQueue.catch(() => undefined).then(() => doCleanupOrphanedBlobs(options))
-  cleanupQueue = run.catch(() => undefined)
-  return run.then(() => totalDeletedCount - deletedBefore)
+  return rendererApplication.backupOperations
+    .runBackground(() =>
+      withSessionWorkAccess(async () => {
+        const deletedBefore = totalDeletedCount
+        const run = cleanupQueue.catch(() => undefined).then(() => doCleanupOrphanedBlobs(options))
+        cleanupQueue = run.catch(() => undefined)
+        await run
+        return totalDeletedCount - deletedBefore
+      })
+    )
+    .then((deleted) => deleted ?? 0)
 }

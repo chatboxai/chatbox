@@ -284,28 +284,30 @@ export class SessionService {
       },
     }
 
-    await this.repository.setSession(session)
+    const record = await this.writes.create(session, async () => {
+      await this.repository.setSession(session)
 
-    let sortOrder = this.now()
-    if (previousId) {
-      // The numeric lower bound comes from the full repository rather than a
-      // partially loaded list window. It includes hidden records and both pin
-      // groups so the new sortOrder stays unique if either record later moves
-      // between groups or becomes visible again.
-      const records = [...(await this.repository.meta.getAllIncludingHidden())].sort(
-        (a, b) => b.sortOrder - a.sortOrder
-      )
-      const previous = records.find((item) => item.id === previousId && !item.hidden)
-      if (previous) {
-        const lowerNeighbor = records.find((item) => item.sortOrder < previous.sortOrder)
-        sortOrder =
-          lowerNeighbor !== undefined ? (previous.sortOrder + lowerNeighbor.sortOrder) / 2 : previous.sortOrder - 2000
+      let sortOrder = this.now()
+      if (previousId) {
+        // The numeric lower bound comes from the full repository rather than a
+        // partially loaded list window. It includes hidden records and both pin
+        // groups so the new sortOrder stays unique if either record later moves
+        // between groups or becomes visible again.
+        const records = [...(await this.repository.meta.getAllIncludingHidden())].sort(
+          (a, b) => b.sortOrder - a.sortOrder
+        )
+        const previous = records.find((item) => item.id === previousId && !item.hidden)
+        if (previous) {
+          const lowerNeighbor = records.find((item) => item.sortOrder < previous.sortOrder)
+          sortOrder =
+            lowerNeighbor !== undefined ? (previous.sortOrder + lowerNeighbor.sortOrder) / 2 : previous.sortOrder - 2000
+        }
       }
-    }
 
-    const record = createSessionMetaRecord(session, sortOrder, this.now())
-    await this.repository.meta.create(record)
-    this.writes.prime(session)
+      const record = createSessionMetaRecord(session, sortOrder, this.now())
+      await this.repository.meta.create(record)
+      return record
+    })
     await this.events.publish({ type: 'session-created', session, record })
     return session
   }
@@ -414,7 +416,7 @@ export class SessionService {
 
   async updateSessionSortOrder(sessionId: string, sortOrder: number): Promise<SessionMetaRecord> {
     await this.initialize()
-    const updated = await this.repository.meta.update(sessionId, { sortOrder })
+    const updated = await this.writes.updateSortOrder(sessionId, sortOrder)
     if (!updated) throw new SessionNotFoundError(sessionId)
     await this.publishListReset({ visible: true })
     return updated

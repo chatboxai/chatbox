@@ -70,7 +70,14 @@ function createMirroredListAtom<T>(key: string, parse?: (value: unknown) => T[])
     return read().then((items) => store.set(listAtom, updater(current ?? items)))
   }
 
-  return { atom: listAtom, read, update, peek: () => current }
+  const reload = async () => {
+    await pendingRead
+    const stored = await storage.getItem<unknown>(key, [])
+    current = parse ? parse(stored) : (stored as T[])
+    await getDefaultStore().set(listAtom, current)
+  }
+
+  return { atom: listAtom, read, update, reload, peek: () => current }
 }
 
 const myCopilots = createMirroredListAtom<CopilotDetail>(MY_COPILOTS_STORAGE_KEY)
@@ -83,6 +90,12 @@ const memoryTokens = createMirroredListAtom<CopilotMemoryStateToken>(
 export const myCopilotsAtom = myCopilots.atom
 export const copilotMemoryOwnersAtom = memoryOwners.atom
 export const copilotMemoryTokensAtom = memoryTokens.atom
+
+/** Reload all persisted mirrors before conversations resume after restoration. */
+export async function reloadCopilotState(): Promise<void> {
+  await memoryPreferenceMutation
+  await Promise.all([myCopilots.reload(), memoryOwners.reload(), memoryTokens.reload()])
+}
 
 let memoryPreferenceMutation: Promise<unknown> = Promise.resolve()
 

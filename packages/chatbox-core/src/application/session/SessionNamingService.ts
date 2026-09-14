@@ -23,7 +23,7 @@ export interface ScheduledNameGeneration {
 }
 
 export interface NameGenerationSchedulerPort {
-  schedule(callback: () => void, delayMs: number): ScheduledNameGeneration
+  schedule(callback: () => void | Promise<void>, delayMs: number): ScheduledNameGeneration
 }
 
 export interface SessionNamingServiceDependencies {
@@ -111,14 +111,14 @@ export class SessionNamingService {
    * Domain-event entry: backfill a missing historical threadName, otherwise
    * schedule AI naming when the conversation is eligible.
    */
-  syncAutoTitle(session: Session, options: SessionNameGenerationOptions = {}): void {
+  async syncAutoTitle(session: Session, options: SessionNameGenerationOptions = {}): Promise<void> {
     // Backfill is a data migration, not naming — run it even when the
     // auto-title setting is off, mirroring repairSessionOnRead.
     if (shouldBackfillThreadName(session)) {
       if (this.backfillInFlight.has(session.id)) return
       this.backfillInFlight.add(session.id)
       const backfilled = backfillMissingThreadName(session).session.threadName ?? ''
-      void this.modifyThreadName(session.id, backfilled)
+      await this.modifyThreadName(session.id, backfilled)
         .catch((error) => {
           this.dependencies.reportUnexpectedError(error)
         })
@@ -175,9 +175,10 @@ export class SessionNamingService {
   ): void {
     if (!this.canSchedule(key, messages)) return
 
-    const task = this.dependencies.scheduler.schedule(() => {
-      void this.runScheduled(key, sessionId, isEligible, generate, expectedIdentity)
-    }, 1_000)
+    const task = this.dependencies.scheduler.schedule(
+      () => this.runScheduled(key, sessionId, isEligible, generate, expectedIdentity),
+      1_000
+    )
     this.pending.set(key, task)
   }
 

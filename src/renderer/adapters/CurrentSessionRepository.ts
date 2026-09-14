@@ -1,4 +1,5 @@
 import { RowBackedSessionRepository, type SessionMigrationOutcome } from '@chatbox/core/application/session'
+import { BackupOperationBusyError, throwIfAborted } from '@chatbox/core/backup'
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '@chatbox/core/ports'
 import {
   type SessionContextRequest,
@@ -35,11 +36,45 @@ export interface CurrentSessionRepositoryOptions {
 
 const log = getLogger('session-repository')
 const SESSION_STORAGE_LOCK = 'chatbox-session-storage'
+let backupRequested = false
+const activeStorageOperations = new Set<Promise<void>>()
+
+function withSharedSessionStorageAccess<Result>(action: () => Promise<Result>): Promise<Result> {
+  if (backupRequested) return Promise.reject(new BackupOperationBusyError())
+  const result = Promise.resolve().then(async () => {
+    if (typeof navigator === 'undefined' || !navigator.locks) return action()
+    return navigator.locks.request(SESSION_STORAGE_LOCK, { mode: 'shared', ifAvailable: true }, (lock) => {
+      if (!lock) throw new BackupOperationBusyError()
+      return action()
+    })
+  })
+  const tail = result
+    .then(
+      () => {},
+      () => {}
+    )
+    .then(() => {
+      activeStorageOperations.delete(tail)
+    })
+  activeStorageOperations.add(tail)
+  return result
+}
 
 /** Prevents session writes in every renderer context while raw backup data is replaced. */
-export async function withExclusiveSessionStorageLock<Result>(action: () => Promise<Result>): Promise<Result> {
-  if (typeof navigator === 'undefined' || !navigator.locks) return action()
-  return await navigator.locks.request(SESSION_STORAGE_LOCK, { mode: 'exclusive' }, action)
+export async function withExclusiveSessionStorageLock<Result>(
+  action: () => Promise<Result>,
+  signal?: AbortSignal
+): Promise<Result> {
+  if (backupRequested) throw new BackupOperationBusyError()
+  backupRequested = true
+  try {
+    await Promise.all(activeStorageOperations)
+    throwIfAborted(signal)
+    if (typeof navigator === 'undefined' || !navigator.locks) return await action()
+    return await navigator.locks.request(SESSION_STORAGE_LOCK, { mode: 'exclusive', signal }, action)
+  } finally {
+    backupRequested = false
+  }
 }
 
 /**
@@ -64,7 +99,12 @@ async function normalizeRepositoryError<T>(
   try {
     return await action()
   } catch (error) {
-    if (error instanceof SessionRepositoryError || error instanceof SessionWriteConflictError) throw error
+    if (
+      error instanceof SessionRepositoryError ||
+      error instanceof SessionWriteConflictError ||
+      error instanceof BackupOperationBusyError
+    )
+      throw error
     throw new SessionRepositoryError(operation, error, sessionId)
   }
 }
@@ -86,15 +126,25 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
   }
 
   create(record: SessionMetaRecord): Promise<void> {
-    return normalizeRepositoryError('create-meta', () => this.getBackend().create(record), record.id)
+    return normalizeRepositoryError(
+      'create-meta',
+      () => withSharedSessionStorageAccess(() => this.getBackend().create(record)),
+      record.id
+    )
   }
 
   createMany(records: SessionMetaRecord[]): Promise<void> {
-    return normalizeRepositoryError('create-meta-many', () => this.getBackend().createMany(records))
+    return normalizeRepositoryError('create-meta-many', () =>
+      withSharedSessionStorageAccess(() => this.getBackend().createMany(records))
+    )
   }
 
   update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null> {
-    return normalizeRepositoryError('update-meta', () => this.getBackend().update(id, updates), id)
+    return normalizeRepositoryError(
+      'update-meta',
+      () => withSharedSessionStorageAccess(() => this.getBackend().update(id, updates)),
+      id
+    )
   }
 
   getById(id: string): Promise<SessionMetaRecord | null> {
@@ -102,11 +152,17 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
   }
 
   delete(id: string): Promise<void> {
-    return normalizeRepositoryError('delete-meta', () => this.getBackend().delete(id), id)
+    return normalizeRepositoryError(
+      'delete-meta',
+      () => withSharedSessionStorageAccess(() => this.getBackend().delete(id)),
+      id
+    )
   }
 
   deleteMany(ids: string[]): Promise<void> {
-    return normalizeRepositoryError('delete-meta-many', () => this.getBackend().deleteMany(ids))
+    return normalizeRepositoryError('delete-meta-many', () =>
+      withSharedSessionStorageAccess(() => this.getBackend().deleteMany(ids))
+    )
   }
 
   getAll(): Promise<SessionMetaRecord[]> {
@@ -142,7 +198,7 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
   }
 
   clear(): Promise<void> {
-    return normalizeRepositoryError('clear-meta', () => this.getBackend().clear())
+    return normalizeRepositoryError('clear-meta', () => withSharedSessionStorageAccess(() => this.getBackend().clear()))
   }
 }
 
@@ -153,6 +209,24 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
  * UI side effects.
  */
 export class CurrentSessionRepository implements SessionRepositoryPort {
+  withBackupStorageAccess<Result>(
+    action: (
+      readSession: (id: string) => Promise<Session | null>,
+      metaStorage: SessionMetaRepositoryPort
+    ) => Promise<Result>,
+    signal?: AbortSignal
+  ): Promise<Result> {
+    return withExclusiveSessionStorageLock(async () => {
+      const reader = new RowBackedSessionRepository({
+        records: this.records,
+        rows: this.createRowStore(),
+        onMigrationSkipped: reportMigrationSkipped,
+      })
+      const metaStorage = this.createMetaStorage()
+      await metaStorage.initialize()
+      return action((id) => reader.getSession(id), metaStorage)
+    }, signal)
+  }
   getCompleteSessionSource(sessionId: string) {
     return this.getData().getCompleteSessionSource(sessionId)
   }
@@ -166,12 +240,14 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
 
   private readonly records: CurrentSessionRecordStore
   private readonly createRowStore: () => SessionRowStorePort
+  private readonly createMetaStorage: () => SessionMetaRepositoryPort
   private data: RowBackedSessionRepository | null = null
 
   constructor(options: CurrentSessionRepositoryOptions = {}) {
     this.records = new CurrentSessionRecordStore(options.dataStorage ?? storage)
     this.createRowStore = () => options.rowStore ?? platform.getSessionRowStore()
-    this.meta = new CurrentSessionMetaRepository(() => options.metaStorage ?? platform.getSessionMetaStorage())
+    this.createMetaStorage = () => options.metaStorage ?? platform.getSessionMetaStorage()
+    this.meta = new CurrentSessionMetaRepository(this.createMetaStorage)
   }
 
   private getData(): RowBackedSessionRepository {
@@ -181,12 +257,10 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
         rows: this.createRowStore(),
         onMigrationSkipped: reportMigrationSkipped,
         serializeSessionOperation: async (sessionId, action) => {
-          if (typeof navigator === 'undefined' || !navigator.locks) {
-            return action()
-          }
-          return await navigator.locks.request(SESSION_STORAGE_LOCK, { mode: 'shared' }, async () =>
-            navigator.locks.request(`chatbox-session-storage:${sessionId}`, { mode: 'exclusive' }, action)
-          )
+          return withSharedSessionStorageAccess(async () => {
+            if (typeof navigator === 'undefined' || !navigator.locks) return action()
+            return navigator.locks.request(`chatbox-session-storage:${sessionId}`, { mode: 'exclusive' }, action)
+          })
         },
       })
     }

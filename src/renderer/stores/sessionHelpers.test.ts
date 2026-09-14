@@ -158,12 +158,16 @@ vi.mock('@/i18n', () => ({
   default: {},
 }))
 
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: {
-    sessions: { initialize: vi.fn(), repository: { meta: sessionMetaStorage } },
-  },
-  sessionRepository: { getSession: mockGetSession },
-}))
+vi.mock('@/app/renderer-application', async () => {
+  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+  return {
+    rendererApplication: {
+      backupOperations: new BackupOperationCoordinator(),
+      sessions: { initialize: vi.fn(), repository: { meta: sessionMetaStorage } },
+    },
+    sessionRepository: { getSession: mockGetSession },
+  }
+})
 
 import type { Session } from '@shared/types'
 import {

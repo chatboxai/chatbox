@@ -16,12 +16,16 @@ vi.mock('@/platform', () => ({
   },
 }))
 
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: {
-    sessionQueryBridge: { getSession: vi.fn(() => Promise.resolve(null)) },
-    sessions: { listSessionsMetaPage: vi.fn(() => Promise.resolve({ items: [], nextCursor: null, total: 0 })) },
-  },
-}))
+vi.mock('@/app/renderer-application', async () => {
+  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+  return {
+    rendererApplication: {
+      backupOperations: new BackupOperationCoordinator(),
+      sessionQueryBridge: { getSession: vi.fn(() => Promise.resolve(null)) },
+      sessions: { listSessionsMetaPage: vi.fn(() => Promise.resolve({ items: [], nextCursor: null, total: 0 })) },
+    },
+  }
+})
 
 function createSource(): SessionAttachmentRagMaintenanceSource & {
   getSession: ReturnType<typeof vi.fn>

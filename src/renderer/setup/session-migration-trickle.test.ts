@@ -1,3 +1,4 @@
+import { BackupOperationBusyError } from '@chatbox/core/backup'
 import type { SessionMigrationOutcome } from '@chatbox/core/application/session'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { type SessionMigrationTrickleOptions, startSessionMigrationTrickle } from './session-migration-trickle'
@@ -73,6 +74,132 @@ function createRepository(outcomes: Record<string, SessionMigrationOutcome | Err
 }
 
 describe('startSessionMigrationTrickle', () => {
+  test('retries backup contention without completing or recording migration failures', async () => {
+    const repository = createRepository({ a: new BackupOperationBusyError() })
+    const { scheduler, handle, log } = start({ repository })
+    let completed = false
+    void handle.done.then(() => {
+      completed = true
+    })
+    await scheduler.run()
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await scheduler.run()
+      expect(completed).toBe(false)
+      expect(scheduler.pending()).not.toBeNull()
+    }
+    repository.migrateSession.mockResolvedValue('migrated')
+    await scheduler.run()
+    await expect(handle.readyForFullScan).resolves.toBe(true)
+    expect(repository.migrateSession.mock.calls.map(([id]) => id)).toEqual(Array(6).fill('a'))
+    expect(messages(log, 'warn')).not.toContain('failed')
+  })
+
+  test.each(['empty', 'failed'] as const)('defers completion of a paused %s scan until resumed', async (outcome) => {
+    let finishScan = () => {}
+    const scan = new Promise<void>((resolve) => {
+      finishScan = resolve
+    })
+    const { scheduler, handle } = start({
+      repository: {
+        listUnmigratedSessionIds: async () => {
+          await scan
+          if (outcome === 'failed') throw new Error('scan failed')
+          return []
+        },
+        migrateSession: async () => 'migrated',
+      },
+    })
+    let completed = false
+    void handle.done.then(() => {
+      completed = true
+    })
+    await scheduler.run()
+    const pause = handle.pauseAndDrain()
+    finishScan()
+    await pause
+    expect(completed).toBe(false)
+    handle.resume()
+    await scheduler.run()
+    await expect(handle.readyForFullScan).resolves.toBe(outcome === 'empty')
+  })
+
+  test('does not start a migration after an asynchronous protection check finishes while paused', async () => {
+    let finishCheck = () => {}
+    const check = new Promise<void>((resolve) => {
+      finishCheck = resolve
+    })
+    const migrated: string[] = []
+    const { scheduler, handle } = start({
+      repository: {
+        listUnmigratedSessionIds: async () => ['a'],
+        migrateSession: async (id) => {
+          migrated.push(id)
+          return 'migrated'
+        },
+      },
+      shouldSkipSession: async () => {
+        await check
+        return false
+      },
+    })
+    await scheduler.run()
+    await scheduler.run()
+    const pause = handle.pauseAndDrain()
+    finishCheck()
+    await pause
+    expect(migrated).toEqual([])
+
+    handle.resume()
+    await scheduler.run()
+    await expect(handle.readyForFullScan).resolves.toBe(true)
+    expect(migrated).toEqual(['a'])
+  })
+
+  test('pauses new migrations and drains the active migration without completing the run', async () => {
+    let completeMigration = () => {}
+    const activeMigration = new Promise<void>((resolve) => {
+      completeMigration = resolve
+    })
+    const migrated: string[] = []
+    const { scheduler, handle } = start({
+      repository: {
+        listUnmigratedSessionIds: async () => ['a', 'b'],
+        migrateSession: async (id) => {
+          if (id === 'a') await activeMigration
+          migrated.push(id)
+          return 'migrated'
+        },
+      },
+    })
+    let done = false
+    let ready = false
+    void handle.done.then(() => {
+      done = true
+    })
+    void handle.readyForFullScan.then(() => {
+      ready = true
+    })
+    await scheduler.run()
+    await scheduler.run()
+
+    let drained = false
+    const pause = handle.pauseAndDrain().then(() => {
+      drained = true
+    })
+    await flush()
+    expect(drained).toBe(false)
+    completeMigration()
+    await pause
+    expect(migrated).toEqual(['a'])
+    expect(scheduler.pending()).toBeNull()
+    expect({ done, ready }).toEqual({ done: false, ready: false })
+
+    handle.resume()
+    await scheduler.run()
+    await expect(handle.readyForFullScan).resolves.toBe(true)
+    expect(migrated).toEqual(['a', 'b'])
+  })
+
   test('keeps protected sessions out of the initial scan and prevents full maintenance afterward', async () => {
     const repository = {
       listUnmigratedSessionIds: vi.fn(async (shouldSkip?: (id: string) => Promise<boolean>) =>
@@ -246,7 +373,7 @@ describe('startSessionMigrationTrickle', () => {
     const { scheduler, handle } = start({ repository })
 
     await scheduler.run()
-    void scheduler.run()
+    await scheduler.run()
     handle.stop()
     resolveMigration('migrated')
     await flush()

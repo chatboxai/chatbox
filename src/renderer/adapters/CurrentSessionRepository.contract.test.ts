@@ -114,6 +114,21 @@ async function messageRowIds(harness: ReturnType<typeof createHarness>, id: stri
 }
 
 describe('CurrentSessionRepository contract', () => {
+  test('reads complete backup sessions while rejecting conflicting writes until the operation finishes', async () => {
+    const source = createHarness()
+    const original = createSessionWithMessages('exclusive-backup')
+    await source.repository.setSession(original)
+    await source.repository.withBackupStorageAccess(async (readSession) => {
+      expect(await readSession(original.id)).toMatchObject(original)
+      await expect(source.repository.setSession({ ...original, name: 'Late' })).rejects.toMatchObject({
+        name: 'BackupOperationBusyError',
+      })
+      await expect(source.repository.meta.clear()).rejects.toMatchObject({ name: 'BackupOperationBusyError' })
+    })
+    await source.repository.setSession({ ...original, name: 'After' })
+    expect((await source.repository.getSession(original.id))?.name).toBe('After')
+  })
+
   let harness: ReturnType<typeof createHarness>
 
   beforeEach(() => {

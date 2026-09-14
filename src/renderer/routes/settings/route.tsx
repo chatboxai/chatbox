@@ -27,6 +27,7 @@ import Divider from '@/components/common/Divider'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import Page from '@/components/layout/Page'
 import { useProviders } from '@/hooks/useProviders'
+import { useBackupNavigationGuard } from '@/hooks/useBackupNavigationGuard'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform from '@/platform'
 import { featureFlags } from '@/utils/feature-flags'
@@ -159,6 +160,7 @@ export function RouteComponent() {
 }
 
 export function SettingsRoot() {
+  useBackupNavigationGuard()
   const { t } = useTranslation()
   const routerState = useRouterState()
   const key = routerState.location.pathname.split('/')[2]

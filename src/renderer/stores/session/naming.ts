@@ -1,3 +1,6 @@
+import { guardBackupWrite } from '@/app/backup-operation-guard'
+import { BackupOperationBusyError } from '@chatbox/core/backup'
+import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import { type Session, shouldBackfillThreadName, UNTITLED_SESSION_NAME } from '@chatbox/core'
 import { SessionNamingService } from '@chatbox/core/application/session'
 import type { SessionHeader } from '@chatbox/core/ports'
@@ -19,8 +22,34 @@ const namingService = new SessionNamingService({
   models: currentModelFactory,
   scheduler: {
     schedule(callback, delayMs) {
-      const timeout = setTimeout(callback, delayMs)
-      return { cancel: () => clearTimeout(timeout) }
+      let canceled = false
+      let unsubscribe: (() => void) | undefined
+      let timeout: ReturnType<typeof setTimeout>
+      const run = () => {
+        if (canceled) return
+        if (rendererApplication.backupOperations.getSnapshot()) {
+          unsubscribe = rendererApplication.backupOperations.subscribe(() => {
+            if (rendererApplication.backupOperations.getSnapshot()) return
+            unsubscribe?.()
+            timeout = setTimeout(run, delayMs)
+          })
+          return
+        }
+        void rendererApplication.backupOperations
+          .runWrite(() => withSessionWorkAccess(async () => callback()))
+          .catch((error: unknown) => {
+            if (error instanceof BackupOperationBusyError && !canceled) timeout = setTimeout(run, delayMs)
+            else reportError(error, { domain: 'ai-generation', operation: 'generate_session_name' })
+          })
+      }
+      timeout = setTimeout(run, delayMs)
+      return {
+        cancel: () => {
+          canceled = true
+          clearTimeout(timeout)
+          unsubscribe?.()
+        },
+      }
     },
   },
   getLanguageName: (language) => languageNameMap[language],
@@ -34,16 +63,26 @@ const namingService = new SessionNamingService({
   },
 })
 
-export function modifyNameAndThreadName(sessionId: string, name: string) {
+export async function modifyNameAndThreadName(sessionId: string, name: string) {
+  if (!(await guardBackupWrite())) return
   return namingService.modifyNameAndThreadName(sessionId, name)
 }
 
-export function modifyThreadName(sessionId: string, threadName: string) {
+export async function modifyThreadName(sessionId: string, threadName: string) {
+  if (!(await guardBackupWrite())) return
   return namingService.modifyThreadName(sessionId, threadName)
 }
 
 export function syncSessionAutoTitle(session: Session) {
-  namingService.syncAutoTitle(session, { messages: session.messages })
+  return rendererApplication.backupOperations
+    .runBackground(() =>
+      withSessionWorkAccess(() => namingService.syncAutoTitle(session, { messages: session.messages }))
+    )
+    .catch((error: unknown) => {
+      if (!(error instanceof BackupOperationBusyError)) {
+        reportError(error, { domain: 'ai-generation', operation: 'generate_session_name' })
+      }
+    })
 }
 
 export async function syncSessionAutoTitleOnOpen(
@@ -51,7 +90,7 @@ export async function syncSessionAutoTitleOnOpen(
   isCurrent: () => boolean
 ): Promise<void> {
   if ('messages' in session) {
-    if (isCurrent()) syncSessionAutoTitle(session)
+    if (isCurrent()) await syncSessionAutoTitle(session)
     return
   }
 
@@ -65,7 +104,7 @@ export async function syncSessionAutoTitleOnOpen(
   }
 
   const completeSession = await rendererApplication.sessionQueryBridge.getSession(session.id)
-  if (isCurrent() && completeSession) syncSessionAutoTitle(completeSession)
+  if (isCurrent() && completeSession) await syncSessionAutoTitle(completeSession)
 }
 
 export function clearSessionNameGenerationState(sessionId: string): void {

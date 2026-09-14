@@ -1,3 +1,4 @@
+import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import type {
   Message,
   Session,
@@ -135,7 +136,7 @@ function createMaintenanceTasks(source: SessionAttachmentRagMaintenanceSource): 
 
 async function runMaintenanceTask(task: SessionAttachmentRagMaintenanceTask) {
   try {
-    await task.run()
+    await rendererApplication.backupOperations.runBackground(() => withSessionWorkAccess(() => task.run()))
   } catch (error) {
     log.warn(`${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [MAINTENANCE] Failed task ${task.name}:`, error)
   }
@@ -155,7 +156,11 @@ async function waitForSessionMigration(pending: Promise<void>, waitMs: number): 
 
 export async function runSessionAttachmentRagMaintenancePass(options: SessionAttachmentRagMaintenanceOptions = {}) {
   const tasks = createMaintenanceTasks(options.source ?? defaultSource)
-  const results = await Promise.all(tasks.map((task) => task.run()))
+  const results = await Promise.all(
+    tasks.map((task) =>
+      rendererApplication.backupOperations.runBackground(() => withSessionWorkAccess(() => task.run()))
+    )
+  )
   return (
     results.at(-1) ?? {
       interruptedFailedCount: 0,

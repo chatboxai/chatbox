@@ -1,7 +1,9 @@
 import type { Session, SessionMetaRecord } from '@shared/types'
 import { SessionMetaRecordSchema } from '@shared/types'
+import { v4 as uuidv4 } from 'uuid'
 import { migrateSession } from '../application/session/compatibility/session-load'
-import { hasPausedToolCall } from '../application/session/session-metadata'
+import { createSessionMetaRecord, hasPausedToolCall } from '../application/session/session-metadata'
+import { throwIfAborted } from './abort'
 import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
 import type { BackupFile, BackupMetaStorage, BackupStorage } from './types'
 
@@ -14,6 +16,7 @@ export interface LegacyBackupDataStore {
 }
 
 export interface LegacyBackupImportOptions {
+  signal?: AbortSignal
   storage: BackupStorage
   metaStorage: BackupMetaStorage
   migrateData: (dataStore: LegacyBackupDataStore) => Promise<void>
@@ -41,10 +44,12 @@ export async function importLegacyJsonBackup(
   file: BackupFile,
   options: LegacyBackupImportOptions
 ): Promise<LegacyBackupImportResult> {
+  throwIfAborted(options.signal)
   const parsed: unknown = JSON.parse(await file.text())
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('Unsupported legacy backup data format')
   }
+  throwIfAborted(options.signal)
   const importData = parsed as Record<string, unknown>
   await options.migrateData({
     getData: <T>(key: string, defaultValue: T) => Promise.resolve((importData[key] ?? defaultValue) as T),
@@ -70,29 +75,108 @@ export async function importLegacyJsonBackup(
     ([key]) =>
       key !== BackupStorageKey.ChatSessionsList && key !== BackupStorageKey.ConfigVersion && !key.startsWith('__')
   )
-  for (const [key, value] of entriesToImport) await options.storage.setItemNow(key, value)
-
-  const rawMetaValue = importData[BackupStorageKey.ChatSessionsList]
-  const rawMeta: unknown[] | undefined = Array.isArray(rawMetaValue) ? rawMetaValue : undefined
-  let importedMetaCount = 0
-  let recoveredSessionList = false
-  if (rawMeta) {
-    for (const item of rawMeta) {
-      const record = normalizeMeta(item)
-      if (!record) continue
-      const rawSession = importData[backupSessionStorageKey(record.id)]
-      if (rawSession && typeof rawSession === 'object') {
-        record.hasPausedToolCall = hasPausedToolCall(migrateSession(rawSession as Session))
-      }
-      const existing = await options.metaStorage.getById(record.id)
-      if (existing) await options.metaStorage.update(record.id, record)
-      else await options.metaStorage.create(record)
-      importedMetaCount++
+  throwIfAborted(options.signal)
+  const existingKeys = new Set(await options.storage.getAllKeys())
+  const previousMeta = await options.metaStorage.getAllIncludingHidden()
+  const operationId = uuidv4()
+  const snapshots: Array<{ key: string; previousKey?: string }> = []
+  const changedKeys: typeof snapshots = []
+  let metadataTouched = false
+  let committed = false
+  const cleanup = async () => {
+    for (const { previousKey } of snapshots) {
+      if (previousKey) await options.storage.removeItem(previousKey)
     }
-  } else if (entriesToImport.some(([key]) => key.startsWith('session:'))) {
-    await options.recoverSessionList()
-    recoveredSessionList = true
   }
+  try {
+    // Store originals before publishing any record; failed rollback retains them.
+    for (const [key] of entriesToImport) {
+      throwIfAborted(options.signal)
+      const previousKey = existingKeys.has(key) ? `__backup_legacy:${operationId}:${snapshots.length}` : undefined
+      if (previousKey) await options.storage.setItemNow(previousKey, await options.storage.getItem(key, null))
+      snapshots.push({ key, previousKey })
+    }
+    for (const [index, [key, value]] of entriesToImport.entries()) {
+      throwIfAborted(options.signal)
+      changedKeys.push(snapshots[index])
+      await options.storage.setItemNow(key, value)
+    }
+    throwIfAborted(options.signal)
+    metadataTouched = true
 
-  return { importedKeyCount: entriesToImport.length, importedMetaCount, recoveredSessionList }
+    const rawMetaValue = importData[BackupStorageKey.ChatSessionsList]
+    const rawMeta: unknown[] | undefined = Array.isArray(rawMetaValue) ? rawMetaValue : undefined
+    let importedMetaCount = 0
+    let recoveredSessionList = false
+    if (rawMeta) {
+      for (const item of rawMeta) {
+        throwIfAborted(options.signal)
+        const record = normalizeMeta(item)
+        if (!record) continue
+        const rawSession = importData[backupSessionStorageKey(record.id)]
+        if (rawSession && typeof rawSession === 'object') {
+          record.hasPausedToolCall = hasPausedToolCall(migrateSession(rawSession as Session))
+        }
+        const existing = await options.metaStorage.getById(record.id)
+        if (existing) {
+          await options.metaStorage.update(record.id, {
+            ...record,
+            recoveryArchived: record.recoveryArchived,
+          })
+        } else await options.metaStorage.create(record)
+        importedMetaCount++
+      }
+    } else if (entriesToImport.some(([key]) => key.startsWith('session:'))) {
+      for (const [key] of entriesToImport) {
+        if (!key.startsWith('session:')) continue
+        const sessionId = key.slice('session:'.length)
+        if (!sessionId) continue
+        throwIfAborted(options.signal)
+        const session = migrateSession(importData[key] as Session)
+        if (session.id !== sessionId) throw new Error('Legacy backup session identity mismatch')
+        const record = createSessionMetaRecord(session, Date.now(), Date.now())
+        const existing = await options.metaStorage.getById(sessionId)
+        if (existing) await options.metaStorage.update(sessionId, { ...record, recoveryArchived: undefined })
+        else await options.metaStorage.create(record)
+      }
+      await options.recoverSessionList()
+      recoveredSessionList = true
+    }
+
+    throwIfAborted(options.signal)
+    committed = true
+    return { importedKeyCount: entriesToImport.length, importedMetaCount, recoveredSessionList }
+  } catch (error) {
+    const failures: unknown[] = []
+    const restore = async (action: () => Promise<unknown>) => {
+      try {
+        await action()
+      } catch (failure) {
+        failures.push(failure)
+      }
+    }
+    if (metadataTouched) {
+      await restore(async () => {
+        for (const record of await options.metaStorage.getAllIncludingHidden()) {
+          await restore(() => options.metaStorage.delete(record.id))
+        }
+      })
+      for (const record of previousMeta) await restore(() => options.metaStorage.create(record))
+    }
+    for (const { key, previousKey } of changedKeys.reverse()) {
+      await restore(async () => {
+        if (previousKey) await options.storage.setItemNow(key, await options.storage.getItem(previousKey, null))
+        else await options.storage.removeItem(key)
+      })
+    }
+    if (failures.length)
+      throw new AggregateError(
+        [error, ...failures],
+        `Legacy import rollback failed; recovery data retained (${operationId})`
+      )
+    await cleanup()
+    throw error
+  } finally {
+    if (committed) await cleanup()
+  }
 }

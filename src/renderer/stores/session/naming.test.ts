@@ -22,12 +22,16 @@ vi.mock('@/adapters/CurrentModelFactory', () => ({ currentModelFactory: {} }))
 vi.mock('@/packages/model-calls/message-utils', () => ({ convertToModelMessages: vi.fn() }))
 vi.mock('@/settings-runtime', () => ({ settingsService: { getSettings: mocks.getSettings } }))
 vi.mock('@/utils/sentry', () => ({ reportError: vi.fn() }))
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: {
-    sessions: { updateSession: vi.fn(), updateSessionWithMessages: vi.fn() },
-    sessionQueryBridge: { getSession: mocks.getSession },
-  },
-}))
+vi.mock('@/app/renderer-application', async () => {
+  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+  return {
+    rendererApplication: {
+      backupOperations: new BackupOperationCoordinator(),
+      sessions: { updateSession: vi.fn(), updateSessionWithMessages: vi.fn() },
+      sessionQueryBridge: { getSession: mocks.getSession },
+    },
+  }
+})
 
 import { clearSessionNameGenerationState, syncSessionAutoTitle, syncSessionAutoTitleOnOpen } from './naming'
 
@@ -52,7 +56,7 @@ describe('Session naming Renderer adapter', () => {
     mocks.getSession.mockReset()
   })
 
-  it('forwards the current session to syncAutoTitle', () => {
+  it('forwards the current session to syncAutoTitle', async () => {
     const session = {
       id: 'session-1',
       name: 'Untitled',
@@ -60,7 +64,7 @@ describe('Session naming Renderer adapter', () => {
       messages: [{ id: 'user', role: 'user' as const, contentParts: [{ type: 'text' as const, text: 'hello' }] }],
     }
 
-    syncSessionAutoTitle(session)
+    await syncSessionAutoTitle(session)
 
     expect(mocks.syncAutoTitle).toHaveBeenCalledWith(session, { messages: session.messages })
   })

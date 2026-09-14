@@ -287,6 +287,8 @@ let mainWindow: BrowserWindow | null = null
 // it is held here and opened once startup has created the window.
 let startupWindowCreated = false
 let startupDeepLink: string | undefined
+let backupOperationActive = false
+let backupQuitRequested = false
 let tray: Tray | null = null
 
 // --------- 快捷键 ---------
@@ -519,6 +521,8 @@ async function createWindow() {
   }
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    backupOperationActive = false
+    backupQuitRequested = false
     reportMainProcessError(new Error(`Renderer process exited unexpectedly: ${details.reason}`), {
       domain: 'renderer-process',
       extras: {
@@ -592,13 +596,20 @@ async function createWindow() {
   }
 
   // 窗口关闭时保存窗口大小与位置
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (event) => {
+    if (backupOperationActive) {
+      event.preventDefault()
+      mainWindow?.webContents.send('backup-operation:close-requested')
+      return
+    }
     if (mainWindow) {
       windowState.saveState(mainWindow)
     }
   })
 
   mainWindow.on('closed', () => {
+    backupOperationActive = false
+    backupQuitRequested = false
     mainWindow = null
   })
 
@@ -793,7 +804,13 @@ if (quitForInstallRequested) {
         mcpIpc.closeAllTransports()
         destroyTray()
       })
-      app.on('before-quit', () => {
+      app.on('before-quit', (event) => {
+        if (backupOperationActive) {
+          event.preventDefault()
+          backupQuitRequested = true
+          mainWindow?.webContents.send('backup-operation:close-requested')
+          return
+        }
         destroyTray()
       })
     })
@@ -1226,7 +1243,7 @@ ipcMain.handle('window:unmaximize', () => {
   mainWindow?.unmaximize()
 })
 
-ipcMain.handle('window:close', () => {
+function closeMainWindow() {
   if (IS_HARMONY_BUILD) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       windowState.saveState(mainWindow)
@@ -1237,6 +1254,29 @@ ipcMain.handle('window:close', () => {
     return
   }
   mainWindow?.close()
+}
+
+ipcMain.handle('window:close', () => {
+  if (backupOperationActive) {
+    mainWindow?.webContents.send('backup-operation:close-requested')
+    return
+  }
+  closeMainWindow()
+})
+
+ipcMain.handle('backup-operation:set-active', (event, active: unknown) => {
+  if (event.sender !== mainWindow?.webContents || typeof active !== 'boolean') return
+  backupOperationActive = active
+})
+
+ipcMain.handle('backup-operation:finish-close', (event, confirmed: unknown) => {
+  if (event.sender !== mainWindow?.webContents || typeof confirmed !== 'boolean') return
+  const quit = backupQuitRequested
+  backupQuitRequested = false
+  if (!confirmed) return
+  backupOperationActive = false
+  if (quit) app.quit()
+  else closeMainWindow()
 })
 
 ipcMain.handle('window:is-maximized', () => {

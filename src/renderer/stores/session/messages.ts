@@ -23,6 +23,7 @@ import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attac
 import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndexing'
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
+import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { guardSessionAction } from './action-guard'
 import { getSessionSettings, getSessionTokenModel } from './session-settings'
 import { StreamingWriteCoordinator } from './streaming-write-coordinator'
@@ -275,10 +276,11 @@ export async function removeMessage(sessionId: string, messageId: string) {
  * 在会话中发送新用户消息，并根据需要生成回复
  * @param params
  */
-export function submitNewUserMessage(
+export async function submitNewUserMessage(
   sessionId: string,
   params: { newUserMsg: Message; needGenerating: boolean; onUserMessageReady?: () => void }
 ) {
+  if (!(await guardBackupWrite())) return
   // The gate runs inside the session lock so it reads the freshest state:
   // lock-free alternative replies can start streaming between a pre-lock
   // check and lock acquisition.

@@ -1,4 +1,5 @@
 import { type SessionRepositoryPort, SessionWriteConflictError } from '../../ports'
+import { BackupOperationBusyError } from '../../backup/operation'
 import type { SessionMessageDerivedWriteResult } from '../../ports/session-message-source'
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '../../ports/session-text-tokens'
 import type { Session, SessionMeta, SessionMetaRecord, Updater } from '../../types'
@@ -74,7 +75,13 @@ export class SessionMetadataUpdateError extends Error {
  * Restore/import code that writes the repository directly must call `forget` for
  * every affected id before another update, or recreate/reload the runtime.
  */
+export interface SessionBackupWriteAccess {
+  replaceSession(session: Session): Promise<void>
+  removeSession(sessionId: string): Promise<void>
+}
+
 export class SessionWriteCoordinator {
+  private backupProtected = false
   private readonly current = new Map<string, Session>()
   private readonly tails = new Map<string, Promise<void>>()
   private readonly unavailable = new Set<string>()
@@ -89,6 +96,18 @@ export class SessionWriteCoordinator {
   ) {
     this.readCurrentSession = options.readCurrentSession ?? ((sessionId) => this.repository.getSession(sessionId))
     this.discardCurrentSession = options.discardCurrentSession ?? (() => undefined)
+  }
+
+  create<T>(session: Session, persist: () => Promise<T>): Promise<T> {
+    return this.enqueue(session.id, async () => {
+      const result = await persist()
+      this.prime(session)
+      return result
+    })
+  }
+
+  updateSortOrder(sessionId: string, sortOrder: number): Promise<SessionMetaRecord | null> {
+    return this.enqueue(sessionId, () => this.repository.meta.update(sessionId, { sortOrder }))
   }
 
   update(sessionId: string, updater: Updater<Session>, options: SessionWriteOptions = {}): Promise<SessionWriteResult> {
@@ -248,6 +267,7 @@ export class SessionWriteCoordinator {
    * recreate the session after storage removal.
    */
   deleteMany(sessionIds: string[], operation: () => Promise<void>): Promise<void> {
+    if (this.backupProtected) return Promise.reject(new BackupOperationBusyError())
     const uniqueIds = [...new Set(sessionIds)]
     for (const sessionId of uniqueIds) {
       this.unavailable.add(sessionId)
@@ -301,12 +321,20 @@ export class SessionWriteCoordinator {
 
   /** Explicit backup restoration replaces a record, including a missing or deleted id, after queued writes drain. */
   replaceFromBackup(session: Session): Promise<void> {
-    return this.enqueue(session.id, async () => {
-      const baseSession = await this.repository.getSession(session.id)
+    return this.enqueue(session.id, () => this.replaceBackupSession(session))
+  }
+
+  private async replaceBackupSession(session: Session): Promise<void> {
+    const baseSession = await this.repository.getSession(session.id)
+    try {
       await this.repository.setSession(session, { baseSession: baseSession ?? undefined })
       this.prime(session)
+    } catch (error) {
+      this.forget(session.id)
+      throw error
+    } finally {
       this.discardCurrentSession(session.id)
-    })
+    }
   }
 
   forget(sessionId: string): void {
@@ -316,7 +344,58 @@ export class SessionWriteCoordinator {
     this.loadedRecoveryArchiveState.delete(sessionId)
   }
 
+  /** Fences new writes for the full backup operation, including rollback and cleanup. */
+  async withBackupAccess<T>(action: (access: SessionBackupWriteAccess) => Promise<T>): Promise<T> {
+    if (this.backupProtected) throw new BackupOperationBusyError()
+    this.backupProtected = true
+    let active = true
+    const pending = new Set<Promise<void>>()
+    const failures = new Set<unknown>()
+    const run = (write: () => Promise<void>): Promise<void> => {
+      if (!active) return Promise.reject(new Error('Backup write access has expired'))
+      const result = Promise.resolve().then(write)
+      const tail = result
+        .then(
+          () => {},
+          (error: unknown) => {
+            failures.add(error)
+          }
+        )
+        .finally(() => {
+          pending.delete(tail)
+        })
+      pending.add(tail)
+      return result
+    }
+    let value: T | undefined
+    try {
+      await Promise.all(this.tails.values())
+      value = await action({
+        replaceSession: (session) => run(() => this.replaceBackupSession(session)),
+        removeSession: (sessionId) =>
+          run(async () => {
+            try {
+              await this.repository.deleteSession(sessionId)
+            } finally {
+              this.forget(sessionId)
+              this.discardCurrentSession(sessionId)
+            }
+          }),
+      })
+    } catch (error) {
+      failures.add(error)
+    } finally {
+      active = false
+      await Promise.all(pending)
+      this.backupProtected = false
+    }
+    if (failures.size === 1) throw failures.values().next().value
+    if (failures.size > 1) throw new AggregateError([...failures], 'Backup writes failed')
+    return value as T
+  }
+
   private enqueue<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+    if (this.backupProtected) return Promise.reject(new BackupOperationBusyError())
     const previousTail = this.tails.get(sessionId) ?? Promise.resolve()
     const result = previousTail.catch(() => undefined).then(operation)
     const nextTail = result.then(

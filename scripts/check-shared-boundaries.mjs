@@ -299,6 +299,7 @@ function rawStorageOwnerGroups(root) {
         'src/renderer/adapters/CurrentSessionRecordStore.ts',
         'src/renderer/adapters/CurrentSessionRepository.ts',
         'src/renderer/adapters/RendererSettingsStorage.ts',
+        'src/renderer/adapters/RendererStoragePersistence.ts',
       ],
     },
     {

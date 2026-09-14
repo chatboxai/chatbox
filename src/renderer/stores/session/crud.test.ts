@@ -19,13 +19,17 @@ const { generationRuntimeMock, sessionsMock, sessionQueryBridgeMock, clearQueueM
   clearQueueMock: vi.fn(),
 }))
 
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: {
-    generationRuntime: generationRuntimeMock,
-    sessions: sessionsMock,
-    sessionQueryBridge: sessionQueryBridgeMock,
-  },
-}))
+vi.mock('@/app/renderer-application', async () => {
+  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+  return {
+    rendererApplication: {
+      backupOperations: new BackupOperationCoordinator(),
+      generationRuntime: generationRuntimeMock,
+      sessions: sessionsMock,
+      sessionQueryBridge: sessionQueryBridgeMock,
+    },
+  }
+})
 vi.mock('@/platform', () => ({ default: { isDesktopLike: false } }))
 vi.mock('@/router', () => ({ router: { navigate: vi.fn() }, navigateToDynamicPath: vi.fn() }))
 vi.mock('@/storage/SessionMetaStorage', () => ({ sortSessionRecords: vi.fn((records: unknown) => records) }))

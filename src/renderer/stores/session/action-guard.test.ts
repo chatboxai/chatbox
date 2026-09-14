@@ -20,8 +20,10 @@ vi.mock('../uiStore', () => ({
 }))
 vi.mock('@/app/renderer-application', async () => {
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
+  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
   return {
     rendererApplication: {
+      backupOperations: new BackupOperationCoordinator(),
       generationRuntime: new GenerationRuntimeStore(),
       sessionQueryBridge: { getSession: getSessionMock },
     },
@@ -53,6 +55,15 @@ function session(overrides: Partial<Session> = {}): Session {
 }
 
 describe('guardSessionAction', () => {
+  it('rejects a new user action during backup and allows it after cleanup', async () => {
+    getSessionMock.mockResolvedValue(session())
+    await rendererApplication.backupOperations.run('export', async () => {
+      expect(await guardSessionAction('session-1', 'submit-message')).toBe(false)
+      expect(await guardSessionAction('session-1', 'switch-fork')).toBe(false)
+    })
+    expect(await guardSessionAction('session-1', 'submit-message')).toBe(true)
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     setCompactionUIState('session-1', { status: 'idle' })

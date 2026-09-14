@@ -62,6 +62,53 @@ describe('SessionWriteCoordinator', () => {
     expect(repository.records.get(session.id)?.hasPausedToolCall).toBe(true)
   })
 
+  test('limits backup replacement authority to the protected operation', async () => {
+    const repository = new MemorySessionRepository()
+    const coordinator = new SessionWriteCoordinator(repository)
+    const session = createTestSession('restored')
+    let replace: ((session: Session) => Promise<void>) | undefined
+    await coordinator.withBackupAccess(async (access) => {
+      replace = access.replaceSession
+      await access.replaceSession(session)
+      await expect(coordinator.update(session.id, { name: 'Ordinary edit' })).rejects.toMatchObject({
+        name: 'BackupOperationBusyError',
+      })
+    })
+    await expect(replace?.({ ...session, name: 'Expired replacement' })).rejects.toThrow('expired')
+    await coordinator.update(session.id, { name: 'Normal edit after restore' })
+    expect((await repository.getSession(session.id))?.name).toBe('Normal edit after restore')
+  })
+
+  test('backup access drains accepted edits and rejects new edits and deletion until released', async () => {
+    const repository = new MemorySessionRepository()
+    const original = createTestSession('backup-protected')
+    await repository.setSession(original)
+    const writes = new SessionWriteCoordinator(repository)
+    const accepted = writes.update(original.id, { name: 'Before backup' }, { updateMeta: false })
+    let finishBackup = () => {}
+    const backup = new Promise<void>((resolve) => {
+      finishBackup = resolve
+    })
+    let exportedName: string | undefined
+    const operation = writes.withBackupAccess(async () => {
+      exportedName = (await repository.getSession(original.id))?.name
+      await backup
+    })
+    await expect(writes.update(original.id, { name: 'Late edit' })).rejects.toMatchObject({
+      name: 'BackupOperationBusyError',
+    })
+    await expect(writes.delete(original.id, () => repository.deleteSession(original.id))).rejects.toMatchObject({
+      name: 'BackupOperationBusyError',
+    })
+    await accepted
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(exportedName).toBe('Before backup')
+    finishBackup()
+    await operation
+    await writes.update(original.id, { name: 'After backup' }, { updateMeta: false })
+    expect((await repository.getSession(original.id))?.name).toBe('After backup')
+  })
+
   test('restores backups after queued writes and primes subsequent edits from the restored value', async () => {
     const repository = new MemorySessionRepository()
     const original = createTestSession('restore')
@@ -314,6 +361,19 @@ describe('SessionWriteCoordinator', () => {
 
     expect(repository.sessions.get(session.id)).toMatchObject({ hidden: true, archivedAt: 50 })
     expect(repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
+  })
+
+  test('reports a failed accepted backup write even when its caller did not await it', async () => {
+    const repository = new MemorySessionRepository()
+    const coordinator = new SessionWriteCoordinator(repository)
+    const failure = new Error('disk full')
+    vi.spyOn(repository, 'setSession').mockRejectedValueOnce(failure)
+    await expect(
+      coordinator.withBackupAccess(async (access) => {
+        void access.replaceSession(createTestSession('backup')).catch(() => {})
+      })
+    ).rejects.toThrow('disk full')
+    await expect(coordinator.replaceFromBackup(createTestSession('after'))).resolves.toBeUndefined()
   })
 
   test('reprojectMeta is a no-op without a snapshot or behind the deletion fence', async () => {

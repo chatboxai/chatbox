@@ -1,3 +1,4 @@
+import { guardBackupWrite } from '@/app/backup-operation-guard'
 import {
   deriveSessionLockState,
   getSessionActionGate,
@@ -56,6 +57,7 @@ export async function guardSessionAction(
   context: SessionActionContext = {},
   preloadedSession?: Session | null
 ): Promise<boolean> {
+  if (!(await guardBackupWrite())) return false
   let session: Session | null
   let locks: SessionLockState | null
   try {

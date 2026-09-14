@@ -46,14 +46,35 @@ export default class StoreStorage extends BaseStorage {
     return value
   }
 
-  private debounceQueue = new Map<string, DebouncedFunc<(key: string, value: unknown) => void>>()
+  private debounceQueue = new Map<string, DebouncedFunc<(key: string, value: unknown) => Promise<void>>>()
+  private pendingWrites = new Set<Promise<void>>()
 
   public async setItem<T>(key: string, value: T): Promise<void> {
     let debounced = this.debounceQueue.get(key)
     if (!debounced) {
-      debounced = debounce(this.setItemNow.bind(this), 500, { maxWait: 2000 })
+      debounced = debounce(
+        (key: string, value: unknown) => {
+          const pending = this.setItemNow(key, value)
+          this.pendingWrites.add(pending)
+          const settled = () => {
+            this.pendingWrites.delete(pending)
+          }
+          pending.then(settled, settled)
+          return pending
+        },
+        500,
+        { maxWait: 2000 }
+      )
       this.debounceQueue.set(key, debounced)
     }
     debounced(key, value)
+  }
+
+  /** Includes both delayed writes and writes whose storage call has already started. */
+  public async flushPendingWrites(): Promise<void> {
+    for (const debounced of this.debounceQueue.values()) debounced.flush()
+    const results = await Promise.allSettled(this.pendingWrites)
+    const failure = results.find((result) => result.status === 'rejected')
+    if (failure?.status === 'rejected') throw failure.reason
   }
 }

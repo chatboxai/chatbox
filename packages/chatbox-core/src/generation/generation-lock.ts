@@ -28,3 +28,25 @@ export async function withSessionGenerationLock<T>(sessionId: string, task: () =
 export function resetSessionGenerationLocksForTests(): void {
   sessionGenerationTails.clear()
 }
+
+/** Includes accepted submission work before a generation runtime has been registered. */
+export async function waitForSessionGenerations(signal?: AbortSignal): Promise<void> {
+  while (sessionGenerationTails.size) {
+    await new Promise<void>((resolve, reject) => {
+      const cancel = () => {
+        const error = new Error('Waiting for generation was canceled')
+        error.name = 'AbortError'
+        reject(signal?.reason ?? error)
+      }
+      if (signal?.aborted) {
+        cancel()
+        return
+      }
+      signal?.addEventListener('abort', cancel, { once: true })
+      void Promise.all(sessionGenerationTails.values()).then(() => {
+        signal?.removeEventListener('abort', cancel)
+        resolve()
+      })
+    })
+  }
+}

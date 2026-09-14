@@ -18,6 +18,21 @@ class MemorySettingsStorage implements SettingsStoragePort {
 }
 
 describe('SettingsService', () => {
+  test('reloads restored settings before the next user edit', async () => {
+    const storage = new MemorySettingsStorage({
+      ...createDefaultSettings(),
+      language: 'en',
+      __version: SETTINGS_PERSIST_VERSION,
+    })
+    const service = new SettingsService(storage, { isDesktopLike: false })
+    await service.hydrate()
+    storage.value = { ...createDefaultSettings(), language: 'zh-Hans', __version: SETTINGS_PERSIST_VERSION }
+    await service.reloadFromStorage()
+    service.updateSettings({ fontSize: 18 })
+    await service.flushPersistence()
+    expect(storage.value).toMatchObject({ language: 'zh-Hans', fontSize: 18 })
+  })
+
   test('hydrates once and writes the current envelope on the next update', async () => {
     const defaults = createDefaultSettings()
     const storage = new MemorySettingsStorage({

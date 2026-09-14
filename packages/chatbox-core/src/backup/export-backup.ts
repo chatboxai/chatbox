@@ -62,6 +62,10 @@ export interface BackupExportWriteResult {
 export interface BackupExportOptions {
   exportItems: BackupExportItem[]
   includeKeys: boolean
+  /** Omitted selects all sessions; an empty array selects none. */
+  selectedSessionIds?: readonly string[]
+  /** Enumerates stored session IDs without reading message bodies. */
+  listSessionIds?: () => Promise<string[]>
   exportedAt?: Date
   storage: BackupStorage
   metaStorage: BackupMetaStorage | Promise<BackupMetaStorage>
@@ -277,10 +281,13 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
       const metaStorage = await options.metaStorage
       const allMeta = await metaStorage.getAllIncludingHidden()
       const metaById = new Map(allMeta.map((meta) => [meta.id, meta]))
-      const sessionIds = unique([
-        ...allMeta.map((meta) => meta.id),
-        ...allStorageKeys.filter((key) => key.startsWith('session:')).map((key) => key.slice('session:'.length)),
-      ])
+      const sessionIds = options.selectedSessionIds
+        ? unique(options.selectedSessionIds)
+        : unique([
+            ...((await options.listSessionIds?.()) ?? []),
+            ...allMeta.map((meta) => meta.id),
+            ...allStorageKeys.filter((key) => key.startsWith('session:')).map((key) => key.slice('session:'.length)),
+          ])
 
       for (let index = 0; index < sessionIds.length; index++) {
         throwIfAborted(options.signal)
@@ -295,7 +302,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           const session = options.readSession
             ? await options.readSession(sessionId)
             : await options.storage.getItem<Session | null>(backupSessionStorageKey(sessionId), null)
-          if (session === null && !metaById.has(sessionId)) continue
+          if (session === null && !metaById.has(sessionId) && !options.selectedSessionIds) continue
           if (!isBackupSession(session)) throw new Error('Session is missing or invalid')
           if (session.id !== sessionId) throw new Error('Session id does not match its storage key')
           const collected = collectSessionResourceReferences(session)

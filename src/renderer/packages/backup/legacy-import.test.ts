@@ -163,6 +163,67 @@ describe('legacy JSON backup import', () => {
     expect(result.importedMetaCount).toBe(1)
   })
 
+  it('rolls back earlier writes when canceled between legacy records', async () => {
+    const storage = new LegacyMemoryStorage()
+    storage.values.set('settings', { language: 'en' })
+    const controller = new AbortController()
+    const set = storage.setItemNow.bind(storage)
+    vi.spyOn(storage, 'setItemNow').mockImplementation(async (key, value) => {
+      await set(key, value)
+      if (key === 'settings') controller.abort()
+    })
+    await expect(
+      importLegacyJsonBackup(asJsonFile({ settings: { language: 'zh' }, 'session:new': { id: 'new', messages: [] } }), {
+        storage,
+        metaStorage: new LegacyMemoryMetaStorage(),
+        signal: controller.signal,
+        migrateData: async () => {},
+        recoverSessionList: async () => {},
+      })
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(Object.fromEntries(storage.values)).toEqual({ settings: { language: 'en' } })
+  })
+
+  it('retains rollback data and reports an unsuccessful rollback', async () => {
+    const storage = new LegacyMemoryStorage()
+    storage.values.set('settings', { language: 'en' })
+    vi.spyOn(storage, 'setItemNow').mockImplementation(async (key, value) => {
+      if (key === 'settings') throw new Error('disk unavailable')
+      storage.values.set(key, value)
+    })
+    await expect(
+      importLegacyJsonBackup(asJsonFile({ settings: { language: 'zh' } }), {
+        storage,
+        metaStorage: new LegacyMemoryMetaStorage(),
+        migrateData: async () => {},
+        recoverSessionList: async () => {},
+      })
+    ).rejects.toThrow('rollback failed')
+    expect([...storage.values.keys()].some((key) => key.startsWith('__backup_legacy:'))).toBe(true)
+  })
+
+  it('still restores values if enumerating metadata for rollback fails', async () => {
+    const storage = new LegacyMemoryStorage()
+    storage.values.set('settings', { language: 'en' })
+    const metaStorage = new LegacyMemoryMetaStorage()
+    vi.spyOn(metaStorage, 'getAllIncludingHidden')
+      .mockResolvedValueOnce([])
+      .mockRejectedValue(new Error('metadata unavailable'))
+    vi.spyOn(metaStorage, 'create').mockRejectedValue(new Error('metadata write failed'))
+    await expect(
+      importLegacyJsonBackup(
+        asJsonFile({ settings: { language: 'zh' }, 'chat-sessions-list': [{ id: 'new', name: 'New' }] }),
+        {
+          storage,
+          metaStorage,
+          migrateData: async () => {},
+          recoverSessionList: async () => {},
+        }
+      )
+    ).rejects.toThrow('rollback failed')
+    expect(storage.values.get('settings')).toEqual({ language: 'en' })
+  })
+
   it('rejects non-object JSON backups', async () => {
     await expect(
       importLegacyJsonBackup(asJsonFile([]), {

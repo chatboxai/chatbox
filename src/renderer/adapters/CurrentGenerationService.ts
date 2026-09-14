@@ -15,6 +15,8 @@ import {
   trackAgentModeSuggested,
   trackWorkModeSuggestionDecision,
 } from '@/analytics/agent-mode'
+import { withSessionWorkAccess } from './session-work-lock'
+import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { captureAgentModeException } from '@/observability/agent-mode'
@@ -320,4 +322,24 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
  * React Native can compose the same service with native implementations of
  * these ports without importing Renderer state, storage, or platform modules.
  */
-export const currentGenerationService = new GenerationService(dependencies)
+const generationService = new GenerationService(dependencies)
+
+async function runGenerationWork(action: () => Promise<void>): Promise<void> {
+  if (!(await guardBackupWrite())) return
+  await withSessionWorkAccess(action)
+}
+
+export const currentGenerationService = {
+  orchestrate: (...args: Parameters<typeof generationService.orchestrate>) =>
+    withSessionWorkAccess(() => generationService.orchestrate(...args)),
+  continuePausedToolCall: (...args: Parameters<typeof generationService.continuePausedToolCall>) =>
+    runGenerationWork(() => generationService.continuePausedToolCall(...args)),
+  disableToolCallLimitPauseAndContinue: (
+    ...args: Parameters<typeof generationService.disableToolCallLimitPauseAndContinue>
+  ) => runGenerationWork(() => generationService.disableToolCallLimitPauseAndContinue(...args)),
+  stopPausedToolCall: (...args: Parameters<typeof generationService.stopPausedToolCall>) =>
+    runGenerationWork(() => generationService.stopPausedToolCall(...args)),
+  retryFromLastToolCallAfterApiError: (
+    ...args: Parameters<typeof generationService.retryFromLastToolCallAfterApiError>
+  ) => runGenerationWork(() => generationService.retryFromLastToolCallAfterApiError(...args)),
+}

@@ -96,10 +96,12 @@ vi.mock('uuid', () => ({
 vi.mock('i18next', () => ({ t: (key: string) => key }))
 
 vi.mock('@/app/renderer-application', async () => {
+  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
   const { QueryClient } = await import('@tanstack/react-query')
   return {
     rendererApplication: {
+      backupOperations: new BackupOperationCoordinator(),
       generationRuntime: new GenerationRuntimeStore(),
       queryClient: new QueryClient(),
       sessions: {

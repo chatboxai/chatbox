@@ -28,10 +28,24 @@ function createHarness(
     }),
     repairSessionOnRead,
   })
-  return { repository, events, log, published, service }
+  return { repository, events, log, published, service, writes }
 }
 
 describe('SessionService', () => {
+  test('does not create or reorder sessions while backup storage access is active', async () => {
+    const { service, writes } = createHarness()
+    const session = await service.createSession({ name: 'Original', type: 'chat', messages: [] })
+    await writes.withBackupAccess(async () => {
+      await expect(service.createSession({ name: 'New', type: 'chat', messages: [] })).rejects.toMatchObject({
+        name: 'BackupOperationBusyError',
+      })
+      await expect(service.updateSessionSortOrder(session.id, 200)).rejects.toMatchObject({
+        name: 'BackupOperationBusyError',
+      })
+    })
+    expect((await service.getSession(session.id))?.name).toBe('Original')
+  })
+
   test('repairs a complete read model without reading its session a second time', async () => {
     const repair = vi.fn((session: Session) => ({ session, changed: false }))
     const harness = createHarness(repair)

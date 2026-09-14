@@ -44,11 +44,15 @@ vi.mock('../storage/blob-write-tracker', () => ({
   isBlobRecentlyWritten: vi.fn((key: string) => recentBlobKeys.includes(key) || lateTouchedBlobKeys.has(key)),
 }))
 
-vi.mock('@/app/renderer-application', () => ({
-  sessionRepository: {
-    getSession: vi.fn(async (id: string) => sessionStore.get(`session:${id}`) ?? null),
-  },
-}))
+vi.mock('@/app/renderer-application', async () => {
+  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+  return {
+    rendererApplication: { backupOperations: new BackupOperationCoordinator() },
+    sessionRepository: {
+      getSession: vi.fn(async (id: string) => sessionStore.get(`session:${id}`) ?? null),
+    },
+  }
+})
 
 vi.mock('@/stores/sessionHelpers', () => ({
   getMetaStorage: async () => ({

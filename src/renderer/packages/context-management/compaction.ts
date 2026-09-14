@@ -5,6 +5,7 @@ import {
 } from '@chatbox/core/application/context'
 import type { Message } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
+import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import { createModel } from '@/adapters'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
@@ -131,6 +132,14 @@ export async function runCompactionWithUIState(
   sessionId: string,
   options: CompactionOptions = {}
 ): Promise<CompactionResult> {
+  return (
+    (await rendererApplication.backupOperations.runBackground(() =>
+      withSessionWorkAccess(() => compactWithUIState(sessionId, options))
+    )) ?? { success: true, compacted: false }
+  )
+}
+
+async function compactWithUIState(sessionId: string, options: CompactionOptions = {}): Promise<CompactionResult> {
   if (compactionService.isInProgress(sessionId)) {
     return { success: true, compacted: false, alreadyRunning: true }
   }

@@ -12,6 +12,7 @@ import { rendererApplication } from '@/app/renderer-application'
 import { assessContextPressure, getConfiguredContextWindow } from '@/packages/context-management/context-pressure'
 import { estimateTokensFromMessages } from '@/packages/token'
 import { settingsStore } from '@/stores/settingsStore'
+import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { guardSessionAction } from './action-guard'
 import { createAttachmentResolver } from './attachment-resolver'
 import { createNewFork, createSaveAndResendFork, findMessageLocation } from './forks'
@@ -50,7 +51,7 @@ export async function retryFromLastToolCallAfterApiError(sessionId: string, mess
   return currentGenerationService.retryFromLastToolCallAfterApiError(sessionId, messageId, toolCallId)
 }
 
-export function generate(
+export async function generate(
   sessionId: string,
   targetMsg: Message,
   options?: {
@@ -59,6 +60,7 @@ export function generate(
     agentModeEntrySource?: AgentModeEntrySource
   }
 ) {
+  if (!(await guardBackupWrite())) return
   return withSessionGenerationLock(sessionId, () => _generateWithoutSessionLock(sessionId, targetMsg, options))
 }
 
@@ -89,6 +91,7 @@ async function generateReplyBelowWithoutSessionLock(sessionId: string, msgId: st
  * drains unsettled streams before dispatching.
  */
 export async function generateMore(sessionId: string, msgId: string) {
+  if (!(await guardBackupWrite())) return
   const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
   if (!session || !supportsSessionGeneration(session.type)) {
     return
@@ -127,11 +130,12 @@ async function saveEditWithoutResend(sessionId: string, editedMessage: Message) 
  * Targets without an eligible predecessor (conversation-first message) keep
  * the legacy shape: overwrite in place, old replies forked under the target.
  */
-export function saveAndResendMessage(
+export async function saveAndResendMessage(
   sessionId: string,
   editedMessage: Message,
   options?: { runGenerateMore?: GenerateMoreFn }
 ) {
+  if (!(await guardBackupWrite())) return
   const runGenerateMore = options?.runGenerateMore ?? generateReplyBelowWithoutSessionLock
   // The target is resolved again inside the session lock. It may have started
   // streaming since the editor's pre-check, including the short window before
@@ -199,7 +203,12 @@ export function saveAndResendMessage(
 
 type GenerateMoreFn = (sessionId: string, msgId: string) => Promise<void>
 
-export function regenerateInNewFork(sessionId: string, msg: Message, options?: { runGenerateMore?: GenerateMoreFn }) {
+export async function regenerateInNewFork(
+  sessionId: string,
+  msg: Message,
+  options?: { runGenerateMore?: GenerateMoreFn }
+) {
+  if (!(await guardBackupWrite())) return
   return withSessionGenerationLock(sessionId, async () => {
     if (!(await guardSessionAction(sessionId, 'regenerate'))) {
       return

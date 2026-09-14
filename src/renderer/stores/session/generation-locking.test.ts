@@ -24,9 +24,11 @@ const {
 }))
 
 vi.mock('@/app/renderer-application', async () => {
+  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
   return {
     rendererApplication: {
+      backupOperations: new BackupOperationCoordinator(),
       generationRuntime: new GenerationRuntimeStore(),
       sessionQueryBridge: { getSession: getSessionMock },
     },

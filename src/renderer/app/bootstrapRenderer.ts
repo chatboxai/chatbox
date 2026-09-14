@@ -25,6 +25,7 @@ import { isSessionGenerating } from '@/stores/sessionActivityStore'
 import { initSettingsStore } from '@/stores/settingsStore'
 import { initUpdateListeners } from '@/stores/updateStore'
 import { reportError } from '@/utils/sentry'
+import { registerNativeBackupProtection } from './native-backup-protection'
 import type { RendererApplication } from './createRendererApplication'
 import { sessionRepository } from './renderer-application'
 
@@ -32,6 +33,8 @@ const log = getLogger('index')
 
 let sessionMigrationTrickle: SessionMigrationTrickleHandle | null = null
 let stopStartupStorageCleanup: (() => void) | null = null
+let unregisterNativeBackupProtection: (() => void) | null = null
+let unregisterBackupMigration: (() => void) | null = null
 
 /**
  * The session the user is watching is the one whose generation the background
@@ -92,26 +95,46 @@ export async function bootstrapRenderer(application: RendererApplication): Promi
   void i18n.changeLanguage(settings.language)
   initLoginLicenseStateReconciliation()
 
-  sessionMigrationTrickle ??= startSessionMigrationTrickle({
-    repository: sessionRepository,
-    isBusy: isSessionWorkInFlight,
-    shouldSkipSession: async (id) => {
-      if (sessionStartupRecovery.isRecoveryRequired(id)) return true
-      const record = await sessionRepository.meta.getById(id)
-      return record?.recoveryArchived === true || sessionStartupRecovery.isRecoveryRequired(id)
-    },
-    log: getLogger('session-migration'),
-  })
-
-  if (!platform.isDesktopLike) {
-    const trickle = sessionMigrationTrickle
+  const startMigration = () =>
+    startSessionMigrationTrickle({
+      repository: sessionRepository,
+      isBusy: isSessionWorkInFlight,
+      shouldSkipSession: async (id) => {
+        if (sessionStartupRecovery.isRecoveryRequired(id)) return true
+        const record = await sessionRepository.meta.getById(id)
+        return record?.recoveryArchived === true || sessionStartupRecovery.isRecoveryRequired(id)
+      },
+      log: getLogger('session-migration'),
+    })
+  const scheduleStorageCleanup = (trickle: SessionMigrationTrickleHandle) => {
+    if (platform.isDesktopLike) return
+    stopStartupStorageCleanup?.()
+    stopStartupStorageCleanup = null
     void import('@/setup/storage_clear').then(({ startStartupStorageCleanup }) => {
       if (sessionMigrationTrickle !== trickle) return
-      stopStartupStorageCleanup ??= startStartupStorageCleanup({
+      stopStartupStorageCleanup = startStartupStorageCleanup({
         sessionMigrationReady: trickle.readyForFullScan,
       }).stop
     })
   }
+  unregisterNativeBackupProtection ??= registerNativeBackupProtection(application.backupOperations, platform)
+  sessionMigrationTrickle ??= startMigration()
+  unregisterBackupMigration ??= application.backupOperations.registerParticipant({
+    pauseAndDrain: async () => {
+      await sessionMigrationTrickle?.pauseAndDrain()
+    },
+    resume: ({ rescan }) => {
+      if (rescan) {
+        sessionMigrationTrickle?.stop()
+        sessionMigrationTrickle = startMigration()
+      } else {
+        sessionMigrationTrickle?.resume()
+      }
+      if (sessionMigrationTrickle) scheduleStorageCleanup(sessionMigrationTrickle)
+    },
+  })
+
+  scheduleStorageCleanup(sessionMigrationTrickle)
 
   if (platform.type === 'desktop') {
     initUpdateListeners()
@@ -124,8 +147,12 @@ export async function bootstrapRenderer(application: RendererApplication): Promi
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
+    unregisterNativeBackupProtection?.()
+    unregisterNativeBackupProtection = null
     sessionMigrationTrickle?.stop()
     sessionMigrationTrickle = null
+    unregisterBackupMigration?.()
+    unregisterBackupMigration = null
     stopStartupStorageCleanup?.()
     stopStartupStorageCleanup = null
   })

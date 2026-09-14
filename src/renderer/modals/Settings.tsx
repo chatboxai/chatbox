@@ -17,6 +17,7 @@ import { ScalableIcon } from '@/components/common/ScalableIcon'
 import SettingsKnowledgeBaseRouteComponent from '@/components/knowledge-base/KnowledgeBase'
 import { Modal } from '@/components/layout/Overlay'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
+import { useBackupNavigationGuard } from '@/hooks/useBackupNavigationGuard'
 import { getSettingsSearchParam, navigateToDynamicPath, router } from '@/router'
 import { RouteComponent as SettingsAgentRouteComponent } from '@/routes/settings/agent'
 import { RouteComponent as SettingsArchiveRouteComponent } from '@/routes/settings/archive'
@@ -181,6 +182,7 @@ const modalRouter = createRouter({
 })
 
 export const SettingsModal: FC<SettingsModalProps> = (props) => {
+  useBackupNavigationGuard()
   const { t } = useTranslation()
   const location = useLocation()
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()

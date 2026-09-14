@@ -440,33 +440,51 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
   }
 
   const rollback = async () => {
-    for (const rollbackRehydration of rehydrationRollbacks.reverse()) {
-      await rollbackRehydration().catch(() => undefined)
-    }
-    for (const metaId of changedMetaIds.reverse()) {
-      const previous = previousMeta.get(metaId)
-      if (previous) {
-        const existing = await options.metaStorage.getById(metaId).catch(() => null)
-        if (existing) {
-          await options.metaStorage
-            .update(metaId, { ...previous, recoveryArchived: previous.recoveryArchived, hasPausedToolCall: previous.hasPausedToolCall })
-            .catch(() => null)
-        } else {
-          await options.metaStorage.create(previous).catch(() => undefined)
-        }
-      } else {
-        await options.metaStorage.delete(metaId).catch(() => undefined)
+    const failures: unknown[] = []
+    const restore = async (action: () => Promise<unknown>) => {
+      try {
+        await action()
+      } catch (error) {
+        failures.push(error)
       }
+    }
+    for (const rollbackRehydration of rehydrationRollbacks.reverse()) await restore(rollbackRehydration)
+    for (const metaId of changedMetaIds.reverse()) {
+      await restore(async () => {
+        const previous = previousMeta.get(metaId)
+        if (!previous) {
+          await options.metaStorage.delete(metaId)
+          return
+        }
+        const existing = await options.metaStorage.getById(metaId)
+        if (existing) {
+          await options.metaStorage.update(metaId, {
+            ...previous,
+            starred: previous.starred,
+            hidden: previous.hidden,
+            archivedAt: previous.archivedAt,
+            assistantAvatarKey: previous.assistantAvatarKey,
+            picUrl: previous.picUrl,
+            backgroundImage: previous.backgroundImage,
+            type: previous.type,
+            hasPausedToolCall: previous.hasPausedToolCall,
+            recoveryArchived: previous.recoveryArchived,
+          })
+        } else await options.metaStorage.create(previous)
+      })
     }
     for (const previous of previousValues.reverse()) {
-      if (previous.existed && previous.rollbackKey) {
-        const value = await options.storage.getItem<unknown>(previous.rollbackKey, null)
-        await options.storage.setItemNow(previous.key, value).catch(() => undefined)
-      } else {
-        await options.storage.removeItem(previous.key).catch(() => undefined)
-      }
+      await restore(async () => {
+        if (previous.existed && previous.rollbackKey) {
+          const missing = {}
+          const value = await options.storage.getItem<unknown>(previous.rollbackKey, missing)
+          if (value === missing) throw new Error(`Rollback record is missing: ${previous.key}`)
+          await options.storage.setItemNow(previous.key, value)
+        } else await options.storage.removeItem(previous.key)
+      })
     }
-    for (const key of newResourceKeys.reverse()) await options.storage.delBlob(key).catch(() => undefined)
+    for (const key of newResourceKeys.reverse()) await restore(() => options.storage.delBlob(key))
+    if (failures.length) throw new AggregateError(failures, 'Backup rollback failed')
   }
 
   try {
@@ -606,12 +624,14 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       })
     }
 
+    throwIfAborted(options.signal)
     if (manifest.data.settings) {
       const value = stagedEntries.get(manifest.data.settings.path)?.value
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid settings entry')
       const restoredSettings = restoreSettingsResourceKeys(value as Partial<Settings>, resourceKeyMap)
       await options.storage.setItemNow(BackupStorageKey.Settings, restoredSettings)
     }
+    throwIfAborted(options.signal)
     if (manifest.data.copilots) {
       const value = stagedEntries.get(manifest.data.copilots.path)?.value
       if (!Array.isArray(value)) throw new Error('Invalid copilots entry')
@@ -630,10 +650,12 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
         ...AGENT_PERSONA_BACKUP_KEYS,
         ...COPILOT_BACKUP_KEYS,
       ]) {
+        throwIfAborted(options.signal)
         if (key in sessionSettings) await options.storage.setItemNow(key, sessionSettings[key])
       }
     }
 
+    throwIfAborted(options.signal)
     await cleanupTemps()
     return {
       manifest,
@@ -642,7 +664,13 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       restoredResourceCount: manifest.resources.length,
     }
   } catch (error) {
-    if (commitStarted) await rollback()
+    if (commitStarted) {
+      try {
+        await rollback()
+      } catch (rollbackError) {
+        throw new AggregateError([error, rollbackError], `Backup rollback failed; recovery data retained (${importId})`)
+      }
+    }
     await cleanupTemps()
     throw error
   }

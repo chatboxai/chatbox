@@ -563,6 +563,18 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('window:unmaximize')
   }
 
+  public setBackupOperationActive(active: boolean): Promise<void> {
+    return this.ipc.invoke('backup-operation:set-active', active)
+  }
+
+  public onBackupCloseRequest(callback: () => void): () => void {
+    return this.ipc.onBackupCloseRequest(callback)
+  }
+
+  public finishBackupClose(confirmed: boolean): Promise<void> {
+    return this.ipc.invoke('backup-operation:finish-close', confirmed)
+  }
+
   public closeWindow() {
     return this.ipc.invoke('window:close')
   }

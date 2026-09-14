@@ -1,3 +1,5 @@
+import { importShardedBackup, type ShardedBackupOptions } from './sharded-backup'
+import type { BackupManifestV3 } from './sharded-format'
 import type { CopilotDetail, Session, Settings } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { migrateSession } from '../application/session/compatibility/session-load'
@@ -295,6 +297,7 @@ function translateImportedSessionMemoryState(session: Session, state: ImportedMe
 }
 
 export interface BackupImportOptions {
+  sharded?: ShardedBackupOptions
   storage: BackupStorage
   metaStorage: BackupMetaStorage
   signal?: AbortSignal
@@ -307,7 +310,7 @@ export interface BackupImportOptions {
 }
 
 export interface BackupImportResult {
-  manifest: BackupManifest
+  manifest: BackupManifest | BackupManifestV3
   warnings: BackupWarning[]
   restoredSessionCount: number
   restoredResourceCount: number
@@ -418,6 +421,10 @@ export async function isZipBackupFile(file: BackupFile): Promise<boolean> {
 }
 
 export async function importBackupArchive(file: BackupFile, options: BackupImportOptions): Promise<BackupImportResult> {
+  if (options.sharded) {
+    const result = await importShardedBackup(file, options, options.sharded)
+    if (result) return result
+  }
   const createId = options.createId ?? uuidv4
   const importId = await createId()
   const tempPrefix = `__chatbox_backup_import:${importId}`

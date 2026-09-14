@@ -95,7 +95,9 @@ export const BackupManifestSchema = z.object({
 })
 export type BackupManifest = z.infer<typeof BackupManifestSchema>
 
-export function validateBackupManifestGraph(manifest: BackupManifest): void {
+export function validateBackupManifestGraph(
+  manifest: Pick<BackupManifest, 'sessions' | 'resources' | 'stats' | 'warnings'>
+): void {
   const resourceIds = new Set<string>()
   const resourceKeys = new Set<string>()
   const sessionIds = new Set<string>()

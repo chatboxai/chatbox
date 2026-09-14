@@ -1,3 +1,22 @@
+import { iterateIndexedDBBackupRows, beginIndexedDBBackupRestore } from './session-row-idb-backup'
+import type { BackupPageLimits } from '@chatbox/core/backup'
+import {
+  SESSION_ROW_DB_NAME,
+  SESSION_ROW_THREAD_STORE,
+  SESSION_ROW_MESSAGE_STORE,
+  SESSION_INDEX,
+  STATUS_INDEX,
+  ROW_STORES,
+  REVISION_HEAD_THREAD_ID,
+  type RevisionHeadRow,
+  type PersistedThreadRow,
+  isRevisionHeadRow,
+  storedRevision,
+  revisionHead,
+  revisionTombstone,
+  plainThreadRow,
+  readStoredCommit,
+} from './session-row-idb-records'
 import {
   assertMessageWindowRevision,
   SessionMessageWindowTraversal,
@@ -27,85 +46,11 @@ import {
   type SessionRows,
   type SessionRowsDiff,
 } from '@chatbox/core/ports'
-import type { MessageRow, MessageRowStatus, SessionRecordV2, ThreadRow } from '@chatbox/core/session/session-tree'
+import type { MessageRow, MessageRowStatus, ThreadRow } from '@chatbox/core/session/session-tree'
 import { reportDbOpenSucceeded, toDbOpenError, watchDbOpenBlocked, watchDbVersionChange } from './db-schema-guard'
 
-export const SESSION_ROW_DB_NAME = 'chatbox-messages'
-export const SESSION_ROW_THREAD_STORE = 'threads'
-export const SESSION_ROW_MESSAGE_STORE = 'messages'
-
+export { SESSION_ROW_DB_NAME, SESSION_ROW_THREAD_STORE, SESSION_ROW_MESSAGE_STORE } from './session-row-idb-records'
 const DB_VERSION = 1
-const SESSION_INDEX = 'bySession'
-const STATUS_INDEX = 'byStatus'
-const ROW_STORES = [SESSION_ROW_THREAD_STORE, SESSION_ROW_MESSAGE_STORE]
-const REVISION_HEAD_THREAD_ID = '__chatbox_internal_revision_head__'
-
-interface RevisionHeadRow {
-  sessionId: string
-  threadId: typeof REVISION_HEAD_THREAD_ID
-  seq: -2
-  commitRevision: number
-  sessionRecord?: SessionRecordV2
-}
-
-interface PersistedThreadRow extends ThreadRow {
-  sessionRecord?: SessionRecordV2
-  commitRevision?: number
-}
-
-function isRevisionHeadRow(row: PersistedThreadRow | RevisionHeadRow): row is RevisionHeadRow {
-  return row.seq === -2 && row.threadId === REVISION_HEAD_THREAD_ID
-}
-
-function storedRevision(row: PersistedThreadRow | RevisionHeadRow | undefined): number | null {
-  return row && isRevisionHeadRow(row) ? row.commitRevision : null
-}
-
-function revisionHead(sessionId: string, commit: SessionRowCommit): RevisionHeadRow {
-  return {
-    sessionId,
-    threadId: REVISION_HEAD_THREAD_ID,
-    seq: -2,
-    commitRevision: commit.revision,
-    sessionRecord: commit.record,
-  }
-}
-
-function revisionTombstone(sessionId: string, revision: number): RevisionHeadRow {
-  return { sessionId, threadId: REVISION_HEAD_THREAD_ID, seq: -2, commitRevision: revision }
-}
-
-function plainThreadRow(row: PersistedThreadRow): ThreadRow {
-  const { sessionRecord: _sessionRecord, commitRevision: _commitRevision, ...thread } = row
-  return thread
-}
-
-function readStoredCommit(
-  sessionId: string,
-  threads: PersistedThreadRow[],
-  head: RevisionHeadRow | undefined
-): SessionRowCommit {
-  const activeRows = threads.filter((thread) => thread.seq === -1)
-  if (activeRows.length !== 1) {
-    throw new Error(`session ${sessionId} must have exactly one active thread row`)
-  }
-  const active = activeRows[0]
-  const record = head?.sessionRecord ?? active.sessionRecord
-  const revision = head?.sessionRecord ? head.commitRevision : active.commitRevision
-  if (!record || revision === undefined) {
-    throw new Error(`session ${sessionId} rows have no commit metadata`)
-  }
-  if (!Number.isSafeInteger(revision) || revision <= 0) {
-    throw new Error(`session ${sessionId} has an invalid commit revision`)
-  }
-  if (!head?.sessionRecord && head?.commitRevision !== undefined && head.commitRevision !== active.commitRevision) {
-    throw new Error(`session ${sessionId} has inconsistent commit revisions`)
-  }
-  if (record.id !== sessionId || record.activeThreadId !== active.threadId) {
-    throw new Error(`session ${sessionId} commit metadata does not match its active thread`)
-  }
-  return { record, revision }
-}
 
 function assertCommit(sessionId: string, rows: SessionRows, commit: SessionRowCommit): void {
   if (!Number.isSafeInteger(commit.revision) || commit.revision <= 0) {
@@ -187,6 +132,12 @@ function clearSessionRows(store: IDBObjectStore, sessionId: string, onDone: () =
 export class IndexedDBSessionRowStore implements SessionRowStorePort {
   private db: IDBDatabase | null = null
   private initPromise: Promise<void> | null = null
+
+  close(): void {
+    this.db?.close()
+    this.db = null
+    this.initPromise = null
+  }
 
   initialize(): Promise<void> {
     if (!this.initPromise) {
@@ -284,6 +235,16 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
         fail(error)
       }
     })
+  }
+
+  async *iterateBackupRows(sessionId: string, limits: BackupPageLimits, signal?: AbortSignal) {
+    const db = await this.ensureDatabase('read-rows', sessionId)
+    yield* iterateIndexedDBBackupRows(db, sessionId, limits, signal)
+  }
+
+  async beginBackupRestore(sessionId: string) {
+    const db = await this.ensureDatabase('write-rows', sessionId)
+    return beginIndexedDBBackupRestore(db, sessionId)
   }
 
   async readSnapshot(sessionId: string): Promise<SessionRowSnapshot | null> {

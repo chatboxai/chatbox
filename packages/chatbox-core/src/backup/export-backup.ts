@@ -1,3 +1,5 @@
+import { exportShardedBackup, type ShardedBackupOptions } from './sharded-backup'
+import type { BackupManifestV3 } from './sharded-format'
 import type { CopilotDetail, Session, SessionMetaRecord, Settings } from '@shared/types'
 import { throwIfAborted } from './abort'
 import {
@@ -60,6 +62,8 @@ export interface BackupExportWriteResult {
 }
 
 export interface BackupExportOptions {
+  /** Controlled integration seam; public hosts enable this after platform acceptance. */
+  sharded?: ShardedBackupOptions
   exportItems: BackupExportItem[]
   includeKeys: boolean
   /** Omitted selects all sessions; an empty array selects none. */
@@ -83,10 +87,10 @@ export interface BackupExportOptions {
 }
 
 export interface BackupExportResult extends BackupExportWriteResult {
-  manifest: BackupManifest
+  manifest: BackupManifest | BackupManifestV3
 }
 
-async function safeSessionPathComponent(sessionId: string, checksum: typeof sha256Checksum): Promise<string> {
+export async function safeSessionPathComponent(sessionId: string, checksum: typeof sha256Checksum): Promise<string> {
   const encoded = encodeURIComponent(sessionId).replaceAll('.', '%2E')
   if (new TextEncoder().encode(encoded).length <= 200) return encoded
   const result = await checksum(new TextEncoder().encode(sessionId))
@@ -200,6 +204,7 @@ async function resourcePath(
 }
 
 export async function exportBackupArchive(options: BackupExportOptions): Promise<BackupExportResult> {
+  if (options.sharded) return exportShardedBackup(options, options.sharded)
   let completedManifest: BackupManifest | undefined
   const exportedAt = options.exportedAt ?? new Date()
   const checksum = options.checksum ?? sha256Checksum

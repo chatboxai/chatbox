@@ -1,3 +1,6 @@
+import { throwIfAborted } from '../backup/abort'
+import { backupPageLimits, type BackupPageLimits, type BackupRow } from '../backup/session-port'
+import { createSqlBackupCandidate } from './session-row-sql-backup'
 import type { SessionContextMessage, SessionContextRequest, SessionContextRows } from '../ports/session-context-source'
 import {
   type GeneratingMessageRef,
@@ -719,6 +722,76 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         })
     }
     return this.initializePromise
+  }
+
+  async beginBackupRestore(sessionId: string) {
+    await this.initialize()
+    return createSqlBackupCandidate(this.database, sessionId, { thread: threadStatement, message: messageStatements })
+  }
+
+  async *iterateBackupRows(
+    sessionId: string,
+    requested: BackupPageLimits,
+    signal?: AbortSignal
+  ): AsyncGenerator<BackupRow> {
+    const limits = backupPageLimits(requested)
+    await this.initialize()
+    const revision = await this.readRevision(sessionId)
+    const assertRevision = async () => {
+      throwIfAborted(signal)
+      const actual = await this.readRevision(sessionId)
+      if (actual !== revision) throw new SessionRowConflictError(sessionId, revision, actual)
+    }
+    const checkThread = (row: ThreadMetadataRecord) => {
+      for (const size of [
+        row.name_length,
+        row.compaction_points_json_length,
+        row.session_prompt_context_snapshot_json_length,
+        row.session_record_json_length,
+      ]) {
+        if (size !== null && size > limits.maxRecordBytes)
+          throw new Error('Backup thread or header requires payload blocks')
+      }
+    }
+    const bounded = (row: BackupRow): BackupRow => {
+      if (textEncoder.encode(JSON.stringify(row)).byteLength > limits.maxRecordBytes)
+        throw new Error('Backup record requires payload blocks')
+      return row
+    }
+    const active = await this.database.query<ThreadMetadataRecord>(
+      `SELECT ${THREAD_METADATA_COLUMNS} FROM session_threads WHERE session_id = ? AND seq = -1`,
+      [sessionId]
+    )
+    active.forEach(checkThread)
+    const { record } = readCommitMetadata(sessionId, await this.readThreadRecords(active), revision)
+    await assertRevision()
+    yield bounded({ kind: 'header', record })
+    for (let offset = 0; ; offset++) {
+      await assertRevision()
+      const page = await this.database.query<ThreadMetadataRecord>(SELECT_THREADS_PAGE_SQL, [sessionId, 1, offset])
+      if (!page.length) break
+      page.forEach(checkThread)
+      const threads = await this.readThreadRecords(page)
+      await assertRevision()
+      yield bounded({ kind: 'thread', thread: toThreadRow(threads[0]) })
+    }
+    let cursor: MessageRecord | undefined
+    for (;;) {
+      await assertRevision()
+      const params: SessionRowSqlBindValue[] = [sessionId]
+      if (cursor) params.push(cursor.thread_id, cursor.seq, cursor.message_id)
+      params.push(limits.maxPageRows, Math.min(limits.maxPageBytes, MESSAGE_PAGE_RESPONSE_BUDGET))
+      const page = await this.database.query<MessageRecord>(selectMessagePageSql(cursor !== undefined), params)
+      if (!page.length) break
+      for (const entry of page) {
+        if (entry.payload_utf8_length > limits.maxRecordBytes) throw new Error('Backup message requires payload blocks')
+        const [message] = await this.readMessageRows([entry], Object.create(null))
+        await assertRevision()
+        yield bounded({ kind: 'message', message })
+      }
+      cursor = page[page.length - 1]
+    }
+    await assertRevision()
   }
 
   async readSnapshot(sessionId: string): Promise<SessionRowSnapshot | null> {

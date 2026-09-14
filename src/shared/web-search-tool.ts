@@ -1,4 +1,5 @@
-import { jsonSchema, type ToolSet } from 'ai'
+import { validatedToolSchema } from './validated-tool-schema'
+import type { ToolSet } from 'ai'
 
 // The web_search tool definition shared between the renderer
 // (packages/model-calls/toolsets/web-search.ts) and the native app. Only the
@@ -45,7 +46,7 @@ export function createWebSearchTool(
   return {
     description:
       'Search the web for information. Use it when fresh, real-time, or source-specific data would improve the answer (current events, recent releases, live data, facts you are unsure about). For questions you can answer confidently from your own knowledge, answer directly instead. Use short, concise queries (English preferred).',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         query: { type: 'string', description: 'the search query' },

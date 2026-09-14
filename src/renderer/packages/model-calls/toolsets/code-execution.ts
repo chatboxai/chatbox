@@ -1,3 +1,6 @@
+import { isUploadedFilePath } from '@shared/uploaded-file-tools'
+import { readFileSchema, READ_FILE_DEFAULT_LINES } from '@shared/uploaded-file-tools'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import { isTextFilePath } from '@shared/file-extensions'
 import {
   type SandboxSeedAttachment,
@@ -6,7 +9,7 @@ import {
   sandboxAttachmentRelPath,
 } from '@shared/sandbox/attachment-path'
 import { DEFAULT_EXEC_TIMEOUT, type SandboxExecLanguage, type SandboxProvider } from '@shared/sandbox-provider'
-import { jsonSchema, type ToolSet } from 'ai'
+import type { ToolSet } from 'ai'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import { asRecord, contentOrErrorText, numberField, stringField, toTextModelOutput } from './model-output'
@@ -206,7 +209,7 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
       'that and the task cannot be completed with the available runtime. To create or modify files, prefer ' +
       'the write_file/edit_file tools rather than writing through code here. Use relative paths (they resolve ' +
       'to the working directory); do not use /home/user. Generated files can be made downloadable via create_download.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         code: {
@@ -271,38 +274,19 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
     toModelOutput: toTextModelOutput(formatCodeExecutionOutput),
   }
 
-  const READ_FILE_MAX_LINES = 2000
-  const READ_FILE_DEFAULT_LINES = 500
-
   const read_file: ToolSet[string] = {
     description:
       'Read the content of a file in the sandbox working directory, or an absolute user filesystem path when explicitly provided. ' +
       'For document files (PDF, DOCX, etc.), read the path from <PARSED_SANDBOX_PATH> instead of the binary. ' +
       'Output is truncated to fit context. Use offset to continue reading large files.',
-    inputSchema: jsonSchema({
-      type: 'object',
-      properties: {
-        file_path: {
-          type: 'string',
-          description: 'Path to file in the sandbox working directory, or an absolute user filesystem path',
-        },
-        offset: {
-          type: 'integer',
-          minimum: 1,
-          description: 'Line number to start reading from (1-indexed). Defaults to 1.',
-        },
-        limit: {
-          type: 'integer',
-          minimum: 1,
-          maximum: READ_FILE_MAX_LINES,
-          description: `Max number of lines to read. Defaults to ${READ_FILE_DEFAULT_LINES}, max ${READ_FILE_MAX_LINES}.`,
-        },
-      },
-      required: ['file_path'],
-      additionalProperties: false,
-    }),
+    inputSchema: validatedToolSchema(readFileSchema),
     execute: async (input) => {
       const readInput = input as { file_path: string; offset?: number; limit?: number }
+      if (isUploadedFilePath(readInput.file_path))
+        return {
+          error:
+            'This virtual path requires the uploaded-file read_file tool. Use a filesystem path for this operation.',
+        }
       if (isSoulVirtualPath(readInput.file_path)) {
         return readSoulVirtualFile()
       }
@@ -383,7 +367,7 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
       'macOS/Linux a sandbox-writable temp dir such as /tmp. If the file cannot be persisted, this returns an ' +
       'error instead of a download; write the file inside the sandbox and try again. Never present sandbox ' +
       'paths as download links in your reply text.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         file_path: {
@@ -402,6 +386,11 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
     }),
     execute: async (input) => {
       const downloadInput = input as { file_path: string; display_name: string }
+      if (isUploadedFilePath(downloadInput.file_path))
+        return {
+          error:
+            'This virtual path requires the uploaded-file read_file tool. Use a filesystem path for this operation.',
+        }
       // Downloads must originate inside the sandbox, so phantom-home paths always map
       // there even when the host's real home happens to be /home/user.
       downloadInput.file_path = remapPhantomHomePath(downloadInput.file_path)

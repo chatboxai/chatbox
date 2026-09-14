@@ -1,6 +1,7 @@
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import { ChatboxAIAPIError } from '@shared/models/errors'
 import { createWebSearchTool, WEB_SEARCH_TOOLSET_INSTRUCTION } from '@shared/web-search-tool'
-import { jsonSchema, type ToolSet } from 'ai'
+import type { ToolSet } from 'ai'
 import * as remote from '@/packages/remote'
 import { getParseLinkProvider, webSearchExecutor } from '@/packages/web-search'
 import platform from '@/platform'
@@ -63,7 +64,7 @@ function formatParseLinkOutput(output: unknown): string {
 export const parseLinkTool: ToolSet[string] = {
   description:
     'Parses the readable content of a web page. Use this when you need detailed information from a specific URL — typically one the user shared or that was returned by a prior search.',
-  inputSchema: jsonSchema({
+  inputSchema: validatedToolSchema({
     type: 'object',
     properties: {
       url: {

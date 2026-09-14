@@ -1,5 +1,6 @@
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { SessionAttachmentQueryPlan } from '@shared/types'
-import { jsonSchema, type ToolSet } from 'ai'
+import type { ToolSet } from 'ai'
 import * as remote from '@/packages/remote'
 import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
@@ -106,7 +107,7 @@ export async function getToolSet(attachmentIds: number[]) {
   const tools: ToolSet = {
     list_session_attachments: {
       description: 'List large uploaded attachments in the current session and show their readiness status.',
-      inputSchema: jsonSchema({
+      inputSchema: validatedToolSchema({
         type: 'object',
         properties: {},
         additionalProperties: false,
@@ -116,7 +117,7 @@ export async function getToolSet(attachmentIds: number[]) {
     },
     query_session_attachment: {
       description: 'Search across ready large uploaded attachments with a semantic query.',
-      inputSchema: jsonSchema({
+      inputSchema: validatedToolSchema({
         type: 'object',
         properties: {
           query: {
@@ -145,7 +146,7 @@ export async function getToolSet(attachmentIds: number[]) {
     },
     read_session_attachment_parents: {
       description: 'Read parent blocks for search hits from large uploaded attachments.',
-      inputSchema: jsonSchema({
+      inputSchema: validatedToolSchema({
         type: 'object',
         properties: {
           parentIds: {

@@ -1,3 +1,4 @@
+import { asSchema } from 'ai'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -534,4 +535,21 @@ describe('run_command', () => {
       })
     )
   })
+})
+
+describe('run_command input schema', () => {
+  test.each([{ cmd: 'pwd' }, { command: 123 }, { command: 'pwd', timeout: '1000' }])(
+    'rejects invalid arguments %j using the command tool schema',
+    async (input) => {
+      const { tool } = buildRunCommandTool({
+        sessionId: 'session-1',
+        platform: 'darwin',
+        workingDirectories: [],
+        approvalMode: 'smart',
+        requestSmartApproval: vi.fn(),
+      })
+      const schema = asSchema(tool.inputSchema)
+      expect((await schema.validate?.(input))?.success).toBe(false)
+    }
+  )
 })

@@ -1,3 +1,4 @@
+import { MAX_UPLOADED_FILE_LINES, uploadedFileToolHint, uploadedFilePath } from '../uploaded-file-tools'
 import { isTextFilePath } from '../file-extensions'
 import {
   sandboxAttachmentIdentity,
@@ -17,7 +18,7 @@ import type {
   ToolCleanupMode,
 } from './types'
 
-const MAX_INLINE_FILE_LINES = 500
+const MAX_INLINE_FILE_LINES = MAX_UPLOADED_FILE_LINES
 const PREVIEW_LINES = 100
 
 /** Serialized args longer than this are downgraded to a preview when a part is stubbed. */
@@ -165,7 +166,7 @@ function stubToolResultPart(part: MessageContentToolCallPart): MessageContentToo
     ? {
         _cleared: true,
         fullResultFileKey: part.resultStorageKey,
-        note: 'Old tool result cleared to save context space. Use the read_file tool with fullResultFileKey to re-read it if needed.',
+        note: `Old tool result cleared to save context space. ${uploadedFileToolHint(part.resultStorageKey)}`,
       }
     : {
         _cleared: true,
@@ -419,8 +420,8 @@ function buildAttachment(params: AttachmentParams): string {
 
   let prefix = '\n\n<ATTACHMENT_FILE>\n'
   prefix += `<FILE_INDEX>${index}</FILE_INDEX>\n`
-  prefix += `<FILE_NAME>${name}</FILE_NAME>\n`
-  prefix += `<FILE_KEY>${key}</FILE_KEY>\n`
+  prefix += `<FILE_NAME>${escapeXmlText(name)}</FILE_NAME>\n`
+  prefix += `<FILE_PATH>${uploadedFilePath(key)}</FILE_PATH>\n`
   prefix += `<FILE_LINES>${fileLines}</FILE_LINES>\n`
   prefix += `<FILE_SIZE>${fileSize} bytes</FILE_SIZE>\n`
   prefix += '<FILE_CONTENT>\n'
@@ -429,7 +430,7 @@ function buildAttachment(params: AttachmentParams): string {
 
   let suffix = '</FILE_CONTENT>\n'
   if (shouldTruncate) {
-    suffix += `<TRUNCATED>Content truncated. Showing first ${PREVIEW_LINES} of ${fileLines} lines. Use read_file or search_file_content tool with FILE_KEY="${key}" to read more content.</TRUNCATED>\n`
+    suffix += `<TRUNCATED>Content truncated. Showing first ${PREVIEW_LINES} of ${fileLines} lines. ${uploadedFileToolHint(key)}</TRUNCATED>\n`
   }
   suffix += '</ATTACHMENT_FILE>\n'
 
@@ -446,14 +447,14 @@ function buildRetrievalAttachment(params: {
   const { index, name, key, status, blockedReason } = params
   let text = '\n\n<ATTACHMENT_FILE>\n'
   text += `<FILE_INDEX>${index}</FILE_INDEX>\n`
-  text += `<FILE_NAME>${name}</FILE_NAME>\n`
-  text += `<FILE_KEY>${key}</FILE_KEY>\n`
+  text += `<FILE_NAME>${escapeXmlText(name)}</FILE_NAME>\n`
+  text += `<FILE_KEY>${escapeXmlText(key.startsWith('session-attachment:') ? key : uploadedFilePath(key))}</FILE_KEY>\n`
   text += '<FILE_CONTENT>\n'
   text += '</FILE_CONTENT>\n'
   text += '<RETRIEVAL_MODE>session_attachment_rag</RETRIEVAL_MODE>\n'
-  text += `<INDEX_STATUS>${status}</INDEX_STATUS>\n`
+  text += `<INDEX_STATUS>${escapeXmlText(status)}</INDEX_STATUS>\n`
   if (blockedReason) {
-    text += `<BLOCKED_REASON>${blockedReason}</BLOCKED_REASON>\n`
+    text += `<BLOCKED_REASON>${escapeXmlText(blockedReason)}</BLOCKED_REASON>\n`
   }
   text += [
     '<SYSTEM_REMINDER>',
@@ -483,7 +484,7 @@ function buildSandboxAttachment(params: {
   let text = '\n\n<ATTACHMENT_FILE>\n'
   text += `<FILE_INDEX>${index}</FILE_INDEX>\n`
   text += `<FILE_NAME>${escapeXmlText(name)}</FILE_NAME>\n`
-  text += `<FILE_KEY>${escapeXmlText(key)}</FILE_KEY>\n`
+  text += `<FILE_KEY>${escapeXmlText(key.startsWith('session-attachment:') ? key : uploadedFilePath(key))}</FILE_KEY>\n`
   text += `<FILE_SIZE>${escapeXmlText(size)}</FILE_SIZE>\n`
   text += '<FILE_CONTENT>\n'
   text += '</FILE_CONTENT>\n'
@@ -523,11 +524,11 @@ function buildToolOnlyAttachment(params: { index: number; name: string; key: str
   const { index, name, key } = params
   let text = '\n\n<ATTACHMENT_FILE>\n'
   text += `<FILE_INDEX>${index}</FILE_INDEX>\n`
-  text += `<FILE_NAME>${name}</FILE_NAME>\n`
-  text += `<FILE_KEY>${key}</FILE_KEY>\n`
+  text += `<FILE_NAME>${escapeXmlText(name)}</FILE_NAME>\n`
+  text += `<FILE_PATH>${uploadedFilePath(key)}</FILE_PATH>\n`
   text += '<FILE_CONTENT>\n'
   text += '</FILE_CONTENT>\n'
-  text += `<TRUNCATED>Content preview unavailable. Use read_file or search_file_content tool with FILE_KEY="${key}" to inspect this file.</TRUNCATED>\n`
+  text += `<TRUNCATED>Content preview unavailable. ${uploadedFileToolHint(key)}</TRUNCATED>\n`
   text += '</ATTACHMENT_FILE>\n'
   return text
 }

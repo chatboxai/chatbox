@@ -1,3 +1,4 @@
+import { asSchema } from 'ai'
 import {
   DEFAULT_REQUEST_TIMEOUT_MSEC,
   type JSONRPCMessage,
@@ -213,10 +214,15 @@ describe('MCPServer HTTP transport', () => {
                   name: 'echo',
                   description: 'Echo the input text',
                   inputSchema: {
+                    $schema: 'http://json-schema.org/draft-06/schema#',
                     type: 'object',
                     properties: { text: { type: 'string' } },
                     required: ['text'],
                   },
+                },
+                {
+                  name: 'unsupported',
+                  inputSchema: { type: 'object', $schema: 'https://example.com/unsupported-dialect' },
                 },
               ],
             },
@@ -250,7 +256,14 @@ describe('MCPServer HTTP transport', () => {
     await server.start()
 
     expect(server.status).toEqual({ state: 'running' })
-    expect(Object.keys(server.getAvailableTools())).toEqual(['echo'])
+    expect(Object.keys(server.getAvailableTools())).toEqual(['echo', 'unsupported'])
+    const unsupported = asSchema(server.getAvailableTools().unsupported.inputSchema)
+    expect((await unsupported.validate?.({}))?.success).toBe(true)
+    const echoSchema = asSchema(server.getAvailableTools().echo.inputSchema)
+    expect(echoSchema.jsonSchema).not.toHaveProperty('additionalProperties')
+    expect((await echoSchema.validate?.({ text: 'hello', dynamic: true }))?.success).toBe(true)
+    expect((await echoSchema.validate?.({ text: 42 }))?.success).toBe(false)
+    expect((await echoSchema.validate?.({ typo: 'hello' }))?.success).toBe(false)
     const echoResult = await server
       .getAvailableTools()
       .echo.execute?.({ text: 'hello' }, { toolCallId: 'echo-call', messages: [] })
@@ -309,10 +322,15 @@ describe('MCPServer HTTP transport', () => {
                   name: 'echo',
                   description: 'Echo the input text',
                   inputSchema: {
+                    $schema: 'http://json-schema.org/draft-06/schema#',
                     type: 'object',
                     properties: { text: { type: 'string' } },
                     required: ['text'],
                   },
+                },
+                {
+                  name: 'unsupported',
+                  inputSchema: { type: 'object', $schema: 'https://example.com/unsupported-dialect' },
                 },
               ],
             },
@@ -345,7 +363,14 @@ describe('MCPServer HTTP transport', () => {
     await server.start()
 
     expect(server.status).toEqual({ state: 'running' })
-    expect(Object.keys(server.getAvailableTools())).toEqual(['echo'])
+    expect(Object.keys(server.getAvailableTools())).toEqual(['echo', 'unsupported'])
+    const unsupported = asSchema(server.getAvailableTools().unsupported.inputSchema)
+    expect((await unsupported.validate?.({}))?.success).toBe(true)
+    const echoSchema = asSchema(server.getAvailableTools().echo.inputSchema)
+    expect(echoSchema.jsonSchema).not.toHaveProperty('additionalProperties')
+    expect((await echoSchema.validate?.({ text: 'hello', dynamic: true }))?.success).toBe(true)
+    expect((await echoSchema.validate?.({ text: 42 }))?.success).toBe(false)
+    expect((await echoSchema.validate?.({ typo: 'hello' }))?.success).toBe(false)
     const echoResult = await server
       .getAvailableTools()
       .echo.execute?.({ text: 'hello-modern' }, { toolCallId: 'echo-call', messages: [] })

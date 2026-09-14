@@ -1,4 +1,5 @@
-import { jsonSchema, type ToolSet } from 'ai'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
+import type { ToolSet } from 'ai'
 import { executeChatboxCli, getChatboxCliDescription } from '@/packages/chatbox-cli'
 import type { ChatboxCliInput, ChatboxCliOptions, ChatboxCliToolContext } from '@/packages/chatbox-cli/types'
 
@@ -11,7 +12,7 @@ export function buildChatboxCliToolSet(options: ChatboxCliOptions = {}) {
       'conversation history, and asynchronous image-generation background tasks. Image generation requires a ' +
       'localized approval; after an accepted result, end the turn and wait for Chatbox callback instead of polling. ' +
       'Prefer argv for deterministic argument handling.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         command: {

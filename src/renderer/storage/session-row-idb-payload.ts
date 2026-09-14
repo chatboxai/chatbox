@@ -128,14 +128,12 @@ export function putStoredMessages(
           }
           if (payload.count >= 100_000) throw new Error('IndexedDB message payload exceeds block budget')
           payload.size += part.value.length
-          tx
-            .objectStore(PAYLOADS)
-            .add({
-              payloadId: payload.id,
-              index: payload.count++,
-              sessionId: row.sessionId,
-              data: part.value,
-            } satisfies PayloadChunk).onsuccess = nextChunk
+          tx.objectStore(PAYLOADS).add({
+            payloadId: payload.id,
+            index: payload.count++,
+            sessionId: row.sessionId,
+            data: part.value,
+          } satisfies PayloadChunk).onsuccess = nextChunk
         } catch (error) {
           fail(error)
         }

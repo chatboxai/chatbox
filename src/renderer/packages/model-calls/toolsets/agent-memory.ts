@@ -1,5 +1,6 @@
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import { MEMORY_ENTRY_MAX_CHARS, type MemoryScope } from '@shared/types/agent-persona'
-import { jsonSchema, type ToolSet } from 'ai'
+import type { ToolSet } from 'ai'
 import { addMemoryForScope, deleteMemoryForScope } from '@/stores/agentPersonaStore'
 import { asRecord, stringField, toTextModelOutput } from './model-output'
 
@@ -20,7 +21,7 @@ function buildSaveMemoryTool(scope: MemoryScope, languageName: string | undefine
   return {
     description: `Save a durable fact to your persistent memory. It becomes part of your system prompt in FUTURE sessions (the current session keeps its frozen snapshot).
 Save only facts that will still matter across sessions: stable user preferences, environment details, corrections to your approach, project-level conventions. Do not save one-off task state, secrets, or anything the user asked to keep out of memory. Keep each entry a single compact fact under ${MEMORY_ENTRY_MAX_CHARS} characters.${languageLine}`,
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         content: {
@@ -45,7 +46,7 @@ function buildDeleteMemoryTool(scope: MemoryScope): ToolSet[string] {
   return {
     description:
       'Delete a stale or incorrect entry from your persistent memory by id. Ids appear as [id] prefixes in the Memories section of your system prompt. The current session keeps its frozen snapshot; the deletion applies to future sessions.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         id: {

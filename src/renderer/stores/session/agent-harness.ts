@@ -78,6 +78,7 @@ export interface PrepareAgentGenerationHarnessOptions {
   configs: Config
   messages: Message[]
   targetMsgIx: number
+  loadFileMessages?: () => Promise<Message[]>
   history?: SessionContextBeforeTarget
   model: ModelInterface
   dependencies: ModelDependencies
@@ -375,6 +376,8 @@ export async function prepareAgentGenerationHarness(
     webBrowsing,
     knowledgeBase,
     messages: promptMsgs,
+    fileMessages: messagesForPrompt,
+    loadFileMessages: options.loadFileMessages,
     agentMode: effectiveAgentMode,
     sessionSettings: settings,
     codeExecution: codeExecutionOption,

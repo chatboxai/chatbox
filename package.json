@@ -86,6 +86,7 @@
     "email": "tohuangbin@gmail.com"
   },
   "devDependencies": {
+    "@cfworker/json-schema": "4.1.1",
     "@ai-sdk/amazon-bedrock": "^4.0.141",
     "@ai-sdk/anthropic": "^3.0.102",
     "@ai-sdk/azure": "^3.0.93",

@@ -1,7 +1,8 @@
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import type { CommandApprovalMode, RunCommandShell } from '@shared/types/command-execution'
 import type { UserExecApprovalSource } from '@shared/types/user-exec'
-import { jsonSchema, type ToolSet } from 'ai'
+import type { ToolSet } from 'ai'
 import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
 import { skillsController } from '@/packages/skills/controller'
 import { CommandEscalationApprovalPausedError, UserExecApprovalPausedError } from '@/packages/user-exec-approval'
@@ -149,7 +150,7 @@ Use \`run_command\` for project commands, shell commands, and Node.js scripts. T
       (sandboxAvailable
         ? 'Commands run in the sandbox first; an exact failed call can request a one-time host retry.'
         : 'No OS command sandbox is available on this platform, so host execution follows the session approval policy.'),
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         command: { type: 'string', description: `The ${shell} command to execute.` },

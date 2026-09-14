@@ -1,3 +1,5 @@
+import { mcpToolSchema } from '@shared/mcp-tool-schema'
+import { getLogger } from '@/lib/utils'
 import { createMCPClient } from '@ai-sdk/mcp'
 import {
   type JSONObject,
@@ -10,12 +12,14 @@ import {
   UnauthorizedError,
 } from '@modelcontextprotocol/client'
 import { StreamableHTTPClientTransport as LegacyHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { type JSONValue as AIToolJSONValue, dynamicTool, jsonSchema, type ToolSet } from 'ai'
+import { type JSONValue as AIToolJSONValue, dynamicTool, type ToolSet } from 'ai'
 import Emittery from 'emittery'
 import { isEqual } from 'lodash'
 import { IPCStdioTransport } from './ipc-stdio-transport'
 import { MCPOAuthProvider } from './oauth-provider'
 import type { MCPProtocolMode, MCPServerConfig, MCPServerStatus } from './types'
+
+const schemaLog = getLogger('mcp:tool-schema')
 
 type TransportConfig = MCPServerConfig['transport']
 type LegacyMCPClient = Awaited<ReturnType<typeof createMCPClient>>
@@ -69,12 +73,13 @@ function createNegotiatingClientAdapter(client: NegotiatingMCPClient): MCPClient
         const inputSchema = {
           ...definition.inputSchema,
           properties: definition.inputSchema.properties ?? {},
-          additionalProperties: false,
         }
         tools[definition.name] = dynamicTool({
           description: definition.description,
           title: definition.title ?? definition.annotations?.title,
-          inputSchema: jsonSchema(inputSchema as Parameters<typeof jsonSchema>[0]),
+          inputSchema: mcpToolSchema(inputSchema as Parameters<typeof mcpToolSchema>[0], (message) =>
+            schemaLog.warn(`${definition.name}: ${message}`)
+          ),
           execute: async (args, options) => {
             options.abortSignal?.throwIfAborted()
             const result = await client.callTool(
@@ -101,10 +106,18 @@ function createNegotiatingClientAdapter(client: NegotiatingMCPClient): MCPClient
 function createLegacyClientAdapter(client: LegacyMCPClient): MCPClient {
   return {
     async tools() {
-      // @ai-sdk/mcp can resolve a newer @ai-sdk/provider-utils patch than `ai`.
-      // The returned tools share the same runtime schema contract, but TypeScript
-      // treats the two package instances' schema symbols as distinct.
-      return (await client.tools()) as unknown as ToolSet
+      const definitions = await client.listTools()
+      const tools = client.toolsFromDefinitions(definitions) as unknown as ToolSet
+      for (const definition of definitions.tools) {
+        tools[definition.name].inputSchema = mcpToolSchema(
+          {
+            ...definition.inputSchema,
+            properties: definition.inputSchema.properties ?? {},
+          } as Parameters<typeof mcpToolSchema>[0],
+          (message) => schemaLog.warn(`${definition.name}: ${message}`)
+        )
+      }
+      return tools
     },
     close() {
       return client.close()

@@ -566,3 +566,19 @@ describe('buildCodeExecutionTools', () => {
     })
   })
 })
+
+test('reserved virtual paths cannot reach standalone filesystem readers or downloads', async () => {
+  const provider = createMockProvider()
+  const { tools } = buildCodeExecutionTools({ sessionId: 'virtual', files: [], provider })
+  for (const name of ['read_file', 'create_download']) {
+    expect(
+      await tools[name].execute(
+        { file_path: '/__chatbox__/files/unknown', display_name: 'file' },
+        { toolCallId: 'v', messages: [] }
+      )
+    ).toMatchObject({ error: expect.stringContaining('virtual path') })
+  }
+  expect(provider.readFileOut).not.toHaveBeenCalled()
+  expect(provider.persistArtifact).not.toHaveBeenCalled()
+  expect(provider.exec).not.toHaveBeenCalled()
+})

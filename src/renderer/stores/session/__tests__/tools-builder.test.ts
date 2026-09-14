@@ -19,7 +19,11 @@ const {
   userExecMock,
   readWorkspaceInstructionsMock,
   platformName,
+  buildFileToolsMock,
 } = vi.hoisted(() => ({
+  buildFileToolsMock: vi.fn((_messages: unknown, filesystemRead?: unknown, _loadFileMessages?: unknown) => ({
+    tools: { read_file: filesystemRead ?? { execute: async () => ({}) } },
+  })),
   discoverSkillsMock: vi.fn(),
   installFromSandboxMock: vi.fn(),
   loadSkillMock: vi.fn(),
@@ -159,10 +163,8 @@ vi.mock('@/packages/model-calls/toolsets/web-search', () => {
 })
 
 vi.mock('@/packages/model-calls/toolsets/file', () => ({
-  default: {
-    description: 'file toolset',
-    tools: { read_file: { execute: async () => ({}) } },
-  },
+  fileToolSetDescription: 'file toolset',
+  buildFileTools: buildFileToolsMock,
 }))
 
 vi.mock('@/packages/model-calls/toolsets/filesystem', () => ({
@@ -1476,4 +1478,40 @@ describe('buildToolsForSession — view_image gating', () => {
     })
     expect(result.tools.view_image).toBeUndefined()
   })
+})
+
+test('registers file tools from branch history after prompt compaction', async () => {
+  const result = await buildToolsForSession(createMockModel(), {
+    webBrowsing: false,
+    agentMode: 'off',
+    messages: [
+      { id: 'summary', role: 'user', contentParts: [{ type: 'text', text: 'Continue reading the uploaded report.' }] },
+    ],
+    fileMessages: [
+      {
+        id: 'original',
+        role: 'user',
+        contentParts: [],
+        files: [{ id: 'report', name: 'report.txt', fileType: 'text/plain', storageKey: 'report' }],
+      },
+    ],
+  })
+  expect(result.tools.read_file).toBeDefined()
+  expect(result.instructions).toContain('file toolset')
+  expect(buildFileToolsMock.mock.lastCall?.[0]).toEqual([
+    expect.objectContaining({ id: 'original', files: expect.any(Array) }),
+  ])
+})
+
+test('keeps the virtual reader available for compacted resource lookups', async () => {
+  const loadFileMessages = vi.fn(async () => [])
+  const result = await buildToolsForSession(createMockModel(), {
+    webBrowsing: false,
+    agentMode: 'off',
+    messages: [],
+    loadFileMessages,
+  })
+  expect(result.tools.read_file).toBeDefined()
+  expect(buildFileToolsMock.mock.lastCall?.[2]).toBe(loadFileMessages)
+  expect(loadFileMessages).not.toHaveBeenCalled()
 })

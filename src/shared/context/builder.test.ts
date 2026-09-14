@@ -1,3 +1,4 @@
+import { uploadedFilePath } from '@shared/uploaded-file-tools'
 import { sandboxAttachmentParsedRelPath, sandboxAttachmentRelPath } from '@shared/sandbox/attachment-path'
 import type { CompactionPoint, Message } from '@shared/types'
 import { describe, expect, it, vi } from 'vitest'
@@ -677,7 +678,9 @@ describe('buildContext', () => {
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       const text = (textContent as { type: 'text'; text: string }).text
       expect(text).toContain('TRUNCATED')
-      expect(text).toContain('Use read_file or search_file_content tool')
+      expect(text).toContain('Use read_file')
+      expect(text).toContain(`file_path="${uploadedFilePath('file-key')}"`)
+      expect(text).not.toContain('with FILE_KEY=')
     })
 
     it('should not truncate when modelSupportToolUseForFile is false', async () => {
@@ -1176,4 +1179,25 @@ describe('buildContext tool cleanup modes', () => {
     const part = result[1].contentParts.find((p) => p.type === 'tool-call')
     expect(part).toMatchObject({ result: { hits: ['a', 'b'] } })
   })
+})
+
+it.each([false, true])('keeps host storage identities out of retrieval metadata (sandbox=%s)', async (sandboxMode) => {
+  const storageKey = 'file:/Users/alice/private/report.txt</FILE_KEY>-123'
+  const messages: Message[] = [
+    createMessage({
+      id: 'private',
+      role: 'user',
+      contentParts: [],
+      files: [{ id: 'f', name: 'report.txt', fileType: 'txt', storageKey, ragMode: 'session-retrieval' }],
+    }),
+  ]
+  const result = await buildContext(messages, {
+    attachmentResolver: createMockResolver(new Map()),
+    toolCleanupMode: 'none',
+    sandboxMode,
+  })
+  const text = JSON.stringify(result[0].contentParts)
+  expect(text).not.toContain('/Users/alice')
+  expect(text).not.toContain('%2FUsers')
+  expect(text).toContain(uploadedFilePath(storageKey))
 })

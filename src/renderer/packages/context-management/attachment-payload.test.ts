@@ -1,3 +1,4 @@
+import { uploadedFilePath } from '@shared/uploaded-file-tools'
 import type { Message } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import {
@@ -32,7 +33,7 @@ describe('attachment-payload', () => {
       expect(prefix).toContain('<ATTACHMENT_FILE>')
       expect(prefix).toContain('<FILE_INDEX>1</FILE_INDEX>')
       expect(prefix).toContain('<FILE_NAME>test.txt</FILE_NAME>')
-      expect(prefix).toContain('<FILE_KEY>key123</FILE_KEY>')
+      expect(prefix).toContain(`<FILE_PATH>${uploadedFilePath('key123')}</FILE_PATH>`)
       expect(prefix).toContain('<FILE_LINES>150</FILE_LINES>')
       expect(prefix).toContain('<FILE_SIZE>1500 bytes</FILE_SIZE>')
       expect(prefix).toContain('<FILE_CONTENT>')
@@ -97,7 +98,7 @@ describe('attachment-payload', () => {
       expect(suffix).toContain('<TRUNCATED>')
       expect(suffix).toContain('Content truncated')
       expect(suffix).toContain('Showing first 100 of 1500 lines')
-      expect(suffix).toContain('FILE_KEY="key123"')
+      expect(suffix).toContain(`file_path="${uploadedFilePath('key123')}"`)
       expect(suffix).toContain('</ATTACHMENT_FILE>')
     })
 
@@ -114,8 +115,8 @@ describe('attachment-payload', () => {
         fileKey: 'storage_key_abc',
       })
 
-      expect(suffix).toContain('read_file or search_file_content tool')
-      expect(suffix).toContain('FILE_KEY="storage_key_abc"')
+      expect(suffix).toContain('read_file')
+      expect(suffix).toContain(`file_path="${uploadedFilePath('storage_key_abc')}"`)
     })
   })
 
@@ -299,7 +300,7 @@ describe('attachment-payload', () => {
       expect(fullWrapper).toMatch(/^\n\n<ATTACHMENT_FILE>\n/)
       expect(fullWrapper).toMatch(/<FILE_INDEX>1<\/FILE_INDEX>\n/)
       expect(fullWrapper).toMatch(/<FILE_NAME>small\.txt<\/FILE_NAME>\n/)
-      expect(fullWrapper).toMatch(/<FILE_KEY>key1<\/FILE_KEY>\n/)
+      expect(fullWrapper).toContain(`<FILE_PATH>${uploadedFilePath('key1')}</FILE_PATH>\n`)
       expect(fullWrapper).toMatch(/<FILE_LINES>50<\/FILE_LINES>\n/)
       expect(fullWrapper).toMatch(/<FILE_SIZE>500 bytes<\/FILE_SIZE>\n/)
       expect(fullWrapper).toMatch(/<FILE_CONTENT>\n/)

@@ -1,4 +1,5 @@
-import { jsonSchema, type ToolSet } from 'ai'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
+import type { ToolSet } from 'ai'
 import platform from '@/platform'
 import { asRecord, contentOrErrorText, numberField, stringField, toTextModelOutput } from './model-output'
 
@@ -63,7 +64,7 @@ export const queryKnowledgeBaseTool = (kbId: number): ToolSet[string] => {
     description: `Search the knowledge base with a semantic query. Returns relevant document chunks.
 
 Call this when the user's question is related to the attached documents and searching would help you answer more accurately. For greetings, chit-chat, or questions clearly unrelated to the knowledge base, answer directly. For follow-up questions on the same topic, reuse earlier results when they still apply.`,
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         query: {
@@ -86,7 +87,7 @@ Call this when the user's question is related to the attached documents and sear
 export function getFilesMetaTool(knowledgeBaseId: number): ToolSet[string] {
   return {
     description: `Get metadata for files in the current knowledge base. Use this to find out more about files returned from a search, like filename, size, and total number of chunks.`,
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         fileIds: {
@@ -113,7 +114,7 @@ export function getFilesMetaTool(knowledgeBaseId: number): ToolSet[string] {
 export function readFileChunksTool(knowledgeBaseId: number): ToolSet[string] {
   return {
     description: `Read content chunks from specified files in the current knowledge base. Use this to get the text content of a document.`,
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         chunks: {
@@ -154,7 +155,7 @@ export function readFileChunksTool(knowledgeBaseId: number): ToolSet[string] {
 export function listFilesTool(knowledgeBaseId: number): ToolSet[string] {
   return {
     description: `List all files in the current knowledge base. Returns file ID, filename, and chunk count for each file.`,
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         page: {

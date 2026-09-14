@@ -1,3 +1,4 @@
+import { loadBranchFileMessages } from '@/packages/model-calls/toolsets/file-history'
 import { SessionNotFoundError } from '@chatbox/core/application/session'
 import {
   GenerationService,
@@ -152,11 +153,17 @@ async function buildToolsForPausedToolCall(source: SessionContextSource, setting
         }
       : undefined
 
+  const targetMessageId = source.targetMessage?.id
   const { tools } = await buildToolsForSession(model, {
     sessionId: session.id,
     webBrowsing,
     knowledgeBase,
     messages: promptMessages,
+    fileMessages: messagesForPrompt,
+    loadFileMessages:
+      source.compactionPoints.length && targetMessageId
+        ? () => loadBranchFileMessages(() => rendererApplication.sessions.getSession(session.id), targetMessageId)
+        : undefined,
     agentMode: effectiveAgentMode,
     sessionSettings: settings,
     codeExecution,
@@ -201,6 +208,14 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
         messages: request.messages,
         targetMsgIx: request.targetMessageIndex,
         history: request.history,
+        loadFileMessages:
+          request.compactionPoints?.length && request.messages[request.targetMessageIndex]
+            ? () =>
+                loadBranchFileMessages(
+                  () => rendererApplication.sessions.getSession(request.session.id),
+                  request.messages[request.targetMessageIndex].id
+                )
+            : undefined,
         model: request.model,
         dependencies: request.modelContext,
         attachmentResolver: request.attachments,

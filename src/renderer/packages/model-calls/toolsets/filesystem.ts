@@ -1,3 +1,5 @@
+import { isUploadedFilePath } from '@shared/uploaded-file-tools'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import { TASK_SANDBOX_EXTRA_WRITE_PATHS } from '@shared/task-sandbox'
 import {
@@ -6,7 +8,7 @@ import {
   isWindowsPathInside,
   normalizeWindowsAbsolutePath,
 } from '@shared/utils/windows-path'
-import { jsonSchema, type ToolSet } from 'ai'
+import type { ToolSet } from 'ai'
 import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
 import { requestFileMutationApproval } from '@/packages/user-exec-approval'
 import platform from '@/platform'
@@ -36,47 +38,50 @@ interface EditFileInput {
   edits?: EditOperation[]
 }
 
-const editFileInputSchema = jsonSchema({
-  type: 'object',
-  description:
-    'Provide either edits for one or more replacements, or legacy old_text and new_text for a single replacement.',
-  properties: {
-    file_path: {
-      type: 'string',
-      description: 'File path to edit',
-    },
-    old_text: {
-      type: 'string',
-      description: 'Legacy single edit: exact text to replace; must be unique',
-    },
-    new_text: {
-      type: 'string',
-      description: 'Legacy single edit: replacement text',
-    },
-    edits: {
-      type: 'array',
-      minItems: 1,
-      description: 'Multiple exact search-and-replace edits to apply atomically in order',
-      items: {
-        type: 'object',
-        properties: {
-          old_text: {
-            type: 'string',
-            description: 'Exact text to replace; must be unique within the current file content',
+const editFileInputSchema = validatedToolSchema(
+  {
+    type: 'object',
+    description: 'Provide file_path and a non-empty edits array, including for a single replacement.',
+    properties: {
+      file_path: {
+        type: 'string',
+        description: 'File path to edit',
+      },
+      edits: {
+        type: 'array',
+        minItems: 1,
+        description: 'Multiple exact search-and-replace edits to apply atomically in order',
+        items: {
+          type: 'object',
+          properties: {
+            old_text: {
+              type: 'string',
+              description: 'Exact text to replace; must be unique within the current file content',
+            },
+            new_text: {
+              type: 'string',
+              description: 'Replacement text',
+            },
           },
-          new_text: {
-            type: 'string',
-            description: 'Replacement text',
-          },
+          required: ['old_text', 'new_text'],
+          additionalProperties: false,
         },
-        required: ['old_text', 'new_text'],
-        additionalProperties: false,
       },
     },
+    required: ['file_path', 'edits'],
+    additionalProperties: false,
   },
-  required: ['file_path'],
-  additionalProperties: false,
-})
+  { normalize: normalizeEditArguments }
+)
+
+function normalizeEditArguments(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+  const input = value as Record<string, unknown>
+  if (input.edits !== undefined || typeof input.old_text !== 'string' || typeof input.new_text !== 'string')
+    return value
+  const { old_text, new_text, ...rest } = input
+  return { ...rest, edits: [{ old_text, new_text }] }
+}
 
 function formatWriteFileOutput(output: unknown): string {
   const record = asRecord(output)
@@ -290,7 +295,7 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
   const list_files: ToolSet[string] = {
     description:
       'List files in a directory. Relative paths are resolved in the session sandbox. Absolute paths read the user filesystem.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         path: {
@@ -303,6 +308,11 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
     }),
     execute: async (input) => {
       const listInput = input as { path: string }
+      if (isUploadedFilePath(listInput.path))
+        return {
+          error:
+            'This virtual path requires the uploaded-file read_file tool. Use a filesystem path for this operation.',
+        }
       listInput.path = await remapPhantomHomePathForProvider(listInput.path, context.provider)
       listInput.path = normalizeToolPathForPlatform(listInput.path)
       const useSandbox = await shouldUseSandbox(context, listInput.path)
@@ -337,7 +347,7 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
       'By default the query is matched literally; set regex=true to use the bounded ripgrep/Rust regex syntax ' +
       '(look-around and backreferences are not supported). ' +
       'Heavy directories (node_modules, .git, build output) are skipped and results are capped for speed.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         path: {
@@ -363,6 +373,11 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
     }),
     execute: async (input) => {
       const searchInput = input as { path: string; query: string; regex?: boolean; include?: string }
+      if (isUploadedFilePath(searchInput.path))
+        return {
+          error:
+            'This virtual path requires the uploaded-file read_file tool. Use a filesystem path for this operation.',
+        }
       searchInput.path = await remapPhantomHomePathForProvider(searchInput.path, context.provider)
       searchInput.path = normalizeToolPathForPlatform(searchInput.path)
       if (await shouldUseSandbox(context, searchInput.path)) {
@@ -399,7 +414,7 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
       (hasCreateDownload
         ? ' Writing a sandbox file does NOT deliver it to the user — call create_download for that.'
         : ''),
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         file_path: {
@@ -416,6 +431,8 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
     }),
     execute: async (input, toolOptions) => {
       const writeInput = input as { file_path: string; content: string }
+      if (isUploadedFilePath(writeInput.file_path))
+        return { error: 'Uploaded files are read-only. Write a copy to a filesystem path.' }
       if (isSoulVirtualPath(writeInput.file_path)) {
         return writeSoulVirtualFile(writeInput.content)
       }
@@ -470,10 +487,12 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
 
   const edit_file: ToolSet[string] = {
     description:
-      'Edit a file with one or more exact search-and-replace edits. Prefer edits[] for multiple changes in one call. Each old_text must be unique at the time it is applied. Relative sandbox paths are edited directly. Editing absolute user filesystem paths requires user approval unless Full Access is enabled.',
+      'Edit a file with one or more exact search-and-replace edits. Use edits[] for every call, including a single replacement. Each old_text must be unique at the time it is applied. Relative sandbox paths are edited directly. Editing absolute user filesystem paths requires user approval unless Full Access is enabled.',
     inputSchema: editFileInputSchema,
     execute: async (input, toolOptions) => {
       const editInput = input as EditFileInput
+      if (isUploadedFilePath(editInput.file_path))
+        return { error: 'Uploaded files are read-only. Write a copy to a filesystem path.' }
       const validatedForSoul = isSoulVirtualPath(editInput.file_path) ? validateEditInput(editInput) : null
       if (validatedForSoul) {
         return 'error' in validatedForSoul

@@ -46,6 +46,11 @@ export async function repairToolCallJsonInput(
   return null
 }
 
-export const repairToolCallJson: ToolCallRepairFunction<ToolSet> = ({ toolCall }) => {
-  return repairToolCallJsonInput(toolCall)
+export const repairToolCallJson: ToolCallRepairFunction<ToolSet> = async ({ toolCall, tools }) => {
+  const tool = tools[toolCall.toolName]
+  if (!tool) return null
+  const repaired = await repairToolCallJsonInput(toolCall)
+  if (!repaired || repaired.input === toolCall.input) return null
+  // The SDK validates this candidate again before execution, including after JSON syntax repair.
+  return repaired
 }

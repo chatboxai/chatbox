@@ -1,3 +1,4 @@
+import { uploadedFileToolHint } from '../uploaded-file-tools'
 import type { JSONValue } from '@ai-sdk/provider'
 import type { ReasoningPart } from '@ai-sdk/provider-utils'
 import type { FilePart, ImagePart, ModelMessage, TextPart, ToolCallPart } from 'ai'
@@ -297,7 +298,7 @@ function truncatedToolResultOutput(toolCallPart: MessageContentToolCallPart): To
       _truncated: true,
       preview: String(toolCallPart.result ?? ''),
       fullResultFileKey: toolCallPart.resultStorageKey,
-      hint: 'Result was too large and has been truncated. Use the read_file tool with the fullResultFileKey above to read the complete result.',
+      hint: `Result was too large and has been truncated. ${uploadedFileToolHint(toolCallPart.resultStorageKey ?? '')}`,
     } as JSONValue,
   }
 }

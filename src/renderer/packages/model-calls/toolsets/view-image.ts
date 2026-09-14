@@ -1,3 +1,5 @@
+import { isUploadedFilePath } from '@shared/uploaded-file-tools'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import { readRasterImageBounds } from '@shared/image-dimensions'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import { DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT } from '@shared/tool-result-image'
@@ -13,7 +15,7 @@ import {
   type ViewImageToolResult,
   viewImageAttachmentNotice,
 } from '@shared/tools/view-image'
-import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
+import { type ModelMessage, type ToolSet } from 'ai'
 import { getImageBase64AndResize, MODEL_IMAGE_MAX_DIMENSION, svgToPngBase64 } from '@/packages/pic_utils'
 import platform from '@/platform'
 import { saveImage } from '@/utils/image'
@@ -326,7 +328,7 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
       'View an image file so you can actually see its contents (screenshots, charts, photos, generated images). ' +
       'Relative paths are resolved in the session sandbox; absolute paths read the user filesystem (read-only). ' +
       'Supported formats: png, jpg, webp, gif, bmp, svg. Large images are downscaled automatically.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         file_path: {
@@ -339,6 +341,11 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     }),
     execute: async (input, toolOptions) => {
       const viewInput = input as { file_path: string }
+      if (isUploadedFilePath(viewInput.file_path))
+        return {
+          error:
+            'This virtual path requires the uploaded-file read_file tool. Use a filesystem path for this operation.',
+        }
       let filePath = await remapPhantomHomePathForProvider(viewInput.file_path, context.provider)
       filePath = normalizeToolPathForPlatform(filePath)
 

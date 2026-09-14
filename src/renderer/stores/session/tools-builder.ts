@@ -1,3 +1,4 @@
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { ModelInterface } from '@shared/models/types'
 import type { SandboxSeedAttachment } from '@shared/sandbox/attachment-path'
 import type { SandboxProvider } from '@shared/sandbox-provider'
@@ -7,7 +8,7 @@ import type { MemoryScope } from '@shared/types/agent-persona'
 import { resolveCommandApprovalMode } from '@shared/types/command-execution'
 import type { UserExecApprovalSource } from '@shared/types/user-exec'
 import { getMessageText } from '@shared/utils/message'
-import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
+import { type ModelMessage, type ToolSet } from 'ai'
 import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
 import { languageNameMap } from '@/i18n/locales'
 import { mcpController } from '@/packages/mcp/controller'
@@ -15,7 +16,7 @@ import { generateCommandExplanation } from '@/packages/model-calls/command-expla
 import { buildAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
 import { buildChatboxCliToolSet } from '@/packages/model-calls/toolsets/chatbox-cli'
 import { buildCodeExecutionTools } from '@/packages/model-calls/toolsets/code-execution'
-import fileToolSet from '@/packages/model-calls/toolsets/file'
+import { buildFileTools, fileToolSetDescription } from '@/packages/model-calls/toolsets/file'
 import { buildFilesystemTools } from '@/packages/model-calls/toolsets/filesystem'
 import { getToolSet as getKBToolSet } from '@/packages/model-calls/toolsets/knowledge-base'
 import { asRecord, numberField, stringField, toTextModelOutput } from '@/packages/model-calls/toolsets/model-output'
@@ -65,6 +66,9 @@ export interface BuildToolsOptions {
   webBrowsing: boolean
   knowledgeBase?: Pick<KnowledgeBase, 'id' | 'name'>
   messages: Message[]
+  /** Known file messages before model-context trimming. */
+  fileMessages?: Message[]
+  loadFileMessages?: () => Promise<Message[]>
   agentMode: 'on' | 'off'
   sessionSettings?: SessionSettings
   codeExecution?: {
@@ -349,12 +353,16 @@ export async function buildToolsForSession(
   const modelSupportsAgentTools = model.isSupportToolUse('agent')
   const includeAgentTools = agentMode === 'on' && modelSupportsAgentTools
 
-  const hasInlineFileOrLink = messages.some(
+  const fileMessages = options.fileMessages ?? messages
+  const hasInlineFileOrLink = fileMessages.some(
     (m) => m.links?.length || m.files?.some((file) => file.ragMode !== 'session-retrieval')
   )
   const sessionAttachmentIds = getSessionAttachmentRagIds(messages)
-  // When code execution is enabled, file tools are replaced by code_execution + sandbox read_file.
-  const needFileToolSet = !codeExecution && hasInlineFileOrLink && model.isSupportToolUse('read-file')
+  const hasStoredToolResults = fileMessages.some((message) =>
+    message.contentParts.some((part) => part.type === 'tool-call' && part.resultStorageKey)
+  )
+  const needFileToolSet =
+    (hasInlineFileOrLink || hasStoredToolResults || options.loadFileMessages) && model.isSupportToolUse('read-file')
   const needSessionAttachmentRagToolSet = sessionAttachmentIds.length > 0 && model.isSupportToolUse('read-file')
   const kbSupported = Boolean(knowledgeBase) && model.isSupportToolUse('knowledge-base')
   const webSupported = webBrowsing && model.isSupportToolUse('web-browsing')
@@ -403,7 +411,7 @@ When you create a Git commit that includes code changes, append this exact trail
     instructions += sessionAttachmentRagToolSet.description
   }
   if (needFileToolSet) {
-    instructions += fileToolSet.description
+    instructions += fileToolSetDescription
   }
   if (webSupported) {
     instructions += getToolSetDescription({ includeParseLink: includeParseLinkTool })
@@ -461,10 +469,6 @@ When you create a Git commit that includes code changes, append this exact trail
     tools = { ...tools, ...sessionAttachmentRagToolSet.tools }
   }
 
-  if (needFileToolSet) {
-    tools = { ...tools, ...fileToolSet.tools }
-  }
-
   if (codeExecToolSet) {
     if (legacyCommandTools || sandboxCodeExecutionFallback) {
       tools = { ...tools, ...codeExecToolSet.tools }
@@ -491,6 +495,13 @@ When you create a Git commit that includes code changes, append this exact trail
       const nonCommandTools = { ...codeExecToolSet.tools }
       delete nonCommandTools.code_execution
       tools = { ...tools, ...nonCommandTools }
+    }
+  }
+
+  if (needFileToolSet) {
+    tools = {
+      ...tools,
+      ...buildFileTools(fileMessages, codeExecToolSet?.tools.read_file, options.loadFileMessages).tools,
     }
   }
 
@@ -621,7 +632,7 @@ function buildLoadSkillTool(options: BuildToolsOptions): ToolSet[string] {
     description:
       "Load a skill by name to get its full instructions. Call this when the user's request " +
       'matches an available skill. Available skills are listed in the system instructions.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         name: {
@@ -679,7 +690,7 @@ function buildInstallSkillTool(
       'contains a valid SKILL.md with name and description fields, then call this tool. ' +
       stagingRequirement +
       'The skill will be auto-enabled after installation.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         sandboxPath: {
@@ -767,7 +778,7 @@ function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
         : commandApprovalMode === 'always_ask'
           ? 'Every command requires user approval.'
           : 'Clearly safe commands may be approved automatically; other commands require user approval.'),
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         command: {

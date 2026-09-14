@@ -464,3 +464,13 @@ describe('view_image without tool-result image support (user-message injection)'
     expect(buildToolSet({ toolResultImages: true }).injectImagesIntoStepMessages).toBeDefined()
   })
 })
+
+test('reserved uploaded paths never reach image filesystem sinks', async () => {
+  fsReadImage.mockClear()
+  sandboxReadFileBytes.mockClear()
+  expect(await execute(getViewImageTool(), { file_path: '/__chatbox__/files/unknown' })).toMatchObject({
+    error: expect.stringContaining('virtual path'),
+  })
+  expect(fsReadImage).not.toHaveBeenCalled()
+  expect(sandboxReadFileBytes).not.toHaveBeenCalled()
+})

@@ -1,3 +1,4 @@
+import { asSchema } from 'ai'
 import type { SandboxExecResult, SandboxOperationResult, SandboxProvider } from '@shared/sandbox-provider'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -530,4 +531,62 @@ describe('list_files model output', () => {
       value: 'Error: directory unavailable',
     })
   })
+})
+
+describe('edit_file input contract', () => {
+  test('shows only edits[] and normalizes released single-edit arguments', async () => {
+    const schema = asSchema(getTools().edit_file.inputSchema)
+    expect((await schema.jsonSchema).required).toEqual(['file_path', 'edits'])
+    expect(Object.keys((await schema.jsonSchema).properties ?? {})).toEqual(['file_path', 'edits'])
+    const input = { file_path: '/tmp/a.txt', old_text: 'before', new_text: '' }
+    expect(await schema.validate?.(input)).toEqual({
+      success: true,
+      value: { file_path: '/tmp/a.txt', edits: [{ old_text: 'before', new_text: '' }] },
+    })
+    expect(input).toEqual({ file_path: '/tmp/a.txt', old_text: 'before', new_text: '' })
+  })
+
+  test.each([
+    { file_path: '/tmp/a.txt' },
+    { file_path: '/tmp/a.txt', edits: [] },
+    { file_path: '/tmp/a.txt', edits: [{ old_text: 'a', new_text: 1 }] },
+    { file_path: '/tmp/a.txt', old_text: 'a' },
+    { file_path: '/tmp/a.txt', old_text: 'a', new_text: 'b', edits: [{ old_text: 'c', new_text: 'd' }] },
+    { file_path: '/tmp/a.txt', old_text: 'a', new_text: 'b', unknown: true },
+  ])('rejects incomplete or mixed edit arguments %j', async (input) => {
+    const schema = asSchema(getTools().edit_file.inputSchema)
+    expect((await schema.validate?.(input))?.success).toBe(false)
+  })
+})
+
+test('virtual uploaded files reject writes and edits before filesystem execution', async () => {
+  fsWrite.mockClear()
+  fsEdit.mockClear()
+  exec.mockClear()
+  const tools = getTools()
+  expect(await execute(tools.write_file, { file_path: '/__chatbox__/files/report', content: 'new' })).toMatchObject({
+    error: expect.stringContaining('read-only'),
+  })
+  expect(
+    await execute(tools.edit_file, {
+      file_path: '/__chatbox__/files/report',
+      edits: [{ old_text: 'old', new_text: 'new' }],
+    })
+  ).toMatchObject({ error: expect.stringContaining('read-only') })
+  expect(fsWrite).not.toHaveBeenCalled()
+  expect(fsEdit).not.toHaveBeenCalled()
+  expect(exec).not.toHaveBeenCalled()
+})
+
+test('reserved virtual paths cannot be listed or searched on disk', async () => {
+  fsList.mockClear()
+  exec.mockClear()
+  const tools = getTools()
+  for (const tool of [tools.list_files, tools.search_files]) {
+    expect(await execute(tool, { path: '/__chatbox__/files/unknown', query: 'hello' })).toMatchObject({
+      error: expect.stringContaining('virtual path'),
+    })
+  }
+  expect(fsList).not.toHaveBeenCalled()
+  expect(exec).not.toHaveBeenCalled()
 })

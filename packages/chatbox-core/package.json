@@ -51,6 +51,7 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@cfworker/json-schema": "4.1.1",
     "@noble/hashes": "1.8.0",
     "ai": "^6.0.11",
     "deepmerge": "^4.3.1",

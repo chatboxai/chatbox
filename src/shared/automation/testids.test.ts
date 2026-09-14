@@ -20,6 +20,7 @@ describe('automation test ID contract', () => {
         TestId.agent.modeTrigger,
         TestId.reasoning.trigger,
         TestId.sidebar.newChat,
+        TestId.sidebar.downloadApp,
         TestId.chat.newThread,
         TestId.chat.rollbackThread,
         TestId.message.actionBar,

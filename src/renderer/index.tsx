@@ -7,7 +7,13 @@ import { useAtomValue } from 'jotai'
 import 'photoswipe/dist/photoswipe.css'
 import { lazy, StrictMode, Suspense, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import { bootstrapRenderer, initializeRenderer, rendererApplication, reportRendererInitializationError } from './app'
+import {
+  bootstrapRenderer,
+  initializeRenderer,
+  rendererApplication,
+  reportRendererInitializationError,
+  runRendererStartup,
+} from './app'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { sessionStartupRecovery } from './packages/session-startup-recovery'
 import platform from './platform'
@@ -99,12 +105,10 @@ const tid = setTimeout(() => {
 captureRendererDevLaunchOptions()
 
 // 等待初始化完成后再渲染
-initializeRenderer()
-  .catch((error) => {
-    // 初始化中的各个步骤已经捕获了错误，这里防止未来添加未捕获的逻辑
-    reportRendererInitializationError(error)
-  })
-  .finally(async () => {
+void runRendererStartup({
+  initialize: initializeRenderer,
+  reportInitializationError: reportRendererInitializationError,
+  bootstrap: async () => {
     clearTimeout(tid)
 
     sessionStartupRecovery.promotePreviousAttempt()
@@ -128,6 +132,26 @@ initializeRenderer()
       </StrictMode>
     )
 
+    if (window?.navigator?.storage) {
+      navigator.storage?.persisted().then((persisted) => {
+        if (!persisted) {
+          navigator.storage?.persist()
+        }
+      })
+    }
+  },
+  showStartupError: (error) => {
+    // Keep startup failures visible instead of leaving the static splash screen
+    // covering the page forever.
+    const root = document.getElementById('root')
+    if (root) {
+      root.innerHTML = '<div class="startup-error">Chatbox could not start. Please reload the page.</div>'
+    }
+    console.error('Failed to bootstrap Chatbox:', error)
+  },
+  finalize: () => {
+    clearTimeout(tid)
+
     if (platform.type === 'mobile') {
       void SplashScreen.hide()
     }
@@ -150,15 +174,8 @@ initializeRenderer()
     } else {
       void androidStatusBarSetup?.then(({ syncStatusBarTheme }) => syncStatusBarTheme())
     }
-
-    if (window?.navigator?.storage) {
-      navigator.storage?.persisted().then((persisted) => {
-        if (!persisted) {
-          navigator.storage?.persist()
-        }
-      })
-    }
-  })
+  },
+})
 
 // If you want to start measuring performance in your app, pass a function
 // to log results (for example: reportWebVitals(console.log))

@@ -31,6 +31,8 @@ import { useIsSmallScreen, useSidebarWidth } from './hooks/useScreenChange'
 import useVersion from './hooks/useVersion'
 import { navigateToSettings } from './modals/settings-navigation'
 import { trackingEvent } from './packages/event'
+import { buildChatboxUrl } from './packages/remote'
+import platform from './platform'
 import { getSidebarModalSx } from './sidebar-drawer'
 import icon from './static/icon.png'
 import { useLanguage } from './stores/settingsStore'
@@ -69,6 +71,7 @@ export default function Sidebar() {
   const sidebarWidth = useSidebarWidth()
 
   const isSmallScreen = useIsSmallScreen()
+  const showDownloadApp = CHATBOX_BUILD_PLATFORM === 'web'
 
   const [isResizing, setIsResizing] = useState(false)
   const resizeStartX = useRef<number>(0)
@@ -92,6 +95,16 @@ export default function Sidebar() {
     }
     trackingEvent('open_image_creator', { event_category: 'user' })
   }, [isSmallScreen, setShowSidebar, navigate])
+
+  const handleDownloadApp = useCallback(() => {
+    void platform.openLink(
+      buildChatboxUrl(`/redirect_app/homepage/${language}?utm_source=web&utm_content=sidebar_download_app#download`)
+    )
+    if (isSmallScreen) {
+      setShowSidebar(false)
+    }
+    trackingEvent('download_app', { event_category: 'user' })
+  }, [isSmallScreen, language, setShowSidebar])
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -264,50 +277,64 @@ export default function Sidebar() {
           </Stack>
 
           {isSmallScreen ? (
-            <Flex gap="md" align="center">
-              <NavLink
-                c="chatbox-secondary"
-                className="rounded-lg"
-                label={t('My Copilots')}
-                leftSection={<ScalableIcon icon={IconMessageChatbot} size={20} />}
-                onClick={() => {
-                  navigate({
-                    to: '/copilots',
-                  })
-                  setShowSidebar(false)
-                }}
-                variant="light"
-                p="xs"
-              />
+            <>
+              {showDownloadApp && (
+                <NavLink
+                  data-testid={TestId.sidebar.downloadApp}
+                  c="chatbox-secondary"
+                  className="rounded-lg"
+                  label={t('Download app')}
+                  leftSection={<ScalableIcon icon={IconDownload} size={20} />}
+                  onClick={handleDownloadApp}
+                  variant="light"
+                  p="xs"
+                />
+              )}
+              <Flex gap="md" align="center">
+                <NavLink
+                  c="chatbox-secondary"
+                  className="rounded-lg"
+                  label={t('My Copilots')}
+                  leftSection={<ScalableIcon icon={IconMessageChatbot} size={20} />}
+                  onClick={() => {
+                    navigate({
+                      to: '/copilots',
+                    })
+                    setShowSidebar(false)
+                  }}
+                  variant="light"
+                  p="xs"
+                />
 
-              {!versionHook.isExceeded && (
+                {!versionHook.isExceeded && (
+                  <ActionIcon
+                    variant="transparent"
+                    color="chatbox-secondary"
+                    size={24}
+                    onClick={() => {
+                      navigate({ to: '/guide' })
+                      setShowSidebar(false)
+                    }}
+                  >
+                    <ScalableIcon icon={IconHelpCircle} size={20} />
+                  </ActionIcon>
+                )}
                 <ActionIcon
+                  data-testid={TestId.sidebar.settingsTrigger}
                   variant="transparent"
                   color="chatbox-secondary"
                   size={24}
                   onClick={() => {
-                    navigate({ to: '/guide' })
+                    navigateToSettings()
                     setShowSidebar(false)
                   }}
                 >
-                  <ScalableIcon icon={IconHelpCircle} size={20} />
+                  <ScalableIcon icon={IconSettingsFilled} size={20} />
                 </ActionIcon>
-              )}
-              <ActionIcon
-                data-testid={TestId.sidebar.settingsTrigger}
-                variant="transparent"
-                color="chatbox-secondary"
-                size={24}
-                onClick={() => {
-                  navigateToSettings()
-                  setShowSidebar(false)
-                }}
-              >
-                <ScalableIcon icon={IconSettingsFilled} size={20} />
-              </ActionIcon>
 
-              <SmallScreenAboutIcon versionHook={versionHook} navigate={navigate} setShowSidebar={setShowSidebar} />
-            </Flex>
+                <SmallScreenAboutIcon versionHook={versionHook} navigate={navigate} setShowSidebar={setShowSidebar} />
+              </Flex>
+            </>
           ) : (
             <>
               <NavLink
@@ -336,6 +363,18 @@ export default function Sidebar() {
                 variant="light"
                 p="xs"
               />
+              {showDownloadApp && (
+                <NavLink
+                  data-testid={TestId.sidebar.downloadApp}
+                  c="chatbox-secondary"
+                  className="rounded-lg"
+                  label={t('Download app')}
+                  leftSection={<ScalableIcon icon={IconDownload} size={20} />}
+                  onClick={handleDownloadApp}
+                  variant="light"
+                  p="xs"
+                />
+              )}
               {!versionHook.isExceeded && (
                 <NavLink
                   c="chatbox-secondary"
@@ -347,7 +386,7 @@ export default function Sidebar() {
                   p="xs"
                 />
               )}
-              {FORCE_ENABLE_DEV_PAGES && (
+              {FORCE_ENABLE_DEV_PAGES && CHATBOX_BUILD_PLATFORM !== 'web' && (
                 <NavLink
                   c="chatbox-secondary"
                   className="rounded-lg"

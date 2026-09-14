@@ -80,6 +80,7 @@ export const TestId = {
     root: 'sidebar',
     newChat: 'new-chat-button',
     newImage: 'new-image-button',
+    downloadApp: 'download-app-button',
     settingsTrigger: 'settings-trigger',
     /** Hosts AutomationAdjacentAttr.sessionId. */
     sessionItem: 'session-item',

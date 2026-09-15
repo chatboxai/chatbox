@@ -2,7 +2,7 @@ import type { LanguageModelV3StreamPart } from '@ai-sdk/provider'
 import { APICallError, RetryError } from 'ai'
 import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, MidStreamApiError, NetworkError } from './errors'
+import { ApiError, MidStreamApiError, NetworkError, NonReplayableRequestError } from './errors'
 import { createRetryableChatModel } from './retryable-chat-model'
 
 const request = { prompt: [] }
@@ -25,6 +25,22 @@ function successfulStream() {
 }
 
 describe('chat retries', () => {
+  it('never replays an ambiguous native POST failure wrapped by a provider', async () => {
+    const cause = new NonReplayableRequestError('Native background request expired')
+    const error = new APICallError({
+      message: 'Provider failed',
+      url: 'https://example.test',
+      requestBodyValues: {},
+      statusCode: 503,
+      isRetryable: true,
+      cause,
+    })
+    const doStream = vi.fn().mockRejectedValue(error)
+    const model = createRetryableChatModel(new MockLanguageModelV3({ doStream }), vi.fn())
+    const result = model.doStream(request)
+    await expect(result).rejects.toBe(error)
+    expect(doStream).toHaveBeenCalledTimes(1)
+  })
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-14T00:00:00Z'))

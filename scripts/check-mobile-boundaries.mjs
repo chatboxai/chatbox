@@ -18,6 +18,8 @@ const allowedSharedImports = new Map([
     new Set(['@shared/providers/api-style', '@shared/utils/reasoning-control']),
   ],
 ])
+allowedSharedImports.set('apps/mobile/src/adapters/background-stream.ts', new Set(['@shared/utils/background-stream']))
+allowedSharedImports.set('apps/mobile/src/adapters/mobile-model-dependencies.ts', new Set(['@shared/utils/background-stream']))
 // Host-neutral execution and artifact contracts shared by RN and Capacitor.
 allowedSharedImports.set('apps/mobile/src/application/createPersistentMobileApplication.ts', new Set(['@shared/mobile-work/workspace-cleanup']))
 allowedSharedImports.set('apps/mobile/src/screens/HtmlPreviewScreen.tsx', new Set(['@shared/mobile-work/artifact-preview']))

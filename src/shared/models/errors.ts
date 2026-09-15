@@ -39,6 +39,9 @@ export class ApiError extends BaseError {
 // partial text has already reached the UI, so a silent retry would duplicate it.
 export class MidStreamApiError extends ApiError {}
 
+/** The server may already have accepted this request; automatic replay is unsafe. */
+export class NonReplayableRequestError extends ApiError {}
+
 export class NetworkError extends BaseError {
   public code = 10002
   public host: string

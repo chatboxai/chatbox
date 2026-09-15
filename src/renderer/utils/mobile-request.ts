@@ -1,8 +1,33 @@
 import { CapacitorHttp } from '@capacitor/core'
+import { backgroundStreamFetch, isBackgroundStreamRequest } from '@shared/utils/background-stream'
+import {
+  backgroundStreamBridge,
+  backgroundStreamPrototypeEnabled,
+  subscribeBackgroundStreamResume,
+} from '@/native/background-stream'
 import { createNativeReadableStream } from '@/native/stream-http'
 import { ApiError } from '../../shared/models/errors'
 
 export async function handleMobileRequest(
+  url: string,
+  method: string,
+  headers: Headers,
+  body?: RequestInit['body'],
+  signal?: AbortSignal
+): Promise<Response> {
+  if (backgroundStreamPrototypeEnabled && isBackgroundStreamRequest(url, body, headers)) {
+    return backgroundStreamFetch(
+      backgroundStreamBridge,
+      url,
+      { method, headers, body, signal },
+      subscribeBackgroundStreamResume,
+      () => handleDefaultMobileRequest(url, method, headers, body, signal)
+    )
+  }
+  return handleDefaultMobileRequest(url, method, headers, body, signal)
+}
+
+async function handleDefaultMobileRequest(
   url: string,
   method: string,
   headers: Headers,

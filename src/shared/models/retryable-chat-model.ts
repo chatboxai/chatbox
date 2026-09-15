@@ -1,7 +1,7 @@
 import type { LanguageModelV3, LanguageModelV3StreamPart } from '@ai-sdk/provider'
 import { APICallError, wrapLanguageModel } from 'ai'
 import { createRetryable, isErrorAttempt } from 'ai-retry'
-import { ApiError, MidStreamApiError, NetworkError } from './errors'
+import { ApiError, MidStreamApiError, NetworkError, NonReplayableRequestError } from './errors'
 import type { ModelStatus } from './types'
 
 type ModelStream = Awaited<ReturnType<LanguageModelV3['doStream']>>['stream']
@@ -23,14 +23,25 @@ function getStatusCode(error: unknown): number | undefined {
   return undefined
 }
 
+function hasNonReplayableCause(error: unknown): boolean {
+  const visited = new Set<object>()
+  let current = error
+  while (current !== null && typeof current === 'object' && !visited.has(current)) {
+    if (current instanceof NonReplayableRequestError || current instanceof MidStreamApiError) return true
+    visited.add(current)
+    current = 'cause' in current ? current.cause : undefined
+  }
+  return false
+}
+
 export function isRetryableStatusError(error: unknown): boolean {
-  if (error instanceof MidStreamApiError) return false
+  if (hasNonReplayableCause(error)) return false
   const code = getStatusCode(error)
   return code !== undefined && (code === 429 || (code >= 500 && code < 600))
 }
 
 export function isRetryableNetworkError(error: unknown): boolean {
-  if (error instanceof MidStreamApiError || (error instanceof Error && error.name === 'AbortError')) return false
+  if (hasNonReplayableCause(error) || (error instanceof Error && error.name === 'AbortError')) return false
   const status = getStatusCode(error)
   if (status !== undefined && status !== 0) return false
   if (error instanceof NetworkError) return true

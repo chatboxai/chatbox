@@ -2,7 +2,6 @@ import { injectAttachments, selectContextMessages } from '@shared/context'
 import { estimateMessageToolCallTokens } from '@shared/context/tool-tokens'
 import { getRegistryModelMeta, getUnambiguousRegistryModelContextWindow } from '@shared/model-registry'
 import {
-  CJK_CHARACTER_PATTERN,
   estimateTokensForTokenizerType,
   getTokenizerType,
   type TokenizerType,
@@ -14,14 +13,20 @@ import type { BlobStoragePort } from '../../ports'
 import type { Message, Session, Settings } from '../../types'
 import { findLastCompactionBoundaryMessage } from '../context/compaction-boundary'
 
-export const LONG_DRAFT_TOKENIZATION_THRESHOLD = 4096
-export const OUTPUT_RESERVE_TOKENS = 32_000
-export const DEFAULT_COMPACTION_THRESHOLD = 0.6
-export const FALLBACK_CONTEXT_WINDOW_TOKENS = 128_000
+import {
+  estimateDraftTokensImmediately,
+  LONG_DRAFT_TOKENIZATION_THRESHOLD,
+  FALLBACK_CONTEXT_WINDOW_TOKENS,
+  getCompactionThresholdForContextWindow,
+} from './math'
+export {
+  estimateDraftTokensImmediately,
+  LONG_DRAFT_TOKENIZATION_THRESHOLD,
+  OUTPUT_RESERVE_TOKENS,
+  DEFAULT_COMPACTION_THRESHOLD,
+  FALLBACK_CONTEXT_WINDOW_TOKENS,
+} from './math'
 const RAW_TAIL_BUDGET_RATIO = 0.5
-const QUICK_ESTIMATE_SAMPLE_SIZE = 512
-const GOLDEN_RATIO_FRACTION = 0.6180339887498949
-const WHITESPACE = /\s/
 const MAX_HISTORY_CACHE_ENTRIES = 1_000
 const IMAGE_TOKEN_ESTIMATE = 4_096
 
@@ -207,37 +212,6 @@ export function selectTokenEstimationContext(
   }).filter((message) => message !== currentInput)
 }
 
-export function estimateDraftTokensImmediately(text: string, tokenizerType: TokenizerType): number {
-  if (text.length < LONG_DRAFT_TOKENIZATION_THRESHOLD) {
-    return estimateTokensForTokenizerType(text, tokenizerType)
-  }
-
-  const stride = text.length / QUICK_ESTIMATE_SAMPLE_SIZE
-  let sampledTokens = 0
-  let jitter = 0
-  for (let sample = 0; sample < QUICK_ESTIMATE_SAMPLE_SIZE; sample += 1) {
-    jitter = (jitter + GOLDEN_RATIO_FRACTION) % 1
-    let index = Math.floor((sample + jitter) * stride)
-    const unit = text.charCodeAt(index)
-    if (unit >= 0xdc00 && unit <= 0xdfff && index > 0) index -= 1
-    const codePoint = text.codePointAt(index) ?? 0
-    const character = String.fromCodePoint(codePoint)
-    const unitsPerCharacter = codePoint > 0xffff ? 2 : 1
-    if (CJK_CHARACTER_PATTERN.test(character)) {
-      sampledTokens += tokenizerType === 'deepseek' ? 0.6 / unitsPerCharacter : unitsPerCharacter === 2 ? 1.5 : 1
-    } else if (WHITESPACE.test(character)) {
-      if (tokenizerType === 'deepseek') {
-        if (index === 0 || !WHITESPACE.test(text[index - 1])) sampledTokens += 1
-      } else {
-        sampledTokens += 0.25
-      }
-    } else {
-      sampledTokens += tokenizerType === 'deepseek' ? 0.3 / unitsPerCharacter : 0.25
-    }
-  }
-  return Math.max(Math.ceil((sampledTokens / QUICK_ESTIMATE_SAMPLE_SIZE) * text.length), 1)
-}
-
 export function resolveModelContextWindow(model: TokenEstimationModel | undefined): number | null {
   if (!model?.modelId) return null
   if (model.contextWindow && model.contextWindow > 0) return model.contextWindow
@@ -251,8 +225,7 @@ export function getCompactionThresholdTokens(options: {
   compactionThreshold?: Settings['compactionThreshold']
 }): number {
   const contextWindow = resolveModelContextWindow(options.model) ?? FALLBACK_CONTEXT_WINDOW_TOKENS
-  const availableWindow = Math.max(contextWindow - OUTPUT_RESERVE_TOKENS, Math.floor(contextWindow * 0.5))
-  return Math.floor(availableWindow * (options.compactionThreshold ?? DEFAULT_COMPACTION_THRESHOLD))
+  return getCompactionThresholdForContextWindow(contextWindow, options.compactionThreshold)
 }
 
 export function getRawTailTokenBudget(options: {

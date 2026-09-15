@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest'
 import { SessionWriteConflictError } from '../../ports'
 import type { Message, Session } from '../../types'
-import { createTestRecord, createTestSession, MemorySessionRepository } from './__tests__/memory-session-repository'
+import { createTestRecord, createTestSession, InMemorySessionRepository } from '../../testing/InMemorySessionRepository'
 import { SessionMetadataUpdateError, SessionNotFoundError, SessionWriteCoordinator } from './SessionWriteCoordinator'
 
 function message(id: string): Message {
@@ -41,7 +41,7 @@ function appendMessage(session: Session | null | undefined, messageId: string): 
 
 describe('SessionWriteCoordinator', () => {
   test('reprojectMeta repairs the metadata record from the retained snapshot', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const session = createTestSession('session-1')
     repository.sessions.set(session.id, session)
     repository.records.set(session.id, createTestRecord(session, 1))
@@ -63,7 +63,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('limits backup replacement authority to the protected operation', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const coordinator = new SessionWriteCoordinator(repository)
     const session = createTestSession('restored')
     let replace: ((session: Session) => Promise<void>) | undefined
@@ -80,7 +80,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('backup access drains accepted edits and rejects new edits and deletion until released', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const original = createTestSession('backup-protected')
     await repository.setSession(original)
     const writes = new SessionWriteCoordinator(repository)
@@ -110,7 +110,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('restores backups after queued writes and primes subsequent edits from the restored value', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const original = createTestSession('restore')
     repository.sessions.set(original.id, original)
     const coordinator = new SessionWriteCoordinator(repository)
@@ -129,7 +129,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('keeps the previous write baseline when backup persistence fails', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const original = createTestSession('restore-failure')
     repository.sessions.set(original.id, original)
     const coordinator = new SessionWriteCoordinator(repository)
@@ -143,7 +143,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('passes the changed message hint through to the repository write', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const persisted = createTestSession('session-1')
     repository.sessions.set(persisted.id, persisted)
     const coordinator = new SessionWriteCoordinator(repository)
@@ -160,7 +160,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('starts from the injected read model and serializes concurrent writes', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const persisted = createTestSession('session-1')
     const cached: Session = {
       ...persisted,
@@ -185,7 +185,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('applies a read repair after already queued updates instead of overwriting them with its snapshot', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const snapshot = createTestSession('session-1')
     repository.sessions.set(snapshot.id, snapshot)
     const coordinator = new SessionWriteCoordinator(repository)
@@ -203,7 +203,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('continues accepting writes after a rejected updater', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const session = createTestSession('session-1')
     repository.sessions.set(session.id, session)
     repository.records.set(session.id, createTestRecord(session, 1))
@@ -220,7 +220,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('discards retained and external snapshots after a write conflict', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const session = createTestSession('session-1')
     repository.sessions.set(session.id, session)
     const discardCurrentSession = vi.fn()
@@ -240,7 +240,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('projects hasPausedToolCall into the metadata and clears it when the pause resolves', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const session = createTestSession('session-1')
     repository.sessions.set(session.id, session)
     repository.records.set(session.id, createTestRecord(session, 1))
@@ -260,7 +260,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('reports metadata failure after retaining the persisted session snapshot', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const session = createTestSession('session-1')
     repository.sessions.set(session.id, session)
     repository.records.set(session.id, createTestRecord(session, 1))
@@ -283,7 +283,7 @@ describe('SessionWriteCoordinator', () => {
   test.each([true, false])(
     'recovery undo restores the full session after a queued write (updateMeta=%s)',
     async (updateMeta) => {
-      const repository = new MemorySessionRepository()
+      const repository = new InMemorySessionRepository()
       const session = createTestSession('session-1')
       repository.sessions.set(session.id, session)
       repository.records.set(session.id, createTestRecord(session, 1))
@@ -302,7 +302,7 @@ describe('SessionWriteCoordinator', () => {
   )
 
   test('serializes metadata-only recovery archives and preserves them across later projections', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const session = createTestSession('session-1')
     repository.sessions.set(session.id, session)
     repository.records.set(session.id, createTestRecord(session, 1))
@@ -328,7 +328,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('restores a metadata-only recovery archive before a later full write', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const session = createTestSession('session-1')
     repository.sessions.set(session.id, session)
     repository.records.set(session.id, createTestRecord(session, 1))
@@ -346,7 +346,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('loads a persisted recovery archive before the first write after restart', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const session = createTestSession('session-1')
     repository.sessions.set(session.id, session)
     repository.records.set(session.id, {
@@ -364,7 +364,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('reports a failed accepted backup write even when its caller did not await it', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const coordinator = new SessionWriteCoordinator(repository)
     const failure = new Error('disk full')
     vi.spyOn(repository, 'setSession').mockRejectedValueOnce(failure)
@@ -377,7 +377,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('reprojectMeta is a no-op without a snapshot or behind the deletion fence', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const session = createTestSession('session-1')
     repository.sessions.set(session.id, session)
     repository.records.set(session.id, createTestRecord(session, 1))
@@ -396,7 +396,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('drains queued writes before deletion and fences later writes from recreating the session', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const session = createTestSession('session-1')
     repository.sessions.set(session.id, session)
     repository.records.set(session.id, createTestRecord(session, 1))
@@ -436,7 +436,7 @@ describe('SessionWriteCoordinator', () => {
   })
 
   test('re-reads storage after a partially failed bulk deletion instead of reviving cached sessions', async () => {
-    const repository = new MemorySessionRepository()
+    const repository = new InMemorySessionRepository()
     const removed = createTestSession('removed')
     const surviving = createTestSession('surviving')
     for (const session of [removed, surviving]) {

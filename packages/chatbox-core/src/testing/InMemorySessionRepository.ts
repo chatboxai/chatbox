@@ -1,15 +1,6 @@
-import type { SessionRepositoryPort } from '../ports'
+import type { SessionDataWriteOptions, SessionRepositoryPort } from '../ports'
 import type { Session, SessionMetaPage, SessionMetaRecord } from '../types'
-
-function sortVisible(records: SessionMetaRecord[]): SessionMetaRecord[] {
-  return records
-    .filter((record) => !record.hidden)
-    .sort((left, right) => {
-      if (left.starred && !right.starred) return -1
-      if (!left.starred && right.starred) return 1
-      return right.sortOrder - left.sortOrder
-    })
-}
+import { sortSessionRecords } from '../utils/session-sort'
 
 function page(items: SessionMetaRecord[], cursor: number, limit: number): SessionMetaPage {
   const pageItems = items.slice(cursor, cursor + limit)
@@ -23,6 +14,8 @@ function page(items: SessionMetaRecord[], cursor: number, limit: number): Sessio
 export class InMemorySessionRepository implements SessionRepositoryPort {
   readonly sessions = new Map<string, Session>()
   readonly records = new Map<string, SessionMetaRecord>()
+  /** Write options of every `setSession`, in call order. */
+  readonly writeOptions: Array<SessionDataWriteOptions | undefined> = []
   initializeCount = 0
 
   readonly meta = {
@@ -33,15 +26,15 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     getById: (id: string) => Promise.resolve(this.records.get(id) ?? null),
     delete: (id: string) => this.deleteMeta(id),
     deleteMany: (ids: string[]) => this.deleteMetaMany(ids),
-    getAll: () => Promise.resolve(sortVisible([...this.records.values()])),
+    getAll: () => Promise.resolve(sortSessionRecords([...this.records.values()])),
     getAllIncludingHidden: () => Promise.resolve([...this.records.values()].sort((a, b) => b.sortOrder - a.sortOrder)),
-    getArchived: () => Promise.resolve(this.archivedRecords()),
-    getArchivedPage: (cursor: number, limit = 2) => Promise.resolve(page(this.archivedRecords(), cursor, limit)),
+    getArchived: () => Promise.resolve(this.getArchivedRecords()),
+    getArchivedPage: (cursor: number, limit = 2) => Promise.resolve(page(this.getArchivedRecords(), cursor, limit)),
     getPage: (cursor: number, limit = 2) =>
-      Promise.resolve(page(sortVisible([...this.records.values()]), cursor, limit)),
-    getTotal: () => Promise.resolve(sortVisible([...this.records.values()]).length),
+      Promise.resolve(page(sortSessionRecords([...this.records.values()]), cursor, limit)),
+    getTotal: () => Promise.resolve(sortSessionRecords([...this.records.values()]).length),
     getAllTotal: () => Promise.resolve(this.records.size),
-    getArchivedTotal: () => Promise.resolve(this.archivedRecords().length),
+    getArchivedTotal: () => Promise.resolve(this.getArchivedRecords().length),
     clear: () => {
       this.records.clear()
       return Promise.resolve()
@@ -56,8 +49,9 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     return Promise.resolve(this.sessions.get(id) ?? null)
   }
 
-  setSession(session: Session): Promise<void> {
+  setSession(session: Session, options?: SessionDataWriteOptions): Promise<void> {
     this.sessions.set(session.id, session)
+    this.writeOptions.push(options)
     return Promise.resolve()
   }
 
@@ -103,9 +97,28 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     return Promise.resolve()
   }
 
-  private archivedRecords(): SessionMetaRecord[] {
+  private getArchivedRecords(): SessionMetaRecord[] {
     return [...this.records.values()]
       .filter((record) => record.archivedAt !== undefined)
-      .sort((left, right) => (right.archivedAt ?? 0) - (left.archivedAt ?? 0))
+      .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
+  }
+}
+
+export function createTestSession(id: string): Session {
+  return {
+    id,
+    name: id,
+    type: 'chat',
+    messages: [],
+  }
+}
+
+export function createTestRecord(session: Session, sortOrder: number): SessionMetaRecord {
+  return {
+    id: session.id,
+    name: session.name,
+    type: session.type,
+    sortOrder,
+    createdAt: sortOrder,
   }
 }

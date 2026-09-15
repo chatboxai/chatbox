@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
 import type { Session } from '../../types'
-import { createTestRecord, createTestSession, MemorySessionRepository } from './__tests__/memory-session-repository'
+import { createTestRecord, createTestSession, InMemorySessionRepository } from '../../testing/InMemorySessionRepository'
 import { SessionService } from './SessionService'
 import { SessionNotFoundError, SessionWriteCoordinator } from './SessionWriteCoordinator'
 import { type SessionApplicationEvent, SessionEventBus } from './session-events'
@@ -11,7 +11,7 @@ function createHarness(
     changed: boolean
   }
 ) {
-  const repository = new MemorySessionRepository()
+  const repository = new InMemorySessionRepository()
   const events = new SessionEventBus()
   const published: SessionApplicationEvent[] = []
   events.subscribe((event) => {

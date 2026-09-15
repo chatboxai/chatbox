@@ -15,6 +15,7 @@
     "./application/session": "./src/application/session/index.ts",
     "./application/settings": "./src/application/settings/index.ts",
     "./application/token-estimation": "./src/application/token-estimation/index.ts",
+    "./application/token-estimation/math": "./src/application/token-estimation/math.ts",
     "./backup": "./src/backup/index.ts",
     "./backup/archive-layout": "./src/backup/archive-layout.ts",
     "./backup/codec": "./src/backup/codec.ts",

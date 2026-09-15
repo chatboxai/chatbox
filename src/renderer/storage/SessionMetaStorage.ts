@@ -7,24 +7,7 @@ const DB_NAME = 'chatbox-session-meta'
 const STORE_NAME = 'records'
 const DEFAULT_PAGE_SIZE = 50
 
-export interface SessionMetaStorage extends SessionMetaRepositoryPort {
-  initialize(): Promise<void>
-  create(record: SessionMetaRecord): Promise<void>
-  createMany(records: SessionMetaRecord[]): Promise<void>
-  update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null>
-  getById(id: string): Promise<SessionMetaRecord | null>
-  delete(id: string): Promise<void>
-  deleteMany(ids: string[]): Promise<void>
-  getAll(): Promise<SessionMetaRecord[]>
-  getAllIncludingHidden(): Promise<SessionMetaRecord[]>
-  getArchived(): Promise<SessionMetaRecord[]>
-  getArchivedPage(cursor: number, limit?: number): Promise<SessionMetaPage>
-  getPage(cursor: number, limit?: number): Promise<SessionMetaPage>
-  getTotal(): Promise<number>
-  getAllTotal(): Promise<number>
-  getArchivedTotal(): Promise<number>
-  clear(): Promise<void>
-}
+export type SessionMetaStorage = SessionMetaRepositoryPort
 
 // Sort logic shared with the native mobile shell.
 export { sortSessionRecords }

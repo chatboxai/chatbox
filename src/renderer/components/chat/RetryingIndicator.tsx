@@ -1,6 +1,6 @@
 import type { Message } from '@shared/types'
 import { Loader } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useRetryCountdown } from '@chatbox/react/retry'
 import { useTranslation } from 'react-i18next'
 
 export function RetryingIndicator(props: {
@@ -8,18 +8,7 @@ export function RetryingIndicator(props: {
 }) {
   const { status } = props
   const { t } = useTranslation()
-  const [now, setNow] = useState(Date.now)
-  useEffect(() => {
-    if (!status.retryAt) return
-    setNow(Date.now())
-    const timer = setInterval(() => setNow(Date.now()), 250)
-    return () => clearInterval(timer)
-  }, [status.retryAt])
-  const values = {
-    attempt: Math.max(1, status.attempt - 1),
-    maxAttempts: Math.max(1, status.maxAttempts - 1),
-    seconds: Math.max(1, Math.ceil(((status.retryAt ?? now) - now) / 1000)),
-  }
+  const values = useRetryCountdown(status)
   const label = status.retryAt
     ? status.statusCode === 429
       ? t('Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})', values)

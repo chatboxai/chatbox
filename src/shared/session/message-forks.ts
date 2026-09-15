@@ -1,5 +1,5 @@
 import type { Message, Session, SessionThread } from '../types/session'
-import { getReachableSessionMessages } from './generation-state'
+import { getReachableSessionMessages } from '@chatbox/core/session/generation-state'
 
 /**
  * Pure message-fork transforms shared by the web renderer and the mobile-native

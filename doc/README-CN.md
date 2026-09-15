@@ -1,6 +1,12 @@
 <p align="right">
-  <a href="../README.md">English</a> |
-  <a href="README-CN.md">简体中文</a>
+  <strong>语言 / Languages:</strong>
+  <a href="../README.md">English</a> ·
+  <a href="README-CN.md">简体中文</a> ·
+  <a href="README-ES.md">Español</a> ·
+  <a href="README-FR.md">Français</a> ·
+  <a href="README-PT.md">Português</a> ·
+  <a href="README-RU.md">Русский</a> ·
+  <a href="README-DE.md">Deutsch</a>
 </p>
 
 这里是 Chatbox 社区版的代码仓库，以 GPLv3 许可证开源。

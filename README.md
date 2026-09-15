@@ -1,6 +1,12 @@
 <p align="right">
-  <a href="README.md">English</a> |
-  <a href="./doc/README-CN.md">简体中文</a>
+  <strong>Languages:</strong>
+  <a href="README.md">English</a> ·
+  <a href="./doc/README-CN.md">简体中文</a> ·
+  <a href="./doc/README-ES.md">Español</a> ·
+  <a href="./doc/README-FR.md">Français</a> ·
+  <a href="./doc/README-PT.md">Português</a> ·
+  <a href="./doc/README-RU.md">Русский</a> ·
+  <a href="./doc/README-DE.md">Deutsch</a>
 </p>
 
 <h1 align="center">

@@ -632,7 +632,9 @@ describe('ZIP backup round trip', () => {
       id: string
       token: string
     }>
-    expect(restoredTokens).toEqual([{ id: 'copilot-1', token: expect.any(String) }])
+    expect(restoredTokens).toEqual([
+      { id: 'copilot-1', token: expect.any(String), retirementToken: expect.any(String) },
+    ])
     expect(restoredTokens[0].token).not.toBe('same-copilot')
     expect(destination.values.get(backupSessionStorageKey(existingSession.id))).toEqual(existingSession)
   })
@@ -721,7 +723,9 @@ describe('ZIP backup round trip', () => {
     })
     expect(destination.values.get(BackupStorageKey.CopilotMemoryOwners)).toEqual([{ id: 'copilot-1', name: 'Copilot' }])
     const restoredCopilotTokens = destination.values.get(BackupStorageKey.CopilotMemoryTokens)
-    expect(restoredCopilotTokens).toEqual([{ id: 'copilot-1', token: expect.any(String) }])
+    expect(restoredCopilotTokens).toEqual([
+      { id: 'copilot-1', token: expect.any(String), retirementToken: expect.any(String) },
+    ])
     expect(restoredCopilotTokens).not.toEqual([{ id: 'copilot-1', token: 'source-copilot' }])
     expect(destination.blobs.get('picture:kept')).toBe('data:image/png;base64,AAECAw==')
   })

@@ -1,59 +1,64 @@
-import { createBackupProgressReporter } from './progress'
-import { BackupPresentation } from './restore-presentation'
-import { fitsInlineBackupJson, jsonUtf8Blocks } from './json-stream'
-import { prepareGlobalRestore } from './global-restore'
-import { encodeSessionTree } from '../session/session-tree/encode'
-import { SessionSchema, type Session, type Settings, type CopilotDetail } from '@shared/types'
-import { collectGlobalResourceReferences } from './resources'
-import { preparedSessionReader } from './preflight'
-import { backupGlobalEntries, deriveSessionMeta } from './export-backup'
-import { normalizeBackupExportItems } from './export-items'
-import { checkedBackupRows } from './source-check'
-import { validateResourceReferences } from './resource-validation'
-import { BackupResourceCatalog } from './resource-catalog'
-import { BackupResourcePayloadTransform, prepareBackupMessagePayload } from './resource-payload'
-import { fingerprintResource, resourceExists, resourceHash, storedResourceChunks } from './blob-stream'
 import {
-  BACKUP_SETTINGS_PATH,
+  type CopilotDetail,
+  type Session,
+  type SessionMetaRecord,
+  SessionMetaRecordSchema,
+  SessionSchema,
+  type Settings,
+} from '@shared/types'
+import { v4 as uuidv4 } from 'uuid'
+import { encodeSessionTree } from '../session/session-tree/encode'
+import { throwIfAborted } from './abort'
+import {
   BACKUP_COPILOTS_PATH,
   BACKUP_SESSION_SETTINGS_PATH,
+  BACKUP_SETTINGS_PATH,
   isBackupResourcePath,
 } from './archive-layout'
-import { v4 as uuidv4 } from 'uuid'
-import { SessionMetaRecordSchema, type SessionMetaRecord } from '@shared/types'
-import type { BackupExportOptions, BackupExportResult } from './export-backup'
-import { safeSessionPathComponent, enforceArchiveLimits } from './export-backup'
-import type { BackupImportOptions, BackupImportResult } from './import-backup'
-import { throwIfAborted } from './abort'
+import { fingerprintResource, resourceExists, resourceHash, storedResourceChunks } from './blob-stream'
 import { sha256Checksum } from './codec'
-import { BackupMessageValidator, backupPayloadBlocks, BACKUP_PAYLOAD_BLOCK_BYTES } from './payload'
+import type { BackupExportOptions, BackupExportResult } from './export-backup'
+import { backupGlobalEntries, deriveSessionMeta, enforceArchiveLimits, safeSessionPathComponent } from './export-backup'
+import { normalizeBackupExportItems } from './export-items'
+import { prepareGlobalRestore } from './global-restore'
+import type { BackupImportOptions, BackupImportResult } from './import-backup'
+import { fitsInlineBackupJson, jsonUtf8Blocks } from './json-stream'
+import { BACKUP_PAYLOAD_BLOCK_BYTES, BackupMessageValidator, backupPayloadBlocks } from './payload'
+import { preparedSessionReader } from './preflight'
+import { createBackupProgressReporter } from './progress'
+import { BackupResourceCatalog } from './resource-catalog'
+import { BackupResourcePayloadTransform, prepareBackupMessagePayload } from './resource-payload'
+import { validateResourceReferences } from './resource-validation'
 import {
-  backupPageLimits,
+  collectGlobalResourceReferences,
+  collectSessionResourceReferences,
+  prepareSessionForBackup,
+  rehydrateSessionAttachmentsAsInline,
+  restoreSessionMetaResourceKeys,
+  restoreSessionResourceKeys,
+} from './resources'
+import { BackupPresentation } from './restore-presentation'
+import {
   type BackupPageLimits,
   type BackupSessionCandidate,
   type BackupSessionStore,
+  backupPageLimits,
 } from './session-port'
 import {
-  compareBackupIds,
   BackupGraphValidator,
-  BackupManifestV3Schema,
-  fromLogicalBackupRow,
-  LogicalBackupRowSchema,
-  type LogicalBackupRow,
-  toLogicalBackupRow,
   type BackupManifestV3,
+  BackupManifestV3Schema,
+  compareBackupIds,
+  fromLogicalBackupRow,
+  type LogicalBackupRow,
+  LogicalBackupRowSchema,
+  toLogicalBackupRow,
 } from './sharded-format'
-import {
-  collectSessionResourceReferences,
-  prepareSessionForBackup,
-  restoreSessionResourceKeys,
-  restoreSessionMetaResourceKeys,
-  rehydrateSessionAttachmentsAsInline,
-} from './resources'
+import { checkedBackupRows } from './source-check'
 import {
   type BackupFile,
-  type BackupProgress,
   type BackupJsonEntry,
+  type BackupProgress,
   MAX_BACKUP_JSON_ENTRY_BYTES,
   MAX_BACKUP_RESOURCE_ENTRY_BYTES,
   validateBackupManifestGraph,
@@ -680,6 +685,7 @@ export async function importShardedBackup(
     }
     for (const key of missingResources) keys.set(key, await allocate())
     globals = await prepareGlobalRestore(validated, globalValues, options.storage, keys, options.signal)
+    const { translateMessage, translateMemoryToolContext } = globals
     await readEntries(
       file,
       () => {
@@ -769,7 +775,10 @@ export async function importShardedBackup(
         }
         if (entry.path.endsWith('.bin')) {
           if (!active?.candidate.appendPayload) throw new Error('Backup storage does not support payload restoration')
-          payloadTransform ??= { transform: new BackupResourcePayloadTransform(keys), size: 0 }
+          payloadTransform ??= {
+            transform: new BackupResourcePayloadTransform(keys, translateMemoryToolContext),
+            size: 0,
+          }
           for (const bytes of payloadTransform.transform.write(entry.data)) {
             payloadTransform.size += bytes.length
             await active.candidate.appendPayload(bytes)
@@ -801,6 +810,7 @@ export async function importShardedBackup(
             row = { ...row, value: final.message, payload: { ...row.payload, size: payloadTransform.size } }
             payloadTransform = undefined
           } else {
+            if (row.kind === 'message') row = { ...row, value: translateMessage(row.value) }
             if (row.kind === 'thread' && row.sessionPromptContextSnapshot && activeSourceSession) {
               const translated = globals!.translate({
                 ...activeSourceSession,

@@ -3,6 +3,7 @@ import { isPersistentToolCallPauseError } from '@shared/models/persistent-tool-c
 import { mergeProviderMetadata, pickPersistableProviderMetadata } from '@shared/models/provider-part-metadata'
 import type { ModelStreamPart } from '@shared/models/types'
 import { extractToolResultImage } from '@shared/tool-result-image'
+import type { MemoryToolContext } from '@shared/types/agent-persona'
 import type {
   Message,
   MessageContentParts,
@@ -23,6 +24,7 @@ const PREPARING_PROGRESS_MIN_SIZE_KB = 1
 const PREPARING_PROGRESS_MIN_LINES = 10
 
 export interface StreamProcessorCallbacks {
+  memoryToolContext?: MemoryToolContext
   onFileReceived: (mediaType: string, base64: string) => Promise<string>
   /**
    * Called when a tool result exceeds TOOL_RESULT_SIZE_LIMIT.
@@ -323,6 +325,7 @@ export async function processStreamChunk(
         state: 'call',
         toolCallId: chunk.toolCallId,
         toolName: chunk.toolName,
+        ...memoryContextForTool(chunk.toolName, callbacks),
         args,
         providerMetadata,
         providerExecuted: 'providerExecuted' in chunk ? chunk.providerExecuted : undefined,
@@ -409,6 +412,7 @@ export async function processStreamChunk(
           state: 'call',
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
+          ...memoryContextForTool(chunk.toolName, callbacks),
           args: chunk.input,
           providerMetadata: chunk.providerMetadata ?? preparedProviderMetadata,
           providerExecuted: 'providerExecuted' in chunk ? chunk.providerExecuted : undefined,
@@ -487,6 +491,16 @@ export async function processStreamChunk(
     state: nextState(),
     skipUpdate: false,
   }
+}
+
+function memoryContextForTool(
+  toolName: string,
+  callbacks: StreamProcessorCallbacks
+): { memoryToolContext?: MemoryToolContext } {
+  const context = callbacks.memoryToolContext
+  return context && (toolName === 'save_memory' || toolName === 'delete_memory')
+    ? { memoryToolContext: { ...context, scope: { ...context.scope } } }
+    : {}
 }
 
 function getToolInputId(chunk: ModelStreamPart<ToolSet>): string | undefined {

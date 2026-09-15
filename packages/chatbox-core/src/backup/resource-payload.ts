@@ -88,12 +88,19 @@ function referencePath(path: Path) {
   return path.length === 4 && root === 'contentParts' && key === 'result' && legacyKey === 'image_storage_key'
 }
 
-/** Changes only attachment metadata paths; free text and tool arguments stream unchanged. */
+/** Changes attachment and memory-call metadata; free text and tool arguments stream unchanged. */
 export class BackupResourcePayloadTransform {
   private tokenizer = new JsonTokens()
   private encoder = new TextEncoder()
   private outputValidator = new BackupMessageValidator()
-  constructor(private readonly resourceKeys?: ReadonlyMap<string, string>) {}
+  constructor(
+    private readonly resourceKeys?: ReadonlyMap<string, string>,
+    private readonly translateMemoryToolContext?: (context: unknown) => unknown
+  ) {}
+
+  private memoryContext:
+    | { depth: number; json: string | undefined; translate: (context: unknown) => unknown }
+    | undefined
 
   private stack: Frame[] = []
   private keyString = false
@@ -116,6 +123,27 @@ export class BackupResourcePayloadTransform {
   }
   private *output(tokens: Iterable<Token>): Generator<string> {
     for (const token of tokens) {
+      if (this.memoryContext) {
+        const context = this.memoryContext
+        if (context.json === undefined) yield token.value
+        else {
+          context.json += token.value
+          // Unusually large metadata is retained verbatim, with its source identity.
+          if (context.json.length > 128 * 1024) {
+            yield context.json
+            context.json = undefined
+          }
+        }
+        if (token.kind === 'punctuation') {
+          if (token.value === '{' || token.value === '[') context.depth++
+          if (token.value === '}' || token.value === ']') context.depth--
+        }
+        if (context.depth === 0) {
+          if (context.json !== undefined) yield JSON.stringify(context.translate(JSON.parse(context.json)))
+          this.memoryContext = undefined
+        }
+        continue
+      }
       const frame = this.stack.at(-1)
       if (token.kind === 'string-start') {
         this.keyString = Boolean(frame && !frame.array && frame.expectsKey)
@@ -159,6 +187,19 @@ export class BackupResourcePayloadTransform {
         if (!this.skip) yield prefix + token.value
       } else if (token.value === '{' || token.value === '[') {
         const prefix = this.begin()
+        if (
+          !this.skip &&
+          token.value === '{' &&
+          this.translateMemoryToolContext &&
+          this.path.length === 3 &&
+          this.path[0] === 'contentParts' &&
+          typeof this.path[1] === 'number' &&
+          this.path[2] === 'memoryToolContext'
+        ) {
+          if (prefix) yield prefix
+          this.memoryContext = { depth: 1, json: '{', translate: this.translateMemoryToolContext }
+          continue
+        }
         if (!this.skip) yield prefix + token.value
         this.stack.push({
           path: this.path,

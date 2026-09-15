@@ -1,5 +1,6 @@
-import { buildContext } from '@shared/context'
+import { buildContext, flattenToolCallPartsToText } from '@shared/context'
 import type { Message, MessageContentParts } from '@shared/types'
+import type { MemoryToolContext } from '@shared/types/agent-persona'
 import type { ToolSet } from 'ai'
 import type { GenerationPreparationPort, GenerationPreparationRequest } from './GenerationService'
 import { prepareModelMessages } from './model-message-preparation'
@@ -9,6 +10,7 @@ export interface BasicGenerationToolPreparation {
   infoParts?: MessageContentParts
   instructions?: string
   tools: ToolSet
+  memoryToolContext?: MemoryToolContext
 }
 
 export interface BasicGenerationPreparationOptions<TContext> {
@@ -37,10 +39,10 @@ function injectInstructions(messages: Message[], instructions: string, createId:
           contentParts: [
             {
               type: 'text',
-              text: `${instructions}\n\n${message.contentParts
+              text: `${message.contentParts
                 .filter((part): part is Extract<MessageContentParts[number], { type: 'text' }> => part.type === 'text')
                 .map((part) => part.text)
-                .join('\n')}`,
+                .join('\n')}\n\n${instructions}`,
             },
           ],
         }
@@ -68,6 +70,9 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
         : undefined,
     })
     const tools = (await this.options.prepareTools?.(request, promptMessages)) ?? { tools: {} }
+    if (Object.keys(tools.tools).length === 0) {
+      promptMessages = flattenToolCallPartsToText(promptMessages)
+    }
     if (tools.instructions?.trim()) {
       promptMessages = injectInstructions(
         promptMessages,
@@ -89,6 +94,7 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
       promptMessages,
       coreMessages: preparedMessages.coreMessages,
       tools: tools.tools,
+      memoryToolContext: tools.memoryToolContext,
       chatOptions: {
         sessionId: request.session.id,
         agentMode: false,

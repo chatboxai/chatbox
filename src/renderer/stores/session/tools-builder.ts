@@ -1,20 +1,21 @@
-import { formatLoadSkillOutput, type LoadedSkill } from '@shared/skills/catalog'
-import { validatedToolSchema } from '@shared/validated-tool-schema'
+import type { PausedMemoryContext } from '@chatbox/core/application/memory'
 import type { ModelInterface } from '@shared/models/types'
 import type { SandboxSeedAttachment } from '@shared/sandbox/attachment-path'
 import type { SandboxProvider } from '@shared/sandbox-provider'
+import { formatLoadSkillOutput, type LoadedSkill } from '@shared/skills/catalog'
 import { supportsToolResultImages } from '@shared/tools/view-image'
 import type { KnowledgeBase, Message, SessionSettings, Settings } from '@shared/types'
 import type { MemoryScope } from '@shared/types/agent-persona'
 import { resolveCommandApprovalMode } from '@shared/types/command-execution'
 import type { UserExecApprovalSource } from '@shared/types/user-exec'
 import { getMessageText } from '@shared/utils/message'
-import { type ModelMessage, type ToolSet } from 'ai'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
+import type { ModelMessage, ToolSet } from 'ai'
 import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
 import { languageNameMap } from '@/i18n/locales'
 import { mcpController } from '@/packages/mcp/controller'
 import { generateCommandExplanation } from '@/packages/model-calls/command-explanation'
-import { buildAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
+import { buildAgentMemoryTools, buildPausedAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
 import { buildChatboxCliToolSet } from '@/packages/model-calls/toolsets/chatbox-cli'
 import { buildCodeExecutionTools } from '@/packages/model-calls/toolsets/code-execution'
 import { buildFileTools, fileToolSetDescription } from '@/packages/model-calls/toolsets/file'
@@ -101,6 +102,8 @@ export interface BuildToolsOptions {
    * switch for tool registration. Defaults to the global store.
    */
   memoryScope?: MemoryScope
+  /** Frozen memory availability for an existing call being resumed or retried. */
+  pausedMemoryContext?: PausedMemoryContext
 }
 
 export interface BuildToolsResult {
@@ -593,11 +596,16 @@ When you create a Git commit that includes code changes, append this exact trail
   const globalSettingsForTools = options.globalSettings ?? settingsStore.getState().getSettings()
   const memoryScope = options.memoryScope ?? { type: 'global' as const }
   const memoryToolsEnabled = memoryScope.type === 'copilot' || globalSettingsForTools.memoryEnabled !== false
-  if (memoryToolsEnabled && modelSupportsAgentTools) {
-    const memoryToolSet = buildAgentMemoryTools({
-      languageName: languageNameMap[globalSettingsForTools.language],
-      scope: memoryScope,
-    })
+  if (options.pausedMemoryContext || (memoryToolsEnabled && modelSupportsAgentTools)) {
+    const memoryToolSet = options.pausedMemoryContext
+      ? buildPausedAgentMemoryTools({
+          ...options.pausedMemoryContext,
+          languageName: languageNameMap[globalSettingsForTools.language],
+        })
+      : buildAgentMemoryTools({
+          languageName: languageNameMap[globalSettingsForTools.language],
+          scope: memoryScope,
+        })
     instructions += memoryToolSet.description
     tools = { ...tools, ...memoryToolSet.tools }
   }

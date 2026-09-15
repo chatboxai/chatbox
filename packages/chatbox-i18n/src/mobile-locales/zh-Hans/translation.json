@@ -360,5 +360,6 @@
   "Your launcher may take time to update the icon. You may need to add the home screen shortcut again.": "桌面图标可能需要稍后才会更新，你可能需要重新添加主屏幕快捷方式。",
   "Gold minimal": "金色简约",
   "Multicolor minimal": "彩色简约",
-  "Blue minimal": "蓝色简约"
+  "Blue minimal": "蓝色简约",
+  "Unable to access memory. Please try again.": "暂时无法访问记忆，请重试。"
 }

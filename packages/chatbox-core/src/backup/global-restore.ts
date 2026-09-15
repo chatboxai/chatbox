@@ -1,11 +1,16 @@
+import type { CopilotDetail, Message, Session, Settings } from '@shared/types'
 import { v4 as uuid } from 'uuid'
-import type { CopilotDetail, Session, Settings } from '@shared/types'
-import { resolveImportedMemoryState, translateImportedSessionMemoryState } from './import-backup'
-import { restoreCopilotResourceKeys, restoreSettingsResourceKeys } from './resources'
-import { AGENT_PERSONA_BACKUP_KEYS, BackupStorageKey, COPILOT_BACKUP_KEYS } from './storage-keys'
 import { throwIfAborted } from './abort'
-import type { BackupManifest, BackupStorage } from './types'
+import {
+  resolveImportedMemoryState,
+  translateImportedMemoryToolContext,
+  translateImportedMessageMemoryState,
+  translateImportedSessionMemoryState,
+} from './import-backup'
+import { restoreCopilotResourceKeys, restoreSettingsResourceKeys } from './resources'
 import type { BackupManifestV3 } from './sharded-format'
+import { AGENT_PERSONA_BACKUP_KEYS, BackupStorageKey, COPILOT_BACKUP_KEYS } from './storage-keys'
+import type { BackupStorage } from './types'
 
 export async function prepareGlobalRestore(
   manifest: BackupManifestV3,
@@ -81,6 +86,8 @@ export async function prepareGlobalRestore(
   }
   return {
     translate: (session: Session) => translateImportedSessionMemoryState(session, memory),
+    translateMessage: (message: Message) => translateImportedMessageMemoryState(message, memory),
+    translateMemoryToolContext: (context: unknown) => translateImportedMemoryToolContext(context, memory),
     async publish() {
       for (const [key, value] of changes) {
         throwIfAborted(signal)

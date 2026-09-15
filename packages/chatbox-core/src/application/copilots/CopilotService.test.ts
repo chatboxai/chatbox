@@ -1,6 +1,8 @@
 import type { CopilotDetail } from '@shared/types'
 import { describe, expect, test, vi } from 'vitest'
 import type { KeyValueStoragePort } from '../../ports'
+import { COPILOT_MEMORY_OWNERS_STORAGE_KEY } from '../memory/MemoryPreferences'
+import { MemoryService } from '../memory/MemoryService'
 import { COPILOT_PREFERENCES_STORAGE_KEY, CopilotPreferences } from './CopilotPreferences'
 import { CopilotService, MY_COPILOTS_STORAGE_KEY, searchCopilots } from './CopilotService'
 
@@ -208,6 +210,70 @@ describe('CopilotService', () => {
     await service.remove('saved')
     expect(set).toHaveBeenCalledExactlyOnceWith(MY_COPILOTS_STORAGE_KEY, [])
     expect(await storage.get('session:session')).toEqual(session)
+  })
+
+  test('memory ownership stores only identity and remains stable across edits and hydration', async () => {
+    const storage = new MemoryStorage()
+    const memory = new MemoryService({ storage })
+    const service = new CopilotService({ storage, memoryLifecycle: memory, now: () => 10 })
+    const definition = copilot('saved', {
+      prompt: 'Custom prompt',
+      avatar: { type: 'url', url: 'https://example.com/avatar.png' },
+      backgroundImage: { type: 'url', url: 'https://example.com/background.png' },
+    })
+    for (const name of ['Original', 'Renamed']) {
+      await service.upsert({ ...definition, name }, { memoryEnabled: true })
+      const owners = [{ id: definition.id, name }]
+      expect(memory.getSnapshot().owners).toEqual(owners)
+      expect(await storage.get(COPILOT_MEMORY_OWNERS_STORAGE_KEY)).toEqual(owners)
+      const restarted = new MemoryService({ storage })
+      await restarted.hydrate()
+      expect(restarted.getSnapshot().owners).toEqual(memory.getSnapshot().owners)
+      expect(service.getSnapshot().copilots).toEqual([{ ...definition, name, createdAt: 10, updatedAt: 10 }])
+    }
+  })
+
+  test('memory save failure keeps the persisted ID for retry and deletion waits for retirement', async () => {
+    const storage = new MemoryStorage()
+    const retirement = deferred<void>()
+    const memoryLifecycle = {
+      setCopilotMemoryEnabled: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('memory write failed'))
+        .mockResolvedValue(undefined),
+      retireCopilot: vi.fn(async (_id: string, commitRemoval: () => Promise<void>) => {
+        await retirement.promise
+        await commitRemoval()
+      }),
+    }
+    const service = new CopilotService({ storage, memoryLifecycle, now: () => 10 })
+    await expect(service.upsert(copilot('new'), { memoryEnabled: true })).rejects.toThrow('memory write failed')
+    expect(service.getSnapshot().copilots.map((item) => item.id)).toEqual(['new'])
+    await service.upsert(copilot('new'), { memoryEnabled: true })
+    expect(service.getSnapshot().copilots).toHaveLength(1)
+    const removing = service.remove('new')
+    await vi.waitFor(() => expect(memoryLifecycle.retireCopilot).toHaveBeenCalledWith('new', expect.any(Function)))
+    expect(service.getSnapshot().copilots).toHaveLength(1)
+    retirement.resolve()
+    await removing
+    expect(service.getSnapshot().copilots).toEqual([])
+  })
+
+  test('failed retirement preserves the definition and can be retried', async () => {
+    const storage = new MemoryStorage()
+    const memoryLifecycle = {
+      setCopilotMemoryEnabled: vi.fn(),
+      retireCopilot: vi
+        .fn(async (_id: string, commitRemoval: () => Promise<void>) => commitRemoval())
+        .mockRejectedValueOnce(new Error('cleanup failed')),
+    }
+    const service = new CopilotService({ storage, memoryLifecycle })
+    await service.upsert(copilot('saved'))
+    await expect(service.remove('saved')).rejects.toThrow('cleanup failed')
+    expect(service.getSnapshot().copilots).toHaveLength(1)
+    await service.remove('saved')
+    expect(service.getSnapshot().copilots).toEqual([])
+    expect(memoryLifecycle.retireCopilot).toHaveBeenCalledTimes(2)
   })
 
   test('local search matches prompt and description case-insensitively', () => {

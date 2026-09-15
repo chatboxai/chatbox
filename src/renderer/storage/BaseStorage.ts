@@ -3,6 +3,11 @@ import platform from '@/platform'
 
 const log = getLogger('base-storage')
 
+export interface StorageReadOptions {
+  /** Require the default value to be persisted before returning it. */
+  persistInitialValue?: boolean
+}
+
 export default class BaseStorage {
   constructor() {}
 
@@ -34,7 +39,18 @@ export default class BaseStorage {
     }
   }
 
-  public async getItem<T>(key: string, initialValue: T): Promise<T> {
+  /** Read a stored value, returning null when the key is absent. */
+  public async getItemRaw<T>(key: string): Promise<T | null> {
+    try {
+      const value: unknown = await platform.getStoreValue(key)
+      return (value ?? null) as T | null
+    } catch (error) {
+      log.error(`Failed to read from storage (key: ${key}):`, error)
+      throw error
+    }
+  }
+
+  public async getItem<T>(key: string, initialValue: T, options: StorageReadOptions = {}): Promise<T> {
     try {
       let value: unknown = await platform.getStoreValue(key)
       if (value === undefined || value === null) {
@@ -42,7 +58,9 @@ export default class BaseStorage {
         if (key === 'settings') {
           log.info(`[CONFIG_DEBUG] getItem settings: value was null/undefined, using initialValue`)
         }
-        this.setItemNow(key, value)
+        const seed = this.setItemNow(key, value)
+        if (options.persistInitialValue) await seed
+        else void seed.catch(() => undefined)
       } else if (key === 'settings') {
         const providers = (value as Record<string, unknown>)?.providers
         const providersCount =

@@ -21,6 +21,34 @@ afterEach(() => {
 })
 
 describe('TokenEstimationService', () => {
+  it('counts injected instructions once in every estimate without changing conversation counts', async () => {
+    const session: Session = {
+      id: 'memory-budget',
+      name: '',
+      messages: [{ id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'Hello' }] }],
+    }
+    const additionalInstructions = 'Remember that the user prefers Chinese explanations.'
+    const baseline = await service.estimate({ session })
+    const instructionOnly = await service.estimate({ additionalInstructions })
+    const progress = vi.fn()
+    const result = await service.estimate({ session, additionalInstructions }, { onProgress: progress })
+
+    expect(instructionOnly.contextTokens).toBeGreaterThan(0)
+    expect(instructionOnly.contextMessageCount).toBe(0)
+    expect(instructionOnly.canManualCompact).toBe(false)
+    expect(result.contextTokens).toBe(baseline.contextTokens + instructionOnly.contextTokens)
+    expect(result.contextMessageCount).toBe(baseline.contextMessageCount)
+    expect(result.currentInputTokens).toBe(baseline.currentInputTokens)
+    expect(progress.mock.calls[0][0].contextTokens).toBe(result.contextTokens)
+    expect(service.estimateImmediately({ session, additionalInstructions }).contextTokens).toBe(result.contextTokens)
+  })
+
+  it('reports bounded long instruction estimates as approximate even with no historical messages', async () => {
+    const request = { additionalInstructions: 'memory '.repeat(1000) }
+    expect(service.estimateImmediately(request).approximation.context).toBe(true)
+    expect((await service.estimate(request)).approximation.context).toBe(true)
+  })
+
   it('supports native AbortSignals without throwIfAborted', async () => {
     const controller = new AbortController()
     Object.defineProperty(controller.signal, 'throwIfAborted', { value: undefined })

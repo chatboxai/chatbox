@@ -56,6 +56,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
+import { exportRendererBackupArchive, importRendererLegacyJsonBackup } from '@/app/persona-backup'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { AppIconPicker } from '@/components/common/AppIconPicker'
@@ -66,9 +67,7 @@ import {
   type BackupExportItem,
   type BackupProgress,
   type BackupWarning,
-  exportBackupArchive,
   importBackupArchive,
-  importLegacyJsonBackup,
   isAbortError,
   isZipBackupFile,
   rehydrateImportedSession,
@@ -778,7 +777,7 @@ const ImportExportDataSection = () => {
               setExportPlan(undefined)
               if (!proceed) return undefined
             }
-            return exportBackupArchive({
+            return exportRendererBackupArchive({
               ...options,
               prepared,
               writeArchive: (dataCallback) =>
@@ -908,7 +907,7 @@ const ImportExportDataSection = () => {
           await rendererApplication.sessionWrites.withBackupAccess(() =>
             sessionRepository.withBackupStorageAccess(async (_readSession, metaStorage) => {
               try {
-                await importLegacyJsonBackup(file, {
+                await importRendererLegacyJsonBackup(file, {
                   storage,
                   metaStorage,
                   signal,

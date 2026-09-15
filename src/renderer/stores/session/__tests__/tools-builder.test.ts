@@ -48,6 +48,26 @@ const {
   platformName: { current: 'darwin' },
 }))
 
+const memoryValues = vi.hoisted(() => new Map<string, unknown>())
+
+vi.mock('@/stores/agentPersonaStore', async () => {
+  const { MemoryService } = await import('@chatbox/core/application/memory')
+  const rendererMemoryService = new MemoryService({
+    storage: {
+      get: <T>(key: string) => Promise.resolve((memoryValues.get(key) ?? null) as T | null),
+      set: async <T>(key: string, value: T) => {
+        memoryValues.set(key, value)
+      },
+    },
+  })
+  return {
+    rendererMemoryService,
+    addMemoryForScope: rendererMemoryService.addMemoryForScope.bind(rendererMemoryService),
+    deleteMemoryForScope: rendererMemoryService.deleteMemoryForScope.bind(rendererMemoryService),
+    copilotMemoryEpoch: rendererMemoryService.copilotMemoryEpoch.bind(rendererMemoryService),
+  }
+})
+
 vi.hoisted(() => {
   const storage = {
     getItem: () => null,
@@ -193,6 +213,9 @@ vi.mock('@/packages/model-calls/toolsets/session-attachment-rag', () => ({
 import type { ModelInterface } from '@shared/models/types'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import type { Message } from '@shared/types'
+import type { MemoryToolContext } from '@shared/types/agent-persona'
+import type { ToolSet } from 'ai'
+import { rendererMemoryService } from '@/stores/agentPersonaStore'
 import { type BuildToolsOptions, buildToolsForSession } from '../tools-builder'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -235,8 +258,10 @@ const sandboxToolNames = [
   'sandbox_find',
 ]
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks()
+  memoryValues.clear()
+  await rendererMemoryService.reload()
   for (const listener of skillsChangedListeners) {
     listener()
   }
@@ -345,6 +370,210 @@ describe('buildToolsForSession', () => {
     expect(withCopilotScope.tools.save_memory).toBeDefined()
     expect(withCopilotScope.tools.delete_memory).toBeDefined()
     expect(withCopilotScope.instructions).toContain('## Persistent Memory')
+  })
+
+  function pausedMemoryMessage(
+    contexts: Array<{ id: string; context?: MemoryToolContext; name?: 'save_memory' | 'delete_memory' }>
+  ): Message {
+    return {
+      id: 'paused-message',
+      role: 'assistant',
+      contentParts: contexts.map(({ id, context, name }) => ({
+        type: 'tool-call',
+        toolCallId: id,
+        toolName: name ?? 'save_memory',
+        state: 'paused',
+        pauseReason: { type: 'tool_call_limit', maxToolCalls: 1 },
+        ...(context ? { memoryToolContext: context } : {}),
+      })),
+    }
+  }
+
+  async function executeMemoryTool(tools: ToolSet, name: string, toolCallId: string, input: unknown) {
+    const execute = tools[name]?.execute
+    if (!execute) throw new Error(`Missing executable ${name}`)
+    return execute(input, { toolCallId, messages: [] })
+  }
+
+  test('paused global memory executes its captured context after the switch is disabled', async () => {
+    const targetMessage = pausedMemoryMessage([
+      { id: 'global-save', context: { version: 1, enabled: true, scope: { type: 'global' } } },
+    ])
+    const options: BuildToolsOptions = {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      globalSettings: { memoryEnabled: false, language: 'en' },
+      memoryScope: { type: 'copilot', copilotId: 'new-scope', epoch: 0 },
+    }
+    const resumed = await buildToolsForSession(createMockModel({ isSupportToolUse: () => false }), {
+      ...options,
+      pausedMemoryContext: { targetMessage },
+    })
+    await expect(
+      executeMemoryTool(resumed.tools, 'save_memory', 'global-save', { content: 'Global fact' })
+    ).resolves.toMatchObject({
+      message: expect.any(String),
+    })
+    expect((await rendererMemoryService.listMemories()).map((entry) => entry.content)).toEqual(['Global fact'])
+    expect(await rendererMemoryService.listCopilotMemories('new-scope')).toEqual([])
+
+    const nextGeneration = await buildToolsForSession(createMockModel(), {
+      ...options,
+      memoryScope: { type: 'global' },
+    })
+    expect(nextGeneration.tools.save_memory).toBeUndefined()
+    expect(nextGeneration.tools.delete_memory).toBeUndefined()
+  })
+
+  test('each call in an appended message retains its own global or Copilot destination', async () => {
+    await rendererMemoryService.enableCopilotMemory({ id: 'cp-mixed', name: 'Tutor' })
+    const selection = await rendererMemoryService.getCopilotMemorySelection('cp-mixed')
+    if (selection.scope.type !== 'copilot') throw new Error('Expected Copilot memory')
+    const globalEntry = await rendererMemoryService.addMemory('Global old')
+    const copilotEntry = await rendererMemoryService.addCopilotMemory('cp-mixed', 'Copilot old')
+    if (!globalEntry.ok || !copilotEntry.ok) throw new Error('Memory setup failed')
+    const globalContext: MemoryToolContext = { version: 1, enabled: true, scope: { type: 'global' } }
+    const copilotContext: MemoryToolContext = {
+      version: 1,
+      enabled: true,
+      scope: { type: 'copilot', copilotId: 'cp-mixed', lifecycleToken: selection.scope.lifecycleToken },
+    }
+    const targetMessage = pausedMemoryMessage([
+      { id: 'global-save', context: globalContext },
+      { id: 'copilot-save', context: copilotContext },
+      { id: 'global-delete', context: globalContext, name: 'delete_memory' },
+      { id: 'copilot-delete', context: copilotContext, name: 'delete_memory' },
+    ])
+    const { tools } = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      memoryScope: { type: 'copilot', copilotId: 'another-branch', epoch: 0, lifecycleToken: 'another-life' },
+      pausedMemoryContext: { targetMessage },
+    })
+    await executeMemoryTool(tools, 'save_memory', 'global-save', { content: 'Global new' })
+    await executeMemoryTool(tools, 'save_memory', 'copilot-save', { content: 'Copilot new' })
+    await executeMemoryTool(tools, 'delete_memory', 'global-delete', { id: globalEntry.entry.id })
+    await executeMemoryTool(tools, 'delete_memory', 'copilot-delete', { id: copilotEntry.entry.id })
+
+    expect((await rendererMemoryService.listMemories()).map((entry) => entry.content)).toEqual(['Global new'])
+    expect((await rendererMemoryService.listCopilotMemories('cp-mixed')).map((entry) => entry.content)).toEqual([
+      'Copilot new',
+    ])
+    expect(await rendererMemoryService.listCopilotMemories('another-branch')).toEqual([])
+  })
+
+  test('an older branch cannot borrow a recreated Copilot lifecycle from the current scope', async () => {
+    await rendererMemoryService.enableCopilotMemory({ id: 'cp-recreated', name: 'Original' })
+    const initial = await rendererMemoryService.getCopilotMemorySelection('cp-recreated')
+    if (initial.scope.type !== 'copilot') throw new Error('Expected Copilot memory')
+    const oldBranch = pausedMemoryMessage([
+      {
+        id: 'old-save',
+        context: {
+          version: 1,
+          enabled: true,
+          scope: { type: 'copilot', copilotId: 'cp-recreated', lifecycleToken: initial.scope.lifecycleToken },
+        },
+      },
+      {
+        id: 'old-delete',
+        name: 'delete_memory',
+        context: {
+          version: 1,
+          enabled: true,
+          scope: { type: 'copilot', copilotId: 'cp-recreated', lifecycleToken: initial.scope.lifecycleToken },
+        },
+      },
+    ])
+    await rendererMemoryService.retireCopilot('cp-recreated')
+    await rendererMemoryService.enableCopilotMemory({ id: 'cp-recreated', name: 'Recreated' })
+    const selection = await rendererMemoryService.getCopilotMemorySelection('cp-recreated')
+    if (selection.scope.type !== 'copilot') throw new Error('Expected Copilot memory')
+    const newBranch = pausedMemoryMessage([
+      {
+        id: 'new-save',
+        context: {
+          version: 1,
+          enabled: true,
+          scope: { type: 'copilot', copilotId: 'cp-recreated', lifecycleToken: selection.scope.lifecycleToken },
+        },
+      },
+    ])
+    const options: BuildToolsOptions = {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      memoryScope: selection.scope,
+    }
+    const oldTools = await buildToolsForSession(createMockModel(), {
+      ...options,
+      pausedMemoryContext: { targetMessage: oldBranch },
+    })
+    const newTools = await buildToolsForSession(createMockModel(), {
+      ...options,
+      pausedMemoryContext: { targetMessage: newBranch },
+    })
+
+    await expect(
+      executeMemoryTool(oldTools.tools, 'save_memory', 'old-save', { content: 'Retired fact' })
+    ).resolves.toMatchObject({ error: expect.any(String) })
+    await expect(
+      executeMemoryTool(newTools.tools, 'save_memory', 'new-save', { content: 'Current fact' })
+    ).resolves.toMatchObject({ message: expect.any(String) })
+    const currentEntry = (await rendererMemoryService.listCopilotMemories('cp-recreated'))[0]
+    await expect(
+      executeMemoryTool(oldTools.tools, 'delete_memory', 'old-delete', { id: currentEntry.id })
+    ).resolves.toEqual({
+      error: 'The memory context for this call is no longer available. Start a new generation.',
+    })
+    expect((await rendererMemoryService.listCopilotMemories('cp-recreated')).map((entry) => entry.content)).toEqual([
+      'Current fact',
+    ])
+    expect(await rendererMemoryService.listMemories()).toEqual([])
+  })
+
+  test.each(['global', 'copilot'] as const)(
+    'legacy calls reject a %s scope inferred from the current topic',
+    async (scopeType) => {
+      const existing = await rendererMemoryService.addMemory('Preserve this')
+      if (!existing.ok) throw new Error('Memory setup failed')
+      const targetMessage = pausedMemoryMessage([{ id: 'legacy-save' }, { id: 'legacy-delete', name: 'delete_memory' }])
+      const { tools } = await buildToolsForSession(createMockModel(), {
+        webBrowsing: false,
+        messages: [],
+        agentMode: 'off',
+        memoryScope:
+          scopeType === 'global' ? { type: 'global' } : { type: 'copilot', copilotId: 'cp-legacy', epoch: 0 },
+        pausedMemoryContext: { targetMessage },
+      })
+      await expect(
+        executeMemoryTool(tools, 'save_memory', 'legacy-save', { content: 'Unknown destination' })
+      ).resolves.toMatchObject({ error: expect.any(String) })
+      await expect(
+        executeMemoryTool(tools, 'delete_memory', 'legacy-delete', { id: existing.entry.id })
+      ).resolves.toMatchObject({ error: expect.any(String) })
+      expect((await rendererMemoryService.listMemories()).map((entry) => entry.content)).toEqual(['Preserve this'])
+      expect(await rendererMemoryService.listCopilotMemories('cp-legacy')).toEqual([])
+    }
+  )
+
+  test('disabled captured memory cannot be enabled by the current settings', async () => {
+    const targetMessage = pausedMemoryMessage([
+      { id: 'disabled-save', context: { version: 1, enabled: false, scope: { type: 'global' } } },
+    ])
+    const { tools } = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      globalSettings: { memoryEnabled: true, language: 'en' },
+      pausedMemoryContext: { targetMessage },
+    })
+    await expect(
+      executeMemoryTool(tools, 'save_memory', 'disabled-save', { content: 'Must not save' })
+    ).resolves.toMatchObject({ error: expect.any(String) })
+    expect(await rendererMemoryService.listMemories()).toEqual([])
   })
 
   test('agentMode="off" exposes selected Knowledge Base without Work Mode tools', async () => {

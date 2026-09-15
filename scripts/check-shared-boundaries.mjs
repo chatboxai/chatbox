@@ -308,7 +308,7 @@ function rawStorageOwnerGroups(root) {
         'src/renderer/packages/chatbox-cli/images.ts',
         'src/renderer/stores/agentPersonaStore.ts',
         'src/renderer/stores/atoms/configAtoms.ts',
-        'src/renderer/stores/copilotStore.ts',
+        'src/renderer/stores/memoryRuntime.ts',
         'src/renderer/stores/onboardingStore.ts',
         'src/renderer/stores/sessionHelpers.ts',
       ],

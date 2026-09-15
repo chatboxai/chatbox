@@ -24,6 +24,7 @@ const storageMock = vi.hoisted(() => {
   return {
     getBlob: vi.fn().mockResolvedValue(null),
     setBlob: vi.fn().mockResolvedValue(undefined),
+    getItemRaw: vi.fn((key: string) => Promise.resolve(values.get(key) ?? null)),
     getItem: vi.fn((key: string, initialValue: unknown) => Promise.resolve(values.get(key) ?? initialValue)),
     setItem: vi.fn((key: string, value: unknown) => {
       values.set(key, value)
@@ -130,7 +131,13 @@ import { getMessageText } from '@shared/utils/message'
 import { formatTimestampWithZone, TIME_REMINDER_MIN_GAP_MS } from '@shared/utils/system-reminder'
 import type { ModelMessage } from 'ai'
 import { convertToLanguageModelPrompt, standardizePrompt } from 'ai/internal'
-import { addOrUpdateMyCopilot, disableCopilotMemory, enableCopilotMemory, removeMyCopilot } from '@/stores/copilotStore'
+import {
+  addOrUpdateMyCopilot,
+  disableCopilotMemory,
+  enableCopilotMemory,
+  getCopilotMemorySelection,
+  removeMyCopilot,
+} from '@/stores/copilotStore'
 import { computeEffectiveAgentMode, prepareAgentGenerationHarness } from './agent-harness'
 import * as toolsBuilder from './tools-builder'
 
@@ -743,6 +750,7 @@ describe('prepareAgentGenerationHarness', () => {
     // Only the mode-independent memory tools remain in chat mode.
     expect(prepared.tools.save_memory).toBeDefined()
     expect(prepared.tools.delete_memory).toBeDefined()
+    expect(prepared.memoryToolContext).toEqual({ version: 1, enabled: true, scope: { type: 'global' } })
     expect(JSON.stringify(prepared.coreMessages)).not.toContain('SANDBOX_MODE')
   })
 
@@ -1679,7 +1687,13 @@ describe('session prompt context snapshot', () => {
 })
 
 describe('chat mode memories', () => {
-  function chatPrepare(settings: SessionSettings, messages: Message[], sideEffects = {}, session = createSession()) {
+  function chatPrepare(
+    settings: SessionSettings,
+    messages: Message[],
+    sideEffects = {},
+    session = createSession(),
+    agentModeValue: 'off' | 'on' = 'off'
+  ) {
     return prepareAgentGenerationHarness({
       session,
       settings,
@@ -1690,7 +1704,7 @@ describe('chat mode memories', () => {
       model: createMockModel(),
       dependencies: createModelDependencies(),
       webBrowsing: false,
-      agentModeValue: 'off',
+      agentModeValue,
       agentModeLocked: false,
       agentModeSupported: true,
       signal: new AbortController().signal,
@@ -1794,6 +1808,7 @@ describe('chat mode memories', () => {
 
     expect(prepared.tools.save_memory).toBeUndefined()
     expect(prepared.tools.delete_memory).toBeUndefined()
+    expect(prepared.memoryToolContext).toEqual({ version: 1, enabled: false, scope: { type: 'global' } })
     const serialized = JSON.stringify(prepared.coreMessages)
     expect(serialized).not.toContain('Should not appear')
     expect(serialized).not.toContain('## Memories')
@@ -1832,7 +1847,48 @@ describe('chat mode memories', () => {
     )
     expect(persistSessionPromptContextSnapshot).not.toHaveBeenCalled()
     expect(JSON.stringify(prepared.coreMessages)).not.toContain('## Memories')
+    expect(prepared.memoryToolContext).toEqual({ version: 1, enabled: true, scope: { type: 'global' } })
   })
+
+  test.each(['off', 'on'] as const)(
+    'binds prepared memory tools to their Copilot lifecycle in mode %s',
+    async (mode) => {
+      const copilotId = `captured-tools-${mode}`
+      await removeMyCopilot(copilotId)
+      await enableCopilotMemory({ id: copilotId, name: 'Captured tutor' })
+      const captured = await getCopilotMemorySelection(copilotId)
+      if (captured.scope.type !== 'copilot') throw new Error('Expected Copilot memory')
+      const prepared = await chatPrepare(
+        { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' },
+        [userMessage],
+        {},
+        createSession(copilotId),
+        mode
+      )
+      const expectedContext = {
+        version: 1,
+        enabled: true,
+        scope: { type: 'copilot', copilotId, lifecycleToken: captured.scope.lifecycleToken },
+      }
+      expect(prepared.memoryToolContext).toEqual(expectedContext)
+
+      await removeMyCopilot(copilotId)
+      await enableCopilotMemory({ id: copilotId, name: 'Recreated tutor' })
+      const recreated = await getCopilotMemorySelection(copilotId)
+      expect(recreated.scope).not.toEqual(captured.scope)
+      expect(prepared.memoryToolContext).toEqual(expectedContext)
+      const execute = prepared.tools.save_memory?.execute
+      if (!execute) throw new Error('Missing save_memory tool')
+      await expect(
+        execute({ content: 'Retired generation fact' }, { toolCallId: 'captured-save', messages: [] })
+      ).resolves.toMatchObject({
+        error: expect.any(String),
+      })
+      const memories = await storageMock.getItem('copilot-memories', {})
+      expect(memories).not.toHaveProperty(copilotId)
+      await disableCopilotMemory(copilotId)
+    }
+  )
 
   test('copilot memory replaces the global store even when the global switch is off', async () => {
     await enableCopilotMemory({ id: 'cp1', name: 'Tutor' })
@@ -1869,6 +1925,11 @@ describe('chat mode memories', () => {
     expect(serialized).toContain('[cm1] Copilot-only fact')
     expect(serialized).not.toContain('Global-only fact')
     expect(prepared.tools.save_memory).toBeDefined()
+    expect(prepared.memoryToolContext).toMatchObject({
+      version: 1,
+      enabled: true,
+      scope: { type: 'copilot', copilotId: 'cp1' },
+    })
 
     await disableCopilotMemory('cp1')
     await storageMock.setItemNow('copilot-memories', {})

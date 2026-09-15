@@ -1,3 +1,4 @@
+import { createMemoryToolContext, type MemoryToolContext } from '@chatbox/core/application/memory'
 import type { SessionContextBeforeTarget, SessionHeader } from '@chatbox/core/ports'
 import { buildAgentPersonaPrompt, buildMemoriesSection } from '@shared/agent-persona/prompt'
 import { buildContext, flattenToolCallPartsToText, selectContextMessages } from '@shared/context'
@@ -102,6 +103,7 @@ export interface PrepareAgentGenerationHarnessOptions {
 }
 
 export interface PreparedAgentGenerationHarness {
+  memoryToolContext: MemoryToolContext
   promptMsgs: Message[]
   coreMessages: Awaited<ReturnType<typeof convertToModelMessages>>
   tools: ToolSet
@@ -566,6 +568,7 @@ export async function prepareAgentGenerationHarness(
 
   return {
     promptMsgs,
+    memoryToolContext: createMemoryToolContext(memoryScope, memoryEnabled),
     coreMessages,
     tools,
     chatOptions,

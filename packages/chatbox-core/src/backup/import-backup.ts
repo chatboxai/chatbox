@@ -1,23 +1,13 @@
-import { collectSessionResourceReferences } from './resources'
-import {
-  decodeBase64Chunks,
-  encodeBase64Chunks,
-  fingerprintResource,
-  resourceExists,
-  resourceHash,
-  storedResourceChunks,
-} from './blob-stream'
-import { validateResourceReferences } from './resource-validation'
-import { importShardedBackup, type ShardedBackupOptions } from './sharded-backup'
-import type { BackupManifestV3 } from './sharded-format'
-import type { CopilotDetail, Session, Settings } from '@shared/types'
+import type { CopilotDetail, Message, Session, Settings } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { migrateSession } from '../application/session/compatibility/session-load'
 import { hasPausedToolCall } from '../application/session/session-metadata'
 import {
   combineMemoryStateTokens,
   createMemoryStateToken,
+  getSnapshotCopilotLifecycleToken,
   isMemoryStateToken,
+  type MemoryToolContext,
   parseCopilotMemoryStateTokens,
 } from '../types/agent-persona'
 import { throwIfAborted } from './abort'
@@ -29,13 +19,25 @@ import {
   isBackupSession,
   isBackupSessionPath,
 } from './archive-layout'
-import { base64ToBytes, bytesToBase64, decodeStoredBlob, sha256Checksum } from './codec'
 import {
+  decodeBase64Chunks,
+  encodeBase64Chunks,
+  fingerprintResource,
+  resourceExists,
+  resourceHash,
+  storedResourceChunks,
+} from './blob-stream'
+import { base64ToBytes, bytesToBase64, decodeStoredBlob, sha256Checksum } from './codec'
+import { validateResourceReferences } from './resource-validation'
+import {
+  collectSessionResourceReferences,
   restoreCopilotResourceKeys,
   restoreSessionMetaResourceKeys,
   restoreSessionResourceKeys,
   restoreSettingsResourceKeys,
 } from './resources'
+import { importShardedBackup, type ShardedBackupOptions } from './sharded-backup'
+import type { BackupManifestV3 } from './sharded-format'
 import {
   AGENT_PERSONA_BACKUP_KEYS,
   BackupStorageKey,
@@ -88,6 +90,8 @@ interface ImportedMemoryState {
   finalCopilotOwners: Set<string>
   sourceCopilotTokens: Map<string, string>
   finalCopilotTokens: Map<string, string>
+  sourceCopilotLifecycles: Map<string, string>
+  finalCopilotLifecycles: Map<string, string>
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | undefined {
@@ -112,6 +116,10 @@ function parseCopilotMemoryIds(value: unknown): Set<string> {
 
 function memoryTokenMap(value: unknown): Map<string, string> {
   return new Map(parseCopilotMemoryStateTokens(value).map((entry) => [entry.id, entry.token]))
+}
+
+function memoryLifecycleMap(value: unknown): Map<string, string> {
+  return new Map(parseCopilotMemoryStateTokens(value).map((entry) => [entry.id, entry.retirementToken ?? entry.token]))
 }
 
 interface EffectiveMemoryState {
@@ -201,6 +209,7 @@ export async function resolveImportedMemoryState(
 
   const destinationOwners = parseCopilotOwnerIds(destinationOwnersValue)
   const destinationTokens = memoryTokenMap(destinationTokensValue)
+  const destinationLifecycles = memoryLifecycleMap(destinationTokensValue)
   const destinationMemoryIds = parseCopilotMemoryIds(destinationMemoriesValue)
   const sourceOwners = ownersImported
     ? parseCopilotOwnerIds(sessionSettings?.[BackupStorageKey.CopilotMemoryOwners])
@@ -208,6 +217,11 @@ export async function resolveImportedMemoryState(
   const sourceTokens = tokensImported
     ? memoryTokenMap(sessionSettings?.[BackupStorageKey.CopilotMemoryTokens])
     : destinationTokens
+  const sourceLifecycles = tokensImported
+    ? memoryLifecycleMap(sessionSettings?.[BackupStorageKey.CopilotMemoryTokens])
+    : ownersImported || memoriesImported
+      ? new Map<string, string>()
+      : destinationLifecycles
   const sourceMemoryIds = memoriesImported
     ? parseCopilotMemoryIds(sessionSettings?.[BackupStorageKey.CopilotMemories])
     : destinationMemoryIds
@@ -227,11 +241,20 @@ export async function resolveImportedMemoryState(
   }
 
   const finalTokens = new Map(destinationTokens)
-  for (const id of affectedCopilotIds) finalTokens.set(id, createMemoryStateToken())
+  const finalLifecycles = new Map(destinationLifecycles)
+  for (const id of affectedCopilotIds) {
+    const token = createMemoryStateToken()
+    finalTokens.set(id, token)
+    finalLifecycles.set(id, token)
+  }
   if (affectedCopilotIds.size > 0 && sessionSettings && sessionSettingsEntry) {
     sessionSettingsEntry.value = {
       ...sessionSettings,
-      [BackupStorageKey.CopilotMemoryTokens]: Array.from(finalTokens, ([id, token]) => ({ id, token })),
+      [BackupStorageKey.CopilotMemoryTokens]: Array.from(finalTokens, ([id, token]) => ({
+        id,
+        token,
+        ...(finalLifecycles.get(id) ? { retirementToken: finalLifecycles.get(id) } : {}),
+      })),
     }
   }
 
@@ -246,6 +269,41 @@ export async function resolveImportedMemoryState(
     finalCopilotOwners: sourceOwners,
     sourceCopilotTokens: sourceTokens,
     finalCopilotTokens: finalTokens,
+    sourceCopilotLifecycles: sourceLifecycles,
+    finalCopilotLifecycles: finalLifecycles,
+  }
+}
+
+export function translateImportedMemoryToolContext(
+  context: MemoryToolContext,
+  state: ImportedMemoryState
+): MemoryToolContext
+export function translateImportedMemoryToolContext(context: unknown, state: ImportedMemoryState): unknown
+export function translateImportedMemoryToolContext(context: unknown, state: ImportedMemoryState): unknown {
+  const record = objectRecord(context)
+  const scope = objectRecord(record?.scope)
+  const copilotId = scope?.copilotId
+  const lifecycleToken = scope?.lifecycleToken
+  if (
+    scope?.type !== 'copilot' ||
+    typeof copilotId !== 'string' ||
+    typeof lifecycleToken !== 'string' ||
+    !lifecycleToken ||
+    !state.affectedCopilotIds.has(copilotId) ||
+    lifecycleToken !== state.sourceCopilotLifecycles.get(copilotId)
+  )
+    return context
+  return { ...record, scope: { ...scope, lifecycleToken: state.finalCopilotLifecycles.get(copilotId) } }
+}
+
+export function translateImportedMessageMemoryState(message: Message, state: ImportedMemoryState): Message {
+  return {
+    ...message,
+    contentParts: message.contentParts.map((part) =>
+      part.type === 'tool-call' && part.memoryToolContext
+        ? { ...part, memoryToolContext: translateImportedMemoryToolContext(part.memoryToolContext, state) }
+        : part
+    ),
   }
 }
 
@@ -274,26 +332,43 @@ export function translateImportedSessionMemoryState(session: Session, state: Imp
   const translateSnapshot = (
     snapshot: NonNullable<NonNullable<Session['settings']>['sessionPromptContextSnapshot']>
   ) => {
+    const id = snapshot.memoryCopilotId
+    const lifecycle = id ? getSnapshotCopilotLifecycleToken(snapshot) : undefined
+    // Preserve the source identity before translating its prompt-cache token.
+    let translated = lifecycle ? { ...snapshot, memoryCopilotLifecycleToken: lifecycle } : snapshot
     if (
-      noContributingStateImported ||
-      (allContributingStateImported && snapshotMatchesEffectiveMemoryState(snapshot, sourceState))
+      (!id || lifecycle) &&
+      (noContributingStateImported ||
+        (allContributingStateImported && snapshotMatchesEffectiveMemoryState(snapshot, sourceState)))
     ) {
-      return { ...snapshot, memoryStateToken: finalState.token }
+      translated = { ...translated, memoryStateToken: finalState.token }
     }
-    return snapshot
+    if (id && lifecycle && state.affectedCopilotIds.has(id) && lifecycle === state.sourceCopilotLifecycles.get(id)) {
+      translated = { ...translated, memoryCopilotLifecycleToken: state.finalCopilotLifecycles.get(id) }
+    }
+    return translated
   }
+  const translateMessage = (message: Message): Message => translateImportedMessageMemoryState(message, state)
   const currentSnapshot = session.settings?.sessionPromptContextSnapshot
-  const threads = session.threads?.map((thread) =>
-    thread.sessionPromptContextSnapshot
-      ? {
-          ...thread,
-          sessionPromptContextSnapshot: translateSnapshot(thread.sessionPromptContextSnapshot),
-        }
-      : thread
-  )
+  const threads = session.threads?.map((thread) => ({
+    ...thread,
+    messages: thread.messages.map(translateMessage),
+    ...(thread.sessionPromptContextSnapshot
+      ? { sessionPromptContextSnapshot: translateSnapshot(thread.sessionPromptContextSnapshot) }
+      : {}),
+  }))
+  const forks = session.messageForksHash
+    ? Object.fromEntries(
+        Object.entries(session.messageForksHash).map(([id, fork]) => [
+          id,
+          { ...fork, lists: fork.lists.map((list) => ({ ...list, messages: list.messages.map(translateMessage) })) },
+        ])
+      )
+    : undefined
 
   return {
     ...session,
+    messages: session.messages.map(translateMessage),
     ...(currentSnapshot
       ? {
           settings: {
@@ -303,6 +378,7 @@ export function translateImportedSessionMemoryState(session: Session, state: Imp
         }
       : {}),
     ...(threads ? { threads } : {}),
+    ...(forks ? { messageForksHash: forks } : {}),
   }
 }
 

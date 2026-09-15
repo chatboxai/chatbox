@@ -1,7 +1,7 @@
 import type { DebouncedFunc } from 'lodash'
 import debounce from 'lodash/debounce'
 import { v4 as uuidv4 } from 'uuid'
-import BaseStorage from './BaseStorage'
+import BaseStorage, { type StorageReadOptions } from './BaseStorage'
 import { getFileUniqKey } from './file-uniq-key'
 
 export enum StorageKey {
@@ -36,8 +36,8 @@ export const StorageKeyGenerator = {
 }
 
 export default class StoreStorage extends BaseStorage {
-  public async getItem<T>(key: string, initialValue: T): Promise<T> {
-    const value: T = await super.getItem(key, initialValue)
+  public async getItem<T>(key: string, initialValue: T, options: StorageReadOptions = {}): Promise<T> {
+    const value: T = await super.getItem(key, initialValue, options)
 
     if (key === StorageKey.Configs && value === initialValue) {
       await super.setItemNow(key, initialValue) // 持久化初始生成的 uuid

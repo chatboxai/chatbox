@@ -123,6 +123,7 @@ export {
   MY_COPILOTS_STORAGE_KEY,
   searchCopilots,
 } from './application/copilots'
+export * from './application/memory'
 export { ModelFactory, type ModelFactoryOptions, type ModelResolver } from './application/model'
 export {
   assertNoMessageDataUpdate,

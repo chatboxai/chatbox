@@ -15,6 +15,7 @@ import type {
   Settings,
 } from '@shared/types'
 import { createMessage } from '@shared/types'
+import type { MemoryToolContext } from '@shared/types/agent-persona'
 import { resolveCommandApprovalMode } from '@shared/types/command-execution'
 import { getMessageText } from '@shared/utils/message'
 import { resolveReasoningProviderOptions } from '@shared/utils/reasoning-control'
@@ -183,6 +184,7 @@ export interface GenerationPreparationRequest<TContext> {
 }
 
 export interface PreparedGeneration {
+  memoryToolContext?: MemoryToolContext
   promptMessages: Message[]
   coreMessages: ModelMessage[]
   tools: ToolSet
@@ -817,6 +819,7 @@ export class GenerationService<TContext> {
       )
 
       const streamCallbacks = {
+        memoryToolContext: prepared.memoryToolContext,
         onFileReceived: async (mediaType: string, base64: string) => {
           const storageKey = host.createPictureStorageKey(session.id, targetMessage.id)
           await this.dependencies.blobs.set(storageKey, `data:${mediaType};base64,${base64}`)

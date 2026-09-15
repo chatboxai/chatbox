@@ -1,11 +1,14 @@
-import { workModelDisclosure } from '@shared/mobile-work/model-disclosure'
-import { buildLocalViewImage } from '@shared/mobile-work/view-image'
-import { supportsToolResultImages } from '@shared/tools/view-image'
-import { normalizeWorkImage } from './normalize-work-image'
-import { BasicGenerationPreparation, type GenerationPreparationRequest } from '@chatbox/core'
+import {
+  BasicGenerationPreparation,
+  type BasicGenerationToolPreparation,
+  type GenerationPreparationRequest,
+} from '@chatbox/core/generation'
 import { throwIfWorkAborted } from '@shared/mobile-work/abort'
 import { LocalWorkMode, WORK_INSTRUCTIONS } from '@shared/mobile-work/LocalWorkMode'
+import { workModelDisclosure } from '@shared/mobile-work/model-disclosure'
+import { buildLocalViewImage } from '@shared/mobile-work/view-image'
 import type { ModelInterface } from '@shared/models/types'
+import { supportsToolResultImages } from '@shared/tools/view-image'
 import type { ModelDependencies } from '@shared/types/adapters'
 import type { ToolSet } from 'ai'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
@@ -15,6 +18,7 @@ import * as settingActions from '@/stores/settingActions'
 import { CapacitorWorkspace } from './CapacitorWorkspace'
 import { createCapacitorSystemToolGroups } from './capacitor-system-tools'
 import { capacitorExecution } from './execution-service'
+import { normalizeWorkImage } from './normalize-work-image'
 
 export const capacitorWorkspace = new CapacitorWorkspace()
 export const capacitorWorkMode = new LocalWorkMode(
@@ -53,7 +57,10 @@ export function capacitorImageTools(model: ModelInterface, sessionId: string, si
     : undefined
 }
 
-export async function prepareCapacitorWorkMode(request: GenerationPreparationRequest<ModelDependencies>) {
+export async function prepareCapacitorWorkMode(
+  request: GenerationPreparationRequest<ModelDependencies>,
+  memory: BasicGenerationToolPreparation
+) {
   throwIfWorkAborted(request.signal)
   await capacitorWorkspace.seed(
     request.session.id,
@@ -71,10 +78,14 @@ export async function prepareCapacitorWorkMode(request: GenerationPreparationReq
       ...workModelDisclosure(request.settings, request.globalSettings),
       signal: request.signal,
     },
-    { ...web.tools, ...images?.tools }
+    { ...web.tools, ...images?.tools, ...memory.tools }
   )
   const prepared = await new BasicGenerationPreparation<ModelDependencies>({
-    prepareTools: async () => ({ tools, instructions: `${WORK_INSTRUCTIONS}\n${web.instructions}` }),
+    prepareTools: async () => ({
+      ...memory,
+      tools,
+      instructions: `${memory.instructions ?? ''}${WORK_INSTRUCTIONS}\n${web.instructions}`,
+    }),
   }).prepare(request)
   return {
     ...prepared,

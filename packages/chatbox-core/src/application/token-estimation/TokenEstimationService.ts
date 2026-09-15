@@ -59,6 +59,8 @@ export interface TokenEstimationRequest {
   constructedMessage?: Message
   model?: TokenEstimationModel
   maxContextMessageCount?: number
+  /** Host instructions appended to the system prompt, outside the conversation history. */
+  additionalInstructions?: string
 }
 
 function emptyBreakdown(): TokenBreakdown {
@@ -293,9 +295,11 @@ export class TokenEstimationService {
     const currentInput = request.constructedMessage
       ? estimateMessageImmediately(request.constructedMessage, tokenizerType)
       : emptyBreakdown()
-    const context = mergeExactBreakdowns(
-      contextMessages.map((message) => this.estimateHistoricalMessageImmediately(message, tokenizerType))
-    )
+    const instructionEstimate = estimateBoundedText(request.additionalInstructions ?? '', tokenizerType)
+    const context = mergeExactBreakdowns([
+      { ...emptyBreakdown(), text: instructionEstimate.tokens },
+      ...contextMessages.map((message) => this.estimateHistoricalMessageImmediately(message, tokenizerType)),
+    ])
     const currentInputTokens = totalBreakdown(currentInput)
     const contextTokens = totalBreakdown(context)
     return {
@@ -311,7 +315,7 @@ export class TokenEstimationService {
             (getMessageText(request.constructedMessage, true, true).length >= LONG_DRAFT_TOKENIZATION_THRESHOLD ||
               imageTokenEstimate(request.constructedMessage) > 0)
         ),
-        context: contextMessages.length > 0,
+        context: contextMessages.length > 0 || instructionEstimate.approximate,
       },
     }
   }
@@ -336,7 +340,9 @@ export class TokenEstimationService {
     assertEstimationActive(options.signal)
     const contextEstimates: HydratedBreakdown[] = []
     const textResults: SessionTextTokenResult[] = []
-    let progressiveContext = emptyBreakdown()
+    const instructionEstimate = estimateBoundedText(request.additionalInstructions ?? '', tokenizerType)
+    const instructionBreakdown = { ...emptyBreakdown(), text: instructionEstimate.tokens }
+    let progressiveContext = instructionBreakdown
     let lastYieldAt = Date.now()
     for (let offset = 0; offset < contextMessages.length; offset += 16) {
       assertEstimationActive(options.signal)
@@ -396,7 +402,7 @@ export class TokenEstimationService {
     }
     const currentInput = currentInputEstimate.breakdown
     const contextBreakdowns = contextEstimates.map((estimate) => estimate.breakdown)
-    const context = mergeExactBreakdowns(contextBreakdowns)
+    const context = mergeExactBreakdowns([instructionBreakdown, ...contextBreakdowns])
     const currentInputTokens = totalBreakdown(currentInput)
     const contextTokens = totalBreakdown(context)
     return {
@@ -408,7 +414,7 @@ export class TokenEstimationService {
       breakdown: { currentInput, context },
       approximation: {
         currentInput: currentInputEstimate.approximate,
-        context: contextEstimates.some((estimate) => estimate.approximate),
+        context: instructionEstimate.approximate || contextEstimates.some((estimate) => estimate.approximate),
       },
     }
   }

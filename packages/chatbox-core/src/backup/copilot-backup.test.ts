@@ -160,7 +160,7 @@ describe('Copilot backup storage', () => {
     expect(destination.values.get(BackupStorageKey.CopilotMemories)).toEqual(copilotMemories)
     expect(destination.values.get(BackupStorageKey.CopilotMemoryOwners)).toEqual(copilotMemoryOwners)
     const restoredTokens = destination.values.get(BackupStorageKey.CopilotMemoryTokens)
-    expect(restoredTokens).toEqual([{ id: 'tutor', token: expect.any(String) }])
+    expect(restoredTokens).toEqual([{ id: 'tutor', token: expect.any(String), retirementToken: expect.any(String) }])
     expect(restoredTokens).not.toEqual(copilotMemoryTokens)
   })
 

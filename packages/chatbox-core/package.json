@@ -45,7 +45,8 @@
     "./testing/generation-stream": "./src/testing/generation-stream.ts",
     "./utils/chat-export": "./src/utils/chat-export.ts",
     "./utils/session-sort": "./src/utils/session-sort.ts",
-    "./application/image-generation": "./src/application/image-generation/index.ts"
+    "./application/image-generation": "./src/application/image-generation/index.ts",
+    "./application/memory": "./src/application/memory/index.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json"

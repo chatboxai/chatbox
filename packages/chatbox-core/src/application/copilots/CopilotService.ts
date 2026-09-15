@@ -14,7 +14,16 @@ export interface CopilotStorageScope {
   reload(): Promise<void>
 }
 
+export interface CopilotMemoryLifecycle {
+  /** Holds the memory lock and restores memory if the definition write fails. */
+  retireCopilot(id: string, commitRemoval: () => Promise<void>): Promise<void>
+  setCopilotMemoryEnabled(owner: { id: string; name: string }, enabled: boolean): Promise<void>
+}
+export interface CopilotSaveOptions {
+  memoryEnabled?: boolean
+}
 export interface CopilotServiceOptions {
+  memoryLifecycle?: CopilotMemoryLifecycle
   storage: Pick<KeyValueStoragePort, 'get' | 'set'>
   now?: () => number
 }
@@ -97,10 +106,15 @@ export class CopilotService {
     return this.enqueue(() => this.read())
   }
 
-  upsert(copilot: CopilotDetail): Promise<CopilotDetail> {
+  upsert(copilot: CopilotDetail, options: CopilotSaveOptions = {}): Promise<CopilotDetail> {
     return this.enqueue(async () => {
       await this.ensureHydrated()
-      return this.writeCopilot(copilot)
+      if (options.memoryEnabled !== undefined && !this.options.memoryLifecycle)
+        throw new Error('Copilot memory is unavailable')
+      const saved = await this.writeCopilot(copilot)
+      if (options.memoryEnabled !== undefined)
+        await this.options.memoryLifecycle?.setCopilotMemoryEnabled(saved, options.memoryEnabled)
+      return saved
     })
   }
 
@@ -118,7 +132,12 @@ export class CopilotService {
   remove(id: string): Promise<void> {
     return this.enqueue(async () => {
       await this.ensureHydrated()
-      await this.persist(this.records.filter((copilot) => copilot.id !== id))
+      const records = this.records.filter((copilot) => copilot.id !== id)
+      const commitRemoval = () => this.options.storage.set(MY_COPILOTS_STORAGE_KEY, records)
+      if (this.options.memoryLifecycle) await this.options.memoryLifecycle.retireCopilot(id, commitRemoval)
+      else await commitRemoval()
+      this.records = records
+      this.publishRecords()
     })
   }
 

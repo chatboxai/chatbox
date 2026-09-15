@@ -1,7 +1,7 @@
 import type { JSONValue, LanguageModelUsage, ProviderMetadata } from 'ai'
 import { z } from 'zod'
 import { SessionSettingsSchema } from '../types/settings'
-import { SessionPromptContextSnapshotSchema } from './agent-persona'
+import { MemoryToolContextSchema, SessionPromptContextSnapshotSchema } from './agent-persona'
 import { ModelProviderEnum } from './provider'
 
 // Re-export for backward compatibility
@@ -208,6 +208,7 @@ export const MessageToolCallPartSchema = z.object({
   toolCallId: z.string(),
   toolName: z.string(),
   args: z.unknown().optional(),
+  memoryToolContext: MemoryToolContextSchema.optional().catch(undefined),
   providerMetadata: MessageProviderMetadataSchema.optional().catch(undefined),
   resultProviderMetadata: MessageProviderMetadataSchema.optional().catch(undefined),
   providerExecuted: z.boolean().optional(),

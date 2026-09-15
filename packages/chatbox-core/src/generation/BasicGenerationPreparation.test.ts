@@ -1,8 +1,9 @@
 import type { ModelInterface } from '@shared/models/types'
 import type { Message, Session } from '@shared/types'
+import { jsonSchema, tool } from 'ai'
 import { describe, expect, it, vi } from 'vitest'
 import { createDefaultSettings } from '../domain/settings'
-import { BasicGenerationPreparation } from './BasicGenerationPreparation'
+import { BasicGenerationPreparation, type BasicGenerationToolPreparation } from './BasicGenerationPreparation'
 import type { GenerationPreparationRequest } from './GenerationService'
 
 type TestContext = { host: 'native' }
@@ -89,16 +90,53 @@ describe('BasicGenerationPreparation', () => {
     const prepared = await preparation.prepare(createRequest())
 
     expect(prepared.promptMessages[0].role).toBe('system')
-    expect(JSON.stringify(prepared.promptMessages[0].contentParts)).toContain('Native tool instructions')
-    expect(JSON.stringify(prepared.promptMessages[0].contentParts)).toContain('Original system prompt')
+    expect(prepared.promptMessages[0].contentParts).toEqual([
+      { type: 'text', text: 'Original system prompt\n\nNative tool instructions' },
+    ])
   })
 
   it('coerces system messages for models that do not accept a system role', async () => {
-    const prepared = await new BasicGenerationPreparation<TestContext>().prepare(
-      createRequest(createModel({ system: false }))
-    )
+    const prepared = await new BasicGenerationPreparation<TestContext>({
+      prepareTools: async () => ({ tools: {}, instructions: 'Saved memory' }),
+    }).prepare(createRequest(createModel({ system: false })))
 
     expect(prepared.promptMessages[0].role).toBe('user')
     expect(prepared.coreMessages[0].role).toBe('user')
+    const text = JSON.stringify(prepared.coreMessages[0])
+    expect(text.indexOf('Original system prompt')).toBeLessThan(text.indexOf('Saved memory'))
+    expect(text.indexOf('Saved memory')).toBeLessThan(text.indexOf('Read both inputs'))
+  })
+
+  it.each([false, true])('preserves tool history only when some tools are available (%s)', async (hasTools) => {
+    const request = createRequest()
+    request.messages.splice(2, 0, {
+      id: 'prior-memory-call',
+      role: 'assistant',
+      contentParts: [
+        {
+          type: 'tool-call',
+          state: 'result',
+          toolCallId: 'memory-1',
+          toolName: 'save_memory',
+          args: { content: 'Prefers Chinese' },
+          result: { success: true },
+        },
+      ],
+    })
+    request.targetMessageIndex = 3
+    const preparation = new BasicGenerationPreparation<TestContext>({
+      prepareTools: async (): Promise<BasicGenerationToolPreparation> => ({
+        tools: hasTools ? { web_search: tool({ inputSchema: jsonSchema({ type: 'object' }) }) } : {},
+      }),
+    })
+
+    const prepared = await preparation.prepare(request)
+
+    expect(
+      prepared.promptMessages.flatMap((message) => message.contentParts).some((part) => part.type === 'tool-call')
+    ).toBe(hasTools)
+    expect(JSON.stringify(prepared.coreMessages)).toContain('save_memory')
+    expect(JSON.stringify(prepared.coreMessages)).toContain('Prefers Chinese')
+    expect(JSON.stringify(prepared.coreMessages).includes('"type":"tool-call"')).toBe(hasTools)
   })
 })

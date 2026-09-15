@@ -5,6 +5,8 @@ export {
   type CopilotPreferencesSnapshot,
 } from './CopilotPreferences'
 export {
+  type CopilotMemoryLifecycle,
+  type CopilotSaveOptions,
   CopilotService,
   type CopilotServiceOptions,
   type CopilotSnapshot,

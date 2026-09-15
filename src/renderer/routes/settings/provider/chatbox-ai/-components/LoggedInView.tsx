@@ -1,13 +1,14 @@
 import { Alert, Button, Flex, Paper, Select, Stack, Text, Title, UnstyledButton } from '@mantine/core'
-import { IconArrowRight, IconExclamationCircle, IconExternalLink, IconLogout } from '@tabler/icons-react'
+import { IconArrowRight, IconCheck, IconExclamationCircle, IconExternalLink, IconLogout } from '@tabler/icons-react'
 import {
   accountLicenseFromApi,
-  getAccountLicenseStatus,
+  getAccountLicenseStatus as getSharedLicenseStatus,
   selectAccountLicenseForInspection,
   selectAccountLicense,
+  isAccountLicenseOptionDisabled,
 } from '@shared/utils/account-license'
 import { useQuery } from '@tanstack/react-query'
-import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
@@ -28,6 +29,8 @@ import { isChatboxAIPlanFree } from '@/stores/licensePlan'
 import * as premiumActions from '@/stores/premiumActions'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { LicenseDetailCard } from './LicenseDetailCard'
+import { LicenseOptionContent, LicenseStatusDot } from './LicenseOptionContent'
+import { getAccountLicenseStatus, maskLicenseKey, sortAccountLicensesByStatus } from './licenseStatus'
 import type { UserProfile } from './types'
 
 interface LicenseDetailQueryError {
@@ -136,11 +139,20 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
       (selectedLicenseKey !== licenseKey ||
         licenseActivationMethod !== 'login' ||
         !licenseInstances?.[selectedLicenseKey!] ||
-        !getAccountLicenseStatus(accountLicenseFromApi(viewedLicense)).usable)
+        !getSharedLicenseStatus(accountLicenseFromApi(viewedLicense)).usable)
     const lastSelectedLicenseKey = userProfile ? lastSelectedLicenseByUser?.[userProfile.email] : undefined
     // 合并两种错误来源：1) API 返回 200 但带有 error 字段  2) API 返回 4xx/5xx 被 ofetch 抛出
     const licenseDetailError =
       licenseDetailResponse?.error || normalizedQueryError?.data?.error || normalizedQueryError?.error
+
+    const licenseOptions = useMemo(() => {
+      const now = Date.now()
+      return sortAccountLicensesByStatus(licenses, now).map((license) => ({
+        license,
+        status: getAccountLicenseStatus(license, now),
+      }))
+    }, [licenses])
+    const displayLicenseStatus = licenseOptions.find(({ license }) => license.key === displayLicenseKey)?.status
 
     const handleOpenAuthLink = useCallback(
       async (
@@ -249,7 +261,7 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
 
         const target = licenses.find((item) => item.key === newKey)
         if (!target) return
-        if (!getAccountLicenseStatus(accountLicenseFromApi(target)).usable) {
+        if (!getSharedLicenseStatus(accountLicenseFromApi(target)).usable) {
           setSelectedLicenseKey(newKey)
           setDisplayLicenseKey(newKey)
           setActivationError(null)
@@ -369,28 +381,31 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
                     value={displayLicenseKey}
                     onChange={(value) => value && handleSelectLicense(value)}
                     disabled={switchingLicense}
-                    data={licenses.map((license) => ({
+                    data={licenseOptions.map(({ license }) => ({
                       value: license.key,
-                      label: `${license.key.substring(0, 10)}${'*'.repeat(10)}`,
+                      label: `${license.product_name} · ${maskLicenseKey(license.key)}`,
+                      disabled: isAccountLicenseOptionDisabled(
+                        accountLicenseFromApi(license),
+                        licenses.map(accountLicenseFromApi)
+                      ),
                     }))}
                     placeholder={t('Select a license') as string}
-                    renderOption={({ option }) => {
-                      const license = licenses.find((l) => l.key === option.value)
-                      if (!license) return option.label
-
-                      const expiryDate = license.expires_at
-                        ? new Date(license.expires_at).toLocaleDateString()
-                        : t('No expiration')
-                      const isExpired = license.expires_at ? new Date(license.expires_at) < new Date() : false
-                      const expiryText = isExpired ? `${expiryDate} (${t('Expired')})` : expiryDate
-
+                    leftSection={displayLicenseStatus ? <LicenseStatusDot status={displayLicenseStatus} /> : undefined}
+                    maxDropdownHeight={360}
+                    renderOption={({ option, checked }) => {
+                      const item = licenseOptions.find(({ license }) => license.key === option.value)
+                      if (!item) return option.label
                       return (
-                        <Stack gap={2}>
-                          <Text size="sm">{option.label}</Text>
-                          <Text size="xs" c="dimmed">
-                            {license.product_name} - {t('Expires')}: {expiryText}
-                          </Text>
-                        </Stack>
+                        <Flex gap="xs" align="flex-start" w="100%" data-license-key={item.license.key}>
+                          <LicenseOptionContent license={item.license} status={item.status} />
+                          <ScalableIcon
+                            icon={IconCheck}
+                            size={16}
+                            className={
+                              checked ? 'mt-0.5 shrink-0 text-chatbox-tint-brand' : 'mt-0.5 shrink-0 invisible'
+                            }
+                          />
+                        </Flex>
                       )
                     }}
                   />

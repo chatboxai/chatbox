@@ -1085,7 +1085,19 @@ export interface UserLicense {
   expires_at: string
   created_at: string
   recurring_canceled: boolean
-  quota_packs: any[]
+  quota_packs: UserLicenseQuotaPack[]
+}
+
+export interface UserLicenseQuotaPack {
+  id: number
+  license_key: string
+  product_name: string
+  quantity: number
+  quota_limit: number
+  quota_usage: number
+  status: string
+  current_period_start: string | null
+  current_period_end: string | null
 }
 
 export async function listLicensesByUser(): Promise<UserLicense[]> {

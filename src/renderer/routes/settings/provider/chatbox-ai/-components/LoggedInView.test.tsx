@@ -47,7 +47,7 @@ vi.mock('@/stores/settingsStore', () => ({
   },
 }))
 vi.mock('./LicenseDetailCard', () => ({ LicenseDetailCard: () => null }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) }))
 vi.stubGlobal(
   'ResizeObserver',
   class {
@@ -153,7 +153,19 @@ it('automatically activates an expired license with expansion points', async () 
   const modal = mount([
     {
       ...license('expansion', 'expired', '2020-01-01'),
-      quota_packs: [{ status: 'active', quota_limit: 100, quota_usage: 20, current_period_end: '2099-01-01' }],
+      quota_packs: [
+        {
+          id: 1,
+          license_key: 'expansion',
+          product_name: 'Expansion Pack',
+          quantity: 1,
+          current_period_start: null,
+          status: 'active',
+          quota_limit: 100,
+          quota_usage: 20,
+          current_period_end: '2099-01-01',
+        },
+      ],
     },
   ])
   await waitFor(() =>

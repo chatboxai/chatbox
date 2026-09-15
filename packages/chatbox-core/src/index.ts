@@ -1,5 +1,25 @@
 /** Public, host-neutral API for Chatbox application and generation logic. */
 
+export {
+  isAccountLicenseUsable,
+  accountLicenseFromApi,
+  getAccountLicenseStatus,
+  sortAccountLicensesByStatus,
+  selectAccountLicense,
+  selectAccountLicenseForInspection,
+  isAccountLicenseOptionDisabled,
+} from '@shared/utils/account-license'
+export type {
+  AccountLicenseSummary,
+  AccountLicenseStatus,
+  AccountLicenseStatusKind,
+} from '@shared/utils/account-license'
+export {
+  prepareLicenseActivation,
+  licenseActivationSettings,
+  licenseDeactivationSettings,
+} from '@shared/services/license-activation'
+
 export type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
 export { getChatboxAPIOrigin } from '@shared/request/chatbox-api-origin'
 export {
@@ -24,6 +44,7 @@ export {
   activateNativeLicense,
   deactivateNativeLicense,
   fetchNativeLicenseDetail,
+  fetchNativeLicenseInspection,
   type NativeLicenseActivationResult,
   type NativeLicenseDetailResult,
   type NativeLicenseRequestOptions,

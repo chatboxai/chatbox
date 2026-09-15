@@ -371,7 +371,18 @@ export interface LicenseDetailResponse {
   error?: LicenseDetailError
 }
 
-export async function getLicenseDetailRealtime(params: { licenseKey: string }): Promise<LicenseDetailResponse> {
+export function getLicenseDetailRealtime(params: { licenseKey: string }): Promise<LicenseDetailResponse> {
+  return fetchLicenseDetail(params, 'realtime')
+}
+
+export function getLicenseDetailForInspection(params: { licenseKey: string }): Promise<LicenseDetailResponse> {
+  return fetchLicenseDetail(params, 'all_status')
+}
+
+async function fetchLicenseDetail(
+  params: { licenseKey: string },
+  endpoint: 'realtime' | 'all_status'
+): Promise<LicenseDetailResponse> {
   type Response = {
     data: ChatboxAILicenseDetail | null
     error?: LicenseDetailError
@@ -379,7 +390,7 @@ export async function getLicenseDetailRealtime(params: { licenseKey: string }): 
   // 用于捕获错误响应体
   let capturedError: LicenseDetailError | undefined
   try {
-    const res = await ofetch<Response>(`${getAPIOrigin()}/api/license/detail/realtime`, {
+    const res = await ofetch<Response>(`${getAPIOrigin()}/api/license/detail/${endpoint}`, {
       retry: 5,
       headers: {
         Authorization: params.licenseKey,

@@ -15,7 +15,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useClaimPolling } from '../-hooks/useClaimPolling'
 
 interface ClaimWaitingCardProps {
-  onClaimDetected: (license: UserLicense) => void
+  onClaimDetected: (license: UserLicense, email: string) => void
 }
 
 function buildClaimUrl(language: string) {

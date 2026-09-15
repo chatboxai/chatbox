@@ -11,6 +11,7 @@ import { buildChatboxUrl } from '@/packages/remote'
 import { formatNumber } from '@/utils/format'
 
 interface LicenseDetailCardProps {
+  inspectionOnly?: boolean
   licenseDetail: ChatboxAILicenseDetail
   language: string
   utmContent: string
@@ -219,7 +220,12 @@ function InfoPanel({ title, value, valueColor }: InfoPanelProps) {
   )
 }
 
-export function LicenseDetailCard({ licenseDetail, language, utmContent }: LicenseDetailCardProps) {
+export function LicenseDetailCard({
+  licenseDetail,
+  language,
+  utmContent,
+  inspectionOnly = false,
+}: LicenseDetailCardProps) {
   const { t, i18n } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
   const isCN = i18n.language.toLowerCase().startsWith('zh')
@@ -269,7 +275,7 @@ export function LicenseDetailCard({ licenseDetail, language, utmContent }: Licen
 
   return (
     <Stack gap="lg">
-      {isExpired && (
+      {isExpired && !inspectionOnly && (
         <Alert variant="light" color="orange" p="sm">
           <Flex gap="xs" align="center" c="chatbox-primary">
             <ScalableIcon icon={IconAlertTriangle} className="flex-shrink-0" />

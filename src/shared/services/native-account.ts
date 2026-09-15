@@ -37,6 +37,7 @@ export interface NativeAccountLicense {
   unifiedTokenLimit: number
   nextTokenRefreshAt: string
   expiresAt: string
+  quotaPacks?: unknown[]
   recurringCanceled: boolean
 }
 
@@ -212,6 +213,7 @@ export async function fetchNativeAccountLicenses(
         unifiedTokenLimit: typeof value.unified_token_limit === 'number' ? value.unified_token_limit : 0,
         nextTokenRefreshAt: typeof value.next_token_refresh_at === 'string' ? value.next_token_refresh_at : '',
         expiresAt: typeof value.expires_at === 'string' ? value.expires_at : '',
+        quotaPacks: Array.isArray(value.quota_packs) ? value.quota_packs : [],
         recurringCanceled: value.recurring_canceled === true,
       },
     ]

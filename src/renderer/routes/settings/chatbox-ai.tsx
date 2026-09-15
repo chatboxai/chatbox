@@ -34,7 +34,7 @@ export function RouteComponent() {
     return 'login'
   })
 
-  const { isLoggedIn, clearAuthTokens, saveAuthTokens } = useAuthTokens()
+  const { isLoggedIn, clearAuthTokens, saveAuthTokens, afterLogin, consumeLogin } = useAuthTokens()
   const licenseKey = useSettingsStore((state) => state.licenseKey)
 
   const { allChatboxAIModels, chatboxAIModels, refetch: refetchChatboxAIModels } = useChatboxAIModels()
@@ -164,6 +164,8 @@ export function RouteComponent() {
             <div style={{ ...styles, position: 'absolute', top: 0, left: 0, right: 0 }}>
               {isLoggedIn ? (
                 <LoggedInView
+                  afterLogin={afterLogin}
+                  onLoginSelectionHandled={consumeLogin}
                   ref={loginViewRef}
                   onLogout={clearAuthTokens}
                   language={language}

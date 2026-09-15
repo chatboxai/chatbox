@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+// @vitest-environment jsdom
+import { act, renderHook, cleanup } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type TestSettingsState = {
   licenseKey?: string
@@ -72,6 +74,10 @@ const { remoteMocks, mcpMocks, stateControls, authControls, authSubscribers } = 
   return {
     remoteMocks: {
       invalidateSessionRagConfigCache: vi.fn(),
+      validateLicense: vi.fn(),
+      activateLicense: vi.fn(),
+      getLicenseDetailRealtime: vi.fn(),
+      deactivateLicense: vi.fn(),
     },
     mcpMocks: {
       stopServer: vi.fn(() => Promise.resolve()),
@@ -105,7 +111,7 @@ vi.mock('@/packages/mcp/controller', () => ({
   },
 }))
 vi.mock('../packages/remote', () => ({
-  invalidateSessionRagConfigCache: remoteMocks.invalidateSessionRagConfigCache,
+  ...remoteMocks,
 }))
 vi.mock('../platform', () => ({
   default: {
@@ -124,7 +130,7 @@ vi.mock('./settingsStore', () => ({
       }
     },
   },
-  useSettingsStore: vi.fn(),
+  useSettingsStore: (selector: (state: TestSettingsState) => unknown) => selector(stateControls.current),
 }))
 vi.mock('./authInfoStore', () => ({
   authInfoStore: {
@@ -149,7 +155,12 @@ vi.mock('./authInfoStore', () => ({
   },
 }))
 
-import { initLoginLicenseStateReconciliation, reconcileLoginLicenseState } from './premiumActions'
+import {
+  activate,
+  useAutoValidate,
+  initLoginLicenseStateReconciliation,
+  reconcileLoginLicenseState,
+} from './premiumActions'
 
 function resetSettings(overrides: Partial<TestSettingsState>) {
   stateControls.current = {
@@ -267,4 +278,47 @@ describe('login license state reconciliation', () => {
     expect(stateControls.current.licenseActivationMethod).toBeUndefined()
     unsubscribe()
   })
+})
+
+describe('license activation commit', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetSettings({ licenseKey: 'old', licenseActivationMethod: 'login', licenseInstances: { old: 'old-instance' } })
+    remoteMocks.activateLicense.mockResolvedValue({ valid: true, instanceId: 'new-instance' })
+  })
+
+  it('retains credentials when the activated license detail cannot be read', async () => {
+    remoteMocks.getLicenseDetailRealtime.mockResolvedValue({ error: { code: 'expired_license' } })
+    expect(await activate('new', 'login', { accountEmail: 'user@example.com' })).toMatchObject({ valid: false })
+    expect(stateControls.current).toMatchObject({ licenseKey: 'old', licenseInstances: { old: 'old-instance' } })
+    expect(remoteMocks.deactivateLicense).not.toHaveBeenCalled()
+  })
+
+  it('commits complete credentials even when remote cleanup of the old license fails', async () => {
+    remoteMocks.getLicenseDetailRealtime.mockResolvedValue({ data: { name: 'Pro' } })
+    remoteMocks.deactivateLicense.mockRejectedValue(new Error('offline'))
+    expect(await activate('new', 'login', { accountEmail: 'user@example.com' })).toMatchObject({ valid: true })
+    expect(stateControls.current).toMatchObject({
+      licenseKey: 'new',
+      licenseInstances: { new: 'new-instance' },
+      lastSelectedLicenseByUser: { 'user@example.com': 'new' },
+    })
+    expect(remoteMocks.deactivateLicense).toHaveBeenCalledWith({ licenseKey: 'old', instanceId: 'old-instance' })
+  })
+})
+
+afterEach(cleanup)
+it('ignores invalid validation for a replaced license', async () => {
+  resetSettings({ licenseKey: 'old', licenseInstances: { old: 'old-instance' } })
+  let complete!: (value: { valid: boolean }) => void
+  remoteMocks.validateLicense.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve
+      })
+  )
+  renderHook(() => useAutoValidate())
+  resetSettings({ licenseKey: 'new', licenseInstances: { new: 'new-instance' } })
+  await act(async () => complete({ valid: false }))
+  expect(stateControls.current).toMatchObject({ licenseKey: 'new', licenseInstances: { new: 'new-instance' } })
 })

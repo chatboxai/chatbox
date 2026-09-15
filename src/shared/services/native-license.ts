@@ -115,8 +115,21 @@ export async function fetchNativeLicenseDetail(
   licenseKey: string,
   options: NativeLicenseRequestOptions = {}
 ): Promise<NativeLicenseDetailResult> {
+  return fetchLicenseDetail(licenseKey, options, 'realtime')
+}
+
+/** Read-only account details; this result must not activate credentials. */
+export function fetchNativeLicenseInspection(licenseKey: string, options: NativeLicenseRequestOptions = {}) {
+  return fetchLicenseDetail(licenseKey, options, 'all_status')
+}
+
+async function fetchLicenseDetail(
+  licenseKey: string,
+  options: NativeLicenseRequestOptions,
+  endpoint: 'realtime' | 'all_status'
+): Promise<NativeLicenseDetailResult> {
   const fetchFn = options.fetchFn ?? fetch
-  const response = await fetchFn(`${resolveOrigin(options.apiOrigin)}/api/license/detail/realtime`, {
+  const response = await fetchFn(`${resolveOrigin(options.apiOrigin)}/api/license/detail/${endpoint}`, {
     headers: { Authorization: licenseKey, ...options.headers },
     signal: options.signal as NativeFetchInit['signal'],
   } as NativeFetchInit)

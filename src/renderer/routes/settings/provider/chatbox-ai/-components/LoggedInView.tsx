@@ -1,5 +1,11 @@
 import { Alert, Button, Flex, Paper, Select, Stack, Text, Title, UnstyledButton } from '@mantine/core'
 import { IconArrowRight, IconExclamationCircle, IconExternalLink, IconLogout } from '@tabler/icons-react'
+import {
+  accountLicenseFromApi,
+  getAccountLicenseStatus,
+  selectAccountLicenseForInspection,
+  selectAccountLicense,
+} from '@shared/utils/account-license'
 import { useQuery } from '@tanstack/react-query'
 import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -10,6 +16,7 @@ import { trackingEvent } from '@/packages/event'
 import { openLinkWithAuth } from '@/packages/openLinkWithAuth'
 import {
   buildChatboxUrl,
+  getLicenseDetailForInspection,
   getLicenseDetailRealtime,
   getUserProfile,
   type LicenseDetailError,
@@ -31,6 +38,8 @@ interface LicenseDetailQueryError {
 }
 
 interface LoggedInViewProps {
+  afterLogin?: boolean
+  onLoginSelectionHandled?: () => void
   onLogout: () => void
   onSwitchToLicenseKey: () => void
   language: string
@@ -47,7 +56,18 @@ interface LoggedInViewProps {
 }
 
 export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
-  ({ onLogout, language, initialAccountData, onShowLicenseSelectionModal, onSwitchToLicenseKey }, ref) => {
+  (
+    {
+      onLogout,
+      language,
+      initialAccountData,
+      onShowLicenseSelectionModal,
+      onSwitchToLicenseKey,
+      afterLogin = false,
+      onLoginSelectionHandled,
+    },
+    ref
+  ) => {
     const { t } = useTranslation()
     const licenseKey = useSettingsStore((state) => state.licenseKey)
     const licenseActivationMethod = useSettingsStore((state) => state.licenseActivationMethod)
@@ -90,7 +110,7 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
       isLoading: loadingLicenseDetail,
       error: queryError,
     } = useQuery({
-      queryKey: ['licenseDetail', selectedLicenseKey],
+      queryKey: ['licenseInspection', userProfile?.email, selectedLicenseKey],
       queryFn: () => {
         if (initialAccountData?.licenseDetailResponse) {
           return initialAccountData.licenseDetailResponse
@@ -98,19 +118,25 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
         if (!selectedLicenseKey) {
           throw new Error('Missing license key')
         }
-        return getLicenseDetailRealtime({ licenseKey: selectedLicenseKey })
+        return getLicenseDetailForInspection({ licenseKey: selectedLicenseKey })
       },
       enabled: !!selectedLicenseKey && !activationError && !initialAccountData,
       staleTime: 0, // 数据立即过期，总是刷新
       gcTime: 24 * 60 * 60 * 1000, // 缓存保留24小时
       refetchOnWindowFocus: true,
-      placeholderData: (previousData) => previousData, // 使用之前的数据作为占位符
       initialData: initialAccountData?.licenseDetailResponse,
     })
 
     const licenseDetailResponse = initialAccountData?.licenseDetailResponse ?? queriedLicenseDetailResponse
     const licenseDetail = licenseDetailResponse?.data
     const normalizedQueryError = initialAccountData ? null : (queryError as LicenseDetailQueryError | null)
+    const viewedLicense = licenses.find((item) => item.key === selectedLicenseKey)
+    const inspectionOnly =
+      !!viewedLicense &&
+      (selectedLicenseKey !== licenseKey ||
+        licenseActivationMethod !== 'login' ||
+        !licenseInstances?.[selectedLicenseKey!] ||
+        !getAccountLicenseStatus(accountLicenseFromApi(viewedLicense)).usable)
     const lastSelectedLicenseKey = userProfile ? lastSelectedLicenseByUser?.[userProfile.email] : undefined
     // 合并两种错误来源：1) API 返回 200 但带有 error 字段  2) API 返回 4xx/5xx 被 ofetch 抛出
     const licenseDetailError =
@@ -135,155 +161,79 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
       []
     )
 
-    // 自动激活逻辑
+    const activatingLicenseRef = useRef(false)
+
     useEffect(() => {
-      if (!userProfile || licenses.length === 0) return
-
-      const needActivation = !licenseKey || licenseActivationMethod !== 'login' || !licenseInstances?.[licenseKey]
-
-      if (needActivation) {
-        // 确定要激活的license
-        const lastSelected = lastSelectedLicenseKey
-        const isLastSelectedValid = lastSelected && licenses.some((l) => l.key === lastSelected)
-
-        if (isLastSelectedValid) {
-          // 有有效的历史记录，自动激活
-          setDisplayLicenseKey(lastSelected) // 先设置显示的key
-          premiumActions
-            .activate(lastSelected, 'login')
-            .then((result) => {
-              if (!result.valid) {
-                setActivationError(result.error)
-                setSelectedLicenseKey(null)
-              } else {
-                setSelectedLicenseKey(lastSelected)
-              }
-            })
-            .catch((error) => {
-              console.error('Failed to activate license:', error)
-              setActivationError(error?.message || 'Failed to activate license. Please try again.')
-              setSelectedLicenseKey(null)
-            })
-        } else if (licenses.length === 1) {
-          // 只有1个license，直接激活
-          const onlyLicense = licenses[0].key
-          settingsStore.setState((state) => ({
-            lastSelectedLicenseByUser: {
-              ...state.lastSelectedLicenseByUser,
-              [userProfile.email]: onlyLicense,
-            },
-          }))
-          setDisplayLicenseKey(onlyLicense) // 先设置显示的key
-          premiumActions
-            .activate(onlyLicense, 'login')
-            .then((result) => {
-              if (!result.valid) {
-                setActivationError(result.error)
-                setSelectedLicenseKey(null)
-              } else {
-                setSelectedLicenseKey(onlyLicense)
-              }
-            })
-            .catch((error) => {
-              console.error('Failed to activate license:', error)
-              setActivationError(error?.message || 'Failed to activate license. Please try again.')
-              setSelectedLicenseKey(null)
-            })
-        } else {
-          // 多个licenses 且 无历史记录/历史记录无效 → 弹框让用户选择
-          if (onShowLicenseSelectionModal) {
-            onShowLicenseSelectionModal({
-              licenses,
-              onConfirm: (licenseKey: string) => {
-                // 保存用户选择
-                settingsStore.setState((state) => ({
-                  lastSelectedLicenseByUser: {
-                    ...state.lastSelectedLicenseByUser,
-                    [userProfile.email]: licenseKey,
-                  },
-                }))
-                // 激活选中的license
-                setDisplayLicenseKey(licenseKey) // 先设置显示的key
-                premiumActions
-                  .activate(licenseKey, 'login')
-                  .then((result) => {
-                    if (!result.valid) {
-                      setActivationError(result.error)
-                      setSelectedLicenseKey(null)
-                    } else {
-                      setSelectedLicenseKey(licenseKey)
-                    }
-                  })
-                  .catch((error) => {
-                    console.error('Failed to activate license:', error)
-                    setActivationError(error?.message || 'Failed to activate license. Please try again.')
-                    setSelectedLicenseKey(null)
-                  })
-              },
-              onCancel: () => {
-                // fallback到第一个
-                const firstLicense = licenses[0]?.key
-                if (firstLicense) {
-                  settingsStore.setState((state) => ({
-                    lastSelectedLicenseByUser: {
-                      ...state.lastSelectedLicenseByUser,
-                      [userProfile.email]: firstLicense,
-                    },
-                  }))
-                  setDisplayLicenseKey(firstLicense) // 先设置显示的key
-                  premiumActions
-                    .activate(firstLicense, 'login')
-                    .then((result) => {
-                      if (!result.valid) {
-                        setActivationError(result.error)
-                        setSelectedLicenseKey(null)
-                      } else {
-                        setSelectedLicenseKey(firstLicense)
-                      }
-                    })
-                    .catch((error) => {
-                      console.error('Failed to activate license:', error)
-                      setActivationError(error?.message || 'Failed to activate license. Please try again.')
-                      setSelectedLicenseKey(null)
-                    })
-                }
-              },
-            })
-          } else {
-            // fallback：如果没有传入modal回调，直接使用第一个
-            const firstLicense = licenses[0]?.key
-            if (firstLicense) {
-              settingsStore.setState((state) => ({
-                lastSelectedLicenseByUser: {
-                  ...state.lastSelectedLicenseByUser,
-                  [userProfile.email]: firstLicense,
-                },
-              }))
-              setDisplayLicenseKey(firstLicense) // 先设置显示的key
-              premiumActions
-                .activate(firstLicense, 'login')
-                .then((result) => {
-                  if (!result.valid) {
-                    setActivationError(result.error)
-                    setSelectedLicenseKey(null)
-                  } else {
-                    setSelectedLicenseKey(firstLicense)
-                  }
-                })
-                .catch((error) => {
-                  console.error('Failed to activate license:', error)
-                  setActivationError(error?.message || 'Failed to activate license. Please try again.')
-                  setSelectedLicenseKey(null)
-                })
-            }
-          }
+      if (!userProfile || licenses.length === 0 || activatingLicenseRef.current) return
+      const selection = selectAccountLicense(
+        licenses.map(accountLicenseFromApi),
+        settingsStore.getState(),
+        userProfile.email,
+        afterLogin
+      )
+      if (selection.preserveManual) return
+      if (afterLogin) onLoginSelectionHandled?.()
+      const usableLicenses = selection.eligible.map(
+        (candidate) => licenses.find((license) => license.key === candidate.key)!
+      )
+      const currentLicense = selection.eligible.find((license) => license.key === licenseKey)
+      if (currentLicense && licenseActivationMethod === 'login' && licenseInstances?.[currentLicense.key]) {
+        setSelectedLicenseKey(currentLicense.key)
+        setDisplayLicenseKey(currentLicense.key)
+        return
+      }
+      if (usableLicenses.length === 0) {
+        const accountLicense = selectAccountLicenseForInspection(licenses.map(accountLicenseFromApi), [
+          selectedLicenseKey,
+          licenseKey,
+          lastSelectedLicenseKey,
+        ])
+        if (accountLicense) {
+          setSelectedLicenseKey(accountLicense.key)
+          setDisplayLicenseKey(accountLicense.key)
         }
+        return
+      }
+
+      const activate = async (key: string) => {
+        activatingLicenseRef.current = true
+        setSwitchingLicense(true)
+        setDisplayLicenseKey(key)
+        setActivationError(null)
+        try {
+          const result = await premiumActions.activate(key, 'login', { accountEmail: userProfile.email })
+          if (!result.valid) {
+            setActivationError(result.error)
+            setSelectedLicenseKey(null)
+          } else {
+            setSelectedLicenseKey(key)
+          }
+        } catch (error) {
+          setActivationError(error instanceof Error ? error.message : 'Failed to activate license. Please try again.')
+          setSelectedLicenseKey(null)
+        } finally {
+          activatingLicenseRef.current = false
+          setSwitchingLicense(false)
+        }
+      }
+      const preferred = selection.preferred
+      if (preferred || usableLicenses.length === 1 || !onShowLicenseSelectionModal) {
+        void activate((preferred ?? usableLicenses[0]).key)
       } else {
-        // 已激活直接显示。如用户在 loggedinview 和 licenseview 切换
-        setSelectedLicenseKey(licenseKey || null)
-        setDisplayLicenseKey(licenseKey || null)
+        activatingLicenseRef.current = true
+        onShowLicenseSelectionModal({
+          licenses: usableLicenses,
+          onConfirm: (key) => {
+            void activate(key)
+          },
+          onCancel: () => {
+            void activate(usableLicenses[0].key)
+          },
+        })
       }
     }, [
+      afterLogin,
+      onLoginSelectionHandled,
       userProfile,
       licenses,
       licenseKey,
@@ -295,21 +245,23 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
 
     const handleSelectLicense = useCallback(
       async (newKey: string) => {
-        if (!userProfile || switchingLicense) return
+        if (!userProfile || switchingLicense || activatingLicenseRef.current) return
 
+        const target = licenses.find((item) => item.key === newKey)
+        if (!target) return
+        if (!getAccountLicenseStatus(accountLicenseFromApi(target)).usable) {
+          setSelectedLicenseKey(newKey)
+          setDisplayLicenseKey(newKey)
+          setActivationError(null)
+          return
+        }
+        activatingLicenseRef.current = true
         setSwitchingLicense(true)
         setActivationError(null)
         setDisplayLicenseKey(newKey) // 先设置显示的key
 
         try {
-          settingsStore.setState({
-            lastSelectedLicenseByUser: {
-              ...lastSelectedLicenseByUser,
-              [userProfile.email]: newKey,
-            },
-          })
-
-          const result = await premiumActions.activate(newKey, 'login')
+          const result = await premiumActions.activate(newKey, 'login', { accountEmail: userProfile.email })
           if (!result.valid) {
             setActivationError(result.error)
             setSelectedLicenseKey(null)
@@ -322,10 +274,11 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
           setActivationError(errorMsg)
           setSelectedLicenseKey(null)
         } finally {
+          activatingLicenseRef.current = false
           setSwitchingLicense(false)
         }
       },
-      [userProfile, lastSelectedLicenseByUser, switchingLicense]
+      [userProfile, licenses, switchingLicense]
     )
 
     if (profileError || licensesError) {
@@ -449,6 +402,26 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
                 </Stack>
               )}
 
+              {inspectionOnly && (
+                <Alert variant="light" color="yellow">
+                  <Text>{t('This license is not active. You can still view its details.')}</Text>
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    disabled={pendingExternalAction !== null}
+                    onClick={() =>
+                      void handleOpenAuthLink(
+                        'manage-license',
+                        buildChatboxUrl(
+                          `/redirect_app/manage_license/${language}/?utm_source=app&utm_content=license_inspection`
+                        )
+                      )
+                    }
+                  >
+                    {t('Manage License')}
+                  </Button>
+                </Alert>
+              )}
               {!activationError && loadingLicenseDetail && <Text c="dimmed">{t('Loading license details...')}</Text>}
 
               {!activationError && !loadingLicenseDetail && licenseDetailError && (
@@ -483,6 +456,7 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
 
               {!activationError && !loadingLicenseDetail && !licenseDetailError && licenseDetail && (
                 <LicenseDetailCard
+                  inspectionOnly={inspectionOnly}
                   licenseDetail={licenseDetail}
                   language={language}
                   utmContent="provider_cb_login_quota_details"

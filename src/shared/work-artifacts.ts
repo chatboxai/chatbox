@@ -57,6 +57,52 @@ export function workArtifactMimeType(name: string): string {
   return types[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream'
 }
 
+export type WorkArtifactKind = 'web' | 'spreadsheet' | 'image' | 'document' | 'other'
+
+const workArtifactKinds: Record<string, WorkArtifactKind> = {
+  html: 'web',
+  htm: 'web',
+  csv: 'spreadsheet',
+  tsv: 'spreadsheet',
+  xls: 'spreadsheet',
+  xlsx: 'spreadsheet',
+  png: 'image',
+  jpg: 'image',
+  jpeg: 'image',
+  webp: 'image',
+  gif: 'image',
+  bmp: 'image',
+  svg: 'image',
+  heic: 'image',
+  pdf: 'document',
+  doc: 'document',
+  docx: 'document',
+  ppt: 'document',
+  pptx: 'document',
+  md: 'document',
+  txt: 'document',
+}
+
+function workArtifactExtension(fileName: string): string {
+  const dot = fileName.lastIndexOf('.')
+  return dot > 0 ? fileName.slice(dot + 1).toLowerCase() : ''
+}
+
+export function workArtifactKind(fileName: string): WorkArtifactKind {
+  return workArtifactKinds[workArtifactExtension(fileName)] ?? 'other'
+}
+
+/** Short uppercase extension shown in the file badge; empty when the name has no badge-sized extension. */
+export function workArtifactBadgeLabel(fileName: string): string {
+  const extension = workArtifactExtension(fileName)
+  return /^[a-z0-9]{1,4}$/.test(extension) ? extension.toUpperCase() : ''
+}
+
+/** HTML files open in the in-app preview; every other file is saved or shared. */
+export function isPreviewableWorkArtifact(artifact: Pick<WorkArtifact, 'path'>): boolean {
+  return workArtifactKind(artifact.path) === 'web'
+}
+
 export function formatArtifactSize(bytes: number, locale?: string): string {
   const size = Math.max(0, bytes)
   const unit = size >= 1024 * 1024 ? 'MB' : size >= 1024 ? 'KB' : 'B'

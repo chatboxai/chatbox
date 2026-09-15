@@ -1522,5 +1522,8 @@
   "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Demasiados pedidos. Nova tentativa em {{seconds}} s ({{attempt}}/{{maxAttempts}})",
   "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Serviço indisponível. Nova tentativa em {{seconds}} s ({{attempt}}/{{maxAttempts}})",
   "Retrying request ({{attempt}}/{{maxAttempts}})": "A tentar novamente o pedido ({{attempt}}/{{maxAttempts}})",
-  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Erro de rede. Nova tentativa em {{seconds}} s ({{attempt}}/{{maxAttempts}})"
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Erro de rede. Nova tentativa em {{seconds}} s ({{attempt}}/{{maxAttempts}})",
+  "Web page": "Página web",
+  "Spreadsheet": "Folha de cálculo",
+  "Document": "Documento"
 }

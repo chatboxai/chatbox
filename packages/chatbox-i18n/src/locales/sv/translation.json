@@ -1522,5 +1522,8 @@
   "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "För många förfrågningar. Nytt försök om {{seconds}} s ({{attempt}}/{{maxAttempts}})",
   "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Tjänsten är inte tillgänglig. Nytt försök om {{seconds}} s ({{attempt}}/{{maxAttempts}})",
   "Retrying request ({{attempt}}/{{maxAttempts}})": "Försöker skicka förfrågan igen ({{attempt}}/{{maxAttempts}})",
-  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Nätverksfel. Nytt försök om {{seconds}} s ({{attempt}}/{{maxAttempts}})"
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Nätverksfel. Nytt försök om {{seconds}} s ({{attempt}}/{{maxAttempts}})",
+  "Web page": "Webbsida",
+  "Spreadsheet": "Kalkylblad",
+  "Document": "Dokument"
 }

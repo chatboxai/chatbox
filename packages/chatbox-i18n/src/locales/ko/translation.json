@@ -1522,5 +1522,8 @@
   "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "요청이 너무 많습니다. {{seconds}}초 후 재시도 ({{attempt}}/{{maxAttempts}}회)",
   "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "서비스를 사용할 수 없습니다. {{seconds}}초 후 재시도 ({{attempt}}/{{maxAttempts}}회)",
   "Retrying request ({{attempt}}/{{maxAttempts}})": "요청 재시도 중 ({{attempt}}/{{maxAttempts}}회)",
-  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "네트워크 오류. {{seconds}}초 후 재시도 ({{attempt}}/{{maxAttempts}}회)"
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "네트워크 오류. {{seconds}}초 후 재시도 ({{attempt}}/{{maxAttempts}}회)",
+  "Web page": "웹 페이지",
+  "Spreadsheet": "스프레드시트",
+  "Document": "문서"
 }

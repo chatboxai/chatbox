@@ -1522,5 +1522,8 @@
   "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "リクエストが多すぎます。{{seconds}}秒後に再試行（{{attempt}}/{{maxAttempts}}回目）",
   "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "サービスを利用できません。{{seconds}}秒後に再試行（{{attempt}}/{{maxAttempts}}回目）",
   "Retrying request ({{attempt}}/{{maxAttempts}})": "リクエストを再試行中（{{attempt}}/{{maxAttempts}}回目）",
-  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "ネットワークエラー。{{seconds}}秒後に再試行（{{attempt}}/{{maxAttempts}}回目）"
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "ネットワークエラー。{{seconds}}秒後に再試行（{{attempt}}/{{maxAttempts}}回目）",
+  "Web page": "ウェブページ",
+  "Spreadsheet": "スプレッドシート",
+  "Document": "ドキュメント"
 }

@@ -1518,5 +1518,8 @@
   "Rate limited. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Çok fazla istek. {{seconds}} sn sonra yeniden denenecek ({{attempt}}/{{maxAttempts}})",
   "Service unavailable. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Hizmet kullanılamıyor. {{seconds}} sn sonra yeniden denenecek ({{attempt}}/{{maxAttempts}})",
   "Retrying request ({{attempt}}/{{maxAttempts}})": "İstek yeniden deneniyor ({{attempt}}/{{maxAttempts}})",
-  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Ağ hatası. {{seconds}} sn sonra yeniden denenecek ({{attempt}}/{{maxAttempts}})"
+  "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Ağ hatası. {{seconds}} sn sonra yeniden denenecek ({{attempt}}/{{maxAttempts}})",
+  "Web page": "Web sayfası",
+  "Spreadsheet": "Elektronik tablo",
+  "Document": "Belge"
 }

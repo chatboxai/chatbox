@@ -139,7 +139,7 @@ describe('generated images in the artifacts area', () => {
         <MessageArtifactsUI imageParts={[]} downloadParts={[part]} sessionId="s1" messageId="m1" />
       </MantineProvider>
     )
-    expect(screen.getByText('report.html')).toBeTruthy()
+    expect(screen.getByTitle('report.html').textContent).toBe('report.html')
     expect(screen.getByRole('button', { name: 'Preview' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Save / Share' })).toBeTruthy()
   })

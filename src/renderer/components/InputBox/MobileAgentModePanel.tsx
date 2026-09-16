@@ -8,7 +8,7 @@ import {
   resolveLocalWorkCapabilities,
   setLocalWorkCapability,
 } from '@shared/mobile-work/capabilities'
-import { IconBook, IconChevronLeft, IconChevronRight, IconDeviceMobile } from '@tabler/icons-react'
+import { IconBook, IconChevronLeft, IconChevronRight, IconDeviceMobile, IconNotes } from '@tabler/icons-react'
 import { forwardRef, useImperativeHandle, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
@@ -22,6 +22,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import type { AgentModePanelHandle, AgentModePanelProps } from './AgentModePanel'
+import { AgentMemorySettingsContent, useAgentMemorySettings } from './AgentMemorySettings'
 import AgentModeStatusIcon from './AgentModeStatusIcon'
 
 export function isMobileWorkCapabilityAvailable(id: LocalWorkCapabilityId): boolean {
@@ -32,6 +33,10 @@ export function isMobileWorkCapabilityAvailable(id: LocalWorkCapabilityId): bool
 const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(function MobileAgentModePanel(
   {
     sessionId,
+    providerId,
+    modelId,
+    draftCopilotId,
+    draftCopilotName,
     hasDraftAttachments = false,
     modelSupportsAgentMode = true,
     webBrowsingMode,
@@ -41,7 +46,7 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
   ref
 ) {
   const { t } = useTranslation()
-  const [page, setPage] = useState<'main' | 'services'>('main')
+  const [page, setPage] = useState<'main' | 'services' | 'memory'>('main')
   useImperativeHandle(
     ref,
     () => ({
@@ -76,6 +81,15 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
   )
   const [saving, setSaving] = useState(false)
   const workActive = entry.value === 'on' && modelSupportsAgentMode
+  const memory = useAgentMemorySettings({
+    sessionId,
+    providerId,
+    modelId,
+    agentModeActive: workActive,
+    copilotId: sessionId === 'new' ? draftCopilotId : header?.copilotId,
+    copilotName: sessionId === 'new' ? draftCopilotName : header?.name,
+    onClose,
+  })
   const webSearch = useSettingsStore((s) => s.extension.webSearch)
   const licenseKey = useSettingsStore((s) => s.licenseKey)
   const webIssue = webBrowsingMode && getWebSearchConfigurationIssue(webSearch, licenseKey) !== null
@@ -134,6 +148,28 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
     } finally {
       setSaving(false)
     }
+  }
+
+  if (page === 'memory') {
+    return (
+      <Stack gap="sm" p="md" style={{ maxHeight: '70dvh', overflowY: 'auto' }}>
+        <Group gap="xs">
+          <ActionIcon
+            data-testid={TestId.agent.modePanelBack}
+            variant="subtle"
+            size={36}
+            aria-label={t('Back')}
+            onClick={() => setPage('main')}
+          >
+            <IconChevronLeft size={18} />
+          </ActionIcon>
+          <Text size="sm" fw={600}>
+            {t('Memory')}
+          </Text>
+        </Group>
+        <AgentMemorySettingsContent memory={memory} />
+      </Stack>
+    )
   }
 
   if (page === 'services')
@@ -240,6 +276,29 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
         </Text>
       )}
       <Divider />
+      <UnstyledButton aria-label={t('Memory')} onClick={() => setPage('memory')} style={{ minHeight: 44 }}>
+        <Group justify="space-between" wrap="nowrap">
+          <Group gap="xs">
+            <IconNotes size={18} />
+            <Text size="sm">{t('Memory')}</Text>
+            {memory.effectiveMemorySource !== 'none' && memory.memoryCount !== null && memory.memoryCount > 0 && (
+              <Badge size="xs" variant="light">
+                {memory.memoryCount}
+              </Badge>
+            )}
+          </Group>
+          <Group gap="xs" wrap="nowrap">
+            <Badge size="xs" variant="light" color={memory.effectiveMemorySource === 'none' ? 'gray' : 'chatbox-brand'}>
+              {memory.effectiveMemorySource === 'copilot'
+                ? t('Copilot Memory')
+                : memory.effectiveMemorySource === 'global'
+                  ? t('Global Memory')
+                  : t('Off')}
+            </Badge>
+            <IconChevronRight size={16} />
+          </Group>
+        </Group>
+      </UnstyledButton>
       <UnstyledButton aria-label={t('Device services')} onClick={() => setPage('services')} style={{ minHeight: 44 }}>
         <Group justify="space-between" wrap="nowrap">
           <Group gap="xs">

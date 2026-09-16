@@ -1,5 +1,4 @@
 import { hasConversationStarted, resolveSessionMode } from '@chatbox/core/session/mode-policy'
-import NiceModal from '@ebay/nice-modal-react'
 import {
   ActionIcon,
   Badge,
@@ -44,24 +43,17 @@ import {
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  trackAgentModeSelect,
-  trackMemoryClick,
-  trackSmartSwitchingClick,
-  trackWebSearchClick,
-} from '@/analytics/agent-mode'
+import { trackAgentModeSelect, trackSmartSwitchingClick, trackWebSearchClick } from '@/analytics/agent-mode'
 import { rendererApplication } from '@/app/renderer-application'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useKnowledgeBases } from '@/hooks/knowledge-base'
 import { useMCPServerStatus, useToggleMCPServer } from '@/hooks/mcp'
-import { useCopilotMemory, useMyCopilots } from '@/hooks/useCopilots'
 import { navigateToSettings } from '@/modals/settings-navigation'
 import { BUILTIN_MCP_SERVERS } from '@/packages/mcp/builtin'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
 import { getWebSearchConfigurationIssue } from '@/packages/web-search/configuration-issue'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
 import platform from '@/platform'
-import { listCopilotMemories, listMemories } from '@/stores/agentPersonaStore'
 import { useAutoValidate } from '@/stores/premiumActions'
 import { setSessionAgentMode, useSessionAgentMode } from '@/stores/session/agent-mode'
 import { useSessionPresentation } from '@/hooks/useSessionPresentation'
@@ -72,6 +64,7 @@ import { featureFlags } from '@/utils/feature-flags'
 import { ScalableIcon } from '../common/ScalableIcon'
 import MCPStatus from '../mcp/MCPStatus'
 import { CommandApprovalOptions, WorkingDirectoryContent } from './AgentModeSettingsContent'
+import { AgentMemorySettingsContent, useAgentMemorySettings } from './AgentMemorySettings'
 import AgentModeStatusIcon from './AgentModeStatusIcon'
 import { getAgentModeUIState } from './agentModeState'
 import type { ComposerMenuLayout } from './composerTouchLayout'
@@ -171,33 +164,6 @@ const MCPServerItem: FC<{
   )
 }
 
-const MemorySettingRow: FC<{
-  label: string
-  description: string
-  checked: boolean
-  disabled?: boolean
-  onChange: (enabled: boolean) => void
-}> = ({ label, description, checked, disabled = false, onChange }) => (
-  <Flex justify="space-between" align="center" gap="sm" px="sm" py="xs">
-    <Stack gap={2} className="min-w-0">
-      <Text size="sm" fw={500} c={disabled ? 'dimmed' : undefined}>
-        {label}
-      </Text>
-      <Text size="xs" c="dimmed" className="leading-snug">
-        {description}
-      </Text>
-    </Stack>
-    <Switch
-      aria-label={label}
-      checked={checked}
-      disabled={disabled}
-      size="xs"
-      className="shrink-0"
-      onChange={(event) => onChange(event.currentTarget.checked)}
-    />
-  </Flex>
-)
-
 // --- Main component ---
 
 const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(function AgentModePanel(
@@ -273,51 +239,16 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
       )
     : null
 
-  // Memory is a global preference (all chats) unless the chat comes from a copilot:
-  // then the switch here is that copilot's own — shared by every chat with it — and
-  // turning it on replaces global memory for those chats. Ownership is tracked by
-  // copilot id, so a copilot used straight from the store qualifies too.
-  const globalMemoryEnabled = useSettingsStore((s) => s.memoryEnabled !== false)
-  const { copilots: myCopilots, addOrUpdate: updateCopilot } = useMyCopilots()
-  const {
-    owners: copilotMemoryOwners,
-    isEnabled: isCopilotMemoryEnabled,
-    setEnabled: setCopilotMemory,
-  } = useCopilotMemory()
-  const sessionCopilotId = isNewSession ? draftCopilotId : currentSession?.copilotId
-  const savedCopilot = useMemo(
-    () => (sessionCopilotId ? myCopilots.find((copilot) => copilot.id === sessionCopilotId) : undefined),
-    [myCopilots, sessionCopilotId]
-  )
-  /** Label for the copilot behind this chat, whether or not it was ever saved. */
-  const sessionCopilotName = useMemo(() => {
-    if (!sessionCopilotId) return undefined
-    const owned = copilotMemoryOwners.find((owner) => owner.id === sessionCopilotId)
-    return savedCopilot?.name ?? owned?.name ?? currentSession?.name ?? draftCopilotName
-  }, [copilotMemoryOwners, currentSession?.name, draftCopilotName, savedCopilot, sessionCopilotId])
-  const copilotMemoryEnabled = Boolean(sessionCopilotId && isCopilotMemoryEnabled(sessionCopilotId))
-  const effectiveMemorySource = copilotMemoryEnabled ? 'copilot' : globalMemoryEnabled ? 'global' : 'none'
-  // Keep retained memories manageable while their switch is off. The main row
-  // only shows the count for the effective source, so a disabled store never
-  // looks active.
-  const managedMemoryCopilotId = effectiveMemorySource === 'copilot' ? sessionCopilotId : undefined
-  const [memoryCount, setMemoryCount] = useState<number | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setMemoryCount(null)
-    const load = managedMemoryCopilotId ? listCopilotMemories(managedMemoryCopilotId) : listMemories()
-    void load
-      .then((entries) => {
-        if (!cancelled) setMemoryCount(entries.length)
-      })
-      .catch(() => {
-        if (!cancelled) setMemoryCount(0)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [managedMemoryCopilotId])
+  const memory = useAgentMemorySettings({
+    sessionId,
+    providerId,
+    modelId,
+    agentModeActive: agentModeUIState.isActive,
+    copilotId: isNewSession ? draftCopilotId : currentSession?.copilotId,
+    copilotName: currentSession?.name ?? draftCopilotName,
+    onClose,
+  })
+  const { effectiveMemorySource, memoryCount } = memory
 
   const isProviderAvailable = useCallback(
     (provider: WebSearchProviderValue) => {
@@ -838,48 +769,6 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
     [setSettings]
   )
 
-  const trackMemoryEnabledChange = useCallback(
-    (enabled: boolean) => {
-      trackMemoryClick(
-        {
-          sessionId,
-          mode: agentModeUIState.isActive ? 'work_mode' : 'chat_mode',
-          provider: providerId,
-          model: modelId,
-        },
-        enabled
-      )
-    },
-    [agentModeUIState.isActive, modelId, providerId, sessionId]
-  )
-
-  const handleCopilotMemoryEnabledChange = useCallback(
-    (enabled: boolean) => {
-      if (!sessionCopilotId) return
-      trackMemoryEnabledChange(enabled)
-      setCopilotMemory({ id: sessionCopilotId, name: sessionCopilotName ?? sessionCopilotId }, enabled)
-    },
-    [sessionCopilotId, sessionCopilotName, setCopilotMemory, trackMemoryEnabledChange]
-  )
-
-  const handleGlobalMemoryEnabledChange = useCallback(
-    (enabled: boolean) => {
-      trackMemoryEnabledChange(enabled)
-      setSettings({ memoryEnabled: enabled })
-    },
-    [setSettings, trackMemoryEnabledChange]
-  )
-
-  const openCopilotSettings = useCallback(() => {
-    if (!savedCopilot) return
-    onClose()
-    void NiceModal.show('copilot-settings', {
-      copilot: savedCopilot,
-      mode: 'edit',
-      onSave: updateCopilot,
-    })
-  }, [onClose, savedCopilot, updateCopilot])
-
   // --- Sub-panel content ---
   const renderSubPanel = () => {
     if (page === 'web-search') {
@@ -932,61 +821,9 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
     if (page === 'memory') {
       return (
         <>
-          <SubPanelHeader
-            title={t('Memory')}
-            settingsPath={savedCopilot && effectiveMemorySource === 'copilot' ? undefined : '/agent'}
-          />
+          <SubPanelHeader title={t('Memory')} settingsPath={memory.settingsPath} />
           <Divider my={4} />
-          {sessionCopilotName && (
-            <Text size="xs" fw={500} c="chatbox-primary" px="sm" pt={6} className="leading-snug">
-              {sessionCopilotName}
-            </Text>
-          )}
-          <MemorySettingRow
-            label={t('Copilot Memory')}
-            description={
-              sessionCopilotId
-                ? t('All chats with this Copilot use its shared memory when on, or follow Global Memory when off.')
-                : t('You must create a copilot and use it in a conversation to use Copilot Memory.')
-            }
-            checked={copilotMemoryEnabled}
-            disabled={!sessionCopilotId}
-            onChange={handleCopilotMemoryEnabledChange}
-          />
-          {!copilotMemoryEnabled && (
-            <MemorySettingRow
-              label={t('Global Memory')}
-              description={t("Shared by chats that don't use Copilot Memory.")}
-              checked={globalMemoryEnabled}
-              onChange={handleGlobalMemoryEnabledChange}
-            />
-          )}
-          <Divider my={4} />
-          {memoryCount === null ? (
-            <Flex justify="center" py="md">
-              <Loader size="sm" />
-            </Flex>
-          ) : (
-            <Group justify="space-between" align="center" px="sm" py="xs">
-              <Text size="xs" c="dimmed">
-                {memoryCount === 0 ? t('No memories saved yet.') : t('{{count}} saved', { count: memoryCount })}
-              </Text>
-              <Button
-                size="xs"
-                variant="light"
-                onClick={() => {
-                  if (savedCopilot && effectiveMemorySource === 'copilot') {
-                    openCopilotSettings()
-                    return
-                  }
-                  onClose()
-                  navigateToSettings('/agent')
-                }}
-              >
-                {t('Manage memories')}
-              </Button>
-            </Group>
-          )}
+          <AgentMemorySettingsContent memory={memory} />
         </>
       )
     }

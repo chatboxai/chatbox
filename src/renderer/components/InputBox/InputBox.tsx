@@ -1,3 +1,4 @@
+import { MAX_CHAT_IMAGE_ATTACHMENTS } from '@chatbox/core/application/attachments'
 import { LOCAL_WORK_ATTACHMENT_ACCEPT } from '@/packages/mobile-work-mode/attachments'
 import { listPendingPauseInteractions } from '@chatbox/core/message-approval'
 import { getSubmitAvailability } from '@chatbox/core/session/action-gates'
@@ -1273,7 +1274,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const isAgentModeActive = agentModeUIState.isActive
 
     const insertFiles = async (files: File[], options: InsertFilesOptions = {}) => {
-      const MAX_IMAGES = 8
+      const MAX_IMAGES = MAX_CHAT_IMAGE_ATTACHMENTS
       const MAX_ATTACHMENTS = 20
       // 用本地累加器跟踪本次新增数量：同步循环内 state/ref 可能尚未刷新，靠它做无竞态的限额判断
       let imageCount = preConstructedMessageRef.current.pictureKeys?.length || 0
@@ -1284,7 +1285,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       for (const file of files) {
         // 文件和图片插入方法复用，会导致 svg、gif 这类不支持的图片也被插入，但暂时没看到有什么问题
         if (file.type.startsWith('image/')) {
-          // 超过上限时直接跳过：保留最先添加的前 8 张，且不浪费转码/不产生孤儿 blob
+          // Skip excess images before transcoding or storing their blobs.
           if (imageCount >= MAX_IMAGES) {
             droppedImages++
             continue
@@ -1294,7 +1295,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           await saveBlob.mutateAsync({ key, value: base64 })
           setPreConstructedMessage((prev) => ({
             ...prev,
-            pictureKeys: [...(prev.pictureKeys || []), key].slice(0, MAX_IMAGES), // 保留最先添加的前 8 张
+            pictureKeys: [...(prev.pictureKeys || []), key].slice(0, MAX_IMAGES),
           }))
           imageCount++
         } else {

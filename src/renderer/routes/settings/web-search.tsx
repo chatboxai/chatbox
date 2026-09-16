@@ -12,6 +12,7 @@ import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import { BochaSearch } from '@/packages/web-search/bocha'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
+import { KeenableSearch } from '@/packages/web-search/keenable'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
 import { SearxngSearch } from '@/packages/web-search/searxng'
 import platform from '@/platform'
@@ -48,6 +49,21 @@ export function RouteComponent() {
       } finally {
         setCheckingQuerit(false)
       }
+    }
+  }
+
+  const [checkingKeenable, setCheckingKeenable] = useState(false)
+  const [keenableAvailable, setKeenableAvailable] = useState<boolean>()
+  const checkKeenable = async () => {
+    setCheckingKeenable(true)
+    setKeenableAvailable(undefined)
+    try {
+      const { items } = await new KeenableSearch(extension.webSearch.keenableApiKey).search('Chatbox')
+      setKeenableAvailable(items.length > 0)
+    } catch (e) {
+      setKeenableAvailable(false)
+    } finally {
+      setCheckingKeenable(false)
     }
   }
 
@@ -221,6 +237,59 @@ export function RouteComponent() {
               </Text>
             )
           ) : null}
+        </Stack>
+      )}
+      {/* Keenable API Key (optional) */}
+      {extension.webSearch.provider === 'keenable' && (
+        <Stack gap="xs">
+          <Text size="xs" c="chatbox-gray">
+            {t('Keenable works without an API key. Adding one only raises the rate limit.')}
+          </Text>
+          <Text fw="600">{t('Keenable API Key')}</Text>
+          <Flex align="center" gap="xs">
+            <PasswordInput
+              flex={1}
+              maw={320}
+              value={extension.webSearch.keenableApiKey}
+              onChange={(e) => {
+                setKeenableAvailable(undefined)
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      keenableApiKey: e.currentTarget.value,
+                    },
+                  },
+                })
+              }}
+              error={keenableAvailable === false}
+            />
+            <Button color="blue" variant="light" onClick={checkKeenable} loading={checkingKeenable}>
+              {t('Check')}
+            </Button>
+          </Flex>
+
+          {typeof keenableAvailable === 'boolean' ? (
+            keenableAvailable ? (
+              <Text size="xs" c="chatbox-success">
+                {t('Connection successful!')}
+              </Text>
+            ) : (
+              <Text size="xs" c="chatbox-error">
+                {t('Connection failed!')}
+              </Text>
+            )
+          ) : null}
+          <Button
+            variant="transparent"
+            size="compact-xs"
+            px={0}
+            className="self-start"
+            onClick={() => platform.openLink('https://keenable.ai?utm_source=chatbox')}
+          >
+            {t('Get API Key')}
+          </Button>
         </Stack>
       )}
       {/* Tavily API Key */}

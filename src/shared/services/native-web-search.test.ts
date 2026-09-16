@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { formatNativeWebSearchContext, hasNativeWebSearchConfiguration, searchNativeWeb } from './native-web-search'
+import {
+  formatNativeWebSearchContext,
+  hasNativeWebSearchConfiguration,
+  KEENABLE_SNIPPET_MAX_LENGTH,
+  searchNativeWeb,
+} from './native-web-search'
 
 function mockFetchResponse(body: unknown, ok = true, status = 200) {
   return vi.fn(async () => ({
@@ -15,6 +20,7 @@ describe('native web search', () => {
     expect(hasNativeWebSearchConfiguration({ provider: 'tavily', apiKey: '  ' })).toBe(false)
     expect(hasNativeWebSearchConfiguration({ provider: 'tavily', apiKey: 'tvly-key' })).toBe(true)
     expect(hasNativeWebSearchConfiguration({ provider: 'bing', apiKey: '' })).toBe(true)
+    expect(hasNativeWebSearchConfiguration({ provider: 'keenable', apiKey: '' })).toBe(true)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' })).toBe(false)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' }, 'license-1')).toBe(true)
   })
@@ -89,6 +95,43 @@ describe('native web search', () => {
     expect(url).toBe('http://10.0.2.2:8091/search')
     expect(JSON.parse((init as RequestInit).body as string).query).toBe('chatbox')
     expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer key-1' })
+  })
+
+  it('searches keenable without an API key and names the caller', async () => {
+    const fetchFn = mockFetchResponse({
+      results: [
+        // Keenable sends both fields: `snippet` is the page text, `description` is the
+        // page meta description and is empty for most pages.
+        { title: 'One', url: 'https://one.test', description: '', snippet: 'first\n  snippet' },
+        { title: 'Two', url: 'https://two.test', description: 'meta description', snippet: '' },
+      ],
+    })
+    const items = await searchNativeWeb('chatbox', { provider: 'keenable', fetchFn })
+    expect(items).toEqual([
+      { title: 'One', link: 'https://one.test', snippet: 'first snippet' },
+      { title: 'Two', link: 'https://two.test', snippet: 'meta description' },
+    ])
+    const [url, init] = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(url).toBe('https://api.keenable.ai/v1/search/public')
+    // The public endpoint takes no credentials but requires the caller to name itself.
+    expect((init as RequestInit).headers).toMatchObject({ 'X-Keenable-Title': 'Chatbox' })
+    expect((init as RequestInit).headers).not.toHaveProperty('X-API-Key')
+  })
+
+  it('uses the keyed keenable endpoint once an API key is set', async () => {
+    const fetchFn = mockFetchResponse({ results: [] })
+    await searchNativeWeb('chatbox', { provider: 'keenable', apiKey: ' kn-key ', fetchFn })
+    const [url, init] = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(url).toBe('https://api.keenable.ai/v1/search')
+    expect((init as RequestInit).headers).toMatchObject({ 'X-API-Key': 'kn-key' })
+  })
+
+  it('caps keenable results, which carry whole page text rather than a serp blurb', async () => {
+    const fetchFn = mockFetchResponse({
+      results: [{ title: 'Long', url: 'https://long.test', snippet: 'word '.repeat(2000) }],
+    })
+    const [item] = await searchNativeWeb('chatbox', { provider: 'keenable', fetchFn })
+    expect(item.snippet).toHaveLength(KEENABLE_SNIPPET_MAX_LENGTH)
   })
 
   it('throws on non-ok responses', async () => {

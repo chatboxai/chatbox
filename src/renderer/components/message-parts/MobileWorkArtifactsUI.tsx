@@ -63,7 +63,10 @@ export function MobileWorkArtifactsUI({ artifacts, sessionId }: { artifacts: Wor
         const color = kindColor[kind]
         const disabled = !sessionId || busy
         const pendingAction = pending?.path === artifact.path ? pending.action : undefined
-        const subtitle = [formatArtifactSize(artifact.size, i18n.language), kindLabels[kind]]
+        const subtitle = [
+          artifact.size === null ? '' : formatArtifactSize(artifact.size, i18n.language),
+          kindLabels[kind],
+        ]
           .filter(Boolean)
           .join(' · ')
         const shareButton = (

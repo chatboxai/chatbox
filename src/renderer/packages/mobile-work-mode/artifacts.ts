@@ -6,7 +6,7 @@ const MAX_ARTIFACT_BYTES = 20 * 1024 * 1024
 
 export async function readLocalWorkArtifact(sessionId: string, artifact: WorkArtifact): Promise<string> {
   workspacePath(artifact.path)
-  if (!artifact.path.startsWith('artifacts/') || artifact.size > MAX_ARTIFACT_BYTES)
+  if (!artifact.path.startsWith('artifacts/') || (artifact.size !== null && artifact.size > MAX_ARTIFACT_BYTES))
     throw new Error('File is missing or too large')
   let base64: string | undefined
   if (artifact.storageKey) {

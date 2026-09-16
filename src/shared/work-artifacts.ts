@@ -4,7 +4,7 @@ export interface WorkArtifact {
   path: string
   name: string
   mimeType: string
-  size: number
+  size: number | null
   storageKey?: string
 }
 
@@ -22,9 +22,7 @@ export function getWorkArtifacts(part: Message['contentParts'][number]): WorkArt
           item.path.startsWith('artifacts/') &&
           typeof item.name === 'string' &&
           typeof item.mimeType === 'string' &&
-          typeof item.size === 'number' &&
-          Number.isFinite(item.size) &&
-          item.size >= 0 &&
+          (item.size === null || (typeof item.size === 'number' && Number.isFinite(item.size) && item.size >= 0)) &&
           (item.storageKey === undefined || typeof item.storageKey === 'string')
       )
     )

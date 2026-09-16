@@ -43,6 +43,7 @@ allowedSharedImports.set('apps/mobile/src/work-mode/normalize-work-image.ts', ne
 allowedSharedImports.set('apps/mobile/src/components/message/MessageWorkTimeline.tsx', new Set(['@shared/mobile-work/execution-feedback']))
 allowedSharedImports.set('apps/mobile/src/screens/settings/SkillsSettingsScreen.tsx', new Set(['@shared/mobile-work/skill-settings']))
 allowedSharedImports.set('apps/mobile/src/work-mode/ui/WorkArtifactCards.tsx', new Set(['@shared/work-artifacts']))
+allowedSharedImports.set('apps/mobile/src/work-mode/ui/WorkArtifactCards.test.ts', new Set(['@shared/work-artifacts']))
 allowedSharedImports.set('apps/mobile/src/work-mode/ui/authorizeSystemTool.ts', new Set(['@shared/mobile-work/authorization-text', '@shared/mobile-work/system-tools']))
 
 allowedSharedImports.set('apps/mobile/src/work-mode/createMobileWorkMode.ts', new Set(['@shared/mobile-work/product-info-tools']))

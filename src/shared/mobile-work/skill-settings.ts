@@ -1,4 +1,10 @@
-export const MOBILE_SKILL_IDS = ['documents', 'spreadsheets', 'presentations', 'websites'] as const
+export const MOBILE_SKILL_IDS = [
+  'chatbox-product-info',
+  'documents',
+  'spreadsheets',
+  'presentations',
+  'websites',
+] as const
 export type MobileSkillId = (typeof MOBILE_SKILL_IDS)[number]
 export type MobileSkillPreferences = Partial<Record<MobileSkillId, boolean>>
 
@@ -8,6 +14,11 @@ export function isMobileSkillEnabled(name: MobileSkillId, preferences?: MobileSk
 
 export function mobileSkillLabels(t: (key: string) => string) {
   return [
+    {
+      name: 'chatbox-product-info',
+      title: t('Chatbox Product Info'),
+      description: t('Get Chatbox product help and query account quota, settings, and chat history.'),
+    },
     {
       name: 'documents',
       title: t('Documents'),

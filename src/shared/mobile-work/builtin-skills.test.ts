@@ -5,7 +5,13 @@ describe('portable built-in skill catalog', () => {
   it('lists task metadata separately from loaded runtime instructions', async () => {
     const catalog = createLocalBuiltinSkillCatalog([], { spreadsheets: true, presentations: true })
     const metadata = await catalog.list()
-    expect(metadata.map((skill) => skill.name)).toEqual(['documents', 'spreadsheets', 'presentations', 'websites'])
+    expect(metadata.map((skill) => skill.name)).toEqual([
+      'chatbox-product-info',
+      'documents',
+      'spreadsheets',
+      'presentations',
+      'websites',
+    ])
     expect(metadata.every((skill) => Object.keys(skill).sort().join(',') === 'description,name')).toBe(true)
     expect(JSON.stringify(metadata)).not.toContain('docs.writePresentation')
     expect((await catalog.load('spreadsheets'))?.instructions).toContain('docs.readSpreadsheet')
@@ -20,6 +26,7 @@ describe('portable built-in skill catalog', () => {
       presentations: true,
     })
     expect((await catalog.list()).map((skill) => skill.name)).toEqual([
+      'chatbox-product-info',
       'documents',
       'spreadsheets',
       'presentations',
@@ -48,10 +55,33 @@ describe('portable built-in skill catalog', () => {
 })
 
 it('defaults to documents and websites and respects explicit skill overrides', async () => {
-  expect((await createLocalBuiltinSkillCatalog([]).list()).map((s) => s.name)).toEqual(['documents', 'websites'])
+  expect((await createLocalBuiltinSkillCatalog([]).list()).map((s) => s.name)).toEqual([
+    'chatbox-product-info',
+    'documents',
+    'websites',
+  ])
   const preferences = { documents: false, spreadsheets: true, calendar: false }
   const catalog = createLocalBuiltinSkillCatalog(['calendar'], preferences)
-  expect((await catalog.list()).map((s) => s.name)).toEqual(['spreadsheets', 'websites', 'calendar'])
+  expect((await catalog.list()).map((s) => s.name)).toEqual([
+    'chatbox-product-info',
+    'spreadsheets',
+    'websites',
+    'calendar',
+  ])
   expect(await catalog.load('calendar')).not.toBeNull()
   expect(await catalog.load('presentations')).toBeNull()
+})
+
+it('provides official product guidance without advertising unavailable mobile commands', async () => {
+  const catalog = createLocalBuiltinSkillCatalog([])
+  const loaded = await catalog.load('chatbox-product-info')
+  expect(loaded?.instructions).toContain('https://chatboxai.app/llms.txt')
+  expect(loaded?.instructions).toContain('https://chatboxai.app/pricing.md')
+  expect(loaded?.instructions).toContain('parse_link')
+  expect(loaded?.instructions).toContain('enable web browsing')
+  expect(loaded?.instructions).toContain('Image generation is unsupported')
+  expect(loaded?.instructions).toContain('["account", "refresh"]')
+  const disabled = createLocalBuiltinSkillCatalog([], { 'chatbox-product-info': false })
+  expect((await disabled.list()).some((skill) => skill.name === 'chatbox-product-info')).toBe(false)
+  expect(await disabled.load('chatbox-product-info')).toBeNull()
 })

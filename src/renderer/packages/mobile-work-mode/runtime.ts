@@ -12,9 +12,12 @@ import { supportsToolResultImages } from '@shared/tools/view-image'
 import type { ModelDependencies } from '@shared/types/adapters'
 import type { ToolSet } from 'ai'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
+import { rendererApplication } from '@/app/renderer-application'
 import { getToolSetDescription, parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
+import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
+import { settingsStore } from '@/stores/settingsStore'
 import { CapacitorWorkspace } from './CapacitorWorkspace'
 import { createCapacitorSystemToolGroups } from './capacitor-system-tools'
 import { capacitorExecution } from './execution-service'
@@ -32,7 +35,20 @@ export const capacitorWorkMode = new LocalWorkMode(
       signal: context.signal,
       workspace: capacitorWorkspace,
     }),
-  currentBlobStorage
+  currentBlobStorage,
+  () => ({
+    getSettings: () => settingsStore.getState().getSettings(),
+    refreshAccount: async () => {
+      const { refreshChatboxAccount } = await import('@/packages/chatbox-cli/account')
+      return Boolean((await refreshChatboxAccount()).refreshed)
+    },
+    getVersion: async () => ({ installedVersion: await platform.getVersion(), platform: await platform.getPlatform() }),
+    listChats: (cursor, limit, archived) =>
+      archived
+        ? rendererApplication.sessions.listArchivedSessionsMetaPage(cursor, limit)
+        : rendererApplication.sessions.listSessionsMetaPage(cursor, limit),
+    getChat: (id) => rendererApplication.sessionQueryBridge.getSession(id),
+  })
 )
 
 export function buildMobileWebTools(model: ModelInterface, enabled: boolean) {

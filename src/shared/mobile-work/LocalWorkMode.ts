@@ -1,15 +1,16 @@
-import { type MobileSkillPreferences } from './skill-settings'
-import { buildLocalFilesystemTools } from './filesystem-tools'
-import { formatLoadSkillOutput } from '../skills/catalog'
-import { createLocalBuiltinSkillCatalog, getLocalSkillCapability } from './builtin-skills'
-import { resolveLocalWorkCapabilities, type LocalWorkCapabilityId } from './capabilities'
-import { throwIfWorkAborted } from './abort'
 import type { BlobStoragePort } from '@chatbox/core/ports'
-import { tool, type ToolSet } from 'ai'
+import { type ToolSet, tool } from 'ai'
 import { z } from 'zod'
-import { MobileExecutionService } from './MobileExecutionService'
-import type { LocalWorkspacePort } from './workspace-port'
+import { formatLoadSkillOutput } from '../skills/catalog'
+import { throwIfWorkAborted } from './abort'
+import { createLocalBuiltinSkillCatalog, getLocalSkillCapability } from './builtin-skills'
+import { type LocalWorkCapabilityId, resolveLocalWorkCapabilities } from './capabilities'
+import { buildLocalFilesystemTools } from './filesystem-tools'
+import type { MobileExecutionService } from './MobileExecutionService'
+import { buildMobileProductInfoTool, type MobileProductInfoHost } from './product-info-tools'
+import { isMobileSkillEnabled, type MobileSkillPreferences } from './skill-settings'
 import { textToBase64 } from './workspace-path'
+import type { LocalWorkspacePort } from './workspace-port'
 
 export interface MobileToolGroup {
   id: string
@@ -59,7 +60,8 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
     readonly workspace: W,
     readonly execution: MobileExecutionService,
     private readonly groups: (context: WorkModeContext) => MobileToolGroup[] = () => [],
-    private readonly blobs?: BlobStoragePort
+    private readonly blobs?: BlobStoragePort,
+    private readonly productInfoHost?: () => MobileProductInfoHost
   ) {}
 
   async createTools(context: WorkModeContext, webTools: ToolSet = {}, restoreActive = false) {
@@ -91,6 +93,9 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
       }
     }
     const baseTools: ToolSet = {
+      ...(this.productInfoHost && isMobileSkillEnabled('chatbox-product-info', context.skillPreferences)
+        ? { chatbox_cli: buildMobileProductInfoTool(this.productInfoHost(), context.signal) }
+        : {}),
       load_skill: tool({
         description: `Load a built-in skill by name for its full instructions and any related tool definitions in the next step. Loading does not grant OS permissions or read data. Available skills: ${availableSkills.map((skill) => `${skill.name}: ${skill.description}`).join('; ')}`,
         inputSchema: loadSkillInput,

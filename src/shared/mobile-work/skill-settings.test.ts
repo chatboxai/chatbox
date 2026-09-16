@@ -17,6 +17,7 @@ describe('mobile skill settings persistence', () => {
 
 it('shows only content skills and strips device preferences while preserving content choices', () => {
   expect(mobileSkillLabels((key) => key).map((skill) => skill.name)).toEqual([
+    'chatbox-product-info',
     'documents',
     'spreadsheets',
     'presentations',
@@ -34,4 +35,12 @@ it('shows only content skills and strips device preferences while preserving con
       },
     }).mobileSkillPreferences
   ).toEqual({ spreadsheets: true, documents: false })
+})
+
+it('enables product info for existing settings and persists explicit opt-out', () => {
+  expect(isMobileSkillEnabled('chatbox-product-info', schema.parse({}).mobileSkillPreferences)).toBe(true)
+  const restored = schema.parse(
+    JSON.parse(JSON.stringify({ mobileSkillPreferences: { 'chatbox-product-info': false } }))
+  )
+  expect(isMobileSkillEnabled('chatbox-product-info', restored.mobileSkillPreferences)).toBe(false)
 })

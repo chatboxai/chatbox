@@ -605,6 +605,7 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   mcp: MCPSettingsSchema,
   mobileSkillPreferences: z
     .object({
+      'chatbox-product-info': z.boolean().optional(),
       documents: z.boolean().optional(),
       spreadsheets: z.boolean().optional(),
       presentations: z.boolean().optional(),

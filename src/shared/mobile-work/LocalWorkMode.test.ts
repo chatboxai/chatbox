@@ -1,4 +1,4 @@
-import { tool, type ToolSet } from 'ai'
+import { type ToolSet, tool } from 'ai'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { LocalWorkMode, WORK_INSTRUCTIONS } from './LocalWorkMode'
@@ -101,4 +101,40 @@ it('uses the conversation device selection when restoring a paused request', asy
   expect(tools.calendar_read).toBeDefined()
   expect(active.has('calendar_read')).toBe(true)
   expect(await execute(tools, 'load_skill', { name: 'calendar' })).not.toHaveProperty('error')
+})
+
+it('makes product information discoverable and loadable in the shared mobile work runtime', async () => {
+  const { work } = fixture()
+  const context = { sessionId: 'product', modelName: 'custom', signal: new AbortController().signal }
+  const { tools } = await work.createTools(context)
+  expect(tools.load_skill.description).toContain('chatbox-product-info:')
+  expect(await execute(tools, 'load_skill', { name: 'chatbox-product-info' })).toMatchObject({
+    instructions: expect.stringContaining('https://chatboxai.app/llms.txt'),
+  })
+  expect(tools.chatbox_cli).toBeUndefined()
+  const disabled = await work.createTools({ ...context, skillPreferences: { 'chatbox-product-info': false } })
+  expect(disabled.tools.load_skill.description).not.toContain('chatbox-product-info:')
+  expect(await execute(disabled.tools, 'load_skill', { name: 'chatbox-product-info' })).toHaveProperty('error')
+})
+
+it('registers the host CLI only while product info is enabled', async () => {
+  const { workspace } = fixture()
+  const host = vi.fn(() => ({
+    getSettings: () => {
+      throw new Error('Not used by capabilities')
+    },
+    refreshAccount: async () => false,
+    getVersion: async () => ({ installedVersion: '1', platform: 'test' }),
+    listChats: async () => ({ items: [], total: 0, nextCursor: null }),
+    getChat: async () => null,
+  }))
+  const work = new LocalWorkMode(workspace, new MobileExecutionService(), undefined, undefined, host)
+  const context = { sessionId: 'cli', modelName: 'custom', signal: new AbortController().signal }
+  const { tools, active } = await work.createTools(context)
+  expect(active.has('chatbox_cli')).toBe(true)
+  expect(await execute(tools, 'chatbox_cli', { argv: ['capabilities'] })).toMatchObject({ readOnly: true })
+  const disabled = await work.createTools({ ...context, skillPreferences: { 'chatbox-product-info': false } })
+  expect(disabled.tools.chatbox_cli).toBeUndefined()
+  expect(disabled.active.has('chatbox_cli')).toBe(false)
+  expect(host).toHaveBeenCalledTimes(1)
 })

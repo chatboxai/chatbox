@@ -1,4 +1,5 @@
 import { Badge, Button, Flex, Stack, Text, UnstyledButton } from '@mantine/core'
+import { ModelProviderEnum } from '@shared/types'
 import { IconDatabase, IconSparkles } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { useState } from 'react'
@@ -322,7 +323,9 @@ export function DetailCard({
           {model.description}
         </Text>
       )}
-      <CostLevelIndicator costLevel={model.costLevel} costLabel={costLabel} t={t} />
+      {model.providerId === ModelProviderEnum.ChatboxAI && (
+        <CostLevelIndicator costLevel={model.costLevel} costLabel={costLabel} t={t} />
+      )}
       {/* Temporarily hide model pricing information. */}
       {showPricing && <PricingBlock model={model} mobile={mobile} t={t} isCN={isCN} />}
       <Stack gap="xs" mt="sm">

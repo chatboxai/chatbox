@@ -351,13 +351,13 @@
   "Choose what to include in your backup.": "Choose what to include in your backup.",
   "Also include": "Also include",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.",
-  "Blue sculpted (default)": "Blue sculpted (default)",
-  "Blue flat": "Blue flat",
-  "Warm flat": "Warm flat",
-  "Warm sculpted": "Warm sculpted",
   "Your launcher may take time to update the icon. You may need to add the home screen shortcut again.": "Your launcher may take time to update the icon. You may need to add the home screen shortcut again.",
-  "Gold minimal": "Gold minimal",
-  "Multicolor minimal": "Multicolor minimal",
-  "Blue minimal": "Blue minimal",
-  "Unable to access memory. Please try again.": "Unable to access memory. Please try again."
+  "Unable to access memory. Please try again.": "Unable to access memory. Please try again.",
+  "Soda (Default)": "Soda (Default)",
+  "Blueberry": "Blueberry",
+  "Original": "Original",
+  "Caramel": "Caramel",
+  "Butter": "Butter",
+  "Candy": "Candy",
+  "Ice": "Ice"
 }

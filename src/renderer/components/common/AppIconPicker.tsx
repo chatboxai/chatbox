@@ -6,7 +6,7 @@ import defaultIcon from '@/static/app-icons/default.png'
 import flatGradientIcon from '@/static/app-icons/flat-gradient.png'
 import sculptedIcon from '@/static/app-icons/sculpted.png'
 
-export function AppIconPicker() {
+export function AppIconPicker({ showTitle = true }: { showTitle?: boolean }) {
   const { t } = useTranslation()
   const [selected, setSelected] = useState<string | null>(null)
   const [supported, setSupported] = useState(false)
@@ -54,7 +54,7 @@ export function AppIconPicker() {
 
   return (
     <Stack gap="xs">
-      <Text size="sm">{t('App icon')}</Text>
+      {showTitle && <Text size="sm">{t('App icon')}</Text>}
       {supported && (
         <Group gap="sm" role="group" aria-label={t('App icon') || undefined}>
           {(

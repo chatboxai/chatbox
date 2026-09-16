@@ -45,6 +45,7 @@ import { type Language, Theme } from '@shared/types'
 import { formatFileSize } from '@shared/utils'
 import {
   IconCheck,
+  IconChevronRight,
   IconCircleCheck,
   IconDeviceFloppy,
   IconInfoCircle,
@@ -52,14 +53,14 @@ import {
   IconPlus,
   IconTrash,
 } from '@tabler/icons-react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { exportRendererBackupArchive, importRendererLegacyJsonBackup } from '@/app/persona-backup'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
-import { AppIconPicker } from '@/components/common/AppIconPicker'
+import { canChangeAppIcon } from '@/platform/app-icon'
 import { InterfaceColorInput } from '@/components/common/InterfaceColorInput'
 import LazySlider from '@/components/common/LazySlider'
 import { languageNameMap, languages } from '@/i18n/locales'
@@ -282,7 +283,20 @@ export function RouteComponent() {
               }}
             />
           </SimpleGrid>
-          <AppIconPicker />
+          {canChangeAppIcon() && (
+            <Button
+              component={Link}
+              to="/settings/app-icon"
+              variant="default"
+              justify="space-between"
+              rightSection={<IconChevronRight size={18} />}
+              h="auto"
+              py="sm"
+              fw={400}
+            >
+              {t('App icon')}
+            </Button>
+          )}
 
           <Stack gap="md">
             <Stack gap="xxs">

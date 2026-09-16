@@ -25,6 +25,7 @@ import { RouteComponent as SettingsChatRouteComponent } from '@/routes/settings/
 import { RouteComponent as SettingsChatboxAiRouteComponent } from '@/routes/settings/chatbox-ai'
 import { RouteComponent as SettingsDefaultModelsRouteComponent } from '@/routes/settings/default-models'
 import { RouteComponent as SettingsDocumentParserRouteComponent } from '@/routes/settings/document-parser'
+import { RouteComponent as SettingsAppIconRouteComponent } from '@/routes/settings/app-icon'
 import { RouteComponent as SettingsGeneralRouteComponent } from '@/routes/settings/general'
 import { RouteComponent as SettingsHotkeysRouteComponent } from '@/routes/settings/hotkeys'
 import { RouteComponent as SettingsIndexRouteComponent } from '@/routes/settings/index'
@@ -58,6 +59,12 @@ const SettingsChatboxAiRoute = createRoute({
 const SettingsGeneralRoute = createRoute({
   component: SettingsGeneralRouteComponent,
   path: '/settings/general',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsAppIconRoute = createRoute({
+  component: SettingsAppIconRouteComponent,
+  path: '/settings/app-icon',
   getParentRoute: () => RootRoute,
 })
 
@@ -155,6 +162,7 @@ const routeTree = RootRoute.addChildren([
   SettingsIndexRoute,
   SettingsChatboxAiRoute,
   SettingsGeneralRoute,
+  SettingsAppIconRoute,
   SettingsChatRoute,
   SettingsArchiveRoute,
   SettingsWebSearchRoute,

@@ -163,7 +163,8 @@ export function SettingsRoot() {
   useBackupNavigationGuard()
   const { t } = useTranslation()
   const routerState = useRouterState()
-  const key = routerState.location.pathname.split('/')[2]
+  const section = routerState.location.pathname.split('/')[2]
+  const key = section === 'app-icon' ? 'general' : section
   const isSmallScreen = useIsSmallScreen()
   const { providers: availableProviders } = useProviders()
   const isChatboxAIActivated = availableProviders.some((p) => p.id === 'chatbox-ai')

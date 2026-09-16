@@ -68,6 +68,7 @@
     "check:ci": "biome ci",
     "check:docs": "node --test scripts/check-docs.test.mjs && node scripts/check-docs.mjs",
     "check:shared-boundaries": "node --test scripts/check-shared-boundaries.test.mjs && node scripts/check-shared-boundaries.mjs",
+    "check:desktop-automation-build": "node --test scripts/ensure-desktop-automation-build.test.mjs",
     "mobile:sync": "pnpm run mobile:sync:ios && pnpm run mobile:sync:android",
     "prepare": "node -e \"try { require('husky') } catch(e) { process.exit(0) }\" && husky || true",
     "check:error-i18n-keys": "node script/sync-error-i18n-keys.mjs --check",

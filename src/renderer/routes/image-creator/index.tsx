@@ -560,6 +560,19 @@ function ImageCreatorPage() {
                       placeholder={t('Describe the image you want to create...') || ''}
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
+                      onPaste={(e) => {
+                        const items = Array.from(e.clipboardData.items)
+                        const images = items
+                          .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+                          .map((item) => item.getAsFile())
+                          .filter((file): file is File => file !== null)
+                        if (images.length === 0) return
+
+                        if (!items.some((item) => item.kind === 'string' && item.type === 'text/plain')) {
+                          e.preventDefault()
+                        }
+                        handleImageUpload(images)
+                      }}
                       minRows={2}
                       maxRows={6}
                       autosize

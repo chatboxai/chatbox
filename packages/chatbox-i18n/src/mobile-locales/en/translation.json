@@ -360,6 +360,14 @@
   "Butter": "Butter",
   "Candy": "Candy",
   "Ice": "Ice",
+  "Connecting...": "Connecting...",
+  "Delete Server": "Delete Server",
+  "Disconnected": "Disconnected",
+  "Local MCP servers are only available on desktop. This configuration is preserved in your backups.": "Local MCP servers are only available on desktop. This configuration is preserved in your backups.",
+  "MCP Servers": "MCP Servers",
+  "MCP server not found": "MCP server not found",
+  "No valid MCP servers found": "No valid MCP servers found",
+  "Some MCP server configurations are invalid": "Some MCP server configurations are invalid",
   "Generate image": "Generate image",
   "Reference images": "Reference images"
 }

@@ -360,6 +360,14 @@
   "Butter": "奶油",
   "Candy": "彩虹糖",
   "Ice": "薄荷冰",
+  "Connecting...": "正在连接…",
+  "Delete Server": "删除服务器",
+  "Disconnected": "未连接",
+  "Local MCP servers are only available on desktop. This configuration is preserved in your backups.": "本地 MCP 服务器仅支持桌面端。此配置会保留在备份中。",
+  "MCP Servers": "MCP 服务器",
+  "MCP server not found": "未找到 MCP 服务器",
+  "No valid MCP servers found": "未找到有效的 MCP 服务器配置",
+  "Some MCP server configurations are invalid": "部分 MCP 服务器配置无效",
   "Generate image": "生成图片",
   "Reference images": "参考图片"
 }

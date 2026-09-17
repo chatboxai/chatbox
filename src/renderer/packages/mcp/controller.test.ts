@@ -1085,7 +1085,7 @@ describe('mobile MCP lifecycle', () => {
     expect(server.getAvailableTools()).toEqual({})
   })
 
-  it('cancels a shared initialization when a joining caller aborts', async () => {
+  it('keeps a shared initialization for a caller without a signal when another caller aborts', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(() => new Promise(() => undefined))
     const server = new MCPServer(
       { id: 'joined', name: 'Joined', enabled: true, transport: { type: 'http', url: 'https://native.example/mcp' } },
@@ -1095,7 +1095,10 @@ describe('mobile MCP lifecycle', () => {
     const controller = new AbortController()
     const second = server.start({ signal: controller.signal })
     controller.abort()
-    await Promise.all([first, second])
+    await second
+    expect(server.status.state).toBe('starting')
+    await server.stop()
+    await first
     expect(server.status.state).toBe('idle')
     expect(server.getAvailableTools()).toEqual({})
   })

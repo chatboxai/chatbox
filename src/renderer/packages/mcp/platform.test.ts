@@ -18,7 +18,7 @@ describe('mobile MCP HTTP boundary', () => {
   })
 
   test('passes same-origin GET and POST through native fetch with redirect rejection', async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 202 }))
+    const fetchImpl = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(null, { status: 202 }))
     const fetch = createMCPFetch('https://example.com/sse', fetchImpl)
     await fetch('https://example.com/messages?session=1', { method: 'POST', headers: { authorization: 'Bearer test' } })
     expect(fetchImpl).toHaveBeenCalledWith('https://example.com/messages?session=1', {
@@ -28,8 +28,19 @@ describe('mobile MCP HTTP boundary', () => {
       credentials: 'include',
     })
   })
+  test('normalizes SDK URL objects for native fetch implementations', async () => {
+    const fetchImpl = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(null, { status: 204 }))
+    const fetch = createMCPFetch('https://example.com/mcp', fetchImpl)
+    await fetch(new URL('https://example.com/mcp'), { method: 'DELETE' })
+    expect(fetchImpl).toHaveBeenCalledWith('https://example.com/mcp', {
+      method: 'DELETE',
+      redirect: 'error',
+      credentials: 'include',
+    })
+  })
+
   test('rejects cross-origin SSE endpoints without forwarding credentials', async () => {
-    const fetchImpl = vi.fn<typeof fetch>()
+    const fetchImpl = vi.fn<typeof globalThis.fetch>()
     const fetch = createMCPFetch('https://example.com/sse', fetchImpl)
     await expect(
       fetch('https://other.example/messages', { headers: { authorization: 'Bearer test' } })

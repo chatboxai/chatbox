@@ -47,17 +47,25 @@
     "./utils/chat-export": "./src/utils/chat-export.ts",
     "./utils/session-sort": "./src/utils/session-sort.ts",
     "./application/image-generation": "./src/application/image-generation/index.ts",
-    "./application/memory": "./src/application/memory/index.ts"
+    "./application/memory": "./src/application/memory/index.ts",
+    "./mcp": "./src/mcp/index.ts",
+    "./mcp/schema": "./src/mcp/schema.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@ai-sdk/mcp": "^1.0.64",
+    "@ai-sdk/provider": "^3.0.14",
     "@cfworker/json-schema": "4.1.1",
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/sdk": "^1.15.1",
     "@noble/hashes": "1.8.0",
     "ai": "^6.0.11",
     "deepmerge": "^4.3.1",
+    "emittery": "^1.1.0",
     "fflate": "^0.8.3",
+    "lodash": "^4.17.21",
     "uuid": "^9.0.0",
     "zod": "^4.0.17"
   },

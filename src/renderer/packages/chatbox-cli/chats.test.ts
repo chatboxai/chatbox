@@ -39,6 +39,18 @@ function context(argv: string[]): ChatboxCliCommandContext {
 describe('Chatbox CLI history reads', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('exposes reusable image keys from image-only messages', async () => {
+    getSessionMock.mockResolvedValue({
+      id: 's1',
+      name: 'Images',
+      messages: [{ id: 'image-1', role: 'user', contentParts: [{ type: 'image', storageKey: 'picture:reference' }] }],
+    })
+    await expect(command('read').execute(context(['s1']))).resolves.toMatchObject({
+      total: 1,
+      messages: [{ images: [{ storageKey: 'picture:reference' }] }],
+    })
+  })
+
   it('lists compact metadata with pagination', async () => {
     listSessionsMetaPageMock.mockResolvedValue({
       items: [{ id: 's1', name: 'Project', sortOrder: 1, createdAt: 100, starred: true }],

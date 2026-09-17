@@ -116,3 +116,21 @@ it.each([
     items: expect.arrayContaining([{ key: 'appearance.theme', value: expected }]),
   })
 })
+
+it('dispatches supported image commands with execution identity and cancellation', async () => {
+  const { host, controller } = fixture()
+  const execute = vi.fn(async () => ({ kind: 'image-generation', recordId: 'image-1' }))
+  host.imageCommands = { execute }
+  const cli = buildMobileProductInfoTool(host, controller.signal, 'session-1')
+  const options = { toolCallId: 'tool-1', messages: [] }
+  expect(await cli.execute?.({ argv: ['capabilities'] }, options)).toMatchObject({
+    imageGeneration: true,
+    readOnly: false,
+  })
+  await cli.execute?.({ argv: ['image', 'generate', '--prompt', 'poster'] }, options)
+  expect(execute).toHaveBeenCalledWith(['generate', '--prompt', 'poster'], {
+    sessionId: 'session-1',
+    toolCallId: 'tool-1',
+    signal: controller.signal,
+  })
+})

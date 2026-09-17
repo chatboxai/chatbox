@@ -1,3 +1,4 @@
+import { supportsImageReferenceInput } from '@chatbox/core/application/image-generation'
 import { type ImageGeneration, ModelProviderEnum } from '@shared/types'
 import { rendererApplication } from '@/app/renderer-application'
 import { requestAppActionApproval } from '@/packages/app-action-approval'
@@ -296,6 +297,30 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
   if (!requestedPrompt) throw new ChatboxCliUsageError('Missing --prompt.')
   if (requestedPrompt.length > 8_000) throw new ChatboxCliUsageError('Prompt must be at most 8000 characters.')
 
+  const referenceFlag = stringFlag(context.parsed, 'reference-images')
+  let referenceImages: string[] = []
+  if (referenceFlag !== undefined) {
+    let value: unknown
+    try {
+      value = JSON.parse(referenceFlag)
+    } catch {
+      throw new ChatboxCliUsageError('--reference-images must be a JSON array of image storage keys or HTTP(S) URLs.')
+    }
+    if (
+      !Array.isArray(value) ||
+      value.length > 16 ||
+      !value.every(
+        (entry: unknown) =>
+          typeof entry === 'string' && entry.length <= 2000 && /^(picture:[^\s]+|https?:\/\/[^\s]+)$/.test(entry)
+      )
+    ) {
+      throw new ChatboxCliUsageError(
+        '--reference-images accepts at most 16 image storage keys or HTTP(S) URLs; inline image data is not supported.'
+      )
+    }
+    referenceImages = value
+  }
+
   const requestedProvider = stringFlag(context.parsed, 'provider')
   const requestedModelId = stringFlag(context.parsed, 'model')
   const requestedCount = integerFlag(context.parsed, 'count', { defaultValue: 1, min: 1, max: 4 })
@@ -312,7 +337,13 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
   const settings = settingsStore.getState()
   let availableModels: AvailableImageModel[] | undefined
   const ensureAvailableModels = async () => {
-    availableModels ??= promptOnlyImageModels(await getAvailableImageModels(settings))
+    availableModels ??= (await getAvailableImageModels(settings)).filter((model) =>
+      referenceImages.length === 0
+        ? supportsPromptOnlyGeneration(model)
+        : supportsImageReferenceInput(model, model.capabilities) &&
+          referenceImages.length >= (model.capabilities?.inputReferences?.min ?? 0) &&
+          referenceImages.length <= (model.capabilities?.inputReferences?.max ?? 16)
+    )
     return availableModels
   }
 
@@ -336,6 +367,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
   if (
     approvedRequest &&
     (approvedRequest.prompt !== requestedPrompt ||
+      JSON.stringify(approvedRequest.referenceImages ?? []) !== JSON.stringify(referenceImages) ||
       approvedRequest.count !== requestedCount ||
       approvedRequest.aspectRatio !== requestedAspectRatio ||
       approvedRequest.style !== parsedStyle ||
@@ -379,7 +411,15 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
         : 'No image models are configured. Configure a Chatbox license or an image-capable provider in Chatbox Settings, then retry.'
     )
   }
-  const signature = JSON.stringify({ prompt, provider, modelId, count, aspectRatio, dalleStyle })
+  const signature = JSON.stringify({
+    prompt,
+    provider,
+    modelId,
+    count,
+    aspectRatio,
+    dalleStyle,
+    ...(referenceImages.length ? { referenceImages } : {}),
+  })
   if (existing) {
     if (existing.signature !== signature) {
       throw new Error(`Tool call ${cacheKey} was reused with different image arguments.`)
@@ -433,6 +473,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
         count,
         aspectRatio,
         style: dalleStyle,
+        referenceImages,
         billing: provider === ModelProviderEnum.ChatboxAI ? 'chatbox_quota' : 'provider',
         ...(provider === ModelProviderEnum.ChatboxAI && licenseDetail
           ? {
@@ -454,7 +495,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
     const handle = await startImageGeneration(
       {
         prompt,
-        referenceImages: [],
+        referenceImages,
         model: { provider, modelId },
         imageGenerateNum: count,
         aspectRatio,
@@ -507,9 +548,9 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
   {
     path: ['image', 'generate'],
     description:
-      'Request approval, then start a callback-driven image background task. Never poll for completion. When the user names a model, pass --model (model id or display name); without --model the first catalog model is used.',
+      'Request approval, then start a callback-driven image background task. Never poll for completion. When the user names a model, pass --model (model id or display name); without --model the first compatible catalog model is used. Pass --reference-images as a JSON array of picture storage keys from chat attachments or HTTP(S) image URLs. Never pass base64 image data.',
     usage:
-      'chatbox image generate --prompt <text> [--provider <id>] [--model <id-or-name>] [--count 1] [--aspect-ratio <ratio>]',
+      'chatbox image generate --prompt <text> [--provider <id>] [--model <id-or-name>] [--count 1] [--aspect-ratio <ratio>] [--reference-images <json-array>]',
     execute: generateImage,
   },
   {
@@ -558,13 +599,13 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
   {
     path: ['image', 'models'],
     description:
-      'List configured image models that support prompt-only generation without exposing provider credentials. Run this when the user asks which models exist or names a model you cannot resolve.',
+      'List configured image models and reference-input capabilities without exposing provider credentials. Run this when the user asks which models exist or names a model you cannot resolve.',
     usage: 'chatbox image models',
     async execute() {
-      const models = promptOnlyImageModels(await getAvailableImageModels())
+      const models = await getAvailableImageModels()
       return {
         models,
-        defaultModel: models[0] ?? null,
+        defaultModel: promptOnlyImageModels(models)[0] ?? null,
       }
     },
   },

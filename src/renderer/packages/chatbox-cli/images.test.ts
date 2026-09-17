@@ -240,6 +240,49 @@ describe('Chatbox CLI image commands', () => {
     )
   })
 
+  it('binds reference images to approval and forwards them to generation', async () => {
+    const referenceImages = ['picture:uploaded-1', 'https://example.com/reference.png']
+    const argv = ['--prompt', 'red fox', '--reference-images', JSON.stringify(referenceImages)]
+    requestAppActionApprovalMock.mockRejectedValueOnce(new Error('approval required'))
+    await expect(command('generate').execute(context(argv, { approved: false }))).rejects.toThrow('approval required')
+    const approvalDetails = requestAppActionApprovalMock.mock.calls[0][4]
+    expect(approvalDetails.referenceImages).toEqual(referenceImages)
+    startImageGenerationMock.mockResolvedValue({
+      recordId: 'reference-record',
+      startedAt: 1000,
+      monitoring: { mode: 'direct' },
+      completion: Promise.resolve(null),
+    })
+    await command('generate').execute(context(argv, { approvalDetails }))
+    expect(startImageGenerationMock).toHaveBeenCalledWith(
+      expect.objectContaining({ referenceImages }),
+      expect.anything()
+    )
+    await expect(command('generate').execute(context(['--prompt', 'red fox'], { approvalDetails }))).rejects.toThrow(
+      'changed after approval'
+    )
+  })
+
+  it.each(['["data:image/png;base64,abc"]', '["file:///tmp/image.png"]', '{}', 'invalid'])(
+    'rejects invalid reference input %s',
+    async (references) => {
+      await expect(
+        command('generate').execute(context(['--prompt', 'fox', '--reference-images', references]))
+      ).rejects.toThrow('--reference-images')
+      expect(startImageGenerationMock).not.toHaveBeenCalled()
+    }
+  )
+
+  it('rejects references when the model does not support them', async () => {
+    getAvailableImageModelsMock.mockResolvedValue([{ provider: 'openai', modelId: 'dall-e-3', nickname: 'DALL-E' }])
+    await expect(
+      command('generate').execute(
+        context(['--prompt', 'fox', '--reference-images', '["picture:ref"]'], { approved: false })
+      )
+    ).rejects.toThrow('No image models')
+    expect(requestAppActionApprovalMock).not.toHaveBeenCalled()
+  })
+
   it('requires a tool-call anchor', async () => {
     await expect(command('generate').execute(context(['--prompt', 'red fox'], { toolCallId: '' }))).rejects.toThrow(
       'requires a tool call id'
@@ -561,7 +604,7 @@ describe('Chatbox CLI image commands', () => {
     expect(getAvailableImageModelsMock).toHaveBeenCalledOnce()
   })
 
-  it('hides models that require reference images from prompt-only CLI generation', async () => {
+  it('lists reference models but rejects them for prompt-only generation', async () => {
     getAvailableImageModelsMock.mockResolvedValue([
       {
         provider: 'openrouter',
@@ -579,6 +622,12 @@ describe('Chatbox CLI image commands', () => {
 
     await expect(command('models').execute(context([]))).resolves.toEqual({
       models: [
+        {
+          provider: 'openrouter',
+          modelId: 'recraft-required-reference',
+          nickname: 'Recraft Required Reference',
+          capabilities: { aspectRatio: null, inputReferences: { min: 1, max: 1 } },
+        },
         {
           provider: 'openrouter',
           modelId: 'prompt-or-reference',

@@ -26,7 +26,9 @@ vi.mock('react-i18next', async (importOriginal) => ({
 }))
 
 vi.mock('@/components/chat/ImageGenerationResultGallery', () => ({
-  ImageGenerationResultGallery: () => null,
+  ImageGenerationResultGallery: ({ images }: { images: readonly string[] }) => (
+    <div data-testid="reference-gallery">{images.join(',')}</div>
+  ),
 }))
 
 vi.mock('@/components/common/ChatboxAIErrorMessage', () => ({
@@ -154,6 +156,20 @@ describe('CLI image recovery timeline', () => {
       })
     }
   )
+
+  it('shows reference images on a pending tool call before results exist', () => {
+    useImageGenerationRecordMock.mockReturnValue({
+      data: record({ referenceImages: ['picture:reference'] }),
+      isFetched: true,
+    })
+    render(
+      <MantineProvider>
+        <StepTimelineUI parts={[toolCall]} sessionId="session-1" messageId="message-1" />
+      </MantineProvider>
+    )
+    expect(screen.getByText('Reference images')).toBeTruthy()
+    expect(screen.getByTestId('reference-gallery').textContent).toBe('picture:reference')
+  })
 
   it('shows an interrupted state without a recovery action when the request has no backend task id', () => {
     useImageGenerationRecordMock.mockReturnValue({ data: record({ taskId: undefined }), isFetched: true })

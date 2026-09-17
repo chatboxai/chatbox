@@ -72,14 +72,16 @@ it('defaults to documents and websites and respects explicit skill overrides', a
   expect(await catalog.load('presentations')).toBeNull()
 })
 
-it('provides official product guidance without advertising unavailable mobile commands', async () => {
+it('provides official product guidance and capability-gated image commands', async () => {
   const catalog = createLocalBuiltinSkillCatalog([])
   const loaded = await catalog.load('chatbox-product-info')
   expect(loaded?.instructions).toContain('https://chatboxai.app/llms.txt')
   expect(loaded?.instructions).toContain('https://chatboxai.app/pricing.md')
   expect(loaded?.instructions).toContain('parse_link')
   expect(loaded?.instructions).toContain('enable web browsing')
-  expect(loaded?.instructions).toContain('Image generation is unsupported')
+  expect(loaded?.instructions).toContain('capabilities reports imageGeneration=true')
+  expect(loaded?.instructions).toContain('--reference-images')
+  expect(loaded?.instructions).toContain('confirm charges')
   expect(loaded?.instructions).toContain('["account", "refresh"]')
   const disabled = createLocalBuiltinSkillCatalog([], { 'chatbox-product-info': false })
   expect((await disabled.list()).some((skill) => skill.name === 'chatbox-product-info')).toBe(false)

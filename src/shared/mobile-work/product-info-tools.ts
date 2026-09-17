@@ -4,6 +4,12 @@ import { z } from 'zod'
 import { throwIfWorkAborted } from './abort'
 
 export interface MobileProductInfoHost {
+  imageCommands?: {
+    execute(
+      argv: string[],
+      context: { sessionId: string; toolCallId: string; signal: AbortSignal }
+    ): Promise<Record<string, unknown>>
+  }
   getSettings(): Settings
   refreshAccount(): Promise<boolean>
   getVersion(): Promise<{ installedVersion: string; platform: string }>
@@ -25,7 +31,7 @@ const commands = [
   'chats read <id> [--limit 20] [--cursor 0]',
   'chats search <query> [--limit 10] [--cursor 0:0] [--archived]',
 ]
-const inputSchema = z.object({ argv: z.array(z.string().max(1000)).min(1).max(16) }).strict()
+const inputSchema = z.object({ argv: z.array(z.string().max(32000)).min(1).max(16) }).strict()
 
 function account(settings: Settings) {
   const detail = settings.licenseDetail
@@ -83,6 +89,10 @@ function messages(session: Session) {
     role: message.role,
     timestamp: message.timestamp,
     threadId,
+    images: message.contentParts
+      .filter((part) => part.type === 'image')
+      .slice(0, 16)
+      .map((part) => ({ storageKey: part.storageKey })),
     text: message.contentParts
       .filter((part) => part.type === 'text')
       .map((part) => part.text)
@@ -106,10 +116,10 @@ function integer(value: string, max = 10_000_000) {
   return Number(value)
 }
 
-export function buildMobileProductInfoTool(host: MobileProductInfoHost, signal: AbortSignal) {
+export function buildMobileProductInfoTool(host: MobileProductInfoHost, signal: AbortSignal, sessionId?: string) {
   return tool({
     description:
-      'Read Chatbox account/quota, allowlisted settings and local conversation history. Controlled virtual CLI, not a shell. Use argv ["capabilities"] for commands. Read-only; image generation and settings writes are unsupported.',
+      'Read Chatbox account/quota, allowlisted settings and local conversation history. Controlled virtual CLI, not a shell. Use argv ["capabilities"] for commands. Use capabilities to discover available operations. Image generation requires user confirmation when supported. Settings writes are unsupported.',
     inputSchema,
     execute: async (input, options) => {
       const currentSignal = options.abortSignal ?? signal
@@ -117,7 +127,26 @@ export function buildMobileProductInfoTool(host: MobileProductInfoHost, signal: 
       const { argv } = inputSchema.parse(input)
       const [domain, action, ...args] = argv
       try {
-        if (domain === 'capabilities' || domain === 'help') return { commands, readOnly: true, imageGeneration: false }
+        if (domain === 'capabilities' || domain === 'help')
+          return {
+            commands: host.imageCommands
+              ? [
+                  ...commands,
+                  'image models',
+                  'image generate --prompt <text> [--provider <id>] [--model <id>] [--count <1-4>] [--aspect-ratio <ratio>] [--reference-images <json-array>]',
+                  'image status <record-id>',
+                ]
+              : commands,
+            readOnly: !host.imageCommands,
+            imageGeneration: Boolean(host.imageCommands),
+          }
+        if (domain === 'image' && host.imageCommands && sessionId) {
+          return await host.imageCommands.execute([action, ...args], {
+            sessionId,
+            toolCallId: options.toolCallId,
+            signal: currentSignal,
+          })
+        }
         if (domain === 'version' && argv.length === 1) return await host.getVersion()
         if (domain === 'account' && argv.length === 2 && ['status', 'license', 'quota', 'refresh'].includes(action)) {
           const refreshed = action === 'refresh' ? await host.refreshAccount() : undefined

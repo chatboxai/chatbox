@@ -168,6 +168,7 @@ export const MessageReasoningPartSchema = z.object({
 })
 
 export const ImageGenerationApprovalDetailsSchema = z.object({
+  referenceImages: z.array(z.string()).optional(),
   type: z.literal('image_generation'),
   provider: z.string(),
   modelId: z.string(),

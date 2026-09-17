@@ -1,3 +1,4 @@
+import { ImageGenerationResultGallery } from '@/components/chat/ImageGenerationResultGallery'
 import {
   type ApprovalPauseReason,
   listPendingPauseInteractions,
@@ -136,6 +137,14 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails 
   return (
     <>
       <PayloadBlock mono={false}>{details.prompt}</PayloadBlock>
+      {!!details.referenceImages?.length && (
+        <div>
+          <Text size="xs" c="chatbox-tertiary">
+            {t('Reference images')}
+          </Text>
+          <ImageGenerationResultGallery images={details.referenceImages} compact />
+        </div>
+      )}
       <Group gap="md" wrap="wrap">
         <Text size="xs" c="chatbox-tertiary">
           {t('Number of images')}: {details.count}

@@ -18,6 +18,8 @@ const allowedSharedImports = new Map([
     new Set(['@shared/providers/api-style', '@shared/utils/reasoning-control']),
   ],
 ])
+allowedSharedImports.set('apps/mobile/src/components/message/ToolImageGenerationPreview.tsx', new Set(['@shared/image-background-task-result']))
+allowedSharedImports.set('apps/mobile/src/work-mode/image-commands.ts', new Set(['@shared/mobile-work/product-info-tools']))
 allowedSharedImports.set('apps/mobile/src/adapters/background-stream.ts', new Set(['@shared/utils/background-stream']))
 allowedSharedImports.set('apps/mobile/src/adapters/mobile-model-dependencies.ts', new Set(['@shared/utils/background-stream']))
 // Host-neutral execution and artifact contracts shared by RN and Capacitor.
@@ -40,11 +42,11 @@ allowedSharedImports.set('apps/mobile/src/work-mode/workspace-path.ts', new Set(
 
 allowedSharedImports.set('apps/mobile/src/work-mode/normalize-work-image.ts', new Set(['@shared/mobile-work/view-image']))
 
-allowedSharedImports.set('apps/mobile/src/components/message/MessageWorkTimeline.tsx', new Set(['@shared/mobile-work/execution-feedback']))
+allowedSharedImports.set('apps/mobile/src/components/message/MessageWorkTimeline.tsx', new Set(['@shared/mobile-work/execution-feedback', '@shared/image-background-task-result']))
 allowedSharedImports.set('apps/mobile/src/screens/settings/SkillsSettingsScreen.tsx', new Set(['@shared/mobile-work/skill-settings']))
 allowedSharedImports.set('apps/mobile/src/work-mode/ui/WorkArtifactCards.tsx', new Set(['@shared/work-artifacts']))
 allowedSharedImports.set('apps/mobile/src/work-mode/ui/WorkArtifactCards.test.ts', new Set(['@shared/work-artifacts']))
-allowedSharedImports.set('apps/mobile/src/work-mode/ui/authorizeSystemTool.ts', new Set(['@shared/mobile-work/authorization-text', '@shared/mobile-work/system-tools']))
+allowedSharedImports.set('apps/mobile/src/work-mode/ui/system-tool-approval.ts', new Set(['@shared/mobile-work/authorization-text']))
 
 allowedSharedImports.set('apps/mobile/src/work-mode/createMobileWorkMode.ts', new Set(['@shared/mobile-work/product-info-tools']))
 

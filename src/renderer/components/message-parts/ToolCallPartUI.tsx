@@ -1544,6 +1544,11 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
   const { data: imageRecord, isFetched: isImageRecordFetched } = useImageGenerationRecord(
     acceptedImageTask?.recordId ?? null
   )
+  const referenceImages =
+    imageRecord?.referenceImages ??
+    (part.pauseReason?.type === 'app_action_approval' && part.pauseReason.details?.type === 'image_generation'
+      ? part.pauseReason.details.referenceImages
+      : undefined)
   const currentGeneratingId = useCurrentGeneratingId()
   const imageStatus = imageRecord?.status ?? acceptedImageTask?.status
   const isBackgroundWaiting =
@@ -1769,6 +1774,14 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
         <Text size="xs" c="chatbox-tertiary" mt={2}>
           {t('The original task cannot be resumed. Please send a new image generation request.')}
         </Text>
+      )}
+      {!!referenceImages?.length && (
+        <Box mt={6}>
+          <Text size="xs" c="chatbox-tertiary">
+            {t('Reference images')}
+          </Text>
+          <ImageGenerationResultGallery images={referenceImages} compact />
+        </Box>
       )}
       <Collapse in={expanded && hasDetail}>
         <Box

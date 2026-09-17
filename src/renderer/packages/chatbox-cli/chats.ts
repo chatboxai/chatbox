@@ -23,6 +23,10 @@ function compactMessage(message: Message, thread?: { id: string; name: string })
     role: message.role,
     timestamp: message.timestamp,
     text: excerpt(message),
+    images: message.contentParts
+      .filter((part) => part.type === 'image')
+      .slice(0, 16)
+      .map((part) => ({ storageKey: part.storageKey })),
     files: message.files?.slice(0, 10).map((file) => file.name),
     threadId: thread?.id,
     threadName: thread?.name,
@@ -35,7 +39,9 @@ function readableMessages(session: Session): Array<{ message: Message; thread?: 
     thread.messages.map((message) => ({ message, thread: { id: thread.id, name: thread.name } }))
   )
   return [...current, ...history].filter(
-    ({ message }) => isReadableConversationMessage(message) && Boolean(excerpt(message) || message.files?.length)
+    ({ message }) =>
+      isReadableConversationMessage(message) &&
+      Boolean(excerpt(message) || message.files?.length || message.contentParts.some((part) => part.type === 'image'))
   )
 }
 

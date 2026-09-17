@@ -11,6 +11,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useState,
 } from 'react'
@@ -56,6 +57,8 @@ import {
   IconPlayerPlayFilled,
   type IconProps,
   IconWorldUpload,
+  IconTextWrap,
+  IconTextWrapDisabled,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { visit } from 'unist-util-visit'
@@ -149,6 +152,7 @@ function Markdown(props: {
     onPreviewWebpage,
   } = props
 
+  const fallbackId = useId()
   const processedChildren = useMemo(
     () => (enableLaTeXRendering ? latex.processLaTeX(children) : children),
     [children, enableLaTeXRendering]
@@ -185,6 +189,7 @@ function Markdown(props: {
                 <CodeRenderer
                   {...props}
                   uniqueId={uniqueId ? `${uniqueId}-code-${codeIndex}` : undefined}
+                  wrapStateId={`${uniqueId || fallbackId}-code-${codeIndex}`}
                   sessionId={sessionId}
                   hiddenCodeActions={hiddenCodeActions}
                   hiddenCodeCopyButton={hiddenCodeCopyButton}
@@ -226,6 +231,7 @@ function Markdown(props: {
           }),
           [
             uniqueId,
+            fallbackId,
             sessionId,
             hiddenCodeActions,
             hiddenCodeCopyButton,
@@ -303,6 +309,7 @@ export const CodeRenderer = memo(
     children: string
     className?: string
     uniqueId?: string
+    wrapStateId?: string
     sessionId?: string
     hiddenCodeActions?: boolean
     hiddenCodeCopyButton?: boolean
@@ -336,6 +343,7 @@ export const CodeRenderer = memo(
       <>
         <BlockCode
           uniqueId={props.uniqueId}
+          wrapStateId={props.wrapStateId}
           sessionId={props.sessionId}
           hiddenCodeActions={hiddenCodeActions}
           hiddenCodeCopyButton={hiddenCodeCopyButton}
@@ -374,6 +382,8 @@ const InlineCode = memo((props: { children: string; className?: string }) => {
 
 // Define the Context type
 interface BlockCodeCollapsedStateContextType {
+  wrappedStates: Record<string, boolean>
+  toggleWrap: (id: string) => void
   collapsedStates: Record<string, boolean>
   toggleCollapse: (id: string) => void
   setCollapse: (id: string, collapsed: boolean) => void
@@ -395,6 +405,10 @@ export const BlockCodeCollapsedStateProvider: React.FC<BlockCodeCollapsedStatePr
   children,
   defaultCollapsed = false,
 }) => {
+  const [wrappedStates, setWrappedStates] = useState<Record<string, boolean>>({})
+  const toggleWrap = useCallback((id: string) => {
+    setWrappedStates((previous) => ({ ...previous, [id]: !previous[id] }))
+  }, [])
   const [collapsedStates, setCollapsedStates] = useState<Record<string, boolean>>({})
 
   // Toggle collapse state
@@ -429,20 +443,22 @@ export const BlockCodeCollapsedStateProvider: React.FC<BlockCodeCollapsedStatePr
 
   const value: BlockCodeCollapsedStateContextType = useMemo(
     () => ({
+      wrappedStates,
+      toggleWrap,
       collapsedStates,
       toggleCollapse,
       setCollapse,
       isCollapsed,
       resetAll,
     }),
-    [collapsedStates, toggleCollapse, setCollapse, isCollapsed, resetAll]
+    [wrappedStates, toggleWrap, collapsedStates, toggleCollapse, setCollapse, isCollapsed, resetAll]
   )
 
   return <BlockCodeCollapsedStateContext.Provider value={value}>{children}</BlockCodeCollapsedStateContext.Provider>
 }
 
 // Custom hook
-export const useBlockCodeCollapsedState = (messageId: string) => {
+export const useBlockCodeCollapsedState = (messageId: string, wrapStateId = messageId) => {
   const context = useContext(BlockCodeCollapsedStateContext)
 
   if (context === undefined) {
@@ -454,6 +470,8 @@ export const useBlockCodeCollapsedState = (messageId: string) => {
   }
 
   return {
+    wrapped: context.wrappedStates[wrapStateId] ?? false,
+    toggleWrap: () => context.toggleWrap(wrapStateId),
     collapsed: context.isCollapsed(messageId),
     toggleCollapsed: () => context.toggleCollapse(messageId),
     setCollapsed: (collapsed: boolean) => context.setCollapse(messageId, collapsed),
@@ -464,6 +482,7 @@ type BlockCodeProps = {
   language: string
   children: string
   uniqueId?: string
+  wrapStateId?: string
   sessionId?: string
   hiddenCodeActions?: boolean
   hiddenCodeCopyButton?: boolean
@@ -625,6 +644,7 @@ const BlockCode = memo(
   ({
     children,
     uniqueId,
+    wrapStateId,
     sessionId,
     hiddenCodeActions,
     hiddenCodeCopyButton,
@@ -635,6 +655,7 @@ const BlockCode = memo(
     onPreviewWebpage,
   }: BlockCodeProps) => {
     const { t } = useTranslation()
+    const fallbackId = useId()
     const computedColorScheme = useComputedColorScheme()
     const colorScheme = forceColorScheme || computedColorScheme
     const shikiTheme: ShikiTheme = colorScheme !== 'light' ? 'one-dark-pro' : 'one-light'
@@ -688,7 +709,12 @@ const BlockCode = memo(
       () => !!uniqueId && children.split('\n').length > CODE_BLOCK_COLLAPSE_LINE_THRESHOLD,
       [uniqueId, children]
     )
-    const { collapsed, toggleCollapsed } = useBlockCodeCollapsedState(uniqueId || '')
+    const {
+      collapsed,
+      toggleCollapsed,
+      wrapped: wrapCode,
+      toggleWrap,
+    } = useBlockCodeCollapsedState(uniqueId || fallbackId, wrapStateId || uniqueId || fallbackId)
     const onClickCollapse = (event: React.MouseEvent) => {
       event.stopPropagation()
       event.preventDefault()
@@ -699,6 +725,7 @@ const BlockCode = memo(
       <Stack
         gap={0}
         className="code-block-container w-full max-w-full min-w-0 bg-chatbox-background-primary rounded-md overflow-hidden"
+        data-wrap-code={wrapCode}
       >
         <Flex
           justify="space-between"
@@ -720,6 +747,22 @@ const BlockCode = memo(
 
           {!hiddenCodeActions && (
             <Flex gap="xs" align="center">
+              <Tooltip label={wrapCode ? t('Auto wrap') : t('Preserve line breaks')} withArrow openDelay={1000}>
+                <ActionIcon
+                  variant="transparent"
+                  color="chatbox-tertiary"
+                  size={18}
+                  aria-label={t('Auto wrap')}
+                  aria-pressed={wrapCode}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    event.preventDefault()
+                    toggleWrap()
+                  }}
+                >
+                  {wrapCode ? <IconTextWrap size={14} /> : <IconTextWrapDisabled size={14} />}
+                </ActionIcon>
+              </Tooltip>
               {!hiddenCodeCopyButton && (
                 <Tooltip label={t('copy')} withArrow openDelay={1000}>
                   <ActionIcon

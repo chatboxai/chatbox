@@ -85,6 +85,12 @@ export function createDefaultSettings(): Settings {
         queritTimeRange: 'none',
         searxngBaseUrl: '',
       },
+      speechToText: {
+        enabled: false,
+        baseUrl: '',
+        model: 'FunAudioLLM/SenseVoiceSmall',
+        apiKey: '',
+      },
       knowledgeBase: {
         models: {
           embedding: undefined,

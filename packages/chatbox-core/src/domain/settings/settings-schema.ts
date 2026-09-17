@@ -340,6 +340,14 @@ const ExtensionSettingsSchema = z.object({
     queritTimeRange: z.string().nullable().optional(),
     searxngBaseUrl: z.string().optional(),
   }),
+  speechToText: z
+    .object({
+      enabled: z.boolean().catch(false),
+      baseUrl: z.string().catch(''),
+      model: z.string().catch('FunAudioLLM/SenseVoiceSmall'),
+      apiKey: z.string().catch(''),
+    })
+    .optional(),
   knowledgeBase: z
     .object({
       models: z.object({

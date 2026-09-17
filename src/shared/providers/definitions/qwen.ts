@@ -16,6 +16,9 @@ export const qwenProvider = defineProvider({
     'qwen3.6-flash',
     'qwen3-coder-plus',
     'qwen3-vl-plus',
+    'qwen3-rerank',
+    'qwen3.7-text-rerank',
+    'text-embedding-v4',
   ],
   urls: {
     website: 'https://chat.qwen.ai',
@@ -51,6 +54,26 @@ export const qwenProvider = defineProvider({
       {
         modelId: 'qwen3-vl-plus',
         capabilities: ['vision', 'tool_use'],
+      },
+      {
+        modelId: 'qwen3-rerank',
+        type: 'rerank',
+      },
+      {
+        modelId: 'qwen3.7-text-rerank',
+        type: 'rerank',
+      },
+      {
+        modelId: 'qwen3-vl-rerank',
+        type: 'rerank',
+      },
+      {
+        modelId: 'text-embedding-v4',
+        type: 'embedding',
+      },
+      {
+        modelId: 'qwen3.7-text-embedding',
+        type: 'embedding',
       },
     ],
   },

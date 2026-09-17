@@ -1,3 +1,4 @@
+import { SETTINGS_PERSIST_VERSION } from '@chatbox/core/domain/settings'
 import { settings as defaultSettings } from '@shared/defaults'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -151,7 +152,7 @@ describe('settingsStore persistence', () => {
           apiHost: 'https://api.openai.com',
         },
       },
-      __version: 6,
+      __version: SETTINGS_PERSIST_VERSION,
     })
   })
 

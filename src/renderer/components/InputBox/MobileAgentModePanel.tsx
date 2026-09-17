@@ -8,10 +8,11 @@ import {
   resolveLocalWorkCapabilities,
   setLocalWorkCapability,
 } from '@shared/mobile-work/capabilities'
-import { IconBook, IconChevronLeft, IconChevronRight, IconDeviceMobile, IconNotes } from '@tabler/icons-react'
+import { IconBook, IconChevronLeft, IconChevronRight, IconDeviceMobile, IconNotes, IconPlug } from '@tabler/icons-react'
 import { forwardRef, useImperativeHandle, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
+import { MCPConnectionSummary } from '@/components/mcp/MCPConnectionSummary'
 import { useSessionLockState } from '@/hooks/useSessionLockState'
 import { useSessionPresentation } from '@/hooks/useSessionPresentation'
 import { navigateToSettings } from '@/modals/settings-navigation'
@@ -309,6 +310,25 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
                 {activeCount}
               </Badge>
             )}
+          </Group>
+          <IconChevronRight size={16} />
+        </Group>
+      </UnstyledButton>
+      <UnstyledButton
+        aria-label={t('MCP Settings')}
+        onClick={() => {
+          onClose?.()
+          navigateToSettings('/mcp')
+        }}
+        style={{ minHeight: 44 }}
+      >
+        <Group justify="space-between">
+          <Group gap="xs">
+            <IconPlug size={18} />
+            <Stack gap={0}>
+              <Text size="sm">{t('MCP Settings')}</Text>
+              <MCPConnectionSummary />
+            </Stack>
           </Group>
           <IconChevronRight size={16} />
         </Group>

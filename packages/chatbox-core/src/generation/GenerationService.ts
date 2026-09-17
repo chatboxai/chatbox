@@ -202,7 +202,8 @@ export interface GenerationToolExecutionPort {
   buildToolsForPausedToolCall(
     source: SessionContextSource,
     settings: SessionSettings,
-    targetMessage: Message
+    targetMessage: Message,
+    signal: AbortSignal
   ): Promise<ToolSet>
 }
 
@@ -1251,7 +1252,12 @@ export class GenerationService<TContext> {
     await sessions.modifyMessage(sessionId, message, false)
 
     try {
-      const tools = await this.dependencies.tools.buildToolsForPausedToolCall(source, settings, message)
+      const tools = await this.dependencies.tools.buildToolsForPausedToolCall(
+        source,
+        settings,
+        message,
+        controller.signal
+      )
       for (const batchPart of batch) {
         if (controller.signal.aborted) break
 
@@ -1407,15 +1413,23 @@ export class GenerationService<TContext> {
       }))
       await sessions.modifyMessage(sessionId, retryMessage, false)
 
+      const retryRuntime = this.dependencies.runtime.start(sessionId, messageId)
       try {
-        const tools = await this.dependencies.tools.buildToolsForPausedToolCall(source, settings, retryMessage)
+        const tools = await this.dependencies.tools.buildToolsForPausedToolCall(
+          source,
+          settings,
+          retryMessage,
+          retryRuntime.abortController.signal
+        )
         const toolValue = (tools as Record<string, unknown>)[part.toolName]
         const executableTool = toolValue && typeof toolValue === 'object' ? (toolValue as ExecutableTool) : undefined
         if (typeof executableTool?.execute !== 'function') {
           throw new Error(`Tool "${part.toolName}" is not available`)
         }
 
+        retryRuntime.abortController.signal.throwIfAborted()
         const result = await executableTool.execute(part.args, {
+          abortSignal: retryRuntime.abortController.signal,
           toolCallId,
           approved: true,
           ...(part.pauseReason?.type === 'file_mutation_approval' && part.pauseReason.editPreview
@@ -1430,6 +1444,7 @@ export class GenerationService<TContext> {
             : {}),
           approvalDetails: part.pauseReason?.type === 'app_action_approval' ? part.pauseReason.details : undefined,
         })
+        retryRuntime.abortController.signal.throwIfAborted()
         retryMessage = updateToolCallPart(retryMessage, toolCallId, (toolPart) => ({
           ...toolPart,
           state: 'result',
@@ -1438,13 +1453,34 @@ export class GenerationService<TContext> {
           duration: toolPart.startTime ? host.now() - toolPart.startTime : undefined,
         }))
         await sessions.modifyMessage(sessionId, retryMessage, true)
+        retryRuntime.abortController.signal.throwIfAborted()
 
+        this.dependencies.runtime.clear(sessionId, messageId, retryRuntime)
         await this.orchestrate(
           sessionId,
           { ...retryMessage, generating: true },
-          { operationType: 'regenerate', appendToMessage: true }
+          {
+            operationType: 'regenerate',
+            appendToMessage: true,
+            externalAbortSignal: retryRuntime.abortController.signal,
+          }
         )
       } catch (error) {
+        if (retryRuntime.abortController.signal.aborted) {
+          await sessions.modifyMessage(
+            sessionId,
+            finishPausedToolCallContinuation(
+              cancelRunningToolCallBatch(
+                retryMessage,
+                new Set([toolCallId]),
+                getAbortStoppedAt(retryRuntime.abortController.signal, host.now())
+              ),
+              'canceled'
+            ),
+            true
+          )
+          return
+        }
         const pause = getToolCallPause(error)
         if (pause) {
           await sessions.modifyMessage(
@@ -1485,6 +1521,8 @@ export class GenerationService<TContext> {
           })),
           true
         )
+      } finally {
+        this.dependencies.runtime.clear(sessionId, messageId, retryRuntime)
       }
       return
     }

@@ -1,5 +1,3 @@
-import { mcpToolSchema } from '@shared/mcp-tool-schema'
-import { getLogger } from '@/lib/utils'
 import { createMCPClient } from '@ai-sdk/mcp'
 import {
   type JSONObject,
@@ -11,17 +9,27 @@ import {
   type StreamableHTTPClientTransportOptions,
   UnauthorizedError,
 } from '@modelcontextprotocol/client'
+import { SSEClientTransport as LegacySSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { StreamableHTTPClientTransport as LegacyHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { mcpToolSchema } from '@shared/mcp-tool-schema'
 import { type JSONValue as AIToolJSONValue, dynamicTool, type ToolSet } from 'ai'
 import Emittery from 'emittery'
 import { isEqual } from 'lodash'
+import { getLogger } from '@/lib/utils'
 import { IPCStdioTransport } from './ipc-stdio-transport'
-import { MCPOAuthProvider } from './oauth-provider'
+import {
+  createMCPFetch,
+  getMCPPlatformDependencies,
+  type MCPAuthorizationProvider,
+  type MCPPlatformDependencies,
+} from './platform'
 import type { MCPProtocolMode, MCPServerConfig, MCPServerStatus } from './types'
 
 const schemaLog = getLogger('mcp:tool-schema')
 
 type TransportConfig = MCPServerConfig['transport']
+type ManagedTransport = { close(): Promise<void>; onclose?: () => void; onerror?: (error: Error) => void }
+type RegisterTransport = (transport: ManagedTransport) => void
 type LegacyMCPClient = Awaited<ReturnType<typeof createMCPClient>>
 
 interface MCPClient {
@@ -63,7 +71,16 @@ function toModelOutput({ output }: { output: unknown }) {
   }
 }
 
-function createNegotiatingClientAdapter(client: NegotiatingMCPClient): MCPClient {
+function closeClientOnAbort(client: Pick<MCPClient, 'close'>, signal?: AbortSignal): () => void {
+  // Legacy cancellation is connection-scoped; close it to release native I/O.
+  const cancel = () => {
+    void client.close().catch(() => undefined)
+  }
+  signal?.addEventListener('abort', cancel, { once: true })
+  return () => signal?.removeEventListener('abort', cancel)
+}
+
+function createNegotiatingClientAdapter(client: NegotiatingMCPClient, closeOnAbort = false): MCPClient {
   return {
     async tools() {
       const { tools: definitions } = await client.listTools()
@@ -82,14 +99,19 @@ function createNegotiatingClientAdapter(client: NegotiatingMCPClient): MCPClient
           ),
           execute: async (args, options) => {
             options.abortSignal?.throwIfAborted()
-            const result = await client.callTool(
-              {
-                name: definition.name,
-                arguments: args as JSONObject,
-              },
-              { signal: options.abortSignal }
-            )
-            return { ...result, isError: result.isError ?? false }
+            const removeAbortListener = closeOnAbort ? closeClientOnAbort(client, options.abortSignal) : undefined
+            try {
+              const result = await client.callTool(
+                {
+                  name: definition.name,
+                  arguments: args as JSONObject,
+                },
+                { signal: options.abortSignal }
+              )
+              return { ...result, isError: result.isError ?? false }
+            } finally {
+              removeAbortListener?.()
+            }
           },
           toModelOutput,
         })
@@ -103,12 +125,24 @@ function createNegotiatingClientAdapter(client: NegotiatingMCPClient): MCPClient
   }
 }
 
-function createLegacyClientAdapter(client: LegacyMCPClient): MCPClient {
+function createLegacyClientAdapter(client: LegacyMCPClient, closeOnAbort = false): MCPClient {
   return {
     async tools() {
       const definitions = await client.listTools()
       const tools = client.toolsFromDefinitions(definitions) as unknown as ToolSet
       for (const definition of definitions.tools) {
+        const execute = tools[definition.name].execute
+        if (closeOnAbort && execute) {
+          tools[definition.name].execute = async (args, options) => {
+            options.abortSignal?.throwIfAborted()
+            const removeAbortListener = closeClientOnAbort(client, options.abortSignal)
+            try {
+              return await execute(args, options)
+            } finally {
+              removeAbortListener()
+            }
+          }
+        }
         tools[definition.name].inputSchema = mcpToolSchema(
           {
             ...definition.inputSchema,
@@ -128,68 +162,80 @@ function createLegacyClientAdapter(client: LegacyMCPClient): MCPClient {
 async function connectNegotiatingClient(
   transport: NegotiatingTransport,
   name: string,
-  protocolMode: MCPProtocolMode
+  protocolMode: MCPProtocolMode,
+  closeLegacyOnAbort = false
 ): Promise<MCPClient> {
   const client = new NegotiatingMCPClient({ name, version: '1.0.0' }, { versionNegotiation: { mode: protocolMode } })
   try {
     await client.connect(transport)
-    return createNegotiatingClientAdapter(client)
+    return createNegotiatingClientAdapter(client, closeLegacyOnAbort && client.getProtocolEra() === 'legacy')
   } catch (error) {
     await client.close().catch(console.error)
     throw error
   }
 }
 
-type HttpTransportOptions = StreamableHTTPClientTransportOptions & { authProvider: MCPOAuthProvider }
+type HttpTransportOptions = StreamableHTTPClientTransportOptions & { authProvider?: MCPAuthorizationProvider }
 
 async function connectStreamableHttpClient(
   url: URL,
   options: HttpTransportOptions,
   name: string,
-  protocolMode: MCPProtocolMode = 'auto'
+  protocolMode: MCPProtocolMode = 'auto',
+  register: RegisterTransport = () => undefined,
+  closeLegacyOnAbort = false
 ): Promise<MCPClient> {
   const transport = new NegotiatingHTTPClientTransport(url, options)
+  register(transport)
   try {
-    return await connectNegotiatingClient(transport, name, protocolMode)
+    return await connectNegotiatingClient(transport, name, protocolMode, closeLegacyOnAbort)
   } catch (error) {
     if (error instanceof SdkHttpError && error.status === 401 && protocolMode === 'auto') {
       // Some gateways reject the `server/discover` negotiation probe with 401 even though the bearer
       // token is valid. Skip the probe and open the session with the `initialize` handshake instead.
-      return connectStreamableHttpClient(url, options, name, 'legacy')
+      return connectStreamableHttpClient(url, options, name, 'legacy', register, closeLegacyOnAbort)
     }
     if (!(error instanceof UnauthorizedError)) {
       throw error
     }
     // The SDK has already discovered the authorization server, registered this client and
     // opened the browser. Wait for the redirect, exchange the code, then connect with the token.
-    const pendingCallback = options.authProvider.waitForAuthorizationCallback()
+    const pendingCallback = options.authProvider?.waitForAuthorizationCallback()
     if (!pendingCallback) {
       throw error
     }
     const { code, iss } = await pendingCallback
     await transport.finishAuth(code, iss)
-    return connectStreamableHttpClient(url, options, name, protocolMode)
+    return connectStreamableHttpClient(url, options, name, protocolMode, register, closeLegacyOnAbort)
   }
 }
 
-async function createAutoClient(config: MCPServerConfig, name: string, interactive: boolean): Promise<MCPClient> {
+async function createAutoClient(
+  config: MCPServerConfig,
+  name: string,
+  interactive: boolean,
+  dependencies: MCPPlatformDependencies,
+  register: RegisterTransport
+): Promise<MCPClient> {
   const transportConfig = config.transport
   if (transportConfig.type === 'stdio') {
     const transport = await IPCStdioTransport.create(transportConfig)
+    register(transport)
     return connectNegotiatingClient(transport, name, 'auto')
   }
 
   const url = new URL(transportConfig.url)
   const transportOptions: HttpTransportOptions = {
     requestInit: { headers: transportConfig.headers },
-    authProvider: new MCPOAuthProvider(config.id, interactive),
+    authProvider: dependencies.createOAuthProvider?.(config, interactive),
+    fetch: dependencies.fetch && createMCPFetch(transportConfig.url, dependencies.fetch),
     // Vendors commonly publish an `issuer` that differs from the advertised authorization server
     // URL (for example the bare origin of a path-scoped server), which the RFC 8414 §3.3 echo
     // check rejects. Compatibility with those servers matters more than this check here.
     skipIssuerMetadataValidation: true,
   }
   try {
-    return await connectStreamableHttpClient(url, transportOptions, name)
+    return await connectStreamableHttpClient(url, transportOptions, name, 'auto', register, dependencies.mobile)
   } catch (error) {
     if (!(error instanceof SdkHttpError) || (error.status !== 404 && error.status !== 405)) {
       throw error
@@ -198,7 +244,8 @@ async function createAutoClient(config: MCPServerConfig, name: string, interacti
     console.error('Streamable HTTP connection failed, trying legacy SSE', error)
     try {
       const fallbackTransport = new NegotiatingSSEClientTransport(url, transportOptions)
-      return await connectNegotiatingClient(fallbackTransport, name, 'legacy')
+      register(fallbackTransport)
+      return await connectNegotiatingClient(fallbackTransport, name, 'legacy', dependencies.mobile)
     } catch (fallbackError) {
       const streamableMessage = error.message
       const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
@@ -210,9 +257,15 @@ async function createAutoClient(config: MCPServerConfig, name: string, interacti
   }
 }
 
-async function createLegacyClient(transportConfig: TransportConfig, name: string): Promise<MCPClient> {
+async function createLegacyClient(
+  transportConfig: TransportConfig,
+  name: string,
+  dependencies: MCPPlatformDependencies,
+  register: RegisterTransport
+): Promise<MCPClient> {
   if (transportConfig.type === 'stdio') {
     const transport = await IPCStdioTransport.create(transportConfig)
+    register(transport)
     let errorMessage = ''
     try {
       return createLegacyClientAdapter(
@@ -238,7 +291,9 @@ async function createLegacyClient(transportConfig: TransportConfig, name: string
     try {
       const transport = new LegacyHTTPClientTransport(new URL(transportConfig.url), {
         requestInit: { headers: transportConfig.headers },
+        fetch: dependencies.fetch && createMCPFetch(transportConfig.url, dependencies.fetch),
       })
+      register(transport)
       return createLegacyClientAdapter(
         await createMCPClient({
           name,
@@ -246,23 +301,28 @@ async function createLegacyClient(transportConfig: TransportConfig, name: string
           onUncaughtError(error: unknown) {
             console.error('mcp:client:onUncaughtError', error)
           },
-        })
+        }),
+        dependencies.mobile
       )
     } catch (err) {
+      const status = err && typeof err === 'object' && 'code' in err ? err.code : undefined
+      if (dependencies.mobile && status !== 404 && status !== 405) throw err
       console.error('Streamable HTTP connection failed', err)
       try {
+        const fallbackTransport = new LegacySSEClientTransport(new URL(transportConfig.url), {
+          requestInit: { headers: transportConfig.headers },
+          fetch: dependencies.fetch && createMCPFetch(transportConfig.url, dependencies.fetch),
+        })
+        register(fallbackTransport)
         return createLegacyClientAdapter(
           await createMCPClient({
             name,
-            transport: {
-              type: 'sse',
-              url: transportConfig.url,
-              headers: transportConfig.headers,
-            },
+            transport: fallbackTransport,
             onUncaughtError(error: unknown) {
               console.error('mcp:client:onUncaughtError', error)
             },
-          })
+          }),
+          dependencies.mobile
         )
       } catch (fallbackError) {
         const streamableMessage = err instanceof Error ? err.message : String(err)
@@ -277,67 +337,154 @@ async function createLegacyClient(transportConfig: TransportConfig, name: string
   throw new Error('Unknown transport type')
 }
 
-function createClient(config: MCPServerConfig, interactive: boolean, name = 'chatbox-mcp-client'): Promise<MCPClient> {
-  if (config.protocolMode === 'auto') {
-    return createAutoClient(config, name, interactive)
+function createClient(
+  config: MCPServerConfig,
+  interactive: boolean,
+  dependencies: MCPPlatformDependencies,
+  register: RegisterTransport,
+  name = 'chatbox-mcp-client'
+): Promise<MCPClient> {
+  if (dependencies.mobile && config.transport.type === 'stdio') {
+    return Promise.reject(new Error('Local MCP servers are only available on desktop'))
   }
-  return createLegacyClient(config.transport, name)
+  if (config.protocolMode === 'auto') return createAutoClient(config, name, interactive, dependencies, register)
+  return createLegacyClient(config.transport, name, dependencies, register)
 }
 
 export interface MCPServerStartOptions {
   /** Allow an OAuth browser round trip. Defaults to true; app bootstrap passes false. */
   interactive?: boolean
+  signal?: AbortSignal
+  timeoutMs?: number
 }
 
 export class MCPServer extends Emittery<{ status: MCPServerStatus }> {
   private _status: MCPServerStatus = { state: 'idle' }
   private client?: MCPClient
   private tools?: ToolSet
+  private starting?: Promise<void>
+  private generation = 0
+  private cancelStart?: () => void
 
-  constructor(private readonly config: MCPServerConfig) {
+  constructor(
+    private readonly config: MCPServerConfig,
+    private readonly dependencies = getMCPPlatformDependencies()
+  ) {
     super()
   }
 
   get status() {
     return this._status
   }
-
   set status(status: MCPServerStatus) {
     this._status = status
-    this.emit('status', status)
+    void this.emit('status', status)
   }
 
-  async start(options: MCPServerStartOptions = {}) {
-    if (this.status.state !== 'idle') {
-      return
+  start(options: MCPServerStartOptions = {}): Promise<void> {
+    if (this.starting) {
+      const signal = options.signal
+      if (!signal) return this.starting
+      const cancel = () => this.cancelStart?.()
+      signal.addEventListener('abort', cancel, { once: true })
+      if (signal.aborted) cancel()
+      return this.starting.finally(() => signal.removeEventListener('abort', cancel))
     }
+    if (this.status.state !== 'idle') return Promise.resolve()
+    const generation = ++this.generation
+    const transports = new Set<ManagedTransport>()
+    const cancelled = new AbortController()
+    const register: RegisterTransport = (transport) => {
+      if (cancelled.signal.aborted) void transport.close().catch(() => undefined)
+      else transports.add(transport)
+    }
+    const cancel = () => {
+      cancelled.abort()
+      for (const transport of transports) void transport.close().catch(() => undefined)
+      transports.clear()
+    }
+    this.cancelStart = cancel
+    const timer = setTimeout(cancel, options.timeoutMs ?? (this.dependencies.mobile ? 20_000 : 300_000))
+    options.signal?.addEventListener('abort', cancel, { once: true })
+    if (options.signal?.aborted) cancel()
     this.status = { state: 'starting' }
-    try {
-      this.client = await createClient(this.config, options.interactive ?? true)
-      this.tools = await this.client.tools()
-    } catch (err) {
-      console.error('mcp:client:start', err)
-      await this.client?.close().catch(console.error)
-      this.client = undefined
-      this.tools = undefined
-      this.status = { state: 'idle', error: (err as Error).message }
-      return
+    const task = async () => {
+      let created: MCPClient | undefined
+      try {
+        const aborted = new Promise<never>((_, reject) => {
+          if (cancelled.signal.aborted) reject(new DOMException('MCP connection cancelled or timed out', 'AbortError'))
+          else
+            cancelled.signal.addEventListener(
+              'abort',
+              () => reject(new DOMException('MCP connection cancelled or timed out', 'AbortError')),
+              { once: true }
+            )
+        })
+        const connecting = (async () => {
+          if (cancelled.signal.aborted) throw new DOMException('Aborted', 'AbortError')
+          created = await createClient(this.config, options.interactive ?? true, this.dependencies, register)
+          if (cancelled.signal.aborted || generation !== this.generation) {
+            await created.close()
+            throw new DOMException('Aborted', 'AbortError')
+          }
+          const tools = await created.tools()
+          if (cancelled.signal.aborted || generation !== this.generation) {
+            await created.close()
+            throw new DOMException('Aborted', 'AbortError')
+          }
+          this.client = created
+          this.tools = tools
+          const disconnected = () => {
+            if (generation !== this.generation || this.status.state !== 'running') return
+            void this.stop()
+            this.status = { state: 'idle', error: 'MCP connection interrupted. Pending tool results may be unknown.' }
+          }
+          for (const transport of transports) {
+            const onclose = transport.onclose
+            const onerror = transport.onerror
+            transport.onclose = () => {
+              onclose?.()
+              disconnected()
+            }
+            transport.onerror = (error) => {
+              onerror?.(error)
+              disconnected()
+            }
+          }
+        })()
+        await Promise.race([connecting, aborted])
+        if (generation === this.generation) this.status = { state: 'running' }
+      } catch (error) {
+        cancel()
+        void created?.close().catch(() => undefined)
+        if (generation === this.generation) {
+          this.client = undefined
+          this.tools = undefined
+          this.status = { state: 'idle', error: error instanceof Error ? error.message : String(error) }
+        }
+      } finally {
+        clearTimeout(timer)
+        options.signal?.removeEventListener('abort', cancel)
+        if (generation === this.generation) {
+          this.starting = undefined
+          this.cancelStart = undefined
+        }
+      }
     }
-    this.status = { state: 'running' }
+    this.starting = task()
+    return this.starting
   }
 
   async stop() {
-    if (this.status.state !== 'running') {
-      return
-    }
-    this.status = { state: 'stopping' }
-    try {
-      await this.client?.close()
-    } finally {
-      this.client = undefined
-      this.tools = undefined
-      this.status = { state: 'idle' }
-    }
+    ++this.generation
+    this.cancelStart?.()
+    this.cancelStart = undefined
+    this.starting = undefined
+    const client = this.client
+    this.client = undefined
+    this.tools = undefined
+    this.status = { state: 'idle' }
+    await client?.close().catch(() => undefined)
   }
 
   getAvailableTools(): ToolSet {
@@ -352,8 +499,11 @@ export class MCPServer extends Emittery<{ status: MCPServerStatus }> {
     if (!this.client || this.status.state !== 'running') {
       throw new Error('MCP server is not running')
     }
-    this.tools = await this.client.tools()
-    return this.tools
+    const client = this.client
+    const tools = await client.tools()
+    if (this.client !== client || this.status.state !== 'running') throw new Error('MCP connection changed')
+    this.tools = tools
+    return tools
   }
 }
 
@@ -363,6 +513,7 @@ export const mcpController = {
   _statusSubscribers: new Map<string, Set<(status: MCPServerStatus) => void>>(),
 
   bootstrap(serverConfigs: MCPServerConfig[]) {
+    if (getMCPPlatformDependencies().mobile) return
     for (const serverConfig of serverConfigs) {
       if (serverConfig.enabled) {
         void this.startServer(serverConfig, { interactive: false })
@@ -373,6 +524,12 @@ export const mcpController = {
   async startServer(serverConfig: MCPServerConfig, options?: MCPServerStartOptions) {
     if (!serverConfig.enabled) {
       return
+    }
+    const existing = this.servers.get(serverConfig.id)
+    if (existing && isEqual(existing.config, serverConfig)) return existing.instance.start(options)
+    if (existing) {
+      existing.instance.clearListeners()
+      void existing.instance.stop()
     }
     const server = new MCPServer(serverConfig)
     this.servers.set(serverConfig.id, { instance: server, config: serverConfig })
@@ -411,7 +568,7 @@ export const mcpController = {
     ) {
       server.config = serverConfig
     } else {
-      await this.stopServer(serverConfig.id)
+      void this.stopServer(serverConfig.id)
       await this.startServer(serverConfig)
     }
   },
@@ -436,21 +593,27 @@ export const mcpController = {
     }
 
     return () => {
-      server?.off('status', callback)
+      this.getServer(id)?.off('status', callback)
       subscribers.delete(callback)
     }
   },
 
-  getAvailableTools(): ToolSet {
+  getAvailableTools(serverIds?: ReadonlySet<string>): ToolSet {
     const toolSet: ToolSet = {}
     for (const { instance, config } of this.servers.values()) {
+      if (serverIds && !serverIds.has(config.id)) continue
       const mcpTools = instance.getAvailableTools()
       for (const [toolName, tool] of Object.entries(mcpTools)) {
         const rawExecute = tool.execute?.bind(tool)
-        toolSet[normalizeToolName(config.name, toolName)] = {
+        const name = normalizeToolName(config.name, toolName)
+        if (name in toolSet) throw new Error(`MCP tool name collision: ${name}`)
+        toolSet[name] = {
           ...tool,
           execute: async (args, options) => {
             try {
+              options.abortSignal?.throwIfAborted()
+              if (instance.status.state !== 'running')
+                throw new Error('MCP connection is unavailable; execution result may be unknown')
               return await rawExecute?.(args, options)
             } catch (err) {
               // 返回而非抛出，否则会导致流程中断。

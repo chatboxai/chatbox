@@ -1525,5 +1525,9 @@
   "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "خطأ في الشبكة. إعادة المحاولة خلال {{seconds}} ث ({{attempt}}/{{maxAttempts}})",
   "Web page": "صفحة ويب",
   "Spreadsheet": "جدول بيانات",
-  "Document": "مستند"
+  "Document": "مستند",
+  "Local MCP servers are only available on desktop": "خوادم MCP المحلية متاحة على سطح المكتب فقط",
+  "{{connected}} / {{total}} servers connected": "الخوادم المتصلة: {{connected}} / {{total}}",
+  "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. يُحفظ سجل المحادثات في نسخة الويب في ذاكرة التخزين المؤقت للمتصفح فقط (وهي غير موثوقة، فقد يحذفها المتصفح).\n2. يتوفر MCP في تطبيقي سطح المكتب والهاتف. تتوفر قاعدة المعرفة على سطح المكتب. ",
+  "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "على الهاتف، اتصل بخوادم HTTP البعيدة باستخدام URL والترويسات. تسجيل الدخول عبر OAuth غير متاح."
 }

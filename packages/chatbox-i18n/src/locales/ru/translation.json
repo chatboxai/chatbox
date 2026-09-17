@@ -1525,5 +1525,9 @@
   "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Ошибка сети. Повтор через {{seconds}} с ({{attempt}}/{{maxAttempts}})",
   "Web page": "Веб-страница",
   "Spreadsheet": "Таблица",
-  "Document": "Документ"
+  "Document": "Документ",
+  "Local MCP servers are only available on desktop": "Локальные серверы MCP доступны только в настольном приложении",
+  "{{connected}} / {{total}} servers connected": "Подключено серверов: {{connected}} / {{total}}",
+  "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. История чатов веб-версии хранится только в кеше браузера (это ненадёжно: браузер может удалить кеш).\n2. MCP доступен в настольном и мобильном приложениях. База знаний доступна в настольном приложении. ",
+  "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "На мобильном устройстве подключайтесь к удалённым HTTP-серверам с помощью URL и заголовков. Вход через OAuth недоступен."
 }

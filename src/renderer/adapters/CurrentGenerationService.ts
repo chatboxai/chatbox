@@ -23,6 +23,7 @@ import { getLogger } from '@/lib/utils'
 import { captureAgentModeException } from '@/observability/agent-mode'
 import * as appleAppStore from '@/packages/apple_app_store'
 import { wakeBackgroundTaskFollowUps } from '@/packages/chatbox-cli/background-follow-up'
+import { prepareMobileMCPTools } from '@/packages/mcp/mobile-tools'
 import { buildPausedAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
 import { loadBranchFileMessages } from '@/packages/model-calls/toolsets/file-history'
 import platform from '@/platform'
@@ -110,7 +111,8 @@ const sessions: GenerationSessionPort = {
 async function buildToolsForPausedToolCall(
   source: SessionContextSource,
   settings: SessionSettings,
-  targetMessage: Message
+  targetMessage: Message,
+  signal: AbortSignal
 ) {
   const session = source.header
   const snapshot = source.thread.sessionPromptContextSnapshot ?? settings.sessionPromptContextSnapshot
@@ -126,6 +128,7 @@ async function buildToolsForPausedToolCall(
     const { capacitorWorkMode, buildMobileWebTools, capacitorImageTools } = await import(
       '@/packages/mobile-work-mode/runtime'
     )
+    const mcp = await prepareMobileMCPTools({ enabled: true, model, settings: settingsService.getSettings(), signal })
     const web = buildMobileWebTools(model, getSessionWebBrowsing(session.id, settings.provider))
     return (
       await capacitorWorkMode.createTools(
@@ -134,11 +137,12 @@ async function buildToolsForPausedToolCall(
           capabilities: settings.localWorkCapabilities,
           skillPreferences: settingsService.getSettings().mobileSkillPreferences,
           ...workModelDisclosure(settings, settingsService.getSettings()),
-          signal: new AbortController().signal,
+          signal,
         },
         {
           ...web.tools,
-          ...capacitorImageTools(model, session.id, new AbortController().signal)?.tools,
+          ...capacitorImageTools(model, session.id, signal)?.tools,
+          ...mcp.tools,
           ...buildPausedAgentMemoryTools({
             targetMessage,
             languageName: languageNameMap[settingsService.getSettings().language],

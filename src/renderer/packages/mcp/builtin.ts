@@ -9,6 +9,8 @@ export interface BuildinMCPServerConfig {
   url: string
 }
 
+const BUILTIN_MCP_BASE_URL = 'https://mcp.chatboxai.app'
+
 export const BUILTIN_MCP_SERVERS: BuildinMCPServerConfig[] = [
   {
     id: 'fetch',
@@ -16,25 +18,19 @@ export const BUILTIN_MCP_SERVERS: BuildinMCPServerConfig[] = [
     description: i18n.t(
       'This server enables LLMs to retrieve and process content from web pages, converting HTML to markdown for easier consumption.'
     ),
-    url: 'https://mcp.chatboxai.app/fetch',
-  },
-  {
-    id: 'edgeone-pages',
-    name: 'EdgeOne Pages',
-    description: i18n.t('Deploy HTML content to EdgeOne Pages and obtaining an accessible public URL.'),
-    url: 'https://mcp.chatboxai.app/edgeone-pages',
+    url: `${BUILTIN_MCP_BASE_URL}/fetch`,
   },
   {
     id: 'arxiv',
     name: 'arXiv',
     description: i18n.t('MCP server for accessing arXiv papers'),
-    url: 'https://mcp.chatboxai.app/arxiv',
+    url: `${BUILTIN_MCP_BASE_URL}/arxiv`,
   },
   {
     id: 'context7',
     name: 'Context7',
     description: i18n.t('Retrieves up-to-date documentation and code examples for any library.'),
-    url: 'https://mcp.chatboxai.app/context7',
+    url: `${BUILTIN_MCP_BASE_URL}/context7`,
   },
 ]
 

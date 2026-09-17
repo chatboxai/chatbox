@@ -1,10 +1,10 @@
-import { asSchema } from 'ai'
 import {
   DEFAULT_REQUEST_TIMEOUT_MSEC,
   type JSONRPCMessage,
   type Transport,
   type TransportSendOptions,
 } from '@modelcontextprotocol/client'
+import { asSchema, jsonSchema } from 'ai'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { settingsStore } from '@/stores/settingsStore'
 import { MCPServer, mcpController } from './controller'
@@ -441,6 +441,83 @@ describe('MCPServer HTTP transport', () => {
     await server.stop()
   })
 
+  it('cancels only the requested tool on a modern mobile HTTP connection', async () => {
+    const pending = new Map<string, { signal: AbortSignal; finish: () => void }>()
+    const requests: RecordedRequest[] = []
+    const fetchImpl: typeof fetch = (input, init) => {
+      const request = recordRequest(input, init)
+      requests.push(request)
+      const body = request.body
+      if (!body) return Promise.resolve(new Response(null, { status: 405 }))
+      if (body.method === 'server/discover') {
+        return Promise.resolve(
+          modernResponse(body, { supportedVersions: ['2026-07-28'], capabilities: { tools: {} } }, { cacheable: true })
+        )
+      }
+      if (body.method === 'tools/list') {
+        return Promise.resolve(
+          modernResponse(
+            body,
+            { tools: [{ name: 'echo', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } }] },
+            { cacheable: true }
+          )
+        )
+      }
+      if (body.method === 'tools/call') {
+        const params = body.params as { arguments: { text: string } }
+        const text = params.arguments.text
+        const signal = init?.signal
+        if (!signal) throw new Error('Expected request cancellation signal')
+        return new Promise<Response>((resolve, reject) => {
+          const abort = () => reject(signal.reason)
+          signal.addEventListener('abort', abort, { once: true })
+          pending.set(text, {
+            signal,
+            finish: () => {
+              signal.removeEventListener('abort', abort)
+              resolve(modernResponse(body, { content: [{ type: 'text', text }] }))
+            },
+          })
+        })
+      }
+      return Promise.resolve(new Response(null, { status: 500 }))
+    }
+    const server = new MCPServer(
+      {
+        id: 'modern-mobile-cancel',
+        name: 'Modern mobile cancellation',
+        enabled: true,
+        protocolMode: 'auto',
+        transport: { type: 'http', url: 'https://modern.example.com/mcp' },
+      },
+      { mobile: true, fetch: fetchImpl }
+    )
+    try {
+      await server.start()
+      expect(server.status).toEqual({ state: 'running' })
+      const execute = server.getAvailableTools().echo.execute
+      if (!execute) throw new Error('Missing executable tool')
+      const controller = new AbortController()
+      const cancelled = expect(
+        execute({ text: 'cancel' }, { toolCallId: 'cancel', messages: [], abortSignal: controller.signal })
+      ).rejects.toThrow()
+      const retained = Promise.resolve(execute({ text: 'keep' }, { toolCallId: 'keep', messages: [] }))
+      const retainedResult = expect(retained).resolves.toMatchObject({ content: [{ type: 'text', text: 'keep' }] })
+      await expect.poll(() => pending.size).toBe(2)
+      controller.abort()
+      await cancelled
+      expect(pending.get('cancel')?.signal.aborted).toBe(true)
+      expect(pending.get('keep')?.signal.aborted).toBe(false)
+      expect(server.status).toEqual({ state: 'running' })
+      pending.get('keep')?.finish()
+      await retainedResult
+      expect(requests.filter((request) => request.body?.method === 'tools/call')).toHaveLength(2)
+      expect(requests.some((request) => request.body?.method === 'notifications/cancelled')).toBe(false)
+    } finally {
+      await server.stop()
+    }
+  })
+
   it('falls back from discovery to the legacy Streamable HTTP handshake', async () => {
     const requests: RecordedRequest[] = []
     vi.stubGlobal(
@@ -698,7 +775,7 @@ describe('MCPServer HTTP transport', () => {
     expect(server.status.error).toContain(
       "Streamable HTTP connection failed: Server's protocol version is not supported: 2099-01-01"
     )
-    expect(server.status.error).toContain('Legacy SSE fallback failed: MCP SSE Transport Error: 405 Method Not Allowed')
+    expect(server.status.error).toContain('Legacy SSE fallback failed: SSE error: Non-200 status code (405)')
   })
 })
 
@@ -915,5 +992,122 @@ describe('MCPServer stdio transport', () => {
     } finally {
       await mcpController.stopServer(id)
     }
+  })
+})
+
+describe('mobile MCP lifecycle', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('rejects colliding tool names instead of replacing an enabled server tool', async () => {
+    const configs = ['collision-a', 'collision-b'].map((id) => ({
+      id,
+      name: 'Same Name',
+      enabled: true,
+      transport: { type: 'http' as const, url: 'https://native.example/mcp' },
+    }))
+    for (const config of configs) {
+      const instance = new MCPServer(config, { mobile: true })
+      vi.spyOn(instance, 'getAvailableTools').mockReturnValue({ echo: { inputSchema: jsonSchema({ type: 'object' }) } })
+      mcpController.servers.set(config.id, { config, instance })
+    }
+    try {
+      expect(() => mcpController.getAvailableTools(new Set(configs.map(({ id }) => id)))).toThrow(
+        'MCP tool name collision: mcp__same_name__echo'
+      )
+      expect(Object.keys(mcpController.getAvailableTools(new Set(['collision-a'])))).toEqual(['mcp__same_name__echo'])
+    } finally {
+      await Promise.all(configs.map(({ id }) => mcpController.stopServer(id)))
+    }
+  })
+
+  it('rejects stdio before opening desktop IPC', async () => {
+    const create = vi.spyOn(IPCStdioTransport, 'create')
+    const server = new MCPServer(
+      { id: 'mobile-stdio', name: 'Local', enabled: true, transport: { type: 'stdio', command: 'npx', args: [] } },
+      { mobile: true }
+    )
+    await server.start()
+    expect(server.status.error).toContain('only available on desktop')
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it.each(['auto', 'legacy'] as const)(
+    'uses injected native fetch and does not start OAuth for %s',
+    async (protocolMode) => {
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(null, { status: 401 }))
+      const browser = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('browser fetch must not run'))
+      const server = new MCPServer(
+        {
+          id: 'mobile-http',
+          name: 'Remote',
+          enabled: true,
+          protocolMode,
+          transport: { type: 'http', url: 'https://native.example/mcp', headers: { authorization: 'Bearer static' } },
+        },
+        { mobile: true, fetch }
+      )
+      await server.start()
+      expect(server.status.state).toBe('idle')
+      expect(fetch).toHaveBeenCalled()
+      expect(browser).not.toHaveBeenCalled()
+      expect(fetch.mock.calls.every(([input]) => String(input).startsWith('https://native.example/'))).toBe(true)
+    }
+  )
+
+  it('shares concurrent starts and settles when stopped before initialization finishes', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
+            once: true,
+          })
+        })
+    )
+    const server = new MCPServer(
+      {
+        id: 'starting',
+        name: 'Starting',
+        enabled: true,
+        protocolMode: 'legacy',
+        transport: { type: 'http', url: 'https://native.example/mcp' },
+      },
+      { mobile: true, fetch }
+    )
+    const first = server.start()
+    expect(server.start()).toBe(first)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
+    await server.stop()
+    await first
+    expect(server.status).toEqual({ state: 'idle' })
+    expect(server.getAvailableTools()).toEqual({})
+  })
+
+  it('cancels a shared initialization when a joining caller aborts', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(() => new Promise(() => undefined))
+    const server = new MCPServer(
+      { id: 'joined', name: 'Joined', enabled: true, transport: { type: 'http', url: 'https://native.example/mcp' } },
+      { mobile: true, fetch }
+    )
+    const first = server.start()
+    const controller = new AbortController()
+    const second = server.start({ signal: controller.signal })
+    controller.abort()
+    await Promise.all([first, second])
+    expect(server.status.state).toBe('idle')
+    expect(server.getAvailableTools()).toEqual({})
+  })
+
+  it('bounds initialization even when a transport ignores cancellation', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(() => new Promise(() => undefined))
+    const server = new MCPServer(
+      { id: 'timeout', name: 'Timeout', enabled: true, transport: { type: 'http', url: 'https://native.example/mcp' } },
+      { mobile: true, fetch }
+    )
+    await server.start({ timeoutMs: 20 })
+    expect(server.status.state).toBe('idle')
+    expect(server.status.error).toContain('timed out')
   })
 })

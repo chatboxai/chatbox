@@ -5,8 +5,8 @@ import type { LocalWorkCapabilityId } from '@shared/mobile-work/capabilities'
 import type { AgentModeEntry, Session } from '@shared/types'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { type ComponentProps, createRef } from 'react'
-import type { AgentModePanelHandle } from './AgentModePanel'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import type { AgentModePanelHandle } from './AgentModePanel'
 
 const mocks = vi.hoisted(() => ({
   platform: 'ios',
@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   close: vi.fn(),
   trackMemory: vi.fn(),
 }))
+vi.mock('@/components/mcp/MCPConnectionSummary', () => ({ MCPConnectionSummary: () => null }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('@capacitor/core', () => ({
   Capacitor: {
@@ -202,6 +203,12 @@ test('keeps attachment processing mode fixed until draft attachments are removed
   expect(chat).toBeDisabled()
   fireEvent.click(chat)
   expect(mocks.saveMode).not.toHaveBeenCalled()
+})
+
+test('opens mobile MCP settings', () => {
+  renderPanel()
+  fireEvent.click(screen.getByRole('button', { name: 'MCP Settings' }))
+  expect(mocks.navigate).toHaveBeenCalledWith('/mcp')
 })
 
 describe('Mobile Agent Mode memory', () => {

@@ -1,7 +1,8 @@
 import { Flex, Paper, SimpleGrid, Switch, Text } from '@mantine/core'
 import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useToggleMCPServer } from '@/hooks/mcp'
+import MCPStatus from '@/components/mcp/MCPStatus'
+import { useMCPServerStatus, useToggleMCPServer } from '@/hooks/mcp'
 import { BUILTIN_MCP_SERVERS, type BuildinMCPServerConfig } from '@/packages/mcp/builtin'
 import { useAutoValidate } from '@/stores/premiumActions'
 import { useMcpSettings } from '@/stores/settingsStore'
@@ -12,12 +13,16 @@ const ServerCard: FC<{
   onEnabledChange: (id: string, checked: boolean) => void
   accessible: boolean
 }> = (props) => {
+  const status = useMCPServerStatus(props.config.id)
   return (
     <Paper shadow="xs" radius="lg" withBorder p="sm">
       <Flex justify="space-between" align="center">
-        <Text size="sm" fw={600}>
-          {props.config.name}
-        </Text>
+        <Flex align="center" gap="xs">
+          <MCPStatus status={status} />
+          <Text size="sm" fw={600}>
+            {props.config.name}
+          </Text>
+        </Flex>
         <Switch
           size="xs"
           checked={props.enabled}

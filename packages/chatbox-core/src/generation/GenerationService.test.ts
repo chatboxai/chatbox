@@ -1694,6 +1694,86 @@ describe('GenerationService', () => {
     })
   })
 
+  it.each(['reject', 'error-result', 'success-result'] as const)(
+    'does not resume generation when a canceled tool retry returns %s',
+    async (outcome) => {
+      let started: () => void = () => undefined
+      const executing = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      const execute = vi.fn(
+        (_args: unknown, options: { abortSignal: AbortSignal }) =>
+          new Promise<unknown>((resolve, reject) => {
+            options.abortSignal.addEventListener(
+              'abort',
+              () => {
+                if (outcome === 'reject') reject(options.abortSignal.reason)
+                else if (outcome === 'error-result')
+                  resolve({ isError: true, content: [{ type: 'text', text: 'Aborted' }] })
+                else resolve({ found: true })
+              },
+              { once: true }
+            )
+            started()
+          })
+      )
+      harness.setTools({ search: { execute } } as unknown as ToolSet)
+      harness.session.messages[1] = {
+        ...targetMessage(),
+        generating: false,
+        error: 'provider disconnected',
+        contentParts: [{ type: 'tool-call', state: 'call', toolCallId: 'tool-1', toolName: 'search', args: {} }],
+      }
+
+      const retry = harness.service.retryFromLastToolCallAfterApiError('session-1', 'assistant-1', 'tool-1')
+      await executing
+      harness.runtime.requestAbort('session-1', 'assistant-1')
+      await retry
+
+      expect(execute).toHaveBeenCalledTimes(1)
+      expect(lastPersisted(harness)).toMatchObject({ generating: false, finishReason: 'canceled', error: undefined })
+      expect(lastPersisted(harness).contentParts).toEqual([
+        expect.objectContaining({ state: 'error', toolCallId: 'tool-1' }),
+      ])
+      expect(harness.preparedRequests).toHaveLength(0)
+      expect(harness.runtime.get('session-1')).toBeUndefined()
+    }
+  )
+
+  it('persists cancellation before releasing a tool retry stopped during result persistence', async () => {
+    const execute = vi.fn().mockResolvedValue({ found: true })
+    harness.setTools({ search: { execute } } as unknown as ToolSet)
+    harness.session.messages[1] = {
+      ...targetMessage(),
+      generating: false,
+      error: 'provider disconnected',
+      contentParts: [{ type: 'tool-call', state: 'call', toolCallId: 'tool-1', toolName: 'search', args: {} }],
+    }
+    const modifyMessage = harness.sessions.modifyMessage
+    let persistedCancellation = false
+    harness.sessions.modifyMessage = async (...args) => {
+      const message = args[1]
+      await modifyMessage(...args)
+      if (message.finishReason === 'canceled') {
+        expect(harness.runtime.get('session-1')?.abortController.signal.aborted).toBe(true)
+        persistedCancellation = true
+      } else if (message.contentParts.some((part) => part.type === 'tool-call' && part.state === 'result')) {
+        harness.runtime.beginStop('session-1', 'assistant-1')
+      }
+    }
+
+    await harness.service.retryFromLastToolCallAfterApiError('session-1', 'assistant-1', 'tool-1')
+
+    expect(persistedCancellation).toBe(true)
+    expect(lastPersisted(harness)).toMatchObject({
+      generating: false,
+      finishReason: 'canceled',
+      contentParts: [expect.objectContaining({ state: 'result', result: { found: true } })],
+    })
+    expect(harness.preparedRequests).toHaveLength(0)
+    expect(harness.runtime.get('session-1')).toBeUndefined()
+  })
+
   it('retries the last interrupted tool call before resuming generation', async () => {
     const execute = vi.fn(() => Promise.resolve({ found: true }))
     harness.setTools({
@@ -1720,7 +1800,7 @@ describe('GenerationService', () => {
 
     expect(execute).toHaveBeenCalledWith(
       { query: 'Chatbox' },
-      { toolCallId: 'tool-1', approved: true, approvalDetails: undefined }
+      { toolCallId: 'tool-1', approved: true, approvalDetails: undefined, abortSignal: expect.any(AbortSignal) }
     )
     expect(lastPersisted(harness)).toMatchObject({
       generating: false,

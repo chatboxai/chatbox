@@ -1525,5 +1525,9 @@
   "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Erreur réseau. Nouvel essai dans {{seconds}} s ({{attempt}}/{{maxAttempts}})",
   "Web page": "Page web",
   "Spreadsheet": "Feuille de calcul",
-  "Document": "Document"
+  "Document": "Document",
+  "Local MCP servers are only available on desktop": "Les serveurs MCP locaux sont disponibles uniquement sur ordinateur",
+  "{{connected}} / {{total}} servers connected": "{{connected}} / {{total}} serveurs connectés",
+  "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. L’historique des discussions de la version web est stocké uniquement dans le cache du navigateur (peu fiable, car le navigateur peut le supprimer).\n2. MCP est disponible dans les applications de bureau et mobile. La base de connaissances est disponible sur ordinateur. ",
+  "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "Sur mobile, connectez des serveurs HTTP distants à l’aide d’une URL et d’en-têtes. La connexion OAuth n’est pas disponible."
 }

@@ -13,6 +13,7 @@ import type { ModelDependencies } from '@shared/types/adapters'
 import type { ToolSet } from 'ai'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { rendererApplication } from '@/app/renderer-application'
+import { prepareMobileMCPTools } from '@/packages/mcp/mobile-tools'
 import { getToolSetDescription, parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import platform from '@/platform'
@@ -84,6 +85,12 @@ export async function prepareCapacitorWorkMode(
     currentBlobStorage
   )
   throwIfWorkAborted(request.signal)
+  const mcp = await prepareMobileMCPTools({
+    enabled: true,
+    model: request.model,
+    settings: request.globalSettings,
+    signal: request.signal,
+  })
   const web = buildMobileWebTools(request.model, request.webBrowsing)
   const images = capacitorImageTools(request.model, request.session.id, request.signal)
   const { tools, active } = await capacitorWorkMode.createTools(
@@ -94,13 +101,13 @@ export async function prepareCapacitorWorkMode(
       ...workModelDisclosure(request.settings, request.globalSettings),
       signal: request.signal,
     },
-    { ...web.tools, ...images?.tools, ...memory.tools }
+    { ...web.tools, ...images?.tools, ...memory.tools, ...mcp.tools }
   )
   const prepared = await new BasicGenerationPreparation<ModelDependencies>({
     prepareTools: async () => ({
       ...memory,
       tools,
-      instructions: `${memory.instructions ?? ''}${WORK_INSTRUCTIONS}\n${web.instructions}`,
+      instructions: `${memory.instructions ?? ''}${WORK_INSTRUCTIONS}\n${web.instructions}${mcp.unavailable.length ? '\nSome enabled MCP services are unavailable. Do not claim to have used their tools.' : ''}`,
     }),
   }).prepare(request)
   return {

@@ -1,4 +1,4 @@
-import { Box, Title } from '@mantine/core'
+import { Box, Text, Title } from '@mantine/core'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { useEffect, useState } from 'react'
@@ -7,7 +7,10 @@ import { z } from 'zod'
 import { BuiltinServersSection } from '@/components/settings/mcp/BuiltinServersSection'
 import CustomServersSection from '@/components/settings/mcp/CustomServersSection'
 import { parseServerFromJson } from '@/components/settings/mcp/utils'
+import { prepareMobileMCPTools } from '@/packages/mcp/mobile-tools'
 import type { MCPServerConfig } from '@/packages/mcp/types'
+import platform from '@/platform'
+import { settingsStore } from '@/stores/settingsStore'
 import { decodeBase64 } from '@/utils/base64'
 
 const searchSchema = z.object({
@@ -24,6 +27,18 @@ export function RouteComponent() {
   const navigate = useNavigate()
   const searchParams = Route.useSearch()
   const [installConfig, setInstallConfig] = useState<MCPServerConfig | undefined>(undefined)
+
+  useEffect(() => {
+    if (platform.type !== 'mobile') return
+    const controller = new AbortController()
+    void prepareMobileMCPTools({
+      enabled: true,
+      model: { isSupportToolUse: () => true },
+      settings: settingsStore.getState(),
+      signal: controller.signal,
+    }).catch(() => undefined)
+    return () => controller.abort()
+  }, [])
 
   // Handle install parameter from search params
   useEffect(() => {
@@ -46,6 +61,11 @@ export function RouteComponent() {
   return (
     <Box p="md">
       <Title order={5}>{t('MCP Settings')}</Title>
+      {platform.type === 'mobile' && (
+        <Text size="sm" c="dimmed" mt="xs">
+          {t('On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.')}
+        </Text>
+      )}
       <Box className="mt-8">
         <BuiltinServersSection />
       </Box>

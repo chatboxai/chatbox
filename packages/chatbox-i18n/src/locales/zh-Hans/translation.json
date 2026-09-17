@@ -1525,5 +1525,9 @@
   "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "网络连接失败，{{seconds}} 秒后重试（第 {{attempt}}/{{maxAttempts}} 次）",
   "Web page": "网页",
   "Spreadsheet": "表格",
-  "Document": "文档"
+  "Document": "文档",
+  "Local MCP servers are only available on desktop": "本地 MCP 服务器仅支持桌面端",
+  "{{connected}} / {{total}} servers connected": "已连接 {{connected}} / {{total}} 个服务器",
+  "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. 网页版聊天记录只能保存在浏览器缓存中（可能被浏览器清理，并不可靠）。\n2. 桌面和移动应用均支持 MCP，知识库支持桌面端。 ",
+  "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "移动端可通过 URL 和请求头连接远程 HTTP 服务器，暂不支持 OAuth 登录。"
 }

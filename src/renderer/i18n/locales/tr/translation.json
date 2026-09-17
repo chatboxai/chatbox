@@ -1521,5 +1521,9 @@
   "Network error. Retrying in {{seconds}}s ({{attempt}}/{{maxAttempts}})": "Ağ hatası. {{seconds}} sn sonra yeniden denenecek ({{attempt}}/{{maxAttempts}})",
   "Web page": "Web sayfası",
   "Spreadsheet": "Elektronik tablo",
-  "Document": "Belge"
+  "Document": "Belge",
+  "Local MCP servers are only available on desktop": "Yerel MCP sunucuları yalnızca masaüstünde kullanılabilir",
+  "{{connected}} / {{total}} servers connected": "{{connected}} / {{total}} sunucu bağlı",
+  "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. Web sürümünün sohbet geçmişi yalnızca tarayıcı önbelleğinde saklanır (tarayıcı tarafından silinebileceği için güvenilir değildir).\n2. MCP, masaüstü ve mobil uygulamalarda kullanılabilir. Bilgi tabanı masaüstünde kullanılabilir. ",
+  "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "Mobilde, URL ve üstbilgiler kullanarak uzak HTTP sunucularına bağlanın. OAuth ile oturum açma desteklenmez."
 }

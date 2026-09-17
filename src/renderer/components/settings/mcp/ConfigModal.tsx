@@ -15,7 +15,6 @@ import {
 import { useForm } from '@mantine/form'
 import { IconRefresh } from '@tabler/icons-react'
 import type { ToolSet } from 'ai'
-import pTimeout from 'p-timeout'
 import { type FC, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal } from '@/components/layout/Overlay'
@@ -23,6 +22,7 @@ import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useMCPServerStatus } from '@/hooks/mcp'
 import { MCPServer, mcpController } from '@/packages/mcp/controller'
 import type { MCPServerConfig } from '@/packages/mcp/types'
+import platform from '@/platform'
 import { trackEvent } from '@/utils/track'
 import { getConfigFromFormValues, getFormValuesFromConfig, type MCPServerConfigFormValues } from './utils'
 
@@ -92,6 +92,7 @@ const ConfigForm: FC<{
   const [testingResult, setTestingResult] = useState<ConnectionTestingResult | null>()
   const testingAbortController = useRef<AbortController | null>(null)
   const liveStatus = useMCPServerStatus(props.config.id)
+  useEffect(() => () => testingAbortController.current?.abort(), [])
 
   const form = useForm<MCPServerConfigFormValues>({
     mode: 'controlled',
@@ -134,13 +135,12 @@ const ConfigForm: FC<{
     setTesting(true)
     setTestingResult(null)
     trackEvent('test_mcp_server_connection', { type: config.transport.type })
+    const server = new MCPServer(config)
+    const controller = new AbortController()
+    testingAbortController.current = controller
     try {
-      const server = new MCPServer(config)
-      testingAbortController.current = new AbortController()
-      await pTimeout(server.start(), {
-        milliseconds: 5 * 60_000,
-        signal: testingAbortController.current.signal,
-      })
+      await server.start({ signal: controller.signal })
+      if (controller.signal.aborted) return
       if (server.status.state !== 'running') {
         throw new Error(server.status.error || `Failed to start server: ${server.status.state}`)
       }
@@ -149,14 +149,17 @@ const ConfigForm: FC<{
         config,
         tools: Object.keys(tools).map((name) => ({ name, description: tools[name].description })),
       })
-      await server.stop()
     } catch (err) {
       if (testingAbortController.current?.signal.aborted) {
         return
       }
       setTestingResult({ config, error: err as Error, tools: [] })
     } finally {
-      setTesting(false)
+      await server.stop()
+      if (testingAbortController.current === controller) {
+        testingAbortController.current = null
+        setTesting(false)
+      }
     }
   }
 
@@ -177,7 +180,13 @@ const ConfigForm: FC<{
         >
           <Group>
             <Radio variant="outline" size="sm" value="http" label={t('Remote (http/sse)')} />
-            <Radio variant="outline" size="sm" value="stdio" label={t('Local (stdio)')} />
+            <Radio
+              variant="outline"
+              size="sm"
+              value="stdio"
+              disabled={platform.type === 'mobile'}
+              label={t('Local (stdio)')}
+            />
           </Group>
         </Radio.Group>
         <Stack gap={4}>
@@ -198,6 +207,11 @@ const ConfigForm: FC<{
             )}
           </Text>
         </Stack>
+        {platform.type === 'mobile' && form.values.transport.type === 'stdio' && (
+          <Text size="sm" c="dimmed">
+            {t('Local MCP servers are only available on desktop')}
+          </Text>
+        )}
         {form.values.transport.type === 'stdio' && (
           <>
             <Textarea
@@ -243,7 +257,12 @@ const ConfigForm: FC<{
                 {t('Cancel')}
               </Button>
             )}
-            <Button variant="outline" onClick={testConnection} loading={testing} disabled={testing}>
+            <Button
+              variant="outline"
+              onClick={testConnection}
+              loading={testing}
+              disabled={testing || (platform.type === 'mobile' && form.values.transport.type === 'stdio')}
+            >
               {t('Connect')}
             </Button>
             {props.mode === 'edit' || testingResult ? (
@@ -289,7 +308,13 @@ export const ConfigModal: FC<Props> = (props) => {
       overlayProps={{ backgroundOpacity: 0.35, blur: 7 }}
     >
       {props.mode && props.config && (
-        <ConfigForm mode={props.mode} config={props.config} onSave={props.onSave} onDelete={props.onDelete} />
+        <ConfigForm
+          key={props.config.id}
+          mode={props.mode}
+          config={props.config}
+          onSave={props.onSave}
+          onDelete={props.onDelete}
+        />
       )}
     </Modal>
   )

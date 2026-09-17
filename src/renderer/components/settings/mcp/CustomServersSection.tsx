@@ -7,10 +7,12 @@ import { toast } from 'sonner'
 import { v4 as uuid } from 'uuid'
 import { bucketPlausibleCount } from '@/analytics/plausible'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
-import { useToggleMCPServer } from '@/hooks/mcp'
+import MCPStatus from '@/components/mcp/MCPStatus'
+import { useMCPServerStatus, useToggleMCPServer } from '@/hooks/mcp'
 import { mcpController } from '@/packages/mcp/controller'
 import type { MCPServerConfig } from '@/packages/mcp/types'
 import { toastError } from '@/packages/toast'
+import platform from '@/platform'
 import { useMcpSettings, useSettingsStore } from '@/stores/settingsStore'
 import { trackEvent } from '@/utils/track'
 import { ConfigModal } from './ConfigModal'
@@ -25,6 +27,8 @@ const ServerCard: FC<{
 }> = (props) => {
   const { t } = useTranslation()
   const { config, triggerEdit, onEnabledChange } = props
+  const status = useMCPServerStatus(config.id)
+  const unsupported = platform.type === 'mobile' && config.transport.type === 'stdio'
   return (
     <Paper shadow="xs" radius="lg" withBorder p="sm">
       <Flex justify="space-between" align="center">
@@ -34,13 +38,23 @@ const ServerCard: FC<{
         <Switch
           size="xs"
           checked={config.enabled}
+          disabled={unsupported}
           onChange={(e) => onEnabledChange(config.id, e.currentTarget.checked)}
         />
       </Flex>
       <Flex justify="space-between" align="center" mt="lg">
-        <Badge size="sm" variant="light" color="chatbox-brand">
-          {config.transport.type}
-        </Badge>
+        <Flex align="center" gap="xs">
+          <MCPStatus status={status} />
+          <Badge size="sm" variant="light" color="chatbox-brand">
+            {config.transport.type}
+          </Badge>
+          {unsupported && <Text size="xs">{t('Local MCP servers are only available on desktop')}</Text>}
+          {config.enabled && !unsupported && status?.state !== 'running' && status?.state !== 'starting' && (
+            <Anchor size="xs" onClick={() => onEnabledChange(config.id, true)}>
+              {t('Connect')}
+            </Anchor>
+          )}
+        </Flex>
         <Anchor size="xs" c="chatbox-brand" onClick={() => triggerEdit(config)}>
           {t('Edit')}
         </Anchor>

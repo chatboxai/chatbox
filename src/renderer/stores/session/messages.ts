@@ -1,4 +1,5 @@
 import { SessionNotFoundError } from '@chatbox/core'
+import { snapshotStreamingMessage, StreamingWriteCoordinator } from '@chatbox/core/application/session'
 import { withSessionGenerationLock } from '@chatbox/core/generation'
 import { getReachableSessionMessages } from '@chatbox/core/session/generation-state'
 import { isExpectedGenerationError } from '@shared/models/error-classification'
@@ -26,19 +27,10 @@ import { settingsStore } from '../settingsStore'
 import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { guardSessionAction } from './action-guard'
 import { getSessionSettings, getSessionTokenModel } from './session-settings'
-import { StreamingWriteCoordinator } from './streaming-write-coordinator'
 import { getSessionWebBrowsing } from './utils'
 
 const log = getLogger('session-messages')
 const streamingWriteCoordinator = new StreamingWriteCoordinator()
-
-function snapshotStreamingMessage(message: Message): Message {
-  return {
-    ...message,
-    contentParts: message.contentParts.map((part) => ({ ...part })),
-    status: message.status?.map((status) => ({ ...status })),
-  }
-}
 
 export async function attachLargeFileRagMetadata(sessionId: string, message: Message): Promise<Message> {
   if (!platform.isDesktopLike || !message.files?.length) {
@@ -167,10 +159,10 @@ export function updateStreamingCache(sessionId: string, message: Message): void 
   const snapshot = snapshotStreamingMessage(message)
   const key = `${sessionId}\u0000${message.id}`
   streamingWriteCoordinator
-    .runCacheUpdate(key, () =>
-      rendererApplication.sessionQueryBridge.updateMessageCache(sessionId, snapshot.id, (current) =>
-        streamingWriteCoordinator.isTerminalRequested(key) ? (current ?? snapshot) : snapshot
-      )
+    .runCacheUpdate(key, (isCurrent) =>
+      rendererApplication.sessionQueryBridge.updateMessageCache(sessionId, snapshot.id, snapshot, {
+        shouldApply: isCurrent,
+      })
     )
     .catch((err) => {
       console.error('Failed to update streaming cache:', err)
@@ -184,7 +176,7 @@ export function updateStreamingCache(sessionId: string, message: Message): void 
 export async function persistStreamingMessage(
   sessionId: string,
   message: Message,
-  options?: { checkpoint?: boolean; refreshCounting?: boolean }
+  options?: { checkpoint?: boolean; refreshCounting?: boolean; onlyIfGenerating?: boolean }
 ): Promise<void> {
   if (options?.refreshCounting) {
     message.wordCount = countMessageWords(message)
@@ -196,7 +188,17 @@ export async function persistStreamingMessage(
   }
   message.timestamp = Date.now()
   const snapshot = snapshotStreamingMessage(message)
-  const write = () => rendererApplication.sessions.updateMessage(sessionId, snapshot.id, snapshot)
+  const write = () =>
+    rendererApplication.sessions.updateMessage(
+      sessionId,
+      snapshot.id,
+      options?.onlyIfGenerating
+        ? (current) => {
+            if (!current) throw new Error(`Message ${snapshot.id} not found`)
+            return current.generating ? snapshot : current
+          }
+        : snapshot
+    )
   const key = `${sessionId}\u0000${message.id}`
 
   if (options?.checkpoint) {

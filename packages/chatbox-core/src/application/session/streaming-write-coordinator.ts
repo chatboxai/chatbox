@@ -6,6 +6,7 @@ type QueuedCheckpoint = {
 
 type WriteState = {
   cacheUpdates: Set<Promise<void>>
+  cacheRevision: number
   inFlight?: Promise<void>
   pending?: QueuedCheckpoint
   terminalRequested: boolean
@@ -36,13 +37,18 @@ export class StreamingWriteCoordinator {
     })
   }
 
-  runCacheUpdate(key: string, run: () => Promise<void>): Promise<void> {
+  runCacheUpdate(key: string, run: (isCurrent: () => boolean) => Promise<void>): Promise<void> {
     const state = this.getOrCreateState(key)
     if (state.terminalRequested) return Promise.resolve()
+    const revision = ++state.cacheRevision
+    const isCurrent = () =>
+      this.states.get(key) === state && state.cacheRevision === revision && !state.terminalRequested
 
     let task: Promise<void>
     try {
-      task = run()
+      // Check immediately before publishing: a cold cache read can resume after
+      // a newer update that already found the loaded session.
+      task = run(isCurrent)
     } catch (error) {
       task = Promise.reject(error)
     }
@@ -52,10 +58,6 @@ export class StreamingWriteCoordinator {
       () => this.finishCacheUpdate(key, state, task)
     )
     return task
-  }
-
-  isTerminalRequested(key: string): boolean {
-    return this.states.get(key)?.terminalRequested === true
   }
 
   persistTerminal(key: string, run: () => Promise<void>): Promise<void> {
@@ -83,7 +85,7 @@ export class StreamingWriteCoordinator {
   private getOrCreateState(key: string): WriteState {
     const current = this.states.get(key)
     if (current) return current
-    const created: WriteState = { cacheUpdates: new Set(), terminalRequested: false }
+    const created: WriteState = { cacheUpdates: new Set(), cacheRevision: 0, terminalRequested: false }
     this.states.set(key, created)
     return created
   }

@@ -87,16 +87,51 @@ describe('StreamingWriteCoordinator', () => {
     expect(retry).toHaveBeenCalledOnce()
   })
 
-  it('keeps late cache updates from overwriting a requested terminal state', async () => {
+  it('publishes the latest cache update when an older read finishes later', async () => {
     const coordinator = new StreamingWriteCoordinator()
-    const cacheGate = deferred()
-    const cache = coordinator.runCacheUpdate('session:message', () => cacheGate.promise)
+    const slowRead = deferred()
+    const published: string[] = []
+    const first = coordinator.runCacheUpdate('session:message', async (isCurrent) => {
+      await slowRead.promise
+      if (isCurrent()) published.push('A')
+    })
+    await coordinator.runCacheUpdate('session:message', async (isCurrent) => {
+      if (isCurrent()) published.push('AB')
+    })
+    slowRead.resolve()
+    await first
+    expect(published).toEqual(['AB'])
+  })
 
-    expect(coordinator.isTerminalRequested('session:message')).toBe(false)
-    await coordinator.persistTerminal('session:message', () => Promise.resolve())
-    expect(coordinator.isTerminalRequested('session:message')).toBe(true)
+  it('keeps pending cache updates for different messages independent', async () => {
+    const coordinator = new StreamingWriteCoordinator()
+    const slowRead = deferred()
+    const published: string[] = []
+    const first = coordinator.runCacheUpdate('session:first', async (isCurrent) => {
+      await slowRead.promise
+      if (isCurrent()) published.push('First reply')
+    })
+    await coordinator.runCacheUpdate('session:second', async (isCurrent) => {
+      if (isCurrent()) published.push('Second reply')
+    })
+    slowRead.resolve()
+    await first
+    expect(published).toEqual(['Second reply', 'First reply'])
+  })
 
-    cacheGate.resolve()
-    await cache
+  it('rejects a pending cache publication after terminal persistence', async () => {
+    const coordinator = new StreamingWriteCoordinator()
+    const slowRead = deferred()
+    const published: string[] = []
+    const pending = coordinator.runCacheUpdate('session:message', async (isCurrent) => {
+      await slowRead.promise
+      if (isCurrent()) published.push('Generating')
+    })
+    await coordinator.persistTerminal('session:message', async () => {
+      published.push('Finished')
+    })
+    slowRead.resolve()
+    await pending
+    expect(published).toEqual(['Finished'])
   })
 })

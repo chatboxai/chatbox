@@ -43,9 +43,10 @@ async function getDefaultDependencies(): Promise<GenerationCancellationDependenc
   const { persistStreamingMessage, removeMessage } = await import('./messages')
   return {
     runtime: rendererApplication.generationRuntime,
-    getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
+    getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSessionWithLiveMessages(sessionId),
     removeMessage,
-    persistMessage: (sessionId, message) => persistStreamingMessage(sessionId, message, { refreshCounting: true }),
+    persistMessage: (sessionId, message) =>
+      persistStreamingMessage(sessionId, message, { refreshCounting: true, onlyIfGenerating: true }),
   }
 }
 

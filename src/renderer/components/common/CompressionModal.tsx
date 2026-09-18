@@ -1,11 +1,13 @@
 import { Button, Group, Stack, Text, Textarea } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
 import { getDefaultCompactionPrompt } from '@shared/prompts'
 import type { Session } from '@shared/types/session'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { languageNameMap } from '@/i18n/locales'
-import { runCompactionWithUIState } from '@/packages/context-management/compaction'
+import { requestManualCompaction } from '@/packages/context-management/compaction'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { add as addToast } from '@/stores/toastActions'
 import { AdaptiveModal } from './AdaptiveModal'
 
 interface CompressionModalProps {
@@ -31,12 +33,32 @@ function CompressionForm({ session, onClose }: Pick<CompressionModalProps, 'sess
   const defaultPrompt = configuredPrompt?.trim() || getDefaultCompactionPrompt(languageNameMap[language])
   const [prompt, setPrompt] = useState(defaultPrompt)
   const [additionalInstructions, setAdditionalInstructions] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
 
   const handleConfirm = () => {
-    if (!prompt.trim()) return
+    if (!prompt.trim() || submitting) return
     const combinedPrompt = [prompt.trim(), additionalInstructions.trim()].filter(Boolean).join('\n\n')
-    onClose()
-    void runCompactionWithUIState(session.id, { force: true, prompt: combinedPrompt })
+    // The modal stays open until the request is accepted, so a queue that cannot
+    // take it leaves the prompts the user just wrote on screen.
+    setSubmitting(true)
+    setFailure(null)
+    void requestManualCompaction(session.id, { force: true, prompt: combinedPrompt })
+      .then((outcome) => {
+        if (outcome === 'queue-full') {
+          setFailure(t('Message queue is full'))
+          return
+        }
+        if (outcome === 'queue-failed') {
+          setFailure(t('Failed to queue the compression'))
+          return
+        }
+        onClose()
+        if (outcome === 'queued') {
+          addToast(t('Compression queued, it runs when the current reply finishes'))
+        }
+      })
+      .finally(() => setSubmitting(false))
   }
 
   return (
@@ -69,9 +91,19 @@ function CompressionForm({ session, onClose }: Pick<CompressionModalProps, 'sess
         minRows={2}
         maxRows={4}
       />
+      {failure && (
+        <Text size="sm" c="red">
+          {failure}
+        </Text>
+      )}
       <AdaptiveModal.Actions>
         <AdaptiveModal.CloseButton onClick={onClose} />
-        <Button onClick={handleConfirm} disabled={!prompt.trim()}>
+        <Button
+          data-testid={TestId.chat.compressConfirm}
+          onClick={handleConfirm}
+          disabled={!prompt.trim()}
+          loading={submitting}
+        >
           {t('Confirm')}
         </Button>
       </AdaptiveModal.Actions>

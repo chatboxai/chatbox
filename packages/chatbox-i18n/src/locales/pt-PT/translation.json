@@ -1529,5 +1529,8 @@
   "Local MCP servers are only available on desktop": "Os servidores MCP locais só estão disponíveis no computador",
   "{{connected}} / {{total}} servers connected": "{{connected}} / {{total}} servidores ligados",
   "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. O histórico de conversas da versão web só é guardado na cache do navegador (pouco fiável, pois o navegador pode apagá-la).\n2. O MCP está disponível nas aplicações para computador e telemóvel. A base de conhecimento está disponível no computador. ",
-  "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "No telemóvel, ligue servidores HTTP remotos através de um URL e de cabeçalhos. O início de sessão OAuth não está disponível."
+  "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "No telemóvel, ligue servidores HTTP remotos através de um URL e de cabeçalhos. O início de sessão OAuth não está disponível.",
+  "Compression queued, it runs when the current reply finishes": "Compressão em fila, será executada quando a resposta atual terminar",
+  "Runs when the current reply finishes": "Executa quando a resposta atual terminar",
+  "Failed to queue the compression": "Não foi possível colocar a compressão em fila"
 }

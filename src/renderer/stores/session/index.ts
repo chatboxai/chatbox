@@ -62,11 +62,13 @@ export {
 } from './generation'
 export type { GenerationCancellationDependencies } from './generation-cancellation'
 export { stopAllMessageGenerations, stopMessageGeneration } from './generation-cancellation'
-// Message queue (queue user messages while a generation is running)
-export type { QueuedUserMessage, QueuePausedReason } from './message-queue'
+// Session queue (user messages and compression requests waiting for a busy session)
+export type { QueuedCompactionRequest, QueuedItem, QueuedUserMessage, QueuePausedReason } from './message-queue'
 export {
   clearQueue,
+  enqueueCompactionRequest,
   enqueueUserMessage,
+  hasPendingQueueWork,
   messageQueueStore,
   removeQueuedMessage,
   resumeQueueAndDrain,

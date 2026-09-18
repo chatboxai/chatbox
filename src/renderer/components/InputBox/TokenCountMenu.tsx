@@ -1,4 +1,5 @@
 import { Flex, Loader, Menu, Switch, Text } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
 import { formatNumber } from '@shared/utils'
 import { IconFileZip } from '@tabler/icons-react'
 import type { FC } from 'react'
@@ -203,6 +204,7 @@ const TokenCountMenu: FC<Props> = ({
           <>
             <Menu.Divider />
             <Menu.Item
+              data-testid={TestId.chat.compressConversation}
               leftSection={<ScalableIcon icon={IconFileZip} size={16} />}
               onClick={onCompressClick}
               color="chatbox-brand"

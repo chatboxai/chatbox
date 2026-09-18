@@ -1,26 +1,29 @@
 import type { Message, Session } from '@shared/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock, submitMock, insertMessageMock, generateMock } = vi.hoisted(() => {
-  // The queue persists itself to localStorage, which node's test env lacks.
-  const backing = new Map<string, string>()
-  globalThis.localStorage = {
-    getItem: (key: string) => backing.get(key) ?? null,
-    setItem: (key: string, value: string) => void backing.set(key, value),
-    removeItem: (key: string) => void backing.delete(key),
-    clear: () => backing.clear(),
-    key: () => null,
-    get length() {
-      return backing.size
-    },
-  } as Storage
-  return {
-    getSessionMock: vi.fn(),
-    submitMock: vi.fn(),
-    insertMessageMock: vi.fn(),
-    generateMock: vi.fn(),
-  }
-})
+const { getSessionMock, submitMock, insertMessageMock, generateMock, runCompactionMock, isCompactionInProgressMock } =
+  vi.hoisted(() => {
+    // The queue persists itself to localStorage, which node's test env lacks.
+    const backing = new Map<string, string>()
+    globalThis.localStorage = {
+      getItem: (key: string) => backing.get(key) ?? null,
+      setItem: (key: string, value: string) => void backing.set(key, value),
+      removeItem: (key: string) => void backing.delete(key),
+      clear: () => backing.clear(),
+      key: () => null,
+      get length() {
+        return backing.size
+      },
+    } as Storage
+    return {
+      getSessionMock: vi.fn(),
+      submitMock: vi.fn(),
+      insertMessageMock: vi.fn(),
+      generateMock: vi.fn(),
+      runCompactionMock: vi.fn(),
+      isCompactionInProgressMock: vi.fn(),
+    }
+  })
 
 vi.mock('@/app/renderer-application', async () => {
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
@@ -38,6 +41,12 @@ vi.mock('@/stores/session/messages', () => ({
   attachLargeFileRagMetadata: vi.fn((_sessionId: string, message: Message) => Promise.resolve(message)),
 }))
 vi.mock('@/stores/session/generation', () => ({ _generateWithoutSessionLock: generateMock }))
+// The queued compression runner reads the session state itself; this module is
+// only loaded for that entry point.
+vi.mock('@/packages/context-management', () => ({
+  isCompactionInProgress: isCompactionInProgressMock,
+  runCompactionWithUIState: runCompactionMock,
+}))
 vi.mock('@/lib/utils', () => ({
   getLogger: () => ({ error: vi.fn() }),
 }))
@@ -47,11 +56,14 @@ import { rendererApplication } from '@/app/renderer-application'
 import {
   clearPendingQueuedMessages,
   clearQueue,
+  enqueueCompactionRequest,
   enqueueUserMessage,
   flushMessageQueueForTests,
+  hasPendingQueueWork,
   isSteerableQueuedMessage,
   MAX_QUEUED_MESSAGES,
   messageQueueStore,
+  type QueuedUserMessage,
   releaseInFlightQueuedMessage,
   removeQueuedMessage,
   requestSteerQueuedMessage,
@@ -83,6 +95,12 @@ function getQueueIds(sessionId = 'session-1'): string[] {
   return (messageQueueStore.getState().queues[sessionId] ?? []).map((item) => item.id)
 }
 
+function getQueuedMessages(sessionId = 'session-1'): QueuedUserMessage[] {
+  return (messageQueueStore.getState().queues[sessionId] ?? []).filter(
+    (item): item is QueuedUserMessage => item.kind === 'message'
+  )
+}
+
 describe('message queue', () => {
   let currentSession: Session
 
@@ -109,6 +127,8 @@ describe('message queue', () => {
       return Promise.resolve()
     })
     generateMock.mockResolvedValue(undefined)
+    runCompactionMock.mockResolvedValue({ success: true, compacted: true, summaryMessageId: 'summary-1' })
+    isCompactionInProgressMock.mockReturnValue(false)
   })
 
   afterEach(() => {
@@ -665,7 +685,7 @@ describe('message queue', () => {
       updateQueuedMessageText('session-1', 'm1', 'edited text')
 
       expect(getQueueIds()).toEqual(['m1', 'm2'])
-      const first = messageQueueStore.getState().queues['session-1']?.[0]
+      const first = getQueuedMessages()[0]
       expect(first?.message.contentParts).toEqual([{ type: 'text', text: 'edited text' }])
     })
 
@@ -685,7 +705,7 @@ describe('message queue', () => {
       // Both consumers read this message object: ordinary delivery inserts it
       // as-is, and a steer claim injects it mid-generation. Stale counts here
       // would be trusted by the send path and the analyzer alike.
-      const delivered = messageQueueStore.getState().queues['session-1']?.[0]?.message
+      const delivered = getQueuedMessages()[0]?.message
       expect(delivered?.tokenCount).toBeUndefined()
       expect(delivered?.tokenCountMap).toBeUndefined()
       expect(delivered?.tokenCalculatedAt).toBeUndefined()
@@ -718,7 +738,218 @@ describe('message queue', () => {
 
       updateQueuedMessageText('session-1', 'm1', 'same text')
 
-      expect(messageQueueStore.getState().queues['session-1']?.[0]?.message.tokenCountMap).toEqual({ default: 424242 })
+      expect(getQueuedMessages()[0]?.message.tokenCountMap).toEqual({ default: 424242 })
+    })
+  })
+
+  describe('queued compression', () => {
+    function startReply(): void {
+      generationRuntimeStore.start('session-1', 'active')
+      currentSession.messages.push({ id: 'active', role: 'assistant', contentParts: [], generating: true })
+    }
+
+    function settleReply(): void {
+      currentSession = {
+        ...currentSession,
+        messages: currentSession.messages.map((message) =>
+          message.id === 'active' ? { ...message, generating: false, finishReason: 'stop' as const } : message
+        ),
+      }
+      generationRuntimeStore.clear('session-1', 'active')
+    }
+
+    it('runs after the messages queued before it', async () => {
+      const order: string[] = []
+      submitMock.mockImplementation((_sessionId: string, params: { newUserMsg: Message }) => {
+        order.push('message')
+        currentSession.messages.push(params.newUserMsg)
+        return Promise.resolve()
+      })
+      runCompactionMock.mockImplementation(() => {
+        order.push('compaction')
+        return Promise.resolve({ success: true, compacted: true, summaryMessageId: 'summary-1' })
+      })
+
+      enqueueUserMessage('session-1', userMessage('m1'))
+      enqueueCompactionRequest('session-1', { force: true, prompt: 'Keep exact paths.' })
+      await flushMessageQueueForTests()
+
+      expect(order).toEqual(['message', 'compaction'])
+      expect(runCompactionMock).toHaveBeenCalledWith('session-1', { force: true, prompt: 'Keep exact paths.' })
+      expect(getQueueIds()).toEqual([])
+    })
+
+    it('waits for the streaming reply instead of summarizing it mid-write', async () => {
+      startReply()
+      enqueueCompactionRequest('session-1', { force: true })
+
+      await flushMessageQueueForTests()
+      expect(runCompactionMock).not.toHaveBeenCalled()
+      expect(getQueueIds()).toHaveLength(1)
+      expect(hasPendingQueueWork('session-1')).toBe(true)
+
+      settleReply()
+      wakeQueuedUserMessages('session-1')
+      await vi.runOnlyPendingTimersAsync()
+
+      expect(runCompactionMock).toHaveBeenCalledOnce()
+      expect(getQueueIds()).toEqual([])
+      expect(hasPendingQueueWork('session-1')).toBe(false)
+    })
+
+    it('defers while a tool call waits for a user decision', async () => {
+      currentSession.messages.push({
+        id: 'paused',
+        role: 'assistant',
+        contentParts: [
+          {
+            type: 'tool-call',
+            state: 'paused',
+            toolCallId: 'tool-1',
+            toolName: 'user_exec',
+            args: {},
+            pauseReason: { type: 'user_exec_approval', command: 'ls' },
+          },
+        ],
+        finishReason: 'tool-call-paused',
+      })
+
+      enqueueCompactionRequest('session-1', { force: true })
+      await flushMessageQueueForTests()
+
+      expect(runCompactionMock).not.toHaveBeenCalled()
+      expect(getQueueIds()).toHaveLength(1)
+    })
+
+    it('does not start a second summary while one already runs', async () => {
+      isCompactionInProgressMock.mockReturnValue(true)
+
+      enqueueCompactionRequest('session-1', { force: true })
+      await flushMessageQueueForTests()
+
+      expect(runCompactionMock).not.toHaveBeenCalled()
+      expect(getQueueIds()).toHaveLength(1)
+    })
+
+    it('keeps one pending request and swaps in the newest prompt', () => {
+      startReply()
+      enqueueCompactionRequest('session-1', { prompt: 'first' })
+      enqueueCompactionRequest('session-1', { prompt: 'second' })
+
+      const queue = messageQueueStore.getState().queues['session-1'] ?? []
+      expect(queue).toHaveLength(1)
+      expect(queue[0]?.kind === 'compaction' ? queue[0].prompt : undefined).toBe('second')
+    })
+
+    it('re-anchors a pending request to the conversation the newest confirmation came from', () => {
+      startReply()
+      enqueueCompactionRequest('session-1', { force: true }, 'left-behind-fork')
+      enqueueCompactionRequest('session-1', { force: true }, 'current-fork')
+
+      const queue = messageQueueStore.getState().queues['session-1'] ?? []
+      expect(queue).toHaveLength(1)
+      // Keeping the first anchor would pause this request as "conversation
+      // changed" and never compress the conversation the user asked for.
+      expect(queue[0]?.kind === 'compaction' ? queue[0].conversationAnchorId : undefined).toBe('current-fork')
+    })
+
+    it('refuses a compression while the queue is already full', () => {
+      startReply()
+      for (let index = 0; index < MAX_QUEUED_MESSAGES; index += 1) {
+        expect(enqueueUserMessage('session-1', userMessage(`m${index}`))).toBe('queued')
+      }
+
+      expect(enqueueCompactionRequest('session-1', { force: true })).toBe('full')
+      expect(getQueueIds()).toHaveLength(MAX_QUEUED_MESSAGES)
+    })
+
+    it('rolls back a replaced prompt the queue could not persist', () => {
+      startReply()
+      expect(enqueueCompactionRequest('session-1', { force: true, prompt: 'first' }, 'fork-a')).toBe('queued')
+
+      const setItemSpy = vi.spyOn(globalThis.localStorage, 'setItem').mockImplementation(() => {
+        throw new Error('quota exceeded')
+      })
+      try {
+        expect(enqueueCompactionRequest('session-1', { force: true, prompt: 'second' }, 'fork-b')).toBe(
+          'persist-failed'
+        )
+        // A reload would otherwise run the update that never reached storage.
+        const queue = messageQueueStore.getState().queues['session-1'] ?? []
+        expect(queue).toHaveLength(1)
+        expect(queue[0]?.kind === 'compaction' ? queue[0].prompt : undefined).toBe('first')
+        expect(queue[0]?.kind === 'compaction' ? queue[0].conversationAnchorId : undefined).toBe('fork-a')
+      } finally {
+        setItemSpy.mockRestore()
+      }
+    })
+
+    it('drops a compression the queue could not persist instead of reporting it queued', () => {
+      startReply()
+      const setItemSpy = vi.spyOn(globalThis.localStorage, 'setItem').mockImplementation(() => {
+        throw new Error('quota exceeded')
+      })
+      try {
+        expect(enqueueCompactionRequest('session-1', { force: true })).toBe('persist-failed')
+        expect(getQueueIds()).toEqual([])
+      } finally {
+        setItemSpy.mockRestore()
+      }
+      // Storage recovered: the same request can be queued normally again.
+      expect(enqueueCompactionRequest('session-1', { force: true })).toBe('queued')
+    })
+
+    it('pauses instead of compressing a conversation the request was not queued for', async () => {
+      enqueueCompactionRequest('session-1', { force: true }, 'gone-message')
+
+      await flushMessageQueueForTests()
+
+      expect(runCompactionMock).not.toHaveBeenCalled()
+      expect(messageQueueStore.getState().paused['session-1']).toBe('conversation-changed')
+    })
+
+    it('drops a failed compression so the messages behind it still send', async () => {
+      runCompactionMock.mockResolvedValue({ success: false, compacted: false, error: new Error('boom') })
+
+      enqueueCompactionRequest('session-1', { force: true })
+      enqueueUserMessage('session-1', userMessage('m2'))
+      await flushMessageQueueForTests()
+
+      expect(submitMock).toHaveBeenCalledOnce()
+      expect(getQueueIds()).toEqual([])
+    })
+
+    it('restores a pending request after a reload', async () => {
+      startReply()
+      enqueueUserMessage('session-1', userMessage('m1'))
+      enqueueCompactionRequest('session-1', { force: true, prompt: 'Keep paths.' })
+
+      vi.resetModules()
+      const fresh = await import('./message-queue')
+      const restored = fresh.messageQueueStore.getState().queues['session-1'] ?? []
+
+      expect(restored.map((item) => item.kind)).toEqual(['message', 'compaction'])
+    })
+
+    it('reads kind-less entries persisted before compression joined the queue as messages', async () => {
+      startReply()
+      enqueueUserMessage('session-1', userMessage('m1'))
+
+      const persisted = JSON.parse(globalThis.localStorage.getItem('chatbox-message-queue-state') ?? '{}') as {
+        queues: Record<string, Record<string, unknown>[]>
+      }
+      persisted.queues['session-1'] = persisted.queues['session-1'].map((item) => {
+        const { kind: _kind, ...legacy } = item
+        return legacy
+      })
+      globalThis.localStorage.setItem('chatbox-message-queue-state', JSON.stringify(persisted))
+
+      vi.resetModules()
+      const fresh = await import('./message-queue')
+      const restored = fresh.messageQueueStore.getState().queues['session-1'] ?? []
+
+      expect(restored.map((item) => item.kind)).toEqual(['message'])
+      expect(restored[0]?.kind === 'message' ? restored[0].message.id : undefined).toBe('m1')
     })
   })
 })

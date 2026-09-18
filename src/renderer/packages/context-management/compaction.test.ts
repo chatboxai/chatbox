@@ -5,13 +5,23 @@ import { getDefaultStore } from 'jotai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { compactionUIStateMapAtom, getCompactionUIState } from '@/stores/atoms/compactionAtoms'
 
-const { generateSummaryWithStreamMock, getSessionMock, updateSessionWithMessagesMock, getSessionSettingsMock } =
-  vi.hoisted(() => ({
-    generateSummaryWithStreamMock: vi.fn(),
-    getSessionMock: vi.fn(),
-    getSessionSettingsMock: vi.fn(),
-    updateSessionWithMessagesMock: vi.fn(),
-  }))
+const {
+  generateSummaryWithStreamMock,
+  getSessionMock,
+  updateSessionWithMessagesMock,
+  getSessionSettingsMock,
+  getSessionLockStateMock,
+  enqueueCompactionRequestMock,
+  hasPendingQueueWorkMock,
+} = vi.hoisted(() => ({
+  generateSummaryWithStreamMock: vi.fn(),
+  getSessionMock: vi.fn(),
+  getSessionSettingsMock: vi.fn(),
+  updateSessionWithMessagesMock: vi.fn(),
+  getSessionLockStateMock: vi.fn(),
+  enqueueCompactionRequestMock: vi.fn(),
+  hasPendingQueueWorkMock: vi.fn(),
+}))
 
 vi.mock('@/adapters', () => ({ createModel: vi.fn() }))
 vi.mock('@/platform', () => ({ default: { isDesktopLike: false } }))
@@ -43,9 +53,14 @@ vi.mock('./context-tokens', () => ({
   getLatestCompactionBoundaryId: () => null,
 }))
 vi.mock('./summary-generator', () => ({ generateSummaryWithStream: generateSummaryWithStreamMock }))
+vi.mock('@/stores/session/action-guard', () => ({ getSessionLockStateNow: getSessionLockStateMock }))
+vi.mock('@/stores/session/message-queue', () => ({
+  enqueueCompactionRequest: enqueueCompactionRequestMock,
+  hasPendingQueueWork: hasPendingQueueWorkMock,
+}))
 
 import { rendererApplication } from '@/app/renderer-application'
-import { runCompactionWithUIState } from './compaction'
+import { requestManualCompaction, runCompactionWithUIState } from './compaction'
 
 function message(id: string, overrides: Partial<Message> = {}): Message {
   return { id, role: 'assistant', contentParts: [], ...overrides }
@@ -58,6 +73,25 @@ function testSession(): Session {
     messages: [message('u1', { role: 'user' }), message('a1')],
   }
 }
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  getDefaultStore().set(compactionUIStateMapAtom, {})
+  getSessionMock.mockResolvedValue(testSession())
+  getSessionSettingsMock.mockResolvedValue({})
+  getSessionLockStateMock.mockResolvedValue({
+    generatingReplyCount: 0,
+    anyReplyGenerating: false,
+    compactionRunning: false,
+    awaitingPauseDecision: false,
+  })
+  hasPendingQueueWorkMock.mockReturnValue(false)
+  enqueueCompactionRequestMock.mockReturnValue('queued')
+  updateSessionWithMessagesMock.mockImplementation((_id: string, updater: (s: Session) => Session) => {
+    updater(testSession())
+    return Promise.resolve()
+  })
+})
 
 describe('runCompactionWithUIState', () => {
   it('does not admit compaction during backup', async () => {
@@ -72,17 +106,6 @@ describe('runCompactionWithUIState', () => {
     generateSummaryWithStreamMock.mockResolvedValue({ success: true, summary: 'Summary' })
     await runCompactionWithUIState('session-1', { force: true, prompt: 'Keep exact paths.' })
     expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'Keep exact paths.' }))
-  })
-
-  beforeEach(() => {
-    vi.clearAllMocks()
-    getDefaultStore().set(compactionUIStateMapAtom, {})
-    getSessionMock.mockResolvedValue(testSession())
-    getSessionSettingsMock.mockResolvedValue({})
-    updateSessionWithMessagesMock.mockImplementation((_id: string, updater: (s: Session) => Session) => {
-      updater(testSession())
-      return Promise.resolve()
-    })
   })
 
   it('keeps long-history compaction within the normal send window', async () => {
@@ -182,5 +205,69 @@ describe('runCompactionWithUIState', () => {
       status: 'completed',
       summaryMessageId: expect.any(String),
     })
+  })
+})
+
+describe('requestManualCompaction', () => {
+  const idleLocks = {
+    generatingReplyCount: 0,
+    anyReplyGenerating: false,
+    compactionRunning: false,
+    awaitingPauseDecision: false,
+  }
+
+  it('compacts immediately when the session is idle', async () => {
+    generateSummaryWithStreamMock.mockResolvedValue({ success: true, summary: 'Summary' })
+
+    await expect(requestManualCompaction('session-1', { force: true, prompt: 'Keep paths.' })).resolves.toBe('started')
+
+    expect(enqueueCompactionRequestMock).not.toHaveBeenCalled()
+    expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'session-1', prompt: 'Keep paths.' })
+    )
+  })
+
+  it('queues when a reply wins the lock between the check and the run', async () => {
+    getSessionLockStateMock
+      .mockResolvedValueOnce(idleLocks)
+      .mockResolvedValueOnce({ ...idleLocks, anyReplyGenerating: true })
+
+    await expect(requestManualCompaction('session-1', { force: true, prompt: 'Keep paths.' })).resolves.toBe('queued')
+
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+    expect(enqueueCompactionRequestMock).toHaveBeenCalledWith('session-1', { prompt: 'Keep paths.', force: true }, 'a1')
+  })
+
+  it.each([
+    ['a streaming reply', { ...idleLocks, anyReplyGenerating: true }],
+    ['a running summary', { ...idleLocks, compactionRunning: true }],
+    ['a tool call waiting for a decision', { ...idleLocks, awaitingPauseDecision: true }],
+  ])('queues instead of summarizing during %s', async (_case, locks) => {
+    getSessionLockStateMock.mockResolvedValue(locks)
+
+    await expect(requestManualCompaction('session-1', { force: true, prompt: 'Keep paths.' })).resolves.toBe('queued')
+
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+    expect(enqueueCompactionRequestMock).toHaveBeenCalledWith('session-1', { prompt: 'Keep paths.', force: true }, 'a1')
+  })
+
+  it('queues behind work the session already accepted', async () => {
+    hasPendingQueueWorkMock.mockReturnValue(true)
+
+    await expect(requestManualCompaction('session-1', { force: true })).resolves.toBe('queued')
+
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a full queue', 'full', 'queue-full'],
+    ['a queue that cannot persist the request', 'persist-failed', 'queue-failed'],
+  ])('reports %s without accepting the request', async (_case, enqueueResult, outcome) => {
+    hasPendingQueueWorkMock.mockReturnValue(true)
+    enqueueCompactionRequestMock.mockReturnValue(enqueueResult)
+
+    await expect(requestManualCompaction('session-1', { force: true })).resolves.toBe(outcome)
+
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
   })
 })

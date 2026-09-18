@@ -23,8 +23,9 @@ vi.mock('@/hooks/useCopied', () => ({
   useCopied: () => ({ copied: false, copy: vi.fn() }),
 }))
 vi.mock('@/packages/context-management', () => ({
-  runCompactionWithUIState: vi.fn(),
+  requestManualCompaction: vi.fn(),
 }))
+vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 vi.mock('../common/ScalableIcon', () => ({ ScalableIcon: () => null }))
 
 import { CompactionStatus } from './CompactionStatus'

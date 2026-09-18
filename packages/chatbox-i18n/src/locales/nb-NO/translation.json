@@ -1529,5 +1529,8 @@
   "Local MCP servers are only available on desktop": "Lokale MCP-servere er bare tilgjengelige på datamaskiner",
   "{{connected}} / {{total}} servers connected": "{{connected}} / {{total}} servere tilkoblet",
   "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. Chatloggen i nettversjonen lagres bare i nettleserens hurtigbuffer (upålitelig, siden nettleseren kan slette den).\n2. MCP er tilgjengelig i appene for datamaskin og mobil. Kunnskapsbasen er tilgjengelig på datamaskiner. ",
-  "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "På mobil kan du koble til eksterne HTTP-servere med URL og headere. OAuth-innlogging er ikke tilgjengelig."
+  "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "På mobil kan du koble til eksterne HTTP-servere med URL og headere. OAuth-innlogging er ikke tilgjengelig.",
+  "Compression queued, it runs when the current reply finishes": "Komprimering satt i kø, kjøres når det gjeldende svaret er ferdig",
+  "Runs when the current reply finishes": "Kjøres når det gjeldende svaret er ferdig",
+  "Failed to queue the compression": "Kunne ikke sette komprimeringen i kø"
 }

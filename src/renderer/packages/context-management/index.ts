@@ -1,8 +1,9 @@
-export type { CompactionOptions, CompactionResult } from './compaction'
+export type { CompactionOptions, CompactionResult, ManualCompactionOutcome } from './compaction'
 export {
   isAutoCompactionEnabled,
   isCompactionInProgress,
   needsCompaction,
+  requestManualCompaction,
   runCompactionWithUIState,
 } from './compaction'
 export type { OverflowCheckOptions, OverflowCheckResult } from './compaction-detector'

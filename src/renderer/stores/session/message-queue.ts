@@ -4,6 +4,7 @@ import {
   getGenerationControlMessages,
 } from '@chatbox/core/session/generation-state'
 import { createMessage, type Message, type Session } from '@shared/types'
+import { v4 as uuidv4 } from 'uuid'
 import { createStore } from 'zustand'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
@@ -18,6 +19,7 @@ export const MAX_QUEUED_MESSAGES = 20
 export type QueuePausedReason = 'stopped' | 'error' | 'agent-mode-suggested' | 'conversation-changed'
 
 export interface QueuedUserMessage {
+  kind: 'message'
   id: string
   message: Message
   createdAt: number
@@ -44,8 +46,34 @@ export interface QueuedUserMessage {
   steerRequested?: boolean
 }
 
+/**
+ * A compression the user asked for while the session was busy. It rides the
+ * message queue so it cannot summarize a conversation that a reply is still
+ * writing into, and so its turn relative to queued messages is the order the
+ * user sees.
+ */
+export interface QueuedCompactionRequest {
+  kind: 'compaction'
+  id: string
+  createdAt: number
+  /** Summary prompt for this compression; absent means the configured default. */
+  prompt?: string
+  /** Force the summary even when the context has not reached the threshold. */
+  force?: boolean
+  /** Conversation binding, same meaning as on a queued message. */
+  conversationAnchorId?: string
+  /** Running now; the item stays durable until its session write completes. */
+  inFlight?: boolean
+}
+
+export type QueuedItem = QueuedUserMessage | QueuedCompactionRequest
+
+function isQueuedMessage(item: QueuedItem): item is QueuedUserMessage {
+  return item.kind === 'message'
+}
+
 interface MessageQueueState {
-  queues: Record<string, QueuedUserMessage[] | undefined>
+  queues: Record<string, QueuedItem[] | undefined>
   paused: Record<string, QueuePausedReason | undefined>
 }
 
@@ -63,15 +91,26 @@ function loadPersistedState(): MessageQueueState {
     // and steer requests (the generation they targeted no longer exists).
     const queues: MessageQueueState['queues'] = {}
     for (const [sessionId, queue] of Object.entries(parsed.queues ?? {})) {
-      queues[sessionId] = queue?.map((item) =>
-        item.inFlight || item.steerRequested ? { ...item, inFlight: undefined, steerRequested: undefined } : item
-      )
+      queues[sessionId] = queue?.map(restorePersistedItem)
     }
     return { queues, paused: parsed.paused ?? {} }
   } catch (error) {
     log.error('Failed to restore persisted message queue state:', error)
     return { queues: {}, paused: {} }
   }
+}
+
+/**
+ * Queue state written before the queue held more than one kind of work has no
+ * `kind` on its entries; every such entry is a user message.
+ */
+function restorePersistedItem(item: QueuedItem): QueuedItem {
+  if (item.kind === 'compaction') {
+    return { ...item, inFlight: undefined }
+  }
+  return item.inFlight || item.steerRequested
+    ? { ...item, kind: 'message', inFlight: undefined, steerRequested: undefined }
+    : { ...item, kind: 'message' }
 }
 
 // Tracks whether the most recent write-through landed. Enqueue consults this to
@@ -116,11 +155,11 @@ const deferralCounters = new Map<string, number>()
 // otherwise pause the queue again.
 const forceResume = new Set<string>()
 
-function getQueue(sessionId: string): QueuedUserMessage[] {
+function getQueue(sessionId: string): QueuedItem[] {
   return messageQueueStore.getState().queues[sessionId] ?? []
 }
 
-function setQueue(sessionId: string, queue: QueuedUserMessage[]): void {
+function setQueue(sessionId: string, queue: QueuedItem[]): void {
   messageQueueStore.setState((state) => {
     const queues = { ...state.queues }
     if (queue.length === 0) {
@@ -301,6 +340,51 @@ function deliverQueuedMessage(sessionId: string, item: QueuedUserMessage): Promi
   })
 }
 
+/**
+ * Deliver a queued compression request. It holds the same session generation
+ * lock as a send and defers while the session is busy, so a summary never
+ * covers a half-written reply and a reply never starts mid-summary.
+ */
+function deliverQueuedCompaction(sessionId: string, item: QueuedCompactionRequest): Promise<DeliveryOutcome> {
+  return withSessionGenerationLock(sessionId, async (): Promise<DeliveryOutcome> => {
+    if (getQueue(sessionId)[0]?.id !== item.id) return 'stale'
+
+    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+    if (!session) return 'discard'
+
+    if (item.conversationAnchorId && !session.messages.some((message) => message.id === item.conversationAnchorId)) {
+      return { paused: 'conversation-changed' }
+    }
+
+    const activeGenerationMessageIds = rendererApplication.generationRuntime.getActiveMessageIds(sessionId)
+    if (
+      countCancellableGeneratingAssistantMessages(
+        getGenerationControlMessages(session, activeGenerationMessageIds),
+        activeGenerationMessageIds
+      ) > 0
+    )
+      return 'deferred'
+    if (currentConversationHasPausedToolCall(session)) return 'deferred'
+
+    // Lazy import to avoid a circular dependency (the compaction module imports this store).
+    const { isCompactionInProgress, runCompactionWithUIState } = await import('@/packages/context-management')
+    if (isCompactionInProgress(sessionId)) return 'deferred'
+
+    setItemInFlight(sessionId, item.id, true)
+    try {
+      // The run reports its own failures in the compaction status UI, so the
+      // item leaves the queue either way: a failed compression must not block
+      // the messages queued behind it.
+      await runCompactionWithUIState(sessionId, { force: item.force === true, prompt: item.prompt })
+    } catch (error) {
+      setItemInFlight(sessionId, item.id, false)
+      throw error
+    }
+    removeQueuedMessage(sessionId, item.id)
+    return 'delivered'
+  })
+}
+
 async function drainQueue(sessionId: string): Promise<void> {
   if (draining.has(sessionId)) return
   draining.add(sessionId)
@@ -309,8 +393,11 @@ async function drainQueue(sessionId: string): Promise<void> {
     while (getQueue(sessionId).length > 0 && !getQueuePausedReason(sessionId)) {
       const next = getQueue(sessionId)[0]
       try {
-        // 'delivered' implies deliverQueuedMessage already removed the item from the queue.
-        const outcome = await deliverQueuedMessage(sessionId, next)
+        // 'delivered' implies the delivery already removed the item from the queue.
+        const outcome =
+          next.kind === 'compaction'
+            ? await deliverQueuedCompaction(sessionId, next)
+            : await deliverQueuedMessage(sessionId, next)
         if (outcome === 'delivered' || outcome === 'stale') {
           attemptCounters.delete(sessionId)
           deferralCounters.delete(sessionId)
@@ -331,7 +418,7 @@ async function drainQueue(sessionId: string): Promise<void> {
       } catch (error) {
         const attempts = (attemptCounters.get(sessionId) ?? 0) + 1
         attemptCounters.set(sessionId, attempts)
-        log.error('Failed to deliver queued user message:', error)
+        log.error('Failed to deliver queued item:', error)
         if (attempts >= MAX_DELIVERY_ATTEMPTS) {
           // Never drop a user message: park the queue instead so the user can
           // retry via "Send now" or remove the item.
@@ -361,7 +448,10 @@ export type EnqueueResult = 'queued' | 'full' | 'persist-failed'
 export function enqueueUserMessage(sessionId: string, message: Message, conversationAnchorId?: string): EnqueueResult {
   const queue = getQueue(sessionId)
   if (queue.length >= MAX_QUEUED_MESSAGES) return 'full'
-  setQueue(sessionId, [...queue, { id: message.id, message, createdAt: Date.now(), conversationAnchorId }])
+  setQueue(sessionId, [
+    ...queue,
+    { kind: 'message', id: message.id, message, createdAt: Date.now(), conversationAnchorId },
+  ])
   // The write-through runs synchronously in the store subscription. If it failed,
   // the enqueue is not durable: undo it so the caller keeps the persisted draft
   // instead of clearing the only surviving copy of the user's text.
@@ -377,6 +467,84 @@ export function enqueueUserMessage(sessionId: string, message: Message, conversa
   }
   scheduleDrain(sessionId)
   return 'queued'
+}
+
+/**
+ * Queue a compression behind everything already waiting in the session. Only
+ * one request is kept: a second one replaces the pending prompt and its
+ * conversation binding instead of collecting duplicate summaries in the queue.
+ *
+ * Like a queued message, the prompt the user just confirmed is its only durable
+ * copy, so a write-through that failed rolls the enqueue back and is reported
+ * instead of promising a request a reload would lose.
+ */
+export function enqueueCompactionRequest(
+  sessionId: string,
+  request: { prompt?: string; force?: boolean },
+  conversationAnchorId?: string
+): EnqueueResult {
+  const existing = getQueue(sessionId).find(
+    (item): item is QueuedCompactionRequest => item.kind === 'compaction' && !item.inFlight
+  )
+  if (existing) {
+    // The pending request follows the newest confirmation, including the
+    // conversation it was confirmed in: the first one may belong to a fork the
+    // user has switched away from, and delivery would then pause instead of
+    // compressing what the user is looking at now.
+    const updated: QueuedCompactionRequest = {
+      ...existing,
+      prompt: request.prompt,
+      force: request.force,
+      conversationAnchorId,
+    }
+    setQueue(
+      sessionId,
+      getQueue(sessionId).map((item) => (item.id === existing.id ? updated : item))
+    )
+    if (lastPersistFailed) {
+      // An update that did not reach storage must not be reported as accepted:
+      // a reload would then run the previous prompt and conversation binding.
+      setQueue(
+        sessionId,
+        getQueue(sessionId).map((item) => (item.id === existing.id ? existing : item))
+      )
+      return 'persist-failed'
+    }
+    scheduleDrain(sessionId)
+    return 'queued'
+  }
+
+  const queue = getQueue(sessionId)
+  if (queue.length >= MAX_QUEUED_MESSAGES) return 'full'
+  const item: QueuedCompactionRequest = {
+    kind: 'compaction',
+    id: uuidv4(),
+    createdAt: Date.now(),
+    prompt: request.prompt,
+    force: request.force,
+    conversationAnchorId,
+  }
+  setQueue(sessionId, [...queue, item])
+  if (lastPersistFailed) {
+    setQueue(
+      sessionId,
+      getQueue(sessionId).filter((queued) => queued.id !== item.id)
+    )
+    return 'persist-failed'
+  }
+  if (!conversationAnchorId) {
+    stampConversationAnchor(sessionId, item.id)
+  }
+  scheduleDrain(sessionId)
+  return 'queued'
+}
+
+/**
+ * Whether the session has queue work that will actually run. Paused items wait
+ * for an explicit resume, so they cannot race a new request.
+ */
+export function hasPendingQueueWork(sessionId: string): boolean {
+  return getQueue(sessionId).length > 0 && !getQueuePausedReason(sessionId)
 }
 
 // Best-effort async stamp; an unstamped item simply skips the conversation-changed gate.
@@ -457,7 +625,7 @@ export function resumeQueueAndDrain(sessionId: string): void {
 export function requestSteerQueuedMessage(sessionId: string, itemId: string): boolean {
   if (getQueuePausedReason(sessionId)) return false
   const item = getQueue(sessionId).find((queued) => queued.id === itemId)
-  if (!item || item.inFlight || !isSteerableQueuedMessage(item.message)) return false
+  if (!item || !isQueuedMessage(item) || item.inFlight || !isSteerableQueuedMessage(item.message)) return false
   setQueue(
     sessionId,
     getQueue(sessionId).map((queued) => (queued.id === itemId ? { ...queued, steerRequested: true } : queued))
@@ -465,12 +633,12 @@ export function requestSteerQueuedMessage(sessionId: string, itemId: string): bo
   return true
 }
 
-/** Replace the text of a queued item (edit-in-place; the item keeps its position). */
+/** Replace the text of a queued message (edit-in-place; the item keeps its position). */
 export function updateQueuedMessageText(sessionId: string, itemId: string, text: string): void {
   setQueue(
     sessionId,
     getQueue(sessionId).map((queued) => {
-      if (queued.id !== itemId || queued.inFlight) return queued
+      if (queued.id !== itemId || !isQueuedMessage(queued) || queued.inFlight) return queued
       const hasTextPart = queued.message.contentParts.some((part) => part.type === 'text')
       if (hasTextPart && queued.message.contentParts.every((part) => part.type !== 'text' || part.text === text)) {
         return queued
@@ -528,7 +696,11 @@ export function takeRequestedSteerableMessage(
 export function peekRequestedSteerableMessage(sessionId: string): QueuedUserMessage | undefined {
   if (getQueuePausedReason(sessionId)) return undefined
   return getQueue(sessionId).find(
-    (queued) => queued.steerRequested && !queued.inFlight && isSteerableQueuedMessage(queued.message)
+    (queued): queued is QueuedUserMessage =>
+      isQueuedMessage(queued) &&
+      queued.steerRequested === true &&
+      !queued.inFlight &&
+      isSteerableQueuedMessage(queued.message)
   )
 }
 
@@ -539,10 +711,12 @@ export function peekRequestedSteerableMessage(sessionId: string): QueuedUserMess
  */
 export function clearPendingSteerRequests(sessionId: string): void {
   const queue = getQueue(sessionId)
-  if (!queue.some((item) => item.steerRequested && !item.inFlight)) return
+  if (!queue.some((item) => isQueuedMessage(item) && item.steerRequested && !item.inFlight)) return
   setQueue(
     sessionId,
-    queue.map((item) => (item.steerRequested && !item.inFlight ? { ...item, steerRequested: undefined } : item))
+    queue.map((item) =>
+      isQueuedMessage(item) && item.steerRequested && !item.inFlight ? { ...item, steerRequested: undefined } : item
+    )
   )
 }
 
@@ -550,11 +724,14 @@ export function clearPendingSteerRequests(sessionId: string): void {
 export function releaseInFlightQueuedMessage(sessionId: string, itemId: string): void {
   setQueue(
     sessionId,
-    getQueue(sessionId).map((item) =>
+    getQueue(sessionId).map((item) => {
+      if (item.id !== itemId) return item
       // Also drop the steer request so a persistent failure cannot loop on
       // every step; the user can ask again.
-      item.id === itemId ? { ...item, inFlight: undefined, steerRequested: undefined } : item
-    )
+      return isQueuedMessage(item)
+        ? { ...item, inFlight: undefined, steerRequested: undefined }
+        : { ...item, inFlight: undefined }
+    })
   )
 }
 

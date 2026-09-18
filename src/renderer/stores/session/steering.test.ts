@@ -21,11 +21,18 @@ import {
   enqueueUserMessage,
   messageQueueStore,
   pauseQueue,
+  type QueuedUserMessage,
   removeQueuedMessage,
   requestSteerQueuedMessage,
   resetMessageQueueForTests,
 } from './message-queue'
 import { registerSteeringConsumer, resetSteeringForTests } from './steering'
+
+/** The queue also holds compression requests, which steering never touches. */
+function queuedMessage(sessionId = 'session-1', index = 0): QueuedUserMessage | undefined {
+  const item = messageQueueStore.getState().queues[sessionId]?.[index]
+  return item?.kind === 'message' ? item : undefined
+}
 
 function userMessage(id: string, text = `text-${id}`): Message {
   return { id, role: 'user', contentParts: [{ type: 'text', text }] }
@@ -111,7 +118,7 @@ describe('steering consumer', () => {
     await consumer?.inject(baseMessages, 'a1')
     expect(persistMock).not.toHaveBeenCalled()
     expect(messageQueueStore.getState().queues['session-1']?.[0]).toMatchObject({ id: 'm1' })
-    expect(messageQueueStore.getState().queues['session-1']?.[0].steerRequested).toBeUndefined()
+    expect(queuedMessage()?.steerRequested).toBeUndefined()
     expect(warnMock).toHaveBeenCalledWith(expect.any(String), { reason: 'scope-changed' })
   })
 
@@ -132,7 +139,7 @@ describe('steering consumer', () => {
     resolveScope(null)
     await pending
     expect(persistMock).not.toHaveBeenCalled()
-    expect(messageQueueStore.getState().queues['session-1']?.[0].steerRequested).toBe(true)
+    expect(queuedMessage()?.steerRequested).toBe(true)
     expect(warnMock).not.toHaveBeenCalled()
   })
 
@@ -160,7 +167,7 @@ describe('steering consumer', () => {
       .mockResolvedValue(conversationIds)
     const consumer = registerSteeringConsumer('session-1', load, persistMock)
     await consumer?.inject(baseMessages, 'a1')
-    expect(messageQueueStore.getState().queues['session-1']?.[0].steerRequested).toBe(true)
+    expect(queuedMessage()?.steerRequested).toBe(true)
     await consumer?.inject(baseMessages, 'a1')
     expect(persistMock).toHaveBeenCalledTimes(1)
     expect(load).toHaveBeenCalledTimes(2)
@@ -171,7 +178,7 @@ describe('steering consumer', () => {
     await enqueueRequested('session-1', userMessage('m1'))
 
     consumer?.release()
-    const item = messageQueueStore.getState().queues['session-1']?.[0]
+    const item = queuedMessage()
     expect(item?.id).toBe('m1')
     expect(item?.steerRequested).toBeUndefined()
   })

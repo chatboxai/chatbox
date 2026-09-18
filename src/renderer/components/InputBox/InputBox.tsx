@@ -2079,6 +2079,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   onAutoCompactionChange={sessionId && !isNewSession ? handleAutoCompactionChange : undefined}
                 >
                   <Flex
+                    data-testid={TestId.chat.contextMenuTrigger}
                     align="center"
                     gap="2"
                     className={`shrink-0 text-xs cursor-pointer hover:text-chatbox-tint-secondary transition-colors px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] ${

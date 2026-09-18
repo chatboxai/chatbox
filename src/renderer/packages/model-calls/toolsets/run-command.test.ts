@@ -1,5 +1,5 @@
-import { asSchema } from 'ai'
 import type { SandboxProvider } from '@shared/sandbox-provider'
+import { asSchema } from 'ai'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const {
@@ -177,7 +177,7 @@ describe('run_command', () => {
       success: false,
       sandboxed: true,
       retryAvailable: true,
-      ignoredHostRetryFields: true,
+      escalationIgnored: 'no_matching_failure',
     })
     await expect(toModelOutput(tool, result)).resolves.toEqual({
       type: 'text',
@@ -500,6 +500,66 @@ describe('run_command', () => {
     await expect(toModelOutput(tool, result)).resolves.toEqual({
       type: 'text',
       value: expect.stringContaining('Output capture: /tmp/.chatbox-command-output-tool-large.txt'),
+    })
+  })
+
+  test('runs directly on the host under full access and reports ignored retry fields', async () => {
+    userExecMock.mockResolvedValueOnce({
+      success: false,
+      exitCode: 1,
+      stdout: '',
+      stderr: 'ls: /Users/example/Documents: Operation not permitted',
+      cwd: '/workspace/project',
+    })
+    const runCommand = vi.fn()
+    const { tool, description } = buildRunCommandTool({
+      sessionId: 'session-1',
+      platform: 'darwin',
+      provider: createProvider(runCommand),
+      ensureSandbox: vi.fn().mockResolvedValue({ success: true }),
+      workingDirectories: ['/workspace/project'],
+      approvalMode: 'full_access',
+      requestSmartApproval: vi.fn(),
+    })
+    if (!tool.execute) throw new Error('run_command execute missing')
+
+    expect(tool.description).toContain('Full Access, so commands run directly on the host')
+    expect(tool.description).not.toContain('sandbox first')
+    expect(description).toContain(
+      'run_command executes directly on the host without an approval step; it does not execute inside the file sandbox and there is no host retry to request'
+    )
+    expect(description).not.toContain('there is no file sandbox')
+    expect(description).not.toContain('commands run in the file sandbox first')
+    const inputSchema = (await asSchema(tool.inputSchema).jsonSchema) as {
+      properties?: Record<string, { description?: string }>
+    }
+    expect(inputSchema.properties?.sandbox_permissions?.description).toContain('Not applicable in this session')
+
+    const result = await tool.execute(
+      {
+        command: 'ls /Users/example/Documents',
+        sandbox_permissions: 'danger-full-access',
+        justification: 'The listing is only available on the host.',
+      },
+      { toolCallId: 'tool-full-access-escalation', messages: [] } as never
+    )
+
+    expect(runCommand).not.toHaveBeenCalled()
+    expect(resolveCommandRetryMock).not.toHaveBeenCalled()
+    expect(userExecMock).toHaveBeenCalledWith('ls /Users/example/Documents', {
+      cwd: '/workspace/project',
+      timeout: 120_000,
+      sessionId: 'session-1',
+      toolCallId: 'tool-full-access-escalation',
+      approvalSource: 'full_access',
+      baseCwd: '/workspace/project',
+      injectBundledNode: true,
+    })
+    expect(result).toMatchObject({ success: false, sandboxed: false, escalationIgnored: 'full_access' })
+    expect(result).not.toHaveProperty('retryAvailable')
+    await expect(toModelOutput(tool, result)).resolves.toEqual({
+      type: 'text',
+      value: expect.stringContaining('Host retry fields were ignored: this session has Full Access'),
     })
   })
 

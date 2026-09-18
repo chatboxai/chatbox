@@ -50,7 +50,7 @@ interface RunCommandResult {
   retryAvailable?: boolean
   cancelled?: boolean
   outputFile?: string
-  ignoredHostRetryFields?: boolean
+  escalationIgnored?: 'full_access' | 'no_matching_failure'
 }
 
 function formatRunCommandOutput(output: unknown): string {
@@ -62,7 +62,7 @@ function formatRunCommandOutput(output: unknown): string {
   const outputFile = stringField(record, 'outputFile')
   const exitCode = numberField(record, 'exitCode')
   const sandboxDenied = record?.sandboxDenied === true
-  const ignoredHostRetryFields = record?.ignoredHostRetryFields === true
+  const escalationIgnoredReason = stringField(record, 'escalationIgnored')
   const sections = [`Exit code: ${exitCode ?? 'unknown'}`]
   if (cwd) sections.push(`Working directory: ${cwd}`)
   if (stdout) sections.push(`Stdout:\n${stdout}`)
@@ -72,7 +72,11 @@ function formatRunCommandOutput(output: unknown): string {
   if (sandboxDenied) {
     sections.push('Sandbox signal: the command may have been blocked by the file sandbox.')
   }
-  if (ignoredHostRetryFields) {
+  if (escalationIgnoredReason === 'full_access') {
+    sections.push(
+      'Host retry fields were ignored: this session has Full Access, so the command ran directly on the host and no sandbox failure was available to escalate.'
+    )
+  } else if (escalationIgnoredReason === 'no_matching_failure') {
     sections.push(
       'Host retry fields were ignored because no matching sandbox failure was available. This call followed the normal sandbox-first or approval path.'
     )
@@ -130,26 +134,34 @@ export function buildRunCommandTool(context: RunCommandContext): { tool: ToolSet
   const sandboxRunCommand = sandboxProvider?.runCommand?.bind(sandboxProvider)
   const ensureSandbox = context.ensureSandbox
   const sandboxAvailable = !isWindows && sandboxRunCommand !== undefined && ensureSandbox !== undefined
+  const fullAccess = context.approvalMode === 'full_access'
   const executionCache = new Map<string, { signature: string; promise: Promise<RunCommandResult> }>()
+
+  const retryGuidance = fullAccess
+    ? '- This session has Full Access: run_command executes directly on the host without an approval step; it does not execute inside the file sandbox and there is no host retry to request. Do not pass `sandbox_permissions` or `justification`.'
+    : `- All user-granted workdirs remain writable in the sandbox.
+- On macOS/Linux, commands run in the file sandbox first. A failed call records a one-time retry reference inside the harness without exposing it to the model.
+- Request full host access only after a real failed sandbox call, by retrying the exact command/workdir/shell with \`sandbox_permissions\` and \`justification\`.
+- The harness finds and consumes the matching retry reference internally. Never add or infer a retry id.
+- A sandbox-denied marker is a diagnostic signal, not the only reason a host retry may be appropriate.`
 
   const description = `
 ## Command Execution
 Use \`run_command\` for project commands, shell commands, and Node.js scripts. The current platform shell is ${shell}.
-- Commands use the selected workdir as cwd. All user-granted workdirs remain writable in the sandbox.
-- On macOS/Linux, commands run in the file sandbox first. A failed call records a one-time retry reference inside the harness without exposing it to the model.
-- Request full host access only after a real failed sandbox call, by retrying the exact command/workdir/shell with \`sandbox_permissions\` and \`justification\`.
-- The harness finds and consumes the matching retry reference internally. Never add or infer a retry id.
+- Commands use the selected workdir as cwd.
+${retryGuidance}
 - Do not append \`| head\` or \`| tail\` merely to limit output. Output is already bounded; preserve the original command for exact retry matching.
-- A sandbox-denied marker is a diagnostic signal, not the only reason a host retry may be appropriate.
 - Prefer writing reusable Node.js code to a file, then run it with \`node path/to/script.mjs\`.
 `
 
   const tool: ToolSet[string] = {
     description:
       `Run a ${shell} command in the current project. ` +
-      (sandboxAvailable
-        ? 'Commands run in the sandbox first; an exact failed call can request a one-time host retry.'
-        : 'No OS command sandbox is available on this platform, so host execution follows the session approval policy.'),
+      (fullAccess
+        ? 'This session has Full Access, so commands run directly on the host without an approval step.'
+        : sandboxAvailable
+          ? 'Commands run in the sandbox first; an exact failed call can request a one-time host retry.'
+          : 'No OS command sandbox is available on this platform, so host execution follows the session approval policy.'),
     inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
@@ -164,13 +176,16 @@ Use \`run_command\` for project commands, shell commands, and Node.js scripts. T
         sandbox_permissions: {
           type: 'string',
           enum: ['danger-full-access'],
-          description:
-            'Request a one-time host retry of an exact failed sandbox command. Valid only with justification.',
+          description: fullAccess
+            ? 'Not applicable in this session: commands already run on the host with Full Access.'
+            : 'Request a one-time host retry of an exact failed sandbox command. Valid only with justification.',
         },
         justification: {
           type: 'string',
           maxLength: MAX_JUSTIFICATION_LENGTH,
-          description: 'One sentence explaining why this exact failed command needs host access.',
+          description: fullAccess
+            ? 'Not applicable in this session: commands already run on the host with Full Access.'
+            : 'One sentence explaining why this exact failed command needs host access.',
         },
       },
       required: ['command'],
@@ -220,7 +235,6 @@ Use \`run_command\` for project commands, shell commands, and Node.js scripts. T
           approvalRetryOf?: string
         }
         const alreadyApproved = approvalContext.approved === true
-        const fullAccess = context.approvalMode === 'full_access'
 
         let sandboxReady = false
         let sandboxWorkingDirectory: string | undefined
@@ -253,7 +267,10 @@ Use \`run_command\` for project commands, shell commands, and Node.js scripts. T
           else retryResolutionError = retry.error
         }
         const groundedEscalation = retryOf !== undefined
-        const ignoredHostRetryFields = escalationRequested && !groundedEscalation && !fullAccess
+        let escalationIgnoredReason: RunCommandResult['escalationIgnored']
+        if (escalationRequested && !groundedEscalation) {
+          escalationIgnoredReason = fullAccess ? 'full_access' : 'no_matching_failure'
+        }
 
         if (!isWindows && sandboxRunCommand && sandboxReady && !fullAccess && !groundedEscalation) {
           const cwd = input.workdir ?? sandboxProvider?.getAcceptedExtraWritableDirs?.()[0] ?? sandboxWorkingDirectory
@@ -283,7 +300,7 @@ Use \`run_command\` for project commands, shell commands, and Node.js scripts. T
               ...(output.outputFile ? { outputFile: output.outputFile } : {}),
               ...(result.sandbox?.denied ? { sandboxDenied: true } : {}),
               ...(result.retryOf ? { retryAvailable: true } : {}),
-              ...(ignoredHostRetryFields ? { ignoredHostRetryFields: true } : {}),
+              ...(escalationIgnoredReason ? { escalationIgnored: escalationIgnoredReason } : {}),
             }
           } finally {
             toolOptions.abortSignal?.removeEventListener('abort', cancel)
@@ -357,7 +374,7 @@ Use \`run_command\` for project commands, shell commands, and Node.js scripts. T
             sandboxed: false,
             ...(output.outputFile ? { outputFile: output.outputFile } : {}),
             ...(result.cancelled ? { cancelled: true } : {}),
-            ...(ignoredHostRetryFields ? { ignoredHostRetryFields: true } : {}),
+            ...(escalationIgnoredReason ? { escalationIgnored: escalationIgnoredReason } : {}),
           }
         } finally {
           toolOptions.abortSignal?.removeEventListener('abort', cancel)

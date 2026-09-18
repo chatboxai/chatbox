@@ -711,6 +711,31 @@ describe('buildToolsForSession', () => {
     expect(result.instructions).not.toContain('sandboxed environment for lightweight code execution')
   })
 
+  test('v2 command instructions describe direct host execution under Full Access', async () => {
+    const provider = createMockSandboxProvider()
+    vi.mocked(provider.resolveWorkingDirectory).mockResolvedValue('/sandbox/session-1')
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      agentToolContractVersion: 2,
+      sessionSettings: { commandApprovalMode: 'full_access', workingDirectories: ['/workspace/project'] },
+      codeExecution: { sessionId: 'session-1', provider, files: [] },
+      commandExecution: { sessionId: 'session-1', provider },
+    })
+
+    expect(result.instructions).toContain(
+      'run_command executes Bash directly on the host because Full Access is enabled'
+    )
+    expect(result.instructions).toContain(
+      'Full Access is enabled, so it runs commands directly on the host without an approval step; it does not execute inside the file sandbox and there is no host retry to request'
+    )
+    expect(result.instructions).not.toContain('this session has no file sandbox')
+    expect(result.instructions).toContain('Keep the prepared skill directory beneath that sandbox root')
+    expect(result.instructions).not.toContain('run_command executes Bash in the file sandbox first')
+    expect(result.instructions).not.toContain('It runs sandbox-first')
+  })
+
   test.each(['web', 'ios', 'android'])('v2 command contract does not expose Electron commands on %s', async (name) => {
     platformName.current = name
     const provider = createMockSandboxProvider()

@@ -152,16 +152,22 @@ ${grantedDirsBlock}`
 function buildRunCommandFileProcessingInstruction(
   commandPlatform: 'darwin' | 'linux' | 'win32',
   workingDir: string | null,
+  fullAccess: boolean,
   userWorkingDirectories?: string[]
 ): string {
   const formatPath = (filePath: string) => filePath.replace(/\\/g, '/')
   const directories = userWorkingDirectories?.length
     ? `\nUser-selected working directories:\n${userWorkingDirectories.map((dir) => `- ${formatPath(dir)}`).join('\n')}`
     : ''
+  const hostApproval = fullAccess
+    ? 'directly on the host because Full Access is enabled'
+    : 'on the host under the session approval policy'
   const runtime =
     commandPlatform === 'win32'
-      ? 'run_command executes PowerShell on the host under the session approval policy. Use PowerShell syntax and native Windows paths; Bash is unavailable.'
-      : 'run_command executes Bash in the file sandbox first. Use Bash syntax and request a host retry only after a real sandbox failure.'
+      ? `run_command executes PowerShell ${hostApproval}. Use PowerShell syntax and native Windows paths; Bash is unavailable.`
+      : fullAccess
+        ? 'run_command executes Bash directly on the host because Full Access is enabled. Use Bash syntax; run_command does not execute inside the file sandbox and there is no host retry to request.'
+        : 'run_command executes Bash in the file sandbox first. Use Bash syntax and request a host retry only after a real sandbox failure.'
   return `
 ## Working Directory & File Processing
 Sandbox working directory: ${workingDir ? formatPath(workingDir) : '(created when first needed)'}${directories}
@@ -238,15 +244,14 @@ Use code_execution to download and unpack skill files, ensure the directory cont
     const defaultWorkdir = userExecWorkingDirectory
       ? `The default workdir is ${userExecWorkingDirectory.replace(/\\/g, '/')}.`
       : ''
-    const fullAccessNotice = agentFullAccess
-      ? 'Full Access is enabled, so commands run without per-command approval.'
-      : ''
+    const runCommandExecution = agentFullAccess
+      ? 'Full Access is enabled, so it runs commands directly on the host without an approval step; it does not execute inside the file sandbox and there is no host retry to request.'
+      : 'It runs sandbox-first where confinement is available and applies the session approval policy before host execution.'
     const stagingDirectory = skillStagingDirectory?.replace(/\\/g, '/')
     instruction += `
 ### Running Commands
-Use run_command for project commands and commands required by loaded skills. It runs sandbox-first where confinement is available and applies the session approval policy before host execution.
+Use run_command for project commands and commands required by loaded skills. ${runCommandExecution}
 ${defaultWorkdir}
-${fullAccessNotice}
 
 ### Installing Skills
 Use run_command with workdir set to ${stagingDirectory ?? 'the internal sandbox working directory shown above'} to download and unpack skill files. Keep the prepared skill directory beneath that sandbox root, ensure it contains a valid SKILL.md, then call install_skill with that path. User-granted working directories are not valid install_skill staging roots.
@@ -424,6 +429,7 @@ When you create a Git commit that includes code changes, append this exact trail
       instructions += buildRunCommandFileProcessingInstruction(
         commandPlatform,
         sandboxWorkingDirectory,
+        commandApprovalMode === 'full_access',
         userWorkingDirectories
       )
     }

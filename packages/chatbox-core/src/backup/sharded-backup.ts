@@ -1,5 +1,6 @@
 import {
   type CopilotDetail,
+  type Message,
   type Session,
   type SessionMetaRecord,
   SessionMetaRecordSchema,
@@ -23,7 +24,14 @@ import { normalizeBackupExportItems } from './export-items'
 import { prepareGlobalRestore } from './global-restore'
 import type { BackupImportOptions, BackupImportResult } from './import-backup'
 import { fitsInlineBackupJson, jsonUtf8Blocks } from './json-stream'
-import { BACKUP_PAYLOAD_BLOCK_BYTES, BackupMessageValidator, backupPayloadBlocks } from './payload'
+import {
+  BACKUP_PAYLOAD_BLOCK_BYTES,
+  BackupMessageValidator,
+  NATIVE_PAYLOAD_LIMIT_BYTES,
+  payloadBlocksOf,
+  projectBackupMessage,
+  serializeBackupPayload,
+} from './payload'
 import { preparedSessionReader } from './preflight'
 import { createBackupProgressReporter } from './progress'
 import { BackupResourceCatalog } from './resource-catalog'
@@ -75,6 +83,8 @@ export interface ShardedBackupOptions {
   prepared?: import('./preflight').BackupExportPlan
   store: BackupSessionStore
   limits?: Partial<BackupPageLimits>
+  /** Payloads up to this many bytes are parsed natively; larger ones stream. Tests set 0 to force streaming. */
+  nativePayloadLimit?: number
 }
 const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8', { fatal: true })
@@ -113,6 +123,7 @@ export async function exportShardedBackup(
   sharded: ShardedBackupOptions
 ): Promise<BackupExportResult> {
   const limits = backupPageLimits(sharded.limits)
+  const nativePayloadLimit = sharded.nativePayloadLimit ?? NATIVE_PAYLOAD_LIMIT_BYTES
   const checksum = options.checksum ?? sha256Checksum
   const report = createBackupProgressReporter(options.onProgress)
   let sessionProgress: BackupProgress = { phase: 'sessions', current: 0, total: 0, processedBytes: 0 }
@@ -206,28 +217,43 @@ export async function exportShardedBackup(
         batchBytes = 2
         return entry.archive
       }
-      for await (const row of checkedBackupRows(sharded.store, id, limits, options.signal)) {
+      for await (const row of checkedBackupRows(sharded.store, id, limits, options.signal, nativePayloadLimit)) {
         throwIfAborted(options.signal)
         let logical = LogicalBackupRowSchema.parse(toLogicalBackupRow(row))
         if (row.kind === 'message' && row.payload) {
           if (!session || !row.payload.chunks || logical.kind !== 'message')
             throw new Error('Backup payload source is missing')
           if (batch.length) yield await flush()
-          const validator = new BackupMessageValidator()
           const firstBlock = session.payloads.length
           let size = 0
-          let rawSize = 0
-          const source = row.payload.chunks()
-          const originalValidator = new BackupMessageValidator()
-          const raw = (async function* () {
-            for await (const data of source) {
-              rawSize += data.length
-              originalValidator.write(data)
-              yield data
-            }
-          })()
-          for await (const data of prepareBackupMessagePayload(raw)) {
-            validator.write(data)
+          let rawSize = row.payload.size ?? 0
+          let prepared: Message | undefined
+          let transformed: AsyncIterable<Uint8Array> | Iterable<Uint8Array>
+          if (row.payload.value) {
+            // Materialized payload: one native serialization plus the projection pass importers rely on.
+            const serialized = serializeBackupPayload(
+              prepareSessionForBackup({ id, name: '', messages: [row.payload.value] }).messages[0]
+            )
+            prepared = serialized.projection
+            transformed = serialized.blocks
+          } else {
+            rawSize = 0
+            const source = row.payload.chunks()
+            const raw = (async function* () {
+              for await (const data of source) {
+                rawSize += data.length
+                yield data
+              }
+            })()
+            // checkedBackupRows validated the raw stream; the transform validates only its output.
+            transformed = prepareBackupMessagePayload(raw, undefined, {
+              validateInput: false,
+              onFinish: (message) => {
+                prepared = message
+              },
+            })
+          }
+          for await (const data of transformed) {
             size += data.length
             const entry = await encodeBytes(
               `${prefix}/payloads/${String(session.payloads.length).padStart(6, '0')}.bin`,
@@ -239,13 +265,14 @@ export async function exportShardedBackup(
             session.payloads.push(entry.descriptor)
             yield entry.archive
           }
-          const originalResources = rowResources({ ...logical, value: originalValidator.finish() }, id)
+          if (!prepared || !row.payload.original) throw new Error('Backup payload projection is missing')
+          const originalResources = rowResources({ ...logical, value: row.payload.original() }, id)
           catalog.warnings.push(...originalResources.warnings)
           if (row.payload.size !== undefined && rawSize !== row.payload.size)
             throw new Error('Backup payload size mismatch')
           logical = LogicalBackupRowSchema.parse({
             ...logical,
-            value: validator.finish(),
+            value: prepared,
             payload: { encoding: 'json-utf8', size, firstBlock, blockCount: session.payloads.length - firstBlock },
           })
         }
@@ -417,6 +444,9 @@ export async function importShardedBackup(
   let headerBytes = 0
   let payloadIndex = 0
   let pendingPayload: { validator: BackupMessageValidator; firstBlock: number; count: number; size: number } | undefined
+  const nativePayloadLimit = sharded.nativePayloadLimit ?? NATIVE_PAYLOAD_LIMIT_BYTES
+  /** Total bytes of each payload group, keyed by session id and first block index. */
+  const payloadGroupSizes = new Map<string, number>()
   const finishGraph = () => {
     if (pendingPayload) throw new Error('Backup payload has no owning message')
     if (current) summaries.set(current.id, current.graph.finish())
@@ -530,6 +560,7 @@ export async function importShardedBackup(
             JSON.stringify(pendingPayload.validator.finish()) !== JSON.stringify(row.value)
           )
             throw new Error('Backup payload reference mismatch')
+          if (current) payloadGroupSizes.set(`${current.id}:${p.firstBlock}`, p.size)
           pendingPayload = undefined
         } else if (pendingPayload) throw new Error('Backup payload has no owning message')
         if (row.kind === 'header') {
@@ -647,6 +678,8 @@ export async function importShardedBackup(
   let preserveGlobals = false
   let activeSourceSession: Session | undefined
   let payloadTransform: { transform: BackupResourcePayloadTransform; size: number } | undefined
+  let payloadBuffer: { data: Uint8Array; offset: number } | undefined
+  let restoreBlockIndex = 0
   try {
     beginPhase('restoring')
     const reserved = new Set<string>()
@@ -684,7 +717,14 @@ export async function importShardedBackup(
       for (const key of resource.originalStorageKeys) keys.set(key, chosen.key)
     }
     for (const key of missingResources) keys.set(key, await allocate())
-    globals = await prepareGlobalRestore(validated, globalValues, options.storage, keys, options.signal)
+    globals = await prepareGlobalRestore(
+      validated,
+      globalValues,
+      options.storage,
+      keys,
+      options.signal,
+      options.createId
+    )
     const { translateMessage, translateMemoryToolContext } = globals
     await readEntries(
       file,
@@ -775,8 +815,22 @@ export async function importShardedBackup(
         }
         if (entry.path.endsWith('.bin')) {
           if (!active?.candidate.appendPayload) throw new Error('Backup storage does not support payload restoration')
+          // Every payload block was validated and checksummed before restoring began.
+          if (!payloadTransform && !payloadBuffer) {
+            const groupSize = payloadGroupSizes.get(`${active.id}:${restoreBlockIndex}`)
+            if (groupSize !== undefined && groupSize <= nativePayloadLimit)
+              payloadBuffer = { data: new Uint8Array(groupSize), offset: 0 }
+          }
+          restoreBlockIndex++
+          if (payloadBuffer) {
+            if (payloadBuffer.offset + entry.data.length > payloadBuffer.data.length)
+              throw new Error('Backup payload size mismatch')
+            payloadBuffer.data.set(entry.data, payloadBuffer.offset)
+            payloadBuffer.offset += entry.data.length
+            return
+          }
           payloadTransform ??= {
-            transform: new BackupResourcePayloadTransform(keys, translateMemoryToolContext),
+            transform: new BackupResourcePayloadTransform(keys, translateMemoryToolContext, { validateInput: false }),
             size: 0,
           }
           for (const bytes of payloadTransform.transform.write(entry.data)) {
@@ -798,9 +852,25 @@ export async function importShardedBackup(
             const oldMeta = await options.metaStorage.getById(id)
             active = { id, candidate: await sharded.store.beginBackupRestore(id), oldMeta }
             candidates.push(active)
+            restoreBlockIndex = 0
           }
           if (!active) throw new Error('Backup header is missing')
-          if (row.kind === 'message' && row.payload) {
+          if (row.kind === 'message' && row.payload && payloadBuffer) {
+            if (!active.candidate.appendPayload) throw new Error('Missing backup message payload')
+            if (payloadBuffer.offset !== payloadBuffer.data.length) throw new Error('Backup payload size mismatch')
+            // Materialized group: rebuild the message with the same object-level steps inline rows use.
+            const parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(payloadBuffer.data)) as Message
+            const restored = prepareRow({ ...row, value: translateMessage(parsed) }, active.id, keys)
+            if (restored.kind !== 'message') throw new Error('Backup payload row changed kind')
+            const bytes = encoder.encode(JSON.stringify(restored.value))
+            for (const block of payloadBlocksOf(bytes)) await active.candidate.appendPayload(block)
+            row = {
+              ...restored,
+              value: projectBackupMessage(restored.value),
+              payload: { ...row.payload, size: bytes.length },
+            }
+            payloadBuffer = undefined
+          } else if (row.kind === 'message' && row.payload) {
             if (!payloadTransform || !active.candidate.appendPayload) throw new Error('Missing backup message payload')
             const final = payloadTransform.transform.finish()
             for (const bytes of final.bytes) {

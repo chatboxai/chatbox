@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
+import { openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
 import { contextSnapshot } from '../persistence/session-context-read.test-support'
 import { SqlSessionRowStore } from '../persistence/session-row-sql'
-import { openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
 import { decodeSessionTree } from '../session/session-tree/decode'
 import { exportBackupArchive } from './export-backup'
 import { jsonUtf8Blocks } from './json-stream'
@@ -190,6 +190,75 @@ it('measures canonical v2 bytes across branches, Unicode, and cleaned attachment
       'sharded'
     )
     expect(await rows.readSnapshot('s')).toMatchObject({ rows: source.rows })
+  } finally {
+    db.close()
+  }
+})
+
+const payloadSession = (count: number) =>
+  contextSnapshot({
+    id: 's',
+    name: 'S',
+    messages: Array.from({ length: count }, (_, i) => ({
+      id: `m${i}`,
+      role: 'user' as const,
+      contentParts: [{ type: 'text' as const, text: `${i}:`.padEnd(200 * 1024, 'y') }],
+    })),
+  })
+
+const countingStore = (rows: SqlSessionRowStore) => {
+  let payloadReads = 0
+  const store: BackupSessionStore = {
+    listSessionIds: () => rows.listSessionIds(),
+    beginBackupRestore: (id) => rows.beginBackupRestore(id),
+    async *iterateBackupRows(...args) {
+      for await (const row of rows.iterateBackupRows(...args)) {
+        if (row.kind === 'message' && row.payload?.chunks) {
+          const chunks = row.payload.chunks
+          yield {
+            ...row,
+            payload: {
+              ...row.payload,
+              chunks: () => {
+                payloadReads++
+                return chunks()
+              },
+            },
+          }
+        } else yield row
+      }
+    },
+  }
+  return { store, payloadReads: () => payloadReads }
+}
+
+it('settles on the sharded layout from stored payload sizes without reading any payload', async () => {
+  const db = openNodeSessionRowDatabase()
+  try {
+    const rows = new SqlSessionRowStore(db)
+    await rows.writeRows(payloadSession(3))
+    const { store, payloadReads } = countingStore(rows)
+    const plan = await prepareBackupExport(options(store), { singleSessionBytes: 300 * 1024 })
+    expect(plan.sessions).toEqual([{ id: 's', name: 'S', layout: 'sharded' }])
+    expect(payloadReads()).toBe(0)
+  } finally {
+    db.close()
+  }
+})
+
+it('measures deferred payloads exactly when the stored sizes fit the single-file budget', async () => {
+  const db = openNodeSessionRowDatabase()
+  try {
+    const rows = new SqlSessionRowStore(db)
+    const source = payloadSession(3)
+    await rows.writeRows(source)
+    const decoded = decodeSessionTree({ session: source.record, ...source.rows })
+    if (!decoded.ok) throw new Error(decoded.reason)
+    const expected = new TextEncoder().encode(JSON.stringify(prepareSessionForBackup(decoded.session))).length
+    const { store, payloadReads } = countingStore(rows)
+    const plan = await prepareBackupExport(options(store), { singleSessionBytes: 2 * 1024 * 1024 })
+    expect(plan.sessions).toEqual([{ id: 's', name: 'S', layout: 'single', size: expected }])
+    expect(payloadReads()).toBe(3)
   } finally {
     db.close()
   }

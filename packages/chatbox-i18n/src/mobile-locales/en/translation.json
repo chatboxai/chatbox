@@ -369,5 +369,7 @@
   "No valid MCP servers found": "No valid MCP servers found",
   "Some MCP server configurations are invalid": "Some MCP server configurations are invalid",
   "Generate image": "Generate image",
-  "Reference images": "Reference images"
+  "Reference images": "Reference images",
+  "Finishing up": "Finishing up",
+  "{{size}} processed (uncompressed)": "{{size}} processed (uncompressed)"
 }

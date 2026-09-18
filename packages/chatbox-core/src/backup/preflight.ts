@@ -3,11 +3,10 @@ import { decodeSessionTree } from '../session/session-tree/decode'
 import type { SessionTree } from '../session/session-tree/types'
 import { throwIfAborted } from './abort'
 import type { BackupExportOptions } from './export-backup'
-import { BackupMessageValidator } from './payload'
-import { prepareBackupMessagePayload } from './resource-payload'
 import { classifyBackupSession } from './format-classification'
-import { prepareSessionForBackup, collectSessionResourceReferences } from './resources'
-import { backupPageLimits, type BackupSessionStore } from './session-port'
+import { prepareBackupMessagePayload } from './resource-payload'
+import { collectSessionResourceReferences, prepareSessionForBackup } from './resources'
+import { type BackupSessionStore, backupPageLimits } from './session-port'
 import { BackupSourceBudgetError, checkedBackupRows, MAX_BACKUP_SESSION_STRUCTURE_BYTES } from './source-check'
 import type { BackupWarning } from './types'
 
@@ -24,7 +23,10 @@ export interface BackupExportPlan {
   exportItems: BackupExportOptions['exportItems']
   includeKeys: boolean
 }
-type PreparationOptions = Omit<BackupExportOptions, 'writeArchive'> & { sessionStore: BackupSessionStore }
+type PreparationOptions = Omit<BackupExportOptions, 'writeArchive'> & {
+  sessionStore: BackupSessionStore
+  nativePayloadLimit?: number
+}
 const encoder = new TextEncoder()
 
 /** Materialization is allowed only for an already measured, bounded single-file session. */
@@ -32,7 +34,8 @@ export async function prepareSessionSource(
   store: BackupSessionStore,
   id: string,
   signal?: AbortSignal,
-  materializeLimit: number = SINGLE_BACKUP_SESSION_BYTES
+  materializeLimit: number = SINGLE_BACKUP_SESSION_BYTES,
+  nativePayloadLimit?: number
 ) {
   const tree: Partial<SessionTree> & Pick<SessionTree, 'threads' | 'messages'> = { threads: [], messages: [] }
   let messageBytes = 0
@@ -50,7 +53,7 @@ export async function prepareSessionSource(
     if (warningBytes > 4 * 1024 * 1024) throw new BackupSourceBudgetError('Backup warning index exceeds budget')
     sourceWarnings.push(...warnings)
   }
-  for await (const row of checkedBackupRows(store, id, backupPageLimits(), signal)) {
+  for await (const row of checkedBackupRows(store, id, backupPageLimits(), signal, nativePayloadLimit)) {
     if (row.kind === 'header') {
       keep(row.record)
       tree.session = row.record
@@ -62,26 +65,22 @@ export async function prepareSessionSource(
       if (!row.payload) {
         warn(row.message.message)
         message = prepareSessionForBackup({ id, name: '', messages: [row.message.message] }).messages[0]
+      } else if (row.payload.value) {
+        warn(row.payload.value)
+        message = prepareSessionForBackup({ id, name: '', messages: [row.payload.value] }).messages[0]
       } else {
-        if (!row.payload.chunks) throw new Error('Backup payload source is missing')
-        const original = new BackupMessageValidator()
-        const input = row.payload.chunks()
-        const source = (async function* () {
-          for await (const part of input) {
-            original.write(part)
-            yield part
-          }
-        })()
+        if (!row.payload.chunks || !row.payload.original) throw new Error('Backup payload source is missing')
         const parts: Uint8Array<ArrayBuffer>[] = []
         let bytes = 0
-        for await (const part of prepareBackupMessagePayload(source)) {
+        const source = prepareBackupMessagePayload(row.payload.chunks(), undefined, { validateInput: false })
+        for await (const part of source) {
           throwIfAborted(signal)
           bytes += part.length
           if (bytes + messageBytes > materializeLimit + 128 * 1024)
             throw new Error('Prepared session exceeded its single-file budget')
           parts.push(new Uint8Array(part))
         }
-        warn(original.finish())
+        warn(row.payload.original())
         const data = new Uint8Array(bytes)
         let offset = 0
         for (const part of parts) {
@@ -129,7 +128,13 @@ export async function prepareBackupExport(
     throwIfAborted(options.signal)
     options.onProgress?.({ phase: 'preparing', current: index, total: ids.length })
     try {
-      const descriptor = await classifyBackupSession(options.sessionStore, id, threshold, options.signal)
+      const descriptor = await classifyBackupSession(
+        options.sessionStore,
+        id,
+        threshold,
+        options.signal,
+        options.nativePayloadLimit
+      )
       reserve(descriptor)
       sessions.push(descriptor)
     } catch (error) {
@@ -169,7 +174,13 @@ export function preparedSessionReader(
   return async (id, onWarnings) => {
     const expected = plan.sessions.find((session) => session.id === id)
     if (!expected || expected.layout !== 'single') throw new Error('Session was not prepared for single-file export')
-    const actual = await prepareSessionSource(options.sessionStore, id, options.signal, expected.size + 1024 * 1024)
+    const actual = await prepareSessionSource(
+      options.sessionStore,
+      id,
+      options.signal,
+      expected.size + 1024 * 1024,
+      options.nativePayloadLimit
+    )
     if (actual.size !== expected.size) throw new Error('Backup source changed after preparation')
     onWarnings?.(actual.warnings)
     return actual.session

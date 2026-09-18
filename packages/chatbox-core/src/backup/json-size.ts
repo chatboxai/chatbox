@@ -2,7 +2,8 @@ import { JsonTokens } from './resource-payload'
 
 /** Counts canonical JSON.stringify UTF-8 bytes without retaining string bodies. */
 export class BackupJsonSize {
-  private tokens = new JsonTokens()
+  /** Callers feed transform output, which the transform has already validated. */
+  private tokens = new JsonTokens(false)
   private encoder = new TextEncoder()
   private size = 0
   private raw = ''

@@ -1,4 +1,5 @@
-import type { SessionRecordV2, ThreadRow, MessageRow } from '../session/session-tree/types'
+import type { Message } from '@shared/types'
+import type { MessageRow, SessionRecordV2, ThreadRow } from '../session/session-tree/types'
 
 export interface BackupPageLimits {
   maxPageRows: number
@@ -26,7 +27,18 @@ export type BackupRow =
   | { kind: 'header'; record: SessionRecordV2 }
   | { kind: 'thread'; thread: ThreadRow }
   // With a payload, message.message is a validation projection; chunks carry the complete JSON value.
-  | { kind: 'message'; message: MessageRow; payload?: { size?: number; chunks?: () => AsyncIterable<Uint8Array> } }
+  // original() returns the validated projection of those chunks once they have been fully consumed;
+  // value is the complete parsed message when the payload was small enough to materialize.
+  | {
+      kind: 'message'
+      message: MessageRow
+      payload?: {
+        size?: number
+        chunks?: () => AsyncIterable<Uint8Array>
+        original?: () => Message
+        value?: Message
+      }
+    }
 
 export interface BackupSessionCandidate {
   appendPayload?(chunk: Uint8Array): Promise<void>

@@ -1,8 +1,3 @@
-import { prepareBackupExport, preparedSessionReader, type BackupExportPlan } from './preflight'
-import type { BackupSessionStore } from './session-port'
-import { BackupResourceCatalog, BackupResourceBudgetError } from './resource-catalog'
-import { exportShardedBackup, type ShardedBackupOptions } from './sharded-backup'
-import type { BackupManifestV3 } from './sharded-format'
 import type { CopilotDetail, Session, SessionMetaRecord, Settings } from '@shared/types'
 import { throwIfAborted } from './abort'
 import {
@@ -15,8 +10,13 @@ import {
 } from './archive-layout'
 import { sha256Checksum } from './codec'
 import { normalizeBackupExportItems } from './export-items'
+import { type BackupExportPlan, prepareBackupExport, preparedSessionReader } from './preflight'
+import { BackupResourceBudgetError, BackupResourceCatalog } from './resource-catalog'
 import { collectGlobalResourceReferences, collectSessionResourceReferences, prepareSessionForBackup } from './resources'
+import type { BackupSessionStore } from './session-port'
 import { settingsPayloadForBackup } from './settings-payload'
+import { exportShardedBackup, type ShardedBackupOptions } from './sharded-backup'
+import type { BackupManifestV3 } from './sharded-format'
 import {
   AGENT_PERSONA_BACKUP_KEYS,
   BackupStorageKey,
@@ -56,6 +56,8 @@ export interface BackupExportWriteResult {
 export interface BackupExportOptions {
   sessionStore?: BackupSessionStore
   prepared?: BackupExportPlan
+  /** Payloads up to this many bytes are parsed natively during classification and export. */
+  nativePayloadLimit?: number
   sourceWarnings?: import('./types').BackupWarning[]
   strictSessions?: boolean
   /** Controlled integration seam; public hosts enable this after platform acceptance. */
@@ -238,7 +240,12 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
         JSON.stringify([...new Set(options.selectedSessionIds)]) !== JSON.stringify(prepared.selectedSessionIds))
     )
       throw new Error('Backup selection changed; prepare the export again')
-    if (prepared.formatVersion === 3) return exportShardedBackup(options, { store: options.sessionStore, prepared })
+    if (prepared.formatVersion === 3)
+      return exportShardedBackup(options, {
+        store: options.sessionStore,
+        prepared,
+        nativePayloadLimit: options.nativePayloadLimit,
+      })
     return exportBackupArchive({
       ...options,
       sessionStore: undefined,

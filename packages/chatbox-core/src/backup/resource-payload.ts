@@ -1,3 +1,4 @@
+import type { Message } from '@shared/types'
 import { BackupMessageValidator, backupPayloadBlocks } from './payload'
 
 type Token = { kind: 'punctuation' | 'scalar' | 'string-start' | 'string-part' | 'string-end'; value: string }
@@ -7,8 +8,10 @@ export class JsonTokens {
   private string = false
   private escape = false
   private scalar = ''
+  /** Input that an upstream validator already accepted can skip the structural pass. */
+  constructor(private readonly validate = true) {}
   public *write(bytes: Uint8Array): Generator<Token> {
-    this.validator.write(bytes)
+    if (this.validate) this.validator.write(bytes)
     const text = this.decoder.decode(bytes, { stream: true })
     let fragment = ''
     for (const c of text) {
@@ -49,7 +52,7 @@ export class JsonTokens {
   *finish(): Generator<Token> {
     this.decoder.decode()
     if (this.scalar) yield { kind: 'scalar', value: this.scalar }
-    this.validator.finish()
+    if (this.validate) this.validator.finish()
   }
 }
 
@@ -89,14 +92,21 @@ function referencePath(path: Path) {
 }
 
 /** Changes attachment and memory-call metadata; free text and tool arguments stream unchanged. */
+export interface BackupPayloadTransformOptions {
+  /** False when the caller has already validated the input bytes; the output is always validated. */
+  validateInput?: boolean
+}
 export class BackupResourcePayloadTransform {
-  private tokenizer = new JsonTokens()
+  private readonly tokenizer: JsonTokens
   private encoder = new TextEncoder()
   private outputValidator = new BackupMessageValidator()
   constructor(
     private readonly resourceKeys?: ReadonlyMap<string, string>,
-    private readonly translateMemoryToolContext?: (context: unknown) => unknown
-  ) {}
+    private readonly translateMemoryToolContext?: (context: unknown) => unknown,
+    options: BackupPayloadTransformOptions = {}
+  ) {
+    this.tokenizer = new JsonTokens(options.validateInput ?? true)
+  }
 
   private memoryContext:
     | { depth: number; json: string | undefined; translate: (context: unknown) => unknown }
@@ -234,12 +244,15 @@ export class BackupResourcePayloadTransform {
 }
 export async function* prepareBackupMessagePayload(
   source: AsyncIterable<Uint8Array>,
-  resourceKeys?: ReadonlyMap<string, string>
+  resourceKeys?: ReadonlyMap<string, string>,
+  options: BackupPayloadTransformOptions & { onFinish?: (message: Message) => void } = {}
 ) {
-  const transform = new BackupResourcePayloadTransform(resourceKeys)
+  const transform = new BackupResourcePayloadTransform(resourceKeys, undefined, options)
   const output = async function* () {
     for await (const bytes of source) yield* transform.write(bytes)
-    yield* transform.finish().bytes
+    const final = transform.finish()
+    options.onFinish?.(final.message)
+    yield* final.bytes
   }
   yield* backupPayloadBlocks(output())
 }

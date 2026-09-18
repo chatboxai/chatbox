@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid'
 import type { BackupRow, BackupSessionCandidate } from '../backup/session-port'
-import { SessionRowConflictError, type SessionRowCommit } from '../ports/session-row-store'
-import type { ThreadRow, MessageRow } from '../session/session-tree/types'
+import { type SessionRowCommit, SessionRowConflictError } from '../ports/session-row-store'
+import type { MessageRow, ThreadRow } from '../session/session-tree/types'
 import type { SessionRowSqlDatabase, SessionRowSqlStatement } from './session-row-sql'
 
 const columns = {
@@ -18,10 +18,11 @@ export async function createSqlBackupCandidate(
   codec: {
     thread(row: ThreadRow, commit?: SessionRowCommit): SessionRowSqlStatement
     message(row: MessageRow): Iterable<SessionRowSqlStatement>
-  }
+  },
+  createId: () => string = uuid
 ): Promise<BackupSessionCandidate> {
-  const mutation = uuid()
-  const previous = uuid()
+  const mutation = createId()
+  const previous = createId()
   const heads = await database.query<{ revision: number | null }>(
     'SELECT revision FROM session_row_heads WHERE session_id = ?',
     [sessionId]
@@ -74,24 +75,24 @@ export async function createSqlBackupCandidate(
       if (published || disposed || !commit) throw new Error('Backup candidate is closed')
       if (!bytes.length || bytes.length > 128 * 1024) throw new Error('Backup payload block exceeds budget')
       pending ??= {
-        id: payloadPrefix + uuid(),
+        id: payloadPrefix + createId(),
         decoder: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }),
         count: 0,
         bytes: 0,
       }
       pending.bytes += bytes.length
       const text = pending.decoder.decode(bytes, { stream: true })
+      const statements: SessionRowSqlStatement[] = []
       for (let offset = 0; offset < text.length; ) {
         let end = Math.min(offset + 16 * 1024, text.length)
         if (end < text.length && text.charCodeAt(end - 1) >= 0xd800 && text.charCodeAt(end - 1) <= 0xdbff) end--
-        await database.executeBatch([
-          {
-            sql: 'INSERT INTO session_message_payload_chunks (session_id, payload_id, chunk_index, value) VALUES (?, ?, ?, ?)',
-            params: [sessionId, pending.id, pending.count++, text.slice(offset, end)],
-          },
-        ])
+        statements.push({
+          sql: 'INSERT INTO session_message_payload_chunks (session_id, payload_id, chunk_index, value) VALUES (?, ?, ?, ?)',
+          params: [sessionId, pending.id, pending.count++, text.slice(offset, end)],
+        })
         offset = end
       }
+      if (statements.length) await database.executeBatch(statements)
     },
     async append(row: BackupRow) {
       if (published || disposed) throw new Error('Backup candidate is closed')

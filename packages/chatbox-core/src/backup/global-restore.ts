@@ -17,7 +17,8 @@ export async function prepareGlobalRestore(
   values: Map<string, unknown>,
   storage: BackupStorage,
   resourceKeys: ReadonlyMap<string, string>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  createId: () => string | Promise<string> = uuid
 ) {
   const staged = new Map(
     Object.values(manifest.data).map((entry) => [entry.path, { ...entry, value: values.get(entry.path) }])
@@ -51,7 +52,7 @@ export async function prepareGlobalRestore(
   }
   const existing = new Set(await storage.getAllKeys())
   const previous = new Map<string, string | null>()
-  const prefix = `__chatbox_backup_import:globals:${uuid()}`
+  const prefix = `__chatbox_backup_import:globals:${await createId()}`
   const written: string[] = []
   const dispose = async () => {
     const failures: unknown[] = []

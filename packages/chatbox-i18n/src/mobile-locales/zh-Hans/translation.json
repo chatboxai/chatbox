@@ -369,5 +369,7 @@
   "No valid MCP servers found": "未找到有效的 MCP 服务器配置",
   "Some MCP server configurations are invalid": "部分 MCP 服务器配置无效",
   "Generate image": "生成图片",
-  "Reference images": "参考图片"
+  "Reference images": "参考图片",
+  "Finishing up": "正在收尾",
+  "{{size}} processed (uncompressed)": "已处理 {{size}}（未压缩）"
 }

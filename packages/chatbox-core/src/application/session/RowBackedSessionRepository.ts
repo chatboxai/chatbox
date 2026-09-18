@@ -666,7 +666,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     if (fingerprint === baseline.version.fingerprint) {
       return this.rememberBaseline(id, { ...baseline, session, decoded: false })
     }
-    const record = deriveSessionRecord(session, id)
+    const record = deriveSessionRecord(session, baseline.record.activeThreadId)
     record.contextReadProjection = baseline.record.contextReadProjection
     record.topologyFingerprint = baseline.record.topologyFingerprint
     const diff = diffSessionRows(baseline.rows, baseline.rows)

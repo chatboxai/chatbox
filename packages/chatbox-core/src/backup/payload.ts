@@ -1,6 +1,72 @@
-import { MessageSchema, type Message } from '@shared/types'
+import { type Message, MessageSchema } from '@shared/types'
 
 export const BACKUP_PAYLOAD_BLOCK_BYTES = 128 * 1024
+/** Payloads up to this size are parsed natively instead of being scanned by the streaming passes. */
+export const NATIVE_PAYLOAD_LIMIT_BYTES = 8 * 1024 * 1024
+
+/** Reads a payload of known size into memory and parses it once; the returned message keeps unknown fields. */
+export async function materializeBackupPayload(
+  chunks: AsyncIterable<Uint8Array>,
+  size: number
+): Promise<{ bytes: Uint8Array; message: Message }> {
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for await (const part of chunks) {
+    if (offset + part.length > size) throw new Error('Backup payload size mismatch')
+    bytes.set(part, offset)
+    offset += part.length
+  }
+  if (offset !== size) throw new Error('Backup payload size mismatch')
+  const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+  MessageSchema.parse(value)
+  return { bytes, message: value as Message }
+}
+
+/** Serializes a message into payload blocks and the projection importers recompute from those bytes. */
+export function serializeBackupPayload(message: Message): { blocks: Uint8Array[]; projection: Message } {
+  const bytes = new TextEncoder().encode(JSON.stringify(message))
+  const validator = new BackupMessageValidator()
+  const blocks: Uint8Array[] = []
+  for (let offset = 0; offset < bytes.length; offset += BACKUP_PAYLOAD_BLOCK_BYTES) {
+    const block = bytes.subarray(offset, offset + BACKUP_PAYLOAD_BLOCK_BYTES)
+    validator.write(block)
+    blocks.push(block)
+  }
+  return { blocks, projection: validator.finish() }
+}
+
+const RESOURCE_ROOTS = new Set(['files', 'links', 'pictures', 'contentParts'])
+const RESOURCE_KEYS = new Set(['storageKey', 'rawStorageKey', 'resultStorageKey', 'resultImageStorageKey'])
+function projectValue(value: unknown, path: Array<string | number>, key: string | undefined): unknown {
+  if (typeof value === 'string') {
+    // path names the string itself; the validator's limits are keyed on its container path.
+    const container = path.slice(0, -1)
+    const resource =
+      typeof container[1] === 'number' &&
+      ((container.length === 2 && RESOURCE_ROOTS.has(String(container[0])) && RESOURCE_KEYS.has(key ?? '')) ||
+        (container.length === 3 &&
+          container[0] === 'contentParts' &&
+          container[2] === 'result' &&
+          key === 'image_storage_key'))
+    return value.slice(0, resource ? 32768 : 4096)
+  }
+  if (Array.isArray(value)) return value.map((item, index) => projectValue(item, [...path, index], undefined))
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, item] of Object.entries(value)) out[k] = projectValue(item, [...path, k], k)
+    return out
+  }
+  return value
+}
+/** Bounded projection of a materialized message: the same string truncation the streaming validator applies. */
+export function projectBackupMessage(message: Message): Message {
+  return projectValue(message, [], undefined) as Message
+}
+
+export function* payloadBlocksOf(bytes: Uint8Array): Generator<Uint8Array> {
+  for (let offset = 0; offset < bytes.length; offset += BACKUP_PAYLOAD_BLOCK_BYTES)
+    yield bytes.subarray(offset, offset + BACKUP_PAYLOAD_BLOCK_BYTES)
+}
 type Frame = {
   path: Array<string | number>
   value: Record<string, unknown> | unknown[]

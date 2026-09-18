@@ -1,6 +1,5 @@
 import { throwIfAborted } from '../backup/abort'
-import { backupPageLimits, type BackupPageLimits, type BackupRow } from '../backup/session-port'
-import { createSqlBackupCandidate } from './session-row-sql-backup'
+import { type BackupPageLimits, type BackupRow, backupPageLimits } from '../backup/session-port'
 import type { SessionContextMessage, SessionContextRequest, SessionContextRows } from '../ports/session-context-source'
 import {
   type GeneratingMessageRef,
@@ -40,6 +39,7 @@ import {
   SessionMessageWindowTraversal,
   validateMessageWindowRequest,
 } from './session-message-window'
+import { createSqlBackupCandidate } from './session-row-sql-backup'
 import {
   createTextTokenSource,
   SESSION_TEXT_TOKEN_SCHEMA_SQL,
@@ -710,7 +710,10 @@ function toMessageRow(record: MessageRecord, message: Message): MessageRow {
 export class SqlSessionRowStore implements SessionRowStorePort {
   private initializePromise: Promise<void> | null = null
 
-  constructor(private readonly database: SessionRowSqlDatabase) {}
+  constructor(
+    private readonly database: SessionRowSqlDatabase,
+    private readonly createBackupId?: () => string
+  ) {}
 
   initialize(): Promise<void> {
     if (!this.initializePromise) {
@@ -726,7 +729,12 @@ export class SqlSessionRowStore implements SessionRowStorePort {
 
   async beginBackupRestore(sessionId: string) {
     await this.initialize()
-    return createSqlBackupCandidate(this.database, sessionId, { thread: threadStatement, message: messageStatements })
+    return createSqlBackupCandidate(
+      this.database,
+      sessionId,
+      { thread: threadStatement, message: messageStatements },
+      this.createBackupId
+    )
   }
 
   async *iterateBackupRows(

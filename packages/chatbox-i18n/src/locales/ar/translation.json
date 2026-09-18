@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "الضغط في قائمة الانتظار، سيتم تنفيذه عندما تكون الجلسة خاملة",
   "Runs when the session is idle": "يتم التنفيذ عندما تكون الجلسة خاملة",
   "Failed to queue the compression": "تعذر وضع الضغط في قائمة الانتظار",
-  "Compression could not start": "تعذر بدء الضغط"
+  "Compression could not start": "تعذر بدء الضغط",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "تمت إزالة مزود النموذج المستخدم في هذه المحادثة. يرجى اختيار نموذج آخر والمحاولة مرة أخرى."
 }

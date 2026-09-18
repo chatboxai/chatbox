@@ -86,6 +86,15 @@ describe('resolveMessageErrorPresentation', () => {
     })
   })
 
+  it('maps a removed provider to the provider-missing presentation', () => {
+    const presentation = resolveMessageErrorPresentation(
+      message({ errorCode: MESSAGE_ERROR_CODES.MODEL_PROVIDER_NOT_FOUND })
+    )
+
+    expect(presentation.kind).toBe('provider-missing')
+    expect(isMessageReminderPresentation(presentation)).toBe(false)
+  })
+
   it('keeps unrelated failures in the unknown presentation', () => {
     const presentation = resolveMessageErrorPresentation(message({ errorCode: 99999 }))
 

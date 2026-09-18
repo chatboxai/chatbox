@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "壓縮已排隊，將在工作階段空閒後執行",
   "Runs when the session is idle": "工作階段空閒後執行",
   "Failed to queue the compression": "壓縮未能排隊，請重試",
-  "Compression could not start": "壓縮未能開始"
+  "Compression could not start": "壓縮未能開始",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "此對話使用的模型供應商已被刪除，請選擇其他模型後重試。"
 }

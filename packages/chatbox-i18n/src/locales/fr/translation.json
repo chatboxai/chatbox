@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "Compression mise en file d'attente, elle s'exécute lorsque la session est inactive",
   "Runs when the session is idle": "S'exécute lorsque la session est inactive",
   "Failed to queue the compression": "Impossible de mettre la compression en file d'attente",
-  "Compression could not start": "Impossible de démarrer la compression"
+  "Compression could not start": "Impossible de démarrer la compression",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Le fournisseur de modèle utilisé par cette conversation a été supprimé. Veuillez sélectionner un autre modèle et réessayer."
 }

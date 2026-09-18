@@ -399,8 +399,19 @@ const MCPOAuthStateSchema = z.object({
 })
 
 const MCPSettingsSchema = z.object({
-  servers: z.array(MCPServerConfigSchema),
-  enabledBuiltinServers: z.array(z.string()),
+  // Persisted settings are untrusted input; one malformed entry must not make the
+  // whole settings object unparseable (every settings update goes through parse).
+  // Dropped entries are not carried forward: the next persisted write omits them.
+  servers: z
+    .array(z.unknown())
+    .catch([])
+    .transform((servers) =>
+      servers.flatMap((server) => {
+        const parsed = MCPServerConfigSchema.safeParse(server)
+        return parsed.success ? [parsed.data] : []
+      })
+    ),
+  enabledBuiltinServers: z.array(z.string()).catch([]),
   oauth: z.record(z.string(), MCPOAuthStateSchema).optional().catch(undefined),
 })
 

@@ -51,7 +51,7 @@ import type {
   ModelStreamPart,
 } from './types'
 import { isKimiFixedSamplingModel } from './utils/kimi'
-import { extractStreamErrorMessage } from './utils/stream-error-message'
+import { extractStreamErrorMessage, extractStreamErrorStatusCode } from './utils/stream-error-message'
 
 export type { CallSettings } from './types'
 
@@ -847,7 +847,11 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     }
     // Mid-stream provider errors are often plain objects ({ message, type, code });
     // interpolating them yields "[object Object]".
-    throw new ApiError(`Error from ${this.name}${context}: ${extractStreamErrorMessage(error)}`)
+    throw new ApiError(
+      `Error from ${this.name}${context}: ${extractStreamErrorMessage(error)}`,
+      undefined,
+      extractStreamErrorStatusCode(error)
+    )
   }
 
   /**

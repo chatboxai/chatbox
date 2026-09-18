@@ -1,4 +1,5 @@
 import { enrichModelFromRegistry } from '../model-registry/enrich'
+import { ModelProviderNotFoundError } from '../models/errors'
 import type { ModelInterface } from '../models/types'
 import { isUsingOAuth, mergeSharedOAuthProviderSettings, resolveEffectiveApiKey } from '../oauth'
 import type { PlatformType } from '../platform'
@@ -19,7 +20,7 @@ import {
 import type { CreateModelConfig, ProviderDefinition, ProviderDefinitionInput } from './types'
 import { createCustomProviderModel } from './utils'
 
-export { projectProviderCatalog, type ProviderCatalogProjection } from './catalog'
+export { type ProviderCatalogProjection, projectProviderCatalog } from './catalog'
 
 export {
   clearProviderRegistry,
@@ -61,7 +62,7 @@ export function getProviderSettings(
   )
 
   if (!providerBaseInfo) {
-    throw new Error(`Cannot find model with provider: ${setting.provider}`)
+    throw new ModelProviderNotFoundError(provider)
   }
   const providerSetting = mergeSharedOAuthProviderSettings(provider, globalSettings.providers)
   // When OAuth is active, use the provider's default API host (OAuth tokens are issued for specific endpoints)
@@ -204,5 +205,5 @@ export function getModel(
     )
   }
 
-  throw new Error(`Cannot find model with provider: ${settings.provider}`)
+  throw new ModelProviderNotFoundError(provider)
 }

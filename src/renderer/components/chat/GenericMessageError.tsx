@@ -164,6 +164,10 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
           components={[<Link key="link" className="cursor-pointer font-bold" onClick={() => navigateToSettings()} />]}
         />
       )
+    case 'provider-missing':
+      return (
+        <Trans i18nKey="The model provider used by this conversation has been removed. Please select another model and try again." />
+      )
     case 'known-chatbox-api':
       return <ChatboxAIErrorMessage errorCode={presentation.errorCode} model={model} />
     case 'unknown':

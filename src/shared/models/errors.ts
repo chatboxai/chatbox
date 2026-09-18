@@ -10,6 +10,7 @@ export class BaseError extends Error {
 export const MESSAGE_ERROR_CODES = {
   CHATBOX_AI_QUOTA_EXHAUSTED: 10004,
   OCR_FAILED: 10006,
+  MODEL_PROVIDER_NOT_FOUND: 10007,
   CHATBOX_AI_FREE_QUOTA_EXHAUSTED: 20039,
   CHATBOX_AI_FREE_AGENT_MODE_QUOTA_EXHAUSTED: 20040,
   FILE_PREPROCESS_FAILED: 20041,
@@ -62,6 +63,16 @@ export class AIProviderNoImplementedChatError extends BaseError {
   public code = 10005
   constructor(aiProvider: string) {
     super(`Current AI Provider ${aiProvider} Does Not Support Chat Completions API`)
+  }
+}
+
+/** The session references a provider that no longer exists (e.g. a deleted custom provider). */
+export class ModelProviderNotFoundError extends BaseError {
+  public code: number = MESSAGE_ERROR_CODES.MODEL_PROVIDER_NOT_FOUND
+  public providerId: string
+  constructor(providerId: string) {
+    super(`Model provider ${providerId} is no longer available. Please select another model.`)
+    this.providerId = providerId
   }
 }
 

@@ -5,6 +5,7 @@ import { buildContext, flattenToolCallPartsToText, selectContextMessages } from 
 import type { AttachmentResolver } from '@shared/context/types'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
 import type { ChatStreamOptions, ModelInterface } from '@shared/models/types'
+import { extractStreamErrorMessage } from '@shared/models/utils/stream-error-message'
 import { toSandboxSeedAttachment } from '@shared/sandbox/attachment-path'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import { supportsToolResultImages } from '@shared/tools/view-image'
@@ -338,7 +339,7 @@ export async function prepareAgentGenerationHarness(
     try {
       await ocrImagesInMessages(promptMsgs, ocrResult.model, session.id)
     } catch (err) {
-      throw new OCRError(ocrResult.providerName, err instanceof Error ? err : new Error(`${err}`))
+      throw new OCRError(ocrResult.providerName, err instanceof Error ? err : new Error(extractStreamErrorMessage(err)))
     }
     infoParts.push({
       type: 'info',

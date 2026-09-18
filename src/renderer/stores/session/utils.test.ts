@@ -116,14 +116,7 @@ describe('trackGenerateEvent', () => {
     }
   )
 
-  test.each([
-    ['primitive', 'quota exceeded', 'quota exceeded'],
-    [
-      'provider object',
-      { message: 'provider unavailable, please retry', type: 'server_error', apiKey: 'sk-private-secret' },
-      'provider unavailable, please retry',
-    ],
-  ])('keeps %s details local while sending only normalized telemetry', (_label, thrown, expectedMessage) => {
+  test('keeps primitive details local while sending only normalized telemetry', () => {
     const message = {
       id: 'message-1',
       role: 'assistant',
@@ -134,13 +127,35 @@ describe('trackGenerateEvent', () => {
       provider: 'custom-provider-private',
     } as SessionSettings
 
-    const result = handleGenerationError(thrown, message, settings, { operationType: 'send_message' })
+    const result = handleGenerationError('quota exceeded', message, settings, { operationType: 'send_message' })
 
-    expect(result.error).toBe(expectedMessage)
+    expect(result.error).toBe('quota exceeded')
     const reported = reportErrorMock.mock.calls.at(-1)?.[0]
     expect(reported).toBeInstanceOf(Error)
     expect(reported.message).toMatch(/^Non-Error exception/)
-    expect(reported.message).not.toMatch(/quota exceeded|provider unavailable|private-secret/)
+    expect(reported.message).not.toMatch(/quota exceeded/)
+  })
+
+  test('shows provider error payloads to the user without reporting them', () => {
+    const message = {
+      id: 'message-1',
+      role: 'assistant',
+      contentParts: [],
+    } as Message
+    const settings = {
+      modelId: 'private-model-name',
+      provider: 'custom-provider-private',
+    } as SessionSettings
+
+    const result = handleGenerationError(
+      { message: 'provider unavailable, please retry', type: 'server_error', apiKey: 'sk-private-secret' },
+      message,
+      settings,
+      { operationType: 'send_message' }
+    )
+
+    expect(result.error).toBe('provider unavailable, please retry')
+    expect(reportErrorMock).not.toHaveBeenCalled()
   })
 
   test('persists Chatbox AI OCR quota exhaustion separately from main-model quota exhaustion', () => {

@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "Compressão em fila, será executada quando a sessão estiver inativa",
   "Runs when the session is idle": "Executa quando a sessão estiver inativa",
   "Failed to queue the compression": "Não foi possível colocar a compressão em fila",
-  "Compression could not start": "Não foi possível iniciar a compressão"
+  "Compression could not start": "Não foi possível iniciar a compressão",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "O fornecedor do modelo utilizado nesta conversa foi removido. Selecione outro modelo e tente novamente."
 }

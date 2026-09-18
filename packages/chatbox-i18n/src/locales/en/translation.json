@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "Compression queued, it runs when the session is idle",
   "Runs when the session is idle": "Runs when the session is idle",
   "Failed to queue the compression": "Failed to queue the compression",
-  "Compression could not start": "Compression could not start"
+  "Compression could not start": "Compression could not start",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "The model provider used by this conversation has been removed. Please select another model and try again."
 }

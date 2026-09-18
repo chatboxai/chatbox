@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "圧縮をキューに追加しました。セッションがアイドル状態になった後に実行されます",
   "Runs when the session is idle": "セッションがアイドル状態になった後に実行されます",
   "Failed to queue the compression": "圧縮をキューに追加できませんでした",
-  "Compression could not start": "圧縮を開始できませんでした"
+  "Compression could not start": "圧縮を開始できませんでした",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "この会話で使用しているモデルプロバイダーは削除されました。別のモデルを選択してからもう一度お試しください。"
 }

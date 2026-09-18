@@ -140,7 +140,13 @@ const CustomServersSection: FC<Props> = (props) => {
   }, [])
 
   const triggerImportJson = async () => {
-    const content = await navigator.clipboard.readText()
+    let content: string
+    try {
+      content = await navigator.clipboard.readText()
+    } catch {
+      toastError(t('Failed to read from clipboard'))
+      return
+    }
     const servers = parseServersFromJson(content)
     trackEvent('import_mcp_servers_from_json', { count: bucketPlausibleCount(servers.length) })
     if (!servers.length) {

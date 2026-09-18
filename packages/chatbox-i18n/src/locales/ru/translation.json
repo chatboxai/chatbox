@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "Сжатие в очереди, выполнится когда сессия освободится",
   "Runs when the session is idle": "Выполнится, когда сессия освободится",
   "Failed to queue the compression": "Не удалось поставить сжатие в очередь",
-  "Compression could not start": "Не удалось запустить сжатие"
+  "Compression could not start": "Не удалось запустить сжатие",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Провайдер моделей, используемый в этом диалоге, был удалён. Выберите другую модель и повторите попытку."
 }

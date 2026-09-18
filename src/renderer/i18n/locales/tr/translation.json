@@ -1530,5 +1530,6 @@
   "Compression queued, it runs when the session is idle": "Sıkıştırma kuyruğa alındı, oturum boşta olduğunda çalışacak",
   "Runs when the session is idle": "Oturum boşta olduğunda çalışır",
   "Failed to queue the compression": "Sıkıştırma kuyruğa alınamadı",
-  "Compression could not start": "Sıkıştırma başlatılamadı"
+  "Compression could not start": "Sıkıştırma başlatılamadı",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Bu konuşmada kullanılan model sağlayıcısı kaldırıldı. Lütfen başka bir model seçip tekrar deneyin."
 }

@@ -298,3 +298,35 @@ describe('SessionSettingsSchema command approval mode', () => {
     expect(parsed.agentFullAccess).toBe(true)
   })
 })
+
+describe('SettingsSchema mcp servers', () => {
+  const validServer = {
+    id: 'srv-1',
+    name: 'Valid',
+    enabled: true,
+    transport: { type: 'http', url: 'https://example.com/mcp' },
+  }
+
+  test('drops malformed server entries and keeps valid ones', () => {
+    const parsed = SettingsSchema.parse({
+      ...defaultSettings(),
+      mcp: {
+        servers: [
+          { name: 'Missing id', enabled: true, transport: { type: 'stdio', command: 'x', args: [] } },
+          validServer,
+        ],
+        enabledBuiltinServers: [],
+      },
+    })
+    expect(parsed.mcp.servers).toEqual([validServer])
+  })
+
+  test('falls back to an empty list when servers is not an array', () => {
+    const parsed = SettingsSchema.parse({
+      ...defaultSettings(),
+      mcp: { servers: 'broken', enabledBuiltinServers: 'broken' },
+    })
+    expect(parsed.mcp.servers).toEqual([])
+    expect(parsed.mcp.enabledBuiltinServers).toEqual([])
+  })
+})

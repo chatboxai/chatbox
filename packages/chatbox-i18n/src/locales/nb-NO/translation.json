@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "Komprimering satt i kø, kjøres når økten er inaktiv",
   "Runs when the session is idle": "Kjøres når økten er inaktiv",
   "Failed to queue the compression": "Kunne ikke sette komprimeringen i kø",
-  "Compression could not start": "Kunne ikke starte komprimeringen"
+  "Compression could not start": "Kunne ikke starte komprimeringen",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Modell-leverandøren som brukes i denne samtalen er fjernet. Velg en annen modell og prøv igjen."
 }

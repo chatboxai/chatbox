@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "압축이 대기열에 추가되었습니다. 세션이 유휴 상태가 되면 실행됩니다",
   "Runs when the session is idle": "세션이 유휴 상태가 되면 실행됩니다",
   "Failed to queue the compression": "압축을 대기열에 추가하지 못했습니다",
-  "Compression could not start": "압축을 시작하지 못했습니다"
+  "Compression could not start": "압축을 시작하지 못했습니다",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "이 대화에서 사용하던 모델 공급자가 삭제되었습니다. 다른 모델을 선택한 후 다시 시도해 주세요."
 }

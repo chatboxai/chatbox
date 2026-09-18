@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "Komprimierung eingereiht, wird ausgeführt, wenn die Sitzung inaktiv ist",
   "Runs when the session is idle": "Wird ausgeführt, wenn die Sitzung inaktiv ist",
   "Failed to queue the compression": "Komprimierung konnte nicht eingereiht werden",
-  "Compression could not start": "Komprimierung konnte nicht gestartet werden"
+  "Compression could not start": "Komprimierung konnte nicht gestartet werden",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Der in diesem Gespräch verwendete Modellanbieter wurde entfernt. Bitte wählen Sie ein anderes Modell aus und versuchen Sie es erneut."
 }

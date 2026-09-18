@@ -1534,5 +1534,6 @@
   "Compression queued, it runs when the session is idle": "压缩已排队，将在会话空闲后执行",
   "Runs when the session is idle": "会话空闲后执行",
   "Failed to queue the compression": "压缩未能排队，请重试",
-  "Compression could not start": "压缩未能开始"
+  "Compression could not start": "压缩未能开始",
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "此对话使用的模型提供方已被删除，请选择其他模型后重试。"
 }

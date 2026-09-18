@@ -217,7 +217,21 @@ describe('SessionItem', () => {
     })
 
     expect(screen.getByRole('status', { name: 'Completed' })).toBeTruthy()
+    // The dot alone marks an unread completion; the title keeps its default weight.
+    expect(screen.getByTestId(TestId.sidebar.sessionTitle).style.fontWeight).toBe('')
     view.unmount()
+  })
+
+  test('shows waiting activity for a persisted paused tool call', () => {
+    render(
+      <MantineProvider>
+        <SessionItem session={{ ...session, hasPausedToolCall: true }} selected={false} />
+      </MantineProvider>
+    )
+
+    expect(screen.getByRole('status', { name: 'Waiting for you...' })).toBeTruthy()
+    // The clock icon alone marks the waiting state; the title keeps its default weight.
+    expect(screen.getByTestId(TestId.sidebar.sessionTitle).style.fontWeight).toBe('')
   })
 
   test('always offers undo after archiving and offers to open the restored chat', async () => {

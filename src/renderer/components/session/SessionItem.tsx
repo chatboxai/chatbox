@@ -343,7 +343,6 @@ function SessionItem(props: Props) {
           flex={1}
           lineClamp={1}
           c={selected ? 'chatbox-brand' : 'chatbox-primary'}
-          fw={activity === 'completed' || activity === 'waiting' ? 600 : undefined}
           onMouseDown={(event) => {
             if (event.detail === 1) {
               renameClickStartedOnSelectedSessionRef.current = selected

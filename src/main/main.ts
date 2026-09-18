@@ -526,6 +526,11 @@ async function createWindow() {
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     backupOperationActive = false
     backupQuitRequested = false
+    // The OS or the user ended the process; nothing in the renderer failed.
+    if (details.reason === 'killed' || details.reason === 'clean-exit') {
+      log.warn(`Renderer process exited: ${details.reason} (exit code ${details.exitCode})`)
+      return
+    }
     reportMainProcessError(new Error(`Renderer process exited unexpectedly: ${details.reason}`), {
       domain: 'renderer-process',
       extras: {

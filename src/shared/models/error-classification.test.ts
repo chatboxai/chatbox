@@ -29,6 +29,14 @@ describe('isExpectedGenerationError', () => {
     ).toBe(true)
   })
 
+  it('recognizes transport failures thrown by fetch and stream readers', () => {
+    expect(isExpectedGenerationError(new TypeError('the stream has been terminated'))).toBe(true)
+    expect(isExpectedGenerationError(new TypeError('network error'))).toBe(true)
+    expect(isExpectedGenerationError(new TypeError('Load failed'))).toBe(true)
+    expect(isExpectedGenerationError(new TypeError('Failed to fetch'))).toBe(true)
+    expect(isExpectedGenerationError(new TypeError("Cannot read properties of undefined (reading 'x')"))).toBe(false)
+  })
+
   it('keeps shapeless objects reportable', () => {
     expect(isProviderErrorPayload({ message: 'no discriminator' })).toBe(false)
     expect(isProviderErrorPayload({ type: 'upstream_error' })).toBe(false)

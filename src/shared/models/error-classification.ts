@@ -8,6 +8,7 @@ import {
   NetworkError,
   OCRError,
 } from './errors'
+import { isRetryableNetworkError } from './retryable-chat-model'
 import { unwrapProviderErrorPayload } from './utils/stream-error-message'
 
 const PROVIDER_ERROR_PAYLOAD_KEYS = ['type', 'code', 'status', 'statusCode']
@@ -37,6 +38,7 @@ export function isExpectedGenerationError(error: unknown): boolean {
     error instanceof ModelProviderNotFoundError ||
     APICallError.isInstance(error) ||
     (error instanceof OCRError && error.cause instanceof BaseError) ||
-    isProviderErrorPayload(error)
+    isProviderErrorPayload(error) ||
+    isRetryableNetworkError(error)
   )
 }

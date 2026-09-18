@@ -63,7 +63,7 @@ export function isRetryableNetworkError(error: unknown): boolean {
   }
   return (
     error instanceof Error &&
-    /^(?:Failed to fetch|fetch failed|Network request failed|Load failed|NetworkError when attempting to fetch resource\.?|Network disconnected)$/i.test(
+    /^(?:Failed to fetch|fetch failed|Network request failed|network error|Load failed|NetworkError when attempting to fetch resource\.?|Network disconnected|the stream has been terminated)$/i.test(
       error.message
     )
   )

@@ -189,7 +189,7 @@ describe('QueuedMessagesBar compression requests', () => {
     setCompactionQueue()
     renderBar()
 
-    expect(screen.getByText('Runs when the current reply finishes')).toBeTruthy()
+    expect(screen.getByText('Runs when the session is idle')).toBeTruthy()
     expect(screen.queryByText('Will send after the current response finishes')).toBeNull()
   })
 })

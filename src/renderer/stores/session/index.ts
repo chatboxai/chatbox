@@ -66,9 +66,10 @@ export { stopAllMessageGenerations, stopMessageGeneration } from './generation-c
 export type { QueuedCompactionRequest, QueuedItem, QueuedUserMessage, QueuePausedReason } from './message-queue'
 export {
   clearQueue,
+  conversationAnchorIdOf,
   enqueueCompactionRequest,
   enqueueUserMessage,
-  hasPendingQueueWork,
+  hasQueuedWork,
   messageQueueStore,
   removeQueuedMessage,
   resumeQueueAndDrain,

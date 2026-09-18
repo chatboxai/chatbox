@@ -1530,7 +1530,8 @@
   "{{connected}} / {{total}} servers connected": "서버 {{total}}개 중 {{connected}}개 연결됨",
   "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. 웹 버전의 채팅 기록은 브라우저 캐시에만 저장됩니다(브라우저가 삭제할 수 있어 안정적이지 않습니다).\n2. MCP는 데스크톱 및 모바일 앱에서 사용할 수 있습니다. 지식 베이스는 데스크톱에서 사용할 수 있습니다. ",
   "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "모바일에서는 URL과 헤더로 원격 HTTP 서버에 연결할 수 있습니다. OAuth 로그인은 지원하지 않습니다.",
-  "Compression queued, it runs when the current reply finishes": "압축이 대기열에 추가되었습니다. 현재 응답이 완료된 후 실행됩니다",
-  "Runs when the current reply finishes": "현재 응답이 완료된 후 실행됩니다",
-  "Failed to queue the compression": "압축을 대기열에 추가하지 못했습니다"
+  "Compression queued, it runs when the session is idle": "압축이 대기열에 추가되었습니다. 세션이 유휴 상태가 되면 실행됩니다",
+  "Runs when the session is idle": "세션이 유휴 상태가 되면 실행됩니다",
+  "Failed to queue the compression": "압축을 대기열에 추가하지 못했습니다",
+  "Compression could not start": "압축을 시작하지 못했습니다"
 }

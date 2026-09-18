@@ -1530,7 +1530,8 @@
   "{{connected}} / {{total}} servers connected": "{{total}} 台中 {{connected}} 台のサーバーに接続済み",
   "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. ウェブ版のチャット履歴はブラウザーのキャッシュにのみ保存されます（ブラウザーによって削除される可能性があり、確実ではありません）。\n2. MCP はデスクトップ版とモバイル版で利用できます。ナレッジベースはデスクトップ版で利用できます。 ",
   "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "モバイル版では URL とヘッダーを使用してリモート HTTP サーバーに接続できます。OAuth ログインには対応していません。",
-  "Compression queued, it runs when the current reply finishes": "圧縮をキューに追加しました。現在の返信が完了した後に実行されます",
-  "Runs when the current reply finishes": "現在の返信が完了した後に実行されます",
-  "Failed to queue the compression": "圧縮をキューに追加できませんでした"
+  "Compression queued, it runs when the session is idle": "圧縮をキューに追加しました。セッションがアイドル状態になった後に実行されます",
+  "Runs when the session is idle": "セッションがアイドル状態になった後に実行されます",
+  "Failed to queue the compression": "圧縮をキューに追加できませんでした",
+  "Compression could not start": "圧縮を開始できませんでした"
 }

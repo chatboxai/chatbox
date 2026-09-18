@@ -56,13 +56,15 @@ import { rendererApplication } from '@/app/renderer-application'
 import {
   clearPendingQueuedMessages,
   clearQueue,
+  conversationAnchorIdOf,
   enqueueCompactionRequest,
   enqueueUserMessage,
   flushMessageQueueForTests,
-  hasPendingQueueWork,
+  hasQueuedWork,
   isSteerableQueuedMessage,
   MAX_QUEUED_MESSAGES,
   messageQueueStore,
+  pauseQueue,
   type QueuedUserMessage,
   releaseInFlightQueuedMessage,
   removeQueuedMessage,
@@ -786,7 +788,7 @@ describe('message queue', () => {
       await flushMessageQueueForTests()
       expect(runCompactionMock).not.toHaveBeenCalled()
       expect(getQueueIds()).toHaveLength(1)
-      expect(hasPendingQueueWork('session-1')).toBe(true)
+      expect(hasQueuedWork('session-1')).toBe(true)
 
       settleReply()
       wakeQueuedUserMessages('session-1')
@@ -794,7 +796,7 @@ describe('message queue', () => {
 
       expect(runCompactionMock).toHaveBeenCalledOnce()
       expect(getQueueIds()).toEqual([])
-      expect(hasPendingQueueWork('session-1')).toBe(false)
+      expect(hasQueuedWork('session-1')).toBe(false)
     })
 
     it('defers while a tool call waits for a user decision', async () => {
@@ -950,6 +952,60 @@ describe('message queue', () => {
 
       expect(restored.map((item) => item.kind)).toEqual(['message'])
       expect(restored[0]?.kind === 'message' ? restored[0].message.id : undefined).toBe('m1')
+    })
+
+    it('does not let a retry weaken the request the user confirmed', () => {
+      startReply()
+      enqueueCompactionRequest('session-1', { force: true, prompt: 'Keep exact paths.' }, 'a1')
+      // The failure card's retry carries neither a prompt nor a force flag, and a
+      // forced run must not degrade into "only if the context overflows".
+      enqueueCompactionRequest('session-1', {}, 'a1')
+
+      const queue = messageQueueStore.getState().queues['session-1'] ?? []
+      expect(queue).toHaveLength(1)
+      expect(queue[0]?.kind === 'compaction' ? queue[0].force : undefined).toBe(true)
+      expect(queue[0]?.kind === 'compaction' ? queue[0].prompt : undefined).toBe('Keep exact paths.')
+    })
+
+    it('releases a compression whose anchor message is gone when the user resumes', async () => {
+      enqueueCompactionRequest('session-1', { force: true }, 'gone-message')
+      await flushMessageQueueForTests()
+      expect(runCompactionMock).not.toHaveBeenCalled()
+      expect(messageQueueStore.getState().paused['session-1']).toBe('conversation-changed')
+
+      // "Send now" is the user answering that pause; it must not bounce back off
+      // the same anchor check forever.
+      resumeQueueAndDrain('session-1')
+      await vi.runOnlyPendingTimersAsync()
+
+      expect(runCompactionMock).toHaveBeenCalledOnce()
+      expect(getQueueIds()).toEqual([])
+    })
+
+    it('keeps counting a paused queue as work a new compression waits behind', () => {
+      startReply()
+      enqueueUserMessage('session-1', userMessage('m1'))
+      pauseQueue('session-1', 'stopped')
+
+      // Resuming later would run the queued compression, so a second one beside
+      // it would summarize the conversation twice.
+      expect(hasQueuedWork('session-1')).toBe(true)
+    })
+
+    it('anchors a conversation on the newest message that is not still streaming', () => {
+      const session: Session = {
+        id: 'session-1',
+        name: 'Session',
+        messages: [
+          { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'hi' }] },
+          { id: 'streaming', role: 'assistant', contentParts: [], generating: true },
+        ],
+      }
+
+      // Stopping a reply before any text arrives removes it, so the streaming
+      // placeholder cannot be the conversation's identity.
+      expect(conversationAnchorIdOf(session)).toBe('u1')
+      expect(conversationAnchorIdOf({ ...session, messages: [] })).toBeUndefined()
     })
   })
 })

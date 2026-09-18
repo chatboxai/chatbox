@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  hasPendingSessionGeneration,
   resetSessionGenerationLocksForTests,
-  withSessionGenerationLock,
   waitForSessionGenerations,
+  withSessionGenerationLock,
 } from './generation-lock'
 
 describe('session generation lock', () => {
@@ -108,5 +109,29 @@ describe('session generation lock', () => {
     await expect(second).resolves.toBe('second')
     releaseFirst()
     await first
+  })
+
+  it('reports a pending generation turn until the last task releases it', async () => {
+    expect(hasPendingSessionGeneration('session-1')).toBe(false)
+
+    let releaseTask = () => {}
+    const taskGate = new Promise<void>((resolve) => {
+      releaseTask = resolve
+    })
+    const first = withSessionGenerationLock('session-1', () => taskGate)
+    // A submission that has not produced a generating message yet still owns the turn.
+    expect(hasPendingSessionGeneration('session-1')).toBe(true)
+    expect(hasPendingSessionGeneration('session-2')).toBe(false)
+
+    const secondTask = vi.fn(() => Promise.resolve('second'))
+    const second = withSessionGenerationLock('session-1', secondTask)
+    expect(hasPendingSessionGeneration('session-1')).toBe(true)
+
+    releaseTask()
+    await first
+    // The queued task keeps the turn until it finishes too.
+    expect(hasPendingSessionGeneration('session-1')).toBe(true)
+    await expect(second).resolves.toBe('second')
+    expect(hasPendingSessionGeneration('session-1')).toBe(false)
   })
 })

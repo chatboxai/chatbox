@@ -1530,7 +1530,8 @@
   "{{connected}} / {{total}} servers connected": "已連線 {{connected}} / {{total}} 個伺服器",
   "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. 網頁版聊天記錄只能儲存在瀏覽器快取中（可能被瀏覽器清除，並不可靠）。\n2. 桌面和行動應用程式皆支援 MCP，知識庫支援桌面版。 ",
   "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "行動版可透過 URL 和請求標頭連線至遠端 HTTP 伺服器，暫不支援 OAuth 登入。",
-  "Compression queued, it runs when the current reply finishes": "壓縮已排隊，將在當前回覆結束後執行",
-  "Runs when the current reply finishes": "當前回覆結束後執行",
-  "Failed to queue the compression": "壓縮未能排隊，請重試"
+  "Compression queued, it runs when the session is idle": "壓縮已排隊，將在工作階段空閒後執行",
+  "Runs when the session is idle": "工作階段空閒後執行",
+  "Failed to queue the compression": "壓縮未能排隊，請重試",
+  "Compression could not start": "壓縮未能開始"
 }

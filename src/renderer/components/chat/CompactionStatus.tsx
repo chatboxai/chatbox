@@ -70,13 +70,17 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId, onVi
   const isTruncated = shouldTruncate(errorText)
 
   const handleRetry = useCallback(() => {
-    void requestManualCompaction(sessionId).then((outcome) => {
-      if (outcome === 'queue-full') {
-        addToast(t('Message queue is full'))
-      } else if (outcome === 'queue-failed') {
-        addToast(t('Failed to queue the compression'))
-      }
-    })
+    void requestManualCompaction(sessionId)
+      .then((outcome) => {
+        if (outcome === 'queue-full') {
+          addToast(t('Message queue is full'))
+        } else if (outcome === 'queue-failed') {
+          addToast(t('Failed to queue the compression'))
+        } else if (outcome === 'queued') {
+          addToast(t('Compression queued, it runs when the session is idle'))
+        }
+      })
+      .catch(() => addToast(t('Compression could not start')))
   }, [sessionId, t])
 
   const handleDismiss = useCallback(() => {

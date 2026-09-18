@@ -254,7 +254,7 @@ function QueuedCompactionRow({ sessionId, item, order }: QueuedCompactionRowProp
         {order}
       </Text>
       <ScalableIcon icon={IconFileZip} size={14} className="flex-shrink-0 text-chatbox-tint-brand" />
-      <Tooltip label={t('Runs when the current reply finishes')}>
+      <Tooltip label={t('Runs when the session is idle')}>
         <Text size="sm" c="chatbox-secondary" className="min-w-0 flex-1 truncate">
           {t('Compress Conversation')}
         </Text>
@@ -301,8 +301,9 @@ export const QueuedMessagesBar = memo(function QueuedMessagesBar({ sessionId }: 
   // showing them as "will send later" would be misleading.
   const visibleQueue = queue?.filter((item) => !item.inFlight)
   const visibleCount = visibleQueue?.length ?? 0
-  // A queue that holds only compression work is not "sending" anything, so the
-  // header describes when it runs instead.
+  // A queue that holds only compression work is not "sending" anything, and its
+  // wait can be a pending decision or another summary as well as a reply, so the
+  // header describes the session state instead.
   const onlyCompaction = visibleQueue?.every((item) => item.kind === 'compaction') ?? false
   const tailId = visibleQueue?.at(-1)?.id
 
@@ -341,7 +342,7 @@ export const QueuedMessagesBar = memo(function QueuedMessagesBar({ sessionId }: 
             {pausedReason
               ? getPausedLabel(pausedReason, t)
               : onlyCompaction
-                ? t('Runs when the current reply finishes')
+                ? t('Runs when the session is idle')
                 : t('Will send after the current response finishes')}
           </Text>
           {!pausedReason && (

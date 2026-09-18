@@ -1,27 +1,12 @@
 /** Public, host-neutral API for Chatbox application and generation logic. */
 
-export {
-  isAccountLicenseUsable,
-  accountLicenseFromApi,
-  getAccountLicenseStatus,
-  sortAccountLicensesByStatus,
-  selectAccountLicense,
-  selectAccountLicenseForInspection,
-  isAccountLicenseOptionDisabled,
-} from '@shared/utils/account-license'
-export type {
-  AccountLicenseSummary,
-  AccountLicenseStatus,
-  AccountLicenseStatusKind,
-} from '@shared/utils/account-license'
-export {
-  prepareLicenseActivation,
-  licenseActivationSettings,
-  licenseDeactivationSettings,
-} from '@shared/services/license-activation'
-
 export type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
 export { getChatboxAPIOrigin } from '@shared/request/chatbox-api-origin'
+export {
+  licenseActivationSettings,
+  licenseDeactivationSettings,
+  prepareLicenseActivation,
+} from '@shared/services/license-activation'
 export {
   fetchNativeAccountLicenses,
   fetchNativeAccountProfile,
@@ -79,6 +64,20 @@ export type {
   Settings,
   Updater,
 } from '@shared/types'
+export type {
+  AccountLicenseStatus,
+  AccountLicenseStatusKind,
+  AccountLicenseSummary,
+} from '@shared/utils/account-license'
+export {
+  accountLicenseFromApi,
+  getAccountLicenseStatus,
+  isAccountLicenseOptionDisabled,
+  isAccountLicenseUsable,
+  selectAccountLicense,
+  selectAccountLicenseForInspection,
+  sortAccountLicensesByStatus,
+} from '@shared/utils/account-license'
 export {
   createWebSearchTool,
   WEB_SEARCH_TOOLSET_INSTRUCTION,
@@ -295,6 +294,7 @@ export {
   getLastUserMessage,
   getToolCallPause,
   hasPausedToolCallPart,
+  hasPendingSessionGeneration,
   isFirstUserTurn,
   isRetryableToolCallStep,
   keepContentPartsThroughToolCall,

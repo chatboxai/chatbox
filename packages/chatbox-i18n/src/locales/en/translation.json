@@ -1530,7 +1530,8 @@
   "{{connected}} / {{total}} servers connected": "{{connected}} / {{total}} servers connected",
   "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ",
   "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.",
-  "Compression queued, it runs when the current reply finishes": "Compression queued, it runs when the current reply finishes",
-  "Runs when the current reply finishes": "Runs when the current reply finishes",
-  "Failed to queue the compression": "Failed to queue the compression"
+  "Compression queued, it runs when the session is idle": "Compression queued, it runs when the session is idle",
+  "Runs when the session is idle": "Runs when the session is idle",
+  "Failed to queue the compression": "Failed to queue the compression",
+  "Compression could not start": "Compression could not start"
 }

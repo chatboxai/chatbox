@@ -1530,7 +1530,8 @@
   "{{connected}} / {{total}} servers connected": "Подключено серверов: {{connected}} / {{total}}",
   "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. История чатов веб-версии хранится только в кеше браузера (это ненадёжно: браузер может удалить кеш).\n2. MCP доступен в настольном и мобильном приложениях. База знаний доступна в настольном приложении. ",
   "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "На мобильном устройстве подключайтесь к удалённым HTTP-серверам с помощью URL и заголовков. Вход через OAuth недоступен.",
-  "Compression queued, it runs when the current reply finishes": "Сжатие в очереди, выполнится после завершения текущего ответа",
-  "Runs when the current reply finishes": "Выполнится после завершения текущего ответа",
-  "Failed to queue the compression": "Не удалось поставить сжатие в очередь"
+  "Compression queued, it runs when the session is idle": "Сжатие в очереди, выполнится когда сессия освободится",
+  "Runs when the session is idle": "Выполнится, когда сессия освободится",
+  "Failed to queue the compression": "Не удалось поставить сжатие в очередь",
+  "Compression could not start": "Не удалось запустить сжатие"
 }

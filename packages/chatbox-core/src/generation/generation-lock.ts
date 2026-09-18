@@ -29,6 +29,16 @@ export function resetSessionGenerationLocksForTests(): void {
   sessionGenerationTails.clear()
 }
 
+/**
+ * Whether an accepted submission or follow-up already owns (or is waiting for)
+ * this session's generation turn. Hosts that have work to do on the session use
+ * this to choose between queueing that work and taking the lock, which would
+ * silently wait out the whole reply first.
+ */
+export function hasPendingSessionGeneration(sessionId: string): boolean {
+  return sessionGenerationTails.has(sessionId)
+}
+
 /** Includes accepted submission work before a generation runtime has been registered. */
 export async function waitForSessionGenerations(signal?: AbortSignal): Promise<void> {
   while (sessionGenerationTails.size) {

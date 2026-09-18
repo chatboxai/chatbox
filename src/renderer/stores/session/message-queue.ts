@@ -352,7 +352,13 @@ function deliverQueuedCompaction(sessionId: string, item: QueuedCompactionReques
     const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
     if (!session) return 'discard'
 
-    if (item.conversationAnchorId && !session.messages.some((message) => message.id === item.conversationAnchorId)) {
+    if (
+      item.conversationAnchorId &&
+      !session.messages.some((message) => message.id === item.conversationAnchorId) &&
+      // "Send now" is the user answering the conversation-changed pause, so it
+      // also has to release a compression whose anchor message is gone.
+      !consumeForceResume(sessionId)
+    ) {
       return { paused: 'conversation-changed' }
     }
 
@@ -493,9 +499,12 @@ export function enqueueCompactionRequest(
     // compressing what the user is looking at now.
     const updated: QueuedCompactionRequest = {
       ...existing,
-      prompt: request.prompt,
-      force: request.force,
-      conversationAnchorId,
+      // A retry arrives without a prompt and without `force`; it must not weaken
+      // what the user already confirmed, or a forced compression would silently
+      // degrade into "only if the context overflows".
+      prompt: request.prompt ?? existing.prompt,
+      force: existing.force === true || request.force === true,
+      conversationAnchorId: conversationAnchorId ?? existing.conversationAnchorId,
     }
     setQueue(
       sessionId,
@@ -540,11 +549,27 @@ export function enqueueCompactionRequest(
 }
 
 /**
- * Whether the session has queue work that will actually run. Paused items wait
- * for an explicit resume, so they cannot race a new request.
+ * Whether the session already has queued work, paused or not. A paused item can
+ * still run once the user resumes, so a new compression belongs behind it in
+ * the queue: running beside it would summarize the conversation twice.
  */
-export function hasPendingQueueWork(sessionId: string): boolean {
-  return getQueue(sessionId).length > 0 && !getQueuePausedReason(sessionId)
+export function hasQueuedWork(sessionId: string): boolean {
+  return getQueue(sessionId).length > 0
+}
+
+/**
+ * The newest message that identifies a conversation for work that has to
+ * survive the reply settling: a reply that is still streaming is transient
+ * (stopping it before any text arrives removes it), so a compression request
+ * cannot be anchored on it. Steered messages keep using the newest message of
+ * the conversation scope they were admitted into.
+ */
+export function conversationAnchorIdOf(session: Session): string | undefined {
+  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+    const message = session.messages[index]
+    if (!message.generating) return message.id
+  }
+  return undefined
 }
 
 // Best-effort async stamp; an unstamped item simply skips the conversation-changed gate.

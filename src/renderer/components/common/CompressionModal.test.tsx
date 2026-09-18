@@ -72,9 +72,20 @@ describe('CompressionModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
 
-    await waitFor(() =>
-      expect(addToast).toHaveBeenCalledWith('Compression queued, it runs when the current reply finishes')
-    )
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith('Compression queued, it runs when the session is idle'))
+  })
+
+  it('keeps the prompts on screen when the request is rejected outright', async () => {
+    requestCompaction.mockRejectedValue(new Error('session work lock held elsewhere'))
+    const close = vi.fn()
+    render(modal(true, close))
+    fireEvent.change(screen.getByLabelText('Compaction Prompt'), { target: { value: 'Retain decisions.' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => expect(screen.getByText('Compression could not start')).toBeTruthy())
+    expect(close).not.toHaveBeenCalled()
+    expect((screen.getByLabelText('Compaction Prompt') as HTMLTextAreaElement).value).toBe('Retain decisions.')
   })
 
   it.each([

@@ -3,7 +3,7 @@ import {
   type CompactionServiceResult,
   isAutoCompactionEnabled,
 } from '@chatbox/core/application/context'
-import { withSessionGenerationLock } from '@chatbox/core/generation'
+import { hasPendingSessionGeneration, withSessionGenerationLock } from '@chatbox/core/generation'
 import type { SessionLockState } from '@chatbox/core/session/action-gates'
 import type { Message } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
@@ -20,7 +20,7 @@ import { setCompactionUIState } from '@/stores/atoms/compactionAtoms'
 import queryClient from '@/stores/queryClient'
 import { getSessionLockStateNow } from '@/stores/session/action-guard'
 import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
-import { enqueueCompactionRequest, hasPendingQueueWork } from '@/stores/session/message-queue'
+import { conversationAnchorIdOf, enqueueCompactionRequest, hasQueuedWork } from '@/stores/session/message-queue'
 import { getSessionSettings } from '@/stores/session/session-settings'
 import { isPro } from '@/stores/settingActions'
 import { sumCachedTokensFromMessages } from '../token'
@@ -123,9 +123,9 @@ export interface CompactionResult {
 }
 
 /**
- * `started` — the session was free and this call ran the compression to
- * completion. `queued` — a busy session deferred it to the queue. The remaining
- * outcomes mean the request was not accepted and the caller still holds it.
+ * `started` — the session was free and compression runs in the background.
+ * `queued` — the request was persisted in the session queue. The remaining outcomes mean
+ * the request was not accepted and the caller still holds it.
  */
 export type ManualCompactionOutcome = 'started' | 'queued' | 'queue-full' | 'queue-failed'
 
@@ -151,11 +151,11 @@ export async function runCompactionWithUIState(
 }
 
 /**
- * A session is free for a compression when no reply streams, no summary runs, no
- * decision is pending, and no queue delivery is about to start one.
+ * Conversation-state checks shared by admission and the locked decision.
+ * Generation turn ownership is checked separately before acquiring the lock.
  */
 function canCompressNow(sessionId: string, locks: SessionLockState | null): boolean {
-  if (hasPendingQueueWork(sessionId)) return false
+  if (hasQueuedWork(sessionId)) return false
   if (!locks) return true
   return !locks.anyReplyGenerating && !locks.compactionRunning && !locks.awaitingPauseDecision
 }
@@ -188,20 +188,47 @@ export async function requestManualCompaction(
   const request = { prompt: options.prompt, force: options.force === true }
   // Recorded before the lock is taken: the request is bound to the conversation
   // the user confirmed it in, not to whatever the session looks like later.
-  const conversationAnchorId = session?.messages.at(-1)?.id
-  if (!canCompressNow(sessionId, locks)) {
+  const conversationAnchorId = session ? conversationAnchorIdOf(session) : undefined
+  // Accepted submissions can own the generation turn before their placeholder
+  // appears. Check ownership only before acquiring our own turn.
+  if (hasPendingSessionGeneration(sessionId) || !canCompressNow(sessionId, locks)) {
     return enqueueManualCompaction(sessionId, request, conversationAnchorId)
   }
 
-  // The same generation lock a send takes serializes the two. A reply admitted
-  // between the check above and this call wins the lock, and the re-check then
-  // moves the request behind it instead of summarizing mid-write.
-  return withSessionGenerationLock(sessionId, async () => {
-    if (!canCompressNow(sessionId, await getSessionLockStateNow(sessionId))) {
-      return enqueueManualCompaction(sessionId, request, conversationAnchorId)
-    }
-    await runCompactionWithUIState(sessionId, options)
-    return 'started'
+  return runAcceptedCompaction(sessionId, options, request, conversationAnchorId)
+}
+
+async function runAcceptedCompaction(
+  sessionId: string,
+  options: CompactionOptions,
+  request: { prompt?: string; force?: boolean },
+  conversationAnchorId?: string
+): Promise<ManualCompactionOutcome> {
+  // Resolve the acceptance decision independently of the summary lifetime;
+  // subsequent sends still wait for the complete generation turn.
+  return new Promise((resolve, reject) => {
+    let started = false
+    const action = withSessionGenerationLock(sessionId, async () => {
+      if (!canCompressNow(sessionId, await getSessionLockStateNow(sessionId))) {
+        resolve(enqueueManualCompaction(sessionId, request, conversationAnchorId))
+        return
+      }
+      started = true
+      resolve('started')
+      await runCompactionWithUIState(sessionId, options)
+    })
+
+    void action.catch((error: unknown) => {
+      if (!started) {
+        reject(error)
+        return
+      }
+      setCompactionUIState(sessionId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      })
+      log.log('error', 'Manual compaction could not run', { error })
+    })
   })
 }
 

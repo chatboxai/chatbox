@@ -1,3 +1,8 @@
+import {
+  hasPendingSessionGeneration,
+  waitForSessionGenerations,
+  withSessionGenerationLock,
+} from '@chatbox/core/generation'
 import { buildContext } from '@shared/context'
 import { estimateTokensForTokenizerType } from '@shared/token-estimation/tokenizer'
 import type { Message, Session } from '@shared/types'
@@ -12,7 +17,7 @@ const {
   getSessionSettingsMock,
   getSessionLockStateMock,
   enqueueCompactionRequestMock,
-  hasPendingQueueWorkMock,
+  hasQueuedWorkMock,
 } = vi.hoisted(() => ({
   generateSummaryWithStreamMock: vi.fn(),
   getSessionMock: vi.fn(),
@@ -20,11 +25,11 @@ const {
   updateSessionWithMessagesMock: vi.fn(),
   getSessionLockStateMock: vi.fn(),
   enqueueCompactionRequestMock: vi.fn(),
-  hasPendingQueueWorkMock: vi.fn(),
+  hasQueuedWorkMock: vi.fn(),
 }))
 
 vi.mock('@/adapters', () => ({ createModel: vi.fn() }))
-vi.mock('@/platform', () => ({ default: { isDesktopLike: false } }))
+vi.mock('@/platform', () => ({ default: { isDesktopLike: false, appLog: () => Promise.resolve() } }))
 vi.mock('@/sandbox', () => ({ createSandboxProvider: vi.fn() }))
 vi.mock('@/stores/session/agent-mode', () => ({ getSessionAgentModeEntry: () => ({ value: 'off' }) }))
 vi.mock('@/stores/settingActions', () => ({ isPro: () => true }))
@@ -55,8 +60,9 @@ vi.mock('./context-tokens', () => ({
 vi.mock('./summary-generator', () => ({ generateSummaryWithStream: generateSummaryWithStreamMock }))
 vi.mock('@/stores/session/action-guard', () => ({ getSessionLockStateNow: getSessionLockStateMock }))
 vi.mock('@/stores/session/message-queue', () => ({
+  conversationAnchorIdOf: (session: Session) => session.messages.at(-1)?.id,
   enqueueCompactionRequest: enqueueCompactionRequestMock,
-  hasPendingQueueWork: hasPendingQueueWorkMock,
+  hasQueuedWork: hasQueuedWorkMock,
 }))
 
 import { rendererApplication } from '@/app/renderer-application'
@@ -85,7 +91,7 @@ beforeEach(() => {
     compactionRunning: false,
     awaitingPauseDecision: false,
   })
-  hasPendingQueueWorkMock.mockReturnValue(false)
+  hasQueuedWorkMock.mockReturnValue(false)
   enqueueCompactionRequestMock.mockReturnValue('queued')
   updateSessionWithMessagesMock.mockImplementation((_id: string, updater: (s: Session) => Session) => {
     updater(testSession())
@@ -216,15 +222,31 @@ describe('requestManualCompaction', () => {
     awaitingPauseDecision: false,
   }
 
-  it('compacts immediately when the session is idle', async () => {
-    generateSummaryWithStreamMock.mockResolvedValue({ success: true, summary: 'Summary' })
+  it('compacts in the background without holding the caller for the whole summary', async () => {
+    let finishSummary = () => {}
+    generateSummaryWithStreamMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishSummary = () => resolve({ success: true, summary: 'Summary' })
+        })
+    )
 
+    // The modal closes on this answer, so it must arrive before the summary does.
     await expect(requestManualCompaction('session-1', { force: true, prompt: 'Keep paths.' })).resolves.toBe('started')
 
     expect(enqueueCompactionRequestMock).not.toHaveBeenCalled()
     expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'session-1', prompt: 'Keep paths.' })
     )
+    expect(hasPendingSessionGeneration('session-1')).toBe(true)
+    const nextGeneration = vi.fn(async () => {})
+    const nextTurn = withSessionGenerationLock('session-1', nextGeneration)
+    await Promise.resolve()
+    expect(nextGeneration).not.toHaveBeenCalled()
+    finishSummary()
+    await nextTurn
+    expect(nextGeneration).toHaveBeenCalledOnce()
+    expect(hasPendingSessionGeneration('session-1')).toBe(false)
   })
 
   it('queues when a reply wins the lock between the check and the run', async () => {
@@ -236,6 +258,62 @@ describe('requestManualCompaction', () => {
 
     expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
     expect(enqueueCompactionRequestMock).toHaveBeenCalledWith('session-1', { prompt: 'Keep paths.', force: true }, 'a1')
+  })
+
+  it('queues instead of waiting out a submission that has no placeholder yet', async () => {
+    let finishSubmission = () => {}
+    const submission = withSessionGenerationLock(
+      'session-1',
+      () =>
+        new Promise<void>((resolve) => {
+          finishSubmission = resolve
+        })
+    )
+    try {
+      await expect(requestManualCompaction('session-1', { force: true })).resolves.toBe('queued')
+      expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+      expect(enqueueCompactionRequestMock).toHaveBeenCalledOnce()
+    } finally {
+      finishSubmission()
+      await submission
+    }
+  })
+
+  it('rejects a failed acceptance decision so the caller can retain its input', async () => {
+    getSessionLockStateMock.mockResolvedValueOnce(idleLocks).mockRejectedValueOnce(new Error('session read failed'))
+
+    await expect(requestManualCompaction('session-1', { force: true })).rejects.toThrow('session read failed')
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+    expect(hasPendingSessionGeneration('session-1')).toBe(false)
+  })
+
+  it('reports failures after acceptance in the compaction status', async () => {
+    const background = vi
+      .spyOn(rendererApplication.backupOperations, 'runBackground')
+      .mockRejectedValueOnce(new Error('background unavailable'))
+    try {
+      await expect(requestManualCompaction('session-1', { force: true })).resolves.toBe('started')
+      await waitForSessionGenerations()
+      await vi.waitFor(() =>
+        expect(getCompactionUIState('session-1')).toMatchObject({ status: 'failed', error: 'background unavailable' })
+      )
+    } finally {
+      background.mockRestore()
+    }
+  })
+
+  it.each([
+    ['full', 'queue-full'],
+    ['persist-failed', 'queue-failed'],
+  ])('returns %s rejection from the locked acceptance decision', async (enqueueResult, outcome) => {
+    getSessionLockStateMock
+      .mockResolvedValueOnce(idleLocks)
+      .mockResolvedValueOnce({ ...idleLocks, anyReplyGenerating: true })
+    enqueueCompactionRequestMock.mockReturnValue(enqueueResult)
+
+    await expect(requestManualCompaction('session-1', { force: true, prompt: 'Keep paths.' })).resolves.toBe(outcome)
+    expect(enqueueCompactionRequestMock).toHaveBeenCalledWith('session-1', { force: true, prompt: 'Keep paths.' }, 'a1')
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -252,7 +330,7 @@ describe('requestManualCompaction', () => {
   })
 
   it('queues behind work the session already accepted', async () => {
-    hasPendingQueueWorkMock.mockReturnValue(true)
+    hasQueuedWorkMock.mockReturnValue(true)
 
     await expect(requestManualCompaction('session-1', { force: true })).resolves.toBe('queued')
 
@@ -263,7 +341,7 @@ describe('requestManualCompaction', () => {
     ['a full queue', 'full', 'queue-full'],
     ['a queue that cannot persist the request', 'persist-failed', 'queue-failed'],
   ])('reports %s without accepting the request', async (_case, enqueueResult, outcome) => {
-    hasPendingQueueWorkMock.mockReturnValue(true)
+    hasQueuedWorkMock.mockReturnValue(true)
     enqueueCompactionRequestMock.mockReturnValue(enqueueResult)
 
     await expect(requestManualCompaction('session-1', { force: true })).resolves.toBe(outcome)

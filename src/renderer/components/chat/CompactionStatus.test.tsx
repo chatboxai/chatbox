@@ -28,6 +28,8 @@ vi.mock('@/packages/context-management', () => ({
 vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 vi.mock('../common/ScalableIcon', () => ({ ScalableIcon: () => null }))
 
+import { requestManualCompaction } from '@/packages/context-management'
+import { add as addToast } from '@/stores/toastActions'
 import { CompactionStatus } from './CompactionStatus'
 
 describe('CompactionStatus completed state', () => {
@@ -71,5 +73,53 @@ describe('CompactionStatus completed state', () => {
       status: 'idle',
       summaryMessageId: null,
     })
+  })
+})
+
+describe('CompactionStatus retry', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+    getDefaultStore().set(compactionUIStateMapAtom, {
+      'session-1': { status: 'failed', error: 'boom', streamingText: '', summaryMessageId: null },
+    })
+  })
+
+  function retry() {
+    render(
+      <MantineProvider>
+        <CompactionStatus sessionId="session-1" />
+      </MantineProvider>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  }
+
+  test('reports that a retry waits for the session instead of silently doing nothing', async () => {
+    vi.mocked(requestManualCompaction).mockResolvedValue('queued')
+
+    retry()
+
+    await vi.waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith('Compression queued, it runs when the session is idle')
+    )
+  })
+
+  test('reports a retry that could not start', async () => {
+    vi.mocked(requestManualCompaction).mockRejectedValue(new Error('busy'))
+
+    retry()
+
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Compression could not start'))
   })
 })

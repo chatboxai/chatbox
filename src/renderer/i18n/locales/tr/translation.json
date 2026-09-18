@@ -1526,7 +1526,8 @@
   "{{connected}} / {{total}} servers connected": "{{connected}} / {{total}} sunucu bağlı",
   "1. Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser). \n2. MCP is available in the desktop and mobile apps. Knowledge Base is available on desktop. ": "1. Web sürümünün sohbet geçmişi yalnızca tarayıcı önbelleğinde saklanır (tarayıcı tarafından silinebileceği için güvenilir değildir).\n2. MCP, masaüstü ve mobil uygulamalarda kullanılabilir. Bilgi tabanı masaüstünde kullanılabilir. ",
   "On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.": "Mobilde, URL ve üstbilgiler kullanarak uzak HTTP sunucularına bağlanın. OAuth ile oturum açma desteklenmez.",
-  "Compression queued, it runs when the current reply finishes": "Sıkıştırma kuyruğa alındı, geçerli yanıt tamamlandıktan sonra çalışacak",
-  "Runs when the current reply finishes": "Geçerli yanıt tamamlandıktan sonra çalışır",
-  "Failed to queue the compression": "Sıkıştırma kuyruğa alınamadı"
+  "Compression queued, it runs when the session is idle": "Sıkıştırma kuyruğa alındı, oturum boşta olduğunda çalışacak",
+  "Runs when the session is idle": "Oturum boşta olduğunda çalışır",
+  "Failed to queue the compression": "Sıkıştırma kuyruğa alınamadı",
+  "Compression could not start": "Sıkıştırma başlatılamadı"
 }

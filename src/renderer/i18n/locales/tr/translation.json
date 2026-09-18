@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "Bir mesaj yazın, kuyruğa almak için Enter'a basın",
   "Unsupported or damaged backup": "Desteklenmeyen veya bozuk yedek",
   "Validating backup": "Yedek doğrulanıyor",
+  "Will send after the compression finishes": "Sıkıştırma tamamlandıktan sonra gönderilecek",
   "Will send after the current response finishes": "Geçerli yanıt tamamlandıktan sonra gönderilecek",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "Yedeğiniz bellekte oluşturuldu. İndir'i seçin ve ardından tarayıcınızın indirmeler bölümünde göründüğünü doğrulayın.",
   "ZIP backups include each conversation and its managed images and attachments.": "ZIP yedekleri her konuşmayı ve yönetilen görsellerini ve eklerini içerir.",

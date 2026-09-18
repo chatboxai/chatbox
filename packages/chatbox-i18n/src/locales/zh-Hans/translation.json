@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "输入消息，Enter 加入队列",
   "Unsupported or damaged backup": "不支持的备份格式或备份已损坏",
   "Validating backup": "正在验证备份",
+  "Will send after the compression finishes": "压缩完成后依次发送",
   "Will send after the current response finishes": "当前回复结束后依次发送",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "备份已在内存中生成。请选择“下载”，然后确认文件已出现在浏览器的下载记录中。",
   "ZIP backups include each conversation and its managed images and attachments.": "ZIP 备份包含每个对话及其由 Chatbox 管理的图片和附件。",

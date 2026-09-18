@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "Nachricht eingeben, mit Enter in die Warteschlange stellen",
   "Unsupported or damaged backup": "Nicht unterstützte oder beschädigte Sicherung",
   "Validating backup": "Sicherung wird überprüft",
+  "Will send after the compression finishes": "Wird nach Abschluss der Komprimierung gesendet",
   "Will send after the current response finishes": "Wird nach Abschluss der aktuellen Antwort gesendet",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "Ihre Sicherung wurde im Arbeitsspeicher erstellt. Wählen Sie „Herunterladen“ und prüfen Sie anschließend, ob sie in den Downloads Ihres Browsers angezeigt wird.",
   "ZIP backups include each conversation and its managed images and attachments.": "ZIP-Sicherungen enthalten jedes Gespräch sowie die von Chatbox verwalteten Bilder und Anhänge.",

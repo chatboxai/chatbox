@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "Type a message, press Enter to queue it",
   "Unsupported or damaged backup": "Unsupported or damaged backup",
   "Validating backup": "Validating backup",
+  "Will send after the compression finishes": "Will send after the compression finishes",
   "Will send after the current response finishes": "Will send after the current response finishes",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.",
   "ZIP backups include each conversation and its managed images and attachments.": "ZIP backups include each conversation and its managed images and attachments.",

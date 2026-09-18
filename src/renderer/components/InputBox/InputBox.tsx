@@ -387,7 +387,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const submitAvailability = getSubmitAvailability(sessionLocks)
     // While replies stream, an empty draft shows Stop; entering content turns
     // the same control back into Send so it can be queued. The hard block
-    // (compaction/pause decision) remains an independent axis.
+    // (pause decision) remains an independent axis; a running compression
+    // turns into queue mode in work mode (see submitBlocked below).
     const generating = submitAvailability.control === 'stop'
     const generatingCount = sessionLocks.generatingReplyCount
     const isAwaitingPauseDecision = sessionLocks.awaitingPauseDecision
@@ -762,16 +763,23 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // The session-level share of the submit gate comes from the shared
     // availability model; the remaining flags are renderer-local draft state.
     const submitInProgress = isSubmitting && !generating
+    // Work mode keeps the composer usable while a compression runs: a draft
+    // queues behind it and delivers when the summary settles (the queue drain
+    // serializes on the session generation lock the summary holds). Chat mode
+    // keeps the hard block.
+    const compactionBlocking = submitAvailability.blockReason === 'compaction'
+    const compactionQueable = compactionBlocking && queueEnabled
     const submitBlocked =
       disableSubmit ||
       isPreprocessing ||
       submitInProgress ||
-      submitAvailability.blockReason !== undefined ||
+      (submitAvailability.blockReason !== undefined && !compactionQueable) ||
       hasPreprocessErrors ||
       hasBlockedSessionRagFiles ||
       stopGenerationStatus !== 'idle'
     const submitControl = getSubmitControl({
       generating,
+      compactionBlocking,
       hasDraft: !disableSubmit,
       canQueueDraft: !submitBlocked && currentQueueLength < MAX_QUEUED_MESSAGES,
       queueEnabled,
@@ -785,7 +793,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         : stopGenerationStatus === 'failed'
           ? t('Retry stopping')
           : submitControl === 'queue'
-            ? t('Will send after the current response finishes')
+            ? compactionBlocking
+              ? t('Will send after the compression finishes')
+              : t('Will send after the current response finishes')
             : submitControl === 'stop'
               ? generatingCount > 1
                 ? t('Stop all {{n}} replies', { n: generatingCount })
@@ -900,6 +910,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const handleSubmit = async (needGenerating = true, options: SubmitOptions = {}) => {
       const submitAction = getSubmitAction({
         generating,
+        compactionBlocking,
         needGenerating,
         sessionType,
         queueLength: currentSessionId ? (messageQueueStore.getState().queues[currentSessionId]?.length ?? 0) : 0,
@@ -907,7 +918,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           disableSubmit ||
           submitInProgress ||
           isPreprocessing ||
-          submitAvailability.blockReason !== undefined ||
+          (submitAvailability.blockReason !== undefined && !compactionQueable) ||
           hasPreprocessErrors ||
           hasBlockedSessionRagFiles ||
           stopGenerationStatus !== 'idle',
@@ -1658,7 +1669,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 ref={messageInputFieldRef}
                 isNewSession={isNewSession}
                 viewportHeight={viewportHeight}
-                isReadOnly={submitAvailability.blockReason !== undefined}
+                isReadOnly={submitAvailability.blockReason !== undefined && !compactionQueable}
                 placeholder={
                   composerPlaceholder.kind === 'locked'
                     ? getSessionLockNotice(composerPlaceholder.reason, t)

@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "اكتب رسالة واضغط Enter لإضافتها إلى قائمة الانتظار",
   "Unsupported or damaged backup": "نسخة احتياطية غير مدعومة أو تالفة",
   "Validating backup": "جارٍ التحقق من النسخة الاحتياطية",
+  "Will send after the compression finishes": "سيتم الإرسال بعد اكتمال الضغط",
   "Will send after the current response finishes": "سيتم الإرسال بعد اكتمال الرد الحالي",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "تم إنشاء النسخة الاحتياطية في الذاكرة. اختر «تنزيل»، ثم تأكد من ظهورها في قائمة التنزيلات بالمتصفح.",
   "ZIP backups include each conversation and its managed images and attachments.": "تتضمن نسخ ZIP الاحتياطية كل محادثة وصورها ومرفقاتها التي يديرها Chatbox.",

@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "Введите сообщение и нажмите Enter, чтобы добавить его в очередь",
   "Unsupported or damaged backup": "Неподдерживаемая или повреждённая резервная копия",
   "Validating backup": "Проверка резервной копии",
+  "Will send after the compression finishes": "Будет отправлено после завершения сжатия",
   "Will send after the current response finishes": "Будет отправлено после завершения текущего ответа",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "Резервная копия создана в памяти. Выберите «Скачать», затем убедитесь, что файл появился в списке загрузок браузера.",
   "ZIP backups include each conversation and its managed images and attachments.": "Резервная копия ZIP содержит каждую беседу, а также управляемые Chatbox изображения и вложения.",

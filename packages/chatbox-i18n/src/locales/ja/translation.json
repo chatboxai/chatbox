@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "メッセージを入力し、Enter でキューに追加",
   "Unsupported or damaged backup": "未対応または破損したバックアップ",
   "Validating backup": "バックアップを検証中",
+  "Will send after the compression finishes": "圧縮が完了した後に送信されます",
   "Will send after the current response finishes": "現在の返信が完了した後に送信されます",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "バックアップがメモリ内に作成されました。「ダウンロード」を選択し、ブラウザーのダウンロード一覧に表示されたことを確認してください。",
   "ZIP backups include each conversation and its managed images and attachments.": "ZIP バックアップには、各会話と Chatbox が管理する画像および添付ファイルが含まれます。",

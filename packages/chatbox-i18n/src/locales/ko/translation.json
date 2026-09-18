@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "메시지를 입력하고 Enter로 대기열에 추가",
   "Unsupported or damaged backup": "지원되지 않거나 손상된 백업",
   "Validating backup": "백업 확인 중",
+  "Will send after the compression finishes": "압축이 완료된 후 전송됩니다",
   "Will send after the current response finishes": "현재 응답이 완료된 후 전송됩니다",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "백업이 메모리에 생성되었습니다. '다운로드'를 선택한 다음 브라우저의 다운로드 목록에 표시되는지 확인하세요.",
   "ZIP backups include each conversation and its managed images and attachments.": "ZIP 백업에는 각 대화와 Chatbox에서 관리하는 이미지 및 첨부 파일이 포함됩니다.",

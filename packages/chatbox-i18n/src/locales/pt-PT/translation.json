@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "Escreva uma mensagem e prima Enter para a colocar em fila",
   "Unsupported or damaged backup": "Cópia de segurança não suportada ou danificada",
   "Validating backup": "A validar a cópia de segurança",
+  "Will send after the compression finishes": "Será enviado quando a compressão terminar",
   "Will send after the current response finishes": "Será enviado quando a resposta atual terminar",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "A cópia de segurança foi criada na memória. Selecione «Transferir» e confirme que aparece nas transferências do navegador.",
   "ZIP backups include each conversation and its managed images and attachments.": "As cópias de segurança ZIP incluem cada conversa e as respetivas imagens e anexos geridos pelo Chatbox.",

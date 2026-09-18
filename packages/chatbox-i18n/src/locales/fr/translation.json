@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "Saisissez un message, appuyez sur Entrée pour le mettre en file d'attente",
   "Unsupported or damaged backup": "Sauvegarde non prise en charge ou endommagée",
   "Validating backup": "Validation de la sauvegarde",
+  "Will send after the compression finishes": "Sera envoyé une fois la compression terminée",
   "Will send after the current response finishes": "Sera envoyé une fois la réponse en cours terminée",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "Votre sauvegarde a été créée en mémoire. Sélectionnez « Télécharger », puis vérifiez qu’elle apparaît dans les téléchargements de votre navigateur.",
   "ZIP backups include each conversation and its managed images and attachments.": "Les sauvegardes ZIP incluent chaque conversation ainsi que les images et pièces jointes gérées par Chatbox.",

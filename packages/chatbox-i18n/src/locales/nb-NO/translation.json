@@ -182,6 +182,7 @@
   "Type a message, press Enter to queue it": "Skriv en melding, trykk Enter for å legge den i køen",
   "Unsupported or damaged backup": "Sikkerhetskopien støttes ikke eller er skadet",
   "Validating backup": "Kontrollerer sikkerhetskopien",
+  "Will send after the compression finishes": "Sendes når komprimeringen er ferdig",
   "Will send after the current response finishes": "Sendes når det gjeldende svaret er ferdig",
   "Your backup was created in memory. Select Download, then confirm it appears in your browser's downloads.": "Sikkerhetskopien ble opprettet i minnet. Velg «Last ned», og kontroller deretter at den vises i nettleserens nedlastinger.",
   "ZIP backups include each conversation and its managed images and attachments.": "ZIP-sikkerhetskopier inneholder hver samtale og bilder og vedlegg som administreres av Chatbox.",

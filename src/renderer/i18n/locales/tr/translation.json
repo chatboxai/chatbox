@@ -1364,7 +1364,7 @@
   "Reset to template": "Şablona sıfırla",
   "Unsaved changes": "Kaydedilmemiş değişiklikler",
   "Memories": "Bellek Kayıtları",
-  "Facts saved from your conversations. They are loaded into new conversations; deleting one only affects future ones.": "Konuşmalarınızdan kaydedilen bilgiler yeni konuşmalara yüklenir. Bir kaydı silmek yalnızca sonraki konuşmaları etkiler.",
+  "Facts the agent saved from your conversations. They are loaded into new agent sessions; deleting one only affects future sessions.": "Ajanın konuşmalarınızdan kaydettiği bilgiler. Yeni ajan oturumlarına yüklenirler; birini silmek yalnızca gelecekteki oturumları etkiler.",
   "No memories yet. The agent saves durable facts here as you work together.": "Henüz kayıtlı bilgi yok. Birlikte çalıştıkça ajan, hatırlanması gereken bilgileri buraya kaydeder.",
   "Soul defines who your agent is — persona, tone, and boundaries. It replaces per-session system prompts in agent mode and is loaded when an agent session starts.": "Soul, ajanınızın kim olduğunu tanımlar — persona, üslup ve sınırlar. Ajan modunda oturum başına sistem istemlerinin yerini alır ve bir ajan oturumu başladığında yüklenir.",
   "Agent": "Ajan",

@@ -1,5 +1,6 @@
 import type { MessageContentParts } from '@shared/types'
 import { visibleContentParts } from '@shared/utils/message'
+import { getLastWorkStep } from '@shared/work-timeline'
 
 type MessageContentPart = MessageContentParts[number]
 type TimelinePart = Extract<MessageContentPart, { type: 'reasoning' | 'text' | 'tool-call' }>
@@ -7,6 +8,8 @@ export type GroupedMessageContentPart = { type: 'step_group'; parts: TimelinePar
 
 interface MessageTimelineLayout {
   orderedContentParts: MessageContentParts
+  /** The message's last tool call or thinking block, or `null` when it has none. */
+  lastWorkStep: MessageContentParts[number] | null
   lastStepIndex: number
   groupedContentParts: GroupedMessageContentPart[]
 }
@@ -41,11 +44,8 @@ export function createMessageTimelineLayout(
 
   // Text before the last reasoning/tool-call part is intermediate narration;
   // text after it is the final answer.
-  let lastStepIndex = -1
-  for (let index = 0; index < orderedContentParts.length; index++) {
-    const part = orderedContentParts[index]
-    if (part.type === 'reasoning' || part.type === 'tool-call') lastStepIndex = index
-  }
+  const lastWorkStep = getLastWorkStep(orderedContentParts)
+  const lastStepIndex = lastWorkStep ? orderedContentParts.indexOf(lastWorkStep) : -1
 
   const groupedContentParts: GroupedMessageContentPart[] = []
   const pushToStepGroup = (part: TimelinePart) => {
@@ -68,7 +68,7 @@ export function createMessageTimelineLayout(
     }
   }
 
-  return { orderedContentParts, lastStepIndex, groupedContentParts }
+  return { orderedContentParts, lastWorkStep, lastStepIndex, groupedContentParts }
 }
 
 /**
@@ -85,16 +85,17 @@ function collectImageParts(parts: MessageContentParts): GroupedMessageContentPar
  */
 export function createCollapsedDisplayGroups(
   orderedContentParts: MessageContentParts,
-  lastStepIndex: number
+  lastWorkStep: MessageContentPart | null
 ): GroupedMessageContentPart[] {
-  const answerParts = orderedContentParts.slice(lastStepIndex + 1)
+  const answerStart = lastWorkStep ? orderedContentParts.indexOf(lastWorkStep) : -1
+  const answerParts = orderedContentParts.slice(answerStart + 1)
   if (answerParts.length > 0) {
-    return [...collectImageParts(orderedContentParts.slice(0, lastStepIndex + 1)), ...answerParts]
+    return [...collectImageParts(orderedContentParts.slice(0, answerStart + 1)), ...answerParts]
   }
   // The message ended on a process step — fall back to showing that last step.
-  const lastPart = orderedContentParts[orderedContentParts.length - 1]
+  const lastPart = lastWorkStep ?? orderedContentParts[orderedContentParts.length - 1]
   if (!lastPart) return []
-  const precedingImages = collectImageParts(orderedContentParts.slice(0, orderedContentParts.length - 1))
+  const precedingImages = collectImageParts(orderedContentParts.slice(0, orderedContentParts.indexOf(lastPart)))
   if (lastPart.type === 'tool-call' || lastPart.type === 'reasoning') {
     return [...precedingImages, { type: 'step_group' as const, parts: [lastPart] }]
   }

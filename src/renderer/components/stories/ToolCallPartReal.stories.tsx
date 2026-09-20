@@ -2,7 +2,8 @@ import { Box, Stack, Text } from '@mantine/core'
 import { SANDBOX_EXEC_ERROR_CODES } from '@shared/sandbox-provider'
 import type { Message, MessageToolCallPart } from '@shared/types'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { type StepTimelinePart, StepTimelineUI, ToolCallPartUI } from '../message-parts/ToolCallPartUI'
+import { type StepTimelinePart, StepTimelineUI } from '../message-parts/StepTimelineUI'
+import { ToolCallPartUI } from '../message-parts/ToolCallPartUI'
 
 // ─── ToolCallPartUI Stories ─────────────────────────────────────────
 

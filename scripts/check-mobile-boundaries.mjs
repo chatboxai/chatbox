@@ -42,7 +42,12 @@ allowedSharedImports.set('apps/mobile/src/work-mode/workspace-path.ts', new Set(
 
 allowedSharedImports.set('apps/mobile/src/work-mode/normalize-work-image.ts', new Set(['@shared/mobile-work/view-image']))
 
-allowedSharedImports.set('apps/mobile/src/components/message/MessageWorkTimeline.tsx', new Set(['@shared/mobile-work/execution-feedback', '@shared/image-background-task-result']))
+allowedSharedImports.set('apps/mobile/src/components/message/MessageWorkTimeline.tsx', new Set(['@shared/work-timeline', '@shared/mobile-work/execution-feedback', '@shared/image-background-task-result']))
+// Host-neutral work-contract helpers the RN timeline shares with the desktop renderer.
+allowedSharedImports.set(
+  'apps/mobile/src/components/message/message-work-presentation.ts',
+  new Set(['@shared/work-activity', '@shared/work-timeline'])
+)
 allowedSharedImports.set('apps/mobile/src/screens/settings/SkillsSettingsScreen.tsx', new Set(['@shared/mobile-work/skill-settings']))
 allowedSharedImports.set('apps/mobile/src/work-mode/ui/WorkArtifactCards.tsx', new Set(['@shared/work-artifacts']))
 allowedSharedImports.set('apps/mobile/src/work-mode/ui/WorkArtifactCards.test.ts', new Set(['@shared/work-artifacts']))
@@ -111,6 +116,59 @@ const expectedChatCommandModules = [
 ]
 const expectedI18nModules = ['src/i18n/MobileI18nBridge.tsx', 'src/i18n/mobile-i18n.ts']
 
+// A module the RN bundle reaches must stay host-neutral all the way down: the
+// allowlist names the entry points, and these are what none of them may pull in.
+const hostOnlyImports = [
+  /^node:/,
+  /^electron(?:\/|$)/,
+  /(?:^|\/)src\/renderer(?:\/|$)/,
+  /^@\/(?:api|chat|db|official|providers|resources|session|state)(?:\/|$)/,
+]
+const sharedRoot = path.join(repositoryRoot, 'src/shared')
+
+function resolveSharedModule(specifier, fromFile) {
+  const target = specifier.startsWith('@shared/')
+    ? path.join(sharedRoot, specifier.slice('@shared/'.length))
+    : specifier.startsWith('.')
+      ? path.resolve(path.dirname(fromFile), specifier)
+      : undefined
+  if (target === undefined || !target.startsWith(sharedRoot)) return undefined
+  for (const candidate of [
+    ...[...sourceExtensions].map((extension) => `${target}${extension}`),
+    ...[...sourceExtensions].map((extension) => path.join(target, `index${extension}`)),
+    target,
+  ]) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
+  }
+  return undefined
+}
+
+/** Every @shared module the allowlisted entry points reach, directly or through each other. */
+function collectSharedClosure(entrySpecifiers) {
+  const visited = new Set()
+  const queue = []
+  for (const specifier of entrySpecifiers) {
+    const file = resolveSharedModule(specifier, sharedRoot)
+    if (file !== undefined) queue.push(file)
+  }
+  const reachedViolations = []
+  while (queue.length > 0) {
+    const file = queue.pop()
+    if (visited.has(file)) continue
+    visited.add(file)
+    const relativePath = path.relative(repositoryRoot, file)
+    for (const specifier of importedSpecifiers(readFileSync(file, 'utf8'))) {
+      if (hostOnlyImports.some((pattern) => pattern.test(specifier))) {
+        reachedViolations.push(`${relativePath}: host-only import ${specifier} reaches the mobile bundle`)
+        continue
+      }
+      const resolved = resolveSharedModule(specifier, file)
+      if (resolved !== undefined) queue.push(resolved)
+    }
+  }
+  return reachedViolations
+}
+
 function listFiles(directory) {
   return readdirSync(directory).flatMap((entry) => {
     if (ignoredDirectories.has(entry)) return []
@@ -157,6 +215,10 @@ for (const modulePath of expectedI18nModules) {
     violations.push(`apps/mobile/${modulePath}: missing mobile i18n module`)
   }
 }
+
+violations.push(
+  ...collectSharedClosure([...allowedSharedImports.values()].flatMap((specifiers) => [...specifiers]))
+)
 
 for (const file of listFiles(mobileRoot)) {
   if (!sourceExtensions.has(path.extname(file))) continue

@@ -3,7 +3,7 @@ import type { Message, MessageToolCallPart, Session } from '@shared/types'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PendingActionBar from '../InputBox/PendingActionBar'
-import { StepTimelineUI } from '../message-parts/ToolCallPartUI'
+import { StepTimelineUI } from '../message-parts/StepTimelineUI'
 
 const storyQueryClient = new QueryClient()
 

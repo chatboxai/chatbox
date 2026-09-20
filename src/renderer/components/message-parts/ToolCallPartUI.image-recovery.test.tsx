@@ -67,7 +67,7 @@ vi.mock('@/stores/uiStore', () => ({
   useUIStore: (selector: (state: { setPictureShow: () => void }) => unknown) => selector({ setPictureShow: vi.fn() }),
 }))
 
-import { StepTimelineUI } from './ToolCallPartUI'
+import { StepTimelineUI } from './StepTimelineUI'
 
 const acceptedResult = {
   ok: true,

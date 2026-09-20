@@ -80,7 +80,8 @@ import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { AssistantAvatar, SystemAvatar, UserAvatar } from '../common/Avatar'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Loading from '../icons/Loading'
-import { MessageArtifactsUI, ReasoningContentUI, StepTimelineUI, ToolCallPartUI } from '../message-parts/ToolCallPartUI'
+import { ReasoningContentUI, StepTimelineUI } from '../message-parts/StepTimelineUI'
+import { MessageArtifactsUI, ToolCallPartUI } from '../message-parts/ToolCallPartUI'
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
 import MessageStatuses, { PreparingToolCallStatus } from './MessageLoading'
@@ -569,7 +570,7 @@ const _Message: FC<Props> = (props) => {
 
   // Normalize provider-specific non-streaming reasoning order before deciding
   // which text belongs to the process timeline and which text is the final answer.
-  const { orderedContentParts, lastStepIndex, groupedContentParts } = useMemo(
+  const { orderedContentParts, lastWorkStep, groupedContentParts } = useMemo(
     () => createMessageTimelineLayout(contentParts, msg.isStreamingMode),
     [contentParts, msg.isStreamingMode]
   )
@@ -605,7 +606,14 @@ const _Message: FC<Props> = (props) => {
   // Offer the collapsible process summary on any finished assistant run that has
   // a multi-step process worth hiding. With a single step there is nothing to fold —
   // the step renders its own duration inline — so skip the collapse header entirely.
-  const showWorkSummary = msg.role === 'assistant' && !msg.generating && hasFoldableProcess && workStepCount > 1
+  // A run paused on a decision has not finished: it resumes in place once the user
+  // answers, so it keeps its steps open instead of folding for the length of the pause.
+  const awaitingDecision = useMemo(
+    () => orderedContentParts.some((p) => p.type === 'tool-call' && p.state === 'paused'),
+    [orderedContentParts]
+  )
+  const showWorkSummary =
+    msg.role === 'assistant' && !msg.generating && !awaitingDecision && hasFoldableProcess && workStepCount > 1
   const workSummaryLabel =
     workDurationMs >= 1000
       ? t('Worked for {{time}}', { time: formatElapsedTime(workDurationMs) })
@@ -615,12 +623,14 @@ const _Message: FC<Props> = (props) => {
   // When collapsed, hide the process and show the final answer. The answer can span
   // multiple parts after the last step (e.g. text + image), so show the whole answer
   // region rather than only the last part.
+  // The step the timeline singles out is the message's last one, so it still reads as
+  // the end of the run when an image or an answer splits the message into step groups.
   const displayGroups = useMemo<typeof groupedContentParts>(
     () =>
       showWorkSummary && processCollapsed
-        ? createCollapsedDisplayGroups(orderedContentParts, lastStepIndex)
+        ? createCollapsedDisplayGroups(orderedContentParts, lastWorkStep)
         : groupedContentParts,
-    [showWorkSummary, processCollapsed, groupedContentParts, orderedContentParts, lastStepIndex]
+    [showWorkSummary, processCollapsed, groupedContentParts, orderedContentParts, lastWorkStep]
   )
 
   // Renders an intermediate text block inside the step timeline, reusing the same

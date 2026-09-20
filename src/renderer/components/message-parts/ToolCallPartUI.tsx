@@ -1,32 +1,18 @@
-import { workExecutionFeedback } from '@shared/mobile-work/execution-feedback'
 import { isApprovalPauseReason } from '@chatbox/core/message-approval'
 import NiceModal from '@ebay/nice-modal-react'
-import {
-  ActionIcon,
-  Alert,
-  Box,
-  Button,
-  Code,
-  Collapse,
-  Group,
-  Paper,
-  Stack,
-  Text,
-  Tooltip,
-  UnstyledButton,
-} from '@mantine/core'
+import { Alert, Box, Button, Code, Collapse, Group, Paper, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
+import { workExecutionFeedback } from '@shared/mobile-work/execution-feedback'
 import { ChatboxAIAPIError } from '@shared/models/errors'
 import { SANDBOX_EXEC_ERROR_CODES } from '@shared/sandbox-provider'
 import { getToolResultImageReference } from '@shared/tool-result-image'
-import type { Message, MessageReasoningPart, MessageTextPart, MessageToolCallPart } from '@shared/types'
+import type { MessageToolCallPart } from '@shared/types'
 import { getWorkArtifacts } from '@shared/work-artifacts'
+import { stepNeedsUserAction } from '@shared/work-timeline'
 import {
-  IconBulb,
   IconCheck,
   IconChevronDown,
   IconCircleXFilled,
   IconCode,
-  IconCopy,
   IconDatabase,
   IconDeviceFloppy,
   IconDownload,
@@ -39,7 +25,6 @@ import {
   IconFolderSearch,
   IconInfoCircle,
   IconLoader,
-  IconMessage,
   IconPackage,
   IconPhoto,
   IconPlayerPlay,
@@ -50,10 +35,9 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
-import { type FC, type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { type FC, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ImageGenerationResultGallery } from '@/components/chat/ImageGenerationResultGallery'
-import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { ImageInStorage } from '@/components/Image'
 import { useBlob } from '@/hooks/useBlob'
 import { formatElapsedTime, MIN_STEP_DURATION_MS, useThinkingTimer } from '@/hooks/useThinkingTimer'
@@ -79,8 +63,20 @@ import { useUIStore } from '@/stores/uiStore'
 import { inlineSandboxHtmlAssets } from './html-artifact-assets'
 import { getLocalFileName, localFilePathToUrl } from './local-file-url'
 import { MobileWorkArtifactsUI } from './MobileWorkArtifactsUI'
-import { ReasoningInlineSummary } from './ReasoningInlineSummary'
 import { ToolUnavailableCard } from './ToolUnavailableCard'
+import {
+  InlineToolIcon,
+  TIMELINE_APPROVAL_BORDER,
+  TIMELINE_DETAIL_INDENT,
+  TIMELINE_DISCLOSURE_CLASS,
+  TIMELINE_GROUP_BORDER,
+  TIMELINE_GROUP_INDENT,
+  TIMELINE_ICON_GAP,
+  TIMELINE_LABEL_FONT_SIZE,
+  TIMELINE_ROW_HEIGHT,
+  TimelineStepIcon,
+  ToolCallRunningDots,
+} from './timeline-primitives'
 
 // ─── Tool Error Result ──────────────────────────────────────────────
 
@@ -161,14 +157,6 @@ function extractToolError(part: MessageToolCallPart): { errorCode?: number; erro
   const errorText =
     result?.error === undefined ? undefined : stringifyToolPayload(result.error, TOOL_ERROR_PREVIEW_LENGTH)
   return { errorCode, errorText }
-}
-
-function hasKnownToolError(part: MessageToolCallPart): boolean {
-  const { errorCode } = extractToolError(part)
-  return (
-    Boolean(workExecutionFeedback(part.result, (key: string) => key)) ||
-    (errorCode !== undefined && ChatboxAIAPIError.getDetail(errorCode) !== null)
-  )
 }
 
 const ToolCallErrorDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
@@ -265,29 +253,11 @@ const toolIconMap: Record<string, React.ElementType> = {
   load_skill: IconSparkles,
   chatbox_cli: IconSparkles,
   user_exec: IconTerminal,
+  run_command: IconTerminal,
   view_image: IconPhoto,
 }
 
 const getToolIcon = (toolName: string) => toolIconMap[toolName] || IconCode
-const TIMELINE_NODE_SIZE = 24
-const TIMELINE_NODE_TOP = 2
-const TIMELINE_NODE_CENTER = TIMELINE_NODE_TOP + TIMELINE_NODE_SIZE / 2
-const TIMELINE_STACK_GAP = 8
-
-const InlineToolIcon: FC<{
-  icon: React.ElementType
-  size: number
-  color?: string
-  className?: string
-}> = ({ icon: Icon, size, color, className }) => (
-  <Box
-    component="span"
-    className={clsx('inline-flex shrink-0 items-center justify-center leading-none', className)}
-    style={{ width: size, height: size, color }}
-  >
-    <Icon size={size} color={color} style={{ display: 'block' }} />
-  </Box>
-)
 
 // ─── Pill Header (shared) ───────────────────────────────────────────
 
@@ -486,7 +456,7 @@ export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }
 
   const isFailState = hasError || noResults
   const errorPart = hasError ? parts.find((p) => p.state === 'error') : undefined
-  const [expanded, setExpanded] = useAutoExpandOnSignal(Boolean(errorPart && hasKnownToolError(errorPart)))
+  const [expanded, setExpanded] = useAutoExpandOnSignal(Boolean(errorPart && stepNeedsUserAction(errorPart)))
   const bgColor = isFailState
     ? 'var(--chatbox-background-gray-secondary)'
     : expanded
@@ -573,7 +543,7 @@ export const WebSearchGroupUI: FC<{ parts: MessageToolCallPart[] }> = ({ parts }
 const ParseLinkUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   const isLoading = part.state === 'call'
   const isError = part.state === 'error'
-  const [expanded, setExpanded] = useAutoExpandOnSignal(hasKnownToolError(part))
+  const [expanded, setExpanded] = useAutoExpandOnSignal(stepNeedsUserAction(part))
   const result = part.result as Record<string, unknown> | undefined
   const title = (result?.title as string) || ''
   const content = (result?.content as string) || ''
@@ -691,9 +661,8 @@ const ParseLinkDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
 
 const GeneralToolCallUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   const isBashNotAvailable = isBashNotAvailableResult(part)
-  const isActionableToolError = hasKnownToolError(part)
   const isError = part.state === 'error' || isBashNotAvailable
-  const [expanded, setExpanded] = useAutoExpandOnSignal(isBashNotAvailable || isActionableToolError)
+  const [expanded, setExpanded] = useAutoExpandOnSignal(stepNeedsUserAction(part))
 
   return (
     <Stack gap={6} mb="xs">
@@ -1241,7 +1210,7 @@ const UserExecUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
 
 // ─── Entry Point ────────────────────────────────────────────────────
 
-type ToolCallActionContext = {
+export type ToolCallActionContext = {
   sessionId?: string
   messageId?: string
 }
@@ -1252,7 +1221,11 @@ export const ToolCallPartUI: FC<{ part: MessageToolCallPart } & ToolCallActionCo
   messageId,
 }) => {
   if (part.state === 'paused') {
-    return <ToolCallGroupUI parts={[part]} sessionId={sessionId} messageId={messageId} />
+    return (
+      <Box my={8} mb={12}>
+        <TimelineToolCallStep part={part} sessionId={sessionId} messageId={messageId} />
+      </Box>
+    )
   }
   if (part.toolName === 'web_search') {
     return <WebSearchGroupUI parts={[part]} />
@@ -1284,25 +1257,6 @@ function getFirstStringValue(source: unknown, keys: string[]): string | undefine
 function truncateSummary(value: string, maxLength = 56): string {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value
 }
-
-const ToolCallRunningDots: FC = () => (
-  <Group gap={2} wrap="nowrap" ml={2} style={{ color: 'var(--chatbox-tint-brand)' }}>
-    {[0, 1, 2].map((index) => (
-      <Box
-        key={index}
-        component="span"
-        className="animate-pulse"
-        style={{
-          width: 5,
-          height: 5,
-          borderRadius: 999,
-          backgroundColor: 'currentColor',
-          animationDelay: `${index * 150}ms`,
-        }}
-      />
-    ))}
-  </Group>
-)
 
 // Read-only pause details: what the agent is waiting on. All decision actions
 // (Approve/Deny/Continue/Stop) live in the pending-action bar at the bottom of
@@ -1468,73 +1422,15 @@ const ViewImageDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
   )
 }
 
-// Shared timeline rail: the connecting line(s) plus the round status node.
-// Used by both tool-call steps and reasoning steps so they line up on one thread.
-const TimelineRail: FC<{
-  isFirst: boolean
-  isLast: boolean
-  icon: React.ElementType
-  dotBg: string
-  stateColor: string
-}> = ({ isFirst, isLast, icon, dotBg, stateColor }) => (
-  <>
-    {!isFirst && (
-      <Box
-        style={{
-          position: 'absolute',
-          left: TIMELINE_NODE_SIZE / 2 - 1,
-          top: -TIMELINE_STACK_GAP,
-          height: TIMELINE_STACK_GAP + TIMELINE_NODE_TOP,
-          width: 2,
-          borderRadius: 1,
-          backgroundColor: 'color-mix(in srgb, var(--chatbox-border-primary) 70%, transparent)',
-        }}
-      />
-    )}
-    {!isLast && (
-      <Box
-        style={{
-          position: 'absolute',
-          left: TIMELINE_NODE_SIZE / 2 - 1,
-          top: TIMELINE_NODE_TOP + TIMELINE_NODE_SIZE,
-          bottom: -TIMELINE_STACK_GAP,
-          width: 2,
-          borderRadius: 1,
-          backgroundColor: 'color-mix(in srgb, var(--chatbox-border-primary) 70%, transparent)',
-        }}
-      />
-    )}
-    <Box
-      style={{
-        position: 'absolute',
-        left: 0,
-        top: TIMELINE_NODE_TOP,
-        width: TIMELINE_NODE_SIZE,
-        height: TIMELINE_NODE_SIZE,
-        borderRadius: 999,
-        backgroundColor: dotBg,
-        color: stateColor,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1,
-      }}
-    >
-      <InlineToolIcon icon={icon} size={14} />
-    </Box>
-  </>
-)
-
 type TimelineToolCallStepProps = {
   part: MessageToolCallPart
-  isFirst: boolean
-  isLast: boolean
+  /** Renders as a child of a folded run instead of a top-level step. */
+  nested?: boolean
 } & ToolCallActionContext
 
 const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResult?: Record<string, unknown> }> = ({
   part,
-  isFirst,
-  isLast,
+  nested,
   sessionId,
   messageId,
   commandResult,
@@ -1577,22 +1473,15 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
     part.state === 'result' &&
     (commandResult?.success === false || (commandExitCode !== undefined && commandExitCode !== 0))
   const isBashNotAvailable = isBashNotAvailableResult(part)
-  const isActionableToolError = hasKnownToolError(part)
   const isError =
     (part.state === 'error' && !isCancelled) ||
     isBashNotAvailable ||
     imageStatus === 'error' ||
     isBackgroundUnrecoverable ||
     (isCommandFailure && !isCancelled)
-  const isDone =
-    part.state === 'result' &&
-    !isBashNotAvailable &&
-    !isBackgroundWaiting &&
-    imageStatus !== 'error' &&
-    !isCommandFailure
   // Paused steps stay collapsed — the decision lives in the pending-action bar
   // above the input box, so several pending steps don't unfold at once.
-  const [expanded, setExpanded] = useAutoExpandOnSignal(isBashNotAvailable || isActionableToolError)
+  const [expanded, setExpanded] = useAutoExpandOnSignal(stepNeedsUserAction(part))
   const isApprovalPaused = isPaused && isApprovalPauseReason(part.pauseReason)
   const stepRef = usePausedStepElementRegistration(sessionId, messageId, part.toolCallId, isPaused)
   const approvalHighlighted = useApprovalCardHighlighted(sessionId, messageId, part.toolCallId) && isPaused
@@ -1641,22 +1530,16 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
         : 0
   const showTime = stepDuration >= MIN_STEP_DURATION_MS
 
+  // A settled step stays grey, failed ones included — the agent reads a failure and
+  // carries on, and the summary names it. Color on this row means the step is running
+  // or waiting on the user, so those are the only states that stand out.
   const stateColor =
     isPaused || canResumeBackground || isCancelled
       ? 'var(--chatbox-tint-warning)'
       : isLoading
         ? 'var(--chatbox-tint-brand)'
-        : isError
-          ? 'var(--chatbox-tint-error)'
-          : 'var(--chatbox-tint-success)'
-  const dotBg =
-    isPaused || canResumeBackground || isCancelled
-      ? 'color-mix(in srgb, var(--chatbox-tint-warning) 12%, transparent)'
-      : isLoading
-        ? 'var(--chatbox-background-brand-secondary)'
-        : isError
-          ? 'color-mix(in srgb, var(--chatbox-tint-error) 10%, transparent)'
-          : 'color-mix(in srgb, var(--chatbox-tint-success) 10%, transparent)'
+        : 'var(--chatbox-tint-tertiary)'
+  const needsAttention = isPaused || canResumeBackground || isCancelled || isLoading
 
   const argSummary =
     part.toolName === 'user_exec'
@@ -1705,39 +1588,50 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
                 : truncateSummary(argSummary || resultSummary || t('Completed'))
 
   const hasDetail = isPaused || part.state !== 'call' || isCommandExecutionPart(part)
+  // A step unfolded under the summary row of its run: no rail marker of its own,
+  // a smaller label and the argument it ran against.
+  const isStepChild = nested === true
 
   return (
-    <Box ref={stepRef} pos="relative" pl={32} style={{ minHeight: 28, overflow: 'visible' }}>
-      <TimelineRail isFirst={isFirst} isLast={isLast} icon={Icon} dotBg={dotBg} stateColor={stateColor} />
+    <Box ref={stepRef} pos="relative" style={{ minHeight: isStepChild ? 20 : TIMELINE_ROW_HEIGHT }}>
       <UnstyledButton
         onClick={hasDetail ? () => setExpanded((prev) => !prev) : undefined}
-        style={{
-          cursor: hasDetail ? 'pointer' : 'default',
-          maxWidth: '100%',
-          display: 'block',
-        }}
+        aria-expanded={hasDetail ? expanded : undefined}
+        className="group"
+        style={{ cursor: hasDetail ? 'pointer' : 'default', maxWidth: '100%', display: 'block', width: '100%' }}
       >
         <Group
-          gap={8}
+          gap={isStepChild ? 8 : TIMELINE_ICON_GAP}
           wrap="nowrap"
           align="center"
-          style={{ height: TIMELINE_NODE_CENTER * 2, maxWidth: '100%', transform: 'translateY(-1px)' }}
+          style={{ minHeight: isStepChild ? 20 : TIMELINE_ROW_HEIGHT, maxWidth: '100%' }}
         >
-          <Text size="sm" fw={500} c={isError ? 'chatbox-error' : 'chatbox-primary'} lh="20px" className="shrink-0">
+          {!isStepChild && <TimelineStepIcon icon={Icon} stateColor={stateColor} />}
+          <Text
+            size="xs"
+            fw={isStepChild || !needsAttention ? undefined : 500}
+            c={isStepChild ? 'chatbox-secondary' : needsAttention ? 'chatbox-primary' : 'chatbox-tertiary'}
+            lh="20px"
+            className="shrink-0"
+            style={{ fontSize: TIMELINE_LABEL_FONT_SIZE }}
+          >
             {getToolName(part.toolName, part.args)}
           </Text>
           {summary && (
-            <Text size="xs" c="chatbox-tertiary" lh="20px" truncate="end" style={{ minWidth: 0 }}>
-              · {summary}
+            <Text
+              size="xs"
+              c="chatbox-tertiary"
+              lh="20px"
+              truncate="end"
+              style={{
+                minWidth: 0,
+                fontFamily: isStepChild ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' : undefined,
+              }}
+            >
+              {summary}
             </Text>
           )}
-          {isLoading ? (
-            <ToolCallRunningDots />
-          ) : isError ? (
-            <InlineToolIcon icon={IconCircleXFilled} size={13} color="var(--chatbox-tint-error)" />
-          ) : isDone ? (
-            <InlineToolIcon icon={IconCheck} size={13} color="var(--chatbox-tint-success)" />
-          ) : null}
+          {isLoading && <ToolCallRunningDots />}
           {showTime && (
             <Text size="xs" c="chatbox-tertiary" lh="20px" className="shrink-0 tabular-nums">
               {formatElapsedTime(stepDuration)}
@@ -1748,7 +1642,7 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
               icon={IconChevronDown}
               size={13}
               color="var(--chatbox-tertiary)"
-              className={clsx('transition-transform', expanded ? 'rotate-180' : '')}
+              className={clsx('transition-transform', expanded ? 'rotate-180' : TIMELINE_DISCLOSURE_CLASS)}
             />
           )}
         </Group>
@@ -1788,17 +1682,16 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
           // The rotating locate ring plays only after the pill's "View" action, as
           // the "here it is" feedback — not as a permanent attention grabber.
           className={approvalHighlighted ? 'chatbox-approval-ring' : undefined}
-          mt={6}
-          mb={2}
-          p={isActionableToolError ? 0 : 10}
           style={{
-            borderRadius: 'var(--mantine-radius-md)',
-            backgroundColor: isActionableToolError
-              ? 'transparent'
-              : 'color-mix(in srgb, var(--chatbox-background-gray-secondary) 72%, transparent)',
-            color: 'var(--chatbox-tint-secondary)',
+            marginTop: 8,
+            marginBottom: 2,
+            // Details hang under the row's text column; a step unfolded inside a run
+            // already sits in that column, so it only adds the group's own indent.
+            marginLeft: isStepChild ? 0 : TIMELINE_DETAIL_INDENT,
+            paddingLeft: TIMELINE_GROUP_INDENT,
             // Amber accent marks "decision needed" apart from routine tool details.
-            borderLeft: isApprovalPaused ? '3px solid var(--chatbox-tint-warning)' : undefined,
+            borderLeft: isApprovalPaused ? TIMELINE_APPROVAL_BORDER : TIMELINE_GROUP_BORDER,
+            color: 'var(--chatbox-tint-secondary)',
             minWidth: 0,
             maxWidth: '100%',
             overflow: 'hidden',
@@ -1816,247 +1709,9 @@ const CommandTimelineToolCallStep: FC<TimelineToolCallStepProps> = (props) => {
   return <TimelineToolCallStepContent {...props} commandResult={commandResult} />
 }
 
-const TimelineToolCallStep: FC<TimelineToolCallStepProps> = (props) =>
+export const TimelineToolCallStep: FC<TimelineToolCallStepProps> = (props) =>
   isCommandExecutionPart(props.part) ? (
     <CommandTimelineToolCallStep {...props} />
   ) : (
     <TimelineToolCallStepContent {...props} />
   )
-
-// A timeline step is a tool call, a reasoning ("thinking") block, or an
-// intermediate text block the assistant emitted between steps.
-export type StepTimelinePart = MessageToolCallPart | MessageReasoningPart | MessageTextPart
-
-type CopyReasoningHandler = (content: string) => (e: React.MouseEvent<HTMLButtonElement>) => void
-
-// Renders an intermediate assistant text block as a timeline node. Markdown
-// rendering is delegated to the caller (Message owns the settings/uniqueId).
-type RenderStepText = (part: MessageTextPart, index: number) => ReactNode
-
-const TimelineTextStep: FC<{ children: ReactNode; isFirst: boolean; isLast: boolean }> = ({
-  children,
-  isFirst,
-  isLast,
-}) => (
-  <Box pos="relative" pl={32} style={{ minHeight: TIMELINE_NODE_CENTER * 2, overflow: 'visible' }}>
-    <TimelineRail
-      isFirst={isFirst}
-      isLast={isLast}
-      icon={IconMessage}
-      dotBg="var(--chatbox-background-gray-secondary)"
-      stateColor="var(--chatbox-tint-tertiary)"
-    />
-    <Box
-      className="text-sm break-words [overflow-wrap:anywhere] [&_p]:!my-0 [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0"
-      style={{
-        minHeight: TIMELINE_NODE_CENTER * 2,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        transform: 'translateY(-1px)',
-      }}
-    >
-      {children}
-    </Box>
-  </Box>
-)
-
-// Shared reasoning display state, kept in sync with how a reasoning block is
-// rendered both standalone (ReasoningContentUI) and inside the step timeline.
-function useReasoningState(message: Message | undefined, part: MessageReasoningPart | undefined) {
-  const reasoningContent = part?.text ?? message?.reasoningContent ?? ''
-  const hasActiveStatus = (message?.status?.length ?? 0) > 0
-  const rawIsThinking =
-    (message?.generating &&
-      !!part &&
-      !hasActiveStatus &&
-      !!message?.contentParts &&
-      message.contentParts.length > 0 &&
-      message.contentParts[message.contentParts.length - 1] === part) ||
-    false
-
-  // Once thinking transitions to done, lock it as done to prevent flicker
-  // when new content parts are appended during streaming.
-  const wasEverDoneRef = useRef(false)
-  if (!rawIsThinking && (reasoningContent.length > 0 || (part?.duration && part.duration > 0))) {
-    wasEverDoneRef.current = true
-  }
-  const isThinking = rawIsThinking && !wasEverDoneRef.current
-
-  const elapsedTime = useThinkingTimer(part?.startTime, isThinking)
-  const displayTime =
-    part?.duration && part.duration > 0 ? part.duration : isThinking && elapsedTime > 0 ? elapsedTime : 0
-
-  return { reasoningContent, isThinking, displayTime }
-}
-
-const TimelineReasoningStep: FC<{
-  part?: MessageReasoningPart
-  message?: Message
-  isFirst: boolean
-  isLast: boolean
-  onCopyReasoningContent?: CopyReasoningHandler
-}> = ({ part, message, isFirst, isLast, onCopyReasoningContent }) => {
-  const { t } = useTranslation()
-  const { reasoningContent, isThinking, displayTime } = useReasoningState(message, part)
-  const [expanded, setExpanded] = useState(false)
-  const shouldShowTimer = message?.isStreamingMode === true
-  const showTime = shouldShowTimer && displayTime >= MIN_STEP_DURATION_MS
-  const hasDetail = reasoningContent.length > 0
-
-  const stateColor = isThinking ? 'var(--chatbox-tint-brand)' : 'var(--chatbox-tint-warning)'
-  const dotBg = isThinking
-    ? 'var(--chatbox-background-brand-secondary)'
-    : 'color-mix(in srgb, var(--chatbox-tint-warning) 12%, transparent)'
-
-  const label = isThinking ? t('Thinking') : t('Deeply thought')
-
-  return (
-    <Box pos="relative" pl={32} style={{ minHeight: 28, overflow: 'visible' }}>
-      <TimelineRail isFirst={isFirst} isLast={isLast} icon={IconBulb} dotBg={dotBg} stateColor={stateColor} />
-      <UnstyledButton
-        onClick={hasDetail ? () => setExpanded((prev) => !prev) : undefined}
-        style={{ cursor: hasDetail ? 'pointer' : 'default', width: '100%', maxWidth: '100%', display: 'block' }}
-      >
-        <Group
-          gap={8}
-          wrap="nowrap"
-          align="center"
-          style={{ height: TIMELINE_NODE_CENTER * 2, maxWidth: '100%', transform: 'translateY(-1px)' }}
-        >
-          <Text size="sm" fw={500} c="chatbox-primary" lh="20px" className="shrink-0">
-            {label}
-          </Text>
-          {isThinking && <ToolCallRunningDots />}
-          {showTime && (
-            <Text size="xs" c="chatbox-tertiary" lh="20px" className="shrink-0 tabular-nums">
-              {formatElapsedTime(displayTime)}
-            </Text>
-          )}
-          {!expanded && <ReasoningInlineSummary content={reasoningContent} isThinking={isThinking} />}
-          {expanded && hasDetail && onCopyReasoningContent && (
-            <ActionIcon
-              variant="subtle"
-              size="xs"
-              c="chatbox-gray"
-              onClick={(e) => {
-                e.stopPropagation()
-                onCopyReasoningContent(reasoningContent)(e)
-              }}
-              aria-label={t('Copy reasoning content')}
-            >
-              <ScalableIcon icon={IconCopy} size={12} />
-            </ActionIcon>
-          )}
-          {hasDetail && (
-            <InlineToolIcon
-              icon={IconChevronDown}
-              size={13}
-              color="var(--chatbox-tertiary)"
-              className={clsx('transition-transform', expanded ? 'rotate-180' : '')}
-            />
-          )}
-        </Group>
-      </UnstyledButton>
-      <Collapse in={expanded && hasDetail}>
-        <Box
-          mt={6}
-          mb={2}
-          pl="sm"
-          style={{
-            borderLeft: '2px solid var(--chatbox-tint-warning)',
-            maxHeight: 400,
-            overflowY: 'auto',
-          }}
-        >
-          <Text size="sm" c="chatbox-tertiary" style={PRELINE_OVERFLOW_STYLE}>
-            {reasoningContent}
-          </Text>
-        </Box>
-      </Collapse>
-    </Box>
-  )
-}
-
-// Unified timeline that threads consecutive reasoning + tool-call steps together
-// with a single connecting line so an agent run reads as one coherent sequence.
-export const StepTimelineUI: FC<
-  {
-    parts: StepTimelinePart[]
-    message?: Message
-    onCopyReasoningContent?: CopyReasoningHandler
-    renderText?: RenderStepText
-  } & ToolCallActionContext
-> = ({ parts, message, sessionId, messageId, onCopyReasoningContent, renderText }) => {
-  return (
-    <Box pos="relative" my={8} mb={12} style={{ minWidth: 0, maxWidth: '100%' }}>
-      <Stack gap={TIMELINE_STACK_GAP} style={{ minWidth: 0 }}>
-        {parts.map((part, index) => {
-          const isFirst = index === 0
-          const isLast = index === parts.length - 1
-          if (part.type === 'reasoning') {
-            return (
-              <TimelineReasoningStep
-                key={`reasoning-${index}`}
-                part={part}
-                message={message}
-                isFirst={isFirst}
-                isLast={isLast}
-                onCopyReasoningContent={onCopyReasoningContent}
-              />
-            )
-          }
-          if (part.type === 'text') {
-            return (
-              <TimelineTextStep key={`text-${index}`} isFirst={isFirst} isLast={isLast}>
-                {renderText ? (
-                  renderText(part, index)
-                ) : (
-                  <Text size="sm" style={PRELINE_OVERFLOW_STYLE}>
-                    {part.text}
-                  </Text>
-                )}
-              </TimelineTextStep>
-            )
-          }
-          return (
-            <TimelineToolCallStep
-              key={part.toolCallId}
-              part={part}
-              isFirst={isFirst}
-              isLast={isLast}
-              sessionId={sessionId}
-              messageId={messageId}
-            />
-          )
-        })}
-      </Stack>
-    </Box>
-  )
-}
-
-// Backwards-compatible wrapper for tool-call-only timelines (e.g. a single
-// paused tool call rendered outside a step group).
-export const ToolCallGroupUI: FC<{ parts: MessageToolCallPart[] } & ToolCallActionContext> = ({
-  parts,
-  sessionId,
-  messageId,
-}) => <StepTimelineUI parts={parts} sessionId={sessionId} messageId={messageId} />
-
-// ─── Reasoning / Thinking (Minimal Inline) ──────────────────────────
-
-export const ReasoningContentUI: FC<{
-  message: Message
-  part?: MessageReasoningPart
-  onCopyReasoningContent: (content: string) => (e: React.MouseEvent<HTMLButtonElement>) => void
-}> = ({ message, part, onCopyReasoningContent }) => (
-  <Box my={8} mb={12}>
-    <TimelineReasoningStep
-      part={part}
-      message={message}
-      isFirst
-      isLast
-      onCopyReasoningContent={onCopyReasoningContent}
-    />
-  </Box>
-)

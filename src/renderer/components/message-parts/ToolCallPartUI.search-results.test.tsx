@@ -52,7 +52,8 @@ vi.mock('@/stores/uiStore', () => ({
   useUIStore: (selector: (state: { setPictureShow: () => void }) => unknown) => selector({ setPictureShow: vi.fn() }),
 }))
 
-import { StepTimelineUI, ToolCallPartUI } from './ToolCallPartUI'
+import { StepTimelineUI } from './StepTimelineUI'
+import { ToolCallPartUI } from './ToolCallPartUI'
 
 const LONG_LINK =
   'https://example.com/docs/very-long-path/that-has-no-spaces-and-would-overflow-the-viewport-if-the-card-grew-with-its-content?token=abcdefghijklmnopqrstuvwxyz0123456789'

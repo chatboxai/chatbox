@@ -395,7 +395,9 @@ function SessionItem(props: Props) {
       )}
 
       {switchShortcutDigit !== undefined && !renaming && (
-        <Box component="span" data-testid={TestId.sidebar.sessionSwitchHint} aria-hidden>
+        // `flex` keeps the slot at the hint's own height: an inline wrapper would
+        // add the inherited line box and make the peeked row taller than the rest.
+        <Box component="span" data-testid={TestId.sidebar.sessionSwitchHint} aria-hidden className="flex shrink-0">
           <ShortcutKeysChip keys={['mod', String(switchShortcutDigit)]} />
         </Box>
       )}

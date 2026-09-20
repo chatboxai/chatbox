@@ -67,9 +67,15 @@ function formatKey(key: string) {
   }
 }
 
+/**
+ * Key chip naming the keys of a shortcut, e.g. the conversation switch keys
+ * peeked in the sidebar. The fill is deliberately near the hover tone of a
+ * list row and the shape stays flat, so a column of these reads as secondary
+ * information instead of a stack of keycaps.
+ */
 export function ShortcutKeysChip(props: { keys: string[] }) {
   return (
-    <span className="inline-flex shrink-0 items-center gap-[2px] rounded-xs bg-chatbox-background-tertiary px-[5px] py-[1px] text-[10px] leading-4 font-medium text-chatbox-tertiary">
+    <span className="inline-flex shrink-0 items-center gap-[2px] bg-chatbox-background-gray-secondary px-1 py-[1px] text-[10px] leading-4 text-chatbox-tertiary">
       {props.keys.map((key) => (
         <span key={key}>{formatKey(key)}</span>
       ))}

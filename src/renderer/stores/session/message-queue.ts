@@ -658,6 +658,21 @@ export function requestSteerQueuedMessage(sessionId: string, itemId: string): bo
   return true
 }
 
+/**
+ * Ask the queue's first steerable message to jump it: the keyboard path for an
+ * empty composer, where there is no draft to interject with and the message the
+ * user means is the next one in line. Items that cannot be injected mid-stream
+ * (a queued compression, a message carrying attachments) are skipped, so the
+ * request lands on the next message that can actually steer.
+ */
+export function requestSteerFirstQueuedMessage(sessionId: string): boolean {
+  const candidate = getQueue(sessionId).find(
+    (item): item is QueuedUserMessage =>
+      isQueuedMessage(item) && !item.inFlight && isSteerableQueuedMessage(item.message)
+  )
+  return candidate ? requestSteerQueuedMessage(sessionId, candidate.id) : false
+}
+
 /** Replace the text of a queued message (edit-in-place; the item keeps its position). */
 export function updateQueuedMessageText(sessionId: string, itemId: string, text: string): void {
   setQueue(

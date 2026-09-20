@@ -205,6 +205,29 @@ describe('SessionItem', () => {
     expect(screen.getByRole('textbox', { name: 'Name' })).toBeTruthy()
   })
 
+  test('shows the switch shortcut digit instead of the row actions while the list peeks', () => {
+    const view = render(
+      <MantineProvider>
+        <SessionItem session={session} selected={false} switchShortcutDigit={3} />
+      </MantineProvider>
+    )
+
+    const hint = screen.getByTestId(TestId.sidebar.sessionSwitchHint)
+    expect(hint.textContent).toContain('3')
+    // The key takes the hover actions' place, so the row never shows both.
+    expect(screen.getByTestId(TestId.sidebar.sessionPin).closest('div')?.className).toContain('hidden')
+
+    view.rerender(
+      <MantineProvider>
+        <SessionItem session={session} selected={false} />
+      </MantineProvider>
+    )
+    expect(screen.queryByTestId(TestId.sidebar.sessionSwitchHint)).toBeNull()
+    expect(screen.getByTestId(TestId.sidebar.sessionPin).closest('div')?.className).toContain(
+      'group-hover/session-item:flex'
+    )
+  })
+
   test('shows generation and unread completion activity', () => {
     const runtime = generationRuntimeStore.start(session.id, 'reply-1')
     const view = renderItem(false)

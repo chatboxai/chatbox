@@ -68,6 +68,7 @@ import {
   type QueuedUserMessage,
   releaseInFlightQueuedMessage,
   removeQueuedMessage,
+  requestSteerFirstQueuedMessage,
   requestSteerQueuedMessage,
   resetMessageQueueForTests,
   resumeQueueAndDrain,
@@ -652,6 +653,33 @@ describe('message queue', () => {
 
       messageQueueStore.setState((state) => ({ paused: { ...state.paused, 'session-1': 'stopped' as const } }))
       expect(requestSteerQueuedMessage('session-1', 'm2')).toBe(false)
+    })
+
+    it('requestSteerFirstQueuedMessage jumps the first item that can be injected', async () => {
+      const withFile: Message = { ...userMessage('m1'), files: [{ id: 'f', name: 'f.txt', fileType: 'text/plain' }] }
+      enqueueUserMessage('session-1', withFile)
+      enqueueUserMessage('session-1', userMessage('m2'))
+      enqueueUserMessage('session-1', userMessage('m3'))
+      await flushMicrotasks()
+
+      // The attachment-carrying head cannot enter the stream, so the request
+      // lands on the next message instead of going nowhere.
+      expect(requestSteerFirstQueuedMessage('session-1')).toBe(true)
+      expect(takeRequestedSteerableMessage('session-1', acceptAll)?.id).toBe('m2')
+    })
+
+    it('requestSteerFirstQueuedMessage reports when no queued message can steer', async () => {
+      expect(requestSteerFirstQueuedMessage('session-1')).toBe(false)
+
+      const withFile: Message = { ...userMessage('m1'), files: [{ id: 'f', name: 'f.txt', fileType: 'text/plain' }] }
+      enqueueUserMessage('session-1', withFile)
+      await flushMicrotasks()
+      expect(requestSteerFirstQueuedMessage('session-1')).toBe(false)
+
+      enqueueUserMessage('session-1', userMessage('m2'))
+      await flushMicrotasks()
+      messageQueueStore.setState((state) => ({ paused: { ...state.paused, 'session-1': 'stopped' as const } }))
+      expect(requestSteerFirstQueuedMessage('session-1')).toBe(false)
     })
 
     it('does not consume a requested item from another conversation or an unstamped item', async () => {

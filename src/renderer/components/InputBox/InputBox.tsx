@@ -108,6 +108,8 @@ import {
   enqueueUserMessage,
   MAX_QUEUED_MESSAGES,
   messageQueueStore,
+  requestSteerFirstQueuedMessage,
+  requestSteerQueuedMessage,
   resumeQueueAndDrain,
 } from '../../stores/session/message-queue'
 import { startPreparedSessionAttachmentIndexing } from '../../stores/sessionAttachmentRagIndexing'
@@ -487,6 +489,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // control and submits are blocked with the standard generating notice.
     // Items already queued before the mode split still drain in order.
     const queueEnabled = isActionAvailableInMode('queue-message', sessionMode)
+    // Same mode policy as the queue bar's "Send now": interjecting into the
+    // running reply is a work-mode capability.
+    const steeringEnabled = isActionAvailableInMode('steer-queued-message', sessionMode)
     const canCreateThread = isActionAvailableInMode('create-thread', sessionMode)
 
     const [showCompressionModal, setShowCompressionModal] = useState(false)
@@ -898,7 +903,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const { addInputBoxHistory, getPreviousHistoryInput, getNextHistoryInput, resetHistoryIndex } = useInputBoxHistory()
     resetHistoryIndexRef.current = resetHistoryIndex
 
-    type SubmitOptions = { allowUnreadySessionAttachments?: boolean }
+    type SubmitOptions = { allowUnreadySessionAttachments?: boolean; steer?: boolean }
     type InsertFilesOptions = { source?: 'pasted-text' }
     const handleSubmitRef = useRef<(needGenerating?: boolean, options?: SubmitOptions) => void>(() => {})
     const getPreviousHistoryInputRef = useRef(getPreviousHistoryInput)
@@ -1057,6 +1062,13 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             return
           }
           finalizeUserMessageDraft()
+          // The send shortcut asked this draft to interject: the reply streaming
+          // right now consumes it at its next step instead of letting it wait
+          // for the turn to end. Only a running reply has a consumer to hand it
+          // to; behind a compression the item simply keeps its place in line.
+          if (options.steer && generating && steeringEnabled) {
+            requestSteerQueuedMessage(currentSessionId, outgoingMessage.id)
+          }
           if (submitAction === 'queue-resume') {
             resumeQueueAndDrain(currentSessionId)
           }
@@ -1128,6 +1140,20 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         const isSendShortcut = isPressedHash[shortcuts.inputBoxSendMessage]
         const isSendWithoutResponseShortcut = isPressedHash[shortcuts.inputBoxSendMessageWithoutResponse]
 
+        // 排队发送时 Cmd/Ctrl+Enter 直接插话：有草稿就把它作为插话入队，由正在
+        // 生成的回复在下一步消费；输入框为空则把队列里的第一条消息变为插话。
+        // 没有正在进行的回复时该组合键保持原有语义（发送/不生成回复）。
+        const isSteerShortcut = isPressedHash['CommandOrControl+Enter']
+        if (isSteerShortcut && steeringEnabled && generating && currentSessionId) {
+          event.preventDefault()
+          if (!disableSubmit) {
+            handleSubmitRef.current(true, { steer: true })
+          } else {
+            requestSteerFirstQueuedMessage(currentSessionId)
+          }
+          return
+        }
+
         // 发送消息
         if (isSendShortcut) {
           if (platform.type === 'mobile' && isSmallScreen && shortcuts.inputBoxSendMessage === 'Enter') {
@@ -1179,12 +1205,16 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         }
       },
       [
+        currentSessionId,
+        disableSubmit,
+        generating,
         insertSkillCommand,
         isSmallScreen,
         matchingInputSkills,
         shortcuts,
         skillCommandQuery,
         skillCommandSelectedIndex,
+        steeringEnabled,
         updateSkillCommandQuery,
       ]
     )

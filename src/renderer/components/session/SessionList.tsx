@@ -29,6 +29,7 @@ import { useTranslation } from 'react-i18next'
 import { Virtuoso } from 'react-virtuoso'
 import { rendererApplication } from '@/app/renderer-application'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { useSessionSwitchHintDigits } from '@/hooks/useSessionSwitchHints'
 import platform from '@/platform'
 import { reorderSessions } from '@/stores/session/crud'
 import SessionItem from './SessionItem'
@@ -54,6 +55,9 @@ function SessionListLoadingFooter() {
 export default function SessionList(props: Props) {
   const { t } = useTranslation()
   const { sessionMetaList: sortedSessions, fetchNextPage, hasNextPage, isFetchingNextPage } = useSessionList()
+  // Digits appear only while the switch modifier is held (see the hook); the
+  // rows read them by session id, so a pinned row keeps its own key.
+  const switchShortcutDigits = useSessionSwitchHintDigits()
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [isReordering, setIsReordering] = useState(false)
   const isSmallScreen = useIsSmallScreen()
@@ -221,6 +225,7 @@ export default function SessionList(props: Props) {
                     session={item.session}
                     isReordering={Boolean(isSmallScreen && isReordering)}
                     onStartReordering={() => setIsReordering(true)}
+                    switchShortcutDigit={switchShortcutDigits.get(item.session.id)}
                   />
                 </SortableItem>
               )

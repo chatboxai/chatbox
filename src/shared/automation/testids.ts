@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.7.6'
+export const AUTOMATION_CONTRACT_VERSION = '1.7.7'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -92,6 +92,7 @@ export const TestId = {
     sessionTitle: 'session-title',
     sessionPin: 'session-pin',
     sessionArchive: 'session-archive',
+    sessionSwitchHint: 'session-switch-hint',
     pinnedSection: 'sidebar-pinned-section',
     collapse: 'sidebar-collapse',
   },

@@ -67,6 +67,16 @@ function formatKey(key: string) {
   }
 }
 
+export function ShortcutKeysChip(props: { keys: string[] }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-[2px] rounded-xs bg-chatbox-background-tertiary px-[5px] py-[1px] text-[10px] leading-4 font-medium text-chatbox-tertiary">
+      {props.keys.map((key) => (
+        <span key={key}>{formatKey(key)}</span>
+      ))}
+    </span>
+  )
+}
+
 export function Keys(props: {
   keys: string[]
   size?: 'small'

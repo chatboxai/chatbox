@@ -16,6 +16,7 @@ import dayjs from 'dayjs'
 import { type MouseEvent, memo, type PointerEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
+import { ShortcutKeysChip } from '@/components/Shortcut'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { navigateToSettings } from '@/modals/settings-navigation'
@@ -61,10 +62,17 @@ export interface Props {
   selected: boolean
   isReordering?: boolean
   onStartReordering?: () => void
+  /**
+   * Digit that opens this conversation while the switch modifier is held. Set
+   * only while the list is peeking, so the row shows the key instead of its
+   * trailing time and hover actions.
+   */
+  switchShortcutDigit?: number
 }
 
 function SessionItem(props: Props) {
   const { session, selected } = props
+  const switchShortcutDigit = props.switchShortcutDigit
   const { t } = useTranslation()
   const activity = useSessionActivity(session.id, session.hasPausedToolCall === true)
   const activityLabel =
@@ -376,7 +384,7 @@ function SessionItem(props: Props) {
         </Box>
       )}
 
-      {!isSmallScreen && !renaming && activity === 'idle' && (
+      {!isSmallScreen && !renaming && activity === 'idle' && switchShortcutDigit === undefined && (
         <Text
           span
           c="chatbox-disabled"
@@ -386,7 +394,20 @@ function SessionItem(props: Props) {
         </Text>
       )}
 
-      <Flex gap={2} className={clsx(isSmallScreen || renaming ? 'hidden' : 'group-hover/session-item:flex hidden')}>
+      {switchShortcutDigit !== undefined && !renaming && (
+        <Box component="span" data-testid={TestId.sidebar.sessionSwitchHint} aria-hidden>
+          <ShortcutKeysChip keys={['mod', String(switchShortcutDigit)]} />
+        </Box>
+      )}
+
+      <Flex
+        gap={2}
+        className={clsx(
+          isSmallScreen || renaming || switchShortcutDigit !== undefined
+            ? 'hidden'
+            : 'group-hover/session-item:flex hidden'
+        )}
+      >
         <Tooltip label={pinActionLabel} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
           <ActionIcon
             data-testid={TestId.sidebar.sessionPin}

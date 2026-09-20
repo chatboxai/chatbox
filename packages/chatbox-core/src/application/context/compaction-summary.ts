@@ -10,6 +10,7 @@ export async function generateCompactionSummaryWithModel(options: {
   languageName: string
   resolveImage?: ModelImageResolver
   onStreamUpdate?: (text: string) => void
+  abortSignal?: AbortSignal
 }): Promise<{ success: boolean; summary?: string; error?: Error }> {
   if (options.messages.length === 0) return { success: true, summary: '' }
 
@@ -20,6 +21,7 @@ export async function generateCompactionSummaryWithModel(options: {
       resolveImage: options.resolveImage ?? (async () => null),
     })
     const result = await options.model.chat(coreMessages, {
+      signal: options.abortSignal,
       onResultChange(data) {
         if (!data.contentParts || !options.onStreamUpdate) return
         options.onStreamUpdate(

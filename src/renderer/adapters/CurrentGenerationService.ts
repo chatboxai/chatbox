@@ -23,6 +23,8 @@ import { getLogger } from '@/lib/utils'
 import { captureAgentModeException } from '@/observability/agent-mode'
 import * as appleAppStore from '@/packages/apple_app_store'
 import { wakeBackgroundTaskFollowUps } from '@/packages/chatbox-cli/background-follow-up'
+import { getCompactionThresholdTokens } from '@/packages/context-management/compaction-detector'
+import { getConfiguredContextWindow } from '@/packages/context-management/context-pressure'
 import { prepareMobileMCPTools } from '@/packages/mcp/mobile-tools'
 import { buildPausedAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
 import { loadBranchFileMessages } from '@/packages/model-calls/toolsets/file-history'
@@ -45,6 +47,7 @@ import {
   insertMessageAfter,
   modifyMessage,
   persistStreamingMessage,
+  splitStreamingMessage,
   updateStreamingCache,
 } from '@/stores/session/messages'
 import { sessionPromptContextSnapshotMatchesMemoryState } from '@/stores/session/prompt-context-snapshot'
@@ -94,6 +97,7 @@ const sessions: GenerationSessionPort = {
   initializeTargetMessage: (message, settings, globalSettings, sessionType) =>
     initializeTargetMessage(message, settings, globalSettings, sessionType),
   persistStreamingMessage: (sessionId, message, options) => persistStreamingMessage(sessionId, message, options),
+  splitStreamingMessage,
   insertMessageAfter: async (sessionId, message, afterMessageId) => {
     await insertMessageAfter(sessionId, message, afterMessageId, { requireAnchor: true })
   },
@@ -173,9 +177,6 @@ async function buildToolsForPausedToolCall(
   const promptMessages = await buildContext(messagesForPrompt, {
     attachmentResolver: attachmentAdapter,
     compactionPoints: source.compactionPoints,
-    // This context only feeds tool selection below and never reaches a model,
-    // so tool history is kept intact.
-    toolCleanupMode: 'none',
     modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
     maxContextMessageCount: settings.maxContextMessageCount,
     sandboxMode: canExecuteCode,
@@ -334,6 +335,27 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
         insertMessageAfter(sessionId, message, afterMessageId, { requireAnchor: true })
       ),
     wake: (sessionId) => wakeQueuedUserMessages(sessionId),
+  },
+  compaction: {
+    getThresholdTokens(sessionSettings, globalSettings) {
+      const providerId = sessionSettings.provider ?? globalSettings.defaultChatModel?.provider
+      const modelId = sessionSettings.modelId ?? globalSettings.defaultChatModel?.model
+      if (!modelId) return null
+      return getCompactionThresholdTokens(
+        modelId,
+        { compactionThreshold: globalSettings.compactionThreshold },
+        getConfiguredContextWindow(globalSettings, providerId, modelId)
+      )
+    },
+    async compact(sessionId, abortSignal, target) {
+      const { runCompactionWithUIState } = await import('@/packages/context-management/compaction')
+      const result = await runCompactionWithUIState(sessionId, { force: true, abortSignal, target })
+      return {
+        compacted: Boolean(result.success && result.compacted),
+        summary: result.summary,
+        boundaryMessageId: result.boundaryMessageId,
+      }
+    },
   },
   runtime: rendererApplication.generationRuntime,
   blobs: new CurrentBlobStorage(),

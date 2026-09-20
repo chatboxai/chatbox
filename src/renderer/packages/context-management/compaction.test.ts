@@ -28,11 +28,6 @@ const {
   hasQueuedWorkMock: vi.fn(),
 }))
 
-vi.mock('@/adapters', () => ({ createModel: vi.fn() }))
-vi.mock('@/platform', () => ({ default: { isDesktopLike: false, appLog: () => Promise.resolve() } }))
-vi.mock('@/sandbox', () => ({ createSandboxProvider: vi.fn() }))
-vi.mock('@/stores/session/agent-mode', () => ({ getSessionAgentModeEntry: () => ({ value: 'off' }) }))
-vi.mock('@/stores/settingActions', () => ({ isPro: () => true }))
 vi.mock('@/app/renderer-application', async () => {
   const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
   return {
@@ -151,7 +146,6 @@ describe('runCompactionWithUIState', () => {
     const sendContext = await buildContext([...session.messages, pending], {
       attachmentResolver: { read: async () => null },
       maxContextMessageCount: 4,
-      toolCleanupMode: 'none',
     })
     expect(countInputTokens(session.messages)).toBeGreaterThan(1_000_000)
     expect(countInputTokens(sendContext)).toBeLessThan(100)

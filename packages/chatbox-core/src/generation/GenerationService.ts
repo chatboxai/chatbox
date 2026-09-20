@@ -21,6 +21,8 @@ import { getMessageText } from '@shared/utils/message'
 import { resolveReasoningProviderOptions } from '@shared/utils/reasoning-control'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION, shouldPauseOnToolCallLimit } from '@shared/utils/tool-call-limit-pause'
 import type { ModelMessage, ToolSet } from 'ai'
+import { isAutoCompactionEnabled } from '../application/context'
+import type { GenerationSegmentSplitWriter } from '../application/session/generation-segment-split'
 import { contextSourceFromSession } from '../application/session/session-context-source'
 import { contextPathFacts } from '../persistence/session-context-read'
 import type {
@@ -49,6 +51,7 @@ import {
   getLastUserMessage,
   parseAgentModeSuggestionDecision,
 } from './agent-mode-suggestion'
+import { GenerationSegmentTransitions } from './GenerationSegmentTransitions'
 import {
   applyPersistentToolCallPause,
   cancelRunningToolCallBatch,
@@ -71,6 +74,7 @@ import {
   updateToolCallParts,
   withToolCallLimitPause,
 } from './generation-flow'
+import { MidRunCompactionController, type MidRunCompactionResult } from './MidRunCompactionController'
 import type { GenerationRuntimeStore } from './runtime-store'
 import { createInitialState, processStreamChunk } from './stream-chunk-processor'
 
@@ -134,6 +138,8 @@ export interface GenerationSessionPort extends Pick<SessionRepositoryPort, 'getS
    * ambiguous failure can be resolved by retrying.
    */
   insertMessageAfter(sessionId: string, message: Message, afterMessageId: string): Promise<void>
+  /** Atomic structural write; absent hosts decline splitting rather than partially committing. */
+  splitStreamingMessage?: GenerationSegmentSplitWriter
   updateStreamingCache(sessionId: string, message: Message): void
   findMessage(session: Session, messageId: string): Message | undefined
   modifyMessage(
@@ -235,6 +241,15 @@ export interface GenerationSteeringPort {
   wake(sessionId: string): void
 }
 
+export interface GenerationCompactionPort {
+  getThresholdTokens(sessionSettings: SessionSettings, globalSettings: Settings): number | null
+  compact(
+    sessionId: string,
+    abortSignal: AbortSignal,
+    target: { targetMessageId: string; boundaryMessageId: string }
+  ): Promise<MidRunCompactionResult>
+}
+
 export interface GenerationHostPort {
   getConfig(): Promise<Config>
   getKnowledgeBase(sessionId: string): Pick<KnowledgeBase, 'id' | 'name'> | undefined
@@ -295,6 +310,7 @@ export interface GenerationServiceDependencies<TContext> {
   tools: GenerationToolExecutionPort
   coordination: GenerationCoordinationPort
   steering?: GenerationSteeringPort
+  compaction?: GenerationCompactionPort
   runtime: GenerationRuntimeStore
   blobs: Pick<BlobStoragePort, 'get' | 'set'>
   attachments: AttachmentContentPort
@@ -566,10 +582,12 @@ export class GenerationService<TContext> {
     // continuation message stored below the steered user.
     const steering = this.dependencies.steering?.register(sessionId, conversationScope) ?? null
 
+    const segmentTransitions = new GenerationSegmentTransitions(controller.signal)
     let processorState = createInitialState()
     const infoParts: MessageContentParts = []
     const persistAbortedGenerationIfNeeded = async (): Promise<boolean> => {
       if (!controller.signal.aborted) return false
+      await segmentTransitions.settle()
       targetMessage = finishAbortedGeneration(
         targetMessage,
         [...infoParts, ...processorState.contentParts],
@@ -683,123 +701,151 @@ export class GenerationService<TContext> {
 
       const chatOptions = { ...prepared.chatOptions }
       let segmentStartedAt = startedAt
-      if (steering) {
-        // When the current segment has produced no output yet, the steered user
-        // belongs before it — anchored at the target's predecessor.
-        const preSteerAnchorMessageId = messages[targetMessageIndex - 1]?.id
-        // Set when a split was abandoned: later steers must still land after the
-        // ones already stored, not back at the assistant they all interrupted.
-        let lastUnsplitSteerMessageId: string | undefined
+      // When the current segment has produced no output yet, the steered user
+      // belongs before it — anchored at the target's predecessor.
+      let preSteerAnchorMessageId = messages[targetMessageIndex - 1]?.id
+      // Set when a split was abandoned: later steers must still land after the
+      // ones already stored, not back at the assistant they all interrupted.
+      let lastUnsplitSteerMessageId: string | undefined
 
-        // Finalize the interrupted assistant segment and continue the same
-        // provider run in a fresh continuation message stored after the steered
-        // user(s). The durable transcript thereby keeps true causal order
-        // (assistant steps -> steered user -> later steps) with no read-time
-        // reordering or projection.
-        //
-        // Write order is chosen so that *some* assistant message is flagged
-        // `generating` at every instant: the durable `generating` flags are the
-        // only thing session locks read, and a gap would briefly expose a normal
-        // Send whose submission becomes an ordinary follow-up instead of a steer.
-        //
-        //   1. insert the continuation (generating) while the segment still is
-        //   2. finalize the segment  (now two, momentarily — never zero)
-        //   3. swap the in-memory run + runtime, synchronously
-        //
-        // If step 1 fails the split is abandoned and the run keeps streaming into
-        // the original message: the steered user then trails an unfinalized
-        // assistant, which is exactly the legacy shape `orderSteeredMessagesForModel`
-        // already reorders. That degradation is always safe, so nothing here needs
-        // to roll back a partially applied split.
-        const splitTargetMessageForSteering = async (consumedMessages: Message[]): Promise<void> => {
-          const previousMessageId = generationMessageId
-          // Stop has already claimed this run and owns the cleanup of its id;
-          // moving the runtime out from under it would strand both. The run is
-          // ending anyway, so keep everything on the current message.
-          if (this.dependencies.runtime.get(sessionId, previousMessageId)?.phase === 'stopping') {
-            lastUnsplitSteerMessageId = consumedMessages[consumedMessages.length - 1].id
-            return
-          }
+      const splitGeneratingSegment = async (
+        anchorMessageId: string,
+        finishReason: string,
+        prefixParts: MessageContentParts,
+        tailParts: MessageContentParts
+      ): Promise<boolean> => {
+        const previousMessageId = generationMessageId
+        const splitWriter = sessions.splitStreamingMessage
+        if (
+          !splitWriter ||
+          controller.signal.aborted ||
+          this.dependencies.runtime.get(sessionId, previousMessageId)?.phase === 'stopping'
+        )
+          return false
 
-          const continuation: Message = {
-            ...createMessage('assistant'),
-            generating: true,
-            status: [],
-            aiProvider: targetMessage.aiProvider,
-            model: targetMessage.model,
-            // The raw model identity travels with the display name so a split
-            // continuation keeps the same provenance record as its source.
-            modelId: targetMessage.modelId,
-            name: targetMessage.name,
-            style: targetMessage.style,
-            isStreamingMode: targetMessage.isStreamingMode,
+        const continuation: Message = {
+          ...createMessage('assistant'),
+          generating: true,
+          contentParts: tailParts,
+          status: [],
+          aiProvider: targetMessage.aiProvider,
+          model: targetMessage.model,
+          modelId: targetMessage.modelId,
+          name: targetMessage.name,
+          style: targetMessage.style,
+          isStreamingMode: targetMessage.isStreamingMode,
+        }
+        const completedParts = prefixParts.map((part) => ({ ...part }))
+        this.finalizePartDurations(completedParts)
+        const finalizedSegment: Message = {
+          ...targetMessage,
+          generating: false,
+          contentParts: completedParts,
+          status: [],
+          finishReason,
+          usage: processorState.usage ?? targetMessage.usage,
+          generationDuration: host.now() - segmentStartedAt,
+        }
+        return segmentTransitions.run(
+          async () => {
+            try {
+              return await splitWriter(
+                sessionId,
+                {
+                  prefix: finalizedSegment,
+                  continuation,
+                  afterMessageId: anchorMessageId,
+                },
+                controller.signal
+              )
+            } catch (error) {
+              this.dependencies.logger.log('error', 'Atomic segment split failed; continuing in place', { error })
+              return false
+            }
+          },
+          () => {
+            targetMessage = continuation
+            processorState = createInitialState(tailParts)
+            infoParts.length = 0
+            segmentStartedAt = host.now()
+            firstTokenLatency = undefined
+            generationMessageId = continuation.id
+            lastUnsplitSteerMessageId = undefined
+            preSteerAnchorMessageId = anchorMessageId
+            this.dependencies.runtime.retarget(sessionId, previousMessageId, continuation.id, runtimeState)
+            steering?.admitAnchor(continuation.id)
           }
-          const anchorMessageId = consumedMessages[consumedMessages.length - 1].id
-          try {
-            await sessions.insertMessageAfter(sessionId, continuation, anchorMessageId)
-          } catch (error) {
-            // A rejected write does not prove nothing was committed: a session
-            // whose messages persisted can still fail its list-metadata update
-            // and reject. Ask the session which happened instead of guessing.
-            const selected = await this.readMessages({ sessionId, messageIds: [continuation.id] }).catch(
-              () => undefined
-            )
-            const committed = Boolean(selected?.messages.length)
-            if (!committed) {
-              this.dependencies.logger.log('error', 'Steering continuation insert failed, continuing in place', {
+        )
+      }
+
+      const compaction = this.dependencies.compaction
+      const midRunCompaction = compaction
+        ? new MidRunCompactionController({
+            thresholdTokens:
+              Object.keys(prepared.tools).length > 0 && isAutoCompactionEnabled(settings, globalSettings)
+                ? compaction.getThresholdTokens(settings, globalSettings)
+                : null,
+            signal: controller.signal,
+            getContentParts: () => [...infoParts, ...processorState.contentParts],
+            splitPrefix: async (prefix, tail) => {
+              const prefixId = generationMessageId
+              return (await splitGeneratingSegment(targetMessage.id, 'compacted', prefix, tail)) ? prefixId : undefined
+            },
+            getBoundaryMessageId: () => preSteerAnchorMessageId,
+            compact: (boundaryMessageId) =>
+              compaction.compact(sessionId, controller.signal, {
+                targetMessageId: targetMessage.id,
+                boundaryMessageId,
+              }),
+            onFailure: (error) => {
+              this.dependencies.logger.log('error', 'Mid-run compaction failed; keeping the last valid context', {
                 error,
               })
-              lastUnsplitSteerMessageId = anchorMessageId
-              return
-            }
-          }
+            },
+          })
+        : undefined
 
-          this.finalizePartDurations(processorState.contentParts)
-          const finalizedSegment: Message = {
-            ...targetMessage,
-            generating: false,
-            contentParts: [...infoParts, ...processorState.contentParts],
-            status: [],
-            finishReason: 'steered',
-            // Provider usage arrives only with the final finish chunk; a resumed
-            // target keeps the usage recorded by its earlier completed run.
-            usage: processorState.usage ?? targetMessage.usage,
-            generationDuration: host.now() - segmentStartedAt,
-          }
-          await sessions.persistStreamingMessage(sessionId, finalizedSegment, { refreshCounting: true })
-
-          targetMessage = continuation
-          processorState = createInitialState()
-          infoParts.length = 0
-          segmentStartedAt = host.now()
-          firstTokenLatency = undefined
-          generationMessageId = continuation.id
-          lastUnsplitSteerMessageId = undefined
-          this.dependencies.runtime.retarget(sessionId, previousMessageId, continuation.id, runtimeState)
-          steering.admitAnchor(continuation.id)
-        }
-
+      if (steering || this.dependencies.compaction) {
         const basePrepareStep = chatOptions.prepareStep
         chatOptions.prepareStep = async (prepareStepOptions) => {
           const base = await basePrepareStep?.(prepareStepOptions)
-          const stepMessages = base?.messages ?? prepareStepOptions.messages
-          // AI SDK calls prepareStep only after the previous provider response and
-          // its complete tool-call batch have settled. This is the same checkpoint
-          // used by pi-agent: the steered user enters the durable transcript and
-          // the next LLM request at the boundary, in true causal order.
-          const hasSegmentOutput = processorState.contentParts.length > 0
-          const anchorMessageId =
-            lastUnsplitSteerMessageId ?? (hasSegmentOutput ? targetMessage.id : preSteerAnchorMessageId)
-          if (!anchorMessageId) return base ?? {}
-          const injection = await steering.inject(stepMessages, anchorMessageId).catch((error) => {
-            this.dependencies.logger.log('error', 'Steering injection failed', { error })
-            return undefined
-          })
-          if (!injection) return base ?? {}
-          if (injection.consumed.length > 0 && hasSegmentOutput) {
-            await splitTargetMessageForSteering(injection.consumed)
+          let stepMessages = base?.messages ?? prepareStepOptions.messages
+
+          if (steering) {
+            // AI SDK calls prepareStep only after the previous provider response
+            // and its complete tool-call batch have settled. The steered user
+            // enters the durable transcript and the next LLM request at that
+            // boundary, in true causal order.
+            const hasSegmentOutput = processorState.contentParts.length > 0
+            const anchorMessageId =
+              lastUnsplitSteerMessageId ?? (hasSegmentOutput ? targetMessage.id : preSteerAnchorMessageId)
+            if (anchorMessageId) {
+              const injection = await steering.inject(stepMessages, anchorMessageId).catch((error) => {
+                this.dependencies.logger.log('error', 'Steering injection failed', { error })
+                return undefined
+              })
+              if (injection?.consumed.length && hasSegmentOutput) {
+                const split = await splitGeneratingSegment(
+                  injection.consumed[injection.consumed.length - 1].id,
+                  'steered',
+                  [...infoParts, ...processorState.contentParts],
+                  []
+                )
+                if (!split) {
+                  lastUnsplitSteerMessageId = injection.consumed[injection.consumed.length - 1].id
+                }
+              }
+              if (injection?.messages) {
+                stepMessages = injection.messages
+              }
+            }
           }
-          return injection.messages ? { ...(base ?? {}), messages: injection.messages } : (base ?? {})
+
+          if (midRunCompaction) {
+            stepMessages = await midRunCompaction.prepareStep(stepMessages, prepareStepOptions.stepNumber ?? 0)
+          }
+
+          return { ...(base ?? {}), messages: stepMessages }
         }
       }
       if (Object.keys(prepared.tools).length > 0) {
@@ -861,6 +907,8 @@ export class GenerationService<TContext> {
 
           const stateBeforeChunk = processorState
           const result = await processStreamChunk(chunk, processorState, streamCallbacks)
+          // Do not publish an old checkpoint across a committed target handoff.
+          await segmentTransitions.settle()
           // Chunk processing can await blob storage or other host work. Stop may
           // land during that await, so do not publish a stale generating
           // checkpoint after the runtime has entered its terminal path.

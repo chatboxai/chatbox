@@ -235,7 +235,7 @@ describe('attachment-payload', () => {
       expect(result).toEqual([])
     })
 
-    it('should use default keepToolCallRounds = 2', () => {
+    it('keeps messages within the configured send window', () => {
       const messages: Message[] = [createMessage('user', 'hello', 'msg1')]
 
       const result = selectMessagesForSendContext({

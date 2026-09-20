@@ -1,7 +1,6 @@
 export { buildContext, injectAttachments, prepareContextMessages, selectContextMessages } from './builder'
 export { findLatestApplicableCompactionPoint } from './compaction-points'
 export { isContextEligibleMessage } from './message-eligibility'
-export { findRecentRoundsStartIndex } from './rounds'
 export {
   flattenToolCallPartsToText,
   TOOL_FLATTEN_ARGS_PREVIEW_CHARS,
@@ -13,5 +12,4 @@ export type {
   ContextBuilderOptions,
   ContextPreparationOptions,
   ContextSelectionOptions,
-  ToolCleanupMode,
 } from './types'

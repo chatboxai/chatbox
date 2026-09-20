@@ -108,12 +108,6 @@ export interface ChatStreamOptions {
    * failures.
    */
   onRequestResolved?: (request: ResolvedChatRequest) => void | Promise<void>
-  /**
-   * Enables mid-run tool-result relief for long tool loops: when the estimated
-   * step payload approaches `thresholdTokens` (the compaction threshold), old
-   * tool-result outputs are stubbed between steps. See context-pressure-relief.
-   */
-  contextPressure?: { thresholdTokens: number }
 }
 
 export type ModelStatus = MessageStatus

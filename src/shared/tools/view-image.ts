@@ -70,8 +70,10 @@ export function viewImageAttachmentNotice(filePath: string): string {
 }
 
 /** Label prefix for the injected user message carrying a view_image result. */
+export const VIEW_IMAGE_FOLLOW_UP_LABEL_PREFIX = '[Image from view_image tool: '
+
 export function viewImageUserMessageLabel(filePath: string): string {
-  return `[Image from view_image tool: ${filePath}]`
+  return `${VIEW_IMAGE_FOLLOW_UP_LABEL_PREFIX}${filePath}]`
 }
 
 /** Build the native tool-result media shape shared by live execution and history resend. */

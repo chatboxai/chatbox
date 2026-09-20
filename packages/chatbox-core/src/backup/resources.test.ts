@@ -118,7 +118,6 @@ describe('rehydrateSessionAttachmentsAsInline', () => {
     const context = await buildContext(rehydrated.messages, {
       attachmentResolver: { read: (key) => Promise.resolve(bodies.get(key) ?? null) },
       modelSupportToolUseForFile: false,
-      toolCleanupMode: 'none',
     })
     expect(JSON.stringify(context)).toContain('indexed attachment body')
     expect(JSON.stringify(context)).toContain('existing inline body')

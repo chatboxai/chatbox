@@ -2,15 +2,19 @@ import type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared
 import type { Config, Message, Session, SessionSettings, Settings } from '@shared/types'
 import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { CompactionService } from '../application/context/CompactionService'
+import { createGenerationSegmentSplitWriter } from '../application/session/generation-segment-split'
 import { getSessionMessageTokenizationDigest } from '../application/session/message-derived-data'
 import { RowBackedSessionRepository } from '../application/session/RowBackedSessionRepository'
 import { contextSourceFromRows } from '../application/session/session-context-source'
+import { StreamingWriteCoordinator } from '../application/session/streaming-write-coordinator'
 import { contextPathFacts } from '../persistence/session-context-read'
 import { contextSession, contextSnapshot } from '../persistence/session-context-read.test-support'
 import { generationStreamFixture } from '../testing/generation-stream'
 import { InMemorySessionRecordStore } from '../testing/InMemorySessionRecordStore'
 import { InMemorySessionRowStore } from '../testing/InMemorySessionRowStore'
 import {
+  type GenerationCompactionPort,
   type GenerationHostPort,
   type GenerationPreparationRequest,
   GenerationService,
@@ -88,6 +92,7 @@ interface Harness {
   failInsertion(error: Error, options?: { commit?: boolean }): void
   enableAgentModeSuggestion(result: Message['contentParts']): void
   setNow(value: number): void
+  setCompaction(port: GenerationCompactionPort): void
 }
 
 function createHarness(): Harness {
@@ -229,6 +234,36 @@ function createHarness(): Harness {
     updateStreamingCache: (_sessionId, message) => {
       cached.push({ ...message, contentParts: [...message.contentParts] })
     },
+    splitStreamingMessage: createGenerationSegmentSplitWriter({
+      streamingWrites: new StreamingWriteCoordinator(),
+      sessions: {
+        async updateSessionWithMessages(_sessionId, updater, options) {
+          if (insertionFailure && !insertionFailure.commit) throw insertionFailure.error
+          persistenceCallCount += 1
+          if (persistenceFailure && persistenceCallCount >= persistenceFailure.call) throw persistenceFailure.error
+          const previousIds = new Set(session.messages.map((message) => message.id))
+          const previous = session.messages
+          const next = typeof updater === 'function' ? updater(session) : updater
+          Object.assign(session, next)
+          for (const [index, message] of session.messages.entries()) {
+            if (!previousIds.has(message.id)) {
+              inserted.push({
+                message: { ...message, contentParts: [...message.contentParts] },
+                afterMessageId: session.messages[index - 1].id,
+              })
+            } else if (previous.find((old) => old.id === message.id) !== message) {
+              persisted.push({
+                message: { ...message, contentParts: [...message.contentParts] },
+                refreshCounting: true,
+              })
+            }
+          }
+          options?.onFullSessionPersisted?.(session)
+          if (insertionFailure) throw insertionFailure.error
+          return session
+        },
+      },
+    }),
     insertMessageAfter: (_sessionId, message, afterMessageId) => {
       if (insertionFailure && !insertionFailure.commit) return Promise.reject(insertionFailure.error)
       const copy = { ...message, contentParts: [...message.contentParts] }
@@ -404,6 +439,9 @@ function createHarness(): Harness {
     },
     setNow(value) {
       now = value
+    },
+    setCompaction(port) {
+      dependencies.compaction = port
     },
   }
 }
@@ -987,7 +1025,7 @@ describe('GenerationService', () => {
     expect(lastPersisted(harness)).toMatchObject({ id: 'assistant-1', finishReason: 'stop' })
   })
 
-  it('splits on a rejected insert that already committed the continuation', async () => {
+  it('adopts a confirmed atomic split when its metadata projection rejects', async () => {
     const steeredUser: Message = {
       id: 'steered-user',
       role: 'user',
@@ -1206,7 +1244,7 @@ describe('GenerationService', () => {
     // conversation; mid-run continuations are admitted separately.
     expect(harness.steeringRegister).toHaveBeenCalledWith('session-1', new Set(['user-1', 'assistant-1']))
     expect(stepResults).toEqual([
-      { activeTools: ['tool_a'] },
+      { activeTools: ['tool_a'], messages: [{ role: 'user', content: 'Hello' }] },
       { activeTools: ['tool_a'], messages: [{ role: 'user', content: 'steered' }] },
     ])
     // No segment output was streamed before either boundary, so both anchor at
@@ -1253,6 +1291,907 @@ describe('GenerationService', () => {
         { role: 'user', content: 'steered' },
       ],
     })
+  })
+
+  it('compacts between tool steps when the payload exceeds the threshold', async () => {
+    const compact = vi.fn().mockResolvedValue({
+      compacted: true,
+      summary: 'Earlier work done.',
+      boundaryMessageId: 'assistant-1',
+    })
+    harness.setCompaction({
+      getThresholdTokens: () => 50,
+      compact,
+    })
+    harness.setPreparedTools({
+      search: { description: 'search', inputSchema: jsonSchema({ type: 'object' }) },
+    } as unknown as ToolSet)
+
+    const bulky: ModelMessage[] = [
+      { role: 'user', content: 'task '.repeat(80) },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'search', input: { q: 1 } }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't1',
+            toolName: 'search',
+            output: { type: 'text', value: 'old '.repeat(80) },
+          },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't2', toolName: 'search', input: { q: 2 } }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't2',
+            toolName: 'search',
+            output: { type: 'text', value: 'recent' },
+          },
+        ],
+      },
+    ]
+
+    let stepResult: unknown
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* streamWithMidRunCompact() {
+        const prepareStep = options.prepareStep
+        if (!prepareStep) throw new Error('Expected prepareStep to be wired')
+        yield {
+          type: 'tool-call',
+          toolCallId: 't1',
+          toolName: 'search',
+          input: { q: 1 },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 't1',
+          toolName: 'search',
+          output: { type: 'text', value: 'old' },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-call',
+          toolCallId: 't2',
+          toolName: 'search',
+          input: { q: 2 },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 't2',
+          toolName: 'search',
+          output: { type: 'text', value: 'recent' },
+        } as ModelStreamPart<ToolSet>
+        stepResult = await prepareStep({
+          steps: [],
+          stepNumber: 1,
+          model: {},
+          messages: bulky,
+          experimental_context: undefined,
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    expect(compact).toHaveBeenCalledWith('session-1', expect.any(AbortSignal), {
+      targetMessageId: harness.inserted[0].message.id,
+      boundaryMessageId: 'assistant-1',
+    })
+    expect(harness.inserted).toHaveLength(1)
+    expect(
+      harness.persisted.some(
+        (entry) => entry.message.id === 'assistant-1' && entry.message.finishReason === 'compacted'
+      )
+    ).toBe(true)
+    expect(stepResult).toEqual({
+      messages: [{ role: 'assistant', content: 'Earlier work done.' }, bulky[3], bulky[4]],
+    })
+  })
+
+  it.each(['before-summary', 'during-summary'])(
+    'compacts the generating branch after switching selection %s',
+    async (switchAt) => {
+      const aHistory: Message = {
+        id: 'a-history',
+        role: 'user',
+        contentParts: [{ type: 'text', text: 'A history '.repeat(100) }],
+      }
+      const bHistory: Message = {
+        id: 'b-history',
+        role: 'user',
+        contentParts: [{ type: 'text', text: 'B private history' }],
+      }
+      harness.session.messages.splice(1, 0, aHistory)
+      harness.session.settings = harness.sessionSettings
+      const switchToB = () => {
+        const aTail = harness.session.messages.slice(1)
+        harness.session.messages = [harness.session.messages[0], bHistory]
+        harness.session.messageForksHash = {
+          'user-1': {
+            createdAt: 1,
+            position: 1,
+            lists: [
+              { id: 'branch-a', messages: aTail },
+              { id: 'branch-b', messages: [] },
+            ],
+          },
+        }
+      }
+      const generate = vi.fn(async ({ messages }: { messages: Message[] }) => {
+        expect(JSON.stringify(messages)).toContain('A history')
+        expect(JSON.stringify(messages)).not.toContain('B private history')
+        if (switchAt === 'during-summary') switchToB()
+        return { success: true, summary: 'A summary' }
+      })
+      const service = new CompactionService({
+        sessions: {
+          getSession: async () => harness.session,
+          getSessionSettings: async () => harness.sessionSettings,
+          updateSessionWithMessages: async (_id, updater) => {
+            Object.assign(harness.session, updater(harness.session))
+            return harness.session
+          },
+        },
+        settings: { getSettings: () => harness.globalSettings },
+        policy: { shouldCompact: async () => true, getCompactionContext: (session) => session.messages },
+        summaries: { generate },
+        createId: () => 'a-summary',
+      })
+      harness.setCompaction({
+        getThresholdTokens: () => 200,
+        compact: (id, abortSignal, target) => service.run(id, { force: true, abortSignal, target }),
+      })
+      harness.setPreparedTools({ search: { inputSchema: jsonSchema({ type: 'object' }) } } as unknown as ToolSet)
+      const payload: ModelMessage[] = [
+        { role: 'user', content: 'A history '.repeat(100) },
+        { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 'a-tool', toolName: 'search', input: {} }] },
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolCallId: 'a-tool',
+              toolName: 'search',
+              output: { type: 'text', value: 'recent' },
+            },
+          ],
+        },
+      ]
+      let nextStep: unknown
+      harness.setChatStreamFactory((_messages, options) =>
+        (async function* () {
+          yield { type: 'tool-call', toolCallId: 'a-tool', toolName: 'search', input: {} } as ModelStreamPart<ToolSet>
+          yield {
+            type: 'tool-result',
+            toolCallId: 'a-tool',
+            toolName: 'search',
+            output: { type: 'text', value: 'recent' },
+          } as ModelStreamPart<ToolSet>
+          if (switchAt === 'before-summary') switchToB()
+          nextStep = await options.prepareStep?.({
+            steps: [],
+            stepNumber: 1,
+            model: {},
+            messages: payload,
+            experimental_context: undefined,
+          } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+          yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+        })()
+      )
+      await harness.service.orchestrate('session-1', targetMessage())
+      expect(generate).toHaveBeenCalledOnce()
+      expect(harness.inserted).toHaveLength(0)
+      expect(nextStep).toEqual({ messages: [{ role: 'assistant', content: 'A summary' }, ...payload.slice(1)] })
+      expect(harness.session.messages.map((message) => message.id)).toEqual(['user-1', 'b-history'])
+      expect(harness.session.messageForksHash?.['user-1'].lists[0].messages.map((message) => message.id)).toEqual([
+        'a-history',
+        'a-summary',
+        'assistant-1',
+      ])
+      expect(harness.session.compactionPoints).toEqual([expect.objectContaining({ boundaryMessageId: 'a-history' })])
+    }
+  )
+
+  it('compacts through the steered user when the continuation keeps all its tool calls', async () => {
+    harness.session.settings = harness.sessionSettings
+    const steeredUser: Message = {
+      id: 'steered-user',
+      role: 'user',
+      steered: true,
+      contentParts: [{ type: 'text', text: 'change direction' }],
+    }
+    harness.steeringInject
+      .mockResolvedValueOnce({ messages: undefined, consumed: [] })
+      .mockImplementationOnce((messages, anchorId) => {
+        const anchorIndex = harness.session.messages.findIndex((message) => message.id === anchorId)
+        harness.session.messages.splice(anchorIndex + 1, 0, steeredUser)
+        return Promise.resolve({
+          messages: [...messages, { role: 'user' as const, content: 'change direction' }],
+          consumed: [steeredUser],
+        })
+      })
+    const generate = vi.fn(async ({ messages }: { messages: Message[] }) => {
+      expect(messages.at(-1)?.id).toBe('steered-user')
+      return { success: true, summary: 'Work and updated direction' }
+    })
+    const service = new CompactionService({
+      sessions: {
+        getSession: async () => harness.session,
+        getSessionSettings: async () => harness.sessionSettings,
+        updateSessionWithMessages: async (_id, updater) => {
+          Object.assign(harness.session, updater(harness.session))
+          return harness.session
+        },
+      },
+      settings: { getSettings: () => harness.globalSettings },
+      policy: { shouldCompact: async () => true, getCompactionContext: (session) => session.messages },
+      summaries: { generate },
+      createId: () => 'steer-summary',
+    })
+    harness.setCompaction({
+      getThresholdTokens: () => 200,
+      compact: (id, abortSignal, target) => service.run(id, { force: true, abortSignal, target }),
+    })
+    harness.setPreparedTools({ search: { inputSchema: jsonSchema({ type: 'object' }) } } as unknown as ToolSet)
+    const history: ModelMessage[] = [
+      { role: 'user', content: 'task' },
+      { role: 'assistant', content: 'previous work '.repeat(100) },
+    ]
+    const tail: ModelMessage[] = [
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 'current-tool', toolName: 'search', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'current-tool',
+            toolName: 'search',
+            output: { type: 'text', value: 'recent' },
+          },
+        ],
+      },
+    ]
+    let nextStep: unknown
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* () {
+        yield { type: 'text-delta', text: 'previous work '.repeat(100) } as ModelStreamPart<ToolSet>
+        yield { type: 'finish-step' } as ModelStreamPart<ToolSet>
+        await options.prepareStep?.({
+          steps: [],
+          stepNumber: 1,
+          model: {},
+          messages: history,
+          experimental_context: undefined,
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+        yield {
+          type: 'tool-call',
+          toolCallId: 'current-tool',
+          toolName: 'search',
+          input: {},
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 'current-tool',
+          toolName: 'search',
+          output: { type: 'text', value: 'recent' },
+        } as ModelStreamPart<ToolSet>
+        yield { type: 'finish-step' } as ModelStreamPart<ToolSet>
+        nextStep = await options.prepareStep?.({
+          steps: [],
+          stepNumber: 2,
+          model: {},
+          messages: [...history, { role: 'user', content: 'change direction' }, ...tail],
+          experimental_context: undefined,
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+    await harness.service.orchestrate('session-1', targetMessage())
+    expect(generate).toHaveBeenCalledOnce()
+    expect(harness.inserted).toHaveLength(1)
+    expect(nextStep).toEqual({ messages: [{ role: 'assistant', content: 'Work and updated direction' }, ...tail] })
+    expect(harness.session.compactionPoints).toEqual([expect.objectContaining({ boundaryMessageId: 'steered-user' })])
+  })
+
+  it('keeps the full payload when mid-run compaction throws', async () => {
+    const compact = vi.fn().mockRejectedValue(new Error('compact failed'))
+    harness.setCompaction({
+      getThresholdTokens: () => 50,
+      compact,
+    })
+    harness.setPreparedTools({
+      search: { description: 'search', inputSchema: jsonSchema({ type: 'object' }) },
+    } as unknown as ToolSet)
+
+    const bulky: ModelMessage[] = [
+      { role: 'user', content: 'task '.repeat(80) },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'search', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't1',
+            toolName: 'search',
+            output: { type: 'text', value: 'old '.repeat(80) },
+          },
+        ],
+      },
+    ]
+    const stepResults: unknown[] = []
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* streamWithFailedCompact() {
+        const prepareStep = options.prepareStep
+        if (!prepareStep) throw new Error('Expected prepareStep to be wired')
+        for (const toolCallId of ['t1']) {
+          yield { type: 'tool-call', toolCallId, toolName: 'search', input: {} } as ModelStreamPart<ToolSet>
+          yield {
+            type: 'tool-result',
+            toolCallId,
+            toolName: 'search',
+            output: { type: 'text', value: 'result' },
+          } as ModelStreamPart<ToolSet>
+        }
+        const prepareOptions = {
+          steps: [],
+          stepNumber: 1,
+          model: {},
+          messages: bulky,
+          experimental_context: undefined,
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0]
+        stepResults.push(await prepareStep(prepareOptions))
+        stepResults.push(await prepareStep({ ...prepareOptions, stepNumber: 2 }))
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    expect(compact).toHaveBeenCalledOnce()
+    expect(stepResults).toEqual([{ messages: bulky }, { messages: bulky }])
+  })
+
+  it('reuses a successful mid-run rewrite on later steps', async () => {
+    const compact = vi.fn().mockResolvedValue({
+      compacted: true,
+      summary: 'Earlier work done.',
+      boundaryMessageId: 'assistant-1',
+    })
+    harness.setCompaction({
+      getThresholdTokens: () => 80,
+      compact,
+    })
+    harness.setPreparedTools({
+      search: { description: 'search', inputSchema: jsonSchema({ type: 'object' }) },
+    } as unknown as ToolSet)
+
+    const bulky: ModelMessage[] = [
+      { role: 'user', content: 'task '.repeat(80) },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'search', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't1',
+            toolName: 'search',
+            output: { type: 'text', value: 'old '.repeat(80) },
+          },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't2', toolName: 'search', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't2',
+            toolName: 'search',
+            output: { type: 'text', value: 'recent' },
+          },
+        ],
+      },
+    ]
+    const stepResults: unknown[] = []
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* streamWithCachedRewrite() {
+        const prepareStep = options.prepareStep
+        if (!prepareStep) throw new Error('Expected prepareStep to be wired')
+        for (const toolCallId of ['t1', 't2']) {
+          yield { type: 'tool-call', toolCallId, toolName: 'search', input: {} } as ModelStreamPart<ToolSet>
+          yield {
+            type: 'tool-result',
+            toolCallId,
+            toolName: 'search',
+            output: { type: 'text', value: 'result' },
+          } as ModelStreamPart<ToolSet>
+        }
+        const prepareOptions = {
+          steps: [],
+          stepNumber: 1,
+          model: {},
+          messages: bulky,
+          experimental_context: undefined,
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0]
+        stepResults.push(await prepareStep(prepareOptions))
+        stepResults.push(await prepareStep({ ...prepareOptions, stepNumber: 2 }))
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    expect(compact).toHaveBeenCalledOnce()
+    expect(stepResults).toEqual([
+      { messages: [{ role: 'assistant', content: 'Earlier work done.' }, bulky[3], bulky[4]] },
+      { messages: [{ role: 'assistant', content: 'Earlier work done.' }, bulky[3], bulky[4]] },
+    ])
+  })
+
+  it('keeps the full payload when a generating split cannot be established', async () => {
+    const compact = vi.fn().mockResolvedValue({
+      compacted: true,
+      summary: 'Earlier work done.',
+      boundaryMessageId: 'assistant-1',
+    })
+    harness.setCompaction({
+      getThresholdTokens: () => 50,
+      compact,
+    })
+    harness.setPreparedTools({
+      search: { description: 'search', inputSchema: jsonSchema({ type: 'object' }) },
+    } as unknown as ToolSet)
+    harness.failInsertion(new Error('continuation insert failed'))
+
+    const bulky: ModelMessage[] = [
+      { role: 'user', content: 'task '.repeat(80) },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'search', input: { q: 1 } }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't1',
+            toolName: 'search',
+            output: { type: 'text', value: 'old '.repeat(80) },
+          },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't2', toolName: 'search', input: { q: 2 } }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't2',
+            toolName: 'search',
+            output: { type: 'text', value: 'recent' },
+          },
+        ],
+      },
+    ]
+
+    let stepResult: unknown
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* streamWithFailedSplit() {
+        const prepareStep = options.prepareStep
+        if (!prepareStep) throw new Error('Expected prepareStep to be wired')
+        yield {
+          type: 'tool-call',
+          toolCallId: 't1',
+          toolName: 'search',
+          input: { q: 1 },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 't1',
+          toolName: 'search',
+          output: { type: 'text', value: 'old' },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-call',
+          toolCallId: 't2',
+          toolName: 'search',
+          input: { q: 2 },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 't2',
+          toolName: 'search',
+          output: { type: 'text', value: 'recent' },
+        } as ModelStreamPart<ToolSet>
+        stepResult = await prepareStep({
+          steps: [],
+          stepNumber: 1,
+          model: {},
+          messages: bulky,
+          experimental_context: undefined,
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    expect(compact).not.toHaveBeenCalled()
+    expect(stepResult).toEqual({ messages: bulky })
+  })
+
+  it('keeps the full payload when the committed summary does not cover the split prefix', async () => {
+    const compact = vi.fn().mockResolvedValue({
+      compacted: true,
+      summary: 'Older history only.',
+      boundaryMessageId: 'user-1',
+    })
+    harness.setCompaction({
+      getThresholdTokens: () => 50,
+      compact,
+    })
+    harness.setPreparedTools({
+      search: { description: 'search', inputSchema: jsonSchema({ type: 'object' }) },
+    } as unknown as ToolSet)
+
+    const bulky: ModelMessage[] = [
+      { role: 'user', content: 'task '.repeat(80) },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'search', input: { q: 1 } }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't1',
+            toolName: 'search',
+            output: { type: 'text', value: 'old '.repeat(80) },
+          },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't2', toolName: 'search', input: { q: 2 } }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't2',
+            toolName: 'search',
+            output: { type: 'text', value: 'recent' },
+          },
+        ],
+      },
+    ]
+
+    let stepResult: unknown
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* streamWithUncoveredPrefix() {
+        const prepareStep = options.prepareStep
+        if (!prepareStep) throw new Error('Expected prepareStep to be wired')
+        yield {
+          type: 'tool-call',
+          toolCallId: 't1',
+          toolName: 'search',
+          input: { q: 1 },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 't1',
+          toolName: 'search',
+          output: { type: 'text', value: 'old' },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-call',
+          toolCallId: 't2',
+          toolName: 'search',
+          input: { q: 2 },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 't2',
+          toolName: 'search',
+          output: { type: 'text', value: 'recent' },
+        } as ModelStreamPart<ToolSet>
+        stepResult = await prepareStep({
+          steps: [],
+          stepNumber: 1,
+          model: {},
+          messages: bulky,
+          experimental_context: undefined,
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    expect(compact).toHaveBeenCalledOnce()
+    expect(stepResult).toEqual({ messages: bulky })
+  })
+
+  it('inserts the retained tail before shortening the compacted assistant', async () => {
+    const compact = vi.fn(() => {
+      const prefix = harness.session.messages.find((message) => message.id === 'assistant-1')
+      const continuation = harness.session.messages.find(
+        (message) => message.role === 'assistant' && message.id !== 'assistant-1'
+      )
+      expect(prefix?.contentParts.some((part) => part.type === 'tool-call' && part.toolCallId === 't2')).toBe(false)
+      expect(continuation?.contentParts.some((part) => part.type === 'tool-call' && part.toolCallId === 't2')).toBe(
+        true
+      )
+      return Promise.resolve({ compacted: true, summary: 'Earlier work done.', boundaryMessageId: 'assistant-1' })
+    })
+    harness.setCompaction({
+      getThresholdTokens: () => 50,
+      compact,
+    })
+    harness.setPreparedTools({
+      search: { description: 'search', inputSchema: jsonSchema({ type: 'object' }) },
+    } as unknown as ToolSet)
+
+    const bulky: ModelMessage[] = [
+      { role: 'user', content: 'task '.repeat(80) },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'search', input: { q: 1 } }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't1',
+            toolName: 'search',
+            output: { type: 'text', value: 'old '.repeat(80) },
+          },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't2', toolName: 'search', input: { q: 2 } }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't2',
+            toolName: 'search',
+            output: { type: 'text', value: 'recent' },
+          },
+        ],
+      },
+    ]
+
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* streamWithPersistedTail() {
+        const prepareStep = options.prepareStep
+        if (!prepareStep) throw new Error('Expected prepareStep to be wired')
+        yield {
+          type: 'tool-call',
+          toolCallId: 't1',
+          toolName: 'search',
+          input: { q: 1 },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 't1',
+          toolName: 'search',
+          output: { type: 'text', value: 'old' },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-call',
+          toolCallId: 't2',
+          toolName: 'search',
+          input: { q: 2 },
+        } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 't2',
+          toolName: 'search',
+          output: { type: 'text', value: 'recent' },
+        } as ModelStreamPart<ToolSet>
+        await prepareStep({
+          steps: [],
+          stepNumber: 1,
+          model: {},
+          messages: bulky,
+          experimental_context: undefined,
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    expect(compact).toHaveBeenCalledOnce()
+    expect(
+      harness.inserted[0]?.message.contentParts.some((part) => part.type === 'tool-call' && part.toolCallId === 't2')
+    ).toBe(true)
+  })
+
+  it('reuses a mid-run rewrite after an earlier image follow-up is dropped', async () => {
+    const compact = vi.fn().mockResolvedValue({
+      compacted: true,
+      summary: 'Earlier work done.',
+      boundaryMessageId: 'assistant-1',
+    })
+    harness.setCompaction({
+      getThresholdTokens: () => 80,
+      compact,
+    })
+    harness.setPreparedTools({
+      search: { description: 'search', inputSchema: jsonSchema({ type: 'object' }) },
+    } as unknown as ToolSet)
+
+    const imageFollowUp = (name: string): ModelMessage => ({
+      role: 'user',
+      content: [
+        { type: 'text', text: `[Image from view_image tool: ${name}]` },
+        { type: 'image', image: name, mediaType: 'image/png' },
+      ],
+    })
+    const t2Assistant: ModelMessage = {
+      role: 'assistant',
+      content: [{ type: 'tool-call', toolCallId: 't2', toolName: 'search', input: {} }],
+    }
+    const t2Result: ModelMessage = {
+      role: 'tool',
+      content: [
+        {
+          type: 'tool-result',
+          toolCallId: 't2',
+          toolName: 'search',
+          output: { type: 'text', value: 'recent' },
+        },
+      ],
+    }
+    const firstStep: ModelMessage[] = [
+      { role: 'user', content: 'task '.repeat(80) },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'search', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't1',
+            toolName: 'search',
+            output: { type: 'text', value: 'old '.repeat(80) },
+          },
+        ],
+      },
+      imageFollowUp('a.png'),
+      t2Assistant,
+      t2Result,
+    ]
+    const secondStep = firstStep.filter((_, index) => index !== 3)
+
+    const stepResults: unknown[] = []
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* streamWithImageWindowShift() {
+        const prepareStep = options.prepareStep
+        if (!prepareStep) throw new Error('Expected prepareStep to be wired')
+        for (const toolCallId of ['t1', 't2']) {
+          yield { type: 'tool-call', toolCallId, toolName: 'search', input: {} } as ModelStreamPart<ToolSet>
+          yield {
+            type: 'tool-result',
+            toolCallId,
+            toolName: 'search',
+            output: { type: 'text', value: 'result' },
+          } as ModelStreamPart<ToolSet>
+        }
+        const prepareOptions = {
+          steps: [],
+          stepNumber: 1,
+          model: {},
+          messages: firstStep,
+          experimental_context: undefined,
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0]
+        stepResults.push(await prepareStep(prepareOptions))
+        stepResults.push(await prepareStep({ ...prepareOptions, stepNumber: 2, messages: secondStep }))
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    expect(compact).toHaveBeenCalledOnce()
+    expect(stepResults).toEqual([
+      { messages: [{ role: 'assistant', content: 'Earlier work done.' }, t2Assistant, t2Result] },
+      { messages: [{ role: 'assistant', content: 'Earlier work done.' }, t2Assistant, t2Result] },
+    ])
+  })
+
+  it('does not retry mid-run compaction after a non-throwing failure', async () => {
+    const compact = vi.fn().mockResolvedValue({ compacted: false })
+    harness.setCompaction({
+      getThresholdTokens: () => 50,
+      compact,
+    })
+    harness.setPreparedTools({
+      search: { description: 'search', inputSchema: jsonSchema({ type: 'object' }) },
+    } as unknown as ToolSet)
+
+    const bulky: ModelMessage[] = [
+      { role: 'user', content: 'task '.repeat(80) },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'search', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't1',
+            toolName: 'search',
+            output: { type: 'text', value: 'old '.repeat(80) },
+          },
+        ],
+      },
+    ]
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* streamWithNoOpCompact() {
+        const prepareStep = options.prepareStep
+        if (!prepareStep) throw new Error('Expected prepareStep to be wired')
+        for (const toolCallId of ['t1']) {
+          yield { type: 'tool-call', toolCallId, toolName: 'search', input: {} } as ModelStreamPart<ToolSet>
+          yield {
+            type: 'tool-result',
+            toolCallId,
+            toolName: 'search',
+            output: { type: 'text', value: 'result' },
+          } as ModelStreamPart<ToolSet>
+        }
+        const prepareOptions = {
+          steps: [],
+          stepNumber: 1,
+          model: {},
+          messages: bulky,
+          experimental_context: undefined,
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0]
+        await prepareStep(prepareOptions)
+        await prepareStep({ ...prepareOptions, stepNumber: 2 })
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    expect(compact).toHaveBeenCalledOnce()
   })
 
   it('persists a tool-call checkpoint immediately instead of waiting for the periodic interval', async () => {

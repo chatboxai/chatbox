@@ -1,6 +1,6 @@
 import { withSessionGenerationLock } from '@chatbox/core/generation'
 import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
-import { buildContext, selectContextMessages } from '@shared/context'
+import { buildContext } from '@shared/context'
 import type { AttachmentResolver } from '@shared/context/types'
 import { supportsSessionGeneration } from '@shared/session/capabilities'
 import { findMessageContext } from '@shared/session/message-forks'
@@ -9,9 +9,7 @@ import { countMessageWords } from '@shared/utils/message'
 import { v4 as uuidv4 } from 'uuid'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { rendererApplication } from '@/app/renderer-application'
-import { assessContextPressure, getConfiguredContextWindow } from '@/packages/context-management/context-pressure'
 import { estimateTokensFromMessages } from '@/packages/token'
-import { settingsStore } from '@/stores/settingsStore'
 import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { guardSessionAction } from './action-guard'
 import { createAttachmentResolver } from './attachment-resolver'
@@ -287,25 +285,10 @@ export async function genMessageContext(
     ? createAttachmentResolverFromAdapter(storageAdapter)
     : createAttachmentResolver()
 
-  // Same pressure gating as the agent harness: keep tool history intact until
-  // the context approaches the compaction threshold, then stub old results.
-  const globalSettings = settingsStore.getState().getSettings()
-  const contextPressure = assessContextPressure({
-    contextMessages: selectContextMessages(msgs, {
-      compactionPoints,
-      maxContextMessageCount: settings.maxContextMessageCount,
-    }),
-    providerId: settings.provider,
-    modelId: settings.modelId,
-    contextWindow: getConfiguredContextWindow(globalSettings, settings.provider, settings.modelId),
-    compactionThreshold: globalSettings.compactionThreshold,
-  })
-
   return buildContext(msgs, {
     attachmentResolver,
     compactionPoints,
     maxContextMessageCount: settings.maxContextMessageCount,
-    toolCleanupMode: contextPressure.toolCleanupMode,
     modelSupportToolUseForFile,
   })
 }

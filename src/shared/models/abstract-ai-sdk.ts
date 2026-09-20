@@ -34,7 +34,6 @@ import type {
 import type { ModelDependencies } from '../types/adapters'
 import { getReasoningControlCapabilities, stripReasoningProviderOptions } from '../utils/reasoning-control'
 import { normalizeCompletedResponse } from './completed-response-normalizer'
-import { createMidRunToolResultRelief } from './context-pressure-relief'
 import { isExpectedGenerationError } from './error-classification'
 import { ApiError, BaseError, ChatboxAIAPIError, NetworkError } from './errors'
 import { wrapOpenAICompatibleNonStreamingModel } from './openai-compatible-non-streaming'
@@ -304,39 +303,24 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const callSettings = this.resolveCallSettings(options)
     const basePrepareStep = options.prepareStep as PrepareStepFunction<T> | undefined
     const onRequestResolved = options.onRequestResolved
-    const midRunRelief = options.contextPressure
-      ? createMidRunToolResultRelief({ thresholdTokens: options.contextPressure.thresholdTokens })
-      : undefined
-    const prepareStep: PrepareStepFunction<T> | undefined =
-      onRequestResolved || midRunRelief
-        ? async (stepOptions) => {
-            const prepared = await basePrepareStep?.(stepOptions)
-            // Relief runs on the final composed messages, and the request
-            // snapshot below must observe exactly what is dispatched.
-            let stepMessages = prepared?.messages ?? stepOptions.messages
-            const relieved = midRunRelief?.(stepMessages)
-            if (relieved) {
-              stepMessages = relieved
-            }
-            const allTools = (options.tools ?? {}) as T
-            const activeToolNames = prepared?.activeTools ? new Set(prepared.activeTools.map(String)) : undefined
-            const effectiveTools = activeToolNames
-              ? (Object.fromEntries(
-                  Object.entries(allTools).filter(([toolName]) => activeToolNames.has(toolName))
-                ) as T)
-              : allTools
-            await onRequestResolved?.({
-              callSettings,
-              modelMessages: stepMessages,
-              tools: effectiveTools,
-              stream: this.options.stream !== false,
-            })
-            if (!relieved) {
-              return prepared
-            }
-            return { ...(prepared ?? {}), messages: stepMessages }
-          }
-        : basePrepareStep
+    const prepareStep: PrepareStepFunction<T> | undefined = onRequestResolved
+      ? async (stepOptions) => {
+          const prepared = await basePrepareStep?.(stepOptions)
+          const stepMessages = prepared?.messages ?? stepOptions.messages
+          const allTools = (options.tools ?? {}) as T
+          const activeToolNames = prepared?.activeTools ? new Set(prepared.activeTools.map(String)) : undefined
+          const effectiveTools = activeToolNames
+            ? (Object.fromEntries(Object.entries(allTools).filter(([toolName]) => activeToolNames.has(toolName))) as T)
+            : allTools
+          await onRequestResolved?.({
+            callSettings,
+            modelMessages: stepMessages,
+            tools: effectiveTools,
+            stream: this.options.stream !== false,
+          })
+          return prepared
+        }
+      : basePrepareStep
 
     const statusQueue = new StatusQueue()
 

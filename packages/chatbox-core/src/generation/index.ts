@@ -1,6 +1,7 @@
 export * from './agent-mode-suggestion'
 export * from './GenerationService'
 export * from './BasicGenerationPreparation'
+export * from './mid-run-compaction'
 export * from './generation-flow'
 export * from './generation-lock'
 export * from './legacy-tool-fallback'

@@ -24,6 +24,7 @@
 | [存储架构](./storage.md) | 混合存储策略、跨平台方案、版本迁移历史 |
 | [数据备份归档](./data-backup.md) | ZIP v2 格式、资源范围、流式导入导出、事务恢复与安全限制 |
 | [Token 估算系统](./token-estimation.md) | 异步队列架构、优先级调度、Real Context 一致性 |
+| [工具步间上下文压缩](./mid-run-compaction.md) | 生成分段、分支归属、摘要边界与步间上下文替换 |
 | [上下文管理系统](./context-management.md) | 上下文构建流程、AttachmentResolver 抽象、Compaction 机制 |
 | [知识库（RAG 系统）](./knowledge-base.md) | 向量数据库、文档索引、语义搜索、跨平台限制 |
 | [Session Attachment RAG 评测](./session-attachment-rag-eval.md) | 大文件问答 RAG 的模型工具调用评测、真实 Chatbox 流程与 fixture 策略 |

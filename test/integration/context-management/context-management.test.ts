@@ -456,11 +456,12 @@ describe('Context Management Integration Tests', () => {
     })
   })
 
-  describe('Tool Cleanup Modes (shared buildContext)', () => {
+  describe('Tool call parts (shared buildContext)', () => {
     const attachmentResolver = { read: async () => null }
 
-    function toolConversation(toolCallPart: MessageContentParts[number]) {
-      return [
+    it('keeps tool calls and results intact', async () => {
+      const toolCallPart = createToolCallPart('tool1', { query: 'X' })
+      const messages = [
         createTestMessage('user', 'Q1'),
         createTestMessage('assistant', 'Text', {
           contentParts: [{ type: 'text', text: 'Text' }, toolCallPart],
@@ -468,40 +469,15 @@ describe('Context Management Integration Tests', () => {
         createTestMessage('user', 'Q2'),
         createTestMessage('assistant', 'A2'),
       ]
-    }
 
-    it('keeps everything intact in mode none', async () => {
-      const messages = toolConversation(createToolCallPart('tool1'))
+      const result = await buildContext(messages, { attachmentResolver })
 
-      const result = await buildContext(messages, { attachmentResolver, toolCleanupMode: 'none' })
-
-      expect(result[1].contentParts.some((p) => p.type === 'tool-call')).toBe(true)
       expect(result[1].contentParts.find((p) => p.type === 'tool-call')).toMatchObject({
-        result: { success: true },
-      })
-    })
-
-    it('stubs old results but keeps the call in stub mode', async () => {
-      const toolCallPart = createToolCallPart('tool1', { query: 'X' })
-      const messages = toolConversation(toolCallPart)
-
-      const result = await buildContext(messages, {
-        attachmentResolver,
-        toolCleanupMode: 'stub-old-results',
-        keepToolCallRounds: 1,
-      })
-
-      const stubbed = result[1].contentParts.find((p) => p.type === 'tool-call')
-      expect(stubbed).toMatchObject({
         toolName: 'tool1',
         args: { query: 'X' },
-        state: 'result',
-        result: { _cleared: true },
+        result: { success: true },
       })
-      // Original message must not be mutated
       expect(toolCallPart).toMatchObject({ result: { success: true } })
-      // Recent round keeps its parts untouched
-      expect(result[3].contentParts.some((p) => p.type === 'tool-call')).toBe(false)
     })
   })
 

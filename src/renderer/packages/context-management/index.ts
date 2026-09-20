@@ -22,12 +22,7 @@ export {
   computeContextAfterCompaction,
   getContextMessageIds,
 } from './context-builder'
-export type { AssessContextPressureOptions, ContextPressureAssessment } from './context-pressure'
-export {
-  assessContextPressure,
-  getConfiguredContextWindow,
-  TOOL_RESULT_STUB_PRESSURE_RATIO,
-} from './context-pressure'
+export { getConfiguredContextWindow } from './context-pressure'
 export type {
   ContextTokensCacheKeyParams,
   ContextTokensCacheValue,

@@ -27,7 +27,7 @@ describe('buildContext', () => {
         createMessage({ id: '2', role: 'assistant', contentParts: [], generating: true }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result).toHaveLength(1)
       expect(result[0].id).toBe('1')
@@ -40,13 +40,13 @@ describe('buildContext', () => {
         createMessage({ id: '2', role: 'assistant', contentParts: [{ type: 'text', text: 'Hello' }] }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result.map((m) => m.id)).toEqual(['1', '2'])
     })
 
     it('should return empty array for empty messages', async () => {
-      const result = await buildContext([], { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext([], { attachmentResolver: createMockResolver() })
 
       expect(result).toEqual([])
     })
@@ -57,7 +57,7 @@ describe('buildContext', () => {
         createMessage({ id: '2', role: 'assistant', generating: true }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result).toEqual([])
     })
@@ -69,7 +69,7 @@ describe('buildContext', () => {
         createMessage({ id: '3', role: 'assistant', contentParts: [{ type: 'text', text: 'Hi there' }] }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result).toHaveLength(3)
     })
@@ -86,7 +86,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 2,
       })
 
@@ -111,7 +110,7 @@ describe('buildContext', () => {
         createMessage({ id: 'continuation', role: 'assistant', contentParts: [{ type: 'text', text: 'after' }] }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result.map((message) => message.id)).toEqual(['original', 'segment', 'steered', 'continuation'])
     })
@@ -126,7 +125,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 2,
       })
 
@@ -146,7 +144,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 2,
       })
 
@@ -167,7 +164,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 1,
       })
 
@@ -185,7 +181,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 2,
       })
 
@@ -202,7 +197,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 0,
       })
 
@@ -221,7 +215,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 0,
       })
 
@@ -234,7 +227,6 @@ describe('buildContext', () => {
     // maxContextMessageCount=19 → effectiveLimit 20 → chunk = ceil(20/4) = 5
     const limitOptions = {
       attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'none' as const,
       maxContextMessageCount: 19,
     }
     const makeMessages = (count: number): Message[] =>
@@ -294,7 +286,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
@@ -322,7 +313,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints: [{ boundaryMessageId: 'steered', summaryMessageId: 'summary', createdAt: Date.now() }],
       })
 
@@ -348,7 +338,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
@@ -372,7 +361,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
@@ -392,7 +380,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
@@ -418,182 +405,10 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
       expect(result.map((m) => m.id)).toEqual(['old-summary', '3', '4', '5'])
-    })
-  })
-
-  describe('tool call cleanup', () => {
-    it('stubs tool results older than keepToolCallRounds and keeps the recent round intact', async () => {
-      const messages: Message[] = [
-        createMessage({ id: '1', role: 'user' }),
-        createMessage({
-          id: '2',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Let me call a tool' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc1',
-              toolName: 'search',
-              args: {},
-              result: { data: 'old-1' },
-            },
-          ],
-        }),
-        createMessage({ id: '3', role: 'user' }),
-        createMessage({
-          id: '4',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Another tool call' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc2',
-              toolName: 'search',
-              args: {},
-              result: { data: 'old-2' },
-            },
-          ],
-        }),
-        createMessage({ id: '5', role: 'user' }),
-        createMessage({
-          id: '6',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Recent tool call' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc3',
-              toolName: 'search',
-              args: {},
-              result: { data: 'recent' },
-            },
-          ],
-        }),
-      ]
-
-      const result = await buildContext(messages, {
-        attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'stub-old-results',
-        keepToolCallRounds: 1,
-      })
-
-      const findToolPart = (id: string) =>
-        result.find((m) => m.id === id)?.contentParts.find((p) => p.type === 'tool-call')
-
-      expect(findToolPart('2')).toMatchObject({ toolName: 'search', result: { _cleared: true } })
-      expect(findToolPart('4')).toMatchObject({ toolName: 'search', result: { _cleared: true } })
-      expect(findToolPart('6')).toMatchObject({ result: { data: 'recent' } })
-    })
-
-    it('should preserve tool results for explicitly protected messages', async () => {
-      const messages: Message[] = [
-        createMessage({ id: '1', role: 'user' }),
-        createMessage({
-          id: '2',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Tool call to preserve' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc1',
-              toolName: 'search',
-              args: {},
-              result: { data: 'preserve' },
-            },
-          ],
-        }),
-        createMessage({ id: '3', role: 'user' }),
-        createMessage({
-          id: '4',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Tool call to clean' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc2',
-              toolName: 'search',
-              args: {},
-              result: { data: 'clean' },
-            },
-          ],
-        }),
-        createMessage({ id: '5', role: 'user' }),
-        createMessage({
-          id: '6',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Recent tool call' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc3',
-              toolName: 'search',
-              args: {},
-              result: { data: 'recent' },
-            },
-          ],
-        }),
-      ]
-
-      const result = await buildContext(messages, {
-        attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'stub-old-results',
-        keepToolCallRounds: 1,
-        preserveToolCallMessageIds: ['2'],
-      })
-
-      const findToolPart = (id: string) =>
-        result.find((m) => m.id === id)?.contentParts.find((p) => p.type === 'tool-call')
-
-      expect(findToolPart('2')).toMatchObject({ result: { data: 'preserve' } })
-      expect(findToolPart('4')).toMatchObject({ result: { _cleared: true } })
-      expect(findToolPart('6')).toMatchObject({ result: { data: 'recent' } })
-    })
-
-    it('keeps recent split-segment tool calls under the round policy', async () => {
-      // Split segments are ordinary rounds for tool-call cleanup: each steered
-      // user counts as a round boundary like any other user turn.
-      const messages: Message[] = [
-        createMessage({ id: 'original', role: 'user' }),
-        createMessage({
-          id: 'segment',
-          role: 'assistant',
-          finishReason: 'steered',
-          contentParts: [
-            { type: 'tool-call', state: 'result', toolCallId: 'tc1', toolName: 'search', args: {}, result: {} },
-          ],
-        }),
-        createMessage({ id: 'steered', role: 'user', steered: true }),
-        createMessage({
-          id: 'continuation',
-          role: 'assistant',
-          contentParts: [
-            { type: 'tool-call', state: 'result', toolCallId: 'tc2', toolName: 'search', args: {}, result: {} },
-          ],
-        }),
-      ]
-
-      const result = await buildContext(messages, {
-        attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'stub-old-results',
-      })
-
-      expect(result.find((message) => message.id === 'segment')?.contentParts).toEqual([
-        expect.objectContaining({ type: 'tool-call', toolCallId: 'tc1' }),
-      ])
-      expect(result.find((message) => message.id === 'continuation')?.contentParts).toEqual([
-        expect.objectContaining({ type: 'tool-call', toolCallId: 'tc2' }),
-      ])
     })
   })
 
@@ -611,7 +426,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       expect(textContent?.type).toBe('text')
@@ -632,7 +447,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       expect((textContent as { type: 'text'; text: string }).text).toContain('Web page content')
@@ -650,7 +465,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       expect((textContent as { type: 'text'; text: string }).text).toBe('Check this file')
@@ -671,7 +486,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: resolver,
-        toolCleanupMode: 'none',
         modelSupportToolUseForFile: true,
       })
 
@@ -698,7 +512,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: resolver,
-        toolCleanupMode: 'none',
         modelSupportToolUseForFile: false,
       })
 
@@ -729,7 +542,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       expect(resolver.read).not.toHaveBeenCalled()
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
@@ -767,7 +580,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: resolver,
-        toolCleanupMode: 'none',
         sandboxMode: true,
       })
 
@@ -808,7 +620,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: resolver,
-        toolCleanupMode: 'none',
         sandboxMode: true,
       })
 
@@ -844,7 +655,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: resolver,
-        toolCleanupMode: 'none',
         sandboxMode: true,
       })
 
@@ -890,7 +700,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         sandboxMode: true,
       })
 
@@ -912,7 +721,7 @@ describe('buildContext', () => {
       ]
       const messagesCopy = JSON.stringify(originalMessages)
 
-      await buildContext(originalMessages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      await buildContext(originalMessages, { attachmentResolver: createMockResolver() })
 
       expect(JSON.stringify(originalMessages)).toBe(messagesCopy)
     })
@@ -939,7 +748,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       expect(textContent?.type).toBe('text')
@@ -973,7 +782,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       const text = (textContent as { type: 'text'; text: string }).text
@@ -1002,7 +811,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
@@ -1018,7 +826,7 @@ describe('buildContext', () => {
         createMessage({ id: '2', role: 'assistant', contentParts: [{ type: 'text', text: 'Response' }] }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result).toHaveLength(3)
       expect(result[0].id).toBe('1')
@@ -1035,13 +843,11 @@ describe('buildContext', () => {
 
       const resultWithEmpty = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints: [],
       })
 
       const resultWithUndefined = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints: undefined,
       })
 
@@ -1049,135 +855,6 @@ describe('buildContext', () => {
       expect(resultWithEmpty).toHaveLength(3)
       expect(resultWithUndefined).toHaveLength(3)
     })
-  })
-})
-
-describe('buildContext tool cleanup modes', () => {
-  type ToolCallPart = Extract<Message['contentParts'][number], { type: 'tool-call' }>
-
-  function toolCallPart(overrides: Partial<ToolCallPart> = {}): ToolCallPart {
-    return {
-      type: 'tool-call',
-      state: 'result',
-      toolCallId: 'tc-1',
-      toolName: 'search',
-      args: { query: 'x' },
-      result: { hits: ['a', 'b'] },
-      ...overrides,
-    }
-  }
-
-  function conversationWithOldToolCall(part: ToolCallPart): Message[] {
-    return [
-      createMessage({ id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Q1' }] }),
-      createMessage({ id: 'a1', role: 'assistant', contentParts: [{ type: 'text', text: 'A1' }, part] }),
-      createMessage({ id: 'u2', role: 'user', contentParts: [{ type: 'text', text: 'Q2' }] }),
-      createMessage({ id: 'a2', role: 'assistant', contentParts: [{ type: 'text', text: 'A2' }] }),
-    ]
-  }
-
-  it('mode none keeps every tool part intact', async () => {
-    const messages = conversationWithOldToolCall(toolCallPart())
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'none',
-      keepToolCallRounds: 1,
-    })
-
-    const part = result[1].contentParts.find((p) => p.type === 'tool-call')
-    expect(part).toMatchObject({ args: { query: 'x' }, result: { hits: ['a', 'b'] } })
-  })
-
-  it('stub mode replaces old results but keeps the call and args', async () => {
-    const original = toolCallPart()
-    const messages = conversationWithOldToolCall(original)
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'stub-old-results',
-      keepToolCallRounds: 1,
-    })
-
-    const part = result[1].contentParts.find((p) => p.type === 'tool-call')
-    expect(part).toMatchObject({
-      state: 'result',
-      toolName: 'search',
-      args: { query: 'x' },
-      result: { _cleared: true },
-    })
-    // Never mutates the stored message
-    expect(original.result).toEqual({ hits: ['a', 'b'] })
-  })
-
-  it('stub mode keeps a read-back pointer for blob-offloaded results', async () => {
-    const messages = conversationWithOldToolCall(
-      toolCallPart({ result: 'preview…', resultStorageKey: 'tool-result:s:tc-1' })
-    )
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'stub-old-results',
-      keepToolCallRounds: 1,
-    })
-
-    const part = result[1].contentParts.find((p) => p.type === 'tool-call')
-    expect(part).toMatchObject({
-      result: { _cleared: true, fullResultFileKey: 'tool-result:s:tc-1' },
-      resultStorageKey: undefined,
-    })
-  })
-
-  it('stub mode downgrades oversized args to a preview object', async () => {
-    const bigArgs = { content: 'x'.repeat(5000), path: '/tmp/file.txt' }
-    const messages = conversationWithOldToolCall(toolCallPart({ args: bigArgs }))
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'stub-old-results',
-      keepToolCallRounds: 1,
-    })
-
-    const part = result[1].contentParts.find((p) => p.type === 'tool-call')
-    expect(part).toMatchObject({ args: { _cleared: true } })
-    expect((part as { args: { preview: string } }).args.preview.length).toBeLessThanOrEqual(500)
-  })
-
-  it('stub mode leaves error results and the recent window untouched', async () => {
-    const errorPart = toolCallPart({ state: 'error', result: { error: 'boom' } })
-    const messages: Message[] = [
-      createMessage({ id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Q1' }] }),
-      createMessage({ id: 'a1', role: 'assistant', contentParts: [errorPart] }),
-      createMessage({ id: 'u2', role: 'user', contentParts: [{ type: 'text', text: 'Q2' }] }),
-      createMessage({
-        id: 'a2',
-        role: 'assistant',
-        contentParts: [toolCallPart({ toolCallId: 'tc-2', result: { fresh: true } })],
-      }),
-    ]
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'stub-old-results',
-      keepToolCallRounds: 1,
-    })
-
-    expect(result[1].contentParts[0]).toMatchObject({ state: 'error', result: { error: 'boom' } })
-    expect(result[3].contentParts[0]).toMatchObject({ result: { fresh: true } })
-  })
-
-  it('stub mode honors preserveToolCallMessageIds', async () => {
-    const messages = conversationWithOldToolCall(toolCallPart())
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'stub-old-results',
-      keepToolCallRounds: 1,
-      preserveToolCallMessageIds: ['a1'],
-    })
-
-    const part = result[1].contentParts.find((p) => p.type === 'tool-call')
-    expect(part).toMatchObject({ result: { hits: ['a', 'b'] } })
   })
 })
 
@@ -1193,7 +870,6 @@ it.each([false, true])('keeps host storage identities out of retrieval metadata 
   ]
   const result = await buildContext(messages, {
     attachmentResolver: createMockResolver(new Map()),
-    toolCleanupMode: 'none',
     sandboxMode,
   })
   const text = JSON.stringify(result[0].contentParts)

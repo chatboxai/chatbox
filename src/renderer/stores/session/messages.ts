@@ -1,5 +1,9 @@
 import { SessionNotFoundError } from '@chatbox/core'
-import { snapshotStreamingMessage, StreamingWriteCoordinator } from '@chatbox/core/application/session'
+import {
+  createGenerationSegmentSplitWriter,
+  StreamingWriteCoordinator,
+  snapshotStreamingMessage,
+} from '@chatbox/core/application/session'
 import { withSessionGenerationLock } from '@chatbox/core/generation'
 import { getReachableSessionMessages } from '@chatbox/core/session/generation-state'
 import { isExpectedGenerationError } from '@shared/models/error-classification'
@@ -12,6 +16,7 @@ import { createMessage, type Message } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { normalizeErrorForSentry } from '@shared/utils/sentry_policy'
 import { createModel } from '@/adapters'
+import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { runCompactionWithUIState } from '@/packages/context-management'
@@ -24,13 +29,17 @@ import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attac
 import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndexing'
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
-import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { guardSessionAction } from './action-guard'
 import { getSessionSettings, getSessionTokenModel } from './session-settings'
 import { getSessionWebBrowsing } from './utils'
 
 const log = getLogger('session-messages')
 const streamingWriteCoordinator = new StreamingWriteCoordinator()
+
+export const splitStreamingMessage = createGenerationSegmentSplitWriter({
+  sessions: rendererApplication.sessions,
+  streamingWrites: streamingWriteCoordinator,
+})
 
 export async function attachLargeFileRagMetadata(sessionId: string, message: Message): Promise<Message> {
   if (!platform.isDesktopLike || !message.files?.length) {

@@ -1,4 +1,5 @@
 import { flattenToolCallPartsToText } from '@shared/context/tool-flatten'
+import { findMessageContext, findMessageSourceThread } from '@shared/session/message-forks'
 import type { LoggerPort, SettingsRepositoryPort } from '../../ports'
 import type { Message, Session, SessionSettings, Settings } from '../../types'
 import { findLastCompactionBoundaryMessage } from './compaction-boundary'
@@ -22,9 +23,9 @@ export interface CompactionPolicyPort {
     pendingMessage?: Message
   }): Promise<boolean>
   /**
-   * The host's send-context selection, including its message-count limit and
-   * tool-result cleanup. The summary covers this window through its latest
-   * eligible message; persisted history remains available in the conversation.
+   * The host's send-context selection, including its message-count limit.
+   * The summary covers this window through its latest eligible message;
+   * persisted history remains available in the conversation.
    */
   getCompactionContext(
     session: Session,
@@ -41,6 +42,7 @@ export interface CompactionSummaryPort {
     language: Settings['language']
     prompt?: string
     onStreamUpdate?: (text: string) => void
+    abortSignal?: AbortSignal
   }): Promise<{ success: boolean; summary?: string; error?: Error }>
 }
 
@@ -57,6 +59,10 @@ export interface CompactionServiceResult {
   compacted: boolean
   failure?: CompactionFailure
   summaryMessageId?: string
+  /** Summary text committed with the compaction point, when compacted. */
+  summary?: string
+  /** Last eligible message the summary covers, when compacted. */
+  boundaryMessageId?: string
   /** Another compaction for this session already owns the streaming run. */
   alreadyRunning?: boolean
 }
@@ -107,10 +113,12 @@ export class CompactionService {
   async run(
     sessionId: string,
     options: {
+      target?: { targetMessageId: string; boundaryMessageId: string }
       force?: boolean
       prompt?: string
       onStreamUpdate?: (text: string) => void
       pendingMessage?: Message
+      abortSignal?: AbortSignal
     } = {}
   ): Promise<CompactionServiceResult> {
     if (this.ongoing.has(sessionId)) {
@@ -140,8 +148,18 @@ export class CompactionService {
       // Summarize the full selected context through its latest eligible message.
       // Capture the boundary before generation so messages arriving during
       // streaming remain after the summary and available to the next request.
+      const targetPath = options.target ? findMessageContext(session, options.target.targetMessageId) : null
+      if (options.target && !targetPath) return { success: true, compacted: false }
+      const thread = options.target ? findMessageSourceThread(session, options.target.targetMessageId) : null
+      const scopedSession = targetPath
+        ? {
+            ...session,
+            messages: targetPath.list.slice(0, targetPath.index),
+            compactionPoints: thread ? thread.compactionPoints : session.compactionPoints,
+          }
+        : session
       const contextMessages = await this.options.policy.getCompactionContext(
-        session,
+        scopedSession,
         sessionSettings,
         options.pendingMessage
       )
@@ -149,7 +167,14 @@ export class CompactionService {
       if (!boundary) {
         return this.failure('no_messages', 'No messages to compact')
       }
+      if (options.target && boundary.id !== options.target.boundaryMessageId) {
+        return { success: true, compacted: false }
+      }
+      const coveredMessageIds = targetPath?.list.slice(0, targetPath.index).map((message) => message.id)
       const boundaryIndex = contextMessages.findIndex((message) => message.id === boundary.id)
+      if (options.abortSignal?.aborted) {
+        return { success: true, compacted: false }
+      }
       const summaryResult = await this.options.summaries.generate({
         sessionId,
         messages: flattenToolCallPartsToText(contextMessages.slice(0, boundaryIndex + 1)),
@@ -157,7 +182,11 @@ export class CompactionService {
         language: globalSettings.language,
         prompt: options.prompt?.trim() || globalSettings.compactionPrompt,
         onStreamUpdate: options.onStreamUpdate,
+        abortSignal: options.abortSignal,
       })
+      if (options.abortSignal?.aborted) {
+        return { success: true, compacted: false }
+      }
       if (!summaryResult.success || !summaryResult.summary) {
         return this.failure(
           'summary_failed',
@@ -180,9 +209,24 @@ export class CompactionService {
         createdAt: this.now(),
       }
       try {
+        if (options.abortSignal?.aborted) {
+          return { success: true, compacted: false }
+        }
         let committed = false
         await this.options.sessions.updateSessionWithMessages(sessionId, (current) => {
           if (!current) throw new Error('Session not found during update')
+          if (options.abortSignal?.aborted) return current
+          if (options.target) {
+            const currentPath = findMessageContext(current, options.target.targetMessageId)
+            const currentIds = currentPath?.list.slice(0, currentPath.index).map((message) => message.id)
+            if (
+              !currentIds ||
+              !coveredMessageIds ||
+              currentIds.length !== coveredMessageIds.length ||
+              currentIds.some((id, index) => id !== coveredMessageIds[index])
+            )
+              return current
+          }
           const updated = buildCompactionCommitPatch(current, summaryMessage, point)
           if (!updated) return current
           committed = true
@@ -196,7 +240,13 @@ export class CompactionService {
         return this.failure('update_failed', error instanceof Error ? error.message : String(error), error)
       }
 
-      return { success: true, compacted: true, summaryMessageId: summaryMessage.id }
+      return {
+        success: true,
+        compacted: true,
+        summaryMessageId: summaryMessage.id,
+        summary: summaryResult.summary,
+        boundaryMessageId: boundary.id,
+      }
     } catch (error) {
       return this.failure('update_failed', error instanceof Error ? error.message : String(error), error)
     } finally {

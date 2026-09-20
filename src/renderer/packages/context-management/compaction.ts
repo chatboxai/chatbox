@@ -7,22 +7,16 @@ import { hasPendingSessionGeneration, withSessionGenerationLock } from '@chatbox
 import type { SessionLockState } from '@chatbox/core/session/action-gates'
 import type { Message } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
-import { createModel } from '@/adapters'
 import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { getTokenizerType } from '@/packages/token-estimation'
-import platform from '@/platform'
-import { createSandboxProvider } from '@/sandbox'
-import { resolveContextSandbox } from '@/sandbox/context'
 import { settingsService } from '@/settings-runtime'
 import { setCompactionUIState } from '@/stores/atoms/compactionAtoms'
 import queryClient from '@/stores/queryClient'
 import { getSessionLockStateNow } from '@/stores/session/action-guard'
-import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
 import { conversationAnchorIdOf, enqueueCompactionRequest, hasQueuedWork } from '@/stores/session/message-queue'
 import { getSessionSettings } from '@/stores/session/session-settings'
-import { isPro } from '@/stores/settingActions'
 import { sumCachedTokensFromMessages } from '../token'
 import { getCompactionContext } from './compaction-context'
 import { checkOverflow } from './compaction-detector'
@@ -80,20 +74,8 @@ const compactionService = new CompactionService({
         contextWindow: getConfiguredContextWindow(globalSettings, providerId, modelId),
       }).isOverflow
     },
-    async getCompactionContext(session, sessionSettings, pendingMessage) {
-      let sandboxMode = false
-      if (platform.isDesktopLike && getSessionAgentModeEntry(session.id, session).value === 'on') {
-        const model = await createModel(sessionSettings)
-        const capabilities = await resolveContextSandbox({
-          enabled: model.isSupportToolUse('agent'),
-          model,
-          settings: sessionSettings,
-          createProvider: createSandboxProvider,
-          isPro,
-        })
-        sandboxMode = capabilities.canExecuteCode
-      }
-      return getCompactionContext(session, sessionSettings, settingsService.getSettings(), pendingMessage, sandboxMode)
+    getCompactionContext(session, sessionSettings, pendingMessage) {
+      return getCompactionContext(session, sessionSettings, pendingMessage)
     },
   },
   summaries: {
@@ -108,9 +90,11 @@ const compactionService = new CompactionService({
 })
 
 export interface CompactionOptions {
+  target?: { targetMessageId: string; boundaryMessageId: string }
   pendingMessage?: Message
   force?: boolean
   prompt?: string
+  abortSignal?: AbortSignal
 }
 
 export interface CompactionResult {
@@ -118,6 +102,8 @@ export interface CompactionResult {
   compacted: boolean
   error?: Error
   summaryMessageId?: string
+  summary?: string
+  boundaryMessageId?: string
   /** Another compaction for this session was already streaming. */
   alreadyRunning?: boolean
 }
@@ -255,6 +241,8 @@ async function compactWithUIState(sessionId: string, options: CompactionOptions 
       force: options.force === true,
       prompt: options.prompt,
       pendingMessage: options.pendingMessage,
+      abortSignal: options.abortSignal,
+      target: options.target,
       onStreamUpdate: (text) => setCompactionUIState(sessionId, { streamingText: text }),
     })
   )
@@ -289,11 +277,21 @@ async function compactWithUIState(sessionId: string, options: CompactionOptions 
 }
 
 function mapResult(result: CompactionServiceResult): CompactionResult {
-  if (!result.failure) return result
+  if (!result.failure)
+    return {
+      success: result.success,
+      compacted: result.compacted,
+      summaryMessageId: result.summaryMessageId,
+      summary: result.summary,
+      boundaryMessageId: result.boundaryMessageId,
+      alreadyRunning: result.alreadyRunning,
+    }
   return {
     success: result.success,
     compacted: result.compacted,
     error: result.failure.cause instanceof Error ? result.failure.cause : new Error(result.failure.message),
     summaryMessageId: result.summaryMessageId,
+    summary: result.summary,
+    boundaryMessageId: result.boundaryMessageId,
   }
 }

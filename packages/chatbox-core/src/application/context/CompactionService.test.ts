@@ -86,6 +86,33 @@ function createHarness(
 }
 
 describe('CompactionService', () => {
+  test('rejects an unexpected boundary before generating or persisting a summary', async () => {
+    const harness = createHarness()
+    const result = await harness.service.run('session-1', {
+      force: true,
+      target: { targetMessageId: 'assistant', boundaryMessageId: 'other-branch' },
+    })
+    expect(result.compacted).toBe(false)
+    expect(harness.generate).not.toHaveBeenCalled()
+    expect(harness.session.compactionPoints).toBeUndefined()
+  })
+
+  test('abandons a summary when its target path changes before commit', async () => {
+    const harness = createHarness({
+      beforeUpdate: (session) => ({
+        ...session,
+        messages: [message('replacement', 'user'), session.messages[2]],
+      }),
+    })
+    const result = await harness.service.run('session-1', {
+      force: true,
+      target: { targetMessageId: 'assistant', boundaryMessageId: 'user' },
+    })
+    expect(harness.generate).toHaveBeenCalledOnce()
+    expect(result.compacted).toBe(false)
+    expect(harness.session.compactionPoints).toBeUndefined()
+  })
+
   test('uses the saved prompt for automatic compaction', async () => {
     const harness = createHarness({ compactionPrompt: 'Preserve decisions and file paths.' })
     await harness.service.run('session-1')
@@ -110,7 +137,7 @@ describe('CompactionService', () => {
       onStreamUpdate: (text) => streamUpdates.push(text),
     })
 
-    expect(result).toMatchObject({ success: true, compacted: true })
+    expect(result).toMatchObject({ success: true, compacted: true, boundaryMessageId: 'assistant' })
     expect(streamUpdates).toEqual(['streaming summary'])
     expect(harness.generate).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }))
     expect(harness.session.messages.at(-1)).toMatchObject({ role: 'assistant', isSummary: true })

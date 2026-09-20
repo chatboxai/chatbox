@@ -5,25 +5,19 @@ import {
   sandboxAttachmentParsedRelPath,
   sandboxAttachmentRelPath,
 } from '../sandbox/attachment-path'
-import type { CompactionPoint, Message, MessageContentParts, MessageContentToolCallPart } from '../types'
+import type { CompactionPoint, Message, MessageContentParts } from '../types'
 import { orderSteeredMessagesForModel } from '../utils/message'
 import { findLatestApplicableCompactionPoint } from './compaction-points'
 import { isContextEligibleMessage } from './message-eligibility'
-import { findRecentRoundsStartIndex } from './rounds'
 import type {
   AttachmentResolver,
   ContextBuilderOptions,
   ContextPreparationOptions,
   ContextSelectionOptions,
-  ToolCleanupMode,
 } from './types'
 
 const MAX_INLINE_FILE_LINES = MAX_UPLOADED_FILE_LINES
 const PREVIEW_LINES = 100
-
-/** Serialized args longer than this are downgraded to a preview when a part is stubbed. */
-const STUB_ARGS_MAX_CHARS = 2_000
-const STUB_ARGS_PREVIEW_CHARS = 500
 
 /**
  * Build context for AI from messages.
@@ -35,25 +29,16 @@ export async function buildContext(messages: Message[], options: ContextBuilderO
   return await injectAttachments(contextMessages, attachmentResolver, modelSupportToolUseForFile, sandboxMode)
 }
 
-/** The shared send window, with tool cleanup applied before attachment injection. */
+/** The shared send window, before attachment injection. */
 export function prepareContextMessages(messages: Message[], options: ContextPreparationOptions): Message[] {
-  const contextMessages = selectContextMessages(messages, options)
-  if (contextMessages.length === 0) return []
-  const toolCleanupMode =
-    typeof options.toolCleanupMode === 'function' ? options.toolCleanupMode(contextMessages) : options.toolCleanupMode
-  return applyToolCleanup(
-    contextMessages,
-    toolCleanupMode,
-    options.keepToolCallRounds ?? 2,
-    options.preserveToolCallMessageIds
-  )
+  return selectContextMessages(messages, options)
 }
 
 /**
  * The message-selection half of context building: causal ordering, eligibility,
  * compaction-point slicing, error filtering, and the message-count limit —
  * everything that decides WHICH messages are in context, with their content
- * untouched. Exposed so pressure estimation can measure exactly the selection
+ * untouched. Exposed so token estimation can measure exactly the selection
  * the send path will use. Returns the original message references.
  */
 export function selectContextMessages(messages: Message[], options: ContextSelectionOptions = {}): Message[] {
@@ -109,96 +94,6 @@ function applyCompaction(messages: Message[], compactionPoints: CompactionPoint[
   }
 
   return contextMessages
-}
-
-function applyToolCleanup(
-  messages: Message[],
-  mode: ToolCleanupMode,
-  keepRounds: number,
-  preserveToolCallMessageIds: string[] | undefined
-): Message[] {
-  if (mode === 'none' || messages.length === 0 || keepRounds < 0) {
-    return messages.map((m) => ({ ...m }))
-  }
-
-  const roundBoundaryIndex = findRecentRoundsStartIndex(messages, keepRounds)
-  const preserveToolCallMessageIdSet = new Set(preserveToolCallMessageIds ?? [])
-
-  return messages.map((message, index) => {
-    if (index >= roundBoundaryIndex || preserveToolCallMessageIdSet.has(message.id)) {
-      return { ...message }
-    }
-    return stubToolResultParts(message)
-  })
-}
-
-/**
- * Pressure relief that keeps the action record: the call (name + args) stays so
- * the model still knows what it did, while the bulky result payload is replaced
- * with a stub the model can act on (re-run the tool, or read the offloaded blob
- * back via read_file). Error results stay intact — they are small and their
- * diagnostics matter. Oversized args (e.g. written file content) are cut to a
- * preview while remaining a JSON object, which the wire format requires.
- */
-function stubToolResultParts(message: Message): Message {
-  if (!message.contentParts || message.contentParts.length === 0) {
-    return { ...message }
-  }
-
-  let changed = false
-  const parts: MessageContentParts = message.contentParts.map((part) => {
-    if (part.type !== 'tool-call' || part.state !== 'result') {
-      return part
-    }
-    changed = true
-    return stubToolResultPart(part)
-  })
-
-  if (!changed) {
-    return { ...message }
-  }
-
-  return { ...message, contentParts: parts }
-}
-
-function stubToolResultPart(part: MessageContentToolCallPart): MessageContentToolCallPart {
-  const result: Record<string, unknown> = part.resultStorageKey
-    ? {
-        _cleared: true,
-        fullResultFileKey: part.resultStorageKey,
-        note: `Old tool result cleared to save context space. ${uploadedFileToolHint(part.resultStorageKey)}`,
-      }
-    : {
-        _cleared: true,
-        note: 'Old tool result cleared to save context space. Call the tool again if this result is needed.',
-      }
-
-  const stubbed: MessageContentToolCallPart = {
-    ...part,
-    result,
-    resultStorageKey: undefined,
-  }
-
-  const serializedArgs = serializeArgsLength(part.args)
-  if (serializedArgs !== null && serializedArgs.length > STUB_ARGS_MAX_CHARS) {
-    stubbed.args = {
-      _cleared: true,
-      preview: serializedArgs.slice(0, STUB_ARGS_PREVIEW_CHARS),
-      note: 'Args truncated together with the cleared result.',
-    }
-  }
-
-  return stubbed
-}
-
-function serializeArgsLength(args: unknown): string | null {
-  if (args == null) return null
-  if (typeof args === 'string') return args
-  try {
-    return JSON.stringify(args) ?? null
-  } catch {
-    return null
-  }
 }
 
 /**

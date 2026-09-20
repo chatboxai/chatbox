@@ -1,7 +1,7 @@
 import { createMemoryToolContext, type MemoryToolContext } from '@chatbox/core/application/memory'
 import type { SessionContextBeforeTarget, SessionHeader } from '@chatbox/core/ports'
 import { buildAgentPersonaPrompt, buildMemoriesSection } from '@shared/agent-persona/prompt'
-import { buildContext, flattenToolCallPartsToText, selectContextMessages } from '@shared/context'
+import { buildContext, flattenToolCallPartsToText } from '@shared/context'
 import type { AttachmentResolver } from '@shared/context/types'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
 import type { ChatStreamOptions, ModelInterface } from '@shared/models/types'
@@ -40,7 +40,6 @@ import {
   hasAcceptedCallbackBackgroundTask,
   hasAcceptedCallbackBackgroundTaskResult,
 } from '@/packages/chatbox-cli/background-task-result'
-import { assessContextPressure, getConfiguredContextWindow } from '@/packages/context-management/context-pressure'
 import {
   buildModelSystemPrompt,
   convertToModelMessages,
@@ -60,7 +59,6 @@ import { resolveSessionPromptContextSnapshot } from './prompt-context-snapshot'
 import { buildToolsForSession } from './tools-builder'
 
 const log = getLogger('agent-generation-harness')
-const RECENT_TOOL_CALL_CACHE_WINDOW_MS = 5 * 60 * 1000
 
 const GLOBAL_RESPONSE_LANGUAGE_INSTRUCTION = `
 ## Response Language
@@ -124,29 +122,6 @@ export interface PreparedAgentGenerationHarness {
 export function computeEffectiveAgentMode(agentModeValue: AgentModeValue, agentModeSupported: boolean): 'on' | 'off' {
   if (!agentModeSupported || agentModeValue === 'off') return 'off'
   return agentModeValue === 'on' ? 'on' : 'off'
-}
-
-function getToolCallPreserveMessageIds(
-  messages: Message[],
-  targetMsgIx: number,
-  preserveLastPromptMessageToolCalls: boolean
-): string[] {
-  const ids = new Set<string>()
-  const targetMessage = messages[targetMsgIx]
-  const previousMessage = messages[targetMsgIx - 1]
-
-  if (preserveLastPromptMessageToolCalls && previousMessage) {
-    ids.add(previousMessage.id)
-  }
-
-  if (targetMessage?.timestamp !== undefined && previousMessage?.timestamp !== undefined) {
-    const interval = targetMessage.timestamp - previousMessage.timestamp
-    if (interval >= 0 && interval <= RECENT_TOOL_CALL_CACHE_WINDOW_MS) {
-      ids.add(previousMessage.id)
-    }
-  }
-
-  return [...ids]
 }
 
 export async function refreshSessionAttachmentStatuses(messages: Message[]): Promise<Message[]> {
@@ -289,33 +264,11 @@ export async function prepareAgentGenerationHarness(
     // the model restarts the task from scratch.
     message.id === resumedMessage?.id && message.generating ? { ...message, generating: false } : message
   )
-  const preserveToolCallMessageIds = getToolCallPreserveMessageIds(
-    messages,
-    targetMsgIx,
-    preserveLastPromptMessageToolCalls
-  )
-  // Pressure is measured on the un-relieved context selection: below the
-  // relief threshold history rides along untouched; above it, old tool
-  // results are stubbed (calls stay). Full compaction is handled separately
-  // at submit time.
-  const contextPressure = assessContextPressure({
-    contextMessages: selectContextMessages(messagesForPrompt, {
-      compactionPoints,
-      maxContextMessageCount: settings.maxContextMessageCount,
-    }),
-    providerId: settings.provider,
-    modelId: model.modelId,
-    contextWindow: getConfiguredContextWindow(globalSettings, settings.provider, model.modelId),
-    compactionThreshold: globalSettings.compactionThreshold,
-    sandboxMode: canExecuteCode,
-  })
   let promptMsgs = await buildContext(messagesForPrompt, {
     attachmentResolver,
     compactionPoints,
     modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
     maxContextMessageCount: settings.maxContextMessageCount,
-    toolCleanupMode: contextPressure.toolCleanupMode,
-    preserveToolCallMessageIds,
     sandboxMode: canExecuteCode,
   })
 
@@ -536,12 +489,6 @@ export async function prepareAgentGenerationHarness(
 
   if (Object.keys(tools).length > 0) {
     chatOptions.tools = tools as ToolSet
-  }
-
-  // Long tool loops can outgrow the window mid-run where compaction cannot
-  // fire; the model layer stubs old in-run tool results near the threshold.
-  if (contextPressure.thresholdTokens !== null && Object.keys(tools).length > 0) {
-    chatOptions.contextPressure = { thresholdTokens: contextPressure.thresholdTokens }
   }
 
   const allToolNames = Object.keys(tools)

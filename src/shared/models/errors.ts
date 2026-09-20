@@ -126,7 +126,7 @@ export class ChatboxAIAPIError extends BaseError {
       name: 'license_upgrade_required',
       code: 20001,
       i18nKey:
-        'Your current License (Chatbox AI Free/Lite) does not support the {{model}} model. To use this model, please <OpenMorePlanButton>upgrade</OpenMorePlanButton> to Chatbox AI Pro or a higher-tier package. Alternatively, you can switch to a different model by <OpenSettingButton>accessing the settings</OpenSettingButton>.',
+        'Your current License (Chatbox AI Free/Lite) does not support the {{model}} model. To use this model, please <OpenMorePlanButton>upgrade</OpenMorePlanButton> to Chatbox AI Pro or a higher-tier package.',
     },
     // license 过期
     expired_license: {

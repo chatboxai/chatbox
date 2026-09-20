@@ -1228,7 +1228,7 @@
   "Your chat history on web version can only be stored in the browser cache (unreliable - it may be cleaned by browser).": "您在網頁版的聊天記錄只能存儲在瀏覽器緩存中（不可靠 - 可能會被瀏覽器清除）。",
   "Your Chatbox AI knowledge base requires an active login. Please sign in to Chatbox AI to use this knowledge base.": "您的 Chatbox AI 知識庫需要主動登入。請登入 Chatbox AI 以使用此知識庫。",
   "Your conversation has exceeded the model's context limit. Try compressing the conversation, starting a new chat, or reducing the number of context messages in settings.": "您的對話已超過該模型的上下文限制。請嘗試壓縮對話、開啟新對話，或在設定中減少上下文訊息的數量。",
-  "Your current License (Chatbox AI Free/Lite) does not support the {{model}} model. To use this model, please <OpenMorePlanButton>upgrade</OpenMorePlanButton> to Chatbox AI Pro or a higher-tier package. Alternatively, you can switch to a different model by <OpenSettingButton>accessing the settings</OpenSettingButton>.": "您目前的許可證 (Chatbox AI Free/Lite) 不支援 {{model}} 模型。若要使用此模型，請 <OpenMorePlanButton>升級</OpenMorePlanButton> 至 Chatbox AI Pro 或更高等級的方案。或者，您可以透過 <OpenSettingButton>存取設定</OpenSettingButton> 來切換至其他模型。",
+  "Your current License (Chatbox AI Free/Lite) does not support the {{model}} model. To use this model, please <OpenMorePlanButton>upgrade</OpenMorePlanButton> to Chatbox AI Pro or a higher-tier package.": "您目前的許可證 (Chatbox AI Free/Lite) 不支援 {{model}} 模型。若要使用此模型，請 <OpenMorePlanButton>升級</OpenMorePlanButton> 至 Chatbox AI Pro 或更高等級的方案。",
   "Your HTML content has been published. You can access it via the link below.": "您的 HTML 內容已發布。您可以透過下方的連結進行存取。",
   "Your license has expired.": "您的許可證已過期。",
   "Your license has expired. Please check your subscription or purchase a new one.": "您的許可證已過期。請檢查您的訂閱或購買新的許可證。",

@@ -380,6 +380,11 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     }
   }, [windowKey, renderItems, widthFull, isSmallScreen, isNewMessage, sessionLocks.anyReplyGenerating])
 
+  // A transcript window with no position left to restore belongs at its tail — but only when that
+  // tail is the conversation end, and only when the reader it saved was following it. A reader that
+  // stopped mid-conversation keeps the ordinary fallback even once its anchor message is gone.
+  const windowBelongsAtTail = !!props.transcript && !props.hasNewer && (windowStart.entry?.following ?? true)
+
   useLayoutEffect(() => {
     if (windowStart.ready) return
     // Virtuoso consumes measured ranges on mount. Validate a warm candidate against the actual
@@ -395,9 +400,16 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
           messageId: windowStart.entry.anchor.messageId,
           offset: 'snapshot' in position ? windowStart.entry.anchor.offset : 0,
         }
+    } else if (windowBelongsAtTail) {
+      // Nothing is left to restore, so the mount below sends this window to its end. Follow has to
+      // be active before that happens: the window measures itself before Virtuoso can report being
+      // at the bottom, and the height handler only holds the view at the end while following.
+      smoothFollowOutput.resume()
     }
-    setWindowStart({ ready: true, position })
-  }, [windowStart, windowKey, renderItems, widthFull, isSmallScreen, smoothFollowOutput])
+    // The entry stays on the state: Virtuoso only mounts once the window is ready, and the
+    // mount position below still needs to know whether the saved reader was following the tail.
+    setWindowStart({ ready: true, entry: windowStart.entry, position })
+  }, [windowStart, windowKey, renderItems, widthFull, isSmallScreen, smoothFollowOutput, windowBelongsAtTail])
 
   useLayoutEffect(() => {
     if (isCompleteSession || !windowStart.ready) return
@@ -981,25 +993,27 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                         // 需要额外设置 initialScrollTop，否则恢复位置后 scrollTop 为 0。这时如果用户没有滚动，那么下次保存时 scrollTop 将记为 0，导致下一次恢复时位置始终为顶部。
                         initialScrollTop: sessionScrollPositionCache.get(currentSession.id)?.scrollTop,
                       }
-                    : {
-                        initialTopMostItemIndex:
-                          !props.transcript && smoothFollowOutput.isFollowing()
-                            ? { index: 'LAST', align: 'end' }
-                            : !props.transcript && viewportAnchorRef.current
-                              ? {
-                                  index: Math.max(
-                                    0,
-                                    renderItems.findIndex((item) =>
-                                      item.messages.some(
-                                        (message) => message.id === viewportAnchorRef.current?.messageId
+                    : windowBelongsAtTail
+                      ? { initialTopMostItemIndex: { index: 'LAST' as const, align: 'end' as const } }
+                      : {
+                          initialTopMostItemIndex:
+                            !props.transcript && smoothFollowOutput.isFollowing()
+                              ? { index: 'LAST', align: 'end' }
+                              : !props.transcript && viewportAnchorRef.current
+                                ? {
+                                    index: Math.max(
+                                      0,
+                                      renderItems.findIndex((item) =>
+                                        item.messages.some(
+                                          (message) => message.id === viewportAnchorRef.current?.messageId
+                                        )
                                       )
-                                    )
-                                  ),
-                                  align: 'start',
-                                  offset: viewportAnchorRef.current.offset,
-                                }
-                              : renderItems.length - 1,
-                      })}
+                                    ),
+                                    align: 'start',
+                                    offset: viewportAnchorRef.current.offset,
+                                  }
+                                : renderItems.length - 1,
+                        })}
               increaseViewportBy={{ top: 2000, bottom: 2000 }}
               itemContent={(absoluteIndex, item) => {
                 const index = absoluteIndex - firstItemIndex

@@ -550,6 +550,51 @@ describe('MessageList new message layout', () => {
     expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toEqual({ index: 20, align: 'start' })
   })
 
+  test('sends a tail follower to the window end when its geometry is unusable', () => {
+    const sessionId = 'warm-tail-geometry'
+    const first = measuredWindow(sessionId, 4400)
+    first.mounted.unmount()
+    expect(getWindowScrollPosition(sessionId)?.following).toBe(true)
+
+    // A layout change rejects the saved geometry, and a tail follower has no reading anchor to fall
+    // back to, so the mount has to choose the position on its own.
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 380 })
+    render(first.view())
+    expect(virtuosoRestoreStates.at(-1)).toBeUndefined()
+    expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toEqual({ index: 'LAST', align: 'end' })
+  })
+
+  test('keeps following the end after restoring a tail window with unusable geometry', async () => {
+    const sessionId = 'warm-tail-follow'
+    const first = measuredWindow(sessionId, 4400)
+    first.mounted.unmount()
+
+    // The restored window measures itself before it can report being at the bottom, so follow has to
+    // be active already; otherwise the growing list drifts away from the end it was just sent to.
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 380 })
+    virtuosoAtBottom.value = false
+    virtuosoScrollToMock.mockClear()
+    render(first.view())
+    act(() => {
+      virtuosoPositioning.at(-1)?.totalListHeightChanged?.(5000)
+      virtuosoPositioning.at(-1)?.totalListHeightChanged?.(6200)
+    })
+    await waitFor(() => expect(virtuosoScrollToMock).toHaveBeenCalledWith(expect.objectContaining({ top: Infinity })))
+  })
+
+  test('keeps a mid-window reader off the end once its anchor is gone', () => {
+    const sessionId = 'warm-anchor-lost'
+    const first = measuredWindow(sessionId, 2012)
+    first.mounted.unmount()
+    expect(getWindowScrollPosition(sessionId)?.following).toBe(false)
+
+    // Neither the geometry nor the anchor message survives, so there is nothing to restore — but
+    // this reader had stopped mid-conversation and must not be dropped at the end of it.
+    render(first.view({ ...first.windowIdentity, revision: 2 }, first.messages.slice(-5)))
+    expect(virtuosoRestoreStates.at(-1)).toBeUndefined()
+    expect(virtuosoPositioning.at(-1)?.initialTopMostItemIndex).toBe(4)
+  })
+
   test('does not repopulate an explicitly cleared session when its window unmounts', () => {
     const first = measuredWindow('warm-cleared', 2012)
     clearScrollPositionCache('warm-cleared')

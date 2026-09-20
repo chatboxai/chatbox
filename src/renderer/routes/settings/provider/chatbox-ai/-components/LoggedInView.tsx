@@ -1,24 +1,25 @@
 import { Alert, Button, Flex, Paper, Select, Stack, Text, Title, UnstyledButton } from '@mantine/core'
-import { IconArrowRight, IconCheck, IconExclamationCircle, IconExternalLink, IconLogout } from '@tabler/icons-react'
 import {
   accountLicenseFromApi,
   getAccountLicenseStatus as getSharedLicenseStatus,
-  selectAccountLicenseForInspection,
-  selectAccountLicense,
   isAccountLicenseOptionDisabled,
+  selectAccountLicense,
+  selectAccountLicenseForInspection,
 } from '@shared/utils/account-license'
+import { IconArrowRight, IconCheck, IconExclamationCircle, IconExternalLink, IconLogout } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
+import { useRefreshChatboxAIModelsOnLicenseChange } from '@/hooks/useChatboxAIModels'
 import { trackingEvent } from '@/packages/event'
 import { openLinkWithAuth } from '@/packages/openLinkWithAuth'
 import {
   buildChatboxUrl,
   getLicenseDetailForInspection,
-  getLicenseDetailRealtime,
+  type getLicenseDetailRealtime,
   getUserProfile,
   type LicenseDetailError,
   listLicensesByUser,
@@ -144,6 +145,8 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
     // 合并两种错误来源：1) API 返回 200 但带有 error 字段  2) API 返回 4xx/5xx 被 ofetch 抛出
     const licenseDetailError =
       licenseDetailResponse?.error || normalizedQueryError?.data?.error || normalizedQueryError?.error
+
+    useRefreshChatboxAIModelsOnLicenseChange(selectedLicenseKey, licenseDetailError ? undefined : licenseDetail)
 
     const licenseOptions = useMemo(() => {
       const now = Date.now()

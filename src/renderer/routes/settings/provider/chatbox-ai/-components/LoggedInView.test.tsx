@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { MantineProvider } from '@mantine/core'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { Settings } from '@shared/types'
+import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { UserLicense } from '@/packages/remote'
-import type { Settings } from '@shared/types'
+import { getLicenseDetailForInspection, getUserProfile, listLicensesByUser, type UserLicense } from '@/packages/remote'
 import { LoggedInView } from './LoggedInView'
 
 const mocks = vi.hoisted(() => ({
@@ -126,6 +126,50 @@ it('keeps the current activated usable license', () => {
   mocks.settings.licenseInstances = { valid: 'instance' }
   mount([license('valid'), license('other')])
   expect(mocks.activate).not.toHaveBeenCalled()
+})
+
+it('refreshes the active model catalog when the account detail query receives a same-key upgrade', async () => {
+  mocks.settings.licenseKey = 'valid'
+  mocks.settings.licenseInstances = { valid: 'instance' }
+  vi.mocked(getUserProfile).mockResolvedValue({ email: 'user@example.com', id: 'user', created_at: '' })
+  vi.mocked(listLicensesByUser).mockResolvedValue([license('valid')])
+  const getDetail = vi.mocked(getLicenseDetailForInspection)
+  // Only the entitlement fields are used by this view; the quota card is mocked.
+  getDetail.mockResolvedValue({ data: { name: 'Chatbox AI Free', plan: 'free' } } as Awaited<
+    ReturnType<typeof getLicenseDetailForInspection>
+  >)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let serverPlan = 'free'
+  const observer = new QueryObserver(client, {
+    queryKey: ['chatbox-ai-models', 'en', 'valid'],
+    staleTime: 3600 * 1000,
+    queryFn: async () => ({ license: { plan: serverPlan } }),
+  })
+  const unsubscribe = observer.subscribe(() => {})
+  const view = render(
+    <MantineProvider>
+      <QueryClientProvider client={client}>
+        <LoggedInView language="en" onLogout={() => {}} onSwitchToLicenseKey={() => {}} />
+      </QueryClientProvider>
+    </MantineProvider>
+  )
+  try {
+    await waitFor(() => expect(getDetail).toHaveBeenCalledWith({ licenseKey: 'valid' }))
+    await waitFor(() => expect(observer.getCurrentResult().data?.license.plan).toBe('free'))
+    serverPlan = 'pro'
+    getDetail.mockResolvedValue({ data: { name: 'Chatbox AI Pro', plan: 'pro' } } as Awaited<
+      ReturnType<typeof getLicenseDetailForInspection>
+    >)
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['licenseInspection', 'user@example.com', 'valid'] })
+    })
+    await waitFor(() => expect(observer.getCurrentResult().data?.license.plan).toBe('pro'))
+    expect(mocks.activate).not.toHaveBeenCalled()
+  } finally {
+    view.unmount()
+    unsubscribe()
+    client.clear()
+  }
 })
 it('does not activate invalid licenses when no usable key remains', () => {
   const modal = mount([license('expired', 'expired'), license('disabled', 'disabled')])

@@ -1233,6 +1233,7 @@
   "Your license has expired.": "ライセンスの有効期限が切れています。",
   "Your license has expired. Please check your subscription or purchase a new one.": "ライセンスが期限切れです。サブスクリプションを確認するか、新しいライセンスを購入してください。",
   "Your license has expired. You can continue using your expansion pack.": "ライセンスの有効期限が切れています。拡張パックは引き続きご利用いただけます。",
+  "Your plan has expired and has been automatically downgraded to the Free plan. Please refresh your license information and try again.": "プランの有効期限が切れたため、自動的に無料プランに変更されました。ライセンス情報を更新してから、もう一度お試しください。",
   "Your rating on the App Store would help make Chatbox even better!": "App Storeでの評価は、Chatboxをさらに改善する助けになります！",
   "Duplicate Conversation": "会話を複製",
   "Forked from conversation": "会話からフォーク",

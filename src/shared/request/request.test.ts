@@ -40,18 +40,21 @@ describe('createAfetch', () => {
     })
   })
 
-  it('stores request id from Chatbox error body on known Chatbox errors', async () => {
+  it.each([
+    { codeName: 'token_quota_exhausted', status: 429, clientCode: 10004 },
+    { codeName: 'license_downgraded', status: 409, clientCode: 20047 },
+  ])('parses $codeName from HTTP $status and preserves the request id', async ({ codeName, status, clientCode }) => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
             error: {
-              code: 'token_quota_exhausted',
+              code: codeName,
               request_id: 'req-from-body',
             },
           }),
-          { status: 429 }
+          { status }
         )
       )
     )
@@ -61,7 +64,7 @@ describe('createAfetch', () => {
     await expect(
       afetch('https://api.chatboxai.app/gateway/openai/v1/chat/completions', {}, { parseChatboxRemoteError: true })
     ).rejects.toMatchObject({
-      code: 10004,
+      code: clientCode,
       requestId: 'req-from-body',
     } satisfies Partial<ChatboxAIAPIError>)
   })

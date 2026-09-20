@@ -134,6 +134,12 @@ export class ChatboxAIAPIError extends BaseError {
       code: 20002,
       i18nKey: 'Your license has expired. Please check your subscription or purchase a new one.',
     },
+    license_downgraded: {
+      name: 'license_downgraded',
+      code: 20047,
+      i18nKey:
+        'Your plan has expired and has been automatically downgraded to the Free plan. Please refresh your license information and try again.',
+    },
     // 未输入 license
     license_key_required: {
       name: 'license_key_required',

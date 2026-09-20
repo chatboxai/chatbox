@@ -2,7 +2,7 @@
 
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
-import { MESSAGE_ERROR_CODES } from '@shared/models/errors'
+import { ChatboxAIAPIError, MESSAGE_ERROR_CODES } from '@shared/models/errors'
 import type { ChatboxAILicenseDetail, ChatboxAIPlanType, Message, Session } from '@shared/types'
 import { afterEach, expect, test, vi } from 'vitest'
 import { settingsStore } from '@/stores/settingsStore'
@@ -92,6 +92,35 @@ afterEach(() => {
   trackingMocks.useSession.mockReset()
   trackingMocks.useSession.mockReturnValue({ session: undefined, isFetched: false })
   settingsStore.setState(initialSettings)
+})
+
+test('shows the Free plan downgrade and license refresh guidance for a backend downgrade error', () => {
+  const error = ChatboxAIAPIError.fromCodeName('Plan Downgraded', 'license_downgraded')
+  expect(error).not.toBeNull()
+
+  const msg = {
+    id: 'assistant-downgraded',
+    role: 'assistant',
+    contentParts: [],
+    error: error?.message,
+    errorCode: error?.code,
+    aiProvider: 'chatbox-ai',
+  } as Message
+
+  render(
+    <MantineProvider>
+      <MessageErrTips msg={msg} />
+    </MantineProvider>
+  )
+
+  expect(
+    screen.getByText(
+      'Your plan has expired and has been automatically downgraded to the Free plan. Please refresh your license information and try again.'
+    )
+  ).not.toBeNull()
+  expect(
+    screen.queryByText('Your license has expired. Please check your subscription or purchase a new one.')
+  ).toBeNull()
 })
 
 test.each([

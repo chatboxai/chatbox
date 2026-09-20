@@ -26,6 +26,9 @@ function _errorI18nKeys(t: (key: string) => string) {
   )
   t('Your license has expired. Please check your subscription or purchase a new one.')
   t(
+    'Your plan has expired and has been automatically downgraded to the Free plan. Please refresh your license information and try again.'
+  )
+  t(
     'You have selected Chatbox AI as the model provider, but a license key has not been entered yet. Please <OpenSettingButton>click here to open Settings</OpenSettingButton> and enter your license key, or choose a different model provider.'
   )
   t('The license key you entered is invalid. Please check your license key and try again.')

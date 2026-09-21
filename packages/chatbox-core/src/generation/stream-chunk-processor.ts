@@ -3,7 +3,6 @@ import { isPersistentToolCallPauseError } from '@shared/models/persistent-tool-c
 import { mergeProviderMetadata, pickPersistableProviderMetadata } from '@shared/models/provider-part-metadata'
 import type { ModelStreamPart } from '@shared/models/types'
 import { extractToolResultImage } from '@shared/tool-result-image'
-import type { MemoryToolContext } from '@shared/types/agent-persona'
 import type {
   Message,
   MessageContentParts,
@@ -13,6 +12,7 @@ import type {
   MessageTextPart,
   MessageToolCallPart,
 } from '@shared/types'
+import type { MemoryToolContext } from '@shared/types/agent-persona'
 import { type ProviderMetadata, parsePartialJson, type ToolSet } from 'ai'
 
 /** Maximum serialized size (in characters) before a tool result is offloaded to blob storage. */
@@ -73,7 +73,7 @@ type PreparingToolCallProgress = Extract<
 export function createInitialState(initialParts?: MessageContentParts): StreamProcessorState {
   let stepIndex = 0
   for (const part of initialParts ?? []) {
-    if (part.type === 'tool-call' && part.stepIndex !== undefined && part.stepIndex >= stepIndex) {
+    if ('stepIndex' in part && part.stepIndex !== undefined && part.stepIndex >= stepIndex) {
       stepIndex = part.stepIndex + 1
     }
   }
@@ -144,7 +144,7 @@ export async function processStreamChunk(
       if (currentTextPart) {
         currentTextPart.text += chunk.text
       } else {
-        currentTextPart = { type: 'text', text: chunk.text }
+        currentTextPart = { type: 'text', text: chunk.text, stepIndex }
         contentParts.push(currentTextPart)
       }
       break
@@ -162,6 +162,7 @@ export async function processStreamChunk(
         currentTextPart = undefined
         currentReasoningPart = {
           type: 'reasoning',
+          stepIndex,
           text: '',
           providerMetadata: persistable,
           startTime: Date.now(),
@@ -182,6 +183,7 @@ export async function processStreamChunk(
         currentTextPart = undefined
         currentReasoningPart = {
           type: 'reasoning',
+          stepIndex,
           text: pendingReasoningText + chunk.text,
           startTime: Date.now(),
         }
@@ -206,6 +208,7 @@ export async function processStreamChunk(
         if (!currentReasoningPart) {
           currentReasoningPart = {
             type: 'reasoning',
+            stepIndex,
             text: pendingReasoningText,
             startTime: Date.now(),
           }
@@ -452,7 +455,7 @@ export async function processStreamChunk(
         finalizeReasoningDuration(currentReasoningPart)
         preparingToolInput = undefined
         const storageKey = await callbacks.onFileReceived(chunk.file.mediaType, chunk.file.base64)
-        contentParts.push({ type: 'image', storageKey })
+        contentParts.push({ type: 'image', storageKey, stepIndex })
         currentTextPart = undefined
         currentReasoningPart = undefined
       }
@@ -466,6 +469,9 @@ export async function processStreamChunk(
       }
     }
     case 'finish-step': {
+      finalizeReasoningDuration(currentReasoningPart)
+      currentTextPart = undefined
+      currentReasoningPart = undefined
       stepIndex += 1
       return {
         state: nextState(),

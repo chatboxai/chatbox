@@ -875,7 +875,7 @@ describe('GenerationService', () => {
       firstTokenLatency: 500,
       generationDuration: 1_000,
     })
-    expect(finalizedSegment?.contentParts).toEqual([{ type: 'text', text: 'step one output' }])
+    expect(finalizedSegment?.contentParts).toEqual([{ type: 'text', text: 'step one output', stepIndex: 0 }])
 
     // The continuation is a fresh message inserted after the steered user.
     expect(harness.inserted).toHaveLength(1)
@@ -899,7 +899,7 @@ describe('GenerationService', () => {
       firstTokenLatency: 600,
       generationDuration: 600,
     })
-    expect(finalMessage.contentParts).toEqual([{ type: 'text', text: 'step two output' }])
+    expect(finalMessage.contentParts).toEqual([{ type: 'text', text: 'step two output', stepIndex: 0 }])
 
     // Durable storage keeps true causal order with no read-time reordering.
     expect(harness.session.messages.map((message) => message.id)).toEqual([
@@ -957,7 +957,10 @@ describe('GenerationService', () => {
     const finalMessage = lastPersisted(harness)
     expect(finalMessage).toMatchObject({ id: 'assistant-1', generating: false, finishReason: 'stop' })
     expect(finalMessage.error).toBeUndefined()
-    expect(finalMessage.contentParts).toEqual([{ type: 'text', text: 'step one output step two output' }])
+    expect(finalMessage.contentParts).toEqual([
+      { type: 'text', text: 'step one output', stepIndex: 0 },
+      { type: 'text', text: ' step two output', stepIndex: 1 },
+    ])
     expect(harness.steeringAdmitAnchor).not.toHaveBeenCalled()
     expect(harness.runtime.get('session-1')).toBeUndefined()
   })
@@ -1074,7 +1077,7 @@ describe('GenerationService', () => {
     ])
     const finalMessage = lastPersisted(harness)
     expect(finalMessage).toMatchObject({ id: continuation.message.id, generating: false, finishReason: 'stop' })
-    expect(finalMessage.contentParts).toEqual([{ type: 'text', text: 'step two output' }])
+    expect(finalMessage.contentParts).toEqual([{ type: 'text', text: 'step two output', stepIndex: 0 }])
   })
 
   it('leaves Stop in control of its message instead of splitting mid-stop', async () => {
@@ -2255,7 +2258,7 @@ describe('GenerationService', () => {
     expect(harness.persisted).toHaveLength(3)
     expect(harness.persisted[1].refreshCounting).toBe(false)
     expect(harness.persisted[1].message.contentParts).toEqual([
-      { type: 'text', text: 'before' },
+      { type: 'text', text: 'before', stepIndex: 0 },
       expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-1' }),
     ])
   })
@@ -2420,7 +2423,7 @@ describe('GenerationService', () => {
     await harness.service.orchestrate('session-1', targetMessage())
 
     expect(harness.persisted).toHaveLength(3)
-    expect(harness.persisted[1].message.contentParts).toEqual([{ type: 'text', text: 'first second' }])
+    expect(harness.persisted[1].message.contentParts).toEqual([{ type: 'text', text: 'first second', stepIndex: 0 }])
   })
 
   it('owns locking and background follow-up wake-up for paused-tool entry points', async () => {

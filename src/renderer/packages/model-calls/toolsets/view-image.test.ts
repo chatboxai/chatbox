@@ -1,6 +1,8 @@
 import type { LanguageModelV3Prompt, LanguageModelV3StreamPart } from '@ai-sdk/provider'
 import type { SandboxProvider } from '@shared/sandbox-provider'
-import { stepCountIs, streamText } from 'ai'
+import { convertToModelMessages } from '@shared/services/model-message-converter'
+import type { MessageContentToolCallPart } from '@shared/types'
+import { jsonSchema, stepCountIs, streamText } from 'ai'
 import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -552,5 +554,80 @@ test('rejects oversized normalized images before saving a successful result', as
   expect(await execute(getViewImageTool(), { file_path: 'large.png' })).toMatchObject({
     error: expect.stringContaining('request image limit'),
   })
+  expect(saveImage).not.toHaveBeenCalled()
+})
+
+test.each([true, false])('SDK trims resumed image history after an unrelated tool step (native=%s)', async (native) => {
+  const toolSet = buildToolSet({ toolResultImages: native })
+  const images: MessageContentToolCallPart[] = Array.from({ length: 8 }, (_, index) => ({
+    type: 'tool-call',
+    state: 'result',
+    toolCallId: `resume-${index}`,
+    toolName: 'view_image',
+    stepIndex: 0,
+    args: { file_path: `page-${index}.png` },
+    result: { file_path: `page-${index}.png`, media_type: 'image/png' },
+    resultImageStorageKey: `picture:${index}`,
+  }))
+  const messages = await convertToModelMessages(
+    [
+      {
+        id: 'resume',
+        role: 'assistant',
+        contentParts: [...images, { type: 'text', text: 'Inspecting.', stepIndex: 0 }],
+      },
+    ],
+    async () => 'data:image/png;base64,aW1hZ2U=',
+    { modelSupportVision: true, supportToolResultImages: native }
+  )
+  const prompts: LanguageModelV3Prompt[] = []
+  const model = new MockLanguageModelV3({
+    doStream: async ({ prompt }) => {
+      prompts.push(prompt)
+      const chunks: LanguageModelV3StreamPart[] = [
+        { type: 'stream-start', warnings: [] },
+        ...(prompts.length === 1
+          ? [{ type: 'tool-call' as const, toolCallId: 'other', toolName: 'other', input: '{}' }]
+          : []),
+        {
+          type: 'finish',
+          finishReason: { unified: prompts.length === 1 ? 'tool-calls' : 'stop', raw: undefined },
+          usage: {
+            inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 1, text: 1, reasoning: 0 },
+          },
+        },
+      ]
+      return { stream: convertArrayToReadableStream(chunks) }
+    },
+  })
+  await streamText({
+    model,
+    messages,
+    tools: {
+      ...toolSet.tools,
+      other: { inputSchema: jsonSchema({ type: 'object', properties: {} }), execute: async () => 'done' },
+    },
+    stopWhen: stepCountIs(2),
+    prepareStep: async ({ messages }) => ({ messages: await toolSet.injectImagesIntoStepMessages?.(messages) }),
+  }).consumeStream()
+  const count = (prompt: LanguageModelV3Prompt) =>
+    prompt.reduce((total, message) => {
+      if (message.role === 'user') return total + message.content.filter((part) => part.type === 'file').length
+      if (message.role === 'tool')
+        return (
+          total +
+          message.content.reduce(
+            (n, part) =>
+              n +
+              (part.type === 'tool-result' && part.output.type === 'content'
+                ? part.output.value.filter((value) => value.type === 'image-data').length
+                : 0),
+            0
+          )
+        )
+      return total
+    }, 0)
+  expect(prompts.map(count)).toEqual([8, 5])
   expect(saveImage).not.toHaveBeenCalled()
 })

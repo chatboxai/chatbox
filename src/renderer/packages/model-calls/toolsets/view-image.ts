@@ -351,7 +351,7 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
   // Selected images are embedded in tool output or injected as user parts.
   // Runs per step (prepareStep), so it never mutates the input messages.
   const injectImagesIntoStepMessages = async (messages: ModelMessage[]): Promise<ModelMessage[]> => {
-    if (resultEntries.length === 0) return messages
+    if (resultEntries.length === 0) return boundToolResultImages(messages, DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT)
 
     // Match current-generation executions to tool-result positions from newest to oldest.
     // This prevents a reused call ID from capturing older history or duplicating one image.

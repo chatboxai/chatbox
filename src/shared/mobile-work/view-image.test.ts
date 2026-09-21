@@ -3,6 +3,8 @@ import type { ModelMessage } from 'ai'
 import { stepCountIs, streamText } from 'ai'
 import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, it, vi } from 'vitest'
+import { convertToModelMessages } from '../services/model-message-converter'
+import type { MessageContentToolCallPart } from '../types'
 import { buildLocalViewImage } from './view-image'
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1WQAAAAASUVORK5CYII='
@@ -169,3 +171,54 @@ it.each([false, true])('sends actual image input in SDK second step (tool images
     expect(JSON.stringify(prompts[1].find((m) => m.role === 'tool'))).not.toContain(png)
   }
 })
+
+it.each([true, false])(
+  'bounds recovered image history even with no new view_image execution (native=%s)',
+  async (native) => {
+    const s = setup(native)
+    const images: MessageContentToolCallPart[] = Array.from({ length: 8 }, (_, index) => ({
+      type: 'tool-call',
+      state: 'result',
+      toolCallId: `resume-${index}`,
+      toolName: 'view_image',
+      stepIndex: 0,
+      args: { file_path: `page-${index}.png` },
+      result: { file_path: `page-${index}.png`, media_type: 'image/png' },
+      resultImageStorageKey: `picture:${index}`,
+    }))
+    const messages = await convertToModelMessages(
+      [
+        {
+          id: 'resume',
+          role: 'assistant',
+          contentParts: [...images, { type: 'text', text: 'Inspecting.', stepIndex: 0 }],
+        },
+      ],
+      async () => dataUrl,
+      { modelSupportVision: true, supportToolResultImages: native }
+    )
+    const count = (messages: ModelMessage[]) =>
+      messages.reduce((total, message) => {
+        if (message.role === 'user' && Array.isArray(message.content))
+          return total + message.content.filter((part) => part.type === 'image').length
+        if (message.role === 'tool')
+          return (
+            total +
+            message.content.reduce(
+              (n, part) =>
+                n +
+                (part.type === 'tool-result' && part.output.type === 'content'
+                  ? part.output.value.filter((value) => value.type === 'image-data').length
+                  : 0),
+              0
+            )
+          )
+        return total
+      }, 0)
+    expect(count(await s.api.prepareStepMessages(messages))).toBe(8)
+    const history = [...messages, { role: 'assistant' as const, content: 'Inspected.' }]
+    expect(count(await s.api.prepareStepMessages(history))).toBe(5)
+    expect(s.read).not.toHaveBeenCalled()
+    expect(s.blobs.get).not.toHaveBeenCalled()
+  }
+)

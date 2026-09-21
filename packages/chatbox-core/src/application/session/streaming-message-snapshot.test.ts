@@ -31,8 +31,10 @@ describe('snapshotStreamingMessage', () => {
     if (status?.type === 'retrying') status.attempt = 2
     message.generating = false
 
-    expect(reasoning.contentParts).toEqual([{ type: 'reasoning', text: 'Consider', startTime: expect.any(Number) }])
-    expect(text.contentParts[1]).toEqual({ type: 'text', text: 'Answer' })
+    expect(reasoning.contentParts).toEqual([
+      { type: 'reasoning', text: 'Consider', startTime: expect.any(Number), stepIndex: 0 },
+    ])
+    expect(text.contentParts[1]).toEqual({ type: 'text', text: 'Answer', stepIndex: 0 })
     expect(tool.contentParts[2]).toMatchObject({ type: 'tool-call', state: 'call' })
     expect(tool.contentParts[2]).not.toHaveProperty('result')
     expect(tool.contentParts[2]).not.toHaveProperty('duration')

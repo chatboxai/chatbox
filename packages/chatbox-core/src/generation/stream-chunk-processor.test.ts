@@ -125,7 +125,7 @@ describe('processStreamChunk', () => {
     const result = await processStreamChunk(chunk('text-delta', { text: 'Hello' }), state, callbacks)
     expect(result.skipUpdate).toBe(false)
     expect(result.state.contentParts).toHaveLength(1)
-    expect(result.state.contentParts[0]).toEqual({ type: 'text', text: 'Hello' })
+    expect(result.state.contentParts[0]).toEqual({ type: 'text', text: 'Hello', stepIndex: 0 })
   })
 
   it('handles consecutive text-delta by concatenating', async () => {
@@ -133,7 +133,7 @@ describe('processStreamChunk', () => {
     const r1 = await processStreamChunk(chunk('text-delta', { text: 'Hello' }), state, callbacks)
     const r2 = await processStreamChunk(chunk('text-delta', { text: ' world' }), r1.state, callbacks)
     expect(r2.state.contentParts).toHaveLength(1)
-    expect(r2.state.contentParts[0]).toEqual({ type: 'text', text: 'Hello world' })
+    expect(r2.state.contentParts[0]).toEqual({ type: 'text', text: 'Hello world', stepIndex: 0 })
   })
 
   it('handles reasoning-delta', async () => {
@@ -949,7 +949,7 @@ describe('processStreamChunk', () => {
     )
     expect(mockCallback.onFileReceived).toHaveBeenCalledWith('image/png', 'abc123')
     expect(result.state.contentParts).toHaveLength(1)
-    expect(result.state.contentParts[0]).toEqual({ type: 'image', storageKey: 'stored-key' })
+    expect(result.state.contentParts[0]).toEqual({ type: 'image', storageKey: 'stored-key', stepIndex: 0 })
   })
 
   it('handles status chunk by returning skipUpdate=true with statusChunk', async () => {
@@ -1064,5 +1064,43 @@ describe('processStreamChunk', () => {
       result: { success: true, file_path: 'chart.png', media_type: 'image/webp' },
     })
     expect((r2.state.contentParts[0] as MessageToolCallPart).result).not.toHaveProperty('image_storage_key')
+  })
+})
+
+describe('assistant part step identity', () => {
+  it.each(['text', 'reasoning'] as const)(
+    'separates %s emitted before and after a tool-step boundary',
+    async (type) => {
+      let state = createInitialState()
+      for (const event of [
+        chunk('tool-call', { toolCallId: 'view', toolName: 'view_image', args: { file_path: 'page.png' } }),
+        chunk(`${type}-delta`, { text: 'Inspecting.' }),
+        chunk('finish-step'),
+        chunk(`${type}-delta`, { text: 'Inspected.' }),
+      ]) {
+        state = (await processStreamChunk(event, state, callbacks)).state
+      }
+      expect(state.contentParts).toMatchObject([
+        { type: 'tool-call', stepIndex: 0 },
+        { type, text: 'Inspecting.', stepIndex: 0 },
+        { type, text: 'Inspected.', stepIndex: 1 },
+      ])
+      expect(createInitialState(state.contentParts).stepIndex).toBe(2)
+    }
+  )
+
+  it('persists the step identity of provider-generated images and signed empty reasoning', async () => {
+    let state = createInitialState()
+    for (const event of [
+      chunk('reasoning-start', { providerMetadata: { anthropic: { redactedData: 'opaque' } } }),
+      chunk('file', { file: { mediaType: 'image/png', base64: 'aW1hZ2U=' } }),
+    ]) {
+      state = (await processStreamChunk(event, state, callbacks)).state
+    }
+    expect(state.contentParts).toMatchObject([
+      { type: 'reasoning', stepIndex: 0 },
+      { type: 'image', stepIndex: 0 },
+    ])
+    expect(createInitialState(state.contentParts).stepIndex).toBe(1)
   })
 })

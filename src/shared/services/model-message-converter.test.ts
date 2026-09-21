@@ -1,5 +1,8 @@
+import { boundToolResultImages } from '@shared/tools/view-image-replay'
 import type { Message, MessageContentToolCallPart } from '@shared/types'
-import { modelMessageSchema } from 'ai'
+import { MessageSchema } from '@shared/types/session'
+import { sequenceMessages } from '@shared/utils/message'
+import { type ModelMessage, modelMessageSchema } from 'ai'
 import { describe, expect, it, vi } from 'vitest'
 import { convertToModelMessages } from './model-message-converter'
 
@@ -918,4 +921,175 @@ describe('convertToModelMessages — view_image tool results', () => {
     const firstTool = output.find((message) => message.role === 'tool')
     expect((firstTool?.content as Array<{ output: { type: string } }>)[0].output.type).toBe('json')
   })
+})
+
+function resumedImageCalls(): MessageContentToolCallPart[] {
+  return Array.from({ length: 8 }, (_, index) => ({
+    type: 'tool-call',
+    state: 'result',
+    toolCallId: `resume-${index}`,
+    toolName: 'view_image',
+    stepIndex: 0,
+    args: { file_path: `page-${index}.png` },
+    result: { file_path: `page-${index}.png`, media_type: 'image/png' },
+    resultImageStorageKey: `picture:${index}`,
+  }))
+}
+
+function pixelCount(messages: ModelMessage[]): number {
+  return messages.reduce((total, message) => {
+    if (message.role === 'user' && Array.isArray(message.content))
+      return total + message.content.filter((part) => part.type === 'image').length
+    if (message.role === 'tool')
+      return (
+        total +
+        message.content.reduce(
+          (count, part) =>
+            count +
+            (part.type === 'tool-result' && part.output.type === 'content'
+              ? part.output.value.filter((value) => value.type === 'image-data').length
+              : 0),
+          0
+        )
+      )
+    return total
+  }, 0)
+}
+
+describe.each([true, false])('resumed step boundaries (native=%s)', (native) => {
+  it.each(['text', 'reasoning'] as const)(
+    'preserves same-step interleaved and trailing %s before image results',
+    async (type) => {
+      const images = resumedImageCalls()
+      const response = { type, text: 'Inspect these pages.', stepIndex: 0 }
+      const message = MessageSchema.parse({
+        id: 'resume',
+        role: 'assistant',
+        contentParts: [...images.slice(0, 4), response, ...images.slice(4), response],
+      })
+      const resolve = vi.fn(async () => 'data:image/png;base64,aW1hZ2U=')
+      const options = { modelSupportVision: true, supportToolResultImages: native, preserveReasoning: true }
+      const output = await convertToModelMessages([message], resolve, options)
+      expect(resolve).toHaveBeenCalledTimes(8)
+      expect(output.filter((part) => part.role === 'assistant')).toHaveLength(1)
+      expect(output.filter((part) => part.role === 'tool')).toHaveLength(1)
+      expect(modelMessageSchema.array().safeParse(output).success).toBe(true)
+      expect(pixelCount(boundToolResultImages(output, 5))).toBe(8)
+      expect(pixelCount(boundToolResultImages([...output, { role: 'assistant', content: 'Inspected.' }], 5))).toBe(5)
+
+      resolve.mockClear()
+      const consumed = MessageSchema.parse({
+        ...message,
+        contentParts: [...message.contentParts, { type, text: 'I have inspected the pages.', stepIndex: 1 }],
+      })
+      const history = await convertToModelMessages([consumed], resolve, options)
+      expect(resolve).toHaveBeenCalledTimes(5)
+      expect(pixelCount(boundToolResultImages(history, 5))).toBe(5)
+      expect(history.at(-1)?.role).toBe('assistant')
+    }
+  )
+
+  it('preserves an ambiguous legacy tail until a subsequent assistant response', async () => {
+    const message: Message = {
+      id: 'legacy',
+      role: 'assistant',
+      contentParts: [...resumedImageCalls(), { type: 'text', text: 'Inspect these pages.' }],
+    }
+    const resolve = vi.fn(async () => 'data:image/png;base64,aW1hZ2U=')
+    const options = { modelSupportVision: true, supportToolResultImages: native }
+    const output = await convertToModelMessages([message], resolve, options)
+    expect(pixelCount(boundToolResultImages(output, 5))).toBe(8)
+    const history = await convertToModelMessages(
+      [message, { id: 'after', role: 'assistant', contentParts: [{ type: 'text', text: 'Inspected.' }] }],
+      resolve,
+      options
+    )
+    expect(pixelCount(boundToolResultImages(history, 5))).toBe(5)
+  })
+
+  it.each(['text', 'reasoning'] as const)(
+    'keeps completed legacy %s after image results when the user follows up',
+    async (type) => {
+      for (const finishReason of [undefined, 'stop']) {
+        const message = MessageSchema.parse({
+          id: 'completed',
+          role: 'assistant',
+          generating: false,
+          finishReason,
+          contentParts: [...resumedImageCalls(), { type, text: 'I have inspected the pages.' }],
+        })
+        const messages = sequenceMessages([
+          message,
+          { id: 'follow-up', role: 'user', contentParts: [{ type: 'text', text: 'Summarize the findings.' }] },
+          { id: 'target', role: 'assistant', generating: true, contentParts: [{ type: 'text', text: '' }] },
+        ])
+        const resolve = vi.fn(async () => 'data:image/png;base64,aW1hZ2U=')
+        const output = await convertToModelMessages(messages, resolve, {
+          modelSupportVision: true,
+          supportToolResultImages: native,
+          preserveReasoning: true,
+        })
+        expect(resolve).toHaveBeenCalledTimes(5)
+        expect(pixelCount(boundToolResultImages(output, 5))).toBe(5)
+        const answerIndex = output.findIndex(
+          (part) =>
+            part.role === 'assistant' &&
+            Array.isArray(part.content) &&
+            part.content.some((content) => content.type === type && content.text === 'I have inspected the pages.')
+        )
+        expect(answerIndex).toBeGreaterThan(output.findIndex((part) => part.role === 'tool'))
+        expect(output.at(-1)?.role).toBe('user')
+        expect(modelMessageSchema.array().safeParse(output).success).toBe(true)
+      }
+    }
+  )
+
+  it.each([undefined, 'tool-call-paused', 'canceled', 'stop'])(
+    'uses completion state for an unmarked prompt tail (finishReason=%s)',
+    async (finishReason) => {
+      const output = await convertToModelMessages(
+        [
+          {
+            id: 'tail',
+            role: 'assistant',
+            finishReason,
+            contentParts: [...resumedImageCalls(), { type: 'text', text: 'Inspect these pages.' }],
+          },
+          { id: 'target', role: 'assistant', generating: true, contentParts: [] },
+        ],
+        async () => 'data:image/png;base64,aW1hZ2U=',
+        { modelSupportVision: true, supportToolResultImages: native }
+      )
+      expect(pixelCount(boundToolResultImages(output, 5))).toBe(finishReason === 'stop' ? 5 : 8)
+      if (finishReason === 'stop') expect(output.at(-1)?.role).toBe('assistant')
+    }
+  )
+
+  it.each([true, false])('preserves explicit pending steps after a user message (steered=%s)', async (steered) => {
+    const messages = sequenceMessages([
+      {
+        id: 'pending',
+        role: 'assistant',
+        finishReason: steered ? 'steered' : 'tool-call-paused',
+        contentParts: [...resumedImageCalls(), { type: 'text', text: 'Inspect these pages.', stepIndex: 0 }],
+      },
+      { id: 'instruction', role: 'user', steered, contentParts: [{ type: 'text', text: 'Focus on numbering.' }] },
+      { id: 'target', role: 'assistant', generating: true, contentParts: [] },
+    ])
+    const output = await convertToModelMessages(messages, async () => 'data:image/png;base64,aW1hZ2U=', {
+      modelSupportVision: true,
+      supportToolResultImages: native,
+    })
+    expect(pixelCount(boundToolResultImages(output, 5))).toBe(8)
+    expect(output.filter((part) => part.role === 'assistant')).toHaveLength(1)
+    expect(output.at(-1)?.role).toBe('user')
+  })
+})
+
+it('keeps an unmarked legacy answer after unrelated tool results', async () => {
+  const message = assistantWithToolResult({ found: true })
+  message.contentParts = message.contentParts.map((part) => ({ ...part, stepIndex: 0 }))
+  message.contentParts.push({ type: 'text', text: 'The search found a result.' })
+  const output = await convertToModelMessages([message], noImage)
+  expect(output.map((message) => message.role)).toEqual(['assistant', 'tool', 'assistant'])
 })

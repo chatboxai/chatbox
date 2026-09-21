@@ -123,6 +123,8 @@ const MessageProviderMetadataSchema: z.ZodType<ProviderMetadata> = z.record(
 export const MessageTextPartSchema = z.object({
   type: z.literal('text'),
   text: z.string(),
+  /** Provider step that emitted this assistant part; absent on user and legacy parts. */
+  stepIndex: z.number().optional().catch(undefined),
   /**
    * The part exists only to keep the provider's block structure intact for
    * request replay (e.g. an empty Anthropic text block between thinking
@@ -134,6 +136,8 @@ export const MessageTextPartSchema = z.object({
 export const MessageImagePartSchema = z.object({
   type: z.literal('image'),
   storageKey: z.string(),
+  /** Provider step that emitted this assistant part; absent on user and legacy parts. */
+  stepIndex: z.number().optional().catch(undefined),
   ocrResult: z.string().optional(),
 })
 
@@ -151,6 +155,8 @@ export const MessageAgentModeSuggestionPartSchema = z.object({
 export const MessageReasoningPartSchema = z.object({
   type: z.literal('reasoning'),
   text: z.string(),
+  /** Provider step that emitted this assistant part; absent on user and legacy parts. */
+  stepIndex: z.number().optional().catch(undefined),
   /**
    * Replay-critical provider metadata (whitelisted in
    * `models/provider-part-metadata.ts`), e.g. Anthropic thinking signatures and

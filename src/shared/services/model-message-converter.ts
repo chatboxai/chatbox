@@ -162,10 +162,68 @@ function isCompletedToolCall(part: MessageContentParts[number]): part is Message
   return part.type === 'tool-call' && (part.state === 'result' || part.state === 'error')
 }
 
-function isSameToolCallBatch(first: MessageContentToolCallPart, next: MessageContentToolCallPart): boolean {
-  // stepIndex is the provider-level step boundary; parts without one (legacy messages)
-  // keep the old one-call-per-batch serialization.
-  return first.stepIndex !== undefined && first.stepIndex === next.stepIndex
+function isAssistantResponsePart(part: MessageContentParts[number]): boolean {
+  return (
+    part.type === 'tool-call' ||
+    part.type === 'image' ||
+    (part.type === 'text' && part.text.length > 0) ||
+    (part.type === 'reasoning' && (part.text.length > 0 || part.providerMetadata !== undefined))
+  )
+}
+
+function lastAssistantResponseIndex(messages: Message[]): number {
+  for (let index = lastAssistantMessageIndex(messages); index >= 0; index -= 1) {
+    if (messages[index].role === 'assistant' && messages[index].contentParts?.some(isAssistantResponsePart))
+      return index
+  }
+  return -1
+}
+
+function canReplayUnmarkedTail(messages: Message[], assistantIndex: number): boolean {
+  if (assistantIndex < 0 || messages[assistantIndex].finishReason === 'stop') return false
+  return messages
+    .slice(assistantIndex + 1)
+    .every(
+      (message) =>
+        message.role === 'system' ||
+        (message.role === 'assistant' && !message.contentParts?.some(isAssistantResponsePart))
+    )
+}
+
+/** Keep a provider's entire step before its tool results, including interleaved text. */
+function getToolCallBatch(parts: MessageContentParts, start: number, allowUnmarkedTail: boolean) {
+  const first = parts[start]
+  const toolCallPartIndexes = [start]
+  let end = start + 1
+  if (first.type !== 'tool-call' || first.stepIndex === undefined) return { end, toolCallPartIndexes }
+
+  let nextMarkedIndex = start
+  let hasViewImageResult = first.toolName === 'view_image' && first.state === 'result'
+  for (; end < parts.length; end += 1) {
+    const part = parts[end]
+    const partStep = 'stepIndex' in part ? part.stepIndex : undefined
+    if (partStep !== undefined && partStep !== first.stepIndex) break
+    if (part.type === 'tool-call') {
+      if (partStep === undefined) break
+      if (isCompletedToolCall(part)) toolCallPartIndexes.push(end)
+      if (part.toolName === 'view_image' && part.state === 'result') hasViewImageResult = true
+    } else if (isAssistantResponsePart(part) && partStep === undefined) {
+      if (nextMarkedIndex <= end) {
+        nextMarkedIndex = end + 1
+        while (nextMarkedIndex < parts.length) {
+          const next = parts[nextMarkedIndex]
+          if ('stepIndex' in next && next.stepIndex !== undefined) break
+          nextMarkedIndex += 1
+        }
+      }
+      const nextMarkedPart = parts[nextMarkedIndex]
+      const nextStep = nextMarkedPart && 'stepIndex' in nextMarkedPart ? nextMarkedPart.stepIndex : undefined
+      // Legacy text has no step identity. Preserve an ambiguous final batch on
+      // resume; the next provider response will make it eligible for eviction.
+      if (nextStep !== first.stepIndex && !(nextStep === undefined && allowUnmarkedTail && hasViewImageResult)) break
+    }
+  }
+  return { end, toolCallPartIndexes }
 }
 
 async function convertContentParts<T extends TextPart | ImagePart | FilePart>(
@@ -367,36 +425,25 @@ async function toToolResultImageOutput(
 
 function collectRecentToolResultImagePositions(
   messages: Message[],
-  limit: number
+  limit: number,
+  lastAssistantIndex: number,
+  allowUnmarkedTail: boolean
 ): ReadonlyMap<number, ReadonlySet<number>> {
   const selected = new Map<number, Set<number>>()
   const normalizedLimit = Math.max(0, Math.floor(limit))
   if (normalizedLimit === 0) return selected
 
-  // A final tool batch may be resumed before the model has received its results.
-  // Later assistant output is the consumption boundary, including within one message.
-  const isResponsePart = (part: MessageContentParts[number]) =>
-    part.type === 'tool-call' ||
-    part.type === 'image' ||
-    ((part.type === 'text' || part.type === 'reasoning') && part.text.length > 0)
-  let lastAssistantIndex = lastAssistantMessageIndex(messages)
-  while (lastAssistantIndex >= 0) {
-    const message = messages[lastAssistantIndex]
-    if (message.role === 'assistant' && message.contentParts?.some(isResponsePart)) break
-    lastAssistantIndex -= 1
-  }
   const lastParts = messages[lastAssistantIndex]?.contentParts ?? []
   let lastPartIndex = lastParts.length - 1
-  while (lastPartIndex >= 0 && !isResponsePart(lastParts[lastPartIndex])) lastPartIndex -= 1
-  let pendingStart = lastParts.length
-  const lastPart = lastParts[lastPartIndex]
-  if (lastPart?.type === 'tool-call') {
-    pendingStart = lastPartIndex
-    while (pendingStart > 0) {
-      const previous = lastParts[pendingStart - 1]
-      if (!isCompletedToolCall(previous) || !isSameToolCallBatch(previous, lastPart)) break
-      pendingStart -= 1
+  while (lastPartIndex >= 0 && !isAssistantResponsePart(lastParts[lastPartIndex])) lastPartIndex -= 1
+  const pendingIndexes = new Set<number>()
+  for (let index = 0; index <= lastPartIndex; index += 1) {
+    if (!isCompletedToolCall(lastParts[index])) continue
+    const batch = getToolCallBatch(lastParts, index, allowUnmarkedTail)
+    if (batch.end > lastPartIndex) {
+      for (const partIndex of batch.toolCallPartIndexes) pendingIndexes.add(partIndex)
     }
+    index = batch.end - 1
   }
   let selectedCount = 0
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
@@ -405,7 +452,8 @@ function collectRecentToolResultImagePositions(
       const part = parts[partIndex]
       if (part.type !== 'tool-call' || part.state !== 'result') continue
       if (!getToolResultImageReference(part)) continue
-      const pending = messageIndex === lastAssistantIndex && partIndex >= pendingStart && part.toolName === 'view_image'
+      const pending =
+        messageIndex === lastAssistantIndex && pendingIndexes.has(partIndex) && part.toolName === 'view_image'
       if (!pending && selectedCount >= normalizedLimit) continue
       const selectedPartIndexes = selected.get(messageIndex) ?? new Set<number>()
       selectedPartIndexes.add(partIndex)
@@ -427,6 +475,7 @@ async function emitAssistantMessages(
     modelSupportVision?: boolean
     supportToolResultImages?: boolean
     inlineToolResultImagePartIndexes?: ReadonlySet<number>
+    allowUnmarkedTail?: boolean
   }
 ): Promise<void> {
   let cursor = 0
@@ -434,17 +483,12 @@ async function emitAssistantMessages(
     const tcIdx = contentParts.findIndex((part, index) => index >= cursor && isCompletedToolCall(part))
     if (tcIdx === -1) break
 
-    // Collect the contiguous run of completed tool calls that belong to the same batch.
-    const toolCallParts: MessageContentToolCallPart[] = []
-    const toolCallPartIndexes: number[] = []
-    for (let index = tcIdx; index < contentParts.length; index += 1) {
-      const part = contentParts[index]
-      if (!isCompletedToolCall(part)) break
-      if (toolCallParts.length > 0 && !isSameToolCallBatch(toolCallParts[0], part)) break
-      toolCallParts.push(part)
-      toolCallPartIndexes.push(index)
-    }
-    const batchEnd = tcIdx + toolCallParts.length
+    const { end: batchEnd, toolCallPartIndexes } = getToolCallBatch(
+      contentParts,
+      tcIdx,
+      options?.allowUnmarkedTail ?? false
+    )
+    const toolCallParts = toolCallPartIndexes.map((index) => contentParts[index]).filter(isCompletedToolCall)
 
     // Gemini 3 signs only the first functionCall of a batch, so a missing signature on the
     // batch head is the only case that needs the validator bypass.
@@ -452,7 +496,8 @@ async function emitAssistantMessages(
       toolCallParts[0] = withGoogleThoughtSignatureBypass(toolCallParts[0])
     }
 
-    const segment = [...contentParts.slice(cursor, tcIdx), ...toolCallParts]
+    const segment = contentParts.slice(cursor, batchEnd)
+    segment[tcIdx - cursor] = toolCallParts[0]
     const converted = await convertAssistantContentParts(segment, resolveImage, options)
     if (converted.length > 0) {
       output.push({ role: 'assistant' as const, content: converted })
@@ -539,11 +584,15 @@ export async function convertToModelMessages(
     : options?.signedReasoningOnly
       ? 'signed-only'
       : 'text'
+  const lastAssistantIndex = lastAssistantResponseIndex(messages)
+  const allowUnmarkedTail = canReplayUnmarkedTail(messages, lastAssistantIndex)
   const inlineToolResultImagePositions = collectRecentToolResultImagePositions(
     messages,
     options?.supportToolResultImages === undefined
       ? 0
-      : (options.maxInlineToolResultImages ?? DEFAULT_MAX_INLINE_TOOL_RESULT_IMAGES)
+      : (options.maxInlineToolResultImages ?? DEFAULT_MAX_INLINE_TOOL_RESULT_IMAGES),
+    lastAssistantIndex,
+    allowUnmarkedTail
   )
 
   for (const [messageIndex, m] of messages.entries()) {
@@ -569,6 +618,7 @@ export async function convertToModelMessages(
           modelSupportVision: options?.modelSupportVision,
           supportToolResultImages: options?.supportToolResultImages,
           inlineToolResultImagePartIndexes: inlineToolResultImagePositions.get(messageIndex),
+          allowUnmarkedTail: messageIndex === lastAssistantIndex && allowUnmarkedTail,
         })
         break
       case 'tool':

@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "平衡：在成本與保留上下文之間取得良好平衡",
   "Bash is not available on this Windows device.": "此 Windows 裝置上沒有可用的 Bash。",
   "Basic": "基礎",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "適合需要檔案、程式碼執行、工具、MCP、技能或知識庫參與的多步驟任務。",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "適合快速問答、寫作、翻譯、解釋和網頁搜尋。",
   "Beta updates": "測試版更新",
   "Binary/executable files are not supported": "不支援二進位/執行檔",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "Bing Search 提供免費使用，但可能會有限制，並由 Microsoft 決定是否變更。",
@@ -1553,5 +1551,7 @@
   "Runs when the session is idle": "工作階段空閒後執行",
   "Failed to queue the compression": "壓縮未能排隊，請重試",
   "Compression could not start": "壓縮未能開始",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "此對話使用的模型供應商已被刪除，請選擇其他模型後重試。"
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "此對話使用的模型供應商已被刪除，請選擇其他模型後重試。",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "輕量上下文、省 token，聊天與角色扮演更自然生動。",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "全功能、嚴謹精確，勝任多步驟複雜任務。"
 }

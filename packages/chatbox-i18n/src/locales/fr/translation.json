@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "Équilibré : Bon équilibre entre le coût et la préservation du contexte",
   "Bash is not available on this Windows device.": "Bash n’est pas disponible sur cet appareil Windows.",
   "Basic": "Basique",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "Idéal pour les tâches en plusieurs étapes avec fichiers, exécution de code, outils, MCP, compétences ou bases de connaissances.",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "Idéal pour les questions-réponses rapides, la rédaction, la traduction, les explications et la recherche web.",
   "Beta updates": "Mises à jour bêta",
   "Binary/executable files are not supported": "Les fichiers binaires/exécutables ne sont pas pris en charge",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "La recherche Bing est fournie gratuitement, mais elle peut avoir des limitations et est sujette à modification par Microsoft.",
@@ -1553,5 +1551,7 @@
   "Runs when the session is idle": "S'exécute lorsque la session est inactive",
   "Failed to queue the compression": "Impossible de mettre la compression en file d'attente",
   "Compression could not start": "Impossible de démarrer la compression",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "Le fournisseur de modèle utilisé par cette conversation a été supprimé. Veuillez sélectionner un autre modèle et réessayer."
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Le fournisseur de modèle utilisé par cette conversation a été supprimé. Veuillez sélectionner un autre modèle et réessayer.",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "Contexte léger et moins de Tokens. Idéal pour des conversations naturelles et le jeu de rôle.",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "Toutes les capacités, avec rigueur et précision. Conçu pour les tâches en plusieurs étapes."
 }

@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "Dengeli: Maliyet ile bağlam koruma arasında iyi denge",
   "Bash is not available on this Windows device.": "Bash bu Windows cihazında kullanılamıyor.",
   "Basic": "Temel",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "Dosyalar, kod yürütme, araçlar, MCP, yetenekler veya bilgi tabanları içeren çok adımlı görevler için en uygun.",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "Hızlı soru-cevap, yazma, çeviri, açıklamalar ve web araması için en uygun.",
   "Beta updates": "Beta güncellemeleri",
   "Binary/executable files are not supported": "İkili/çalıştırılabilir dosyalar desteklenmiyor",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "Bing Arama ücretsiz kullanım için sunulur, ancak sınırlamaları olabilir ve Microsoft tarafından değiştirilebilir.",
@@ -1549,5 +1547,7 @@
   "Runs when the session is idle": "Oturum boşta olduğunda çalışır",
   "Failed to queue the compression": "Sıkıştırma kuyruğa alınamadı",
   "Compression could not start": "Sıkıştırma başlatılamadı",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "Bu konuşmada kullanılan model sağlayıcısı kaldırıldı. Lütfen başka bir model seçip tekrar deneyin."
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Bu konuşmada kullanılan model sağlayıcısı kaldırıldı. Lütfen başka bir model seçip tekrar deneyin.",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "Hafif bağlam ve daha az Token. Doğal, canlı sohbet ve rol yapma için.",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "Tüm yetenekler, titiz ve kesin. Çok adımlı görevler için."
 }

@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "Сбалансированный: хороший баланс между стоимостью и сохранением контекста",
   "Bash is not available on this Windows device.": "Bash недоступен на этом устройстве с Windows.",
   "Basic": "Базовый",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "Лучше всего подходит для многошаговых задач с файлами, выполнением кода, инструментами, MCP, навыками или базами знаний.",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "Лучше всего подходит для быстрых вопросов и ответов, письма, перевода, объяснений и веб-поиска.",
   "Beta updates": "Бета-обновления",
   "Binary/executable files are not supported": "Бинарные/исполняемые файлы не поддерживаются",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "Поиск Bing предоставляется для бесплатного использования, но может иметь ограничения и быть изменен компанией Microsoft.",
@@ -1553,5 +1551,7 @@
   "Runs when the session is idle": "Выполнится, когда сессия освободится",
   "Failed to queue the compression": "Не удалось поставить сжатие в очередь",
   "Compression could not start": "Не удалось запустить сжатие",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "Провайдер моделей, используемый в этом диалоге, был удалён. Выберите другую модель и повторите попытку."
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Провайдер моделей, используемый в этом диалоге, был удалён. Выберите другую модель и повторите попытку.",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "Лёгкий контекст и меньше Token. Для живого, естественного общения и ролевых игр.",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "Полный набор возможностей, строго и точно. Для многошаговых задач."
 }

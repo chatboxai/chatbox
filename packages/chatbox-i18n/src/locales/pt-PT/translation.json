@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "Equilibrado: Bom equilíbrio entre custo e preservação de contexto",
   "Bash is not available on this Windows device.": "O Bash não está disponível neste dispositivo Windows.",
   "Basic": "Básico",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "Ideal para tarefas em vários passos com ficheiros, execução de código, ferramentas, MCP, competências ou bases de conhecimento.",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "Ideal para perguntas e respostas rápidas, escrita, tradução, explicações e pesquisa na web.",
   "Beta updates": "Atualizações beta",
   "Binary/executable files are not supported": "Ficheiros binários/executáveis não são suportados",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "A Pesquisa Bing é fornecida para uso gratuito, mas pode ter limitações e está sujeita a alterações pela Microsoft.",
@@ -1553,5 +1551,7 @@
   "Runs when the session is idle": "Executa quando a sessão estiver inativa",
   "Failed to queue the compression": "Não foi possível colocar a compressão em fila",
   "Compression could not start": "Não foi possível iniciar a compressão",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "O fornecedor do modelo utilizado nesta conversa foi removido. Selecione outro modelo e tente novamente."
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "O fornecedor do modelo utilizado nesta conversa foi removido. Selecione outro modelo e tente novamente.",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "Contexto leve e menos Tokens. Ideal para conversas naturais e interpretação de papéis.",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "Todas as capacidades, com rigor e precisão. Feito para tarefas em vários passos."
 }

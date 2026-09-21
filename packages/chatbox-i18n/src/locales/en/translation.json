@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "Balanced: Good balance between cost and context preservation",
   "Bash is not available on this Windows device.": "Bash is not available on this Windows device.",
   "Basic": "Basic",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "Best for quick Q&A, writing, translation, explanations, and web search.",
   "Beta updates": "Beta updates",
   "Binary/executable files are not supported": "Binary/executable files are not supported",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.",
@@ -1553,5 +1551,7 @@
   "Runs when the session is idle": "Runs when the session is idle",
   "Failed to queue the compression": "Failed to queue the compression",
   "Compression could not start": "Compression could not start",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "The model provider used by this conversation has been removed. Please select another model and try again."
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "The model provider used by this conversation has been removed. Please select another model and try again.",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "Light context, fewer tokens. Natural, expressive chat and role-play.",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "Full capability, rigorous and precise. Built for multi-step tasks."
 }

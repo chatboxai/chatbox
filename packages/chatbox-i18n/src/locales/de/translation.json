@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "Ausgewogen: Gutes Gleichgewicht zwischen Kosten und Kontexterhaltung",
   "Bash is not available on this Windows device.": "Bash ist auf diesem Windows-Gerät nicht verfügbar.",
   "Basic": "Basis",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "Am besten für mehrstufige Aufgaben mit Dateien, Codeausführung, Tools, MCP, Skills oder Wissensdatenbanken.",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "Am besten für schnelle Fragen und Antworten, Schreiben, Übersetzen, Erklärungen und Websuche.",
   "Beta updates": "Beta-Updates",
   "Binary/executable files are not supported": "Binär- oder ausführbare Dateien werden nicht unterstützt",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "Die Bing Suche wird zur kostenlosen Nutzung bereitgestellt, kann jedoch Einschränkungen unterliegen und von Microsoft geändert werden.",
@@ -1553,5 +1551,7 @@
   "Runs when the session is idle": "Wird ausgeführt, wenn die Sitzung inaktiv ist",
   "Failed to queue the compression": "Komprimierung konnte nicht eingereiht werden",
   "Compression could not start": "Komprimierung konnte nicht gestartet werden",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "Der in diesem Gespräch verwendete Modellanbieter wurde entfernt. Bitte wählen Sie ein anderes Modell aus und versuchen Sie es erneut."
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Der in diesem Gespräch verwendete Modellanbieter wurde entfernt. Bitte wählen Sie ein anderes Modell aus und versuchen Sie es erneut.",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "Schlanker Kontext, weniger Token. Für natürliche, ausdrucksstarke Chats und Rollenspiele.",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "Voller Funktionsumfang, gründlich und präzise. Für mehrstufige Aufgaben."
 }

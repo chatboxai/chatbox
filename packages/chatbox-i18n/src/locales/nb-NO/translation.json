@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "Balansert: God balanse mellom kostnad og bevaring av kontekst",
   "Bash is not available on this Windows device.": "Bash er ikke tilgjengelig på denne Windows-enheten.",
   "Basic": "Grunnleggende",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "Best for flertrinnsoppgaver med filer, kodekjøring, verktøy, MCP, ferdigheter eller kunnskapsbaser.",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "Best for raske spørsmål og svar, skriving, oversettelse, forklaringer og nettsøk.",
   "Beta updates": "Beta-oppdateringer",
   "Binary/executable files are not supported": "Binære filer/eksekverbare filer støttes ikke",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "Bing Search tilbys for gratis bruk, men den kan ha begrensninger og er gjenstand for endringer fra Microsofts side.",
@@ -1553,5 +1551,7 @@
   "Runs when the session is idle": "Kjøres når økten er inaktiv",
   "Failed to queue the compression": "Kunne ikke sette komprimeringen i kø",
   "Compression could not start": "Kunne ikke starte komprimeringen",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "Modell-leverandøren som brukes i denne samtalen er fjernet. Velg en annen modell og prøv igjen."
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Modell-leverandøren som brukes i denne samtalen er fjernet. Velg en annen modell og prøv igjen.",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "Lett kontekst og færre Token. For naturlige, uttrykksfulle samtaler og rollespill.",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "Full kapasitet, grundig og presist. Laget for flertrinnsoppgaver."
 }

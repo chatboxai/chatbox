@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "Bilanciato: Buon equilibrio tra costo e conservazione del contesto",
   "Bash is not available on this Windows device.": "Bash non è disponibile su questo dispositivo Windows.",
   "Basic": "Base",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "Ideale per attività in più passaggi con file, esecuzione di codice, strumenti, MCP, skill o basi di conoscenza.",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "Ideale per domande e risposte rapide, scrittura, traduzione, spiegazioni e ricerca web.",
   "Beta updates": "Aggiornamenti Beta",
   "Binary/executable files are not supported": "I file binari/eseguibili non sono supportati",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "Bing Search è fornito per un uso gratuito, ma potrebbe avere limitazioni ed è soggetto a modifiche da parte di Microsoft.",
@@ -1553,5 +1551,7 @@
   "Runs when the session is idle": "Viene eseguito quando la sessione è inattiva",
   "Failed to queue the compression": "Impossibile mettere in coda la compressione",
   "Compression could not start": "Impossibile avviare la compressione",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "Il fornitore di modelli usato da questa conversazione è stato rimosso. Seleziona un altro modello e riprova."
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "Il fornitore di modelli usato da questa conversazione è stato rimosso. Seleziona un altro modello e riprova.",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "Contesto leggero e meno Token. Ideale per conversazioni naturali e giochi di ruolo.",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "Tutte le funzionalità, con rigore e precisione. Pensato per attività in più passaggi."
 }

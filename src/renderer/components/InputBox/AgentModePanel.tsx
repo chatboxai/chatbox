@@ -631,8 +631,8 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
       : readModel?.kind === 'window' && readModel.summary.userMessageCount > 0)
   const isSmartSwitchingDisabled = entry.locked || !modelSupportsAgentMode || smartSwitchingExpired
   const modeDescription = agentModeUIState.isActive
-    ? t('Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.')
-    : t('Best for quick Q&A, writing, translation, explanations, and web search.')
+    ? t('Full capability, rigorous and precise. Built for multi-step tasks.')
+    : t('Light context, fewer tokens. Natural, expressive chat and role-play.')
   const smartSwitchingDescription = smartSwitchingExpired
     ? t('Only available before the first message.')
     : t('Suggest Work Mode on the first message.')

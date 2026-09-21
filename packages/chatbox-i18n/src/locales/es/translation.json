@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "Equilibrado: buen equilibrio entre coste y preservación de contexto",
   "Bash is not available on this Windows device.": "Bash no está disponible en este dispositivo Windows.",
   "Basic": "Básico",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "Ideal para tareas de varios pasos con archivos, ejecución de código, herramientas, MCP, habilidades o bases de conocimiento.",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "Ideal para preguntas y respuestas rápidas, escritura, traducción, explicaciones y búsqueda web.",
   "Beta updates": "Actualizaciones beta",
   "Binary/executable files are not supported": "Los archivos binarios/ejecutables no son compatibles",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "Bing Search se proporciona para uso gratuito, pero puede tener limitaciones y está sujeto a cambios por parte de Microsoft.",
@@ -1553,5 +1551,7 @@
   "Runs when the session is idle": "Se ejecuta cuando la sesión está inactiva",
   "Failed to queue the compression": "No se pudo poner la compresión en cola",
   "Compression could not start": "No se pudo iniciar la compresión",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "El proveedor de modelo utilizado por esta conversación ha sido eliminado. Seleccione otro modelo e inténtelo de nuevo."
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "El proveedor de modelo utilizado por esta conversación ha sido eliminado. Seleccione otro modelo e inténtelo de nuevo.",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "Contexto ligero y menos Tokens. Ideal para conversaciones naturales y juegos de rol.",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "Todas las capacidades, con rigor y precisión. Pensado para tareas de varios pasos."
 }

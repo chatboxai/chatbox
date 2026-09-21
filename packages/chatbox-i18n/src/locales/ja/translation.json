@@ -194,8 +194,6 @@
   "Balanced: Good balance between cost and context preservation": "バランス型：コストとコンテキスト保持の優れたバランス",
   "Bash is not available on this Windows device.": "この Windows デバイスでは Bash を利用できません。",
   "Basic": "基本",
-  "Best for multi-step tasks with files, code execution, tools, MCP, skills, or knowledge bases.": "ファイル、コード実行、ツール、MCP、スキル、ナレッジベースを使う複数ステップの作業に適しています。",
-  "Best for quick Q&A, writing, translation, explanations, and web search.": "簡単なQ&A、文章作成、翻訳、説明、Web検索に適しています。",
   "Beta updates": "ベータ版アップデート",
   "Binary/executable files are not supported": "バイナリ/実行可能ファイルはサポートされていません",
   "Bing Search is provided for free use, but it may have limitations and is subject to change by Microsoft.": "Bing Searchは無料で使用できますが、制限がある場合があり、Microsoftによって変更される可能性があります。",
@@ -1553,5 +1551,7 @@
   "Runs when the session is idle": "セッションがアイドル状態になった後に実行されます",
   "Failed to queue the compression": "圧縮をキューに追加できませんでした",
   "Compression could not start": "圧縮を開始できませんでした",
-  "The model provider used by this conversation has been removed. Please select another model and try again.": "この会話で使用しているモデルプロバイダーは削除されました。別のモデルを選択してからもう一度お試しください。"
+  "The model provider used by this conversation has been removed. Please select another model and try again.": "この会話で使用しているモデルプロバイダーは削除されました。別のモデルを選択してからもう一度お試しください。",
+  "Light context, fewer tokens. Natural, expressive chat and role-play.": "軽いコンテキストで Token を節約。自然で表現豊かな会話やロールプレイに。",
+  "Full capability, rigorous and precise. Built for multi-step tasks.": "全機能を備え、厳密かつ正確。多段階のタスク向け。"
 }

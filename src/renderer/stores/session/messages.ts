@@ -1,4 +1,4 @@
-import { SessionNotFoundError } from '@chatbox/core'
+import { compactionFailureError, SessionNotFoundError } from '@chatbox/core'
 import {
   createGenerationSegmentSplitWriter,
   StreamingWriteCoordinator,
@@ -337,9 +337,12 @@ export async function submitNewUserMessageUnlocked(
   // Run compaction check before sending message (blocking)
   // Only for chat sessions with auto-compaction enabled
   if (session.type === 'chat' || session.type === undefined) {
-    const compactionResult = await runCompactionWithUIState(sessionId, { pendingMessage: params.newUserMsg })
-    if (!compactionResult.success) {
-      throw compactionResult.error ?? new Error('Compaction failed')
+    const compactionResult = await runCompactionWithUIState(sessionId, {
+      kind: 'automatic',
+      pendingMessage: params.newUserMsg,
+    })
+    if (compactionResult.status === 'failed') {
+      throw compactionFailureError(compactionResult.failure)
     }
   }
 

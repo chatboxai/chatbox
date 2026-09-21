@@ -1,11 +1,12 @@
 import {
+  type CompactionRequest,
+  type CompactionRunOptions,
   CompactionService,
   type CompactionServiceResult,
   isAutoCompactionEnabled,
 } from '@chatbox/core/application/context'
 import { hasPendingSessionGeneration, withSessionGenerationLock } from '@chatbox/core/generation'
 import type { SessionLockState } from '@chatbox/core/session/action-gates'
-import type { Message } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import { rendererApplication } from '@/app/renderer-application'
@@ -89,23 +90,9 @@ const compactionService = new CompactionService({
   createId: uuidv4,
 })
 
-export interface CompactionOptions {
-  target?: { targetMessageId: string; boundaryMessageId: string }
-  pendingMessage?: Message
+export interface ManualCompactionOptions {
   force?: boolean
   prompt?: string
-  abortSignal?: AbortSignal
-}
-
-export interface CompactionResult {
-  success: boolean
-  compacted: boolean
-  error?: Error
-  summaryMessageId?: string
-  summary?: string
-  boundaryMessageId?: string
-  /** Another compaction for this session was already streaming. */
-  alreadyRunning?: boolean
 }
 
 /**
@@ -127,12 +114,13 @@ export function needsCompaction(sessionId: string): Promise<boolean> {
 
 export async function runCompactionWithUIState(
   sessionId: string,
-  options: CompactionOptions = {}
-): Promise<CompactionResult> {
+  request: CompactionRequest,
+  options: CompactionRunOptions = {}
+): Promise<CompactionServiceResult> {
   return (
     (await rendererApplication.backupOperations.runBackground(() =>
-      withSessionWorkAccess(() => compactWithUIState(sessionId, options))
-    )) ?? { success: true, compacted: false }
+      withSessionWorkAccess(() => compactWithUIState(sessionId, request, options))
+    )) ?? { status: 'skipped', reason: 'backup_busy' }
   )
 }
 
@@ -167,7 +155,7 @@ function enqueueManualCompaction(
  */
 export async function requestManualCompaction(
   sessionId: string,
-  options: CompactionOptions = {}
+  options: ManualCompactionOptions = {}
 ): Promise<ManualCompactionOutcome> {
   const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
   const locks = await getSessionLockStateNow(sessionId, session)
@@ -186,7 +174,7 @@ export async function requestManualCompaction(
 
 async function runAcceptedCompaction(
   sessionId: string,
-  options: CompactionOptions,
+  options: ManualCompactionOptions,
   request: { prompt?: string; force?: boolean },
   conversationAnchorId?: string
 ): Promise<ManualCompactionOutcome> {
@@ -201,7 +189,11 @@ async function runAcceptedCompaction(
       }
       started = true
       resolve('started')
-      await runCompactionWithUIState(sessionId, options)
+      await runCompactionWithUIState(
+        sessionId,
+        { kind: options.force ? 'manual' : 'automatic' },
+        { prompt: options.prompt }
+      )
     })
 
     void action.catch((error: unknown) => {
@@ -218,80 +210,56 @@ async function runAcceptedCompaction(
   })
 }
 
-async function compactWithUIState(sessionId: string, options: CompactionOptions = {}): Promise<CompactionResult> {
-  if (compactionService.isInProgress(sessionId)) {
-    return { success: true, compacted: false, alreadyRunning: true }
+async function compactWithUIState(
+  sessionId: string,
+  request: CompactionRequest,
+  options: CompactionRunOptions
+): Promise<CompactionServiceResult> {
+  if (compactionService.isInProgress(sessionId)) return { status: 'skipped', reason: 'busy' }
+  if (options.abortSignal?.aborted) return { status: 'cancelled' }
+  if (request.kind === 'automatic' && !(await compactionService.needsCompaction(sessionId, request.pendingMessage))) {
+    return { status: 'skipped', reason: 'not_needed' }
   }
-  if (!options.force && !(await compactionService.needsCompaction(sessionId))) {
-    return { success: true, compacted: false }
-  }
-
   setCompactionUIState(sessionId, {
     status: 'running',
     error: null,
     streamingText: '',
     summaryMessageId: null,
   })
-  // The pre-check above is only a cheap fast-path for UI state; pass the
-  // caller's real `force` through so the auto path is re-validated inside
-  // run() (behind its ongoing-set), closing the window where the session
-  // changes between the two checks and gets compacted twice.
-  const result = mapResult(
-    await compactionService.run(sessionId, {
-      force: options.force === true,
-      prompt: options.prompt,
-      pendingMessage: options.pendingMessage,
-      abortSignal: options.abortSignal,
-      target: options.target,
-      onStreamUpdate: (text) => setCompactionUIState(sessionId, { streamingText: text }),
-    })
-  )
-
-  if (result.alreadyRunning) {
-    return result
-  }
-
-  if (result.success && result.compacted && result.summaryMessageId) {
-    setCompactionUIState(sessionId, {
-      status: 'completed',
-      error: null,
-      streamingText: '',
-      summaryMessageId: result.summaryMessageId,
-    })
-  } else if (result.success) {
-    setCompactionUIState(sessionId, {
-      status: 'idle',
-      error: null,
-      streamingText: '',
-      summaryMessageId: null,
-    })
-  } else {
-    setCompactionUIState(sessionId, {
-      status: 'failed',
-      error: result.error?.message ?? 'Compaction failed',
-      streamingText: '',
-      summaryMessageId: null,
-    })
+  const result = await compactionService.run(sessionId, request, {
+    ...options,
+    onStreamUpdate: (text) => {
+      setCompactionUIState(sessionId, { streamingText: text })
+      options.onStreamUpdate?.(text)
+    },
+  })
+  if (result.status === 'skipped' && result.reason === 'busy') return result
+  switch (result.status) {
+    case 'compacted':
+      setCompactionUIState(sessionId, {
+        status: 'completed',
+        error: null,
+        streamingText: '',
+        summaryMessageId: result.summaryMessageId,
+      })
+      break
+    case 'failed':
+      setCompactionUIState(sessionId, {
+        status: 'failed',
+        error: result.failure.message,
+        streamingText: '',
+        summaryMessageId: null,
+      })
+      break
+    case 'skipped':
+    case 'cancelled':
+      setCompactionUIState(sessionId, {
+        status: 'idle',
+        error: null,
+        streamingText: '',
+        summaryMessageId: null,
+      })
+      break
   }
   return result
-}
-
-function mapResult(result: CompactionServiceResult): CompactionResult {
-  if (!result.failure)
-    return {
-      success: result.success,
-      compacted: result.compacted,
-      summaryMessageId: result.summaryMessageId,
-      summary: result.summary,
-      boundaryMessageId: result.boundaryMessageId,
-      alreadyRunning: result.alreadyRunning,
-    }
-  return {
-    success: result.success,
-    compacted: result.compacted,
-    error: result.failure.cause instanceof Error ? result.failure.cause : new Error(result.failure.message),
-    summaryMessageId: result.summaryMessageId,
-    summary: result.summary,
-    boundaryMessageId: result.boundaryMessageId,
-  }
 }

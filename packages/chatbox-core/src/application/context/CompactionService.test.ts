@@ -2,7 +2,8 @@ import { selectContextMessages } from '@shared/context'
 import { describe, expect, test, vi } from 'vitest'
 import type { LoggerPort } from '../../ports'
 import type { Message, Session, SessionSettings, Settings } from '../../types'
-import { CompactionService } from './CompactionService'
+import { selectTokenEstimationContext } from '../token-estimation/TokenEstimationService'
+import { CompactionService, type CompactionSummaryPort } from './CompactionService'
 
 function message(id: string, role: Message['role']): Message {
   return { id, role, contentParts: [{ type: 'text', text: id }] }
@@ -46,14 +47,10 @@ function createHarness(
     (current: Session, _settings: SessionSettings, _pendingMessage?: Message) => current.messages
   )
   const shouldCompact = vi.fn(() => Promise.resolve(true))
-  const generate = vi.fn(
-    (input: {
-      onStreamUpdate?: (text: string) => void
-    }): Promise<{ success: boolean; summary?: string; error?: Error }> => {
-      input.onStreamUpdate?.('streaming summary')
-      return Promise.resolve({ success: true, summary: 'Final summary' })
-    }
-  )
+  const generate = vi.fn<CompactionSummaryPort['generate']>(async (input) => {
+    input.onStreamUpdate?.('streaming summary')
+    return { success: true, summary: 'Final summary' }
+  })
   const service = new CompactionService({
     sessions: {
       getSession: () => Promise.resolve(session),
@@ -86,13 +83,14 @@ function createHarness(
 }
 
 describe('CompactionService', () => {
-  test('rejects an unexpected boundary before generating or persisting a summary', async () => {
+  test('rejects a retained round outside the target before generating or persisting a summary', async () => {
     const harness = createHarness()
     const result = await harness.service.run('session-1', {
-      force: true,
-      target: { targetMessageId: 'assistant', boundaryMessageId: 'other-branch' },
+      kind: 'generation',
+      targetMessageId: 'assistant',
+      retainedToolCallId: 'other-branch',
     })
-    expect(result.compacted).toBe(false)
+    expect(result).toEqual({ status: 'skipped', reason: 'stale_path' })
     expect(harness.generate).not.toHaveBeenCalled()
     expect(harness.session.compactionPoints).toBeUndefined()
   })
@@ -104,18 +102,97 @@ describe('CompactionService', () => {
         messages: [message('replacement', 'user'), session.messages[2]],
       }),
     })
+    Object.assign(harness.session.messages[2], {
+      generating: true,
+      contentParts: [{ type: 'tool-call', state: 'call', toolCallId: 'current-tool', toolName: 'search', args: {} }],
+    })
     const result = await harness.service.run('session-1', {
-      force: true,
-      target: { targetMessageId: 'assistant', boundaryMessageId: 'user' },
+      kind: 'generation',
+      targetMessageId: 'assistant',
+      retainedToolCallId: 'current-tool',
     })
     expect(harness.generate).toHaveBeenCalledOnce()
-    expect(result.compacted).toBe(false)
+    expect(result).toEqual({ status: 'skipped', reason: 'stale_path' })
     expect(harness.session.compactionPoints).toBeUndefined()
+  })
+
+  test.each(['summary', 'commit'] as const)('cancels at %s without persisting a summary', async (stage) => {
+    const abort = new AbortController()
+    const harness = createHarness({
+      beforeUpdate: (session) => {
+        if (stage === 'commit') abort.abort()
+        return session
+      },
+    })
+    harness.generate.mockImplementationOnce(async () => {
+      if (stage === 'summary') abort.abort()
+      return { success: true, summary: 'Cancelled summary' }
+    })
+    expect(await harness.service.run('session-1', { kind: 'manual' }, { abortSignal: abort.signal })).toEqual({
+      status: 'cancelled',
+    })
+    expect(harness.session.compactionPoints).toBeUndefined()
+    expect(harness.session.messages.some((message) => message.isSummary)).toBe(false)
+    expect(harness.service.isInProgress('session-1')).toBe(false)
+  })
+
+  test('reports busy while another summary runs and accepts work after it settles', async () => {
+    const harness = createHarness()
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    harness.generate.mockImplementationOnce(async () => {
+      await waiting
+      return { success: true, summary: 'First summary' }
+    })
+    const first = harness.service.run('session-1', { kind: 'manual' })
+    expect(await harness.service.run('session-1', { kind: 'manual' })).toEqual({ status: 'skipped', reason: 'busy' })
+    release()
+    expect(await first).toMatchObject({ status: 'compacted' })
+    expect(await harness.service.run('session-1', { kind: 'manual' })).toMatchObject({ status: 'compacted' })
+  })
+
+  test('summarizes an archived generation using its prior summary and eligible boundary', async () => {
+    const harness = createHarness()
+    const target: Message = {
+      ...message('target', 'assistant'),
+      generating: true,
+      contentParts: [{ type: 'tool-call', state: 'call', toolCallId: 'retained', toolName: 'search', args: {} }],
+    }
+    const oldSummary: Message = { ...message('old-summary', 'assistant'), isSummary: true }
+    harness.session.threads = [
+      {
+        id: 'archived',
+        name: 'Archived',
+        createdAt: 1,
+        messages: [
+          message('old-user', 'user'),
+          oldSummary,
+          message('recent-user', 'user'),
+          { ...message('marker', 'assistant'), isForkMarker: true },
+          target,
+        ],
+        compactionPoints: [{ summaryMessageId: 'old-summary', boundaryMessageId: 'old-user', createdAt: 1 }],
+      },
+    ]
+    harness.getCompactionContext.mockImplementation((session, settings, pending) =>
+      selectTokenEstimationContext(session, settings.maxContextMessageCount, pending)
+    )
+    const request = { kind: 'generation' as const, targetMessageId: 'target', retainedToolCallId: 'retained' }
+    const result = await harness.service.run('session-1', request)
+    expect(result).toMatchObject({ status: 'compacted', coverage: { ...request, boundaryMessageId: 'recent-user' } })
+    expect(harness.generate.mock.calls[0][0].messages.map((message) => message.id)).toEqual([
+      'old-summary',
+      'recent-user',
+    ])
+    expect(harness.session.compactionPoints).toBeUndefined()
+    expect(harness.session.threads[0].compactionPoints?.at(-1)?.boundaryMessageId).toBe('recent-user')
   })
 
   test('uses the saved prompt for automatic compaction', async () => {
     const harness = createHarness({ compactionPrompt: 'Preserve decisions and file paths.' })
-    await harness.service.run('session-1')
+    await harness.service.run('session-1', { kind: 'automatic' })
     expect(harness.generate).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: 'Preserve decisions and file paths.' })
     )
@@ -123,9 +200,9 @@ describe('CompactionService', () => {
 
   test('keeps a manual prompt override scoped to one run', async () => {
     const harness = createHarness({ compactionPrompt: 'Saved instructions' })
-    await harness.service.run('session-1', { force: true, prompt: 'One-time instructions' })
+    await harness.service.run('session-1', { kind: 'manual' }, { prompt: 'One-time instructions' })
     expect(harness.generate).toHaveBeenLastCalledWith(expect.objectContaining({ prompt: 'One-time instructions' }))
-    await harness.service.run('session-1', { force: true })
+    await harness.service.run('session-1', { kind: 'manual' })
     expect(harness.generate).toHaveBeenLastCalledWith(expect.objectContaining({ prompt: 'Saved instructions' }))
   })
 
@@ -133,11 +210,19 @@ describe('CompactionService', () => {
     const harness = createHarness()
     const streamUpdates: string[] = []
 
-    const result = await harness.service.run('session-1', {
-      onStreamUpdate: (text) => streamUpdates.push(text),
-    })
+    const result = await harness.service.run(
+      'session-1',
+      { kind: 'automatic' },
+      {
+        onStreamUpdate: (text) => streamUpdates.push(text),
+      }
+    )
 
-    expect(result).toMatchObject({ success: true, compacted: true, boundaryMessageId: 'assistant' })
+    expect(result).toMatchObject({
+      status: 'compacted',
+      coverage: { kind: 'conversation', boundaryMessageId: 'assistant' },
+    })
+    if (result.status !== 'compacted') throw new Error('Expected a committed summary')
     expect(streamUpdates).toEqual(['streaming summary'])
     expect(harness.generate).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }))
     expect(harness.session.messages.at(-1)).toMatchObject({ role: 'assistant', isSummary: true })
@@ -154,7 +239,7 @@ describe('CompactionService', () => {
     const harness = createHarness()
     const pendingMessage = message('pending-user', 'user')
 
-    await harness.service.run('session-1', { pendingMessage })
+    await harness.service.run('session-1', { kind: 'automatic', pendingMessage })
 
     expect(harness.shouldCompact).toHaveBeenCalledWith(expect.objectContaining({ pendingMessage }))
     expect(harness.getCompactionContext).toHaveBeenCalledWith(expect.any(Object), expect.any(Object), pendingMessage)
@@ -190,14 +275,14 @@ describe('CompactionService', () => {
       ],
     })
 
-    const result = await harness.service.run('session-1', { force: true })
+    const result = await harness.service.run('session-1', { kind: 'manual' })
 
-    expect(result).toMatchObject({ success: true, compacted: true })
+    expect(result).toMatchObject({ status: 'compacted' })
     expect(harness.session.compactionPoints?.[0]).toMatchObject({ boundaryMessageId: 'a3' })
     expect(harness.session.messages.map((m) => m.id)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3', 'summary-message'])
 
     // The summarizer saw only the covered range, with the tool call flattened to text.
-    const summaryInput = harness.generate.mock.calls[0][0] as unknown as { messages: Message[] }
+    const summaryInput = harness.generate.mock.calls[0][0]
     expect(summaryInput.messages.map((m) => m.id)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
     const flattenedParts = summaryInput.messages[1].contentParts ?? []
     expect(flattenedParts.some((part) => part.type === 'tool-call')).toBe(false)
@@ -216,11 +301,11 @@ describe('CompactionService', () => {
     }
     const harness = createHarness({ messages })
 
-    const result = await harness.service.run('session-1', { force: true })
+    const result = await harness.service.run('session-1', { kind: 'manual' })
 
-    expect(result).toMatchObject({ success: true, compacted: true })
+    expect(result).toMatchObject({ status: 'compacted' })
     expect(harness.session.compactionPoints?.[0]).toMatchObject({ boundaryMessageId: 'a130' })
-    const summaryInput = harness.generate.mock.calls[0][0] as unknown as { messages: Message[] }
+    const summaryInput = harness.generate.mock.calls[0][0]
     expect(summaryInput.messages).toHaveLength(260)
     expect(summaryInput.messages.at(-1)?.id).toBe('a130')
   })
@@ -238,9 +323,8 @@ describe('CompactionService', () => {
       }),
     })
 
-    await expect(harness.service.run('session-1', { force })).resolves.toMatchObject({
-      success: true,
-      compacted: true,
+    await expect(harness.service.run('session-1', { kind: force ? 'manual' : 'automatic' })).resolves.toMatchObject({
+      status: 'compacted',
     })
     expect(harness.session.compactionPoints?.[0].boundaryMessageId).toBe('a4')
     expect(
@@ -248,7 +332,7 @@ describe('CompactionService', () => {
         compactionPoints: harness.session.compactionPoints,
       }).map((item) => item.id)
     ).toEqual(['system', 'summary-message', 'new-user'])
-    const summaryInput = harness.generate.mock.calls[0][0] as unknown as { messages: Message[] }
+    const summaryInput = harness.generate.mock.calls[0][0]
     expect(summaryInput.messages.map((item) => item.id)).toEqual(['system', ...messages.map((item) => item.id)])
   })
 
@@ -264,11 +348,10 @@ describe('CompactionService', () => {
     harness.generate.mockResolvedValueOnce({ success: false, error: new Error('provider failed') })
     const originalMessages = harness.session.messages
 
-    const result = await harness.service.run('session-1', { force: true })
+    const result = await harness.service.run('session-1', { kind: 'manual' })
 
     expect(result).toMatchObject({
-      success: false,
-      compacted: false,
+      status: 'failed',
       failure: { code: 'summary_failed', message: 'provider failed' },
     })
     expect(harness.session.messages).toBe(originalMessages)
@@ -285,13 +368,12 @@ describe('CompactionService', () => {
       logger: { log },
     })
 
-    const result = await harness.service.run('session-1', { force: true })
+    const result = await harness.service.run('session-1', { kind: 'manual' })
 
-    expect(result).toEqual({ success: true, compacted: false })
-    expect(log).toHaveBeenCalledWith(
-      'warn',
-      'Compaction boundary message disappeared during summary streaming; compaction abandoned',
-      { sessionId: 'session-1', boundaryMessageId: 'assistant' }
-    )
+    expect(result).toEqual({ status: 'skipped', reason: 'stale_path' })
+    expect(log).toHaveBeenCalledWith('warn', 'Compaction path changed during summary streaming; compaction abandoned', {
+      sessionId: 'session-1',
+      boundaryMessageId: 'assistant',
+    })
   })
 })

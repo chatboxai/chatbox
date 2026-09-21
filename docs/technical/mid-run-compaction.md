@@ -5,7 +5,8 @@
 | Responsibility | Owner |
 | --- | --- |
 | Protocol-aware size estimates; complete-round tail boundaries; stable tool-call lookup | `generation/mid-run-compaction.ts` |
-| Reuse, measure, plan, compact, verify coverage, and advance a run's summary | `generation/MidRunCompactionController.ts` |
+| Reuse, measure, choose retained tool rounds, verify receipts, and advance a run's summary | `generation/MidRunCompactionController.ts` |
+| Resolve the target path, select the summary window, and validate commit ownership | `application/context/compaction-plan.ts` |
 | Join an in-flight structural write before cancellation or an old checkpoint is published | `generation/GenerationSegmentTransitions.ts` |
 | Snapshot and atomically persist the prefix and continuation in the right root/thread/fork | `application/session/generation-segment-split.ts` |
 | Model, streaming processor, steering, and runtime target handoff | `generation/GenerationService.ts` |
@@ -22,8 +23,9 @@ base/steering projection
   -> estimate that effective request (even after earlier successful compactions)
   -> if over threshold, choose a newer complete tool-round boundary
   -> atomically seal a prefix when current generating calls would be removed
-  -> summarize the target message path through the explicit durable boundary
-  -> verify the returned boundary matches, including when no split is needed
+  -> resolve the target path and summary window from the retained tool-call identity
+  -> validate the plan inside the coordinated commit
+  -> verify the receipt belongs to this generation and retained round
   -> replace the rewrite's summary and retained tool-call ID
 ```
 
@@ -33,9 +35,11 @@ Cuts are resolved by tool-call identity, never by a cached array offset. Synthet
 
 ## Summary ownership
 
-Each request carries the current generation target ID and expected boundary ID. `CompactionService` reconstructs that target's path, including inactive forks and archived threads, and uses its owning thread's compaction points. It rejects a mismatched summary boundary before calling the summarizer. Inside the coordinated commit, it checks cancellation and verifies that the target still has the same ordered history. Changing the selected branch does not change summary ownership.
+A generation request carries the current target message ID and the first retained tool-call ID. The context planner resolves the same target path used for sending, including inactive forks and archived threads, and applies the host's context selection and message-count limit using that thread's compaction points. It owns the summary boundary; steering owns only its insertion anchor.
 
-When every current tool call remains in the tail, the expected boundary is the generation target's predecessor. Both split and unsplit requests verify the returned boundary before replacing model context. A retained tool from inside an older, unsplit message cannot define a complete durable boundary, so that step keeps its current context.
+Before planning, generation awaits a coordinated checkpoint so the retained round is visible to repository reads, including when no split is needed. The retained tool call must be the first call in the generating target. When older calls must be summarized, the atomic split supplies a continuation satisfying that contract. Inside the coordinated summary commit, the planner checks cancellation, target/retained-round identity, and the complete ordered ancestry. Changing the selected branch does not change summary ownership. Both split and unsplit requests receive a typed receipt containing their generation identity and the committed summary boundary.
+
+Requests distinguish automatic threshold checks, manual compaction, and generation compaction. Outcomes distinguish a committed summary, a temporary skip, cancellation, and failure. A busy compactor or backup operation leaves the controller eligible to try at the next provider step; cancellation keeps the current context, while a stale path or summary failure stops further compaction for that run. A retained tool from inside an older, unsplit message cannot define a complete durable boundary, so that step keeps its current context.
 
 ## Atomic segment persistence
 
@@ -57,6 +61,6 @@ These are pressure heuristics, not provider billing counts or a guarantee that a
 
 ## Regression coverage
 
-The controller tests append 64 tool rounds, require multiple compactions, and bound the effective request after each step for the fixture. Other cases cover a second compaction failing, changed image projections, boundary mismatch, canceled/disabled runs, and declined splits.
+The controller tests append 64 tool rounds, require multiple compactions, and bound the effective request after each step for the fixture. Other cases cover a second compaction failing, changed image projections, receipt mismatch, temporary busy outcomes, canceled/disabled runs, and declined splits.
 
 The writer tests cover one-write durability, failure before commit, metadata failure after commit, abort before/while writing, old-checkpoint draining, concurrent terminal writes, root/thread/fork paths, idempotency, and missing anchors. Transition tests verify that cancellation waits for adoption. Media tests use the real `buildViewImageToolResultContent` shape rather than a synthetic top-level image alone.

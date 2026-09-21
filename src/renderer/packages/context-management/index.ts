@@ -1,4 +1,4 @@
-export type { CompactionOptions, CompactionResult, ManualCompactionOutcome } from './compaction'
+export type { ManualCompactionOptions, ManualCompactionOutcome } from './compaction'
 export {
   isAutoCompactionEnabled,
   isCompactionInProgress,

@@ -97,7 +97,7 @@ beforeEach(() => {
 describe('runCompactionWithUIState', () => {
   it('does not admit compaction during backup', async () => {
     await rendererApplication.backupOperations.run('export', async () => {
-      await runCompactionWithUIState('session-1', { force: true })
+      await runCompactionWithUIState('session-1', { kind: 'manual' })
       expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
       expect(updateSessionWithMessagesMock).not.toHaveBeenCalled()
     })
@@ -105,7 +105,7 @@ describe('runCompactionWithUIState', () => {
 
   it('forwards a one-time prompt to the summary generator', async () => {
     generateSummaryWithStreamMock.mockResolvedValue({ success: true, summary: 'Summary' })
-    await runCompactionWithUIState('session-1', { force: true, prompt: 'Keep exact paths.' })
+    await runCompactionWithUIState('session-1', { kind: 'manual' }, { prompt: 'Keep exact paths.' })
     expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'Keep exact paths.' }))
   })
 
@@ -165,10 +165,9 @@ describe('runCompactionWithUIState', () => {
       }
       return Promise.resolve({ success: true, summary: 'Summary' })
     })
-    const result = await runCompactionWithUIState(session.id, { force: true, pendingMessage: pending })
+    const result = await runCompactionWithUIState(session.id, { kind: 'manual' })
     expect(result, `Summary input tokens (cl100k_base): ${countInputTokens(summarizedMessages)}`).toMatchObject({
-      success: true,
-      compacted: true,
+      status: 'compacted',
     })
     expect(countInputTokens(summarizedMessages)).toBe(12)
     expect(summarizedMessages).toEqual(sendContext.filter((message) => message.id !== pending.id))
@@ -183,16 +182,16 @@ describe('runCompactionWithUIState', () => {
       })
     )
 
-    const first = runCompactionWithUIState('session-1', { force: true })
+    const first = runCompactionWithUIState('session-1', { kind: 'manual' })
     await vi.waitFor(() => {
       expect(getCompactionUIState('session-1').status).toBe('running')
       expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }))
     })
 
     // e.g. the manual Compress modal confirmed while auto-compaction streams
-    const duplicate = await runCompactionWithUIState('session-1', { force: true })
+    const duplicate = await runCompactionWithUIState('session-1', { kind: 'manual' })
 
-    expect(duplicate).toMatchObject({ success: true, compacted: false, alreadyRunning: true })
+    expect(duplicate).toMatchObject({ status: 'skipped', reason: 'busy' })
     // The duplicate must not reset the owner's UI state: fork switching stays
     // locked while the summary is still streaming.
     expect(getCompactionUIState('session-1').status).toBe('running')
@@ -200,7 +199,7 @@ describe('runCompactionWithUIState', () => {
     resolveSummary({ success: true, summary: 'summary text' })
     const result = await first
 
-    expect(result).toMatchObject({ success: true, compacted: true })
+    expect(result).toMatchObject({ status: 'compacted' })
     expect(getCompactionUIState('session-1')).toMatchObject({
       status: 'completed',
       summaryMessageId: expect.any(String),

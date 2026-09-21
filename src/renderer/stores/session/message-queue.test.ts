@@ -1,5 +1,6 @@
 import type { Message, Session } from '@shared/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { runCompactionWithUIState } from '@/packages/context-management/compaction'
 
 const { getSessionMock, submitMock, insertMessageMock, generateMock, runCompactionMock, isCompactionInProgressMock } =
   vi.hoisted(() => {
@@ -20,7 +21,7 @@ const { getSessionMock, submitMock, insertMessageMock, generateMock, runCompacti
       submitMock: vi.fn(),
       insertMessageMock: vi.fn(),
       generateMock: vi.fn(),
-      runCompactionMock: vi.fn(),
+      runCompactionMock: vi.fn<typeof runCompactionWithUIState>(),
       isCompactionInProgressMock: vi.fn(),
     }
   })
@@ -130,7 +131,12 @@ describe('message queue', () => {
       return Promise.resolve()
     })
     generateMock.mockResolvedValue(undefined)
-    runCompactionMock.mockResolvedValue({ success: true, compacted: true, summaryMessageId: 'summary-1' })
+    runCompactionMock.mockResolvedValue({
+      status: 'compacted',
+      summaryMessageId: 'summary-1',
+      summary: 'Summary',
+      coverage: { kind: 'conversation', boundaryMessageId: 'assistant' },
+    })
     isCompactionInProgressMock.mockReturnValue(false)
   })
 
@@ -797,7 +803,12 @@ describe('message queue', () => {
       })
       runCompactionMock.mockImplementation(() => {
         order.push('compaction')
-        return Promise.resolve({ success: true, compacted: true, summaryMessageId: 'summary-1' })
+        return Promise.resolve({
+          status: 'compacted',
+          summaryMessageId: 'summary-1',
+          summary: 'Summary',
+          coverage: { kind: 'conversation', boundaryMessageId: 'assistant' },
+        })
       })
 
       enqueueUserMessage('session-1', userMessage('m1'))
@@ -805,7 +816,7 @@ describe('message queue', () => {
       await flushMessageQueueForTests()
 
       expect(order).toEqual(['message', 'compaction'])
-      expect(runCompactionMock).toHaveBeenCalledWith('session-1', { force: true, prompt: 'Keep exact paths.' })
+      expect(runCompactionMock).toHaveBeenCalledWith('session-1', { kind: 'manual' }, { prompt: 'Keep exact paths.' })
       expect(getQueueIds()).toEqual([])
     })
 
@@ -939,7 +950,7 @@ describe('message queue', () => {
     })
 
     it('drops a failed compression so the messages behind it still send', async () => {
-      runCompactionMock.mockResolvedValue({ success: false, compacted: false, error: new Error('boom') })
+      runCompactionMock.mockResolvedValue({ status: 'failed', failure: { code: 'summary_failed', message: 'boom' } })
 
       enqueueCompactionRequest('session-1', { force: true })
       enqueueUserMessage('session-1', userMessage('m2'))

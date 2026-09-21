@@ -22,6 +22,7 @@ import { resolveReasoningProviderOptions } from '@shared/utils/reasoning-control
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION, shouldPauseOnToolCallLimit } from '@shared/utils/tool-call-limit-pause'
 import type { ModelMessage, ToolSet } from 'ai'
 import { isAutoCompactionEnabled } from '../application/context'
+import type { CompactionServiceResult, GenerationCompactionRequest } from '../application/context/compaction-types'
 import type { GenerationSegmentSplitWriter } from '../application/session/generation-segment-split'
 import { contextSourceFromSession } from '../application/session/session-context-source'
 import { contextPathFacts } from '../persistence/session-context-read'
@@ -74,7 +75,7 @@ import {
   updateToolCallParts,
   withToolCallLimitPause,
 } from './generation-flow'
-import { MidRunCompactionController, type MidRunCompactionResult } from './MidRunCompactionController'
+import { MidRunCompactionController } from './MidRunCompactionController'
 import type { GenerationRuntimeStore } from './runtime-store'
 import { createInitialState, processStreamChunk } from './stream-chunk-processor'
 
@@ -129,7 +130,7 @@ export interface GenerationSessionPort extends Pick<SessionRepositoryPort, 'getS
   persistStreamingMessage(
     sessionId: string,
     message: Message,
-    options?: { checkpoint?: boolean; refreshCounting?: boolean }
+    options?: { checkpoint?: boolean; refreshCounting?: boolean; onlyIfGenerating?: boolean }
   ): Promise<void>
   /**
    * Insert a new durable message directly after an existing one (fork/thread
@@ -245,9 +246,9 @@ export interface GenerationCompactionPort {
   getThresholdTokens(sessionSettings: SessionSettings, globalSettings: Settings): number | null
   compact(
     sessionId: string,
-    abortSignal: AbortSignal,
-    target: { targetMessageId: string; boundaryMessageId: string }
-  ): Promise<MidRunCompactionResult>
+    request: GenerationCompactionRequest,
+    abortSignal: AbortSignal
+  ): Promise<CompactionServiceResult>
 }
 
 export interface GenerationHostPort {
@@ -787,16 +788,17 @@ export class GenerationService<TContext> {
                 : null,
             signal: controller.signal,
             getContentParts: () => [...infoParts, ...processorState.contentParts],
-            splitPrefix: async (prefix, tail) => {
-              const prefixId = generationMessageId
-              return (await splitGeneratingSegment(targetMessage.id, 'compacted', prefix, tail)) ? prefixId : undefined
+            splitPrefix: (prefix, tail) => splitGeneratingSegment(targetMessage.id, 'compacted', prefix, tail),
+            getTargetMessageId: () => targetMessage.id,
+            compact: async (request) => {
+              // Planning reads persisted ancestry, so publish the retained round before resolving it.
+              await sessions.persistStreamingMessage(sessionId, targetMessage, {
+                checkpoint: true,
+                onlyIfGenerating: true,
+              })
+              if (controller.signal.aborted) return { status: 'cancelled' }
+              return compaction.compact(sessionId, request, controller.signal)
             },
-            getBoundaryMessageId: () => preSteerAnchorMessageId,
-            compact: (boundaryMessageId) =>
-              compaction.compact(sessionId, controller.signal, {
-                targetMessageId: targetMessage.id,
-                boundaryMessageId,
-              }),
             onFailure: (error) => {
               this.dependencies.logger.log('error', 'Mid-run compaction failed; keeping the last valid context', {
                 error,

@@ -33,30 +33,37 @@ function harness(threshold = 57_600) {
   let prefixId = ''
   let compactions = 0
   let splitCount = 0
-  let fail: 'throw' | 'false' | 'boundary' | undefined
+  let fail: 'throw' | 'false' | 'boundary' | 'busy' | 'backup_busy' | 'stale_path' | undefined
   let declineSplit = false
   const controller = new MidRunCompactionController({
     thresholdTokens: threshold,
     signal: abort.signal,
-    getBoundaryMessageId: () => 'user',
+    getTargetMessageId: () => currentId,
     getContentParts: () => parts,
     splitPrefix: async (prefix, tail) => {
-      if (declineSplit) return undefined
+      if (declineSplit) return false
       assert.ok(prefix.length)
       assert.ok(tail.length)
       prefixId = currentId
       currentId = `assistant-${++splitCount}`
       parts = tail
-      return prefixId
+      return true
     },
-    compact: async () => {
+    compact: async (request) => {
       compactions += 1
+      if (fail === 'busy' || fail === 'backup_busy' || fail === 'stale_path') return { status: 'skipped', reason: fail }
       if (fail === 'throw') throw new Error('summary unavailable')
-      if (fail === 'false') return { compacted: false }
+      if (fail === 'false')
+        return { status: 'failed', failure: { code: 'summary_failed', message: 'summary unavailable' } }
       return {
-        compacted: true,
+        status: 'compacted',
+        summaryMessageId: `summary-${compactions}`,
         summary: `summary-${compactions}`,
-        boundaryMessageId: fail === 'boundary' ? 'wrong' : prefixId,
+        coverage: {
+          ...request,
+          retainedToolCallId: fail === 'boundary' ? 'wrong' : request.retainedToolCallId,
+          boundaryMessageId: prefixId || 'user',
+        },
       }
     },
   })
@@ -91,13 +98,37 @@ function harness(threshold = 57_600) {
 }
 
 describe('MidRunCompactionController', () => {
-  it('rejects a mismatched boundary even when every current tool call stays in the tail', async () => {
+  it('rejects a mismatched coverage receipt even when every current tool call stays in the tail', async () => {
     const h = harness(200)
     h.source[1] = { role: 'user', content: 'history '.repeat(1000) }
     h.append('current-tool', 10)
     h.setFailure('boundary')
     assert.equal(await h.controller.prepareStep(h.source, 1), h.source)
     assert.equal(h.splitCount, 0)
+    assert.equal(h.compactions, 1)
+  })
+
+  for (const reason of ['busy', 'backup_busy'] as const) {
+    it(`keeps later compaction available after ${reason}`, async () => {
+      const h = harness(200)
+      h.source[1] = { role: 'user', content: 'history '.repeat(1000) }
+      h.append('current-tool', 10)
+      h.setFailure(reason)
+      assert.equal(await h.controller.prepareStep(h.source, 1), h.source)
+      h.setFailure(undefined)
+      const rewritten = await h.controller.prepareStep(h.source, 2)
+      assert.equal(h.compactions, 2)
+      assert.equal(rewritten[1].content, 'summary-2')
+    })
+  }
+
+  it('stops planning after the generation path becomes stale', async () => {
+    const h = harness(200)
+    h.source[1] = { role: 'user', content: 'history '.repeat(1000) }
+    h.append('current-tool', 10)
+    h.setFailure('stale_path')
+    await h.controller.prepareStep(h.source, 1)
+    await h.controller.prepareStep(h.source, 2)
     assert.equal(h.compactions, 1)
   })
 
@@ -180,7 +211,7 @@ describe('MidRunCompactionController', () => {
     const disabled = new MidRunCompactionController({
       thresholdTokens: null,
       signal: h.abort.signal,
-      getBoundaryMessageId: () => 'user',
+      getTargetMessageId: () => 'assistant',
       getContentParts: () => [],
       splitPrefix: async () => {
         throw new Error('must not split')

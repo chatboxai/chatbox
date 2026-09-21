@@ -1,5 +1,6 @@
 import type { MessageContentParts } from '@shared/types'
 import type { ModelMessage } from 'ai'
+import type { CompactionServiceResult, GenerationCompactionRequest } from '../application/context/compaction-types'
 import {
   collectToolCallIds,
   estimateModelMessagesTokens,
@@ -11,21 +12,15 @@ import {
   rewriteModelMessagesWithSummary,
 } from './mid-run-compaction'
 
-export interface MidRunCompactionResult {
-  compacted: boolean
-  summary?: string
-  boundaryMessageId?: string
-}
-
 export interface MidRunCompactionOptions {
   /** Null disables this run's automatic compaction. */
   thresholdTokens: number | null
   signal: AbortSignal
   getContentParts(): MessageContentParts
-  /** Returns the durable prefix id, or undefined when no split was committed. */
-  splitPrefix(prefix: MessageContentParts, tail: MessageContentParts): Promise<string | undefined>
-  getBoundaryMessageId(): string | undefined
-  compact(boundaryMessageId: string): Promise<MidRunCompactionResult>
+  /** True only when both the prefix and continuation are durable. */
+  splitPrefix(prefix: MessageContentParts, tail: MessageContentParts): Promise<boolean>
+  getTargetMessageId(): string
+  compact(request: GenerationCompactionRequest): Promise<CompactionServiceResult>
   onFailure?(error: unknown): void
 }
 
@@ -80,24 +75,39 @@ export class MidRunCompactionController {
     const parts = this.options.getContentParts()
     const keptIds = collectToolCallIds(source.slice(keepStart))
     const dropsGeneratingCalls = parts.some((part) => part.type === 'tool-call' && !keptIds.has(part.toolCallId))
-    let prefixMessageId: string | undefined
 
     try {
       if (dropsGeneratingCalls) {
         const partStart = findKeptContentPartStartIndex(parts, keptIds)
         if (partStart <= 0 || partStart >= parts.length) return effective
-        prefixMessageId = await this.options.splitPrefix(parts.slice(0, partStart), parts.slice(partStart))
-        if (!prefixMessageId) return effective
+        if (!(await this.options.splitPrefix(parts.slice(0, partStart), parts.slice(partStart)))) return effective
       }
       if (signal.aborted) return effective
       // A retained historical tool can lie inside an unsplit stored message.
       // Only advance across a complete durable message boundary.
-      if (!prefixMessageId && !parts.some((part) => part.type === 'tool-call' && part.toolCallId === keepToolCallId))
+      if (!parts.some((part) => part.type === 'tool-call' && part.toolCallId === keepToolCallId)) return effective
+      const request: GenerationCompactionRequest = {
+        kind: 'generation',
+        targetMessageId: this.options.getTargetMessageId(),
+        retainedToolCallId: keepToolCallId,
+      }
+      const result = await this.options.compact(request)
+      if (signal.aborted || result.status === 'cancelled') return effective
+      if (result.status === 'skipped') {
+        // Busy work can finish before a later step; a changed path invalidates this run's plan.
+        if (result.reason === 'stale_path') this.failed = true
         return effective
-      const boundaryMessageId = prefixMessageId ?? this.options.getBoundaryMessageId()
-      if (!boundaryMessageId) return effective
-      const result = await this.options.compact(boundaryMessageId)
-      if (signal.aborted || !result.compacted || !result.summary || result.boundaryMessageId !== boundaryMessageId) {
+      }
+      if (result.status === 'failed') {
+        this.failed = true
+        this.options.onFailure?.(result.failure)
+        return effective
+      }
+      if (
+        result.coverage.kind !== 'generation' ||
+        result.coverage.targetMessageId !== request.targetMessageId ||
+        result.coverage.retainedToolCallId !== request.retainedToolCallId
+      ) {
         this.failed = true
         return effective
       }

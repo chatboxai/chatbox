@@ -8,6 +8,7 @@ import { getSessionMessageTokenizationDigest } from '../application/session/mess
 import { RowBackedSessionRepository } from '../application/session/RowBackedSessionRepository'
 import { contextSourceFromRows } from '../application/session/session-context-source'
 import { StreamingWriteCoordinator } from '../application/session/streaming-write-coordinator'
+import { selectTokenEstimationContext } from '../application/token-estimation/TokenEstimationService'
 import { contextPathFacts } from '../persistence/session-context-read'
 import { contextSession, contextSnapshot } from '../persistence/session-context-read.test-support'
 import { generationStreamFixture } from '../testing/generation-stream'
@@ -1294,11 +1295,12 @@ describe('GenerationService', () => {
   })
 
   it('compacts between tool steps when the payload exceeds the threshold', async () => {
-    const compact = vi.fn().mockResolvedValue({
-      compacted: true,
+    const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
+      status: 'compacted',
+      summaryMessageId: 'summary',
       summary: 'Earlier work done.',
-      boundaryMessageId: 'assistant-1',
-    })
+      coverage: { ...request, boundaryMessageId: 'assistant-1' },
+    }))
     harness.setCompaction({
       getThresholdTokens: () => 50,
       compact,
@@ -1383,10 +1385,15 @@ describe('GenerationService', () => {
 
     await harness.service.orchestrate('session-1', targetMessage())
 
-    expect(compact).toHaveBeenCalledWith('session-1', expect.any(AbortSignal), {
-      targetMessageId: harness.inserted[0].message.id,
-      boundaryMessageId: 'assistant-1',
-    })
+    expect(compact).toHaveBeenCalledWith(
+      'session-1',
+      {
+        kind: 'generation',
+        targetMessageId: harness.inserted[0].message.id,
+        retainedToolCallId: 't2',
+      },
+      expect.any(AbortSignal)
+    )
     expect(harness.inserted).toHaveLength(1)
     expect(
       harness.persisted.some(
@@ -1398,7 +1405,7 @@ describe('GenerationService', () => {
     })
   })
 
-  it.each(['before-summary', 'during-summary'])(
+  it.each(['before-summary', 'during-summary', 'delayed-checkpoint'])(
     'compacts the generating branch after switching selection %s',
     async (switchAt) => {
       const aHistory: Message = {
@@ -1413,6 +1420,17 @@ describe('GenerationService', () => {
       }
       harness.session.messages.splice(1, 0, aHistory)
       harness.session.settings = harness.sessionSettings
+      let releaseCheckpoints!: () => void
+      const checkpointsReady = new Promise<void>((resolve) => {
+        releaseCheckpoints = resolve
+      })
+      if (switchAt === 'delayed-checkpoint') {
+        const persist = harness.sessions.persistStreamingMessage
+        harness.sessions.persistStreamingMessage = async (...args) => {
+          if (args[2]?.checkpoint) await checkpointsReady
+          return persist(...args)
+        }
+      }
       const switchToB = () => {
         const aTail = harness.session.messages.slice(1)
         harness.session.messages = [harness.session.messages[0], bHistory]
@@ -1430,7 +1448,7 @@ describe('GenerationService', () => {
       const generate = vi.fn(async ({ messages }: { messages: Message[] }) => {
         expect(JSON.stringify(messages)).toContain('A history')
         expect(JSON.stringify(messages)).not.toContain('B private history')
-        if (switchAt === 'during-summary') switchToB()
+        if (switchAt !== 'before-summary') switchToB()
         return { success: true, summary: 'A summary' }
       })
       const service = new CompactionService({
@@ -1443,13 +1461,17 @@ describe('GenerationService', () => {
           },
         },
         settings: { getSettings: () => harness.globalSettings },
-        policy: { shouldCompact: async () => true, getCompactionContext: (session) => session.messages },
+        policy: {
+          shouldCompact: async () => true,
+          getCompactionContext: (session, settings, pending) =>
+            selectTokenEstimationContext(session, settings.maxContextMessageCount, pending),
+        },
         summaries: { generate },
         createId: () => 'a-summary',
       })
       harness.setCompaction({
         getThresholdTokens: () => 200,
-        compact: (id, abortSignal, target) => service.run(id, { force: true, abortSignal, target }),
+        compact: (id, request, abortSignal) => service.run(id, request, { abortSignal }),
       })
       harness.setPreparedTools({ search: { inputSchema: jsonSchema({ type: 'object' }) } } as unknown as ToolSet)
       const payload: ModelMessage[] = [
@@ -1478,13 +1500,19 @@ describe('GenerationService', () => {
             output: { type: 'text', value: 'recent' },
           } as ModelStreamPart<ToolSet>
           if (switchAt === 'before-summary') switchToB()
-          nextStep = await options.prepareStep?.({
+          const pendingStep = options.prepareStep?.({
             steps: [],
             stepNumber: 1,
             model: {},
             messages: payload,
             experimental_context: undefined,
           } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+          if (switchAt === 'delayed-checkpoint') {
+            await new Promise<void>((resolve) => setTimeout(resolve, 10))
+            expect(generate).not.toHaveBeenCalled()
+            releaseCheckpoints()
+          }
+          nextStep = await pendingStep
           yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
         })()
       )
@@ -1534,13 +1562,17 @@ describe('GenerationService', () => {
         },
       },
       settings: { getSettings: () => harness.globalSettings },
-      policy: { shouldCompact: async () => true, getCompactionContext: (session) => session.messages },
+      policy: {
+        shouldCompact: async () => true,
+        getCompactionContext: (session, settings, pending) =>
+          selectTokenEstimationContext(session, settings.maxContextMessageCount, pending),
+      },
       summaries: { generate },
       createId: () => 'steer-summary',
     })
     harness.setCompaction({
       getThresholdTokens: () => 200,
-      compact: (id, abortSignal, target) => service.run(id, { force: true, abortSignal, target }),
+      compact: (id, request, abortSignal) => service.run(id, request, { abortSignal }),
     })
     harness.setPreparedTools({ search: { inputSchema: jsonSchema({ type: 'object' }) } } as unknown as ToolSet)
     const history: ModelMessage[] = [
@@ -1668,11 +1700,12 @@ describe('GenerationService', () => {
   })
 
   it('reuses a successful mid-run rewrite on later steps', async () => {
-    const compact = vi.fn().mockResolvedValue({
-      compacted: true,
+    const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
+      status: 'compacted',
+      summaryMessageId: 'summary',
       summary: 'Earlier work done.',
-      boundaryMessageId: 'assistant-1',
-    })
+      coverage: { ...request, boundaryMessageId: 'assistant-1' },
+    }))
     harness.setCompaction({
       getThresholdTokens: () => 80,
       compact,
@@ -1751,11 +1784,12 @@ describe('GenerationService', () => {
   })
 
   it('keeps the full payload when a generating split cannot be established', async () => {
-    const compact = vi.fn().mockResolvedValue({
-      compacted: true,
+    const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
+      status: 'compacted',
+      summaryMessageId: 'summary',
       summary: 'Earlier work done.',
-      boundaryMessageId: 'assistant-1',
-    })
+      coverage: { ...request, boundaryMessageId: 'assistant-1' },
+    }))
     harness.setCompaction({
       getThresholdTokens: () => 50,
       compact,
@@ -1845,12 +1879,13 @@ describe('GenerationService', () => {
     expect(stepResult).toEqual({ messages: bulky })
   })
 
-  it('keeps the full payload when the committed summary does not cover the split prefix', async () => {
-    const compact = vi.fn().mockResolvedValue({
-      compacted: true,
+  it('keeps the full payload when the summary receipt belongs to another retained round', async () => {
+    const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
+      status: 'compacted',
+      summaryMessageId: 'summary',
       summary: 'Older history only.',
-      boundaryMessageId: 'user-1',
-    })
+      coverage: { ...request, retainedToolCallId: 'wrong-round', boundaryMessageId: 'user-1' },
+    }))
     harness.setCompaction({
       getThresholdTokens: () => 50,
       compact,
@@ -1940,7 +1975,7 @@ describe('GenerationService', () => {
   })
 
   it('inserts the retained tail before shortening the compacted assistant', async () => {
-    const compact = vi.fn(() => {
+    const compact = vi.fn<GenerationCompactionPort['compact']>((_id, request) => {
       const prefix = harness.session.messages.find((message) => message.id === 'assistant-1')
       const continuation = harness.session.messages.find(
         (message) => message.role === 'assistant' && message.id !== 'assistant-1'
@@ -1949,7 +1984,12 @@ describe('GenerationService', () => {
       expect(continuation?.contentParts.some((part) => part.type === 'tool-call' && part.toolCallId === 't2')).toBe(
         true
       )
-      return Promise.resolve({ compacted: true, summary: 'Earlier work done.', boundaryMessageId: 'assistant-1' })
+      return Promise.resolve({
+        status: 'compacted',
+        summaryMessageId: 'summary',
+        summary: 'Earlier work done.',
+        coverage: { ...request, boundaryMessageId: 'assistant-1' },
+      })
     })
     harness.setCompaction({
       getThresholdTokens: () => 50,
@@ -2041,11 +2081,12 @@ describe('GenerationService', () => {
   })
 
   it('reuses a mid-run rewrite after an earlier image follow-up is dropped', async () => {
-    const compact = vi.fn().mockResolvedValue({
-      compacted: true,
+    const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
+      status: 'compacted',
+      summaryMessageId: 'summary',
       summary: 'Earlier work done.',
-      boundaryMessageId: 'assistant-1',
-    })
+      coverage: { ...request, boundaryMessageId: 'assistant-1' },
+    }))
     harness.setCompaction({
       getThresholdTokens: () => 80,
       compact,
@@ -2136,7 +2177,9 @@ describe('GenerationService', () => {
   })
 
   it('does not retry mid-run compaction after a non-throwing failure', async () => {
-    const compact = vi.fn().mockResolvedValue({ compacted: false })
+    const compact = vi
+      .fn<GenerationCompactionPort['compact']>()
+      .mockResolvedValue({ status: 'failed', failure: { code: 'summary_failed', message: 'summary failed' } })
     harness.setCompaction({
       getThresholdTokens: () => 50,
       compact,

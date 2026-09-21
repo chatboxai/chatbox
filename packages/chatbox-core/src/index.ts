@@ -113,15 +113,20 @@ export {
 } from './application/chat'
 export {
   buildCompactionCommitPatch,
+  type CompactionCoverage,
   type CompactionFailure,
   type CompactionFailureCode,
   type CompactionPolicyPort,
+  type CompactionRequest,
+  type CompactionRunOptions,
   CompactionService,
   type CompactionServiceOptions,
   type CompactionServiceResult,
   type CompactionSessionPort,
   type CompactionSummaryPort,
+  compactionFailureError,
   findLastCompactionBoundaryMessage,
+  type GenerationCompactionRequest,
   generateCompactionSummaryWithModel,
   isAutoCompactionEnabled,
 } from './application/context'

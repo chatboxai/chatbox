@@ -381,7 +381,7 @@ function deliverQueuedCompaction(sessionId: string, item: QueuedCompactionReques
       // The run reports its own failures in the compaction status UI, so the
       // item leaves the queue either way: a failed compression must not block
       // the messages queued behind it.
-      await runCompactionWithUIState(sessionId, { force: item.force === true, prompt: item.prompt })
+      await runCompactionWithUIState(sessionId, { kind: item.force ? 'manual' : 'automatic' }, { prompt: item.prompt })
     } catch (error) {
       setItemInFlight(sessionId, item.id, false)
       throw error

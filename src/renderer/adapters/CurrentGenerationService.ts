@@ -347,14 +347,9 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
         getConfiguredContextWindow(globalSettings, providerId, modelId)
       )
     },
-    async compact(sessionId, abortSignal, target) {
+    async compact(sessionId, request, abortSignal) {
       const { runCompactionWithUIState } = await import('@/packages/context-management/compaction')
-      const result = await runCompactionWithUIState(sessionId, { force: true, abortSignal, target })
-      return {
-        compacted: Boolean(result.success && result.compacted),
-        summary: result.summary,
-        boundaryMessageId: result.boundaryMessageId,
-      }
+      return runCompactionWithUIState(sessionId, request, { abortSignal })
     },
   },
   runtime: rendererApplication.generationRuntime,

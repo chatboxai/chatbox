@@ -49,7 +49,8 @@
     "./application/image-generation": "./src/application/image-generation/index.ts",
     "./application/memory": "./src/application/memory/index.ts",
     "./mcp": "./src/mcp/index.ts",
-    "./mcp/schema": "./src/mcp/schema.ts"
+    "./mcp/schema": "./src/mcp/schema.ts",
+    "./headless": "./src/headless/index.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json"

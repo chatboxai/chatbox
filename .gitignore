@@ -201,3 +201,7 @@ tmp_*.*
 .pnpm-store/
 
 /src/shared/mobile-work/generated/
+
+# Local headless evaluation artifacts
+/jobs/
+/scripts/terminal_bench/__pycache__/

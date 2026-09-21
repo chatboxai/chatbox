@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { settings as getDefaultSettings, newConfigs } from '../../defaults'
 import type { CallChatCompletionOptions, ModelInterface } from '../../models/types'
 import { getModel } from '../../providers'
+import { convertToModelMessages } from '../../services/model-message-converter'
 import type { SessionSettings, Settings } from '../../types'
 import { ModelProviderEnum } from '../../types'
 import type { ModelDependencies } from '../../types/adapters'
+import { getReasoningProviderOptions, resolveReasoningReplayPolicy } from '../../utils/reasoning-control'
 import type { SentryScope } from '../../utils/sentry_adapter'
 import CustomClaude from './models/custom-claude'
 import CustomGemini from './models/custom-gemini'
@@ -228,9 +230,176 @@ describe('OpenCode request session headers', () => {
   })
 })
 
+const deepseekModel = { modelId: 'deepseek-v4-pro', apiStyle: 'openai' as const }
+
+function deepseekReply(stream: boolean) {
+  if (!stream) {
+    return jsonReply({
+      id: 'chatcmpl-deepseek',
+      object: 'chat.completion',
+      created: 0,
+      model: deepseekModel.modelId,
+      choices: [
+        {
+          index: 0,
+          message: { role: 'assistant', content: '42', reasoning_content: 'Let me calculate.' },
+          finish_reason: 'stop',
+        },
+      ],
+      usage: { prompt_tokens: 3, completion_tokens: 5, total_tokens: 8 },
+    })
+  }
+  const chunks = [
+    {
+      choices: [
+        { index: 0, delta: { role: 'assistant', reasoning_content: 'Let me calculate.' }, finish_reason: null },
+      ],
+    },
+    { choices: [{ index: 0, delta: { content: '42' }, finish_reason: null }] },
+    {
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 3, completion_tokens: 5, total_tokens: 8 },
+    },
+  ]
+  return new Response(
+    chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('') +
+      'data: [DONE]\n\ndata: {"invalid":"trailing gateway data"}\n\n',
+    {
+      headers: { 'content-type': 'text/event-stream' },
+    }
+  )
+}
+
+describe.each([ModelProviderEnum.OpenCodeGo, ModelProviderEnum.OpenCodeZen] as const)(
+  '%s DeepSeek protocol',
+  (provider) => {
+    it.each([
+      ['default', undefined, undefined],
+      ['off', 'disabled', undefined],
+      ['low', 'enabled', 'low'],
+      ['medium', 'enabled', 'high'],
+      ['high', 'enabled', 'max'],
+    ] as const)(
+      'serializes the %s reasoning control and preserves streamed reasoning',
+      async (level, thinking, effort) => {
+        const dependencies = createDependencies()
+        const apiRequest = vi.mocked(dependencies.request.apiRequest)
+        apiRequest.mockResolvedValueOnce(deepseekReply(true))
+        const model = createModel(provider, deepseekModel.modelId, dependencies)
+        const result = await model.chat([{ role: 'user', content: 'Calculate.' }], {
+          sessionId: 'deepseek-session',
+          providerOptions: getReasoningProviderOptions(provider, deepseekModel, level),
+        })
+        const request = apiRequest.mock.calls[0][0]
+        const body = JSON.parse(String(request.body))
+        expect(body.thinking).toEqual(thinking ? { type: thinking } : undefined)
+        expect(body.reasoning_effort).toBe(effort)
+        expect(body.stream).toBe(true)
+        expect(body.temperature).toBe(0.7)
+        expect(body.top_p).toBe(0.9)
+        expect(request.url).toBe(
+          `${provider === ModelProviderEnum.OpenCodeGo ? OPENCODE_GO_API_HOST : OPENCODE_ZEN_API_HOST}/chat/completions`
+        )
+        expect(headerValue(request.headers as Record<string, string>, OPENCODE_SESSION_HEADER)).toBe('deepseek-session')
+        expect(result.contentParts).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ type: 'reasoning', text: 'Let me calculate.' }),
+            expect.objectContaining({ type: 'text', text: '42' }),
+          ])
+        )
+      }
+    )
+
+    it('preserves non-streaming reasoning and tool continuation history through the proxy', async () => {
+      const dependencies = createDependencies()
+      const apiRequest = vi.mocked(dependencies.request.apiRequest)
+      apiRequest.mockResolvedValueOnce(deepseekReply(false))
+      const model = createModel(provider, deepseekModel.modelId, dependencies)
+      expect(model).toBeInstanceOf(OpenAI)
+      if (!(model instanceof OpenAI)) throw new Error('Expected OpenCode Chat model')
+      model.options.stream = false
+      model.options.useProxy = true
+      const messages = await convertToModelMessages(
+        [
+          { id: 'user-1', role: 'user', contentParts: [{ type: 'text', text: 'Calculate.' }] },
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            contentParts: [
+              { type: 'reasoning', text: 'Use the calculator.' },
+              {
+                type: 'tool-call',
+                state: 'result',
+                toolCallId: 'call-1',
+                toolName: 'calculate',
+                args: { expression: '6*7' },
+                result: 42,
+              },
+            ],
+          },
+        ],
+        async () => null,
+        { modelSupportVision: false, ...resolveReasoningReplayPolicy(provider, deepseekModel) }
+      )
+      const result = await model.chat(messages, {
+        providerOptions: getReasoningProviderOptions(provider, deepseekModel, 'high'),
+      })
+      const request = apiRequest.mock.calls[0][0]
+      const body = JSON.parse(String(request.body))
+      expect(body.stream).not.toBe(true)
+      expect(request.useProxy).toBe(true)
+      expect(request.retry).toBe(0)
+      expect(body.messages[1]).toMatchObject({
+        role: 'assistant',
+        reasoning_content: 'Use the calculator.',
+        tool_calls: [{ id: 'call-1', function: { name: 'calculate', arguments: '{"expression":"6*7"}' } }],
+      })
+      expect(body.messages[2]).toMatchObject({ role: 'tool', tool_call_id: 'call-1', content: '42' })
+      expect(result.contentParts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'reasoning', text: 'Let me calculate.' }),
+          expect.objectContaining({ type: 'text', text: '42' }),
+        ])
+      )
+    })
+
+    it('keeps custom fetch and extra headers for DeepSeek', async () => {
+      const model = createModel(provider, deepseekModel.modelId)
+      if (!(model instanceof OpenAI)) throw new Error('Expected OpenCode Chat model')
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(deepseekReply(false))
+      model.options.customFetch = fetch
+      model.options.extraHeaders = { 'x-custom': 'test-header' }
+      await exposeChatModel(model, { sessionId: 'custom-session' }).doGenerate(generateRequest)
+      const headers = new Headers(fetch.mock.calls[0][1]?.headers)
+      expect(headers.get('x-custom')).toBe('test-header')
+      expect(headers.get(OPENCODE_SESSION_HEADER)).toBe('custom-session')
+    })
+
+    it('keeps ordinary Chat Completions models and excludes stale DeepSeek settings', async () => {
+      const dependencies = createDependencies()
+      const apiRequest = vi.mocked(dependencies.request.apiRequest)
+      apiRequest.mockResolvedValueOnce(chatCompletionsReply())
+      const model = createModel(provider, 'glm-5.3', dependencies)
+      if (!(model instanceof OpenAI)) throw new Error('Expected OpenCode Chat model')
+      model.options.stream = false
+      const result = await model.chat([{ role: 'user', content: 'Hi' }], {
+        providerOptions: { deepseek: { thinking: { type: 'enabled' }, reasoningEffort: 'max' } },
+      })
+      const body = JSON.parse(String(apiRequest.mock.calls[0][0].body))
+      expect(body.thinking).toBeUndefined()
+      expect(body.reasoning_effort).toBeUndefined()
+      expect(result.contentParts).toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: 'text', text: 'Hello' })])
+      )
+    })
+  }
+)
+
 describe('OpenCode network compatibility', () => {
   const routes = [
     [ModelProviderEnum.OpenCodeGo, 'glm-5.3'],
+    [ModelProviderEnum.OpenCodeGo, 'deepseek-v4-pro'],
+    [ModelProviderEnum.OpenCodeZen, 'deepseek-v4-pro'],
     [ModelProviderEnum.OpenCodeGo, 'grok-4.5'],
     [ModelProviderEnum.OpenCodeGo, 'minimax-m3'],
     [ModelProviderEnum.OpenCodeZen, 'glm-5.3'],

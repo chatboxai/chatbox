@@ -1,7 +1,11 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { fetchRemoteModels } from '../../models/openai-compatible'
-import type { CallChatCompletionOptions, ModelInterface } from '../../models/types'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
+import { fetchRemoteModels, getOpenAICompatibleProviderOptionsKey } from '../../models/openai-compatible'
+import type { CallChatCompletionOptions, CallSettings, ModelInterface } from '../../models/types'
+import { isDeepSeekReasoningModel, normalizeDeepSeekReasoningEffort } from '../../models/utils/deepseek'
 import { createFetchWithProxy } from '../../models/utils/fetch-proxy'
+import { createOpenAIChatCompletionSseFetch } from '../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../types'
 import type { ModelDependencies } from '../../types/adapters'
 import type { CreateModelConfig } from '../types'
@@ -107,6 +111,47 @@ export function defineOpenCodeModelClasses(
 
     protected getRequestHeaders(options?: CallChatCompletionOptions): Record<string, string> {
       return mergeOpenCodeSessionHeaders(super.getRequestHeaders(options), options?.sessionId)
+    }
+
+    protected getChatModel(options?: CallChatCompletionOptions) {
+      if (!isDeepSeekReasoningModel(this.options.model.modelId)) return super.getChatModel(options)
+
+      const fetch = this.options.customFetch || createFetchWithProxy(this.options.useProxy, this.dependencies)
+      const provider = createOpenAICompatible({
+        name: this.name,
+        apiKey: this.options.apiKey,
+        baseURL: this.options.apiHost,
+        fetch: createOpenAIChatCompletionSseFetch(fetch),
+        headers: this.getRequestHeaders(options),
+      })
+      return wrapLanguageModel({
+        model: provider.chatModel(this.options.model.modelId),
+        middleware: extractReasoningMiddleware({ tagName: 'think' }),
+      })
+    }
+
+    protected getCallSettings(options: CallChatCompletionOptions): CallSettings {
+      if (!isDeepSeekReasoningModel(this.options.model.modelId)) return super.getCallSettings(options)
+
+      const deepseekOptions = options.providerOptions?.deepseek
+      const thinkingType = deepseekOptions?.thinking?.type
+      const reasoningEffort = normalizeDeepSeekReasoningEffort(
+        this.options.model.modelId,
+        deepseekOptions?.reasoningEffort
+      )
+      const compatibleOptions = {
+        ...(thinkingType ? { thinking: { type: thinkingType } } : {}),
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+      }
+      return {
+        temperature: this.options.temperature,
+        topP: this.options.topP,
+        maxOutputTokens: this.options.maxOutputTokens,
+        providerOptions:
+          thinkingType || reasoningEffort
+            ? { [getOpenAICompatibleProviderOptionsKey(this.name)]: compatibleOptions }
+            : undefined,
+      }
     }
 
     public async listModels(): Promise<ProviderModelInfo[]> {

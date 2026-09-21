@@ -2,7 +2,7 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
 import { fetchRemoteModels } from '../../../models/openai-compatible'
-import type { CallChatCompletionOptions } from '../../../models/types'
+import type { CallChatCompletionOptions, CallSettings } from '../../../models/types'
 import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
 import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../../types'
@@ -95,7 +95,7 @@ export default class OpenAI extends AbstractAISDKModel {
     return getOpenAIImageGenerationOptions(this.options.model.modelId, aspectRatio)
   }
 
-  protected getCallSettings(options: CallChatCompletionOptions) {
+  protected getCallSettings(options: CallChatCompletionOptions): CallSettings {
     const openaiOptions = normalizeOpenAIReasoningOptions(this.options.model.modelId, options.providerOptions?.openai)
     const providerOptions = openaiOptions
       ? {

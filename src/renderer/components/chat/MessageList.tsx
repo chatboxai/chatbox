@@ -1107,7 +1107,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
               onScrollToNext={handleScrollToNext}
             />
           ) : (
-            <Transition mounted={!atBottom || !!props.hasNewer} transition="slide-up">
+            <Transition mounted={activity !== 'generating' && (!atBottom || !!props.hasNewer)} transition="slide-up">
               {(transitionStyle) => <ScrollToBottomButton onClick={handleScrollToBottom} style={transitionStyle} />}
             </Transition>
           )}

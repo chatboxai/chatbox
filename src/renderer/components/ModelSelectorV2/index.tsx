@@ -25,8 +25,8 @@ import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { collapsedProvidersAtom } from '@/stores/atoms/uiAtoms'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useUIStore } from '@/stores/uiStore'
 import { ScalableIcon } from '../common/ScalableIcon'
-import { filterModelsForSelector } from '../ModelSelector/filterModels'
 import { ChatboxProviderRows } from './ChatboxProviderRows'
 import { buildChatboxAIGroupViews, modelMatchesSearch } from './chatboxCatalog'
 import {
@@ -42,6 +42,7 @@ import {
   SELECTED_CLASS,
 } from './constants'
 import { DetailCard } from './DetailCard'
+import { filterModelsForSelector } from './filterModels'
 import { GenericProviderRows } from './GenericProviderRows'
 import { searchGenericModel, toProviderModelInfo } from './helpers'
 import type { ChatboxAIModel, DesktopDetailState, DetailModel, ModelSelectorV2Props } from './types'
@@ -73,7 +74,8 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
       (state) => state.providers?.[ModelProviderEnum.ChatboxAI]?.excludedModels || EMPTY_MODEL_IDS
     )
     const [collapsedProviders, setCollapsedProviders] = useAtom(collapsedProvidersAtom)
-    const [activeTab, setActiveTab] = useState('all')
+    const activeTab = useUIStore((state) => state.modelSelectorTab)
+    const setActiveTab = useUIStore((state) => state.setModelSelectorTab)
     const [search, setSearch] = useState('')
     const [mobileOpen, setMobileOpen] = useState(false)
     const [advancedExpanded, setAdvancedExpanded] = useState(false)
@@ -353,7 +355,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
         ? (favoritedModels || []).filter((favorite) => {
             const provider = favorite.provider
             const model = favorite.model
-            if (!provider || !model || provider.id === ModelProviderEnum.ChatboxAI) return false
+            if (!provider || !model || (chatboxAIModelList && provider.id === ModelProviderEnum.ChatboxAI)) return false
             if (!modelMatchesSearch({ modelId: model.modelId, modelName: model.nickname }, search, provider.name)) {
               return false
             }
@@ -490,6 +492,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
                 />
               )}
               <GenericProviderRows
+                hasChatboxCatalog={!!chatboxAIModelList}
                 favoriteOnly
                 favoritedModels={favoritedModels}
                 genericProviders={genericProviders}
@@ -542,6 +545,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
                 />
               )}
               <GenericProviderRows
+                hasChatboxCatalog={!!chatboxAIModelList}
                 favoriteOnly={false}
                 favoritedModels={favoritedModels}
                 genericProviders={genericProviders}

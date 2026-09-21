@@ -7,7 +7,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { forwardRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
-import ModelSelector from '@/components/ModelSelector'
+import ModelSelectorV2 from '@/components/ModelSelectorV2'
 import { enrichModelsFromRegistry, useModelRegistryVersion } from '@/packages/model-registry'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { isEmbeddingModel, isRerankModel } from './-defaultModelFilters'
@@ -28,7 +28,7 @@ export function RouteComponent() {
       <Stack gap="xs">
         <Text fw={600}>{t('Default Chat Model')}</Text>
 
-        <ModelSelector
+        <ModelSelectorV2
           position="bottom-start"
           transitionProps={{
             transition: 'fade-down',
@@ -59,7 +59,7 @@ export function RouteComponent() {
             model={settings.defaultChatModel?.model}
             testId={TestId.settings.defaultChatModel}
           />
-        </ModelSelector>
+        </ModelSelectorV2>
 
         <Text c="chatbox-tertiary" size="xs">
           {t('Chatbox will use this model as the default for new chats.')}
@@ -69,7 +69,7 @@ export function RouteComponent() {
       <Stack gap="xs">
         <Text fw={600}>{t('Default Thread Naming Model')}</Text>
 
-        <ModelSelector
+        <ModelSelectorV2
           position="bottom-start"
           width={320}
           showAuto={true}
@@ -94,7 +94,7 @@ export function RouteComponent() {
             provider={settings.threadNamingModel?.provider}
             model={settings.threadNamingModel?.model}
           />
-        </ModelSelector>
+        </ModelSelectorV2>
 
         <Text c="chatbox-tertiary" size="xs">
           {t('Chatbox will automatically use this model to rename threads.')}
@@ -104,7 +104,7 @@ export function RouteComponent() {
       <Stack gap="xs">
         <Text fw={600}>{t('Search Term Construction Model')}</Text>
 
-        <ModelSelector
+        <ModelSelectorV2
           position="bottom-start"
           width={320}
           showAuto={true}
@@ -129,7 +129,7 @@ export function RouteComponent() {
             provider={settings.searchTermConstructionModel?.provider}
             model={settings.searchTermConstructionModel?.model}
           />
-        </ModelSelector>
+        </ModelSelectorV2>
 
         <Text c="chatbox-tertiary" size="xs">
           {t('Chatbox will automatically use this model to construct search term.')}
@@ -138,7 +138,7 @@ export function RouteComponent() {
       <Stack gap="xs">
         <Text fw={600}>{t('OCR Model')}</Text>
 
-        <ModelSelector
+        <ModelSelectorV2
           position="bottom-start"
           showAuto={true}
           autoText={settings.licenseKey ? t('Auto (Use Chatbox AI)')! : t('None')!}
@@ -164,7 +164,7 @@ export function RouteComponent() {
             provider={settings.ocrModel?.provider}
             model={settings.ocrModel?.model}
           />
-        </ModelSelector>
+        </ModelSelectorV2>
 
         <Text c="chatbox-tertiary" size="xs">
           {t('Chatbox OCRs images with this model and sends the text to models without image support.')}
@@ -174,7 +174,7 @@ export function RouteComponent() {
       <Stack gap="xs">
         <Text fw={600}>{t('Default Embedding Model')}</Text>
 
-        <ModelSelector
+        <ModelSelectorV2
           position="bottom-start"
           showAuto={true}
           autoText={chatboxAIAutoText}
@@ -201,7 +201,7 @@ export function RouteComponent() {
             model={settings.defaultEmbeddingModel?.model}
             modelType="embedding"
           />
-        </ModelSelector>
+        </ModelSelectorV2>
 
         <Text c="chatbox-tertiary" size="xs">
           {t('When selected, Chatbox will use this model instead of the automatic Chatbox AI embedding model.')}
@@ -211,7 +211,7 @@ export function RouteComponent() {
       <Stack gap="xs">
         <Text fw={600}>{t('Default Reranking Model')}</Text>
 
-        <ModelSelector
+        <ModelSelectorV2
           position="bottom-start"
           showAuto={true}
           autoText={chatboxAIAutoText}
@@ -238,7 +238,7 @@ export function RouteComponent() {
             model={settings.defaultRerankModel?.model}
             modelType="rerank"
           />
-        </ModelSelector>
+        </ModelSelectorV2>
 
         <Text c="chatbox-tertiary" size="xs">
           {t('When selected, Chatbox will use this model instead of the automatic Chatbox AI reranking model.')}

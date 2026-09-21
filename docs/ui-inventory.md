@@ -6,10 +6,10 @@ This inventory is code-derived from `src/renderer/routes`, `src/renderer/compone
 
 ## Summary
 
-- Total UI TSX files: 230
-- By kind: `component` 131, `story` 20, `modal` 18, `ui` 2, `page` 34, `route-component` 25
-- By area: `app` 76, `chat` 10, `common` 25, `input` 10, `knowledge-base` 6, `layout` 7, `message-parts` 1, `model-selector` 5, `session` 3, `settings` 37, `modal` 18, `copilots` 9, `dev` 7, `guide` 6, `image-creator` 10
-- By platform signal: `all` 200, `mobile` 19, `desktop` 14, `web` 2
+- Total UI TSX files: 225
+- By kind: `component` 126, `story` 20, `modal` 18, `ui` 2, `page` 34, `route-component` 25
+- By area: `app` 69, `chat` 10, `common` 25, `input` 10, `knowledge-base` 6, `layout` 7, `message-parts` 1, `model-selector` 7, `session` 3, `settings` 37, `modal` 18, `copilots` 9, `dev` 7, `guide` 6, `image-creator` 10
+- By platform signal: `all` 196, `mobile` 18, `desktop` 14, `web` 2
 - Dev preview: `/dev/ui-inventory`
 
 ## Pages
@@ -1955,75 +1955,10 @@ This inventory is code-derived from `src/renderer/routes`, `src/renderer/compone
 - Variants: `color:blue`, `color:chatbox-brand`, `color:teal`, `light`, `size:compact-xs`, `size:sm`, `size:xs`, `transparent`
 - Text: `Context Window`, `Max Output`, `New`, `No models available`, `No models found matching your search`, `Pro`, `Reasoning`, `Search models...`, `tokens`, `Tool Use`, `Vision`
 
-### components/ModelSelector/DesktopModelSelector
-
-- Source: `src/renderer/components/ModelSelector/DesktopModelSelector.tsx`
-- Metadata: kind: `component`; area: `model-selector`
-- Components: `DesktopModelSelector`, `SearchBox`
-- Platform signals: `all`
-- Platform notes: None detected
-- Preview modes: None detected
-- Preview links: [Storybook: Desktop model selector all favorite search disabled states](http://localhost:6006/?path=/story/real-components-model-selector--desktop-model-selector-all-favorite-search-disabled-states), [Storybook: Model selector dropdown with configured providers](http://localhost:6006/?path=/story/real-components-model-selector--model-selector-dropdown-with-configured-providers)
-- States: `isCollapsed`, `isCustom`, `isEmpty`, `isFavorited`, `isFavoritedModel`, `isSelected`, `isValidElement`
-- Variants: `favorite`, `size:xs`, `transparent`, `unstyled`
-- Text: `All`, `Auto`, `Click here to set up`, `Favorite`, `No eligible models available`, `No favorite models`, `Search models`
-
-### components/ModelSelector
-
-- Source: `src/renderer/components/ModelSelector/index.tsx`
-- Metadata: kind: `component`; area: `model-selector`
-- Components: `ModelSelector`
-- Platform signals: `all`
-- Platform notes: `responsive branch via isSmallScreen/useIsSmallScreen`
-- Preview modes: `desktop-wide`, `narrow/mobile-layout`
-- Preview links: [Storybook: Model selector dropdown with configured providers](http://localhost:6006/?path=/story/real-components-model-selector--model-selector-dropdown-with-configured-providers)
-- States: `activeTab`, `isFavoritedModel`, `isSmallScreen`, `search`
-- Variants: None detected
-- Text: None detected
-
-### components/ModelSelector/MobileModelSelector
-
-- Source: `src/renderer/components/ModelSelector/MobileModelSelector.tsx`
-- Metadata: kind: `component`; area: `model-selector`
-- Components: `MobileModelSelector`
-- Platform signals: `all`
-- Platform notes: None detected
-- Preview modes: None detected
-- Preview links: [Storybook: Mobile model selector drawer states](http://localhost:6006/?path=/story/real-components-model-selector--mobile-model-selector-drawer-states)
-- States: `active`, `isCollapsed`, `isCustom`, `isFavorited`, `isFavoritedModel`, `isSelected`, `open`
-- Variants: `mobile`, `size:md`, `size:sm`
-- Text: `All`, `Auto`, `Favorite`, `No favorite models`, `Search models`, `Select Model`
-
-### components/ModelSelector/ProviderHeader
-
-- Source: `src/renderer/components/ModelSelector/ProviderHeader.tsx`
-- Metadata: kind: `component`; area: `model-selector`
-- Components: `ProviderHeader`
-- Platform signals: `mobile`
-- Platform notes: `uses isMobile state/prop`
-- Preview modes: None detected
-- Preview links: [Storybook: Provider header default favorite mobile custom and collapsed states](http://localhost:6006/?path=/story/real-components-model-selector--provider-header-default-favorite-mobile-custom-and-collapsed-states)
-- States: `expanded`, `isClickable`, `isCollapsed`, `isCustom`, `isFavorite`, `isMobile`
-- Variants: `size:sm`, `size:xs`
-- Text: None detected
-
-### components/ModelSelector/shared
-
-- Source: `src/renderer/components/ModelSelector/shared.tsx`
-- Metadata: kind: `component`; area: `model-selector`
-- Components: `ModelItem`, `ModelItemInDrawer`, `SELECTED_BG_CLASS`, `TRANSITION_DURATION`, `WithDisabledTooltip`
-- Platform signals: `all`
-- Platform notes: None detected
-- Preview modes: None detected
-- Preview links: [Storybook: Model item selected favorited disabled capability and drawer states](http://localhost:6006/?path=/story/real-components-model-selector--model-item-selected-favorited-disabled-capability-and-drawer-states)
-- States: `active`, `disabled`, `isCustom`, `isDisabled`, `isFavorited`, `isRecommended`, `isSelected`, `success`
-- Variants: `color:chatbox-brand`, `color:teal`, `light`, `size:md`, `size:xs`
-- Text: `New`, `Pro`, `Reasoning`, `Tool Use`, `Vision`
-
 ### components/ModelSelectorV2/CapabilityIconRow
 
 - Source: `src/renderer/components/ModelSelectorV2/CapabilityIconRow.tsx`
-- Metadata: kind: `component`; area: `app`
+- Metadata: kind: `component`; area: `model-selector`
 - Components: `CAPABILITY_ICON_COLOR_CLASSES`, `CAPABILITY_STYLES`, `CapabilityIconRow`
 - Platform signals: `all`
 - Platform notes: None detected
@@ -2036,7 +1971,7 @@ This inventory is code-derived from `src/renderer/routes`, `src/renderer/compone
 ### components/ModelSelectorV2/ChatboxProviderRows
 
 - Source: `src/renderer/components/ModelSelectorV2/ChatboxProviderRows.tsx`
-- Metadata: kind: `component`; area: `app`
+- Metadata: kind: `component`; area: `model-selector`
 - Components: `ChatboxProviderRows`
 - Platform signals: `mobile`
 - Platform notes: `uses isMobile state/prop`
@@ -2049,7 +1984,7 @@ This inventory is code-derived from `src/renderer/routes`, `src/renderer/compone
 ### components/ModelSelectorV2/DetailCard
 
 - Source: `src/renderer/components/ModelSelectorV2/DetailCard.tsx`
-- Metadata: kind: `component`; area: `app`
+- Metadata: kind: `component`; area: `model-selector`
 - Components: `COST_LEVEL_BAR_IDS`, `CostLevelIndicator`, `DetailCard`, `PriceMetric`, `PricingBlock`, `TieredPricingDetails`, `TieredPricingTag`
 - Platform signals: `all`
 - Platform notes: None detected
@@ -2062,7 +1997,7 @@ This inventory is code-derived from `src/renderer/routes`, `src/renderer/compone
 ### components/ModelSelectorV2/GenericProviderRows
 
 - Source: `src/renderer/components/ModelSelectorV2/GenericProviderRows.tsx`
-- Metadata: kind: `component`; area: `app`
+- Metadata: kind: `component`; area: `model-selector`
 - Components: `ByokSectionDivider`, `GenericProviderRows`
 - Platform signals: `mobile`
 - Platform notes: `uses isMobile state/prop`
@@ -2075,20 +2010,20 @@ This inventory is code-derived from `src/renderer/routes`, `src/renderer/compone
 ### components/ModelSelectorV2
 
 - Source: `src/renderer/components/ModelSelectorV2/index.tsx`
-- Metadata: kind: `component`; area: `app`
+- Metadata: kind: `component`; area: `model-selector`
 - Components: `ModelSelectorV2`
 - Platform signals: `mobile`
 - Platform notes: `responsive branch via isSmallScreen/useIsSmallScreen`, `uses isMobile state/prop`
 - Preview modes: `desktop-wide`, `narrow/mobile-layout`
-- Preview links: Missing real fixture
-- States: `activeTab`, `advancedExpanded`, `collapsed`, `collapsedGroupIds`, `desktopDetail`, `hasRightSideSpace`, `isCustom`, `isFavorited`, `isFavoritedModel`, `isMobile`, `isValidElement`, `mobileDetail`, `mobileOpen`, `search`, `success`, `visible`
+- Preview links: [Storybook: Model selector dropdown with configured providers](http://localhost:6006/?path=/story/real-components-model-selector--model-selector-dropdown-with-configured-providers)
+- States: `advancedExpanded`, `collapsed`, `collapsedGroupIds`, `desktopDetail`, `hasRightSideSpace`, `isCustom`, `isFavorited`, `isFavoritedModel`, `isMobile`, `isValidElement`, `mobileDetail`, `mobileOpen`, `search`, `success`, `visible`
 - Variants: `size:sm`, `size:xs`, `unstyled`
 - Text: `All`, `Auto`, `Chatbox AI`, `Favorite`, `Model details`, `No eligible models available`, `No favorite models`, `Search models`, `Select Model`
 
 ### components/ModelSelectorV2/ModelRow
 
 - Source: `src/renderer/components/ModelSelectorV2/ModelRow.tsx`
-- Metadata: kind: `component`; area: `app`
+- Metadata: kind: `component`; area: `model-selector`
 - Components: `ModelRow`
 - Platform signals: `all`
 - Platform notes: None detected
@@ -2101,7 +2036,7 @@ This inventory is code-derived from `src/renderer/routes`, `src/renderer/compone
 ### components/ModelSelectorV2/ProviderRowHeader
 
 - Source: `src/renderer/components/ModelSelectorV2/ProviderRowHeader.tsx`
-- Metadata: kind: `component`; area: `app`
+- Metadata: kind: `component`; area: `model-selector`
 - Components: `ProviderRowHeader`
 - Platform signals: `all`
 - Platform notes: None detected
@@ -2909,15 +2844,15 @@ This inventory is code-derived from `src/renderer/routes`, `src/renderer/compone
 ### components/stories/ModelSelectorReal.stories
 
 - Source: `src/renderer/components/stories/ModelSelectorReal.stories.tsx`
-- Metadata: kind: `story`; area: `app`; stories: `DesktopModelSelectorStates`, `MobileModelSelectorStates`, `ModelItemStates`, `ModelSelectorDropdownStates`, `ProviderHeaderStates`
-- Components: `DesktopSelectorFixture`, `MobileSelectorFixture`, `ModelSelectorFixture`, `SeededProviderSettings`, `SurfaceLabel`
+- Metadata: kind: `story`; area: `app`; stories: `ModelSelectorDropdownStates`
+- Components: `ModelSelectorV2Fixture`, `SeededProviderSettings`, `SurfaceLabel`
 - Platform signals: `all`
 - Platform notes: None detected
 - Preview modes: None detected
-- Preview links: [Storybook: Desktop model selector all favorite search disabled states](http://localhost:6006/?path=/story/real-components-model-selector--desktop-model-selector-all-favorite-search-disabled-states), [Storybook: Mobile model selector drawer states](http://localhost:6006/?path=/story/real-components-model-selector--mobile-model-selector-drawer-states), [Storybook: Model item selected favorited disabled capability and drawer states](http://localhost:6006/?path=/story/real-components-model-selector--model-item-selected-favorited-disabled-capability-and-drawer-states), [Storybook: Model selector dropdown with configured providers](http://localhost:6006/?path=/story/real-components-model-selector--model-selector-dropdown-with-configured-providers), [Storybook: Provider header default favorite mobile custom and collapsed states](http://localhost:6006/?path=/story/real-components-model-selector--provider-header-default-favorite-mobile-custom-and-collapsed-states)
-- States: `activeTab`, `collapsed`, `disabled`, `isCollapsed`, `isCustom`, `isFavorited`, `isSelected`, `opened`, `search`, `selected`
-- Variants: `favorite`, `light`, `mobile`, `size:sm`
-- Text: `Actual desktop combobox with auto option, favorites, grouped providers, selected row, search, and disabled model state.`, `Actual mobile drawer with tabs, search, auto row, grouped providers, selected row, favorite state, and disabled model state.`, `Actual provider group header used in desktop dropdowns and mobile drawers.`, `Actual responsive model selector entry point backed by configured provider settings.`, `Actual selectable model rows with recommendation color, badges, capabilities, favorite affordance, selected state, and disabled tooltip state.`, `Claude`, `Desktop dropdown rows`, `Desktop model selector all favorite search disabled states`, `DesktopModelSelector`, `Favorite`, `Local Gateway`, `Mobile drawer rows`, `Mobile model selector drawer states`, `MobileModelSelector`, `Model item selected favorited disabled capability and drawer states`, `Model selector dropdown with configured providers`, `ModelItem and ModelItemInDrawer`, `ModelSelector`, `Open mobile selector`, `OpenAI`, `Provider header default favorite mobile custom and collapsed states`, `ProviderHeader`
+- Preview links: [Storybook: Model selector dropdown with configured providers](http://localhost:6006/?path=/story/real-components-model-selector--model-selector-dropdown-with-configured-providers)
+- States: `disabled`, `isCustom`, `opened`, `selected`
+- Variants: `light`, `size:sm`
+- Text: `Actual responsive model selector entry point backed by configured provider settings.`, `Local Gateway`, `Model selector dropdown with configured providers`, `ModelSelectorV2`
 
 ### components/stories/ReasoningContentReal.stories
 

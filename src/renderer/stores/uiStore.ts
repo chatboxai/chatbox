@@ -94,6 +94,7 @@ export const uiStore = createStore(
           onSave?: () => void
         } | null,
         widthFull: false, // Stored UI preference
+        modelSelectorTab: 'all' as 'all' | 'favorite',
         showCopilotsInNewSession: false,
         sidebarWidth: null as number | null, // Custom sidebar width, null means use default
         agentModeSmartSwitchingDefault: true,
@@ -260,6 +261,12 @@ export const uiStore = createStore(
           set({ sidebarWidth })
         },
 
+        setModelSelectorTab: (tab: string | null) => {
+          if (tab === 'all' || tab === 'favorite') {
+            set({ modelSelectorTab: tab })
+          }
+        },
+
         setAgentModeSmartSwitchingDefault: (enabled: boolean) => {
           set({ agentModeSmartSwitchingDefault: enabled })
         },
@@ -286,6 +293,7 @@ export const uiStore = createStore(
       version: 0,
       partialize: (state) => ({
         widthFull: state.widthFull,
+        modelSelectorTab: state.modelSelectorTab,
         showCopilotsInNewSession: state.showCopilotsInNewSession,
         sidebarWidth: state.sidebarWidth,
         agentModeSmartSwitchingDefault: state.agentModeSmartSwitchingDefault,

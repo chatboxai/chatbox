@@ -1072,6 +1072,7 @@ ipcMain.handle('fs:read', async (_event, params: { filePath: string; offset?: nu
     const limit = Math.min(FS_READ_MAX_LINES, Math.max(1, Math.floor(params.limit ?? FS_READ_DEFAULT_LINES)))
     const selected = lines.slice(startLine - 1, startLine - 1 + limit)
     const content = selected.map(truncateFsLine).join('\n')
+    const truncatedLineCount = selected.filter((line) => line.length > FS_MAX_LINE_LENGTH).length
     const endLine = selected.length > 0 ? startLine + selected.length - 1 : startLine
 
     return {
@@ -1080,6 +1081,7 @@ ipcMain.handle('fs:read', async (_event, params: { filePath: string; offset?: nu
       startLine,
       endLine,
       totalLines: lines.length,
+      ...(truncatedLineCount > 0 ? { truncatedLineCount } : {}),
     }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) }

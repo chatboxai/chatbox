@@ -1,6 +1,6 @@
-import { uploadedFilePath } from '@shared/uploaded-file-tools'
 import { sandboxAttachmentParsedRelPath, sandboxAttachmentRelPath } from '@shared/sandbox/attachment-path'
 import type { CompactionPoint, Message } from '@shared/types'
+import { uploadedFilePath } from '@shared/uploaded-file-tools'
 import { describe, expect, it, vi } from 'vitest'
 import { buildContext } from './builder'
 import type { AttachmentResolver } from './types'
@@ -573,6 +573,7 @@ describe('buildContext', () => {
               rawStorageKey: 'file-key-raw',
               parserType: 'local',
               byteLength: 4096,
+              lineCount: 1200,
             },
           ],
         }),
@@ -594,6 +595,13 @@ describe('buildContext', () => {
       expect(text).toContain(`<SANDBOX_PATH>${budgetPath}</SANDBOX_PATH>`)
       expect(text).toContain(`<PARSED_SANDBOX_PATH>${sandboxAttachmentParsedRelPath(budgetPath)}</PARSED_SANDBOX_PATH>`)
       expect(text).toContain('code_execution')
+      expect(text).toContain('<PARSED_TEXT_STATUS>available</PARSED_TEXT_STATUS>')
+      expect(text).toContain('<FILE_LINES>1200</FILE_LINES>')
+      expect(text).toContain('read PARSED_SANDBOX_PATH sequentially')
+      expect(text).toContain('endLine + 1')
+      expect(text).toContain('reducing limit cannot recover them')
+      expect(text).toContain('bounded Unicode-safe character chunks')
+      expect(text).toContain('Line-number coverage alone does not establish complete text coverage')
       expect(text).not.toContain('parsed content should stay out of sandbox prompt')
     })
 
@@ -627,50 +635,83 @@ describe('buildContext', () => {
       const text = (textContent as { type: 'text'; text: string }).text
       expect(text).toContain(`<SANDBOX_PATH>${sandboxAttachmentRelPath('archive.bin', 'file-key-raw')}</SANDBOX_PATH>`)
       expect(text).not.toContain('<PARSED_SANDBOX_PATH>')
+      expect(text).toContain('<PARSED_TEXT_STATUS>unavailable</PARSED_TEXT_STATUS>')
+      expect(text).not.toContain('<FILE_LINES>')
       expect(text).toContain('Use read_file or code_execution on SANDBOX_PATH')
     })
 
-    it('should preserve session retrieval cues in sandbox mode', async () => {
-      const resolver = createMockResolver(new Map([['file-key', 'large parsed content should stay out of context']]))
+    it.each(['ready', 'indexing', 'failed'] as const)(
+      'routes sandbox text independently of retrieval status %s',
+      async (status) => {
+        const resolver = createMockResolver(new Map([['file-key', 'large parsed content should stay out of context']]))
 
-      const messages: Message[] = [
-        createMessage({
-          id: '1',
-          role: 'user',
-          contentParts: [{ type: 'text', text: 'Use the attached manual' }],
-          files: [
-            {
-              id: 'file-1',
-              name: 'manual.pdf',
-              fileType: 'application/pdf',
-              storageKey: 'file-key',
-              rawStorageKey: 'file-key-raw',
-              ragMode: 'session-retrieval',
-              sessionAttachmentId: 42,
-              sessionAttachmentIndexStatus: 'ready',
-            },
-          ],
-        }),
-      ]
+        const messages: Message[] = [
+          createMessage({
+            id: '1',
+            role: 'user',
+            contentParts: [{ type: 'text', text: 'Use the attached manual' }],
+            files: [
+              {
+                id: 'file-1',
+                name: 'manual.pdf',
+                fileType: 'application/pdf',
+                storageKey: 'file-key',
+                rawStorageKey: 'file-key-raw',
+                ragMode: 'session-retrieval',
+                sessionAttachmentId: 42,
+                sessionAttachmentIndexStatus: status,
+              },
+            ],
+          }),
+        ]
 
-      const result = await buildContext(messages, {
-        attachmentResolver: resolver,
-        sandboxMode: true,
-      })
+        const result = await buildContext(messages, {
+          attachmentResolver: resolver,
+          sandboxMode: true,
+        })
 
+        expect(resolver.read).not.toHaveBeenCalled()
+        const textContent = result[0].contentParts.find((p) => p.type === 'text')
+        const text = (textContent as { type: 'text'; text: string }).text
+        expect(text).toContain('<ATTACHMENT_FILE>')
+        expect(text).not.toContain('<ATTACHED_FILES>')
+        expect(text).toContain('<FILE_KEY>session-attachment:42</FILE_KEY>')
+        expect(text).toContain('<RETRIEVAL_MODE>session_attachment_rag</RETRIEVAL_MODE>')
+        expect(text).toContain(`<INDEX_STATUS>${status}</INDEX_STATUS>`)
+        expect(text).toContain('<PARSED_TEXT_STATUS>available</PARSED_TEXT_STATUS>')
+        expect(text).toContain('<FILE_LINES>unknown</FILE_LINES>')
+        const manualPath = sandboxAttachmentRelPath('manual.pdf', 'file-key-raw')
+        expect(text).toContain(`<SANDBOX_PATH>${manualPath}</SANDBOX_PATH>`)
+        expect(text).toContain(
+          `<PARSED_SANDBOX_PATH>${sandboxAttachmentParsedRelPath(manualPath)}</PARSED_SANDBOX_PATH>`
+        )
+        expect(text).toContain('query_session_attachment')
+        expect(text).toContain('For focused questions')
+        expect(text).toContain('read PARSED_SANDBOX_PATH sequentially')
+        expect(text).toContain('not extracted-text availability or completeness')
+        expect(text).not.toContain('For document-specific questions about this file')
+        expect(text).not.toContain('large parsed content should stay out of context')
+      }
+    )
+
+    it('uses the original sandbox path and known line count for text attachments', async () => {
+      const resolver = createMockResolver(new Map())
+      const result = await buildContext(
+        [
+          createMessage({
+            id: 'text-message',
+            role: 'user',
+            files: [{ id: 'text', name: 'notes.md', fileType: 'text/markdown', storageKey: 'text', lineCount: 800 }],
+          }),
+        ],
+        { attachmentResolver: resolver, sandboxMode: true }
+      )
+      const text = result[0].contentParts.find((part) => part.type === 'text')?.text ?? ''
+      expect(text).toContain('<PARSED_TEXT_STATUS>not_required</PARSED_TEXT_STATUS>')
+      expect(text).toContain('<FILE_LINES>800</FILE_LINES>')
+      expect(text).not.toContain('<PARSED_SANDBOX_PATH>')
+      expect(text).toContain('for original text files, use SANDBOX_PATH')
       expect(resolver.read).not.toHaveBeenCalled()
-      const textContent = result[0].contentParts.find((p) => p.type === 'text')
-      const text = (textContent as { type: 'text'; text: string }).text
-      expect(text).toContain('<ATTACHMENT_FILE>')
-      expect(text).not.toContain('<ATTACHED_FILES>')
-      expect(text).toContain('<FILE_KEY>session-attachment:42</FILE_KEY>')
-      expect(text).toContain('<RETRIEVAL_MODE>session_attachment_rag</RETRIEVAL_MODE>')
-      expect(text).toContain('<INDEX_STATUS>ready</INDEX_STATUS>')
-      const manualPath = sandboxAttachmentRelPath('manual.pdf', 'file-key-raw')
-      expect(text).toContain(`<SANDBOX_PATH>${manualPath}</SANDBOX_PATH>`)
-      expect(text).toContain(`<PARSED_SANDBOX_PATH>${sandboxAttachmentParsedRelPath(manualPath)}</PARSED_SANDBOX_PATH>`)
-      expect(text).toContain('query_session_attachment')
-      expect(text).not.toContain('large parsed content should stay out of context')
     })
 
     it('gives same-named uploads distinct sandbox paths', async () => {

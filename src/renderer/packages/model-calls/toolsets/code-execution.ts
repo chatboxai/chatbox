@@ -1,6 +1,4 @@
-import { isUploadedFilePath } from '@shared/uploaded-file-tools'
-import { readFileSchema, READ_FILE_DEFAULT_LINES } from '@shared/uploaded-file-tools'
-import { validatedToolSchema } from '@shared/validated-tool-schema'
+import { WHOLE_DOCUMENT_READ_GUIDANCE } from '@shared/context/attachment-guidance'
 import { isTextFilePath } from '@shared/file-extensions'
 import {
   type SandboxSeedAttachment,
@@ -8,7 +6,14 @@ import {
   sandboxAttachmentParsedRelPath,
   sandboxAttachmentRelPath,
 } from '@shared/sandbox/attachment-path'
-import { DEFAULT_EXEC_TIMEOUT, type SandboxExecLanguage, type SandboxProvider } from '@shared/sandbox-provider'
+import {
+  DEFAULT_EXEC_TIMEOUT,
+  type SandboxExecLanguage,
+  type SandboxProvider,
+  type SandboxReadResult,
+} from '@shared/sandbox-provider'
+import { isUploadedFilePath, READ_FILE_DEFAULT_LINES, readFileSchema } from '@shared/uploaded-file-tools'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { ToolSet } from 'ai'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
@@ -107,12 +112,59 @@ function formatReadFileOutput(output: unknown): string {
   const content = stringField(record, 'content') ?? ''
   const startLine = numberField(record, 'startLine')
   const endLine = numberField(record, 'endLine')
+  const totalLines = numberField(record, 'totalLines')
+  if (totalLines === 0) return 'File is empty.'
   const hint = stringField(record, 'hint')
   const displayContent =
     content.trim() === '' && startLine !== undefined && endLine !== undefined && endLine >= startLine
       ? '[Selected lines are blank.]'
       : content
-  return hint ? `${displayContent}\n\n${hint}` : displayContent
+  const range =
+    startLine !== undefined && endLine !== undefined && totalLines !== undefined
+      ? `[Showing lines ${startLine}-${endLine} of ${totalLines}.]`
+      : undefined
+  return [displayContent, range, hint].filter(Boolean).join('\n\n')
+}
+
+function buildReadFileOutput(filePath: string, result: SandboxReadResult) {
+  if (result.totalLines === 0) return { file_path: filePath, content: '', totalLines: 0 }
+  const content = result.content ?? ''
+  const truncatedLineCount = result.truncatedLineCount ?? 0
+  const contentTruncated = content.length > MAX_STDOUT_LENGTH
+  const hints: string[] = []
+  if (truncatedLineCount > 0) {
+    hints.push(
+      `${truncatedLineCount} returned line(s) were shortened. Line-number coverage does not mean their text was fully read. ` +
+        'Reducing limit cannot recover those characters. Use code_execution to read the same text file in bounded character chunks ' +
+        '(for example, with Node.js fs and Array.from(text).slice(offset, offset + size).join("")), recording and advancing the character offset until each chunk is complete. ' +
+        'Keep each printed chunk small enough to avoid output truncation. Do not re-OCR the source document.'
+    )
+  }
+  if (contentTruncated) {
+    hints.push(
+      `Output was shortened. Reread offset=${result.startLine ?? 1} with a smaller limit before advancing. ` +
+        'If a single line still exceeds the output budget, use code_execution to read bounded character chunks of the same text file.'
+    )
+  }
+  if (
+    !truncatedLineCount &&
+    !contentTruncated &&
+    result.endLine &&
+    result.totalLines &&
+    result.endLine < result.totalLines
+  ) {
+    hints.push(`Use offset=${result.endLine + 1} to continue.`)
+  }
+  return {
+    file_path: filePath,
+    content: truncateOutput(content, MAX_STDOUT_LENGTH),
+    startLine: result.startLine,
+    endLine: result.endLine,
+    totalLines: result.totalLines,
+    ...(truncatedLineCount > 0 ? { truncatedLineCount } : {}),
+    ...(contentTruncated ? { contentTruncated: true } : {}),
+    ...(hints.length ? { hint: hints.join(' ') } : {}),
+  }
 }
 
 function formatDownloadOutput(output: unknown): string {
@@ -278,7 +330,9 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
     description:
       'Read the content of a file in the sandbox working directory, or an absolute user filesystem path when explicitly provided. ' +
       'For document files (PDF, DOCX, etc.), read the path from <PARSED_SANDBOX_PATH> instead of the binary. ' +
-      'Output is truncated to fit context. Use offset to continue reading large files.',
+      'For whole-document tasks, read sequentially with offset and limit; retrieval hits do not establish full coverage. ' +
+      'Check truncation notices: shortened lines require code_execution to read bounded Unicode-safe character chunks ' +
+      'of the same text file; reducing the line limit cannot recover them.',
     inputSchema: validatedToolSchema(readFileSchema),
     execute: async (input) => {
       const readInput = input as { file_path: string; offset?: number; limit?: number }
@@ -301,19 +355,7 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
             limit: readInput.limit,
           })
           if (!result.success) return { error: result.error || `File not found: ${readInput.file_path}` }
-          const hasMore = !!result.endLine && !!result.totalLines && result.endLine < result.totalLines
-          return {
-            file_path: readInput.file_path,
-            content: truncateOutput(result.content ?? '', MAX_STDOUT_LENGTH),
-            startLine: result.startLine,
-            endLine: result.endLine,
-            totalLines: result.totalLines,
-            ...(hasMore
-              ? {
-                  hint: `[Showing lines ${result.startLine}-${result.endLine} of ${result.totalLines}. Use offset=${(result.endLine ?? 0) + 1} to continue.]`,
-                }
-              : {}),
-          }
+          return buildReadFileOutput(readInput.file_path, result)
         }
       }
 
@@ -336,24 +378,7 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
         }
       }
 
-      const content = result.content ?? ''
-      const totalLines = result.totalLines ?? 0
-      const endLine = result.endLine ?? 0
-      if (totalLines === 0) {
-        return { file_path: readInput.file_path, content: '', totalLines: 0 }
-      }
-      const hasMore = endLine < totalLines
-
-      return {
-        file_path: readInput.file_path,
-        content: truncateOutput(content, MAX_STDOUT_LENGTH),
-        startLine: result.startLine ?? safeStart,
-        endLine,
-        totalLines,
-        ...(hasMore
-          ? { hint: `[Showing lines ${safeStart}-${endLine} of ${totalLines}. Use offset=${endLine + 1} to continue.]` }
-          : {}),
-      }
+      return buildReadFileOutput(readInput.file_path, { ...result, startLine: result.startLine ?? safeStart })
     },
     toModelOutput: toTextModelOutput(formatReadFileOutput, { emptyFallback: 'File is empty.' }),
   }
@@ -487,6 +512,7 @@ If a package install seems necessary:
 
 ### read_file
 Read file content from the sandbox with line-based pagination.
+- ${WHOLE_DOCUMENT_READ_GUIDANCE}
 - Use \`offset\` (1-indexed line number) and \`limit\` (number of lines) to read large files in chunks.
 - **Text files** (code, markdown, CSV, etc.): read the path in <SANDBOX_PATH> directly.
 - **Document files** (PDF, DOCX, XLSX, PPTX, etc.): when <PARSED_SANDBOX_PATH> is present, read that file to get extracted text. The original binary at <SANDBOX_PATH> is also present if you need to process it with code_execution.

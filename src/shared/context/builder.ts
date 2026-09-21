@@ -1,4 +1,3 @@
-import { MAX_UPLOADED_FILE_LINES, uploadedFileToolHint, uploadedFilePath } from '../uploaded-file-tools'
 import { isTextFilePath } from '../file-extensions'
 import {
   sandboxAttachmentIdentity,
@@ -6,7 +5,13 @@ import {
   sandboxAttachmentRelPath,
 } from '../sandbox/attachment-path'
 import type { CompactionPoint, Message, MessageContentParts } from '../types'
+import { MAX_UPLOADED_FILE_LINES, uploadedFilePath, uploadedFileToolHint } from '../uploaded-file-tools'
 import { orderSteeredMessagesForModel } from '../utils/message'
+import {
+  ATTACHMENT_INDEX_STATUS_GUIDANCE,
+  FOCUSED_ATTACHMENT_QUERY_GUIDANCE,
+  WHOLE_DOCUMENT_READ_GUIDANCE,
+} from './attachment-guidance'
 import { findLatestApplicableCompactionPoint } from './compaction-points'
 import { isContextEligibleMessage } from './message-eligibility'
 import type {
@@ -203,6 +208,8 @@ function injectSandboxFileMetadata(msg: Message): Message {
         name: file.name,
         key: file.sessionAttachmentId ? `session-attachment:${file.sessionAttachmentId}` : (file.storageKey ?? file.id),
         size: formatFileSize(file.byteLength),
+        lineCount: file.lineCount,
+        isText,
         sandboxPath,
         parsedSandboxPath:
           !isText && file.storageKey && file.parserType !== 'sandbox-raw'
@@ -354,9 +361,9 @@ function buildRetrievalAttachment(params: {
   text += [
     '<SYSTEM_REMINDER>',
     'This uploaded file is indexed for retrieval, not inlined in the conversation. ',
-    'For document-specific questions about this file, use query_session_attachment and then ',
-    'read_session_attachment_parents before answering. If the user asks something unrelated to the uploaded file, ',
-    'answer normally without retrieval.',
+    FOCUSED_ATTACHMENT_QUERY_GUIDANCE,
+    ' Full-document tasks require sequential access to the complete text. Search hits alone cannot establish full coverage. ',
+    'If no direct reading tool or text path is available, explain that limitation rather than claiming a complete conversion.',
     '</SYSTEM_REMINDER>\n',
   ].join('')
   text += '</ATTACHMENT_FILE>\n'
@@ -368,6 +375,8 @@ function buildSandboxAttachment(params: {
   name: string
   key: string
   size: string
+  lineCount?: number
+  isText: boolean
   sandboxPath: string
   parsedSandboxPath?: string
   retrieval?: {
@@ -375,7 +384,7 @@ function buildSandboxAttachment(params: {
     blockedReason?: string
   }
 }): string {
-  const { index, name, key, size, sandboxPath, parsedSandboxPath, retrieval } = params
+  const { index, name, key, size, lineCount, isText, sandboxPath, parsedSandboxPath, retrieval } = params
   let text = '\n\n<ATTACHMENT_FILE>\n'
   text += `<FILE_INDEX>${index}</FILE_INDEX>\n`
   text += `<FILE_NAME>${escapeXmlText(name)}</FILE_NAME>\n`
@@ -388,29 +397,31 @@ function buildSandboxAttachment(params: {
   if (parsedSandboxPath) {
     text += `<PARSED_SANDBOX_PATH>${escapeXmlText(parsedSandboxPath)}</PARSED_SANDBOX_PATH>\n`
   }
+  text += `<PARSED_TEXT_STATUS>${isText ? 'not_required' : parsedSandboxPath ? 'available' : 'unavailable'}</PARSED_TEXT_STATUS>\n`
+  const hasTextSource = isText || !!parsedSandboxPath
+  if (hasTextSource) {
+    const knownLineCount = lineCount !== undefined && Number.isInteger(lineCount) && lineCount >= 0
+    text += `<FILE_LINES>${knownLineCount ? lineCount : 'unknown'}</FILE_LINES>\n`
+  }
   if (retrieval) {
     text += '<RETRIEVAL_MODE>session_attachment_rag</RETRIEVAL_MODE>\n'
     text += `<INDEX_STATUS>${escapeXmlText(retrieval.status)}</INDEX_STATUS>\n`
     if (retrieval.blockedReason) {
       text += `<BLOCKED_REASON>${escapeXmlText(retrieval.blockedReason)}</BLOCKED_REASON>\n`
     }
-    text += [
-      '<SYSTEM_REMINDER>',
-      'This uploaded file is indexed for retrieval and is also available in the sandbox working directory. ',
-      'For document-specific questions about this file, use query_session_attachment and then ',
-      'read_session_attachment_parents before answering. Use code_execution or read_file when direct file processing is needed.',
-      '</SYSTEM_REMINDER>\n',
-    ].join('')
-  } else {
-    text += [
-      '<SYSTEM_REMINDER>',
-      'This uploaded file is available in the sandbox working directory, not inlined in the conversation. ',
-      parsedSandboxPath
-        ? 'Use read_file on PARSED_SANDBOX_PATH for extracted text, or code_execution on SANDBOX_PATH for the original binary. Use those paths exactly — uploads that share a filename live in distinct subdirectories.'
-        : 'Use read_file or code_execution on SANDBOX_PATH to inspect it. Use that path exactly — uploads that share a filename live in distinct subdirectories.',
-      '</SYSTEM_REMINDER>\n',
-    ].join('')
   }
+  text += [
+    '<SYSTEM_REMINDER>',
+    'This uploaded file is available in the sandbox working directory, not inlined in the conversation. ',
+    parsedSandboxPath
+      ? 'Use read_file on PARSED_SANDBOX_PATH for extracted text, or code_execution on SANDBOX_PATH for the original binary. Use those paths exactly — uploads that share a filename live in distinct subdirectories.'
+      : 'Use read_file or code_execution on SANDBOX_PATH to inspect it. Use that path exactly — uploads that share a filename live in distinct subdirectories.',
+    ' ',
+    WHOLE_DOCUMENT_READ_GUIDANCE,
+    ' File metadata does not verify text completeness; confirm contents and totalLines with read_file.',
+    retrieval ? ` ${FOCUSED_ATTACHMENT_QUERY_GUIDANCE} ${ATTACHMENT_INDEX_STATUS_GUIDANCE}` : '',
+    '</SYSTEM_REMINDER>\n',
+  ].join('')
   text += '</ATTACHMENT_FILE>\n'
   return text
 }

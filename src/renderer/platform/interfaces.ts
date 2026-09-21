@@ -118,6 +118,7 @@ export interface Platform extends Storage {
     startLine?: number
     endLine?: number
     totalLines?: number
+    truncatedLineCount?: number
     error?: string
   }>
   readWorkspaceInstructions?(directories: string[]): Promise<WorkspaceInstructionsResult>

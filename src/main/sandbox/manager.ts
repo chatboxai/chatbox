@@ -1484,6 +1484,7 @@ export async function readFile(
       startLine: number
       endLine: number
       totalLines: number
+      truncatedLineCount?: number
     }
     return { success: true, ...output }
   } catch (error) {

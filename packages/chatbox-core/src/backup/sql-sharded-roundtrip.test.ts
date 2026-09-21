@@ -1,19 +1,19 @@
-import type { BackupProgress } from './types'
-import { decodeSessionTree } from '../session/session-tree/decode'
 import { createHash } from 'node:crypto'
+import { unzipSync, zipSync } from 'fflate'
 import { afterEach, expect, it, vi } from 'vitest'
-import { openNodeSessionRowDatabase, type NodeSessionRowSqlDatabase } from '../persistence/node-sqlite.test-support'
-import { SqlSessionRowStore } from '../persistence/session-row-sql'
+import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
 import { contextSession, contextSnapshot } from '../persistence/session-context-read.test-support'
+import { SqlSessionRowStore } from '../persistence/session-row-sql'
+import { SessionRowConflictError } from '../ports/session-row-store'
+import { decodeSessionTree } from '../session/session-tree/decode'
+import type { MessageRow } from '../session/session-tree/types'
+import { sha256Checksum } from './codec'
 import { exportBackupArchive } from './export-backup'
 import { importBackupArchive } from './import-backup'
-import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
-import { unzipSync, zipSync } from 'fflate'
-import { sha256Checksum } from './codec'
-import { readZipFileEntries, createZipStream } from './zip'
 import { DEFAULT_BACKUP_PAGE_LIMITS } from './session-port'
-import { SessionRowConflictError } from '../ports/session-row-store'
-import type { MessageRow } from '../session/session-tree/types'
+import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
+import type { BackupProgress } from './types'
+import { createZipStream, readZipFileEntries } from './zip'
 
 async function collect(stream: AsyncIterable<Uint8Array>) {
   const parts: Uint8Array<ArrayBuffer>[] = []
@@ -114,7 +114,10 @@ it('round trips a SQL message larger than a shard and preserves Unicode, escaped
   let archive = new Blob()
   // Advance the reporter clock deterministically so even a fast run observes each chunk.
   let clock = Date.UTC(2026, 0, 1)
-  vi.spyOn(Date, 'now').mockImplementation(() => (clock += 501))
+  vi.spyOn(Date, 'now').mockImplementation(() => {
+    clock += 501
+    return clock
+  })
   await exportBackupArchive({
     storage: new MemoryStorage(),
     metaStorage: new MemoryMetaStorage(),
@@ -225,7 +228,7 @@ it('bounds the structure retained while exporting a message with many long objec
       ],
     })
   )
-  await expect(backup(source)).rejects.toThrow('Backup message structure exceeds budget')
+  await expect(backup(source)).rejects.toThrow('Backup JSON key index exceeds budget')
 })
 
 it.skipIf(process.env.RUN_LARGE_BACKUP !== '1')(

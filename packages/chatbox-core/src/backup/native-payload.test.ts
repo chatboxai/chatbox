@@ -177,9 +177,20 @@ it('projects materialized messages with the validator string limits', () => {
     id: 'm',
     role: 'user',
     contentParts: [{ type: 'text', text: 'x'.repeat(5000) }],
-    files: [{ id: 'f', name: 'n', fileType: 't', storageKey: 'k'.repeat(5000), rawStorageKey: 'r'.repeat(40000) }],
+    files: [{ id: 'f', name: 'n', fileType: 't', storageKey: 'k'.repeat(5000), rawStorageKey: 'r'.repeat(32768) }],
   })
   expect((projected.contentParts[0] as { text: string }).text).toHaveLength(4096)
   expect(projected.files?.[0].storageKey).toHaveLength(5000)
   expect(projected.files?.[0].rawStorageKey).toHaveLength(32768)
+})
+
+it('rejects resource identifiers that cannot be retained in full', () => {
+  expect(() =>
+    projectBackupMessage({
+      id: 'm',
+      role: 'user',
+      contentParts: [],
+      files: [{ id: 'f', name: 'n', fileType: 't', rawStorageKey: 'r'.repeat(32769) }],
+    })
+  ).toThrow('Backup resource identifier exceeds budget')
 })

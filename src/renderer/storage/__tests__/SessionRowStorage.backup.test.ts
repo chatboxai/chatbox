@@ -1,22 +1,24 @@
 import 'fake-indexeddb/auto'
-import { IDBFactory, IDBObjectStore } from 'fake-indexeddb'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { unzipSync } from 'fflate'
 import {
-  prepareBackupExport,
-  exportBackupArchive,
-  importBackupArchive,
-  DEFAULT_BACKUP_PAGE_LIMITS,
   BackupManifestV3Schema,
   type BackupSessionStore,
+  DEFAULT_BACKUP_PAGE_LIMITS,
+  exportBackupArchive,
+  importBackupArchive,
+  prepareBackupExport,
 } from '@chatbox/core/backup'
-import { contextSnapshot } from '../../../../packages/chatbox-core/src/persistence/session-context-read.test-support'
-import { MemoryStorage, MemoryMetaStorage } from '../../../../packages/chatbox-core/src/backup/sharded.test-support'
-import { IndexedDBSessionRowStore } from '../SessionRowStorage'
-import { decodeSessionTree } from '@chatbox/core/session/session-tree'
+import { backupSessionStorageKey } from '@chatbox/core/backup/storage-keys'
 import { SessionRowConflictError } from '@chatbox/core/ports'
-import { SqlSessionRowStore } from '../../../../packages/chatbox-core/src/persistence/session-row-sql'
+import { decodeSessionTree } from '@chatbox/core/session/session-tree'
+import type { Session } from '@shared/types'
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb'
+import { unzipSync } from 'fflate'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { MemoryMetaStorage, MemoryStorage } from '../../../../packages/chatbox-core/src/backup/sharded.test-support'
 import { openNodeSessionRowDatabase } from '../../../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
+import { contextSnapshot } from '../../../../packages/chatbox-core/src/persistence/session-context-read.test-support'
+import { SqlSessionRowStore } from '../../../../packages/chatbox-core/src/persistence/session-row-sql'
+import { IndexedDBSessionRowStore } from '../SessionRowStorage'
 
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
@@ -68,6 +70,140 @@ async function exportFile(
   })
   return file
 }
+
+it.each([
+  { sourceKind: 'idb', layout: 'single', nativePayloadLimit: 8 * 1024 * 1024 },
+  { sourceKind: 'sql', layout: 'single', nativePayloadLimit: 0 },
+  { sourceKind: 'idb', layout: 'sharded', nativePayloadLimit: 0 },
+  { sourceKind: 'sql', layout: 'sharded', nativePayloadLimit: 8 * 1024 * 1024 },
+] as const)(
+  'round trips complex work messages from $sourceKind using $layout archives',
+  async ({ sourceKind, layout, nativePayloadLimit }) => {
+    const database = openNodeSessionRowDatabase()
+    const sql = new SqlSessionRowStore(database)
+    const idb = new IndexedDBSessionRowStore()
+    const [source, target] = sourceKind === 'idb' ? [idb, sql] : [sql, idb]
+    const session: Session = {
+      id: 'complex-work',
+      name: 'Complex work',
+      messages: [
+        {
+          id: 'work',
+          role: 'assistant',
+          contentParts: [
+            ...Array.from({ length: 24 }, (_, index) => ({
+              type: 'text' as const,
+              text: `Part ${index}: ${'中🙂\\\"\n'.repeat(1000)}`,
+            })),
+            {
+              type: 'tool-call',
+              toolName: 'search',
+              toolCallId: 'search',
+              state: 'result',
+              args: { values: Array.from({ length: 9000 }, (_, index) => index) },
+              result: { results: Array.from({ length: 9000 }, () => ({ title: 'found', score: 1 })) },
+              providerMetadata: { provider: { signature: 's'.repeat(9000), data: [1, 2, 3] } },
+              resultStorageKey: 'tool-body',
+            },
+            {
+              type: 'tool-call',
+              toolName: 'view_image',
+              toolCallId: 'image',
+              state: 'result',
+              result: { image_storage_key: 'image', media_type: 'image/png' },
+            },
+            {
+              type: 'tool-call',
+              toolName: 'create_download',
+              toolCallId: 'download',
+              state: 'result',
+              result: {
+                artifacts: [
+                  {
+                    path: 'artifacts/report.pdf',
+                    name: 'report.pdf',
+                    mimeType: 'application/pdf',
+                    size: 3,
+                    storageKey: 'pdf',
+                  },
+                ],
+              },
+            },
+          ],
+          files: [{ id: 'file', name: 'notes.txt', fileType: 'text/plain', storageKey: 'attachment' }],
+        },
+      ],
+    }
+    const snapshot = contextSnapshot(session)
+    const storage = new MemoryStorage()
+    storage.blobs.set('tool-body', 'complete tool result')
+    storage.blobs.set('attachment', 'complete attachment')
+    storage.blobs.set('image', 'data:image/png;base64,AQID')
+    storage.blobs.set('pdf', 'data:application/pdf;base64,AQID')
+    const restoredStorage = new MemoryStorage()
+    try {
+      await source.writeRows(snapshot)
+      const exportFrom = async (store: BackupSessionStore, resources: MemoryStorage) => {
+        const options = {
+          sessionStore: store,
+          storage: resources,
+          metaStorage: new MemoryMetaStorage(),
+          exportItems: ['conversations'] as ['conversations'],
+          includeKeys: false,
+          application: { version: 'test', platform: 'test' },
+          nativePayloadLimit,
+        }
+        const prepared = await prepareBackupExport(options, {
+          singleSessionBytes: layout === 'single' ? 64 * 1024 * 1024 : 64 * 1024,
+        })
+        expect(prepared.warnings).toEqual([])
+        expect(prepared.formatVersion).toBe(layout === 'single' ? 2 : 3)
+        let archive = new Blob()
+        const result = await exportBackupArchive({
+          ...options,
+          prepared,
+          writeArchive: async (stream) => {
+            const parts: Uint8Array<ArrayBuffer>[] = []
+            for await (const part of stream()) parts.push(new Uint8Array(part))
+            archive = new Blob(parts)
+            return { boundedMemory: true }
+          },
+        })
+        expect(result.manifest.resources).toHaveLength(4)
+        expect(result.manifest.warnings).toEqual([])
+        return archive
+      }
+      const archive = await exportFrom(source, storage)
+      await importBackupArchive(archive, {
+        storage: restoredStorage,
+        metaStorage: new MemoryMetaStorage(),
+        sharded: { store: target, nativePayloadLimit },
+      })
+      if (layout === 'single') {
+        const restored = await restoredStorage.getItem<Session | null>(backupSessionStorageKey(session.id), null)
+        if (!restored) throw new Error('Missing restored session')
+        await target.writeRows(contextSnapshot(restored))
+      }
+      expect(await target.readSnapshot(session.id)).not.toBeNull()
+      expect((await target.readSnapshot(session.id))?.rows).toEqual(snapshot.rows)
+      for (const [key, value] of storage.blobs) expect(restoredStorage.blobs.get(key)).toBe(value)
+      const second = await exportFrom(target, restoredStorage)
+      await importBackupArchive(second, {
+        storage,
+        metaStorage: new MemoryMetaStorage(),
+        sharded: { store: source, nativePayloadLimit },
+      })
+      if (layout === 'single') {
+        const restored = await storage.getItem<Session | null>(backupSessionStorageKey(session.id), null)
+        if (!restored) throw new Error('Missing restored session')
+        await source.writeRows(contextSnapshot(restored))
+      }
+      expect((await source.readSnapshot(session.id))?.rows).toEqual(snapshot.rows)
+    } finally {
+      database.close()
+    }
+  }
+)
 
 it('batches 64 KiB stored payloads and restores mixed message sizes through SQLite and IndexedDB', async () => {
   const source = new IndexedDBSessionRowStore()

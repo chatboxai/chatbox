@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { withSessionGenerationLock } from '../../generation/generation-lock'
 import type { Message, Session } from '../../types'
 import {
   ChatMessageService,
@@ -54,6 +55,44 @@ function createHarness(
 }
 
 describe('ChatMessageService', () => {
+  it('retains the send action timestamp across a queued session submission', async () => {
+    const session: Session = {
+      id: 'timed-session',
+      name: 'Timed',
+      type: 'chat',
+      messages: [],
+      settings: { provider: 'openai', modelId: 'gpt-test' },
+    }
+    const harness = createHarness(session)
+    let release!: () => void
+    const blocking = withSessionGenerationLock(
+      session.id,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        })
+    )
+    await Promise.resolve()
+    const sending = harness.service.sendExistingSession(session.id, { input: { text: 'Hello' }, submittedAt: 42 })
+    expect(harness.generation).not.toHaveBeenCalled()
+    release()
+    await Promise.all([blocking, sending])
+    expect(harness.generation).toHaveBeenCalledWith(session.id, expect.any(Object), {
+      operationType: 'send_message',
+      submittedAt: 42,
+    })
+    await harness.service.sendNewSession({
+      idempotencyKey: 'timed-new',
+      input: { text: 'New' },
+      sessionSettings: session.settings!,
+      submittedAt: 15,
+    })
+    expect(harness.generation).toHaveBeenLastCalledWith(expect.any(String), expect.any(Object), {
+      operationType: 'send_message',
+      submittedAt: 15,
+    })
+  })
+
   it('validates the whole first turn before creating persistence', async () => {
     const harness = createHarness()
 

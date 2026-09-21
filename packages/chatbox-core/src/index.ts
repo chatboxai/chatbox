@@ -285,6 +285,7 @@ export {
   type GenerationModelFactoryPort,
   type GenerationOperationType,
   type GenerationOptions,
+  type GenerationRequestTiming,
   type GenerationPreparationPort,
   type GenerationPreparationRequest,
   type GenerationRuntimePhase,

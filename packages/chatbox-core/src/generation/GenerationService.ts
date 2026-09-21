@@ -104,6 +104,8 @@ export type GenerationOperationType = 'send_message' | 'regenerate'
 export type GenerationAgentModeEntrySource = 'suggestion_accept' | 'locked_session' | 'manual' | 'none'
 
 export interface GenerationOptions {
+  /** User send action time, before preflight, persistence and the session lock. */
+  submittedAt?: number
   operationType?: GenerationOperationType
   appendToMessage?: boolean
   skipAgentModeSuggestion?: boolean
@@ -162,8 +164,15 @@ export interface GenerationModelContext<TContext> {
   context: TContext
 }
 
+export interface GenerationRequestTiming {
+  sessionId: string
+  messageId: string
+  submittedAt?: number
+  generationStartedAt: number
+}
+
 export interface GenerationModelFactoryPort<TContext> extends ModelFactoryPort {
-  createContext(settings: SessionSettings): Promise<GenerationModelContext<TContext>>
+  createContext(settings: SessionSettings, timing?: GenerationRequestTiming): Promise<GenerationModelContext<TContext>>
   createWithContext(settings: SessionSettings, context: TContext): Promise<ModelInterface>
 }
 
@@ -405,6 +414,7 @@ export class GenerationService<TContext> {
     options?: GenerationOptions
   ): Promise<void> {
     const { sessions, settings: settingsRepository, host, analytics } = this.dependencies
+    const generationStartedAt = host.now()
     let generationMessageId = initialTargetMessage.id
     const runtimeState = this.dependencies.runtime.start(sessionId, generationMessageId)
     const controller = runtimeState.abortController
@@ -418,6 +428,22 @@ export class GenerationService<TContext> {
     let targetMessage = initialTargetMessage
     const finishRuntime = () => {
       this.dependencies.runtime.finishActive(sessionId, generationMessageId, runtimeState)
+      const settledAt = host.now()
+      try {
+        void Promise.resolve(
+          this.dependencies.logger.log('info', 'Generation timing', {
+            event: 'generation_settled',
+            sessionId,
+            messageId: initialTargetMessage.id,
+            submittedAt: options?.submittedAt,
+            generationStartedAt,
+            settledAt,
+            sendToSettledMs: options?.submittedAt === undefined ? undefined : settledAt - options.submittedAt,
+            generationDurationMs: settledAt - generationStartedAt,
+            aborted: controller.signal.aborted,
+          })
+        ).catch(() => {})
+      } catch {}
     }
     const finishCanceledSetup = async (persist: boolean): Promise<void> => {
       targetMessage = {
@@ -572,7 +598,7 @@ export class GenerationService<TContext> {
           getAbortStoppedAt(controller.signal, host.now())
         )
         await sessions.persistStreamingMessage(sessionId, targetMessage, { refreshCounting: true })
-        this.dependencies.runtime.finishActive(sessionId, generationMessageId, runtimeState)
+        finishRuntime()
         return
       }
     }
@@ -599,7 +625,12 @@ export class GenerationService<TContext> {
     }
 
     try {
-      const modelContext = await this.dependencies.models.createContext(settings)
+      const modelContext = await this.dependencies.models.createContext(settings, {
+        sessionId,
+        messageId: initialTargetMessage.id,
+        submittedAt: options?.submittedAt,
+        generationStartedAt,
+      })
       const { model } = modelContext
       // Reasoning options are scoped to the provider+model they were configured for;
       // resolving here guarantees a switched model never inherits another model's parameters.
@@ -1066,7 +1097,7 @@ export class GenerationService<TContext> {
       })
       await sessions.persistStreamingMessage(sessionId, targetMessage, { refreshCounting: true })
     } finally {
-      this.dependencies.runtime.finishActive(sessionId, generationMessageId, runtimeState)
+      finishRuntime()
       steering?.release()
       this.dependencies.steering?.wake(sessionId)
     }

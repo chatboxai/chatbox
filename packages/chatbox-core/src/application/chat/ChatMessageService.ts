@@ -10,7 +10,7 @@ export interface ChatGenerationPort {
   orchestrate(
     sessionId: string,
     targetMessage: Message,
-    options?: { operationType?: 'send_message' | 'regenerate' }
+    options?: { operationType?: 'send_message' | 'regenerate'; submittedAt?: number }
   ): Promise<void>
 }
 
@@ -40,6 +40,7 @@ export interface ChatMessageInput {
 }
 
 export interface SendNewSessionRequest {
+  submittedAt?: number
   copilot?: Pick<Session, 'copilotId' | 'assistantAvatarKey' | 'picUrl' | 'backgroundImage'>
   idempotencyKey: string
   input: ChatMessageInput
@@ -51,6 +52,7 @@ export interface SendNewSessionRequest {
 }
 
 export interface SendExistingSessionRequest {
+  submittedAt?: number
   input: ChatMessageInput
   onMessagesPersisted?(result: ChatSendResult): void | Promise<void>
 }
@@ -222,7 +224,7 @@ export class ChatMessageService {
     const current = this.firstSendFlights.get(request.idempotencyKey)
     if (current) return await current
 
-    const flight = this.sendNewSessionOnce(request)
+    const flight = this.sendNewSessionOnce({ ...request, submittedAt: request.submittedAt ?? this.dependencies.now() })
     this.firstSendFlights.set(request.idempotencyKey, flight)
     void flight.catch(() => {
       if (
@@ -236,6 +238,7 @@ export class ChatMessageService {
   }
 
   sendExistingSession(sessionId: string, request: SendExistingSessionRequest): Promise<ChatSendResult> {
+    const submittedAt = request.submittedAt ?? this.dependencies.now()
     return withSessionGenerationLock(sessionId, async () => {
       const current = await this.requireSession(sessionId)
       validateInput(request.input, current.settings ?? {})
@@ -258,7 +261,10 @@ export class ChatMessageService {
       })
       const result = { assistantMessage, session, userMessage }
       await request.onMessagesPersisted?.(result)
-      await this.dependencies.generation.orchestrate(sessionId, assistantMessage, { operationType: 'send_message' })
+      await this.dependencies.generation.orchestrate(sessionId, assistantMessage, {
+        operationType: 'send_message',
+        submittedAt,
+      })
       return result
     })
   }
@@ -377,7 +383,10 @@ export class ChatMessageService {
     const result = { assistantMessage, session, userMessage }
     await request.onSessionPersisted?.(result)
     await withSessionGenerationLock(session.id, () =>
-      this.dependencies.generation.orchestrate(session.id, assistantMessage, { operationType: 'send_message' })
+      this.dependencies.generation.orchestrate(session.id, assistantMessage, {
+        operationType: 'send_message',
+        submittedAt: request.submittedAt,
+      })
     )
     return result
   }

@@ -4,7 +4,6 @@ import {
   IconAdjustmentsHorizontal,
   IconArchive,
   IconBook,
-  IconBox,
   IconBrain,
   IconCategory,
   IconChevronLeft,
@@ -13,6 +12,7 @@ import {
   IconFileText,
   IconInfoCircle,
   IconKeyboard,
+  IconListDetails,
   IconMessages,
   IconRobotFace,
   IconSparkles,
@@ -26,8 +26,8 @@ import { Toaster } from 'sonner'
 import Divider from '@/components/common/Divider'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import Page from '@/components/layout/Page'
-import { useProviders } from '@/hooks/useProviders'
 import { useBackupNavigationGuard } from '@/hooks/useBackupNavigationGuard'
+import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform from '@/platform'
 import { featureFlags } from '@/utils/feature-flags'
@@ -45,8 +45,8 @@ const ITEMS = [
   },
   {
     key: 'default-models',
-    label: 'Default Models',
-    icon: <IconBox className="w-full h-full" />,
+    label: 'Models & services',
+    icon: <IconListDetails className="w-full h-full" />,
   },
   {
     key: 'web-search',

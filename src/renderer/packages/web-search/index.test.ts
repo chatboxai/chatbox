@@ -62,7 +62,7 @@ vi.mock('./chatbox-search', () => {
 })
 
 import { getExtensionSettings } from '@/stores/settingActions'
-import { webSearchExecutor } from './index'
+import { testWebSearchConnection, webSearchExecutor } from './index'
 
 const mockGetExtensionSettings = vi.mocked(getExtensionSettings)
 
@@ -161,5 +161,20 @@ describe('webSearchExecutor', () => {
     } as ReturnType<typeof getExtensionSettings>)
 
     await expect(webSearchExecutor({ query: 'provider failure' }, {})).rejects.toThrow('Tavily unavailable')
+  })
+})
+
+describe('testWebSearchConnection', () => {
+  it('checks current credentials even when a successful query is cached', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'tavily', tavilyApiKey: 'working-key' },
+    } as ReturnType<typeof getExtensionSettings>)
+    await webSearchExecutor({ query: 'Chatbox' }, {})
+    await expect(testWebSearchConnection()).resolves.toBeUndefined()
+
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'tavily', tavilyApiKey: 'failing-key' },
+    } as ReturnType<typeof getExtensionSettings>)
+    await expect(testWebSearchConnection()).rejects.toThrow('Tavily unavailable')
   })
 })

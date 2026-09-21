@@ -47,11 +47,12 @@ import {
   useImageGenerationHistory,
   useImageGenerationRecord,
 } from '@/stores/imageGenerationStore'
+import { lastUsedModelStore, useLastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { queryClient } from '@/stores/queryClient'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import * as toastActions from '@/stores/toastActions'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
-import { getRatioOptionsForModel, HISTORY_PANEL_WIDTH, MAX_REFERENCE_IMAGES } from './-components/constants'
+import { HISTORY_PANEL_WIDTH } from './-components/constants'
 import { EmptyState } from './-components/EmptyState'
 import { GeneratedImagesGallery } from './-components/GeneratedImagesGallery'
 import { HistoryPanel } from './-components/HistoryPanel'
@@ -61,7 +62,11 @@ import {
   getHistoryImageModelDisplayName as resolveHistoryImageModelDisplayName,
   getImageModelDisplayName as resolveImageModelDisplayName,
 } from './-components/model-display-name'
-import { getImageModelRatioOptions, resolveImageRatioSelection, resolveImageModelSelection } from './-components/model-selection'
+import {
+  getImageModelRatioOptions,
+  resolveImageModelSelection,
+  resolveImageRatioSelection,
+} from './-components/model-selection'
 import { PromptDisplay } from './-components/PromptDisplay'
 import { ReferenceImagesPreview } from './-components/ReferenceImagesPreview'
 import { LoadingShimmer } from './-components/Shimmer'
@@ -240,10 +245,16 @@ function ImageCreatorPage() {
     clear: clearReferenceImages,
     beginSubmission,
   } = useReferenceImageDraft()
+  const picture = useLastUsedModelStore((state) => state.picture)
   const [showHistory, setShowHistory] = useState(true)
   const [showMobileHistory, setShowMobileHistory] = useState(false)
-  const [selectedProvider, setSelectedProvider] = useState<string>(ModelProviderEnum.ChatboxAI)
-  const [selectedModel, setSelectedModel] = useState<string>('')
+  const selection = resolveImageModelSelection(
+    imageModelGroups,
+    picture?.provider ?? ModelProviderEnum.ChatboxAI,
+    picture?.modelId ?? ''
+  )
+  const selectedProvider = selection?.provider ?? ''
+  const selectedModel = selection?.model ?? ''
   const [selectedRatio, setSelectedRatio] = useState<string>('auto')
   const [showModelDrawer, setShowModelDrawer] = useState(false)
   const [showRatioDrawer, setShowRatioDrawer] = useState(false)
@@ -282,33 +293,12 @@ function ImageCreatorPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    const nextSelection = resolveImageModelSelection(imageModelGroups, selectedProvider, selectedModel)
-    if (!nextSelection) {
-      setSelectedProvider('')
-      setSelectedModel('')
-      setSelectedRatio('auto')
-      return
-    }
-    if (nextSelection.provider === selectedProvider && nextSelection.model === selectedModel) return
-
-    setSelectedProvider(nextSelection.provider)
-    setSelectedModel(nextSelection.model)
-    const nextCapabilities = imageModelGroups
-      .find((group) => group.providerId === nextSelection.provider)
-      ?.models.find((model) => model.modelId === nextSelection.model)?.capabilities
-    const nextRatioOptions = getImageModelRatioOptions(nextSelection.model, nextCapabilities)
-    setSelectedRatio((prev) => resolveImageRatioSelection(prev, nextRatioOptions))
-  }, [imageModelGroups, selectedProvider, selectedModel])
-
-  useEffect(() => {
     setSelectedRatio((prev) => resolveImageRatioSelection(prev, ratioOptions))
   }, [ratioOptions])
 
   const handleModelSelect = useCallback(
     (provider: string, model: string) => {
-      setSelectedProvider(provider)
-      setSelectedModel(model)
-      // lastUsedModelStore.getState().setPictureModel(provider, model)
+      lastUsedModelStore.getState().setPictureModel(provider, model)
 
       const capabilities = imageModelGroups
         .find((group) => group.providerId === provider)

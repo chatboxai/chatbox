@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.7.7'
+export const AUTOMATION_CONTRACT_VERSION = '1.7.9'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -193,6 +193,8 @@ export const TestId = {
     topP: 'settings-top-p',
     maxContext: 'settings-max-context',
     defaultChatModel: 'settings-default-chat-model',
+    modelRigApplyPresets: 'settings-model-rig-apply-presets',
+    modelRigTestAll: 'settings-model-rig-test-all',
     shortcutRow: 'settings-shortcut-row',
     shortcutSelect: 'settings-shortcut-select',
     sessionName: 'session-settings-name',

@@ -448,6 +448,21 @@ describe('reasoning-control', () => {
     ).toBe('off')
   })
 
+  it.each([
+    [ModelProviderEnum.ChatboxAI, 'gemini-3.7-flash'],
+    [ModelProviderEnum.ChatboxAI, 'gemini-3.8-flash'],
+    [ModelProviderEnum.ChatboxAI, 'gemini-3.9-flash'],
+    [ModelProviderEnum.ChatboxAI, 'gemini-3.9-flash-lite'],
+    [ModelProviderEnum.Gemini, 'gemini-3.7-flash'],
+    [ModelProviderEnum.Gemini, 'gemini-3.8-flash'],
+    [ModelProviderEnum.Gemini, 'gemini-3.9-flash'],
+    [ModelProviderEnum.Gemini, 'gemini-3.9-flash-lite'],
+  ] as const)('uses low thinking for off through %s with %s', (provider, modelId) => {
+    expect(getReasoningProviderOptions(provider, model(modelId, 'google'), 'off')).toEqual({
+      google: { thinkingConfig: { thinkingLevel: 'low', includeThoughts: false } },
+    })
+  })
+
   it('maps off to explicit disable or minimum reasoning parameters per provider', () => {
     expect(getReasoningProviderOptions(ModelProviderEnum.Claude, model('claude-sonnet-4-6'), 'off')).toEqual({
       claude: { thinking: { type: 'disabled', budgetTokens: 0 } },

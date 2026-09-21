@@ -28,6 +28,8 @@ describe('google-thinking utils', () => {
     // Flash models: minimal/low/medium/high
     expect(getSupportedGoogleThinkingLevels('gemini-3-flash-preview')).toEqual(['minimal', 'low', 'medium', 'high'])
     expect(getSupportedGoogleThinkingLevels('gemini-3.5-flash')).toEqual(['minimal', 'low', 'medium', 'high'])
+    expect(getSupportedGoogleThinkingLevels('gemini-3.6-flash')).toEqual(['minimal', 'low', 'medium', 'high'])
+    expect(getSupportedGoogleThinkingLevels('gemini-3.5-flash-lite')).toEqual(['minimal', 'low', 'medium', 'high'])
     expect(getSupportedGoogleThinkingLevels('gemini-3.1-flash-lite-preview')).toEqual([
       'minimal',
       'low',
@@ -43,6 +45,26 @@ describe('google-thinking utils', () => {
     expect(getDefaultGoogleThinkingLevel('gemini-3-pro-preview')).toBe('high')
     expect(getDefaultGoogleThinkingLevel('gemini-3-flash-preview')).toBe('high')
     expect(getDefaultGoogleThinkingLevel('gemini-3.1-flash-image-preview')).toBeUndefined()
+  })
+
+  it.each([
+    'gemini-3.7-flash',
+    'google/gemini-3.7-flash',
+    'GEMINI-3.7-FLASH',
+    'gemini-3.8-flash',
+    'google/gemini-3.8-flash',
+    'GEMINI-3.8-FLASH',
+    'gemini-3.9-flash',
+    'google/gemini-3.9-flash',
+    'gemini-3.10-flash',
+    'gemini-3.9-flash-lite',
+    'gemini-3.6-flash-lite',
+  ])('uses conservative thinking levels for %s', (modelId) => {
+    expect(getSupportedGoogleThinkingLevels(modelId)).toEqual(['low', 'medium', 'high'])
+    expect(normalizeGoogleThinkingConfig(modelId, { thinkingLevel: 'minimal', includeThoughts: false })).toEqual({
+      thinkingLevel: 'low',
+      includeThoughts: false,
+    })
   })
 
   it('normalizes budget config for Gemini 2.5 models', () => {
@@ -86,12 +108,12 @@ describe('google-thinking utils', () => {
     ).toBeUndefined()
   })
 
-  it('falls back to default level when saved level is invalid', () => {
+  it('maps unsupported minimal to low for Pro models', () => {
     const config = normalizeGoogleThinkingConfig('gemini-3-pro-preview', {
       thinkingLevel: 'minimal',
       includeThoughts: true,
     })
-    expect(config).toEqual({ thinkingLevel: 'high', includeThoughts: true })
+    expect(config).toEqual({ thinkingLevel: 'low', includeThoughts: true })
   })
 
   it('fills in default level when no thinkingLevel is set', () => {

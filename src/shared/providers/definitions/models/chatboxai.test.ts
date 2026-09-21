@@ -124,6 +124,66 @@ describe('ChatboxAI apiStyle fallback', () => {
   })
 })
 
+describe('ChatboxAI Gemini thinking options', () => {
+  it.each([
+    ['gemini-3.7-flash', false],
+    ['gemini-3.7-flash', true],
+    ['gemini-3.8-flash', false],
+    ['gemini-3.8-flash', true],
+    ['gemini-3.9-flash', false],
+    ['gemini-3.9-flash', true],
+    ['gemini-3.9-flash-lite', false],
+    ['gemini-3-pro-preview', false],
+  ] as const)('normalizes %s saved minimal with includeThoughts=%s', (modelId, includeThoughts) => {
+    const model = createModel({ modelId, apiStyle: 'google' })
+    const thinkingConfig = { thinkingLevel: 'minimal' as const, includeThoughts }
+    const settings = model.exposeCallSettings({ providerOptions: { google: { thinkingConfig } } })
+
+    expect(settings.providerOptions).toEqual({
+      google: { thinkingConfig: { thinkingLevel: 'low', includeThoughts } },
+    })
+    expect(thinkingConfig).toEqual({ thinkingLevel: 'minimal', includeThoughts })
+  })
+
+  it.each(['low', 'medium', 'high'] as const)('preserves supported level %s', (thinkingLevel) => {
+    const model = createModel({ modelId: 'gemini-3.8-flash', apiStyle: 'google' })
+    const settings = model.exposeCallSettings({
+      providerOptions: { google: { thinkingConfig: { thinkingLevel, includeThoughts: true } } },
+    })
+
+    expect(settings.providerOptions).toEqual({
+      google: { thinkingConfig: { thinkingLevel, includeThoughts: true } },
+    })
+  })
+
+  it('leaves absent thinking levels for the gateway to default', () => {
+    const model = createModel({ modelId: 'gemini-3.8-flash', apiStyle: 'google' })
+
+    expect(model.exposeCallSettings({}).providerOptions).toBeUndefined()
+    expect(
+      model.exposeCallSettings({ providerOptions: { google: { thinkingConfig: { includeThoughts: false } } } })
+        .providerOptions
+    ).toEqual({ google: { thinkingConfig: { includeThoughts: false } } })
+  })
+
+  it.each([
+    'gemini-3-flash-preview',
+    'gemini-3.5-flash',
+    'gemini-3.6-flash',
+    'gemini-3.1-flash-lite-preview',
+    'gemini-3.5-flash-lite',
+  ])('preserves minimal for %s', (modelId) => {
+    const model = createModel({ modelId, apiStyle: 'google' })
+    const settings = model.exposeCallSettings({
+      providerOptions: { google: { thinkingConfig: { thinkingLevel: 'minimal', includeThoughts: false } } },
+    })
+
+    expect(settings.providerOptions).toEqual({
+      google: { thinkingConfig: { thinkingLevel: 'minimal', includeThoughts: false } },
+    })
+  })
+})
+
 describe('ChatboxAI openai-responses models', () => {
   beforeEach(() => {
     vi.clearAllMocks()

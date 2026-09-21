@@ -29,6 +29,7 @@ import { getChatboxAPIOrigin } from '../../../request/chatboxai_pool'
 import type { StreamTextResult, ToolUseScope } from '../../../types'
 import { type ChatboxAILicenseDetail, ModelProviderEnum, type ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
+import { normalizeGoogleThinkingLevel } from '../../../utils/google-thinking'
 import {
   getLegacyOpenAICompatibleThinkingType,
   normalizeClaudeReasoningOptions,
@@ -214,8 +215,12 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
     }
     if (this.options.model.apiStyle === 'google') {
       const providerOptions: GoogleGenerativeAIProviderOptions = {}
-      if (options.providerOptions?.google?.thinkingConfig) {
-        providerOptions.thinkingConfig = options.providerOptions.google.thinkingConfig
+      const thinkingConfig = options.providerOptions?.google?.thinkingConfig
+      if (thinkingConfig) {
+        providerOptions.thinkingConfig = {
+          ...thinkingConfig,
+          thinkingLevel: normalizeGoogleThinkingLevel(this.options.model.modelId, thinkingConfig.thinkingLevel),
+        }
       }
       return {
         temperature: this.options.temperature,

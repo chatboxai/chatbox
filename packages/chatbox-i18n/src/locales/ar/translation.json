@@ -132,6 +132,8 @@
   "Auto-collapse code blocks": "طي كتل الأكواد تلقائياً",
   "Auto-Generate Chat Titles": "إنشاء عناوين المحادثة تلقائياً",
   "Auto-preview artifacts": "معاينة الأدوات البرمجية تلقائياً",
+  "Auto-deny in {{count}}s": "رفض تلقائي خلال {{count}} ث",
+  "Countdown paused": "العد التنازلي متوقف مؤقتًا",
   "Automatic updates": "التحديثات التلقائية",
   "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)": "عرض الأدوات البرمجية المنشأة تلقائياً (مثل HTML مع CSS و JS و Tailwind)",
   "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.": "تلخيص وضغط سجل المحادثة تلقائياً عندما يتجاوز حجم السياق الحد المسموح به، مع الحفاظ على المعلومات الأساسية وتقليل استهلاك Token.",

@@ -132,6 +132,8 @@
   "Auto-collapse code blocks": "コードブロックを自動的に折りたたむ",
   "Auto-Generate Chat Titles": "チャットタイトルの自動生成",
   "Auto-preview artifacts": "アーティファクトの自動プレビュー",
+  "Auto-deny in {{count}}s": "{{count}} 秒後に自動で拒否",
+  "Countdown paused": "カウントダウン一時停止中",
   "Automatic updates": "自動アップデート",
   "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)": "生成されたアーティファクトを自動的にレンダリングする（例：CSS、JS、Tailwindを含むHTML）",
   "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.": "コンテキストサイズが閾値を超えた際に会話履歴を自動的に要約・圧縮し、重要な情報を保持しながらTokenの使用量を削減します。",

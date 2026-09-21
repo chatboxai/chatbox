@@ -132,6 +132,8 @@
   "Auto-collapse code blocks": "Auto-collapse code blocks",
   "Auto-Generate Chat Titles": "Auto-Generate Chat Titles",
   "Auto-preview artifacts": "Auto-preview artifacts",
+  "Auto-deny in {{count}}s": "Auto-deny in {{count}}s",
+  "Countdown paused": "Countdown paused",
   "Automatic updates": "Automatic updates",
   "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)": "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)",
   "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.": "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.",

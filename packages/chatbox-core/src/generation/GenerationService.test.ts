@@ -2636,6 +2636,68 @@ describe('GenerationService', () => {
     expect(harness.runtime.get('session-1')).toBeUndefined()
   })
 
+  it('records a timed-out approval denial for the whole batch', async () => {
+    const commandPause = { type: 'user_exec_approval' as const, command: 'rm -rf build' }
+    harness.session.messages[1] = {
+      ...targetMessage(),
+      generating: false,
+      finishReason: 'tool-call-paused',
+      contentParts: [
+        {
+          type: 'tool-call',
+          state: 'paused',
+          toolCallId: 'tool-1',
+          toolName: 'user_exec',
+          args: {},
+          stepIndex: 1,
+          pauseReason: commandPause,
+        },
+        {
+          type: 'tool-call',
+          state: 'paused',
+          toolCallId: 'tool-2',
+          toolName: 'user_exec',
+          args: {},
+          stepIndex: 1,
+          pauseReason: commandPause,
+        },
+        {
+          type: 'tool-call',
+          state: 'paused',
+          toolCallId: 'tool-3',
+          toolName: 'user_exec',
+          args: {},
+          stepIndex: 2,
+          pauseReason: commandPause,
+        },
+      ],
+    }
+
+    await harness.service.stopPausedToolCall('session-1', 'assistant-1', 'tool-1', { denyReason: 'timeout' })
+
+    expect(harness.trackPauseAction).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'approval', action: 'timeout' })
+    )
+    expect(lastPersisted(harness).contentParts).toEqual([
+      expect.objectContaining({
+        toolCallId: 'tool-1',
+        state: 'error',
+        result: {
+          success: false,
+          exitCode: null,
+          stdout: '',
+          stderr: 'Command not run. Automatically denied: no user response within 45 seconds.',
+        },
+      }),
+      expect.objectContaining({
+        toolCallId: 'tool-2',
+        state: 'error',
+        result: { error: 'Automatically denied: no user response within 45 seconds.' },
+      }),
+      expect.objectContaining({ toolCallId: 'tool-3', state: 'paused' }),
+    ])
+  })
+
   it('restores approval UI when an interrupted legacy edit requires a fresh preview', async () => {
     const execute = vi.fn().mockRejectedValue({
       name: 'FileMutationApprovalPausedError',

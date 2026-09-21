@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.7.9'
+export const AUTOMATION_CONTRACT_VERSION = '1.7.10'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -151,6 +151,7 @@ export const TestId = {
     actionBar: 'tool-call-action-bar',
     actionBarView: 'tool-call-action-bar-view',
     actionBarProgress: 'tool-call-action-bar-progress',
+    actionBarCountdown: 'tool-call-action-bar-countdown',
   },
   settings: {
     pauseOnToolCallLimitSwitch: 'settings-pause-on-tool-call-limit',

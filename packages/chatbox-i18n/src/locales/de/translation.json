@@ -132,6 +132,8 @@
   "Auto-collapse code blocks": "Code-Blöcke automatisch einklappen",
   "Auto-Generate Chat Titles": "Chat-Titel automatisch generieren",
   "Auto-preview artifacts": "Artefakte automatisch in der Vorschau anzeigen",
+  "Auto-deny in {{count}}s": "Automatische Ablehnung in {{count}} s",
+  "Countdown paused": "Countdown pausiert",
   "Automatic updates": "Automatische Updates",
   "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)": "Generierte Artefakte automatisch rendern (z. B. HTML mit CSS, JS, Tailwind)",
   "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.": "Verlauf automatisch zusammenfassen und komprimieren, wenn die Kontextgröße den Schwellenwert überschreitet, um Schlüsselinformationen zu bewahren und den Token-Verbrauch zu reduzieren.",

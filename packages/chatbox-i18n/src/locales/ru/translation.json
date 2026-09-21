@@ -132,6 +132,8 @@
   "Auto-collapse code blocks": "Автоматически сворачивать блоки кода",
   "Auto-Generate Chat Titles": "Автоматически создавать заголовки чатов",
   "Auto-preview artifacts": "Автоматический предпросмотр артефактов",
+  "Auto-deny in {{count}}s": "Автоотклонение через {{count}} с",
+  "Countdown paused": "Отсчёт приостановлен",
   "Automatic updates": "Автоматические обновления",
   "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)": "Автоматически отображать сгенерированные артефакты (например, HTML с CSS, JS, Tailwind)",
   "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.": "Автоматически суммировать и сжимать историю чата, когда размер контекста превышает пороговое значение, сохраняя ключевую информацию и уменьшая использование Token.",

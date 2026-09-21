@@ -132,6 +132,8 @@
   "Auto-collapse code blocks": "Skjul kodeblokker automatisk",
   "Auto-Generate Chat Titles": "Generer chattitler automatisk",
   "Auto-preview artifacts": "Forhåndsvis artefakter automatisk",
+  "Auto-deny in {{count}}s": "Avvises automatisk om {{count}} s",
+  "Countdown paused": "Nedtellingen er satt på pause",
   "Automatic updates": "Automatiske oppdateringer",
   "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)": "Gjengi genererte artefakter automatisk (f.eks. HTML med CSS, JS, Tailwind)",
   "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.": "Oppsummer og komprimer samtaleloggen automatisk når kontekststørrelsen overskrider grenseverdien, for å bevare nøkkelinformasjon samtidig som Token-forbruket reduseres.",

@@ -1,5 +1,7 @@
 import { ImageGenerationResultGallery } from '@/components/chat/ImageGenerationResultGallery'
 import {
+  APPROVAL_RESPONSE_TIMEOUT_MS,
+  type ApprovalDenyReason,
   type ApprovalPauseReason,
   listPendingPauseInteractions,
   type PendingPauseInteraction,
@@ -56,6 +58,9 @@ const MAX_PROGRESS_SEGMENTS = 6
  * prompts use). Exported for tests.
  */
 export const PENDING_ACTION_ARMING_MS = 300
+/** The countdown turns red and shows its seconds from this point on. */
+const APPROVAL_COUNTDOWN_URGENT_MS = 10_000
+const APPROVAL_COUNTDOWN_TICK_MS = 250
 
 type PendingAction = 'approve' | 'deny' | 'continue' | 'stop'
 
@@ -114,12 +119,16 @@ const MutedText: FC<{ children: string }> = ({ children }) => (
   </Text>
 )
 
+type ExplanationToggle = { expanded: boolean; onExpandedChange: (expanded: boolean) => void }
+
 /** Model-written rationale: two lines by default, expandable in place. */
-const ExplanationText: FC<{ children: string }> = ({ children }) => {
+const ExplanationText: FC<{ children: string } & ExplanationToggle> = ({ children, expanded, onExpandedChange }) => {
   const { t } = useTranslation()
   return (
     <Spoiler
       maxHeight={EXPLANATION_SPOILER_HEIGHT}
+      expanded={expanded}
+      onExpandedChange={onExpandedChange}
       showLabel={t('Show more')}
       hideLabel={t('Show less')}
       styles={{ control: { fontSize: 'var(--mantine-font-size-xs)' } }}
@@ -215,7 +224,10 @@ const FileMutationBody: FC<{ pauseReason: Extract<ApprovalPauseReason, { type: '
 }
 
 /** Body only — what the decision is about lives in the heading. */
-const ApprovalBody: FC<{ pauseReason: ApprovalPauseReason }> = ({ pauseReason }) => {
+const ApprovalBody: FC<{ pauseReason: ApprovalPauseReason; explanation: ExplanationToggle }> = ({
+  pauseReason,
+  explanation,
+}) => {
   const { t } = useTranslation()
   const imageDetails = getImageGenerationDetails(pauseReason)
   if (imageDetails) return <ImageGenerationApprovalBody details={imageDetails} />
@@ -225,7 +237,7 @@ const ApprovalBody: FC<{ pauseReason: ApprovalPauseReason }> = ({ pauseReason })
       return (
         <>
           <PayloadBlock>{pauseReason.command}</PayloadBlock>
-          {pauseReason.explanation && <ExplanationText>{pauseReason.explanation}</ExplanationText>}
+          {pauseReason.explanation && <ExplanationText {...explanation}>{pauseReason.explanation}</ExplanationText>}
           {pauseReason.explanationError && (
             <Text size="xs" c="chatbox-tertiary">
               {t('Explanation failed')}
@@ -237,7 +249,7 @@ const ApprovalBody: FC<{ pauseReason: ApprovalPauseReason }> = ({ pauseReason })
       return (
         <>
           <PayloadBlock>{pauseReason.command}</PayloadBlock>
-          <ExplanationText>{pauseReason.justification}</ExplanationText>
+          <ExplanationText {...explanation}>{pauseReason.justification}</ExplanationText>
         </>
       )
     case 'file_mutation_approval':
@@ -274,12 +286,91 @@ const PendingProgress: FC<{ current: number; total: number }> = ({ current, tota
   </Group>
 )
 
+type ApprovalCountdown = { remainingMs: number; paused: boolean }
+
+/**
+ * Time left before an unanswered approval is denied. Counts only while `running`
+ * and restarts at the full timeout whenever `key` (the displayed decision) changes.
+ */
+function useApprovalCountdown(key: string | undefined, running: boolean, onExpire: () => void): number {
+  const [state, setState] = useState({ key, remainingMs: APPROVAL_RESPONSE_TIMEOUT_MS })
+  const remainingMs = state.key === key ? state.remainingMs : APPROVAL_RESPONSE_TIMEOUT_MS
+
+  useEffect(() => {
+    if (!running) return
+    let last = Date.now()
+    const timer = window.setInterval(() => {
+      const now = Date.now()
+      const elapsed = now - last
+      last = now
+      setState((prev) => ({
+        key,
+        remainingMs: Math.max(0, (prev.key === key ? prev.remainingMs : APPROVAL_RESPONSE_TIMEOUT_MS) - elapsed),
+      }))
+    }, APPROVAL_COUNTDOWN_TICK_MS)
+    return () => window.clearInterval(timer)
+  }, [key, running])
+
+  const onExpireRef = useRef(onExpire)
+  onExpireRef.current = onExpire
+  const expiredKeyRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!running || remainingMs > 0 || expiredKeyRef.current === key) return
+    expiredKeyRef.current = key
+    onExpireRef.current()
+  }, [key, running, remainingMs])
+
+  return remainingMs
+}
+
+/** Paused while the user reads the explanation; seconds appear only near the end. */
+const CountdownHint: FC<{ countdown: ApprovalCountdown }> = ({ countdown }) => {
+  const { t } = useTranslation()
+  if (countdown.paused) {
+    return (
+      <Text data-testid={TestId.toolCall.actionBarCountdown} size="xs" c="chatbox-tertiary" className="tabular-nums">
+        {t('Countdown paused')}
+      </Text>
+    )
+  }
+  if (countdown.remainingMs > APPROVAL_COUNTDOWN_URGENT_MS) return null
+  return (
+    <Text data-testid={TestId.toolCall.actionBarCountdown} size="xs" c="chatbox-error" className="tabular-nums">
+      {t('Auto-deny in {{count}}s', { count: Math.ceil(countdown.remainingMs / 1000) })}
+    </Text>
+  )
+}
+
+/** 2px line along the bottom edge that drains as the approval timeout runs out. */
+const CountdownLine: FC<{ remainingMs: number }> = ({ remainingMs }) => {
+  const urgent = remainingMs <= APPROVAL_COUNTDOWN_URGENT_MS
+  return (
+    <Box
+      className="pointer-events-none absolute inset-0 overflow-hidden"
+      style={{ borderRadius: 'inherit' }}
+      aria-hidden
+    >
+      <Box
+        className="absolute bottom-0 left-0"
+        style={{
+          height: 2,
+          borderRadius: '0 2px 2px 0',
+          width: `${(remainingMs / APPROVAL_RESPONSE_TIMEOUT_MS) * 100}%`,
+          backgroundColor: urgent ? 'var(--chatbox-tint-error)' : 'var(--chatbox-tint-warning)',
+          transition: `width ${APPROVAL_COUNTDOWN_TICK_MS}ms linear, background-color 200ms ease`,
+        }}
+      />
+    </Box>
+  )
+}
+
 const PendingHeading: FC<{
   interaction: PendingPauseInteraction
   progress: { current: number; total: number } | null
   progressKey: number
+  countdown: ApprovalCountdown | null
   onView: () => void
-}> = ({ interaction, progress, progressKey, onView }) => {
+}> = ({ interaction, progress, progressKey, countdown, onView }) => {
   const { t } = useTranslation()
 
   let Icon = IconAlertCircle
@@ -326,6 +417,7 @@ const PendingHeading: FC<{
         </Text>
       )}
       <Group gap={10} wrap="nowrap" className="ml-auto shrink-0">
+        {countdown && <CountdownHint countdown={countdown} />}
         {progress && (
           <Box key={progressKey} className="chatbox-action-progress-pop">
             <PendingProgress current={progress.current} total={progress.total} />
@@ -424,9 +516,26 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
   const initialPulseTokenRef = useRef(pulseToken)
   const showPulse = pulseToken > initialPulseTokenRef.current
 
+  // Reading the full explanation pauses the approval countdown.
+  const [expandedExplanationKey, setExpandedExplanationKey] = useState<string | null>(null)
+  const isExplanationExpanded = currentKey !== undefined && expandedExplanationKey === currentKey
+  const isActing = acting?.interactionKey === currentKey
+  const hasCountdown = current?.kind === 'approval'
+  const countdownRemainingMs = useApprovalCountdown(
+    currentKey,
+    hasCountdown && !isExplanationExpanded && !isActing,
+    () => {
+      if (current?.kind === 'approval') runAction(current, 'deny', 'timeout')
+    }
+  )
+
   if (!current) return null
 
-  const runAction = (interaction: PendingPauseInteraction, action: PendingAction) => {
+  function runAction(
+    interaction: PendingPauseInteraction,
+    action: PendingAction,
+    denyReason: ApprovalDenyReason = 'user'
+  ) {
     if (acting) return
     if (Date.now() < (armingRef.current?.until ?? 0)) return
     const interactionKey = getInteractionKey(interaction)
@@ -434,7 +543,9 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
     setActing({ interactionKey, action })
     const request = isResolveAction(action)
       ? currentGenerationService.continuePausedToolCall(session.id, interaction.messageId, interaction.toolCallId)
-      : currentGenerationService.stopPausedToolCall(session.id, interaction.messageId, interaction.toolCallId)
+      : currentGenerationService.stopPausedToolCall(session.id, interaction.messageId, interaction.toolCallId, {
+          denyReason,
+        })
     request
       .catch((error) => {
         log.error(`Failed to ${action} paused tool call:`, error)
@@ -479,7 +590,6 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
     pulsePendingActionBar()
   }
 
-  const isActing = acting?.interactionKey === currentKey
   const isImageApproval = current.kind === 'approval' && getImageGenerationDetails(current.pauseReason) !== undefined
   const workdir = getWorkdir(current)
 
@@ -495,6 +605,8 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
       )}
       style={INPUT_SURFACE_STYLE}
     >
+      {hasCountdown && <CountdownLine key={currentKey} remainingMs={countdownRemainingMs} />}
+
       {resolveFlash && (
         <Box
           key={resolveFlash.key}
@@ -523,10 +635,17 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
             episode.total > 1 ? { current: Math.min(episode.done + 1, episode.total), total: episode.total } : null
           }
           progressKey={episode.done}
+          countdown={hasCountdown ? { remainingMs: countdownRemainingMs, paused: isExplanationExpanded } : null}
           onView={() => void revealPausedStep(session.id, current.messageId, current.toolCallId)}
         />
         {current.kind === 'approval' ? (
-          <ApprovalBody pauseReason={current.pauseReason} />
+          <ApprovalBody
+            pauseReason={current.pauseReason}
+            explanation={{
+              expanded: isExplanationExpanded,
+              onExpandedChange: (expanded) => setExpandedExplanationKey(expanded ? (currentKey ?? null) : null),
+            }}
+          />
         ) : (
           <MutedText>
             {t('Paused after {{count}} steps. Check whether the task is on track, then continue or stop to adjust.', {

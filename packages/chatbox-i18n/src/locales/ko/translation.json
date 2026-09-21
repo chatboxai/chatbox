@@ -132,6 +132,8 @@
   "Auto-collapse code blocks": "코드 블록 자동 접기",
   "Auto-Generate Chat Titles": "채팅 제목 자동 생성",
   "Auto-preview artifacts": "아티팩트 자동 미리보기",
+  "Auto-deny in {{count}}s": "{{count}}초 후 자동 거부",
+  "Countdown paused": "카운트다운 일시정지됨",
   "Automatic updates": "자동 업데이트",
   "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)": "생성된 아티팩트 자동 렌더링 (예: CSS, JS, Tailwind가 포함된 HTML)",
   "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.": "컨텍스트 크기가 임계값을 초과하면 대화 기록을 자동으로 요약 및 압축하여 주요 정보는 보존하면서 Token 사용량을 줄입니다.",

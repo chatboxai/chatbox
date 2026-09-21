@@ -25,6 +25,7 @@ import { isAutoCompactionEnabled } from '../application/context'
 import type { CompactionServiceResult, GenerationCompactionRequest } from '../application/context/compaction-types'
 import type { GenerationSegmentSplitWriter } from '../application/session/generation-segment-split'
 import { contextSourceFromSession } from '../application/session/session-context-source'
+import { APPROVAL_RESPONSE_TIMEOUT_MS, type ApprovalDenyReason, type ApprovalPauseReason } from '../message-approval'
 import { contextPathFacts } from '../persistence/session-context-read'
 import type {
   AnalyticsPort,
@@ -80,6 +81,32 @@ import type { GenerationRuntimeStore } from './runtime-store'
 import { createInitialState, processStreamChunk } from './stream-chunk-processor'
 
 const STREAM_PERSIST_INTERVAL_MS = 2_000
+
+const APPROVAL_TIMEOUT_DENIAL = `Automatically denied: no user response within ${APPROVAL_RESPONSE_TIMEOUT_MS / 1000} seconds.`
+
+function buildDeniedApprovalResult(type: ApprovalPauseReason['type'], denyReason: ApprovalDenyReason) {
+  const timedOut = denyReason === 'timeout'
+  switch (type) {
+    case 'user_exec_approval':
+    case 'command_escalation_approval':
+      return {
+        success: false,
+        exitCode: null,
+        stdout: '',
+        stderr: timedOut ? `Command not run. ${APPROVAL_TIMEOUT_DENIAL}` : 'Command denied by user.',
+      }
+    case 'file_mutation_approval':
+      return {
+        success: false,
+        error: timedOut ? `File mutation not applied. ${APPROVAL_TIMEOUT_DENIAL}` : 'File mutation denied by user.',
+      }
+    case 'app_action_approval':
+      return {
+        success: false,
+        error: timedOut ? `Chatbox action not run. ${APPROVAL_TIMEOUT_DENIAL}` : 'Chatbox action denied by user.',
+      }
+  }
+}
 
 function getAbortStoppedAt(signal: AbortSignal, fallback: number): number {
   return typeof signal.reason === 'number' ? signal.reason : fallback
@@ -289,7 +316,7 @@ export interface GenerationAnalyticsPort extends AnalyticsPort {
   trackAgentModeSuggested(context: { hasFiles: boolean; fileCount: number }): void
   trackPauseAction(options: {
     type: 'approval' | 'tool_limit'
-    action: 'approve' | 'deny' | 'continue' | 'stop' | 'disable_session' | 'disable_global'
+    action: 'approve' | 'deny' | 'timeout' | 'continue' | 'stop' | 'disable_session' | 'disable_global'
     context?: {
       sessionId: string
       mode: 'work_mode'
@@ -1103,9 +1130,16 @@ export class GenerationService<TContext> {
     }
   }
 
-  stopPausedToolCall(sessionId: string, messageId: string, toolCallId: string): Promise<void> {
+  stopPausedToolCall(
+    sessionId: string,
+    messageId: string,
+    toolCallId: string,
+    options?: { denyReason?: ApprovalDenyReason }
+  ): Promise<void> {
     return this.dependencies.coordination
-      .runExclusive(sessionId, () => this.stopPausedToolCallUnlocked(sessionId, messageId, toolCallId))
+      .runExclusive(sessionId, () =>
+        this.stopPausedToolCallUnlocked(sessionId, messageId, toolCallId, options?.denyReason ?? 'user')
+      )
       .finally(() => {
         this.dependencies.coordination.wakeBackgroundTaskFollowUps(sessionId)
         this.dependencies.steering?.wake(sessionId)
@@ -1168,7 +1202,12 @@ export class GenerationService<TContext> {
     )
   }
 
-  private async stopPausedToolCallUnlocked(sessionId: string, messageId: string, toolCallId: string): Promise<void> {
+  private async stopPausedToolCallUnlocked(
+    sessionId: string,
+    messageId: string,
+    toolCallId: string,
+    denyReason: ApprovalDenyReason
+  ): Promise<void> {
     const { sessions, analytics } = this.dependencies
     const selected = await this.readMessages({ sessionId, messageIds: [messageId] })
     if (!selected) return
@@ -1182,7 +1221,7 @@ export class GenerationService<TContext> {
     const approvalTarget = getApprovalTrackingTarget(part)
     analytics.trackPauseAction({
       type: isApproval ? 'approval' : 'tool_limit',
-      action: isApproval ? 'deny' : 'stop',
+      action: isApproval ? (denyReason === 'timeout' ? 'timeout' : 'deny') : 'stop',
       context:
         isApproval && approvalTarget
           ? {
@@ -1202,12 +1241,7 @@ export class GenerationService<TContext> {
       pauseReason?.type === 'file_mutation_approval' ||
       pauseReason?.type === 'app_action_approval'
     ) {
-      const deniedResult =
-        pauseReason.type === 'user_exec_approval' || pauseReason.type === 'command_escalation_approval'
-          ? { success: false, exitCode: null, stdout: '', stderr: 'Command denied by user.' }
-          : pauseReason.type === 'file_mutation_approval'
-            ? { success: false, error: 'File mutation denied by user.' }
-            : { success: false, error: 'Chatbox action denied by user.' }
+      const deniedResult = buildDeniedApprovalResult(pauseReason.type, denyReason)
       // Denial is batch-scoped so the model sees one consistent refusal. Approval
       // remains per-call because every authorized action must be reviewed individually.
       const approvalBatchIds = new Set(
@@ -1220,7 +1254,10 @@ export class GenerationService<TContext> {
           ...batchPart,
           state: 'error',
           pauseReason: undefined,
-          result: batchPart.toolCallId === toolCallId ? deniedResult : { error: 'Approval denied by user.' },
+          result:
+            batchPart.toolCallId === toolCallId
+              ? deniedResult
+              : { error: denyReason === 'timeout' ? APPROVAL_TIMEOUT_DENIAL : 'Approval denied by user.' },
           startTime: undefined,
           duration: undefined,
         })

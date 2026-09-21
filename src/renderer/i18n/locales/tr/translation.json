@@ -132,6 +132,8 @@
   "Auto-collapse code blocks": "Kod bloklarını otomatik daralt",
   "Auto-Generate Chat Titles": "Sohbet Başlıklarını Otomatik Oluştur",
   "Auto-preview artifacts": "Oluşturulan içerikleri otomatik önizle",
+  "Auto-deny in {{count}}s": "{{count}} sn sonra otomatik reddedilecek",
+  "Countdown paused": "Geri sayım duraklatıldı",
   "Automatic updates": "Otomatik güncellemeler",
   "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)": "Oluşturulan içerikleri otomatik görüntüle (ör. CSS, JS veya Tailwind içeren HTML)",
   "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.": "Bağlam boyutu eşiği aştığında konuşma geçmişini otomatik olarak özetleyip sıkıştırır; önemli bilgileri korurken Token kullanımını azaltır.",

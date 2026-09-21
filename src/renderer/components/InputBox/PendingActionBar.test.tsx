@@ -3,7 +3,7 @@
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { Message, MessageToolCallPart, Session } from '@shared/types'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('react-i18next', async (importOriginal) => ({
@@ -36,6 +36,7 @@ vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { pulsePendingActionBar } from '@/stores/approvalAttentionStore'
+import { APPROVAL_RESPONSE_TIMEOUT_MS } from '@chatbox/core/message-approval'
 import PendingActionBar, { PENDING_ACTION_ARMING_MS } from './PendingActionBar'
 
 Object.defineProperty(globalThis, 'ResizeObserver', {
@@ -159,7 +160,9 @@ describe('PendingActionBar', () => {
     renderBar(makeSession([fileApproval]))
     armBar()
     fireEvent.click(screen.getAllByTestId(TestId.toolCall.deny)[1])
-    expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-file')
+    expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-file', {
+      denyReason: 'user',
+    })
   })
 
   it('swallows decision clicks until the decision has been visible for a beat', () => {
@@ -382,5 +385,56 @@ describe('PendingActionBar', () => {
     fireEvent.click(screen.getByTestId(TestId.toolCall.deny))
     // The first click is still pending, so the second action is ignored.
     expect(currentGenerationService.stopPausedToolCall).not.toHaveBeenCalled()
+  })
+
+  describe('approval countdown', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    })
+
+    function elapse(ms: number) {
+      act(() => {
+        vi.advanceTimersByTime(ms)
+      })
+    }
+
+    it('stays quiet until the last seconds, then denies with the timeout reason', () => {
+      renderBar(makeSession([commandApproval]))
+
+      elapse(APPROVAL_RESPONSE_TIMEOUT_MS - 20_000)
+      expect(screen.queryByTestId(TestId.toolCall.actionBarCountdown)).toBeNull()
+
+      elapse(15_000)
+      expect(screen.getByTestId(TestId.toolCall.actionBarCountdown).textContent).toBe('Auto-deny in {{count}}s')
+      expect(currentGenerationService.stopPausedToolCall).not.toHaveBeenCalled()
+
+      elapse(5_000)
+      expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledTimes(1)
+      expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-cmd', {
+        denyReason: 'timeout',
+      })
+    })
+
+    it('restarts the countdown for the next decision', () => {
+      const { rerender } = renderBar(makeSession([commandApproval, fileApproval]))
+
+      elapse(APPROVAL_RESPONSE_TIMEOUT_MS - 1_000)
+      rerender(<PendingActionBar session={makeSession([fileApproval])} />)
+      elapse(APPROVAL_RESPONSE_TIMEOUT_MS - 1_000)
+
+      expect(currentGenerationService.stopPausedToolCall).not.toHaveBeenCalled()
+      elapse(1_000)
+      expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-file', {
+        denyReason: 'timeout',
+      })
+    })
+
+    it('never times out a tool-call-limit pause', () => {
+      renderBar(makeSession([limitPause]))
+
+      elapse(APPROVAL_RESPONSE_TIMEOUT_MS * 2)
+      expect(screen.queryByTestId(TestId.toolCall.actionBarCountdown)).toBeNull()
+      expect(currentGenerationService.stopPausedToolCall).not.toHaveBeenCalled()
+    })
   })
 })

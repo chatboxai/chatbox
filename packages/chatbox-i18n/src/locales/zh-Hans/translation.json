@@ -132,6 +132,8 @@
   "Auto-collapse code blocks": "自动收起代码块",
   "Auto-Generate Chat Titles": "自动生成聊天标题",
   "Auto-preview artifacts": "自动预览生成物(Artifacts)",
+  "Auto-deny in {{count}}s": "{{count}} 秒后自动拒绝",
+  "Countdown paused": "倒计时已暂停",
   "Automatic updates": "自动更新",
   "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)": "自动渲染生成物（例如，带有 CSS、JS、Tailwind 的 HTML）",
   "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.": "当上下文大小超过阈值时，自动总结并压缩对话历史，在保留关键信息的同时减少 token 使用量。",

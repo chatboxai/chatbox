@@ -132,6 +132,8 @@
   "Auto-collapse code blocks": "Minimera kodblock automatiskt",
   "Auto-Generate Chat Titles": "Generera automatiskt chattitlar",
   "Auto-preview artifacts": "Förhandsgranska artefakter automatiskt",
+  "Auto-deny in {{count}}s": "Nekas automatiskt om {{count}} s",
+  "Countdown paused": "Nedräkningen pausad",
   "Automatic updates": "Automatiska uppdateringar",
   "Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)": "Rendera genererade artefakter automatiskt (t.ex. HTML med CSS, JS, Tailwind)",
   "Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.": "Summera och komprimera konversationshistorik automatiskt när kontextstorleken överskrider tröskelvärdet, vilket bevarar viktig information samtidigt som Token-förbrukningen minskar.",

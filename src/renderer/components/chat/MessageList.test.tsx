@@ -5,6 +5,7 @@ import type { Message, Session } from '@shared/types'
 import { MessageRoleEnum } from '@shared/types'
 import { type CSSProperties, createRef, type ReactNode, StrictMode, type UIEventHandler } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { rendererApplication } from '@/app/renderer-application'
 import { scrollToIndex as navigateToIndex } from '@/stores/scrollActions'
 import type { TranscriptNavigation } from '@/stores/uiStore'
 import { act, cleanup, fireEvent, render, waitFor } from '@/test-utils'
@@ -304,6 +305,54 @@ function message(id: string, role: Message['role'], content: string): Message {
 }
 
 describe('MessageList new message layout', () => {
+  test.each(['complete', 'window'])('shows generation activity in the %s view and returns to the reply', (viewKind) => {
+    virtuosoAtBottom.value = false
+    const view = (generating: boolean) => (
+      <MantineProvider>
+        <MessageList
+          {...(viewKind === 'complete'
+            ? {
+                currentSession: {
+                  id: 'generation-notice',
+                  name: 'Chat',
+                  messages: [{ ...message('reply', MessageRoleEnum.Assistant, 'Reply'), generating }],
+                },
+              }
+            : {
+                transcript: {
+                  header: { id: 'generation-notice', name: 'Chat' },
+                  messages: [message('history', MessageRoleEnum.User, 'Earlier message')],
+                },
+              })}
+        />
+      </MantineProvider>
+    )
+    try {
+      const mounted = render(view(false))
+      expect(mounted.queryByRole('button', { name: 'Generating...' })).toBeNull()
+      act(() => rendererApplication.generationRuntime.start('generation-notice', 'reply'))
+      mounted.rerender(view(true))
+      expect(mounted.getByRole('button', { name: 'Generating...' }).textContent).toBe('')
+      fireEvent.click(mounted.getByRole('button', { name: 'Generating...' }))
+      expect(virtuosoScrollToMock).toHaveBeenCalledWith({ top: Infinity, behavior: 'smooth' })
+      virtuosoAtBottom.value = true
+      mounted.rerender(view(true))
+      expect(mounted.queryByRole('button', { name: 'Generating...' })).toBeNull()
+      mounted.unmount()
+
+      virtuosoAtBottom.value = false
+      const stopped = render(view(true))
+      expect(stopped.getByRole('button', { name: 'Generating...' })).toBeTruthy()
+      act(() => rendererApplication.generationRuntime.clear('generation-notice'))
+      stopped.rerender(view(false))
+      expect(stopped.queryByRole('button', { name: 'Generating...' })).toBeNull()
+      stopped.unmount()
+    } finally {
+      rendererApplication.generationRuntime.clear('generation-notice')
+      virtuosoAtBottom.value = true
+    }
+  })
+
   function navigation() {
     const current = navigationState.transcriptNavigation
     if (!current) throw new Error('Missing transcript navigation')

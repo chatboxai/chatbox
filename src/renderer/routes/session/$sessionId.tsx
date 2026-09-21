@@ -195,7 +195,6 @@ function RouteComponent() {
           settings: currentSessionWithDefaultModel.settings,
         })
       }
-      messageListRef.current?.scrollToBottom('instant')
 
       if (currentSession.copilotId) {
         void remote

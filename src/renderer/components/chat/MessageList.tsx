@@ -51,6 +51,7 @@ import * as atoms from '@/stores/atoms'
 import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
 import { removeMessage } from '@/stores/session/messages'
 import { moveThreadToConversations, removeThread, switchThread } from '@/stores/session/threads'
+import { useSessionActivity } from '@/stores/sessionActivityStore'
 import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/sessionHelpers'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { type TranscriptNavigation, uiStore, useUIStore } from '@/stores/uiStore'
@@ -59,6 +60,7 @@ import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu from '../ActionMenu'
 import { ErrorBoundary } from '../common/ErrorBoundary'
 import { ScalableIcon } from '../common/ScalableIcon'
+import Loading from '../icons/Loading'
 import { BlockCodeCollapsedStateProvider } from '../Markdown'
 import ForkGroup from './ForkGroup'
 import ForkMarkerMessage from './ForkMarkerMessage'
@@ -173,6 +175,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const completeSession = props.currentSession
   const isCompleteSession = completeSession !== undefined
   const currentSession = completeSession ?? props.transcript!.header
+  const activity = useSessionActivity(currentSession.id)
   const navigationOwner = useMemo(() => Symbol(currentSession.id), [currentSession.id])
 
   const currentThreadHash = useMemo(
@@ -1075,6 +1078,24 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
           )}
 
           {showMinimap && <MessageMinimapRail anchors={userMessageAnchors} onJump={handleMinimapJump} />}
+
+          {activity === 'generating' && (!atBottom || props.hasNewer) && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+              <Button
+                w={40}
+                h={40}
+                p={0}
+                radius="xl"
+                bg="var(--chatbox-background-primary)"
+                c="chatbox-secondary"
+                className="border border-solid border-chatbox-border-primary shadow-lg"
+                aria-label={t('Generating...')}
+                onClick={handleScrollToBottom}
+              >
+                <Loading height={16} viewBox="0 0 38 24" aria-hidden="true" />
+              </Button>
+            </div>
+          )}
 
           {!isSmallScreen ? (
             <MessageNavigation

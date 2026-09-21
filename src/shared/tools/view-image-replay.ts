@@ -1,4 +1,5 @@
 import type { ModelMessage } from 'ai'
+import { lastAssistantMessageIndex } from './view-image-batch'
 
 const VIEW_IMAGE_LABEL_PREFIX = '[Image from view_image tool: '
 
@@ -15,6 +16,7 @@ function followsToolImageResult(messages: ModelMessage[], messageIndex: number):
 }
 
 export function boundToolResultImages(messages: ModelMessage[], limit: number): ModelMessage[] {
+  const lastAssistant = lastAssistantMessageIndex(messages)
   let remainingImages = Math.max(0, Math.floor(limit))
   const reversedMessages: ModelMessage[] = []
   const omittedFilePathsByToolMessage = new Map<number, string[]>()
@@ -28,9 +30,9 @@ export function boundToolResultImages(messages: ModelMessage[], limit: number): 
         const label = partIndex > 0 ? message.content[partIndex - 1] : undefined
         const filePath = label ? viewImageLabelFilePath(label) : undefined
         if (part.type === 'image' && label && filePath !== undefined) {
-          if (remainingImages > 0) {
+          if (messageIndex > lastAssistant || remainingImages > 0) {
             boundedContent.unshift(label, part)
-            remainingImages -= 1
+            if (messageIndex <= lastAssistant) remainingImages -= 1
           } else {
             const omittedFilePaths = omittedFilePathsByToolMessage.get(messageIndex - 1) ?? []
             omittedFilePaths.push(filePath)
@@ -84,10 +86,16 @@ export function boundToolResultImages(messages: ModelMessage[], limit: number): 
             boundedValue.unshift(valuePart)
             continue
           }
-          if (remainingImages > 0) {
+          if ((messageIndex > lastAssistant && part.toolName === 'view_image') || remainingImages > 0) {
             boundedValue.unshift(valuePart)
-            remainingImages -= 1
+            if (messageIndex <= lastAssistant || part.toolName !== 'view_image') remainingImages -= 1
           }
+        }
+        if (boundedValue.length < output.value.length) {
+          boundedValue.push({
+            type: 'text',
+            text: 'Historical image pixels omitted from this request. Call view_image again if needed.',
+          })
         }
         boundedContent.unshift({ ...part, output: { ...output, value: boundedValue } })
       }

@@ -1,6 +1,3 @@
-import { boundToolResultImages } from '@shared/tools/view-image-replay'
-import { isUploadedFilePath } from '@shared/uploaded-file-tools'
-import { validatedToolSchema } from '@shared/validated-tool-schema'
 import { readRasterImageBounds } from '@shared/image-dimensions'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import { DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT } from '@shared/tool-result-image'
@@ -16,7 +13,16 @@ import {
   type ViewImageToolResult,
   viewImageAttachmentNotice,
 } from '@shared/tools/view-image'
-import { type ModelMessage, type ToolSet } from 'ai'
+import {
+  createViewImageBatchBudget,
+  lastAssistantMessageIndex,
+  VIEW_IMAGE_BATCH_GUIDANCE,
+  VIEW_IMAGE_MAX_NORMALIZED_LENGTH,
+} from '@shared/tools/view-image-batch'
+import { boundToolResultImages } from '@shared/tools/view-image-replay'
+import { isUploadedFilePath } from '@shared/uploaded-file-tools'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
+import type { ModelMessage, ToolSet } from 'ai'
 import { getImageBase64AndResize, MODEL_IMAGE_MAX_DIMENSION, svgToPngBase64 } from '@/packages/pic_utils'
 import platform from '@/platform'
 import { saveImage } from '@/utils/image'
@@ -157,8 +163,7 @@ export interface ViewImageToolSetResult {
   tools: ToolSet
   description: string
   /**
-   * Rewrites step messages inside the running generation to keep only the most recent
-   * image results inline. Protocols without tool-result media additionally receive those
+   * Preserves pending image results and bounds the consumed historical images. Protocols without tool-result media additionally receive those
    * images as user messages. Wire it into prepareStep.
    */
   injectImagesIntoStepMessages?: (messages: ModelMessage[]) => Promise<ModelMessage[]>
@@ -204,6 +209,7 @@ function matchResultEntriesToMessagePositions(
 export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolSetResult {
   // Keep occurrence order as well as the downscaled data. Some providers reuse tool-call
   // IDs across turns, so IDs alone cannot identify or bound historical image occurrences.
+  const reserveImageCall = createViewImageBatchBudget()
   const resultEntries: ViewImageResultEntry[] = []
   const resultEntriesByStorageKey = new Map<string, ViewImageResultEntry>()
   const resolvedImagesByStorageKey = new Map<string, ViewImageInjection>()
@@ -227,7 +233,8 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     description:
       'View an image file so you can actually see its contents (screenshots, charts, photos, generated images). ' +
       'Relative paths are resolved in the session sandbox; absolute paths read the user filesystem (read-only). ' +
-      'Supported formats: png, jpg, webp, gif, bmp, svg. Large images are downscaled automatically.',
+      'Supported formats: png, jpg, webp, gif, bmp, svg. Large images are downscaled automatically. ' +
+      VIEW_IMAGE_BATCH_GUIDANCE,
     inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
@@ -240,6 +247,7 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
       additionalProperties: false,
     }),
     execute: async (input, toolOptions) => {
+      reserveImageCall(toolOptions.messages)
       const viewInput = input as { file_path: string }
       if (isUploadedFilePath(viewInput.file_path))
         return {
@@ -295,6 +303,9 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
         return { error: 'Failed to decode image. The file may be corrupted or not a valid image.' }
       }
 
+      if (dataUrl.length > VIEW_IMAGE_MAX_NORMALIZED_LENGTH) {
+        return { error: 'Normalized image exceeds the request image limit. Resize or crop the image and try again.' }
+      }
       const parsedImage = parseDataUrl(dataUrl)
       if (!parsedImage) {
         return { error: 'Failed to process image into a model-compatible format.' }
@@ -336,8 +347,8 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     },
   }
 
-  // Keep current-generation replay bounded. Older image outputs become compact JSON;
-  // selected images are either already embedded in tool output or injected as user parts.
+  // Keep pending results until a subsequent assistant response, and bound older pixels.
+  // Selected images are embedded in tool output or injected as user parts.
   // Runs per step (prepareStep), so it never mutates the input messages.
   const injectImagesIntoStepMessages = async (messages: ModelMessage[]): Promise<ModelMessage[]> => {
     if (resultEntries.length === 0) return messages
@@ -346,7 +357,18 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     // This prevents a reused call ID from capturing older history or duplicating one image.
     const matchedResults = matchResultEntriesToMessagePositions(messages, resultEntries)
 
-    const recentResults = new Set(resultEntries.slice(-DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT))
+    const lastAssistant = lastAssistantMessageIndex(messages)
+    let remainingHistory = DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT
+    const recentResults = new Set<ViewImageResultEntry>()
+    for (const [messageIndex, entries] of matchedResults) {
+      for (const entry of entries.values()) {
+        if (messageIndex > lastAssistant) recentResults.add(entry)
+        else if (remainingHistory > 0) {
+          recentResults.add(entry)
+          remainingHistory -= 1
+        }
+      }
+    }
     const output: ModelMessage[] = []
     for (const [messageIndex, message] of messages.entries()) {
       if (message.role !== 'tool' || !Array.isArray(message.content)) {
@@ -366,7 +388,13 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
           continue
         }
         if (!recentResults.has(cached)) {
-          boundedContent.push({ ...part, output: { type: 'json' as const, value: { ...cached.result } } })
+          boundedContent.push({
+            ...part,
+            output: {
+              type: 'text' as const,
+              value: `Historical image pixels omitted: ${cached.result.file_path}. Call view_image again if needed.`,
+            },
+          })
           continue
         }
         if (context.toolResultImages) {
@@ -379,7 +407,23 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
       }
       output.push({ ...message, content: boundedContent })
       if (imageInjections.length > 0) {
-        output.push(buildViewImageUserMessage(imageInjections))
+        const next = messages[messageIndex + 1]
+        const nextContent = next?.role === 'user' && Array.isArray(next.content) ? next.content : []
+        const injection = buildViewImageUserMessage(imageInjections)
+        const alreadyInjected =
+          Array.isArray(injection.content) &&
+          injection.content.length === nextContent.length &&
+          injection.content.every((part, index) => {
+            const existing = nextContent[index]
+            return (
+              (part.type === 'text' && existing.type === 'text' && part.text === existing.text) ||
+              (part.type === 'image' &&
+                existing.type === 'image' &&
+                part.image === existing.image &&
+                part.mediaType === existing.mediaType)
+            )
+          })
+        if (!alreadyInjected) output.push(injection)
       }
     }
     for (const entry of resultEntries) {
@@ -393,6 +437,7 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     description: `
 ## Viewing Images
 Use the view_image tool to look at image files — you will see the actual image, not a text description. Use it to inspect screenshots, rendered charts, downloaded pictures, and images you generated or modified in the sandbox.
+${VIEW_IMAGE_BATCH_GUIDANCE}
 - Relative paths read from the session sandbox working directory; absolute paths read the user's filesystem (read-only).
 - After generating or editing an image in the sandbox, view it to verify the result before presenting it to the user.${
       context.toolResultImages

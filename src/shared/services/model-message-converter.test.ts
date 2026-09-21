@@ -845,6 +845,48 @@ describe('convertToModelMessages — view_image tool results', () => {
     expect(part.output.type).toBe('json')
   })
 
+  it.each([true, false])('restores a pending batch alongside bounded history (native=%s)', async (native) => {
+    const images = Array.from(
+      { length: 8 },
+      (_, i): MessageContentToolCallPart => ({
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: `image-${i}`,
+        toolName: 'view_image',
+        stepIndex: 1,
+        args: { file_path: `chart-${i}.png` },
+        result: { file_path: `chart-${i}.png`, media_type: 'image/png' },
+        resultImageStorageKey: `picture:${i}`,
+      })
+    )
+    const messages: Message[] = [
+      {
+        id: 'old',
+        role: 'assistant',
+        contentParts: images.map((part) => ({ ...part, resultImageStorageKey: `old-${part.resultImageStorageKey}` })),
+      },
+      { id: 'pending', role: 'assistant', contentParts: [...images, { type: 'text', text: '' }] },
+      { id: 'steer', role: 'user', contentParts: [{ type: 'text', text: 'Check captions too.' }] },
+      { id: 'empty-target', role: 'assistant', contentParts: [] },
+    ]
+    const resolve = vi.fn(async () => 'data:image/png;base64,aW1hZ2U=')
+    const options = { modelSupportVision: true, supportToolResultImages: native }
+    const output = await convertToModelMessages(messages, resolve, options)
+    expect(resolve).toHaveBeenCalledTimes(13)
+    expect(modelMessageSchema.array().safeParse(output).success).toBe(true)
+    expect(await convertToModelMessages(messages, resolve, options)).toEqual(output)
+    resolve.mockClear()
+    await convertToModelMessages(
+      [...messages, { id: 'response', role: 'assistant', contentParts: [{ type: 'text', text: 'Inspected.' }] }],
+      resolve,
+      options
+    )
+    expect(resolve).toHaveBeenCalledTimes(5)
+    resolve.mockClear()
+    await convertToModelMessages(messages, resolve)
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
   it('only inlines the most recent image occurrences when tool call IDs repeat', async () => {
     const resolver = vi.fn((storageKey: string) => Promise.resolve(`data:image/webp;base64,${storageKey}`))
     const messages = ['oldest', 'middle', 'latest'].map(

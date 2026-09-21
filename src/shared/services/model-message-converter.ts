@@ -1,4 +1,3 @@
-import { uploadedFileToolHint } from '../uploaded-file-tools'
 import type { JSONValue } from '@ai-sdk/provider'
 import type { ReasoningPart } from '@ai-sdk/provider-utils'
 import type { FilePart, ImagePart, ModelMessage, TextPart, ToolCallPart } from 'ai'
@@ -11,7 +10,9 @@ import {
   type ViewImageInjection,
   viewImageAttachmentNotice,
 } from '../tools/view-image'
+import { lastAssistantMessageIndex } from '../tools/view-image-batch'
 import type { Message, MessageContentParts, MessageContentToolCallPart } from '../types'
+import { uploadedFileToolHint } from '../uploaded-file-tools'
 import { getMessageText } from '../utils/message'
 
 /**
@@ -48,7 +49,7 @@ export interface ConvertToModelMessagesOptions {
    * keeps compact JSON for auxiliary callers such as naming and summarization.
    */
   supportToolResultImages?: boolean
-  /** Maximum number of most-recent stored tool images to inline into one request. */
+  /** Maximum historical tool images to inline; pending view_image results have a separate batch budget. */
   maxInlineToolResultImages?: number
 }
 
@@ -372,6 +373,31 @@ function collectRecentToolResultImagePositions(
   const normalizedLimit = Math.max(0, Math.floor(limit))
   if (normalizedLimit === 0) return selected
 
+  // A final tool batch may be resumed before the model has received its results.
+  // Later assistant output is the consumption boundary, including within one message.
+  const isResponsePart = (part: MessageContentParts[number]) =>
+    part.type === 'tool-call' ||
+    part.type === 'image' ||
+    ((part.type === 'text' || part.type === 'reasoning') && part.text.length > 0)
+  let lastAssistantIndex = lastAssistantMessageIndex(messages)
+  while (lastAssistantIndex >= 0) {
+    const message = messages[lastAssistantIndex]
+    if (message.role === 'assistant' && message.contentParts?.some(isResponsePart)) break
+    lastAssistantIndex -= 1
+  }
+  const lastParts = messages[lastAssistantIndex]?.contentParts ?? []
+  let lastPartIndex = lastParts.length - 1
+  while (lastPartIndex >= 0 && !isResponsePart(lastParts[lastPartIndex])) lastPartIndex -= 1
+  let pendingStart = lastParts.length
+  const lastPart = lastParts[lastPartIndex]
+  if (lastPart?.type === 'tool-call') {
+    pendingStart = lastPartIndex
+    while (pendingStart > 0) {
+      const previous = lastParts[pendingStart - 1]
+      if (!isCompletedToolCall(previous) || !isSameToolCallBatch(previous, lastPart)) break
+      pendingStart -= 1
+    }
+  }
   let selectedCount = 0
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
     const parts = messages[messageIndex].contentParts ?? []
@@ -379,11 +405,12 @@ function collectRecentToolResultImagePositions(
       const part = parts[partIndex]
       if (part.type !== 'tool-call' || part.state !== 'result') continue
       if (!getToolResultImageReference(part)) continue
+      const pending = messageIndex === lastAssistantIndex && partIndex >= pendingStart && part.toolName === 'view_image'
+      if (!pending && selectedCount >= normalizedLimit) continue
       const selectedPartIndexes = selected.get(messageIndex) ?? new Set<number>()
       selectedPartIndexes.add(partIndex)
       selected.set(messageIndex, selectedPartIndexes)
-      selectedCount += 1
-      if (selectedCount >= normalizedLimit) return selected
+      if (!pending) selectedCount += 1
     }
   }
 

@@ -1,8 +1,8 @@
-import type { LanguageModelV3StreamPart, LanguageModelV3Prompt } from '@ai-sdk/provider'
+import type { LanguageModelV3Prompt, LanguageModelV3StreamPart } from '@ai-sdk/provider'
+import type { ModelMessage } from 'ai'
 import { stepCountIs, streamText } from 'ai'
 import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, it, vi } from 'vitest'
-import type { ModelMessage } from 'ai'
 import { buildLocalViewImage } from './view-image'
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1WQAAAAASUVORK5CYII='
@@ -86,14 +86,14 @@ describe('local view_image', () => {
       content: [{ output: { type: 'content', value: [{ type: 'text' }, { type: 'image-data', data: png }] } }],
     })
   })
-  it('bounds current images even when tool call ids repeat and does not read omitted blobs', async () => {
+  it('delivers all pending images even when tool call ids repeat', async () => {
     const s = setup()
     const input: ModelMessage[] = []
     for (let i = 0; i < 8; i++) input.push(toolMessage(await s.execute(`chart${i}.png`)))
     const result = await s.api.prepareStepMessages(input)
-    expect(result.filter((message) => message.role === 'user')).toHaveLength(5)
-    expect(s.blobs.get).toHaveBeenCalledTimes(5)
-    expect(JSON.stringify(result)).not.toContain('[Image from view_image tool: chart0.png]')
+    expect(result.filter((message) => message.role === 'user')).toHaveLength(8)
+    expect(s.blobs.get).toHaveBeenCalledTimes(8)
+    expect(JSON.stringify(result)).toContain('[Image from view_image tool: chart0.png]')
   })
   it('rejects traversal, corrupt images and unsafe dimensions before normalization', async () => {
     const s = setup()

@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict'
-import { buildViewImageToolResultContent, buildViewImageUserMessage } from '@shared/tools/view-image'
+import {
+  buildViewImageToolResultContent,
+  buildViewImageUserMessage,
+  viewImageAttachmentNotice,
+} from '@shared/tools/view-image'
+import { boundToolResultImages } from '@shared/tools/view-image-replay'
 import type { ModelMessage } from 'ai'
 import { describe, it } from 'vitest'
-import { estimateModelMessageTokens, findKeptContentPartStartIndex } from './mid-run-compaction'
+import {
+  estimateModelMessageTokens,
+  findKeptContentPartStartIndex,
+  findKeptModelMessageStartIndex,
+} from './mid-run-compaction'
 
 function toolImage(size: number): ModelMessage {
   return {
@@ -23,6 +32,44 @@ function toolImage(size: number): ModelMessage {
 }
 
 describe('mid-run protocol media estimates', () => {
+  it.each([true, false])('retains all pending images through compaction (native=%s)', (native) => {
+    function batch(prefix: string): ModelMessage[] {
+      const images = Array.from({ length: 8 }, (_, index) => ({
+        filePath: `${prefix}-${index}.png`,
+        base64Data: 'aW1hZ2U=',
+        mediaType: 'image/png',
+      }))
+      return [
+        {
+          role: 'assistant',
+          content: images.map((image) => ({
+            type: 'tool-call',
+            toolCallId: image.filePath,
+            toolName: 'view_image',
+            input: { file_path: image.filePath },
+          })),
+        },
+        {
+          role: 'tool',
+          content: images.map((image) => ({
+            type: 'tool-result',
+            toolCallId: image.filePath,
+            toolName: 'view_image',
+            output: native
+              ? buildViewImageToolResultContent(image)
+              : { type: 'text', value: viewImageAttachmentNotice(image.filePath) },
+          })),
+        },
+        ...(native ? [] : [buildViewImageUserMessage(images)]),
+      ]
+    }
+    const pending = batch('new')
+    const bounded = boundToolResultImages([...batch('old'), ...pending], 5)
+    const retained = bounded.slice(findKeptModelMessageStartIndex(bounded, 1))
+    assert.deepEqual(retained, pending)
+    assert.deepEqual(boundToolResultImages(retained, 5), pending)
+  })
+
   it('retains the text and reasoning that precede the kept tool call', () => {
     assert.equal(
       findKeptContentPartStartIndex(

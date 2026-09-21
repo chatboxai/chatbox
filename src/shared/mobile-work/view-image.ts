@@ -1,5 +1,5 @@
 import type { BlobStoragePort } from '@chatbox/core/ports'
-import { tool, type ModelMessage, type ToolSet } from 'ai'
+import { type ModelMessage, type ToolSet, tool } from 'ai'
 import { z } from 'zod'
 import { readRasterImageBounds } from '../image-dimensions'
 import { DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT } from '../tool-result-image'
@@ -13,10 +13,16 @@ import {
   VIEW_IMAGE_TOOL_NAME,
   viewImageAttachmentNotice,
 } from '../tools/view-image'
+import {
+  createViewImageBatchBudget,
+  lastAssistantMessageIndex,
+  VIEW_IMAGE_BATCH_GUIDANCE,
+  VIEW_IMAGE_MAX_NORMALIZED_LENGTH,
+} from '../tools/view-image-batch'
 import { boundToolResultImages } from '../tools/view-image-replay'
 import { throwIfWorkAborted } from './abort'
-import type { LocalWorkspacePort } from './workspace-port'
 import { workspacePath } from './workspace-path'
+import type { LocalWorkspacePort } from './workspace-port'
 
 export type NormalizeWorkImage = (
   dataUrl: string,
@@ -52,12 +58,13 @@ export function buildLocalViewImage(options: {
   normalize: NormalizeWorkImage
   toolResultImages: boolean
 }) {
+  const reserveImageCall = createViewImageBatchBudget()
   const tools: ToolSet = {
     [VIEW_IMAGE_TOOL_NAME]: tool({
-      description:
-        'View a local workspace image as real visual input. Supports PNG, JPEG, GIF, WebP and BMP; automatically downsizes images. Use after creating an image to verify it. Paths must be relative to this conversation workspace.',
+      description: `View a local workspace image as real visual input. Supports PNG, JPEG, GIF, WebP and BMP; automatically downsizes images. Use after creating an image to verify it. Paths must be relative to this conversation workspace. ${VIEW_IMAGE_BATCH_GUIDANCE}`,
       inputSchema: z.object({ file_path: z.string().min(1).max(240) }).strict(),
       execute: async ({ file_path }, toolOptions) => {
+        reserveImageCall(toolOptions.messages)
         const signal = toolOptions.abortSignal ?? options.signal
         throwIfWorkAborted(signal)
         const path = workspacePath(file_path)
@@ -86,7 +93,7 @@ export function buildLocalViewImage(options: {
         })
         throwIfWorkAborted(signal)
         const parsed = parseImage(normalized)
-        if (!parsed || normalized.length > 3 * 1024 * 1024)
+        if (!parsed || normalized.length > VIEW_IMAGE_MAX_NORMALIZED_LENGTH)
           throw new Error('Normalized image exceeds the request image limit')
         const key = `picture:work-view:${Date.now()}-${Math.random().toString(36).slice(2)}`
         await options.blobs.set(key, normalized)
@@ -103,9 +110,11 @@ export function buildLocalViewImage(options: {
     // History conversion already resolves saved image references. Resolve current-step
     // compact outputs here, before any protocol serializes them into a request.
     throwIfWorkAborted(options.signal)
+    const lastAssistant = lastAssistantMessageIndex(messages)
     let remaining = DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT
     const reversed: ModelMessage[] = []
-    for (const message of [...messages].reverse()) {
+    for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+      const message = messages[messageIndex]
       if (message.role !== 'tool') {
         reversed.push(message)
         continue
@@ -121,9 +130,10 @@ export function buildLocalViewImage(options: {
           content.unshift(part)
           continue
         }
-        const data = remaining > 0 ? await options.blobs.get(result.image_storage_key) : null
+        const data =
+          messageIndex > lastAssistant || remaining > 0 ? await options.blobs.get(result.image_storage_key) : null
         throwIfWorkAborted(options.signal)
-        const parsed = data && data.length <= 3 * 1024 * 1024 && parseImage(data)
+        const parsed = data && data.length <= VIEW_IMAGE_MAX_NORMALIZED_LENGTH && parseImage(data)
         if (!parsed) {
           content.unshift({
             ...part,
@@ -134,7 +144,7 @@ export function buildLocalViewImage(options: {
           })
           continue
         }
-        remaining -= 1
+        if (messageIndex <= lastAssistant) remaining -= 1
         const image = { filePath: result.file_path, mediaType: parsed[1], base64Data: parsed[2] }
         if (!options.toolResultImages) images.unshift(image)
         content.unshift({

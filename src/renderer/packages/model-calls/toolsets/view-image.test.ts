@@ -1,4 +1,7 @@
+import type { LanguageModelV3Prompt, LanguageModelV3StreamPart } from '@ai-sdk/provider'
 import type { SandboxProvider } from '@shared/sandbox-provider'
+import { stepCountIs, streamText } from 'ai'
+import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const fsReadImage = vi.fn(
@@ -339,6 +342,7 @@ describe('view_image without tool-result image support (user-message injection)'
     // prepareStep runs again for every agent step; the per-generation image remains
     // memory-backed instead of re-reading IndexedDB on each rewrite.
     await toolSet.injectImagesIntoStepMessages?.(messages as never)
+    expect(await toolSet.injectImagesIntoStepMessages?.(injected ?? [])).toEqual(injected)
     expect(getStoreBlob).not.toHaveBeenCalled()
     // Pure: input array untouched, and unrelated tool results are ignored.
     expect(messages).toHaveLength(2)
@@ -363,7 +367,7 @@ describe('view_image without tool-result image support (user-message injection)'
     expect(injected).toEqual(messages)
   })
 
-  test('caps current-generation image replay and downgrades older notices to compact json', async () => {
+  test('caps consumed image replay and explicitly marks omitted pixels', async () => {
     const toolSet = buildToolSet({ toolResultImages: false })
     const toolParts = []
     for (let index = 0; index < 6; index += 1) {
@@ -378,11 +382,13 @@ describe('view_image without tool-result image support (user-message injection)'
 
     const bounded = await toolSet.injectImagesIntoStepMessages?.([
       { role: 'tool' as const, content: toolParts },
+      { role: 'assistant', content: 'Images inspected.' },
     ] as never)
 
-    expect(bounded).toHaveLength(2)
+    expect(bounded).toHaveLength(3)
     const boundedToolParts = bounded?.[0].content as Array<{ output: { type: string } }>
-    expect(boundedToolParts[0].output.type).toBe('json')
+    expect(boundedToolParts[0].output.type).toBe('text')
+    expect(JSON.stringify(boundedToolParts[0])).toContain('Historical image pixels omitted')
     expect(boundedToolParts.slice(1).every((part) => part.output.type === 'text')).toBe(true)
     const injectedParts = bounded?.[1].content as Array<{ type: string; text?: string }>
     expect(injectedParts.filter((part) => part.type === 'image')).toHaveLength(5)
@@ -391,7 +397,7 @@ describe('view_image without tool-result image support (user-message injection)'
     )
   })
 
-  test('applies one image limit across history and current-generation results', async () => {
+  test('keeps the historical image window in addition to pending results', async () => {
     const toolSet = buildToolSet({ toolResultImages: false })
     await execute(toolSet.tools.view_image, { file_path: 'current.png' }, 'current-call')
     const historicalContent = Array.from({ length: 5 }, (_, index) => [
@@ -413,6 +419,7 @@ describe('view_image without tool-result image support (user-message injection)'
         })),
       },
       { role: 'user' as const, content: historicalContent },
+      { role: 'assistant', content: 'Inspect current.png next.' },
       {
         role: 'tool' as const,
         content: [
@@ -431,11 +438,11 @@ describe('view_image without tool-result image support (user-message injection)'
         ? message.content.filter((part) => part.type === 'image')
         : []
     )
-    expect(images).toHaveLength(5)
-    expect(JSON.stringify(bounded)).not.toContain('"image":"history-0"')
+    expect(images).toHaveLength(6)
+    expect(JSON.stringify(bounded)).toContain('"image":"history-0"')
     expect(JSON.stringify(bounded)).toContain('current.png')
     const historicalToolResults = bounded?.[0].content as Array<{ output: { value: string } }>
-    expect(historicalToolResults[0].output.value).toContain('Image omitted from this replay')
+    expect(historicalToolResults[0].output.value).toContain('attached in the user message')
     expect(historicalToolResults[1].output.value).toContain('attached in the user message')
   })
 
@@ -452,7 +459,10 @@ describe('view_image without tool-result image support (user-message injection)'
       toolName: 'view_image',
       output: { type: 'text' as const, value: 'image attached next' },
     }))
-    await toolSet.injectImagesIntoStepMessages?.([{ role: 'tool' as const, content: toolParts }] as never)
+    await toolSet.injectImagesIntoStepMessages?.([
+      { role: 'tool' as const, content: toolParts },
+      { role: 'assistant', content: 'Inspected.' },
+    ] as never)
     getStoreBlob.mockResolvedValue('data:image/webp;base64,UkVTSVpFRA==')
 
     await toModelOutput(toolSet.tools.view_image, results[0], 'call-0')
@@ -473,4 +483,74 @@ test('reserved uploaded paths never reach image filesystem sinks', async () => {
   })
   expect(fsReadImage).not.toHaveBeenCalled()
   expect(sandboxReadFileBytes).not.toHaveBeenCalled()
+})
+
+test.each([true, false])('SDK delivers a bounded batch before trimming history (native=%s)', async (native) => {
+  const toolSet = buildToolSet({ toolResultImages: native })
+  for (let i = 0; i < 9; i++) saveImage.mockResolvedValueOnce(`picture:sdk-${i}`)
+  const prompts: LanguageModelV3Prompt[] = []
+  const usage = {
+    inputTokens: { total: 1, noCache: 1, cacheRead: 1, cacheWrite: 0 },
+    outputTokens: { total: 1, text: 1, reasoning: 0 },
+  }
+  const model = new MockLanguageModelV3({
+    doStream: async ({ prompt }) => {
+      prompts.push(prompt)
+      const paths =
+        prompts.length === 1
+          ? Array.from({ length: 9 }, (_, i) => `batch-${i}.png`)
+          : prompts.length === 2
+            ? ['next.png']
+            : []
+      const chunks: LanguageModelV3StreamPart[] = [
+        { type: 'stream-start', warnings: [] },
+        ...paths.map((file_path) => ({
+          type: 'tool-call' as const,
+          toolCallId: file_path,
+          toolName: 'view_image',
+          input: JSON.stringify({ file_path }),
+        })),
+        { type: 'finish', finishReason: { unified: paths.length ? 'tool-calls' : 'stop', raw: undefined }, usage },
+      ]
+      return { stream: convertArrayToReadableStream(chunks) }
+    },
+  })
+  await streamText({
+    model,
+    prompt: 'Inspect the images.',
+    tools: toolSet.tools,
+    stopWhen: stepCountIs(3),
+    prepareStep: async ({ messages }) => ({ messages: await toolSet.injectImagesIntoStepMessages?.(messages) }),
+  }).consumeStream()
+  const imageCount = (prompt: LanguageModelV3Prompt) =>
+    prompt.reduce((count, message) => {
+      if (message.role === 'tool')
+        return (
+          count +
+          message.content.reduce(
+            (n, part) =>
+              n +
+              (part.type === 'tool-result' && part.output.type === 'content'
+                ? part.output.value.filter((p) => p.type === 'image-data').length
+                : 0),
+            0
+          )
+        )
+      if (message.role === 'user') return count + message.content.filter((p) => p.type === 'file').length
+      return count
+    }, 0)
+  expect(prompts).toHaveLength(3)
+  expect(imageCount(prompts[1])).toBe(8)
+  expect(JSON.stringify(prompts[1])).toContain('Image not read: view_image allows at most 8 calls per step')
+  expect(imageCount(prompts[2])).toBe(6)
+  expect(JSON.stringify(prompts[2])).toContain('next.png')
+  expect(saveImage).toHaveBeenCalledTimes(9)
+})
+
+test('rejects oversized normalized images before saving a successful result', async () => {
+  getImageBase64AndResize.mockResolvedValueOnce(`data:image/webp;base64,${'A'.repeat(3 * 1024 * 1024)}`)
+  expect(await execute(getViewImageTool(), { file_path: 'large.png' })).toMatchObject({
+    error: expect.stringContaining('request image limit'),
+  })
+  expect(saveImage).not.toHaveBeenCalled()
 })

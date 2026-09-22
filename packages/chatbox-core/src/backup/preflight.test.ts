@@ -1,14 +1,70 @@
-import { expect, it } from 'vitest'
-import { prepareBackupExport } from './preflight'
-import { exportBackupArchive } from './export-backup'
-import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
-import { openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
-import { SqlSessionRowStore } from '../persistence/session-row-sql'
-import { contextSnapshot } from '../persistence/session-context-read.test-support'
-import { decodeSessionTree } from '../session/session-tree/decode'
-import { prepareSessionForBackup } from './resources'
-import { BackupStorageKey } from './storage-keys'
 import type { Settings } from '@shared/types'
+import { expect, it } from 'vitest'
+import { openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
+import { contextSnapshot } from '../persistence/session-context-read.test-support'
+import { SqlSessionRowStore } from '../persistence/session-row-sql'
+import { decodeSessionTree } from '../session/session-tree/decode'
+import { exportBackupArchive } from './export-backup'
+import { legacyBackupSource } from './legacy-source'
+import { prepareBackupExport } from './preflight'
+import { prepareSessionForBackup } from './resources'
+import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
+import { BackupStorageKey } from './storage-keys'
+import { BackupWarningSchema } from './types'
+
+it.each(['legacy', 'v2', 'v3'] as const)('preserves distinct read failure reasons in %s exports', async (format) => {
+  const database = openNodeSessionRowDatabase()
+  try {
+    const storage = new MemoryStorage()
+    storage.values.set('session:good', { id: 'good', name: 'Good', messages: [] })
+    storage.values.set('session:mismatch', { id: 'other', name: 'Other', messages: [] })
+    const selectedSessionIds = ['good', 'missing', 'mismatch']
+    const store = legacyBackupSource(new SqlSessionRowStore(database), {
+      listSessionIds: async () => selectedSessionIds,
+      readValue: (id) => storage.getItem(`session:${id}`, null),
+    })
+    const options = {
+      storage,
+      metaStorage: new MemoryMetaStorage(),
+      exportItems: ['conversations'] as ['conversations'],
+      selectedSessionIds,
+      includeKeys: false,
+      application: { version: 'test', platform: 'test' },
+    }
+    const prepared =
+      format === 'legacy'
+        ? undefined
+        : await prepareBackupExport(
+            { ...options, sessionStore: store },
+            format === 'v3' ? { singleSessionBytes: 1 } : undefined
+          )
+    const result = await exportBackupArchive({
+      ...options,
+      sessionStore: format === 'legacy' ? undefined : store,
+      prepared,
+      writeArchive: async (stream) => {
+        for await (const part of stream()) void part
+        return { boundedMemory: true }
+      },
+    })
+    expect(result.manifest.formatVersion).toBe(format === 'v3' ? 3 : 2)
+    expect(result.manifest.sessions.map((session) => session.id)).toEqual(['good'])
+    expect(result.manifest.warnings).toEqual([
+      expect.objectContaining({ itemId: 'missing', reason: 'session-missing' }),
+      expect.objectContaining({ itemId: 'mismatch', reason: 'session-id-mismatch' }),
+    ])
+    if (prepared) expect(result.manifest.warnings).toEqual(prepared.warnings)
+  } finally {
+    database.close()
+  }
+})
+
+it('accepts warning metadata from old and future backups while retaining diagnostics', () => {
+  const warning = { code: 'session-read-failed', itemType: 'session', message: 'Original diagnostic' }
+  expect(BackupWarningSchema.parse(warning)).toEqual(warning)
+  expect(BackupWarningSchema.parse({ ...warning, reason: 'future-reason' })).toEqual({ ...warning, reason: undefined })
+  expect(BackupWarningSchema.parse({ ...warning, reason: 'session-missing' }).reason).toBe('session-missing')
+})
 
 it('uses each prepared v2 JSON byte size at the exact threshold and reclassifies selection', async () => {
   const database = openNodeSessionRowDatabase()

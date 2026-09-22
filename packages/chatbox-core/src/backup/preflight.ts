@@ -4,6 +4,8 @@ import type { SessionTree } from '../session/session-tree/types'
 import { throwIfAborted } from './abort'
 import type { BackupExportOptions } from './export-backup'
 import { classifyBackupSession } from './format-classification'
+import { LegacyBackupTopologyError } from './legacy-source'
+import { BackupReadError } from './read-error'
 import { prepareBackupMessagePayload } from './resource-payload'
 import { collectSessionResourceReferences, prepareSessionForBackup } from './resources'
 import { type BackupSessionStore, backupPageLimits } from './session-port'
@@ -12,7 +14,7 @@ import type { BackupWarning } from './types'
 
 export const SINGLE_BACKUP_SESSION_BYTES = 64 * 1024 * 1024
 export type PreparedBackupSession = { id: string; name: string } & (
-  | { layout: 'single'; size: number }
+  | { layout: 'single'; size: number; legacyTopology?: string }
   | { layout: 'sharded' }
 )
 export interface BackupExportPlan {
@@ -128,13 +130,27 @@ export async function prepareBackupExport(
     throwIfAborted(options.signal)
     options.onProgress?.({ phase: 'preparing', current: index, total: ids.length })
     try {
-      const descriptor = await classifyBackupSession(
-        options.sessionStore,
-        id,
-        threshold,
-        options.signal,
-        options.nativePayloadLimit
-      )
+      let descriptor: PreparedBackupSession
+      try {
+        descriptor = await classifyBackupSession(
+          options.sessionStore,
+          id,
+          threshold,
+          options.signal,
+          options.nativePayloadLimit
+        )
+      } catch (error) {
+        // 备份不等于迁移。旧界面能读取的孤立分支必须随 JSON 保留，不能因无法构树就整段漏备份。
+        if (!(error instanceof LegacyBackupTopologyError)) throw error
+        const legacy = await prepareLegacySession(options.sessionStore, id, options.signal)
+        descriptor = {
+          id,
+          name: legacy.session.name,
+          layout: 'single',
+          size: legacy.size,
+          legacyTopology: error.topologyReason.slice(0, 1024),
+        }
+      }
       reserve(descriptor)
       sessions.push(descriptor)
     } catch (error) {
@@ -142,6 +158,7 @@ export async function prepareBackupExport(
       if (error instanceof BackupSourceBudgetError) throw error
       const warning: BackupWarning = {
         code: 'session-read-failed',
+        reason: error instanceof BackupReadError ? error.reason : undefined,
         itemType: 'session',
         itemId: id,
         itemName: await (await options.metaStorage)
@@ -167,6 +184,16 @@ export async function prepareBackupExport(
   }
 }
 
+async function prepareLegacySession(store: BackupSessionStore, id: string, signal?: AbortSignal) {
+  const value = await store.readLegacySession?.(id, SINGLE_BACKUP_SESSION_BYTES, signal)
+  if (!value) throw new Error('Legacy backup source is unavailable')
+  const warnings = collectSessionResourceReferences(value).warnings
+  const session = prepareSessionForBackup(value)
+  const size = encoder.encode(JSON.stringify(session)).length
+  if (size > SINGLE_BACKUP_SESSION_BYTES) throw new Error('Legacy conversation exceeds the single-file backup limit')
+  return { session, size, warnings }
+}
+
 export function preparedSessionReader(
   options: PreparationOptions,
   plan: BackupExportPlan
@@ -174,13 +201,15 @@ export function preparedSessionReader(
   return async (id, onWarnings) => {
     const expected = plan.sessions.find((session) => session.id === id)
     if (!expected || expected.layout !== 'single') throw new Error('Session was not prepared for single-file export')
-    const actual = await prepareSessionSource(
-      options.sessionStore,
-      id,
-      options.signal,
-      expected.size + 1024 * 1024,
-      options.nativePayloadLimit
-    )
+    const actual = expected.legacyTopology
+      ? await prepareLegacySession(options.sessionStore, id, options.signal)
+      : await prepareSessionSource(
+          options.sessionStore,
+          id,
+          options.signal,
+          expected.size + 1024 * 1024,
+          options.nativePayloadLimit
+        )
     if (actual.size !== expected.size) throw new Error('Backup source changed after preparation')
     onWarnings?.(actual.warnings)
     return actual.session

@@ -1,17 +1,11 @@
 import {
-  createBackupProgressReporter,
-  prepareBackupExport,
   type BackupExportPlan,
+  createBackupProgressReporter,
+  getBackupFilename,
+  prepareBackupExport,
   throwIfAborted,
 } from '@chatbox/core/backup'
 import { useBackupSessionSelection } from '@chatbox/react'
-import { BackupWarnings } from '@/components/settings/BackupWarnings'
-import { BackupProgressView } from '@/components/settings/BackupProgressView'
-import { BackupExportDialog } from '@/components/settings/BackupExportDialog'
-import { confirmBackupInterruption } from '@/hooks/useBackupNavigationGuard'
-import { runRendererBackupOperation } from '@/app/backup-operations'
-import { refreshBackupState } from '@/app/backup-restore-state'
-import { getBackupFilename } from '@chatbox/core/backup'
 import {
   ActionIcon,
   Alert,
@@ -57,12 +51,17 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
+import { runRendererBackupOperation } from '@/app/backup-operations'
+import { refreshBackupState } from '@/app/backup-restore-state'
 import { exportRendererBackupArchive, importRendererLegacyJsonBackup } from '@/app/persona-backup'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
-import { canChangeAppIcon } from '@/platform/app-icon'
 import { InterfaceColorInput } from '@/components/common/InterfaceColorInput'
 import LazySlider from '@/components/common/LazySlider'
+import { BackupExportDialog } from '@/components/settings/BackupExportDialog'
+import { BackupProgressView } from '@/components/settings/BackupProgressView'
+import { BackupWarnings } from '@/components/settings/BackupWarnings'
+import { confirmBackupInterruption } from '@/hooks/useBackupNavigationGuard'
 import { languageNameMap, languages } from '@/i18n/locales'
 import {
   type BackupExportItem,
@@ -74,6 +73,7 @@ import {
   rehydrateImportedSession,
 } from '@/packages/backup'
 import platform from '@/platform'
+import { canChangeAppIcon } from '@/platform/app-icon'
 import { canShareFile, shareFile } from '@/platform/web_file_share'
 import storage from '@/storage'
 import { withAgentPersonaLocks } from '@/stores/agentPersonaStore'
@@ -686,6 +686,7 @@ const ImportExportDataSection = () => {
     color: 'green' | 'yellow' | 'red'
     title: string
     body?: string
+    preservedSessions?: { id: string; meta: { name: string }; legacyTopology?: string }[]
     warnings?: BackupWarning[]
   }>()
   const [pendingDownload, setPendingDownload] = useState<{ filename: string; blob: Blob }>()
@@ -807,7 +808,8 @@ const ImportExportDataSection = () => {
         )
       )
       if (!result) return
-      const warningCount = result.manifest.warnings.length
+      const preservedSessions = result.manifest.sessions.filter((session) => session.legacyTopology)
+      const warningCount = result.manifest.warnings.length + preservedSessions.length
       setPendingDownload(result.pendingDownload)
       const warningBody = [
         String(t('{{count}} conversations backed up', { count: result.manifest.sessions.length })),
@@ -832,7 +834,7 @@ const ImportExportDataSection = () => {
           : warningCount > 0 || !result.boundedMemory
             ? { color: 'yellow' as const, title: String(t('Backup exported with warnings')) }
             : { color: 'green' as const, title: String(t('Backup exported successfully')) }
-      setExportNotice({ ...notice, body: warningBody, warnings: result.manifest.warnings })
+      setExportNotice({ ...notice, body: warningBody, warnings: result.manifest.warnings, preservedSessions })
     } catch (error) {
       if (isAbortError(error)) {
         setExportNotice({ color: 'yellow', title: String(t('Export canceled')) })
@@ -1057,7 +1059,11 @@ const ImportExportDataSection = () => {
                 <Text size="sm" c="dimmed" style={{ whiteSpace: 'pre-line' }}>
                   {exportNotice.body}
                 </Text>
-                <BackupWarnings warnings={exportNotice.warnings ?? []} names={selectionNames} />
+                <BackupWarnings
+                  warnings={exportNotice.warnings ?? []}
+                  names={selectionNames}
+                  preservedSessions={exportNotice.preservedSessions}
+                />
               </Stack>
             )
           }

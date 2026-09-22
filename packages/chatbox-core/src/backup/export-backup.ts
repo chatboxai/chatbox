@@ -11,6 +11,7 @@ import {
 import { sha256Checksum } from './codec'
 import { normalizeBackupExportItems } from './export-items'
 import { type BackupExportPlan, prepareBackupExport, preparedSessionReader } from './preflight'
+import { BackupReadError } from './read-error'
 import { BackupResourceBudgetError, BackupResourceCatalog } from './resource-catalog'
 import { collectGlobalResourceReferences, collectSessionResourceReferences, prepareSessionForBackup } from './resources'
 import type { BackupSessionStore } from './session-port'
@@ -58,6 +59,7 @@ export interface BackupExportOptions {
   prepared?: BackupExportPlan
   /** Payloads up to this many bytes are parsed natively during classification and export. */
   nativePayloadLimit?: number
+  legacyTopologies?: ReadonlyMap<string, string>
   sourceWarnings?: import('./types').BackupWarning[]
   strictSessions?: boolean
   /** Controlled integration seam; public hosts enable this after platform acceptance. */
@@ -256,6 +258,11 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
         (warning) => warning.code === 'session-read-failed' || warning.code === 'external-resource-skipped'
       ),
       strictSessions: true,
+      legacyTopologies: new Map(
+        prepared.sessions.flatMap((session) =>
+          session.layout === 'single' && session.legacyTopology ? [[session.id, session.legacyTopology] as const] : []
+        )
+      ),
       readSession: preparedSessionReader({ ...options, sessionStore: options.sessionStore }, prepared),
     })
   }
@@ -310,8 +317,10 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
             ? await options.readSession(sessionId, (sourceWarnings) => warnings.push(...sourceWarnings))
             : await options.storage.getItem<Session | null>(backupSessionStorageKey(sessionId), null)
           if (session === null && !metaById.has(sessionId) && !options.selectedSessionIds) continue
-          if (!isBackupSession(session)) throw new Error('Session is missing or invalid')
-          if (session.id !== sessionId) throw new Error('Session id does not match its storage key')
+          if (session === null) throw new BackupReadError('session-missing', 'Session data is missing')
+          if (!isBackupSession(session)) throw new Error('Session is invalid')
+          if (session.id !== sessionId)
+            throw new BackupReadError('session-id-mismatch', 'Session id does not match its storage key')
           const collected = collectSessionResourceReferences(session)
           const preparedSession = prepareSessionForBackup(session)
           const path = `sessions/${await safeSessionPathComponent(session.id, checksum)}/session.json`
@@ -321,6 +330,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           sessions.push({
             entry: {
               ...descriptor,
+              legacyTopology: options.legacyTopologies?.get(sessionId),
               id: session.id,
               meta: deriveSessionMeta(preparedSession, metaById.get(session.id)),
               resourceIds: [],
@@ -333,6 +343,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           throwIfAborted(options.signal)
           warnings.push({
             code: 'session-read-failed',
+            reason: error instanceof BackupReadError ? error.reason : undefined,
             itemType: 'session',
             itemId: sessionId,
             message: error instanceof Error ? error.message : String(error),

@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto'
-import { expect, it } from 'vitest'
 import type { Session } from '@shared/types'
+import { unzipSync, zipSync } from 'fflate'
+import { expect, it } from 'vitest'
+import { openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
+import { contextSnapshot } from '../persistence/session-context-read.test-support'
+import { SqlSessionRowStore } from '../persistence/session-row-sql'
 import { exportBackupArchive } from './export-backup'
 import { importBackupArchive } from './import-backup'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
-import { openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
-import { SqlSessionRowStore } from '../persistence/session-row-sql'
-import { contextSnapshot } from '../persistence/session-context-read.test-support'
-import { unzipSync, zipSync } from 'fflate'
 
 class StreamStorage extends MemoryStorage {
   largestWrite = 0
@@ -139,7 +139,7 @@ it.each(['v2', 'v3'] as const)(
         },
       })
       expect(exported.manifest.warnings).toContainEqual(
-        expect.objectContaining({ code: 'resource-read-failed', itemId: 'missing-image' })
+        expect.objectContaining({ code: 'resource-read-failed', reason: 'resource-missing', itemId: 'missing-image' })
       )
       await importBackupArchive(archive, {
         storage: target,

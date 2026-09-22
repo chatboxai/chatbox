@@ -27,6 +27,8 @@ export const BackupJsonEntrySchema = z.object({
 export type BackupJsonEntry = z.infer<typeof BackupJsonEntrySchema>
 
 export const BackupSessionEntrySchema = BackupJsonEntrySchema.extend({
+  // 可选诊断不改变旧 JSON 布局；旧版 v2 导入器忽略该字段，仍可恢复完整对话。
+  legacyTopology: z.string().max(1024).optional(),
   id: BackupIdentifierSchema,
   meta: SessionMetaRecordSchema,
   resourceIds: z.array(BackupIdentifierSchema).max(50_000),
@@ -54,12 +56,17 @@ export const BackupResourceEntrySchema = BackupJsonEntrySchema.extend({
 })
 export type BackupResourceEntry = z.infer<typeof BackupResourceEntrySchema>
 
+export const BackupWarningReasonSchema = z.enum(['session-missing', 'session-id-mismatch', 'resource-missing'])
+export type BackupWarningReason = z.infer<typeof BackupWarningReasonSchema>
+
 export const BackupWarningSchema = z.object({
   code: z.enum(['session-read-failed', 'resource-read-failed', 'external-resource-skipped', 'rag-rebuild-failed']),
   itemType: z.enum(['session', 'resource']),
   itemId: z.string().optional(),
   itemName: z.string().optional(),
   message: z.string(),
+  // Diagnostic metadata is optional; unknown future reasons fall back to the original message.
+  reason: BackupWarningReasonSchema.optional().catch(undefined),
 })
 export type BackupWarning = z.infer<typeof BackupWarningSchema>
 

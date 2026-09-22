@@ -6,9 +6,9 @@ import { type ReactNode, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal } from '@/components/layout/Overlay'
 import platform from '@/platform'
-import { BackupWarnings } from './BackupWarnings'
 import { BackupConversationSelector } from './BackupConversationSelector'
 import classes from './BackupExportDialog.module.css'
+import { BackupWarnings } from './BackupWarnings'
 
 export function BackupExportDialog({
   plan,
@@ -73,11 +73,16 @@ export function BackupExportDialog({
           <Text fw={600}>{t('Ready to export')}</Text>
           <Text size="sm">{t('{{count}} conversations will be backed up', { count: plan.sessions.length })}</Text>
           <Text size="sm" c="dimmed">
-            {plan.formatVersion === 3
+            {plan.sessions.some((session) => session.layout === 'single' && session.legacyTopology) &&
+            plan.formatVersion === 3
               ? t(
-                  'This backup includes large conversations and requires a version of Chatbox that supports large backups. Older versions cannot import it.'
+                  'This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.'
                 )
-              : t('This backup is compatible with Chatbox 1.22 or later.')}
+              : plan.formatVersion === 3
+                ? t(
+                    'This backup includes large conversations and requires a version of Chatbox that supports large backups. Older versions cannot import it.'
+                  )
+                : t('This backup is compatible with Chatbox 1.22 or later.')}
           </Text>
           <Text size="sm" c="dimmed">
             {t('Missing items found while exporting will be listed in the result.')}
@@ -93,6 +98,7 @@ export function BackupExportDialog({
           </Text>
           <BackupWarnings
             warnings={plan.warnings}
+            preservedSessions={plan.sessions}
             names={new Map(selection.options.map((option) => [option.id, option.name]))}
           />
           <div style={{ flex: 1, minHeight: 100, overflowY: 'auto' }}>

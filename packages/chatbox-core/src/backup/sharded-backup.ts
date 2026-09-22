@@ -187,6 +187,7 @@ export async function exportShardedBackup(
           ...entry.descriptor,
           id,
           layout: 'single',
+          legacyTopology: selected.legacyTopology,
           meta: deriveSessionMeta(session, (await meta.getById(id)) ?? undefined),
           resourceIds: [],
           shards: [],
@@ -467,13 +468,13 @@ export async function importShardedBackup(
               : limits.maxPageBytes,
     }),
   }
+  const legacyTopologies = new Map<string, string>()
   const singleTree = (data: Uint8Array) => {
     const value = parse(data)
     SessionSchema.parse(value)
     const session = value as Session
     const encoded = encodeSessionTree(session, { activeThreadId: `backup-active:${session.id}`, now: 0 })
-    if (!encoded.ok) throw new Error(encoded.reason)
-    return { session, tree: encoded.tree }
+    return { session, tree: encoded.ok ? encoded.tree : undefined, topology: encoded.ok ? undefined : encoded.reason }
   }
   const rows = (data: Uint8Array, path: string) => {
     const value = parse(data)
@@ -508,7 +509,18 @@ export async function importShardedBackup(
       if (entry.path.endsWith('/session.json')) {
         if (manifest) throw new Error('Backup manifest must be last')
         finishGraph()
-        const { session, tree } = singleTree(entry.data)
+        const { session, tree, topology } = singleTree(entry.data)
+        if (!tree) {
+          // 混合分片备份也可携带旧 JSON。先保留诊断，清单校验后才允许按旧记录恢复，不能丢掉孤立消息。
+          legacyTopologies.set(session.id, topology!)
+          let messages = session.messages.length
+          for (const thread of session.threads ?? []) messages += thread.messages.length
+          for (const fork of Object.values(session.messageForksHash ?? {}))
+            for (const list of fork.lists) messages += list.messages.length
+          summaries.set(session.id, { threads: (session.threads?.length ?? 0) + 1, messages })
+          referenceCatalog.add(collectSessionResourceReferences(session).references)
+          return
+        }
         const graph = new BackupGraphValidator(session.id)
         graph.add(toLogicalBackupRow({ kind: 'header', record: tree.session }))
         for (const thread of tree.threads.sort((a, b) => a.seq - b.seq))
@@ -613,6 +625,10 @@ export async function importShardedBackup(
   )
   const expected = new Map<string, BackupJsonEntry>()
   for (const session of validated.sessions) {
+    const topology = legacyTopologies.get(session.id)
+    if (topology && (session.layout !== 'single' || !session.legacyTopology)) throw new Error(topology)
+    if (topology && !sharded.store.beginLegacyRestore)
+      throw new Error('Backup storage does not support legacy conversation restoration')
     if (JSON.stringify(session.counts) !== JSON.stringify(summaries.get(session.id)))
       throw new Error('Backup session counts mismatch')
     const prefix = `sessions/${await safeSessionPathComponent(session.id, checksum)}`
@@ -780,8 +796,14 @@ export async function importShardedBackup(
             rehydrateSessionAttachmentsAsInline(restoreSessionResourceKeys(singleTree(entry.data).session, keys))
           )
           const encoded = encodeSessionTree(restored, { activeThreadId: `backup-active:${restored.id}`, now: 0 })
-          if (!encoded.ok) throw new Error(encoded.reason)
           const oldMeta = await options.metaStorage.getById(restored.id)
+          if (!encoded.ok) {
+            if (!legacyTopologies.has(restored.id) || !sharded.store.beginLegacyRestore) throw new Error(encoded.reason)
+            const candidate = await sharded.store.beginLegacyRestore(restored)
+            active = { id: restored.id, candidate, oldMeta }
+            candidates.push(active)
+            return
+          }
           const candidate = await sharded.store.beginBackupRestore(restored.id)
           active = { id: restored.id, candidate, oldMeta }
           candidates.push(active)

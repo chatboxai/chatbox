@@ -1,4 +1,4 @@
-import type { Message } from '@shared/types'
+import type { Message, Session } from '@shared/types'
 import type { MessageRow, SessionRecordV2, ThreadRow } from '../session/session-tree/types'
 
 export interface BackupPageLimits {
@@ -49,6 +49,9 @@ export interface BackupSessionCandidate {
 }
 export interface BackupSessionStore {
   listSessionIds(): Promise<string[]>
+  /** 仅用于无法无损转成消息树的旧 JSON；调用方必须传入单文件内存上限。 */
+  readLegacySession?(sessionId: string, maxBytes: number, signal?: AbortSignal): Promise<Session | null>
+  beginLegacyRestore?(session: Session): Promise<BackupSessionCandidate>
   iterateBackupRows(sessionId: string, limits: BackupPageLimits, signal?: AbortSignal): AsyncIterable<BackupRow>
   beginBackupRestore(sessionId: string): Promise<BackupSessionCandidate>
 }

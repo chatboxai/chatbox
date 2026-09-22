@@ -1,14 +1,15 @@
-import { migrateSession } from '../application/session/compatibility/session-load'
+import { type Message, type Session, SessionSchema } from '@shared/types'
 import { migrateMessage } from '@shared/utils/message'
-import { legacyMessageChunks } from './legacy-message'
-import { SessionSchema, type Session, type Message } from '@shared/types'
+import { migrateSession } from '../application/session/compatibility/session-load'
 import { encodeSessionTree } from '../session/session-tree/encode'
 import { throwIfAborted } from './abort'
 import { jsonUtf8Blocks } from './json-stream'
+import { legacyMessageChunks } from './legacy-message'
 import { BackupMessageValidator } from './payload'
-import { compareBackupIds } from './sharded-format'
+import { BackupReadError } from './read-error'
 import type { BackupRow, BackupSessionStore } from './session-port'
-import { readBackupFileBytes, type BackupFile } from './types'
+import { compareBackupIds } from './sharded-format'
+import { type BackupFile, readBackupFileBytes } from './types'
 
 /** Open returns a repeatable view for the duration of the exclusive backup operation.
  * IndexedDB can instead materialize its historical structured-clone value once per scan. */
@@ -17,6 +18,13 @@ export interface LegacyBackupSource {
   open?(id: string): Promise<BackupFile | null>
   readValue?(id: string): Promise<Session | null>
 }
+export class LegacyBackupTopologyError extends Error {
+  constructor(readonly topologyReason: string) {
+    super(`Legacy session topology is invalid: ${topologyReason}`)
+    this.name = 'LegacyBackupTopologyError'
+  }
+}
+
 const BLOCK = 64 * 1024
 const MAX_STRUCTURE = 16 * 1024 * 1024
 interface Range {
@@ -152,6 +160,34 @@ export function legacyBackupSource(rows: BackupSessionStore, source: LegacyBacku
       return [...new Set([...(await rows.listSessionIds()), ...(await source.listSessionIds())])]
     },
     beginBackupRestore: (id) => rows.beginBackupRestore(id),
+    async readLegacySession(id, maxBytes, signal) {
+      throwIfAborted(signal)
+      if ((await rows.listSessionIds()).includes(id)) return null
+      const file = await source.open?.(id)
+      let value: Session | null | undefined
+      if (file) {
+        // 孤立分支仍可能保存用户消息，不能为通过树校验而删除；仅在有界范围内读取完整旧 JSON。
+        if (file.size > maxBytes) throw new Error('Legacy conversation exceeds the single-file backup limit')
+        const bytes = new Uint8Array(file.size)
+        let offset = 0
+        for await (const chunk of rangeBytes(file, 0, file.size, signal)) {
+          bytes.set(chunk, offset)
+          offset += chunk.length
+        }
+        value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+      } else value = await source.readValue?.(id)
+      if (!value) return null
+      let size = 0
+      for (const chunk of jsonUtf8Blocks(value)) {
+        throwIfAborted(signal)
+        size += chunk.length
+        if (size > maxBytes) throw new Error('Legacy conversation exceeds the single-file backup limit')
+      }
+      if (!SessionSchema.safeParse(value).success) throw new Error('Legacy session structure is invalid')
+      if (value.id !== id)
+        throw new BackupReadError('session-id-mismatch', 'Legacy session ID does not match its storage key')
+      return migrateSession(value)
+    },
     async *iterateBackupRows(id, limits, signal): AsyncGenerator<BackupRow> {
       if ((await rows.listSessionIds()).includes(id)) {
         yield* rows.iterateBackupRows(id, limits, signal)
@@ -162,9 +198,11 @@ export function legacyBackupSource(rows: BackupSessionStore, source: LegacyBacku
       const scanned = file ? await scanLegacy(file, signal) : undefined
       const value = scanned?.session ?? (await source.readValue?.(id))
       const session = value && !scanned ? migrateSession(value) : value
-      if (!session || session.id !== id) throw new Error('Legacy session is missing or has an inconsistent ID')
+      if (!session) throw new BackupReadError('session-missing', 'Legacy session data is missing')
+      if (session.id !== id)
+        throw new BackupReadError('session-id-mismatch', 'Legacy session ID does not match its storage key')
       const encoded = encodeSessionTree(session, { activeThreadId: `backup-active:${id}`, now: 0 })
-      if (!encoded.ok) throw new Error(`Legacy session topology is invalid: ${encoded.reason}`)
+      if (!encoded.ok) throw new LegacyBackupTopologyError(encoded.reason)
       const { tree } = encoded
       yield { kind: 'header', record: tree.session }
       for (const thread of tree.threads.sort((a, b) => a.seq - b.seq)) {

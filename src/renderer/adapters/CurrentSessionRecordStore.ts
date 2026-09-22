@@ -12,6 +12,7 @@ export interface CurrentSessionDataStorage {
   copyItem?(source: string, destination: string): Promise<boolean>
   openBackupValue?(key: string): Promise<import('@chatbox/core/backup').BackupFile | null>
   getItem<T>(key: string, initialValue: T): Promise<T>
+  getItemRaw<T>(key: string): Promise<T | null>
   setItemNow<T>(key: string, value: T): Promise<void>
   removeItem(key: string): Promise<void>
   getAllKeys(): Promise<string[]>
@@ -32,7 +33,7 @@ export class CurrentSessionRecordStore implements SessionRecordStorePort {
   }
 
   getRecord(id: string): Promise<StoredSessionRecord | null> {
-    return this.storage.getItem<StoredSessionRecord | null>(StorageKeyGenerator.session(id), null)
+    return this.storage.getItemRaw<StoredSessionRecord>(StorageKeyGenerator.session(id))
   }
 
   setRecord(record: StoredSessionRecord): Promise<void> {

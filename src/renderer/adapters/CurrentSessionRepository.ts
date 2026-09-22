@@ -1,9 +1,9 @@
 import { RowBackedSessionRepository, type SessionMigrationOutcome } from '@chatbox/core/application/session'
 import {
   BackupOperationBusyError,
-  legacyBackupSource,
-  throwIfAborted,
   type BackupSessionStore,
+  recordBackupSource,
+  throwIfAborted,
 } from '@chatbox/core/backup'
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '@chatbox/core/ports'
 import {
@@ -29,9 +29,9 @@ import type { Session, SessionMetaPage, SessionMetaRecord } from '@shared/types'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import storage from '@/storage'
-import { collectSessionOwnership } from './session-ownership'
 import { rendererBackupSessionStore } from './backup-session-store'
 import { type CurrentSessionDataStorage, CurrentSessionRecordStore } from './CurrentSessionRecordStore'
+import { collectSessionOwnership } from './session-ownership'
 
 export type { CurrentSessionDataStorage } from './CurrentSessionRecordStore'
 
@@ -236,6 +236,7 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
       const supportsBackup = 'iterateBackupRows' in rows && 'beginBackupRestore' in rows
       const dataStorage = this.backupDataStorage
       const snapshots = {
+        stage: (token: string, session: Session) => dataStorage.setItemNow(token, session),
         capture: async (id: string, token: string) => {
           if (dataStorage.copyItem) return dataStorage.copyItem(`session:${id}`, token)
           const previous = await this.records.getRecord(id)
@@ -279,7 +280,7 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
         throw new Error('Bounded session ownership reads are unavailable')
       }
       const storage = this.backupDataStorage
-      const source = legacyBackupSource(rows as SessionRowStorePort & BackupSessionStore, {
+      const source = recordBackupSource(rows as SessionRowStorePort & BackupSessionStore, this.records, {
         listSessionIds: () => this.records.listIds(),
         open: storage.openBackupValue ? (id) => storage.openBackupValue!(`session:${id}`) : undefined,
         readValue: async (id) => {
@@ -288,6 +289,7 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
           return record as Session
         },
       })
+      // 孤立分支导致扫描不完整时必须抛错，让维护任务停止清理，不能退回旧行或空归属。
       return collectSessionOwnership(source, sessionId)
     })
   }

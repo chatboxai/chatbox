@@ -19,6 +19,9 @@ class MemoryStorage implements BackupStorage {
   getItem<T>(key: string, initialValue: T): Promise<T> {
     return Promise.resolve((this.values.has(key) ? this.values.get(key) : initialValue) as T)
   }
+  getItemRaw<T>(key: string): Promise<T | null> {
+    return Promise.resolve((this.values.get(key) ?? null) as T | null)
+  }
   setItemNow<T>(key: string, value: T): Promise<void> {
     this.values.set(key, value)
     return Promise.resolve()

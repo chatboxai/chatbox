@@ -1,12 +1,14 @@
-import { createBackupProgressReporter } from './progress'
+import { throwIfAborted } from './abort'
+import { fingerprintResource, readResource, resourceHash } from './blob-stream'
+import { sha256Checksum, shouldCompressMimeType } from './codec'
 import type { BackupExportOptions } from './export-backup'
 import { safeSessionPathComponent } from './export-backup'
-import { fingerprintResource, readResource, resourceHash } from './blob-stream'
-import { shouldCompressMimeType, sha256Checksum } from './codec'
-import { throwIfAborted } from './abort'
+import { createBackupProgressReporter } from './progress'
+import { BackupReadError } from './read-error'
 import type { ResourceReference } from './resources'
-import type { BackupWarning, BackupResourceEntry } from './types'
+import type { BackupResourceEntry, BackupWarning } from './types'
 import type { ZipArchiveEntry } from './zip'
+
 interface ResourceCandidate {
   references: ResourceReference[]
 }
@@ -99,7 +101,7 @@ export class BackupResourceCatalog {
       try {
         const firstReference = candidate.references[0]
         const encoded = await fingerprintResource(options.storage, storageKey, firstReference, options.signal)
-        if (!encoded) throw new Error('Managed resource is missing from blob storage')
+        if (!encoded) throw new BackupReadError('resource-missing', 'Managed resource is missing from blob storage')
         const resourceChecksum = encoded.checksum
         successfullyReadResourceKeys++
         const dedupeKey = `${resourceChecksum.value}:${encoded.encoding}:${encoded.mimeType}`
@@ -169,6 +171,7 @@ export class BackupResourceCatalog {
       } catch (error) {
         warnings.push({
           code: 'resource-read-failed',
+          reason: error instanceof BackupReadError ? error.reason : undefined,
           itemType: 'resource',
           itemId: storageKey,
           itemName: candidate.references.find((reference) => reference.filename)?.filename,

@@ -82,6 +82,7 @@ function createHarness(metaStorage: SessionMetaRepositoryPort = createMetaStorag
   const getAllKeys = vi.fn(() => Promise.resolve([...values.keys()]))
   const dataStorage: CurrentSessionDataStorage = {
     getItem: <T>(key: string, initialValue: T) => getItem(key, initialValue) as Promise<T>,
+    getItemRaw: <T>(key: string) => getItem(key, null) as Promise<T | null>,
     setItemNow,
     removeItem,
     getAllKeys,
@@ -137,11 +138,59 @@ describe('CurrentSessionRepository contract', () => {
     harness = createHarness()
   })
 
+  test.each([false, true])('scans the authoritative restored record with orphan branches: %s', async (orphan) => {
+    const id = 'restored-ownership'
+    await harness.repository.setSession(createSessionWithMessages(id))
+    const restored: Session = {
+      ...createSession(id),
+      messages: [message('restored', 'user', 300)],
+      ...(orphan
+        ? {
+            messageForksHash: {
+              missing: {
+                position: 1,
+                createdAt: 1,
+                lists: [{ id: 'saved', messages: [message('orphan', 'assistant', 400)] }],
+              },
+            },
+          }
+        : {}),
+    }
+    await harness.repository.withBackupStorageAccess(async (_read, _meta, store) => {
+      const candidate = await store!.beginLegacyRestore!(restored)
+      await candidate.publish()
+      await candidate.dispose()
+    })
+    const updated: Session = {
+      ...restored,
+      messages: [
+        ...restored.messages,
+        {
+          ...message('new-attachment', 'user', 500),
+          files: [{ id: 'file', name: 'document.pdf', fileType: 'application/pdf', sessionAttachmentId: 7 }],
+        },
+      ],
+    }
+    if (orphan) {
+      // 无法迁移的对话后续编辑仍写旧 JSON，残留行不能授权附件删除。
+      await harness.repository.setSession(updated, { baseSession: (await harness.repository.getSession(id))! })
+      expect(await messageRowIds(harness, id)).toEqual(['assistant-1', 'user-1'])
+      await expect(harness.repository.collectSessionAttachmentOwnership(id)).rejects.toThrow('unreachable fork')
+    } else {
+      // 模拟旧格式导入；即便尚未触发迁移，扫描也必须忽略同 ID 的旧行。
+      await harness.dataStorage.setItemNow(`session:${id}`, updated)
+      const ownership = await harness.repository.collectSessionAttachmentOwnership(id)
+      expect(ownership.messageIds.sort()).toEqual(['new-attachment', 'restored'])
+      expect(ownership.attachmentReferences).toEqual([{ attachmentId: 7, sessionId: id, messageId: 'new-attachment' }])
+    }
+  })
+
   test('satisfies the reusable portable repository contract', async () => {
     const values = new Map<string, unknown>()
     const inMemoryMeta = new InMemorySessionRepository()
     const repository = new CurrentSessionRepository({
       dataStorage: {
+        getItemRaw: <T>(key: string) => Promise.resolve((values.get(key) ?? null) as T | null),
         getItem: <T>(key: string, initialValue: T) =>
           Promise.resolve(values.has(key) ? (values.get(key) as T) : initialValue),
         setItemNow: (key, value) => {

@@ -1701,5 +1701,7 @@
   "Reason: {{reason}}": "Motivo: {{reason}}",
   "{{count}} conversations preserved in legacy format": "{{count}} conversazioni conservate nel formato precedente",
   "The conversation has inconsistent branch relationships. Its messages and branches were preserved in legacy JSON format.": "Le relazioni tra i rami di questa conversazione sono incoerenti. I messaggi e i rami sono stati conservati nel formato JSON precedente.",
-  "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "Questo backup contiene rami di conversazioni precedenti e conversazioni di grandi dimensioni. Importalo con questa versione di Chatbox o una successiva."
+  "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "Questo backup contiene rami di conversazioni precedenti e conversazioni di grandi dimensioni. Importalo con questa versione di Chatbox o una successiva.",
+  "Fast model": "Modello veloce",
+  "Used to automatically generate conversation titles. Choose a model with fast responses.": "Genera automaticamente i titoli delle conversazioni. Scegli un modello con risposte rapide."
 }

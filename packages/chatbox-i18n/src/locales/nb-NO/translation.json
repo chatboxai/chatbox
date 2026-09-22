@@ -1701,5 +1701,7 @@
   "Reason: {{reason}}": "Årsak: {{reason}}",
   "{{count}} conversations preserved in legacy format": "{{count}} samtaler bevart i eldre format",
   "The conversation has inconsistent branch relationships. Its messages and branches were preserved in legacy JSON format.": "Forgreningene i denne samtalen har inkonsekvente koblinger. Meldinger og forgreninger er bevart i eldre JSON-format.",
-  "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "Denne sikkerhetskopien inneholder eldre samtaleforgreninger og store samtaler. Importer den med denne eller en nyere versjon av Chatbox."
+  "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "Denne sikkerhetskopien inneholder eldre samtaleforgreninger og store samtaler. Importer den med denne eller en nyere versjon av Chatbox.",
+  "Fast model": "Rask modell",
+  "Used to automatically generate conversation titles. Choose a model with fast responses.": "Brukes til å generere samtaletitler automatisk. Velg en modell som svarer raskt."
 }

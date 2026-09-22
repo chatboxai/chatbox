@@ -1701,5 +1701,7 @@
   "The conversation ID does not match the stored ID.": "对话 ID 与存储记录的 ID 不一致。",
   "{{count}} conversations preserved in legacy format": "{{count}} 个对话已按旧格式保留",
   "The conversation has inconsistent branch relationships. Its messages and branches were preserved in legacy JSON format.": "该对话的分支关系不完整，消息和分支已按旧版 JSON 格式完整保留。",
-  "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "此备份同时包含旧版对话分支和大对话，请使用当前版本或更新版本的 Chatbox 导入。"
+  "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "此备份同时包含旧版对话分支和大对话，请使用当前版本或更新版本的 Chatbox 导入。",
+  "Fast model": "快速模型",
+  "Used to automatically generate conversation titles. Choose a model with fast responses.": "用于自动生成对话标题，建议选择响应较快的模型。"
 }

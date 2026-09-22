@@ -67,7 +67,7 @@ export function isSlotPresetOn(
     case 'llm':
       return isAutoOrChatbox(settings.defaultChatModel)
     case 'fast':
-      return isAutoOrChatbox(settings.threadNamingModel) && isAutoOrChatbox(settings.searchTermConstructionModel)
+      return isAutoOrChatbox(settings.threadNamingModel)
     case 'ocr':
       return isAutoOrChatbox(settings.ocrModel)
     case 'embedding':
@@ -91,7 +91,7 @@ export function getSlotModelRef(slotId: ModelSlotId, settings: Settings): ModelR
     case 'llm':
       return settings.defaultChatModel
     case 'fast':
-      return settings.threadNamingModel ?? settings.searchTermConstructionModel
+      return settings.threadNamingModel
     case 'ocr':
       return settings.ocrModel
     case 'embedding':
@@ -106,7 +106,7 @@ export function settingsPatchForModelSlot(slotId: ModelSlotId, selection: ModelR
     case 'llm':
       return { defaultChatModel: selection }
     case 'fast':
-      return { threadNamingModel: selection, searchTermConstructionModel: selection }
+      return { threadNamingModel: selection }
     case 'ocr':
       return { ocrModel: selection }
     case 'embedding':

@@ -1697,5 +1697,7 @@
   "Reason: {{reason}}": "Neden: {{reason}}",
   "{{count}} conversations preserved in legacy format": "{{count}} sohbet eski biçimde korundu",
   "The conversation has inconsistent branch relationships. Its messages and branches were preserved in legacy JSON format.": "Bu sohbetin dalları arasındaki ilişkiler tutarsız. Mesajlar ve dallar eski JSON biçiminde korundu.",
-  "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "Bu yedek, eski sohbet dallarıyla birlikte büyük sohbetler içerir. Bu Chatbox sürümüyle veya daha yeni bir sürümle içe aktarın."
+  "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "Bu yedek, eski sohbet dallarıyla birlikte büyük sohbetler içerir. Bu Chatbox sürümüyle veya daha yeni bir sürümle içe aktarın.",
+  "Fast model": "Hızlı model",
+  "Used to automatically generate conversation titles. Choose a model with fast responses.": "Sohbet başlıklarını otomatik oluşturur. Hızlı yanıt veren bir model seçin."
 }

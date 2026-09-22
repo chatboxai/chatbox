@@ -1701,5 +1701,7 @@
   "The conversation ID does not match the stored ID.": "لا يطابق ID المحادثة ID المخزّن.",
   "{{count}} conversations preserved in legacy format": "تم الاحتفاظ بـ {{count}} محادثات بالتنسيق القديم",
   "The conversation has inconsistent branch relationships. Its messages and branches were preserved in legacy JSON format.": "توجد علاقات غير متسقة بين فروع هذه المحادثة. تم الاحتفاظ بالرسائل والفروع بتنسيق JSON القديم.",
-  "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "تحتوي هذه النسخة الاحتياطية على فروع محادثات قديمة ومحادثات كبيرة. استوردها باستخدام هذا الإصدار من Chatbox أو إصدار أحدث."
+  "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "تحتوي هذه النسخة الاحتياطية على فروع محادثات قديمة ومحادثات كبيرة. استوردها باستخدام هذا الإصدار من Chatbox أو إصدار أحدث.",
+  "Fast model": "النموذج السريع",
+  "Used to automatically generate conversation titles. Choose a model with fast responses.": "يُستخدم لإنشاء عناوين المحادثات تلقائيًا. اختر نموذجًا سريع الاستجابة."
 }

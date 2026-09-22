@@ -43,7 +43,7 @@ describe('model rig slot settings', () => {
     expect(isSlotPresetOn('llm', settings({ defaultChatModel: { provider: 'openai', model: 'gpt-4.1' } }))).toBe(false)
   })
 
-  test('fast helper stays on preset only when both light models are auto or Chatbox', () => {
+  test('fast model preset follows the title model', () => {
     expect(isSlotPresetOn('fast', settings())).toBe(true)
     expect(
       isSlotPresetOn(
@@ -56,14 +56,13 @@ describe('model rig slot settings', () => {
     ).toBe(false)
   })
 
-  test('writes the fast helper into both thread naming and search-term models', () => {
+  test('writes the fast model into the title model setting', () => {
     expect(settingsPatchForModelSlot('fast', { provider: 'openai', model: 'gpt-4.1-mini' })).toEqual({
       threadNamingModel: { provider: 'openai', model: 'gpt-4.1-mini' },
-      searchTermConstructionModel: { provider: 'openai', model: 'gpt-4.1-mini' },
     })
   })
 
-  test('reads the fast helper from the thread-naming model first', () => {
+  test('reads the fast model from the title model setting', () => {
     expect(
       getSlotModelRef(
         'fast',
@@ -73,6 +72,12 @@ describe('model rig slot settings', () => {
         })
       )
     ).toEqual({ provider: 'openai', model: 'naming' })
+  })
+
+  test('ignores a saved search model when the fast model is automatic', () => {
+    const saved = settings({ searchTermConstructionModel: { provider: 'openai', model: 'search' } })
+    expect(isSlotPresetOn('fast', saved)).toBe(true)
+    expect(getSlotModelRef('fast', saved)).toBeUndefined()
   })
 
   test('parser and search presets follow the Chatbox-built-in values', () => {
@@ -203,7 +208,7 @@ describe('model rig slot tests', () => {
   test('web search built-in requires a license before it searches', async () => {
     const result = await runSlotTest('search', {
       settings: settings(),
-      configuredProviderIds: new Set(),
+      configuredProviderIds: new Set(['openai']),
       hasLicense: false,
       isDesktopLike: true,
       pingChat: async () => undefined,
@@ -258,14 +263,14 @@ describe('model configuration availability', () => {
 
 describe('helper model connections', () => {
   test.each([
-    [undefined, { provider: 'openai', model: 'search' }, ['search']],
-    [{ provider: 'openai', model: 'titles' }, { provider: 'openai', model: 'search' }, ['titles', 'search']],
+    [undefined, { provider: 'openai', model: 'search' }, []],
+    [{ provider: 'openai', model: 'titles' }, { provider: 'openai', model: 'search' }, ['titles']],
     [{ provider: 'openai', model: 'same' }, { provider: 'openai', model: 'same' }, ['same']],
-  ])('tests each configured task model once', async (threadNamingModel, searchTermConstructionModel, expected) => {
+  ])('tests only the selected fast model', async (threadNamingModel, searchTermConstructionModel, expected) => {
     const pinged: string[] = []
     await runSlotTest('fast', {
       settings: settings({ threadNamingModel, searchTermConstructionModel }),
-      configuredProviderIds: new Set(),
+      configuredProviderIds: new Set(['openai']),
       hasLicense: false,
       isDesktopLike: true,
       pingChat: async (_provider, model) => {

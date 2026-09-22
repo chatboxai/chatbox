@@ -88,8 +88,8 @@ const GROUPS: { title: string; hint: string; slotIds: ModelRigSlotId[] }[] = [
 const SLOT_COPY: Record<ModelRigSlotId, { name: string; desc: string }> = {
   llm: { name: 'Default chat model', desc: 'Used for new chats. You can choose a different model in each chat.' },
   fast: {
-    name: 'Helper model',
-    desc: 'Names conversations and prepares search queries. Choose a fast model for these short tasks.',
+    name: 'Fast model',
+    desc: 'Used to automatically generate conversation titles. Choose a model with fast responses.',
   },
   ocr: {
     name: 'Image text recognition (OCR)',
@@ -363,12 +363,7 @@ export function RouteComponent() {
                 chatboxAIAutoText={chatboxAIAutoText}
                 running={running}
                 onTest={() => void testSlot(slotId)}
-                onSelectModel={(provider, model, helperField) => {
-                  if (helperField) {
-                    setSettings({ [helperField]: provider && model ? { provider, model } : undefined })
-                    setResults((prev) => ({ ...prev, fast: { ...IDLE_SLOT } }))
-                    return
-                  }
+                onSelectModel={(provider, model) => {
                   if (
                     slotId === 'llm' ||
                     slotId === 'fast' ||
@@ -445,11 +440,7 @@ function SlotCard(props: {
   chatboxAIAutoText: string
   running: boolean
   onTest: () => void
-  onSelectModel: (
-    provider?: string,
-    model?: string,
-    helperField?: 'threadNamingModel' | 'searchTermConstructionModel'
-  ) => void
+  onSelectModel: (provider?: string, model?: string) => void
   onSelectParser: (type: DocumentParserType) => void
   onSelectSearch: (provider: WebSearchProviderValue) => void
   onSelectImage: (provider: string, model: string) => void
@@ -497,38 +488,9 @@ function SlotCard(props: {
       </Flex>
 
       <Flex align="center" gap="xs" wrap="wrap">
-        {props.slotId === 'fast' ? (
-          <Stack gap="sm" className="w-full">
-            {(
-              [
-                ['threadNamingModel', t('Conversation titles')],
-                ['searchTermConstructionModel', t('Search queries')],
-              ] as const
-            ).map(([field, label]) => (
-              <fieldset key={field} className="w-full sm:w-[320px] min-w-0 m-0 p-0 border-0" disabled={props.running}>
-                <Stack gap={4}>
-                  <Text size="xs" fw={500}>
-                    {label}
-                  </Text>
-                  <SlotSelector
-                    {...props}
-                    selection={settings[field]}
-                    autoText={autoText}
-                    modelText={modelText}
-                    onSelectModel={(provider, model) => props.onSelectModel(provider, model, field)}
-                  />
-                  <Text size="xs" c="chatbox-tertiary">
-                    {t(sourceForSlot('fast', settings[field]?.provider, settings, props.parser))}
-                  </Text>
-                </Stack>
-              </fieldset>
-            ))}
-          </Stack>
-        ) : (
-          <fieldset className="w-full sm:w-[320px] min-w-0 m-0 p-0 border-0 [&>button]:w-full" disabled={props.running}>
-            <SlotSelector {...props} selection={selection} autoText={autoText} modelText={modelText} />
-          </fieldset>
-        )}
+        <fieldset className="w-full sm:w-[320px] min-w-0 m-0 p-0 border-0 [&>button]:w-full" disabled={props.running}>
+          <SlotSelector {...props} selection={selection} autoText={autoText} modelText={modelText} />
+        </fieldset>
         <Button
           variant="default"
           size="sm"
@@ -541,18 +503,16 @@ function SlotCard(props: {
         <SlotStatus result={props.result} connection={isConnectionCheck(props.slotId, selection, props.parser)} />
       </Flex>
 
-      {props.slotId !== 'fast' && (
-        <Text size="xs" c="chatbox-tertiary">
-          {t(
-            sourceForSlot(
-              props.slotId,
-              props.slotId === 'image' ? props.picture?.provider : selection?.provider,
-              settings,
-              props.parser
-            )
-          )}
-        </Text>
-      )}
+      <Text size="xs" c="chatbox-tertiary">
+        {t(
+          sourceForSlot(
+            props.slotId,
+            props.slotId === 'image' ? props.picture?.provider : selection?.provider,
+            settings,
+            props.parser
+          )
+        )}
+      </Text>
       {props.slotId === 'parser' && (
         <Button
           component={Link}

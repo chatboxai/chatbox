@@ -1,13 +1,7 @@
 import type { Settings } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types'
 import type { PictureRef } from './-modelRigSettings'
-import {
-  describeError,
-  effectiveParserType,
-  modelRefsEqual,
-  type ModelRigSlotId,
-  searchProvider,
-} from './-modelRigSettings'
+import { describeError, effectiveParserType, type ModelRigSlotId, searchProvider } from './-modelRigSettings'
 
 export type SlotTestStatus = 'idle' | 'testing' | 'ok' | 'fail'
 
@@ -73,20 +67,9 @@ export async function runSlotTest(slotId: ModelRigSlotId, deps: ModelRigTestDeps
 }
 
 async function testChatSlot(slotId: 'llm' | 'fast', deps: ModelRigTestDeps): Promise<SlotTestResult> {
-  const selections =
-    slotId === 'llm'
-      ? [deps.settings.defaultChatModel]
-      : [deps.settings.threadNamingModel, deps.settings.searchTermConstructionModel]
-  const explicit = selections.filter(
-    (selection, index) =>
-      selection && !selections.slice(0, index).some((previous) => modelRefsEqual(previous, selection))
-  )
-  if (explicit.length === 0) return ok(0)
-  const { latencyMs } = await timed(async () => {
-    for (const selection of explicit) {
-      if (selection) await pingResolvedChat(deps, selection.provider, selection.model)
-    }
-  })
+  const selection = slotId === 'llm' ? deps.settings.defaultChatModel : deps.settings.threadNamingModel
+  if (!selection) return ok(0)
+  const { latencyMs } = await timed(() => pingResolvedChat(deps, selection.provider, selection.model))
   return ok(latencyMs)
 }
 

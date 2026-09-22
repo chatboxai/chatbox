@@ -1,5 +1,6 @@
 import {
   type AnysearchDomain,
+  AnysearchQuotaExhaustedError,
   type AnysearchSearchRequest,
   batchSearchAnysearch,
   extractAnysearch,
@@ -24,32 +25,52 @@ export class AnysearchSearch extends WebSearch {
     super()
   }
 
+  /**
+   * Anonymous callers that exhaust the daily free quota get generated
+   * credentials in the error; per the Anysearch docs the request should then be
+   * resubmitted with that key. It is kept in memory for this call only: nothing
+   * is persisted, and the credential never appears in an error or a log.
+   */
+  private async request<T>(run: (apiKey?: string) => Promise<T>): Promise<T> {
+    try {
+      return await run(this.apiKey)
+    } catch (error) {
+      if (!(error instanceof AnysearchQuotaExhaustedError) || !error.credential) throw error
+      return run(error.credential.apiKey)
+    }
+  }
+
   async search(query: string, signal?: AbortSignal): Promise<SearchResult> {
-    const markdown = await searchAnysearch(
-      { query, max_results: this.maxResults },
-      { apiKey: this.apiKey, signal, fetchFn: this.fetchCompat }
+    const markdown = await this.request((apiKey) =>
+      searchAnysearch({ query, max_results: this.maxResults }, { apiKey, signal, fetchFn: this.fetchCompat })
     )
     return { items: parseAnysearchSearchResults(markdown) }
   }
 
   searchAdvanced(request: AnysearchSearchRequest, signal?: AbortSignal): Promise<string> {
-    return searchAnysearch(request, { apiKey: this.apiKey, signal, fetchFn: this.fetchCompat })
+    return this.request((apiKey) => searchAnysearch(request, { apiKey, signal, fetchFn: this.fetchCompat }))
   }
 
   async parseLink(url: string, signal?: AbortSignal): Promise<ParseLinkResult> {
-    const content = await extractAnysearch(url, { apiKey: this.apiKey, signal, fetchFn: this.fetchCompat })
-    let title = url
-    try {
-      title = new URL(url).hostname || url
-    } catch {}
-    return { url, title, content }
+    const extracted = await this.request((apiKey) =>
+      extractAnysearch(url, { apiKey, signal, fetchFn: this.fetchCompat })
+    )
+    let title = extracted.title.trim()
+    if (!title) {
+      try {
+        title = new URL(extracted.url).hostname || extracted.url
+      } catch {
+        title = extracted.url
+      }
+    }
+    return { url: extracted.url, title, content: extracted.content }
   }
 
   batchSearch(queries: AnysearchSearchRequest[], signal?: AbortSignal): Promise<string> {
-    return batchSearchAnysearch(queries, { apiKey: this.apiKey, signal, fetchFn: this.fetchCompat })
+    return this.request((apiKey) => batchSearchAnysearch(queries, { apiKey, signal, fetchFn: this.fetchCompat }))
   }
 
   getSubDomains(domains: AnysearchDomain[], signal?: AbortSignal): Promise<string> {
-    return getAnysearchSubDomains(domains, { apiKey: this.apiKey, signal, fetchFn: this.fetchCompat })
+    return this.request((apiKey) => getAnysearchSubDomains(domains, { apiKey, signal, fetchFn: this.fetchCompat }))
   }
 }

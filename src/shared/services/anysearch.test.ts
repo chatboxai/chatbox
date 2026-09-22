@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   ANYSEARCH_ENDPOINT,
+  AnysearchQuotaExhaustedError,
   batchSearchAnysearch,
   callAnysearchTool,
   extractAnysearch,
@@ -59,10 +60,68 @@ describe('Anysearch client', () => {
     )
   })
 
+  it('reports anonymous quota exhaustion without leaking the generated credentials', async () => {
+    const generated = [
+      'Your account and API key have been automatically generated. Use the API key below to continue.',
+      'username=auto-user',
+      'password=auto-pass',
+      'api_key=auto-key',
+    ].join('\n')
+
+    const error = await callAnysearchTool(
+      'search',
+      { query: 'Chatbox' },
+      { fetchFn: response({ code: -1, message: generated, request_id: 'req-1' }, false, 402) }
+    ).catch((reason: unknown) => reason)
+
+    expect(error).toBeInstanceOf(AnysearchQuotaExhaustedError)
+    expect((error as AnysearchQuotaExhaustedError).credential).toEqual({ apiKey: 'auto-key' })
+    expect((error as Error).message).toContain('automatically generated')
+    expect((error as Error).message).not.toContain('auto-key')
+    expect((error as Error).message).not.toContain('auto-pass')
+  })
+
+  it('detects the quota credential even when the caller flattens the HTTP status', async () => {
+    const generated = ['username=auto-user', 'password=auto-pass', 'api_key=auto-key'].join('\n')
+
+    await expect(
+      callAnysearchTool('search', { query: 'Chatbox' }, { fetchFn: response({ code: -1, message: generated }) })
+    ).rejects.toBeInstanceOf(AnysearchQuotaExhaustedError)
+  })
+
   it('validates batch, domain discovery, and extract inputs', async () => {
     await expect(batchSearchAnysearch([])).rejects.toThrow('between 1 and 5')
     await expect(getAnysearchSubDomains([])).rejects.toThrow('between 1 and 5')
     await expect(extractAnysearch('file:///tmp/a')).rejects.toThrow('HTTP or HTTPS')
+  })
+
+  it('unwraps the extract envelope into url, title, and content', async () => {
+    const fetchFn = response({
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ url: 'https://example.com/a', title: 'Example Article', content: '# Body' }),
+          },
+        ],
+      },
+    })
+
+    await expect(extractAnysearch('https://example.com/a', { fetchFn })).resolves.toEqual({
+      url: 'https://example.com/a',
+      title: 'Example Article',
+      content: '# Body',
+    })
+  })
+
+  it('falls back to plain extract text when the payload is not the JSON envelope', async () => {
+    const fetchFn = response({ result: { content: [{ type: 'text', text: '# Raw\nBody' }] } })
+
+    await expect(extractAnysearch('https://example.com/b', { fetchFn })).resolves.toEqual({
+      url: 'https://example.com/b',
+      title: '',
+      content: '# Raw\nBody',
+    })
   })
 
   it('rejects incomplete vertical search routing', async () => {

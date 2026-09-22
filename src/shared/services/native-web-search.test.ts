@@ -17,6 +17,32 @@ describe('native web search', () => {
     expect(hasNativeWebSearchConfiguration({ provider: 'bing', apiKey: '' })).toBe(true)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' })).toBe(false)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' }, 'license-1')).toBe(true)
+    expect(hasNativeWebSearchConfiguration({ provider: 'anysearch', apiKey: '' })).toBe(false)
+    expect(hasNativeWebSearchConfiguration({ provider: 'anysearch', apiKey: 'any-key' })).toBe(true)
+  })
+
+  it('searches Anysearch through its JSON-RPC endpoint', async () => {
+    const fetchFn = mockFetchResponse({
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: '## Search Results (1 result)\n\n### 1. Any result\n- **URL**: https://any.test\n- Any snippet.',
+          },
+        ],
+      },
+    })
+    const items = await searchNativeWeb('chatbox', {
+      provider: 'anysearch',
+      apiKey: 'any-key',
+      maxResults: 3,
+      fetchFn,
+    })
+    expect(items).toEqual([{ title: 'Any result', link: 'https://any.test', snippet: 'Any snippet.' }])
+    const body = JSON.parse(
+      ((fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit).body as string
+    )
+    expect(body.params).toEqual({ name: 'search', arguments: { query: 'chatbox', max_results: 3 } })
   })
 
   it('searches through the chatbox build-in endpoint with the license key and injected headers', async () => {

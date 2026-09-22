@@ -1341,7 +1341,7 @@
   "Pause after every {{count}} steps": "Пауза каждые {{count}} шагов",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "Длинные задачи приостанавливаются каждые {{count}} шагов для подтверждения, чтобы вы могли убедиться, что всё идёт по плану. Отключите, чтобы они выполнялись без остановок.",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "Длинные задачи приостанавливаются каждые {{count}} шагов для подтверждения, чтобы вы могли убедиться, что всё идёт по плану. Для отдельных чатов это можно переопределить в настройках беседы.",
-  "{{count}} operation(s) awaiting approval": "{{count}} операция(и/й) ожидает одобрения",
+  "{{count}} operation(s) awaiting approval": "Операции, ожидающие одобрения: {{count}}",
   "Your data was created by a newer version of Chatbox": "Ваши данные созданы более новой версией Chatbox",
   "This version of Chatbox cannot read data created by a newer version. Your data is safe — update Chatbox to the latest version to continue.": "Эта версия Chatbox не может прочитать данные, созданные более новой версией. Ваши данные в безопасности — обновите Chatbox до последней версии, чтобы продолжить.",
   "Chatbox was updated in another window": "Chatbox был обновлён в другом окне",
@@ -1440,5 +1440,9 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Используется для автоматического и ручного сжатия. Оставьте пустым, чтобы использовать встроенный промпт.",
   "Compaction Prompt": "Промпт сжатия",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Создайте сводку предыдущих сообщений, чтобы уменьшить объём контекста. История разговора останется доступной.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "В рабочем режиме системные промпты беседы не используются. Чтобы использовать свой промпт, создайте Copilot и задайте его промпт."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "В рабочем режиме системные промпты беседы не используются. Чтобы использовать свой промпт, создайте Copilot и задайте его промпт.",
+  "Anysearch API Key": "API-ключ Anysearch",
+  "Batch Web Search": "Пакетный веб-поиск",
+  "Discover Search Domains": "Определение поисковых доменов",
+  "Enter your Anysearch API Key": "Введите API-ключ Anysearch"
 }

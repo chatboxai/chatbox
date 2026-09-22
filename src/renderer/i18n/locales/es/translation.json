@@ -1440,5 +1440,9 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Se usa para la compresión automática y manual. Déjalo vacío para usar el prompt integrado.",
   "Compaction Prompt": "Prompt de compresión",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Resume los mensajes anteriores para reducir el uso del contexto. El historial de conversación seguirá disponible.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "El modo de trabajo no utiliza los prompts de sistema de la conversación. Para usar un prompt personalizado, crea un Copilot y configura su prompt."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "El modo de trabajo no utiliza los prompts de sistema de la conversación. Para usar un prompt personalizado, crea un Copilot y configura su prompt.",
+  "Anysearch API Key": "Clave de API de Anysearch",
+  "Batch Web Search": "Búsqueda web por lotes",
+  "Discover Search Domains": "Descubrir dominios de búsqueda",
+  "Enter your Anysearch API Key": "Introduce tu clave de API de Anysearch"
 }

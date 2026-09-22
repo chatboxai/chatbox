@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
+import { AnysearchSearch } from '@/packages/web-search/anysearch'
 import { BingSearch } from '@/packages/web-search/bing'
 import { BingNewsSearch } from '@/packages/web-search/bing-news'
 import { BochaSearch } from '@/packages/web-search/bocha'
@@ -34,6 +35,7 @@ describe('parse_link capability consistency', () => {
     { id: 'bocha', instance: new BochaSearch('stub-api-key') },
     { id: 'querit', instance: new QueritSearch('stub-api-key') },
     { id: 'searxng', instance: new SearxngSearch('https://searx.example.com') },
+    { id: 'anysearch', instance: new AnysearchSearch('stub-api-key') },
   ]
 
   it.each(providers)('$id: PROVIDERS_WITH_PARSE_LINK matches supportsParseLink flag', ({ id, instance }) => {

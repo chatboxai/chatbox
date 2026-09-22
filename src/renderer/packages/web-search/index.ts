@@ -4,6 +4,7 @@ import { truncate } from 'lodash'
 import platform from '@/platform'
 import { getExtensionSettings, getLanguage, getLicenseKey } from '@/stores/settingActions'
 import { ChatboxAIAPIError } from '../../../shared/models/errors'
+import { AnysearchSearch } from './anysearch'
 import type WebSearch from './base'
 import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
@@ -72,6 +73,14 @@ function getSearchProviders() {
       selectedProviders.push(new SearxngSearch(searxngBaseUrl))
       break
     }
+    case 'anysearch':
+      if (!settings.webSearch.anysearchApiKey) {
+        throw new Error('Anysearch API key is required')
+      }
+      selectedProviders.push(
+        new AnysearchSearch(settings.webSearch.anysearchApiKey, settings.webSearch.anysearchMaxResults ?? 10)
+      )
+      break
     default:
       throw new Error(`Unsupported search provider: ${provider}`)
   }
@@ -134,8 +143,11 @@ export const webSearchExecutor = async (
 ) => {
   const webSearch = getExtensionSettings().webSearch
   const provider = webSearch.provider
-  const cacheIdentity =
-    provider === 'searxng' ? `${provider}:${normalizeSearxngBaseUrl(webSearch.searxngBaseUrl ?? '')}` : provider
+  const cacheIdentity = (() => {
+    if (provider === 'searxng') return `${provider}:${normalizeSearxngBaseUrl(webSearch.searxngBaseUrl ?? '')}`
+    if (provider === 'anysearch') return `${provider}:${webSearch.anysearchMaxResults ?? 10}`
+    return provider
+  })()
   const searchResults = await cachified({
     cache,
     key: `search-context:${cacheIdentity}:${query}`,
@@ -149,7 +161,7 @@ export const webSearchExecutor = async (
  * Single source of truth: which configured providers offer the parse_link tool.
  * Keep in sync with the provider classes' `supportsParseLink` flags.
  */
-export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily'])
+export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily', 'anysearch'])
 
 /**
  * Returns the first configured search provider that supports parseLink.
@@ -158,6 +170,11 @@ export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in
 export function getParseLinkProvider(): WebSearch | null {
   const providers = getSearchProviders()
   return providers.find((p) => p.supportsParseLink) ?? null
+}
+
+export function getAnysearchProvider(): AnysearchSearch | null {
+  const providers = getSearchProviders()
+  return providers.find((provider): provider is AnysearchSearch => provider instanceof AnysearchSearch) ?? null
 }
 
 export type { SearchResultItem }

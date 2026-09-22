@@ -20,10 +20,10 @@ const anysearchAdvancedDescription = `
 Discover valid vertical sub-domains and their structured parameters before a vertical search.
 
 ## anysearch_search
-Run a general or vertical Anysearch query. Before a vertical search, use anysearch_get_sub_domains and pass its routing key and required parameters without guessing.
+Run a general or vertical Anysearch query. Omit both domain fields for a general search. A vertical search must include both domain and sub_domain; call anysearch_get_sub_domains first and pass its exact routing key and required parameters without guessing.
 
 ## anysearch_batch_search
-Run up to five general or discovered vertical searches in parallel. Use this for comparisons, multi-angle research, and hybrid general plus vertical searches.
+Run up to five general or discovered vertical searches in parallel. Use this for comparisons, multi-angle research, and hybrid general plus vertical searches. The batch is atomic: if one query is invalid or fails, the whole batch fails and no partial result is returned.
 `
 
 export function getToolSetDescription(options: { includeParseLink: boolean; includeAnysearchAdvanced?: boolean }) {
@@ -153,8 +153,15 @@ export const parseLinkTool: ToolSet[string] = {
 
 const anysearchSearchProperties: NonNullable<JSONSchema7['properties']> = {
   query: { type: 'string', minLength: 1, description: 'One natural-language search intent.' },
-  domain: { type: 'string', enum: [...ANYSEARCH_DOMAINS] },
-  sub_domain: { type: 'string', description: 'A routing key returned by anysearch_get_sub_domains.' },
+  domain: {
+    type: 'string',
+    enum: [...ANYSEARCH_DOMAINS],
+    description: 'Vertical search domain. If provided, sub_domain is required too.',
+  },
+  sub_domain: {
+    type: 'string',
+    description: 'Required with domain; use the exact routing key returned by anysearch_get_sub_domains.',
+  },
   sub_domain_params: {
     type: 'object',
     additionalProperties: true,
@@ -169,10 +176,30 @@ const anysearchSearchProperties: NonNullable<JSONSchema7['properties']> = {
   },
 }
 
+const anysearchSearchInputSchema: JSONSchema7 = {
+  type: 'object',
+  properties: anysearchSearchProperties,
+  required: ['query'],
+  additionalProperties: false,
+  allOf: [
+    {
+      if: { required: ['domain'] },
+      then: { required: ['sub_domain'] },
+    },
+    {
+      if: {
+        anyOf: [{ required: ['sub_domain'] }, { required: ['sub_domain_params'] }],
+      },
+      then: { required: ['domain'] },
+    },
+  ],
+}
+
 export const anysearchBatchSearchTool: ToolSet[string] = {
   description:
     'Runs 1 to 5 Anysearch queries in parallel. General queries omit domain fields. ' +
-    'Vertical queries must use domain, sub_domain, and parameters returned by anysearch_get_sub_domains.',
+    'Vertical queries must use both domain and sub_domain, plus the exact parameters returned by anysearch_get_sub_domains. ' +
+    'The batch is atomic: one invalid or failed query fails the entire batch without partial results.',
   inputSchema: jsonSchema({
     type: 'object',
     properties: {
@@ -180,12 +207,7 @@ export const anysearchBatchSearchTool: ToolSet[string] = {
         type: 'array',
         minItems: 1,
         maxItems: 5,
-        items: {
-          type: 'object',
-          properties: anysearchSearchProperties,
-          required: ['query'],
-          additionalProperties: false,
-        },
+        items: anysearchSearchInputSchema,
       },
     },
     required: ['queries'],
@@ -204,14 +226,9 @@ export const anysearchBatchSearchTool: ToolSet[string] = {
 
 export const anysearchSearchTool: ToolSet[string] = {
   description:
-    'Runs one Anysearch general or vertical search. Omit domain fields for general search. ' +
-    'For vertical search, first call anysearch_get_sub_domains and use its exact routing key and required parameters.',
-  inputSchema: jsonSchema({
-    type: 'object',
-    properties: anysearchSearchProperties,
-    required: ['query'],
-    additionalProperties: false,
-  }),
+    'Runs one Anysearch general or vertical search. Omit both domain fields for general search. ' +
+    'For vertical search, domain and sub_domain are both required; first call anysearch_get_sub_domains and use its exact routing key and required parameters.',
+  inputSchema: jsonSchema(anysearchSearchInputSchema),
   execute: async (input, { abortSignal }) => {
     const provider = getAnysearchProvider()
     if (!provider) throw new Error('Anysearch is not the configured web search provider')
@@ -223,7 +240,7 @@ export const anysearchSearchTool: ToolSet[string] = {
 export const anysearchGetSubDomainsTool: ToolSet[string] = {
   description:
     'Returns valid Anysearch vertical sub-domains and their parameter schemas. ' +
-    'Call this before using domain fields in a search.',
+    'Call this before using domain fields in a search. Pass 1 to 5 domains and use the returned field names and required flags exactly; do not substitute similarly named fields.',
   inputSchema: jsonSchema({
     type: 'object',
     properties: {

@@ -2,6 +2,7 @@ import type { SkillCatalog } from '../skills/catalog'
 import { CHATBOX_PRODUCT_ANSWERING_RULES, CHATBOX_PRODUCT_SOURCES } from '../skills/chatbox-product-info'
 import type { SkillMetadata } from '../types/skills'
 import type { LocalWorkCapabilityId } from './capabilities'
+import { QUICKJS_ENVIRONMENT, QUICKJS_FILES } from './execution-contract'
 import { isMobileSkillEnabled, type MobileSkillId, type MobileSkillPreferences } from './skill-settings'
 
 interface LocalBuiltinSkill {
@@ -10,7 +11,7 @@ interface LocalBuiltinSkill {
   capability?: LocalWorkCapabilityId
 }
 
-const DOCUMENT_RUNTIME = `Use parse_file for plain DOCX/XLSX/PPTX text extraction and read_file to inspect its paginated output; parsing does not require a skill. Use code_execution with JavaScript and async/await. Every files and docs method returns a promise; await each call. files provides readText(path), writeText(path,text), readBase64(path), writeBase64(path,base64), and list(). Read source attachments from input/ and write new outputs elsewhere. Scripts have a fresh context each run; workspace files persist. Keep logs and results bounded. Deliver final files with create_download.`
+const DOCUMENT_RUNTIME = `Use parse_file for plain DOCX/XLSX/PPTX text extraction and read_file to inspect its paginated output; parsing does not require a skill. Use code_execution. ${QUICKJS_ENVIRONMENT} ${QUICKJS_FILES} Keep logs and results bounded. Deliver final files with create_download.`
 
 const skills: readonly LocalBuiltinSkill[] = [
   {
@@ -60,7 +61,7 @@ ${CHATBOX_PRODUCT_ANSWERING_RULES}`,
       name: 'websites',
       description: 'Create or modify a static website and deliver an offline HTML preview.',
     },
-    instructions: `# Static Websites\n\nUse write_file or code_execution with await files.writeText(path,text) to create HTML, CSS and classic JavaScript files in the session workspace. Use relative resource paths. Keep layout responsive and content readable on narrow mobile screens. Include only local images and fonts; use data URLs or inline SVG for generated visuals. create_download on the entry HTML packages local scripts, stylesheets, CSS imports and media into one portable HTML artifact for an isolated preview. Check local references before delivery. Preview code has no App bridge. ES modules, Node/npm projects, server processes, multi-page navigation, remote assets and runtime local fetch require a build step outside this runtime. Report these limits explicitly when a project depends on them; do not claim a server is running.`,
+    instructions: `# Static Websites\n\nScripts passed to code_execution run in QuickJS and cannot use window or document. Use await files.writeText(path, text) there to write website source files.\n\nThe generated website's own JavaScript runs in the browser preview and can use window, document, DOM APIs and event listeners for interactive tabs, forms and validation. Keep this browser code in the generated HTML or local JavaScript files.\n\nUse write_file or code_execution with await files.writeText(path,text) to create HTML, CSS and classic JavaScript files in the session workspace. Use relative resource paths. Keep layout responsive and content readable on narrow mobile screens. Include only local images and fonts; use data URLs or inline SVG for generated visuals. create_download on the entry HTML packages local scripts, stylesheets, CSS imports and media into one portable HTML artifact for an isolated preview. Check local references before delivery. Preview code has no App bridge. ES modules, Node/npm projects, server processes, multi-page navigation, remote assets and runtime local fetch require a build step outside this runtime. Report these limits explicitly when a project depends on them; do not claim a server is running.`,
   },
   {
     metadata: {

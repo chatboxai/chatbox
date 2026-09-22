@@ -5,6 +5,13 @@ import { formatLoadSkillOutput } from '../skills/catalog'
 import { throwIfWorkAborted } from './abort'
 import { createLocalBuiltinSkillCatalog, getLocalSkillCapability } from './builtin-skills'
 import { type LocalWorkCapabilityId, resolveLocalWorkCapabilities } from './capabilities'
+import {
+  explainQuickJSError,
+  QUICKJS_CODE_INPUT,
+  QUICKJS_ENVIRONMENT,
+  QUICKJS_EXAMPLE,
+  QUICKJS_FILES,
+} from './execution-contract'
 import { buildLocalFilesystemTools } from './filesystem-tools'
 import type { MobileExecutionService } from './MobileExecutionService'
 import { buildMobileProductInfoTool, type MobileProductInfoHost } from './product-info-tools'
@@ -150,9 +157,8 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
         },
       }),
       code_execution: tool({
-        description:
-          'Execute JavaScript locally in an isolated sandbox. Supports async/await, files API, and document helpers described by the spreadsheets and presentations skills. No Node.js, shell, Python, network, or system APIs. 20 second execution deadline.',
-        inputSchema: z.object({ code: z.string().max(100_000) }),
+        description: `${QUICKJS_ENVIRONMENT}\n${QUICKJS_FILES}\n${QUICKJS_EXAMPLE}\nLoad the relevant document skill before using docs helpers.`,
+        inputSchema: z.object({ code: z.string().max(100_000).describe(QUICKJS_CODE_INPUT) }),
         execute: async ({ code }, options) => {
           const signal = options.abortSignal ?? context.signal
           const files = await this.workspace.snapshot(context.sessionId)
@@ -161,7 +167,7 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
           if (!result.error) await this.workspace.commit(context.sessionId, result.files, signal)
           return {
             stdout: result.stdout,
-            error: result.error,
+            error: explainQuickJSError(result.error),
             exitCode: result.error ? 1 : 0,
             files: result.error ? [] : Object.keys(result.files),
           }
@@ -205,4 +211,4 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
   }
 }
 
-export const WORK_INSTRUCTIONS = `Work mode executes locally on this device using the user's configured model. Complete the requested task and verify outputs before reporting success. Use list_files to find attachments. Use parse_file to extract DOCX/XLSX/PPTX content to a text file, then read_file to inspect it; no skill is required for parsing. Input files are read-only; write outputs elsewhere in the workspace. Scripts run in a fresh JavaScript context each time; files persist across calls. Use console.log for concise results and await all files and docs methods. Call load_skill with a listed skill name when the user's task matches its description; full instructions and relevant system tools are loaded on demand. Use create_download to deliver final files. Loading a skill does not authorize reading system data or changing it. Respect the tools' permission flow and report system changes only after success. When execution is interrupted, inspect saved files before retrying.`
+export const WORK_INSTRUCTIONS = `Work mode executes locally on this device using the user's configured model. ${QUICKJS_ENVIRONMENT} Complete the requested task and verify outputs before reporting success. Use list_files to find attachments. Use parse_file to extract DOCX/XLSX/PPTX content to a text file, then read_file to inspect it; no skill is required for parsing. Input files are read-only; write outputs elsewhere in the workspace. Use console.log for concise results. Call load_skill with a listed skill name when the user's task matches its description; full instructions and relevant system tools are loaded on demand. Use create_download to deliver final files. Loading a skill does not authorize reading system data or changing it. Respect the tools' permission flow and report system changes only after success. When execution is interrupted, inspect saved files before retrying.`

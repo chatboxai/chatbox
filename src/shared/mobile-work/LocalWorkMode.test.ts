@@ -138,3 +138,27 @@ it('registers the host CLI only while product info is enabled', async () => {
   expect(disabled.active.has('chatbox_cli')).toBe(false)
   expect(host).toHaveBeenCalledTimes(1)
 })
+
+it('returns runtime guidance while discarding files from failed execution', async () => {
+  const { work, workspace } = fixture()
+  vi.spyOn(work.execution, 'execute').mockResolvedValue({
+    stdout: 'started',
+    error: "'require' is not defined",
+    files: { 'output/partial.txt': { base64: 'aGk=' } },
+  })
+  const { tools } = await work.createTools({
+    sessionId: 'failure',
+    modelName: 'custom',
+    signal: new AbortController().signal,
+  })
+  const result = await execute(tools, 'code_execution', { code: 'require("fs")' })
+  expect(result).toMatchObject({
+    stdout: 'started',
+    exitCode: 1,
+    files: [],
+    error: expect.stringContaining('files.readText'),
+  })
+  expect(workspace.commit).not.toHaveBeenCalled()
+  expect(tools.code_execution.description).toContain('QuickJS')
+  expect(tools.code_execution.description).toContain('files.readBase64')
+})

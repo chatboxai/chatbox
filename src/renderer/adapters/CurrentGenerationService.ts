@@ -60,7 +60,7 @@ import {
   initializeTargetMessage,
   trackGenerateEvent,
 } from '@/stores/session/utils'
-import { markSessionReplyCompleted } from '@/stores/sessionActivityStore'
+import { markSessionReplyCompleted, markSessionReplyFailed } from '@/stores/sessionActivityStore'
 import * as settingActions from '@/stores/settingActions'
 import { uiStore } from '@/stores/uiStore'
 import { trackEvent } from '@/utils/track'
@@ -373,6 +373,7 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
       appleAppStore.tickAfterMessageGenerated()
       markSessionReplyCompleted(sessionId, message)
     },
+    afterMessageFailed: (sessionId, message) => markSessionReplyFailed(sessionId, message),
     now: Date.now,
   },
   analytics: {

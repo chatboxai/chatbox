@@ -1,45 +1,70 @@
 import type { Message } from '@shared/types'
-import { getDefaultStore } from 'jotai'
 import { useSyncExternalStore } from 'react'
 import { createStore, useStore } from 'zustand'
 import { rendererApplication } from '@/app/renderer-application'
-import { currentSessionIdAtom } from './atoms/sessionAtoms'
 import { isSuccessfulAssistantReply } from './session/message-success'
 
 const generationRuntimeStore = rendererApplication.generationRuntime
 
-export type SessionActivity = 'idle' | 'generating' | 'waiting' | 'completed'
+export type SessionActivity = 'idle' | 'generating' | 'waiting' | 'completed' | 'failed'
+
+type UnreadOutcome = 'completed' | 'failed'
 
 type SessionActivityState = {
-  unreadCompletedSessionIds: Record<string, true>
+  unreadSessionIds: Record<string, UnreadOutcome>
 }
 
 const initialState: SessionActivityState = {
-  unreadCompletedSessionIds: {},
+  unreadSessionIds: {},
 }
 
 export const sessionActivityStore = createStore<SessionActivityState>(() => initialState)
 
-export function markSessionReplyCompleted(sessionId: string, message: Message): void {
-  if (!isSuccessfulAssistantReply(message)) return
-  if (getDefaultStore().get(currentSessionIdAtom) === sessionId) return
+let onScreenSessionId: string | null = null
+
+/**
+ * Set by the session route on enter and leave. The cached current session id
+ * is not a substitute: it keeps pointing at the previous conversation after
+ * New Chat.
+ */
+export function setOnScreenSession(sessionId: string | null): void {
+  onScreenSessionId = sessionId
+}
+
+function isSessionOnScreen(sessionId: string): boolean {
+  return onScreenSessionId === sessionId
+}
+
+function markSessionUnread(sessionId: string, outcome: UnreadOutcome): void {
+  if (isSessionOnScreen(sessionId)) return
   sessionActivityStore.setState((state) => {
-    if (state.unreadCompletedSessionIds[sessionId]) return state
+    if (state.unreadSessionIds[sessionId] === outcome) return state
     return {
-      unreadCompletedSessionIds: {
-        ...state.unreadCompletedSessionIds,
-        [sessionId]: true,
+      unreadSessionIds: {
+        ...state.unreadSessionIds,
+        [sessionId]: outcome,
       },
     }
   })
 }
 
+export function markSessionReplyCompleted(sessionId: string, message: Message): void {
+  if (!isSuccessfulAssistantReply(message)) return
+  markSessionUnread(sessionId, 'completed')
+}
+
+/** Gated on the field that renders the error card, so a failure dot always has a visible error behind it. */
+export function markSessionReplyFailed(sessionId: string, message: Message): void {
+  if (!message.error) return
+  markSessionUnread(sessionId, 'failed')
+}
+
 export function clearSessionActivity(sessionId: string): void {
   sessionActivityStore.setState((state) => {
-    if (!state.unreadCompletedSessionIds[sessionId]) return state
-    const unreadCompletedSessionIds = { ...state.unreadCompletedSessionIds }
-    delete unreadCompletedSessionIds[sessionId]
-    return { unreadCompletedSessionIds }
+    if (!state.unreadSessionIds[sessionId]) return state
+    const unreadSessionIds = { ...state.unreadSessionIds }
+    delete unreadSessionIds[sessionId]
+    return { unreadSessionIds }
   })
 }
 
@@ -51,8 +76,7 @@ export function getSessionActivity(
 ): SessionActivity {
   if (generating) return 'generating'
   if (waiting) return 'waiting'
-  if (state.unreadCompletedSessionIds[sessionId]) return 'completed'
-  return 'idle'
+  return state.unreadSessionIds[sessionId] ?? 'idle'
 }
 
 export function isSessionGenerating(sessionId: string): boolean {
@@ -81,5 +105,6 @@ export function useSessionActivity(sessionId: string, persistedWaiting = false):
 }
 
 export function resetSessionActivityStore(): void {
+  onScreenSessionId = null
   sessionActivityStore.setState(initialState, true)
 }

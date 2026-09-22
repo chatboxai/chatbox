@@ -236,12 +236,20 @@ describe('SessionItem', () => {
 
     act(() => {
       generationRuntimeStore.finishActive(session.id, runtime.messageId, runtime)
-      sessionActivityStore.setState({ unreadCompletedSessionIds: { [session.id]: true } })
+      sessionActivityStore.setState({ unreadSessionIds: { [session.id]: 'completed' } })
     })
 
     expect(screen.getByRole('status', { name: 'Completed' })).toBeTruthy()
     // The dot alone marks an unread completion; the title keeps its default weight.
     expect(screen.getByTestId(TestId.sidebar.sessionTitle).style.fontWeight).toBe('')
+    view.unmount()
+  })
+
+  test('shows unread failure activity as a status dot', () => {
+    sessionActivityStore.setState({ unreadSessionIds: { [session.id]: 'failed' } })
+    const view = renderItem(false)
+
+    expect(screen.getByRole('status', { name: 'Failed' })).toBeTruthy()
     view.unmount()
   })
 

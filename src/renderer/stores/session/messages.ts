@@ -26,6 +26,7 @@ import platform from '@/platform'
 import { clearMessageGenerationStopOperation } from '@/stores/generationStopOperations'
 import { reportError } from '@/utils/sentry'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attachment-rag/logging'
+import { markSessionReplyFailed } from '../sessionActivityStore'
 import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndexing'
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
@@ -443,6 +444,7 @@ export async function submitNewUserMessageUnlocked(
     } else {
       await insertMessage(sessionId, newAssistantMsg)
     }
+    markSessionReplyFailed(sessionId, newAssistantMsg)
     return // 文件上传失败，不再继续生成回复
   }
   // 根据需要，生成这条回复消息

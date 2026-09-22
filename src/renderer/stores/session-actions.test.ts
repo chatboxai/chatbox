@@ -258,7 +258,7 @@ beforeEach(() => {
   lockSessionAgentModeMock.mockReset()
   toastMock.mockReset()
   generationRuntimeStore.clear('session-clear')
-  sessionActivityStore.setState({ unreadCompletedSessionIds: {} }, true)
+  sessionActivityStore.setState({ unreadSessionIds: {} }, true)
 })
 
 describe('conversation list cleanup', () => {
@@ -300,7 +300,7 @@ describe('session message cleanup', () => {
     getSessionMock.mockResolvedValue(session)
     updateSessionWithMessages.mockResolvedValue({ ...session, messages: [], messageForksHash: undefined })
     generationRuntimeStore.start(session.id, forkReply.id)
-    sessionActivityStore.setState({ unreadCompletedSessionIds: { [session.id]: true } })
+    sessionActivityStore.setState({ unreadSessionIds: { [session.id]: 'completed' } })
 
     await sessionActions.clear(session.id)
 
@@ -311,7 +311,7 @@ describe('session message cleanup', () => {
       messageForksHash: undefined,
       threadName: '',
     })
-    expect(sessionActivityStore.getState().unreadCompletedSessionIds[session.id]).toBeUndefined()
+    expect(sessionActivityStore.getState().unreadSessionIds[session.id]).toBeUndefined()
   })
 })
 

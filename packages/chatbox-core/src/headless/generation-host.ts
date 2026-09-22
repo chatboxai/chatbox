@@ -104,6 +104,7 @@ export async function generateTerminalSession(options: {
       },
       markFirstSuccessfulChatCompleted: () => undefined,
       afterMessageGenerated: () => undefined,
+      afterMessageFailed: () => undefined,
       now: Date.now,
     },
     analytics: {

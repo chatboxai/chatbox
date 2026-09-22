@@ -9,14 +9,20 @@ import {
   getSessionActivity,
   isSessionGenerating,
   markSessionReplyCompleted,
+  markSessionReplyFailed,
   resetSessionActivityStore,
   sessionActivityStore,
+  setOnScreenSession,
 } from './sessionActivityStore'
 
 const generationRuntimeStore = rendererApplication.generationRuntime
 
 function completedReply(id: string) {
   return { ...createMessage('assistant', 'Finished answer'), id, generating: false, finishReason: 'stop' }
+}
+
+function failedReply(id: string) {
+  return { ...createMessage('assistant', ''), id, generating: false, error: 'provider failed' }
 }
 
 function activity(sessionId: string, persistedWaiting = false) {
@@ -41,7 +47,7 @@ describe('sessionActivityStore', () => {
     generationRuntimeStore.clear('background-session')
     generationRuntimeStore.clear('current-session')
     resetSessionActivityStore()
-    getDefaultStore().set(currentSessionIdAtom, 'current-session')
+    setOnScreenSession('current-session')
   })
 
   it('shows generating while any reply in the session is active', () => {
@@ -94,7 +100,7 @@ describe('sessionActivityStore', () => {
   })
 
   it('marks a completion unread after leaving the session route', () => {
-    getDefaultStore().set(currentSessionIdAtom, null)
+    setOnScreenSession(null)
     startGeneration('current-session')
     settleGeneration('current-session')
     markSessionReplyCompleted('current-session', completedReply('reply-1'))
@@ -103,12 +109,22 @@ describe('sessionActivityStore', () => {
   })
 
   it('does not mark a completion unread after directly routing into its session', () => {
-    getDefaultStore().set(currentSessionIdAtom, 'background-session')
+    setOnScreenSession('background-session')
     startGeneration('background-session')
     settleGeneration('background-session')
     markSessionReplyCompleted('background-session', completedReply('reply-1'))
 
     expect(activity('background-session')).toBe('idle')
+  })
+
+  it('marks a completion unread on New Chat while the cached session id still points at it', () => {
+    setOnScreenSession(null)
+    getDefaultStore().set(currentSessionIdAtom, 'current-session')
+    startGeneration('current-session')
+    settleGeneration('current-session')
+    markSessionReplyCompleted('current-session', completedReply('reply-1'))
+
+    expect(activity('current-session')).toBe('completed')
   })
 
   it('clears unread completion when the session is opened', () => {
@@ -131,5 +147,34 @@ describe('sessionActivityStore', () => {
     })
 
     expect(activity('background-session')).toBe('idle')
+  })
+
+  it('marks a background failure unread after generation settles', () => {
+    startGeneration('background-session')
+    settleGeneration('background-session')
+    markSessionReplyFailed('background-session', failedReply('reply-1'))
+
+    expect(activity('background-session')).toBe('failed')
+  })
+
+  it('does not mark a failure unread for the current session', () => {
+    startGeneration('current-session')
+    settleGeneration('current-session')
+    markSessionReplyFailed('current-session', failedReply('reply-1'))
+
+    expect(activity('current-session')).toBe('idle')
+  })
+
+  it('does not mark a failure unread without a visible error', () => {
+    markSessionReplyFailed('background-session', { ...failedReply('reply-1'), error: undefined })
+
+    expect(activity('background-session')).toBe('idle')
+  })
+
+  it('replaces an unread failure once a retry succeeds', () => {
+    markSessionReplyFailed('background-session', failedReply('reply-1'))
+    markSessionReplyCompleted('background-session', completedReply('reply-2'))
+
+    expect(activity('background-session')).toBe('completed')
   })
 })

@@ -69,6 +69,7 @@ interface Harness {
   globalSettings: Settings
   trackPauseAction: ReturnType<typeof vi.fn>
   afterMessageGenerated: ReturnType<typeof vi.fn>
+  afterMessageFailed: ReturnType<typeof vi.fn>
   steeringInject: ReturnType<typeof vi.fn>
   steeringAdmitAnchor: ReturnType<typeof vi.fn>
   steeringRegister: ReturnType<typeof vi.fn>
@@ -131,6 +132,7 @@ function createHarness(): Harness {
   const inserted: Array<{ message: Message; afterMessageId: string }> = []
   const trackPauseAction = vi.fn()
   const afterMessageGenerated = vi.fn()
+  const afterMessageFailed = vi.fn()
   const steeringInject = vi.fn((_messages: ModelMessage[], _anchorMessageId: string) =>
     Promise.resolve({ messages: undefined as ModelMessage[] | undefined, consumed: [] as Message[] })
   )
@@ -364,6 +366,7 @@ function createHarness(): Harness {
       createPictureStorageKey: (sessionId, messageId) => `picture:${sessionId}:${messageId}`,
       markFirstSuccessfulChatCompleted: vi.fn(),
       afterMessageGenerated,
+      afterMessageFailed,
       now: () => now,
     },
     analytics: {
@@ -395,6 +398,7 @@ function createHarness(): Harness {
     globalSettings,
     trackPauseAction,
     afterMessageGenerated,
+    afterMessageFailed,
     steeringInject,
     steeringAdmitAnchor,
     steeringRegister,
@@ -1180,6 +1184,7 @@ describe('GenerationService', () => {
       finishReason: 'canceled',
     })
     expect(harness.afterMessageGenerated).not.toHaveBeenCalled()
+    expect(harness.afterMessageFailed).not.toHaveBeenCalled()
     expect(harness.runtime.get('session-1')).toBeUndefined()
   })
 
@@ -2346,6 +2351,8 @@ describe('GenerationService', () => {
       error: 'provider failed',
       errorExtra: { source: 'test-error-mapper' },
     })
+    expect(harness.afterMessageFailed).toHaveBeenCalledWith('session-1', lastPersisted(harness))
+    expect(harness.afterMessageGenerated).not.toHaveBeenCalled()
     expect(harness.runtime.get('session-1')).toBeUndefined()
   })
 

@@ -130,7 +130,7 @@ function SessionItemStatesFixture() {
   useEffect(() => {
     const runtime = rendererApplication.generationRuntime.start(sessionMetas[1].id, 'story-reply')
     sessionActivityStore.setState({
-      unreadCompletedSessionIds: { [sessionMetas[2].id]: true },
+      unreadSessionIds: { [sessionMetas[2].id]: 'completed' },
     })
     return () => {
       rendererApplication.generationRuntime.finishActive(sessionMetas[1].id, runtime.messageId, runtime)

@@ -297,6 +297,7 @@ export interface GenerationHostPort {
   createPictureStorageKey(sessionId: string, messageId: string): string
   markFirstSuccessfulChatCompleted(): void
   afterMessageGenerated(sessionId: string, message: Message): void
+  afterMessageFailed(sessionId: string, message: Message): void
   now(): number
 }
 
@@ -1123,6 +1124,7 @@ export class GenerationService<TContext> {
         operationType: options?.operationType,
       })
       await sessions.persistStreamingMessage(sessionId, targetMessage, { refreshCounting: true })
+      host.afterMessageFailed(sessionId, targetMessage)
     } finally {
       finishRuntime()
       steering?.release()

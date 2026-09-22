@@ -38,7 +38,7 @@ import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { startNewThread } from '@/stores/session/threads'
-import { clearSessionActivity } from '@/stores/sessionActivityStore'
+import { clearSessionActivity, setOnScreenSession } from '@/stores/sessionActivityStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
@@ -98,7 +98,9 @@ function RouteComponent() {
   const setLastUsedChatModel = useStore(lastUsedModelStore, (state) => state.setChatModel)
 
   useEffect(() => {
+    setOnScreenSession(currentSessionId)
     clearSessionActivity(currentSessionId)
+    return () => setOnScreenSession(null)
   }, [currentSessionId])
 
   const welcomeCardMode = useMemo(

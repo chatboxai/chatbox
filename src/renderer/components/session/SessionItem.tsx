@@ -76,7 +76,13 @@ function SessionItem(props: Props) {
   const { t } = useTranslation()
   const activity = useSessionActivity(session.id, session.hasPausedToolCall === true)
   const activityLabel =
-    activity === 'generating' ? t('Generating...') : activity === 'waiting' ? t('Waiting for you...') : t('Completed')
+    activity === 'generating'
+      ? t('Generating...')
+      : activity === 'waiting'
+        ? t('Waiting for you...')
+        : activity === 'failed'
+          ? t('Failed')
+          : t('Completed')
   const pinActionLabel = session.starred ? t('Unpin') : t('Pin')
   const archiveActionLabel = t('Archive')
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
@@ -379,7 +385,13 @@ function SessionItem(props: Props) {
           ) : activity === 'waiting' ? (
             <ScalableIcon icon={IconClockHour4} size={15} className="text-chatbox-tint-warning" />
           ) : (
-            <Box component="span" w={8} h={8} bg="chatbox-brand" className="rounded-full" />
+            <Box
+              component="span"
+              w={8}
+              h={8}
+              bg={activity === 'failed' ? 'chatbox-error' : 'chatbox-brand'}
+              className="rounded-full"
+            />
           )}
         </Box>
       )}

@@ -1444,5 +1444,6 @@
   "Batch Web Search": "批量联网搜索",
   "Discover Search Domains": "发现搜索域名",
   "Enter your Anysearch API Key": "输入 Anysearch API 密钥",
-  "Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.": "API 密钥留空即使用匿名模式：请求按客户端 IP 限流，计入每日免费额度。填写密钥可获得更高并发和付费额度。"
+  "Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.": "API 密钥留空即使用匿名模式：请求按客户端 IP 限流，计入每日免费额度。填写密钥可获得更高并发和付费额度。",
+  "Anysearch fills this in automatically when the free quota runs out. Clear it to go back to anonymous mode.": "Anysearch 免费额度用完后会自动填入这里，清空即可回到匿名模式。"
 }

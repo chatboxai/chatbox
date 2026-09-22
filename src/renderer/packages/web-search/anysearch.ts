@@ -17,26 +17,39 @@ export class AnysearchSearch extends WebSearch {
   /**
    * Omitting the API key uses Anysearch's anonymous mode: requests are
    * rate-limited per client IP and metered against the daily free quota.
+   *
+   * `onApiKeyGenerated` receives the credential the gateway mints when that
+   * quota runs out, so the caller can keep it for later searches.
    */
   constructor(
     private readonly apiKey?: string,
-    private readonly maxResults = 10
+    private readonly maxResults = 10,
+    private readonly onApiKeyGenerated?: (apiKey: string) => void
   ) {
     super()
   }
 
   /**
    * Anonymous callers that exhaust the daily free quota get generated
-   * credentials in the error; per the Anysearch docs the request should then be
-   * resubmitted with that key. It is kept in memory for this call only: nothing
-   * is persisted, and the credential never appears in an error or a log.
+   * credentials in the error, and the documented flow is to resubmit the
+   * request with that key. The key reaches `onApiKeyGenerated` only once the
+   * retry has succeeded, so a key the gateway rejects is never handed out for
+   * storage. The password from the same block is dropped on purpose, and no
+   * credential ever reaches an error message or a log.
    */
   private async request<T>(run: (apiKey?: string) => Promise<T>): Promise<T> {
     try {
       return await run(this.apiKey)
     } catch (error) {
       if (!(error instanceof AnysearchQuotaExhaustedError) || !error.credential) throw error
-      return run(error.credential.apiKey)
+      const generatedApiKey = error.credential.apiKey
+      const result = await run(generatedApiKey)
+      try {
+        this.onApiKeyGenerated?.(generatedApiKey)
+      } catch (persistError) {
+        console.error('Failed to save the generated Anysearch API key', persistError)
+      }
+      return result
     }
   }
 

@@ -555,6 +555,11 @@ export function RouteComponent() {
               'Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.'
             )}
           </Text>
+          <Text size="xs" c="chatbox-gray">
+            {t(
+              'Anysearch fills this in automatically when the free quota runs out. Clear it to go back to anonymous mode.'
+            )}
+          </Text>
           <Button
             variant="transparent"
             size="compact-xs"

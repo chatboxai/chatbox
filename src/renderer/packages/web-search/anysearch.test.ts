@@ -115,3 +115,63 @@ describe('AnysearchSearch on mobile', () => {
     expect(capacitorRequestMock.mock.calls[1][0].headers).toHaveProperty('authorization', 'Bearer auto-key')
   })
 })
+
+describe('AnysearchSearch generated credentials', () => {
+  beforeEach(() => capacitorRequestMock.mockReset())
+
+  const quotaExhaustedResponse = {
+    data: {
+      code: -1,
+      message: ['username=auto-user', 'password=auto-pass', 'api_key=auto-key'].join('\n'),
+    },
+  }
+  const searchResultResponse = {
+    data: {
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: '## Search Results (1 result)\n\n### 1. After quota\n- **URL**: https://quota.test\n- Retried.',
+          },
+        ],
+      },
+    },
+  }
+  const afterQuota = {
+    items: [{ title: 'After quota', link: 'https://quota.test', snippet: 'Retried.' }],
+  }
+
+  it('hands the generated key to the caller once the retry succeeded', async () => {
+    const onApiKeyGenerated = vi.fn()
+    capacitorRequestMock.mockResolvedValueOnce(quotaExhaustedResponse).mockResolvedValueOnce(searchResultResponse)
+
+    await expect(new AnysearchSearch(undefined, 1, onApiKeyGenerated).search('quota query')).resolves.toEqual(
+      afterQuota
+    )
+    expect(onApiKeyGenerated).toHaveBeenCalledTimes(1)
+    expect(onApiKeyGenerated).toHaveBeenCalledWith('auto-key')
+  })
+
+  it('keeps a rejected key away from the caller', async () => {
+    const onApiKeyGenerated = vi.fn()
+    capacitorRequestMock
+      .mockResolvedValueOnce(quotaExhaustedResponse)
+      .mockResolvedValueOnce({ data: { code: -1, message: 'quota still exhausted' } })
+
+    await expect(new AnysearchSearch(undefined, 1, onApiKeyGenerated).search('quota query')).rejects.toThrow(
+      'quota still exhausted'
+    )
+    expect(onApiKeyGenerated).not.toHaveBeenCalled()
+  })
+
+  it('serves the search when storing the key fails', async () => {
+    const onApiKeyGenerated = vi.fn(() => {
+      throw new Error('settings are read-only')
+    })
+    capacitorRequestMock.mockResolvedValueOnce(quotaExhaustedResponse).mockResolvedValueOnce(searchResultResponse)
+
+    await expect(new AnysearchSearch(undefined, 1, onApiKeyGenerated).search('quota query')).resolves.toEqual(
+      afterQuota
+    )
+  })
+})

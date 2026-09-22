@@ -3,6 +3,7 @@ import type { SearchResultItem } from '@shared/types'
 import { truncate } from 'lodash'
 import platform from '@/platform'
 import { getExtensionSettings, getLanguage, getLicenseKey } from '@/stores/settingActions'
+import { settingsStore } from '@/stores/settingsStore'
 import { ChatboxAIAPIError } from '../../../shared/models/errors'
 import { AnysearchSearch } from './anysearch'
 import type WebSearch from './base'
@@ -15,6 +16,17 @@ import { normalizeSearxngBaseUrl, SearxngSearch } from './searxng'
 import { TavilySearch } from './tavily'
 
 const MAX_CONTEXT_ITEMS = 10
+
+/**
+ * Anysearch hands a generated key to anonymous callers that ran out of the
+ * daily free quota. Keeping it in the settings field means later searches go
+ * straight to the authenticated path instead of paying another 402 round trip.
+ */
+function saveAnysearchGeneratedApiKey(apiKey: string) {
+  settingsStore.getState().setSettings((draft) => {
+    draft.extension.webSearch.anysearchApiKey = apiKey
+  })
+}
 
 // 根据配置的搜索提供方来选择搜索服务
 function getSearchProviders() {
@@ -76,7 +88,11 @@ function getSearchProviders() {
     case 'anysearch':
       // A missing key is valid: Anysearch falls back to its anonymous mode.
       selectedProviders.push(
-        new AnysearchSearch(settings.webSearch.anysearchApiKey?.trim(), settings.webSearch.anysearchMaxResults ?? 10)
+        new AnysearchSearch(
+          settings.webSearch.anysearchApiKey?.trim(),
+          settings.webSearch.anysearchMaxResults ?? 10,
+          saveAnysearchGeneratedApiKey
+        )
       )
       break
     default:

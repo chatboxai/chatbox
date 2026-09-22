@@ -1444,5 +1444,6 @@
   "Batch Web Search": "Batch Web Search",
   "Discover Search Domains": "Discover Search Domains",
   "Enter your Anysearch API Key": "Enter your Anysearch API Key",
-  "Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.": "Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota."
+  "Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.": "Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.",
+  "Anysearch fills this in automatically when the free quota runs out. Clear it to go back to anonymous mode.": "Anysearch fills this in automatically when the free quota runs out. Clear it to go back to anonymous mode."
 }

@@ -1,5 +1,6 @@
 import {
   type AnysearchDomain,
+  type AnysearchOptions,
   AnysearchQuotaExhaustedError,
   type AnysearchSearchRequest,
   batchSearchAnysearch,
@@ -10,6 +11,16 @@ import {
 } from '@shared/services/anysearch'
 import type { SearchResult } from '@shared/types'
 import WebSearch, { type ParseLinkResult } from './base'
+
+export function normalizeAnysearchLanguage(language: string | undefined): string | undefined {
+  const normalized = language?.trim()
+  if (!normalized) return undefined
+  if (normalized === 'zh-Hans') return 'zh-CN'
+  if (normalized === 'zh-Hant') return 'zh-TW'
+  return normalized
+}
+
+export type AnysearchSearchConfig = Pick<AnysearchOptions, 'zone' | 'language'>
 
 export class AnysearchSearch extends WebSearch {
   override supportsParseLink = true
@@ -24,7 +35,8 @@ export class AnysearchSearch extends WebSearch {
   constructor(
     private readonly apiKey?: string,
     private readonly maxResults = 10,
-    private readonly onApiKeyGenerated?: (apiKey: string) => void
+    private readonly onApiKeyGenerated?: (apiKey: string) => void,
+    private readonly searchConfig: AnysearchSearchConfig = {}
   ) {
     super()
   }
@@ -54,19 +66,24 @@ export class AnysearchSearch extends WebSearch {
   }
 
   async search(query: string, signal?: AbortSignal): Promise<SearchResult> {
-    const markdown = await this.request((apiKey) =>
-      searchAnysearch({ query, max_results: this.maxResults }, { apiKey, signal, fetchFn: this.fetchCompat })
+    const payload = await this.request((apiKey) =>
+      searchAnysearch(
+        { query, max_results: this.maxResults },
+        { apiKey, signal, fetchFn: this.fetchCompat, ...this.searchConfig }
+      )
     )
-    return { items: parseAnysearchSearchResults(markdown) }
+    return { items: parseAnysearchSearchResults(payload) }
   }
 
   searchAdvanced(request: AnysearchSearchRequest, signal?: AbortSignal): Promise<string> {
-    return this.request((apiKey) => searchAnysearch(request, { apiKey, signal, fetchFn: this.fetchCompat }))
+    return this.request((apiKey) =>
+      searchAnysearch(request, { apiKey, signal, fetchFn: this.fetchCompat, ...this.searchConfig })
+    )
   }
 
   async parseLink(url: string, signal?: AbortSignal): Promise<ParseLinkResult> {
     const extracted = await this.request((apiKey) =>
-      extractAnysearch(url, { apiKey, signal, fetchFn: this.fetchCompat })
+      extractAnysearch(url, { apiKey, signal, fetchFn: this.fetchCompat, ...this.searchConfig })
     )
     let title = extracted.title.trim()
     if (!title) {
@@ -80,10 +97,14 @@ export class AnysearchSearch extends WebSearch {
   }
 
   batchSearch(queries: AnysearchSearchRequest[], signal?: AbortSignal): Promise<string> {
-    return this.request((apiKey) => batchSearchAnysearch(queries, { apiKey, signal, fetchFn: this.fetchCompat }))
+    return this.request((apiKey) =>
+      batchSearchAnysearch(queries, { apiKey, signal, fetchFn: this.fetchCompat, ...this.searchConfig })
+    )
   }
 
   getSubDomains(domains: AnysearchDomain[], signal?: AbortSignal): Promise<string> {
-    return this.request((apiKey) => getAnysearchSubDomains(domains, { apiKey, signal, fetchFn: this.fetchCompat }))
+    return this.request((apiKey) =>
+      getAnysearchSubDomains(domains, { apiKey, signal, fetchFn: this.fetchCompat, ...this.searchConfig })
+    )
   }
 }

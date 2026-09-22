@@ -39,6 +39,7 @@ vi.mock('./tavily', () => {
 })
 
 vi.mock('./anysearch', () => ({
+  normalizeAnysearchLanguage: (language: string | undefined) => language,
   AnysearchSearch: class {
     constructor(
       _apiKey: string,

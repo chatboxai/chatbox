@@ -341,6 +341,7 @@ const ExtensionSettingsSchema = z.object({
     searxngBaseUrl: z.string().optional(),
     anysearchApiKey: z.string().optional(),
     anysearchMaxResults: z.number().optional(),
+    anysearchZone: z.enum(['cn', 'intl']).optional(),
   }),
   knowledgeBase: z
     .object({

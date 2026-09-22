@@ -10,12 +10,13 @@ import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { TooltipInfoTrigger } from '@/components/common/TooltipInfoTrigger'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
-import { AnysearchSearch } from '@/packages/web-search/anysearch'
+import { AnysearchSearch, normalizeAnysearchLanguage } from '@/packages/web-search/anysearch'
 import { BochaSearch } from '@/packages/web-search/bocha'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
 import { SearxngSearch } from '@/packages/web-search/searxng'
 import platform from '@/platform'
+import { getLanguage } from '@/stores/settingActions'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 export const Route = createFileRoute('/settings/web-search')({
@@ -61,7 +62,10 @@ export function RouteComponent() {
     setCheckingAnysearch(true)
     setAnysearchAvailable(undefined)
     try {
-      await new AnysearchSearch(apiKey, 1).search('Chatbox')
+      await new AnysearchSearch(apiKey, 1, undefined, {
+        zone: extension.webSearch.anysearchZone,
+        language: normalizeAnysearchLanguage(getLanguage()),
+      }).search('Chatbox')
       if (checkVersion === anysearchCheckVersion.current) {
         setAnysearchAvailable(true)
       }
@@ -586,6 +590,31 @@ export function RouteComponent() {
                     webSearch: {
                       ...extension.webSearch,
                       anysearchMaxResults: Number(value),
+                    },
+                  },
+                })
+              }}
+              maw={320}
+            />
+          </Stack>
+          <Stack mt="md" gap="xs">
+            <Text size="sm">{t('Search Region')}</Text>
+            <Select
+              comboboxProps={{ withinPortal: true, withArrow: true }}
+              data={[
+                { value: 'auto', label: t('Auto') },
+                { value: 'cn', label: 'CN' },
+                { value: 'intl', label: 'INTL' },
+              ]}
+              value={extension.webSearch.anysearchZone ?? 'auto'}
+              onChange={(value) => {
+                const zone = value === 'cn' || value === 'intl' ? value : undefined
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      anysearchZone: zone,
                     },
                   },
                 })

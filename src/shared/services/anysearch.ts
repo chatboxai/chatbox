@@ -1,5 +1,7 @@
-export const ANYSEARCH_ENDPOINT = 'https://api.anysearch.com/mcp'
-export const ANYSEARCH_CLIENT_HEADER = 'chatbox/1.0'
+export const ANYSEARCH_API_BASE_URL = 'https://api.anysearch.com'
+export const ANYSEARCH_SEARCH_ENDPOINT = `${ANYSEARCH_API_BASE_URL}/v1/search`
+export const ANYSEARCH_SUB_DOMAINS_ENDPOINT = `${ANYSEARCH_API_BASE_URL}/v1/sub-domains`
+export const ANYSEARCH_EXTRACT_ENDPOINT = `${ANYSEARCH_API_BASE_URL}/v1/extract`
 
 export const ANYSEARCH_DOMAINS = [
   'general',
@@ -22,6 +24,7 @@ export const ANYSEARCH_DOMAINS = [
 ] as const
 
 export type AnysearchDomain = (typeof ANYSEARCH_DOMAINS)[number]
+export type AnysearchZone = 'cn' | 'intl'
 export type AnysearchToolName = 'search' | 'batch_search' | 'get_sub_domains' | 'extract'
 
 export interface AnysearchSearchRequest {
@@ -30,20 +33,24 @@ export interface AnysearchSearchRequest {
   sub_domain?: string
   sub_domain_params?: Record<string, unknown>
   max_results?: number
+  zone?: AnysearchZone
+  language?: string
 }
 
 export interface AnysearchOptions {
   apiKey?: string
   fetchFn?: typeof fetch
   signal?: AbortSignal
+  zone?: AnysearchZone
+  language?: string
 }
 
-interface AnysearchJsonRpcResponse {
-  error?: { code?: number; message?: string; data?: unknown }
-  result?: { content?: Array<{ type?: string; text?: string }> }
-  /** REST-style envelope used by gateway errors (401/402/403/429/502). */
+interface AnysearchApiResponse {
   code?: number
   message?: string
+  request_id?: string
+  data?: unknown
+  error?: { code?: number; message?: string; data?: unknown }
 }
 
 export interface AnysearchSearchResultItem {
@@ -99,24 +106,29 @@ function stripAnysearchCredentialBlock(message: string): string {
     .trim()
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 /**
- * Reads the error message from either envelope shape. Platform fetch wrappers
+ * Reads the error message from the REST envelope. Platform fetch wrappers can
  * flatten the HTTP status to 200, so the payload has to carry the failure.
  */
-function readAnysearchErrorMessage(payload: AnysearchJsonRpcResponse | null): string | null {
+function readAnysearchErrorMessage(payload: AnysearchApiResponse | null): string | null {
   const code = payload?.code
   if (typeof code === 'number' && code !== 0 && typeof payload?.message === 'string' && payload.message.trim()) {
     return payload.message.trim()
   }
-  const jsonRpcMessage = payload?.error?.message
-  if (typeof jsonRpcMessage === 'string' && jsonRpcMessage.trim()) return jsonRpcMessage.trim()
+  const nestedMessage = payload?.error?.message
+  if (typeof nestedMessage === 'string' && nestedMessage.trim()) return nestedMessage.trim()
   return null
 }
 
 export function parseAnysearchExtractResult(text: string, fallbackUrl: string): AnysearchExtractResult {
   try {
-    const payload = JSON.parse(text) as { url?: unknown; title?: unknown; content?: unknown }
-    if (payload && typeof payload === 'object' && typeof payload.content === 'string') {
+    const root = JSON.parse(text) as unknown
+    const payload = isRecord(root) && isRecord(root.data) ? root.data : root
+    if (isRecord(payload) && typeof payload.content === 'string') {
       return {
         url: typeof payload.url === 'string' && payload.url.trim() ? payload.url : fallbackUrl,
         title: typeof payload.title === 'string' ? payload.title : '',
@@ -141,40 +153,53 @@ export function normalizeAnysearchSearchRequest(request: AnysearchSearchRequest)
   if (!request.domain && (request.sub_domain?.trim() || request.sub_domain_params)) {
     throw new Error('Anysearch sub_domain and sub_domain_params require a domain')
   }
+  if (request.zone && request.zone !== 'cn' && request.zone !== 'intl') {
+    throw new Error('Anysearch zone must be cn or intl')
+  }
+
   const normalized: AnysearchSearchRequest = { query }
   if (request.domain) normalized.domain = request.domain
   if (request.sub_domain?.trim()) normalized.sub_domain = request.sub_domain.trim()
   if (request.sub_domain_params) normalized.sub_domain_params = request.sub_domain_params
   const maxResults = clampMaxResults(request.max_results)
   if (maxResults !== undefined) normalized.max_results = maxResults
+  if (request.zone) normalized.zone = request.zone
+  const language = request.language?.trim()
+  if (language) normalized.language = language
   return normalized
 }
 
-export async function callAnysearchTool(
-  name: AnysearchToolName,
-  args: Record<string, unknown>,
-  options: AnysearchOptions = {}
-): Promise<string> {
-  const fetchFn = options.fetchFn ?? fetch
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Anysearch-Client': ANYSEARCH_CLIENT_HEADER,
-  }
-  const apiKey = options.apiKey?.trim()
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+function toAnysearchTag(request: AnysearchSearchRequest): string | undefined {
+  const subDomain = request.sub_domain?.trim()
+  if (!subDomain) return undefined
+  return subDomain.includes('.') ? subDomain : `${request.domain}.${subDomain}`
+}
 
-  const response = await fetchFn(ANYSEARCH_ENDPOINT, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'tools/call',
-      params: { name, arguments: args },
-    }),
-    signal: options.signal,
-  })
-  const payload = (await response.json().catch(() => null)) as AnysearchJsonRpcResponse | null
+function toAnysearchSearchBody(request: AnysearchSearchRequest, options: AnysearchOptions): Record<string, unknown> {
+  const normalized = normalizeAnysearchSearchRequest(request)
+  const body: Record<string, unknown> = {
+    query: normalized.query,
+    format: 'json',
+  }
+
+  if (normalized.max_results !== undefined) body.max_results = normalized.max_results
+  const tag = toAnysearchTag(normalized)
+  if (tag) body.tag = tag
+  if (normalized.sub_domain_params) body.params = normalized.sub_domain_params
+  if (normalized.zone ?? options.zone) body.zone = normalized.zone ?? options.zone
+  if (normalized.language ?? options.language) body.language = normalized.language ?? options.language
+  return body
+}
+
+function createAnysearchHeaders(apiKey: string | undefined, hasBody: boolean): Record<string, string> {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (hasBody) headers['Content-Type'] = 'application/json'
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+  return headers
+}
+
+async function readAnysearchResponse(response: Response): Promise<string> {
+  const payload = (await response.json().catch(() => null)) as AnysearchApiResponse | null
   const errorMessage = readAnysearchErrorMessage(payload)
   if (errorMessage) {
     const credential = parseAnysearchGeneratedCredential(errorMessage)
@@ -189,11 +214,50 @@ export async function callAnysearchTool(
   if (!response.ok) {
     throw new Error(`Anysearch request failed with status ${response.status}`)
   }
-  const text = payload?.result?.content?.find((item) => item.type === 'text' && typeof item.text === 'string')?.text
-  if (typeof text !== 'string') {
-    throw new Error('Anysearch returned a malformed response without text content')
+  if (!isRecord(payload)) {
+    throw new Error('Anysearch returned a malformed response without JSON content')
   }
-  return text
+  return JSON.stringify(payload)
+}
+
+export async function callAnysearchTool(
+  name: AnysearchToolName,
+  args: Record<string, unknown>,
+  options: AnysearchOptions = {}
+): Promise<string> {
+  if (name === 'batch_search') {
+    const queries = args.queries
+    if (!Array.isArray(queries)) throw new Error('Anysearch batch_search requires a queries array')
+    return batchSearchAnysearch(queries as AnysearchSearchRequest[], options)
+  }
+
+  const fetchFn = options.fetchFn ?? fetch
+  const apiKey = options.apiKey?.trim() || undefined
+  let response: Response
+
+  if (name === 'get_sub_domains') {
+    const url = new URL(ANYSEARCH_SUB_DOMAINS_ENDPOINT)
+    const domains = args.domains
+    if (!Array.isArray(domains)) throw new Error('Anysearch get_sub_domains requires a domains array')
+    for (const domain of domains) url.searchParams.append('domain', String(domain))
+    response = await fetchFn(url, {
+      method: 'GET',
+      headers: createAnysearchHeaders(apiKey, false),
+      signal: options.signal,
+    })
+  } else {
+    const endpoint = name === 'extract' ? ANYSEARCH_EXTRACT_ENDPOINT : ANYSEARCH_SEARCH_ENDPOINT
+    const body =
+      name === 'extract' ? { url: args.url } : toAnysearchSearchBody(args as unknown as AnysearchSearchRequest, options)
+    response = await fetchFn(endpoint, {
+      method: 'POST',
+      headers: createAnysearchHeaders(apiKey, true),
+      body: JSON.stringify(body),
+      signal: options.signal,
+    })
+  }
+
+  return readAnysearchResponse(response)
 }
 
 export async function searchAnysearch(
@@ -214,7 +278,22 @@ export async function batchSearchAnysearch(
   if (queries.length < 1 || queries.length > 5) {
     throw new Error('Anysearch batch_search requires between 1 and 5 queries')
   }
-  return callAnysearchTool('batch_search', { queries: queries.map(normalizeAnysearchSearchRequest) }, options)
+  const normalizedQueries = queries.map(normalizeAnysearchSearchRequest)
+  const responses = await Promise.all(normalizedQueries.map((query) => searchAnysearch(query, options)))
+  const parsedResponses = responses.map((response) => {
+    try {
+      return JSON.parse(response) as unknown
+    } catch {
+      return response
+    }
+  })
+  return JSON.stringify({
+    code: 0,
+    message: 'success',
+    data: {
+      queries: normalizedQueries.map((query, index) => ({ query: query.query, response: parsedResponses[index] })),
+    },
+  })
 }
 
 export async function getAnysearchSubDomains(
@@ -236,25 +315,50 @@ export async function extractAnysearch(url: string, options: AnysearchOptions = 
   return parseAnysearchExtractResult(text, normalizedUrl.toString())
 }
 
+function parseAnysearchJsonSearchResults(payload: unknown): AnysearchSearchResultItem[] | null {
+  if (!isRecord(payload) || !isRecord(payload.data) || !Array.isArray(payload.data.results)) return null
+  return payload.data.results.flatMap((item) => {
+    if (!isRecord(item) || typeof item.url !== 'string' || !item.url) return []
+    return [
+      {
+        title: typeof item.title === 'string' ? item.title : '',
+        link: item.url,
+        snippet:
+          typeof item.snippet === 'string'
+            ? item.snippet
+            : typeof item.content === 'string'
+              ? item.content
+              : '',
+      },
+    ]
+  })
+}
+
 const RESULT_HEADING = /^###\s+\d+\.\s+(.+)$/gm
 const RESULT_URL = /^-\s+\*\*URL\*\*:\s+(https?:\/\/\S+)\s*$/m
 
-export function parseAnysearchSearchResults(markdown: string): AnysearchSearchResultItem[] {
-  const headings = [...markdown.matchAll(RESULT_HEADING)]
+export function parseAnysearchSearchResults(payloadText: string): AnysearchSearchResultItem[] {
+  try {
+    const payload = JSON.parse(payloadText) as unknown
+    const results = parseAnysearchJsonSearchResults(payload)
+    if (results) return results
+  } catch {}
+
+  const headings = [...payloadText.matchAll(RESULT_HEADING)]
   const items: AnysearchSearchResultItem[] = []
 
   for (let index = 0; index < headings.length; index++) {
     const heading = headings[index]
     const start = (heading.index ?? 0) + heading[0].length
-    const end = headings[index + 1]?.index ?? markdown.length
-    const section = markdown.slice(start, end).trim()
+    const end = headings[index + 1]?.index ?? payloadText.length
+    const section = payloadText.slice(start, end).trim()
     const urlMatch = section.match(RESULT_URL)
     if (!urlMatch) continue
     const snippet = section.replace(RESULT_URL, '').trim().replace(/^-\s*/, '')
     items.push({ title: heading[1].trim(), link: urlMatch[1], snippet })
   }
 
-  if (items.length === 0 && !/\b0\s+results?\b|no (?:search )?results/i.test(markdown)) {
+  if (items.length === 0 && !/\b0\s+results?\b|no (?:search )?results/i.test(payloadText)) {
     throw new Error('Anysearch returned an unrecognized search result format')
   }
   return items

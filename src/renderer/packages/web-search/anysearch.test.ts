@@ -17,41 +17,40 @@ describe('AnysearchSearch on mobile', () => {
   it('uses CapacitorHttp for authenticated search', async () => {
     capacitorRequestMock.mockResolvedValue({
       data: {
-        result: {
-          content: [
-            {
-              type: 'text',
-              text: '## Search Results (1 result)\n\n### 1. Mobile result\n- **URL**: https://mobile.test\n- Native HTTP.',
-            },
-          ],
+        code: 0,
+        message: 'success',
+        data: {
+          results: [{ title: 'Mobile result', url: 'https://mobile.test', snippet: 'Native HTTP.' }],
         },
       },
     })
 
-    await expect(new AnysearchSearch('mobile-key', 4).search('mobile query')).resolves.toEqual({
+    await expect(
+      new AnysearchSearch('mobile-key', 4, undefined, { zone: 'cn', language: 'zh-CN' }).search('mobile query')
+    ).resolves.toEqual({
       items: [{ title: 'Mobile result', link: 'https://mobile.test', snippet: 'Native HTTP.' }],
     })
     expect(capacitorRequestMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: 'https://api.anysearch.com/mcp',
+        url: 'https://api.anysearch.com/v1/search',
         method: 'POST',
         headers: expect.objectContaining({
           authorization: 'Bearer mobile-key',
           'content-type': 'application/json',
-          'x-anysearch-client': 'chatbox/1.0',
           'User-Agent': expect.stringContaining('Android'),
         }),
-        data: expect.objectContaining({
-          jsonrpc: '2.0',
-          params: { name: 'search', arguments: { query: 'mobile query', max_results: 4 } },
-        }),
+        data: { query: 'mobile query', max_results: 4, format: 'json', zone: 'cn', language: 'zh-CN' },
       })
     )
   })
 
   it('uses the Anysearch extract tool for parseLink', async () => {
     capacitorRequestMock.mockResolvedValue({
-      data: { result: { content: [{ type: 'text', text: '# Extracted\nPage body.' }] } },
+      data: {
+        code: 0,
+        message: 'success',
+        data: { url: 'https://docs.example.com/page', title: '', content: '# Extracted\nPage body.' },
+      },
     })
 
     await expect(new AnysearchSearch('mobile-key').parseLink('https://docs.example.com/page')).resolves.toEqual({
@@ -59,22 +58,19 @@ describe('AnysearchSearch on mobile', () => {
       title: 'docs.example.com',
       content: '# Extracted\nPage body.',
     })
-    expect(capacitorRequestMock.mock.calls[0][0].data.params).toEqual({
-      name: 'extract',
-      arguments: { url: 'https://docs.example.com/page' },
-    })
+    expect(capacitorRequestMock.mock.calls[0][0].url).toBe('https://api.anysearch.com/v1/extract')
+    expect(capacitorRequestMock.mock.calls[0][0].data).toEqual({ url: 'https://docs.example.com/page' })
   })
 
   it('uses the extract envelope title and content for parseLink', async () => {
     capacitorRequestMock.mockResolvedValue({
       data: {
-        result: {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({ url: 'https://docs.example.com/page', title: 'Docs Page', content: 'Body text' }),
-            },
-          ],
+        code: 0,
+        message: 'success',
+        data: {
+          url: 'https://docs.example.com/page',
+          title: 'Docs Page',
+          content: 'Body text',
         },
       },
     })
@@ -96,13 +92,10 @@ describe('AnysearchSearch on mobile', () => {
       })
       .mockResolvedValueOnce({
         data: {
-          result: {
-            content: [
-              {
-                type: 'text',
-                text: '## Search Results (1 result)\n\n### 1. After quota\n- **URL**: https://quota.test\n- Retried.',
-              },
-            ],
+          code: 0,
+          message: 'success',
+          data: {
+            results: [{ title: 'After quota', url: 'https://quota.test', snippet: 'Retried.' }],
           },
         },
       })
@@ -127,13 +120,10 @@ describe('AnysearchSearch generated credentials', () => {
   }
   const searchResultResponse = {
     data: {
-      result: {
-        content: [
-          {
-            type: 'text',
-            text: '## Search Results (1 result)\n\n### 1. After quota\n- **URL**: https://quota.test\n- Retried.',
-          },
-        ],
+      code: 0,
+      message: 'success',
+      data: {
+        results: [{ title: 'After quota', url: 'https://quota.test', snippet: 'Retried.' }],
       },
     },
   }

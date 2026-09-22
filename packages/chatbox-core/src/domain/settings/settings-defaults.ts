@@ -86,6 +86,7 @@ export function createDefaultSettings(): Settings {
         searxngBaseUrl: '',
         anysearchApiKey: '',
         anysearchMaxResults: 10,
+        anysearchZone: undefined,
       },
       knowledgeBase: {
         models: {

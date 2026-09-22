@@ -161,6 +161,12 @@ const anysearchSearchProperties: NonNullable<JSONSchema7['properties']> = {
     description: 'Structured parameters returned by anysearch_get_sub_domains. Include required keys even when empty.',
   },
   max_results: { type: 'integer', minimum: 1, maximum: 10 },
+  zone: { type: 'string', enum: ['cn', 'intl'], description: 'Optional result region.' },
+  language: {
+    type: 'string',
+    minLength: 2,
+    description: 'Optional preferred result language, such as zh-CN or en.',
+  },
 }
 
 export const anysearchBatchSearchTool: ToolSet[string] = {

@@ -5,7 +5,7 @@ import platform from '@/platform'
 import { getExtensionSettings, getLanguage, getLicenseKey } from '@/stores/settingActions'
 import { settingsStore } from '@/stores/settingsStore'
 import { ChatboxAIAPIError } from '../../../shared/models/errors'
-import { AnysearchSearch } from './anysearch'
+import { AnysearchSearch, normalizeAnysearchLanguage } from './anysearch'
 import type WebSearch from './base'
 import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
@@ -36,6 +36,7 @@ function getSearchProviders() {
   const selectedProviders: WebSearch[] = []
   const provider = settings.webSearch.provider
   const language = getLanguage()
+  const anysearchLanguage = normalizeAnysearchLanguage(language)
 
   switch (provider) {
     case 'build-in':
@@ -91,7 +92,11 @@ function getSearchProviders() {
         new AnysearchSearch(
           settings.webSearch.anysearchApiKey?.trim(),
           settings.webSearch.anysearchMaxResults ?? 10,
-          saveAnysearchGeneratedApiKey
+          saveAnysearchGeneratedApiKey,
+          {
+            zone: settings.webSearch.anysearchZone,
+            language: anysearchLanguage,
+          }
         )
       )
       break
@@ -159,7 +164,14 @@ export const webSearchExecutor = async (
   const provider = webSearch.provider
   const cacheIdentity = (() => {
     if (provider === 'searxng') return `${provider}:${normalizeSearxngBaseUrl(webSearch.searxngBaseUrl ?? '')}`
-    if (provider === 'anysearch') return `${provider}:${webSearch.anysearchMaxResults ?? 10}`
+    if (provider === 'anysearch') {
+      return [
+        provider,
+        webSearch.anysearchMaxResults ?? 10,
+        webSearch.anysearchZone ?? 'auto',
+        normalizeAnysearchLanguage(getLanguage()) ?? 'auto',
+      ].join(':')
+    }
     return provider
   })()
   const searchResults = await cachified({

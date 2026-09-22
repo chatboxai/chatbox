@@ -6,7 +6,7 @@
  * Android emulator can verify against a local mock without credentials.
  */
 
-import { parseAnysearchSearchResults, searchAnysearch } from './anysearch'
+import { parseAnysearchSearchResults, searchAnysearch, type AnysearchZone } from './anysearch'
 
 export interface NativeWebSearchResultItem {
   title: string
@@ -67,6 +67,9 @@ export interface NativeWebSearchOptions {
   signal?: AbortSignal
   fetchFn?: typeof fetch
   maxResults?: number
+  /** Anysearch REST-only routing preferences. */
+  zone?: AnysearchZone
+  language?: string
   /** Querit-only knobs (renderer settings webSearch.queritMaxResults / queritTimeRange). */
   queritTimeRange?: string | null
   /**
@@ -110,7 +113,13 @@ export async function searchNativeWeb(
   if (provider === 'anysearch') {
     const markdown = await searchAnysearch(
       { query, max_results: options.maxResults },
-      { apiKey: options.apiKey, fetchFn: options.fetchFn, signal: options.signal }
+      {
+        apiKey: options.apiKey,
+        fetchFn: options.fetchFn,
+        signal: options.signal,
+        zone: options.zone,
+        language: options.language,
+      }
     )
     return parseAnysearchSearchResults(markdown)
   }

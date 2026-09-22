@@ -22,15 +22,12 @@ describe('native web search', () => {
     expect(hasNativeWebSearchConfiguration({ provider: 'anysearch', apiKey: 'any-key' })).toBe(true)
   })
 
-  it('searches Anysearch through its JSON-RPC endpoint', async () => {
+  it('searches Anysearch through its REST endpoint', async () => {
     const fetchFn = mockFetchResponse({
-      result: {
-        content: [
-          {
-            type: 'text',
-            text: '## Search Results (1 result)\n\n### 1. Any result\n- **URL**: https://any.test\n- Any snippet.',
-          },
-        ],
+      code: 0,
+      message: 'success',
+      data: {
+        results: [{ title: 'Any result', url: 'https://any.test', snippet: 'Any snippet.' }],
       },
     })
     const items = await searchNativeWeb('chatbox', {
@@ -43,7 +40,7 @@ describe('native web search', () => {
     const body = JSON.parse(
       ((fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit).body as string
     )
-    expect(body.params).toEqual({ name: 'search', arguments: { query: 'chatbox', max_results: 3 } })
+    expect(body).toEqual({ query: 'chatbox', max_results: 3, format: 'json' })
   })
 
   it('searches through the chatbox build-in endpoint with the license key and injected headers', async () => {

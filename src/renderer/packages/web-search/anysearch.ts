@@ -1,11 +1,11 @@
 import {
+  type AnysearchDomain,
+  type AnysearchSearchRequest,
   batchSearchAnysearch,
   extractAnysearch,
   getAnysearchSubDomains,
   parseAnysearchSearchResults,
   searchAnysearch,
-  type AnysearchDomain,
-  type AnysearchSearchRequest,
 } from '@shared/services/anysearch'
 import type { SearchResult } from '@shared/types'
 import WebSearch, { type ParseLinkResult } from './base'
@@ -13,8 +13,12 @@ import WebSearch, { type ParseLinkResult } from './base'
 export class AnysearchSearch extends WebSearch {
   override supportsParseLink = true
 
+  /**
+   * Omitting the API key uses Anysearch's anonymous mode: requests are
+   * rate-limited per client IP and metered against the daily free quota.
+   */
   constructor(
-    private readonly apiKey: string,
+    private readonly apiKey?: string,
     private readonly maxResults = 10
   ) {
     super()

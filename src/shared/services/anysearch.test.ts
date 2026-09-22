@@ -29,6 +29,13 @@ describe('Anysearch client', () => {
     })
   })
 
+  it('omits the authorization header for anonymous requests', async () => {
+    const fetchFn = response({ result: { content: [{ type: 'text', text: 'anonymous result' }] } })
+    await expect(searchAnysearch({ query: 'Chatbox' }, { fetchFn })).resolves.toBe('anonymous result')
+    const [, init] = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect((init as RequestInit).headers).not.toHaveProperty('Authorization')
+  })
+
   it('supports anonymous calls without an Authorization header', async () => {
     const fetchFn = response({ result: { content: [{ type: 'text', text: 'ok' }] } })
     await callAnysearchTool('extract', { url: 'https://example.com' }, { fetchFn })
@@ -38,7 +45,11 @@ describe('Anysearch client', () => {
 
   it('surfaces HTTP, JSON-RPC, and malformed response errors', async () => {
     await expect(
-      callAnysearchTool('search', { query: 'q' }, { fetchFn: response({ error: { message: 'rate limited' } }, false, 429) })
+      callAnysearchTool(
+        'search',
+        { query: 'q' },
+        { fetchFn: response({ error: { message: 'rate limited' } }, false, 429) }
+      )
     ).rejects.toThrow('rate limited')
     await expect(
       callAnysearchTool('search', { query: 'q' }, { fetchFn: response({ error: { code: -1, message: 'bad args' } }) })
@@ -56,9 +67,7 @@ describe('Anysearch client', () => {
 
   it('rejects incomplete vertical search routing', async () => {
     await expect(searchAnysearch({ query: 'quote', domain: 'finance' })).rejects.toThrow('requires a sub_domain')
-    await expect(searchAnysearch({ query: 'quote', sub_domain: 'finance.quote' })).rejects.toThrow(
-      'require a domain'
-    )
+    await expect(searchAnysearch({ query: 'quote', sub_domain: 'finance.quote' })).rejects.toThrow('require a domain')
   })
 })
 

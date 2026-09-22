@@ -91,16 +91,11 @@ export function hasNativeWebSearchConfiguration(
   settings: Pick<NativeWebSearchSettings, 'provider' | 'apiKey'>,
   licenseKey?: string
 ): boolean {
-  if (
-    settings.provider === 'tavily' ||
-    settings.provider === 'bocha' ||
-    settings.provider === 'querit' ||
-    settings.provider === 'anysearch'
-  ) {
+  if (settings.provider === 'tavily' || settings.provider === 'bocha' || settings.provider === 'querit') {
     return Boolean(settings.apiKey.trim())
   }
   if (settings.provider === 'build-in') return Boolean(licenseKey?.trim())
-  return true // bing needs no credentials
+  return true // bing and anonymous Anysearch need no credentials
 }
 
 export async function searchNativeWeb(

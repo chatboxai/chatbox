@@ -17,7 +17,8 @@ describe('native web search', () => {
     expect(hasNativeWebSearchConfiguration({ provider: 'bing', apiKey: '' })).toBe(true)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' })).toBe(false)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' }, 'license-1')).toBe(true)
-    expect(hasNativeWebSearchConfiguration({ provider: 'anysearch', apiKey: '' })).toBe(false)
+    // Anysearch falls back to anonymous mode, so no key is required.
+    expect(hasNativeWebSearchConfiguration({ provider: 'anysearch', apiKey: '' })).toBe(true)
     expect(hasNativeWebSearchConfiguration({ provider: 'anysearch', apiKey: 'any-key' })).toBe(true)
   })
 

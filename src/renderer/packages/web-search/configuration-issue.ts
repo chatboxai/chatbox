@@ -6,7 +6,6 @@ type WebSearchConfiguration = {
   bochaApiKey?: string
   queritApiKey?: string
   searxngBaseUrl?: string
-  anysearchApiKey?: string
 }
 
 export type WebSearchConfigurationIssue =
@@ -15,7 +14,6 @@ export type WebSearchConfigurationIssue =
   | 'bocha-api-key'
   | 'querit-api-key'
   | 'searxng-instance'
-  | 'anysearch-api-key'
 
 export function getWebSearchConfigurationIssue(
   configuration: WebSearchConfiguration,
@@ -32,9 +30,9 @@ export function getWebSearchConfigurationIssue(
       return configuration.queritApiKey ? null : 'querit-api-key'
     case 'searxng':
       return configuration.searxngBaseUrl?.trim() ? null : 'searxng-instance'
-    case 'anysearch':
-      return configuration.anysearchApiKey?.trim() ? null : 'anysearch-api-key'
     case 'bing':
+    // Anysearch works without credentials (anonymous mode).
+    case 'anysearch':
       return null
   }
 }

@@ -13,8 +13,9 @@ describe('getWebSearchConfigurationIssue', () => {
     expect(getWebSearchConfigurationIssue({ provider: 'bocha' })).toBe('bocha-api-key')
     expect(getWebSearchConfigurationIssue({ provider: 'querit' })).toBe('querit-api-key')
     expect(getWebSearchConfigurationIssue({ provider: 'searxng', searxngBaseUrl: '  ' })).toBe('searxng-instance')
-    expect(getWebSearchConfigurationIssue({ provider: 'anysearch' })).toBe('anysearch-api-key')
-    expect(getWebSearchConfigurationIssue({ provider: 'anysearch', anysearchApiKey: '  ' })).toBe('anysearch-api-key')
-    expect(getWebSearchConfigurationIssue({ provider: 'anysearch', anysearchApiKey: 'key' })).toBeNull()
+  })
+
+  it('treats Anysearch as configuration-free because anonymous mode is allowed', () => {
+    expect(getWebSearchConfigurationIssue({ provider: 'anysearch' })).toBeNull()
   })
 })

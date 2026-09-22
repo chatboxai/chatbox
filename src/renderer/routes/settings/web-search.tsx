@@ -57,7 +57,6 @@ export function RouteComponent() {
   const anysearchCheckVersion = useRef(0)
   const checkAnysearch = async () => {
     const apiKey = extension.webSearch.anysearchApiKey?.trim()
-    if (!apiKey) return
     const checkVersion = ++anysearchCheckVersion.current
     setCheckingAnysearch(true)
     setAnysearchAvailable(undefined)
@@ -538,21 +537,24 @@ export function RouteComponent() {
               placeholder={t('Enter your Anysearch API Key') || 'Enter your Anysearch API Key'}
               error={anysearchAvailable === false}
             />
-            <Button
-              color="blue"
-              variant="light"
-              onClick={checkAnysearch}
-              loading={checkingAnysearch}
-              disabled={!extension.webSearch.anysearchApiKey?.trim()}
-            >
+            <Button color="blue" variant="light" onClick={checkAnysearch} loading={checkingAnysearch}>
               {t('Check')}
             </Button>
           </Flex>
           {typeof anysearchAvailable === 'boolean' ? (
             <Text size="xs" c={anysearchAvailable ? 'chatbox-success' : 'chatbox-error'}>
-              {anysearchAvailable ? t('Connection successful!') : t('API key invalid!')}
+              {anysearchAvailable
+                ? t('Connection successful!')
+                : extension.webSearch.anysearchApiKey?.trim()
+                  ? t('API key invalid!')
+                  : t('Connection failed!')}
             </Text>
           ) : null}
+          <Text size="xs" c="chatbox-gray">
+            {t(
+              'Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.'
+            )}
+          </Text>
           <Button
             variant="transparent"
             size="compact-xs"

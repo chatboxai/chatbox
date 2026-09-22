@@ -130,6 +130,16 @@ describe('webSearchExecutor', () => {
     expect(second.searchResults[0].title).toBe('Anysearch Result 7')
   })
 
+  it('searches Anysearch anonymously when no API key is configured', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'anysearch', anysearchApiKey: '', anysearchMaxResults: 2 },
+    } as ReturnType<typeof getExtensionSettings>)
+
+    const result = await webSearchExecutor({ query: 'anonymous anysearch query' }, {})
+
+    expect(result.searchResults[0].title).toBe('Anysearch Result 2')
+  })
+
   it('uses a distinct cache key for the SearXNG provider', async () => {
     mockGetExtensionSettings.mockReturnValue({
       webSearch: { provider: 'searxng', searxngBaseUrl: 'https://searx.example.com' },

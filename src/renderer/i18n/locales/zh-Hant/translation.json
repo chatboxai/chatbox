@@ -1443,5 +1443,6 @@
   "Anysearch API Key": "Anysearch API 金鑰",
   "Batch Web Search": "批次網路搜尋",
   "Discover Search Domains": "探索搜尋網域",
-  "Enter your Anysearch API Key": "輸入 Anysearch API 金鑰"
+  "Enter your Anysearch API Key": "輸入 Anysearch API 金鑰",
+  "Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.": "API 金鑰留空即使用匿名模式：請求依用戶端 IP 限流，計入每日免費額度。填入金鑰可獲得更高並行數與付費額度。"
 }

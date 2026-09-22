@@ -74,11 +74,9 @@ function getSearchProviders() {
       break
     }
     case 'anysearch':
-      if (!settings.webSearch.anysearchApiKey) {
-        throw new Error('Anysearch API key is required')
-      }
+      // A missing key is valid: Anysearch falls back to its anonymous mode.
       selectedProviders.push(
-        new AnysearchSearch(settings.webSearch.anysearchApiKey, settings.webSearch.anysearchMaxResults ?? 10)
+        new AnysearchSearch(settings.webSearch.anysearchApiKey?.trim(), settings.webSearch.anysearchMaxResults ?? 10)
       )
       break
     default:

@@ -145,6 +145,35 @@ describe('Anysearch REST client', () => {
     expect((error as Error).message).not.toContain('auto-pass')
   })
 
+  it('retries an anonymous quota response while credentials are still being provisioned', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 402,
+          json: async () => ({
+            code: -1,
+            message: 'Anonymous quota registration is still running; retry after a short delay.',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => successfulSearchPayload,
+        }) as unknown as typeof fetch
+
+      const resultPromise = callAnysearchTool('search', { query: 'Chatbox' }, { fetchFn })
+      await vi.runAllTimersAsync()
+
+      await expect(resultPromise).resolves.toBe(JSON.stringify(successfulSearchPayload))
+      expect(fetchFn).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('validates batch, domain discovery, and extract inputs', async () => {
     await expect(batchSearchAnysearch([])).rejects.toThrow('between 1 and 5')
     await expect(getAnysearchSubDomains([])).rejects.toThrow('between 1 and 5')
@@ -176,6 +205,9 @@ describe('Anysearch REST client', () => {
   it('rejects incomplete vertical search routing', async () => {
     await expect(searchAnysearch({ query: 'quote', domain: 'finance' })).rejects.toThrow('requires a sub_domain')
     await expect(searchAnysearch({ query: 'quote', sub_domain: 'finance.quote' })).rejects.toThrow('require a domain')
+    await expect(
+      searchAnysearch({ query: 'snippet', domain: 'finance', sub_domain: 'code.snippet' })
+    ).rejects.toThrow('must belong to the requested domain')
   })
 })
 

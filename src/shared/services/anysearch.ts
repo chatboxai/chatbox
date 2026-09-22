@@ -86,6 +86,16 @@ export class AnysearchQuotaExhaustedError extends Error {
   }
 }
 
+class AnysearchQuotaPendingError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AnysearchQuotaPendingError'
+  }
+}
+
+const ANYSEARCH_PENDING_QUOTA_RETRIES = 2
+const ANYSEARCH_PENDING_QUOTA_RETRY_DELAY_MS = 250
+
 const CREDENTIAL_LINE = /^\s*(username|password|api_key)\s*=\s*(.+)$/i
 
 export function parseAnysearchGeneratedCredential(message: string): AnysearchGeneratedCredential | null {
@@ -96,6 +106,26 @@ export function parseAnysearchGeneratedCredential(message: string): AnysearchGen
     if (apiKey) return { apiKey }
   }
   return null
+}
+
+export async function withAnysearchQuotaRetry<T>(
+  initialApiKey: string | undefined,
+  run: (apiKey?: string) => Promise<T>,
+  onApiKeyGenerated?: (apiKey: string) => void
+): Promise<T> {
+  try {
+    return await run(initialApiKey)
+  } catch (error) {
+    if (!(error instanceof AnysearchQuotaExhaustedError) || !error.credential) throw error
+    const generatedApiKey = error.credential.apiKey
+    const result = await run(generatedApiKey)
+    try {
+      onApiKeyGenerated?.(generatedApiKey)
+    } catch (persistError) {
+      console.error('Failed to save the generated Anysearch API key', persistError)
+    }
+    return result
+  }
 }
 
 function stripAnysearchCredentialBlock(message: string): string {
@@ -153,6 +183,10 @@ export function normalizeAnysearchSearchRequest(request: AnysearchSearchRequest)
   if (!request.domain && (request.sub_domain?.trim() || request.sub_domain_params)) {
     throw new Error('Anysearch sub_domain and sub_domain_params require a domain')
   }
+  const subDomain = request.sub_domain?.trim()
+  if (request.domain && subDomain?.includes('.') && !subDomain.startsWith(`${request.domain}.`)) {
+    throw new Error('Anysearch sub_domain must belong to the requested domain')
+  }
   if (request.zone && request.zone !== 'cn' && request.zone !== 'intl') {
     throw new Error('Anysearch zone must be cn or intl')
   }
@@ -198,7 +232,13 @@ function createAnysearchHeaders(apiKey: string | undefined, hasBody: boolean): R
   return headers
 }
 
-async function readAnysearchResponse(response: Response): Promise<string> {
+function isPendingAnonymousQuotaMessage(message: string, status: number): boolean {
+  const normalized = message.toLowerCase()
+  const mentionsRetry = /(retry|try again|register|provision|pending)/i.test(normalized)
+  return mentionsRetry && (status === 402 || /(quota|anonymous)/i.test(normalized))
+}
+
+async function readAnysearchResponse(response: Response, allowPendingAnonymousQuotaRetry: boolean): Promise<string> {
   const payload = (await response.json().catch(() => null)) as AnysearchApiResponse | null
   const errorMessage = readAnysearchErrorMessage(payload)
   if (errorMessage) {
@@ -208,6 +248,9 @@ async function readAnysearchResponse(response: Response): Promise<string> {
         stripAnysearchCredentialBlock(errorMessage) || 'Anysearch free quota exhausted',
         credential
       )
+    }
+    if (allowPendingAnonymousQuotaRetry && isPendingAnonymousQuotaMessage(errorMessage, response.status)) {
+      throw new AnysearchQuotaPendingError(errorMessage)
     }
     throw new Error(errorMessage)
   }
@@ -233,31 +276,42 @@ export async function callAnysearchTool(
 
   const fetchFn = options.fetchFn ?? fetch
   const apiKey = options.apiKey?.trim() || undefined
-  let response: Response
+  const request = async () => {
+    let response: Response
 
-  if (name === 'get_sub_domains') {
-    const url = new URL(ANYSEARCH_SUB_DOMAINS_ENDPOINT)
-    const domains = args.domains
-    if (!Array.isArray(domains)) throw new Error('Anysearch get_sub_domains requires a domains array')
-    for (const domain of domains) url.searchParams.append('domain', String(domain))
-    response = await fetchFn(url, {
-      method: 'GET',
-      headers: createAnysearchHeaders(apiKey, false),
-      signal: options.signal,
-    })
-  } else {
-    const endpoint = name === 'extract' ? ANYSEARCH_EXTRACT_ENDPOINT : ANYSEARCH_SEARCH_ENDPOINT
-    const body =
-      name === 'extract' ? { url: args.url } : toAnysearchSearchBody(args as unknown as AnysearchSearchRequest, options)
-    response = await fetchFn(endpoint, {
-      method: 'POST',
-      headers: createAnysearchHeaders(apiKey, true),
-      body: JSON.stringify(body),
-      signal: options.signal,
-    })
+    if (name === 'get_sub_domains') {
+      const url = new URL(ANYSEARCH_SUB_DOMAINS_ENDPOINT)
+      const domains = args.domains
+      if (!Array.isArray(domains)) throw new Error('Anysearch get_sub_domains requires a domains array')
+      for (const domain of domains) url.searchParams.append('domain', String(domain))
+      response = await fetchFn(url, {
+        method: 'GET',
+        headers: createAnysearchHeaders(apiKey, false),
+        signal: options.signal,
+      })
+    } else {
+      const endpoint = name === 'extract' ? ANYSEARCH_EXTRACT_ENDPOINT : ANYSEARCH_SEARCH_ENDPOINT
+      const body =
+        name === 'extract' ? { url: args.url } : toAnysearchSearchBody(args as unknown as AnysearchSearchRequest, options)
+      response = await fetchFn(endpoint, {
+        method: 'POST',
+        headers: createAnysearchHeaders(apiKey, true),
+        body: JSON.stringify(body),
+        signal: options.signal,
+      })
+    }
+
+    return readAnysearchResponse(response, !apiKey && (name === 'search' || name === 'extract'))
   }
 
-  return readAnysearchResponse(response)
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request()
+    } catch (error) {
+      if (!(error instanceof AnysearchQuotaPendingError) || attempt >= ANYSEARCH_PENDING_QUOTA_RETRIES) throw error
+      await new Promise((resolve) => setTimeout(resolve, ANYSEARCH_PENDING_QUOTA_RETRY_DELAY_MS))
+    }
+  }
 }
 
 export async function searchAnysearch(

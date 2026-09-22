@@ -1,13 +1,13 @@
 import {
   type AnysearchDomain,
   type AnysearchOptions,
-  AnysearchQuotaExhaustedError,
   type AnysearchSearchRequest,
   batchSearchAnysearch,
   extractAnysearch,
   getAnysearchSubDomains,
   parseAnysearchSearchResults,
   searchAnysearch,
+  withAnysearchQuotaRetry,
 } from '@shared/services/anysearch'
 import type { SearchResult } from '@shared/types'
 import WebSearch, { type ParseLinkResult } from './base'
@@ -50,19 +50,7 @@ export class AnysearchSearch extends WebSearch {
    * credential ever reaches an error message or a log.
    */
   private async request<T>(run: (apiKey?: string) => Promise<T>): Promise<T> {
-    try {
-      return await run(this.apiKey)
-    } catch (error) {
-      if (!(error instanceof AnysearchQuotaExhaustedError) || !error.credential) throw error
-      const generatedApiKey = error.credential.apiKey
-      const result = await run(generatedApiKey)
-      try {
-        this.onApiKeyGenerated?.(generatedApiKey)
-      } catch (persistError) {
-        console.error('Failed to save the generated Anysearch API key', persistError)
-      }
-      return result
-    }
+    return withAnysearchQuotaRetry(this.apiKey, run, this.onApiKeyGenerated)
   }
 
   async search(query: string, signal?: AbortSignal): Promise<SearchResult> {

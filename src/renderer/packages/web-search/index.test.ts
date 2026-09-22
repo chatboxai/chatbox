@@ -1,10 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const anysearchTestState = vi.hoisted(() => ({
+  onApiKeyGenerated: undefined as ((apiKey: string) => void) | undefined,
+  setSettings: vi.fn(),
+}))
+
 // Mock the settings actions before importing the module under test
 vi.mock('@/stores/settingActions', () => ({
   getExtensionSettings: vi.fn(),
   getLanguage: vi.fn(() => 'en'),
   getLicenseKey: vi.fn(() => 'test-license-key'),
+}))
+
+vi.mock('@/stores/settingsStore', () => ({
+  settingsStore: {
+    getState: () => ({ setSettings: anysearchTestState.setSettings }),
+  },
 }))
 
 // Mock the search providers to avoid actual network calls
@@ -42,9 +53,12 @@ vi.mock('./anysearch', () => ({
   normalizeAnysearchLanguage: (language: string | undefined) => language,
   AnysearchSearch: class {
     constructor(
-      _apiKey: string,
-      private readonly maxResults: number
-    ) {}
+      _apiKey: string | undefined,
+      private readonly maxResults: number,
+      onApiKeyGenerated?: (apiKey: string) => void
+    ) {
+      anysearchTestState.onApiKeyGenerated = onApiKeyGenerated
+    }
 
     search = vi.fn().mockImplementation(async () => ({
       items: [{ title: `Anysearch Result ${this.maxResults}`, snippet: 'test', link: 'https://example.com' }],
@@ -75,13 +89,14 @@ vi.mock('./chatbox-search', () => {
 })
 
 import { getExtensionSettings } from '@/stores/settingActions'
-import { webSearchExecutor } from './index'
+import { getAnysearchProvider, webSearchExecutor } from './index'
 
 const mockGetExtensionSettings = vi.mocked(getExtensionSettings)
 
 describe('webSearchExecutor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    anysearchTestState.onApiKeyGenerated = undefined
   })
 
   it('returns different results for different providers with same query', async () => {
@@ -139,6 +154,23 @@ describe('webSearchExecutor', () => {
     const result = await webSearchExecutor({ query: 'anonymous anysearch query' }, {})
 
     expect(result.searchResults[0].title).toBe('Anysearch Result 2')
+  })
+
+  it('does not overwrite a newer Anysearch API key when a generated key arrives', () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'anysearch', anysearchApiKey: 'old-key', anysearchMaxResults: 2 },
+    } as ReturnType<typeof getExtensionSettings>)
+    getAnysearchProvider()
+
+    type AnysearchSettingsDraft = { extension: { webSearch: { anysearchApiKey: string } } }
+    const draft: AnysearchSettingsDraft = { extension: { webSearch: { anysearchApiKey: 'new-key' } } }
+    anysearchTestState.setSettings.mockImplementation(
+      (update: (value: AnysearchSettingsDraft) => void) => update(draft)
+    )
+
+    anysearchTestState.onApiKeyGenerated?.('generated-key')
+
+    expect(draft.extension.webSearch.anysearchApiKey).toBe('new-key')
   })
 
   it('uses a distinct cache key for the SearXNG provider', async () => {

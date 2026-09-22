@@ -6,7 +6,12 @@
  * Android emulator can verify against a local mock without credentials.
  */
 
-import { parseAnysearchSearchResults, searchAnysearch, type AnysearchZone } from './anysearch'
+import {
+  parseAnysearchSearchResults,
+  searchAnysearch,
+  type AnysearchZone,
+  withAnysearchQuotaRetry,
+} from './anysearch'
 
 export interface NativeWebSearchResultItem {
   title: string
@@ -70,6 +75,7 @@ export interface NativeWebSearchOptions {
   /** Anysearch REST-only routing preferences. */
   zone?: AnysearchZone
   language?: string
+  onAnysearchApiKeyGenerated?: (apiKey: string) => void
   /** Querit-only knobs (renderer settings webSearch.queritMaxResults / queritTimeRange). */
   queritTimeRange?: string | null
   /**
@@ -111,15 +117,21 @@ export async function searchNativeWeb(
   if (provider === 'bocha') return searchNativeBocha(query, options)
   if (provider === 'querit') return searchNativeQuerit(query, options)
   if (provider === 'anysearch') {
-    const markdown = await searchAnysearch(
-      { query, max_results: options.maxResults },
-      {
-        apiKey: options.apiKey,
-        fetchFn: options.fetchFn,
-        signal: options.signal,
-        zone: options.zone,
-        language: options.language,
-      }
+    const apiKey = options.apiKey?.trim() || undefined
+    const markdown = await withAnysearchQuotaRetry(
+      apiKey,
+      (retryApiKey) =>
+        searchAnysearch(
+          { query, max_results: options.maxResults },
+          {
+            apiKey: retryApiKey,
+            fetchFn: options.fetchFn,
+            signal: options.signal,
+            zone: options.zone,
+            language: options.language,
+          }
+        ),
+      options.onAnysearchApiKeyGenerated
     )
     return parseAnysearchSearchResults(markdown)
   }

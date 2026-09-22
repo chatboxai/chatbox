@@ -1,7 +1,7 @@
-import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import type { CommandApprovalMode, RunCommandShell } from '@shared/types/command-execution'
 import type { UserExecApprovalSource } from '@shared/types/user-exec'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { ToolSet } from 'ai'
 import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
 import { skillsController } from '@/packages/skills/controller'
@@ -135,11 +135,14 @@ export function buildRunCommandTool(context: RunCommandContext): { tool: ToolSet
   const ensureSandbox = context.ensureSandbox
   const sandboxAvailable = !isWindows && sandboxRunCommand !== undefined && ensureSandbox !== undefined
   const fullAccess = context.approvalMode === 'full_access'
+  const hostRetryAvailable = sandboxAvailable && !fullAccess
   const executionCache = new Map<string, { signature: string; promise: Promise<RunCommandResult> }>()
 
   const retryGuidance = fullAccess
     ? '- This session has Full Access: run_command executes directly on the host without an approval step; it does not execute inside the file sandbox and there is no host retry to request. Do not pass `sandbox_permissions` or `justification`.'
-    : `- All user-granted workdirs remain writable in the sandbox.
+    : !sandboxAvailable
+      ? '- No OS command sandbox is available in this session. Commands run on the host following the session approval policy; there is no sandbox failure to escalate. Do not pass `sandbox_permissions` or `justification`.'
+      : `- All user-granted workdirs remain writable in the sandbox.
 - On macOS/Linux, commands run in the file sandbox first. A failed call records a one-time retry reference inside the harness without exposing it to the model.
 - Request full host access only after a real failed sandbox call, by retrying the exact command/workdir/shell with \`sandbox_permissions\` and \`justification\`.
 - The harness finds and consumes the matching retry reference internally. Never add or infer a retry id.
@@ -161,7 +164,7 @@ ${retryGuidance}
         ? 'This session has Full Access, so commands run directly on the host without an approval step.'
         : sandboxAvailable
           ? 'Commands run in the sandbox first; an exact failed call can request a one-time host retry.'
-          : 'No OS command sandbox is available on this platform, so host execution follows the session approval policy.'),
+          : 'No OS command sandbox is available in this session, so host execution follows the session approval policy.'),
     inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
@@ -173,20 +176,21 @@ ${retryGuidance}
         },
         shell: { type: 'string', enum: [shell], description: `Must be ${shell} on this platform.` },
         timeout: { type: 'number', description: `Timeout in milliseconds, capped at ${MAX_TIMEOUT_MS}.` },
-        sandbox_permissions: {
-          type: 'string',
-          enum: ['danger-full-access'],
-          description: fullAccess
-            ? 'Not applicable in this session: commands already run on the host with Full Access.'
-            : 'Request a one-time host retry of an exact failed sandbox command. Valid only with justification.',
-        },
-        justification: {
-          type: 'string',
-          maxLength: MAX_JUSTIFICATION_LENGTH,
-          description: fullAccess
-            ? 'Not applicable in this session: commands already run on the host with Full Access.'
-            : 'One sentence explaining why this exact failed command needs host access.',
-        },
+        ...(hostRetryAvailable
+          ? {
+              sandbox_permissions: {
+                type: 'string' as const,
+                enum: ['danger-full-access'],
+                description:
+                  'Request a one-time host retry of an exact failed sandbox command. Valid only with justification.',
+              },
+              justification: {
+                type: 'string' as const,
+                maxLength: MAX_JUSTIFICATION_LENGTH,
+                description: 'One sentence explaining why this exact failed command needs host access.',
+              },
+            }
+          : {}),
       },
       required: ['command'],
       additionalProperties: false,

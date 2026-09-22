@@ -1,5 +1,9 @@
 import { ChatboxAIAPIError } from '@shared/models/errors'
-import { ANYSEARCH_DOMAINS } from '@shared/services/anysearch'
+import {
+  ANYSEARCH_DOMAINS,
+  normalizeAnysearchSearchRequest,
+  type AnysearchSearchRequest,
+} from '@shared/services/anysearch'
 import { createWebSearchTool, WEB_SEARCH_TOOLSET_INSTRUCTION } from '@shared/web-search-tool'
 import { jsonSchema, type ToolSet } from 'ai'
 import type { JSONSchema7 } from 'json-schema'
@@ -156,16 +160,17 @@ const anysearchSearchProperties: NonNullable<JSONSchema7['properties']> = {
   domain: {
     type: 'string',
     enum: [...ANYSEARCH_DOMAINS],
-    description: 'Vertical search domain. If provided, sub_domain is required too.',
+    description: 'Optional for general search. If provided, sub_domain is required too.',
   },
   sub_domain: {
     type: 'string',
-    description: 'Required with domain; use the exact routing key returned by anysearch_get_sub_domains.',
+    minLength: 1,
+    description: 'Use only with domain; required when domain is provided. Use the exact routing key returned by anysearch_get_sub_domains.',
   },
   sub_domain_params: {
     type: 'object',
     additionalProperties: true,
-    description: 'Structured parameters returned by anysearch_get_sub_domains. Include required keys even when empty.',
+    description: 'Use only with domain. Structured parameters returned by anysearch_get_sub_domains; include required keys even when empty.',
   },
   max_results: { type: 'integer', minimum: 1, maximum: 10 },
   zone: { type: 'string', enum: ['cn', 'intl'], description: 'Optional result region.' },
@@ -178,21 +183,11 @@ const anysearchSearchProperties: NonNullable<JSONSchema7['properties']> = {
 
 const anysearchSearchInputSchema: JSONSchema7 = {
   type: 'object',
+  description:
+    'General searches omit domain, sub_domain, and sub_domain_params. Vertical searches require both domain and sub_domain; the executor validates this conditional requirement.',
   properties: anysearchSearchProperties,
   required: ['query'],
   additionalProperties: false,
-  allOf: [
-    {
-      if: { required: ['domain'] },
-      then: { required: ['sub_domain'] },
-    },
-    {
-      if: {
-        anyOf: [{ required: ['sub_domain'] }, { required: ['sub_domain_params'] }],
-      },
-      then: { required: ['domain'] },
-    },
-  ],
 }
 
 export const anysearchBatchSearchTool: ToolSet[string] = {
@@ -216,8 +211,9 @@ export const anysearchBatchSearchTool: ToolSet[string] = {
   execute: async (input, { abortSignal }) => {
     const provider = getAnysearchProvider()
     if (!provider) throw new Error('Anysearch is not the configured web search provider')
+    const queries = (input as { queries: AnysearchSearchRequest[] }).queries.map(normalizeAnysearchSearchRequest)
     return provider.batchSearch(
-      (input as { queries: Array<{ query: string; domain?: (typeof ANYSEARCH_DOMAINS)[number] }> }).queries,
+      queries,
       abortSignal
     )
   },
@@ -232,7 +228,8 @@ export const anysearchSearchTool: ToolSet[string] = {
   execute: async (input, { abortSignal }) => {
     const provider = getAnysearchProvider()
     if (!provider) throw new Error('Anysearch is not the configured web search provider')
-    return provider.searchAdvanced(input as Parameters<AnysearchSearch['searchAdvanced']>[0], abortSignal)
+    const request = normalizeAnysearchSearchRequest(input as Parameters<AnysearchSearch['searchAdvanced']>[0])
+    return provider.searchAdvanced(request, abortSignal)
   },
   toModelOutput: toTextModelOutput(contentOrErrorText),
 }

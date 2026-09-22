@@ -1,4 +1,5 @@
 import { ChatboxAIAPIError } from '@shared/models/errors'
+import type { JSONSchema7 } from 'json-schema'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getLicenseKeyMock = vi.fn()
@@ -74,6 +75,10 @@ async function toModelOutput(tool: unknown, output: unknown) {
   return await mapper.toModelOutput({ toolCallId: 'tool-call-id', input: {}, output })
 }
 
+function getJsonSchema(inputSchema: unknown): JSONSchema7 {
+  return (inputSchema as { jsonSchema: JSONSchema7 }).jsonSchema
+}
+
 describe('webSearchTool', () => {
   it('maps search results to readable model text', async () => {
     await expect(
@@ -89,6 +94,22 @@ describe('webSearchTool', () => {
 
 describe('Anysearch advanced tools', () => {
   beforeEach(() => getAnysearchProviderMock.mockReset())
+
+  it('keeps the advanced search schemas compatible with strict function calling', () => {
+    const searchSchema = getJsonSchema(anysearchSearchTool.inputSchema)
+    const batchSchema = getJsonSchema(anysearchBatchSearchTool.inputSchema)
+
+    expect(searchSchema.required).toEqual(['query'])
+    expect(searchSchema).not.toHaveProperty('allOf')
+    expect(searchSchema).not.toHaveProperty('anyOf')
+    expect(searchSchema).not.toHaveProperty('oneOf')
+    expect(searchSchema.properties?.sub_domain).toMatchObject({ minLength: 1 })
+
+    expect(batchSchema).not.toHaveProperty('allOf')
+    expect(batchSchema.properties?.queries).toMatchObject({
+      items: expect.objectContaining({ required: ['query'] }),
+    })
+  })
 
   it('executes batch search through the configured provider', async () => {
     const batchSearch = vi.fn().mockResolvedValue('batch markdown')
@@ -113,6 +134,28 @@ describe('Anysearch advanced tools', () => {
 
     await expect(execTool(anysearchSearchTool, input)).resolves.toBe('vertical markdown')
     expect(searchAdvanced).toHaveBeenCalledWith(input, undefined)
+  })
+
+  it('rejects an incomplete vertical search before calling the provider', async () => {
+    const searchAdvanced = vi.fn()
+    getAnysearchProviderMock.mockReturnValue({ searchAdvanced })
+
+    await expect(
+      execTool(anysearchSearchTool, { query: 'AAPL quote', domain: 'finance' })
+    ).rejects.toThrow('requires a sub_domain')
+    expect(searchAdvanced).not.toHaveBeenCalled()
+  })
+
+  it('validates every batch query before calling the provider', async () => {
+    const batchSearch = vi.fn()
+    getAnysearchProviderMock.mockReturnValue({ batchSearch })
+
+    await expect(
+      execTool(anysearchBatchSearchTool, {
+        queries: [{ query: 'valid query' }, { query: 'finance query', domain: 'finance' }],
+      })
+    ).rejects.toThrow('requires a sub_domain')
+    expect(batchSearch).not.toHaveBeenCalled()
   })
 
   it('executes domain discovery through the configured provider', async () => {

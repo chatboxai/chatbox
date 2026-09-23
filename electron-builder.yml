@@ -1,5 +1,22 @@
 productName: Chatbox
 appId: xyz.chatboxapp.app
+# Match packages/chatbox-i18n/src/languages.ts using Windows/Linux locale filenames.
+electronLanguages:
+  - en-US
+  - zh-CN
+  - zh-TW
+  - ja
+  - ko
+  - ru
+  - de
+  - fr
+  - pt-PT
+  - es
+  - ar
+  - it
+  - sv
+  - nb
+  - tr
 asar: true
 asarUnpack:
   - "**/*.{node,dll}"
@@ -21,6 +38,23 @@ afterSign: .erb/scripts/notarize.js
 #   releaseNotes: See the changelog for details
 
 mac:
+  # macOS uses .lproj names; electron-builder matches them exactly.
+  electronLanguages:
+    - en
+    - zh_CN
+    - zh_TW
+    - ja
+    - ko
+    - ru
+    - de
+    - fr
+    - pt_PT
+    - es
+    - ar
+    - it
+    - sv
+    - nb
+    - tr
   notarize: false
   category: public.app-category.developer-tools
   target:

@@ -1109,6 +1109,20 @@ describe('reasoning-control', () => {
         replayNamespaces: [],
       })
     })
+
+    it('replays thought signatures on Gemini routes', () => {
+      expect(resolveReasoningReplayPolicy(ModelProviderEnum.Gemini, model('gemini-3-pro', 'google'))).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: true,
+        replayNamespaces: ['google'],
+      })
+      // ChatboxAI and custom providers route Gemini models over the same wire protocol.
+      expect(resolveReasoningReplayPolicy(ModelProviderEnum.ChatboxAI, model('gemini-3.1-pro', 'google'))).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: true,
+        replayNamespaces: ['google'],
+      })
+    })
   })
 
   describe('shouldDisableClaudeThinkingForUnsignedResume', () => {

@@ -501,7 +501,7 @@ export async function prepareAgentGenerationHarness(
     modelSupportVision: model.isSupportVision(),
     preserveReasoning: disableClaudeThinkingForResume ? false : reasoningReplay.preserveReasoning,
     signedReasoningOnly: reasoningReplay.signedReasoningOnly,
-    reasoningReplayNamespaces: reasoningReplay.replayNamespaces,
+    replayNamespaces: reasoningReplay.replayNamespaces,
     // getModel() stamps apiStyle from the provider type (builtin/custom Gemini providers)
     // or the per-model remote config (ChatboxAI google-routed models), so it is the single
     // signal for "this request speaks the Gemini function-call protocol".

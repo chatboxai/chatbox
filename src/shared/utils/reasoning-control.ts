@@ -420,11 +420,13 @@ export interface ReasoningReplayPolicy {
   /**
    * Provider namespaces whose replay metadata may go on the wire for this
    * route. Replay is per-route, not global: a session can switch providers
-   * between turns, so a reasoning block can carry another provider's metadata.
+   * between turns, so a stored block can carry another provider's metadata.
    * Sending that foreign metadata would turn an otherwise-dropped unsigned
    * block into a wire-visible one (Anthropic rejects thinking blocks without a
    * valid signature; OpenAI Responses warns on reasoning parts it cannot
-   * reconstruct). Empty for the plain-text DeepSeek channel, which replays
+   * reconstruct). Applies to text parts as well as reasoning ones, because
+   * Gemini's signature rides on the last text part of a response with no
+   * function call. Empty for the plain-text DeepSeek channel, which replays
    * text only.
    */
   replayNamespaces: readonly string[]
@@ -450,6 +452,13 @@ export interface ReasoningReplayPolicy {
  * actually carry an item id / encrypted payload go out — a plain-text thought
  * saved on another route cannot be reconstructed into an OpenAI reasoning item.
  *
+ * Gemini is the third signed-replay route. Its `thoughtSignature` is mandatory on
+ * `functionCall` parts for Gemini 3 (the request 400s without it) and is also
+ * attached to the last `text` / `thought` part of a response with no function
+ * call, where Google documents that omitting it can degrade performance. Only
+ * blocks that actually carry a signature go out — unsigned thoughts from other
+ * providers are dropped rather than replayed as Gemini thought parts.
+ *
  * DeepSeek thinking mode keeps its existing all-turns plain-text behavior (see
  * `shouldPreserveDeepSeekReasoning`).
  */
@@ -462,6 +471,9 @@ export function resolveReasoningReplayPolicy(
   }
   if (model?.apiStyle === 'openai-responses') {
     return { preserveReasoning: 'all-turns', signedReasoningOnly: true, replayNamespaces: ['openai'] }
+  }
+  if (model?.apiStyle === 'google') {
+    return { preserveReasoning: 'all-turns', signedReasoningOnly: true, replayNamespaces: ['google'] }
   }
   if (shouldPreserveDeepSeekReasoning(provider, model)) {
     return { preserveReasoning: 'all-turns', signedReasoningOnly: false, replayNamespaces: [] }

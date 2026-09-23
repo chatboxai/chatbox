@@ -26,29 +26,31 @@ export interface ConvertToModelMessagesOptions {
    * Whether historical assistant reasoning survives conversion.
    * - `false`/omitted: reasoning is dropped (most providers reject or mangle it).
    * - `true` / `'all-turns'` (equivalent): reasoning is kept on every assistant
-   *   turn (DeepSeek thinking mode, and Anthropic Messages signed replay —
-   *   the documented pattern: send everything back, the API filters per model).
+   *   turn (DeepSeek thinking mode, and the signed replay routes — Anthropic
+   *   Messages, OpenAI Responses, Gemini — the documented pattern: send
+   *   everything back, the API filters per model).
    */
   preserveReasoning?: boolean | 'all-turns'
   /**
    * When true, only reasoning parts that carry whitelisted replay metadata
    * (Anthropic `signature` / `redactedData`, OpenAI Responses `itemId` /
-   * `reasoningEncryptedContent`) go on the wire. This is the Cherry-style
-   * source filter: Kimi/DeepSeek/Gemini thoughts carry none of those keys and
-   * are omitted, while a signature or encrypted reasoning item survives a
-   * same-realm model or host switch (Claude API / Bedrock Messages / Vertex
-   * signatures are cross-compatible; OpenAI reasoning items are reusable within
-   * a model family). `reasoningReplayNamespaces` narrows this further to the
+   * `reasoningEncryptedContent`, Gemini `thoughtSignature`) go on the wire. This
+   * is the Cherry-style source filter: Kimi/DeepSeek/Mistral thoughts carry none
+   * of those keys and are omitted, while a signature or encrypted reasoning item
+   * survives a same-realm model or host switch (Claude API / Bedrock Messages /
+   * Vertex signatures are cross-compatible; OpenAI reasoning items are reusable
+   * within a model family). `replayNamespaces` narrows this further to the
    * namespaces the target route can actually consume.
    */
   signedReasoningOnly?: boolean
   /**
    * Provider namespaces whose replay metadata may go on the wire (see
-   * `ReasoningReplayPolicy.replayNamespaces`). Omitted keeps every whitelisted
-   * namespace — auxiliary callers such as naming/summarization never replay
-   * reasoning at all, so the filter is irrelevant to them.
+   * `ReasoningReplayPolicy.replayNamespaces`). Applies to both reasoning and
+   * text parts, because Gemini's signature rides on the latter. Omitted keeps
+   * every whitelisted namespace — auxiliary callers such as naming/summarization
+   * never replay reasoning at all, so the filter is irrelevant to them.
    */
-  reasoningReplayNamespaces?: readonly string[]
+  replayNamespaces?: readonly string[]
   ensureGoogleFunctionCallSignatures?: boolean
   /**
    * The model's wire protocol accepts images inside tool results (see
@@ -223,7 +225,7 @@ type EffectiveReasoningReplay = false | 'text' | 'signed-only'
 async function convertAssistantContentParts(
   contentParts: MessageContentParts,
   resolveImage: ModelImageResolver,
-  options?: { preserveReasoning?: EffectiveReasoningReplay; reasoningReplayNamespaces?: readonly string[] }
+  options?: { preserveReasoning?: EffectiveReasoningReplay; replayNamespaces?: readonly string[] }
 ): Promise<Array<TextPart | FilePart | ToolCallPart | ReasoningPart>> {
   const results: Array<TextPart | FilePart | ToolCallPart | ReasoningPart | null> = await Promise.all(
     contentParts.map(async (c) => {
@@ -244,23 +246,32 @@ async function convertAssistantContentParts(
         // only for structure (`protocolOnly`) are equally invisible to providers
         // until a route that requires them (Bedrock Converse) opts in explicitly.
         if (!c.text || c.protocolOnly) return null
-        return { type: 'text', text: c.text } as TextPart
+        // Text parts carry replay metadata too: Gemini signs the last text part of
+        // a response that has no function call. Same namespace filter as reasoning —
+        // only the target route's metadata may go out.
+        const textReplayMetadata = pickPersistableProviderMetadata(c.providerMetadata, options?.replayNamespaces)
+        return {
+          type: 'text',
+          text: c.text,
+          ...(textReplayMetadata ? { providerOptions: textReplayMetadata } : {}),
+        } as TextPart
       }
       // Reasoning is opt-in per provider. DeepSeek thinking mode requires it on follow-up
       // requests, including when routed through an OpenAI-compatible provider, but other
       // providers reject it (xAI Grok 400s on unknown `reasoning_content`) or merge it into
       // text content (Mistral concatenates without a separator). Default off keeps prior
       // behavior; orchestration enables it only for positively identified DeepSeek and
-      // Anthropic Messages routes that require reasoning history on follow-up requests.
+      // signed-replay routes (Anthropic Messages, OpenAI Responses, Gemini) that need
+      // reasoning history on follow-up requests.
       if (c.type === 'reasoning') {
         const mode = options?.preserveReasoning
         if (!mode) return null
         // Only whitelisted replay metadata goes back out, and only for namespaces the
         // target route understands — anything else persisted on the part must not leak
         // onto the wire.
-        const replayMetadata = pickPersistableProviderMetadata(c.providerMetadata, options?.reasoningReplayNamespaces)
-        // The signed-replay channel (Anthropic Messages) carries only blocks
-        // that can pass upstream signature validation; unsigned reasoning —
+        const replayMetadata = pickPersistableProviderMetadata(c.providerMetadata, options?.replayNamespaces)
+        // The signed-replay channel (Anthropic Messages, OpenAI Responses, Gemini)
+        // carries only blocks that can pass upstream validation; unsigned reasoning —
         // e.g. saved by app versions predating metadata capture — is omitted,
         // matching Cherry-style "skip foreign thinking, keep it in the UI".
         if (mode === 'signed-only' && !replayMetadata) return null
@@ -401,7 +412,7 @@ async function emitAssistantMessages(
   output: ModelMessage[],
   options?: {
     preserveReasoning?: EffectiveReasoningReplay
-    reasoningReplayNamespaces?: readonly string[]
+    replayNamespaces?: readonly string[]
     ensureGoogleFunctionCallSignatures?: boolean
     modelSupportVision?: boolean
     supportToolResultImages?: boolean
@@ -544,7 +555,7 @@ export async function convertToModelMessages(
       case 'assistant':
         await emitAssistantMessages(m.contentParts || [], resolveImage, output, {
           preserveReasoning: effectiveReasoningReplay,
-          reasoningReplayNamespaces: options?.reasoningReplayNamespaces,
+          replayNamespaces: options?.replayNamespaces,
           ensureGoogleFunctionCallSignatures: options?.ensureGoogleFunctionCallSignatures,
           modelSupportVision: options?.modelSupportVision,
           supportToolResultImages: options?.supportToolResultImages,

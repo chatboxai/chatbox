@@ -663,9 +663,16 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
   private createOrUpdateTextPart(
     textDelta: string,
     contentParts: MessageContentParts,
-    currentTextPart: MessageTextPart | undefined
+    currentTextPart: MessageTextPart | undefined,
+    persistableProviderMetadata?: ProviderMetadata
   ): MessageTextPart {
-    return this.createOrUpdateContentPart(textDelta, contentParts, currentTextPart, 'text')
+    const textPart = this.createOrUpdateContentPart(textDelta, contentParts, currentTextPart, 'text')
+    // Gemini rides its thought signature on the response's last text part, so text
+    // parts need the same replay-metadata capture reasoning parts get.
+    if (persistableProviderMetadata) {
+      textPart.providerMetadata = mergeProviderMetadata(textPart.providerMetadata, persistableProviderMetadata)
+    }
+    return textPart
   }
 
   /**
@@ -739,7 +746,12 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         finalizeReasoningDuration()
         // clear current reasoning part
         return {
-          currentTextPart: this.createOrUpdateTextPart(chunk.text, contentParts, currentTextPart),
+          currentTextPart: this.createOrUpdateTextPart(
+            chunk.text,
+            contentParts,
+            currentTextPart,
+            pickPersistableProviderMetadata(chunk.providerMetadata)
+          ),
           currentReasoningPart: undefined,
           pendingReasoningText: '',
         }

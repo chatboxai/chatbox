@@ -124,6 +124,13 @@ export const MessageTextPartSchema = z.object({
   type: z.literal('text'),
   text: z.string(),
   /**
+   * Replay-critical provider metadata (whitelisted in
+   * `models/provider-part-metadata.ts`) that rides on a text part rather than a
+   * reasoning part — currently Gemini's `thoughtSignature`, which Gemini 3 puts
+   * on the last text part of a response that has no function call.
+   */
+  providerMetadata: MessageProviderMetadataSchema.optional(),
+  /**
    * The part exists only to keep the provider's block structure intact for
    * request replay (e.g. an empty Anthropic text block between thinking
    * blocks). Never rendered, exported, or counted as a work step.

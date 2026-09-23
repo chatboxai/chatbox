@@ -139,11 +139,20 @@ export async function processStreamChunk(
       finalizeReasoningDuration(currentReasoningPart)
       currentReasoningPart = undefined
       preparingToolInput = undefined
+      // Gemini attaches its thought signature to the response's last text part and
+      // streams it as an empty delta carrying only provider metadata, so text parts
+      // need the same capture reasoning parts get. The metadata lands on the open
+      // text block; an empty block that carries nothing else is dropped at replay,
+      // exactly as the Google SDK drops empty text parts on the way out.
+      const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
       if (currentTextPart) {
         currentTextPart.text += chunk.text
       } else {
         currentTextPart = { type: 'text', text: chunk.text }
         contentParts.push(currentTextPart)
+      }
+      if (persistable) {
+        currentTextPart.providerMetadata = mergeProviderMetadata(currentTextPart.providerMetadata, persistable)
       }
       break
     }
@@ -151,8 +160,8 @@ export async function processStreamChunk(
       finalizeReasoningDuration(currentReasoningPart)
       currentReasoningPart = undefined
       // Anthropic delivers `redacted_thinking` payloads on the block-start chunk.
-      // Metadata outside the persistable whitelist (e.g. OpenAI Responses item
-      // ids) must not create a part — the block stays lazily created on its
+      // Metadata outside the persistable whitelist (e.g. Mistral's usage
+      // breakdown) must not create a part — the block stays lazily created on its
       // first non-empty delta, so spurious empty reasoning blocks that some
       // providers interleave with text never split the current text part.
       const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)

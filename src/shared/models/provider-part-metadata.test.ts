@@ -19,15 +19,23 @@ describe('pickPersistableProviderMetadata', () => {
     expect(pickPersistableProviderMetadata({ openai: { itemId: 'rs_1' } })).toEqual({ openai: { itemId: 'rs_1' } })
   })
 
+  it('keeps whitelisted Gemini replay keys', () => {
+    expect(pickPersistableProviderMetadata({ google: { thoughtSignature: 'gemini-sig' } })).toEqual({
+      google: { thoughtSignature: 'gemini-sig' },
+    })
+  })
+
   it('drops non-whitelisted keys and namespaces', () => {
     expect(
       pickPersistableProviderMetadata({
         anthropic: { signature: 'sig', cacheControl: { type: 'ephemeral' } },
-        google: { thoughtSignature: 'gemini-sig' },
+        google: { thoughtSignature: 'gemini-sig', thought: true },
         openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
+        mistral: { usage: { promptTokens: 10 } },
       })
     ).toEqual({
       anthropic: { signature: 'sig' },
+      google: { thoughtSignature: 'gemini-sig' },
       openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
     })
   })
@@ -36,11 +44,15 @@ describe('pickPersistableProviderMetadata', () => {
     const metadata = {
       anthropic: { signature: 'sig' },
       openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
+      google: { thoughtSignature: 'gemini-sig' },
     }
 
     expect(pickPersistableProviderMetadata(metadata, ['anthropic'])).toEqual({ anthropic: { signature: 'sig' } })
     expect(pickPersistableProviderMetadata(metadata, ['openai'])).toEqual({
       openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
+    })
+    expect(pickPersistableProviderMetadata(metadata, ['google'])).toEqual({
+      google: { thoughtSignature: 'gemini-sig' },
     })
     expect(pickPersistableProviderMetadata(metadata, [])).toBeUndefined()
   })
@@ -48,7 +60,9 @@ describe('pickPersistableProviderMetadata', () => {
   it('returns undefined when nothing persistable remains', () => {
     expect(pickPersistableProviderMetadata(undefined)).toBeUndefined()
     expect(pickPersistableProviderMetadata({})).toBeUndefined()
-    expect(pickPersistableProviderMetadata({ google: { thoughtSignature: 'gemini-sig' } })).toBeUndefined()
+    expect(pickPersistableProviderMetadata({ mistral: { usage: { promptTokens: 10 } } })).toBeUndefined()
+    // A whitelisted namespace still needs a whitelisted key inside it.
+    expect(pickPersistableProviderMetadata({ google: { thought: true } })).toBeUndefined()
     expect(pickPersistableProviderMetadata({ anthropic: {} })).toBeUndefined()
     expect(pickPersistableProviderMetadata({ openai: { itemId: 'rs_1' } }, ['anthropic'])).toBeUndefined()
   })

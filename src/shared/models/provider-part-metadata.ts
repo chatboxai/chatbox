@@ -17,6 +17,12 @@ import type { ProviderMetadata } from 'ai'
  *   replay an encrypted reasoning item. Chatbox forces `store: false` (no
  *   server-side state), so the only way to keep the model's reasoning across
  *   turns is to send the item back — the documented stateless-mode pattern.
+ * - Gemini `thoughtSignature` must be returned on the parts that carry it.
+ *   It rides on `functionCall` parts (mandatory on Gemini 3 — the request 400s
+ *   without it) and on the `text` / `thought` parts of a response with no
+ *   function call, where Google documents that omitting it can degrade
+ *   performance. Note this key lives on text parts too, not just reasoning
+ *   ones, which is why `MessageTextPartSchema` carries provider metadata.
  *
  * Adding a key here requires adding the matching replay logic in
  * `model-message-converter.ts` in the same change.
@@ -24,6 +30,7 @@ import type { ProviderMetadata } from 'ai'
 const PERSISTABLE_PART_METADATA_KEYS: Record<string, readonly string[]> = {
   anthropic: ['signature', 'redactedData'],
   openai: ['itemId', 'reasoningEncryptedContent'],
+  google: ['thoughtSignature'],
 }
 
 /**

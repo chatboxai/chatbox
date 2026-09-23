@@ -240,22 +240,84 @@ describe('processStreamChunk', () => {
     })
   })
 
+  it('persists Gemini thought signatures on reasoning and text parts', async () => {
+    const chunks = [
+      chunk('reasoning-start', {
+        id: 'reasoning-0',
+        providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+      }),
+      chunk('reasoning-delta', {
+        id: 'reasoning-0',
+        text: 'weighing options',
+        providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+      }),
+      chunk('reasoning-end', { id: 'reasoning-0' }),
+      chunk('text-delta', {
+        id: 'text-0',
+        text: 'Final answer',
+        providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+      }),
+      chunk('text-end', { id: 'text-0' }),
+    ]
+
+    let state = createInitialState()
+    for (const streamChunk of chunks) {
+      state = (await processStreamChunk(streamChunk, state, callbacks)).state
+    }
+
+    expect(state.contentParts).toMatchObject([
+      {
+        type: 'reasoning',
+        text: 'weighing options',
+        providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+      },
+      {
+        type: 'text',
+        text: 'Final answer',
+        providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+      },
+    ])
+  })
+
+  it('keeps a text part signature that arrives as an empty trailing delta', async () => {
+    // Gemini signs the response's last part and streams the signature as a delta
+    // with no text, so it has to land on the open text block.
+    const chunks = [
+      chunk('text-delta', { id: 'text-0', text: 'Final answer' }),
+      chunk('text-delta', {
+        id: 'text-0',
+        text: '',
+        providerMetadata: { google: { thoughtSignature: 'trailing-sig' } },
+      }),
+      chunk('text-end', { id: 'text-0' }),
+    ]
+
+    let state = createInitialState()
+    for (const streamChunk of chunks) {
+      state = (await processStreamChunk(streamChunk, state, callbacks)).state
+    }
+
+    expect(state.contentParts).toMatchObject([
+      { type: 'text', text: 'Final answer', providerMetadata: { google: { thoughtSignature: 'trailing-sig' } } },
+    ])
+  })
+
   it('does not persist non-whitelisted provider metadata or create parts for it', async () => {
     const chunks = [
       chunk('reasoning-start', {
         id: 'reasoning-0',
-        providerMetadata: { google: { thoughtSignature: 'gemini-sig' } },
+        providerMetadata: { mistral: { usage: { promptTokens: 10 } } },
       }),
       chunk('reasoning-delta', {
         id: 'reasoning-0',
         text: '',
-        providerMetadata: { google: { thoughtSignature: 'gemini-sig' } },
+        providerMetadata: { mistral: { usage: { promptTokens: 10 } } },
       }),
-      chunk('reasoning-end', { id: 'reasoning-0', providerMetadata: { google: { thoughtSignature: 'gemini-sig' } } }),
+      chunk('reasoning-end', { id: 'reasoning-0', providerMetadata: { mistral: { usage: { promptTokens: 10 } } } }),
       chunk('reasoning-delta', {
         id: 'reasoning-1',
         text: 'visible thought',
-        providerMetadata: { google: { thoughtSignature: 'gemini-sig-2' } },
+        providerMetadata: { mistral: { usage: { promptTokens: 20 } } },
       }),
       chunk('reasoning-end', { id: 'reasoning-1' }),
     ]

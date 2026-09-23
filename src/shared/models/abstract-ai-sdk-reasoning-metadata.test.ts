@@ -38,7 +38,7 @@ function createDependencies(): ModelDependencies {
 class StreamTestModel extends AbstractAISDKModel {
   public constructor(
     private readonly languageModel: MockLanguageModelV3,
-    apiStyle: 'anthropic' | 'openai-responses'
+    apiStyle: 'anthropic' | 'openai-responses' | 'google'
   ) {
     super(
       {
@@ -235,26 +235,73 @@ describe('AbstractAISDKModel reasoning metadata aggregation', () => {
     ])
   })
 
+  it('persists Gemini thought signatures on both reasoning and text parts', async () => {
+    const languageModel = createStreamModel(
+      [
+        {
+          type: 'reasoning-start',
+          id: 'reasoning-0',
+          providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+        },
+        {
+          type: 'reasoning-delta',
+          id: 'reasoning-0',
+          delta: 'Visible thought',
+          providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+        },
+        { type: 'reasoning-end', id: 'reasoning-0' },
+        { type: 'text-start', id: 'text-0' },
+        {
+          type: 'text-delta',
+          id: 'text-0',
+          delta: 'Answer',
+          providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+        },
+        { type: 'text-end', id: 'text-0' },
+      ],
+      'google.generative-ai'
+    )
+
+    const response = await new StreamTestModel(languageModel, 'google').chat([{ role: 'user', content: 'think' }], {})
+
+    expect(response.contentParts).toMatchObject([
+      {
+        type: 'reasoning',
+        text: 'Visible thought',
+        providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+      },
+      {
+        type: 'text',
+        text: 'Answer',
+        providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+      },
+    ])
+  })
+
   it('does not create parts for or persist non-whitelisted reasoning metadata', async () => {
     const languageModel = createStreamModel(
       [
         {
           type: 'reasoning-start',
           id: 'reasoning-0',
-          providerMetadata: { google: { thoughtSignature: 'gemini-sig' } },
+          providerMetadata: { mistral: { usage: { promptTokens: 10 } } },
         },
         {
           type: 'reasoning-delta',
           id: 'reasoning-0',
           delta: 'Visible thought',
-          providerMetadata: { google: { thoughtSignature: 'gemini-sig' } },
+          providerMetadata: { mistral: { usage: { promptTokens: 10 } } },
         },
-        { type: 'reasoning-end', id: 'reasoning-0', providerMetadata: { google: { thoughtSignature: 'gemini-sig' } } },
+        {
+          type: 'reasoning-end',
+          id: 'reasoning-0',
+          providerMetadata: { mistral: { usage: { promptTokens: 10 } } },
+        },
         { type: 'text-start', id: 'text-0' },
         { type: 'text-delta', id: 'text-0', delta: 'Answer' },
         { type: 'text-end', id: 'text-0' },
       ],
-      'google.generative-ai'
+      'mistral.chat'
     )
 
     const response = await new StreamTestModel(languageModel, 'openai-responses').chat(

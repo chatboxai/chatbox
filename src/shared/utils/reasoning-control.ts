@@ -417,6 +417,17 @@ export interface ReasoningReplayPolicy {
   preserveReasoning: false | 'all-turns'
   /** Whether only blocks carrying whitelisted replay metadata go on the wire. */
   signedReasoningOnly: boolean
+  /**
+   * Provider namespaces whose replay metadata may go on the wire for this
+   * route. Replay is per-route, not global: a session can switch providers
+   * between turns, so a reasoning block can carry another provider's metadata.
+   * Sending that foreign metadata would turn an otherwise-dropped unsigned
+   * block into a wire-visible one (Anthropic rejects thinking blocks without a
+   * valid signature; OpenAI Responses warns on reasoning parts it cannot
+   * reconstruct). Empty for the plain-text DeepSeek channel, which replays
+   * text only.
+   */
+  replayNamespaces: readonly string[]
 }
 
 /**
@@ -432,6 +443,13 @@ export interface ReasoningReplayPolicy {
  * expects the `bedrock` namespace and empty text blocks — it stays excluded
  * until that protocol is implemented.
  *
+ * OpenAI Responses is the other signed-replay route: Chatbox forces
+ * `store: false` and requests `reasoning.encrypted_content`, so replaying the
+ * encrypted reasoning item is the only way to keep the model's reasoning across
+ * turns (the API has no server-side state to fall back on). Only blocks that
+ * actually carry an item id / encrypted payload go out — a plain-text thought
+ * saved on another route cannot be reconstructed into an OpenAI reasoning item.
+ *
  * DeepSeek thinking mode keeps its existing all-turns plain-text behavior (see
  * `shouldPreserveDeepSeekReasoning`).
  */
@@ -440,12 +458,15 @@ export function resolveReasoningReplayPolicy(
   model: ProviderModelInfo | null | undefined
 ): ReasoningReplayPolicy {
   if (model?.apiStyle === 'anthropic' && !usesBedrockConverseProtocol(provider)) {
-    return { preserveReasoning: 'all-turns', signedReasoningOnly: true }
+    return { preserveReasoning: 'all-turns', signedReasoningOnly: true, replayNamespaces: ['anthropic'] }
+  }
+  if (model?.apiStyle === 'openai-responses') {
+    return { preserveReasoning: 'all-turns', signedReasoningOnly: true, replayNamespaces: ['openai'] }
   }
   if (shouldPreserveDeepSeekReasoning(provider, model)) {
-    return { preserveReasoning: 'all-turns', signedReasoningOnly: false }
+    return { preserveReasoning: 'all-turns', signedReasoningOnly: false, replayNamespaces: [] }
   }
-  return { preserveReasoning: false, signedReasoningOnly: false }
+  return { preserveReasoning: false, signedReasoningOnly: false, replayNamespaces: [] }
 }
 
 /**
@@ -488,10 +509,17 @@ export function canSendClaudeThinkingDisabled(modelId: string | undefined): bool
  */
 export function shouldDisableClaudeThinkingForUnsignedResume(
   lastPromptMessage: { role: string; contentParts?: MessageContentParts } | undefined,
-  signedReasoningOnly: boolean,
+  /**
+   * Whether this request replays Anthropic signed thinking. Callers must pass
+   * the route's Anthropic-ness, not merely "signed replay is on": OpenAI
+   * Responses also replays signed metadata but has no turn-start rule, and
+   * degrading its thinking would silently drop the encrypted reasoning items
+   * this request exists to send.
+   */
+  anthropicSignedReplay: boolean,
   modelId: string
 ): boolean {
-  if (!signedReasoningOnly || !canSendClaudeThinkingDisabled(modelId)) return false
+  if (!anthropicSignedReplay || !canSendClaudeThinkingDisabled(modelId)) return false
   if (lastPromptMessage?.role !== 'assistant') return false
   const parts = lastPromptMessage.contentParts ?? []
   // Only completed tool calls reach the wire; without one the request does not
@@ -509,12 +537,16 @@ function isWireVisibleToolCall(part: MessageContentParts[number]): boolean {
  * parts that never reach the wire (unsigned reasoning, empty or protocol-only
  * text, unfinished tool calls, info parts) and reports whether the first
  * surviving block is signed thinking.
+ *
+ * Filtered to the `anthropic` namespace for the same reason the converter is:
+ * this only ever runs on Anthropic routes, where a leftover OpenAI reasoning
+ * item is dropped rather than emitted, so it must not count as signed thinking.
  */
 function turnStartsWithSignedThinking(parts: MessageContentParts): boolean {
   for (const part of parts) {
     switch (part.type) {
       case 'reasoning':
-        if (pickPersistableProviderMetadata(part.providerMetadata)) return true
+        if (pickPersistableProviderMetadata(part.providerMetadata, ['anthropic'])) return true
         break // unsigned reasoning is omitted from the wire; keep looking
       case 'text':
         if (part.text && !part.protocolOnly) return false

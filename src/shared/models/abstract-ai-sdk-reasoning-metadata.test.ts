@@ -198,7 +198,7 @@ describe('AbstractAISDKModel reasoning metadata aggregation', () => {
     ])
   })
 
-  it('does not create parts for or persist non-whitelisted reasoning metadata', async () => {
+  it('persists OpenAI Responses encrypted reasoning metadata for replay', async () => {
     const languageModel = createStreamModel(
       [
         {
@@ -218,6 +218,43 @@ describe('AbstractAISDKModel reasoning metadata aggregation', () => {
         { type: 'text-end', id: 'text-0' },
       ],
       'openai.responses'
+    )
+
+    const response = await new StreamTestModel(languageModel, 'openai-responses').chat(
+      [{ role: 'user', content: 'think' }],
+      {}
+    )
+
+    expect(response.contentParts).toMatchObject([
+      {
+        type: 'reasoning',
+        text: 'Visible thought',
+        providerMetadata: { openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } },
+      },
+      { type: 'text', text: 'Answer' },
+    ])
+  })
+
+  it('does not create parts for or persist non-whitelisted reasoning metadata', async () => {
+    const languageModel = createStreamModel(
+      [
+        {
+          type: 'reasoning-start',
+          id: 'reasoning-0',
+          providerMetadata: { google: { thoughtSignature: 'gemini-sig' } },
+        },
+        {
+          type: 'reasoning-delta',
+          id: 'reasoning-0',
+          delta: 'Visible thought',
+          providerMetadata: { google: { thoughtSignature: 'gemini-sig' } },
+        },
+        { type: 'reasoning-end', id: 'reasoning-0', providerMetadata: { google: { thoughtSignature: 'gemini-sig' } } },
+        { type: 'text-start', id: 'text-0' },
+        { type: 'text-delta', id: 'text-0', delta: 'Answer' },
+        { type: 'text-end', id: 'text-0' },
+      ],
+      'google.generative-ai'
     )
 
     const response = await new StreamTestModel(languageModel, 'openai-responses').chat(

@@ -11,20 +11,46 @@ describe('pickPersistableProviderMetadata', () => {
     })
   })
 
+  it('keeps whitelisted OpenAI Responses replay keys', () => {
+    expect(
+      pickPersistableProviderMetadata({ openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } })
+    ).toEqual({ openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } })
+    // A bare item id is enough to replay a stored reasoning item via item_reference.
+    expect(pickPersistableProviderMetadata({ openai: { itemId: 'rs_1' } })).toEqual({ openai: { itemId: 'rs_1' } })
+  })
+
   it('drops non-whitelisted keys and namespaces', () => {
     expect(
       pickPersistableProviderMetadata({
         anthropic: { signature: 'sig', cacheControl: { type: 'ephemeral' } },
+        google: { thoughtSignature: 'gemini-sig' },
         openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
       })
-    ).toEqual({ anthropic: { signature: 'sig' } })
+    ).toEqual({
+      anthropic: { signature: 'sig' },
+      openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
+    })
+  })
+
+  it('restricts the result to the requested namespaces', () => {
+    const metadata = {
+      anthropic: { signature: 'sig' },
+      openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
+    }
+
+    expect(pickPersistableProviderMetadata(metadata, ['anthropic'])).toEqual({ anthropic: { signature: 'sig' } })
+    expect(pickPersistableProviderMetadata(metadata, ['openai'])).toEqual({
+      openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
+    })
+    expect(pickPersistableProviderMetadata(metadata, [])).toBeUndefined()
   })
 
   it('returns undefined when nothing persistable remains', () => {
     expect(pickPersistableProviderMetadata(undefined)).toBeUndefined()
     expect(pickPersistableProviderMetadata({})).toBeUndefined()
-    expect(pickPersistableProviderMetadata({ openai: { itemId: 'rs_1' } })).toBeUndefined()
+    expect(pickPersistableProviderMetadata({ google: { thoughtSignature: 'gemini-sig' } })).toBeUndefined()
     expect(pickPersistableProviderMetadata({ anthropic: {} })).toBeUndefined()
+    expect(pickPersistableProviderMetadata({ openai: { itemId: 'rs_1' } }, ['anthropic'])).toBeUndefined()
   })
 })
 

@@ -1057,24 +1057,56 @@ describe('reasoning-control', () => {
       expect(resolveReasoningReplayPolicy(ModelProviderEnum.Claude, model('claude-sonnet-4-5', 'anthropic'))).toEqual({
         preserveReasoning: 'all-turns',
         signedReasoningOnly: true,
+        replayNamespaces: ['anthropic'],
       })
       expect(resolveReasoningReplayPolicy('acme-llm', model('claude-opus-4-8', 'anthropic'))).toEqual({
         preserveReasoning: 'all-turns',
         signedReasoningOnly: true,
+        replayNamespaces: ['anthropic'],
       })
       // Bedrock speaks the Converse protocol: same apiStyle, different wire format.
       expect(resolveReasoningReplayPolicy(ModelProviderEnum.Bedrock, model('claude-sonnet-4-5', 'anthropic'))).toEqual({
         preserveReasoning: false,
         signedReasoningOnly: false,
+        replayNamespaces: [],
       })
       // DeepSeek thinking mode keeps its plain-text all-turns channel.
       expect(resolveReasoningReplayPolicy(ModelProviderEnum.DeepSeek, model('deepseek-reasoner', 'openai'))).toEqual({
         preserveReasoning: 'all-turns',
         signedReasoningOnly: false,
+        replayNamespaces: [],
       })
       expect(resolveReasoningReplayPolicy(ModelProviderEnum.OpenAI, model('gpt-5.1', 'openai'))).toEqual({
         preserveReasoning: false,
         signedReasoningOnly: false,
+        replayNamespaces: [],
+      })
+    })
+
+    it('replays encrypted reasoning items on OpenAI Responses routes', () => {
+      // Chatbox forces store=false on this route, so the encrypted reasoning item
+      // is the only way to keep the model's reasoning across turns.
+      expect(
+        resolveReasoningReplayPolicy(ModelProviderEnum.OpenAIResponses, model('gpt-5.1', 'openai-responses'))
+      ).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: true,
+        replayNamespaces: ['openai'],
+      })
+      // ChatboxAI and custom providers can route Responses models over the same
+      // stateless wire protocol.
+      expect(
+        resolveReasoningReplayPolicy(ModelProviderEnum.ChatboxAI, model('gpt-6-astra', 'openai-responses'))
+      ).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: true,
+        replayNamespaces: ['openai'],
+      })
+      // Plain Chat Completions never returns replayable reasoning items.
+      expect(resolveReasoningReplayPolicy(ModelProviderEnum.OpenAIResponses, model('gpt-5.1', 'openai'))).toEqual({
+        preserveReasoning: false,
+        signedReasoningOnly: false,
+        replayNamespaces: [],
       })
     })
   })
@@ -1107,6 +1139,24 @@ describe('reasoning-control', () => {
           'claude-haiku-4-5'
         )
       ).toBe(false)
+    })
+
+    it('does not treat a leftover OpenAI reasoning item as signed Anthropic thinking', () => {
+      // The Anthropic converter drops foreign-namespace metadata, so a block
+      // carrying only an OpenAI item never reaches the wire: the resumed turn is
+      // unsigned and must degrade instead of shipping a signature-less block.
+      const openaiOnly = {
+        type: 'reasoning' as const,
+        text: 'openai thought',
+        providerMetadata: { openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } },
+      }
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          { role: 'assistant', contentParts: [openaiOnly, tool('t1')] },
+          true,
+          'claude-haiku-4-5'
+        )
+      ).toBe(true)
     })
 
     it('keeps thinking on for non-interleaved multi-step turns where only the first step is signed', () => {

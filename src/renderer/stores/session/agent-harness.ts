@@ -491,13 +491,17 @@ export async function prepareAgentGenerationHarness(
   // then carry no thinking blocks at all — replay is dropped alongside.
   const disableClaudeThinkingForResume = shouldDisableClaudeThinkingForUnsignedResume(
     promptMsgs.at(-1),
-    reasoningReplay.signedReasoningOnly,
+    // Keyed on the route, not on "signed replay is on": OpenAI Responses also
+    // replays signed metadata but has no turn-start rule, and degrading it here
+    // would drop the encrypted reasoning items this request exists to replay.
+    reasoningReplay.replayNamespaces.includes('anthropic'),
     model.modelId
   )
   const coreMessages = await convertToModelMessages(injectedMessages, {
     modelSupportVision: model.isSupportVision(),
     preserveReasoning: disableClaudeThinkingForResume ? false : reasoningReplay.preserveReasoning,
     signedReasoningOnly: reasoningReplay.signedReasoningOnly,
+    reasoningReplayNamespaces: reasoningReplay.replayNamespaces,
     // getModel() stamps apiStyle from the provider type (builtin/custom Gemini providers)
     // or the per-model remote config (ChatboxAI google-routed models), so it is the single
     // signal for "this request speaks the Gemini function-call protocol".

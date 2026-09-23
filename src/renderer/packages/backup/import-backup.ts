@@ -446,6 +446,7 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
               starred: previous.starred,
               hidden: previous.hidden,
               archivedAt: previous.archivedAt,
+              folderId: previous.folderId,
               assistantAvatarKey: previous.assistantAvatarKey,
               picUrl: previous.picUrl,
               backgroundImage: previous.backgroundImage,
@@ -527,6 +528,7 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
         ? [
             BackupStorageKey.ChatSessionSettings,
             BackupStorageKey.PictureSessionSettings,
+            BackupStorageKey.SessionFolders,
             ...AGENT_PERSONA_BACKUP_KEYS,
             ...COPILOT_BACKUP_KEYS,
           ]
@@ -623,6 +625,7 @@ export async function importBackupArchive(file: File, options: BackupImportOptio
       for (const key of [
         BackupStorageKey.ChatSessionSettings,
         BackupStorageKey.PictureSessionSettings,
+        BackupStorageKey.SessionFolders,
         ...AGENT_PERSONA_BACKUP_KEYS,
         ...COPILOT_BACKUP_KEYS,
       ]) {

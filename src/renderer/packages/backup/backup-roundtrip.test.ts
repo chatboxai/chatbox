@@ -1,4 +1,4 @@
-import type { CopilotDetail, Session, SessionMetaRecord, Settings } from '@shared/types'
+import type { CopilotDetail, Session, SessionFolder, SessionMetaRecord, Settings } from '@shared/types'
 import { unzipSync, zipSync } from 'fflate'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bytesToBase64 } from './codec'
@@ -833,6 +833,103 @@ describe('ZIP backup round trip', () => {
     expect(exported.manifest.warnings).toContainEqual(
       expect.objectContaining({ code: 'resource-read-failed', itemId: 'picture:shared' })
     )
+  })
+
+  it('round-trips session folders (收藏夹) and per-session folderId metadata', async () => {
+    const folders: SessionFolder[] = [
+      { id: 'folder-1', name: '工作', sortOrder: 2, createdAt: 1700000000000 },
+      { id: 'folder-2', name: 'Personal', sortOrder: 1, createdAt: 1700000001000 },
+    ]
+    const foldered = { ...createSession('foldered'), folderId: 'folder-1' }
+    const unfiled = createSession('unfiled')
+    const source = new MemoryStorage()
+    const sourceMeta = new MemoryMetaStorage()
+    source.values.set(BackupStorageKey.SessionFolders, folders)
+    source.blobs.set('picture:shared', 'data:image/png;base64,AAECAw==')
+    for (const [index, session] of [foldered, unfiled].entries()) {
+      source.values.set(backupSessionStorageKey(session.id), session)
+      sourceMeta.records.set(session.id, { ...createMeta(session, index + 1), folderId: session.folderId })
+    }
+    const chunks: Uint8Array[] = []
+    const exported = await exportBackupArchive({
+      exportItems: ['conversations'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: sourceMeta,
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (dataCallback) => {
+        for await (const chunk of dataCallback()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+
+    expect(exported.manifest.data.sessionSettings).toBeDefined()
+    expect(exported.manifest.sessions.find((entry) => entry.id === 'foldered')?.meta.folderId).toBe('folder-1')
+    expect(exported.manifest.sessions.find((entry) => entry.id === 'unfiled')?.meta.folderId).toBeUndefined()
+
+    const destination = new MemoryStorage()
+    const destinationMeta = new MemoryMetaStorage()
+    const result = await importBackupArchive(
+      new File([Uint8Array.from(combine(chunks)).buffer], 'folders.zip', { type: 'application/zip' }),
+      { storage: destination, metaStorage: destinationMeta }
+    )
+
+    expect(result.restoredSessionCount).toBe(2)
+    expect(destination.values.get(BackupStorageKey.SessionFolders)).toEqual(folders)
+    const restoredFolderedSession = destination.values.get(backupSessionStorageKey('foldered')) as Session
+    const restoredUnfiledSession = destination.values.get(backupSessionStorageKey('unfiled')) as Session
+    expect(restoredFolderedSession.folderId).toBe('folder-1')
+    expect(restoredUnfiledSession.folderId).toBeUndefined()
+    expect(destinationMeta.records.get('foldered')?.folderId).toBe('folder-1')
+    expect(destinationMeta.records.get('unfiled')?.folderId).toBeUndefined()
+  })
+
+  it('imports a legacy backup without a session-folders key cleanly', async () => {
+    // A source without the session-folders storage key exports exactly what an
+    // older build (pre-folders) would: no folders entry in session-settings.
+    const session = createSession('legacy-folders')
+    const source = new MemoryStorage()
+    const sourceMeta = new MemoryMetaStorage()
+    source.values.set(BackupStorageKey.ChatSessionSettings, { model: 'model-a' })
+    source.values.set(backupSessionStorageKey(session.id), session)
+    sourceMeta.records.set(session.id, createMeta(session, 1))
+    source.blobs.set('picture:shared', 'data:image/png;base64,AAECAw==')
+    const chunks: Uint8Array[] = []
+    const exported = await exportBackupArchive({
+      exportItems: ['conversations'],
+      includeKeys: false,
+      storage: source,
+      metaStorage: sourceMeta,
+      application: { version: 'test', platform: 'test' },
+      writeArchive: async (dataCallback) => {
+        for await (const chunk of dataCallback()) chunks.push(chunk)
+        return { boundedMemory: true }
+      },
+    })
+    const legacySessionSettings = JSON.parse(
+      new TextDecoder().decode(unzipSync(combine(chunks))['session-settings.json'] ?? new Uint8Array())
+    ) as Record<string, unknown>
+    expect(Object.hasOwn(legacySessionSettings, BackupStorageKey.SessionFolders)).toBe(false)
+    expect(exported.manifest.data.sessionSettings).toBeDefined()
+
+    const destinationFolders: SessionFolder[] = [
+      { id: 'folder-kept', name: 'Existing', sortOrder: 1, createdAt: 1700000000000 },
+    ]
+    const destination = new MemoryStorage()
+    const destinationMeta = new MemoryMetaStorage()
+    destination.values.set(BackupStorageKey.SessionFolders, destinationFolders)
+    const result = await importBackupArchive(
+      new File([Uint8Array.from(combine(chunks)).buffer], 'legacy-folders.zip', { type: 'application/zip' }),
+      { storage: destination, metaStorage: destinationMeta }
+    )
+
+    expect(result.restoredSessionCount).toBe(1)
+    expect(result.warnings).toEqual([])
+    // The legacy archive carries no folders entry, so destination folders survive.
+    expect(destination.values.get(BackupStorageKey.SessionFolders)).toEqual(destinationFolders)
+    expect(destination.values.get(BackupStorageKey.ChatSessionSettings)).toEqual({ model: 'model-a' })
+    expect(destinationMeta.records.get(session.id)).toMatchObject({ id: session.id })
+    expect(destinationMeta.records.get(session.id)?.folderId).toBeUndefined()
   })
 
   it('removes undeclared empty resource references even when the export did not emit a warning', async () => {

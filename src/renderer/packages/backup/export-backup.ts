@@ -87,6 +87,7 @@ function deriveSessionMeta(session: Session, existing?: SessionMetaRecord): Sess
     starred: session.starred,
     hidden: preserveRecoveryArchive ? true : session.hidden,
     archivedAt: preserveRecoveryArchive ? existing.archivedAt : session.archivedAt,
+    folderId: session.folderId || undefined,
     assistantAvatarKey: session.assistantAvatarKey,
     picUrl: session.picUrl,
     backgroundImage: session.backgroundImage,
@@ -243,7 +244,11 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
       }
     }
     if (options.exportItems.includes('conversations')) {
-      await collectKeyValueEntries([BackupStorageKey.ChatSessionSettings, BackupStorageKey.PictureSessionSettings])
+      await collectKeyValueEntries([
+        BackupStorageKey.ChatSessionSettings,
+        BackupStorageKey.PictureSessionSettings,
+        BackupStorageKey.SessionFolders,
+      ])
     }
     if (options.exportItems.includes('setting')) {
       await collectKeyValueEntries(AGENT_PERSONA_BACKUP_KEYS)

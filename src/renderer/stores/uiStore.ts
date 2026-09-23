@@ -90,6 +90,8 @@ export const uiStore = createStore(
         agentModeLastSelected: 'off' as Extract<AgentModeValue, 'on' | 'off'>,
         sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
         promptCacheBreakConfirmDismissed: {} as Record<string, boolean>,
+        // Sidebar session folders: folderId -> collapsed (undefined = expanded)
+        collapsedFolders: {} as Record<string, boolean | undefined>,
       },
       (set, get) => ({
         addToast: (content: string, duration?: number, action?: Toast['action']) => {
@@ -267,6 +269,23 @@ export const uiStore = createStore(
             set({ sessionAgentModeMap: {} })
           }
         },
+
+        toggleFolderCollapsed: (folderId: string) => {
+          set((state) => ({
+            collapsedFolders: {
+              ...state.collapsedFolders,
+              [folderId]: !state.collapsedFolders[folderId],
+            },
+          }))
+        },
+
+        removeCollapsedFolder: (folderId: string) => {
+          set((state) => {
+            const newMap = { ...state.collapsedFolders }
+            delete newMap[folderId]
+            return { collapsedFolders: newMap }
+          })
+        },
       })
     ),
     {
@@ -284,6 +303,7 @@ export const uiStore = createStore(
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
         sessionKnowledgeBaseMap: state.sessionKnowledgeBaseMap,
         promptCacheBreakConfirmDismissed: state.promptCacheBreakConfirmDismissed,
+        collapsedFolders: state.collapsedFolders,
       }),
       storage: safeStorage,
     }

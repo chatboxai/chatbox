@@ -1439,5 +1439,15 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "用于自动和手动压缩。留空则使用内置提示词。",
   "Compaction Prompt": "压缩提示词",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "将较早的消息汇总为摘要，减少上下文占用。原始对话记录仍可查看。",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "工作模式不使用对话的系统提示词。如需使用自定义提示词，请创建 Copilot 并设置其提示词。"
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "工作模式不使用对话的系统提示词。如需使用自定义提示词，请创建 Copilot 并设置其提示词。",
+  "New Folder": "新建文件夹",
+  "Move to Folder": "移动到文件夹",
+  "Remove from Folder": "移出文件夹",
+  "Rename Folder": "重命名文件夹",
+  "Delete Folder": "删除文件夹",
+  "Folder Name": "文件夹名称",
+  "No folders yet. Create one to group your conversations.": "还没有文件夹。创建一个来归纳你的对话吧。",
+  "Add Chats to Folder": "添加会话到文件夹",
+  "In another folder": "在其他文件夹中",
+  "No conversations found.": "未找到会话。"
 }

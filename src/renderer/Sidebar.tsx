@@ -8,6 +8,7 @@ import {
   IconCirclePlus,
   IconCode,
   IconDownload,
+  IconFolderPlus,
   IconHelpCircle,
   IconInfoCircle,
   IconLayoutSidebarLeftCollapse,
@@ -196,6 +197,17 @@ export default function Sidebar() {
           </Flex>
 
           <Flex align="center" gap={2} style={{ flexShrink: 0 }}>
+            <Tooltip label={t('New Folder')} openDelay={1000} withArrow>
+              <ActionIcon
+                variant="subtle"
+                color="chatbox-tertiary"
+                size={26}
+                radius="md"
+                onClick={() => NiceModal.show('folder-settings', { mode: 'create' })}
+              >
+                <IconFolderPlus size={18} />
+              </ActionIcon>
+            </Tooltip>
             <Tooltip label={t('Search')} openDelay={1000} withArrow>
               <ActionIcon
                 variant="subtle"

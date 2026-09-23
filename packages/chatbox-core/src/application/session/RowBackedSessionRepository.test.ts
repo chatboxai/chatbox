@@ -13,6 +13,7 @@ import { InMemorySessionRepository } from '../../testing/InMemorySessionReposito
 import { InMemorySessionRowStore } from '../../testing/InMemorySessionRowStore'
 import type { Message, Session } from '../../types/session'
 import { migrateSession } from './compatibility/session-load'
+import { applyMessageRemoval } from './message-tree'
 import { RowBackedSessionRepository } from './RowBackedSessionRepository'
 
 const NOW = 1_000
@@ -156,6 +157,30 @@ function rowSnapshot(rows: SessionRows, revision: number): SessionRowSnapshot {
 }
 
 describe('RowBackedSessionRepository', () => {
+  test('persists a deleted fork pivot by reparenting every child and only deleting the selected row', async () => {
+    const harness = await createHarness()
+    const source = createRichSession()
+    source.messages.unshift(message('parent', 'system', 50))
+    await harness.repository.setSession(source)
+    const apply = vi.spyOn(harness.rows, 'applyDiff')
+    const updated = applyMessageRemoval(source, source.id, 'user-1', () => 'new-root')
+    await harness.repository.setSession(updated)
+    expect(apply.mock.calls[0][0].messages.delete).toEqual(['user-1'])
+    const children = storedRows(harness, source.id).messages.filter((row) => row.parentMessageId === 'parent')
+    expect(children.map((row) => row.messageId).sort()).toEqual(['assistant-1', 'fork-answer'])
+
+    const reopened = new RowBackedSessionRepository({ records: harness.records, rows: harness.rows, now: () => NOW })
+    await reopened.initialize()
+    const loaded = await reopened.getSession(source.id)
+    expect(loaded).not.toBeNull()
+    if (!loaded) throw new Error('missing session')
+    expect(loaded.messages.map(({ id }) => id)).toEqual(['parent', 'assistant-1'])
+    const switched = { ...loaded, ...buildSwitchForkToPatch(loaded, 'parent', 1) }
+    await reopened.setSession(switched)
+    expect((await reopened.getSession(source.id))?.messages.map(({ id }) => id)).toEqual(['parent', 'fork-answer'])
+    expect((await reopened.getSession(source.id))?.threads).toEqual(normalized(source).threads)
+  })
+
   test('removes a saved branch without renumbering the active or archived paths', async () => {
     const harness = await createHarness()
     const source = createRichSession()

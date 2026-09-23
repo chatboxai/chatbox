@@ -2,6 +2,7 @@ import { withSessionGenerationLock } from '../../generation/generation-lock'
 import { assertSessionActionAllowed, deriveSessionLockState } from '../../session/action-gates'
 import { buildCreateForkPatch, findMessageLocation } from '../../session/message-forks'
 import type { Message, Session, SessionSettings } from '../../types'
+import { applyMessageRemoval } from '../session/message-tree'
 
 export type ChatMessageFiles = NonNullable<Message['files']>
 export type ChatMessageLinks = NonNullable<Message['links']>
@@ -159,39 +160,6 @@ function replaceMessage(session: Session, messageId: string, update: (message: M
   return { ...session, messageForksHash }
 }
 
-function removeMessage(session: Session, messageId: string): Session {
-  const target = findMessageLocation(session, messageId)?.list.find((message) => message.id === messageId)
-  if (!target) throw new Error(`Message ${messageId} not found`)
-
-  const clearCompactionPoint = target.isSummary
-    ? (points: Session['compactionPoints']) => points?.filter((point) => point.summaryMessageId !== messageId)
-    : (points: Session['compactionPoints']) => points
-  return {
-    ...session,
-    messages: session.messages.filter((message) => message.id !== messageId),
-    threads: session.threads?.map((thread) => ({
-      ...thread,
-      messages: thread.messages.filter((message) => message.id !== messageId),
-      compactionPoints: clearCompactionPoint(thread.compactionPoints),
-    })),
-    messageForksHash: session.messageForksHash
-      ? Object.fromEntries(
-          Object.entries(session.messageForksHash).map(([forkId, fork]) => [
-            forkId,
-            {
-              ...fork,
-              lists: fork.lists.map((list) => ({
-                ...list,
-                messages: list.messages.filter((message) => message.id !== messageId),
-              })),
-            },
-          ])
-        )
-      : undefined,
-    compactionPoints: clearCompactionPoint(session.compactionPoints),
-  }
-}
-
 function appendMessageToConversation(session: Session, pivotId: string, message: Message): Session {
   if (session.messages.some((candidate) => candidate.id === pivotId)) {
     return { ...session, messages: [...session.messages, message] }
@@ -296,7 +264,7 @@ export class ChatMessageService {
 
     await this.dependencies.sessions.updateSessionWithMessages(sessionId, (latest) => {
       if (!latest) throw new Error(`Session ${sessionId} not found`)
-      return removeMessage(latest, messageId)
+      return applyMessageRemoval(latest, sessionId, messageId, this.dependencies.createId)
     })
   }
 

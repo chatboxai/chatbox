@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { withSessionGenerationLock } from '../../generation/generation-lock'
+import { buildSwitchForkToPatch } from '../../session/message-forks'
 import type { Message, Session } from '../../types'
 import {
   ChatMessageService,
@@ -55,6 +56,31 @@ function createHarness(
 }
 
 describe('ChatMessageService', () => {
+  it('preserves saved conversations when deleting their fork pivot', async () => {
+    const message = (id: string): Message => ({ id, role: 'assistant', contentParts: [] })
+    const session: Session = {
+      id: 'fork-deletion',
+      name: 'Fork deletion',
+      messages: ['parent', 'pivot', 'active'].map(message),
+      messageForksHash: {
+        pivot: {
+          position: 0,
+          createdAt: 1,
+          lists: [
+            { id: 'active-branch', messages: [] },
+            { id: 'saved-branch', messages: [message('saved')] },
+          ],
+        },
+      },
+    }
+    const harness = createHarness(session)
+    await harness.service.deleteMessage(session.id, 'pivot')
+    const updated = harness.sessions.get(session.id)
+    if (!updated) throw new Error('missing session')
+    expect(updated.messages.map(({ id }) => id)).toEqual(['parent', 'active'])
+    expect(buildSwitchForkToPatch(updated, 'parent', 1)?.messages?.map(({ id }) => id)).toEqual(['parent', 'saved'])
+  })
+
   it('retains the send action timestamp across a queued session submission', async () => {
     const session: Session = {
       id: 'timed-session',

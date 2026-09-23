@@ -390,7 +390,7 @@ export class SessionService {
     // the removed message: the merge only maps over messages that still exist.
     return await this.updateSessionWithMessages(
       sessionId,
-      (session) => applyMessageRemoval(session, sessionId, messageId),
+      (session) => applyMessageRemoval(session, sessionId, messageId, this.options.createId),
       { preserveCachedGeneratingMessages: true, onFullSessionPersisted }
     )
   }

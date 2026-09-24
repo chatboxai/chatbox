@@ -2,7 +2,7 @@ import { Button, Flex, PasswordInput, Select, Stack, Text, TextInput, Title } fr
 import { IconCheck, IconX } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { ofetch } from 'ofetch'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
@@ -10,11 +10,13 @@ import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { TooltipInfoTrigger } from '@/components/common/TooltipInfoTrigger'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
+import { AnysearchSearch, normalizeAnysearchLanguage } from '@/packages/web-search/anysearch'
 import { BochaSearch } from '@/packages/web-search/bocha'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
 import { SearxngSearch } from '@/packages/web-search/searxng'
 import platform from '@/platform'
+import { getLanguage } from '@/stores/settingActions'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 export const Route = createFileRoute('/settings/web-search')({
@@ -47,6 +49,33 @@ export function RouteComponent() {
         setQueritAvailable(false)
       } finally {
         setCheckingQuerit(false)
+      }
+    }
+  }
+
+  const [checkingAnysearch, setCheckingAnysearch] = useState(false)
+  const [anysearchAvailable, setAnysearchAvailable] = useState<boolean>()
+  const anysearchCheckVersion = useRef(0)
+  const checkAnysearch = async () => {
+    const apiKey = extension.webSearch.anysearchApiKey?.trim()
+    const checkVersion = ++anysearchCheckVersion.current
+    setCheckingAnysearch(true)
+    setAnysearchAvailable(undefined)
+    try {
+      await new AnysearchSearch(apiKey, 1, undefined, {
+        zone: extension.webSearch.anysearchZone,
+        language: normalizeAnysearchLanguage(getLanguage()),
+      }).search('Chatbox')
+      if (checkVersion === anysearchCheckVersion.current) {
+        setAnysearchAvailable(true)
+      }
+    } catch {
+      if (checkVersion === anysearchCheckVersion.current) {
+        setAnysearchAvailable(false)
+      }
+    } finally {
+      if (checkVersion === anysearchCheckVersion.current) {
+        setCheckingAnysearch(false)
       }
     }
   }
@@ -146,6 +175,8 @@ export function RouteComponent() {
           const tools: { label: string; supported: boolean }[] = [
             { label: t('Web Search'), supported: true },
             { label: t('Read Webpage'), supported: supportsParseLink },
+            { label: t('Batch Web Search'), supported: extension.webSearch.provider === 'anysearch' },
+            { label: t('Discover Search Domains'), supported: extension.webSearch.provider === 'anysearch' },
           ]
           return tools.map(({ label, supported }) => (
             <Flex key={label} align="center" gap="xs">
@@ -482,6 +513,114 @@ export function RouteComponent() {
                 maw={320}
               />
             </Stack>
+          </Stack>
+        </Stack>
+      )}
+      {extension.webSearch.provider === 'anysearch' && (
+        <Stack gap="xs">
+          <Text fw="600">{t('Anysearch API Key')}</Text>
+          <Flex align="center" gap="xs">
+            <PasswordInput
+              flex={1}
+              maw={320}
+              value={extension.webSearch.anysearchApiKey}
+              onChange={(event) => {
+                anysearchCheckVersion.current += 1
+                setCheckingAnysearch(false)
+                setAnysearchAvailable(undefined)
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      anysearchApiKey: event.currentTarget.value,
+                    },
+                  },
+                })
+              }}
+              placeholder={t('Enter your Anysearch API Key') || 'Enter your Anysearch API Key'}
+              error={anysearchAvailable === false}
+            />
+            <Button color="blue" variant="light" onClick={checkAnysearch} loading={checkingAnysearch}>
+              {t('Check')}
+            </Button>
+          </Flex>
+          {typeof anysearchAvailable === 'boolean' ? (
+            <Text size="xs" c={anysearchAvailable ? 'chatbox-success' : 'chatbox-error'}>
+              {anysearchAvailable
+                ? t('Connection successful!')
+                : extension.webSearch.anysearchApiKey?.trim()
+                  ? t('API key invalid!')
+                  : t('Connection failed!')}
+            </Text>
+          ) : null}
+          <Text size="xs" c="chatbox-gray">
+            {t(
+              'Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.'
+            )}
+          </Text>
+          <Text size="xs" c="chatbox-gray">
+            {t(
+              'Anysearch fills this in automatically when the free quota runs out. Clear it to go back to anonymous mode.'
+            )}
+          </Text>
+          <Button
+            variant="transparent"
+            size="compact-xs"
+            px={0}
+            className="self-start"
+            onClick={() => platform.openLink('https://anysearch.com/pricing')}
+          >
+            {t('Get API Key')}
+          </Button>
+          <Stack mt="md" gap="xs">
+            <Text size="sm">{t('Max Results')}</Text>
+            <Select
+              comboboxProps={{ withinPortal: true, withArrow: true }}
+              data={Array.from({ length: 10 }, (_, index) => {
+                const value = String(index + 1)
+                return { value, label: value }
+              })}
+              value={String(extension.webSearch.anysearchMaxResults ?? 10)}
+              onChange={(value) => {
+                if (!value) return
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      anysearchMaxResults: Number(value),
+                    },
+                  },
+                })
+              }}
+              maw={320}
+            />
+          </Stack>
+          <Stack mt="md" gap="xs">
+            <Text size="sm">{t('Search Region')}</Text>
+            <Select
+              comboboxProps={{ withinPortal: true, withArrow: true }}
+              data={[
+                { value: 'auto', label: t('Auto') },
+                { value: 'cn', label: 'CN' },
+                { value: 'intl', label: 'INTL' },
+              ]}
+              value={extension.webSearch.anysearchZone ?? 'auto'}
+              onChange={(value) => {
+                const zone = value === 'cn' || value === 'intl' ? value : undefined
+                setSettings({
+                  extension: {
+                    ...extension,
+                    webSearch: {
+                      ...extension.webSearch,
+                      anysearchZone: zone,
+                    },
+                  },
+                })
+              }}
+              maw={320}
+            />
           </Stack>
         </Stack>
       )}

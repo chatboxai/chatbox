@@ -3,7 +3,9 @@ import type { SearchResultItem } from '@shared/types'
 import { truncate } from 'lodash'
 import platform from '@/platform'
 import { getExtensionSettings, getLanguage, getLicenseKey } from '@/stores/settingActions'
+import { settingsStore } from '@/stores/settingsStore'
 import { ChatboxAIAPIError } from '../../../shared/models/errors'
+import { AnysearchSearch, normalizeAnysearchLanguage } from './anysearch'
 import type WebSearch from './base'
 import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
@@ -15,6 +17,19 @@ import { TavilySearch } from './tavily'
 
 const MAX_CONTEXT_ITEMS = 10
 
+/**
+ * Anysearch hands a generated key to anonymous callers that ran out of the
+ * daily free quota. Keeping it in the settings field means later searches go
+ * straight to the authenticated path instead of paying another 402 round trip.
+ */
+function saveAnysearchGeneratedApiKey(apiKey: string, expectedApiKey?: string) {
+  settingsStore.getState().setSettings((draft) => {
+    const currentApiKey = draft.extension.webSearch.anysearchApiKey?.trim() || undefined
+    if (currentApiKey !== expectedApiKey) return
+    draft.extension.webSearch.anysearchApiKey = apiKey
+  })
+}
+
 // 根据配置的搜索提供方来选择搜索服务
 function getSearchProviders() {
   const settings = getExtensionSettings()
@@ -23,6 +38,7 @@ function getSearchProviders() {
   const selectedProviders: WebSearch[] = []
   const provider = settings.webSearch.provider
   const language = getLanguage()
+  const anysearchLanguage = normalizeAnysearchLanguage(language)
 
   switch (provider) {
     case 'build-in':
@@ -70,6 +86,22 @@ function getSearchProviders() {
         throw ChatboxAIAPIError.fromCodeName('searxng_base_url_required', 'searxng_base_url_required')
       }
       selectedProviders.push(new SearxngSearch(searxngBaseUrl))
+      break
+    }
+    case 'anysearch': {
+      // A missing key is valid: Anysearch falls back to its anonymous mode.
+      const anysearchApiKey = settings.webSearch.anysearchApiKey?.trim() || undefined
+      selectedProviders.push(
+        new AnysearchSearch(
+          anysearchApiKey,
+          settings.webSearch.anysearchMaxResults ?? 10,
+          (generatedApiKey) => saveAnysearchGeneratedApiKey(generatedApiKey, anysearchApiKey),
+          {
+            zone: settings.webSearch.anysearchZone,
+            language: anysearchLanguage,
+          }
+        )
+      )
       break
     }
     default:
@@ -134,8 +166,18 @@ export const webSearchExecutor = async (
 ) => {
   const webSearch = getExtensionSettings().webSearch
   const provider = webSearch.provider
-  const cacheIdentity =
-    provider === 'searxng' ? `${provider}:${normalizeSearxngBaseUrl(webSearch.searxngBaseUrl ?? '')}` : provider
+  const cacheIdentity = (() => {
+    if (provider === 'searxng') return `${provider}:${normalizeSearxngBaseUrl(webSearch.searxngBaseUrl ?? '')}`
+    if (provider === 'anysearch') {
+      return [
+        provider,
+        webSearch.anysearchMaxResults ?? 10,
+        webSearch.anysearchZone ?? 'auto',
+        normalizeAnysearchLanguage(getLanguage()) ?? 'auto',
+      ].join(':')
+    }
+    return provider
+  })()
   const searchResults = await cachified({
     cache,
     key: `search-context:${cacheIdentity}:${query}`,
@@ -149,7 +191,7 @@ export const webSearchExecutor = async (
  * Single source of truth: which configured providers offer the parse_link tool.
  * Keep in sync with the provider classes' `supportsParseLink` flags.
  */
-export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily'])
+export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily', 'anysearch'])
 
 /**
  * Returns the first configured search provider that supports parseLink.
@@ -158,6 +200,11 @@ export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in
 export function getParseLinkProvider(): WebSearch | null {
   const providers = getSearchProviders()
   return providers.find((p) => p.supportsParseLink) ?? null
+}
+
+export function getAnysearchProvider(): AnysearchSearch | null {
+  const providers = getSearchProviders()
+  return providers.find((provider): provider is AnysearchSearch => provider instanceof AnysearchSearch) ?? null
 }
 
 export type { SearchResultItem }

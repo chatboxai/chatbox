@@ -14,4 +14,8 @@ describe('getWebSearchConfigurationIssue', () => {
     expect(getWebSearchConfigurationIssue({ provider: 'querit' })).toBe('querit-api-key')
     expect(getWebSearchConfigurationIssue({ provider: 'searxng', searxngBaseUrl: '  ' })).toBe('searxng-instance')
   })
+
+  it('treats Anysearch as configuration-free because anonymous mode is allowed', () => {
+    expect(getWebSearchConfigurationIssue({ provider: 'anysearch' })).toBeNull()
+  })
 })

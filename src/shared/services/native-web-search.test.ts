@@ -17,6 +17,68 @@ describe('native web search', () => {
     expect(hasNativeWebSearchConfiguration({ provider: 'bing', apiKey: '' })).toBe(true)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' })).toBe(false)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' }, 'license-1')).toBe(true)
+    // Anysearch falls back to anonymous mode, so no key is required.
+    expect(hasNativeWebSearchConfiguration({ provider: 'anysearch', apiKey: '' })).toBe(true)
+    expect(hasNativeWebSearchConfiguration({ provider: 'anysearch', apiKey: 'any-key' })).toBe(true)
+  })
+
+  it('searches Anysearch through its REST endpoint', async () => {
+    const fetchFn = mockFetchResponse({
+      code: 0,
+      message: 'success',
+      data: {
+        results: [{ title: 'Any result', url: 'https://any.test', snippet: 'Any snippet.' }],
+      },
+    })
+    const items = await searchNativeWeb('chatbox', {
+      provider: 'anysearch',
+      apiKey: 'any-key',
+      maxResults: 3,
+      fetchFn,
+    })
+    expect(items).toEqual([{ title: 'Any result', link: 'https://any.test', snippet: 'Any snippet.' }])
+    const body = JSON.parse(
+      ((fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit).body as string
+    )
+    expect(body).toEqual({ query: 'chatbox', max_results: 3, format: 'json' })
+  })
+
+  it('retries native Anysearch with the generated API key', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 402,
+        json: async () => ({
+          code: -1,
+          message: ['username=auto-user', 'password=auto-pass', 'api_key=auto-key'].join('\n'),
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          code: 0,
+          message: 'success',
+          data: { results: [{ title: 'Retried result', url: 'https://retry.test', snippet: 'Retried.' }] },
+        }),
+      }) as unknown as typeof fetch
+    const onApiKeyGenerated = vi.fn()
+
+    await expect(
+      searchNativeWeb('chatbox', {
+        provider: 'anysearch',
+        apiKey: '',
+        fetchFn,
+        onAnysearchApiKeyGenerated: onApiKeyGenerated,
+      })
+    ).resolves.toEqual([{ title: 'Retried result', link: 'https://retry.test', snippet: 'Retried.' }])
+
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect((fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[1][1]).toMatchObject({
+      headers: { Authorization: 'Bearer auto-key' },
+    })
+    expect(onApiKeyGenerated).toHaveBeenCalledWith('auto-key')
   })
 
   it('searches through the chatbox build-in endpoint with the license key and injected headers', async () => {

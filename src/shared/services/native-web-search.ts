@@ -6,6 +6,13 @@
  * Android emulator can verify against a local mock without credentials.
  */
 
+import {
+  parseAnysearchSearchResults,
+  searchAnysearch,
+  type AnysearchZone,
+  withAnysearchQuotaRetry,
+} from './anysearch'
+
 export interface NativeWebSearchResultItem {
   title: string
   link: string
@@ -13,7 +20,7 @@ export interface NativeWebSearchResultItem {
 }
 
 /** Same provider set the renderer's Web Search settings expose. */
-export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit'
+export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'anysearch'
 
 export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider; label: string }> = [
   { id: 'build-in', label: 'Chatbox AI' },
@@ -21,6 +28,7 @@ export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider
   { id: 'tavily', label: 'Tavily' },
   { id: 'bocha', label: 'BoCha' },
   { id: 'querit', label: 'Querit' },
+  { id: 'anysearch', label: 'Anysearch' },
 ]
 
 export interface NativeWebSearchSettings {
@@ -64,6 +72,10 @@ export interface NativeWebSearchOptions {
   signal?: AbortSignal
   fetchFn?: typeof fetch
   maxResults?: number
+  /** Anysearch REST-only routing preferences. */
+  zone?: AnysearchZone
+  language?: string
+  onAnysearchApiKeyGenerated?: (apiKey: string) => void
   /** Querit-only knobs (renderer settings webSearch.queritMaxResults / queritTimeRange). */
   queritTimeRange?: string | null
   /**
@@ -92,7 +104,7 @@ export function hasNativeWebSearchConfiguration(
     return Boolean(settings.apiKey.trim())
   }
   if (settings.provider === 'build-in') return Boolean(licenseKey?.trim())
-  return true // bing needs no credentials
+  return true // bing and anonymous Anysearch need no credentials
 }
 
 export async function searchNativeWeb(
@@ -104,6 +116,25 @@ export async function searchNativeWeb(
   if (provider === 'build-in') return searchNativeChatbox(query, options)
   if (provider === 'bocha') return searchNativeBocha(query, options)
   if (provider === 'querit') return searchNativeQuerit(query, options)
+  if (provider === 'anysearch') {
+    const apiKey = options.apiKey?.trim() || undefined
+    const markdown = await withAnysearchQuotaRetry(
+      apiKey,
+      (retryApiKey) =>
+        searchAnysearch(
+          { query, max_results: options.maxResults },
+          {
+            apiKey: retryApiKey,
+            fetchFn: options.fetchFn,
+            signal: options.signal,
+            zone: options.zone,
+            language: options.language,
+          }
+        ),
+      options.onAnysearchApiKeyGenerated
+    )
+    return parseAnysearchSearchResults(markdown)
+  }
   return searchNativeTavily(query, options)
 }
 

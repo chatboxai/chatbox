@@ -915,6 +915,7 @@
   "Search models": "搜尋模型",
   "Search models...": "搜尋模型...",
   "Search Provider": "搜尋提供者",
+  "Search Region": "搜尋區域",
   "Search providers...": "搜尋供應商...",
   "Search Results": "搜尋結果",
   "Search skills...": "搜尋技能...",
@@ -1439,5 +1440,11 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "用於自動和手動壓縮。留空則使用內建提示詞。",
   "Compaction Prompt": "壓縮提示詞",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "將較早的訊息彙整為摘要，減少上下文用量。原始對話記錄仍可查看。",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "工作模式不使用對話的系統提示詞。如需使用自訂提示詞，請建立 Copilot 並設定其提示詞。"
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "工作模式不使用對話的系統提示詞。如需使用自訂提示詞，請建立 Copilot 並設定其提示詞。",
+  "Anysearch API Key": "Anysearch API 金鑰",
+  "Batch Web Search": "批次網路搜尋",
+  "Discover Search Domains": "探索搜尋網域",
+  "Enter your Anysearch API Key": "輸入 Anysearch API 金鑰",
+  "Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.": "API 金鑰留空即使用匿名模式：請求依用戶端 IP 限流，計入每日免費額度。填入金鑰可獲得更高並行數與付費額度。",
+  "Anysearch fills this in automatically when the free quota runs out. Clear it to go back to anonymous mode.": "Anysearch 免費額度用完後會自動填入這裡，清空即可回到匿名模式。"
 }

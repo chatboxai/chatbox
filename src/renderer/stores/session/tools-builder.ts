@@ -23,7 +23,14 @@ import { buildRunCommandTool } from '@/packages/model-calls/toolsets/run-command
 import { remapPhantomHomePath } from '@/packages/model-calls/toolsets/sandbox-paths'
 import { getToolSet as getSessionAttachmentRagToolSet } from '@/packages/model-calls/toolsets/session-attachment-rag'
 import { buildViewImageToolSet, isViewImageAvailable } from '@/packages/model-calls/toolsets/view-image'
-import { getToolSetDescription, parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
+import {
+  anysearchBatchSearchTool,
+  anysearchGetSubDomainsTool,
+  anysearchSearchTool,
+  getToolSetDescription,
+  parseLinkTool,
+  webSearchTool,
+} from '@/packages/model-calls/toolsets/web-search'
 import { buildWorkspaceInstructions } from '@/packages/model-calls/workspace-instructions'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
 import {
@@ -360,6 +367,7 @@ export async function buildToolsForSession(
   const webSupported = webBrowsing && model.isSupportToolUse('web-browsing')
   const searchProvider = settingActions.getExtensionSettings().webSearch.provider
   const includeParseLinkTool = webSupported && PROVIDERS_WITH_PARSE_LINK.has(searchProvider)
+  const includeAnysearchAdvancedTools = webSupported && searchProvider === 'anysearch'
 
   let kbToolSet: Awaited<ReturnType<typeof getKBToolSet>> | null = null
   if (knowledgeBase && kbSupported) {
@@ -406,7 +414,10 @@ When you create a Git commit that includes code changes, append this exact trail
     instructions += fileToolSet.description
   }
   if (webSupported) {
-    instructions += getToolSetDescription({ includeParseLink: includeParseLinkTool })
+    instructions += getToolSetDescription({
+      includeParseLink: includeParseLinkTool,
+      includeAnysearchAdvanced: includeAnysearchAdvancedTools,
+    })
   }
 
   let codeExecToolSet: ReturnType<typeof buildCodeExecutionTools> | null = null
@@ -450,6 +461,11 @@ When you create a Git commit that includes code changes, append this exact trail
     // Validation (Pro for build-in, API key for third parties) happens at execution time.
     if (includeParseLinkTool) {
       tools.parse_link = parseLinkTool
+    }
+    if (includeAnysearchAdvancedTools) {
+      tools.anysearch_batch_search = anysearchBatchSearchTool
+      tools.anysearch_get_sub_domains = anysearchGetSubDomainsTool
+      tools.anysearch_search = anysearchSearchTool
     }
   }
 

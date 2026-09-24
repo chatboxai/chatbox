@@ -5,6 +5,7 @@ export const WEB_SEARCH_PROVIDERS = [
   { value: 'bocha', label: 'BoCha' },
   { value: 'querit', label: 'Querit' },
   { value: 'searxng', label: 'SearXNG' },
+  { value: 'anysearch', label: 'Anysearch' },
 ] as const
 
 export type WebSearchProviderValue = (typeof WEB_SEARCH_PROVIDERS)[number]['value']

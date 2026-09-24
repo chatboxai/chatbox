@@ -915,6 +915,7 @@
   "Search models": "Search models",
   "Search models...": "Search models...",
   "Search Provider": "Search Provider",
+  "Search Region": "Search Region",
   "Search providers...": "Search providers...",
   "Search Results": "Search Results",
   "Search skills...": "Search skills...",
@@ -1439,5 +1440,11 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Used for automatic and manual compression. Leave empty to use the built-in prompt.",
   "Compaction Prompt": "Compaction Prompt",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Summarize earlier messages to reduce context usage. Your conversation history will remain available.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.",
+  "Anysearch API Key": "Anysearch API Key",
+  "Batch Web Search": "Batch Web Search",
+  "Discover Search Domains": "Discover Search Domains",
+  "Enter your Anysearch API Key": "Enter your Anysearch API Key",
+  "Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.": "Leave the API key empty to search anonymously: requests are rate-limited per IP and use the daily free quota. Add a key for higher limits and paid quota.",
+  "Anysearch fills this in automatically when the free quota runs out. Clear it to go back to anonymous mode.": "Anysearch fills this in automatically when the free quota runs out. Clear it to go back to anonymous mode."
 }

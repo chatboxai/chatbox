@@ -1,21 +1,40 @@
 import { ChatboxAIAPIError } from '@shared/models/errors'
+import {
+  ANYSEARCH_DOMAINS,
+  normalizeAnysearchSearchRequest,
+  type AnysearchSearchRequest,
+} from '@shared/services/anysearch'
 import { createWebSearchTool, WEB_SEARCH_TOOLSET_INSTRUCTION } from '@shared/web-search-tool'
 import { jsonSchema, type ToolSet } from 'ai'
+import type { JSONSchema7 } from 'json-schema'
 import * as remote from '@/packages/remote'
-import { getParseLinkProvider, webSearchExecutor } from '@/packages/web-search'
+import { getAnysearchProvider, getParseLinkProvider, webSearchExecutor } from '@/packages/web-search'
+import type { AnysearchSearch } from '@/packages/web-search/anysearch'
 import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
-import { asRecord, numberField, stringField, toTextModelOutput } from './model-output'
+import { asRecord, contentOrErrorText, numberField, stringField, toTextModelOutput } from './model-output'
 
 const parseLinkDescription = `
 ## parse_link
 Extract readable content from a specific URL — typically one the user shared or that a prior search returned.
 `
 
-export function getToolSetDescription(options: { includeParseLink: boolean }) {
-  return options.includeParseLink
-    ? `${WEB_SEARCH_TOOLSET_INSTRUCTION}${parseLinkDescription}`
-    : WEB_SEARCH_TOOLSET_INSTRUCTION
+const anysearchAdvancedDescription = `
+## anysearch_get_sub_domains
+Discover valid vertical sub-domains and their structured parameters before a vertical search.
+
+## anysearch_search
+Run a general or vertical Anysearch query. Omit both domain fields for a general search. A vertical search must include both domain and sub_domain; call anysearch_get_sub_domains first and pass its exact routing key and required parameters without guessing.
+
+## anysearch_batch_search
+Run up to five general or discovered vertical searches in parallel. Use this for comparisons, multi-angle research, and hybrid general plus vertical searches. The batch is atomic: if one query is invalid or fails, the whole batch fails and no partial result is returned.
+`
+
+export function getToolSetDescription(options: { includeParseLink: boolean; includeAnysearchAdvanced?: boolean }) {
+  let description = WEB_SEARCH_TOOLSET_INSTRUCTION
+  if (options.includeParseLink) description += parseLinkDescription
+  if (options.includeAnysearchAdvanced) description += anysearchAdvancedDescription
+  return description
 }
 
 // Tool definition shared with the native app; only the executor is renderer-specific.
@@ -136,10 +155,121 @@ export const parseLinkTool: ToolSet[string] = {
   toModelOutput: toTextModelOutput(formatParseLinkOutput),
 }
 
+const anysearchSearchProperties: NonNullable<JSONSchema7['properties']> = {
+  query: { type: 'string', minLength: 1, description: 'One natural-language search intent.' },
+  domain: {
+    type: 'string',
+    enum: [...ANYSEARCH_DOMAINS],
+    description: 'Optional for general search. If provided, sub_domain is required too.',
+  },
+  sub_domain: {
+    type: 'string',
+    minLength: 1,
+    description: 'Use only with domain; required when domain is provided. Use the exact routing key returned by anysearch_get_sub_domains.',
+  },
+  sub_domain_params: {
+    type: 'object',
+    additionalProperties: true,
+    description: 'Use only with domain. Structured parameters returned by anysearch_get_sub_domains; include required keys even when empty.',
+  },
+  max_results: { type: 'integer', minimum: 1, maximum: 10 },
+  zone: { type: 'string', enum: ['cn', 'intl'], description: 'Optional result region.' },
+  language: {
+    type: 'string',
+    minLength: 2,
+    description: 'Optional preferred result language, such as zh-CN or en.',
+  },
+}
+
+const anysearchSearchInputSchema: JSONSchema7 = {
+  type: 'object',
+  description:
+    'General searches omit domain, sub_domain, and sub_domain_params. Vertical searches require both domain and sub_domain; the executor validates this conditional requirement.',
+  properties: anysearchSearchProperties,
+  required: ['query'],
+  additionalProperties: false,
+}
+
+export const anysearchBatchSearchTool: ToolSet[string] = {
+  description:
+    'Runs 1 to 5 Anysearch queries in parallel. General queries omit domain fields. ' +
+    'Vertical queries must use both domain and sub_domain, plus the exact parameters returned by anysearch_get_sub_domains. ' +
+    'The batch is atomic: one invalid or failed query fails the entire batch without partial results.',
+  inputSchema: jsonSchema({
+    type: 'object',
+    properties: {
+      queries: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 5,
+        items: anysearchSearchInputSchema,
+      },
+    },
+    required: ['queries'],
+    additionalProperties: false,
+  }),
+  execute: async (input, { abortSignal }) => {
+    const provider = getAnysearchProvider()
+    if (!provider) throw new Error('Anysearch is not the configured web search provider')
+    const queries = (input as { queries: AnysearchSearchRequest[] }).queries.map(normalizeAnysearchSearchRequest)
+    return provider.batchSearch(
+      queries,
+      abortSignal
+    )
+  },
+  toModelOutput: toTextModelOutput(contentOrErrorText),
+}
+
+export const anysearchSearchTool: ToolSet[string] = {
+  description:
+    'Runs one Anysearch general or vertical search. Omit both domain fields for general search. ' +
+    'For vertical search, domain and sub_domain are both required; first call anysearch_get_sub_domains and use its exact routing key and required parameters.',
+  inputSchema: jsonSchema(anysearchSearchInputSchema),
+  execute: async (input, { abortSignal }) => {
+    const provider = getAnysearchProvider()
+    if (!provider) throw new Error('Anysearch is not the configured web search provider')
+    const request = normalizeAnysearchSearchRequest(input as Parameters<AnysearchSearch['searchAdvanced']>[0])
+    return provider.searchAdvanced(request, abortSignal)
+  },
+  toModelOutput: toTextModelOutput(contentOrErrorText),
+}
+
+export const anysearchGetSubDomainsTool: ToolSet[string] = {
+  description:
+    'Returns valid Anysearch vertical sub-domains and their parameter schemas. ' +
+    'Call this before using domain fields in a search. Pass 1 to 5 domains and use the returned field names and required flags exactly; do not substitute similarly named fields.',
+  inputSchema: jsonSchema({
+    type: 'object',
+    properties: {
+      domains: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 5,
+        uniqueItems: true,
+        items: { type: 'string', enum: [...ANYSEARCH_DOMAINS] },
+      },
+    },
+    required: ['domains'],
+    additionalProperties: false,
+  }),
+  execute: async (input, { abortSignal }) => {
+    const provider = getAnysearchProvider()
+    if (!provider) throw new Error('Anysearch is not the configured web search provider')
+    return provider.getSubDomains(
+      (input as { domains: Array<(typeof ANYSEARCH_DOMAINS)[number]> }).domains,
+      abortSignal
+    )
+  },
+  toModelOutput: toTextModelOutput(contentOrErrorText),
+}
+
 export default {
   description: getToolSetDescription({ includeParseLink: true }),
   tools: {
     web_search: webSearchTool,
     parse_link: parseLinkTool,
+    anysearch_batch_search: anysearchBatchSearchTool,
+    anysearch_get_sub_domains: anysearchGetSubDomainsTool,
+    anysearch_search: anysearchSearchTool,
   },
 }

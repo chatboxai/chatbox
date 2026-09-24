@@ -915,6 +915,7 @@
   "Search models": "Sök modeller",
   "Search models...": "Sök modeller...",
   "Search Provider": "Sökleverantör",
+  "Search Region": "Sökområde",
   "Search providers...": "Sök bland leverantörer...",
   "Search Results": "Sökresultat",
   "Search skills...": "Sök färdigheter...",
@@ -1440,5 +1441,9 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Används för automatisk och manuell komprimering. Lämna tomt för att använda den inbyggda prompten.",
   "Compaction Prompt": "Komprimeringsprompt",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Sammanfatta tidigare meddelanden för att minska kontextanvändningen. Samtalshistoriken är fortfarande tillgänglig.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Arbetsläget använder inte konversationens systempromptar. Skapa en Copilot och ange dess prompt för att använda en egen prompt."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Arbetsläget använder inte konversationens systempromptar. Skapa en Copilot och ange dess prompt för att använda en egen prompt.",
+  "Anysearch API Key": "Anysearch API-nyckel",
+  "Batch Web Search": "Webbsökning i grupp",
+  "Discover Search Domains": "Upptäck sökdomäner",
+  "Enter your Anysearch API Key": "Ange din Anysearch API-nyckel"
 }

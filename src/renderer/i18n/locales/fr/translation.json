@@ -915,6 +915,7 @@
   "Search models": "Rechercher des modèles",
   "Search models...": "Rechercher des modèles...",
   "Search Provider": "Fournisseur de recherche",
+  "Search Region": "Région de recherche",
   "Search providers...": "Rechercher des fournisseurs...",
   "Search Results": "Résultats de recherche",
   "Search skills...": "Rechercher des compétences...",
@@ -1341,7 +1342,7 @@
   "Pause after every {{count}} steps": "Pause toutes les {{count}} étapes",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Turn off to let them run uninterrupted.": "Les tâches longues se mettent en pause toutes les {{count}} étapes pour confirmation, afin de vérifier qu'elles sont sur la bonne voie. Désactivez cette option pour les laisser s'exécuter sans interruption.",
   "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.": "Les tâches longues se mettent en pause toutes les {{count}} étapes pour confirmation, afin de vérifier qu'elles sont sur la bonne voie. Chaque discussion peut remplacer ce réglage dans ses paramètres de conversation.",
-  "{{count}} operation(s) awaiting approval": "{{count}} opération(s) en attente d'approbation",
+  "{{count}} operation(s) awaiting approval": "Approbations en attente : {{count}}",
   "Your data was created by a newer version of Chatbox": "Vos données ont été créées par une version plus récente de Chatbox",
   "This version of Chatbox cannot read data created by a newer version. Your data is safe — update Chatbox to the latest version to continue.": "Cette version de Chatbox ne peut pas lire les données créées par une version plus récente. Vos données sont en sécurité : mettez à jour Chatbox vers la dernière version pour continuer.",
   "Chatbox was updated in another window": "Chatbox a été mis à jour dans une autre fenêtre",
@@ -1440,5 +1441,9 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Utilisé pour la compression automatique et manuelle. Laissez vide pour utiliser le prompt intégré.",
   "Compaction Prompt": "Prompt de compression",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Résumez les anciens messages pour réduire le contexte utilisé. Votre historique de conversation restera accessible.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Le mode travail n’utilise pas les prompts système de la conversation. Pour utiliser un prompt personnalisé, créez un Copilot et définissez son prompt."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Le mode travail n’utilise pas les prompts système de la conversation. Pour utiliser un prompt personnalisé, créez un Copilot et définissez son prompt.",
+  "Anysearch API Key": "Clé API Anysearch",
+  "Batch Web Search": "Recherche web par lots",
+  "Discover Search Domains": "Découvrir les domaines de recherche",
+  "Enter your Anysearch API Key": "Saisissez votre clé API Anysearch"
 }

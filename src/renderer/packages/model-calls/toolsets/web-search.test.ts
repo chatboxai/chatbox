@@ -1,4 +1,5 @@
 import { ChatboxAIAPIError } from '@shared/models/errors'
+import type { JSONSchema7 } from 'json-schema'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getLicenseKeyMock = vi.fn()
@@ -7,6 +8,7 @@ const parseUserLinkProMock = vi.fn()
 const parseUserLinkFreeMock = vi.fn()
 const getStoreBlobMock = vi.fn()
 const getParseLinkProviderMock = vi.fn()
+const getAnysearchProviderMock = vi.fn()
 const webSearchExecutorMock = vi.fn()
 
 vi.mock('@/stores/settingActions', () => ({
@@ -26,12 +28,19 @@ vi.mock('@/platform', () => ({
 }))
 
 vi.mock('@/packages/web-search', () => ({
+  getAnysearchProvider: () => getAnysearchProviderMock(),
   getParseLinkProvider: () => getParseLinkProviderMock(),
   webSearchExecutor: (...args: unknown[]) => webSearchExecutorMock(...args),
 }))
 
 // Import after mocks are registered
-import { parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
+import {
+  anysearchBatchSearchTool,
+  anysearchGetSubDomainsTool,
+  anysearchSearchTool,
+  parseLinkTool,
+  webSearchTool,
+} from '@/packages/model-calls/toolsets/web-search'
 
 type ParseLinkInput = { url: string; maxLength?: number }
 
@@ -53,11 +62,21 @@ async function execParseLink(input: ParseLinkInput, abortSignal?: AbortSignal) {
   return await (parseLinkTool as unknown as ParseLinkToolLike).execute(input, { abortSignal })
 }
 
+async function execTool(tool: unknown, input: unknown, abortSignal?: AbortSignal) {
+  return await (
+    tool as { execute: (value: unknown, context: { abortSignal?: AbortSignal }) => Promise<unknown> }
+  ).execute(input, { abortSignal })
+}
+
 async function toModelOutput(tool: unknown, output: unknown) {
   const mapper = tool as {
     toModelOutput: (options: { toolCallId: string; input: unknown; output: unknown }) => Promise<unknown> | unknown
   }
   return await mapper.toModelOutput({ toolCallId: 'tool-call-id', input: {}, output })
+}
+
+function getJsonSchema(inputSchema: unknown): JSONSchema7 {
+  return (inputSchema as { jsonSchema: JSONSchema7 }).jsonSchema
 }
 
 describe('webSearchTool', () => {
@@ -70,6 +89,90 @@ describe('webSearchTool', () => {
       type: 'text',
       value: 'Result 1\nTitle: Result title\nURL: https://example.com/result\nSnippet:\nShort summary.',
     })
+  })
+})
+
+describe('Anysearch advanced tools', () => {
+  beforeEach(() => getAnysearchProviderMock.mockReset())
+
+  it('keeps the advanced search schemas compatible with strict function calling', () => {
+    const searchSchema = getJsonSchema(anysearchSearchTool.inputSchema)
+    const batchSchema = getJsonSchema(anysearchBatchSearchTool.inputSchema)
+
+    expect(searchSchema.required).toEqual(['query'])
+    expect(searchSchema).not.toHaveProperty('allOf')
+    expect(searchSchema).not.toHaveProperty('anyOf')
+    expect(searchSchema).not.toHaveProperty('oneOf')
+    expect(searchSchema.properties?.sub_domain).toMatchObject({ minLength: 1 })
+
+    expect(batchSchema).not.toHaveProperty('allOf')
+    expect(batchSchema.properties?.queries).toMatchObject({
+      items: expect.objectContaining({ required: ['query'] }),
+    })
+  })
+
+  it('executes batch search through the configured provider', async () => {
+    const batchSearch = vi.fn().mockResolvedValue('batch markdown')
+    getAnysearchProviderMock.mockReturnValue({ batchSearch })
+    const controller = new AbortController()
+    const queries = [{ query: 'one' }, { query: 'two', max_results: 3 }]
+
+    await expect(execTool(anysearchBatchSearchTool, { queries }, controller.signal)).resolves.toBe('batch markdown')
+    expect(batchSearch).toHaveBeenCalledWith(queries, controller.signal)
+  })
+
+  it('executes a vertical search through the configured provider', async () => {
+    const searchAdvanced = vi.fn().mockResolvedValue('vertical markdown')
+    getAnysearchProviderMock.mockReturnValue({ searchAdvanced })
+    const input = {
+      query: 'AAPL quote',
+      domain: 'finance',
+      sub_domain: 'finance.quote',
+      sub_domain_params: { type: 'stock', symbol: 'AAPL' },
+      max_results: 5,
+    }
+
+    await expect(execTool(anysearchSearchTool, input)).resolves.toBe('vertical markdown')
+    expect(searchAdvanced).toHaveBeenCalledWith(input, undefined)
+  })
+
+  it('rejects an incomplete vertical search before calling the provider', async () => {
+    const searchAdvanced = vi.fn()
+    getAnysearchProviderMock.mockReturnValue({ searchAdvanced })
+
+    await expect(
+      execTool(anysearchSearchTool, { query: 'AAPL quote', domain: 'finance' })
+    ).rejects.toThrow('requires a sub_domain')
+    expect(searchAdvanced).not.toHaveBeenCalled()
+  })
+
+  it('validates every batch query before calling the provider', async () => {
+    const batchSearch = vi.fn()
+    getAnysearchProviderMock.mockReturnValue({ batchSearch })
+
+    await expect(
+      execTool(anysearchBatchSearchTool, {
+        queries: [{ query: 'valid query' }, { query: 'finance query', domain: 'finance' }],
+      })
+    ).rejects.toThrow('requires a sub_domain')
+    expect(batchSearch).not.toHaveBeenCalled()
+  })
+
+  it('executes domain discovery through the configured provider', async () => {
+    const getSubDomains = vi.fn().mockResolvedValue('domain markdown')
+    getAnysearchProviderMock.mockReturnValue({ getSubDomains })
+
+    await expect(execTool(anysearchGetSubDomainsTool, { domains: ['finance', 'legal'] })).resolves.toBe(
+      'domain markdown'
+    )
+    expect(getSubDomains).toHaveBeenCalledWith(['finance', 'legal'], undefined)
+  })
+
+  it('rejects execution when Anysearch is not configured', async () => {
+    getAnysearchProviderMock.mockReturnValue(null)
+    await expect(execTool(anysearchBatchSearchTool, { queries: [{ query: 'one' }] })).rejects.toThrow(
+      'not the configured web search provider'
+    )
   })
 })
 

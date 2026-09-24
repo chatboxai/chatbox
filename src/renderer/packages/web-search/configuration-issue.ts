@@ -31,6 +31,8 @@ export function getWebSearchConfigurationIssue(
     case 'searxng':
       return configuration.searxngBaseUrl?.trim() ? null : 'searxng-instance'
     case 'bing':
+    // Anysearch works without credentials (anonymous mode).
+    case 'anysearch':
       return null
   }
 }

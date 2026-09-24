@@ -916,6 +916,7 @@
   "Search models": "Modellerde ara",
   "Search models...": "Modellerde ara...",
   "Search Provider": "Arama Sağlayıcısı",
+  "Search Region": "Arama bölgesi",
   "Search providers...": "Arama sağlayıcılarında ara...",
   "Search Results": "Arama Sonuçları",
   "Search skills...": "Yeteneklerde ara...",
@@ -1440,5 +1441,9 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Otomatik ve elle sıkıştırma için kullanılır. Yerleşik istemi kullanmak için boş bırakın.",
   "Compaction Prompt": "Sıkıştırma İstemi",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Bağlam kullanımını azaltmak için önceki mesajları özetleyin. Konuşma geçmişiniz kullanılabilir kalacaktır.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Çalışma Modu konuşma sistem istemlerini kullanmaz. Özel bir istem kullanmak için bir Copilot oluşturup istemini ayarlayın."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Çalışma Modu konuşma sistem istemlerini kullanmaz. Özel bir istem kullanmak için bir Copilot oluşturup istemini ayarlayın.",
+  "Anysearch API Key": "Anysearch API Anahtarı",
+  "Batch Web Search": "Toplu Web Araması",
+  "Discover Search Domains": "Arama Alanlarını Keşfet",
+  "Enter your Anysearch API Key": "Anysearch API Anahtarınızı girin"
 }

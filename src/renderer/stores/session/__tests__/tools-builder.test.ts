@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 // ── Hoisted mocks (environment + modules) ──────────────────────────────────
 
@@ -188,6 +188,7 @@ vi.mock('@/packages/model-calls/toolsets/session-attachment-rag', () => ({
   getToolSet: getSessionAttachmentRagToolSetMock,
 }))
 
+import { setContextAmplifierEnabled } from '@shared/context-amplifier/singleton'
 import type { ModelInterface } from '@shared/models/types'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import type { Message } from '@shared/types'
@@ -291,6 +292,9 @@ beforeEach(() => {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe('buildToolsForSession', () => {
+  // 工具注册的戳门控在功能开启时才有意义；默认 opt-off，这里显式开启。
+  beforeEach(() => setContextAmplifierEnabled(true))
+  afterEach(() => setContextAmplifierEnabled(false))
   test('agentMode="off" — no skills tools, no sandbox tools in result', async () => {
     const model = createMockModel()
     const options: BuildToolsOptions = {
@@ -316,6 +320,100 @@ describe('buildToolsForSession', () => {
     for (const name of sandboxToolNames) {
       expect(result.tools[name]).toBeUndefined()
     }
+    // 上下文里没有 #STAMP 块，召回工具不该出现——凭空多一个工具会把
+    // Response Language / Tool-use Communication 这些"有工具才注入"的说明
+    // 拉进纯聊天路径。
+    expect(result.tools.retrieve_by_stamp).toBeUndefined()
+  })
+
+  test('上下文含 #STAMP 块时注册 retrieve_by_stamp，即使 agentMode="off"', async () => {
+    const model = createMockModel()
+    // 压缩发生在 buildContext 里，不看 agentMode。压缩块带着 #STAMP 进上下文，
+    // 召回工具必须同样可用，否则模型看得见戳却兑现不了，只能退回重新探索。
+    const result = await buildToolsForSession(model, {
+      webBrowsing: false,
+      agentMode: 'off',
+      messages: [
+        {
+          id: 'stamp-a1b2c3d4e5f6',
+          role: 'user',
+          timestamp: 1,
+          contentParts: [
+            { type: 'text', text: '#STAMP a1b2c3d4e5f6\n#LAYER L2\n#STATUS DONE\n压缩内容\n#END_BLOCK' },
+          ],
+        },
+      ] as unknown as BuildToolsOptions['messages'],
+    })
+
+    expect(result.tools.retrieve_by_stamp).toBeDefined()
+    expect(result.instructions).toContain('#STAMP')
+    expect(result.instructions).toContain('retrieve_by_stamp')
+  })
+
+  test('纯聊天会话（无 #STAMP）不注册 commit_task_memory', async () => {
+    const model = createMockModel()
+    // 实时自报只在会被压缩的会话里有意义。纯聊天里凭空多一个必填 9 字段的
+    // 工具，会让模型每轮多花一次调用，也会拉进"有工具才注入"的系统说明。
+    const result = await buildToolsForSession(model, {
+      webBrowsing: false,
+      agentMode: 'off',
+      sessionId: 'sess-plain',
+      messages: [
+        {
+          id: 'msg-1',
+          role: 'user',
+          timestamp: 1,
+          contentParts: [{ type: 'text', text: '今天天气怎么样' }],
+        },
+      ] as unknown as BuildToolsOptions['messages'],
+    })
+
+    expect(result.tools.commit_task_memory).toBeUndefined()
+  })
+
+  test('正文里偶然出现 "#STAMP" 字样不触发召回工具', async () => {
+    const model = createMockModel()
+    const result = await buildToolsForSession(model, {
+      webBrowsing: false,
+      agentMode: 'off',
+      messages: [
+        {
+          id: 'msg-1',
+          role: 'user',
+          timestamp: 1,
+          contentParts: [{ type: 'text', text: '#STAMP 是什么意思？这个协议怎么设计的？' }],
+        },
+      ] as unknown as BuildToolsOptions['messages'],
+    })
+
+    expect(result.tools.retrieve_by_stamp).toBeUndefined()
+  })
+
+  test('有界投影标记（tool result 内 #STAMP）同样注册 retrieve_by_stamp', async () => {
+    const model = createMockModel()
+    const result = await buildToolsForSession(model, {
+      webBrowsing: false,
+      agentMode: 'off',
+      messages: [
+        {
+          id: 'm-proj',
+          role: 'assistant',
+          timestamp: 1,
+          contentParts: [
+            {
+              type: 'tool-call',
+              state: 'result',
+              toolCallId: 'tc-proj',
+              toolName: 'read_file',
+              args: { path: 'huge.txt' },
+              result:
+                '…[tool-result-projection: 省略约 80000 tokens]…完整原文可通过 #STAMP a1b2c3d4e5f6 调用 retrieve_by_stamp 召回。',
+            },
+          ],
+        },
+      ] as unknown as BuildToolsOptions['messages'],
+    })
+    expect(result.tools.retrieve_by_stamp).toBeDefined()
   })
 
   test('memory tools follow the copilot scope even when the global switch is off', async () => {

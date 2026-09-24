@@ -4,6 +4,7 @@
  */
 
 import type { CompactionPoint, Message } from '@shared/types'
+import type { ContextAmplifierOptions } from '../context-amplifier/pipeline'
 
 /**
  * Platform abstraction for reading attachments
@@ -105,4 +106,12 @@ export interface ContextBuilderOptions {
    * Default: false
    */
   sandboxMode?: boolean
+
+  /**
+   * 上下文放大选项（可选）。
+   * 当提供时，builder 会在 applyCompaction 之前，
+   * 运行上下文放大流水线：检测任务块 → L0/L1/L2 分层 → 压缩 → StampStore 存档。
+   * 不传则不启用，保持原有行为不变。
+   */
+  contextAmplifier?: ContextAmplifierOptions
 }

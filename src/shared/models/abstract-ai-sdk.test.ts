@@ -1,6 +1,6 @@
 import type { LanguageModelV3, LanguageModelV3CallOptions } from '@ai-sdk/provider'
 import { jsonSchema, type ModelMessage, type PrepareStepFunction, type Provider, type ToolSet } from 'ai'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelDependencies } from '../types/adapters'
 import type { SentryScope } from '../utils/sentry_adapter'
 import AbstractAISDKModel, { isRetryableStatusError } from './abstract-ai-sdk'
@@ -402,5 +402,122 @@ describe('isRetryableStatusError', () => {
     expect(isRetryableStatusError({ statusCode: 502 })).toBe(true)
     expect(isRetryableStatusError({ statusCode: 401 })).toBe(false)
     expect(isRetryableStatusError(new Error('nope'))).toBe(false)
+  })
+})
+
+
+import type { ChatStreamOptions } from './types'
+
+class ChunkedTestModel extends TestModel {
+  public chunkedEndpoint = 'https://chunked.example.com/chat/completions'
+  public chunkedApiKey = 'sk-chunked'
+
+  protected getChunkedTransport(
+    _options: ChatStreamOptions
+  ): { endpoint: string; apiKey: string } | null {
+    return { endpoint: this.chunkedEndpoint, apiKey: this.chunkedApiKey }
+  }
+}
+
+function createChunkedModel(modelId = 'test-model'): ChunkedTestModel {
+  return new ChunkedTestModel(
+    {
+      model: { modelId, type: 'chat', capabilities: ['tool_use'] },
+    },
+    createDependencies()
+  )
+}
+
+function okChunkedResponse(content: string) {
+  return new Response(
+    JSON.stringify({
+      choices: [{ message: { content, role: 'assistant' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
+  )
+}
+
+async function collectStream<T>(gen: AsyncGenerator<T>): Promise<T[]> {
+  const out: T[] = []
+  for await (const x of gen) out.push(x)
+  return out
+}
+
+describe('AbstractAISDKModel chatStream chunked routing', () => {
+  let fetchMock: any
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('小消息（< 80K tokens）走老路 streamText，不调 fetch', async () => {
+    // mock streamText 返回简单的流
+    aiMocks.streamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: 'text-delta', id: 't1', text: 'hi' }
+        yield { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 0, outputTokens: 1, totalTokens: 1 } }
+      })(),
+      totalUsage: Promise.resolve({ inputTokens: 0, outputTokens: 1, totalTokens: 1 }),
+      finishReason: Promise.resolve('stop'),
+    })
+    const model = createChunkedModel()
+    const parts: unknown[] = []
+    for await (const p of model.chatStream([{ role: 'user', content: 'hi' }], {})) parts.push(p)
+    // streamText 被调
+    expect(aiMocks.streamText).toHaveBeenCalledTimes(1)
+    // fetch 没被调
+    expect(fetchMock).toHaveBeenCalledTimes(0)
+  })
+
+  it('大消息（> 80K tokens）走 chunked 路径，跳过 streamText', async () => {
+    // 5 条 20K 'A' message，总 token ≈ 5*5000=25000，远不到 80K
+    // 调低阈值：直接在 TestModel 上覆盖 chunkTokenTarget
+    // 实际：默认 80K，单条 20K 不够。改用 5 条 100K 'A'：500K 字符 → 125K tokens
+    const huge = 'A'.repeat(100_000)
+    const messages = Array.from({ length: 5 }, () => ({ role: 'user' as const, content: huge }))
+    fetchMock.mockImplementation(() => Promise.resolve(okChunkedResponse('chunked reply')))
+
+    const model = createChunkedModel()
+    const parts = await collectStream(
+      model.chatStream(messages, { signal: new AbortController().signal })
+    )
+
+    // streamText 没被调
+    expect(aiMocks.streamText).toHaveBeenCalledTimes(0)
+    // fetch 被调（至少 1 帧）
+    expect(fetchMock).toHaveBeenCalled()
+    // endpoint 走 chunked
+    const firstCallUrl = fetchMock.mock.calls[0][0]
+    expect(firstCallUrl).toBe('https://chunked.example.com/chat/completions')
+    // parts 包含 text-delta + finish
+    const types = parts.map((p) => (p as { type: string }).type)
+    expect(types).toEqual(['text-start', 'text-delta', 'text-end', 'finish'])
+    const delta = parts[1] as { type: 'text-delta'; text: string }
+    expect(delta.text).toBe('chunked reply')
+  })
+
+  it('getChunkedTransport 返回 null → 不走 chunked', async () => {
+    // TestModel（基类）getChunkedTransport 默认返回 null
+    aiMocks.streamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } }
+      })(),
+      totalUsage: Promise.resolve({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
+      finishReason: Promise.resolve('stop'),
+    })
+    const huge = 'A'.repeat(100_000)
+    const messages = Array.from({ length: 5 }, () => ({ role: 'user' as const, content: huge }))
+    const model = createModel() // TestModel 默认 null
+    for await (const _ of model.chatStream(messages, { signal: new AbortController().signal })) {
+      // consume
+    }
+    // 走老路
+    expect(aiMocks.streamText).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(0)
   })
 })

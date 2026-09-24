@@ -25,6 +25,7 @@ import './setup/load_polyfill'
 import './setup/automation_contract'
 // 引入保护代码
 import './setup/protect'
+import { initStampStorePersistence } from '@shared/context-amplifier/singleton'
 
 // 开发环境下引入错误测试工具
 // if (process.env.NODE_ENV === 'development') {

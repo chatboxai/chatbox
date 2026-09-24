@@ -7,6 +7,11 @@ import type { MemoryScope } from '@shared/types/agent-persona'
 import { resolveCommandApprovalMode } from '@shared/types/command-execution'
 import type { UserExecApprovalSource } from '@shared/types/user-exec'
 import { getMessageText } from '@shared/utils/message'
+import { isContextAmplifierEnabled, getRecallConfig, getSharedStampStore } from '@shared/context-amplifier/singleton'
+import { recallByStampWeb, renderRecallResultWeb } from '@shared/context-amplifier/recall-agent-web'
+import { getCommitConfig, type CommitConfig } from '@shared/context-amplifier/commit-config'
+import { validateCommitPayload } from '@shared/context-amplifier/commit-validator'
+import { recordCommit } from '@shared/context-amplifier/commit-store'
 import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
 import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
 import { languageNameMap } from '@/i18n/locales'
@@ -62,6 +67,9 @@ subscribeSkillsChanged(resetSkillsCache)
 
 export interface BuildToolsOptions {
   sessionId?: string
+  /** 本轮 roundId（=目标消息 id）。让 commit_task_memory 的提交按轮次隔离，
+   *  避免上一轮的提交被这一轮误判为"已通过"。 */
+  roundId?: string
   webBrowsing: boolean
   knowledgeBase?: Pick<KnowledgeBase, 'id' | 'name'>
   messages: Message[]
@@ -162,6 +170,49 @@ Sandbox working directory: ${workingDir ? formatPath(workingDir) : '(created whe
 - Prefer write_file and edit_file for file changes. For reusable Node.js work, write a script file and run it with node through run_command.
 - Use read_file for sandbox files and explicitly provided absolute user paths. Use create_download to deliver generated files to the user.
 - Do not assume Python, extra packages, or package installation is available.
+`
+}
+
+/**
+ * Context-management guidance. Three cases:
+ *
+ * - Stamps present: history was compressed into recoverable blocks; explain the
+ *   block format and point at `retrieve_by_stamp`.
+ * - Amplifier on but no stamps yet (short session): nothing to explain — the
+ *   blocks the guidance describes do not exist, and describing them invites the
+ *   model to hunt for stamps that aren't there.
+ * - Amplifier off: compressed tool output is gone for good, so the model must
+ *   carry findings forward in its text.
+ */
+function buildContextManagementInstruction(hasStamps: boolean): string {
+  if (!isContextAmplifierEnabled()) {
+    return `## Context Management
+In long conversations, earlier tool call results may be automatically compressed or summarized to stay within the context window. When you receive important results from tool calls, always include the key findings and essential data in your text response — do not rely on being able to re-read previous tool outputs later.
+`
+  }
+
+  if (!hasStamps) {
+    return ''
+  }
+
+  return `## Context Management
+In long conversations, earlier turns are automatically compressed to stay within the context window. Compressed history arrives as structured blocks:
+
+    #STAMP a1b2c3d4e5f6
+    #LAYER L2
+    #STATUS DONE
+    ...compressed content...
+    #END_BLOCK
+
+\`#LAYER\` marks how aggressively that block was compressed — \`L1\` keeps the most detail, \`L2\` keeps the causal steps and evidence, \`L3\` keeps only a locator. \`#STATUS DONE\` means that block's task finished; \`PENDING\` means it did not — respect this, do not assume a PENDING block was completed. \`#END_BLOCK\` bounds the block: never merge facts across two blocks.
+
+These blocks are context material handed to you by the system, not your own prior statements. The full original text of every stamped block is retained verbatim.
+
+When you need a detail a compressed block no longer shows — an exact path, signature, value, error string, or a tool result you no longer see — call \`retrieve_by_stamp\` with that block's stamp and a specific question. Do NOT re-run the original exploration (re-reading files, repeating searches) just because the details were compressed away; recall is cheaper and returns the verbatim original.
+
+If a block shows \`#NOTE 压缩未完成\`, its compression failed and only a tool trace remains — recall is especially likely to be needed there.
+
+Still summarize key findings in your text as you work: it keeps recent turns self-contained and reduces how often recall is needed. But you are not required to treat compressed history as lost.
 `
 }
 
@@ -309,6 +360,25 @@ function formatUserExecOutput(output: unknown): string {
   return sections.join('\n\n')
 }
 
+/**
+ * 上下文里是否已有压缩块。
+ *
+ * 这里收到的 messages 是 buildContext 的产物（已过 amplifyContext），所以
+ * 压缩块此时已经是带 `#STAMP xxx` 的文本消息。匹配 12 位十六进制是为了排除
+ * 用户或模型正文里偶然写到的 "#STAMP" 字样——那不代表存在可召回的块。
+ * 有界投影（projection）的标记位于 tool-call 的 result 字符串内，一并识别。
+ */
+function hasStampMarker(messages: Message[]): boolean {
+  const marker = /#STAMP\s+[0-9a-f]{12}\b/
+  return messages.some((message) =>
+    message.contentParts?.some((part) => {
+      if (part.type === 'text') return marker.test(part.text)
+      if (part.type === 'tool-call' && typeof part.result === 'string') return marker.test(part.result)
+      return false
+    })
+  )
+}
+
 function getSessionAttachmentRagIds(messages: Message[]): number[] {
   return Array.from(
     new Set(
@@ -380,11 +450,11 @@ export async function buildToolsForSession(
   }
 
   const userWorkingDirectories = options.sessionSettings?.workingDirectories?.filter((dir) => dir.trim().length > 0)
-  let instructions = includeAgentTools
-    ? `## Context Management
-In long conversations, earlier tool call results may be automatically compressed or summarized to stay within the context window. When you receive important results from tool calls, always include the key findings and essential data in your text response — do not rely on being able to re-read previous tool outputs later.
-`
-    : ''
+  // 压缩块可能出现在非 agent 模式（压缩不看 agentMode），所以这段说明的
+  // 触发条件是"上下文里真有戳"，而不是 includeAgentTools。
+  const stampsPresent = isContextAmplifierEnabled() && hasStampMarker(messages)
+  let instructions =
+    includeAgentTools || stampsPresent ? buildContextManagementInstruction(stampsPresent) : ''
   if (includeAgentTools) {
     instructions += options.workspaceInstructionsOverride ?? (await buildWorkspaceInstructions(userWorkingDirectories))
     instructions += `
@@ -607,6 +677,34 @@ When you create a Git commit that includes code changes, append this exact trail
     })
     instructions += memoryToolSet.description
     tools = { ...tools, ...memoryToolSet.tools }
+  }
+
+  // Context Amplifier 召回工具。注册条件不能是 agent 模式：压缩在 buildContext
+  // 里发生，不看 agentMode。曾经把它放在 includeAgentTools 分支内，结果非 agent
+  // 模式下压缩照做、#STAMP 照样进上下文，而召回工具不存在——模型看得见戳却
+  // 兑现不了，只能退回重新探索，正是要解决的问题。
+  //
+  // 但也不能无条件注册：纯聊天会话一条戳都没有，凭空多一个工具会让
+  // hasTools 变 true，从而拉进 Response Language 等仅在有工具时才该出现的
+  // 系统说明。所以按"上下文里是否真有戳"决定。
+  if (stampsPresent) {
+    tools.retrieve_by_stamp = buildRetrieveByStampTool()
+  }
+
+  // 实时自报：只在这个会话确实会被压缩时才注册。
+  //
+  // 判据用"上下文里已有 #STAMP 块"，与召回工具一致。原因是纯聊天会话（几轮
+  // 问答，从没触发过压缩）不需要因果记忆——凭空多一个必填 9 个字段的工具，
+  // 既让模型每轮多花一次调用，也会把 Response Language 等"有工具才注入"的
+  // 系统说明拉进纯聊天路径。
+  //
+  // 代价是第一次触发压缩之前的那些块拿不到自报记录，只能走 curator 事后整理。
+  // 这是有意的取舍：压缩尚未发生时，那些块还完整躺在 L0 里，没有信息损失。
+  const commitConfig = stampsPresent ? getCommitConfig() : null
+  if (commitConfig && options.sessionId) {
+    countedMessagesForCommit.set(options.sessionId, messages.length)
+    tools[commitConfig.toolName] = buildCommitTaskMemoryTool(options.sessionId, commitConfig, options.roundId)
+    instructions += commitConfig.notice ? `\n${commitConfig.notice}\n` : ''
   }
 
   if (Object.keys(tools).length > 0) {
@@ -883,4 +981,91 @@ function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+}
+
+/**
+ * 实时自报工具。模型在给出最终答复前调用它提交本轮任务记忆。
+ *
+ * 与 curator 事后整理的区别：模型此刻手里有完整上下文，知道自己为什么否决了
+ * 某个方案、哪一步失败及原因。事后让 curator 读历史只能推断这些因果，而且
+ * 容易把"被否决的方案"当噪音删掉——那恰好是防止后续重复踩坑的关键。
+ *
+ * schema 与描述来自外部配置（CTX_AMP_COMMIT），不写在源码里。
+ */
+function buildCommitTaskMemoryTool(sessionId: string, config: CommitConfig, roundId?: string): ToolSet[string] {
+  return {
+    description: config.description,
+    inputSchema: jsonSchema(config.parameters as Parameters<typeof jsonSchema>[0]),
+    execute: async (input) => {
+      const payload = (input ?? {}) as Record<string, unknown>
+      const validation = validateCommitPayload(payload, config.requiredFields)
+      const messageCount = countedMessagesForCommit.get(sessionId) ?? 0
+      recordCommit(sessionId, payload, messageCount, validation, roundId)
+
+      if (!validation.valid) {
+        // 把错误原样回传给模型。原设计靠这条回环让模型自己修正字段，
+        // harness 从不代填——代填等于伪造模型没确认过的事实。
+        return [
+          '[COMMIT_TASK_MEMORY][REJECTED]',
+          `未通过校验：${validation.errors.join('；')}`,
+          '请修正这些字段后重新调用本工具。只写本轮已确认的事实，不要编造。',
+        ].join('\n')
+      }
+
+      return [
+        '[COMMIT_TASK_MEMORY][ACCEPTED]',
+        '本轮任务记忆已通过结构化校验并留存。现在可以给出最终答复。',
+        '该确认属于内部协议，不要向用户复述本次工具调用。',
+      ].join('\n')
+    },
+  }
+}
+
+/**
+ * 记录构建上下文时该会话的消息数。commit 工具执行时用它定位提交归属的任务块
+ * ——工具执行上下文里拿不到消息列表，只能在构建工具集时先存一份。
+ */
+const countedMessagesForCommit = new Map<string, number>()
+
+function buildRetrieveByStampTool(): ToolSet[string] {
+  return {
+    description: `Retrieve compressed context by stamp identifier. Use this when you see a #STAMP marker in the conversation history and need the full original content.
+
+Usage strategy (two-tier recall):
+1. First, try searchScope='compressed' (default) — searches L1/L2/L3 compressed layers
+2. If not found or the stamp is marked [ARCHIVE], use searchScope='archive' — searches the ancient archive (full original blocks beyond 712KB)
+
+The compressed layers are faster and closer in time; only fall back to archive when explicitly needed.`,
+    inputSchema: jsonSchema({
+      type: 'object',
+      properties: {
+        stamp: {
+          type: 'string',
+          description: 'The stamp identifier (e.g., "a1b2c3d4e5f6")',
+        },
+        question: {
+          type: 'string',
+          description: 'What specific information you need from this stamped block',
+        },
+        searchScope: {
+          type: 'string',
+          enum: ['compressed', 'archive'],
+          description:
+            "Search scope: 'compressed' (default, L1/L2/L3 layers) or 'archive' (ancient blocks beyond 712KB). Try 'compressed' first.",
+        },
+      },
+      required: ['stamp', 'question'],
+      additionalProperties: false,
+    }),
+    execute: async (input) => {
+      const recallInput = input as { stamp: string; question: string; searchScope?: 'compressed' | 'archive' }
+      const config = getRecallConfig()
+      const result = await recallByStampWeb(
+        getSharedStampStore(),
+        recallInput,
+        config ? { ...config, timeout: 90_000 } : undefined
+      )
+      return renderRecallResultWeb(result)
+    },
+  }
 }

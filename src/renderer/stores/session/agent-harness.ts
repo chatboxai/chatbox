@@ -1,6 +1,9 @@
 import { buildAgentPersonaPrompt, buildMemoriesSection } from '@shared/agent-persona/prompt'
 import { buildContext, flattenToolCallPartsToText, selectContextMessages } from '@shared/context'
 import type { AttachmentResolver } from '@shared/context/types'
+import { buildContextAmplifierOptions, isContextAmplifierEnabled } from '@shared/context-amplifier/singleton'
+import { getCommitConfig } from '@shared/context-amplifier/commit-config'
+import { clearSessionCommitGate, evaluateCommitGate } from './commit-gate'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
 import type { ChatStreamOptions, ModelInterface } from '@shared/models/types'
 import { toSandboxSeedAttachment } from '@shared/sandbox/attachment-path'
@@ -310,6 +313,7 @@ export async function prepareAgentGenerationHarness(
     toolCleanupMode: contextPressure.toolCleanupMode,
     preserveToolCallMessageIds,
     sandboxMode: canExecuteCode,
+    contextAmplifier: buildContextAmplifierOptions(isContextAmplifierEnabled(), session.id, model),
   })
 
   // Agent mode owns its identity header: session-level system messages are
@@ -361,12 +365,19 @@ export async function prepareAgentGenerationHarness(
         }
       : undefined
 
+  // roundId = 本轮目标消息的 id。它就是 commit_store.hasValidCommit 用来隔离
+  // 提交的关键 key，否则上一轮通过的提交会一直挡住新轮的补交判定。
+  const roundId = messages[targetMsgIx]?.id
+
+  // 新一轮生成开始：清掉该会话历史轮次的补交计数，避免 Map 无界增长。
+  clearSessionCommitGate(session.id)
   const {
     tools,
     instructions: toolInstructions,
     prepareStepMessages,
   } = await buildToolsForSession(model, {
     sessionId: session.id,
+    roundId,
     webBrowsing,
     knowledgeBase,
     messages: promptMsgs,
@@ -533,14 +544,39 @@ export async function prepareAgentGenerationHarness(
   }
 
   const allToolNames = Object.keys(tools)
-  if (allToolNames.includes('chatbox_cli')) {
-    chatOptions.prepareStep = ({ steps }) => {
-      return {
-        activeTools:
+  const needsCliGating = allToolNames.includes('chatbox_cli')
+  // 质量门：模型想收尾但没提交有效任务记忆时，追加一条 system 消息要求补交。
+  // 用 prepareStep 而不是 stopWhen——后者只能提前停，无法阻止"自然结束"。
+  const commitConfig = getCommitConfig()
+  const needsCommitGate = Boolean(commitConfig && allToolNames.includes(commitConfig.toolName))
+
+  if (needsCliGating || needsCommitGate) {
+    chatOptions.prepareStep = ({ steps, messages: stepMessages }) => {
+      const result: {
+        activeTools?: string[]
+        messages?: typeof stepMessages
+      } = {}
+
+      if (needsCliGating) {
+        result.activeTools =
           resumedMessageWaitsForCallback || hasAcceptedCallbackBackgroundTask(steps)
             ? allToolNames.filter((toolName) => toolName !== 'chatbox_cli')
-            : allToolNames,
+            : allToolNames
       }
+
+      if (needsCommitGate && commitConfig) {
+        const decision = evaluateCommitGate(
+          session.id,
+          roundId ?? 'unknown',
+          { steps: steps as never, messages: stepMessages },
+          commitConfig
+        )
+        if (decision.injectSystem) {
+          result.messages = [...stepMessages, { role: 'system', content: decision.injectSystem }]
+        }
+      }
+
+      return result as never
     }
   }
 

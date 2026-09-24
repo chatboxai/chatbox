@@ -80,7 +80,7 @@ interface ContextBuilderOptions {
   reach a model); `'stub-old-results'` keeps calls but stubs old result payloads (use under
   pressure, or unconditionally for callers without pressure assessment that need bounded tool
   history). Pressure resolution lives in the renderer (`context-management/context-pressure.ts`).
-- `keepToolCallRounds` - Optional. Number of recent tool call rounds kept fully intact when a
+- `keepToolCallRounds` - Optional. Rounds whose tool-call results stay verbatim when tool cleanup runs (default 2). The amplifier itself never strips tool calls — layered compression + stamp recall replace that need.
   cleanup mode is active (default: 2)
 - `preserveToolCallMessageIds` - Optional. Message ids exempt from cleanup (cache-friendly
   continuation flows)

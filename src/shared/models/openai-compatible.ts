@@ -52,6 +52,22 @@ export default abstract class OpenAICompatible extends AbstractAISDKModel implem
   static isSupportTextEmbedding() {
     return true
   }
+
+  /**
+   * OpenAI 兼容协议暴露分块传输入口（baseURL + /chat/completions）。
+   * chatStream 入口在 token > 80K 时走 chunked-chat 路径。
+   */
+  protected getChunkedTransport(): {
+    endpoint: string
+    apiKey: string
+    extraHeaders?: Record<string, string>
+  } {
+    const base = this.options.apiHost.replace(/\/+$/, '')
+    return {
+      endpoint: base + '/chat/completions',
+      apiKey: this.options.apiKey,
+    }
+  }
   isSupportToolUse(scope?: ToolUseScope) {
     if (isDeepSeekWeakToolUse(this.options.model.modelId, scope)) return false
     return super.isSupportToolUse()

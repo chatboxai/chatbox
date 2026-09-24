@@ -9,6 +9,8 @@ import { orderSteeredMessagesForModel } from '../utils/message'
 import { findLatestApplicableCompactionPoint } from './compaction-points'
 import { isContextEligibleMessage } from './message-eligibility'
 import { findRecentRoundsStartIndex } from './rounds'
+import { amplifyContext } from '../context-amplifier/pipeline'
+import { projectToolResults } from '../context-amplifier/projection'
 import type {
   AttachmentResolver,
   ContextBuilderOptions,
@@ -30,7 +32,41 @@ const STUB_ARGS_PREVIEW_CHARS = 500
  */
 export async function buildContext(messages: Message[], options: ContextBuilderOptions): Promise<Message[]> {
   const { attachmentResolver, modelSupportToolUseForFile = false, sandboxMode = false } = options
-  const contextMessages = prepareContextMessages(messages, options)
+  let contextMessages: Message[]
+  // Recall results are temporary prompt material on every path: expire stale
+  // retrieve_by_stamp evidence before any further processing.
+  const selected = filterExpiredRecallEvidence(selectContextMessages(messages, options))
+  if (options.contextAmplifier) {
+    // The amplifier owns the volume budget: compress full tool chains into
+    // stamped blocks over the selected window, then apply tool cleanup —
+    // stubs must not fire on content the amplifier compresses, and
+    // compression input stays lossless.
+    const protectedIds = new Set<string>()
+    for (const point of options.compactionPoints ?? []) {
+      protectedIds.add(point.boundaryMessageId)
+      protectedIds.add(point.summaryMessageId)
+    }
+    const amplified = await amplifyContext(selected, {
+      ...options.contextAmplifier,
+      ...(protectedIds.size > 0 ? { protectedMessageIds: protectedIds } : {}),
+    })
+    contextMessages = projectToolResults(
+      applyToolCleanup(
+        amplified.messages,
+        options.toolCleanupMode,
+        options.keepToolCallRounds ?? 2,
+        options.preserveToolCallMessageIds
+      ),
+      { store: options.contextAmplifier.store }
+    )
+  } else {
+    contextMessages = applyToolCleanup(
+      selected,
+      options.toolCleanupMode,
+      options.keepToolCallRounds ?? 2,
+      options.preserveToolCallMessageIds
+    )
+  }
   return await injectAttachments(contextMessages, attachmentResolver, modelSupportToolUseForFile, sandboxMode)
 }
 
@@ -77,6 +113,36 @@ export function selectContextMessages(messages: Message[], options: ContextSelec
   }
 
   return contextMessages
+}
+
+function filterExpiredRecallEvidence(messages: Message[]): Message[] {
+  let userMessagesAfter = 0
+  const result: Message[] = []
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    const contentParts = message.contentParts
+    if (!contentParts?.some((part) => part.type === 'tool-call' && part.toolName === 'retrieve_by_stamp')) {
+      result.push(message)
+      if (message.role === 'user') userMessagesAfter += 1
+      continue
+    }
+
+    if (userMessagesAfter >= 2) {
+      const filteredParts = contentParts.filter(
+        (part) => !(part.type === 'tool-call' && part.toolName === 'retrieve_by_stamp' && part.state === 'result')
+      )
+      if (filteredParts.length > 0) {
+        result.push({ ...message, contentParts: filteredParts })
+      }
+    } else {
+      result.push(message)
+    }
+
+    if (message.role === 'user') userMessagesAfter += 1
+  }
+
+  return result.reverse()
 }
 
 function applyCompaction(messages: Message[], compactionPoints: CompactionPoint[] | undefined): Message[] {

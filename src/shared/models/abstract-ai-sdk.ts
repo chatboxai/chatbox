@@ -37,6 +37,7 @@ import { normalizeCompletedResponse } from './completed-response-normalizer'
 import { createMidRunToolResultRelief } from './context-pressure-relief'
 import { isExpectedGenerationError } from './error-classification'
 import { ApiError, BaseError, ChatboxAIAPIError, MidStreamApiError } from './errors'
+import { CHUNK_TOKEN_THRESHOLD, chunkedChatStream, estimateRequestTokens } from './chunked-chat'
 import { wrapOpenAICompatibleNonStreamingModel } from './openai-compatible-non-streaming'
 import { stopWhenPersistentToolCallPause } from './persistent-tool-call-pause'
 import { mergeProviderMetadata, pickPersistableProviderMetadata } from './provider-part-metadata'
@@ -192,6 +193,22 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
 
   protected abstract getChatModel(options: CallChatCompletionOptions): LanguageModelV3
 
+  /**
+   * 子类可 override：返回 chunked POST 传输参数。
+   * 默认 null = 不支持 chunked。
+   *
+   * 触发条件：chatStream 入口估算请求体 token > CHUNK_TOKEN_THRESHOLD 时，
+   * 若本方法返回非 null，会走分块 POST 路径（upstream 拼装 + 单次响应）。
+   *
+   * 注意：切块路径只支持纯文本问答（不支持工具调用、vision、流式 SSE）。
+   * 设计取舍：L0 → L1 推不动、必须切块的场景几乎只发生在长上下文纯文本。
+   */
+  protected getChunkedTransport(
+    _options: ChatStreamOptions
+  ): { endpoint: string; apiKey: string; extraHeaders?: Record<string, string> } | null {
+    return null
+  }
+
   private prepareChatModel(model: LanguageModelV3): LanguageModelV3 {
     if (this.options.stream !== false) return model
 
@@ -310,6 +327,35 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     messages: ModelMessage[],
     options: ChatStreamOptions
   ): AsyncGenerator<ModelStreamPart<T>> {
+    // 长上下文 (>80K tokens) 且无工具调用时，走非流式标准 POST 直发路径。
+    // 带工具的请求必须走标准 AI SDK 路径（该路径不支持工具调用）。
+    const hasTools = !!options.tools && Object.keys(options.tools).length > 0
+    const totalTokens = estimateRequestTokens({
+      messages,
+      system: undefined, // 标准路径的 system 在 callSettings 里，直发路径走它自己分支
+      tools: options.tools,
+      model: this.modelId,
+    })
+    const transport =
+      totalTokens > CHUNK_TOKEN_THRESHOLD && !hasTools ? this.getChunkedTransport(options) : null
+    if (transport) {
+      const callSettings = this.resolveCallSettings(options)
+      for await (const part of chunkedChatStream({
+        endpoint: transport.endpoint,
+        apiKey: transport.apiKey,
+        model: this.modelId,
+        messages,
+        system: callSettings.system,
+        temperature: callSettings.temperature,
+        maxOutputTokens: callSettings.maxOutputTokens,
+        signal: options.signal ?? new AbortController().signal,
+        extraHeaders: transport.extraHeaders,
+      })) {
+        yield part as ModelStreamPart<T>
+      }
+      return
+    }
+
     const baseModel = this.prepareChatModel(this.getChatModel(options))
     const callSettings = this.resolveCallSettings(options)
     const basePrepareStep = options.prepareStep as PrepareStepFunction<T> | undefined

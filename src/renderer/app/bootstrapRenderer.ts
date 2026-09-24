@@ -1,4 +1,5 @@
 import type { Settings } from '@shared/types'
+import { initStampStorePersistence } from '@shared/context-amplifier/singleton'
 import i18n from '@/i18n'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
@@ -75,6 +76,9 @@ export async function bootstrapRenderer(application: RendererApplication): Promi
   if (platform.type === 'desktop') {
     initUpdateListeners()
     initSessionAttachmentRagMaintenance()
+    // 恢复历史任务块。不 await：读盘不该阻塞首屏，而放大器只在发消息时
+    // 才需要 store，那时恢复早已完成。
+    void initStampStorePersistence()
   }
   initSessionPresentationBindings()
 

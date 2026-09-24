@@ -2,10 +2,15 @@ import path, { resolve } from 'node:path'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig, type ElectronViteConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig, type ElectronViteConfig, externalizeDepsPlugin, loadEnv } from 'electron-vite'
 import { visualizer } from 'rollup-plugin-visualizer'
 import type { Plugin } from 'vite'
 import packageJson from './release/app/package.json'
+
+// electron-vite does not populate process.env from .env on its own, and the
+// `define` block below reads process.env at config-evaluation time. Load the
+// amplifier's vars explicitly, without the default VITE_ prefix filter.
+Object.assign(process.env, loadEnv(process.env.NODE_ENV || 'development', process.cwd(), 'CTX_AMP_'))
 /**
  * Vite plugin to inject <base href="/"> for web builds
  * This ensures relative paths resolve correctly for SPA routes like /session/xxx
@@ -291,6 +296,15 @@ export default defineConfig(({ mode }) => {
         target: 'es2020', // Avoid static initialization blocks for browser compatibility
         sourcemap: isProduction ? 'hidden' : true,
         minify: isProduction ? 'esbuild' : false, // Use esbuild for faster, less memory-intensive minification
+        commonjsOptions: {
+          // src/shared/context-amplifier/*.js are CommonJS and are also require()d
+          // by the Node-side MCP server, so they cannot be converted to ESM.
+          // Without this, importing them from .ts fails at build time
+          // ("default"/named binding is not exported) and a runtime require()
+          // would throw "require is not defined" in the renderer.
+          include: [/node_modules/, /src\/shared\/context-amplifier\/.*\.js$/],
+          transformMixedEsModules: true,
+        },
         rollupOptions: {
           output: {
             entryFileNames: 'js/[name].[hash].js',
@@ -355,6 +369,20 @@ export default defineConfig(({ mode }) => {
         'process.env.USE_NEWDB_API': JSON.stringify(process.env.USE_NEWDB_API || ''),
         'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
         'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
+        // Context-amplifier compression service. Deliberately separate from the
+        // chat provider's credentials — see src/shared/context-amplifier/singleton.ts.
+        // NOTE: `define` inlines these into the renderer bundle, so a key set here
+        // ships inside app.asar. Fine for local testing; a production build must
+        // move this to a main-process fetch or a user-entered setting.
+        'process.env.CTX_AMP_KEY': JSON.stringify(process.env.CTX_AMP_KEY || ''),
+        'process.env.CTX_AMP_ENDPOINT': JSON.stringify(process.env.CTX_AMP_ENDPOINT || ''),
+        'process.env.CTX_AMP_MODEL': JSON.stringify(process.env.CTX_AMP_MODEL || ''),
+        // L2 curator：整个 schema / 提示词 / 必填字段从外部注入，不写进源码。
+        // 值为一段 JSON；未设置时 curator 不启用，L2 退回简单压缩。
+        'process.env.CTX_AMP_CURATOR': JSON.stringify(process.env.CTX_AMP_CURATOR || ''),
+        // 实时自报（commit_task_memory）：schema / 描述 / 协议说明同样外部注入。
+        // 未设置时不注册该工具，L2 退回 curator 事后整理。
+        'process.env.CTX_AMP_COMMIT': JSON.stringify(process.env.CTX_AMP_COMMIT || ''),
       },
       optimizeDeps: {
         // Force a fresh dep optimization on dev startup. This avoids stale .vite

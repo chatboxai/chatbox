@@ -36,6 +36,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.XiaomiMiMo]: 'Xiaomi MiMo API',
   [ModelProviderEnum.LongCat]: 'LongCat API',
   [ModelProviderEnum.ZhipuGLMCodingPlan]: 'GLM Coding Plan',
+  [ModelProviderEnum.CheaperInference]: 'Cheaper Inference',
   [ModelProviderEnum.Custom]: 'Custom Provider',
 }
 
@@ -189,6 +190,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.ZhipuGLMCodingPlan,
     label: aiProviderNameHash[ModelProviderEnum.ZhipuGLMCodingPlan],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.CheaperInference,
+    label: aiProviderNameHash[ModelProviderEnum.CheaperInference],
     disabled: false,
   },
 ]

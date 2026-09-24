@@ -93,6 +93,7 @@ const BUILTIN_API_HOST_PROVIDERS = new Set<string>([
   ModelProviderEnum.XiaomiMiMo,
   ModelProviderEnum.LongCat,
   ModelProviderEnum.ZhipuGLMCodingPlan,
+  ModelProviderEnum.CheaperInference,
 ])
 
 const OAUTH_ONLY_PROVIDERS = new Set<string>([ModelProviderEnum.QwenPortal])

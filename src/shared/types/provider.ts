@@ -34,6 +34,7 @@ export enum ModelProviderEnum {
   XiaomiMiMo = 'xiaomi-mimo',
   LongCat = 'longcat',
   ZhipuGLMCodingPlan = 'zhipu-glm-coding-plan',
+  CheaperInference = 'cheaper-inference',
   Custom = 'custom',
 }
 

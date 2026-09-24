@@ -2,6 +2,7 @@ import { type BackupExportItem, type BackupExportPlan, updateBackupExportItemSel
 import type { BackupSessionSelection } from '@chatbox/react'
 import { Button, Checkbox, Group, Loader, Stack, Text } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
+import { formatFileSize } from '@shared/utils'
 import { type ReactNode, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal } from '@/components/layout/Overlay'
@@ -108,9 +109,7 @@ export function BackupExportDialog({
                   {session.name}
                 </Text>
                 <Text size="xs" c="dimmed">
-                  {session.layout === 'sharded'
-                    ? t('Large conversation')
-                    : `${(session.size / 1024 / 1024).toFixed(1)} MiB`}
+                  {session.layout === 'sharded' ? t('Large conversation') : formatFileSize(session.size)}
                 </Text>
               </Group>
             ))}

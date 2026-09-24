@@ -1,16 +1,81 @@
-import type { Settings } from '@shared/types'
+import type { Message, Session, Settings } from '@shared/types'
 import { expect, it } from 'vitest'
 import { openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
 import { contextSnapshot } from '../persistence/session-context-read.test-support'
 import { SqlSessionRowStore } from '../persistence/session-row-sql'
 import { decodeSessionTree } from '../session/session-tree/decode'
 import { exportBackupArchive } from './export-backup'
+import { importBackupArchive } from './import-backup'
 import { legacyBackupSource } from './legacy-source'
 import { prepareBackupExport } from './preflight'
 import { prepareSessionForBackup } from './resources'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
-import { BackupStorageKey } from './storage-keys'
+import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
 import { BackupWarningSchema } from './types'
+
+it.each([
+  ['stored JSON', 'v2'],
+  ['stored JSON', 'v3'],
+  ['session rows', 'v2'],
+  ['session rows', 'v3'],
+] as const)('round trips remote URL images from %s in %s backups', async (source, format) => {
+  const database = openNodeSessionRowDatabase()
+  const destination = openNodeSessionRowDatabase()
+  try {
+    const image = { type: 'image', url: 'https://example.com/a.png' }
+    const messages = [
+      { id: 'm', role: 'assistant', contentParts: [image] },
+      { id: 'n', role: 'assistant', contentParts: [{ type: 'text', text: 'conversation'.repeat(100) }] },
+    ] as unknown as Message[]
+    const session = { id: 'image-creator', name: 'Image Creator', type: 'picture' as const, messages }
+    const storage = new MemoryStorage()
+    const rows = new SqlSessionRowStore(database)
+    if (source === 'session rows') await rows.writeRows(contextSnapshot(session))
+    else storage.values.set(backupSessionStorageKey(session.id), session)
+    const options = {
+      storage,
+      metaStorage: new MemoryMetaStorage(),
+      sessionStore: legacyBackupSource(rows, {
+        listSessionIds: async () => [session.id],
+        readValue: (id) => storage.getItem(backupSessionStorageKey(id), null),
+      }),
+      exportItems: ['conversations'] as ['conversations'],
+      includeKeys: false,
+      application: { version: 'test', platform: 'test' },
+    }
+    const prepared = await prepareBackupExport(options, format === 'v3' ? { singleSessionBytes: 1 } : undefined)
+    expect(prepared.warnings).toEqual([])
+    let archive = new Blob()
+    const result = await exportBackupArchive({
+      ...options,
+      prepared,
+      writeArchive: async (stream) => {
+        const parts: Uint8Array<ArrayBuffer>[] = []
+        for await (const part of stream()) parts.push(new Uint8Array(part))
+        archive = new Blob(parts)
+        return { boundedMemory: true }
+      },
+    })
+    expect(result.manifest.formatVersion).toBe(format === 'v3' ? 3 : 2)
+    expect(result.manifest.sessions.map((entry) => entry.id)).toEqual([session.id])
+    expect(result.manifest.warnings).toEqual([])
+    const restored = new MemoryStorage()
+    const restoredRows = new SqlSessionRowStore(destination)
+    await importBackupArchive(archive, {
+      storage: restored,
+      metaStorage: new MemoryMetaStorage(),
+      sharded: format === 'v3' ? { store: restoredRows } : undefined,
+    })
+    const restoredParts =
+      format === 'v3'
+        ? (await restoredRows.readSnapshot(session.id))?.rows.messages[0].message.contentParts
+        : (restored.values.get(backupSessionStorageKey(session.id)) as Session | undefined)?.messages[0].contentParts
+    expect(restoredParts).toEqual([expect.objectContaining(image)])
+  } finally {
+    database.close()
+    destination.close()
+  }
+})
 
 it.each(['legacy', 'v2', 'v3'] as const)('preserves distinct read failure reasons in %s exports', async (format) => {
   const database = openNodeSessionRowDatabase()

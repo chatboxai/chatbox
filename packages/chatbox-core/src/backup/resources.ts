@@ -1,7 +1,7 @@
 import { isTextFilePath } from '@shared/file-extensions'
 import { getToolResultImageReference } from '@shared/tool-result-image'
-import { getWorkArtifacts } from '@shared/work-artifacts'
 import type { CopilotDetail, Message, MessageFile, Session, SessionMetaRecord, Settings } from '@shared/types'
+import { getWorkArtifacts } from '@shared/work-artifacts'
 import type { BackupResourceEntry, BackupWarning } from './types'
 
 export interface ResourceReference {
@@ -241,8 +241,8 @@ function restoreMessageResourceKeys(message: Message, resourceKeyMap: ReadonlyMa
   message.contentParts = (message.contentParts ?? []).flatMap((part) => {
     if (part.type === 'image') {
       const restoredStorageKey = restoreResourceKey(part.storageKey, resourceKeyMap)
-      if (restoredStorageKey === undefined) return []
-      part.storageKey = restoredStorageKey
+      if (restoredStorageKey === undefined && !part.url) return []
+      part.storageKey = restoredStorageKey ?? ''
     } else if (part.type === 'tool-call') {
       if (part.resultStorageKey !== undefined) {
         const restoredStorageKey = restoreResourceKey(part.resultStorageKey, resourceKeyMap)

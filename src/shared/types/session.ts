@@ -135,7 +135,9 @@ export const MessageTextPartSchema = z.object({
 
 export const MessageImagePartSchema = z.object({
   type: z.literal('image'),
-  storageKey: z.string(),
+  /** Empty for remote pictures migrated from legacy `pictures`, which carry only `url`. */
+  storageKey: z.string().catch(''),
+  url: z.string().optional(),
   /** Provider step that emitted this assistant part; absent on user and legacy parts. */
   stepIndex: z.number().optional().catch(undefined),
   ocrResult: z.string().optional(),

@@ -541,6 +541,7 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
     'pt-PT',
     'es',
     'ar',
+    'id',
     'it-IT',
     'sv',
     'nb-NO',

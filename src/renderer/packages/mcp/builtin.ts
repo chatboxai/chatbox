@@ -1,4 +1,3 @@
-import i18n from '@/i18n'
 import { getLicenseKey } from '@/stores/settingActions'
 import type { MCPServerConfig } from './types'
 
@@ -13,27 +12,26 @@ export const BUILTIN_MCP_SERVERS: BuildinMCPServerConfig[] = [
   {
     id: 'fetch',
     name: 'Fetch',
-    description: i18n.t(
-      'This server enables LLMs to retrieve and process content from web pages, converting HTML to markdown for easier consumption.'
-    ),
+    description:
+      'This server enables LLMs to retrieve and process content from web pages, converting HTML to markdown for easier consumption.',
     url: 'https://mcp.chatboxai.app/fetch',
   },
   {
     id: 'edgeone-pages',
     name: 'EdgeOne Pages',
-    description: i18n.t('Deploy HTML content to EdgeOne Pages and obtaining an accessible public URL.'),
+    description: 'Deploy HTML content to EdgeOne Pages and obtaining an accessible public URL.',
     url: 'https://mcp.chatboxai.app/edgeone-pages',
   },
   {
     id: 'arxiv',
     name: 'arXiv',
-    description: i18n.t('MCP server for accessing arXiv papers'),
+    description: 'MCP server for accessing arXiv papers',
     url: 'https://mcp.chatboxai.app/arxiv',
   },
   {
     id: 'context7',
     name: 'Context7',
-    description: i18n.t('Retrieves up-to-date documentation and code examples for any library.'),
+    description: 'Retrieves up-to-date documentation and code examples for any library.',
     url: 'https://mcp.chatboxai.app/context7',
   },
 ]

@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { doNotTranslateLine, glossaryIssues, translateAsRules } from './i18n-glossary.mjs'
 import { groupKeys, scanKeyFileIndex, scanKeyRoles } from './lib/i18n-context.mjs'
 
-const LOCALES = ['en', 'ar', 'de', 'es', 'fr', 'it-IT', 'ja', 'ko', 'nb-NO', 'pt-PT', 'ru', 'sv', 'zh-Hans', 'zh-Hant']
+const LOCALES = ['en', 'ar', 'de', 'es', 'fr', 'id', 'it-IT', 'ja', 'ko', 'nb-NO', 'pt-PT', 'ru', 'sv', 'zh-Hans', 'zh-Hant']
 
 // --- CLI args ---
 const argv = process.argv.slice(2)

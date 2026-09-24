@@ -19,6 +19,7 @@ const allowedSharedImports = new Map([
   ],
 ])
 allowedSharedImports.set('apps/mobile/src/components/message/ToolImageGenerationPreview.tsx', new Set(['@shared/image-background-task-result']))
+allowedSharedImports.set('apps/mobile/src/components/message/mobile-image-tool.ts', new Set(['@shared/image-background-task-result']))
 allowedSharedImports.set('apps/mobile/src/work-mode/image-commands.ts', new Set(['@shared/mobile-work/product-info-tools']))
 allowedSharedImports.set('apps/mobile/src/adapters/background-stream.ts', new Set(['@shared/utils/background-stream']))
 allowedSharedImports.set('apps/mobile/src/adapters/mobile-model-dependencies.ts', new Set(['@shared/utils/background-stream']))
@@ -26,6 +27,8 @@ allowedSharedImports.set('apps/mobile/src/adapters/mobile-model-dependencies.ts'
 allowedSharedImports.set('apps/mobile/src/application/createPersistentMobileApplication.ts', new Set(['@shared/mobile-work/workspace-cleanup']))
 allowedSharedImports.set('apps/mobile/src/screens/HtmlPreviewScreen.tsx', new Set(['@shared/mobile-work/artifact-preview']))
 allowedSharedImports.set('apps/mobile/src/components/composer/ChatComposer.tsx', new Set(['@shared/mobile-work/capabilities', '@shared/models/utils/deepseek']))
+// The model picker uses the same host-neutral tool-capability check as the composer.
+allowedSharedImports.set('apps/mobile/src/features/model/model-details.ts', new Set(['@shared/models/utils/deepseek']))
 allowedSharedImports.set('apps/mobile/src/screens/SessionScreen.tsx', new Set(['@shared/mobile-work/capabilities']))
 allowedSharedImports.set('apps/mobile/src/work-mode/MobileExecutionHost.tsx', new Set(['@shared/mobile-work/generated/worker-source']))
 allowedSharedImports.set('apps/mobile/src/work-mode/MobileExecutionService.ts', new Set(['@shared/mobile-work/MobileExecutionService']))
@@ -42,7 +45,7 @@ allowedSharedImports.set('apps/mobile/src/work-mode/workspace-path.ts', new Set(
 
 allowedSharedImports.set('apps/mobile/src/work-mode/normalize-work-image.ts', new Set(['@shared/mobile-work/view-image']))
 
-allowedSharedImports.set('apps/mobile/src/components/message/MessageWorkTimeline.tsx', new Set(['@shared/work-timeline', '@shared/mobile-work/execution-feedback', '@shared/image-background-task-result']))
+allowedSharedImports.set('apps/mobile/src/components/message/MessageWorkTimeline.tsx', new Set(['@shared/work-timeline', '@shared/mobile-work/execution-feedback']))
 // Host-neutral work-contract helpers the RN timeline shares with the desktop renderer.
 allowedSharedImports.set(
   'apps/mobile/src/components/message/message-work-presentation.ts',

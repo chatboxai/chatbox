@@ -1215,6 +1215,7 @@
   "Work Mode": "Çalışma Modu",
   "Work Mode is currently only available on the desktop app.": "Çalışma Modu şu anda yalnızca masaüstü uygulamasında kullanılabilir.",
   "Work Mode suggested": "Çalışma Modu önerildi",
+  "Processed for {{seconds}}s": "{{seconds}} saniyedir işleniyor",
   "Worked for {{time}}": "{{time}} boyunca çalıştı",
   "Working Directory": "Çalışma Dizini",
   "Writing {{count}} lines": "{{count}} satır yazılıyor",

@@ -66,11 +66,17 @@ export const OAuthCredentialsSchema = z.object({
   extra: z.record(z.string(), z.unknown()).optional().catch(undefined),
 })
 
+export const ProviderModelGroupSchema = z.object({
+  id: z.string(),
+  modelIds: z.array(z.string()),
+})
+
 export const ProviderSettingsSchema = z.object({
   apiKey: z.string().optional().catch(undefined),
   apiHost: z.string().optional().catch(undefined),
   apiPath: z.string().optional().catch(undefined),
   models: z.array(ProviderModelInfoSchema).optional().catch(undefined),
+  modelGroups: z.array(ProviderModelGroupSchema).optional().catch(undefined),
   excludedModels: z.array(z.string()).optional().catch(undefined),
   useProxy: z.boolean().optional().catch(undefined),
 
@@ -638,6 +644,8 @@ export type ProviderInfo = (ProviderBaseInfo | CustomProviderBaseInfo) & Provide
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>
 export type Settings = z.infer<typeof SettingsSchema>
 export type ProviderModelInfo = z.infer<typeof ProviderModelInfoSchema>
+
+export type ProviderModelGroup = z.infer<typeof ProviderModelGroupSchema>
 export type ProviderBaseInfo = z.infer<typeof ProviderBaseInfoSchema>
 export type ProviderSettings = z.infer<typeof ProviderSettingsSchema>
 export type BuiltinProviderBaseInfo = z.infer<typeof BuiltinProviderBaseInfoSchema>

@@ -1,4 +1,4 @@
-import type { ProviderModelInfo } from '../types'
+import type { ProviderModelGroup, ProviderModelInfo } from '../types'
 import type { AbortSignalLike } from '../types/adapters'
 import type { ChatboxAIPlanType } from '../types/settings'
 
@@ -41,10 +41,41 @@ export interface NativeAccountLicense {
   recurringCanceled: boolean
 }
 
+export interface NativeChatboxAIModelDetail {
+  modelId: string
+  modelName?: string
+  description?: string
+  costLevel?: string
+  type?: ProviderModelInfo['type']
+  capabilities?: ProviderModelInfo['capabilities']
+  contextWindow?: number
+  available: boolean
+}
+
+export interface NativeChatboxAIModelCatalog {
+  source?: 'model-list' | 'manifest'
+  models: ProviderModelInfo[]
+  groups: Array<ProviderModelGroup & { featuredModelIds?: string[] }>
+  modelDetails: Record<string, NativeChatboxAIModelDetail>
+  licensePlan?: string
+  links?: { upgrade?: string }
+}
+
 const DEFAULT_API_ORIGIN = 'https://api.chatboxai.app'
 
 function origin(value: string | undefined): string {
   return (value?.trim() || DEFAULT_API_ORIGIN).replace(/\/+$/, '')
+}
+
+function isAbortError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && 'name' in error && error.name === 'AbortError')
+}
+
+function throwIfAborted(signal: AbortSignalLike | undefined): void {
+  if (!signal?.aborted) return
+  const error = new Error('The request was aborted')
+  error.name = 'AbortError'
+  throw error
 }
 
 async function requestJson(
@@ -60,7 +91,8 @@ async function requestJson(
   let payload: unknown = null
   try {
     payload = await response.json()
-  } catch {
+  } catch (error) {
+    if (isAbortError(error) || options.signal?.aborted) throw error
     payload = null
   }
   if (!response.ok) {
@@ -256,11 +288,20 @@ function normalizeModel(candidate: unknown): ProviderModelInfo | null {
   }
 }
 
-export async function fetchNativeChatboxAIModels(
+function modelResponseData(payload: unknown): Record<string, unknown> {
+  const data = dataRecord(payload)
+  const response = payload as Record<string, unknown>
+  if (response.success === false || response.error || Array.isArray(data) || data.success === false || data.error) {
+    throw new Error('Model catalog response was not understood')
+  }
+  return data
+}
+
+async function fetchNativeChatboxAIModelList(
   licenseKey: string | undefined,
   language: string | undefined,
   options: NativeAccountRequestOptions = {}
-): Promise<ProviderModelInfo[]> {
+): Promise<NativeChatboxAIModelCatalog> {
   const { payload } = await requestJson(
     '/api/chatbox_ai/model_list',
     {
@@ -270,15 +311,130 @@ export async function fetchNativeChatboxAIModels(
     },
     options
   )
-  const data = dataRecord(payload)
-  const models = data.models && typeof data.models === 'object' ? Object.values(data.models) : []
+  throwIfAborted(options.signal)
+  const data = modelResponseData(payload)
+  if (
+    !data.models ||
+    typeof data.models !== 'object' ||
+    Array.isArray(data.models) ||
+    (data.groups !== undefined && !Array.isArray(data.groups)) ||
+    (data.imageModels !== undefined && !Array.isArray(data.imageModels))
+  ) {
+    throw new Error('Model catalog response was not understood')
+  }
+  const models = Object.values(data.models)
   const imageModels = Array.isArray(data.imageModels) ? data.imageModels : []
-  return [...models, ...imageModels].flatMap((candidate) => {
-    if (candidate && typeof candidate === 'object' && 'access' in candidate) {
-      const access = candidate.access
-      if (access && typeof access === 'object' && 'available' in access && access.available === false) return []
-    }
+  const normalizedModels = [...models, ...imageModels].flatMap((candidate, index) => {
     const model = normalizeModel(candidate)
-    return model ? [model] : []
+    if (!model) return []
+    const value = candidate as Record<string, unknown>
+    const access = value.access
+    const available = !(access && typeof access === 'object' && 'available' in access && access.available === false)
+    const detail: NativeChatboxAIModelDetail = {
+      modelId: model.modelId,
+      modelName: model.nickname,
+      description: typeof value.description === 'string' ? value.description : undefined,
+      costLevel: typeof value.costLevel === 'string' ? value.costLevel : undefined,
+      type: model.type ?? (index >= models.length ? 'image' : undefined),
+      capabilities: model.capabilities,
+      contextWindow: model.contextWindow,
+      available,
+    }
+    return [{ model, detail }]
   })
+  const availableModels = normalizedModels.filter(({ detail }) => detail.available).map(({ model }) => model)
+  const modelDetails = Object.fromEntries(normalizedModels.map(({ detail }) => [detail.modelId, detail]))
+  const groups = Array.isArray(data.groups)
+    ? data.groups.flatMap((candidate: unknown) => {
+        if (!candidate || typeof candidate !== 'object') return []
+        if (!('id' in candidate) || typeof candidate.id !== 'string') return []
+        if (!('modelIds' in candidate) || !Array.isArray(candidate.modelIds)) return []
+        const featuredModelIds =
+          'featuredModelIds' in candidate && Array.isArray(candidate.featuredModelIds)
+            ? candidate.featuredModelIds.filter((id): id is string => typeof id === 'string')
+            : undefined
+        return [
+          {
+            id: candidate.id,
+            modelIds: candidate.modelIds.filter((id): id is string => typeof id === 'string'),
+            featuredModelIds,
+          },
+        ]
+      })
+    : []
+  const license = data.license
+  const licensePlan =
+    license && typeof license === 'object' && 'plan' in license && typeof license.plan === 'string'
+      ? license.plan
+      : undefined
+  const links = data.links
+  const upgrade =
+    links && typeof links === 'object' && 'upgrade' in links && typeof links.upgrade === 'string'
+      ? links.upgrade
+      : undefined
+  return {
+    source: 'model-list',
+    models: availableModels,
+    groups,
+    modelDetails,
+    licensePlan,
+    links: upgrade ? { upgrade } : undefined,
+  }
+}
+
+async function fetchNativeChatboxAIModelManifest(
+  licenseKey: string | undefined,
+  language: string | undefined,
+  options: NativeAccountRequestOptions
+): Promise<NativeChatboxAIModelCatalog> {
+  const { payload } = await requestJson(
+    '/api/model_manifest',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aiProvider: 'chatbox-ai', licenseKey, language }),
+    },
+    options
+  )
+  throwIfAborted(options.signal)
+  const data = modelResponseData(payload)
+  if (
+    typeof data.groupName !== 'string' ||
+    !Array.isArray(data.models) ||
+    (data.imageModels !== undefined && !Array.isArray(data.imageModels))
+  ) {
+    throw new Error('Model manifest response was not understood')
+  }
+  const imageModels = Array.isArray(data.imageModels) ? data.imageModels : []
+  const chatModelCount = data.models.length
+  const models = [...data.models, ...imageModels].flatMap((candidate: unknown, index) => {
+    if (!candidate || typeof candidate !== 'object' || !('modelName' in candidate)) return []
+    if (typeof candidate.modelName !== 'string') return []
+    const model = normalizeModel(candidate)
+    return model ? [{ ...model, type: model.type ?? (index >= chatModelCount ? 'image' : undefined) }] : []
+  })
+  return { source: 'manifest', models, groups: [], modelDetails: {} }
+}
+
+export async function fetchNativeChatboxAIModelCatalog(
+  licenseKey: string | undefined,
+  language: string | undefined,
+  options: NativeAccountRequestOptions = {}
+): Promise<NativeChatboxAIModelCatalog> {
+  throwIfAborted(options.signal)
+  try {
+    return await fetchNativeChatboxAIModelList(licenseKey, language, options)
+  } catch (error) {
+    if (isAbortError(error)) throw error
+    throwIfAborted(options.signal)
+    return await fetchNativeChatboxAIModelManifest(licenseKey, language, options)
+  }
+}
+
+export async function fetchNativeChatboxAIModels(
+  licenseKey: string | undefined,
+  language: string | undefined,
+  options: NativeAccountRequestOptions = {}
+): Promise<ProviderModelInfo[]> {
+  return (await fetchNativeChatboxAIModelCatalog(licenseKey, language, options)).models
 }

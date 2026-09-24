@@ -288,6 +288,144 @@ describe('CopilotService', () => {
 })
 
 describe('CopilotPreferences', () => {
+  test('publishes a preference immediately while its storage write is pending', async () => {
+    const storage = new MemoryStorage()
+    const service = new CopilotPreferences({ storage })
+    await service.hydrate()
+    const write = deferred<void>()
+    vi.spyOn(storage, 'set').mockImplementationOnce(async (key, value) => {
+      await write.promise
+      storage.values.set(key, value)
+    })
+
+    const saving = service.setShowCopilots(true)
+    expect(service.getSnapshot().showCopilots).toBe(true)
+    expect(await storage.get(COPILOT_PREFERENCES_STORAGE_KEY)).toBeNull()
+    write.resolve()
+    await saving
+    expect(await storage.get(COPILOT_PREFERENCES_STORAGE_KEY)).toBe(true)
+  })
+
+  test('preserves an optimistic preference when hydration completes', async () => {
+    const storage = new MemoryStorage()
+    const read = deferred<unknown>()
+    const write = deferred<void>()
+    vi.spyOn(storage, 'get').mockImplementationOnce(() => read.promise)
+    vi.spyOn(storage, 'set').mockImplementationOnce(async (key, value) => {
+      await write.promise
+      storage.values.set(key, value)
+    })
+    const service = new CopilotPreferences({ storage })
+    const hydration = service.hydrate()
+    const saving = service.setShowCopilots(true)
+    expect(service.getSnapshot().showCopilots).toBe(true)
+    const observed: boolean[] = []
+    service.subscribe(() => observed.push(service.getSnapshot().showCopilots))
+
+    read.resolve(false)
+    await hydration
+    expect(service.getSnapshot().showCopilots).toBe(true)
+    write.resolve()
+    await saving
+    expect(observed.every(Boolean)).toBe(true)
+    expect(await storage.get(COPILOT_PREFERENCES_STORAGE_KEY)).toBe(true)
+  })
+
+  test('keeps the latest optimistic selection as earlier writes finish', async () => {
+    const storage = new MemoryStorage()
+    const service = new CopilotPreferences({ storage })
+    await service.hydrate()
+    const firstWrite = deferred<void>()
+    const lastWrite = deferred<void>()
+    vi.spyOn(storage, 'set')
+      .mockImplementationOnce(async (key, value) => {
+        await firstWrite.promise
+        storage.values.set(key, value)
+      })
+      .mockImplementationOnce(async (key, value) => {
+        await lastWrite.promise
+        storage.values.set(key, value)
+      })
+
+    const firstSave = service.setShowCopilots(true)
+    expect(service.getSnapshot().showCopilots).toBe(true)
+    const lastSave = service.setShowCopilots(false)
+    expect(service.getSnapshot().showCopilots).toBe(false)
+    firstWrite.resolve()
+    await firstSave
+    expect(service.getSnapshot().showCopilots).toBe(false)
+    expect(await storage.get(COPILOT_PREFERENCES_STORAGE_KEY)).toBe(true)
+    lastWrite.resolve()
+    await lastSave
+    expect(service.getSnapshot().showCopilots).toBe(false)
+    expect(await storage.get(COPILOT_PREFERENCES_STORAGE_KEY)).toBe(false)
+  })
+
+  test('rolls a failed latest write back to the last successfully persisted preference', async () => {
+    const storage = new MemoryStorage()
+    const service = new CopilotPreferences({ storage })
+    await service.hydrate()
+    const firstWrite = deferred<void>()
+    const lastWrite = deferred<void>()
+    vi.spyOn(storage, 'set')
+      .mockImplementationOnce(async (key, value) => {
+        await firstWrite.promise
+        storage.values.set(key, value)
+      })
+      .mockImplementationOnce(async () => {
+        await lastWrite.promise
+        throw new Error('disk full')
+      })
+
+    const firstSave = service.setShowCopilots(true)
+    const lastSave = service.setShowCopilots(false)
+    const rejected = expect(lastSave).rejects.toThrow('disk full')
+    expect(service.getSnapshot().showCopilots).toBe(false)
+    firstWrite.resolve()
+    await firstSave
+    expect(service.getSnapshot().showCopilots).toBe(false)
+    lastWrite.resolve()
+    await rejected
+    expect(service.getSnapshot()).toEqual({ showCopilots: true, isLoading: false, error: new Error('disk full') })
+    expect(await storage.get(COPILOT_PREFERENCES_STORAGE_KEY)).toBe(true)
+  })
+
+  test('does not roll back a newer selection when an older write fails', async () => {
+    const storage = new MemoryStorage()
+    const service = new CopilotPreferences({ storage })
+    await service.hydrate()
+    const firstWrite = deferred<void>()
+    const lastWrite = deferred<void>()
+    vi.spyOn(storage, 'set')
+      .mockImplementationOnce(async () => {
+        await firstWrite.promise
+        throw new Error('disk full')
+      })
+      .mockImplementationOnce((key, value) => {
+        storage.values.set(key, value)
+        return Promise.resolve()
+      })
+      .mockImplementationOnce(async (key, value) => {
+        await lastWrite.promise
+        storage.values.set(key, value)
+      })
+
+    const firstSave = service.setShowCopilots(true)
+    const rejected = expect(firstSave).rejects.toThrow('disk full')
+    const middleSave = service.setShowCopilots(false)
+    const lastSave = service.setShowCopilots(true)
+    const observed: boolean[] = []
+    service.subscribe(() => observed.push(service.getSnapshot().showCopilots))
+    firstWrite.resolve()
+    await rejected
+    await middleSave
+    expect(service.getSnapshot()).toEqual({ showCopilots: true, isLoading: false, error: null })
+    lastWrite.resolve()
+    await lastSave
+    expect(observed.every(Boolean)).toBe(true)
+    expect(await storage.get(COPILOT_PREFERENCES_STORAGE_KEY)).toBe(true)
+  })
+
   test('defaults to hidden and serializes a preference change behind hydration', async () => {
     const storage = new MemoryStorage()
     const service = new CopilotPreferences({ storage })

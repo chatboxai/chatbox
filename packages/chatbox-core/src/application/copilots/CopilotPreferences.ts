@@ -11,6 +11,8 @@ export interface CopilotPreferencesSnapshot {
 export class CopilotPreferences {
   private snapshot: CopilotPreferencesSnapshot = { showCopilots: false, isLoading: true, error: null }
   private hydrated = false
+  private persistedShowCopilots = false
+  private pendingWrites = 0
   private queue: Promise<void> = Promise.resolve()
   private readonly listeners = new Set<() => void>()
 
@@ -32,10 +34,19 @@ export class CopilotPreferences {
   }
 
   setShowCopilots(showCopilots: boolean): Promise<void> {
+    this.pendingWrites += 1
+    this.publish({ ...this.snapshot, showCopilots, error: null })
     return this.enqueue(async () => {
-      await this.readOnce()
-      await this.options.storage.set(COPILOT_PREFERENCES_STORAGE_KEY, showCopilots)
-      this.publish({ showCopilots, isLoading: false, error: null })
+      try {
+        await this.readOnce()
+        await this.options.storage.set(COPILOT_PREFERENCES_STORAGE_KEY, showCopilots)
+        this.persistedShowCopilots = showCopilots
+      } finally {
+        this.pendingWrites -= 1
+        if (this.pendingWrites === 0) {
+          this.publish({ showCopilots: this.persistedShowCopilots, isLoading: false, error: null })
+        }
+      }
     })
   }
 
@@ -45,7 +56,12 @@ export class CopilotPreferences {
     this.publish({ ...this.snapshot, isLoading: true, error: null })
     const stored = await this.options.storage.get<unknown>(COPILOT_PREFERENCES_STORAGE_KEY)
     this.hydrated = true
-    this.publish({ showCopilots: stored === true, isLoading: false, error: null })
+    this.persistedShowCopilots = stored === true
+    this.publish({
+      showCopilots: this.pendingWrites > 0 ? this.snapshot.showCopilots : this.persistedShowCopilots,
+      isLoading: false,
+      error: null,
+    })
   }
 
   private enqueue(operation: () => Promise<void>): Promise<void> {
@@ -53,11 +69,13 @@ export class CopilotPreferences {
       .catch(() => undefined)
       .then(operation)
       .catch((error: unknown) => {
-        this.publish({
-          ...this.snapshot,
-          isLoading: false,
-          error: error instanceof Error ? error : new Error(String(error)),
-        })
+        if (this.pendingWrites === 0) {
+          this.publish({
+            ...this.snapshot,
+            isLoading: false,
+            error: error instanceof Error ? error : new Error(String(error)),
+          })
+        }
         throw error
       })
     this.queue = pending

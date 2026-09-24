@@ -1219,6 +1219,7 @@
   "Work Mode": "작업 모드",
   "Work Mode is currently only available on the desktop app.": "작업 모드는 현재 데스크톱 앱에서만 사용할 수 있습니다.",
   "Work Mode suggested": "작업 모드 제안됨",
+  "Processed for {{seconds}}s": "{{seconds}}초 동안 처리 중",
   "Worked for {{time}}": "{{time}} 동안 작업함",
   "Working Directory": "작업 디렉터리",
   "Writing {{count}} lines": "{{count}}줄 쓰기",

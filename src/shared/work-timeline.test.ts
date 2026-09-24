@@ -24,6 +24,19 @@ const tool = (id: string): MessageToolCallPart => ({
 })
 
 describe('work timeline partition', () => {
+  it('keeps native image result cards out of settled tool clusters', () => {
+    const image = {
+      ...tool('image'),
+      toolName: 'chatbox_cli',
+      args: { argv: ['image', 'generate', '--prompt', 'A cat'] },
+      result: { kind: 'image-generation', recordId: 'record-1', status: 'done' },
+    }
+    const parts = [tool('a'), tool('b'), image, tool('c'), tool('d')]
+    const entries = buildWorkTimelineEntries(parts)
+    expect(entries.map((entry) => entry.type)).toEqual(['cluster', 'part', 'cluster'])
+    expect(entries[1]).toEqual({ type: 'part', part: image, index: 2 })
+  })
+
   it('folds an earlier group while another group is streaming', () => {
     const parts = [tool('a'), tool('b')]
     const active = { type: 'text', text: 'Answer' } as const

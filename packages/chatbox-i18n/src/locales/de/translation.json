@@ -1219,6 +1219,7 @@
   "Work Mode": "Arbeitsmodus",
   "Work Mode is currently only available on the desktop app.": "Der Arbeitsmodus ist derzeit nur in der Desktop-App verfügbar.",
   "Work Mode suggested": "Arbeitsmodus vorgeschlagen",
+  "Processed for {{seconds}}s": "Seit {{seconds}} s in Bearbeitung",
   "Worked for {{time}}": "Hat {{time}} gearbeitet",
   "Working Directory": "Arbeitsverzeichnis",
   "Writing {{count}} lines": "{{count}} Zeilen schreiben",

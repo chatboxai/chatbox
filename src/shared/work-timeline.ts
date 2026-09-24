@@ -109,6 +109,10 @@ export function stepNeedsAttention(part: StepTimelinePart, isLastStep: boolean, 
   // An offloaded payload only leaves a truncated prefix behind, so the step's own
   // `cancelled` marker is out of reach; the message says whether the user stopped here.
   if (!record) return isLastStep && canceled && part.resultStorageKey !== undefined
+  // Native image commands return a record reference; the tool card is the visible output.
+  if (part.toolName === 'chatbox_cli' && record.kind === 'image-generation' && typeof record.recordId === 'string') {
+    return true
+  }
   return (record.cancelled === true && isLastStep) || getAcceptedImageBackgroundTaskResult(record) !== null
 }
 

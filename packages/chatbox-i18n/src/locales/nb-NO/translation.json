@@ -1219,6 +1219,7 @@
   "Work Mode": "Arbeidsmodus",
   "Work Mode is currently only available on the desktop app.": "Arbeidsmodus er for øyeblikket bare tilgjengelig i skrivebordsappen.",
   "Work Mode suggested": "Arbeidsmodus foreslått",
+  "Processed for {{seconds}}s": "Behandlet i {{seconds}} s",
   "Worked for {{time}}": "Jobbet i {{time}}",
   "Working Directory": "Arbeidskatalog",
   "Writing {{count}} lines": "Skriver {{count}} linjer",

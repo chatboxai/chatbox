@@ -10,6 +10,7 @@ export {
 export {
   fetchNativeAccountLicenses,
   fetchNativeAccountProfile,
+  fetchNativeChatboxAIModelCatalog,
   fetchNativeChatboxAIModels,
   generateNativeWebAuthToken,
   loginNativeEmailCode,
@@ -17,6 +18,8 @@ export {
   type NativeAccountProfile,
   type NativeAccountRequestOptions,
   type NativeAccountTokens,
+  type NativeChatboxAIModelCatalog,
+  type NativeChatboxAIModelDetail,
   refreshNativeAccountTokens,
   sendNativeEmailLoginCode,
 } from '@shared/services/native-account'
@@ -231,6 +234,8 @@ export {
   type PersistedSettingsEnvelope,
   type ProviderBaseInfo,
   type ProviderInfo,
+  type ProviderModelGroup,
+  ProviderModelGroupSchema,
   type ProviderModelInfo,
   ProviderModelInfoSchema,
   type ProviderOptions,

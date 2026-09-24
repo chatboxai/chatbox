@@ -1219,6 +1219,7 @@
   "Work Mode": "作業モード",
   "Work Mode is currently only available on the desktop app.": "作業モードは現在、デスクトップアプリでのみ利用できます。",
   "Work Mode suggested": "作業モードを推奨",
+  "Processed for {{seconds}}s": "処理時間：{{seconds}} 秒",
   "Worked for {{time}}": "{{time}} かかりました",
   "Working Directory": "作業ディレクトリ",
   "Writing {{count}} lines": "{{count}} 行を書き込み",

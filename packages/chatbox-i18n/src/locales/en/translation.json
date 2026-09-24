@@ -1219,6 +1219,7 @@
   "Work Mode": "Work Mode",
   "Work Mode is currently only available on the desktop app.": "Work Mode is currently only available on the desktop app.",
   "Work Mode suggested": "Work Mode suggested",
+  "Processed for {{seconds}}s": "Processed for {{seconds}}s",
   "Worked for {{time}}": "Worked for {{time}}",
   "Working Directory": "Working Directory",
   "Writing {{count}} lines": "Writing {{count}} lines",

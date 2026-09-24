@@ -1219,6 +1219,7 @@
   "Work Mode": "Рабочий режим",
   "Work Mode is currently only available on the desktop app.": "Рабочий режим в настоящее время доступен только в настольном приложении.",
   "Work Mode suggested": "Предложен рабочий режим",
+  "Processed for {{seconds}}s": "Обработка: {{seconds}} с",
   "Worked for {{time}}": "Работал в течение {{time}}",
   "Working Directory": "Рабочий каталог",
   "Writing {{count}} lines": "Запись {{count}} строк",

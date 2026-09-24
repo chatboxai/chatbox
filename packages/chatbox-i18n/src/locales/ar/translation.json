@@ -1219,6 +1219,7 @@
   "Work Mode": "وضع العمل",
   "Work Mode is currently only available on the desktop app.": "وضع العمل متاح حاليًا في تطبيق سطح المكتب فقط.",
   "Work Mode suggested": "تم اقتراح وضع العمل",
+  "Processed for {{seconds}}s": "تمت المعالجة لمدة {{seconds}} ث",
   "Worked for {{time}}": "استغرق {{time}}",
   "Working Directory": "دليل العمل",
   "Writing {{count}} lines": "كتابة {{count}} سطر",

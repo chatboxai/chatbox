@@ -1219,6 +1219,7 @@
   "Work Mode": "工作模式",
   "Work Mode is currently only available on the desktop app.": "工作模式目前仅在桌面端应用中可用。",
   "Work Mode suggested": "建议使用工作模式",
+  "Processed for {{seconds}}s": "已处理 {{seconds}} 秒",
   "Worked for {{time}}": "工作了 {{time}}",
   "Working Directory": "工作目录",
   "Writing {{count}} lines": "写入 {{count}} 行",

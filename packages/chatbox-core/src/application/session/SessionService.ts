@@ -84,6 +84,8 @@ export class SessionService {
   private readonly getLastUsedModels: NonNullable<SessionServiceOptions['getLastUsedModels']>
   private readonly getVisibleSessionMetas: NonNullable<SessionServiceOptions['getVisibleSessionMetas']>
   private readonly pendingMetaRepairs = new Set<string>()
+  private readonly pendingArchiveListRefreshes = new Set<string>()
+  private archiveStateRevision = 0
   private initialization: Promise<void> | null = null
 
   constructor(
@@ -398,7 +400,7 @@ export class SessionService {
   updateSession(
     sessionId: string,
     updater: Updater<SessionMetadataUpdate>,
-    options: Pick<UpdateSessionOptions, 'clearRecoveryArchive'> = {}
+    options: Pick<UpdateSessionOptions, 'clearRecoveryArchive' | 'onFullSessionPersisted'> = {}
   ): Promise<Session> {
     return this.updateSessionWithMessages(
       sessionId,
@@ -455,8 +457,7 @@ export class SessionService {
   }
 
   async archiveSession(sessionId: string): Promise<void> {
-    await this.updateSession(sessionId, { hidden: true, archivedAt: this.now() })
-    await this.publishListReset({ archived: true })
+    await this.updateArchiveState(sessionId, true)
   }
 
   /**
@@ -468,6 +469,7 @@ export class SessionService {
     const archivedAt = this.now()
     const updated = await this.writes.archiveMetadataOnly(sessionId, archivedAt)
     if (!updated) throw new SessionNotFoundError(sessionId)
+    this.archiveStateRevision++
     await this.publishListReset({ visible: true, archived: true })
   }
 
@@ -476,6 +478,7 @@ export class SessionService {
     await this.initialize()
     const updated = await this.writes.restoreMetadataOnly(sessionId)
     if (!updated) throw new SessionNotFoundError(sessionId)
+    this.archiveStateRevision++
     await this.publishListReset({ visible: true, archived: true })
   }
 
@@ -487,7 +490,15 @@ export class SessionService {
     const missingSessionIds: string[] = []
     await runInChunks(uniqueIds, 20, async (sessionId) => {
       try {
-        await this.updateSession(sessionId, { hidden: true, archivedAt })
+        await this.updateSession(
+          sessionId,
+          { hidden: true, archivedAt },
+          {
+            onFullSessionPersisted: () => {
+              this.archiveStateRevision++
+            },
+          }
+        )
       } catch (error) {
         if (error instanceof Error && error.message === `Session ${sessionId} not found`) {
           missingSessionIds.push(sessionId)
@@ -512,8 +523,49 @@ export class SessionService {
   }
 
   async restoreSession(sessionId: string): Promise<void> {
-    await this.updateSession(sessionId, { hidden: false, archivedAt: undefined }, { clearRecoveryArchive: true })
-    await this.publishListReset({ visible: true, archived: true })
+    await this.updateArchiveState(sessionId, false)
+  }
+
+  private async updateArchiveState(sessionId: string, hidden: boolean): Promise<void> {
+    let persisted = false
+    let revision = this.archiveStateRevision
+    try {
+      await this.updateSession(
+        sessionId,
+        { hidden, archivedAt: hidden ? this.now() : undefined },
+        {
+          clearRecoveryArchive: !hidden,
+          onFullSessionPersisted: () => {
+            persisted = true
+            revision = ++this.archiveStateRevision
+          },
+        }
+      )
+    } catch (error) {
+      if (!persisted) throw error
+      // The live projection already reflects the committed session. Reading stale
+      // metadata now would undo it; refresh both lists after the scheduled repair.
+      this.pendingArchiveListRefreshes.add(sessionId)
+      await this.log('warn', 'Failed to project committed session archive state', {
+        sessionId,
+        hidden,
+        error: describeError(error),
+      })
+      return
+    }
+    await this.refreshArchiveLists(sessionId, revision)
+  }
+
+  private async refreshArchiveLists(sessionId: string, revision: number): Promise<void> {
+    if (revision !== this.archiveStateRevision) return
+    try {
+      await this.publishListReset({ visible: true, archived: true }, revision)
+    } catch (error) {
+      await this.log('warn', 'Failed to refresh session lists after archive state was committed', {
+        sessionId,
+        error: describeError(error),
+      })
+    }
   }
 
   async recoverSessionList(): Promise<{ recovered: number; failed: number }> {
@@ -603,15 +655,18 @@ export class SessionService {
   }
 
   private async repairMetaProjection(sessionId: string): Promise<void> {
+    const refreshArchiveLists = this.pendingArchiveListRefreshes.delete(sessionId)
     try {
       const result = await this.writes.reprojectMeta(sessionId)
       if (!result) return
+      const revision = refreshArchiveLists ? ++this.archiveStateRevision : this.archiveStateRevision
       await this.events.publish({
         type: 'session-updated',
         session: result.session,
         meta: result.meta,
         preserveCachedGeneratingMessages: true,
       })
+      if (refreshArchiveLists) await this.refreshArchiveLists(sessionId, revision)
     } catch (error) {
       await this.log('warn', 'Failed to repair session metadata projection', {
         sessionId,
@@ -622,14 +677,24 @@ export class SessionService {
 
   private async log(level: 'error' | 'warn', message: string, context: Record<string, unknown>): Promise<void> {
     if (!this.options.logger) return
-    await Promise.resolve(this.options.logger.log(level, message, context)).catch(() => {})
+    try {
+      await this.options.logger.log(level, message, context)
+    } catch {
+      // Diagnostics must not change the outcome of a storage operation.
+    }
   }
 
-  private async publishListReset(options: { visible?: boolean; archived?: boolean }): Promise<void> {
+  private async publishListReset(
+    options: { visible?: boolean; archived?: boolean },
+    archiveStateRevision = this.archiveStateRevision
+  ): Promise<void> {
     const [visible, archived] = await Promise.all([
       options.visible ? this.listSessionsMetaPage(0) : Promise.resolve(undefined),
       options.archived ? this.listArchivedSessionsMetaPage(0) : Promise.resolve(undefined),
     ])
+    // A later archive or Undo already published its committed state. Slow page
+    // reads must not replace it with a snapshot taken before that operation.
+    if (archiveStateRevision !== this.archiveStateRevision) return
     await this.events.publish({ type: 'session-list-reset', visible, archived })
   }
 }

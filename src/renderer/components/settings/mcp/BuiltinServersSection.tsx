@@ -12,6 +12,8 @@ const ServerCard: FC<{
   onEnabledChange: (id: string, checked: boolean) => void
   accessible: boolean
 }> = (props) => {
+  const { t } = useTranslation()
+
   return (
     <Paper shadow="xs" radius="lg" withBorder p="sm">
       <Flex justify="space-between" align="center">
@@ -26,7 +28,7 @@ const ServerCard: FC<{
         />
       </Flex>
       <Text size="xs" mt="sm" c="chatbox-tertiary">
-        {props.config.description}
+        {t(props.config.description)}
       </Text>
     </Paper>
   )

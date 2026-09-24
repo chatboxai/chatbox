@@ -1,6 +1,11 @@
 import type { SessionPresentationSummary } from '../session/session-tree/types'
 import type { Message, Session } from '../types/session'
-import type { SessionMessageWindow, SessionMessageWindowRequest } from './session-row-store'
+import type {
+  SessionMessageWindow,
+  SessionMessageWindowRequest,
+  SessionThreadPageRequest,
+  SessionThreadPageCursor,
+} from './session-row-store'
 import type { SessionTextTokenRead } from './session-text-tokens'
 
 /** Metadata cannot be mistaken for a complete session by mutation consumers. */
@@ -10,8 +15,22 @@ export type SessionReadModel =
   | { kind: 'full'; session: Session; textTokens?: SessionTextTokenRead }
   | { kind: 'window'; header: SessionHeader; summary: SessionPresentationSummary; window: SessionMessageWindow }
 
+export type SessionSearchThreadsPageRequest = SessionThreadPageRequest
+
+/** Stores with thread paging return only search metadata; other stores retain their complete-session fallback. */
+export type SessionSearchThreadsPage =
+  | { kind: 'full'; session: Session }
+  | {
+      kind: 'rows'
+      header: SessionHeader
+      revision: number
+      threadIds: string[]
+      nextCursor: SessionThreadPageCursor | null
+    }
+
 export interface SessionReadRepositoryPort {
   getCompleteSessionSource?(id: string): Promise<{ session: Session; textTokens?: SessionTextTokenRead } | null>
+  readSessionSearchThreadsPage(request: SessionSearchThreadsPageRequest): Promise<SessionSearchThreadsPage | null>
   getSessionReadModel(id: string): Promise<SessionReadModel | null>
   readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null>
 }

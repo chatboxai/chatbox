@@ -17,6 +17,11 @@ export function validateMessageWindowRequest(request: SessionMessageWindowReques
   }
   const cursor = request.cursor
   if (
+    (request.expectedRevision !== undefined &&
+      (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision <= 0)) ||
+    (request.cursor &&
+      request.expectedRevision !== undefined &&
+      request.cursor.revision !== request.expectedRevision) ||
     (request.threadId !== undefined && !request.threadId) ||
     (request.edge !== undefined && request.edge !== 'head' && request.edge !== 'tail') ||
     (request.edge !== undefined && cursor !== undefined) ||
@@ -36,8 +41,9 @@ export function validateMessageWindowRequest(request: SessionMessageWindowReques
 }
 
 export function assertMessageWindowRevision(request: SessionMessageWindowRequest, revision: number | null): void {
-  if (request.cursor && request.cursor.revision !== revision) {
-    throw new SessionRowConflictError(request.sessionId, request.cursor.revision, revision)
+  const expected = request.expectedRevision ?? request.cursor?.revision
+  if (expected !== undefined && expected !== revision) {
+    throw new SessionRowConflictError(request.sessionId, expected, revision)
   }
 }
 

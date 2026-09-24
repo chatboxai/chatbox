@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { SessionRowCommit, SessionRowSnapshot, SessionRows, SessionRowsDiff } from '../ports/session-row-store'
+import {
+  SessionRowConflictError,
+  type SessionRowCommit,
+  type SessionRowSnapshot,
+  type SessionRows,
+  type SessionRowsDiff,
+} from '../ports/session-row-store'
 import { createSessionRowStoreContract } from '../ports/testing/session-row-store-contract'
 import type { MessageRow, SessionRecordV2, ThreadRow } from '../session/session-tree/types'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
@@ -917,5 +923,88 @@ describe('metadata-only payload reuse', () => {
       commit(1)
     )
     expect((await store.readSnapshot('session-1'))?.rows.messages[0].messageId).toBe('new')
+  })
+})
+
+describe('SqlSessionRowStore search thread paging', () => {
+  it('pages active then reversed history identities without hydrating compaction or message payloads', async () => {
+    const { database, store } = createStore()
+    const archived = Array.from({ length: 45 }, (_, index) =>
+      threadRow(`history-${index}`, {
+        seq: index,
+        compactionPoints: [{ summaryMessageId: 's'.repeat(80_000), boundaryMessageId: 'b', createdAt: 1 }],
+      })
+    )
+    await store.writeRows(
+      snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active'), ...archived], messages: [] }, 1)
+    )
+    const readSnapshot = vi.spyOn(store, 'readSnapshot')
+    const queries: Array<{ sql: string; params: SessionRowSqlBindValue[]; count: number }> = []
+    const query = database.query.bind(database)
+    vi.spyOn(database, 'query').mockImplementation(async <T>(sql: string, params: SessionRowSqlBindValue[] = []) => {
+      const rows = await query<T>(sql, params)
+      queries.push({ sql, params, count: rows.length })
+      return rows
+    })
+    const ids: string[] = []
+    let page = await store.readThreadsPage({ sessionId: 'session-1', limit: 7 })
+    while (page) {
+      expect(page.threadIds.length).toBeLessThanOrEqual(7)
+      ids.push(...page.threadIds)
+      if (!page.nextCursor) break
+      page = await store.readThreadsPage({ sessionId: 'session-1', limit: 7, cursor: page.nextCursor })
+    }
+    expect(ids).toEqual(['thread-active', ...archived.reverse().map((thread) => thread.threadId)])
+    expect(readSnapshot).not.toHaveBeenCalled()
+    expect(queries.some(({ sql }) => sql.includes('substr(compaction_points_json'))).toBe(false)
+    expect(queries.some(({ sql }) => sql.includes('FROM session_messages'))).toBe(false)
+    const pages = queries.filter(({ sql }) => sql.startsWith('WITH page AS'))
+    expect(pages).toHaveLength(7)
+    expect(pages.every(({ params, count }) => params[1] === 8 && count <= 8)).toBe(true)
+  })
+
+  it('rejects stale history enumeration and first-message reads after a commit', async () => {
+    const { store } = createStore()
+    const initial = snapshot(
+      { sessionId: 'session-1', threads: [threadRow('thread-active'), threadRow('old', { seq: 0 })], messages: [] },
+      1
+    )
+    await store.writeRows(initial)
+    const first = await store.readThreadsPage({ sessionId: 'session-1', limit: 1 })
+    if (!first?.nextCursor) throw new Error('Expected thread cursor')
+    await store.writeRows({ ...initial, revision: 2 }, 1)
+    await expect(
+      store.readThreadsPage({ sessionId: 'session-1', limit: 1, cursor: first.nextCursor })
+    ).rejects.toBeInstanceOf(SessionRowConflictError)
+    await expect(
+      store.readMessageWindow({ sessionId: 'session-1', threadId: 'old', limit: 1, expectedRevision: first.revision })
+    ).rejects.toBeInstanceOf(SessionRowConflictError)
+  })
+
+  it('caps escaped thread identity response bytes and resumes at the actual page boundary', async () => {
+    const { database, store } = createStore()
+    const archived = Array.from({ length: 100 }, (_, index) =>
+      threadRow(`history-${index}-${'\\'.repeat(960)}`, { seq: index })
+    )
+    await store.writeRows(
+      snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active'), ...archived], messages: [] }, 1)
+    )
+    const query = database.query.bind(database)
+    const responseBytes: number[] = []
+    vi.spyOn(database, 'query').mockImplementation(async <T>(sql: string, params: SessionRowSqlBindValue[] = []) => {
+      const rows = await query<T>(sql, params)
+      if (sql.startsWith('WITH page AS')) responseBytes.push(new TextEncoder().encode(JSON.stringify(rows)).length)
+      return rows
+    })
+    const ids: string[] = []
+    let page = await store.readThreadsPage({ sessionId: 'session-1', limit: 200 })
+    expect(page?.threadIds.length).toBeLessThan(101)
+    while (page) {
+      ids.push(...page.threadIds)
+      if (!page.nextCursor) break
+      page = await store.readThreadsPage({ sessionId: 'session-1', limit: 200, cursor: page.nextCursor })
+    }
+    expect(ids).toEqual(['thread-active', ...archived.reverse().map((thread) => thread.threadId)])
+    expect(responseBytes.every((bytes) => bytes < 384 * 1024)).toBe(true)
   })
 })

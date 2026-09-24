@@ -47,6 +47,8 @@ export interface SessionMessageWindowRequest {
   /** First window origin; mutually exclusive with a continuation cursor. Defaults to tail. */
   edge?: 'head' | 'tail'
   cursor?: SessionMessageWindowCursor
+  /** Fence the first window of another thread to an existing read snapshot. */
+  expectedRevision?: number
 }
 
 /** Read-only partial view; never pass a window to a complete-session write API. */
@@ -57,6 +59,24 @@ export interface SessionMessageWindow extends SessionRowCommit {
   messages: MessageRow[]
   older: SessionMessageWindowCursor | null
   newer: SessionMessageWindowCursor | null
+}
+
+/** Active thread first, followed by archived threads in reverse archive order. */
+export interface SessionThreadPageCursor {
+  sessionId: string
+  revision: number
+  offset: number
+}
+
+export interface SessionThreadPageRequest {
+  sessionId: string
+  limit: number
+  cursor?: SessionThreadPageCursor
+}
+
+export interface SessionThreadPage extends SessionRowCommit {
+  threadIds: string[]
+  nextCursor: SessionThreadPageCursor | null
 }
 
 export interface SessionMessagesRequest {
@@ -81,6 +101,7 @@ export type SessionRowStoreOperation =
   | 'initialize'
   | 'read-rows'
   | 'read-message-window'
+  | 'read-thread-page'
   | 'read-messages'
   | 'read-context'
   | 'write-rows'
@@ -126,6 +147,8 @@ export interface SessionRowStorePort extends Partial<SessionTextTokenStorePort> 
   readSnapshot(sessionId: string): Promise<SessionRowSnapshot | null>
   /** Reads only the selected path window. Stale cursors throw SessionRowConflictError; restart at the tail. */
   readMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null>
+  /** Bounded thread identities without message or compaction payloads. */
+  readThreadsPage?(request: SessionThreadPageRequest): Promise<SessionThreadPage | null>
   /** Returns rows in deduplicated request order, across active, archived and fork paths. */
   readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null>
   readContext(request: SessionContextRequest): Promise<SessionContextRows | null>

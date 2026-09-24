@@ -349,6 +349,31 @@ export function createSessionRowStoreContract(
       },
     },
     {
+      name: 'fences the first window of another thread to the same committed revision',
+      run: async () => {
+        const store = await prepareStore(createStore)
+        const snapshot = windowSnapshot()
+        await store.writeRows(snapshot)
+        const active = await store.readMessageWindow({ sessionId: snapshot.record.id, limit: 2 })
+        if (!active) throw new Error('expected active window')
+        await store.writeRows({ ...snapshot, revision: 2 }, 1)
+        try {
+          await store.readMessageWindow({
+            sessionId: snapshot.record.id,
+            threadId: 'thread-archived',
+            limit: 2,
+            expectedRevision: active.revision,
+          })
+        } catch (error) {
+          if (!(error instanceof SessionRowConflictError)) throw error
+          assertEqual(error.expectedRevision, 1, 'cross-thread fence identifies expected revision')
+          assertEqual(error.actualRevision, 2, 'cross-thread fence identifies actual revision')
+          return
+        }
+        throw new Error('a first window cannot silently advance its search revision')
+      },
+    },
+    {
       name: 'distinguishes a missing session, an empty thread, and an unknown thread',
       run: async () => {
         const store = await prepareStore(createStore)

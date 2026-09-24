@@ -18,6 +18,8 @@ import {
   type SessionMessageWindowRequest,
   type SessionMetaRepositoryPort,
   type SessionReadModel,
+  type SessionSearchThreadsPage,
+  type SessionSearchThreadsPageRequest,
   SessionRepositoryError,
   type SessionRepositoryOperation,
   type SessionRepositoryPort,
@@ -363,6 +365,10 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
     patches: SessionMessageDerivedPatch[]
   ): Promise<SessionMessageDerivedWriteResult> {
     return this.getData().patchSessionMessageDerivedData(sessionId, patches)
+  }
+
+  readSessionSearchThreadsPage(request: SessionSearchThreadsPageRequest): Promise<SessionSearchThreadsPage | null> {
+    return this.getData().readSessionSearchThreadsPage(request)
   }
 
   readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {

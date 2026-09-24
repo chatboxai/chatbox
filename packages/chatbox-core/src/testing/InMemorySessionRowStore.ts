@@ -1,3 +1,4 @@
+import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from '../persistence/session-thread-page'
 import {
   type GeneratingMessageRef,
   type SessionMessageWindow,
@@ -5,6 +6,8 @@ import {
   type SessionMessagesRequest,
   type SessionMessagesSnapshot,
   SessionRowConflictError,
+  type SessionThreadPage,
+  type SessionThreadPageRequest,
   type SessionRowCommit,
   type SessionRowSnapshot,
   SessionRowStoreError,
@@ -129,6 +132,37 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
       record: clone(state.record),
       revision: state.revision,
     })
+  }
+
+  async readThreadsPage(request: SessionThreadPageRequest): Promise<SessionThreadPage | null> {
+    try {
+      validateSessionThreadPageRequest(request)
+      const state = this.sessions.get(request.sessionId)
+      assertSessionThreadPageRevision(request, this.revisions.get(request.sessionId) ?? null)
+      if (!state) return null
+      const threads = [...state.threads.values()].sort((left, right) =>
+        left.seq === -1
+          ? -1
+          : right.seq === -1
+            ? 1
+            : right.seq - left.seq || right.threadId.localeCompare(left.threadId)
+      )
+      const offset = request.cursor?.offset ?? 0
+      const threadIds = threads.slice(offset, offset + request.limit).map((thread) => thread.threadId)
+      const nextOffset = offset + threadIds.length
+      return clone({
+        record: state.record,
+        revision: state.revision,
+        threadIds,
+        nextCursor:
+          nextOffset < threads.length
+            ? { sessionId: request.sessionId, revision: state.revision, offset: nextOffset }
+            : null,
+      })
+    } catch (error) {
+      if (error instanceof SessionRowConflictError) throw error
+      throw new SessionRowStoreError('read-thread-page', error, request.sessionId)
+    }
   }
 
   async readMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {

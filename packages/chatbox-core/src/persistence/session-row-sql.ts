@@ -1,3 +1,4 @@
+import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from './session-thread-page'
 import { throwIfAborted } from '../backup/abort'
 import { type BackupPageLimits, type BackupRow, backupPageLimits } from '../backup/session-port'
 import type { SessionContextMessage, SessionContextRequest, SessionContextRows } from '../ports/session-context-source'
@@ -7,6 +8,8 @@ import {
   type SessionMessagesSnapshot,
   type SessionMessageWindow,
   type SessionMessageWindowRequest,
+  type SessionThreadPage,
+  type SessionThreadPageRequest,
   type SessionRowCommit,
   SessionRowConflictError,
   type SessionRowSnapshot,
@@ -204,6 +207,20 @@ function sqlJsonStringBytes(column: string): string {
     THEN COALESCE(length(CAST(${column} AS BLOB)), 0)
     ELSE 6 * COALESCE(length(CAST(${column} AS BLOB)), 0) END)`
 }
+const SEARCH_THREAD_ORDER = 'CASE WHEN seq = -1 THEN 0 ELSE 1 END, seq DESC, thread_id DESC'
+const SELECT_SEARCH_THREADS_PAGE_SQL = `WITH page AS (
+  SELECT thread_id, seq FROM session_threads WHERE session_id = ?
+  ORDER BY ${SEARCH_THREAD_ORDER} LIMIT ? OFFSET ?
+), sized AS (
+  SELECT thread_id, seq, COUNT(*) OVER () AS page_count,
+    ROW_NUMBER() OVER (ORDER BY ${SEARCH_THREAD_ORDER}) AS row_number,
+    SUM(128 + ${sqlJsonStringBytes('thread_id')}) OVER (ORDER BY ${SEARCH_THREAD_ORDER}) AS response_bytes
+  FROM page
+)
+SELECT CASE WHEN response_bytes <= ? THEN thread_id END AS thread_id, page_count,
+  (response_bytes > ?) AS oversized FROM sized
+WHERE response_bytes <= ? OR row_number = 1 ORDER BY ${SEARCH_THREAD_ORDER}`
+
 function messageRecordEstimatedJsonBytes(prefix = ''): string {
   return `512 + ${[
     'session_id',
@@ -636,7 +653,11 @@ function toThreadRow(record: ThreadRecord): ThreadRow {
   return thread
 }
 
-function readCommitMetadata(sessionId: string, records: ThreadRecord[], revision: number | null): SessionRowCommit {
+function readCommitMetadata(
+  sessionId: string,
+  records: Pick<ThreadRecord, 'seq' | 'thread_id' | 'session_record_json' | 'commit_revision'>[],
+  revision: number | null
+): SessionRowCommit {
   const activeRows = records.filter((record) => Number(record.seq) === -1)
   if (activeRows.length !== 1) {
     throw new Error(`session ${sessionId} must have exactly one active thread row`)
@@ -886,6 +907,69 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         return { rows: { sessionId, threads: threadRecords.map(toThreadRow), messages }, ...commit, textTokens }
       }
       throw new Error(`session ${sessionId} changed repeatedly while it was being read`)
+    })
+  }
+
+  async readThreadsPage(request: SessionThreadPageRequest): Promise<SessionThreadPage | null> {
+    const { sessionId } = request
+    return this.run('read-thread-page', sessionId, async () => {
+      validateSessionThreadPageRequest(request)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const before = await this.readRevision(sessionId)
+        assertSessionThreadPageRevision(request, before)
+        let page: SessionThreadPage | null
+        try {
+          const metadata = await this.database.query<ThreadMetadataRecord>(SELECT_WINDOW_THREADS_SQL, [sessionId, null])
+          if (!metadata.length) {
+            page = null
+          } else {
+            const active = metadata[0]
+            const sessionRecord = await this.readThreadText(
+              active,
+              'session_record_json',
+              active.session_record_json_length === null ? null : Number(active.session_record_json_length)
+            )
+            const commit = readCommitMetadata(sessionId, [{ ...active, session_record_json: sessionRecord }], before)
+            const offset = request.cursor?.offset ?? 0
+            const rows = await this.database.query<{ thread_id: string | null; page_count: number; oversized: number }>(
+              SELECT_SEARCH_THREADS_PAGE_SQL,
+              [
+                sessionId,
+                request.limit + 1,
+                offset,
+                MESSAGE_PAGE_RESPONSE_BUDGET,
+                MESSAGE_PAGE_RESPONSE_BUDGET,
+                MESSAGE_PAGE_RESPONSE_BUDGET,
+              ]
+            )
+            if (rows.some((row) => row.oversized || row.thread_id === null)) {
+              throw new Error('Thread identity exceeds the native response budget')
+            }
+            const threadIds = rows.slice(0, request.limit).map((row) => {
+              if (row.thread_id === null) throw new Error('Thread identity is missing')
+              return row.thread_id
+            })
+            page = {
+              ...commit,
+              threadIds,
+              nextCursor:
+                (rows[0]?.page_count ?? 0) > threadIds.length
+                  ? { sessionId, revision: commit.revision, offset: offset + threadIds.length }
+                  : null,
+            }
+          }
+        } catch (error) {
+          const afterFailure = await this.readRevision(sessionId)
+          assertSessionThreadPageRevision(request, afterFailure)
+          if (before !== afterFailure) continue
+          throw error
+        }
+        const after = await this.readRevision(sessionId)
+        assertSessionThreadPageRevision(request, after)
+        if (before !== after) continue
+        return page
+      }
+      throw new Error(`session ${sessionId} changed repeatedly while its thread page was being read`)
     })
   }
 

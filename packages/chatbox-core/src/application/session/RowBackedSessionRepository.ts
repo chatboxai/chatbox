@@ -3,7 +3,15 @@ import { validateSessionContextRequest } from '../../persistence/session-context
 import { assertSessionReadRevision, validateSessionMessagesRequest } from '../../persistence/session-message-selection'
 import type { SessionContextRequest, SessionContextSource } from '../../ports/session-context-source'
 import type { SessionMessageDerivedWriteResult, SessionMessagesSource } from '../../ports/session-message-source'
-import type { SessionReadModel } from '../../ports/session-read-model'
+import type {
+  SessionReadModel,
+  SessionSearchThreadsPage,
+  SessionSearchThreadsPageRequest,
+} from '../../ports/session-read-model'
+import {
+  assertSessionThreadPageRevision,
+  validateSessionThreadPageRequest,
+} from '../../persistence/session-thread-page'
 import {
   isRowsSessionRecord,
   type SessionRecordStorePort,
@@ -463,13 +471,48 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     })
   }
 
+  async readSessionSearchThreadsPage(
+    request: SessionSearchThreadsPageRequest
+  ): Promise<SessionSearchThreadsPage | null> {
+    validateSessionThreadPageRequest(request)
+    let marker = await this.records.getRecord(request.sessionId)
+    if (!marker) {
+      assertSessionThreadPageRevision(request, null)
+      return null
+    }
+    if (!isRowsSessionRecord(marker)) assertSessionThreadPageRevision(request, null)
+    if (this.migrateLegacyBeforeRead && !isRowsSessionRecord(marker)) {
+      await this.enqueueSessionOperation(request.sessionId, () => this.migrateSessionNow(request.sessionId))
+      marker = await this.records.getRecord(request.sessionId)
+      if (!marker) return null
+    }
+    if (isRowsSessionRecord(marker) && this.rows.readThreadsPage) {
+      const page = await this.rows.readThreadsPage(request)
+      if (!page) throw new Error(`session ${request.sessionId} is stored as rows but has none`)
+      return {
+        kind: 'rows',
+        header: contextRecordHeader(page.record),
+        revision: page.revision,
+        threadIds: page.threadIds,
+        nextCursor: page.nextCursor,
+      }
+    }
+    assertSessionThreadPageRevision(request, null)
+    const session = await this.getSession(request.sessionId)
+    return session ? { kind: 'full', session } : null
+  }
+
   async readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {
     // Read-only windows use the row store's atomic snapshot/revision fence and
     // must not queue behind full-context hydration. They never update a write baseline.
     const marker = await this.records.getRecord(request.sessionId)
     if (!marker) return null
     if (!isRowsSessionRecord(marker))
-      throw new SessionRowConflictError(request.sessionId, request.cursor?.revision ?? null, null)
+      throw new SessionRowConflictError(
+        request.sessionId,
+        request.expectedRevision ?? request.cursor?.revision ?? null,
+        null
+      )
     const window = await this.rows.readMessageWindow(request)
     return window ? this.overlayWindow(window) : null
   }

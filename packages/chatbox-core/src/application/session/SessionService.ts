@@ -2,7 +2,15 @@ import { findMessageLocation } from '@shared/session/message-forks'
 import type { LoggerPort, SessionRepositoryPort } from '../../ports'
 import type { SessionContextRequest, SessionContextSource } from '../../ports/session-context-source'
 import type { SessionMessageDerivedWriteResult, SessionMessagesSource } from '../../ports/session-message-source'
-import type { SessionReadModel } from '../../ports/session-read-model'
+import type {
+  SessionReadModel,
+  SessionSearchThreadsPage,
+  SessionSearchThreadsPageRequest,
+} from '../../ports/session-read-model'
+import {
+  assertSessionThreadPageRevision,
+  validateSessionThreadPageRequest,
+} from '../../persistence/session-thread-page'
 import { sessionReadModelHeader } from '../../ports/session-read-model'
 import type { SessionMessageWindow, SessionMessageWindowRequest } from '../../ports/session-row-store'
 import { type SessionMessagesRequest, SessionRowConflictError } from '../../ports/session-row-store'
@@ -165,6 +173,17 @@ export class SessionService {
     }
     const session = await this.getSession(sessionId)
     return session ? { session } : null
+  }
+
+  async readSessionSearchThreadsPage(
+    request: SessionSearchThreadsPageRequest
+  ): Promise<SessionSearchThreadsPage | null> {
+    await this.initialize()
+    validateSessionThreadPageRequest(request)
+    if (this.repository.readSessionSearchThreadsPage) return this.repository.readSessionSearchThreadsPage(request)
+    assertSessionThreadPageRevision(request, null)
+    const session = await this.getSession(request.sessionId)
+    return session ? { kind: 'full', session } : null
   }
 
   async readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {

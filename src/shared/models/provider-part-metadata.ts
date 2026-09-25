@@ -34,6 +34,23 @@ const PERSISTABLE_PART_METADATA_KEYS: Record<string, readonly string[]> = {
 }
 
 /**
+ * Part types whose replay metadata is kept, keyed by part type.
+ *
+ * Ingestion must not keep metadata a part can never replay. Gemini's signature rides on `text`
+ * parts, but OpenAI's `itemId` / `reasoningEncryptedContent` are reasoning-part state: a text
+ * part never carries them, and retaining them there would only widen what a later foreign route
+ * is shown (see `pickPersistableProviderMetadata`).
+ */
+export type ReplayMetadataPartType = 'text' | 'reasoning'
+
+const REPLAYABLE_NAMESPACES_BY_PART_TYPE: Record<ReplayMetadataPartType, Record<string, readonly string[]>> = {
+  text: {
+    google: PERSISTABLE_PART_METADATA_KEYS.google,
+  },
+  reasoning: PERSISTABLE_PART_METADATA_KEYS,
+}
+
+/**
  * Filters stream-chunk provider metadata down to the persistable whitelist.
  * Returns `undefined` when nothing survives, so callers can skip creating a
  * content part for metadata the app never replays.
@@ -45,14 +62,18 @@ const PERSISTABLE_PART_METADATA_KEYS: Record<string, readonly string[]> = {
  * another provider's wire: an Anthropic request carrying a leftover OpenAI
  * `itemId` would turn an otherwise-dropped unsigned reasoning block into a
  * wire-visible one, which the Messages API rejects.
+ *
+ * `partType` narrows the whitelist to the keys that part type can actually replay.
  */
 export function pickPersistableProviderMetadata(
   metadata: ProviderMetadata | undefined,
-  only?: readonly string[]
+  only?: readonly string[],
+  partType: ReplayMetadataPartType = 'reasoning'
 ): ProviderMetadata | undefined {
   if (!metadata) return undefined
+  const allowed = REPLAYABLE_NAMESPACES_BY_PART_TYPE[partType]
   let picked: ProviderMetadata | undefined
-  for (const [provider, keys] of Object.entries(PERSISTABLE_PART_METADATA_KEYS)) {
+  for (const [provider, keys] of Object.entries(allowed)) {
     if (only && !only.includes(provider)) continue
     const namespace = metadata[provider]
     if (!namespace || typeof namespace !== 'object') continue
@@ -64,6 +85,35 @@ export function pickPersistableProviderMetadata(
     }
   }
   return picked
+}
+
+/**
+ * Whether picked replay metadata is enough for the target route to reconstruct the reasoning
+ * block upstream, i.e. whether the block is genuinely signed rather than merely identifiable.
+ *
+ * Used by the `signed-only` conversion mode. Holding *some* whitelisted key is not enough:
+ *
+ * - Anthropic Messages validates the thinking block's `signature`, or replays `redactedData`.
+ * - OpenAI Responses runs with `store: false`. An `itemId` alone points at server-side reasoning
+ *   state that will not exist on the follow-up request, so an id-only part cannot be
+ *   reconstructed — only the encrypted payload travels with the request. The id is still
+ *   accumulated while the turn is in flight (it identifies the item), but it does not by itself
+ *   make the part replayable history.
+ * - Gemini's `thoughtSignature` is self-contained.
+ */
+export function hasReplayableSignedReasoning(metadata: ProviderMetadata | undefined): boolean {
+  if (!metadata) return false
+
+  const hasKey = (namespace: unknown, ...keys: string[]): boolean => {
+    if (!namespace || typeof namespace !== 'object') return false
+    return keys.some((key) => (namespace as Record<string, unknown>)[key] !== undefined)
+  }
+
+  return (
+    hasKey(metadata.anthropic, 'signature', 'redactedData') ||
+    hasKey(metadata.openai, 'reasoningEncryptedContent') ||
+    hasKey(metadata.google, 'thoughtSignature')
+  )
 }
 
 /**

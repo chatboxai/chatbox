@@ -302,6 +302,29 @@ describe('processStreamChunk', () => {
     ])
   })
 
+  it('consumes text replay metadata re-attached to text-end and keeps block boundaries', async () => {
+    // `streamText` drops every empty `text-delta`, so a Gemini signature arrives on `text-end`
+    // instead (re-attached by preserveTextProviderMetadataMiddleware). The processor must read it
+    // there too, and close the block so one signature cannot be concatenated onto another
+    // block's text.
+    const chunks = [
+      chunk('text-delta', { id: 'text-0', text: 'First' }),
+      chunk('text-end', { id: 'text-0', providerMetadata: { google: { thoughtSignature: 'first-sig' } } }),
+      chunk('text-delta', { id: 'text-1', text: 'Second' }),
+      chunk('text-end', { id: 'text-1', providerMetadata: { google: { thoughtSignature: 'second-sig' } } }),
+    ]
+
+    let state = createInitialState()
+    for (const streamChunk of chunks) {
+      state = (await processStreamChunk(streamChunk, state, callbacks)).state
+    }
+
+    expect(state.contentParts).toMatchObject([
+      { type: 'text', text: 'First', providerMetadata: { google: { thoughtSignature: 'first-sig' } } },
+      { type: 'text', text: 'Second', providerMetadata: { google: { thoughtSignature: 'second-sig' } } },
+    ])
+  })
+
   it('does not persist non-whitelisted provider metadata or create parts for it', async () => {
     const chunks = [
       chunk('reasoning-start', {

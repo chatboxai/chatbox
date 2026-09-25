@@ -2,7 +2,7 @@ import type { JSONValue } from '@ai-sdk/provider'
 import type { ReasoningPart } from '@ai-sdk/provider-utils'
 import type { FilePart, ImagePart, ModelMessage, TextPart, ToolCallPart } from 'ai'
 import { compact } from 'lodash'
-import { pickPersistableProviderMetadata } from '../models/provider-part-metadata'
+import { hasReplayableSignedReasoning, pickPersistableProviderMetadata } from '../models/provider-part-metadata'
 import { DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT, getToolResultImageReference } from '../tool-result-image'
 import {
   buildViewImageToolResultContent,
@@ -45,10 +45,13 @@ export interface ConvertToModelMessagesOptions {
   signedReasoningOnly?: boolean
   /**
    * Provider namespaces whose replay metadata may go on the wire (see
-   * `ReasoningReplayPolicy.replayNamespaces`). Applies to both reasoning and
-   * text parts, because Gemini's signature rides on the latter. Omitted keeps
-   * every whitelisted namespace — auxiliary callers such as naming/summarization
-   * never replay reasoning at all, so the filter is irrelevant to them.
+   * `ReasoningReplayPolicy.replayNamespaces`). Required for any replay metadata to survive
+   * conversion, on both reasoning and text parts, because Gemini's signature rides on the
+   * latter.
+   *
+   * Omitting it is not "keep everything": auxiliary callers (naming, summarization) omit it,
+   * and they still send assistant *text*, so an omitted value must strip text metadata rather
+   * than default to every namespace.
    */
   replayNamespaces?: readonly string[]
   ensureGoogleFunctionCallSignatures?: boolean
@@ -246,10 +249,16 @@ async function convertAssistantContentParts(
         // only for structure (`protocolOnly`) are equally invisible to providers
         // until a route that requires them (Bedrock Converse) opts in explicitly.
         if (!c.text || c.protocolOnly) return null
-        // Text parts carry replay metadata too: Gemini signs the last text part of
-        // a response that has no function call. Same namespace filter as reasoning —
-        // only the target route's metadata may go out.
-        const textReplayMetadata = pickPersistableProviderMetadata(c.providerMetadata, options?.replayNamespaces)
+        // Text parts carry replay metadata too: Gemini signs the last text part of a response
+        // that has no function call. Unlike reasoning this is not gated by a mode — ordinary
+        // assistant text goes out on every route — so the metadata needs an explicit opt-in:
+        // only attach it when the caller named the namespaces this target route can consume.
+        // Auxiliary callers (naming, summarization) omit `replayNamespaces` yet still send
+        // assistant text, and a stored Gemini signature must not ride along to whatever
+        // provider those happen to use.
+        const textReplayMetadata = options?.replayNamespaces
+          ? pickPersistableProviderMetadata(c.providerMetadata, options.replayNamespaces, 'text')
+          : undefined
         return {
           type: 'text',
           text: c.text,
@@ -271,10 +280,12 @@ async function convertAssistantContentParts(
         // onto the wire.
         const replayMetadata = pickPersistableProviderMetadata(c.providerMetadata, options?.replayNamespaces)
         // The signed-replay channel (Anthropic Messages, OpenAI Responses, Gemini)
-        // carries only blocks that can pass upstream validation; unsigned reasoning —
-        // e.g. saved by app versions predating metadata capture — is omitted,
-        // matching Cherry-style "skip foreign thinking, keep it in the UI".
-        if (mode === 'signed-only' && !replayMetadata) return null
+        // carries only blocks the target route can actually reconstruct; unsigned reasoning —
+        // e.g. saved by app versions predating metadata capture — is omitted, matching
+        // Cherry-style "skip foreign thinking, keep it in the UI". Holding *a* whitelisted key
+        // is not enough: an OpenAI `itemId` without its encrypted payload points at server-side
+        // state that `store: false` guarantees is absent on the follow-up request.
+        if (mode === 'signed-only' && !hasReplayableSignedReasoning(replayMetadata)) return null
         if (!c.text && !replayMetadata) return null
         return {
           type: 'reasoning',

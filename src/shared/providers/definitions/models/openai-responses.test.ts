@@ -1,6 +1,8 @@
 import type { CallChatCompletionOptions } from '@shared/models/types'
+import { ModelProviderEnum } from '@shared/types'
 import type { ModelDependencies } from '@shared/types/adapters'
 import type { ProviderModelInfo } from '@shared/types/settings'
+import { resolveReasoningReplayPolicy } from '@shared/utils/reasoning-control'
 import type { SentryScope } from '@shared/utils/sentry_adapter'
 import { describe, expect, it, vi } from 'vitest'
 import OpenAIResponses from './openai-responses'
@@ -53,6 +55,38 @@ function createModel(overrides: Partial<ConstructorParameters<typeof OpenAIRespo
     createDependencies()
   )
 }
+
+describe('OpenAIResponses protocol reporting', () => {
+  // `definitions/openai.ts` builds this class for the OpenAI OAuth route from a plain OpenAI
+  // *chat* catalog entry, whose `apiStyle` falls back to `openai`. Reasoning-control resolves its
+  // effective provider from `apiStyle`, so an inherited `openai` silently routes the OAuth
+  // follow-up through the chat-completions replay path and never replays the encrypted
+  // reasoning item the previous response returned.
+  const chatCatalogEntry: ProviderModelInfo = {
+    modelId: 'gpt-5.4',
+    type: 'chat',
+    apiStyle: 'openai',
+    capabilities: ['tool_use', 'reasoning'],
+  }
+
+  it('reports the Responses protocol instead of the catalog entry style', () => {
+    const model = createModel({ model: chatCatalogEntry })
+
+    expect(model.apiStyle).toBe('openai-responses')
+  })
+
+  it('resolves the Responses reasoning replay policy for an instance built from a chat entry', () => {
+    const model = createModel({ model: chatCatalogEntry })
+
+    expect(
+      resolveReasoningReplayPolicy(ModelProviderEnum.OpenAI, {
+        modelId: model.modelId,
+        type: 'chat',
+        apiStyle: model.apiStyle,
+      })
+    ).toEqual({ preserveReasoning: 'all-turns', signedReasoningOnly: true, replayNamespaces: ['openai'] })
+  })
+})
 
 describe('OpenAIResponses call settings', () => {
   it('forces store=false for stateless responses while preserving user OpenAI provider options', () => {

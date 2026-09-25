@@ -655,6 +655,90 @@ describe('convertToModelMessages — Anthropic thinking replay', () => {
     expect(() => modelMessageSchema.parse(assistant)).not.toThrow()
   })
 
+  it('strips text replay metadata when the caller omits the target namespaces', async () => {
+    // Auxiliary callers (naming, summarization) omit `replayNamespaces` yet still send assistant
+    // text, so an omitted value must strip text metadata rather than default to every whitelisted
+    // namespace — otherwise a stored Gemini signature rides along to whatever provider they use.
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [
+          {
+            type: 'text',
+            text: 'Final answer',
+            providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+          },
+        ],
+      },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, { modelSupportVision: true })
+    const assistant = output.find((message) => message.role === 'assistant')
+
+    expect(assistant?.content).toEqual([{ type: 'text', text: 'Final answer' }])
+  })
+
+  it('does not replay an OpenAI reasoning item that carries only an id', async () => {
+    // Chatbox forces `store: false`, so an id-only item points at server-side reasoning state
+    // that is guaranteed absent on the follow-up request. The id is still accumulated while the
+    // turn is in flight, but it is not replayable history on its own.
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [
+          { type: 'reasoning', text: 'weighing options', providerMetadata: { openai: { itemId: 'rs_1' } } },
+          { type: 'text', text: 'Final answer' },
+        ],
+      },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+      replayNamespaces: ['openai'],
+    })
+    const assistant = output.find((message) => message.role === 'assistant')
+
+    expect(assistant?.content).toEqual([{ type: 'text', text: 'Final answer' }])
+  })
+
+  it('replays an OpenAI reasoning item that carries encrypted content without an id', async () => {
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [
+          {
+            type: 'reasoning',
+            text: 'weighing options',
+            providerMetadata: { openai: { reasoningEncryptedContent: 'encrypted' } },
+          },
+          { type: 'text', text: 'Final answer' },
+        ],
+      },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+      replayNamespaces: ['openai'],
+    })
+    const assistant = output.find((message) => message.role === 'assistant')
+
+    expect(assistant?.content).toEqual([
+      {
+        type: 'reasoning',
+        text: 'weighing options',
+        providerOptions: { openai: { reasoningEncryptedContent: 'encrypted' } },
+      },
+      { type: 'text', text: 'Final answer' },
+    ])
+  })
+
   it("never replays one route's reasoning metadata onto another route", async () => {
     const messages: Message[] = [
       {

@@ -316,4 +316,99 @@ describe('AbstractAISDKModel reasoning metadata aggregation', () => {
     expect(response.contentParts[0]).not.toHaveProperty('providerMetadata')
     expect(response.contentParts[0]).not.toHaveProperty('protocolOnly')
   })
+
+  // Gemini streams a text part's `thoughtSignature` as an EMPTY trailing delta carrying only
+  // provider metadata, and `streamText` drops every `text-delta` whose text is empty. These
+  // tests go through the real SDK stream path on purpose: feeding the delta straight into the
+  // core processor would pass even without the middleware that preserves it.
+  describe('Gemini signature on an empty trailing text delta', () => {
+    const signedTrailingTextChunks: LanguageModelV3StreamPart[] = [
+      { type: 'text-start', id: 'text-0' },
+      { type: 'text-delta', id: 'text-0', delta: 'Answer' },
+      {
+        type: 'text-delta',
+        id: 'text-0',
+        delta: '',
+        providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+      },
+      { type: 'text-end', id: 'text-0' },
+    ]
+
+    it('keeps the signature on the text part in chat()', async () => {
+      const languageModel = createStreamModel(signedTrailingTextChunks, 'google.generative-ai')
+
+      const response = await new StreamTestModel(languageModel, 'google').chat([{ role: 'user', content: 'think' }], {})
+
+      expect(response.contentParts).toMatchObject([
+        {
+          type: 'text',
+          text: 'Answer',
+          providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+        },
+      ])
+    })
+
+    it('keeps the signature on the streamed text part in chatStream()', async () => {
+      const languageModel = createStreamModel(signedTrailingTextChunks, 'google.generative-ai')
+
+      const parts: Array<Record<string, unknown>> = []
+      for await (const part of new StreamTestModel(languageModel, 'google').chatStream(
+        [{ role: 'user', content: 'think' }],
+        {}
+      )) {
+        parts.push(part as unknown as Record<string, unknown>)
+      }
+
+      const signed = parts.find(
+        (part) =>
+          (part.type === 'text-end' || part.type === 'text-delta') &&
+          (part.providerMetadata as { google?: { thoughtSignature?: string } } | undefined)?.google
+            ?.thoughtSignature === 'answer-sig'
+      )
+      expect(signed, `no streamed part carried the signature: ${JSON.stringify(parts)}`).toBeDefined()
+    })
+
+    it('keeps each consecutive signed text block with its own signature', async () => {
+      const languageModel = createStreamModel(
+        [
+          { type: 'text-start', id: 'text-0' },
+          { type: 'text-delta', id: 'text-0', delta: 'First' },
+          {
+            type: 'text-delta',
+            id: 'text-0',
+            delta: '',
+            providerMetadata: { google: { thoughtSignature: 'first-sig' } },
+          },
+          { type: 'text-end', id: 'text-0' },
+          { type: 'text-start', id: 'text-1' },
+          { type: 'text-delta', id: 'text-1', delta: 'Second' },
+          {
+            type: 'text-delta',
+            id: 'text-1',
+            delta: '',
+            providerMetadata: { google: { thoughtSignature: 'second-sig' } },
+          },
+          { type: 'text-end', id: 'text-1' },
+        ],
+        'google.generative-ai'
+      )
+
+      const response = await new StreamTestModel(languageModel, 'google').chat([{ role: 'user', content: 'think' }], {})
+
+      // Block boundaries must survive: concatenating the two blocks and attaching one
+      // signature to the result would associate a signature with the wrong text.
+      expect(response.contentParts).toMatchObject([
+        {
+          type: 'text',
+          text: 'First',
+          providerMetadata: { google: { thoughtSignature: 'first-sig' } },
+        },
+        {
+          type: 'text',
+          text: 'Second',
+          providerMetadata: { google: { thoughtSignature: 'second-sig' } },
+        },
+      ])
+    })
+  })
 })

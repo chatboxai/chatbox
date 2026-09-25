@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { mergeProviderMetadata, pickPersistableProviderMetadata } from './provider-part-metadata'
+import {
+  hasReplayableSignedReasoning,
+  mergeProviderMetadata,
+  pickPersistableProviderMetadata,
+} from './provider-part-metadata'
 
 describe('pickPersistableProviderMetadata', () => {
   it('keeps whitelisted Anthropic replay keys', () => {
@@ -15,8 +19,26 @@ describe('pickPersistableProviderMetadata', () => {
     expect(
       pickPersistableProviderMetadata({ openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } })
     ).toEqual({ openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } })
-    // A bare item id is enough to replay a stored reasoning item via item_reference.
+    // The id is retained while the turn is in flight (it identifies the item), but it is not
+    // by itself replayable history — see hasReplayableSignedReasoning.
     expect(pickPersistableProviderMetadata({ openai: { itemId: 'rs_1' } })).toEqual({ openai: { itemId: 'rs_1' } })
+  })
+
+  it('keeps only Gemini signatures on text parts', () => {
+    // Text parts replay Gemini's signature. OpenAI's item id / encrypted payload are
+    // reasoning-part state, so retaining them on a text part would only widen what a later
+    // foreign route is shown.
+    expect(
+      pickPersistableProviderMetadata(
+        {
+          google: { thoughtSignature: 'gemini-sig' },
+          openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
+          anthropic: { signature: 'sig' },
+        },
+        undefined,
+        'text'
+      )
+    ).toEqual({ google: { thoughtSignature: 'gemini-sig' } })
   })
 
   it('keeps whitelisted Gemini replay keys', () => {
@@ -65,6 +87,31 @@ describe('pickPersistableProviderMetadata', () => {
     expect(pickPersistableProviderMetadata({ google: { thought: true } })).toBeUndefined()
     expect(pickPersistableProviderMetadata({ anthropic: {} })).toBeUndefined()
     expect(pickPersistableProviderMetadata({ openai: { itemId: 'rs_1' } }, ['anthropic'])).toBeUndefined()
+  })
+})
+
+describe('hasReplayableSignedReasoning', () => {
+  it('accepts self-contained signatures', () => {
+    expect(hasReplayableSignedReasoning({ anthropic: { signature: 'sig' } })).toBe(true)
+    expect(hasReplayableSignedReasoning({ anthropic: { redactedData: 'data' } })).toBe(true)
+    expect(hasReplayableSignedReasoning({ google: { thoughtSignature: 'gemini-sig' } })).toBe(true)
+  })
+
+  it('requires the encrypted payload, not just an OpenAI item id', () => {
+    // Chatbox forces `store: false`, so an id-only item points at server-side reasoning state
+    // that is guaranteed absent on the follow-up request.
+    expect(hasReplayableSignedReasoning({ openai: { itemId: 'rs_1' } })).toBe(false)
+    expect(hasReplayableSignedReasoning({ openai: { reasoningEncryptedContent: 'encrypted' } })).toBe(true)
+    expect(hasReplayableSignedReasoning({ openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } })).toBe(
+      true
+    )
+  })
+
+  it('rejects missing or non-replayable metadata', () => {
+    expect(hasReplayableSignedReasoning(undefined)).toBe(false)
+    expect(hasReplayableSignedReasoning({})).toBe(false)
+    expect(hasReplayableSignedReasoning({ openai: {} })).toBe(false)
+    expect(hasReplayableSignedReasoning({ mistral: { usage: { promptTokens: 10 } } })).toBe(false)
   })
 })
 

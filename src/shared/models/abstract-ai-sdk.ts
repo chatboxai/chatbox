@@ -40,6 +40,7 @@ import { ApiError, BaseError, ChatboxAIAPIError, MidStreamApiError } from './err
 import { wrapOpenAICompatibleNonStreamingModel } from './openai-compatible-non-streaming'
 import { stopWhenPersistentToolCallPause } from './persistent-tool-call-pause'
 import { mergeProviderMetadata, pickPersistableProviderMetadata } from './provider-part-metadata'
+import { preserveTextProviderMetadataMiddleware } from './text-provider-metadata-middleware'
 import { repairToolCallJson } from './tool-call-json-repair'
 import type {
   CallChatCompletionOptions,
@@ -193,15 +194,21 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
   protected abstract getChatModel(options: CallChatCompletionOptions): LanguageModelV3
 
   private prepareChatModel(model: LanguageModelV3): LanguageModelV3 {
-    if (this.options.stream !== false) return model
+    const prepared =
+      this.options.stream === false
+        ? this.apiStyle === 'openai'
+          ? wrapOpenAICompatibleNonStreamingModel(model)
+          : wrapLanguageModel({
+              model,
+              middleware: simulateStreamingMiddleware(),
+            })
+        : model
 
-    if (this.apiStyle === 'openai') {
-      return wrapOpenAICompatibleNonStreamingModel(model)
-    }
-
+    // Applied last so it observes the final stream — including one simulated from a
+    // non-streaming response — and can re-attach text replay metadata the SDK drops.
     return wrapLanguageModel({
-      model,
-      middleware: simulateStreamingMiddleware(),
+      model: prepared,
+      middleware: preserveTextProviderMetadataMiddleware(),
     })
   }
 
@@ -750,11 +757,27 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
             chunk.text,
             contentParts,
             currentTextPart,
-            pickPersistableProviderMetadata(chunk.providerMetadata)
+            pickPersistableProviderMetadata(chunk.providerMetadata, undefined, 'text')
           ),
           currentReasoningPart: undefined,
           pendingReasoningText: '',
         }
+
+      case 'text-end': {
+        // The SDK drops `text-delta` chunks whose text is empty, so a Gemini thought signature
+        // arriving as an empty trailing delta never reaches the `text-delta` branch above.
+        // `preserveTextProviderMetadataMiddleware` accumulates it per text block and re-attaches
+        // it to `text-end`, which the SDK always forwards (see the core stream-chunk-processor
+        // for the same rule).
+        const persistable = pickPersistableProviderMetadata(chunk.providerMetadata, undefined, 'text')
+        if (persistable && currentTextPart) {
+          currentTextPart.providerMetadata = mergeProviderMetadata(currentTextPart.providerMetadata, persistable)
+          // Close the block so a following block's text is not concatenated onto the text this
+          // signature was issued for.
+          return { currentTextPart: undefined, currentReasoningPart, pendingReasoningText }
+        }
+        return { currentTextPart, currentReasoningPart, pendingReasoningText }
+      }
 
       case 'reasoning-start': {
         finalizeReasoningDuration()

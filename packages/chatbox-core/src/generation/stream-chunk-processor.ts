@@ -144,7 +144,7 @@ export async function processStreamChunk(
       // need the same capture reasoning parts get. The metadata lands on the open
       // text block; an empty block that carries nothing else is dropped at replay,
       // exactly as the Google SDK drops empty text parts on the way out.
-      const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
+      const persistable = pickPersistableProviderMetadata(chunk.providerMetadata, undefined, 'text')
       if (currentTextPart) {
         currentTextPart.text += chunk.text
       } else {
@@ -153,6 +153,22 @@ export async function processStreamChunk(
       }
       if (persistable) {
         currentTextPart.providerMetadata = mergeProviderMetadata(currentTextPart.providerMetadata, persistable)
+      }
+      break
+    }
+    case 'text-end': {
+      // The SDK drops `text-delta` chunks whose text is empty, so a Gemini thought signature
+      // arriving as an empty trailing delta never reaches the `text-delta` branch above.
+      // `preserveTextProviderMetadataMiddleware` accumulates it per text block and re-attaches
+      // it to `text-end`, which the SDK always forwards; consume it here so both application
+      // processors see the same metadata.
+      const persistable = pickPersistableProviderMetadata(chunk.providerMetadata, undefined, 'text')
+      if (persistable && currentTextPart) {
+        currentTextPart.providerMetadata = mergeProviderMetadata(currentTextPart.providerMetadata, persistable)
+        // Close the block here: adjacent text blocks are normally separated by a tool call
+        // (which already closes the part), but if they are not, concatenating the next block
+        // onto this one would associate this signature with text it was never issued for.
+        currentTextPart = undefined
       }
       break
     }

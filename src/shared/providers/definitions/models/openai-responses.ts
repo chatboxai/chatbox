@@ -33,6 +33,20 @@ type FetchFunction = typeof globalThis.fetch
 export default class OpenAIResponses extends AbstractAISDKModel {
   public name = 'OpenAI Responses'
 
+  /**
+   * Report the protocol this model actually speaks instead of inheriting the catalog entry's
+   * `apiStyle`.
+   *
+   * `definitions/openai.ts` builds this class for the OpenAI OAuth route from a plain OpenAI
+   * *chat* catalog entry, and `API_STYLE_BY_PROVIDER_TYPE` falls back to `openai` for that
+   * provider type. Reasoning-control resolves its effective provider from `apiStyle`, so
+   * without this override the Responses route reports `openai`, resolves to
+   * `ModelProviderEnum.OpenAI`, and the Responses-specific reasoning replay is skipped.
+   */
+  public override get apiStyle(): ProviderModelInfo['apiStyle'] {
+    return 'openai-responses'
+  }
+
   constructor(
     public options: Options,
     dependencies: ModelDependencies

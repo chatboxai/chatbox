@@ -16,6 +16,7 @@ import { languageNameMap } from '@/i18n/locales'
 import { mcpController } from '@/packages/mcp/controller'
 import { generateCommandExplanation } from '@/packages/model-calls/command-explanation'
 import { buildAgentMemoryTools, buildPausedAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
+import { getBuiltInBrowserToolSet } from '@/packages/model-calls/toolsets/built-in-browser'
 import { buildChatboxCliToolSet } from '@/packages/model-calls/toolsets/chatbox-cli'
 import { buildCodeExecutionTools } from '@/packages/model-calls/toolsets/code-execution'
 import { buildFileTools, fileToolSetDescription } from '@/packages/model-calls/toolsets/file'
@@ -406,6 +407,13 @@ When you create a Git commit that includes code changes, append this exact trail
   if (webSupported) {
     instructions += getToolSetDescription({ includeParseLink: includeParseLinkTool })
   }
+  // The built-in browser is a Work Mode tool; only desktop platforms provide it.
+  const builtInBrowserToolSet = includeAgentTools
+    ? getBuiltInBrowserToolSet(platform.builtInBrowser, { hasParseLink: includeParseLinkTool })
+    : null
+  if (builtInBrowserToolSet) {
+    instructions += builtInBrowserToolSet.description
+  }
 
   let codeExecToolSet: ReturnType<typeof buildCodeExecutionTools> | null = null
   let sandboxWorkingDirectory: string | null = null
@@ -450,6 +458,10 @@ When you create a Git commit that includes code changes, append this exact trail
     if (includeParseLinkTool) {
       tools.parse_link = parseLinkTool
     }
+  }
+
+  if (builtInBrowserToolSet) {
+    tools = { ...tools, ...builtInBrowserToolSet.tools }
   }
 
   if (kbToolSet && kbSupported) {

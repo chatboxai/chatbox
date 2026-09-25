@@ -53,6 +53,7 @@ import * as analystic from './analystic-node'
 import { AppUpdater } from './app-updater'
 import * as autoLauncher from './autoLauncher'
 import { formatTooLargeFileRead, readRegularFileBytesBounded } from './bounded-file-read'
+import { registerBuiltInBrowserHandlers } from './built-in-browser'
 import { handleDeepLink } from './deeplinks'
 import { registerDesktopDirectRequestHandlers } from './desktop-direct-request'
 import { editTextFile, writeTextFile } from './file-mutations'
@@ -1261,4 +1262,5 @@ registerOAuthHandlers()
 registerAgentPersonaHandlers()
 if (!IS_HARMONY_BUILD) {
   registerDesktopDirectRequestHandlers()
+  registerBuiltInBrowserHandlers()
 }

@@ -4,6 +4,7 @@ import type { FileEditRequest, FileEditResult } from '@shared/file-edits'
 import type { SessionRowStorePort } from '@chatbox/core/ports'
 import type { LocalMemoryScanResult } from '@shared/agent-persona/memory-import'
 import type { AnalyticsEventParams } from '@shared/analytics'
+import type { BuiltInBrowserPage, BuiltInBrowserState, BuiltInBrowserViewRequest } from '@shared/built-in-browser'
 import type { PlatformType as SharedPlatformType } from '@shared/platform'
 import type {
   SandboxExecLanguage,
@@ -32,8 +33,24 @@ export interface Storage {
   setAllStoreValues(data: { [key: string]: any }): Promise<void>
 }
 
+/** Desktop-only browser with its own persistent profile for reading rendered or signed-in pages. */
+export interface BuiltInBrowser {
+  /** Reads `url`, or the page currently shown when `url` is omitted. */
+  readPage(params: { url?: string; timeoutMs?: number; signal?: AbortSignal }): Promise<BuiltInBrowserPage>
+  navigate(url: string): Promise<void>
+  goBack(): Promise<void>
+  goForward(): Promise<void>
+  reload(): Promise<void>
+  stop(): Promise<void>
+  setView(request: BuiltInBrowserViewRequest): Promise<void>
+  getState(): Promise<BuiltInBrowserState>
+  onStateChange(callback: (state: BuiltInBrowserState) => void): () => void
+  clearData(): Promise<void>
+}
+
 export interface Platform extends Storage {
   type: PlatformType
+  builtInBrowser?: BuiltInBrowser
   /** Whether this platform is backed by the Electron main/preload bridge. */
   isDesktopLike: boolean
 

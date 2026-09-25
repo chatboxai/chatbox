@@ -1,6 +1,7 @@
 import { isApprovalPauseReason } from '@chatbox/core/message-approval'
 import NiceModal from '@ebay/nice-modal-react'
 import { Alert, Box, Button, Code, Collapse, Group, Paper, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
+import { BROWSE_PAGE_TOOL_NAME } from '@shared/built-in-browser'
 import { workExecutionFeedback } from '@shared/mobile-work/execution-feedback'
 import { ChatboxAIAPIError } from '@shared/models/errors'
 import { SANDBOX_EXEC_ERROR_CODES } from '@shared/sandbox-provider'
@@ -9,6 +10,7 @@ import type { MessageToolCallPart } from '@shared/types'
 import { getWorkArtifacts } from '@shared/work-artifacts'
 import { stepNeedsUserAction } from '@shared/work-timeline'
 import {
+  IconBrowser,
   IconCheck,
   IconChevronDown,
   IconCircleXFilled,
@@ -230,6 +232,7 @@ const toolIconMap: Record<string, React.ElementType> = {
   file_search: IconFileSearch,
   query_knowledge_base: IconDatabase,
   parse_link: IconExternalLink,
+  [BROWSE_PAGE_TOOL_NAME]: IconBrowser,
   create_file: IconFile,
   edit_file: IconEdit,
   delete_file: IconFileMinus,
@@ -1230,7 +1233,7 @@ export const ToolCallPartUI: FC<{ part: MessageToolCallPart } & ToolCallActionCo
   if (part.toolName === 'web_search') {
     return <WebSearchGroupUI parts={[part]} />
   }
-  if (part.toolName === 'parse_link') {
+  if (part.toolName === 'parse_link' || part.toolName === BROWSE_PAGE_TOOL_NAME) {
     return <ParseLinkUI part={part} />
   }
   if (part.toolName === 'create_download') {
@@ -1376,7 +1379,7 @@ const TimelineToolCallDetail: FC<{ part: MessageToolCallPart }> = ({ part }) => 
   if (part.toolName === 'web_search') {
     return <WebSearchDetails part={part} />
   }
-  if (part.toolName === 'parse_link') {
+  if (part.toolName === 'parse_link' || part.toolName === BROWSE_PAGE_TOOL_NAME) {
     return <ParseLinkDetails part={part} />
   }
   if (isCommandExecutionPart(part)) {
@@ -1548,7 +1551,7 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
         ? getFirstStringValue(part.args, ['code'])
         : part.toolName === 'create_download'
           ? getFirstStringValue(part.result, ['file_path']) || getFirstStringValue(part.args, ['file_path'])
-          : part.toolName === 'parse_link'
+          : part.toolName === 'parse_link' || part.toolName === BROWSE_PAGE_TOOL_NAME
             ? getFirstStringValue(part.args, ['url']) || getFirstStringValue(part.result, ['title', 'url'])
             : getFirstStringValue(part.args, ['path', 'file_path', 'query', 'pattern', 'command', 'skillName', 'name'])
 

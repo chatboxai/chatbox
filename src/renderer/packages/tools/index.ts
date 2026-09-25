@@ -58,6 +58,7 @@ export function getToolName(toolName: string, input?: unknown): string {
     write_file: t('Write File'),
     search_files: t('Search Files'),
     parse_link: t('Parse Link'),
+    browse_page: t('Browse Page'),
     code_execution: t('Code Execution'),
     create_download: t('Create Download'),
     search_file_content: t('Search File Content'),

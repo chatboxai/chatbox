@@ -1,4 +1,13 @@
 {
+  "Forward": "Forward",
+  "Enter a URL": "Enter a URL",
+  "AI is reading this page": "AI is reading this page",
+  "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.",
+  "Sign-ins stay in the built-in browser and are never sent to the model.": "Sign-ins stay in the built-in browser and are never sent to the model.",
+  "Browse Page": "Browse Page",
+  "Built-in Browser": "Built-in Browser",
+  "Clear built-in browser data": "Clear built-in browser data",
+  "Built-in browser data cleared": "Built-in browser data cleared",
   "Move to folder": "Move to folder",
   "New folder": "New folder",
   "No folder": "No folder",

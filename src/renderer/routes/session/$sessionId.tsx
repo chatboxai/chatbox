@@ -1,3 +1,4 @@
+import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import NiceModal from '@ebay/nice-modal-react'
 import { Box, Button } from '@mantine/core'
 import type { ModelProvider } from '@shared/types'
@@ -8,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { rendererApplication } from '@/app/renderer-application'
+import { BuiltInBrowserSidebar } from '@/components/chat/BuiltInBrowserPanel'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
@@ -31,11 +33,13 @@ import {
   useSessionStartupLoadTarget,
   useSessionStartupQueryFailure,
 } from '@/packages/session-startup-recovery'
+import platform from '@/platform'
 import { showSessionArchiveUndo } from '@/presentation/session/session-archive-notification'
 import { showThreadHistoryDrawerAtom } from '@/stores/atoms'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { applyChatboxLicenseDefaultModelToSession } from '@/stores/defaultChatModel'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
+import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { startNewThread } from '@/stores/session/threads'
@@ -97,6 +101,8 @@ function RouteComponent() {
   const messageListRef = useRef<MessageListRef>(null)
   const { requireComplete } = useSessionViewNavigation(currentSessionId, messageListRef, Boolean(completeSession))
   const setLastUsedChatModel = useStore(lastUsedModelStore, (state) => state.setChatModel)
+  const isWorkMode = resolveSessionMode(useSessionAgentMode(currentSessionId).value) === 'work'
+  const builtInBrowser = !isSmallScreen && isWorkMode ? platform.builtInBrowser : undefined
 
   useEffect(() => {
     setOnScreenSession(currentSessionId)
@@ -281,70 +287,73 @@ function RouteComponent() {
   }
 
   return currentSession ? (
-    <div className={`flex flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>
-      <Header session={completeSession ?? currentSession} />
-      {!completeSession && transcript.error && (
-        <Button variant="subtle" onClick={transcript.retry}>
-          {t('Try Again')}
-        </Button>
-      )}
-
-      {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
-      <MessageList
-        ref={messageListRef}
-        key={`message-list${currentSessionId}`}
-        {...(completeSession
-          ? { currentSession: completeSession }
-          : {
-              transcript: { header: currentSession, messages: transcript.messages },
-              windowIdentity: transcript.windowIdentity,
-              hasOlder: transcript.hasOlder,
-              onLoadOlder: transcript.loadOlder,
-              hasNewer: transcript.hasNewer,
-              onLoadNewer: transcript.loadNewer,
-              isLoadingOlder: transcript.isLoadingOlder,
-              isLoadingNewer: transcript.isLoadingNewer,
-              isJumping: transcript.isJumping,
-              onJumpToEdge: transcript.jumpToEdge,
-              windowPosition: transcript.position,
-              onRequireComplete: requireComplete,
-            })}
-        className={!isSmallScreen ? 'pt-[2px]' : undefined}
-      />
-
-      <Box className="relative">
-        {shouldShowTemplateWelcomeCard && (
-          // absolute — taken out of flow, doesn't affect layout of siblings
-          // bottom: '100%' — positioned right above the parent box's top edge (like a tooltip anchoring upward)
-          <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} mb="sm">
-            <Box className={paddedContentColumnClassName(widthFull)}>
-              <ChatboxWelcomeCard
-                mode={welcomeCardMode}
-                pageName={JK_PAGE_NAMES.CHAT_PAGE}
-                className="pointer-events-auto w-full"
-              />
-            </Box>
-          </Box>
+    <div className="flex h-full">
+      <div className={`flex min-w-0 flex-1 flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>
+        <Header session={completeSession ?? currentSession} />
+        {!completeSession && transcript.error && (
+          <Button variant="subtle" onClick={transcript.retry}>
+            {t('Try Again')}
+          </Button>
         )}
 
-        {/* <ScrollButtons /> */}
-        <ErrorBoundary name="session-inputbox">
-          <InputBox
-            key={`input-box${currentSession.id}`}
-            sessionId={currentSession.id}
-            sessionType={currentSession.type}
-            model={model}
-            onStartNewThread={onStartNewThread}
-            onSelectModel={onSelectModel}
-            onClickSessionSettings={onClickSessionSettings}
-            onSubmit={onSubmit}
-            onStopGenerating={onStopGenerating}
-            stopGenerationStatus={stopGenerationStatus}
-            onViewCompactionSummary={onViewCompactionSummary}
-          />
-        </ErrorBoundary>
-      </Box>
-      {completeSession && <ThreadHistoryDrawer session={completeSession} />}
+        {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
+        <MessageList
+          ref={messageListRef}
+          key={`message-list${currentSessionId}`}
+          {...(completeSession
+            ? { currentSession: completeSession }
+            : {
+                transcript: { header: currentSession, messages: transcript.messages },
+                windowIdentity: transcript.windowIdentity,
+                hasOlder: transcript.hasOlder,
+                onLoadOlder: transcript.loadOlder,
+                hasNewer: transcript.hasNewer,
+                onLoadNewer: transcript.loadNewer,
+                isLoadingOlder: transcript.isLoadingOlder,
+                isLoadingNewer: transcript.isLoadingNewer,
+                isJumping: transcript.isJumping,
+                onJumpToEdge: transcript.jumpToEdge,
+                windowPosition: transcript.position,
+                onRequireComplete: requireComplete,
+              })}
+          className={!isSmallScreen ? 'pt-[2px]' : undefined}
+        />
+
+        <Box className="relative">
+          {shouldShowTemplateWelcomeCard && (
+            // absolute — taken out of flow, doesn't affect layout of siblings
+            // bottom: '100%' — positioned right above the parent box's top edge (like a tooltip anchoring upward)
+            <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} mb="sm">
+              <Box className={paddedContentColumnClassName(widthFull)}>
+                <ChatboxWelcomeCard
+                  mode={welcomeCardMode}
+                  pageName={JK_PAGE_NAMES.CHAT_PAGE}
+                  className="pointer-events-auto w-full"
+                />
+              </Box>
+            </Box>
+          )}
+
+          {/* <ScrollButtons /> */}
+          <ErrorBoundary name="session-inputbox">
+            <InputBox
+              key={`input-box${currentSession.id}`}
+              sessionId={currentSession.id}
+              sessionType={currentSession.type}
+              model={model}
+              onStartNewThread={onStartNewThread}
+              onSelectModel={onSelectModel}
+              onClickSessionSettings={onClickSessionSettings}
+              onSubmit={onSubmit}
+              onStopGenerating={onStopGenerating}
+              stopGenerationStatus={stopGenerationStatus}
+              onViewCompactionSummary={onViewCompactionSummary}
+            />
+          </ErrorBoundary>
+        </Box>
+        {completeSession && <ThreadHistoryDrawer session={completeSession} />}
+      </div>
+      {builtInBrowser && <BuiltInBrowserSidebar builtInBrowser={builtInBrowser} />}
     </div>
   ) : (
     !isFetching && (

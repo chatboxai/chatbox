@@ -19,6 +19,7 @@ const {
   userExecMock,
   readWorkspaceInstructionsMock,
   platformName,
+  builtInBrowser,
   buildFileToolsMock,
 } = vi.hoisted(() => ({
   buildFileToolsMock: vi.fn((_messages: unknown, filesystemRead?: unknown, _loadFileMessages?: unknown) => ({
@@ -46,6 +47,7 @@ const {
   userExecMock: vi.fn(),
   readWorkspaceInstructionsMock: vi.fn(),
   platformName: { current: 'darwin' },
+  builtInBrowser: { current: undefined as { readPage: () => Promise<unknown> } | undefined },
 }))
 
 const memoryValues = vi.hoisted(() => new Map<string, unknown>())
@@ -91,6 +93,9 @@ vi.mock('@/platform', () => ({
     readWorkspaceInstructions: readWorkspaceInstructionsMock,
     // Presence enables view_image registration (isViewImageAvailable).
     fsReadImage: vi.fn(),
+    get builtInBrowser() {
+      return builtInBrowser.current
+    },
   },
 }))
 
@@ -260,6 +265,7 @@ const sandboxToolNames = [
 
 beforeEach(async () => {
   vi.clearAllMocks()
+  builtInBrowser.current = undefined
   memoryValues.clear()
   await rendererMemoryService.reload()
   for (const listener of skillsChangedListeners) {
@@ -932,6 +938,28 @@ describe('buildToolsForSession', () => {
     expect(result.tools.web_search).toBeDefined()
     expect(result.tools.parse_link).toBeUndefined()
     expect(result.instructions).not.toContain('## parse_link')
+  })
+
+  test('Work Mode exposes browse_page where the platform provides a built-in browser', async () => {
+    builtInBrowser.current = { readPage: vi.fn() }
+    const model = createMockModel()
+
+    const result = await buildToolsForSession(model, { webBrowsing: false, messages: [], agentMode: 'on' })
+
+    expect(result.tools.browse_page).toBeDefined()
+    expect(result.instructions).toContain('## Built-in browser')
+  })
+
+  test('browse_page stays off in chat mode and without a built-in browser', async () => {
+    const model = createMockModel()
+    const withoutBrowser = await buildToolsForSession(model, { webBrowsing: true, messages: [], agentMode: 'on' })
+    expect(withoutBrowser.tools.browse_page).toBeUndefined()
+    expect(withoutBrowser.instructions).not.toContain('## Built-in browser')
+
+    builtInBrowser.current = { readPage: vi.fn() }
+    const chatMode = await buildToolsForSession(model, { webBrowsing: true, messages: [], agentMode: 'off' })
+    expect(chatMode.tools.browse_page).toBeUndefined()
+    expect(chatMode.instructions).not.toContain('## Built-in browser')
   })
 
   test('agentMode="on" without codeExecution — load_skill only, no code-exec tools', async () => {

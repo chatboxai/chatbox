@@ -13,13 +13,16 @@ import {
   IconId,
   IconSettings,
   IconTrash,
+  IconWorld,
 } from '@tabler/icons-react'
 import { useSetAtom } from 'jotai'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useIsLargeScreen } from '@/hooks/useScreenChange'
 import { copyToClipboard } from '@/packages/navigator'
+import platform from '@/platform'
 import { confirmSessionDeletion } from '@/presentation/session/session-deletion-confirmation'
 import { router } from '@/router'
 import * as atoms from '@/stores/atoms'
@@ -186,11 +189,37 @@ export function SessionMenu({
   )
 }
 
+/** Shows or hides the built-in browser sidebar of a Work Mode conversation. */
+function BuiltInBrowserToggle({ sessionId }: { sessionId: string }) {
+  const { t } = useTranslation()
+  const isWorkMode = resolveSessionMode(useSessionAgentMode(sessionId).value) === 'work'
+  const open = useUIStore((s) => s.showBuiltInBrowser)
+  const setOpen = useUIStore((s) => s.setShowBuiltInBrowser)
+  if (!platform.builtInBrowser || !isWorkMode) return null
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <IconButton
+          icon={IconWorld}
+          size="sm"
+          aria-label={t('Built-in Browser')}
+          aria-pressed={open}
+          data-testid="built-in-browser-toggle"
+          color={open ? 'chatbox-brand' : 'chatbox-secondary'}
+          onClick={() => setOpen(!open)}
+        />
+      </TooltipTrigger>
+      <TooltipContent>{t('Built-in Browser')}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 /** Title bar actions for a conversation. */
 export default function Toolbar({ session }: { session: Session | SessionHeader }) {
   const { t } = useTranslation()
   return (
     <Flex align="center" className="controls">
+      <BuiltInBrowserToggle sessionId={session.id} />
       <SessionMenu session={session}>
         <IconButton icon={IconDots} size="sm" aria-label={t('More')} data-testid={TestId.session.headerMenuTrigger} />
       </SessionMenu>

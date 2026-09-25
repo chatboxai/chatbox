@@ -1,4 +1,13 @@
 {
+  "Forward": "Framåt",
+  "Enter a URL": "Ange en URL",
+  "AI is reading this page": "AI:n läser den här sidan",
+  "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Sidor som AI:n läser öppnas här. Du kan logga in eller klicka dig igenom en sida själv och sedan be AI:n fortsätta.",
+  "Sign-ins stay in the built-in browser and are never sent to the model.": "Inloggningar stannar i den inbyggda webbläsaren och skickas aldrig till modellen.",
+  "Browse Page": "Bläddra på sida",
+  "Built-in Browser": "Inbyggd webbläsare",
+  "Clear built-in browser data": "Rensa data i inbyggd webbläsare",
+  "Built-in browser data cleared": "Data i inbyggd webbläsare rensade",
   "Move to folder": "Flytta till mapp",
   "New folder": "Ny mapp",
   "No folder": "Ingen mapp",

@@ -77,6 +77,7 @@ const electronHandler: ElectronIPC = {
     }
   },
   onSkillsBuiltinUpdated: createListener('skills:builtin-updated'),
+  onBuiltInBrowserState: createListener('built-in-browser:state'),
 
   // Auto-updater events
   onUpdaterChecking: createListener('updater:checking'),

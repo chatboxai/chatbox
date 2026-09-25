@@ -1,4 +1,13 @@
 {
+  "Forward": "進む",
+  "Enter a URL": "URL を入力",
+  "AI is reading this page": "AI がこのページを読み取っています",
+  "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "AI が読み取るページはここに開きます。自分でサインインしたりページを操作したりしてから、AI に続行を頼めます。",
+  "Sign-ins stay in the built-in browser and are never sent to the model.": "サインイン情報は内蔵ブラウザにのみ保存され、モデルに送信されることはありません。",
+  "Browse Page": "ページを閲覧",
+  "Built-in Browser": "内蔵ブラウザ",
+  "Clear built-in browser data": "内蔵ブラウザのデータを消去",
+  "Built-in browser data cleared": "内蔵ブラウザのデータを消去しました",
   "Move to folder": "フォルダに移動",
   "New folder": "新しいフォルダ",
   "No folder": "フォルダなし",

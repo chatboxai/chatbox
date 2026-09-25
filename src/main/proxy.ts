@@ -1,4 +1,5 @@
 import { session } from 'electron'
+import { builtInBrowser } from './built-in-browser'
 import * as store from './store-node'
 
 export function init() {
@@ -14,4 +15,5 @@ export function ensure(proxy?: string) {
   } else {
     session.defaultSession.setProxy({})
   }
+  void builtInBrowser.setProxy(proxy)
 }

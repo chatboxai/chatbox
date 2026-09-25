@@ -1,4 +1,13 @@
 {
+  "Forward": "Suivant",
+  "Enter a URL": "Saisir une URL",
+  "AI is reading this page": "L’IA lit cette page",
+  "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Les pages lues par l’IA s’ouvrent ici. Vous pouvez vous connecter ou naviguer vous-même dans une page, puis demander à l’IA de continuer.",
+  "Sign-ins stay in the built-in browser and are never sent to the model.": "Les connexions restent dans le navigateur intégré et ne sont jamais envoyées au modèle.",
+  "Browse Page": "Parcourir la page",
+  "Built-in Browser": "Navigateur intégré",
+  "Clear built-in browser data": "Effacer les données du navigateur intégré",
+  "Built-in browser data cleared": "Données du navigateur intégré effacées",
   "Move to folder": "Déplacer vers un dossier",
   "New folder": "Nouveau dossier",
   "No folder": "Aucun dossier",

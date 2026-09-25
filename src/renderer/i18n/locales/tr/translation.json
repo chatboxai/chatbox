@@ -1,4 +1,13 @@
 {
+  "Forward": "İleri",
+  "Enter a URL": "Bir URL girin",
+  "AI is reading this page": "Yapay zekâ bu sayfayı okuyor",
+  "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Yapay zekânın okuduğu sayfalar burada açılır. Oturum açabilir veya sayfada kendiniz gezinebilir, ardından yapay zekâdan devam etmesini isteyebilirsiniz.",
+  "Sign-ins stay in the built-in browser and are never sent to the model.": "Oturum bilgileri yerleşik tarayıcıda kalır ve modele asla gönderilmez.",
+  "Browse Page": "Sayfaya göz at",
+  "Built-in Browser": "Yerleşik Tarayıcı",
+  "Clear built-in browser data": "Yerleşik tarayıcı verilerini temizle",
+  "Built-in browser data cleared": "Yerleşik tarayıcı verileri temizlendi",
   "Move to folder": "Klasöre taşı",
   "New folder": "Yeni klasör",
   "No folder": "Klasör yok",

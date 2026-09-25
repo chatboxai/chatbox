@@ -1,4 +1,13 @@
 {
+  "Forward": "Frem",
+  "Enter a URL": "Skriv inn en URL",
+  "AI is reading this page": "KI-en leser denne siden",
+  "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Sider som KI-en leser, åpnes her. Du kan logge inn eller klikke deg gjennom en side selv, og deretter be KI-en fortsette.",
+  "Sign-ins stay in the built-in browser and are never sent to the model.": "Innlogginger blir værende i den innebygde nettleseren og sendes aldri til modellen.",
+  "Browse Page": "Bla gjennom side",
+  "Built-in Browser": "Innebygd nettleser",
+  "Clear built-in browser data": "Tøm data for innebygd nettleser",
+  "Built-in browser data cleared": "Data for innebygd nettleser er tømt",
   "Move to folder": "Flytt til mappe",
   "New folder": "Ny mappe",
   "No folder": "Ingen mappe",

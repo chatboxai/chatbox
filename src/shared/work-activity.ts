@@ -3,6 +3,8 @@
  * counted per action, so a long run still says something instead of listing tools.
  */
 
+import { BROWSE_PAGE_TOOL_NAME } from './built-in-browser'
+
 export type WorkActivityAction =
   | 'commands'
   | 'edits'
@@ -55,7 +57,7 @@ const EDIT_TOOLS = new Set([
 ])
 
 const WEB_SEARCH_TOOLS = new Set(['web_search'])
-const PAGE_TOOLS = new Set(['parse_link'])
+const PAGE_TOOLS = new Set(['parse_link', BROWSE_PAGE_TOOL_NAME])
 const IMAGE_TOOLS = new Set(['create_image', 'generate_image', 'image_generation'])
 
 function isImageCliCall(args: unknown): boolean {

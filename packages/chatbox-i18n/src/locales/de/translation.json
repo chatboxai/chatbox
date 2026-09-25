@@ -1,4 +1,13 @@
 {
+  "Forward": "Vorwärts",
+  "Enter a URL": "URL eingeben",
+  "AI is reading this page": "Die KI liest diese Seite",
+  "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Seiten, die die KI liest, werden hier geöffnet. Du kannst dich selbst anmelden oder dich durch eine Seite klicken und die KI dann weitermachen lassen.",
+  "Sign-ins stay in the built-in browser and are never sent to the model.": "Anmeldungen bleiben im integrierten Browser und werden nie an das Modell gesendet.",
+  "Browse Page": "Seite aufrufen",
+  "Built-in Browser": "Integrierter Browser",
+  "Clear built-in browser data": "Daten des integrierten Browsers löschen",
+  "Built-in browser data cleared": "Daten des integrierten Browsers gelöscht",
   "Move to folder": "In Ordner verschieben",
   "New folder": "Neuer Ordner",
   "No folder": "Kein Ordner",

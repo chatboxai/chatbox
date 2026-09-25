@@ -1,4 +1,13 @@
 {
+  "Forward": "前進",
+  "Enter a URL": "輸入網址",
+  "AI is reading this page": "AI 正在讀取此頁面",
+  "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "AI 讀取的頁面會在這裡開啟。你可以自行登入或點擊操作頁面，然後讓 AI 繼續。",
+  "Sign-ins stay in the built-in browser and are never sent to the model.": "登入資訊只保存在內建瀏覽器中，不會傳送給模型。",
+  "Browse Page": "瀏覽網頁",
+  "Built-in Browser": "內建瀏覽器",
+  "Clear built-in browser data": "清除內建瀏覽器資料",
+  "Built-in browser data cleared": "內建瀏覽器資料已清除",
   "Move to folder": "移動到資料夾",
   "New folder": "新增資料夾",
   "No folder": "不放入資料夾",

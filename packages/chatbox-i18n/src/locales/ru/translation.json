@@ -1,4 +1,13 @@
 {
+  "Forward": "Вперёд",
+  "Enter a URL": "Введите URL",
+  "AI is reading this page": "ИИ читает эту страницу",
+  "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Страницы, которые читает ИИ, открываются здесь. Вы можете сами войти в аккаунт или пройтись по странице, а затем попросить ИИ продолжить.",
+  "Sign-ins stay in the built-in browser and are never sent to the model.": "Данные входа остаются во встроенном браузере и никогда не отправляются модели.",
+  "Browse Page": "Просмотр страницы",
+  "Built-in Browser": "Встроенный браузер",
+  "Clear built-in browser data": "Очистить данные встроенного браузера",
+  "Built-in browser data cleared": "Данные встроенного браузера очищены",
   "Move to folder": "Переместить в папку",
   "New folder": "Новая папка",
   "No folder": "Без папки",

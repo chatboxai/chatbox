@@ -1,4 +1,13 @@
 {
+  "Forward": "التالي",
+  "Enter a URL": "أدخل عنوان URL",
+  "AI is reading this page": "يقرأ الذكاء الاصطناعي هذه الصفحة",
+  "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "تُفتح هنا الصفحات التي يقرأها الذكاء الاصطناعي. يمكنك تسجيل الدخول أو التنقل في الصفحة بنفسك، ثم اطلب من الذكاء الاصطناعي المتابعة.",
+  "Sign-ins stay in the built-in browser and are never sent to the model.": "تبقى بيانات تسجيل الدخول في المتصفح المدمج ولا تُرسل إلى النموذج أبدًا.",
+  "Browse Page": "تصفح الصفحة",
+  "Built-in Browser": "المتصفح المدمج",
+  "Clear built-in browser data": "مسح بيانات المتصفح المدمج",
+  "Built-in browser data cleared": "تم مسح بيانات المتصفح المدمج",
   "Move to folder": "نقل إلى مجلد",
   "New folder": "مجلد جديد",
   "No folder": "بدون مجلد",

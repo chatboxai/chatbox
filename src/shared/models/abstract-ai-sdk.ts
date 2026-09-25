@@ -772,11 +772,11 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         const persistable = pickPersistableProviderMetadata(chunk.providerMetadata, undefined, 'text')
         if (persistable && currentTextPart) {
           currentTextPart.providerMetadata = mergeProviderMetadata(currentTextPart.providerMetadata, persistable)
-          // Close the block so a following block's text is not concatenated onto the text this
-          // signature was issued for.
-          return { currentTextPart: undefined, currentReasoningPart, pendingReasoningText }
         }
-        return { currentTextPart, currentReasoningPart, pendingReasoningText }
+        // `text-end` is the block boundary, so it closes the part whether or not this block
+        // carried metadata — otherwise the next block's text appends to it and that block's
+        // signature lands on text it was never issued for (see the core stream-chunk-processor).
+        return { currentTextPart: undefined, currentReasoningPart, pendingReasoningText }
       }
 
       case 'reasoning-start': {

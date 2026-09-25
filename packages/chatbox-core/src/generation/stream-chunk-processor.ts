@@ -165,11 +165,11 @@ export async function processStreamChunk(
       const persistable = pickPersistableProviderMetadata(chunk.providerMetadata, undefined, 'text')
       if (persistable && currentTextPart) {
         currentTextPart.providerMetadata = mergeProviderMetadata(currentTextPart.providerMetadata, persistable)
-        // Close the block here: adjacent text blocks are normally separated by a tool call
-        // (which already closes the part), but if they are not, concatenating the next block
-        // onto this one would associate this signature with text it was never issued for.
-        currentTextPart = undefined
       }
+      // `text-end` is the block boundary, so it closes the part whether or not this block carried
+      // metadata. Leaving an unsigned block open lets the next block's text append to it, and that
+      // block's signature would then be persisted on text it was never issued for.
+      currentTextPart = undefined
       break
     }
     case 'reasoning-start': {

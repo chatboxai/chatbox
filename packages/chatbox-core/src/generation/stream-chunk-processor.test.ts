@@ -325,6 +325,29 @@ describe('processStreamChunk', () => {
     ])
   })
 
+  it('closes an unsigned text block so the next block keeps its own signature', async () => {
+    // `text-end` is the block boundary, not the presence of metadata. An unsigned block left open
+    // absorbs the next block's text, and that block's signature is then persisted on text it was
+    // never issued for.
+    const chunks = [
+      chunk('text-delta', { id: 'text-0', text: 'First' }),
+      chunk('text-end', { id: 'text-0' }),
+      chunk('text-delta', { id: 'text-1', text: 'Second' }),
+      chunk('text-end', { id: 'text-1', providerMetadata: { google: { thoughtSignature: 'second-sig' } } }),
+    ]
+
+    let state = createInitialState()
+    for (const streamChunk of chunks) {
+      state = (await processStreamChunk(streamChunk, state, callbacks)).state
+    }
+
+    expect(state.contentParts).toMatchObject([
+      { type: 'text', text: 'First' },
+      { type: 'text', text: 'Second', providerMetadata: { google: { thoughtSignature: 'second-sig' } } },
+    ])
+    expect(state.contentParts[0]).not.toHaveProperty('providerMetadata')
+  })
+
   it('does not persist non-whitelisted provider metadata or create parts for it', async () => {
     const chunks = [
       chunk('reasoning-start', {

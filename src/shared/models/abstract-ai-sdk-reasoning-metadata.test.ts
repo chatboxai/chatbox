@@ -368,6 +368,36 @@ describe('AbstractAISDKModel reasoning metadata aggregation', () => {
       expect(signed, `no streamed part carried the signature: ${JSON.stringify(parts)}`).toBeDefined()
     })
 
+    it('closes an unsigned text block so the next block keeps its own signature', async () => {
+      // `text-end` is the block boundary, not the presence of metadata — the same rule the core
+      // stream-chunk-processor applies.
+      const languageModel = createStreamModel(
+        [
+          { type: 'text-start', id: 'text-0' },
+          { type: 'text-delta', id: 'text-0', delta: 'First' },
+          { type: 'text-end', id: 'text-0' },
+          { type: 'text-start', id: 'text-1' },
+          { type: 'text-delta', id: 'text-1', delta: 'Second' },
+          {
+            type: 'text-delta',
+            id: 'text-1',
+            delta: '',
+            providerMetadata: { google: { thoughtSignature: 'second-sig' } },
+          },
+          { type: 'text-end', id: 'text-1' },
+        ],
+        'google.generative-ai'
+      )
+
+      const response = await new StreamTestModel(languageModel, 'google').chat([{ role: 'user', content: 'think' }], {})
+
+      expect(response.contentParts).toMatchObject([
+        { type: 'text', text: 'First' },
+        { type: 'text', text: 'Second', providerMetadata: { google: { thoughtSignature: 'second-sig' } } },
+      ])
+      expect(response.contentParts[0]).not.toHaveProperty('providerMetadata')
+    })
+
     it('keeps each consecutive signed text block with its own signature', async () => {
       const languageModel = createStreamModel(
         [

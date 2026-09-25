@@ -1,11 +1,7 @@
-import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
+import type { MessageFile, MessageLink } from '@shared/types'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
-import {
-  buildAttachmentWrapperPrefix,
-  buildAttachmentWrapperSuffix,
-  PREVIEW_LINES,
-} from '@/packages/context-management/attachment-payload'
+import { calculateAttachmentTokens } from './attachment-computation'
 import { computationQueue } from './computation-queue'
 import {
   estimateDraftTokensImmediately,
@@ -130,7 +126,7 @@ async function tokenizeMessageText(
 }
 
 async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult> {
-  const { sessionId, messageId, attachmentId, attachmentType, tokenizerType, contentMode = 'full' } = task
+  const { sessionId, messageId, attachmentId, attachmentType } = task
 
   if (!attachmentId || !attachmentType) {
     log.debug('Missing attachment info', { taskId: task.id })
@@ -150,7 +146,7 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
     return { success: false, error: 'message_not_found', silent: true }
   }
 
-  let attachment: { storageKey?: string; name?: string; title?: string; id: string } | undefined
+  let attachment: MessageFile | MessageLink | undefined
 
   if (attachmentType === 'file') {
     attachment = message.files?.find((f) => f.id === attachmentId)
@@ -163,91 +159,7 @@ async function executeAttachmentTask(task: ComputationTask): Promise<TaskResult>
     return { success: false, error: 'attachment_not_found', silent: true }
   }
 
-  const storageKey = attachment.storageKey
-  if (!storageKey) {
-    log.debug('No storage key', { taskId: task.id, attachmentId })
-    return { success: false, error: 'no_storage_key' }
-  }
-  const sourceName = attachmentType === 'file' ? (attachment.name ?? '') : (attachment.title ?? '')
-
-  let content: string | null = null
-  try {
-    content = await currentBlobStorage.get(storageKey)
-  } catch (error) {
-    log.debug('Failed to retrieve attachment content', { taskId: task.id, attachmentId, error })
-    return { success: false, error: 'attachment_read_failed', retryable: true }
-  }
-
-  if (content === null) return { success: false, error: 'attachment_content_missing', retryable: true }
-
-  if (content === '') {
-    return {
-      success: true,
-      result: {
-        type: 'attachment',
-        sessionId,
-        messageId,
-        attachmentId,
-        attachmentType,
-        sourceStorageKey: storageKey,
-        sourceName,
-        tokenizerType,
-        contentMode,
-        tokens: 0,
-        lineCount: 0,
-        byteLength: 0,
-        calculatedAt: Date.now(),
-      },
-    }
-  }
-
-  const lines = content.split('\n')
-  const lineCount = lines.length
-  const byteLength = new TextEncoder().encode(content).length
-
-  const tokenContent = contentMode === 'preview' ? lines.slice(0, PREVIEW_LINES).join('\n') : content
-
-  const fileName =
-    attachmentType === 'file' ? (attachment as { name: string }).name : (attachment as { title: string }).title
-  const fileKey = storageKey
-
-  const wrapperPrefix = buildAttachmentWrapperPrefix({
-    attachmentIndex: 1,
-    fileName,
-    fileKey,
-    fileLines: lineCount,
-    fileSize: byteLength,
-  })
-
-  const wrapperSuffix = buildAttachmentWrapperSuffix({
-    isTruncated: contentMode === 'preview',
-    previewLines: contentMode === 'preview' ? PREVIEW_LINES : undefined,
-    totalLines: contentMode === 'preview' ? lineCount : undefined,
-    fileKey: contentMode === 'preview' ? fileKey : undefined,
-  })
-
-  const wrapperTokens = estimateTokensForTokenizerType(wrapperPrefix + wrapperSuffix, tokenizerType)
-  const contentTokens = estimateTokensForTokenizerType(tokenContent, tokenizerType)
-  const tokens = wrapperTokens + contentTokens
-
-  return {
-    success: true,
-    result: {
-      type: 'attachment',
-      sessionId,
-      messageId,
-      attachmentId,
-      attachmentType,
-      sourceStorageKey: storageKey,
-      sourceName,
-      tokenizerType,
-      contentMode,
-      tokens,
-      lineCount,
-      byteLength,
-      calculatedAt: Date.now(),
-    },
-  }
+  return calculateAttachmentTokens(attachment, task)
 }
 
 export function initializeExecutor(): void {

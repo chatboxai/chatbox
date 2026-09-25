@@ -1,34 +1,35 @@
 import { injectAttachments, selectContextMessages } from '@shared/context'
 import { estimateMessageToolCallTokens } from '@shared/context/tool-tokens'
 import { getRegistryModelMeta, getUnambiguousRegistryModelContextWindow } from '@shared/model-registry'
+import { analyzeAttachmentTokens, estimateImageTokens } from '@shared/token-estimation/attachments'
 import {
   estimateTokensForTokenizerType,
   getTokenizerType,
   type TokenizerType,
 } from '@shared/token-estimation/tokenizer'
 import { getMessageText } from '@shared/utils/message'
+import type { BlobStoragePort } from '../../ports'
 import type { SessionContextSource } from '../../ports/session-context-source'
 import type { SessionTextTokenRepositoryPort, SessionTextTokenResult } from '../../ports/session-text-tokens'
-import type { BlobStoragePort } from '../../ports'
 import type { Message, Session, Settings } from '../../types'
 import { findLastCompactionBoundaryMessage } from '../context/compaction-boundary'
 
 import {
   estimateDraftTokensImmediately,
-  LONG_DRAFT_TOKENIZATION_THRESHOLD,
   FALLBACK_CONTEXT_WINDOW_TOKENS,
   getCompactionThresholdForContextWindow,
+  LONG_DRAFT_TOKENIZATION_THRESHOLD,
 } from './math'
+
 export {
+  DEFAULT_COMPACTION_THRESHOLD,
   estimateDraftTokensImmediately,
+  FALLBACK_CONTEXT_WINDOW_TOKENS,
   LONG_DRAFT_TOKENIZATION_THRESHOLD,
   OUTPUT_RESERVE_TOKENS,
-  DEFAULT_COMPACTION_THRESHOLD,
-  FALLBACK_CONTEXT_WINDOW_TOKENS,
 } from './math'
 const RAW_TAIL_BUDGET_RATIO = 0.5
 const MAX_HISTORY_CACHE_ENTRIES = 1_000
-const IMAGE_TOKEN_ESTIMATE = 4_096
 
 export interface TokenEstimationModel {
   provider: string
@@ -43,6 +44,8 @@ export interface TokenBreakdown {
 }
 
 export interface PortableTokenEstimationResult {
+  /** An unreadable attachment makes the estimate incomplete and retryable. */
+  missingAttachments?: { currentInput: boolean; context: boolean }
   currentInputTokens: number
   contextTokens: number
   totalTokens: number
@@ -76,23 +79,11 @@ function totalBreakdown(value: TokenBreakdown): number {
   return value.text + value.attachments + value.toolCalls
 }
 
-function attachmentCachedTokens(message: Message, tokenizerType: TokenizerType): number {
-  let total = 0
-  for (const attachment of [...(message.files ?? []), ...(message.links ?? [])]) {
-    total += attachment.tokenCountMap?.[tokenizerType] ?? 0
-  }
-  return total
-}
-
-function imageTokenEstimate(message: Message): number {
-  return (message.contentParts?.filter((part) => part.type === 'image').length ?? 0) * IMAGE_TOKEN_ESTIMATE
-}
-
 function estimateMessageImmediately(message: Message, tokenizerType: TokenizerType): TokenBreakdown {
   const text = getMessageText(message, true, true)
   return {
     text: message.tokenCountMap?.[tokenizerType] ?? estimateDraftTokensImmediately(text, tokenizerType),
-    attachments: attachmentCachedTokens(message, tokenizerType) + imageTokenEstimate(message),
+    attachments: analyzeAttachmentTokens(message, tokenizerType).tokens,
     toolCalls: estimateMessageToolCallTokens(message),
   }
 }
@@ -119,6 +110,7 @@ function mergeExactBreakdowns(breakdowns: readonly TokenBreakdown[]): TokenBreak
 }
 
 interface HydratedBreakdown {
+  hasMissingAttachments?: boolean
   breakdown: TokenBreakdown
   approximate: boolean
 }
@@ -156,7 +148,7 @@ function hydratedBreakdown(
   tokenizerType: TokenizerType
 ): HydratedBreakdown {
   const textWithoutAttachments = estimateBoundedMessagesText(original, tokenizerType, true)
-  const imageTokens = original.reduce((total, message) => total + imageTokenEstimate(message), 0)
+  const imageTokens = original.reduce((total, message) => total + estimateImageTokens(message), 0)
   const hydratedTexts = withAttachments.map((message) => getMessageText(message, true, true))
   const textWithAttachments = textWithoutAttachments.texts.every((text, index) => text === hydratedTexts[index])
     ? textWithoutAttachments
@@ -286,7 +278,7 @@ export class TokenEstimationService {
         currentInput: Boolean(
           request.constructedMessage &&
             (getMessageText(request.constructedMessage, true, true).length >= LONG_DRAFT_TOKENIZATION_THRESHOLD ||
-              imageTokenEstimate(request.constructedMessage) > 0)
+              estimateImageTokens(request.constructedMessage) > 0)
         ),
         context: contextMessages.length > 0 || instructionEstimate.approximate,
       },
@@ -379,6 +371,10 @@ export class TokenEstimationService {
     const currentInputTokens = totalBreakdown(currentInput)
     const contextTokens = totalBreakdown(context)
     return {
+      missingAttachments: {
+        currentInput: currentInputEstimate.hasMissingAttachments === true,
+        context: contextEstimates.some((value) => value.hasMissingAttachments),
+      },
       currentInputTokens,
       contextTokens,
       totalTokens: currentInputTokens + contextTokens,
@@ -417,8 +413,12 @@ export class TokenEstimationService {
 
   private async estimateDraftMessages(messages: Message[], tokenizerType: TokenizerType): Promise<HydratedBreakdown> {
     if (messages.length === 0) return { breakdown: emptyBreakdown(), approximate: false }
-    const hydrated = await this.hydrateMessagesWithAttachments(messages)
-    return hydratedBreakdown(messages, hydrated, tokenizerType)
+    let hasMissingAttachments = false
+    const hydrated = await injectAttachments(messages, { read: (key) => this.blobs.get(key) }, false, false, () => {
+      hasMissingAttachments = true
+    })
+    const result = hydratedBreakdown(messages, hydrated, tokenizerType)
+    return { ...result, hasMissingAttachments, approximate: result.approximate || hasMissingAttachments }
   }
 
   private estimateHistoricalMessageImmediately(message: Message, tokenizerType: TokenizerType): TokenBreakdown {
@@ -476,14 +476,17 @@ export class TokenEstimationService {
         this.historicalByIdentity.delete(oldestKey)
       }
     }
-    void value.catch(() => {
+    const evict = () => {
       if (this.historicalByObject.get(message)?.get(tokenizerType) === value) {
         this.historicalByObject.get(message)?.delete(tokenizerType)
       }
       if (this.historicalByIdentity.get(identityKey)?.value === value) {
         this.historicalByIdentity.delete(identityKey)
       }
-    })
+    }
+    void value.then((result) => {
+      if (result.hasMissingAttachments) evict()
+    }, evict)
     return value
   }
 }

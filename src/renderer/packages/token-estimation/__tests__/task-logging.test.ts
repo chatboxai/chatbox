@@ -112,7 +112,7 @@ describe('token task logging', () => {
     const result = await executeTask(task({ type: 'attachment', attachmentId: 'file-0', attachmentType: 'file' }))
 
     expect(result.success).toBe(true)
-    expect(result.result?.tokens).toBe(content ? 14 : 0)
+    expect(result.result?.tokens).toBe(content ? 7 : 0)
     expect(log.debug.mock.calls.length).toBe(0)
   })
 

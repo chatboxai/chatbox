@@ -1,3 +1,8 @@
+vi.mock('../token-estimation/policy', () => ({
+  resolveTokenEstimationPolicy: (...args: unknown[]) => resolveTokenEstimationPolicyMock(...args),
+}))
+vi.mock('@/stores/session/agent-mode', () => ({ getSessionAgentModeEntry: () => ({ value: 'off' }) }))
+
 import {
   hasPendingSessionGeneration,
   waitForSessionGenerations,
@@ -11,6 +16,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { compactionUIStateMapAtom, getCompactionUIState } from '@/stores/atoms/compactionAtoms'
 
 const {
+  resolveTokenEstimationPolicyMock,
   generateSummaryWithStreamMock,
   getSessionMock,
   updateSessionWithMessagesMock,
@@ -19,6 +25,7 @@ const {
   enqueueCompactionRequestMock,
   hasQueuedWorkMock,
 } = vi.hoisted(() => ({
+  resolveTokenEstimationPolicyMock: vi.fn(),
   generateSummaryWithStreamMock: vi.fn(),
   getSessionMock: vi.fn(),
   getSessionSettingsMock: vi.fn(),
@@ -77,6 +84,7 @@ function testSession(): Session {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resolveTokenEstimationPolicyMock.mockResolvedValue({ sandboxMode: false, modelSupportToolUseForFile: false })
   getDefaultStore().set(compactionUIStateMapAtom, {})
   getSessionMock.mockResolvedValue(testSession())
   getSessionSettingsMock.mockResolvedValue({})
@@ -95,6 +103,17 @@ beforeEach(() => {
 })
 
 describe('runCompactionWithUIState', () => {
+  it('lets sending continue when automatic estimation cannot resolve the provider', async () => {
+    resolveTokenEstimationPolicyMock.mockRejectedValueOnce(new Error('ModelProviderNotFoundError'))
+    await expect(runCompactionWithUIState('session-1', { kind: 'automatic' })).resolves.toEqual({
+      status: 'skipped',
+      reason: 'not_needed',
+    })
+    expect(resolveTokenEstimationPolicyMock).toHaveBeenCalledOnce()
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+    expect(updateSessionWithMessagesMock).not.toHaveBeenCalled()
+  })
+
   it('does not admit compaction during backup', async () => {
     await rendererApplication.backupOperations.run('export', async () => {
       await runCompactionWithUIState('session-1', { kind: 'manual' })

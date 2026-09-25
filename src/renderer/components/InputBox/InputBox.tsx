@@ -8,7 +8,6 @@ import { autoUpdate, computePosition, flip, offset, shift, size } from '@floatin
 import { ActionIcon, Box, Button, Flex, Loader, Menu, Stack, Text, Textarea, UnstyledButton } from '@mantine/core'
 import { useViewportSize } from '@mantine/hooks'
 import { TestId } from '@shared/automation/testids'
-import { selectContextMessages } from '@shared/context'
 import {
   getFileAcceptConfig,
   getFileAcceptString,
@@ -67,12 +66,7 @@ import { useSessionLockState } from '@/hooks/useSessionLockState'
 import { useSessionPresentation } from '@/hooks/useSessionPresentation'
 import { useSessionTokenContext } from '@/hooks/useSessionTokenContext'
 import { cn } from '@/lib/utils'
-import {
-  isAutoCompactionEnabled,
-  isCompactionInProgress,
-  useContextTokens,
-  useStableEligibleMessages,
-} from '@/packages/context-management'
+import { isAutoCompactionEnabled, isCompactionInProgress, useContextTokens } from '@/packages/context-management'
 import { trackingEvent } from '@/packages/event'
 import { isLocalWorkAttachment, LOCAL_WORK_ATTACHMENT_MAX_BYTES } from '@/packages/mobile-work-mode/attachments'
 import {
@@ -83,6 +77,7 @@ import {
 import * as picUtils from '@/packages/pic_utils'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
 import { seedExactDraftTokens } from '@/packages/token-estimation'
+import { resolveTokenSandboxMode } from '@/packages/token-estimation/policy'
 import platform from '@/platform'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import * as atoms from '@/stores/atoms'
@@ -467,25 +462,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       ),
     })
 
-    // Get current messages for token counting - will only recalculate when stable messages actually change
-    // Keyed off the eligible-message subset so streaming chunks do not repeat selection.
-    const stableSessionMessages = useStableEligibleMessages(tokenSource?.candidateMessages)
-    const currentContextMessageIds = useMemo(() => {
-      if (isNewSession) return null
-      if (!tokenSource || tokenSource.isPartial || !stableSessionMessages.length) return null
-      const ids = selectContextMessages(stableSessionMessages, { compactionPoints: tokenSource.compactionPoints }).map(
-        (message) => message.id
-      )
-      const maxCount = currentSessionMergedSettings?.maxContextMessageCount
-      return maxCount === undefined ? ids : maxCount <= 0 ? [] : ids.slice(-maxCount)
-    }, [
-      isNewSession,
-      currentSessionMergedSettings?.maxContextMessageCount,
-      stableSessionMessages,
-      tokenSource?.compactionPoints,
-      tokenSource?.isPartial,
-    ])
-
     const { knowledgeBase, setKnowledgeBase } = useKnowledgeBase({ isNewSession })
 
     // Agent mode value for conditional toolbar rendering
@@ -726,8 +702,13 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // Check model tool use capabilities for agent mode and file handling.
     // Uses 'agent' scope as the gate — models with weak function calling
     // (e.g. DeepSeek V3/R1) return false, disabling agent mode entirely.
-    const { modelSupportToolUseForFile, modelSupportsAgentMode, isModelToolCapabilityFetched } =
-      useModelToolCapabilities(model, currentSessionMergedSettings)
+    const {
+      modelSupportToolUseForFile,
+      modelSupportsAgentMode,
+      isModelToolCapabilityFetched,
+      isModelToolCapabilityLoading,
+      isModelToolCapabilityError,
+    } = useModelToolCapabilities(model, currentSessionMergedSettings)
     const showSessionRetrievalToolWarning =
       hasSessionRetrievalFiles && isModelToolCapabilityFetched && !modelSupportToolUseForFile
     const agentModeUIState = useMemo(
@@ -735,14 +716,32 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       [agentModeEntry, model, modelSupportsAgentMode]
     )
 
-    // Determine sandbox mode: files exist in session and model supports tool use for files
-    const sandboxMode = useMemo(() => {
-      if (!modelSupportToolUseForFile) return false
-      if (currentSession) return currentSession.messages.some((m) => m.files?.length)
-      return readModel?.kind === 'window' && readModel.summary.fileMessageCount > 0
-    }, [modelSupportToolUseForFile, currentSession?.messages, readModel])
+    const licenseKey = useSettingsStore((state) => state.licenseKey)
+    const licenseDetail = useSettingsStore((state) => state.licenseDetail)
+    const licensePlanName = useSettingsStore((state) => state.licensePlanName)
+    const sandboxQuery = useQuery({
+      queryKey: [
+        'token-estimation-sandbox',
+        agentModeEntry.value,
+        modelSupportsAgentMode,
+        currentSessionMergedSettings?.workingDirectories,
+        licenseKey,
+        licenseDetail,
+        licensePlanName,
+      ],
+      queryFn: () =>
+        resolveTokenSandboxMode(
+          agentModeEntry.value === 'on',
+          modelSupportsAgentMode,
+          currentSessionMergedSettings ?? {}
+        ),
+      enabled: agentModeEntry.value === 'on' && isModelToolCapabilityFetched,
+      staleTime: 0,
+    })
+    const sandboxMode = agentModeEntry.value === 'on' && sandboxQuery.data === true
+    const policyPending = isModelToolCapabilityLoading || (agentModeEntry.value === 'on' && sandboxQuery.isLoading)
 
-    // Calculate token counts using unified cache layer
+    // Calculate the live input and selected-history token counts.
     const {
       contextTokens,
       currentInputTokens,
@@ -764,8 +763,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       sandboxMode,
       constructedMessage: preConstructedMessage.message,
     })
-    const isCalculating = contextPending || tokensCalculating
-    const isTotalApproximate = contextPending || tokensTotalApproximate
+    const isCalculating = contextPending || policyPending || tokensCalculating
+    const isTotalApproximate =
+      contextPending || policyPending || isModelToolCapabilityError || sandboxQuery.isError || tokensTotalApproximate
     const isContextCalculating = contextPending || tokensContextCalculating
 
     const globalAutoCompaction = useSettingsStore((state) => state.autoCompaction)
@@ -2100,7 +2100,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   pendingContextMessages={pendingContextMessages}
                   totalContextMessages={messageCount}
                   contextWindow={effectiveContextWindow ?? undefined}
-                  currentMessageCount={currentContextMessageIds?.length ?? 0}
+                  currentMessageCount={messageCount}
                   maxContextMessageCount={currentSessionMergedSettings?.maxContextMessageCount}
                   onCompressClick={
                     sessionId && !isNewSession

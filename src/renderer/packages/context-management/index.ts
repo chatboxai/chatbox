@@ -24,16 +24,12 @@ export {
 } from './context-builder'
 export { getConfiguredContextWindow } from './context-pressure'
 export type {
-  ContextTokensCacheKeyParams,
-  ContextTokensCacheValue,
   GetContextMessagesForTokenEstimationOptions,
   UseContextTokensOptions,
   UseContextTokensResult,
 } from './context-tokens'
 export {
   getContextMessagesForTokenEstimation,
-  getContextTokensCacheKey,
-  getLatestCompactionBoundaryId,
   useContextTokens,
   useStableEligibleMessages,
 } from './context-tokens'

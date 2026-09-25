@@ -376,3 +376,29 @@ describe('TokenEstimationService', () => {
     expect(resolved.approximation.currentInput).toBe(true)
   })
 })
+
+it('keeps unreadable attachment estimates incomplete and retries the same message after recovery', async () => {
+  const get = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('temporary read failure'))
+    .mockResolvedValue('Recovered document content')
+  const estimator = new TokenEstimationService({ get })
+  const session: Session = {
+    id: 'recovery',
+    name: 'Recovery',
+    messages: [
+      {
+        id: 'file-message',
+        role: 'user',
+        contentParts: [],
+        files: [{ id: 'file', name: 'notes.txt', fileType: 'text/plain', storageKey: 'notes' }],
+      },
+    ],
+  }
+  const failed = await estimator.estimate({ session })
+  expect(failed).toMatchObject({ missingAttachments: { context: true }, approximation: { context: true } })
+  const recovered = await estimator.estimate({ session })
+  expect(recovered.missingAttachments?.context).toBeFalsy()
+  expect(recovered.breakdown.context.attachments).toBeGreaterThan(0)
+  expect(get).toHaveBeenCalledTimes(2)
+})

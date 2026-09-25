@@ -2,6 +2,8 @@
 
 Token 预估系统用于异步计算聊天消息和附件的 token 数量，在不阻塞 UI 的情况下提供实时的 token 统计。
 
+发送窗口、附件发送形态、压缩判定和移动端行为见 [共享预估规则](technical/token-estimation.md)。草稿附件由 `useDraftAttachmentTokens` 在内存中计算；下面的队列与持久化说明适用于已保存的历史消息。
+
 ## 架构概览
 
 ```text

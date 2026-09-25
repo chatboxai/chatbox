@@ -4,7 +4,7 @@ import type { SessionContextSource, SessionMessageWindow, SessionReadModel } fro
 import { InMemorySessionRecordStore } from '@chatbox/core/testing'
 import { type InfiniteData, QueryClient } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { sumCachedTokensFromMessages } from '@/packages/token'
+import { estimateTokensFromMessages } from '@/packages/token'
 import { openNodeSessionRowDatabase } from '../../../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
 import { SqlSessionRowStore } from '../../../../packages/chatbox-core/src/persistence/session-row-sql'
 import { QueryKeys } from '../../../../packages/chatbox-react/src/query/query-keys'
@@ -89,7 +89,7 @@ describe('source-bound token cache publication', () => {
     for (const tail of [0, 10, 37, 59]) {
       const expected = full.messages.slice(tail)
       const actual = context.candidateMessages.slice(tail)
-      expect(sumCachedTokensFromMessages(actual)).toBe(sumCachedTokensFromMessages(expected))
+      expect(estimateTokensFromMessages(actual)).toBe(estimateTokensFromMessages(expected))
     }
     expect(h.complete).toHaveBeenCalledTimes(1)
   })

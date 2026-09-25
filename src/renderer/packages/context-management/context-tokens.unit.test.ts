@@ -1,3 +1,4 @@
+import { selectContextMessages } from '@shared/context'
 /**
  * @vitest-environment jsdom
  */
@@ -33,13 +34,7 @@ vi.mock('@/packages/token-estimation', () => ({
   getTokenizerType: vi.fn(() => 'default'),
 }))
 
-import {
-  type ContextTokensCacheKeyParams,
-  getContextMessagesForTokenEstimation,
-  getContextMessagesForTokenSource,
-  getContextTokensCacheKey,
-  getLatestCompactionBoundaryId,
-} from './context-tokens'
+import { getContextMessagesForTokenEstimation, getContextMessagesForTokenSource } from './context-tokens'
 
 function createMessage(id: string, role: (typeof MessageRoleEnum)[keyof typeof MessageRoleEnum], text = ''): Message {
   return {
@@ -160,130 +155,39 @@ describe('getContextMessagesForTokenEstimation', () => {
   })
 })
 
-describe('getContextTokensCacheKey', () => {
-  it('generates consistent keys', () => {
-    const params: ContextTokensCacheKeyParams = {
-      sessionId: 'test-session',
-      maxContextMessageCount: 100,
-      latestContextMessageId: 'msg-5',
-      latestCompactionBoundaryId: null,
-      tokenizerType: 'default',
-    }
-
-    const key1 = getContextTokensCacheKey(params)
-    const key2 = getContextTokensCacheKey(params)
-
-    expect(key1).toEqual(key2)
-    expect(key1[0]).toBe('context-tokens')
-  })
-
-  it('generates different keys when params differ', () => {
-    const baseParams: ContextTokensCacheKeyParams = {
-      sessionId: 'test-session',
-      maxContextMessageCount: 100,
-      latestContextMessageId: 'msg-5',
-      latestCompactionBoundaryId: null,
-      tokenizerType: 'default',
-    }
-
-    const key1 = getContextTokensCacheKey(baseParams)
-    const key2 = getContextTokensCacheKey({ ...baseParams, sessionId: 'different-session' })
-    const key3 = getContextTokensCacheKey({ ...baseParams, tokenizerType: 'deepseek' })
-    const key4 = getContextTokensCacheKey({ ...baseParams, maxContextMessageCount: 50 })
-
-    expect(key1).not.toEqual(key2)
-    expect(key1).not.toEqual(key3)
-    expect(key1).not.toEqual(key4)
-  })
-
-  it('includes all parameters in the key', () => {
-    const params: ContextTokensCacheKeyParams = {
-      sessionId: 'session-123',
-      maxContextMessageCount: 50,
-      latestContextMessageId: 'msg-999',
-      latestCompactionBoundaryId: 'boundary-456',
-      tokenizerType: 'deepseek',
-    }
-
-    const key = getContextTokensCacheKey(params)
-
-    expect(key).toContain('context-tokens')
-    expect(key).toContain('session-123')
-    expect(key).toContain(50)
-    expect(key).toContain('msg-999')
-    expect(key).toContain('boundary-456')
-    expect(key).toContain('deepseek')
-  })
+it('previews the same history as sending, preserving system instructions and sticky windows', () => {
+  const messages = [
+    createMessage('system', 'system'),
+    ...Array.from({ length: 12 }, (_, i) => createMessage(`m${i}`, i % 2 ? 'assistant' : 'user')),
+  ]
+  const draft = createMessage('draft', 'user')
+  for (const maxContextMessageCount of [0, 1, 4, 8, 100]) {
+    const expected = selectContextMessages([...messages, draft], { maxContextMessageCount }).filter(
+      (message) => message !== draft
+    )
+    expect(
+      getContextMessagesForTokenSource({ candidateMessages: messages }, { settings: { maxContextMessageCount } })
+    ).toEqual(expected)
+  }
 })
 
-describe('getLatestCompactionBoundaryId', () => {
-  it('does not mutate input array', () => {
-    const compactionPoints: CompactionPoint[] = [
-      { summaryMessageId: 'summary-1', boundaryMessageId: 'msg-1', createdAt: 1000 },
-      { summaryMessageId: 'summary-3', boundaryMessageId: 'msg-3', createdAt: 3000 },
-      { summaryMessageId: 'summary-2', boundaryMessageId: 'msg-2', createdAt: 2000 },
-    ]
-
-    // Freeze the array to detect mutations
-    Object.freeze(compactionPoints)
-    for (const p of compactionPoints) {
-      Object.freeze(p)
-    }
-
-    const result = getLatestCompactionBoundaryId(compactionPoints)
-
-    // Should return the one with highest createdAt
-    expect(result).toBe('msg-3')
-
-    // Original array should not be sorted (still in original order)
-    expect(compactionPoints[0].boundaryMessageId).toBe('msg-1')
-    expect(compactionPoints[1].boundaryMessageId).toBe('msg-3')
-    expect(compactionPoints[2].boundaryMessageId).toBe('msg-2')
-  })
-
-  it('returns null for empty array', () => {
-    const result = getLatestCompactionBoundaryId([])
-
-    expect(result).toBeNull()
-  })
-
-  it('returns null for undefined', () => {
-    const result = getLatestCompactionBoundaryId(undefined)
-
-    expect(result).toBeNull()
-  })
-
-  it('returns the latest compaction boundary ID', () => {
-    const compactionPoints: CompactionPoint[] = [
-      { summaryMessageId: 'summary-1', boundaryMessageId: 'msg-1', createdAt: 1000 },
-      { summaryMessageId: 'summary-2', boundaryMessageId: 'msg-2', createdAt: 2000 },
-      { summaryMessageId: 'summary-3', boundaryMessageId: 'msg-3', createdAt: 3000 },
-    ]
-
-    const result = getLatestCompactionBoundaryId(compactionPoints)
-
-    expect(result).toBe('msg-3')
-  })
-
-  it('handles single compaction point', () => {
-    const compactionPoints: CompactionPoint[] = [
-      { summaryMessageId: 'summary-1', boundaryMessageId: 'msg-1', createdAt: 1000 },
-    ]
-
-    const result = getLatestCompactionBoundaryId(compactionPoints)
-
-    expect(result).toBe('msg-1')
-  })
-
-  it('returns correct boundary when timestamps are equal', () => {
-    const compactionPoints: CompactionPoint[] = [
-      { summaryMessageId: 'summary-1', boundaryMessageId: 'msg-1', createdAt: 1000 },
-      { summaryMessageId: 'summary-2', boundaryMessageId: 'msg-2', createdAt: 1000 },
-    ]
-
-    const result = getLatestCompactionBoundaryId(compactionPoints)
-
-    // Should return the first one encountered with the highest timestamp
-    expect(result).toBe('msg-1')
-  })
+it('keeps an applicable summary in the same preview window as sending', () => {
+  const messages = [
+    createMessage('system', 'system'),
+    createMessage('old', 'user'),
+    createMessage('boundary', 'assistant'),
+    { ...createMessage('summary', 'assistant'), isSummary: true },
+    createMessage('tail', 'user'),
+  ]
+  const compactionPoints = [{ boundaryMessageId: 'boundary', summaryMessageId: 'summary', createdAt: 1 }]
+  const draft = createMessage('draft', 'user')
+  const expected = selectContextMessages([...messages, draft], { compactionPoints, maxContextMessageCount: 4 }).filter(
+    (message) => message !== draft
+  )
+  const preview = getContextMessagesForTokenSource(
+    { candidateMessages: messages, compactionPoints },
+    { settings: { maxContextMessageCount: 4 } }
+  )
+  expect(preview).toEqual(expected)
+  expect(preview.some((message) => message.id === 'summary')).toBe(true)
 })

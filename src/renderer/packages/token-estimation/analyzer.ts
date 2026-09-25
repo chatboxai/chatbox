@@ -1,3 +1,4 @@
+import { analyzeAttachmentTokens } from '@shared/token-estimation/attachments'
 /**
  * Token Requirement Analyzer
  *
@@ -7,9 +8,8 @@
 
 import { SESSION_TEXT_TOKEN_VERSION, type SessionTextTokenRead, type SessionTextTokenSource } from '@chatbox/core/ports'
 import { estimateMessageToolCallTokens } from '@shared/context/tool-tokens'
-import type { Message, MessageFile, MessageLink } from '@shared/types/session'
-import { MAX_INLINE_FILE_LINES } from '@/packages/context-management/attachment-payload'
-import { getTokenCacheKey, isAttachmentCacheValid, isMessageTextCacheValid } from './cache-keys'
+import type { Message } from '@shared/types/session'
+import { isMessageTextCacheValid } from './cache-keys'
 import { getPriority } from './computation-queue'
 import {
   estimateDraftTokensImmediately,
@@ -17,7 +17,7 @@ import {
   getTokenizationTextDigest,
 } from './draft-tokenization'
 import { canRetryExactTokenization, getExactTokenizationFallbackCount } from './exact-retry'
-import type { ComputationTask, ContentMode, TokenBreakdown, TokenizerType } from './types'
+import type { ComputationTask, TokenBreakdown, TokenizerType } from './types'
 
 // ============================================================================
 // Types
@@ -198,7 +198,11 @@ export function analyzeCurrentInputTokens(options: {
 
   // Draft approximation is tracked by the caller's own draft state, not the
   // persisted marker, which only ever describes stored context messages.
-  return { breakdown: { text, attachments, toolCalls }, pendingTasks, hasApproximateText: false }
+  return {
+    breakdown: { text, attachments, toolCalls },
+    pendingTasks,
+    hasApproximateText: Boolean(constructedMessage?.contentParts.some((part) => part.type === 'image')),
+  }
 }
 
 /**
@@ -259,6 +263,7 @@ export function analyzeContextTokens(options: {
       sandboxMode
     )
     attachments += attachmentsResult.tokens
+    hasApproximateText ||= msg.contentParts.some((part) => part.type === 'image')
     pendingTasks.push(...attachmentsResult.tasks)
 
     // Tool-call weight is computed synchronously (memoized chars/4): the async
@@ -372,8 +377,6 @@ function analyzeMessageText(
  * @param messageIndex - Position in context (0 = most recent)
  * @returns Analysis result with tokens and tasks
  */
-import { SANDBOX_METADATA_BASE_TOKENS, SANDBOX_METADATA_PER_ITEM_TOKENS } from '@/packages/token'
-
 function analyzeMessageAttachments(
   message: Message,
   tokenizerType: TokenizerType,
@@ -382,50 +385,17 @@ function analyzeMessageAttachments(
   messageIndex: number,
   sandboxMode: boolean
 ): MessageAttachmentsAnalysisResult {
-  let totalTokens = 0
-  const tasks: Omit<ComputationTask, 'id' | 'createdAt' | 'sessionId'>[] = []
-
-  // Combine files and links into a single array for processing
-  const allAttachments: Array<{ attachment: MessageFile | MessageLink; type: 'file' | 'link' }> = [
-    ...(message.files || []).map((f) => ({ attachment: f, type: 'file' as const })),
-    ...(message.links || []).map((l) => ({ attachment: l, type: 'link' as const })),
-  ]
-
-  if (allAttachments.length === 0) {
-    return { tokens: 0, tasks: [] }
+  const result = analyzeAttachmentTokens(message, tokenizerType, { modelSupportToolUseForFile, sandboxMode })
+  return {
+    tokens: result.tokens,
+    tasks: result.missing.map(({ attachment, attachmentType, contentMode }) => ({
+      type: 'attachment',
+      messageId: message.id,
+      attachmentId: attachment.id,
+      attachmentType,
+      tokenizerType,
+      contentMode,
+      priority: getPriority(isCurrentInput, 'attachment', messageIndex),
+    })),
   }
-
-  // In sandbox mode, only metadata XML is sent — use fixed estimate, no computation tasks needed
-  if (sandboxMode) {
-    const metadataTokens = SANDBOX_METADATA_BASE_TOKENS + allAttachments.length * SANDBOX_METADATA_PER_ITEM_TOKENS
-    return { tokens: metadataTokens, tasks: [] }
-  }
-
-  for (const { attachment, type } of allAttachments) {
-    // Skip attachments without storage key (not yet uploaded/processed)
-    if (!attachment.storageKey) continue
-
-    // Determine content mode based on file size and model capability
-    const isLargeFile = (attachment.lineCount ?? 0) > MAX_INLINE_FILE_LINES
-    const usePreview = modelSupportToolUseForFile && isLargeFile
-    const contentMode: ContentMode = usePreview ? 'preview' : 'full'
-    const cacheKey = getTokenCacheKey({ tokenizerType, contentMode })
-
-    if (isAttachmentCacheValid(attachment, cacheKey)) {
-      totalTokens += attachment.tokenCountMap?.[cacheKey] ?? 0
-    } else {
-      // Needs calculation
-      tasks.push({
-        type: 'attachment',
-        messageId: message.id,
-        attachmentId: attachment.id,
-        attachmentType: type,
-        tokenizerType,
-        contentMode,
-        priority: getPriority(isCurrentInput, 'attachment', messageIndex),
-      })
-    }
-  }
-
-  return { tokens: totalTokens, tasks }
 }

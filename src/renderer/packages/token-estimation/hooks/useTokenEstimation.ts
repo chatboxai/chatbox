@@ -12,6 +12,7 @@ import { tokenizeDraftOffMainThread } from '../draft-tokenizer-worker-client'
 import { resultPersister } from '../result-persister'
 import { getTokenizerType } from '../tokenizer'
 import type { ExactDraftTokens, TokenEstimationResult, TokenizerType } from '../types'
+import { useDraftAttachmentTokens } from './useDraftAttachmentTokens'
 
 /**
  * During a backfill the queue completes a task every few milliseconds and
@@ -138,6 +139,12 @@ export function useTokenEstimation(options: UseTokenEstimationOptions): TokenEst
     [constructedMessage]
   )
   const draftTextTokens = useDraftTextTokens({ text: currentInputText, tokenizerType })
+  const draftAttachments = useDraftAttachmentTokens(
+    constructedMessage,
+    tokenizerType,
+    modelSupportToolUseForFile,
+    sandboxMode
+  )
 
   useEffect(() => {
     let throttleTimer: ReturnType<typeof setTimeout> | null = null
@@ -217,8 +224,8 @@ export function useTokenEstimation(options: UseTokenEstimationOptions): TokenEst
   )
 
   const pendingAnalysisTasks = useMemo(
-    () => [...currentInputAnalysis.pendingTasks, ...(options.contextSourcePending ? [] : contextAnalysis.pendingTasks)],
-    [currentInputAnalysis.pendingTasks, contextAnalysis.pendingTasks, options.contextSourcePending]
+    () => (options.contextSourcePending ? [] : contextAnalysis.pendingTasks),
+    [contextAnalysis.pendingTasks, options.contextSourcePending]
   )
 
   const pendingContextMessages = useMemo(() => {
@@ -288,20 +295,18 @@ export function useTokenEstimation(options: UseTokenEstimationOptions): TokenEst
   }, [sessionId])
 
   const currentInputTokens =
-    currentInputAnalysis.breakdown.text +
-    currentInputAnalysis.breakdown.attachments +
-    currentInputAnalysis.breakdown.toolCalls
+    currentInputAnalysis.breakdown.text + draftAttachments.tokens + currentInputAnalysis.breakdown.toolCalls
   const contextTokens =
     contextAnalysis.breakdown.text + contextAnalysis.breakdown.attachments + contextAnalysis.breakdown.toolCalls
 
   const breakdown = useMemo(
     () => ({
-      currentInput: currentInputAnalysis.breakdown,
+      currentInput: { ...currentInputAnalysis.breakdown, attachments: draftAttachments.tokens },
       context: contextAnalysis.breakdown,
     }),
-    [currentInputAnalysis.breakdown, contextAnalysis.breakdown]
+    [currentInputAnalysis.breakdown, contextAnalysis.breakdown, draftAttachments.tokens]
   )
-  const isDraftCalculating = draftTextTokens.isCalculating
+  const isDraftCalculating = draftTextTokens.isCalculating || draftAttachments.isCalculating
   const isContextCalculating = options.contextSourcePending === true || pendingContextMessages > 0
   const isCalculating =
     isContextCalculating ||
@@ -309,7 +314,7 @@ export function useTokenEstimation(options: UseTokenEstimationOptions): TokenEst
     queueStatus.pending > 0 ||
     queueStatus.running > 0 ||
     pendingAnalysisTasks.length > 0
-  const isCurrentInputApproximate = draftTextTokens.isApproximate || currentInputAnalysis.pendingTasks.length > 0
+  const isCurrentInputApproximate = draftTextTokens.isApproximate || draftAttachments.isApproximate
   const isContextApproximate = options.contextSourcePending === true || contextAnalysis.hasApproximateText
 
   return {

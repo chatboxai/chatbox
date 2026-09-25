@@ -170,11 +170,6 @@ describe('context-tokens integration tests', () => {
         expect(view.result.current.contextTokens).toBe(intermediate + 20)
         expect(view.result.current.isContextCalculating).toBe(false)
         expect(view.result.current.isContextApproximate).toBe(false)
-        expect(queryClient.setQueryData).toHaveBeenCalledTimes(1)
-        expect(queryClient.setQueryData).toHaveBeenLastCalledWith(
-          expect.any(Array),
-          expect.objectContaining({ contextTokens: view.result.current.contextTokens, messageCount: 2 })
-        )
       } finally {
         view.unmount()
       }

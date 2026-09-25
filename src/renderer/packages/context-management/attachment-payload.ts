@@ -1,23 +1,9 @@
-import { MAX_UPLOADED_FILE_LINES, uploadedFileToolHint, uploadedFilePath } from '@shared/uploaded-file-tools'
+import { selectContextMessages } from '@shared/context'
 import type { CompactionPoint, Message, Settings } from '@shared/types'
+import { MAX_UPLOADED_FILE_LINES } from '@shared/uploaded-file-tools'
 
 export const MAX_INLINE_FILE_LINES = MAX_UPLOADED_FILE_LINES
-export const PREVIEW_LINES = 100
-
-export interface AttachmentWrapperPrefixParams {
-  attachmentIndex: number
-  fileName: string
-  fileKey: string
-  fileLines: number
-  fileSize: number
-}
-
-export interface AttachmentWrapperSuffixParams {
-  isTruncated: boolean
-  previewLines?: number
-  totalLines?: number
-  fileKey?: string
-}
+export { PREVIEW_LINES } from '@shared/context/attachments'
 
 export interface SelectMessagesForSendContextParams {
   settings: Partial<Settings>
@@ -26,67 +12,11 @@ export interface SelectMessagesForSendContextParams {
   preserveLastUserMessage?: boolean
 }
 
-export function buildAttachmentWrapperPrefix(params: AttachmentWrapperPrefixParams): string {
-  const { attachmentIndex, fileName, fileKey, fileLines, fileSize } = params
-
-  let prefix = '\n\n<ATTACHMENT_FILE>\n'
-  prefix += `<FILE_INDEX>${attachmentIndex}</FILE_INDEX>\n`
-  prefix += `<FILE_NAME>${fileName}</FILE_NAME>\n`
-  prefix += `<FILE_PATH>${uploadedFilePath(fileKey)}</FILE_PATH>\n`
-  prefix += `<FILE_LINES>${fileLines}</FILE_LINES>\n`
-  prefix += `<FILE_SIZE>${fileSize} bytes</FILE_SIZE>\n`
-  prefix += '<FILE_CONTENT>\n'
-
-  return prefix
-}
-
-export function buildAttachmentWrapperSuffix(params: AttachmentWrapperSuffixParams): string {
-  const { isTruncated, previewLines, totalLines, fileKey } = params
-
-  let suffix = '</FILE_CONTENT>\n'
-
-  if (isTruncated && previewLines !== undefined && totalLines !== undefined && fileKey !== undefined) {
-    suffix += `<TRUNCATED>Content truncated. Showing first ${previewLines} of ${totalLines} lines. ${uploadedFileToolHint(fileKey)}</TRUNCATED>\n`
-  }
-
-  suffix += '</ATTACHMENT_FILE>\n'
-
-  return suffix
-}
-
 export function selectMessagesForSendContext(params: SelectMessagesForSendContextParams): Message[] {
-  const { settings, msgs, preserveLastUserMessage = true } = params
-
-  if (msgs.length === 0) {
-    return []
-  }
-
-  const maxContextMessageCount = settings.maxContextMessageCount ?? Number.MAX_SAFE_INTEGER
-
-  const filtered: Message[] = []
-  for (const msg of msgs) {
-    if (msg.error || msg.errorCode) {
-      continue
-    }
-    if (msg.generating === true) {
-      continue
-    }
-    filtered.push(msg)
-  }
-
-  if (filtered.length === 0) {
-    return []
-  }
-
-  const limit = preserveLastUserMessage ? maxContextMessageCount + 1 : maxContextMessageCount
-
-  if (limit <= 0) {
-    return []
-  }
-
-  if (filtered.length <= limit) {
-    return filtered
-  }
-
-  return filtered.slice(-limit)
+  const { settings, msgs, compactionPoints, preserveLastUserMessage = true } = params
+  const draft: Message = { id: 'token-preview-current-input', role: 'user', contentParts: [] }
+  return selectContextMessages(preserveLastUserMessage ? msgs : [...msgs, draft], {
+    compactionPoints,
+    maxContextMessageCount: settings.maxContextMessageCount,
+  }).filter((message) => message !== draft)
 }

@@ -1,18 +1,9 @@
-import { isContextEligibleMessage, selectContextMessages } from '@shared/context'
+import { isContextEligibleMessage } from '@shared/context'
 import type { CompactionPoint, Message, Session, Settings } from '@shared/types'
-import { useEffect, useMemo, useRef } from 'react'
-import { getTokenizerType } from '@/packages/token-estimation'
+import { useMemo, useRef } from 'react'
 import { useTokenEstimation } from '@/packages/token-estimation/hooks/useTokenEstimation'
 import type { ExactDraftTokens } from '@/packages/token-estimation/types'
-import queryClient from '@/stores/queryClient'
 import { selectMessagesForSendContext } from './attachment-payload'
-import { buildContextForSession } from './context-builder'
-
-// Set React Query defaults for context tokens cache
-queryClient.setQueryDefaults(['context-tokens'], {
-  staleTime: Infinity,
-  gcTime: 60 * 60 * 1000, // 1 hour
-})
 
 /**
  * Options for useContextTokens hook
@@ -28,7 +19,7 @@ export interface UseContextTokensOptions {
 }
 
 export interface ContextTokenSource {
-  /** Loaded-message preview, never eligible for the complete-context decision cache. */
+  /** Loaded-message preview whose count remains incomplete. */
   isPartial?: boolean
   textTokens?: SessionTextTokenRead
   candidateMessages: Message[]
@@ -56,27 +47,6 @@ export interface UseContextTokensResult {
 }
 
 /**
- * Parameters for generating context tokens cache key
- * NOTE: modelSupportToolUseForFile NOT included (Compaction can't access it)
- */
-export interface ContextTokensCacheKeyParams {
-  sessionId: string
-  maxContextMessageCount: number
-  latestContextMessageId: string | null
-  latestCompactionBoundaryId: string | null
-  tokenizerType: 'default' | 'deepseek'
-}
-
-/**
- * Value stored in context tokens cache
- */
-export interface ContextTokensCacheValue {
-  contextTokens: number // needsCompaction() reads this
-  messageCount: number // for UI
-  timestamp: number // for debugging
-}
-
-/**
  * Options for getContextMessagesForTokenEstimation
  */
 export interface GetContextMessagesForTokenEstimationOptions {
@@ -84,47 +54,15 @@ export interface GetContextMessagesForTokenEstimationOptions {
   preserveLastUserMessage?: boolean
 }
 
-/**
- * Get context messages for token estimation and compaction.
- *
- * Returns the context selection at full fidelity — tool calls and results are
- * NOT cleaned up here. Pressure decisions (stub relief, compaction trigger)
- * must be driven by the size of the un-relieved context, and the compaction
- * summarizer must see everything it is about to replace.
- *
- * Algorithm:
- * 1. Call buildContextForSession to get base context messages
- * 2. Apply selectMessagesForSendContext filtering:
- *    - Filter out error/errorCode messages
- *    - Filter out generating=true messages
- *    - Apply maxContextMessageCount limit
- *
- * @param session - The session to extract context from
- * @param options - Options including settings, preserveLastUserMessage
- * @returns Filtered messages for token estimation
- */
+/** Select the upcoming history window using the same rules as sending. */
 export function getContextMessagesForTokenEstimation(
   session: Session,
   options: GetContextMessagesForTokenEstimationOptions = {}
 ): Message[] {
-  const { settings = {}, preserveLastUserMessage = false } = options
-
-  // Step 1: Call buildContextForSession to get base context messages
-  const baseMessages = buildContextForSession(session, { settings })
-
-  // Step 2: Apply selectMessagesForSendContext filtering
-  // - Filter out error/errorCode messages
-  // - Filter out generating=true messages
-  // - Apply maxContextMessageCount limit
-  // - CRITICAL: Pass compactionPoints for proper filtering after compaction
-  const filteredMessages = selectMessagesForSendContext({
-    settings,
-    msgs: baseMessages,
-    compactionPoints: session.compactionPoints,
-    preserveLastUserMessage,
-  })
-
-  return filteredMessages
+  return getContextMessagesForTokenSource(
+    { candidateMessages: session.messages, compactionPoints: session.compactionPoints },
+    options
+  )
 }
 
 export function getContextMessagesForTokenSource(
@@ -133,54 +71,10 @@ export function getContextMessagesForTokenSource(
 ): Message[] {
   return selectMessagesForSendContext({
     settings: options.settings ?? {},
-    msgs: selectContextMessages(source.candidateMessages, { compactionPoints: source.compactionPoints }),
+    msgs: source.candidateMessages,
     compactionPoints: source.compactionPoints,
     preserveLastUserMessage: options.preserveLastUserMessage ?? false,
   })
-}
-
-/**
- * Generate immutable cache key for context tokens
- *
- * Uses reduce (not sort) to find latest compaction boundary ID
- * to maintain immutability of input array
- *
- * @param params - Cache key parameters
- * @returns Immutable readonly tuple for React Query
- */
-export function getContextTokensCacheKey(params: ContextTokensCacheKeyParams): readonly [string, ...unknown[]] {
-  return [
-    'context-tokens',
-    // Estimation semantics version: v2 counts tool-call parts and stops
-    // pre-cleaning tool calls, so cached values from older semantics must not
-    // be read back.
-    'v2',
-    params.sessionId,
-    params.maxContextMessageCount,
-    params.latestContextMessageId,
-    params.latestCompactionBoundaryId,
-    params.tokenizerType,
-  ] as const
-}
-
-/**
- * Get the latest compaction boundary ID from compaction points
- *
- * Uses immutable reduce approach (not sort) to find the most recent
- * compaction point by createdAt timestamp
- *
- * @param compactionPoints - Array of compaction points
- * @returns The boundaryMessageId of the latest compaction point, or null
- */
-export function getLatestCompactionBoundaryId(compactionPoints?: CompactionPoint[]): string | null {
-  if (!compactionPoints?.length) return null
-
-  return (
-    compactionPoints.reduce(
-      (latest, current) => (current.createdAt > (latest?.createdAt ?? 0) ? current : latest),
-      undefined as CompactionPoint | undefined
-    )?.boundaryMessageId ?? null
-  )
 }
 
 const EMPTY_MESSAGES: Message[] = []
@@ -210,20 +104,10 @@ export function useStableEligibleMessages(messages: Message[] | undefined): Mess
   }, [messages])
 }
 
-/**
- * React Query cache layer for context tokens
- *
- * Caches context token calculations with dependencies on:
- * - sessionId, maxContextMessageCount, latestContextMessageId
- * - latestCompactionBoundaryId, tokenizerType
- *
- * Does NOT cache:
- * - currentInputTokens (changes with constructedMessage)
- * - totalTokens (derived from currentInputTokens + contextTokens)
- * - calculation and progress status (real-time draft and context work)
- */
+/** Stable context selection and live preview state for the composer. */
 export function useContextTokens(options: UseContextTokensOptions): UseContextTokensResult {
   const { sessionId, source, settings, model, modelSupportToolUseForFile, sandboxMode, constructedMessage } = options
+  const maxContextMessageCount = settings.maxContextMessageCount
   const hasSource = source != null
   const compactionPoints = source?.compactionPoints
 
@@ -233,31 +117,11 @@ export function useContextTokens(options: UseContextTokensOptions): UseContextTo
   const eligibleMessages = useStableEligibleMessages(source?.candidateMessages)
   const contextMessages = useMemo(() => {
     if (!hasSource) return []
-    return getContextMessagesForTokenSource({ compactionPoints, candidateMessages: eligibleMessages }, { settings })
-  }, [eligibleMessages, compactionPoints, settings.maxContextMessageCount, hasSource])
-
-  // 2. tokenizerType must be stable
-  const tokenizerType = useMemo(() => getTokenizerType(model), [model?.provider, model?.modelId])
-
-  // 3. cacheKey must be stable (NO modelSupportToolUseForFile!)
-  const cacheKey = useMemo(() => {
-    if (!sessionId || sessionId === 'new' || !hasSource || source?.isPartial) return null
-    return getContextTokensCacheKey({
-      sessionId,
-      maxContextMessageCount: settings.maxContextMessageCount ?? Number.MAX_SAFE_INTEGER,
-      latestContextMessageId: contextMessages[contextMessages.length - 1]?.id ?? null,
-      latestCompactionBoundaryId: getLatestCompactionBoundaryId(compactionPoints),
-      tokenizerType,
-    })
-  }, [
-    sessionId,
-    compactionPoints,
-    settings.maxContextMessageCount,
-    contextMessages,
-    tokenizerType,
-    hasSource,
-    source?.isPartial,
-  ])
+    return getContextMessagesForTokenSource(
+      { compactionPoints, candidateMessages: eligibleMessages },
+      { settings: { maxContextMessageCount } }
+    )
+  }, [eligibleMessages, compactionPoints, maxContextMessageCount, hasSource])
 
   // 4. Call useTokenEstimation
   const tokenResult = useTokenEstimation({
@@ -271,25 +135,6 @@ export function useContextTokens(options: UseContextTokensOptions): UseContextTo
     sandboxMode,
   })
 
-  const isContextCalculating = tokenResult.isContextCalculating
-
-  // Publish the decision cache only when calculation is complete.
-  const newCacheValue = useMemo<ContextTokensCacheValue | null>(() => {
-    if (!cacheKey || isContextCalculating) return null
-    return {
-      contextTokens: tokenResult.contextTokens,
-      messageCount: contextMessages.length,
-      timestamp: Date.now(),
-    }
-  }, [cacheKey, isContextCalculating, tokenResult.contextTokens, contextMessages.length])
-
-  // 7. Write to cache when calculation completes
-  useEffect(() => {
-    if (!cacheKey || !newCacheValue) return
-    queryClient.setQueryData(cacheKey, newCacheValue)
-  }, [cacheKey, newCacheValue])
-
-  // The UI follows live accumulation; the decision cache may describe an older calculation.
   return {
     contextTokens: tokenResult.contextTokens,
     messageCount: contextMessages.length,

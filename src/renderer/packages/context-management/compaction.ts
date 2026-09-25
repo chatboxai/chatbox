@@ -11,23 +11,17 @@ import { v4 as uuidv4 } from 'uuid'
 import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
-import { getTokenizerType } from '@/packages/token-estimation'
 import { settingsService } from '@/settings-runtime'
 import { setCompactionUIState } from '@/stores/atoms/compactionAtoms'
-import queryClient from '@/stores/queryClient'
 import { getSessionLockStateNow } from '@/stores/session/action-guard'
+import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
 import { conversationAnchorIdOf, enqueueCompactionRequest, hasQueuedWork } from '@/stores/session/message-queue'
 import { getSessionSettings } from '@/stores/session/session-settings'
-import { sumCachedTokensFromMessages } from '../token'
+import { estimateCompactionInputTokens } from '../token-estimation/compaction-input'
+import { resolveTokenEstimationPolicy } from '../token-estimation/policy'
 import { getCompactionContext } from './compaction-context'
 import { checkOverflow } from './compaction-detector'
 import { getConfiguredContextWindow } from './context-pressure'
-import {
-  type ContextTokensCacheValue,
-  getContextMessagesForTokenEstimation,
-  getContextTokensCacheKey,
-  getLatestCompactionBoundaryId,
-} from './context-tokens'
 import { generateSummaryWithStream } from './summary-generator'
 
 const log = getLogger('compaction')
@@ -41,39 +35,35 @@ const compactionService = new CompactionService({
   },
   settings: settingsService,
   policy: {
-    async shouldCompact({ sessionId, session, sessionSettings, globalSettings }) {
+    async shouldCompact({ sessionId, session, sessionSettings, globalSettings, pendingMessage }) {
       const providerId = session.settings?.provider ?? globalSettings.defaultChatModel?.provider
       const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
       if (!modelId) return false
 
-      const maxContextMessageCount = sessionSettings.maxContextMessageCount ?? Number.MAX_SAFE_INTEGER
-      const contextMessages = getContextMessagesForTokenEstimation(session, { settings: sessionSettings })
-      const tokenizerType = getTokenizerType(providerId && modelId ? { provider: providerId, modelId } : undefined)
-      const cacheKey = getContextTokensCacheKey({
-        sessionId,
-        maxContextMessageCount,
-        latestContextMessageId: contextMessages[contextMessages.length - 1]?.id ?? null,
-        latestCompactionBoundaryId: getLatestCompactionBoundaryId(session.compactionPoints),
-        tokenizerType,
-      })
+      try {
+        const model = providerId ? { provider: providerId, modelId } : undefined
+        const policy = await resolveTokenEstimationPolicy(
+          { ...sessionSettings, provider: providerId, modelId },
+          getSessionAgentModeEntry(sessionId, session).value === 'on'
+        )
+        const contextTokens = await estimateCompactionInputTokens(
+          session,
+          pendingMessage,
+          model,
+          sessionSettings.maxContextMessageCount,
+          policy
+        )
 
-      let contextTokens = queryClient.getQueryData<ContextTokensCacheValue>(cacheKey)?.contextTokens
-      if (contextTokens === undefined) {
-        const sandboxMode = contextMessages.some((message) => message.files?.length)
-        contextTokens = sumCachedTokensFromMessages(contextMessages, undefined, sandboxMode)
-        queryClient.setQueryData(cacheKey, {
-          contextTokens,
-          messageCount: contextMessages.length,
-          timestamp: Date.now(),
-        })
+        return checkOverflow({
+          tokens: contextTokens,
+          modelId,
+          settings: { compactionThreshold: globalSettings.compactionThreshold },
+          contextWindow: getConfiguredContextWindow(globalSettings, providerId, modelId),
+        }).isOverflow
+      } catch (error) {
+        log.warn('Failed to estimate automatic compaction input', { sessionId, error })
+        return false
       }
-
-      return checkOverflow({
-        tokens: contextTokens,
-        modelId,
-        settings: { compactionThreshold: globalSettings.compactionThreshold },
-        contextWindow: getConfiguredContextWindow(globalSettings, providerId, modelId),
-      }).isOverflow
     },
     getCompactionContext(session, sessionSettings, pendingMessage) {
       return getCompactionContext(session, sessionSettings, pendingMessage)

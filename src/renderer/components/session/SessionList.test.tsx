@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -10,15 +11,45 @@ type DndContextHandlers = {
   onDragEnd?: (event: { active: { id: string }; over: { id: string } | null }) => Promise<void>
 }
 
-const { dndContextState, reorderSessionsMock, sessionListState, sortablePointerDownMock, useSortableMock } = vi.hoisted(
-  () => ({
-    dndContextState: { handlers: null as DndContextHandlers | null },
-    reorderSessionsMock: vi.fn(),
-    sessionListState: { sessions: [] as SessionMetaRecord[] },
-    sortablePointerDownMock: vi.fn(),
-    useSortableMock: vi.fn(),
-  })
-)
+const {
+  dndContextState,
+  reorderSessionsMock,
+  sessionListState,
+  showModalMock,
+  sortablePointerDownMock,
+  useSortableMock,
+} = vi.hoisted(() => ({
+  dndContextState: { handlers: null as DndContextHandlers | null },
+  reorderSessionsMock: vi.fn(),
+  sessionListState: { sessions: [] as SessionMetaRecord[] },
+  showModalMock: vi.fn(),
+  sortablePointerDownMock: vi.fn(),
+  useSortableMock: vi.fn(),
+}))
+
+vi.mock('@ebay/nice-modal-react', () => ({
+  default: { show: showModalMock },
+}))
+
+vi.mock('../ActionMenu', async () => {
+  const React = await import('react')
+  type Item = { text?: string; testId?: string; onClick?: () => void }
+  return {
+    default: ({ children, items }: { children: React.ReactNode; items: Item[] }) =>
+      React.createElement(
+        React.Fragment,
+        null,
+        children,
+        items.map((item) =>
+          React.createElement(
+            'button',
+            { key: item.text, 'data-testid': item.testId, onClick: item.onClick, type: 'button' },
+            item.text
+          )
+        )
+      ),
+  }
+})
 
 vi.mock('@dnd-kit/core', async () => {
   const React = await import('react')
@@ -111,6 +142,7 @@ vi.mock('./SessionItem', async () => {
   }
 })
 
+import { uiStore } from '@/stores/uiStore'
 import SessionList from './SessionList'
 
 const sessions: SessionMetaRecord[] = [
@@ -215,5 +247,39 @@ describe('SessionList mobile reorder mode', () => {
     })
 
     expect(reorderSessionsMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('SessionList section headers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    sessionListState.sessions = sessions
+    useSortableMock.mockImplementation(() => ({
+      attributes: {},
+      isDragging: false,
+      listeners: {},
+      setNodeRef: vi.fn(),
+      transform: null,
+      transition: undefined,
+    }))
+    uiStore.setState({ showSidebar: true })
+  })
+
+  test('shows the chats section even when nothing is pinned', () => {
+    sessionListState.sessions = [sessions[1]]
+    renderList()
+
+    expect(screen.queryByTestId(TestId.sidebar.pinnedSection)).toBeNull()
+    expect(screen.getByText('Chats')).toBeTruthy()
+    expect(screen.getByTestId(TestId.sidebar.chatsSectionMenu)).toBeTruthy()
+  })
+
+  test('closes the mobile sidebar before opening the cleanup modal from the chats section menu', () => {
+    renderList()
+
+    fireEvent.click(screen.getByTestId(TestId.sidebar.clearSessionList))
+
+    expect(uiStore.getState().showSidebar).toBe(false)
+    expect(showModalMock).toHaveBeenCalledWith('clear-session-list')
   })
 })

@@ -12,6 +12,7 @@ import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
+import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
 import ThreadHistoryDrawer from '@/components/session/ThreadHistoryDrawer'
@@ -315,8 +316,8 @@ function RouteComponent() {
         {shouldShowTemplateWelcomeCard && (
           // absolute — taken out of flow, doesn't affect layout of siblings
           // bottom: '100%' — positioned right above the parent box's top edge (like a tooltip anchoring upward)
-          <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} px="sm" mb="sm">
-            <Box className={widthFull ? 'w-full' : 'max-w-4xl mx-auto'}>
+          <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} mb="sm">
+            <Box className={paddedContentColumnClassName(widthFull)}>
               <ChatboxWelcomeCard
                 mode={welcomeCardMode}
                 pageName={JK_PAGE_NAMES.CHAT_PAGE}

@@ -25,6 +25,7 @@ import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { ImageInStorage } from '@/components/Image'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import HomepageIcon from '@/components/icons/HomepageIcon'
+import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Page from '@/components/layout/Page'
 import { getForceShowNewUserScenarioCardsFlag } from '@/dev/devToolsFlags'
 import { useMyCopilots, useRemoteCopilotsByCursor } from '@/hooks/useCopilots'
@@ -474,8 +475,8 @@ function Index() {
 
         <Stack gap="sm" className="shrink-0">
           {session.copilotId ? (
-            <Box px="md">
-              <Stack gap="sm" className={widthFull ? 'w-full' : 'w-full max-w-4xl mx-auto'}>
+            <Box>
+              <Stack gap="sm" className={paddedContentColumnClassName(widthFull)}>
                 <Flex align="center" gap="sm">
                   <CopilotItem
                     name={session.name}
@@ -490,9 +491,8 @@ function Index() {
                   />
                   <ActionIcon
                     size={32}
-                    radius="lg"
                     c="chatbox-tertiary"
-                    bg="#F1F3F5"
+                    bg="var(--chatbox-background-secondary)"
                     onClick={() => setSession((old) => ({ ...old, copilotId: undefined }))}
                   >
                     <ScalableIcon icon={IconX} size={24} />
@@ -513,13 +513,8 @@ function Index() {
 
           <Box className="relative">
             {welcomeCardMode !== 'none' && (
-              <Box
-                className="pointer-events-none absolute left-0 right-0 z-10"
-                style={{ bottom: '100%' }}
-                px="sm"
-                mb="sm"
-              >
-                <Box className={widthFull ? 'w-full' : 'w-full max-w-4xl mx-auto'}>
+              <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} mb="sm">
+                <Box className={paddedContentColumnClassName(widthFull)}>
                   <ChatboxWelcomeCard
                     mode={welcomeCardMode}
                     pageName={JK_PAGE_NAMES.CHAT_PAGE}
@@ -583,8 +578,8 @@ const CopilotPicker = ({ selectedId, onSelect }: { selectedId?: string; onSelect
   }
 
   return (
-    <Box px="md">
-      <Stack gap="xs" className={widthFull ? 'w-full' : 'w-full max-w-4xl mx-auto'}>
+    <Box>
+      <Stack gap="xs" className={paddedContentColumnClassName(widthFull)}>
         <Flex align="center" justify="space-between">
           <Text size="xxs" c="chatbox-tertiary">
             {t('My Copilots').toUpperCase()}
@@ -706,7 +701,7 @@ const CopilotItem = ({
       bd={selected ? 'none' : '1px solid var(--chatbox-border-primary)'}
       bg={selected ? 'var(--chatbox-background-brand-secondary)' : 'transparent'}
       className={clsx(
-        'max-w-[75vw] sm:max-w-[50vw] cursor-pointer shrink-0 shadow-[0px_2px_12px_0px_rgba(0,0,0,0.04)]',
+        'max-w-[75vw] sm:max-w-[50vw] cursor-pointer shrink-0 shadow-sm',
         isSmallScreen ? 'rounded-full' : 'rounded-lg'
       )}
       onClick={onClick}

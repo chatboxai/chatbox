@@ -1036,7 +1036,7 @@ describe('MessageList new message layout', () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
   })
 
-  test('uses an explicit mobile end inset while preserving the desktop scrollbar gutter', () => {
+  test('pads rows symmetrically and keeps the scrollbar gutter only on desktop', () => {
     isSmallScreenMock.value = true
     const session: Session = {
       id: 'mobile-session',
@@ -1052,7 +1052,7 @@ describe('MessageList new message layout', () => {
     )
 
     expect(getByTestId('virtuoso').style.scrollbarGutter).toBe('auto')
-    expect(container.querySelector<HTMLElement>('[data-index="0"] > div')?.style.paddingInlineEnd).toBe('16px')
+    expect(container.querySelector<HTMLElement>('[data-index="0"] > div')?.style.paddingInlineEnd).toBe('')
 
     isSmallScreenMock.value = false
     rerender(
@@ -1061,7 +1061,7 @@ describe('MessageList new message layout', () => {
       </MantineProvider>
     )
 
-    expect(getByTestId('virtuoso').style.scrollbarGutter).toBe('stable')
+    expect(getByTestId('virtuoso').style.scrollbarGutter).toBe('stable both-edges')
     expect(container.querySelector<HTMLElement>('[data-index="0"] > div')?.style.paddingInlineEnd).toBe('')
     const desktopViewport = container.querySelector<HTMLElement>('[data-session-view]')
     expect(desktopViewport?.classList.contains('h-full')).toBe(true)

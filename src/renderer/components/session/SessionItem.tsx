@@ -281,24 +281,23 @@ function SessionItem(props: Props) {
       {...{ [AutomationStateAttr.sessionPinned]: String(Boolean(session.starred)) }}
       align="center"
       className={clsx(
-        'cursor-pointer rounded-lg group/session-item',
+        'cursor-pointer rounded-md group/session-item',
         'select-none',
         props.isReordering && 'cursor-grab active:cursor-grabbing',
-        isSmallScreen
-          ? props.isReordering
-            ? 'bg-chatbox-background-primary'
-            : longPressing
-              ? 'bg-chatbox-background-gray-secondary'
-              : ''
+        props.isReordering
+          ? 'bg-chatbox-background-primary'
           : selected
-            ? 'bg-chatbox-background-brand-secondary'
-            : 'hover:bg-chatbox-background-gray-secondary'
+            ? 'bg-chatbox-background-secondary-hover'
+            : isSmallScreen
+              ? longPressing && 'bg-chatbox-background-gray-secondary'
+              : 'hover:bg-chatbox-background-gray-secondary'
       )}
       ml="xs"
       mr={isSmallScreen ? 'xs' : 0}
+      mih={isSmallScreen ? 44 : 36}
       pl="xs"
       pr={props.isReordering ? 44 : 'xs'}
-      py={8}
+      py={isSmallScreen ? 10 : 6}
       gap={10}
       onClick={onClick}
       onContextMenu={handleContextMenu}
@@ -314,7 +313,7 @@ function SessionItem(props: Props) {
         sessionType={session.type}
         size="sm"
         type="chat"
-        c={selected ? 'chatbox-brand' : 'chatbox-primary'}
+        c="chatbox-primary"
       />
 
       {renaming ? (
@@ -344,10 +343,7 @@ function SessionItem(props: Props) {
           }}
           className="min-w-0"
           classNames={{
-            input: clsx(
-              '!h-6 !min-h-6 !px-1.5 !text-sm',
-              selected ? '!text-chatbox-tint-brand' : '!text-chatbox-tint-primary'
-            ),
+            input: '!h-6 !min-h-6 !px-1.5 !text-sm !text-chatbox-tint-primary',
           }}
         />
       ) : (
@@ -356,7 +352,8 @@ function SessionItem(props: Props) {
           span
           flex={1}
           lineClamp={1}
-          c={selected ? 'chatbox-brand' : 'chatbox-primary'}
+          c="chatbox-primary"
+          fw={selected ? 500 : undefined}
           onMouseDown={(event) => {
             if (event.detail === 1) {
               renameClickStartedOnSelectedSessionRef.current = selected
@@ -396,12 +393,8 @@ function SessionItem(props: Props) {
         </Box>
       )}
 
-      {!isSmallScreen && !renaming && activity === 'idle' && switchShortcutDigit === undefined && (
-        <Text
-          span
-          c="chatbox-disabled"
-          className="shrink-0 text-[10px] tabular-nums opacity-50 group-hover/session-item:hidden"
-        >
+      {!renaming && activity === 'idle' && switchShortcutDigit === undefined && (
+        <Text span c="chatbox-tertiary" fz={11} className="shrink-0 tabular-nums group-hover/session-item:hidden">
           {formatSessionTime(session.createdAt)}
         </Text>
       )}

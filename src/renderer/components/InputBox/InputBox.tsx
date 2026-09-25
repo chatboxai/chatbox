@@ -56,6 +56,7 @@ import { useStore } from 'zustand'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { rendererApplication } from '@/app/renderer-application'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
+import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import useInputBoxHistory from '@/hooks/useInputBoxHistory'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
@@ -128,7 +129,12 @@ import { FileMiniCard, getParserTypeLabel, ImageMiniCard } from './Attachments'
 import { getAgentModeUIState } from './agentModeState'
 import { ComposerSettingsMenu } from './ComposerSettingsMenu'
 import { ImageUploadInput } from './ImageUploadInput'
-import { INPUT_SURFACE_CLASS_NAME, INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME, INPUT_SURFACE_STYLE } from './inputSurface'
+import {
+  INPUT_SURFACE_CLASS_NAME,
+  INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME,
+  INPUT_SURFACE_STYLE,
+  SEND_BUTTON_BLOCKED_CLASS,
+} from './inputSurface'
 import { MessageInputField, type MessageInputFieldRef } from './MessageInputField'
 import PendingActionBar from './PendingActionBar'
 import { cleanupFile, markFileProcessing, onFileProcessed, storeFilePromise } from './preprocessState'
@@ -1561,12 +1567,14 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // Show deprecated notice for legacy picture sessions
     if (sessionType === 'picture') {
       return (
-        <Box pt={0} pb={isSmallScreen ? 'md' : 'sm'} px="sm" id={dom.InputBoxID}>
+        <Box
+          pt={0}
+          pb={isSmallScreen ? 'md' : 'sm'}
+          id={dom.InputBoxID}
+          className={paddedContentColumnClassName(widthFull)}
+        >
           <Stack
-            className={cn(
-              'rounded-lg bg-chatbox-background-secondary shadow-[0_8px_48px_-8px_rgba(0,0,0,0.15)] dark:shadow-[0_8px_48px_-8px_rgba(0,0,0,0.5)]',
-              widthFull ? 'w-full' : 'max-w-4xl mx-auto'
-            )}
+            className="rounded-lg border border-solid border-chatbox-border-primary bg-chatbox-background-primary shadow-sm"
             gap="xs"
             p="md"
             align="center"
@@ -1583,16 +1591,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     }
 
     return (
-      <Box
-        pt={0}
-        pb={isSmallScreen ? 'md' : 'sm'}
-        px="sm"
-        id={dom.InputBoxID}
-        className="overflow-visible"
-        {...getRootProps()}
-      >
+      <Box pt={0} pb={isSmallScreen ? 'md' : 'sm'} id={dom.InputBoxID} className="overflow-visible" {...getRootProps()}>
         <input className="hidden" {...getInputProps()} />
-        <Stack className={cn('overflow-visible', widthFull ? 'w-full' : 'max-w-4xl mx-auto')} gap="xs">
+        <Stack className={cn('overflow-visible', paddedContentColumnClassName(widthFull))} gap="xs">
           {currentSessionId && (
             <CompactionStatus sessionId={currentSessionId} onViewSummary={onViewCompactionSummary} />
           )}
@@ -1682,12 +1683,12 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 align="center"
                 justify="space-between"
                 gap="sm"
-                className="rounded-md bg-red-50 px-2 py-1 dark:bg-red-950/30"
+                className="rounded-md bg-chatbox-background-error-secondary px-2 py-1"
               >
-                <Text size="xs" c="red" fw={500}>
+                <Text size="xs" c="chatbox-error" fw={500}>
                   {t('The response could not be stopped safely. Retry to finish saving it.')}
                 </Text>
-                <Button variant="subtle" color="red" size="compact-xs" onClick={onStopGenerating}>
+                <Button variant="subtle" color="chatbox-error" size="compact-xs" onClick={onStopGenerating}>
                   {t('Retry')}
                 </Button>
               </Flex>
@@ -1735,15 +1736,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   size={32}
                   variant="filled"
                   color={showingStopControl ? 'dark' : 'chatbox-brand'}
-                  radius="lg"
+                  radius="xl"
                   onClick={showingStopControl ? onStopGenerating : () => handleSubmit()}
-                  className={cn(
-                    'shrink-0 mb-1',
-                    !showingStopControl && submitBlocked && 'disabled:!opacity-100 !text-white'
-                  )}
-                  style={
-                    !showingStopControl && submitBlocked ? { backgroundColor: 'rgba(222, 226, 230, 1)' } : undefined
-                  }
+                  className={cn('shrink-0 mb-1', !showingStopControl && submitBlocked && SEND_BUTTON_BLOCKED_CLASS)}
                 >
                   {showingStopControl ? (
                     stopGenerationStatus === 'stopping' ? (
@@ -2029,7 +2024,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                         data-testid={TestId.chat.rollbackThread}
                         aria-label={t('Rollback Thread')}
                         onClick={rollbackThread}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
+                        className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
                       >
                         <IconArrowBackUp
                           size={toolbarIconSize}
@@ -2046,7 +2041,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                         onClick={startNewThread}
                         disabled={!onStartNewThread || threadActionPending}
                         aria-busy={threadActionPending}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
+                        className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
                       >
                         {threadActionPending ? (
                           <Loader size={toolbarIconSize} />
@@ -2068,7 +2063,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                       aria-label={t('Conversation Settings') || undefined}
                       onClick={onClickSessionSettings}
                       disabled={!onClickSessionSettings}
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
+                      className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
                     >
                       <IconAdjustmentsHorizontal
                         size={toolbarIconSize}
@@ -2123,8 +2118,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     data-testid={TestId.chat.contextMenuTrigger}
                     align="center"
                     gap="2"
-                    className={`shrink-0 text-xs cursor-pointer hover:text-chatbox-tint-secondary transition-colors px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] ${
-                      tokenPercentage && tokenPercentage > 80 ? 'text-red-500' : 'text-chatbox-tint-tertiary'
+                    className={`shrink-0 text-xs cursor-pointer hover:text-chatbox-tint-secondary transition-colors px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] ${
+                      tokenPercentage && tokenPercentage > 80 ? 'text-chatbox-tint-error' : 'text-chatbox-tint-tertiary'
                     }`}
                   >
                     <ScalableIcon icon={IconArrowUp} size={14} />
@@ -2154,8 +2149,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   >
                     <UnstyledButton
                       className={cn(
-                        'flex min-w-0 max-w-full items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors',
-                        !model && 'animate-pulse bg-blue-500/20'
+                        'flex min-w-0 max-w-full items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors',
+                        !model && 'animate-pulse bg-chatbox-background-brand-secondary'
                       )}
                     >
                       {!!model && <ModelProviderIcon size={20} modelId={model.modelId} providerId={model.provider} />}
@@ -2180,7 +2175,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             </Flex>
           </Box>
 
-          <Disclaimer />
+          {/* Small screens show the disclaimer only on a new conversation, where the row is free. */}
+          {(!isSmallScreen || isNewSession) && <Disclaimer />}
         </Stack>
         {currentSession && (
           <CompressionModal
@@ -2250,7 +2246,7 @@ const AttachmentMenu: React.FC<{
       <Menu.Target>
         <UnstyledButton
           data-testid={TestId.chat.attachmentMenuTrigger}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
+          className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
         >
           <IconCirclePlus size={toolbarIconSize} strokeWidth={1.8} className="text-[var(--chatbox-tint-secondary)]" />
         </UnstyledButton>

@@ -19,12 +19,13 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import NiceModal from '@ebay/nice-modal-react'
 import { Button, Flex, Text } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
-import { IconArrowsMoveVertical, IconGripVertical, IconLoader2 } from '@tabler/icons-react'
+import { IconArrowsMoveVertical, IconDots, IconGripVertical, IconLoader2 } from '@tabler/icons-react'
 import { useRouterState } from '@tanstack/react-router'
-import { type CSSProperties, type MutableRefObject, useCallback, useMemo, useState } from 'react'
+import { type CSSProperties, type MutableRefObject, type ReactNode, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Virtuoso } from 'react-virtuoso'
 import { rendererApplication } from '@/app/renderer-application'
@@ -32,6 +33,10 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionSwitchHintDigits } from '@/hooks/useSessionSwitchHints'
 import platform from '@/platform'
 import { reorderSessions } from '@/stores/session/crud'
+import { useUIStore } from '@/stores/uiStore'
+import ActionMenu from '../ActionMenu'
+import { ICON_SIZE, IconButton } from '../common/IconButton'
+import Broom from '../icons/Broom'
 import SessionItem from './SessionItem'
 
 const useSessionList = () => rendererApplication.sessionHooks.useSessionList()
@@ -49,6 +54,55 @@ function SessionListLoadingFooter() {
     <Flex justify="center" py="xs">
       <IconLoader2 size={16} className="animate-spin" style={{ color: 'var(--mantine-color-dimmed)' }} />
     </Flex>
+  )
+}
+
+function SessionListSectionHeader(props: { label: string; testId?: string; children?: ReactNode }) {
+  return (
+    <Flex align="center" justify="space-between" mih={34} pl="md" pr="xs" pt={4} className="group/section">
+      <Text data-testid={props.testId} size="xs" fw={600} c="chatbox-tertiary">
+        {props.label}
+      </Text>
+      {props.children}
+    </Flex>
+  )
+}
+
+function ChatsSectionMenu() {
+  const { t } = useTranslation()
+  const isSmallScreen = useIsSmallScreen()
+  const setShowSidebar = useUIStore((s) => s.setShowSidebar)
+  return (
+    <ActionMenu
+      position="bottom-end"
+      items={[
+        {
+          text: t('Clear Conversation List'),
+          icon: Broom,
+          testId: TestId.sidebar.clearSessionList,
+          onClick: () => {
+            if (isSmallScreen) {
+              setShowSidebar(false)
+            }
+            void NiceModal.show('clear-session-list')
+          },
+        },
+      ]}
+    >
+      <IconButton
+        icon={IconDots}
+        iconSize={ICON_SIZE.inline}
+        size={isSmallScreen ? 'md' : 'sm'}
+        color="chatbox-tertiary"
+        aria-label={t('More')}
+        data-testid={TestId.sidebar.chatsSectionMenu}
+        className={
+          isSmallScreen
+            ? undefined
+            : 'opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100 data-[expanded=true]:opacity-100'
+        }
+      />
+    </ActionMenu>
   )
 }
 
@@ -112,19 +166,19 @@ export default function SessionList(props: Props) {
 
     const pinnedSessions = sortedSessions.filter((session) => session.starred)
     const otherSessions = sortedSessions.filter((session) => !session.starred)
-    if (pinnedSessions.length === 0) {
-      return otherSessions.map((session) => ({ type: 'session', id: session.id, session }))
+    if (sortedSessions.length === 0) {
+      return []
     }
 
     return [
-      { type: 'section', id: 'section:pinned', label: t('Pinned') },
-      ...pinnedSessions.map((session) => ({ type: 'session' as const, id: session.id, session })),
-      ...(otherSessions.length > 0
+      ...(pinnedSessions.length > 0
         ? [
-            { type: 'section' as const, id: 'section:chats', label: t('Chats') },
-            ...otherSessions.map((session) => ({ type: 'session' as const, id: session.id, session })),
+            { type: 'section' as const, id: 'section:pinned', label: t('Pinned') },
+            ...pinnedSessions.map((session) => ({ type: 'session' as const, id: session.id, session })),
           ]
         : []),
+      { type: 'section' as const, id: 'section:chats', label: t('Chats') },
+      ...otherSessions.map((session) => ({ type: 'session' as const, id: session.id, session })),
     ]
   }, [sortedSessions, t])
   const routerState = useRouterState()
@@ -162,7 +216,7 @@ export default function SessionList(props: Props) {
               mb={2}
               px="xs"
               py={6}
-              className="rounded-sm bg-chatbox-background-gray-secondary"
+              className="rounded-md bg-chatbox-background-gray-secondary"
             >
               <Flex align="center" gap={6}>
                 <IconArrowsMoveVertical size={16} className="text-chatbox-tertiary" />
@@ -198,18 +252,12 @@ export default function SessionList(props: Props) {
             components={virtuosoComponents}
             itemContent={(_index, item) => {
               if (item.type === 'section') {
-                return (
-                  <Text
-                    {...(item.id === 'section:pinned' ? { 'data-testid': TestId.sidebar.pinnedSection } : {})}
-                    px="md"
-                    pt="sm"
-                    pb={4}
-                    size="xs"
-                    fw={600}
-                    c="chatbox-tertiary"
-                  >
-                    {item.label}
-                  </Text>
+                return item.id === 'section:chats' ? (
+                  <SessionListSectionHeader label={item.label}>
+                    <ChatsSectionMenu />
+                  </SessionListSectionHeader>
+                ) : (
+                  <SessionListSectionHeader label={item.label} testId={TestId.sidebar.pinnedSection} />
                 )
               }
 
@@ -233,7 +281,7 @@ export default function SessionList(props: Props) {
           />
           <DragOverlay dropAnimation={null}>
             {activeDragSession ? (
-              <div className="pointer-events-none scale-[1.02] rounded-lg bg-chatbox-background-primary shadow-lg">
+              <div className="pointer-events-none scale-[1.02] rounded-md bg-chatbox-background-primary shadow-lg">
                 <SessionItem
                   selected={routerState.location.pathname === `/session/${activeDragSession.id}`}
                   session={activeDragSession}

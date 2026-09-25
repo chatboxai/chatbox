@@ -47,7 +47,7 @@ function formatKey(key: string) {
   const LINUX_KEY_MAPS: Record<string, string> = {
     ...COMMON_KEY_MAPS,
     meta: 'Super',
-    mod: 'Super',
+    mod: 'Ctrl',
     command: 'Super',
   }
   if (!key) {
@@ -65,6 +65,11 @@ function formatKey(key: string) {
     default:
       return COMMON_KEY_MAPS[lowercaseKey] || keyLabel
   }
+}
+
+/** Inline shortcut label, e.g. `⌘K` on macOS and `Ctrl+K` elsewhere. */
+export function formatShortcut(keys: string[]) {
+  return keys.map(formatKey).join(os === 'Mac' ? '' : '+')
 }
 
 /**

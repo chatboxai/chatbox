@@ -495,7 +495,7 @@ async function createWindow() {
     titleBarStyle: 'hidden',
     // expose window controlls in Windows/Linux
     frame: false,
-    trafficLightPosition: { x: 10, y: 16 },
+    trafficLightPosition: { x: 10, y: 13 },
     width: state.width,
     height: state.height,
     x: state.x,

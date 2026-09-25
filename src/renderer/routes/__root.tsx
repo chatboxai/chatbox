@@ -2,6 +2,7 @@ import NiceModal from '@ebay/nice-modal-react'
 import {
   Avatar,
   Button,
+  Card,
   Checkbox,
   Combobox,
   colorsTuple,
@@ -14,6 +15,7 @@ import {
   MantineProvider,
   Modal,
   NativeSelect,
+  Paper,
   Popover,
   rem,
   Select,
@@ -31,6 +33,7 @@ import { shouldNavigateToStartPage, shouldSkipOnboardingGuide, splitLaunchPath }
 import { type RemoteConfig, Theme } from '@shared/types'
 import { useQuery } from '@tanstack/react-query'
 import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
+import clsx from 'clsx'
 import { useSetAtom } from 'jotai'
 import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -41,7 +44,7 @@ import { createPageViewVisitGate } from '@/analytics/page-view-visit-gate'
 import { AppProviders } from '@/components/AppProviders'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
-import DesktopDownloadReminder from '@/components/layout/DesktopDownloadReminder'
+import { AppTitleBar, useAppTitleBarHeight } from '@/components/layout/AppTitleBar'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
 import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
@@ -122,7 +125,7 @@ function BackgroundImageOverlay() {
   if (!isRootPage && !isSessionPage) return null
   if (!imageUrl) return null
   return (
-    <div className="absolute z-0 top-0 left-0 w-full h-full">
+    <div className="pointer-events-none absolute z-0 top-0 left-0 w-full h-full">
       <div
         className="absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
         style={{
@@ -285,6 +288,7 @@ function Root() {
 
   const showSidebar = useUIStore((s) => s.showSidebar)
   const sidebarWidth = useSidebarWidth()
+  const titleBarHeight = useAppTitleBarHeight()
 
   const _theme = useTheme()
   const { setColorScheme } = useMantineColorScheme()
@@ -378,14 +382,18 @@ function Root() {
 
   return (
     <Box
-      className="box-border App relative bg-chatbox-background-primary"
+      className={clsx(
+        'box-border App relative flex flex-col',
+        titleBarHeight ? 'bg-chatbox-background-primary-hover' : 'bg-chatbox-background-primary'
+      )}
       data-chatbox-platform={CHATBOX_BUILD_PLATFORM}
       spellCheck={spellCheck}
       dir={language === 'ar' ? 'rtl' : 'ltr'}
     >
       <BackgroundImageOverlay />
       {platform.isDesktopLike && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
-      <Grid container className="h-full relative z-[1]">
+      <AppTitleBar />
+      <Grid container className="min-h-0 flex-1 relative z-[1]">
         <Sidebar />
         <Box
           className="relative h-full w-full box-border"
@@ -405,38 +413,27 @@ function Root() {
               : {}),
           }}
         >
+          {/* Wide layouts: the content panel sits flush under the title bar and meets the sidebar with one rounded corner. */}
           <Box
-            className="title-bar absolute inset-x-0 top-0 hidden sm:block"
-            sx={{ height: showSidebar ? '10px' : '5px' }}
-          />
-          <Box
-            className="h-full box-border"
-            sx={{
-              padding: { xs: 0, sm: showSidebar ? '10px 10px 10px 0' : '5px' },
-              transition: (theme) =>
-                theme.transitions.create('padding', {
-                  easing: showSidebar ? theme.transitions.easing.easeOut : theme.transitions.easing.sharp,
-                  duration: showSidebar
-                    ? theme.transitions.duration.enteringScreen
-                    : theme.transitions.duration.leavingScreen,
-                }),
-            }}
+            className={clsx(
+              'h-full overflow-hidden box-border border-0 border-solid border-chatbox-border-primary',
+              hasBackgroundImage ? 'bg-transparent' : 'bg-chatbox-background-primary'
+            )}
+            sx={
+              titleBarHeight
+                ? {
+                    borderTopWidth: '1px',
+                    borderInlineStartWidth: showSidebar ? '1px' : 0,
+                    borderStartStartRadius: showSidebar ? '16px' : 0,
+                  }
+                : undefined
+            }
           >
-            <Box
-              className={`h-full overflow-hidden border-[0.5px] border-solid border-chatbox-border-primary ${
-                hasBackgroundImage ? 'bg-transparent' : 'bg-chatbox-background-primary'
-              }`}
-              sx={{
-                borderRadius: { xs: 0, sm: '16px' },
-                boxShadow: { xs: 'none', sm: platform.type === 'web' ? 'none' : '0 0 22px rgba(0, 0, 0, 0.11)' },
-              }}
-            >
-              {/* Keyed per route so a crashing page stays contained to that page
-                  instead of latching the whole main area until the app restarts. */}
-              <ErrorBoundary key={location.pathname} name="main">
-                <Outlet />
-              </ErrorBoundary>
-            </Box>
+            {/* Keyed per route so a crashing page stays contained to that page
+                instead of latching the whole main area until the app restarts. */}
+            <ErrorBoundary key={location.pathname} name="main">
+              <Outlet />
+            </ErrorBoundary>
           </Box>
         </Box>
       </Grid>
@@ -466,7 +463,6 @@ function Root() {
       {/* <ReportContentDialog /> */}
       {/* 搜索 */}
       <SearchDialog />
-      <DesktopDownloadReminder />
       {/* 没有配置模型时的欢迎弹窗 */}
       {/* <WelcomeDialog /> */}
       <Toasts /> {/* mui */}
@@ -481,7 +477,8 @@ const creteMantineTheme = (scale = 1) =>
   createTheme({
     /** Put your mantine theme override here */
     scale,
-    defaultRadius: 'lg',
+    // Controls (buttons, rows, icon buttons, inputs) use md; surfaces (modals, cards, papers) opt into lg below.
+    defaultRadius: 'md',
     primaryColor: 'chatbox-brand',
     colors: {
       'chatbox-brand': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-brand)')),
@@ -668,6 +665,7 @@ const creteMantineTheme = (scale = 1) =>
       Modal: Modal.extend({
         defaultProps: {
           zIndex: 2000,
+          radius: 'lg',
         },
         styles: () => ({
           title: {
@@ -719,6 +717,16 @@ const creteMantineTheme = (scale = 1) =>
         defaultProps: {
           shadow: 'md',
           zIndex: 2100,
+        },
+      }),
+      Paper: Paper.extend({
+        defaultProps: {
+          radius: 'lg',
+        },
+      }),
+      Card: Card.extend({
+        defaultProps: {
+          radius: 'lg',
         },
       }),
       Avatar: Avatar.extend({

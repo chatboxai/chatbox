@@ -29,6 +29,7 @@ import { useTranslation } from 'react-i18next'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ImageModelSelect } from '@/components/ImageModelSelect'
+import { SEND_BUTTON_BLOCKED_CLASS } from '@/components/InputBox/inputSurface'
 import Page from '@/components/layout/Page'
 import { type ImageModelGroup, useImageModelGroups } from '@/hooks/useImageModelGroups'
 import { useProviders } from '@/hooks/useProviders'
@@ -592,16 +593,11 @@ function ImageCreatorPage() {
                       size={32}
                       variant="filled"
                       color={isCurrentlyGenerating ? 'dark' : 'chatbox-brand'}
-                      radius="lg"
+                      radius="xl"
                       onClick={isCurrentlyGenerating ? cancelGeneration : handleSubmit}
                       disabled={(!prompt.trim() || !selectedModel) && !isCurrentlyGenerating}
-                      className={`shrink-0 mb-1 ${(!prompt.trim() || !selectedModel) && !isCurrentlyGenerating ? 'disabled:!opacity-100 !text-white' : ''}`}
-                      style={{
-                        cursor: isCurrentlyGenerating ? 'pointer' : undefined,
-                        ...((!prompt.trim() || !selectedModel) && !isCurrentlyGenerating
-                          ? { backgroundColor: 'rgba(222, 226, 230, 1)' }
-                          : {}),
-                      }}
+                      className={`shrink-0 mb-1 ${(!prompt.trim() || !selectedModel) && !isCurrentlyGenerating ? SEND_BUTTON_BLOCKED_CLASS : ''}`}
+                      style={{ cursor: isCurrentlyGenerating ? 'pointer' : undefined }}
                     >
                       {isCurrentlyGenerating ? <Loader size={16} color="white" /> : <IconArrowUp size={16} />}
                     </ActionIcon>

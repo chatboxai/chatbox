@@ -42,6 +42,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { type StateSnapshot, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { buildMessageRenderItems, type MessageRenderItem } from '@/components/chat/message-render-items'
+import { contentColumnClassName } from '@/components/layout/contentColumn'
 import { platformTypeAtom } from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionLockState } from '@/hooks/useSessionLockState'
@@ -930,9 +931,10 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
         )}
         <div
           className={cn(
-            'overflow-hidden pr-0 relative',
+            'overflow-hidden relative',
             isSmallScreen ? 'min-h-0 flex-1' : 'h-full',
-            showMinimap ? 'pl-[28px]' : 'pl-1 sm:pl-0'
+            // The minimap inset is mirrored on the right so the message column stays centered on the composer.
+            showMinimap ? 'px-[28px]' : 'pl-1 pr-0 sm:pl-0'
           )}
           ref={messageListRef}
           data-session-id={currentSession.id}
@@ -950,7 +952,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
           {(!props.transcript || windowStart.ready) && (
             <Virtuoso
               key={props.transcript ? `window-${props.windowPosition?.id ?? 0}` : 'complete'}
-              style={{ scrollbarGutter: isSmallScreen ? 'auto' : 'stable' }}
+              style={{ scrollbarGutter: isSmallScreen ? 'auto' : 'stable both-edges' }}
               className={platformType === 'win32' ? 'scrollbar-custom' : ''}
               data={renderItems}
               firstItemIndex={firstItemIndex}
@@ -1020,14 +1022,13 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
               increaseViewportBy={{ top: 2000, bottom: 2000 }}
               itemContent={(absoluteIndex, item) => {
                 const index = absoluteIndex - firstItemIndex
-                const itemClassName = widthFull ? 'w-full' : 'max-w-4xl mx-auto'
-                const itemStyle = isSmallScreen ? { paddingInlineEnd: 16 } : undefined
+                const itemClassName = contentColumnClassName(widthFull)
                 const isFirstItem = index === 0
                 const isLastItem = index === renderItems.length - 1
 
                 if (item.type === 'group') {
                   return (
-                    <div className={itemClassName} style={itemStyle}>
+                    <div className={itemClassName}>
                       <div
                         className="flex flex-col pt-5"
                         style={
@@ -1049,7 +1050,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                 }
 
                 return (
-                  <div className={itemClassName} style={itemStyle}>
+                  <div className={itemClassName}>
                     {renderMessageBlock(item.messages[0], { isFirstItem, isLastItem })}
                   </div>
                 )

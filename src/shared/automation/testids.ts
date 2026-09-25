@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.7.10'
+export const AUTOMATION_CONTRACT_VERSION = '1.8.0'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -81,12 +81,20 @@ export const TestId = {
     menu: 'reasoning-control-menu',
     level: (level: AutomationReasoningLevel) => `reasoning-level-${level}`,
   },
+  layout: {
+    titleBar: 'app-title-bar',
+    expandSidebar: 'sidebar-expand',
+  },
   sidebar: {
     root: 'sidebar',
+    clearSessionList: 'clear-session-list-button',
+    chatsSectionMenu: 'sidebar-chats-section-menu',
     newChat: 'new-chat-button',
+    search: 'sidebar-search',
     newImage: 'new-image-button',
     downloadApp: 'download-app-button',
     settingsTrigger: 'settings-trigger',
+    about: 'sidebar-about',
     /** Hosts AutomationAdjacentAttr.sessionId. */
     sessionItem: 'session-item',
     sessionTitle: 'session-title',
@@ -97,7 +105,6 @@ export const TestId = {
     collapse: 'sidebar-collapse',
   },
   session: {
-    searchTrigger: 'session-search-trigger',
     searchInput: 'session-search-input',
     searchCurrent: 'session-search-current',
     searchAll: 'session-search-all',

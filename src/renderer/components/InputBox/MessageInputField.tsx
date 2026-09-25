@@ -163,7 +163,7 @@ export const MessageInputField = memo(
             root: 'flex-1',
             wrapper: 'flex-1',
             input:
-              'block w-full outline-none border-none px-2 py-1 resize-none bg-transparent text-chatbox-tint-primary leading-6',
+              'block w-full outline-none border-none px-2 py-1 resize-none bg-transparent text-chatbox-tint-primary leading-5',
           }}
           size="sm"
           id={dom.messageInputID}
@@ -172,8 +172,9 @@ export const MessageInputField = memo(
           aria-label={ariaLabel}
           bg="transparent"
           autosize={true}
-          minRows={2}
-          maxRows={Math.max(4, Math.floor(viewportHeight / 100))}
+          minRows={1}
+          // Grows with the draft up to 12 lines (240px), fewer on short viewports.
+          maxRows={Math.min(12, Math.max(4, Math.floor(viewportHeight / 60)))}
           value={editValue}
           autoFocus={autoFocus}
           readOnly={isReadOnly}

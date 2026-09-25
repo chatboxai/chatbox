@@ -35,7 +35,7 @@ describe('automation test ID contract', () => {
         TestId.message.forkNext,
         TestId.message.forkDelete,
         TestId.message.forkDeleteConfirm,
-        TestId.session.searchTrigger,
+        TestId.sidebar.search,
         TestId.session.clearMessages,
         TestId.session.delete,
         TestId.chat.sessionSettings,

@@ -78,6 +78,7 @@ import { confirmPromptCacheBreakingAction, isPromptCacheBreakConfirmDismissed } 
 import { getSessionLockNotice, notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { AssistantAvatar, SystemAvatar, UserAvatar } from '../common/Avatar'
+import { ICON_SIZE, ICON_STROKE_WIDTH } from '../common/IconButton'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Loading from '../icons/Loading'
 import { ReasoningContentUI, StepTimelineUI } from '../message-parts/StepTimelineUI'
@@ -810,6 +811,24 @@ const _Message: FC<Props> = (props) => {
   const isRightAlignedMessage = shouldRightAlignMessage(messageLayout, msg.role)
   const messageRoleClass = getMessageRoleClass(msg.role)
   const shouldShowAvatar = showAvatar ?? true
+  // Small screens put a smaller assistant avatar above the reply so the text keeps the full width.
+  const stackAssistantAvatar = isSmallScreen && shouldShowAvatar && msg.role === 'assistant'
+  const stackedAssistantAvatar = stackAssistantAvatar && (
+    <Box className="relative mb-1 self-start">
+      <AssistantAvatar
+        size={24}
+        avatarKey={assistantAvatarKey}
+        picUrl={sessionPicUrl}
+        sessionType={props.sessionType}
+        onClick={onClickAssistantAvatar}
+      />
+      {msg.generating && (
+        <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+          <Loader size={28} classNames={{ root: "after:content-[''] after:border-[2px]" }} />
+        </Flex>
+      )}
+    </Box>
+  )
   const statusElements = <MessageStatuses statuses={leadingStatuses} />
   const errorTipsElement = (
     <MessageErrTips
@@ -1018,7 +1037,7 @@ const _Message: FC<Props> = (props) => {
                                 <Text size="sm" className="line-clamp-2" c="chatbox-secondary" title={item.ocrResult}>
                                   {item.ocrResult}
                                 </Text>
-                                <Text size="xs" className="mt-1 inline-block" c="blue">
+                                <Text size="xs" className="mt-1 inline-block" c="chatbox-brand">
                                   {t('Click to view full text')}
                                 </Text>
                               </>
@@ -1150,18 +1169,13 @@ const _Message: FC<Props> = (props) => {
       : messageStopStatus === 'failed'
         ? t('Retry stopping this reply')
         : t('Stop generating this reply')
+  // Action rows sit flat under the message; the negative margin lines the first icon up with the text.
+  const actionRowMargin = isSmallScreen ? '4px -10px -10px -10px' : '4px -4px -4px -4px'
   const generatingActions = showConcurrentReplyStop && (
-    <Flex gap={0} m="4px -4px -4px -4px" align="center" className={isSmallScreen ? 'sticky bottom-4' : ''}>
-      <Flex
-        gap={0}
-        className={
-          isSmallScreen
-            ? 'p-xxs bg-chatbox-background-primary rounded-lg border-[0.5px] border-solid border-chatbox-border-primary shadow-sm'
-            : ''
-        }
-      >
+    <Flex gap={0} m={actionRowMargin} align="center">
+      <Flex gap={0} align="center">
         {messageStopStatus === 'failed' && (
-          <Text size="xs" c="red" px={4} role="alert">
+          <Text size="xs" c="chatbox-error" px={4} role="alert">
             {t('Stop failed')}
           </Text>
         )}
@@ -1181,23 +1195,14 @@ const _Message: FC<Props> = (props) => {
   const actionButtons = !readOnly && buttonGroup !== 'none' && !msg.generating && (
     <Flex
       gap={0}
-      m="4px -4px -4px -4px"
+      m={actionRowMargin}
       className={clsx(
         'transition-opacity',
-        getMessageActionVisibilityClass(actionMenuOpened || buttonGroup === 'always'),
-        isSmallScreen ? 'sticky bottom-4' : ''
+        getMessageActionVisibilityClass(actionMenuOpened || buttonGroup === 'always')
       )}
       align="center"
     >
-      <Flex
-        data-testid={TestId.message.actionBar}
-        gap={0}
-        className={
-          isSmallScreen
-            ? 'p-xxs bg-chatbox-background-primary rounded-lg border-[0.5px] border-solid border-chatbox-border-primary shadow-sm'
-            : ''
-        }
-      >
+      <Flex data-testid={TestId.message.actionBar} gap={0} align="center">
         {!msg.generating && msg.role === 'assistant' && (
           <MessageActionIcon
             testId={TestId.message.actionBarRetry}
@@ -1311,9 +1316,6 @@ const _Message: FC<Props> = (props) => {
         sx={{
           paddingBottom: '0.1rem',
           paddingX: '1rem',
-          [theme.breakpoints.down('sm')]: {
-            paddingX: '0.3rem',
-          },
         }}
       >
         <Flex justify="flex-end" gap="xs" className="w-full min-w-0">
@@ -1358,18 +1360,10 @@ const _Message: FC<Props> = (props) => {
         sx={{
           paddingBottom: '0.1rem',
           paddingX: '1rem',
-          [theme.breakpoints.down('sm')]: {
-            paddingX: '0.3rem',
-          },
         }}
       >
-        <Flex
-          gap="xs"
-          align="flex-start"
-          className="w-full min-w-0"
-          style={isSmallScreen && !shouldShowAvatar ? { paddingInlineStart: 4 } : undefined}
-        >
-          {shouldShowAvatar && (
+        <Flex gap="xs" align="flex-start" className="w-full min-w-0">
+          {shouldShowAvatar && !stackAssistantAvatar && (
             <Box className={cn('relative shrink-0', msg.role !== 'assistant' ? 'mt-1' : 'mt-2')}>
               {msg.role === 'assistant' ? (
                 <AssistantAvatar
@@ -1389,6 +1383,7 @@ const _Message: FC<Props> = (props) => {
             </Box>
           )}
           <Flex direction="column" align="flex-start" className="min-w-0 flex-1 max-w-full">
+            {stackedAssistantAvatar}
             {messageContent}
             {(msg.files || msg.links) && <MessageAttachmentGrid files={msg.files} links={msg.links} align="start" />}
             {meta}
@@ -1419,13 +1414,10 @@ const _Message: FC<Props> = (props) => {
       sx={{
         paddingBottom: '0.1rem',
         paddingX: '1rem',
-        [theme.breakpoints.down('sm')]: {
-          paddingX: '0.3rem',
-        },
       }}
     >
       <Grid container wrap="nowrap" spacing={1.5}>
-        {(showAvatar ?? true) && (
+        {shouldShowAvatar && !stackAssistantAvatar && (
           <Grid item>
             <Box className={cn('relative', msg.role !== 'assistant' ? 'mt-1' : 'mt-2')}>
               {
@@ -1453,8 +1445,15 @@ const _Message: FC<Props> = (props) => {
             </Box>
           </Grid>
         )}
-        <Grid item xs sm container sx={{ width: '0px', paddingRight: (showAvatar ?? true) ? '15px' : '0px' }}>
+        <Grid
+          item
+          xs
+          sm
+          container
+          sx={{ width: '0px', paddingRight: shouldShowAvatar && !stackAssistantAvatar ? '15px' : '0px' }}
+        >
           <Grid item xs>
+            {stackedAssistantAvatar}
             {messageContent}
             {(msg.files || msg.links) && (
               <MessageAttachmentGrid files={msg.files} links={msg.links} align={isUserBubble ? 'end' : 'start'} />
@@ -1481,22 +1480,29 @@ export const MessageActionIcon = forwardRef<
   }
 >(({ tooltip, icon, iconClassName, testId, ...props }, ref) => {
   const isSmallScreen = useIsSmallScreen()
+  // Small screens use 40px touch targets; wide layouts keep a tight 24px hit area.
+  const touchSize = isSmallScreen ? 40 : 'auto'
   const actionIcon = (
     <ActionIcon
       ref={ref}
       variant="subtle"
-      w="auto"
-      h="auto"
-      miw="auto"
-      mih="auto"
-      p={4}
+      w={touchSize}
+      h={touchSize}
+      miw={touchSize}
+      mih={touchSize}
+      p={isSmallScreen ? 0 : 4}
       bd={0}
       color="chatbox-secondary"
       aria-label={tooltip ?? undefined}
       data-testid={testId}
       {...props}
     >
-      <ScalableIcon icon={icon} size={isSmallScreen ? 20 : 16} className={iconClassName} />
+      <ScalableIcon
+        icon={icon}
+        size={isSmallScreen ? 20 : ICON_SIZE.inline}
+        strokeWidth={ICON_STROKE_WIDTH}
+        className={iconClassName}
+      />
     </ActionIcon>
   )
 

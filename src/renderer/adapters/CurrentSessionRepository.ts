@@ -1,4 +1,8 @@
-import { RowBackedSessionRepository, type SessionMigrationOutcome } from '@chatbox/core/application/session'
+import {
+  createSessionMetaRecord,
+  RowBackedSessionRepository,
+  type SessionMigrationOutcome,
+} from '@chatbox/core/application/session'
 import {
   BackupOperationBusyError,
   type BackupSessionStore,
@@ -332,15 +336,30 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
             return navigator.locks.request(`chatbox-session-storage:${sessionId}`, { mode: 'exclusive' }, action)
           })
         },
+        onOrphanedRowsRestored: (session) => this.restoreListEntry(session),
       })
     }
     return this.data
   }
 
+  /**
+   * Gives a session restored from rows left without a record, typically one an
+   * earlier Chatbox version deleted because it could not see its messages, a
+   * list entry again. Runs inside the session's storage lock, so it uses the
+   * list backend directly.
+   */
+  private async restoreListEntry(session: Session): Promise<void> {
+    log.info(`restored session ${session.id} from rows left without a record`)
+    const meta = this.createMetaStorage()
+    if (await meta.getById(session.id)) return
+    const timestamp = session.messages[0]?.timestamp ?? Date.now()
+    await meta.create(createSessionMetaRecord(session, timestamp, timestamp))
+  }
+
   initialize(): Promise<void> {
     return normalizeRepositoryError('initialize', async () => {
-      await this.getData().initialize()
       await this.meta.initialize()
+      await this.getData().initialize()
     })
   }
 

@@ -194,16 +194,45 @@ export class SessionPersistenceProtocol {
     }
   }
 
-  /** Completes record-first deletions that were interrupted before row cleanup. */
-  async recoverOrphanedRows(runExclusive: (id: string, action: () => Promise<void>) => Promise<void>): Promise<void> {
+  /**
+   * Republishes the record of rows whose record is gone. A client that
+   * predates row storage deletes a migrated session by removing only its
+   * record, and nothing on disk tells that apart from this client's own
+   * record-first deletion interrupted before row cleanup. Restoring is the only
+   * outcome that loses no data; the interrupted deletion can simply be repeated.
+   */
+  async recoverOrphanedRows(
+    runExclusive: (id: string, action: () => Promise<void>) => Promise<void>,
+    onRestored: ((session: Session) => Promise<void>) | undefined,
+    onUnrecoverable: (id: string, error: unknown) => void
+  ): Promise<void> {
     const [recordIds, rowIds] = await Promise.all([this.records.listIds(), this.rows.listSessionIds()])
     const records = new Set(recordIds)
     for (const id of rowIds) {
       if (records.has(id)) continue
       await runExclusive(id, async () => {
-        const revision = await this.rows.getRevision(id)
         if (await this.records.getRecord(id)) return
-        await this.rows.deleteRows(id, revision)
+        let session: Session
+        let record: SessionRecordV2
+        try {
+          const snapshot = await this.rows.readSnapshot(id)
+          if (!snapshot) return
+          session = decodeSnapshot(snapshot)
+          record = snapshot.record
+        } catch (error) {
+          // Unreadable rows stay in place: deleting them would destroy the only copy.
+          onUnrecoverable(id, error)
+          return
+        }
+        // Keep the record absent until the idempotent list restoration succeeds,
+        // so an interrupted recovery remains eligible on the next startup. A
+        // failure stays with this session and must not fail initialization.
+        try {
+          await onRestored?.(session)
+          await this.records.setRecord(record)
+        } catch (error) {
+          onUnrecoverable(id, error)
+        }
       })
     }
   }

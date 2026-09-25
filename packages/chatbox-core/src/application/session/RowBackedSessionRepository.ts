@@ -53,6 +53,11 @@ import {
   verifySessionTreeRoundTrip,
 } from '../../session/session-tree'
 import type { Session } from '../../types/session'
+import {
+  hasReleasedClientContent,
+  mergeReleasedClientContent,
+  releasedClientSession,
+} from './compatibility/released-client-writes'
 import { migrateSession } from './compatibility/session-load'
 import { applySessionMessageDerivedPatch, type SessionMessageDerivedPatch } from './message-derived-data'
 import { applyMessageUpdate } from './message-tree'
@@ -115,10 +120,20 @@ export interface RowBackedSessionRepositoryOptions {
   migrateLegacyBeforeRead?: boolean
   /** Hosts with interactive work-mode controls need the complete graph for those controls. */
   requiresCompleteWorkModeView?: boolean
-  /** Called when a V1 record fails its round-trip self-check; that session keeps working in V1 form. */
+  /**
+   * Called when stored content cannot be converted: a V1 record that fails its
+   * round-trip self-check keeps working in V1 form, and content an earlier
+   * client wrote or left behind stays where it is.
+   */
   onMigrationSkipped?: (sessionId: string, reason: string) => void
   /** Serializes one session across renderer contexts that share the same stores. */
   serializeSessionOperation?: <Result>(sessionId: string, action: () => Promise<Result>) => Promise<Result>
+  /** Idempotently restores the list entry before publishing the record of an orphaned session. */
+  onOrphanedRowsRestored?: (session: Session) => Promise<void>
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function isEmptyDiff(diff: SessionRowsDiff): boolean {
@@ -240,6 +255,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
   private readonly requiresCompleteWorkModeView: boolean
   private readonly onMigrationSkipped?: (sessionId: string, reason: string) => void
   private readonly serializeSessionOperation?: RowBackedSessionRepositoryOptions['serializeSessionOperation']
+  private readonly onOrphanedRowsRestored?: RowBackedSessionRepositoryOptions['onOrphanedRowsRestored']
   private readonly baselines = new Map<string, SessionBaseline>()
   private readonly observedVersions = new Map<string, PersistedSessionVersion>()
   private readonly revisionsByFingerprint = new Map<string, number | null>()
@@ -255,6 +271,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     this.requiresCompleteWorkModeView = options.requiresCompleteWorkModeView ?? true
     this.onMigrationSkipped = options.onMigrationSkipped
     this.serializeSessionOperation = options.serializeSessionOperation
+    this.onOrphanedRowsRestored = options.onOrphanedRowsRestored
   }
 
   initialize(): Promise<void> {
@@ -311,7 +328,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
 
   getSessionReadModel(id: string): Promise<SessionReadModel | null> {
     return this.enqueueSessionOperation(id, async () => {
-      let marker = await this.records.getRecord(id)
+      let marker = await this.readRecord(id)
       if (!marker) {
         this.forgetSessionState(id)
         return null
@@ -521,6 +538,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     id: string,
     observedRecord?: { record: StoredSessionRecord | null }
   ): Promise<Session | null> {
+    observedRecord ??= { record: await this.readRecord(id) }
     const baseline = this.baselines.get(id)
     const state = await this.inspectPersistedState(
       'get-session',
@@ -663,14 +681,17 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     return this.run('list-session-ids', undefined, () => this.records.listIds())
   }
 
-  /** Ids whose authoritative record is still V1, ordered so passes are reproducible. */
+  /**
+   * Ids whose authoritative record is still V1, or whose row marker holds
+   * content an earlier client wrote, ordered so passes are reproducible.
+   */
   async listUnmigratedSessionIds(shouldSkip?: (id: string) => Promise<boolean>): Promise<string[]> {
     const ids = await this.run('list-session-ids', undefined, () => this.records.listIds())
     const unmigrated: string[] = []
     for (const id of ids) {
       if (await shouldSkip?.(id)) continue
       const record = await this.run('list-session-ids', id, () => this.records.getRecord(id))
-      if (record && !isRowsSessionRecord(record)) unmigrated.push(id)
+      if (record && (!isRowsSessionRecord(record) || hasReleasedClientContent(record))) unmigrated.push(id)
     }
     return unmigrated.sort()
   }
@@ -683,7 +704,11 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     id: string,
     observedRecord?: { record: StoredSessionRecord | null }
   ): Promise<SessionMigrationOutcome> {
-    const state = await this.inspectPersistedState('get-session', id, null, observedRecord)
+    const record = observedRecord ? observedRecord.record : await this.records.getRecord(id)
+    if (record && isRowsSessionRecord(record) && hasReleasedClientContent(record)) {
+      return (await this.absorbReleasedClientContent(id, record)) ? 'migrated' : 'skipped'
+    }
+    const state = await this.inspectPersistedState('get-session', id, null, { record })
     if (state.kind === 'missing') return 'missing'
     if (state.kind === 'rows') return 'already'
     const migrated = await this.writeMigratedSession(id, state, state.session)
@@ -721,8 +746,62 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     await this.run('initialize', undefined, async () => {
       await this.records.initialize()
       await this.rows.initialize()
-      await this.persistence.recoverOrphanedRows((id, action) => this.enqueueSessionOperation(id, action))
+      await this.persistence.recoverOrphanedRows(
+        (id, action) => this.enqueueSessionOperation(id, action),
+        this.onOrphanedRowsRestored,
+        (id, error) => this.onMigrationSkipped?.(id, `rows without a record were kept: ${describeError(error)}`)
+      )
     })
+  }
+
+  /** Reads a session record after folding in any content an earlier client wrote into its row marker. */
+  private async readRecord(id: string): Promise<StoredSessionRecord | null> {
+    const record = await this.records.getRecord(id)
+    if (!record || !isRowsSessionRecord(record) || !hasReleasedClientContent(record)) return record
+    return (await this.absorbReleasedClientContent(id, record)) ?? record
+  }
+
+  /**
+   * Moves content a client that predates row storage wrote into a row marker
+   * into the rows, then republishes a clean marker. Runs inside the session's
+   * operation queue. Returns null when the content could not be merged; it then
+   * stays on the marker, which no row write replaces.
+   */
+  private async absorbReleasedClientContent(id: string, marker: SessionRecordV2): Promise<SessionRecordV2 | null> {
+    this.forgetSessionState(id)
+    try {
+      const state = await this.inspectPersistedState('get-session', id, null, { record: marker })
+      if (state.kind !== 'rows') return null
+      const merged = mergeReleasedClientContent(state.session, migrateSession(releasedClientSession(marker)))
+      let clean = state.snapshot.record
+      if (merged) {
+        const encoded = verifySessionTreeRoundTrip(merged, {
+          activeThreadId: id,
+          now: this.now(),
+          previousMessages: state.snapshot.rows.messages,
+        })
+        if (!encoded.ok) {
+          this.onMigrationSkipped?.(id, `content written by an earlier version was kept: ${encoded.reason}`)
+          return null
+        }
+        const nextRows = toSessionRows(encoded.tree)
+        const committed = await this.persistence.commit(
+          id,
+          diffSessionRows(state.snapshot.rows, nextRows),
+          encoded.tree.session,
+          state.snapshot.revision,
+          nextRows
+        )
+        clean = committed.record
+      }
+      await this.records.setRecord(clean)
+      return clean
+    } catch (error) {
+      this.onMigrationSkipped?.(id, `content written by an earlier version was kept: ${describeError(error)}`)
+      return null
+    } finally {
+      this.forgetSessionState(id)
+    }
   }
 
   private async run<Result>(

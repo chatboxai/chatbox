@@ -1,5 +1,4 @@
-import { hasPausedToolCall, migrateSession } from '@chatbox/core'
-import { isRowsSessionRecord, type SessionDataWriteOptions, type StoredSessionRecord } from '@chatbox/core/ports'
+import type { SessionDataWriteOptions } from '@chatbox/core/ports'
 import {
   LEGACY_PROVIDER_MODEL_KEYS,
   type LegacyFlatSettings,
@@ -35,7 +34,6 @@ import { getOldVersionStorages } from '@/platform/storages'
 import WebPlatform from '@/platform/web_platform'
 import { initData } from '@/setup/init_data'
 import storage, { StorageKey } from '@/storage'
-import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { createSessionMetaRecordsFromLegacyList } from '@/utils/session-utils'
 import * as defaults from '../../shared/defaults'
 import { getLogger } from '../lib/utils'
@@ -70,7 +68,7 @@ type MigrateStore = {
   setBlob?: (key: string, value: string) => Promise<void>
 }
 
-export const CurrentVersion = 16
+export const CurrentVersion = 15
 
 async function doMigrateStorage(oldStorage: Storage) {
   // 找到老版本的数据，说明是升级，执行数据迁移操作
@@ -215,7 +213,6 @@ export async function migrateOnData(dataStore: MigrateStore, canRelaunch = true)
     migrate_12_to_13,
     migrate_13_to_14,
     migrate_14_to_15,
-    migrate_15_to_16,
   ]
 
   for (; configVersion < CurrentVersion; configVersion++) {
@@ -608,37 +605,5 @@ async function migrate_14_to_15(dataStore: MigrateStore) {
   await sessionMetaStorage.createMany(records)
 
   log.info(`migrate_14_to_15, migrated ${records.length} session meta records to DB`)
-  return false
-}
-
-async function migrate_15_to_16(dataStore: MigrateStore) {
-  // Legacy JSON backup imports reuse migrateOnData() with a minimal in-memory
-  // data store (no setBlob) and restore metadata through their own path; only
-  // a live startup should reconcile the application's persisted meta storage.
-  if (!dataStore.setBlob) return false
-
-  const sessionMetaStorage = platform.getSessionMetaStorage()
-  await sessionMetaStorage.initialize()
-
-  const records = await sessionMetaStorage.getAll()
-  let updated = 0
-  for (const record of records) {
-    // Version 15 still stores complete sessions in the KV record. Reading
-    // through SessionRepository here would synchronously promote every session
-    // to row storage before the renderer can start, defeating lazy migration.
-    const stored = await dataStore.getData<StoredSessionRecord | null>(StorageKeyGenerator.session(record.id), null)
-    if (!stored) continue
-    // A prior interrupted attempt may already have promoted this particular
-    // session. Loading an existing row marker is recovery, not eager promotion.
-    const session = isRowsSessionRecord(stored) ? await dataStore.getSession(record.id) : migrateSession(stored)
-    if (!session) continue
-    const hasPaused = hasPausedToolCall(session)
-    if (hasPaused !== (record.hasPausedToolCall === true)) {
-      await sessionMetaStorage.update(record.id, { hasPausedToolCall: hasPaused })
-      updated++
-    }
-  }
-
-  log.info(`migrate_15_to_16, backfilled ${updated} of ${records.length} session meta records`)
   return false
 }

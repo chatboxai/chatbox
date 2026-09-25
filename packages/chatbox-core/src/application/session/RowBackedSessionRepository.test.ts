@@ -258,7 +258,7 @@ describe('RowBackedSessionRepository', () => {
     })
   })
 
-  test('checks and removes orphaned rows inside the shared session operation lock', async () => {
+  test('checks and restores orphaned rows inside the shared session operation lock', async () => {
     const harness = await createHarness()
     const session = createPlainSession('orphan')
     await harness.repository.setSession(session)
@@ -270,14 +270,19 @@ describe('RowBackedSessionRepository', () => {
       expect(locked).toBe(true)
       return readRecord(id)
     })
-    const deleteRows = harness.rows.deleteRows.bind(harness.rows)
-    const remove = vi.spyOn(harness.rows, 'deleteRows').mockImplementation((id, revision) => {
+    const writeRecord = harness.records.setRecord.bind(harness.records)
+    const republish = vi.spyOn(harness.records, 'setRecord').mockImplementation((record) => {
       expect(locked).toBe(true)
-      return deleteRows(id, revision)
+      return writeRecord(record)
+    })
+    const restored = vi.fn((_session: Session) => {
+      expect(locked).toBe(true)
+      return Promise.resolve()
     })
     const restarted = new RowBackedSessionRepository({
       records: harness.records,
       rows: harness.rows,
+      onOrphanedRowsRestored: restored,
       serializeSessionOperation: async (id, action) => {
         lockedIds.push(id)
         locked = true
@@ -292,8 +297,32 @@ describe('RowBackedSessionRepository', () => {
     await restarted.initialize()
 
     expect(lockedIds).toEqual([session.id])
-    expect(remove).toHaveBeenCalledExactlyOnceWith(session.id, 1)
-    await expect(harness.rows.hasRows(session.id)).resolves.toBe(false)
+    expect(republish).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: session.id, storageFormat: 'rows' })
+    )
+    expect(restored).toHaveBeenCalledExactlyOnceWith(normalized(session))
+    await expect(harness.rows.hasRows(session.id)).resolves.toBe(true)
+  })
+
+  test('keeps orphaned rows it cannot read and reports them', async () => {
+    const harness = await createHarness()
+    const session = createPlainSession('unreadable')
+    await harness.repository.setSession(session)
+    await harness.records.removeRecord(session.id)
+    vi.spyOn(harness.rows, 'readSnapshot').mockRejectedValue(new Error('corrupt rows'))
+    const deleteRows = vi.spyOn(harness.rows, 'deleteRows')
+    const skipped = vi.fn()
+    const restarted = new RowBackedSessionRepository({
+      records: harness.records,
+      rows: harness.rows,
+      onMigrationSkipped: skipped,
+    })
+
+    await restarted.initialize()
+
+    expect(deleteRows).not.toHaveBeenCalled()
+    expect(skipped).toHaveBeenCalledExactlyOnceWith(session.id, expect.stringContaining('corrupt rows'))
+    await expect(harness.rows.hasRows(session.id)).resolves.toBe(true)
   })
 
   test('reads a bounded window while full context is hydrating, without releasing queued writes', async () => {
@@ -1449,7 +1478,7 @@ describe('RowBackedSessionRepository', () => {
       await expect(harness.rows.hasRows(session.id)).resolves.toBe(false)
     })
 
-    test('cleans rows left by an interrupted record-first deletion on restart', async () => {
+    test('restores a session whose record-first deletion was interrupted, so it can be deleted again', async () => {
       const harness = await createHarness()
       const session = createPlainSession()
       await harness.repository.setSession(session)
@@ -1462,9 +1491,10 @@ describe('RowBackedSessionRepository', () => {
       })
       await restarted.initialize()
 
+      await expect(restarted.getSession(session.id)).resolves.toEqual(normalized(session))
+      await restarted.deleteSession(session.id)
       await expect(restarted.getSession(session.id)).resolves.toBeNull()
       await expect(harness.rows.hasRows(session.id)).resolves.toBe(false)
-      await expect(harness.rows.getRevision(session.id)).resolves.toBe(2)
     })
 
     test('rejects deletion from a repository whose cached snapshot is stale', async () => {

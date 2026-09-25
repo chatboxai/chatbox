@@ -1,6 +1,7 @@
 import { exportBackupArchive, importBackupArchive, prepareBackupExport } from '@chatbox/core/backup'
 import { MemoryStorage } from '../../../packages/chatbox-core/src/backup/sharded.test-support'
 import 'fake-indexeddb/auto'
+import { IDBFactory } from 'fake-indexeddb'
 import { type SessionMetaRepositoryPort, SessionRepositoryError } from '@chatbox/core/ports'
 import {
   createSessionRepositoryContract,
@@ -67,6 +68,8 @@ function createMetaStorage(): SessionMetaRepositoryPort {
 }
 
 function createHarness(metaStorage: SessionMetaRepositoryPort = createMetaStorage()) {
+  // Each harness owns its record map, so it also gets its own row database.
+  globalThis.indexedDB = new IDBFactory()
   const values = new Map<string, unknown>()
   const getItem = vi.fn((key: string, initialValue: unknown) =>
     Promise.resolve(values.has(key) ? values.get(key) : initialValue)
@@ -276,6 +279,47 @@ describe('CurrentSessionRepository contract', () => {
     expect(harness.values.has('session:session-delete')).toBe(false)
     expect(harness.removeItem).toHaveBeenCalledWith('session:session-delete')
     await expect(harness.rowStore.readSnapshot('session-delete')).resolves.toBeNull()
+  })
+
+  test('restores a migrated session an earlier version deleted, with its list entry', async () => {
+    await harness.repository.setSession(createSessionWithMessages('deleted-by-earlier-version'))
+    harness.values.delete('session:deleted-by-earlier-version')
+
+    const restarted = new CurrentSessionRepository({
+      dataStorage: harness.dataStorage,
+      metaStorage: harness.metaStorage,
+      rowStore: harness.rowStore,
+    })
+    await restarted.initialize()
+
+    expect(harness.metaStorage.create).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'deleted-by-earlier-version', sortOrder: 100, createdAt: 100 })
+    )
+    expect(storedRecord(harness, 'deleted-by-earlier-version')).toMatchObject({ storageFormat: 'rows' })
+    expect((await restarted.getSession('deleted-by-earlier-version'))?.messages.map((item) => item.id)).toEqual([
+      'user-1',
+      'assistant-1',
+    ])
+  })
+
+  test('restores a session whose deletion was interrupted without duplicating its list entry', async () => {
+    await harness.repository.setSession(createSessionWithMessages('interrupted-delete'))
+    harness.values.delete('session:interrupted-delete')
+    vi.mocked(harness.metaStorage.getById).mockImplementation((id) =>
+      Promise.resolve(
+        id === 'interrupted-delete' ? ({ id, name: 'Session', sortOrder: 1, createdAt: 1 } as const) : null
+      )
+    )
+
+    const restarted = new CurrentSessionRepository({
+      dataStorage: harness.dataStorage,
+      metaStorage: harness.metaStorage,
+      rowStore: harness.rowStore,
+    })
+    await restarted.initialize()
+
+    expect(harness.metaStorage.create).not.toHaveBeenCalled()
+    expect((await restarted.getSession('interrupted-delete'))?.messages).toHaveLength(2)
   })
 
   test('lists only valid full-session identifiers', async () => {

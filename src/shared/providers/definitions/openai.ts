@@ -151,7 +151,7 @@ export const openaiProvider = defineProvider({
           apiKey: 'oauth-placeholder',
           apiHost: config.formattedApiHost,
           apiPath: '/responses',
-          model: config.model,
+          model: { ...config.model, apiStyle: 'openai-responses' },
           temperature: config.settings.temperature,
           topP: config.settings.topP,
           maxOutputTokens: config.settings.maxTokens,

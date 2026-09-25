@@ -547,10 +547,10 @@ describe('convertToModelMessages — Anthropic thinking replay', () => {
             text: 'thought',
             providerMetadata: {
               anthropic: { signature: 'signature-a', cacheControl: { type: 'ephemeral' } },
-              openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' },
+              mistral: { usage: { promptTokens: 10 } },
             },
           },
-          { type: 'reasoning', text: '', providerMetadata: { openai: { itemId: 'rs_2' } } },
+          { type: 'reasoning', text: '', providerMetadata: { mistral: { usage: { promptTokens: 20 } } } },
         ],
       },
     ]
@@ -567,6 +567,181 @@ describe('convertToModelMessages — Anthropic thinking replay', () => {
         type: 'reasoning',
         text: 'thought',
         providerOptions: { anthropic: { signature: 'signature-a' } },
+      },
+    ])
+  })
+
+  it('replays OpenAI Responses encrypted reasoning items', async () => {
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [
+          {
+            type: 'reasoning',
+            text: 'planning the tool call',
+            providerMetadata: {
+              openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted', chatboxReplaySource: 'source-a' },
+            },
+          },
+          {
+            type: 'reasoning',
+            text: '',
+            providerMetadata: {
+              openai: { itemId: 'rs_2', reasoningEncryptedContent: 'encrypted-2', chatboxReplaySource: 'source-a' },
+            },
+            protocolOnly: true,
+          },
+        ],
+      },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+      replayNamespaces: ['openai'],
+      reasoningReplaySource: 'source-a',
+    })
+    const assistant = output.find((message) => message.role === 'assistant')
+
+    expect(assistant?.content).toEqual([
+      {
+        type: 'reasoning',
+        text: 'planning the tool call',
+        providerOptions: { openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } },
+      },
+      {
+        type: 'reasoning',
+        text: '',
+        providerOptions: { openai: { itemId: 'rs_2', reasoningEncryptedContent: 'encrypted-2' } },
+      },
+    ])
+    expect(() => modelMessageSchema.parse(assistant)).not.toThrow()
+  })
+
+  it('replays Gemini thought signatures on reasoning and text parts', async () => {
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [
+          {
+            type: 'reasoning',
+            text: 'weighing options',
+            providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+          },
+          {
+            type: 'text',
+            text: 'Final answer',
+            providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+          },
+        ],
+      },
+    ]
+
+    const output = await convertToModelMessages(messages, noImage, {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns',
+      signedReasoningOnly: true,
+      replayNamespaces: ['google'],
+    })
+    const assistant = output.find((message) => message.role === 'assistant')
+
+    expect(assistant?.content).toEqual([
+      {
+        type: 'reasoning',
+        text: 'weighing options',
+        providerOptions: { google: { thoughtSignature: 'thought-sig' } },
+      },
+      {
+        type: 'text',
+        text: 'Final answer',
+        providerOptions: { google: { thoughtSignature: 'answer-sig' } },
+      },
+    ])
+    expect(() => modelMessageSchema.parse(assistant)).not.toThrow()
+  })
+
+  it("never replays one route's reasoning metadata onto another route", async () => {
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        contentParts: [
+          {
+            type: 'reasoning',
+            text: 'openai thought',
+            providerMetadata: {
+              openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted', chatboxReplaySource: 'source-a' },
+            },
+          },
+          {
+            type: 'reasoning',
+            text: 'claude thought',
+            providerMetadata: { anthropic: { signature: 'signature-a' } },
+          },
+          {
+            type: 'reasoning',
+            text: 'gemini thought',
+            providerMetadata: { google: { thoughtSignature: 'gemini-sig' } },
+          },
+          {
+            type: 'text',
+            text: 'gemini answer',
+            providerMetadata: { google: { thoughtSignature: 'gemini-answer-sig' } },
+          },
+        ],
+      },
+    ]
+
+    const options = {
+      modelSupportVision: true,
+      preserveReasoning: 'all-turns' as const,
+      signedReasoningOnly: true,
+    }
+
+    // Anthropic route: a leftover OpenAI item must not turn this block into a
+    // wire-visible thinking block the Messages API would reject for its missing
+    // signature. The Gemini-signed text part still goes out — as plain text, with
+    // its foreign signature stripped.
+    const anthropicOutput = await convertToModelMessages(messages, noImage, {
+      ...options,
+      replayNamespaces: ['anthropic'],
+    })
+    expect(anthropicOutput.find((m) => m.role === 'assistant')?.content).toEqual([
+      { type: 'reasoning', text: 'claude thought', providerOptions: { anthropic: { signature: 'signature-a' } } },
+      { type: 'text', text: 'gemini answer' },
+    ])
+
+    const openaiOutput = await convertToModelMessages(messages, noImage, {
+      ...options,
+      replayNamespaces: ['openai'],
+      reasoningReplaySource: 'source-a',
+    })
+    expect(openaiOutput.find((m) => m.role === 'assistant')?.content).toEqual([
+      {
+        type: 'reasoning',
+        text: 'openai thought',
+        providerOptions: { openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } },
+      },
+      { type: 'text', text: 'gemini answer' },
+    ])
+
+    const googleOutput = await convertToModelMessages(messages, noImage, {
+      ...options,
+      replayNamespaces: ['google'],
+    })
+    expect(googleOutput.find((m) => m.role === 'assistant')?.content).toEqual([
+      {
+        type: 'reasoning',
+        text: 'gemini thought',
+        providerOptions: { google: { thoughtSignature: 'gemini-sig' } },
+      },
+      {
+        type: 'text',
+        text: 'gemini answer',
+        providerOptions: { google: { thoughtSignature: 'gemini-answer-sig' } },
       },
     ])
   })

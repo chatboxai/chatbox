@@ -101,6 +101,7 @@ describe('createOpenAIOAuthFetch', () => {
       instructions: 'You are a helpful assistant.',
       store: false,
       stream: true,
+      include: ['reasoning.encrypted_content'],
     })
   })
 })

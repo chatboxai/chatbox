@@ -213,7 +213,7 @@ describe('processStreamChunk', () => {
     ])
   })
 
-  it('does not persist non-whitelisted provider metadata or create parts for it', async () => {
+  it('persists OpenAI Responses encrypted reasoning metadata for replay', async () => {
     const chunks = [
       chunk('reasoning-start', {
         id: 'reasoning-0',
@@ -221,14 +221,103 @@ describe('processStreamChunk', () => {
       }),
       chunk('reasoning-delta', {
         id: 'reasoning-0',
-        text: '',
+        text: 'visible thought',
         providerMetadata: { openai: { itemId: 'rs_1' } },
       }),
       chunk('reasoning-end', { id: 'reasoning-0', providerMetadata: { openai: { itemId: 'rs_1' } } }),
+    ]
+
+    let state = createInitialState()
+    for (const streamChunk of chunks) {
+      state = (await processStreamChunk(streamChunk, state, callbacks)).state
+    }
+
+    expect(state.contentParts).toHaveLength(1)
+    expect(state.contentParts[0]).toMatchObject({
+      type: 'reasoning',
+      text: 'visible thought',
+      providerMetadata: { openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } },
+    })
+  })
+
+  it('persists Gemini thought signatures on reasoning and text parts', async () => {
+    const chunks = [
+      chunk('reasoning-start', {
+        id: 'reasoning-0',
+        providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+      }),
+      chunk('reasoning-delta', {
+        id: 'reasoning-0',
+        text: 'weighing options',
+        providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+      }),
+      chunk('reasoning-end', { id: 'reasoning-0' }),
+      chunk('text-delta', {
+        id: 'text-0',
+        text: 'Final answer',
+        providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+      }),
+      chunk('text-end', { id: 'text-0' }),
+    ]
+
+    let state = createInitialState()
+    for (const streamChunk of chunks) {
+      state = (await processStreamChunk(streamChunk, state, callbacks)).state
+    }
+
+    expect(state.contentParts).toMatchObject([
+      {
+        type: 'reasoning',
+        text: 'weighing options',
+        providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+      },
+      {
+        type: 'text',
+        text: 'Final answer',
+        providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+      },
+    ])
+  })
+
+  it('keeps a text part signature that arrives as an empty trailing delta', async () => {
+    // Gemini signs the response's last part and streams the signature as a delta
+    // with no text, so it has to land on the open text block.
+    const chunks = [
+      chunk('text-delta', { id: 'text-0', text: 'Final answer' }),
+      chunk('text-delta', {
+        id: 'text-0',
+        text: '',
+        providerMetadata: { google: { thoughtSignature: 'trailing-sig' } },
+      }),
+      chunk('text-end', { id: 'text-0' }),
+    ]
+
+    let state = createInitialState()
+    for (const streamChunk of chunks) {
+      state = (await processStreamChunk(streamChunk, state, callbacks)).state
+    }
+
+    expect(state.contentParts).toMatchObject([
+      { type: 'text', text: 'Final answer', providerMetadata: { google: { thoughtSignature: 'trailing-sig' } } },
+    ])
+  })
+
+  it('does not persist non-whitelisted provider metadata or create parts for it', async () => {
+    const chunks = [
+      chunk('reasoning-start', {
+        id: 'reasoning-0',
+        providerMetadata: { mistral: { usage: { promptTokens: 10 } } },
+      }),
+      chunk('reasoning-delta', {
+        id: 'reasoning-0',
+        text: '',
+        providerMetadata: { mistral: { usage: { promptTokens: 10 } } },
+      }),
+      chunk('reasoning-end', { id: 'reasoning-0', providerMetadata: { mistral: { usage: { promptTokens: 10 } } } }),
       chunk('reasoning-delta', {
         id: 'reasoning-1',
         text: 'visible thought',
-        providerMetadata: { openai: { itemId: 'rs_2' } },
+        providerMetadata: { mistral: { usage: { promptTokens: 20 } } },
       }),
       chunk('reasoning-end', { id: 'reasoning-1' }),
     ]

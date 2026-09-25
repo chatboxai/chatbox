@@ -8,9 +8,13 @@ import type { GenerationPreparationRequest } from './GenerationService'
 
 type TestContext = { host: 'native' }
 
-function createModel(options: { system?: boolean; vision?: boolean } = {}): ModelInterface {
+function createModel(
+  options: { system?: boolean; vision?: boolean; apiStyle?: ModelInterface['apiStyle']; replaySource?: string } = {}
+): ModelInterface {
   return {
-    apiStyle: 'openai',
+    modelId: 'test',
+    apiStyle: options.apiStyle ?? 'openai',
+    reasoningReplaySource: options.replaySource,
     isSupportSystemMessage: () => options.system !== false,
     isSupportVision: () => options.vision !== false,
   } as unknown as ModelInterface
@@ -138,5 +142,45 @@ describe('BasicGenerationPreparation', () => {
     expect(JSON.stringify(prepared.coreMessages)).toContain('save_memory')
     expect(JSON.stringify(prepared.coreMessages)).toContain('Prefers Chinese')
     expect(JSON.stringify(prepared.coreMessages).includes('"type":"tool-call"')).toBe(hasTools)
+  })
+  it.each([
+    ['openai-responses', true],
+    ['anthropic', false],
+  ] as const)('replays %s reasoning metadata on the portable path: %s', async (apiStyle, replayed) => {
+    const request = createRequest(createModel({ apiStyle, replaySource: 'source-a' }))
+    request.messages.splice(2, 0, {
+      id: 'prior-answer',
+      role: 'assistant',
+      contentParts: [
+        {
+          type: 'reasoning',
+          text: '',
+          protocolOnly: true,
+          providerMetadata: {
+            openai: { itemId: 'rs_0', reasoningEncryptedContent: 'encrypted', chatboxReplaySource: 'source-a' },
+            anthropic: { signature: 'signature' },
+          },
+        },
+        { type: 'text', text: 'Prior answer' },
+      ],
+    })
+    request.targetMessageIndex = 3
+
+    const prepared = await new BasicGenerationPreparation<TestContext>().prepare(request)
+
+    const reasoning = prepared.coreMessages.flatMap((message) =>
+      Array.isArray(message.content) ? message.content.filter((part) => part.type === 'reasoning') : []
+    )
+    expect(reasoning).toEqual(
+      replayed
+        ? [
+            {
+              type: 'reasoning',
+              text: '',
+              providerOptions: { openai: { itemId: 'rs_0', reasoningEncryptedContent: 'encrypted' } },
+            },
+          ]
+        : []
+    )
   })
 })

@@ -1,6 +1,7 @@
 import { buildContext, flattenToolCallPartsToText } from '@shared/context'
 import type { Message, MessageContentParts } from '@shared/types'
 import type { MemoryToolContext } from '@shared/types/agent-persona'
+import { resolveReasoningReplayPolicy } from '@shared/utils/reasoning-control'
 import type { ToolSet } from 'ai'
 import type { GenerationPreparationPort, GenerationPreparationRequest } from './GenerationService'
 import { prepareModelMessages } from './model-message-preparation'
@@ -76,12 +77,21 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
         () => `generation-instructions-${request.session.id}`
       )
     }
+    const replay = resolveReasoningReplayPolicy(
+      request.settings.provider,
+      { modelId: request.model.modelId, apiStyle: request.model.apiStyle },
+      request.model.reasoningReplaySource
+    )
+    // Anthropic signed replay also needs the Renderer harness's unsigned-resume
+    // handling, so this path replays only the Responses and Gemini protocols.
+    const portableReplay = replay.replayNamespaces.some((namespace) => namespace === 'openai' || namespace === 'google')
     const preparedMessages = await prepareModelMessages({
       messages: promptMessages,
       model: request.model,
       resolveImage: (storageKey) => request.attachments.read(storageKey),
       conversion: {
         ensureGoogleFunctionCallSignatures: request.model.apiStyle === 'google',
+        ...(portableReplay ? replay : {}),
       },
     })
     promptMessages = preparedMessages.promptMessages

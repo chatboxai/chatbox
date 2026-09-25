@@ -8,6 +8,7 @@ import type { ModelDependencies } from '../types/adapters'
 import { withResolvedModelApiStyle } from './api-style'
 import './builtin-registration'
 import { mergeProviderModelCapabilities } from './model-config'
+import { bindReasoningReplaySource } from './reasoning-replay-source'
 import {
   clearProviderRegistry,
   defineProvider,
@@ -170,7 +171,7 @@ export function getModel(
       effectiveApiKey,
     }
 
-    return providerDefinition.createModel(createConfig)
+    return bindReasoningReplaySource(providerDefinition.createModel(createConfig), createConfig)
   }
 
   // Provider not registered - check if it's a custom provider
@@ -188,20 +189,20 @@ export function getModel(
   if (providerBaseInfo.isCustom) {
     const formattedApiPath = providerSetting.apiPath || providerBaseInfo.defaultSettings?.apiPath || ''
     const effectiveApiKey = resolveEffectiveApiKey(providerSetting, dependencies.platformType || 'desktop')
-    return createCustomProviderModel(
-      {
-        settings,
-        globalSettings,
-        config,
-        dependencies,
-        providerSetting,
-        formattedApiHost,
-        formattedApiPath,
-        model,
-        effectiveApiKey,
-      },
-      providerBaseInfo.type,
-      dependencies
+    const createConfig: CreateModelConfig = {
+      settings,
+      globalSettings,
+      config,
+      dependencies,
+      providerSetting,
+      formattedApiHost,
+      formattedApiPath,
+      model,
+      effectiveApiKey,
+    }
+    return bindReasoningReplaySource(
+      createCustomProviderModel(createConfig, providerBaseInfo.type, dependencies),
+      createConfig
     )
   }
 

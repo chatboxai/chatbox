@@ -445,10 +445,11 @@ export async function prepareAgentGenerationHarness(
 
   injectedMessages = sequenceMessages(injectedMessages)
 
-  const reasoningReplay = resolveReasoningReplayPolicy(settings.provider, {
-    modelId: model.modelId,
-    apiStyle: model.apiStyle,
-  })
+  const reasoningReplay = resolveReasoningReplayPolicy(
+    settings.provider,
+    { modelId: model.modelId, apiStyle: model.apiStyle },
+    model.reasoningReplaySource
+  )
   // Anchored on the last surface message, before synthetic trailing time
   // reminders: only a request that resumes an assistant tool exchange is
   // subject to the Anthropic turn-start rule. When the resumed turn cannot
@@ -456,13 +457,16 @@ export async function prepareAgentGenerationHarness(
   // then carry no thinking blocks at all — replay is dropped alongside.
   const disableClaudeThinkingForResume = shouldDisableClaudeThinkingForUnsignedResume(
     promptMsgs.at(-1),
-    reasoningReplay.signedReasoningOnly,
+    // Keyed on the route, not on "signed replay is on": OpenAI Responses also
+    // replays signed metadata but has no turn-start rule, and degrading it here
+    // would drop the encrypted reasoning items this request exists to replay.
+    reasoningReplay.replayNamespaces.includes('anthropic'),
     model.modelId
   )
   const coreMessages = await convertToModelMessages(injectedMessages, {
     modelSupportVision: model.isSupportVision(),
+    ...reasoningReplay,
     preserveReasoning: disableClaudeThinkingForResume ? false : reasoningReplay.preserveReasoning,
-    signedReasoningOnly: reasoningReplay.signedReasoningOnly,
     // getModel() stamps apiStyle from the provider type (builtin/custom Gemini providers)
     // or the per-model remote config (ChatboxAI google-routed models), so it is the single
     // signal for "this request speaks the Gemini function-call protocol".

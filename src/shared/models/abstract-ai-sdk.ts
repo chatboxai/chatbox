@@ -6,6 +6,7 @@ import {
   generateImage,
   type ImageModel,
   type ImageModelProviderMetadata,
+  isStepCount,
   type LanguageModelUsage,
   type ModelMessage,
   type PrepareStepFunction,
@@ -13,7 +14,6 @@ import {
   type ProviderMetadata,
   RetryError,
   simulateStreamingMiddleware,
-  isStepCount,
   streamText,
   type TextStreamPart,
   type ToolCallRepairFunction,
@@ -34,14 +34,21 @@ import type {
 import type { ModelDependencies } from '../types/adapters'
 import { getReasoningControlCapabilities, stripReasoningProviderOptions } from '../utils/reasoning-control'
 import { normalizeCompletedResponse } from './completed-response-normalizer'
+import {
+  accumulateReasoningChunk,
+  accumulateTextChunk,
+  type ContentPartAccumulator,
+  finalizeReasoningDuration,
+} from './content-part-accumulator'
 import { isExpectedGenerationError } from './error-classification'
 import { ApiError, BaseError, ChatboxAIAPIError, NetworkError } from './errors'
+import { toMessageUsage } from './message-usage'
 import { wrapOpenAICompatibleNonStreamingModel } from './openai-compatible-non-streaming'
 import { stopWhenPersistentToolCallPause } from './persistent-tool-call-pause'
-import { mergeProviderMetadata, pickPersistableProviderMetadata } from './provider-part-metadata'
+import { bindReplaySource } from './provider-part-metadata'
 import { createRetryableChatModel } from './retryable-chat-model'
+import { simulateStreamingWithTextReplayMetadataMiddleware, textReplayMetadataMiddleware } from './text-replay-metadata'
 import { repairToolCallJson } from './tool-call-json-repair'
-import { toMessageUsage } from './message-usage'
 import type {
   CallChatCompletionOptions,
   CallSettings,
@@ -123,6 +130,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
   public name = 'AI SDK Model'
   public injectDefaultMetadata = true
   public modelId = ''
+  public reasoningReplaySource?: string
 
   public get apiStyle(): ProviderModelInfo['apiStyle'] {
     return this.options.model.apiStyle
@@ -156,6 +164,15 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
   protected abstract getChatModel(options: CallChatCompletionOptions): LanguageModelV4
 
   private prepareChatModel(model: LanguageModelV4): LanguageModelV4 {
+    if (this.apiStyle === 'google') {
+      return wrapLanguageModel({
+        model,
+        middleware:
+          this.options.stream === false
+            ? simulateStreamingWithTextReplayMetadataMiddleware
+            : textReplayMetadataMiddleware,
+      })
+    }
     if (this.options.stream !== false) return model
 
     if (this.apiStyle === 'openai') {
@@ -389,7 +406,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
           this.handleError(chunk.error)
         }
 
-        yield chunk
+        yield this.scopeReasoningReplayMetadata(chunk)
       }
 
       let status = statusQueue.shift()
@@ -596,58 +613,11 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     }
   }
 
-  private createOrUpdateContentPart<T extends MessageTextPart | MessageReasoningPart>(
-    textDelta: string,
-    contentParts: MessageContentParts,
-    currentPart: T | undefined,
-    type: T['type']
-  ): T {
-    if (!currentPart) {
-      currentPart = { type, text: '' } as T
-      contentParts.push(currentPart)
+  private scopeReasoningReplayMetadata<T extends ToolSet>(chunk: TextStreamPart<T>): TextStreamPart<T> {
+    if (chunk.type !== 'reasoning-start' && chunk.type !== 'reasoning-delta' && chunk.type !== 'reasoning-end') {
+      return chunk
     }
-    currentPart.text += textDelta
-    return currentPart
-  }
-
-  private createOrUpdateTextPart(
-    textDelta: string,
-    contentParts: MessageContentParts,
-    currentTextPart: MessageTextPart | undefined
-  ): MessageTextPart {
-    return this.createOrUpdateContentPart(textDelta, contentParts, currentTextPart, 'text')
-  }
-
-  /**
-   * Creates or updates a reasoning part with timing information for streaming responses
-   * @param textDelta - New text to append to the reasoning content
-   * @param contentParts - Array of message content parts
-   * @param currentReasoningPart - Existing reasoning part to update, if any
-   * @returns The updated or newly created reasoning part
-   */
-  private createOrUpdateReasoningPart(
-    textDelta: string,
-    contentParts: MessageContentParts,
-    currentReasoningPart: MessageReasoningPart | undefined,
-    persistableProviderMetadata?: ProviderMetadata
-  ): MessageReasoningPart {
-    if (!currentReasoningPart) {
-      // Create new reasoning part with start time for timer tracking in streaming mode
-      currentReasoningPart = {
-        type: 'reasoning',
-        text: '',
-        startTime: Date.now(), // Capture when thinking begins
-      }
-      contentParts.push(currentReasoningPart)
-    }
-    currentReasoningPart.text += textDelta
-    if (persistableProviderMetadata) {
-      currentReasoningPart.providerMetadata = mergeProviderMetadata(
-        currentReasoningPart.providerMetadata,
-        persistableProviderMetadata
-      )
-    }
-    return currentReasoningPart
+    return { ...chunk, providerMetadata: bindReplaySource(chunk.providerMetadata, this.reasoningReplaySource) }
   }
 
   private async processImageFile(
@@ -677,109 +647,32 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
      */
     pendingReasoningText: string
   }> {
-    // Finalize reasoning duration when transitioning to other content types
-    const finalizeReasoningDuration = () => {
-      if (currentReasoningPart?.startTime && !currentReasoningPart.duration) {
-        currentReasoningPart.duration = Date.now() - currentReasoningPart.startTime
-      }
-    }
-
     switch (chunk.type) {
+      case 'text-end':
       case 'text-delta':
-        finalizeReasoningDuration()
-        // clear current reasoning part
-        return {
-          currentTextPart: this.createOrUpdateTextPart(chunk.text, contentParts, currentTextPart),
-          currentReasoningPart: undefined,
-          pendingReasoningText: '',
-        }
-
-      case 'reasoning-start': {
-        finalizeReasoningDuration()
-        // Anthropic delivers `redacted_thinking` payloads on the block-start chunk;
-        // metadata outside the persistable whitelist never creates a part (see
-        // the core stream-chunk-processor for the same rule).
-        const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
-        if (persistable) {
-          return {
-            currentTextPart: undefined,
-            currentReasoningPart: this.createOrUpdateReasoningPart('', contentParts, undefined, persistable),
-            pendingReasoningText: '',
-          }
-        }
-        return {
-          currentTextPart,
-          currentReasoningPart: undefined,
-          pendingReasoningText: '',
-        }
-      }
-
-      case 'reasoning-delta': {
-        // 部分提供方会随文本返回空的reasoning，防止分割正常的content。
-        // Anthropic signature_delta 是空文本 + provider metadata，需要照常落到 part 上。
-        const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
-        if (currentReasoningPart) {
-          // Signed thinking must round-trip byte-for-byte: once the block has a
-          // part, even whitespace-only deltas append verbatim.
-          return {
-            currentTextPart: undefined,
-            currentReasoningPart: this.createOrUpdateReasoningPart(
-              chunk.text,
-              contentParts,
-              currentReasoningPart,
-              persistable
-            ),
-            pendingReasoningText: '',
-          }
-        }
-        if (chunk.text.trim() || persistable) {
-          return {
-            currentTextPart: undefined,
-            currentReasoningPart: this.createOrUpdateReasoningPart(
-              pendingReasoningText + chunk.text,
-              contentParts,
-              undefined,
-              persistable
-            ),
-            pendingReasoningText: '',
-          }
-        }
-        // Whitespace before the block has produced a part: buffer it so a later
-        // signed part keeps the exact text; discarded if the block yields nothing.
-        return {
+      case 'reasoning-start':
+      case 'reasoning-delta':
+      case 'reasoning-end': {
+        const accumulator: ContentPartAccumulator = {
+          contentParts,
           currentTextPart,
           currentReasoningPart,
-          pendingReasoningText: pendingReasoningText + chunk.text,
+          pendingReasoningText,
         }
-      }
-
-      case 'reasoning-end': {
-        const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
-        if (persistable && !currentReasoningPart) {
-          currentReasoningPart = this.createOrUpdateReasoningPart(
-            pendingReasoningText,
-            contentParts,
-            undefined,
-            persistable
-          )
-        } else if (persistable) {
-          currentReasoningPart = this.createOrUpdateReasoningPart('', contentParts, currentReasoningPart, persistable)
+        if (chunk.type === 'text-delta' || chunk.type === 'text-end') {
+          accumulateTextChunk(accumulator, chunk)
+        } else {
+          accumulateReasoningChunk(accumulator, chunk)
         }
-        // A block that ends with replay metadata but no visible text exists only
-        // for protocol replay (redacted thinking, signed empty thinking block).
-        if (currentReasoningPart && !currentReasoningPart.text.trim() && currentReasoningPart.providerMetadata) {
-          currentReasoningPart.protocolOnly = true
-        }
-        finalizeReasoningDuration()
         return {
-          currentTextPart,
-          currentReasoningPart: undefined,
-          pendingReasoningText: '',
+          currentTextPart: accumulator.currentTextPart,
+          currentReasoningPart: accumulator.currentReasoningPart,
+          pendingReasoningText: accumulator.pendingReasoningText,
         }
       }
 
       case 'tool-call':
-        finalizeReasoningDuration()
+        finalizeReasoningDuration(currentReasoningPart)
         this.processToolCalls([chunk], contentParts, _options)
         return {
           currentTextPart: undefined,
@@ -791,7 +684,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         this.processToolResults([chunk], contentParts, _options)
         break
       case 'tool-error':
-        finalizeReasoningDuration()
+        finalizeReasoningDuration(currentReasoningPart)
         this.processToolErrors([chunk], contentParts, _options)
         break
       case 'file':
@@ -940,7 +833,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         }
 
         const chunkResult = await this.processStreamChunk(
-          chunk,
+          this.scopeReasoningReplayMetadata(chunk),
           contentParts,
           currentTextPart,
           currentReasoningPart,

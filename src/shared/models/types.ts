@@ -18,6 +18,8 @@ export interface ModelInterface {
    * type (builtin/custom providers) or the per-model remote config (ChatboxAI).
    */
   readonly apiStyle?: ProviderModelInfo['apiStyle']
+  /** Opaque provider/model/endpoint/auth binding for encrypted reasoning replay. */
+  reasoningReplaySource?: string
   isSupportVision(): boolean
   isSupportToolUse(scope?: ToolUseScope): boolean
   isSupportSystemMessage(): boolean

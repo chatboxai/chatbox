@@ -181,6 +181,11 @@ export function createOpenAIOAuthFetch(
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             const body = parsed as Record<string, unknown>
             if (body.store !== false) body.store = false
+            // Stateless requests keep reasoning across turns only through the encrypted item.
+            const include = Array.isArray(body.include) ? body.include : []
+            if (!include.includes('reasoning.encrypted_content')) {
+              body.include = [...include, 'reasoning.encrypted_content']
+            }
             if (typeof body.instructions !== 'string' || body.instructions.length === 0) {
               body.instructions = 'You are a helpful assistant.'
             }

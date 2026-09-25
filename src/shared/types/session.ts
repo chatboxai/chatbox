@@ -123,6 +123,8 @@ const MessageProviderMetadataSchema: z.ZodType<ProviderMetadata> = z.record(
 export const MessageTextPartSchema = z.object({
   type: z.literal('text'),
   text: z.string(),
+  /** Provider metadata required to replay signed text, including Gemini thought signatures. */
+  providerMetadata: MessageProviderMetadataSchema.optional(),
   /** Provider step that emitted this assistant part; absent on user and legacy parts. */
   stepIndex: z.number().optional().catch(undefined),
   /**

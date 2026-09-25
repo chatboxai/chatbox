@@ -1,4 +1,4 @@
-import type { Session, SessionMetaPage, SessionMetaRecord } from '../types/session'
+import type { Session, SessionFolder, SessionMetaPage, SessionMetaRecord } from '../types/session'
 import type { SessionContextRepositoryPort } from './session-context-source'
 import type { SessionMessageRepositoryPort } from './session-message-source'
 import type { SessionReadRepositoryPort } from './session-read-model'
@@ -86,11 +86,21 @@ export interface SessionMetaRepositoryPort {
   getAllIncludingHidden(): Promise<SessionMetaRecord[]>
   getArchived(): Promise<SessionMetaRecord[]>
   getArchivedPage(cursor: number, limit?: number): Promise<SessionMetaPage>
-  getPage(cursor: number, limit?: number): Promise<SessionMetaPage>
+  /**
+   * Visible sessions in display order (see `sortSessionRecords`): pinned, then
+   * each folder of `folderIds` in order, then unfiled.
+   */
+  getPage(cursor: number, limit?: number, folderIds?: readonly string[]): Promise<SessionMetaPage>
   getTotal(): Promise<number>
   getAllTotal(): Promise<number>
   getArchivedTotal(): Promise<number>
   clear(): Promise<void>
+}
+
+/** Folder definitions of the session list; array order is display order. */
+export interface SessionFolderStorePort {
+  load(): Promise<SessionFolder[]>
+  save(folders: SessionFolder[]): Promise<void>
 }
 
 export interface SessionRepositoryPort extends SessionDataRepositoryPort {

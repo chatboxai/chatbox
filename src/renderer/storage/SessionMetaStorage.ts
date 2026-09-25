@@ -219,8 +219,20 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     })
   }
 
-  async getPage(cursor: number = 0, limit: number = DEFAULT_PAGE_SIZE): Promise<SessionMetaPage> {
+  async getPage(
+    cursor: number = 0,
+    limit: number = DEFAULT_PAGE_SIZE,
+    folderIds: readonly string[] = []
+  ): Promise<SessionMetaPage> {
     await this.initialize()
+    if (folderIds.length > 0) {
+      // Folder grouping has no matching index (adding one needs a version bump),
+      // so order the small metadata records in memory.
+      const visible = sortSessionRecords(await this.getAllRecords(), folderIds)
+      const items = visible.slice(cursor, cursor + limit)
+      const nextCursor = cursor + items.length < visible.length ? cursor + items.length : null
+      return { items, nextCursor, total: visible.length }
+    }
     const [items, total] = await Promise.all([this.getVisibleRecordsPage(cursor, limit), this.getTotal()])
     const nextCursor = cursor + items.length < total ? cursor + items.length : null
     return { items, nextCursor, total }

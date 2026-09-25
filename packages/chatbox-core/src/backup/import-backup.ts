@@ -36,6 +36,7 @@ import {
   restoreSessionResourceKeys,
   restoreSettingsResourceKeys,
 } from './resources'
+import { mergeRestoredSessionFolders } from './session-folders'
 import { importShardedBackup, type ShardedBackupOptions } from './sharded-backup'
 import type { BackupManifestV3 } from './sharded-format'
 import {
@@ -713,6 +714,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
         ? [
             BackupStorageKey.ChatSessionSettings,
             BackupStorageKey.PictureSessionSettings,
+            BackupStorageKey.SessionFolders,
             ...AGENT_PERSONA_BACKUP_KEYS,
             ...COPILOT_BACKUP_KEYS,
           ]
@@ -789,6 +791,10 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
 
       const meta = {
         ...restoreSessionMetaResourceKeys(descriptor.meta, resourceKeyMap),
+        // The restored body owns folder membership; an explicit key clears a
+        // folder the local metadata still holds when `update` merges.
+        folderId: session.folderId,
+        hasPausedToolCall: hasPausedToolCall(migrateSession(session)),
         recoveryArchived: descriptor.meta.recoveryArchived,
         hasPausedToolCall: hasPausedToolCall(migrateSession(session)),
       }
@@ -828,11 +834,18 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       for (const key of [
         BackupStorageKey.ChatSessionSettings,
         BackupStorageKey.PictureSessionSettings,
+        BackupStorageKey.SessionFolders,
         ...AGENT_PERSONA_BACKUP_KEYS,
         ...COPILOT_BACKUP_KEYS,
       ]) {
         throwIfAborted(options.signal)
-        if (key in sessionSettings) await options.storage.setItemNow(key, sessionSettings[key])
+        if (!(key in sessionSettings)) continue
+        await options.storage.setItemNow(
+          key,
+          key === BackupStorageKey.SessionFolders
+            ? mergeRestoredSessionFolders(await options.storage.getItem<unknown>(key, []), sessionSettings[key])
+            : sessionSettings[key]
+        )
       }
     }
 

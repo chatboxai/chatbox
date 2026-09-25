@@ -30,8 +30,8 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     getAllIncludingHidden: () => Promise.resolve([...this.records.values()].sort((a, b) => b.sortOrder - a.sortOrder)),
     getArchived: () => Promise.resolve(this.getArchivedRecords()),
     getArchivedPage: (cursor: number, limit = 2) => Promise.resolve(page(this.getArchivedRecords(), cursor, limit)),
-    getPage: (cursor: number, limit = 2) =>
-      Promise.resolve(page(sortSessionRecords([...this.records.values()]), cursor, limit)),
+    getPage: (cursor: number, limit = 2, folderIds: readonly string[] = []) =>
+      Promise.resolve(page(sortSessionRecords([...this.records.values()], folderIds), cursor, limit)),
     getTotal: () => Promise.resolve(sortSessionRecords([...this.records.values()]).length),
     getAllTotal: () => Promise.resolve(this.records.size),
     getArchivedTotal: () => Promise.resolve(this.getArchivedRecords().length),

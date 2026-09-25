@@ -1,5 +1,9 @@
 import { findMessageLocation } from '@shared/session/message-forks'
-import type { LoggerPort, SessionRepositoryPort } from '../../ports'
+import {
+  assertSessionThreadPageRevision,
+  validateSessionThreadPageRequest,
+} from '../../persistence/session-thread-page'
+import type { LoggerPort, SessionFolderStorePort, SessionRepositoryPort } from '../../ports'
 import type { SessionContextRequest, SessionContextSource } from '../../ports/session-context-source'
 import type { SessionMessageDerivedWriteResult, SessionMessagesSource } from '../../ports/session-message-source'
 import type {
@@ -7,15 +11,19 @@ import type {
   SessionSearchThreadsPage,
   SessionSearchThreadsPageRequest,
 } from '../../ports/session-read-model'
-import {
-  assertSessionThreadPageRevision,
-  validateSessionThreadPageRequest,
-} from '../../persistence/session-thread-page'
 import { sessionReadModelHeader } from '../../ports/session-read-model'
 import type { SessionMessageWindow, SessionMessageWindowRequest } from '../../ports/session-row-store'
 import { type SessionMessagesRequest, SessionRowConflictError } from '../../ports/session-row-store'
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '../../ports/session-text-tokens'
-import type { Message, Session, SessionMetaPage, SessionMetaRecord, SessionSettings, Updater } from '../../types'
+import type {
+  Message,
+  Session,
+  SessionFolder,
+  SessionMetaPage,
+  SessionMetaRecord,
+  SessionSettings,
+  Updater,
+} from '../../types'
 import type { SessionMessageDerivedPatch } from './message-derived-data'
 import {
   applyMessageInsert,
@@ -50,6 +58,19 @@ export interface SessionServiceOptions {
     picture?: Partial<SessionSettings>
   }
   repairSessionOnRead?: (session: Session) => { session: Session; changed: boolean }
+  /** Durable folder definitions. Without it folders live for the process only. */
+  folders?: SessionFolderStorePort
+}
+
+function createMemoryFolderStore(): SessionFolderStorePort {
+  let folders: SessionFolder[] = []
+  return {
+    load: () => Promise.resolve(folders),
+    save: (next) => {
+      folders = next
+      return Promise.resolve()
+    },
+  }
 }
 
 function describeError(error: unknown): unknown {
@@ -95,6 +116,8 @@ export class SessionService {
   private readonly pendingArchiveListRefreshes = new Set<string>()
   private archiveStateRevision = 0
   private initialization: Promise<void> | null = null
+  private readonly folderStore: SessionFolderStorePort
+  private folders: Promise<SessionFolder[]> | null = null
 
   constructor(
     readonly repository: SessionRepositoryPort,
@@ -104,6 +127,7 @@ export class SessionService {
   ) {
     this.now = options.now ?? (() => Date.now())
     this.getLastUsedModels = options.getLastUsedModels ?? (() => ({}))
+    this.folderStore = options.folders ?? createMemoryFolderStore()
   }
 
   initialize(): Promise<void> {
@@ -239,10 +263,47 @@ export class SessionService {
     return result
   }
 
+  listSessionFolders(): Promise<SessionFolder[]> {
+    if (!this.folders) {
+      this.folders = this.folderStore.load().catch((error) => {
+        this.folders = null
+        throw error
+      })
+    }
+    return this.folders
+  }
+
+  /**
+   * Replaces the folder list. Sessions are not rewritten: a session whose
+   * folder is gone is listed as unfiled (see `getSessionListGroup`).
+   */
+  async saveSessionFolders(folders: SessionFolder[]): Promise<void> {
+    await this.folderStore.save(folders)
+    this.folders = Promise.resolve(folders)
+    await this.events.publish({ type: 'session-folders-changed', folders })
+    await this.publishListReset({ visible: true })
+  }
+
+  /**
+   * Moves a session into a folder (or out of any folder with `undefined`),
+   * optionally placing it at `sortOrder` within the target group.
+   */
+  async moveSessionToFolder(sessionId: string, folderId: string | undefined, sortOrder?: number): Promise<void> {
+    await this.updateSession(sessionId, { folderId })
+    // The session may sit on a page that is not loaded yet, where no cache
+    // patch can place it; re-read the first page in the new order.
+    if (sortOrder !== undefined) {
+      await this.updateSessionSortOrder(sessionId, sortOrder)
+    } else {
+      await this.publishListReset({ visible: true })
+    }
+  }
+
   async listSessionsMetaPage(cursor: number, limit?: number): Promise<SessionMetaPage> {
     await this.initialize()
     try {
-      return await this.repository.meta.getPage(cursor, limit)
+      const folderIds = (await this.listSessionFolders()).map((folder) => folder.id)
+      return await this.repository.meta.getPage(cursor, limit, folderIds)
     } catch (error) {
       await this.log('error', 'Failed to read session list page from repository', {
         cursor,

@@ -194,8 +194,8 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
     return normalizeRepositoryError('list-archived-meta-page', () => this.getBackend().getArchivedPage(cursor, limit))
   }
 
-  getPage(cursor: number, limit?: number): Promise<SessionMetaPage> {
-    return normalizeRepositoryError('list-meta-page', () => this.getBackend().getPage(cursor, limit))
+  getPage(cursor: number, limit?: number, folderIds?: readonly string[]): Promise<SessionMetaPage> {
+    return normalizeRepositoryError('list-meta-page', () => this.getBackend().getPage(cursor, limit, folderIds))
   }
 
   getTotal(): Promise<number> {

@@ -10,6 +10,7 @@ vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
     sessionHooks: {
       useSessionList: () => sessionListMock(),
+      useSessionFolders: () => ({ folders: [] }),
     },
   },
 }))

@@ -97,6 +97,7 @@ export const uiStore = createStore(
         modelSelectorTab: 'all' as 'all' | 'favorite',
         showCopilotsInNewSession: false,
         sidebarWidth: null as number | null, // Custom sidebar width, null means use default
+        collapsedSessionFolderIds: [] as string[],
         agentModeSmartSwitchingDefault: true,
         // Last mode the user explicitly picked in the mode panel; new chats start in this
         // mode so users don't have to re-select Work Mode for every conversation.
@@ -261,6 +262,13 @@ export const uiStore = createStore(
           set({ sidebarWidth })
         },
 
+        setSessionFolderCollapsed: (folderId: string, collapsed: boolean) => {
+          set((state) => {
+            const others = state.collapsedSessionFolderIds.filter((id) => id !== folderId)
+            return { collapsedSessionFolderIds: collapsed ? [...others, folderId] : others }
+          })
+        },
+
         setModelSelectorTab: (tab: string | null) => {
           if (tab === 'all' || tab === 'favorite') {
             set({ modelSelectorTab: tab })
@@ -296,6 +304,7 @@ export const uiStore = createStore(
         modelSelectorTab: state.modelSelectorTab,
         showCopilotsInNewSession: state.showCopilotsInNewSession,
         sidebarWidth: state.sidebarWidth,
+        collapsedSessionFolderIds: state.collapsedSessionFolderIds,
         agentModeSmartSwitchingDefault: state.agentModeSmartSwitchingDefault,
         agentModeLastSelected: state.agentModeLastSelected,
         newSessionWebBrowsingDefault: state.newSessionWebBrowsingDefault,

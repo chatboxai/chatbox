@@ -17,6 +17,7 @@ export {
 export {
   type SessionDataRepositoryPort,
   type SessionDataWriteOptions,
+  type SessionFolderStorePort,
   type SessionMetaRepositoryPort,
   SessionRepositoryError,
   type SessionRepositoryOperation,

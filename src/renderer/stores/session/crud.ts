@@ -1,7 +1,10 @@
 import { BackupOperationBusyError } from '@chatbox/core/backup'
-import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { getGenerationControlMessages } from '@chatbox/core/session/generation-state'
-import { areSessionsInSamePinGroup } from '@chatbox/core/utils/session-sort'
+import {
+  areSessionsInSameListGroup,
+  excludeCollapsedFolderSessions,
+  getSessionListGroup,
+} from '@chatbox/core/utils/session-sort'
 import {
   copyMessageForksWithMapping,
   copyMessagesWithMapping,
@@ -13,6 +16,7 @@ import {
 } from '@shared/types'
 import { getDefaultStore } from 'jotai'
 import { omit } from 'lodash'
+import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { rendererApplication } from '@/app/renderer-application'
 import platform from '@/platform'
 import { navigateToDynamicPath, router } from '@/router'
@@ -22,6 +26,7 @@ import { clearSessionGenerationStopOperations } from '../generationStopOperation
 import * as scrollActions from '../scrollActions'
 import { clearSessionActivity } from '../sessionActivityStore'
 import { getMetaStorage, initEmptyChatSession } from '../sessionHelpers'
+import { uiStore } from '../uiStore'
 
 // Lazy import: message-queue.ts imports session modules that lead back here,
 // so a static import would be circular.
@@ -230,30 +235,37 @@ export function switchCurrentSession(sessionId: string) {
 }
 
 /**
- * Reorder sessions in the list using fractional indexing.
- * Computes a new sortOrder for the moved item based on its new neighbors.
+ * Moves `activeId` to the position of `overId` using fractional indexing.
+ * Dropping onto a row of another folder (or of the unfiled group) also moves
+ * the session into that group; the pinned group is never entered or left by
+ * dragging.
  */
-export async function reorderSessions(oldIndex: number, newIndex: number) {
+export async function reorderSessions(activeId: string, overId: string) {
   if (!(await guardBackupWrite())) return
-  console.debug('sessionActions', 'reorderSessions', oldIndex, newIndex)
-  const sessions = await rendererApplication.sessionQueryBridge.listSessionsMeta()
+  if (activeId === overId) return
+  const { sessionQueryBridge, sessions: sessionService } = rendererApplication
+  const sessions = await sessionQueryBridge.listSessionsMeta()
+  const folderIds = (await sessionService.listSessionFolders()).map((folder) => folder.id)
+  const oldIndex = sessions.findIndex((s) => s.id === activeId)
+  const newIndex = sessions.findIndex((s) => s.id === overId)
   const movedSession = sessions[oldIndex]
-  if (!movedSession || oldIndex === newIndex) return
-  const reorderedSessions = [...sessions]
-  reorderedSessions.splice(oldIndex, 1)
-  reorderedSessions.splice(newIndex, 0, movedSession)
-  const targetSession = reorderedSessions[newIndex]
-  const nextStarred = targetSession?.starred ?? movedSession.starred
+  const targetSession = sessions[newIndex]
+  if (!movedSession || !targetSession || Boolean(movedSession.starred) !== Boolean(targetSession.starred)) return
 
-  const comparableReordered = reorderedSessions.filter((s) => areSessionsInSamePinGroup(s, movedSession))
-  const targetGroupIndex = comparableReordered.findIndex((s) => s.id === movedSession.id)
+  const targetGroup = getSessionListGroup(targetSession, folderIds)
+  const nextFolderId = targetGroup.kind === 'folder' ? targetGroup.folderId : undefined
+  const groupChanged = !areSessionsInSameListGroup(movedSession, targetSession, folderIds)
+  const moved = groupChanged ? { ...movedSession, folderId: nextFolderId } : movedSession
+  const reorderedSessions = sessions.filter((s) => s.id !== activeId)
+  reorderedSessions.splice(newIndex, 0, moved)
+
+  const comparableReordered = reorderedSessions.filter((s) => areSessionsInSameListGroup(s, moved, folderIds))
+  const targetGroupIndex = comparableReordered.findIndex((s) => s.id === activeId)
   const before = comparableReordered[targetGroupIndex - 1]
   const after = comparableReordered[targetGroupIndex + 1]
 
   let newSortOrder: number
-  if (targetGroupIndex < 0 || reorderedSessions.length === 0) {
-    return
-  } else if (!before && !after) {
+  if (!before && !after) {
     newSortOrder = Date.now()
   } else if (!before) {
     newSortOrder = after.sortOrder + 1000
@@ -263,25 +275,31 @@ export async function reorderSessions(oldIndex: number, newIndex: number) {
     newSortOrder = (before.sortOrder + after.sortOrder) / 2
   }
 
-  if (nextStarred !== movedSession.starred) {
-    await rendererApplication.sessions.updateSession(movedSession.id, { starred: nextStarred })
+  if (groupChanged) {
+    await sessionService.moveSessionToFolder(activeId, nextFolderId, newSortOrder)
+    return
   }
 
   const metaStorage = await getMetaStorage()
-  await metaStorage.update(movedSession.id, { sortOrder: newSortOrder, starred: nextStarred })
-  rendererApplication.sessionQueryBridge.updateSessionListData((items) => {
-    const updated = items.map((s) =>
-      s.id === movedSession.id ? { ...s, sortOrder: newSortOrder, starred: nextStarred } : s
-    )
-    return sortSessionRecords(updated)
+  await metaStorage.update(activeId, { sortOrder: newSortOrder })
+  sessionQueryBridge.updateSessionListData((items) => {
+    const updated = items.map((s) => (s.id === activeId ? { ...s, sortOrder: newSortOrder } : s))
+    return sortSessionRecords(updated, folderIds)
   })
+}
+
+/** Loaded sessions in the order the sidebar shows them, without collapsed folder members. */
+async function listVisibleSessions() {
+  const sessions = await rendererApplication.sessionQueryBridge.listSessionsMeta()
+  const folderIds = (await rendererApplication.sessions.listSessionFolders()).map((folder) => folder.id)
+  return excludeCollapsedFolderSessions(sessions, folderIds, uiStore.getState().collapsedSessionFolderIds)
 }
 
 /**
  * Switch to session by sorted index
  */
 export async function switchToIndex(index: number) {
-  const sessions = await rendererApplication.sessionQueryBridge.listSessionsMeta()
+  const sessions = await listVisibleSessions()
   const target = sessions[index]
   if (!target) {
     return
@@ -293,8 +311,8 @@ export async function switchToIndex(index: number) {
  * Switch to next/previous session in sorted order
  */
 export async function switchToNext(reversed?: boolean) {
-  const sessions = await rendererApplication.sessionQueryBridge.listSessionsMeta()
-  if (!sessions) {
+  const sessions = await listVisibleSessions()
+  if (sessions.length === 0) {
     return
   }
   const store = getDefaultStore()

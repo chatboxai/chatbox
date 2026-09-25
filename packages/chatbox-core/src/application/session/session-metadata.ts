@@ -4,6 +4,7 @@ import type { Session, SessionMeta, SessionMetaRecord } from '../../types'
 const sessionMetaKeys = [
   'id',
   'name',
+  'folderId',
   'starred',
   'hidden',
   'archivedAt',
@@ -22,6 +23,7 @@ export function projectSessionMeta(session: SessionMeta): SessionMeta {
   return {
     id: session.id,
     name: session.name,
+    ...(Object.hasOwn(session, 'folderId') ? { folderId: session.folderId } : {}),
     ...(Object.hasOwn(session, 'starred') ? { starred: session.starred } : {}),
     ...(Object.hasOwn(session, 'hidden') ? { hidden: session.hidden } : {}),
     ...(Object.hasOwn(session, 'archivedAt') ? { archivedAt: session.archivedAt } : {}),

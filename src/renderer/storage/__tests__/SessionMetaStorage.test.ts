@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it } from 'vitest'
 import type { SessionMetaRecord } from '@shared/types'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { IndexedDBSessionMetaStorage } from '../SessionMetaStorage'
 
 function makeRecord(overrides: Partial<SessionMetaRecord> & { id: string }): SessionMetaRecord {
@@ -322,6 +322,25 @@ describe('IndexedDBSessionMetaStorage', () => {
       expect(page1.items.map((r) => r.id)).toEqual(['p1', 'r1'])
       expect(page2.items.map((r) => r.id)).toEqual(['r2'])
       expect(page2.nextCursor).toBeNull()
+    })
+
+    it('pages in folder display order when folders exist', async () => {
+      await storage.create(makeRecord({ id: 'loose', sortOrder: 500 }))
+      await storage.create(makeRecord({ id: 'home', sortOrder: 400, folderId: 'f-home' }))
+      await storage.create(makeRecord({ id: 'work', sortOrder: 100, folderId: 'f-work' }))
+      await storage.create(makeRecord({ id: 'orphan', sortOrder: 300, folderId: 'deleted' }))
+      await storage.create(makeRecord({ id: 'pinned', sortOrder: 50, starred: true, folderId: 'f-home' }))
+      await storage.create(makeRecord({ id: 'hidden', sortOrder: 900, hidden: true, folderId: 'f-work' }))
+
+      const folderIds = ['f-work', 'f-home']
+      const page1 = await storage.getPage(0, 3, folderIds)
+      const page2 = await storage.getPage(3, 3, folderIds)
+
+      expect(page1.items.map((r) => r.id)).toEqual(['pinned', 'work', 'home'])
+      expect(page1.nextCursor).toBe(3)
+      expect(page2.items.map((r) => r.id)).toEqual(['loose', 'orphan'])
+      expect(page2.nextCursor).toBeNull()
+      expect(page2.total).toBe(5)
     })
   })
 

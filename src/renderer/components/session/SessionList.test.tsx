@@ -2,7 +2,7 @@
 
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
-import type { SessionMetaRecord } from '@shared/types'
+import type { SessionFolder, SessionMetaRecord } from '@shared/types'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -13,6 +13,7 @@ type DndContextHandlers = {
 
 const {
   dndContextState,
+  moveSessionToFolderMock,
   reorderSessionsMock,
   sessionListState,
   showModalMock,
@@ -20,8 +21,15 @@ const {
   useSortableMock,
 } = vi.hoisted(() => ({
   dndContextState: { handlers: null as DndContextHandlers | null },
+  moveSessionToFolderMock: vi.fn(),
   reorderSessionsMock: vi.fn(),
-  sessionListState: { sessions: [] as SessionMetaRecord[] },
+  sessionListState: {
+    sessions: [] as SessionMetaRecord[],
+    folders: [] as SessionFolder[],
+    hasNextPage: false,
+    isFetchNextPageError: false,
+    fetchNextPage: vi.fn(),
+  },
   showModalMock: vi.fn(),
   sortablePointerDownMock: vi.fn(),
   useSortableMock: vi.fn(),
@@ -64,6 +72,7 @@ vi.mock('@dnd-kit/core', async () => {
     KeyboardSensor: 'KeyboardSensor',
     MouseSensor: 'MouseSensor',
     TouchSensor: 'TouchSensor',
+    useDroppable: () => ({ isOver: false, setNodeRef: vi.fn() }),
     useSensor: (sensor: unknown, options: unknown) => ({ sensor, options }),
     useSensors: (...sensors: unknown[]) => sensors,
   }
@@ -108,14 +117,21 @@ vi.mock('@/app/renderer-application', () => ({
     sessionHooks: {
       useSessionList: () => ({
         sessionMetaList: sessionListState.sessions,
-        fetchNextPage: vi.fn(),
-        hasNextPage: false,
+        fetchNextPage: sessionListState.fetchNextPage,
+        hasNextPage: sessionListState.hasNextPage,
         isFetchingNextPage: false,
+        isFetchNextPageError: sessionListState.isFetchNextPageError,
       }),
+      useSessionFolders: () => ({ folders: sessionListState.folders }),
     },
   },
 }))
 vi.mock('@/stores/session/crud', () => ({ reorderSessions: reorderSessionsMock }))
+vi.mock('@/stores/session/folders', () => ({
+  deleteSessionFolder: vi.fn(),
+  moveSessionToFolder: moveSessionToFolderMock,
+  renameSessionFolder: vi.fn(),
+}))
 vi.mock('@tanstack/react-router', () => ({
   useRouterState: () => ({ location: { pathname: '/session/session-1' } }),
 }))
@@ -185,6 +201,9 @@ describe('SessionList mobile reorder mode', () => {
     })
     dndContextState.handlers = null
     sessionListState.sessions = sessions
+    sessionListState.folders = []
+    sessionListState.hasNextPage = false
+    uiStore.setState({ collapsedSessionFolderIds: [] })
     reorderSessionsMock.mockResolvedValue(undefined)
     useSortableMock.mockImplementation(({ disabled, id }: { disabled?: boolean; id: string }) => ({
       attributes: {
@@ -254,6 +273,8 @@ describe('SessionList section headers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     sessionListState.sessions = sessions
+    sessionListState.folders = []
+    sessionListState.hasNextPage = false
     useSortableMock.mockImplementation(() => ({
       attributes: {},
       isDragging: false,
@@ -281,5 +302,113 @@ describe('SessionList section headers', () => {
 
     expect(uiStore.getState().showSidebar).toBe(false)
     expect(showModalMock).toHaveBeenCalledWith('clear-session-list')
+  })
+})
+
+describe('SessionList folders', () => {
+  const folders: SessionFolder[] = [
+    { id: 'work', name: 'Work' },
+    { id: 'home', name: 'Home' },
+  ]
+  const filed: SessionMetaRecord[] = [
+    { id: 'w1', name: 'Work chat', folderId: 'work', sortOrder: 3, createdAt: 3 },
+    { id: 'h1', name: 'Home chat', folderId: 'home', sortOrder: 2, createdAt: 2 },
+    { id: 'u1', name: 'Loose chat', sortOrder: 1, createdAt: 1 },
+  ]
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    dndContextState.handlers = null
+    useSortableMock.mockImplementation(() => ({
+      attributes: {},
+      isDragging: false,
+      listeners: {},
+      setNodeRef: vi.fn(),
+      transform: null,
+      transition: undefined,
+    }))
+    sessionListState.sessions = filed
+    sessionListState.folders = folders
+    sessionListState.hasNextPage = false
+    sessionListState.isFetchNextPageError = false
+    uiStore.setState({ collapsedSessionFolderIds: [] })
+  })
+
+  const folderHeaders = () =>
+    Array.from(document.querySelectorAll('[data-folder-id]')).map((node) => node.getAttribute('data-folder-id'))
+
+  test('renders folder groups before unfiled chats and hides collapsed members', () => {
+    uiStore.setState({ collapsedSessionFolderIds: ['home'] })
+    renderList()
+
+    expect(folderHeaders()).toEqual(['work', 'home'])
+    expect(screen.getByText('Work chat')).toBeTruthy()
+    expect(screen.queryByText('Home chat')).toBeNull()
+    expect(screen.getByText('Chats')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Home/ }).getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('shows groups only up to the loaded page boundary', () => {
+    sessionListState.sessions = [filed[0]]
+    sessionListState.hasNextPage = true
+    renderList()
+
+    expect(folderHeaders()).toEqual(['work'])
+    expect(screen.queryByText('Chats')).toBeNull()
+    expect(screen.queryByText('Drag chats here')).toBeNull()
+  })
+
+  test('keeps loading while the loaded pages end inside a collapsed folder', () => {
+    sessionListState.sessions = [filed[0]]
+    sessionListState.hasNextPage = true
+    renderList()
+    expect(sessionListState.fetchNextPage).not.toHaveBeenCalled()
+
+    act(() => {
+      uiStore.setState({ collapsedSessionFolderIds: ['work'] })
+    })
+    expect(sessionListState.fetchNextPage).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not retry a failed page read on its own', () => {
+    sessionListState.sessions = [filed[0]]
+    sessionListState.hasNextPage = true
+    sessionListState.isFetchNextPageError = true
+    uiStore.setState({ collapsedSessionFolderIds: ['work'] })
+    renderList()
+
+    expect(sessionListState.fetchNextPage).not.toHaveBeenCalled()
+  })
+
+  test('marks a folder empty once loading has passed it', () => {
+    sessionListState.sessions = [filed[0], filed[2]]
+    renderList()
+
+    expect(folderHeaders()).toEqual(['work', 'home'])
+    expect(screen.getByText('Drag chats here')).toBeTruthy()
+  })
+
+  test('files a chat dropped on a folder header and unfiles one dropped on Chats', async () => {
+    renderList()
+
+    await act(async () => {
+      await dndContextState.handlers?.onDragEnd?.({ active: { id: 'u1' }, over: { id: 'folder:work' } })
+    })
+    expect(moveSessionToFolderMock).toHaveBeenCalledWith('u1', 'work')
+
+    await act(async () => {
+      await dndContextState.handlers?.onDragEnd?.({ active: { id: 'w1' }, over: { id: 'section:chats' } })
+    })
+    expect(moveSessionToFolderMock).toHaveBeenCalledWith('w1', undefined)
+  })
+
+  test('reorders across folders through the row the chat is dropped on', async () => {
+    renderList()
+
+    await act(async () => {
+      await dndContextState.handlers?.onDragEnd?.({ active: { id: 'u1' }, over: { id: 'h1' } })
+    })
+
+    expect(reorderSessionsMock).toHaveBeenCalledWith('u1', 'h1')
   })
 })

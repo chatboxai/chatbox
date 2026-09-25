@@ -30,6 +30,19 @@ CREATE INDEX IF NOT EXISTS idx_session_meta_sort_order
 ON session_meta(sort_order DESC);
 `
 
+/**
+ * `ORDER BY` clause for visible `session_meta` rows in the order of
+ * `sortSessionRecords`: pinned, then each folder in `folderIds` order, then
+ * unfiled (including rows whose folder no longer exists), each by sort_order.
+ */
+export function capacitorSessionListOrderBy(folderIds: readonly string[]): { sql: string; params: string[] } {
+  const folderCases = folderIds.map((_, index) => `WHEN folder_id = ? THEN ${index + 1}`).join(' ')
+  return {
+    sql: `CASE WHEN starred = 1 THEN 0 ${folderCases} ELSE ${folderIds.length + 1} END, sort_order DESC`,
+    params: [...folderIds],
+  }
+}
+
 /** Row storage keeps no foreign keys or CHECK constraints: the Capacitor and native
  * drivers disagree on the default foreign-key pragma, so `SqlSessionRowStore`
  * validates identities before every write instead. */

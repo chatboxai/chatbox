@@ -1,6 +1,8 @@
+import { excludeCollapsedFolderSessions } from '@chatbox/core/utils/session-sort'
 import { useEffect, useMemo, useState } from 'react'
 import { rendererApplication } from '@/app/renderer-application'
 import { getOS } from '@/packages/navigator'
+import { useUIStore } from '@/stores/uiStore'
 
 /**
  * How long the switch modifier has to be held before the conversation list
@@ -91,16 +93,20 @@ function useSwitchModifierHeld(): boolean {
  */
 export function useSessionSwitchHintDigits(): ReadonlyMap<string, number> {
   const { sessionMetaList } = rendererApplication.sessionHooks.useSessionList()
+  const { folders } = rendererApplication.sessionHooks.useSessionFolders()
+  const collapsedFolderIds = useUIStore((state) => state.collapsedSessionFolderIds)
   const modifierHeld = useSwitchModifierHeld()
 
   return useMemo(() => {
     if (!modifierHeld || !sessionMetaList) {
       return NO_DIGITS
     }
+    const folderIds = (folders ?? []).map((folder) => folder.id)
+    const visible = excludeCollapsedFolderSessions(sessionMetaList, folderIds, collapsedFolderIds)
     const digits = new Map<string, number>()
-    sessionMetaList.slice(0, MAX_SESSION_SWITCH_SHORTCUTS).forEach((session, index) => {
+    visible.slice(0, MAX_SESSION_SWITCH_SHORTCUTS).forEach((session, index) => {
       digits.set(session.id, index + 1)
     })
     return digits
-  }, [modifierHeld, sessionMetaList])
+  }, [modifierHeld, sessionMetaList, folders, collapsedFolderIds])
 }

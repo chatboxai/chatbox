@@ -7,6 +7,7 @@ import {
   IconArchive,
   IconArrowsMoveVertical,
   IconClockHour4,
+  IconFolderShare,
   IconLoader2,
   IconPinned,
   IconPinnedFilled,
@@ -85,6 +86,10 @@ function SessionItem(props: Props) {
           : t('Completed')
   const pinActionLabel = session.starred ? t('Unpin') : t('Pin')
   const archiveActionLabel = t('Archive')
+  const moveToFolderLabel = t('Move to folder')
+  const openMoveToFolder = () => {
+    void NiceModal.show('session-folder-move', { sessionId: session.id, folderId: session.folderId })
+  }
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const onClick = () => {
     if (props.isReordering || renaming) {
@@ -257,6 +262,11 @@ function SessionItem(props: Props) {
       onClick: () => {
         void rendererApplication.sessions.updateSession(session.id, { starred: !session.starred })
       },
+    },
+    {
+      text: moveToFolderLabel || '',
+      icon: IconFolderShare,
+      onClick: openMoveToFolder,
     },
     {
       text: t('Adjust order') || '',
@@ -434,6 +444,24 @@ function SessionItem(props: Props) {
             ) : (
               <ScalableIcon icon={IconPinned} className="text-inherit" size={16} />
             )}
+          </ActionIcon>
+        </Tooltip>
+
+        <Tooltip label={moveToFolderLabel} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
+          <ActionIcon
+            data-testid={TestId.sidebar.sessionMoveToFolder}
+            aria-label={moveToFolderLabel}
+            variant="transparent"
+            size={20}
+            color="chatbox-tertiary"
+            onPointerDown={stopItemClick}
+            onClick={(event) => {
+              stopItemClick(event)
+              dismissActionTooltip()
+              openMoveToFolder()
+            }}
+          >
+            <ScalableIcon icon={IconFolderShare} className="text-inherit" size={16} />
           </ActionIcon>
         </Tooltip>
 

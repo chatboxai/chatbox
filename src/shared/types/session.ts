@@ -461,6 +461,7 @@ export const SessionSchema = z.object({
   id: z.string(),
   type: SessionTypeSchema.optional(),
   name: z.string(),
+  folderId: z.string().optional(),
   picUrl: z.string().optional(),
   messages: z.array(MessageSchema),
   starred: z.boolean().optional(),
@@ -479,6 +480,7 @@ export const SessionSchema = z.object({
 export const SessionMetaSchema = SessionSchema.pick({
   id: true,
   name: true,
+  folderId: true,
   starred: true,
   hidden: true,
   archivedAt: true,
@@ -494,6 +496,11 @@ export const SessionMetaSchema = SessionSchema.pick({
 export const SessionMetaRecordSchema = SessionMetaSchema.extend({
   sortOrder: z.number(),
   createdAt: z.number(),
+})
+
+export const SessionFolderSchema = z.object({
+  id: z.string(),
+  name: z.string(),
 })
 
 export const SessionMetaPageSchema = z.object({
@@ -550,5 +557,6 @@ export type Session = z.infer<typeof SessionSchema>
 export type SessionMeta = z.infer<typeof SessionMetaSchema>
 export type SessionMetaRecord = z.infer<typeof SessionMetaRecordSchema>
 export type SessionMetaPage = z.infer<typeof SessionMetaPageSchema>
+export type SessionFolder = z.infer<typeof SessionFolderSchema>
 export type SessionThread = z.infer<typeof SessionThreadSchema>
 export type SessionThreadBrief = z.infer<typeof SessionThreadBriefSchema>

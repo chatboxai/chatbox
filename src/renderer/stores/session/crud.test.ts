@@ -38,6 +38,7 @@ vi.mock('../scrollActions', () => ({}))
 vi.mock('../sessionActivityStore', () => ({ clearSessionActivity: vi.fn() }))
 vi.mock('../sessionHelpers', () => ({ getMetaStorage: vi.fn(), initEmptyChatSession: vi.fn() }))
 vi.mock('./message-queue', () => ({ clearQueue: clearQueueMock }))
+vi.mock('../uiStore', () => ({ uiStore: { getState: () => ({ collapsedSessionFolderIds: [] }) } }))
 
 import { deleteAllArchivedSessions, deleteSession, deleteSessions } from './crud'
 

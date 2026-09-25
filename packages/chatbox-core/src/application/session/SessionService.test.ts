@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
-import type { Session } from '../../types'
 import { createTestRecord, createTestSession, InMemorySessionRepository } from '../../testing/InMemorySessionRepository'
+import type { Session } from '../../types'
 import { SessionService } from './SessionService'
 import { SessionNotFoundError, SessionWriteCoordinator } from './SessionWriteCoordinator'
 import { type SessionApplicationEvent, SessionEventBus } from './session-events'
@@ -32,6 +32,48 @@ function createHarness(
 }
 
 describe('SessionService', () => {
+  test('saves folders, lists pages in folder order and files sessions', async () => {
+    const { repository, published, service } = createHarness()
+    const saved: unknown[] = []
+    const folderService = new SessionService(repository, new SessionWriteCoordinator(repository), service.events, {
+      createId: () => 'id',
+      now: () => 100,
+      folders: {
+        load: () => Promise.resolve([]),
+        save: (folders) => {
+          saved.push(folders)
+          return Promise.resolve()
+        },
+      },
+    })
+    for (const [id, sortOrder] of [
+      ['a', 3],
+      ['b', 2],
+      ['c', 1],
+    ] as const) {
+      const session = createTestSession(id)
+      repository.sessions.set(id, session)
+      repository.records.set(id, createTestRecord(session, sortOrder))
+    }
+
+    await folderService.saveSessionFolders([{ id: 'f', name: 'Folder' }])
+    expect(saved).toEqual([[{ id: 'f', name: 'Folder' }]])
+    expect(published.map((event) => event.type)).toEqual(['session-folders-changed', 'session-list-reset'])
+
+    await folderService.moveSessionToFolder('c', 'f')
+    expect((await repository.getSession('c'))?.folderId).toBe('f')
+    expect(repository.records.get('c')?.folderId).toBe('f')
+    expect((await folderService.listSessionsMetaPage(0, 3)).items.map((item) => item.id)).toEqual(['c', 'a', 'b'])
+
+    // Deleting a folder leaves the session untouched; it is listed as unfiled again.
+    await folderService.saveSessionFolders([])
+    expect(repository.records.get('c')?.folderId).toBe('f')
+    expect((await folderService.listSessionsMetaPage(0, 3)).items.map((item) => item.id)).toEqual(['a', 'b', 'c'])
+
+    await folderService.moveSessionToFolder('a', undefined, 0)
+    expect(repository.records.get('a')).toMatchObject({ folderId: undefined, sortOrder: 0 })
+  })
+
   test('does not create or reorder sessions while backup storage access is active', async () => {
     const { service, writes } = createHarness()
     const session = await service.createSession({ name: 'Original', type: 'chat', messages: [] })

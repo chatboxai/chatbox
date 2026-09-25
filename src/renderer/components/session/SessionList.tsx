@@ -1,4 +1,4 @@
-import { areSessionsInSamePinGroup } from '@chatbox/core/utils/session-sort'
+import { getSessionListGroup, getSessionListGroupRank } from '@chatbox/core/utils/session-sort'
 import type { DragEndEvent } from '@dnd-kit/core'
 import {
   closestCenter,
@@ -8,6 +8,7 @@ import {
   KeyboardSensor,
   MouseSensor,
   TouchSensor,
+  useDroppable,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
@@ -20,12 +21,31 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import NiceModal from '@ebay/nice-modal-react'
-import { Button, Flex, Text } from '@mantine/core'
-import { TestId } from '@shared/automation/testids'
-import type { SessionMetaRecord } from '@shared/types'
-import { IconArrowsMoveVertical, IconDots, IconGripVertical, IconLoader2 } from '@tabler/icons-react'
+import { Button, Flex, Text, UnstyledButton } from '@mantine/core'
+import { AutomationAdjacentAttr, TestId } from '@shared/automation/testids'
+import type { SessionFolder, SessionMetaRecord } from '@shared/types'
+import {
+  IconArrowsMoveVertical,
+  IconChevronDown,
+  IconChevronRight,
+  IconDots,
+  IconFolder,
+  IconGripVertical,
+  IconLoader2,
+  IconPencil,
+  IconTrash,
+} from '@tabler/icons-react'
 import { useRouterState } from '@tanstack/react-router'
-import { type CSSProperties, type MutableRefObject, type ReactNode, useCallback, useMemo, useState } from 'react'
+import clsx from 'clsx'
+import {
+  type CSSProperties,
+  type MutableRefObject,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { Virtuoso } from 'react-virtuoso'
 import { rendererApplication } from '@/app/renderer-application'
@@ -33,21 +53,85 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionSwitchHintDigits } from '@/hooks/useSessionSwitchHints'
 import platform from '@/platform'
 import { reorderSessions } from '@/stores/session/crud'
+import { deleteSessionFolder, moveSessionToFolder, renameSessionFolder } from '@/stores/session/folders'
 import { useUIStore } from '@/stores/uiStore'
 import ActionMenu from '../ActionMenu'
 import { ICON_SIZE, IconButton } from '../common/IconButton'
+import { ScalableIcon } from '../common/ScalableIcon'
 import Broom from '../icons/Broom'
 import SessionItem from './SessionItem'
 
 const useSessionList = () => rendererApplication.sessionHooks.useSessionList()
+const useSessionFolders = () => rendererApplication.sessionHooks.useSessionFolders()
+
+const FOLDER_DROP_PREFIX = 'folder:'
+const UNFILED_DROP_ID = 'section:chats'
 
 export interface Props {
   sessionListViewportRef: MutableRefObject<HTMLDivElement | null>
 }
 
 type SessionListItem =
-  | { type: 'section'; id: string; label: string }
+  | { type: 'section'; id: string; label: string; droppable?: boolean }
+  | { type: 'folder'; id: string; folder: SessionFolder; collapsed: boolean; empty: boolean }
   | { type: 'session'; id: string; session: SessionMetaRecord }
+
+/**
+ * Builds the rendered rows from the loaded sessions, which arrive in display
+ * order (pinned, folders, unfiled) one page at a time. A group header appears
+ * once loading has reached that group, so a folder whose chats are still on a
+ * later page is never shown as empty.
+ */
+function buildDisplayItems(
+  sessions: SessionMetaRecord[],
+  folders: SessionFolder[],
+  collapsedFolderIds: readonly string[],
+  hasNextPage: boolean,
+  labels: { pinned: string; chats: string }
+): SessionListItem[] {
+  const folderIds = folders.map((folder) => folder.id)
+  const lastSession = sessions.at(-1)
+  const loadedRank = hasNextPage && lastSession ? getSessionListGroupRank(lastSession, folderIds) : Infinity
+  const byRank = new Map<number, SessionMetaRecord[]>()
+  for (const session of sessions) {
+    const rank = getSessionListGroupRank(session, folderIds)
+    const group = byRank.get(rank)
+    if (group) group.push(session)
+    else byRank.set(rank, [session])
+  }
+  const sessionRows = (rank: number): SessionListItem[] =>
+    (byRank.get(rank) ?? []).map((session) => ({ type: 'session', id: session.id, session }))
+
+  const pinned = sessionRows(0)
+  const unfiledRank = folders.length + 1
+  const unfiled = sessionRows(unfiledRank)
+  if (sessions.length === 0 && folders.length === 0) {
+    return []
+  }
+
+  const items: SessionListItem[] = []
+  if (pinned.length > 0) {
+    items.push({ type: 'section', id: 'section:pinned', label: labels.pinned }, ...pinned)
+  }
+  folders.forEach((folder, index) => {
+    const rank = index + 1
+    if (rank > loadedRank) return
+    const collapsed = collapsedFolderIds.includes(folder.id)
+    const rows = sessionRows(rank)
+    items.push({
+      type: 'folder',
+      id: `${FOLDER_DROP_PREFIX}${folder.id}`,
+      folder,
+      collapsed,
+      empty: rows.length === 0 && rank < loadedRank,
+    })
+    if (!collapsed) items.push(...rows)
+  })
+  if (unfiledRank <= loadedRank) {
+    items.push({ type: 'section', id: UNFILED_DROP_ID, label: labels.chats, droppable: folders.length > 0 }, ...unfiled)
+  }
+  return items
+}
 
 function SessionListLoadingFooter() {
   return (
@@ -108,7 +192,16 @@ function ChatsSectionMenu() {
 
 export default function SessionList(props: Props) {
   const { t } = useTranslation()
-  const { sessionMetaList: sortedSessions, fetchNextPage, hasNextPage, isFetchingNextPage } = useSessionList()
+  const {
+    sessionMetaList: sortedSessions,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useSessionList()
+  const { folders } = useSessionFolders()
+  const collapsedFolderIds = useUIStore((state) => state.collapsedSessionFolderIds)
+  const setSessionFolderCollapsed = useUIStore((state) => state.setSessionFolderCollapsed)
   // Digits appear only while the switch modifier is held (see the hook); the
   // rows read them by session id, so a pinned row keeps its own key.
   const switchShortcutDigits = useSessionSwitchHintDigits()
@@ -140,16 +233,24 @@ export default function SessionList(props: Props) {
     }
     const activeId = String(event.active.id)
     const overId = String(event.over.id)
-    if (activeId !== overId) {
-      const oldIndex = sortedSessions.findIndex((s) => s.id === activeId)
-      const newIndex = sortedSessions.findIndex((s) => s.id === overId)
-      const activeSession = sortedSessions[oldIndex]
-      const overSession = sortedSessions[newIndex]
-      if (oldIndex < 0 || newIndex < 0 || !areSessionsInSamePinGroup(activeSession, overSession)) {
-        return
-      }
-      await reorderSessions(oldIndex, newIndex)
+    const activeSession = sortedSessions.find((s) => s.id === activeId)
+    if (!activeSession || activeId === overId) {
+      return
     }
+    if (overId.startsWith(FOLDER_DROP_PREFIX) || overId === UNFILED_DROP_ID) {
+      // Pinned chats stay pinned; filing one would not move it in the list.
+      if (activeSession.starred) return
+      const folderId = overId === UNFILED_DROP_ID ? undefined : overId.slice(FOLDER_DROP_PREFIX.length)
+      if ((activeSession.folderId || undefined) !== folderId) {
+        await moveSessionToFolder(activeId, folderId)
+      }
+      return
+    }
+    const overSession = sortedSessions.find((s) => s.id === overId)
+    if (!overSession || Boolean(activeSession.starred) !== Boolean(overSession.starred)) {
+      return
+    }
+    await reorderSessions(activeId, overId)
   }
   const onDragCancel = () => {
     setActiveDragId(null)
@@ -158,35 +259,43 @@ export default function SessionList(props: Props) {
     () => sortedSessions?.find((session) => session.id === activeDragId),
     [activeDragId, sortedSessions]
   )
-  const sortableSessionIds = useMemo(() => sortedSessions?.map((session) => session.id) ?? [], [sortedSessions])
   const displayItems = useMemo<SessionListItem[]>(() => {
     if (!sortedSessions) {
       return []
     }
-
-    const pinnedSessions = sortedSessions.filter((session) => session.starred)
-    const otherSessions = sortedSessions.filter((session) => !session.starred)
-    if (sortedSessions.length === 0) {
-      return []
-    }
-
-    return [
-      ...(pinnedSessions.length > 0
-        ? [
-            { type: 'section' as const, id: 'section:pinned', label: t('Pinned') },
-            ...pinnedSessions.map((session) => ({ type: 'session' as const, id: session.id, session })),
-          ]
-        : []),
-      { type: 'section' as const, id: 'section:chats', label: t('Chats') },
-      ...otherSessions.map((session) => ({ type: 'session' as const, id: session.id, session })),
-    ]
-  }, [sortedSessions, t])
+    return buildDisplayItems(sortedSessions, folders ?? [], collapsedFolderIds, Boolean(hasNextPage), {
+      pinned: t('Pinned'),
+      chats: t('Chats'),
+    })
+  }, [sortedSessions, folders, collapsedFolderIds, hasNextPage, t])
+  const sortableSessionIds = useMemo(
+    () => displayItems.filter((item) => item.type === 'session').map((item) => item.id),
+    [displayItems]
+  )
   const routerState = useRouterState()
   const onEndReached = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
       fetchNextPage()
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+  // A page that ends inside a collapsed folder adds no visible rows, and
+  // Virtuoso reports the end again only when the row count changes; keep
+  // loading until the list reaches a group that is shown. A failed read stops
+  // here; scrolling to the end retries it.
+  const lastLoadedSession = sortedSessions?.at(-1)
+  const lastLoadedCollapsed = useMemo(() => {
+    if (!lastLoadedSession) return false
+    const group = getSessionListGroup(
+      lastLoadedSession,
+      (folders ?? []).map((folder) => folder.id)
+    )
+    return group.kind === 'folder' && collapsedFolderIds.includes(group.folderId)
+  }, [lastLoadedSession, folders, collapsedFolderIds])
+  useEffect(() => {
+    if (lastLoadedCollapsed && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) {
+      void fetchNextPage()
+    }
+  }, [lastLoadedCollapsed, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
   const virtuosoComponents = useMemo(
     () =>
       hasNextPage
@@ -252,12 +361,24 @@ export default function SessionList(props: Props) {
             components={virtuosoComponents}
             itemContent={(_index, item) => {
               if (item.type === 'section') {
-                return item.id === 'section:chats' ? (
-                  <SessionListSectionHeader label={item.label}>
-                    <ChatsSectionMenu />
-                  </SessionListSectionHeader>
-                ) : (
-                  <SessionListSectionHeader label={item.label} testId={TestId.sidebar.pinnedSection} />
+                const header =
+                  item.id === UNFILED_DROP_ID ? (
+                    <SessionListSectionHeader label={item.label}>
+                      <ChatsSectionMenu />
+                    </SessionListSectionHeader>
+                  ) : (
+                    <SessionListSectionHeader label={item.label} testId={TestId.sidebar.pinnedSection} />
+                  )
+                return item.droppable ? <DropTarget id={item.id}>{header}</DropTarget> : header
+              }
+              if (item.type === 'folder') {
+                return (
+                  <FolderHeader
+                    folder={item.folder}
+                    collapsed={item.collapsed}
+                    empty={item.empty}
+                    onToggle={() => setSessionFolderCollapsed(item.folder.id, !item.collapsed)}
+                  />
                 )
               }
 
@@ -333,5 +454,91 @@ function SortableItem(props: {
         </span>
       )}
     </div>
+  )
+}
+
+function DropTarget(props: { id: string; className?: string; children: React.ReactNode }) {
+  const { isOver, setNodeRef } = useDroppable({ id: props.id })
+  return (
+    <div
+      ref={setNodeRef}
+      className={clsx('rounded-md', props.className, isOver && 'bg-chatbox-background-brand-secondary')}
+    >
+      {props.children}
+    </div>
+  )
+}
+
+function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty: boolean; onToggle: () => void }) {
+  const { folder, collapsed, empty, onToggle } = props
+  const { t } = useTranslation()
+  const isSmallScreen = useIsSmallScreen()
+  const rename = async () => {
+    const name = await NiceModal.show<string | null>('session-folder-name', {
+      title: t('Rename folder'),
+      initialName: folder.name,
+    })
+    if (name && name !== folder.name) await renameSessionFolder(folder.id, name)
+  }
+  return (
+    <DropTarget id={`${FOLDER_DROP_PREFIX}${folder.id}`} className="mx-2">
+      <Flex
+        data-testid={TestId.sidebar.folderHeader}
+        {...{ [AutomationAdjacentAttr.folderId]: folder.id }}
+        align="center"
+        gap={4}
+        pl="xs"
+        pr={4}
+        className="group/folder-header rounded-md hover:bg-chatbox-background-gray-secondary"
+      >
+        <UnstyledButton
+          aria-expanded={!collapsed}
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5"
+        >
+          <ScalableIcon
+            icon={collapsed ? IconChevronRight : IconChevronDown}
+            size={14}
+            className="shrink-0 text-chatbox-tertiary"
+          />
+          <ScalableIcon icon={IconFolder} size={16} className="shrink-0 text-chatbox-secondary" />
+          <Text span size="sm" fw={500} c="chatbox-secondary" lineClamp={1}>
+            {folder.name}
+          </Text>
+        </UnstyledButton>
+        <ActionMenu
+          position="bottom-end"
+          items={[
+            { text: t('Rename'), icon: IconPencil, onClick: () => void rename() },
+            {
+              text: t('Delete folder'),
+              icon: IconTrash,
+              color: 'chatbox-error',
+              doubleCheck: { text: t('Chats will be moved out of the folder. Delete?') || undefined },
+              onClick: () => void deleteSessionFolder(folder.id),
+            },
+          ]}
+        >
+          <IconButton
+            icon={IconDots}
+            iconSize={ICON_SIZE.inline}
+            size={isSmallScreen ? 'md' : 'sm'}
+            color="chatbox-tertiary"
+            aria-label={t('Folder actions') || undefined}
+            // Touch screens have no hover, so the menu trigger stays visible there.
+            className={
+              isSmallScreen
+                ? undefined
+                : 'opacity-0 group-hover/folder-header:opacity-100 focus-visible:opacity-100 data-[expanded=true]:opacity-100'
+            }
+          />
+        </ActionMenu>
+      </Flex>
+      {empty && !collapsed && (
+        <Text size="xs" c="chatbox-tertiary" pl={36} pb={6}>
+          {t('Drag chats here')}
+        </Text>
+      )}
+    </DropTarget>
   )
 }

@@ -14,6 +14,7 @@ export enum StorageKey {
   ChatSessionsList = 'chat-sessions-list',
   ChatSessionSettings = 'chat-session-settings',
   PictureSessionSettings = 'picture-session-settings',
+  SessionFolders = 'session-folders',
   AuthInfo = 'authInfo',
 }
 

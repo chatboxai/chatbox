@@ -39,6 +39,12 @@ export {
 } from './crud'
 // Export operations
 export { exportSessionChat } from './export'
+export {
+  createSessionFolder,
+  deleteSessionFolder,
+  moveSessionToFolder,
+  renameSessionFolder,
+} from './folders'
 // Fork operations (7 functions)
 export {
   createNewFork,

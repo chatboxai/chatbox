@@ -4,6 +4,7 @@ import { backfillMissingThreadName } from '@chatbox/core'
 import { createChatQueryClient } from '@chatbox/react'
 import { v4 as uuidv4 } from 'uuid'
 import { CurrentSessionRepository } from '@/adapters/CurrentSessionRepository'
+import { rendererSessionFolderStore } from '@/adapters/RendererSessionFolderStore'
 import { RendererSettingsStorage } from '@/adapters/RendererSettingsStorage'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
@@ -51,6 +52,7 @@ const common: Omit<CreateRendererApplicationOptions, 'host'> = {
   session: {
     createId: uuidv4,
     logger: getLogger('session-service'),
+    folders: rendererSessionFolderStore,
     repairSessionOnRead: (session) => {
       const recovery = recoverSessionOnLoad(session)
       const backfill = backfillMissingThreadName(recovery.session)

@@ -217,7 +217,11 @@ export async function* backupGlobalEntries(
     }
   }
   if (exportItems.includes('conversations')) {
-    await collectKeyValueEntries([BackupStorageKey.ChatSessionSettings, BackupStorageKey.PictureSessionSettings])
+    await collectKeyValueEntries([
+      BackupStorageKey.ChatSessionSettings,
+      BackupStorageKey.PictureSessionSettings,
+      BackupStorageKey.SessionFolders,
+    ])
   }
   if (exportItems.includes('setting')) {
     await collectKeyValueEntries(AGENT_PERSONA_BACKUP_KEYS)

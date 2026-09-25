@@ -8,6 +8,7 @@ import {
   translateImportedSessionMemoryState,
 } from './import-backup'
 import { restoreCopilotResourceKeys, restoreSettingsResourceKeys } from './resources'
+import { mergeRestoredSessionFolders } from './session-folders'
 import type { BackupManifestV3 } from './sharded-format'
 import { AGENT_PERSONA_BACKUP_KEYS, BackupStorageKey, COPILOT_BACKUP_KEYS } from './storage-keys'
 import type { BackupStorage } from './types'
@@ -45,10 +46,17 @@ export async function prepareGlobalRestore(
     for (const key of [
       BackupStorageKey.ChatSessionSettings,
       BackupStorageKey.PictureSessionSettings,
+      BackupStorageKey.SessionFolders,
       ...AGENT_PERSONA_BACKUP_KEYS,
       ...COPILOT_BACKUP_KEYS,
     ])
-      if (Object.hasOwn(value, key)) changes.set(key, value[key])
+      if (Object.hasOwn(value, key))
+        changes.set(
+          key,
+          key === BackupStorageKey.SessionFolders
+            ? mergeRestoredSessionFolders(await storage.getItem<unknown>(key, []), value[key])
+            : value[key]
+        )
   }
   const existing = new Set(await storage.getAllKeys())
   const previous = new Map<string, string | null>()

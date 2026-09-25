@@ -1,6 +1,6 @@
 import type { LoggerPort } from '../../ports/logger'
 import type { SessionMessageDerivedWriteResult } from '../../ports/session-message-source'
-import type { Session, SessionMeta, SessionMetaPage, SessionMetaRecord } from '../../types'
+import type { Session, SessionFolder, SessionMeta, SessionMetaPage, SessionMetaRecord } from '../../types'
 
 export type SessionDeleteOperation = 'session deletion' | 'bulk session deletion' | 'stale session meta cleanup'
 
@@ -26,6 +26,10 @@ export type SessionApplicationEvent =
   | {
       type: 'session-deleted'
       ids: string[]
+    }
+  | {
+      type: 'session-folders-changed'
+      folders: SessionFolder[]
     }
   | {
       type: 'session-list-reset'

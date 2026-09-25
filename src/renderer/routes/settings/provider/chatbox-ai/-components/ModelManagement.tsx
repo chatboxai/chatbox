@@ -1,4 +1,5 @@
 import { Button, Flex, Stack, Text } from '@mantine/core'
+import { IconUpload } from '@tabler/icons-react'
 import type { ProviderModelInfo } from '@shared/types'
 import { IconRefresh, IconRestore } from '@tabler/icons-react'
 import { useState } from 'react'
@@ -6,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { ModelList } from '@/components/ModelList'
+import { BatchImportModelsModal } from '@/components/BatchImportModelsModal'
 
 interface ModelManagementProps {
   chatboxAIModels: ProviderModelInfo[]
@@ -28,6 +30,15 @@ export function ModelManagement({
 }: ModelManagementProps) {
   const { t } = useTranslation()
   const [showFetchedModels, setShowFetchedModels] = useState(false)
+  const [showBatchImport, setShowBatchImport] = useState(false)
+
+  const handleBatchImport = (models: ProviderModelInfo[]) => {
+    for (const model of models) {
+      onAddModel(model)
+    }
+  }
+
+  const existingModelIds = chatboxAIModels.map((m) => m.modelId)
 
   const handleFetchModels = () => {
     onFetchModels()
@@ -42,6 +53,18 @@ export function ModelManagement({
             {t('Model')}
           </Text>
           <Flex gap="sm" align="center" justify="flex-end">
+            <Button
+              variant="light"
+              color="chatbox-gray"
+              c="chatbox-secondary"
+              size="compact-xs"
+              px="sm"
+              onClick={() => setShowBatchImport(true)}
+              leftSection={<ScalableIcon icon={IconUpload} size={12} />}
+            >
+              {t('Batch Import')}
+            </Button>
+
             <Button
               variant="light"
               color="chatbox-gray"
@@ -88,6 +111,13 @@ export function ModelManagement({
           showSearch={true}
         />
       </AdaptiveModal>
+
+      <BatchImportModelsModal
+        opened={showBatchImport}
+        onClose={() => setShowBatchImport(false)}
+        onImport={handleBatchImport}
+        existingModelIds={existingModelIds}
+      />
     </>
   )
 }

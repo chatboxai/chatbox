@@ -367,5 +367,8 @@
   "Generate image": "Generate image",
   "Reference images": "Reference images",
   "Finishing up": "Finishing up",
-  "{{size}} processed (uncompressed)": "{{size}} processed (uncompressed)"
+  "{{size}} processed (uncompressed)": "{{size}} processed (uncompressed)",
+  "Conversation": "Conversation",
+  "Message": "Message",
+  "Showing up to {{count}} results. Narrow your search to find other matches.": "Showing up to {{count}} results. Narrow your search to find other matches."
 }

@@ -196,6 +196,7 @@
     "@types/ua-parser-js": "^0.7.39",
     "@types/uuid": "^9.0.1",
     "@types/webpack-bundle-analyzer": "^4.6.0",
+    "@vibedrop/cli": "0.3.0",
     "@vitejs/plugin-react": "^5.1.1",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",

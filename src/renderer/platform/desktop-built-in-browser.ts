@@ -50,7 +50,7 @@ export class DesktopBuiltInBrowser implements BuiltInBrowser {
     return this.ipc.invoke(BUILT_IN_BROWSER_CHANNELS.stop)
   }
 
-  setView(request: BuiltInBrowserViewRequest): Promise<void> {
+  setView(request: BuiltInBrowserViewRequest): Promise<string | null> {
     return this.ipc.invoke(BUILT_IN_BROWSER_CHANNELS.setView, request)
   }
 

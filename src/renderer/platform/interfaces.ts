@@ -42,7 +42,8 @@ export interface BuiltInBrowser {
   goForward(): Promise<void>
   reload(): Promise<void>
   stop(): Promise<void>
-  setView(request: BuiltInBrowserViewRequest): Promise<void>
+  /** Resolves to the page still when a hide request asks for one and the page was showing. */
+  setView(request: BuiltInBrowserViewRequest): Promise<string | null>
   getState(): Promise<BuiltInBrowserState>
   onStateChange(callback: (state: BuiltInBrowserState) => void): () => void
   clearData(): Promise<void>

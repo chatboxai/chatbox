@@ -15,7 +15,7 @@ function createBrowser(content: string): BuiltInBrowser {
     goForward: vi.fn(),
     reload: vi.fn(),
     stop: vi.fn(),
-    setView: vi.fn(),
+    setView: vi.fn().mockResolvedValue(null),
     getState: vi.fn(),
     onStateChange: vi.fn(),
     clearData: vi.fn(),

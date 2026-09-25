@@ -8,7 +8,14 @@ import {
   type BuiltInBrowserViewRequest,
   EMPTY_BUILT_IN_BROWSER_STATE,
 } from '@shared/built-in-browser'
-import { type BrowserWindow, type Session, session, type WebContents, WebContentsView } from 'electron'
+import {
+  type BrowserWindow,
+  type NativeImage,
+  type Session,
+  session,
+  type WebContents,
+  WebContentsView,
+} from 'electron'
 import { extractReadableContent } from './extract'
 import { normalizeBrowserUrl } from './url'
 
@@ -47,6 +54,18 @@ interface PageSnapshot {
   text: string
 }
 
+const SNAPSHOT_TIMEOUT_MS = 200
+
+function captureWithin(contents: WebContents, timeoutMs: number): Promise<NativeImage | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), timeoutMs)
+    contents
+      .capturePage()
+      .then(resolve, () => resolve(null))
+      .finally(() => clearTimeout(timer))
+  })
+}
+
 function browserUserAgent(defaultUserAgent: string): string {
   // Many sites refuse or degrade pages for embedded Electron clients.
   return defaultUserAgent
@@ -68,6 +87,8 @@ export class BuiltInBrowserController {
   private readQueue: Promise<unknown> = Promise.resolve()
   /** Whether the view's current main-frame document has reached DOM ready. */
   private documentReady = false
+  /** Orders view requests, so a hide that waits on a snapshot never undoes a later placement. */
+  private viewGeneration = 0
 
   getSession(): Session {
     if (this.configuredSession) return this.configuredSession
@@ -99,11 +120,27 @@ export class BuiltInBrowserController {
     }
   }
 
-  /** Attaches the view to `host` and places it, or hides it. */
-  setView(host: BrowserWindow, request: BuiltInBrowserViewRequest): void {
+  /**
+   * Attaches the view to `host` and places it, or hides it. A hide request with `snapshot`
+   * resolves to a still of the page taken just before it is hidden.
+   */
+  async setView(host: BrowserWindow, request: BuiltInBrowserViewRequest): Promise<string | null> {
+    const generation = ++this.viewGeneration
     if (!request.visible) {
-      if (this.host === host) this.view?.setVisible(false)
-      return
+      const view = this.host === host ? this.view : null
+      if (!view || !view.getVisible()) return null
+      let image: string | null = null
+      if (request.snapshot) {
+        // The page keeps covering the overlay until it is hidden, so a slow capture is abandoned.
+        const captured = await captureWithin(view.webContents, SNAPSHOT_TIMEOUT_MS)
+        // A newer request placed or hid the view while the still was taken.
+        if (generation !== this.viewGeneration) return null
+        if (captured && !captured.isEmpty()) {
+          image = `data:image/jpeg;base64,${captured.toJPEG(85).toString('base64')}`
+        }
+      }
+      view.setVisible(false)
+      return image
     }
     const view = this.ensureView(host)
     const { x, y, width, height } = request.bounds
@@ -114,6 +151,7 @@ export class BuiltInBrowserController {
       height: Math.max(0, Math.round(height)),
     })
     view.setVisible(true)
+    return null
   }
 
   navigate(host: BrowserWindow, url: string): void {

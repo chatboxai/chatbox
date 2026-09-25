@@ -67,7 +67,9 @@ export interface BuiltInBrowserViewBounds {
   height: number
 }
 
-export type BuiltInBrowserViewRequest = { visible: false } | { visible: true; bounds: BuiltInBrowserViewBounds }
+export type BuiltInBrowserViewRequest =
+  /** With `snapshot`, a still of the page is taken before it is hidden and returned as a data URL. */
+  { visible: false; snapshot?: boolean } | { visible: true; bounds: BuiltInBrowserViewBounds }
 
 /** Model tool that reads a page in the built-in browser. */
 export const BROWSE_PAGE_TOOL_NAME = 'browse_page'

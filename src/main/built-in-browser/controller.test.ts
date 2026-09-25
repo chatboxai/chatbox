@@ -5,6 +5,13 @@ class FakeContents extends EventEmitter {
   url = 'about:blank'
   closed = false
   snapshots: Array<(value: unknown) => void> = []
+  captures: Array<(image: unknown) => void> = []
+  capturePage = vi.fn(
+    () =>
+      new Promise((resolve) => {
+        this.captures.push(resolve)
+      })
+  )
   navigationHistory = { canGoBack: () => false, canGoForward: () => false, clear: vi.fn() }
   setWindowOpenHandler = vi.fn()
   isDestroyed = () => this.closed
@@ -31,13 +38,17 @@ class FakeContents extends EventEmitter {
   }
 }
 
-const views: Array<{ webContents: FakeContents }> = []
+const views: Array<{ webContents: FakeContents; visible: boolean }> = []
 
 vi.mock('electron', () => {
   class WebContentsView {
     webContents = new FakeContents()
     setBackgroundColor = vi.fn()
-    setVisible = vi.fn()
+    visible = false
+    setVisible = vi.fn((visible: boolean) => {
+      this.visible = visible
+    })
+    getVisible = () => this.visible
     setBounds = vi.fn()
     constructor() {
       views.push(this)
@@ -155,5 +166,58 @@ describe('BuiltInBrowserController reads', () => {
     await expect(read).rejects.toThrow('cancelled')
     expect(contents.close).toHaveBeenCalled()
     expect(controller.getState().url).toBe('')
+  })
+})
+
+describe('BuiltInBrowserController view', () => {
+  let controller: InstanceType<typeof BuiltInBrowserController>
+  let host: FakeHost
+  const bounds = { x: 0, y: 0, width: 400, height: 600 }
+  const image = { isEmpty: () => false, toJPEG: () => Buffer.from('jpeg') }
+
+  beforeEach(() => {
+    views.length = 0
+    controller = new BuiltInBrowserController()
+    host = new FakeHost()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function show() {
+    return controller.setView(host as unknown as Host, { visible: true, bounds })
+  }
+
+  it('hides the page after taking a still of it', async () => {
+    await show()
+    const hide = controller.setView(host as unknown as Host, { visible: false, snapshot: true })
+    await flush()
+    expect(views[0].visible).toBe(true)
+    views[0].webContents.captures.shift()?.(image)
+
+    await expect(hide).resolves.toBe(`data:image/jpeg;base64,${Buffer.from('jpeg').toString('base64')}`)
+    expect(views[0].visible).toBe(false)
+  })
+
+  it('keeps the page shown when it is placed again while the still is taken', async () => {
+    await show()
+    const hide = controller.setView(host as unknown as Host, { visible: false, snapshot: true })
+    await flush()
+    await show()
+    views[0].webContents.captures.shift()?.(image)
+
+    await expect(hide).resolves.toBeNull()
+    expect(views[0].visible).toBe(true)
+  })
+
+  it('hides the page without a still when the capture is slow', async () => {
+    await show()
+    vi.useFakeTimers()
+    const hide = controller.setView(host as unknown as Host, { visible: false, snapshot: true })
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    await expect(hide).resolves.toBeNull()
+    expect(views[0].visible).toBe(false)
   })
 })

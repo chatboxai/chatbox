@@ -163,7 +163,12 @@ function createHarness(): Harness {
         stepNumber: 0,
         model: {} as never,
         messages,
-        experimental_context: undefined,
+        initialMessages: messages,
+        responseMessages: [],
+        instructions: undefined,
+        initialInstructions: undefined,
+        toolsContext: {},
+        runtimeContext: {},
       })
       const activeToolNames = preparedStep?.activeTools ? new Set(preparedStep.activeTools.map(String)) : undefined
       const effectiveTools = activeToolNames
@@ -851,7 +856,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
-          experimental_context: undefined,
+          initialMessages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         harness.setNow(2_250)
         yield { type: 'text-delta', text: 'step two output' } as ModelStreamPart<ToolSet>
@@ -943,7 +953,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
-          experimental_context: undefined,
+          initialMessages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         yield { type: 'text-delta', text: ' step two output' } as ModelStreamPart<ToolSet>
         yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
@@ -1005,7 +1020,12 @@ describe('GenerationService', () => {
             stepNumber,
             model: {},
             messages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
-            experimental_context: undefined,
+            initialMessages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
+            responseMessages: [],
+            instructions: undefined,
+            initialInstructions: undefined,
+            toolsContext: {},
+            runtimeContext: {},
           } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         yield { type: 'text-delta', text: 'step one' } as ModelStreamPart<ToolSet>
         yield { type: 'finish-step' } as ModelStreamPart<ToolSet>
@@ -1062,7 +1082,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
-          experimental_context: undefined,
+          initialMessages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         yield { type: 'text-delta', text: 'step two output' } as ModelStreamPart<ToolSet>
         yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
@@ -1113,7 +1138,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
-          experimental_context: undefined,
+          initialMessages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
       })()
     )
@@ -1239,7 +1269,12 @@ describe('GenerationService', () => {
           stepNumber: 0,
           model: {},
           messages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
-          experimental_context: undefined,
+          initialMessages: [{ role: 'user', content: 'Hello' }] as ModelMessage[],
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0]
         stepResults.push(await prepareStep(prepareOptions))
         stepResults.push(await prepareStep({ ...prepareOptions, stepNumber: 1 }))
@@ -1284,7 +1319,12 @@ describe('GenerationService', () => {
           stepNumber: 0,
           model: {},
           messages: [{ role: 'user', content: 'original' }],
-          experimental_context: undefined,
+          initialMessages: [{ role: 'user', content: 'original' }],
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
       })()
@@ -1385,7 +1425,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: bulky,
-          experimental_context: undefined,
+          initialMessages: bulky,
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
       })()
@@ -1513,7 +1558,12 @@ describe('GenerationService', () => {
             stepNumber: 1,
             model: {},
             messages: payload,
-            experimental_context: undefined,
+            initialMessages: payload,
+            responseMessages: [],
+            instructions: undefined,
+            initialInstructions: undefined,
+            toolsContext: {},
+            runtimeContext: {},
           } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
           if (switchAt === 'delayed-checkpoint') {
             await new Promise<void>((resolve) => setTimeout(resolve, 10))
@@ -1614,7 +1664,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: history,
-          experimental_context: undefined,
+          initialMessages: history,
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         yield {
           type: 'tool-call',
@@ -1634,7 +1689,12 @@ describe('GenerationService', () => {
           stepNumber: 2,
           model: {},
           messages: [...history, { role: 'user', content: 'change direction' }, ...tail],
-          experimental_context: undefined,
+          initialMessages: [...history, { role: 'user', content: 'change direction' }, ...tail],
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
       })()
@@ -1693,7 +1753,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: bulky,
-          experimental_context: undefined,
+          initialMessages: bulky,
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0]
         stepResults.push(await prepareStep(prepareOptions))
         stepResults.push(await prepareStep({ ...prepareOptions, stepNumber: 2 }))
@@ -1774,7 +1839,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: bulky,
-          experimental_context: undefined,
+          initialMessages: bulky,
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0]
         stepResults.push(await prepareStep(prepareOptions))
         stepResults.push(await prepareStep({ ...prepareOptions, stepNumber: 2 }))
@@ -1875,7 +1945,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: bulky,
-          experimental_context: undefined,
+          initialMessages: bulky,
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
       })()
@@ -1970,7 +2045,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: bulky,
-          experimental_context: undefined,
+          initialMessages: bulky,
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
       })()
@@ -2074,7 +2154,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: bulky,
-          experimental_context: undefined,
+          initialMessages: bulky,
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
         yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
       })()
@@ -2167,7 +2252,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: firstStep,
-          experimental_context: undefined,
+          initialMessages: firstStep,
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0]
         stepResults.push(await prepareStep(prepareOptions))
         stepResults.push(await prepareStep({ ...prepareOptions, stepNumber: 2, messages: secondStep }))
@@ -2232,7 +2322,12 @@ describe('GenerationService', () => {
           stepNumber: 1,
           model: {},
           messages: bulky,
-          experimental_context: undefined,
+          initialMessages: bulky,
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0]
         await prepareStep(prepareOptions)
         await prepareStep({ ...prepareOptions, stepNumber: 2 })

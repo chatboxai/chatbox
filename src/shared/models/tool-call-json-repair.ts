@@ -1,4 +1,4 @@
-import type { LanguageModelV3ToolCall } from '@ai-sdk/provider'
+import type { LanguageModelV4ToolCall } from '@ai-sdk/provider'
 import { parsePartialJson, type ToolCallRepairFunction, type ToolSet } from 'ai'
 
 function stripCodeFence(input: string): string {
@@ -32,8 +32,8 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 export async function repairToolCallJsonInput(
-  toolCall: LanguageModelV3ToolCall
-): Promise<LanguageModelV3ToolCall | null> {
+  toolCall: LanguageModelV4ToolCall
+): Promise<LanguageModelV4ToolCall | null> {
   for (const candidate of buildRepairCandidates(toolCall.input)) {
     const result = await parsePartialJson(candidate)
     if ((result.state === 'successful-parse' || result.state === 'repaired-parse') && isJsonObject(result.value)) {

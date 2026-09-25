@@ -205,7 +205,7 @@ beforeEach(() => {
 /** Runs the same prompt conversion `streamText` performs before a provider call. */
 async function toUpstreamMessages(coreMessages: ModelMessage[]) {
   const prompt = await convertToLanguageModelPrompt({
-    prompt: await standardizePrompt({ messages: coreMessages }),
+    prompt: await standardizePrompt({ messages: coreMessages, allowSystemInMessages: true }),
     supportedUrls: {},
     download: undefined,
   })
@@ -1880,7 +1880,10 @@ describe('chat mode memories', () => {
       const execute = prepared.tools.save_memory?.execute
       if (!execute) throw new Error('Missing save_memory tool')
       await expect(
-        execute({ content: 'Retired generation fact' }, { toolCallId: 'captured-save', messages: [] })
+        execute(
+          { content: 'Retired generation fact' },
+          { toolCallId: 'captured-save', messages: [], context: undefined }
+        )
       ).resolves.toMatchObject({
         error: expect.any(String),
       })

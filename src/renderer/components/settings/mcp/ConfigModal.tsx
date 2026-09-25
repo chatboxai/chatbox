@@ -12,9 +12,9 @@ import {
   Textarea,
   TextInput,
 } from '@mantine/core'
+import { type MCPToolSummary, summarizeMCPTools } from '@chatbox/core/mcp'
 import { useForm } from '@mantine/form'
 import { IconRefresh } from '@tabler/icons-react'
-import type { ToolSet } from 'ai'
 import { type FC, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal } from '@/components/layout/Overlay'
@@ -28,12 +28,8 @@ import { getConfigFromFormValues, getFormValuesFromConfig, type MCPServerConfigF
 
 interface ConnectionTestingResult {
   config: MCPServerConfig
-  tools: { name: string; description?: string }[]
+  tools: MCPToolSummary[]
   error?: Error
-}
-
-function toToolSummaries(tools: ToolSet): ConnectionTestingResult['tools'] {
-  return Object.entries(tools).map(([name, tool]) => ({ name, description: tool.description }))
 }
 
 const TestingResult: FC<{ result: ConnectionTestingResult; onRefresh?: () => void; refreshing?: boolean }> = ({
@@ -106,7 +102,7 @@ const ConfigForm: FC<{
     }
     const server = mcpController.getServer(props.config.id)
     if (liveStatus?.state === 'running' && server) {
-      setTestingResult({ config: props.config, tools: toToolSummaries(server.getAvailableTools()) })
+      setTestingResult({ config: props.config, tools: summarizeMCPTools(server.getAvailableTools()) })
     } else if (liveStatus?.error) {
       setTestingResult({ config: props.config, tools: [], error: new Error(liveStatus.error) })
     }
@@ -119,7 +115,7 @@ const ConfigForm: FC<{
     }
     setRefreshing(true)
     try {
-      setTestingResult({ config: props.config, tools: toToolSummaries(await server.refreshTools()) })
+      setTestingResult({ config: props.config, tools: summarizeMCPTools(await server.refreshTools()) })
     } catch (err) {
       setTestingResult({ config: props.config, tools: [], error: err as Error })
     } finally {
@@ -147,7 +143,7 @@ const ConfigForm: FC<{
       const tools = await server.getAvailableTools()
       setTestingResult({
         config,
-        tools: Object.keys(tools).map((name) => ({ name, description: tools[name].description })),
+        tools: summarizeMCPTools(tools),
       })
     } catch (err) {
       if (testingAbortController.current?.signal.aborted) {

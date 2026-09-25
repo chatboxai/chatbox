@@ -96,9 +96,9 @@ function getTools() {
 
 async function execute(tool: unknown, input: unknown) {
   const executable = tool as {
-    execute: (input: unknown, options: { toolCallId: string; messages: [] }) => Promise<unknown>
+    execute: (input: unknown, options: { toolCallId: string; messages: []; context: undefined }) => Promise<unknown>
   }
-  return await executable.execute(input, { toolCallId: 'tool-call-id', messages: [] })
+  return await executable.execute(input, { toolCallId: 'tool-call-id', messages: [], context: undefined })
 }
 
 async function toModelOutput(tool: unknown, output: unknown) {
@@ -544,11 +544,14 @@ describe('user-granted working directories (like /tmp)', () => {
   test('bypass is not tracked for pre-approved calls or working-directory writes', async () => {
     const approvedTools = buildFilesystemTools({ sessionId: 'session-id', provider, fullAccess: true }).tools
     const executable = approvedTools.write_file as {
-      execute: (input: unknown, options: { toolCallId: string; messages: []; approved?: boolean }) => Promise<unknown>
+      execute: (
+        input: unknown,
+        options: { toolCallId: string; messages: []; context: undefined; approved?: boolean }
+      ) => Promise<unknown>
     }
     await executable.execute(
       { file_path: '/Users/me/project/out.txt', content: 'x' },
-      { toolCallId: 'tool-call-id', messages: [], approved: true }
+      { toolCallId: 'tool-call-id', messages: [], context: undefined, approved: true }
     )
     expect(trackAgentModeFullAccessBypass).not.toHaveBeenCalled()
 

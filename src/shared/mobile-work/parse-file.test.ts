@@ -26,7 +26,10 @@ describe('parse_file', () => {
       modelName: 'test',
     })
     expect(active.has('parse_file')).toBe(true)
-    const output = await tools.parse_file.execute?.({ path: 'input/report.docx' }, { toolCallId: 'p', messages: [] })
+    const output = await tools.parse_file.execute?.(
+      { path: 'input/report.docx' },
+      { toolCallId: 'p', messages: [], context: undefined }
+    )
     expect(output).toMatchObject({ truncated: true })
     expect(JSON.stringify(output).length).toBeLessThan(800)
     const result = output as { path: string }

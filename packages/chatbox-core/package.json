@@ -56,13 +56,13 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@ai-sdk/mcp": "^1.0.64",
-    "@ai-sdk/provider": "^3.0.14",
+    "@ai-sdk/mcp": "2.0.45",
+    "@ai-sdk/provider": "4.0.10",
     "@cfworker/json-schema": "4.1.1",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/sdk": "^1.15.1",
     "@noble/hashes": "1.8.0",
-    "ai": "^6.0.11",
+    "ai": "7.0.93",
     "deepmerge": "^4.3.1",
     "emittery": "^1.1.0",
     "fflate": "^0.8.3",

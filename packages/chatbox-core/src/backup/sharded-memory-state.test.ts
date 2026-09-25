@@ -171,7 +171,7 @@ it.each([
     const { tools } = createPausedMemoryTools({ memory, targetMessage: message })
     const result = await tools.save_memory.execute?.(
       { content: message.id },
-      { toolCallId: `${message.id}-0`, messages: [] }
+      { toolCallId: `${message.id}-0`, messages: [], context: undefined }
     )
     expect(result).toHaveProperty(importLibrary ? 'message' : 'error')
   }

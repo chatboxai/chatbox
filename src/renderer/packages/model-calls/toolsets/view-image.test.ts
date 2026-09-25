@@ -1,9 +1,9 @@
-import type { LanguageModelV3Prompt, LanguageModelV3StreamPart } from '@ai-sdk/provider'
+import type { LanguageModelV4Prompt, LanguageModelV4StreamPart } from '@ai-sdk/provider'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import { convertToModelMessages } from '@shared/services/model-message-converter'
 import type { MessageContentToolCallPart } from '@shared/types'
-import { jsonSchema, stepCountIs, streamText } from 'ai'
-import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
+import { jsonSchema, isStepCount, streamText } from 'ai'
+import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const fsReadImage = vi.fn(
@@ -240,7 +240,7 @@ describe('view_image toModelOutput', () => {
       type: 'content',
       value: [
         { type: 'text', text: 'Viewed image: chart.png' },
-        { type: 'image-data', data: 'UkVTSVpFRA==', mediaType: 'image/webp' },
+        { type: 'file', data: { type: 'data', data: 'UkVTSVpFRA==' }, mediaType: 'image/webp' },
       ],
     })
     expect(getStoreBlob).not.toHaveBeenCalled()
@@ -259,7 +259,7 @@ describe('view_image toModelOutput', () => {
       type: 'content',
       value: [
         { type: 'text', text: 'Viewed image: chart.png' },
-        { type: 'image-data', data: 'UkVTSVpFRA==', mediaType: 'image/png' },
+        { type: 'file', data: { type: 'data', data: 'UkVTSVpFRA==' }, mediaType: 'image/png' },
       ],
     })
     await toModelOutput(tool, result)
@@ -490,12 +490,12 @@ test('reserved uploaded paths never reach image filesystem sinks', async () => {
 test.each([true, false])('SDK delivers a bounded batch before trimming history (native=%s)', async (native) => {
   const toolSet = buildToolSet({ toolResultImages: native })
   for (let i = 0; i < 9; i++) saveImage.mockResolvedValueOnce(`picture:sdk-${i}`)
-  const prompts: LanguageModelV3Prompt[] = []
+  const prompts: LanguageModelV4Prompt[] = []
   const usage = {
     inputTokens: { total: 1, noCache: 1, cacheRead: 1, cacheWrite: 0 },
     outputTokens: { total: 1, text: 1, reasoning: 0 },
   }
-  const model = new MockLanguageModelV3({
+  const model = new MockLanguageModelV4({
     doStream: async ({ prompt }) => {
       prompts.push(prompt)
       const paths =
@@ -504,7 +504,7 @@ test.each([true, false])('SDK delivers a bounded batch before trimming history (
           : prompts.length === 2
             ? ['next.png']
             : []
-      const chunks: LanguageModelV3StreamPart[] = [
+      const chunks: LanguageModelV4StreamPart[] = [
         { type: 'stream-start', warnings: [] },
         ...paths.map((file_path) => ({
           type: 'tool-call' as const,
@@ -521,10 +521,13 @@ test.each([true, false])('SDK delivers a bounded batch before trimming history (
     model,
     prompt: 'Inspect the images.',
     tools: toolSet.tools,
-    stopWhen: stepCountIs(3),
-    prepareStep: async ({ messages }) => ({ messages: await toolSet.injectImagesIntoStepMessages?.(messages) }),
+    stopWhen: isStepCount(3),
+    // Mirrors AbstractAISDKModel, which prepares every step from the full transcript.
+    prepareStep: async ({ initialMessages, responseMessages }) => ({
+      messages: await toolSet.injectImagesIntoStepMessages?.([...initialMessages, ...responseMessages]),
+    }),
   }).consumeStream()
-  const imageCount = (prompt: LanguageModelV3Prompt) =>
+  const imageCount = (prompt: LanguageModelV4Prompt) =>
     prompt.reduce((count, message) => {
       if (message.role === 'tool')
         return (
@@ -533,7 +536,7 @@ test.each([true, false])('SDK delivers a bounded batch before trimming history (
             (n, part) =>
               n +
               (part.type === 'tool-result' && part.output.type === 'content'
-                ? part.output.value.filter((p) => p.type === 'image-data').length
+                ? part.output.value.filter((p) => p.type === 'file' && p.mediaType.startsWith('image')).length
                 : 0),
             0
           )
@@ -580,11 +583,11 @@ test.each([true, false])('SDK trims resumed image history after an unrelated too
     async () => 'data:image/png;base64,aW1hZ2U=',
     { modelSupportVision: true, supportToolResultImages: native }
   )
-  const prompts: LanguageModelV3Prompt[] = []
-  const model = new MockLanguageModelV3({
+  const prompts: LanguageModelV4Prompt[] = []
+  const model = new MockLanguageModelV4({
     doStream: async ({ prompt }) => {
       prompts.push(prompt)
-      const chunks: LanguageModelV3StreamPart[] = [
+      const chunks: LanguageModelV4StreamPart[] = [
         { type: 'stream-start', warnings: [] },
         ...(prompts.length === 1
           ? [{ type: 'tool-call' as const, toolCallId: 'other', toolName: 'other', input: '{}' }]
@@ -608,10 +611,13 @@ test.each([true, false])('SDK trims resumed image history after an unrelated too
       ...toolSet.tools,
       other: { inputSchema: jsonSchema({ type: 'object', properties: {} }), execute: async () => 'done' },
     },
-    stopWhen: stepCountIs(2),
-    prepareStep: async ({ messages }) => ({ messages: await toolSet.injectImagesIntoStepMessages?.(messages) }),
+    stopWhen: isStepCount(2),
+    // Mirrors AbstractAISDKModel, which prepares every step from the full transcript.
+    prepareStep: async ({ initialMessages, responseMessages }) => ({
+      messages: await toolSet.injectImagesIntoStepMessages?.([...initialMessages, ...responseMessages]),
+    }),
   }).consumeStream()
-  const count = (prompt: LanguageModelV3Prompt) =>
+  const count = (prompt: LanguageModelV4Prompt) =>
     prompt.reduce((total, message) => {
       if (message.role === 'user') return total + message.content.filter((part) => part.type === 'file').length
       if (message.role === 'tool')
@@ -621,7 +627,8 @@ test.each([true, false])('SDK trims resumed image history after an unrelated too
             (n, part) =>
               n +
               (part.type === 'tool-result' && part.output.type === 'content'
-                ? part.output.value.filter((value) => value.type === 'image-data').length
+                ? part.output.value.filter((value) => value.type === 'file' && value.mediaType.startsWith('image'))
+                    .length
                 : 0),
             0
           )

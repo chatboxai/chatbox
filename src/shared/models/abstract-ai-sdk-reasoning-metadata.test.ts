@@ -1,6 +1,6 @@
-import type { LanguageModelV3StreamPart } from '@ai-sdk/provider'
+import type { LanguageModelV4StreamPart } from '@ai-sdk/provider'
 import type { Provider } from 'ai'
-import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
+import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test'
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelDependencies } from '../types/adapters'
 import type { SentryScope } from '../utils/sentry_adapter'
@@ -37,7 +37,7 @@ function createDependencies(): ModelDependencies {
 
 class StreamTestModel extends AbstractAISDKModel {
   public constructor(
-    private readonly languageModel: MockLanguageModelV3,
+    private readonly languageModel: MockLanguageModelV4,
     apiStyle: 'anthropic' | 'openai-responses'
   ) {
     super(
@@ -64,8 +64,8 @@ class StreamTestModel extends AbstractAISDKModel {
   }
 }
 
-function createStreamModel(chunks: LanguageModelV3StreamPart[], provider: string) {
-  return new MockLanguageModelV3({
+function createStreamModel(chunks: LanguageModelV4StreamPart[], provider: string) {
+  return new MockLanguageModelV4({
     provider,
     modelId: 'test-model',
     doStream: () =>
@@ -74,7 +74,7 @@ function createStreamModel(chunks: LanguageModelV3StreamPart[], provider: string
           { type: 'stream-start', warnings: [] },
           ...chunks,
           { type: 'finish', finishReason: { unified: 'stop' as const, raw: undefined }, usage },
-        ] satisfies LanguageModelV3StreamPart[]),
+        ] satisfies LanguageModelV4StreamPart[]),
       }),
   })
 }

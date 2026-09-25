@@ -71,6 +71,7 @@ describe('session attachment RAG toolset', () => {
       {
         toolCallId: 'call-1',
         messages: [],
+        context: undefined,
       }
     )
 
@@ -122,6 +123,7 @@ describe('session attachment RAG toolset', () => {
       {
         toolCallId: 'call-1',
         messages: [],
+        context: undefined,
       }
     )
 

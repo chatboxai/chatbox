@@ -249,7 +249,7 @@ describe('Memory state backup translation', () => {
         const tools = createPausedMemoryTools({ memory, targetMessage }).tools
         const result = await tools.save_memory.execute?.(
           { content: `Imported call ${index}` },
-          { toolCallId: 'memory-call', messages: [] }
+          { toolCallId: 'memory-call', messages: [], context: undefined }
         )
         expect(result).toHaveProperty(withCopilot ? 'message' : 'error')
       }
@@ -258,7 +258,7 @@ describe('Memory state backup translation', () => {
         expect(
           await tools.save_memory.execute?.(
             { content: 'Must not import stale call' },
-            { toolCallId: 'memory-call', messages: [] }
+            { toolCallId: 'memory-call', messages: [], context: undefined }
           )
         ).toHaveProperty('error')
       }

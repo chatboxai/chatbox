@@ -1,10 +1,6 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createDeepSeek } from '@ai-sdk/deepseek'
-import {
-  createGoogleGenerativeAI,
-  type GoogleGenerativeAIProvider,
-  type GoogleGenerativeAIProviderOptions,
-} from '@ai-sdk/google'
+import { createGoogle, type GoogleProvider, type GoogleLanguageModelOptions } from '@ai-sdk/google'
 import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { type ModelMessage, streamText, type ToolSet } from 'ai'
@@ -133,7 +129,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
 
   protected getProvider(options: CallChatCompletionOptions) {
     if (this.options.model.apiStyle === 'google') {
-      const provider = createGoogleGenerativeAI({
+      const provider = createGoogle({
         apiKey: this.options.licenseKey || '',
         baseURL: `${getChatboxAPIOrigin()}/gateway/google-ai-studio/v1beta`,
         headers: {
@@ -214,7 +210,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
       return callSettings
     }
     if (this.options.model.apiStyle === 'google') {
-      const providerOptions: GoogleGenerativeAIProviderOptions = {}
+      const providerOptions: GoogleLanguageModelOptions = {}
       const thinkingConfig = options.providerOptions?.google?.thinkingConfig
       if (thinkingConfig) {
         providerOptions.thinkingConfig = {
@@ -299,7 +295,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
   getChatModel(options: CallChatCompletionOptions) {
     const provider = this.getProvider(options)
     if (this.options.model.apiStyle === 'google') {
-      return (provider as GoogleGenerativeAIProvider).chat(this.options.model.modelId)
+      return (provider as GoogleProvider).chat(this.options.model.modelId)
     } else if (this.options.model.apiStyle === 'openai-responses') {
       return (provider as OpenAIProvider).responses(this.options.model.modelId)
     } else {
@@ -346,7 +342,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
 
     const results: string[] = []
     for (let i = 0; i < params.num; i++) {
-      const providerOptions: GoogleGenerativeAIProviderOptions = {
+      const providerOptions: GoogleLanguageModelOptions = {
         responseModalities: ['TEXT', 'IMAGE'],
       }
       const imageConfig = buildGeminiImageConfig(params.aspectRatio)
@@ -365,7 +361,7 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
         maxRetries: 0,
       })
 
-      for await (const chunk of result.fullStream) {
+      for await (const chunk of result.stream) {
         if (chunk.type === 'file' && chunk.file.mediaType?.startsWith('image/') && chunk.file.base64) {
           const dataUrl = `data:${chunk.file.mediaType};base64,${chunk.file.base64}`
           results.push(dataUrl)
@@ -376,10 +372,10 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
     return results
   }
 
-  private getGoogleProvider(): GoogleGenerativeAIProvider {
+  private getGoogleProvider(): GoogleProvider {
     const license = this.options.licenseKey || ''
     const instanceId = (this.options.licenseInstances ? this.options.licenseInstances[license] : '') || ''
-    return createGoogleGenerativeAI({
+    return createGoogle({
       apiKey: this.options.licenseKey || '',
       baseURL: `${getChatboxAPIOrigin()}/gateway/google-ai-studio/v1beta`,
       headers: {

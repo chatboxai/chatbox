@@ -83,8 +83,8 @@ export function buildViewImageToolResultContent(injection: ViewImageInjection) {
     value: [
       { type: 'text' as const, text: `Viewed image: ${injection.filePath}` },
       {
-        type: 'image-data' as const,
-        data: injection.base64Data,
+        type: 'file' as const,
+        data: { type: 'data' as const, data: injection.base64Data },
         mediaType: injection.mediaType,
       },
     ],

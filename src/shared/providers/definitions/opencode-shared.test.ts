@@ -1,4 +1,4 @@
-import type { LanguageModelV3, LanguageModelV3CallOptions } from '@ai-sdk/provider'
+import type { LanguageModelV4, LanguageModelV4CallOptions } from '@ai-sdk/provider'
 import { describe, expect, it, vi } from 'vitest'
 import { settings as getDefaultSettings, newConfigs } from '../../defaults'
 import type { CallChatCompletionOptions, ModelInterface } from '../../models/types'
@@ -88,8 +88,8 @@ function exposeRequestHeaders(model: ModelInterface, options?: CallChatCompletio
   ).getRequestHeaders(options)
 }
 
-function exposeChatModel(model: ModelInterface, options?: CallChatCompletionOptions): LanguageModelV3 {
-  return (model as unknown as { getChatModel(options?: CallChatCompletionOptions): LanguageModelV3 }).getChatModel(
+function exposeChatModel(model: ModelInterface, options?: CallChatCompletionOptions): LanguageModelV4 {
+  return (model as unknown as { getChatModel(options?: CallChatCompletionOptions): LanguageModelV4 }).getChatModel(
     options
   )
 }
@@ -100,7 +100,7 @@ function headerValue(headers: Record<string, string> | undefined, name: string) 
   return match?.[1]
 }
 
-const generateRequest: LanguageModelV3CallOptions = {
+const generateRequest: LanguageModelV4CallOptions = {
   prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hi' }] }],
 }
 

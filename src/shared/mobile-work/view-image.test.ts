@@ -1,7 +1,7 @@
-import type { LanguageModelV3Prompt, LanguageModelV3StreamPart } from '@ai-sdk/provider'
+import type { LanguageModelV4Prompt, LanguageModelV4StreamPart } from '@ai-sdk/provider'
 import type { ModelMessage } from 'ai'
-import { stepCountIs, streamText } from 'ai'
-import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
+import { isStepCount, streamText } from 'ai'
+import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test'
 import { describe, expect, it, vi } from 'vitest'
 import { convertToModelMessages } from '../services/model-message-converter'
 import type { MessageContentToolCallPart } from '../types'
@@ -36,7 +36,7 @@ function setup(toolResultImages = false) {
   const execute = (path = 'chart.png') =>
     api.tools.view_image.execute?.(
       { file_path: path },
-      { toolCallId: 'image', messages: [], abortSignal: controller.signal }
+      { toolCallId: 'image', messages: [], context: undefined, abortSignal: controller.signal }
     )
   return { api, execute, read, normalize, blobs, controller }
 }
@@ -85,7 +85,9 @@ describe('local view_image', () => {
     const result = await s.api.prepareStepMessages([toolMessage(await s.execute())])
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({
-      content: [{ output: { type: 'content', value: [{ type: 'text' }, { type: 'image-data', data: png }] } }],
+      content: [
+        { output: { type: 'content', value: [{ type: 'text' }, { type: 'file', data: { type: 'data', data: png } }] } },
+      ],
     })
   })
   it('delivers all pending images even when tool call ids repeat', async () => {
@@ -122,15 +124,15 @@ describe('local view_image', () => {
 
 it.each([false, true])('sends actual image input in SDK second step (tool images: %s)', async (native) => {
   const s = setup(native)
-  const prompts: LanguageModelV3Prompt[] = []
+  const prompts: LanguageModelV4Prompt[] = []
   const usage = {
     inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
     outputTokens: { total: 1, text: 1, reasoning: 0 },
   }
-  const model = new MockLanguageModelV3({
+  const model = new MockLanguageModelV4({
     doStream: async (options) => {
       prompts.push(options.prompt)
-      const chunks: LanguageModelV3StreamPart[] =
+      const chunks: LanguageModelV4StreamPart[] =
         prompts.length === 1
           ? [
               { type: 'stream-start', warnings: [] },
@@ -153,20 +155,30 @@ it.each([false, true])('sends actual image input in SDK second step (tool images
     model,
     prompt: 'Inspect chart.png',
     tools: s.api.tools,
-    stopWhen: stepCountIs(2),
-    prepareStep: async ({ messages }) => ({ messages: await s.api.prepareStepMessages(messages) }),
+    stopWhen: isStepCount(2),
+    // Mirrors AbstractAISDKModel, which prepares every step from the full transcript.
+    prepareStep: async ({ initialMessages, responseMessages }) => ({
+      messages: await s.api.prepareStepMessages([...initialMessages, ...responseMessages]),
+    }),
   })
   await result.consumeStream()
   expect(prompts).toHaveLength(2)
   if (native)
     expect(prompts[1].find((m) => m.role === 'tool')).toMatchObject({
-      content: [{ output: { type: 'content', value: [{ type: 'text' }, { type: 'image-data', data: png }] } }],
+      content: [
+        {
+          output: {
+            type: 'content',
+            value: [{ type: 'text' }, { type: 'file', mediaType: 'image/png', data: { type: 'data', data: png } }],
+          },
+        },
+      ],
     })
   else {
     const last = prompts[1].at(-1)
     expect(last).toMatchObject({
       role: 'user',
-      content: [{ type: 'text' }, { type: 'file', mediaType: 'image/png', data: png }],
+      content: [{ type: 'text' }, { type: 'file', mediaType: 'image/png', data: { type: 'data', data: png } }],
     })
     expect(JSON.stringify(prompts[1].find((m) => m.role === 'tool'))).not.toContain(png)
   }
@@ -208,7 +220,7 @@ it.each([true, false])(
               (n, part) =>
                 n +
                 (part.type === 'tool-result' && part.output.type === 'content'
-                  ? part.output.value.filter((value) => value.type === 'image-data').length
+                  ? part.output.value.filter((value) => value.type === 'file').length
                   : 0),
               0
             )

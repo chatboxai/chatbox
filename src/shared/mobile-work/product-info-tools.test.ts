@@ -31,7 +31,7 @@ function fixture() {
   }
   const controller = new AbortController()
   const cli = buildMobileProductInfoTool(host, controller.signal)
-  const run = (argv: string[]) => cli.execute?.({ argv }, { toolCallId: 'test', messages: [] })
+  const run = (argv: string[]) => cli.execute?.({ argv }, { toolCallId: 'test', messages: [], context: {} })
   return { host, controller, run, settings }
 }
 
@@ -122,7 +122,7 @@ it('dispatches supported image commands with execution identity and cancellation
   const execute = vi.fn(async () => ({ kind: 'image-generation', recordId: 'image-1' }))
   host.imageCommands = { execute }
   const cli = buildMobileProductInfoTool(host, controller.signal, 'session-1')
-  const options = { toolCallId: 'tool-1', messages: [] }
+  const options = { toolCallId: 'tool-1', messages: [], context: {} }
   expect(await cli.execute?.({ argv: ['capabilities'] }, options)).toMatchObject({
     imageGeneration: true,
     readOnly: false,

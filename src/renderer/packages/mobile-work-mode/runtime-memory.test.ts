@@ -117,7 +117,7 @@ describe('Capacitor Work memory integration', () => {
 
     await prepared.tools.save_memory.execute?.(
       { content: 'Added during this session' },
-      { toolCallId: 'save', messages: [] }
+      { toolCallId: 'save', messages: [], context: undefined }
     )
     const continued = await prepare(input)
     expect(JSON.stringify(continued.promptMessages)).not.toContain('Added during this session')
@@ -170,7 +170,7 @@ describe('Capacitor Work memory integration', () => {
     await expect(
       restored.tools.save_memory.execute?.(
         { content: 'Paused preference' },
-        { toolCallId: 'paused-save', messages: [] }
+        { toolCallId: 'paused-save', messages: [], context: undefined }
       )
     ).resolves.toHaveProperty('message')
     expect(await memory().listMemories()).toEqual([])
@@ -179,7 +179,10 @@ describe('Capacitor Work memory integration', () => {
     await memory().retireCopilot('tutor')
     await memory().enableCopilotMemory({ id: 'tutor', name: 'Tutor' })
     await expect(
-      restored.tools.save_memory.execute?.({ content: 'Stale preference' }, { toolCallId: 'paused-save', messages: [] })
+      restored.tools.save_memory.execute?.(
+        { content: 'Stale preference' },
+        { toolCallId: 'paused-save', messages: [], context: undefined }
+      )
     ).resolves.toEqual({ error: 'The memory context for this call is no longer available. Start a new generation.' })
     expect(await memory().listCopilotMemories('tutor')).toEqual([])
   })

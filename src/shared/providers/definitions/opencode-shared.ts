@@ -1,4 +1,4 @@
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createGoogle } from '@ai-sdk/google'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import { fetchRemoteModels, getOpenAICompatibleProviderOptionsKey } from '../../models/openai-compatible'
@@ -193,7 +193,7 @@ export function defineOpenCodeModelClasses(
     protected getProvider(options?: CallChatCompletionOptions) {
       // CustomGemini appends `/v1beta` for the public Google endpoint. OpenCode serves
       // Gemini straight off `<host>/models/<id>`, so the host is used as-is.
-      return createGoogleGenerativeAI({
+      return createGoogle({
         apiKey: this.options.apiKey,
         baseURL: this.options.apiHost.replace(/\/+$/, ''),
         fetch: createFetchWithProxy(this.options.useProxy, this.dependencies),

@@ -1,6 +1,6 @@
-import type { LanguageModelV3StreamPart } from '@ai-sdk/provider'
-import { stepCountIs, streamText } from 'ai'
-import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
+import type { LanguageModelV4StreamPart } from '@ai-sdk/provider'
+import { isStepCount, streamText } from 'ai'
+import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test'
 import { describe, expect, it, vi } from 'vitest'
 import { createWebSearchTool } from '../web-search-tool'
 import { repairToolCallJson } from './tool-call-json-repair'
@@ -18,7 +18,7 @@ describe('tool schema recovery through the AI SDK', () => {
   ])('returns invalid input %s to the model before executing the corrected call', async (invalidInput, expected) => {
     const execute = vi.fn(async () => ({ searchResults: [] }))
     let calls = 0
-    const model = new MockLanguageModelV3({
+    const model = new MockLanguageModelV4({
       doStream: async ({ prompt }) => {
         calls += 1
         if (calls === 2) {
@@ -27,7 +27,7 @@ describe('tool schema recovery through the AI SDK', () => {
           expect(JSON.stringify(feedback)).toContain('Tool was not executed')
           expect(execute).not.toHaveBeenCalled()
         }
-        const chunks: LanguageModelV3StreamPart[] = [{ type: 'stream-start', warnings: [] }]
+        const chunks: LanguageModelV4StreamPart[] = [{ type: 'stream-start', warnings: [] }]
         if (calls <= 2) {
           chunks.push({
             type: 'tool-call',
@@ -49,10 +49,10 @@ describe('tool schema recovery through the AI SDK', () => {
       prompt: 'Search for weather',
       tools: { web_search: createWebSearchTool(execute) },
       experimental_repairToolCall: repairToolCallJson,
-      stopWhen: stepCountIs(3),
+      stopWhen: isStepCount(3),
     })
     const chunks = []
-    for await (const chunk of result.fullStream) chunks.push(chunk)
+    for await (const chunk of result.stream) chunks.push(chunk)
     expect(calls).toBe(3)
     expect(chunks.filter((chunk) => chunk.type === 'tool-error')).toHaveLength(1)
     expect(execute).toHaveBeenCalledExactlyOnceWith('weather', undefined)
@@ -60,9 +60,9 @@ describe('tool schema recovery through the AI SDK', () => {
 
   it('repairs valid fenced arguments and executes them once', async () => {
     const execute = vi.fn(async () => ({ searchResults: [] }))
-    const model = new MockLanguageModelV3({
+    const model = new MockLanguageModelV4({
       doStream: async () => ({
-        stream: convertArrayToReadableStream<LanguageModelV3StreamPart>([
+        stream: convertArrayToReadableStream<LanguageModelV4StreamPart>([
           { type: 'stream-start', warnings: [] },
           {
             type: 'tool-call',

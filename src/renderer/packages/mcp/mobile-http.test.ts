@@ -103,24 +103,30 @@ describe('remote HTTP MCP interoperability', () => {
         const completed = new AbortController()
         const result = await tool.execute(
           { value: '中文😀' },
-          { toolCallId: 'echo-1', messages: [], abortSignal: completed.signal }
+          { toolCallId: 'echo-1', messages: [], context: undefined, abortSignal: completed.signal }
         )
         expect(result).toMatchObject({ content: [{ type: 'text', text: '中文😀' }] })
         expect(methods.filter((method) => method === 'tools/call')).toHaveLength(1)
         completed.abort()
         expect(client.status.state).toBe('running')
         await expect(
-          tool.execute({ value: 'cancelled' }, { toolCallId: 'cancelled', messages: [], abortSignal: completed.signal })
+          tool.execute(
+            { value: 'cancelled' },
+            { toolCallId: 'cancelled', messages: [], context: undefined, abortSignal: completed.signal }
+          )
         ).rejects.toThrow()
         expect(client.status.state).toBe('running')
         expect(methods.filter((method) => method === 'tools/call')).toHaveLength(1)
         const abort = new AbortController()
         const pending = Promise.resolve(
-          tool.execute({ value: 'wait' }, { toolCallId: 'pending', messages: [], abortSignal: abort.signal })
+          tool.execute(
+            { value: 'wait' },
+            { toolCallId: 'pending', messages: [], context: undefined, abortSignal: abort.signal }
+          )
         )
         const failed = expect(pending).rejects.toThrow()
         const concurrent = Promise.resolve(
-          tool.execute({ value: 'wait' }, { toolCallId: 'concurrent', messages: [] })
+          tool.execute({ value: 'wait' }, { toolCallId: 'concurrent', messages: [], context: undefined })
         ).then(
           () => 'completed',
           () => 'interrupted'
@@ -140,7 +146,7 @@ describe('remote HTTP MCP interoperability', () => {
         const reconnectedTool = client.getAvailableTools().echo
         const reconnected = await reconnectedTool.execute?.(
           { value: 'reconnected' },
-          { toolCallId: 'reconnected', messages: [] }
+          { toolCallId: 'reconnected', messages: [], context: undefined }
         )
         expect(reconnected).toMatchObject({ content: [{ type: 'text', text: 'reconnected' }] })
         expect(methods.filter((method) => method === 'tools/call')).toHaveLength(4)

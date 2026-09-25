@@ -1,4 +1,4 @@
-import type { LanguageModelV3 } from '@ai-sdk/provider'
+import type { LanguageModelV4 } from '@ai-sdk/provider'
 import type { CallSettings } from '@shared/models/abstract-ai-sdk'
 import type { CallChatCompletionOptions } from '@shared/models/types'
 import type { ProviderModelInfo } from '@shared/types'
@@ -8,8 +8,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import DeepSeek from './deepseek'
 
 const providerMocks = vi.hoisted(() => {
-  const languageModel: LanguageModelV3 = {
-    specificationVersion: 'v3',
+  const languageModel: LanguageModelV4 = {
+    specificationVersion: 'v4',
     provider: 'deepseek',
     modelId: 'deepseek-v4-flash',
     supportedUrls: {},
@@ -156,6 +156,28 @@ describe('DeepSeek vision transport', () => {
       DeepSeek: {
         thinking: { type: 'enabled' },
         reasoningEffort: 'high',
+      },
+    })
+  })
+  it('sends the native DeepSeek name for the strongest reasoning effort', () => {
+    const model = createModel({
+      modelId: 'deepseek-v4-flash',
+      capabilities: ['reasoning', 'tool_use'],
+    })
+
+    const settings = model.exposeCallSettings({
+      providerOptions: {
+        deepseek: {
+          thinking: { type: 'enabled' },
+          reasoningEffort: 'xhigh',
+        },
+      },
+    })
+
+    expect(settings.providerOptions).toEqual({
+      deepseek: {
+        thinking: { type: 'enabled' },
+        reasoningEffort: 'max',
       },
     })
   })

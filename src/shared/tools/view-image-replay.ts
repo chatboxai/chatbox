@@ -10,6 +10,10 @@ function viewImageLabelFilePath(part: { type: string; text?: string }): string |
   return part.text.slice(VIEW_IMAGE_LABEL_PREFIX.length, -1)
 }
 
+function isToolResultImagePart(part: { type: string; mediaType?: string }): boolean {
+  return part.type === 'file' && part.mediaType?.startsWith('image/') === true
+}
+
 function followsToolImageResult(messages: ModelMessage[], messageIndex: number): boolean {
   const previousMessage = messageIndex > 0 ? messages[messageIndex - 1] : undefined
   return previousMessage?.role === 'tool'
@@ -82,7 +86,7 @@ export function boundToolResultImages(messages: ModelMessage[], limit: number): 
         const boundedValue = [] as typeof output.value
         for (let valueIndex = output.value.length - 1; valueIndex >= 0; valueIndex -= 1) {
           const valuePart = output.value[valueIndex]
-          if (valuePart.type !== 'image-data') {
+          if (!isToolResultImagePart(valuePart)) {
             boundedValue.unshift(valuePart)
             continue
           }

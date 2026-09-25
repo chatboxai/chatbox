@@ -1,4 +1,4 @@
-import type { LanguageModelV3 } from '@ai-sdk/provider'
+import type { LanguageModelV4 } from '@ai-sdk/provider'
 import type { CallSettings } from '@shared/models/abstract-ai-sdk'
 import type { CallChatCompletionOptions } from '@shared/models/types'
 import { type ChatboxAILicenseDetail, type ProviderModelInfo, ProviderModelInfoSchema } from '@shared/types'
@@ -8,8 +8,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatboxAI from './chatboxai'
 
 const openAIMocks = vi.hoisted(() => {
-  const languageModel: LanguageModelV3 = {
-    specificationVersion: 'v3',
+  const languageModel: LanguageModelV4 = {
+    specificationVersion: 'v4',
     provider: 'openai',
     modelId: 'gpt-5-mini',
     supportedUrls: {},

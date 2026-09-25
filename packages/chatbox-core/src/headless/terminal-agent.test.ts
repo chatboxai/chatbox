@@ -34,7 +34,12 @@ describe('runHeadlessTerminalAgent production orchestration', () => {
       if (!command?.execute) throw new Error('run_command is missing')
       const input = { command: 'pwd' }
       yield { type: 'tool-call', toolName: 'run_command', toolCallId: 'call-1', input } as ModelStreamPart
-      const output = await command.execute(input, { toolCallId: 'call-1', messages, abortSignal: options.signal })
+      const output = await command.execute(input, {
+        toolCallId: 'call-1',
+        messages,
+        context: undefined,
+        abortSignal: options.signal,
+      })
       yield { type: 'tool-result', toolName: 'run_command', toolCallId: 'call-1', input, output } as ModelStreamPart
       yield { type: 'text-delta', text: 'Task complete.' } as ModelStreamPart
       yield {
@@ -142,8 +147,14 @@ describe('runHeadlessTerminalAgent production orchestration', () => {
     const implementation = model(async function* (messages, options) {
       const command = options.tools?.run_command
       if (!command?.execute) throw new Error('missing tool')
-      await command.execute({ command: 'sleep 100' }, { toolCallId: 'running', messages, abortSignal: options.signal })
-      await command.execute({ command: 'must not run' }, { toolCallId: 'later', messages, abortSignal: options.signal })
+      await command.execute(
+        { command: 'sleep 100' },
+        { toolCallId: 'running', messages, context: undefined, abortSignal: options.signal }
+      )
+      await command.execute(
+        { command: 'must not run' },
+        { toolCallId: 'later', messages, context: undefined, abortSignal: options.signal }
+      )
     })
     const pending = runHeadlessTerminalAgent({
       model: implementation,
@@ -175,7 +186,7 @@ describe('runHeadlessTerminalAgent production orchestration', () => {
       if (!tool?.execute) throw new Error('missing tool')
       const output = await tool.execute(
         { command: 'test' },
-        { toolCallId: 'bounded', messages, abortSignal: options.signal }
+        { toolCallId: 'bounded', messages, context: undefined, abortSignal: options.signal }
       )
       expect(output).toMatchObject({ stdout: 'abc', stderr: '' })
       yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>

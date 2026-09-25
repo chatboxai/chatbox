@@ -4,7 +4,7 @@ import { InMemoryKeyValueStorage } from '../../testing/InMemoryKeyValueStorage'
 import { MemoryService } from './MemoryService'
 import { createMemoryTools } from './memory-tools'
 
-const execution = { toolCallId: 'memory-call', messages: [] }
+const execution = { toolCallId: 'memory-call', messages: [], context: undefined }
 
 describe('memory tools', () => {
   it.each([

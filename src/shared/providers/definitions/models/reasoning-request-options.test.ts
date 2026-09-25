@@ -1,4 +1,4 @@
-import type { LanguageModelV3CallOptions } from '@ai-sdk/provider'
+import type { LanguageModelV4CallOptions } from '@ai-sdk/provider'
 import type { CallChatCompletionOptions } from '@shared/models/types'
 import type { ProviderModelInfo } from '@shared/types'
 import type { ModelDependencies } from '@shared/types/adapters'
@@ -243,7 +243,7 @@ describe('reasoning request options', () => {
       topK: 5,
       maxOutputTokens: callSettings.maxOutputTokens,
       providerOptions: callSettings.providerOptions,
-    } satisfies LanguageModelV3CallOptions
+    } satisfies LanguageModelV4CallOptions
 
     expect(callSettings.temperature).toBe(0.7)
     await claude.exposeChatModel().doGenerate(request)

@@ -1,5 +1,5 @@
-import type { GoogleGenerativeAIProvider, GoogleGenerativeAIProviderOptions } from '@ai-sdk/google'
-import type { LanguageModelV3 } from '@ai-sdk/provider'
+import type { GoogleProvider, GoogleLanguageModelOptions } from '@ai-sdk/google'
+import type { LanguageModelV4 } from '@ai-sdk/provider'
 import { generateText } from 'ai'
 import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
 import { ApiError } from '../../../models/errors'
@@ -27,7 +27,7 @@ export abstract class GeminiModel<TOptions extends GeminiModelOptions> extends A
     this.injectDefaultMetadata = false
   }
 
-  protected abstract getProvider(options?: CallChatCompletionOptions): GoogleGenerativeAIProvider
+  protected abstract getProvider(options?: CallChatCompletionOptions): GoogleProvider
 
   isSupportSystemMessage() {
     return ![
@@ -38,7 +38,7 @@ export abstract class GeminiModel<TOptions extends GeminiModelOptions> extends A
     ].includes(this.options.model.modelId)
   }
 
-  protected getChatModel(options: CallChatCompletionOptions): LanguageModelV3 {
+  protected getChatModel(options: CallChatCompletionOptions): LanguageModelV4 {
     const provider = this.getProvider(options)
 
     return provider.chat(this.options.model.modelId)
@@ -46,7 +46,7 @@ export abstract class GeminiModel<TOptions extends GeminiModelOptions> extends A
 
   protected getCallSettings(options: CallChatCompletionOptions): CallSettings {
     const isModelSupportThinking = this.isSupportReasoning()
-    let providerParams: GoogleGenerativeAIProviderOptions = {
+    let providerParams: GoogleLanguageModelOptions = {
       safetySettings: [
         { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
         { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -71,7 +71,7 @@ export abstract class GeminiModel<TOptions extends GeminiModelOptions> extends A
       providerOptions: {
         google: {
           ...providerParams,
-        } satisfies GoogleGenerativeAIProviderOptions,
+        } satisfies GoogleLanguageModelOptions,
       },
     }
     if (isGeminiImageModel(this.options.model.modelId)) {
@@ -79,7 +79,7 @@ export abstract class GeminiModel<TOptions extends GeminiModelOptions> extends A
         google: {
           ...providerParams,
           responseModalities: ['TEXT', 'IMAGE'],
-        } satisfies GoogleGenerativeAIProviderOptions,
+        } satisfies GoogleLanguageModelOptions,
       }
     }
     return settings
@@ -104,7 +104,7 @@ export abstract class GeminiModel<TOptions extends GeminiModelOptions> extends A
 
     const results: string[] = []
     for (let i = 0; i < params.num; i++) {
-      const providerOptions: GoogleGenerativeAIProviderOptions = {
+      const providerOptions: GoogleLanguageModelOptions = {
         responseModalities: ['TEXT', 'IMAGE'],
       }
       const imageConfig = buildGeminiImageConfig(params.aspectRatio)

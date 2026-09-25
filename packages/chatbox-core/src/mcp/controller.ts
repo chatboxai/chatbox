@@ -66,8 +66,8 @@ function toModelOutput({ output }: { output: unknown }) {
         'mimeType' in part
       ) {
         return {
-          type: 'image-data' as const,
-          data: String(part.data),
+          type: 'file' as const,
+          data: { type: 'data' as const, data: String(part.data) },
           mediaType: String(part.mimeType),
         }
       }

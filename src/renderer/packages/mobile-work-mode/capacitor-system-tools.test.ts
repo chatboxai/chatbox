@@ -51,7 +51,7 @@ describe('Capacitor native system tool adapter', () => {
 })
 
 describe('Capacitor disclosure and picker consent', () => {
-  const options = { toolCallId: 'test', messages: [] }
+  const options = { toolCallId: 'test', messages: [], context: undefined }
   it('asks again before disclosing another health data type', async () => {
     vi.mocked(NiceModal.show).mockResolvedValue(true)
     const groups = createCapacitorSystemToolGroups({

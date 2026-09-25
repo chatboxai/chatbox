@@ -1,5 +1,5 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
-import { experimental_generateImage as generateImage } from 'ai'
+import { generateImage } from 'ai'
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelDependencies } from '../../../types/adapters'
 import type { SentryScope } from '../../../utils/sentry_adapter'

@@ -15,7 +15,7 @@ vi.mock('ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ai')>()
   return {
     ...actual,
-    experimental_generateImage: aiMocks.generateImage,
+    generateImage: aiMocks.generateImage,
   }
 })
 

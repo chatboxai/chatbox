@@ -23,7 +23,8 @@ function fixture() {
     },
     { sessionId: 's', signal: new AbortController().signal }
   )
-  const run = (name: string, input: unknown) => tools[name].execute?.(input, { toolCallId: name, messages: [] })
+  const run = (name: string, input: unknown) =>
+    tools[name].execute?.(input, { toolCallId: name, messages: [], context: undefined })
   return { run, commit, files }
 }
 

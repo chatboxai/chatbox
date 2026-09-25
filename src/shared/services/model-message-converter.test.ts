@@ -738,7 +738,7 @@ describe('convertToModelMessages — view_image tool results', () => {
       type: 'content',
       value: [
         { type: 'text', text: 'Viewed image: chart.png' },
-        { type: 'image-data', data: 'SU1BR0U=', mediaType: 'image/png' },
+        { type: 'file', data: { type: 'data', data: 'SU1BR0U=' }, mediaType: 'image/png' },
       ],
     })
     for (const msg of output) {
@@ -784,7 +784,7 @@ describe('convertToModelMessages — view_image tool results', () => {
     const toolMsg = output.find((message) => message.role === 'tool')
     const part = (toolMsg?.content as Array<{ output: { type: string; value: Array<{ type: string }> } }>)[0]
     expect(part.output.type).toBe('content')
-    expect(part.output.value.some((value) => value.type === 'image-data')).toBe(true)
+    expect(part.output.value.some((value) => value.type === 'file')).toBe(true)
   })
 
   it('delivers the image as a follow-up user message when tool-result images are unsupported', async () => {
@@ -947,7 +947,7 @@ function pixelCount(messages: ModelMessage[]): number {
           (count, part) =>
             count +
             (part.type === 'tool-result' && part.output.type === 'content'
-              ? part.output.value.filter((value) => value.type === 'image-data').length
+              ? part.output.value.filter((value) => value.type === 'file').length
               : 0),
           0
         )

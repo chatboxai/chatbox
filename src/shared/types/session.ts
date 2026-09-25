@@ -1,4 +1,4 @@
-import type { JSONValue, LanguageModelUsage, ProviderMetadata } from 'ai'
+import type { JSONValue, ProviderMetadata } from 'ai'
 import { z } from 'zod'
 import { SessionSettingsSchema } from '../types/settings'
 import { MemoryToolContextSchema, SessionPromptContextSnapshotSchema } from './agent-persona'
@@ -296,7 +296,7 @@ export const MessageContentPartsSchema = z.array(MessageContentPartSchema)
 export const StreamTextResultSchema = z.object({
   contentParts: MessageContentPartsSchema,
   reasoningContent: z.string().optional(),
-  usage: z.custom<LanguageModelUsage>().optional(),
+  usage: z.custom<MessageUsage>().optional(),
   finishReason: z.string().optional(),
 })
 
@@ -345,6 +345,8 @@ export const MessageBackgroundTaskSchema = z.object({
   elapsedMs: z.number(),
   summary: z.string(),
 })
+
+export type MessageUsage = z.infer<typeof MessageUsageSchema>
 
 const MessageUsageSchema = z.object({
   inputTokens: z.number().optional().catch(undefined),

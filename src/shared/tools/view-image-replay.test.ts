@@ -46,7 +46,7 @@ function countImages(messages: ModelMessage[]): number {
           (n, part) =>
             n +
             (part.type === 'tool-result' && part.output.type === 'content'
-              ? part.output.value.filter((value) => value.type === 'image-data').length
+              ? part.output.value.filter((value) => value.type === 'file').length
               : 0),
           0
         )

@@ -1,4 +1,4 @@
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createGoogle } from '@ai-sdk/google'
 import { normalizeGeminiHost } from '../../../utils/llm_utils'
 import { GeminiModel, type GeminiModelOptions } from './gemini-base'
 
@@ -11,7 +11,7 @@ export default class Gemini extends GeminiModel<Options> {
   public name = 'Google Gemini'
 
   protected getProvider() {
-    return createGoogleGenerativeAI({
+    return createGoogle({
       apiKey: this.options.geminiAPIKey,
       baseURL: normalizeGeminiHost(this.options.geminiAPIHost).apiHost,
     })

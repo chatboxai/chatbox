@@ -963,12 +963,22 @@ describe('processStreamChunk', () => {
   it('handles finish chunk with totalUsage and finishReason', async () => {
     const state = createInitialState()
     const result = await processStreamChunk(
-      chunk('finish', { finishReason: 'stop', totalUsage: { promptTokens: 10, completionTokens: 20 } }),
+      chunk('finish', {
+        finishReason: 'stop',
+        totalUsage: {
+          inputTokens: 10,
+          inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+          outputTokens: 20,
+          outputTokenDetails: { textTokens: 15, reasoningTokens: 5 },
+          totalTokens: 30,
+          raw: { prompt_tokens: 10, completion_tokens: 20 },
+        },
+      }),
       state,
       callbacks
     )
     expect(result.state.finishReason).toBe('stop')
-    expect(result.state.usage).toEqual({ promptTokens: 10, completionTokens: 20 })
+    expect(result.state.usage).toStrictEqual({ inputTokens: 10, outputTokens: 20, totalTokens: 30, reasoningTokens: 5 })
   })
 
   it('handles error chunk without crashing', async () => {

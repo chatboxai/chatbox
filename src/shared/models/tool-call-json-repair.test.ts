@@ -1,8 +1,8 @@
-import type { LanguageModelV3ToolCall } from '@ai-sdk/provider'
+import type { LanguageModelV4ToolCall } from '@ai-sdk/provider'
 import { describe, expect, it } from 'vitest'
 import { repairToolCallJsonInput } from './tool-call-json-repair'
 
-function toolCall(input: string): LanguageModelV3ToolCall {
+function toolCall(input: string): LanguageModelV4ToolCall {
   return {
     type: 'tool-call',
     toolCallId: 'tc1',

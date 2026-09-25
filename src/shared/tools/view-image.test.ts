@@ -69,7 +69,7 @@ describe('buildViewImageToolResultContent', () => {
       type: 'content',
       value: [
         { type: 'text', text: 'Viewed image: chart.png' },
-        { type: 'image-data', data: 'Q0hBUlQ=', mediaType: 'image/png' },
+        { type: 'file', data: { type: 'data', data: 'Q0hBUlQ=' }, mediaType: 'image/png' },
       ],
     })
   })

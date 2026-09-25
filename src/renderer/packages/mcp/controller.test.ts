@@ -266,7 +266,7 @@ describe('MCPServer HTTP transport', () => {
     expect((await echoSchema.validate?.({ typo: 'hello' }))?.success).toBe(false)
     const echoResult = await server
       .getAvailableTools()
-      .echo.execute?.({ text: 'hello' }, { toolCallId: 'echo-call', messages: [] })
+      .echo.execute?.({ text: 'hello' }, { toolCallId: 'echo-call', messages: [], context: undefined })
     expect(echoResult).toEqual({
       content: [{ type: 'text', text: 'hello' }],
       isError: false,
@@ -373,7 +373,7 @@ describe('MCPServer HTTP transport', () => {
     expect((await echoSchema.validate?.({ typo: 'hello' }))?.success).toBe(false)
     const echoResult = await server
       .getAvailableTools()
-      .echo.execute?.({ text: 'hello-modern' }, { toolCallId: 'echo-call', messages: [] })
+      .echo.execute?.({ text: 'hello-modern' }, { toolCallId: 'echo-call', messages: [], context: undefined })
     expect(echoResult).toEqual({
       _meta: {
         'io.modelcontextprotocol/serverInfo': { name: 'modern-fixture', version: '1.0.0' },
@@ -396,7 +396,7 @@ describe('MCPServer HTTP transport', () => {
       type: 'content',
       value: [
         { type: 'text', text: 'hello-modern' },
-        { type: 'image-data', data: 'aW1hZ2U=', mediaType: 'image/png' },
+        { type: 'file', data: { type: 'data', data: 'aW1hZ2U=' }, mediaType: 'image/png' },
         {
           type: 'text',
           text: JSON.stringify({ type: 'resource_link', uri: 'file:///result.txt', name: 'result.txt' }),
@@ -499,9 +499,14 @@ describe('MCPServer HTTP transport', () => {
       if (!execute) throw new Error('Missing executable tool')
       const controller = new AbortController()
       const cancelled = expect(
-        execute({ text: 'cancel' }, { toolCallId: 'cancel', messages: [], abortSignal: controller.signal })
+        execute(
+          { text: 'cancel' },
+          { toolCallId: 'cancel', messages: [], context: undefined, abortSignal: controller.signal }
+        )
       ).rejects.toThrow()
-      const retained = Promise.resolve(execute({ text: 'keep' }, { toolCallId: 'keep', messages: [] }))
+      const retained = Promise.resolve(
+        execute({ text: 'keep' }, { toolCallId: 'keep', messages: [], context: undefined })
+      )
       const retainedResult = expect(retained).resolves.toMatchObject({ content: [{ type: 'text', text: 'keep' }] })
       await expect.poll(() => pending.size).toBe(2)
       controller.abort()

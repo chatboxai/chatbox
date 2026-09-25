@@ -125,7 +125,7 @@ describe('OpenAI Chat SSE logical termination', () => {
     const result = streamText({ model, prompt: 'hello', maxRetries: 0 })
     const parts = []
 
-    for await (const part of result.fullStream) parts.push(part)
+    for await (const part of result.stream) parts.push(part)
 
     expect(parts.some((part) => part.type === 'finish')).toBe(true)
     await expect(result.text).resolves.toBe('answer')
@@ -172,7 +172,7 @@ describe('OpenAI Chat SSE logical termination', () => {
     })
     const parts = []
 
-    for await (const part of result.fullStream) parts.push(part)
+    for await (const part of result.stream) parts.push(part)
 
     expect(parts).toContainEqual(
       expect.objectContaining({

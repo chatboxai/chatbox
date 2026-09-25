@@ -30,7 +30,7 @@ function fixture() {
   return { work, workspace, calendarRead, photosSelect }
 }
 const execute = (tools: ToolSet, name: string, input: unknown) =>
-  tools[name].execute?.(input, { toolCallId: name, messages: [] })
+  tools[name].execute?.(input, { toolCallId: name, messages: [], context: undefined })
 
 describe('local load_skill contract', () => {
   it('exposes a short catalog and activates only the selected system skill', async () => {

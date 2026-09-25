@@ -47,7 +47,7 @@ function estimateProtocolPartChars(part: unknown): number {
   }
 
   // Do not stringify the outer tool-result before removing its media bytes.
-  // Native Anthropic / Google / Responses results carry image-data here, unlike
+  // Native Anthropic / Google / Responses results carry image files here, unlike
   // the top-level user image used by chat-completions protocols.
   const { output: _output, ...envelope } = part
   return (
@@ -58,7 +58,7 @@ function estimateProtocolPartChars(part: unknown): number {
         typeof item === 'object' &&
         'type' in item &&
         typeof item.type === 'string' &&
-        ['image-data', 'image-url', 'file-data', 'file-url', 'audio-data', 'video-data', 'video-url'].includes(
+        ['file', 'image-data', 'image-url', 'file-data', 'file-url', 'audio-data', 'video-data', 'video-url'].includes(
           item.type
         )
       ) {

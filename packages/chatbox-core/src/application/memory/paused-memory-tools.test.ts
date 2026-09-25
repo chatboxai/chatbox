@@ -5,7 +5,7 @@ import type { Message } from '../../types/session'
 import { MemoryService } from './MemoryService'
 import { createMemoryToolContext, createPausedMemoryTools } from './paused-memory-tools'
 
-const execution = (toolCallId: string) => ({ toolCallId, messages: [] })
+const execution = (toolCallId: string) => ({ toolCallId, messages: [], context: undefined })
 
 describe('createPausedMemoryTools', () => {
   it('resolves each call from its own persisted destination within a mixed assistant message', async () => {

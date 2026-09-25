@@ -1,9 +1,9 @@
-import type { LanguageModelV3 } from '@ai-sdk/provider'
+import type { LanguageModelV4 } from '@ai-sdk/provider'
 import {
   APICallError,
   type EmbeddingModel,
   type FinishReason,
-  experimental_generateImage as generateImage,
+  generateImage,
   type ImageModel,
   type ImageModelProviderMetadata,
   type LanguageModelUsage,
@@ -13,7 +13,7 @@ import {
   type ProviderMetadata,
   RetryError,
   simulateStreamingMiddleware,
-  stepCountIs,
+  isStepCount,
   streamText,
   type TextStreamPart,
   type ToolCallRepairFunction,
@@ -41,6 +41,7 @@ import { stopWhenPersistentToolCallPause } from './persistent-tool-call-pause'
 import { mergeProviderMetadata, pickPersistableProviderMetadata } from './provider-part-metadata'
 import { createRetryableChatModel } from './retryable-chat-model'
 import { repairToolCallJson } from './tool-call-json-repair'
+import { toMessageUsage } from './message-usage'
 import type {
   CallChatCompletionOptions,
   CallSettings,
@@ -152,9 +153,9 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     options: CallChatCompletionOptions
   ): Pick<Provider, 'languageModel'> & Partial<Pick<Provider, 'embeddingModel' | 'imageModel'>>
 
-  protected abstract getChatModel(options: CallChatCompletionOptions): LanguageModelV3
+  protected abstract getChatModel(options: CallChatCompletionOptions): LanguageModelV4
 
-  private prepareChatModel(model: LanguageModelV3): LanguageModelV3 {
+  private prepareChatModel(model: LanguageModelV4): LanguageModelV4 {
     if (this.options.stream !== false) return model
 
     if (this.apiStyle === 'openai') {
@@ -303,24 +304,30 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const callSettings = this.resolveCallSettings(options)
     const basePrepareStep = options.prepareStep as PrepareStepFunction<T> | undefined
     const onRequestResolved = options.onRequestResolved
-    const prepareStep: PrepareStepFunction<T> | undefined = onRequestResolved
-      ? async (stepOptions) => {
-          const prepared = await basePrepareStep?.(stepOptions)
-          const stepMessages = prepared?.messages ?? stepOptions.messages
-          const allTools = (options.tools ?? {}) as T
-          const activeToolNames = prepared?.activeTools ? new Set(prepared.activeTools.map(String)) : undefined
-          const effectiveTools = activeToolNames
-            ? (Object.fromEntries(Object.entries(allTools).filter(([toolName]) => activeToolNames.has(toolName))) as T)
-            : allTools
-          await onRequestResolved?.({
-            callSettings,
-            modelMessages: stepMessages,
-            tools: effectiveTools,
-            stream: this.options.stream !== false,
-          })
-          return prepared
-        }
-      : basePrepareStep
+    const prepareStep: PrepareStepFunction<T> | undefined =
+      basePrepareStep || onRequestResolved
+        ? async (stepOptions) => {
+            // Each preparation starts from the full transcript so temporary step
+            // messages, such as image injections, do not accumulate across steps.
+            const messages = [...stepOptions.initialMessages, ...stepOptions.responseMessages]
+            const prepared = await basePrepareStep?.({ ...stepOptions, messages })
+            const stepMessages = prepared?.messages ?? messages
+            const allTools = (options.tools ?? {}) as T
+            const activeToolNames = prepared?.activeTools ? new Set(prepared.activeTools.map(String)) : undefined
+            const effectiveTools = activeToolNames
+              ? (Object.fromEntries(
+                  Object.entries(allTools).filter(([toolName]) => activeToolNames.has(toolName))
+                ) as T)
+              : allTools
+            await onRequestResolved?.({
+              callSettings,
+              modelMessages: stepMessages,
+              tools: effectiveTools,
+              stream: this.options.stream !== false,
+            })
+            return { ...(prepared ?? {}), messages: stepMessages }
+          }
+        : undefined
 
     const statusQueue = new StatusQueue()
 
@@ -329,7 +336,9 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const result = streamText({
       model,
       messages,
-      stopWhen: [stepCountIs(options.maxSteps || Number.MAX_SAFE_INTEGER), stopWhenPersistentToolCallPause<T>()],
+      // Chatbox lets users author system prompts and preserves their position in chat history.
+      allowSystemInMessages: true,
+      stopWhen: [isStepCount(options.maxSteps || Number.MAX_SAFE_INTEGER), stopWhenPersistentToolCallPause<T>()],
       tools: options.tools as T | undefined,
       prepareStep,
       experimental_repairToolCall: repairToolCallJson as ToolCallRepairFunction<T>,
@@ -340,7 +349,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       maxRetries: 0,
     })
 
-    const streamIterator = result.fullStream[Symbol.asyncIterator]()
+    const streamIterator = result.stream[Symbol.asyncIterator]()
     let nextChunk = streamIterator.next()
 
     try {
@@ -889,11 +898,15 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       tokenCount: result.usage?.outputTokens,
       tokensUsed: result.usage?.totalTokens,
     })
-    return { contentParts: normalizedContentParts, usage: result.usage, finishReason: result.finishReason }
+    return {
+      contentParts: normalizedContentParts,
+      usage: result.usage ? toMessageUsage(result.usage) : undefined,
+      finishReason: result.finishReason,
+    }
   }
 
   private async handleStreamingCompletion<T extends ToolSet>(
-    model: LanguageModelV3,
+    model: LanguageModelV4,
     coreMessages: ModelMessage[],
     options: CallChatCompletionOptions<T>,
     callSettings: CallSettings
@@ -901,7 +914,8 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const result = streamText({
       model,
       messages: coreMessages,
-      stopWhen: [stepCountIs(options.maxSteps || Number.MAX_SAFE_INTEGER), stopWhenPersistentToolCallPause<T>()],
+      allowSystemInMessages: true,
+      stopWhen: [isStepCount(options.maxSteps || Number.MAX_SAFE_INTEGER), stopWhenPersistentToolCallPause<T>()],
       tools: options.tools,
       experimental_repairToolCall: repairToolCallJson as ToolCallRepairFunction<T>,
       abortSignal: options.signal,
@@ -917,7 +931,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     let pendingReasoningText = ''
 
     try {
-      for await (const chunk of result.fullStream) {
+      for await (const chunk of result.stream) {
         // console.debug('stream chunk', chunk)
 
         // Handle error chunks

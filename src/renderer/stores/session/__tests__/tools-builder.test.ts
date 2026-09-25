@@ -392,7 +392,7 @@ describe('buildToolsForSession', () => {
   async function executeMemoryTool(tools: ToolSet, name: string, toolCallId: string, input: unknown) {
     const execute = tools[name]?.execute
     if (!execute) throw new Error(`Missing executable ${name}`)
-    return execute(input, { toolCallId, messages: [] })
+    return execute(input, { toolCallId, messages: [], context: undefined })
   }
 
   test('paused global memory executes its captured context after the switch is disabled', async () => {

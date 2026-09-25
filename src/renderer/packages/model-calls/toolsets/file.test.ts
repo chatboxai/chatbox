@@ -45,7 +45,7 @@ async function read(input: unknown) {
   const result = await asSchema(tool.inputSchema).validate?.(input)
   if (!result?.success) throw new Error('Invalid test input')
   if (!tool.execute) throw new Error('Missing executor')
-  return tool.execute(result.value, { toolCallId: 'read-test', messages: [] })
+  return tool.execute(result.value, { toolCallId: 'read-test', messages: [], context: undefined })
 }
 
 describe('uploaded file contract', () => {
@@ -93,7 +93,7 @@ describe('virtual file routing', () => {
     const tool = buildFileTools([], { inputSchema: fileToolSet.tools.read_file.inputSchema, execute, toModelOutput })
       .tools.read_file
     const input = { file_path: '/tmp/report.txt', offset: 8, limit: 2 }
-    const options = { toolCallId: 'disk', messages: [] }
+    const options = { toolCallId: 'disk', messages: [], context: undefined }
     await tool.execute?.(input, options)
     expect(execute).toHaveBeenCalledWith(input, options)
     await tool.toModelOutput?.({ toolCallId: 'disk', input, output: { content: 'disk' } })
@@ -110,9 +110,9 @@ describe('virtual file routing', () => {
       uploadedFilePath('local:/etc/passwd'),
       '/__chatbox__/files/../secret',
     ]) {
-      expect(await tool.execute?.({ file_path: path }, { toolCallId: 'missing', messages: [] })).toContain(
-        'File not found'
-      )
+      expect(
+        await tool.execute?.({ file_path: path }, { toolCallId: 'missing', messages: [], context: undefined })
+      ).toContain('File not found')
     }
     expect(execute).not.toHaveBeenCalled()
     expect(platform.getStoreBlob).not.toHaveBeenCalled()
@@ -143,13 +143,13 @@ describe('virtual file routing', () => {
     expect(
       await tools.read_file.execute?.(
         { file_path: uploadedFilePath('local:/tmp/report.txt') },
-        { toolCallId: 'local', messages: [] }
+        { toolCallId: 'local', messages: [], context: undefined }
       )
     ).toMatchObject({ content: '     1\tlocal' })
     expect(
       await tools.read_file.execute?.(
         { file_path: uploadedFilePath('result:123') },
-        { toolCallId: 'saved', messages: [] }
+        { toolCallId: 'saved', messages: [], context: undefined }
       )
     ).toMatchObject({ content: '     1\tsaved' })
   })
@@ -189,7 +189,7 @@ test('resolves an attachment omitted by the real compacted repository source on 
   expect(load).not.toHaveBeenCalled()
   vi.mocked(platform.getStoreBlob).mockResolvedValue('archived attachment')
   const input = { file_path: uploadedFilePath('older') }
-  const options = { toolCallId: 'old', messages: [] }
+  const options = { toolCallId: 'old', messages: [], context: undefined }
   expect(await tool.execute?.(input, options)).toMatchObject({ content: '     1\tarchived attachment' })
   await tool.execute?.(input, options)
   expect(load).toHaveBeenCalledTimes(1)
@@ -216,7 +216,10 @@ test('retrieval attachments cannot be read through the virtual registry', async 
   ]).tools.read_file
   vi.mocked(platform.getStoreBlob).mockClear()
   expect(
-    await tool.execute?.({ file_path: uploadedFilePath('retrieval') }, { toolCallId: 'rag', messages: [] })
+    await tool.execute?.(
+      { file_path: uploadedFilePath('retrieval') },
+      { toolCallId: 'rag', messages: [], context: undefined }
+    )
   ).toContain('File not found')
   expect(platform.getStoreBlob).not.toHaveBeenCalled()
 })
@@ -235,7 +238,7 @@ test('recovers from a rejected history read on the next call', async () => {
     ])
   const tool = buildFileTools([], undefined, load).tools.read_file
   const input = { file_path: uploadedFilePath('report') }
-  const options = { toolCallId: 'retry', messages: [] }
+  const options = { toolCallId: 'retry', messages: [], context: undefined }
   await expect(tool.execute?.(input, options)).resolves.toContain('File not found')
   vi.mocked(platform.getStoreBlob).mockResolvedValue('recovered')
   await expect(tool.execute?.(input, options)).resolves.toMatchObject({ content: '     1\trecovered' })
@@ -292,7 +295,7 @@ test('lazy history cannot expose an attachment from a sibling branch', async () 
   vi.mocked(platform.getStoreBlob).mockClear().mockResolvedValue('branch content')
   const tool = buildFileTools([], undefined, () => loadBranchFileMessages(async () => session, 'target-b')).tools
     .read_file
-  const options = { toolCallId: 'branch', messages: [] }
+  const options = { toolCallId: 'branch', messages: [], context: undefined }
   expect(await tool.execute?.({ file_path: uploadedFilePath('a') }, options)).toContain('File not found')
   expect(platform.getStoreBlob).not.toHaveBeenCalled()
   expect(await tool.execute?.({ file_path: uploadedFilePath('b') }, options)).toMatchObject({

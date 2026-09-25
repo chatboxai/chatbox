@@ -1,12 +1,12 @@
-import type { LanguageModelV3, LanguageModelV3StreamPart } from '@ai-sdk/provider'
+import type { LanguageModelV4, LanguageModelV4StreamPart } from '@ai-sdk/provider'
 import { APICallError, wrapLanguageModel } from 'ai'
 import { createRetryable, isErrorAttempt } from 'ai-retry'
 import { ApiError, MidStreamApiError, NetworkError, NonReplayableRequestError } from './errors'
 import type { ModelStatus } from './types'
 
-type ModelStream = Awaited<ReturnType<LanguageModelV3['doStream']>>['stream']
+type ModelStream = Awaited<ReturnType<LanguageModelV4['doStream']>>['stream']
 type ModelStreamConstructor = new (source: {
-  pull(controller: { enqueue(part: LanguageModelV3StreamPart): void; close(): void }): Promise<void>
+  pull(controller: { enqueue(part: LanguageModelV4StreamPart): void; close(): void }): Promise<void>
   cancel(reason: unknown): Promise<void>
 }) => ModelStream
 
@@ -87,13 +87,13 @@ function retryAfterMs(error: unknown, now: number): number {
 
 /** Keeps request retries and their waiting/requesting status on the same schedule. */
 export function createRetryableChatModel(
-  baseModel: LanguageModelV3,
+  baseModel: LanguageModelV4,
   onStatus: (status: ModelStatus) => void
-): LanguageModelV3 {
+): LanguageModelV4 {
   const model = wrapLanguageModel({
     model: baseModel,
     middleware: {
-      specificationVersion: 'v3',
+      specificationVersion: 'v4',
       wrapStream: async ({ doStream }) => {
         // Hosts provide Web Streams; keep the shared entrypoint independent of DOM ambient types.
         const ModelReadableStream = (globalThis as typeof globalThis & { ReadableStream: ModelStreamConstructor })

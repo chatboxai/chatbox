@@ -1,4 +1,4 @@
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createGoogle } from '@ai-sdk/google'
 import type { CallChatCompletionOptions } from '../../../models/types'
 import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
 import { normalizeGeminiHost } from '../../../utils/llm_utils'
@@ -18,7 +18,7 @@ export default class CustomGemini extends GeminiModel<Options> {
   }
 
   protected getProvider(options?: CallChatCompletionOptions) {
-    return createGoogleGenerativeAI({
+    return createGoogle({
       apiKey: this.options.apiKey,
       baseURL: normalizeGeminiHost(this.options.apiHost).apiHost,
       fetch: createFetchWithProxy(this.options.useProxy, this.dependencies),

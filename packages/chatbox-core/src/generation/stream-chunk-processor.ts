@@ -1,4 +1,5 @@
 import { BaseError } from '@shared/models/errors'
+import { toMessageUsage } from '@shared/models/message-usage'
 import { isPersistentToolCallPauseError } from '@shared/models/persistent-tool-call-pause'
 import { mergeProviderMetadata, pickPersistableProviderMetadata } from '@shared/models/provider-part-metadata'
 import type { ModelStreamPart } from '@shared/models/types'
@@ -482,7 +483,7 @@ export async function processStreamChunk(
       finishReason = 'finishReason' in chunk ? chunk.finishReason : finishReason
       preparingToolInput = undefined
       if ('totalUsage' in chunk && chunk.totalUsage) {
-        usage = chunk.totalUsage as Message['usage']
+        usage = toMessageUsage(chunk.totalUsage)
       }
       break
     }

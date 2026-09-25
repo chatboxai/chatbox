@@ -67,7 +67,7 @@ overrides:
   shell-quote: 1.10.0
 
 patchedDependencies:
-  "@openrouter/ai-sdk-provider@2.10.0": patches/@openrouter__ai-sdk-provider@2.10.0.patch
+  "@openrouter/ai-sdk-provider@3.0.0": patches/@openrouter__ai-sdk-provider@3.0.0.patch
   fflate@0.8.3: patches/fflate@0.8.3.patch
   libsql@0.5.22: patches/libsql@0.5.22.patch
   mdast-util-gfm-autolink-literal@2.0.1: patches/mdast-util-gfm-autolink-literal@2.0.1.patch

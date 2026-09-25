@@ -347,7 +347,9 @@ type ToolResultModelOutput =
   | { type: 'json'; value: JSONValue }
   | {
       type: 'content'
-      value: Array<{ type: 'text'; text: string } | { type: 'image-data'; data: string; mediaType: string }>
+      value: Array<
+        { type: 'text'; text: string } | { type: 'file'; data: { type: 'data'; data: string }; mediaType: string }
+      >
     }
 
 function truncatedToolResultOutput(toolCallPart: MessageContentToolCallPart): ToolResultModelOutput {

@@ -1,6 +1,6 @@
-import type { LanguageModelV3StreamPart } from '@ai-sdk/provider'
+import type { LanguageModelV4StreamPart } from '@ai-sdk/provider'
 import { APICallError, RetryError } from 'ai'
-import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
+import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, MidStreamApiError, NetworkError, NonReplayableRequestError } from './errors'
 import { createRetryableChatModel } from './retryable-chat-model'
@@ -36,7 +36,7 @@ describe('chat retries', () => {
       cause,
     })
     const doStream = vi.fn().mockRejectedValue(error)
-    const model = createRetryableChatModel(new MockLanguageModelV3({ doStream }), vi.fn())
+    const model = createRetryableChatModel(new MockLanguageModelV4({ doStream }), vi.fn())
     const result = model.doStream(request)
     await expect(result).rejects.toBe(error)
     expect(doStream).toHaveBeenCalledTimes(1)
@@ -50,7 +50,7 @@ describe('chat retries', () => {
   it('publishes waiting before the delay, then requesting, and recovers', async () => {
     const doStream = vi.fn().mockRejectedValueOnce(apiError()).mockImplementation(successfulStream)
     const status = vi.fn()
-    const model = createRetryableChatModel(new MockLanguageModelV3({ doStream }), status)
+    const model = createRetryableChatModel(new MockLanguageModelV4({ doStream }), status)
     const result = model.doStream(request)
     await vi.advanceTimersByTimeAsync(0)
     expect(status).toHaveBeenLastCalledWith({
@@ -79,7 +79,7 @@ describe('chat retries', () => {
     const error = apiError()
     const doStream = vi.fn().mockRejectedValue(error)
     const status = vi.fn()
-    const result = createRetryableChatModel(new MockLanguageModelV3({ doStream }), status).doStream(request)
+    const result = createRetryableChatModel(new MockLanguageModelV4({ doStream }), status).doStream(request)
     const failed = expect(result).rejects.toSatisfy((e: unknown) => RetryError.isInstance(e) && e.lastError === error)
     await vi.advanceTimersByTimeAsync(30000)
     await failed
@@ -91,7 +91,7 @@ describe('chat retries', () => {
   it.each(['10', 'Mon, 14 Sep 2026 00:00:10 GMT'])('honors Retry-After %s', async (header) => {
     const doStream = vi.fn().mockRejectedValueOnce(apiError(429, header)).mockImplementation(successfulStream)
     const status = vi.fn()
-    const result = createRetryableChatModel(new MockLanguageModelV3({ doStream }), status).doStream(request)
+    const result = createRetryableChatModel(new MockLanguageModelV4({ doStream }), status).doStream(request)
     await vi.advanceTimersByTimeAsync(0)
     expect(status.mock.calls[0][0].retryAt).toBe(Date.now() + 10000)
     await vi.advanceTimersByTimeAsync(9999)
@@ -105,7 +105,7 @@ describe('chat retries', () => {
     'uses backoff for Retry-After %s',
     async (header) => {
       const doStream = vi.fn().mockRejectedValueOnce(apiError(429, header)).mockImplementation(successfulStream)
-      const result = createRetryableChatModel(new MockLanguageModelV3({ doStream }), vi.fn()).doStream(request)
+      const result = createRetryableChatModel(new MockLanguageModelV4({ doStream }), vi.fn()).doStream(request)
       await vi.advanceTimersByTimeAsync(1999)
       expect(doStream).toHaveBeenCalledTimes(1)
       await vi.advanceTimersByTimeAsync(1)
@@ -120,7 +120,7 @@ describe('chat retries', () => {
       .mockRejectedValueOnce(new ApiError('Rate limited', undefined, 429, undefined, '10'))
       .mockImplementation(successfulStream)
     const status = vi.fn()
-    const result = createRetryableChatModel(new MockLanguageModelV3({ doStream }), status).doStream(request)
+    const result = createRetryableChatModel(new MockLanguageModelV4({ doStream }), status).doStream(request)
     await vi.advanceTimersByTimeAsync(0)
     expect(status.mock.calls[0][0].retryAt).toBe(Date.now() + 10000)
     await vi.advanceTimersByTimeAsync(9999)
@@ -146,7 +146,7 @@ describe('chat retries', () => {
   ])('retries a network failure with waiting status and recovers', async (error) => {
     const doStream = vi.fn().mockRejectedValueOnce(error).mockImplementation(successfulStream)
     const status = vi.fn()
-    const result = createRetryableChatModel(new MockLanguageModelV3({ doStream }), status).doStream(request)
+    const result = createRetryableChatModel(new MockLanguageModelV4({ doStream }), status).doStream(request)
     await vi.advanceTimersByTimeAsync(0)
     expect(status).toHaveBeenLastCalledWith({
       type: 'retrying',
@@ -163,7 +163,7 @@ describe('chat retries', () => {
   it('bounds persistent network failures to five requests', async () => {
     const error = new NetworkError('Failed to fetch', 'https://example.test')
     const doStream = vi.fn().mockRejectedValue(error)
-    const result = createRetryableChatModel(new MockLanguageModelV3({ doStream }), vi.fn()).doStream(request)
+    const result = createRetryableChatModel(new MockLanguageModelV4({ doStream }), vi.fn()).doStream(request)
     const failed = expect(result).rejects.toSatisfy((e: unknown) => RetryError.isInstance(e) && e.lastError === error)
     await vi.advanceTimersByTimeAsync(30000)
     await failed
@@ -180,7 +180,7 @@ describe('chat retries', () => {
       ]),
     }))
     const status = vi.fn()
-    const response = await createRetryableChatModel(new MockLanguageModelV3({ doStream }), status).doStream(request)
+    const response = await createRetryableChatModel(new MockLanguageModelV4({ doStream }), status).doStream(request)
     const reader = response.stream.getReader()
     const parts = []
     while (true) {
@@ -193,10 +193,9 @@ describe('chat retries', () => {
     expect(status).not.toHaveBeenCalled()
   })
 
-  it.each<LanguageModelV3StreamPart>([
+  it.each<LanguageModelV4StreamPart>([
     { type: 'text-delta', id: 'text', delta: 'Partial' },
     { type: 'reasoning-delta', id: 'reasoning', delta: 'Partial' },
-    { type: 'tool-input-start', id: 'tool', toolName: 'search' },
     { type: 'tool-input-delta', id: 'tool', delta: '{' },
     { type: 'tool-call', toolCallId: 'tool', toolName: 'search', input: '{}' },
   ])('does not replay after $type and a rejected stream read', async (part) => {
@@ -204,7 +203,7 @@ describe('chat retries', () => {
     const doStream = vi.fn(async () => {
       let emitted = false
       return {
-        stream: new ReadableStream<LanguageModelV3StreamPart>({
+        stream: new ReadableStream<LanguageModelV4StreamPart>({
           pull(controller) {
             if (emitted) controller.error(error)
             else {
@@ -216,7 +215,7 @@ describe('chat retries', () => {
       }
     })
     const status = vi.fn()
-    const response = await createRetryableChatModel(new MockLanguageModelV3({ doStream }), status).doStream(request)
+    const response = await createRetryableChatModel(new MockLanguageModelV4({ doStream }), status).doStream(request)
     const reader = response.stream.getReader()
     expect((await reader.read()).value).toEqual(part)
     expect((await reader.read()).value).toEqual({ type: 'error', error })
@@ -225,11 +224,38 @@ describe('chat retries', () => {
     expect(status).not.toHaveBeenCalled()
   })
 
+  it('recovers from a failure after tool input starts without forwarding the failed attempt', async () => {
+    const doStream = vi
+      .fn()
+      .mockResolvedValueOnce({
+        stream: new ReadableStream<LanguageModelV4StreamPart>({
+          start(controller) {
+            controller.enqueue({ type: 'tool-input-start', id: 'tool', toolName: 'search' })
+            controller.error(new TypeError('Failed to fetch'))
+          },
+        }),
+      })
+      .mockImplementation(successfulStream)
+    const response = await createRetryableChatModel(new MockLanguageModelV4({ doStream }), vi.fn()).doStream(request)
+    const reader = response.stream.getReader()
+    const first = reader.read()
+    await vi.advanceTimersByTimeAsync(2000)
+    const parts = [(await first).value?.type]
+    while (true) {
+      const next = await reader.read()
+      if (next.done) break
+      parts.push(next.value.type)
+    }
+    expect(parts).not.toContain('tool-input-start')
+    expect(parts).toContain('text-delta')
+    expect(doStream).toHaveBeenCalledTimes(2)
+  })
+
   it('recovers from a rejected stream read before output', async () => {
     const doStream = vi
       .fn()
       .mockResolvedValueOnce({
-        stream: new ReadableStream<LanguageModelV3StreamPart>({
+        stream: new ReadableStream<LanguageModelV4StreamPart>({
           start(controller) {
             controller.error(new TypeError('Failed to fetch'))
           },
@@ -237,7 +263,7 @@ describe('chat retries', () => {
       })
       .mockImplementation(successfulStream)
     const status = vi.fn()
-    const response = await createRetryableChatModel(new MockLanguageModelV3({ doStream }), status).doStream(request)
+    const response = await createRetryableChatModel(new MockLanguageModelV4({ doStream }), status).doStream(request)
     const reader = response.stream.getReader()
     const first = reader.read()
     await vi.advanceTimersByTimeAsync(2000)
@@ -253,7 +279,7 @@ describe('chat retries', () => {
     async (error) => {
       const doStream = vi.fn().mockRejectedValue(error)
       const controller = new AbortController()
-      const result = createRetryableChatModel(new MockLanguageModelV3({ doStream }), vi.fn()).doStream({
+      const result = createRetryableChatModel(new MockLanguageModelV4({ doStream }), vi.fn()).doStream({
         ...request,
         abortSignal: controller.signal,
       })
@@ -277,7 +303,7 @@ describe('chat retries', () => {
     const doStream = vi.fn().mockRejectedValue(error)
     const status = vi.fn()
     await expect(
-      createRetryableChatModel(new MockLanguageModelV3({ doStream }), status).doStream(request)
+      createRetryableChatModel(new MockLanguageModelV4({ doStream }), status).doStream(request)
     ).rejects.toBe(error)
     expect(doStream).toHaveBeenCalledTimes(1)
     expect(status).not.toHaveBeenCalled()

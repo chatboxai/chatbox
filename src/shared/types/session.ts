@@ -501,6 +501,9 @@ export const SessionMetaRecordSchema = SessionMetaSchema.extend({
 export const SessionFolderSchema = z.object({
   id: z.string(),
   name: z.string(),
+  // Work Mode directory this folder collects; the folder's identity for
+  // automatic filing, independent of its editable name.
+  workingDirectory: z.string().optional(),
 })
 
 export const SessionMetaPageSchema = z.object({

@@ -11,10 +11,14 @@ const { generationRuntimeMock, sessionsMock, sessionQueryBridgeMock, clearQueueM
     deleteSession: vi.fn().mockResolvedValue(undefined),
     deleteSessions: vi.fn().mockResolvedValue(undefined),
     listArchivedSessionsMeta: vi.fn().mockResolvedValue([]),
+    listSessionFolders: vi.fn().mockResolvedValue([]),
+    moveSessionToFolder: vi.fn().mockResolvedValue(undefined),
   },
   sessionQueryBridgeMock: {
     getCachedSession: vi.fn((_sessionId: string) => null as Session | null | undefined),
     getSession: vi.fn().mockResolvedValue(null),
+    listSessionsMeta: vi.fn().mockResolvedValue([]),
+    updateSessionListData: vi.fn(),
   },
   clearQueueMock: vi.fn(),
 }))
@@ -40,7 +44,9 @@ vi.mock('../sessionHelpers', () => ({ getMetaStorage: vi.fn(), initEmptyChatSess
 vi.mock('./message-queue', () => ({ clearQueue: clearQueueMock }))
 vi.mock('../uiStore', () => ({ uiStore: { getState: () => ({ collapsedSessionFolderIds: [] }) } }))
 
-import { deleteAllArchivedSessions, deleteSession, deleteSessions } from './crud'
+import type { SessionMetaRecord } from '@shared/types'
+import { getMetaStorage } from '../sessionHelpers'
+import { deleteAllArchivedSessions, deleteSession, deleteSessions, reorderSessions } from './crud'
 
 function sessionFixture(id: string): Session {
   return {
@@ -135,5 +141,32 @@ describe('deleteAllArchivedSessions', () => {
     await deleteAllArchivedSessions()
 
     expect(sessionsMock.deleteSessions).not.toHaveBeenCalled()
+  })
+})
+
+describe('reorderSessions', () => {
+  const record = (id: string, sortOrder: number, folderId: string): SessionMetaRecord => ({
+    id,
+    name: id,
+    sortOrder,
+    createdAt: sortOrder,
+    folderId,
+  })
+
+  it('places a chat dropped at the end of the loaded rows before the next stored chat of that folder', async () => {
+    const loaded = [record('a1', 100, 'A'), record('a2', 90, 'A'), record('b1', 80, 'B')]
+    const stored = [...loaded, record('b2', 70, 'B'), record('b3', 60, 'B')]
+    sessionQueryBridgeMock.listSessionsMeta.mockResolvedValue(loaded)
+    sessionsMock.listSessionFolders.mockResolvedValue([
+      { id: 'A', name: 'A' },
+      { id: 'B', name: 'B' },
+    ])
+    vi.mocked(getMetaStorage).mockResolvedValue({
+      getAll: () => Promise.resolve(stored),
+    } as unknown as Awaited<ReturnType<typeof getMetaStorage>>)
+
+    await reorderSessions('a2', 'b1')
+
+    expect(sessionsMock.moveSessionToFolder).toHaveBeenCalledWith('a2', 'B', 75)
   })
 })

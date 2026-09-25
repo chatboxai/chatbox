@@ -3,6 +3,7 @@ import { getGenerationControlMessages } from '@chatbox/core/session/generation-s
 import {
   areSessionsInSameListGroup,
   excludeCollapsedFolderSessions,
+  findGroupSuccessor,
   getSessionListGroup,
 } from '@chatbox/core/utils/session-sort'
 import {
@@ -270,7 +271,9 @@ export async function reorderSessions(activeId: string, overId: string) {
   } else if (!before) {
     newSortOrder = after.sortOrder + 1000
   } else if (!after) {
-    newSortOrder = before.sortOrder - 1000
+    const metaStorage = await getMetaStorage()
+    const successor = findGroupSuccessor(await metaStorage.getAll(), before, moved, activeId, folderIds)
+    newSortOrder = successor ? (before.sortOrder + successor.sortOrder) / 2 : before.sortOrder - 1000
   } else {
     newSortOrder = (before.sortOrder + after.sortOrder) / 2
   }

@@ -1,5 +1,5 @@
 import type { SessionMetaRepositoryPort } from '@chatbox/core/ports'
-import { sortSessionRecords } from '@chatbox/core/utils/session-sort'
+import { applySortedSessionRecord, sortSessionRecords } from '@chatbox/core/utils/session-sort'
 import type { SessionMetaPage, SessionMetaRecord } from '@shared/types'
 import { reportDbOpenSucceeded, toDbOpenError, watchDbOpenBlocked, watchDbVersionChange } from './db-schema-guard'
 
@@ -21,6 +21,43 @@ function sortArchivedSessionRecords(records: SessionMetaRecord[]): SessionMetaRe
 export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
   private db: IDBDatabase | null = null
   private initPromise: Promise<void> | null = null
+  // Visible records in folder display order. No index matches that order, so
+  // one full read serves every page; writes through this instance patch it.
+  private folderOrderSnapshot: { key: string; folderIds: readonly string[]; records: SessionMetaRecord[] } | null = null
+  private writeGeneration = 0
+
+  /**
+   * Runs a write and applies `patch` to the folder order snapshot once it has
+   * committed. A failed write drops the snapshot, since the stored state is
+   * then unknown.
+   */
+  private async write<T>(
+    operation: () => Promise<T>,
+    patch: (records: SessionMetaRecord[], result: T, folderIds: readonly string[]) => void
+  ): Promise<T> {
+    this.writeGeneration += 1
+    try {
+      const result = await operation()
+      const snapshot = this.folderOrderSnapshot
+      if (snapshot) patch(snapshot.records, result, snapshot.folderIds)
+      return result
+    } catch (error) {
+      this.folderOrderSnapshot = null
+      throw error
+    } finally {
+      this.writeGeneration += 1
+    }
+  }
+
+  private async getFolderOrderedRecords(folderIds: readonly string[]): Promise<SessionMetaRecord[]> {
+    const key = folderIds.join('\u0000')
+    if (this.folderOrderSnapshot?.key === key) return this.folderOrderSnapshot.records
+    const generation = this.writeGeneration
+    const records = sortSessionRecords(await this.getAllRecords(), folderIds)
+    // A write that landed during the read may be missing from `records`.
+    if (generation === this.writeGeneration) this.folderOrderSnapshot = { key, folderIds: [...folderIds], records }
+    return records
+  }
 
   initialize(): Promise<void> {
     if (!this.initPromise) {
@@ -87,43 +124,62 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     return tx.objectStore(STORE_NAME)
   }
 
-  async create(record: SessionMetaRecord): Promise<void> {
-    await this.initialize()
-    return new Promise((resolve, reject) => {
-      const store = this.getStore('readwrite')
-      const request = store.add(record)
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
+  create(record: SessionMetaRecord): Promise<void> {
+    return this.write(
+      async () => {
+        await this.initialize()
+        return new Promise((resolve, reject) => {
+          const store = this.getStore('readwrite')
+          const request = store.add(record)
+          request.onsuccess = () => resolve()
+          request.onerror = () => reject(request.error)
+        })
+      },
+      (records, _result, folderIds) => applySortedSessionRecord(records, record, folderIds)
+    )
   }
 
-  async createMany(records: SessionMetaRecord[]): Promise<void> {
-    await this.initialize()
-    if (records.length === 0) return
-    return new Promise((resolve, reject) => {
-      if (!this.db) throw new Error('Database not initialized')
-      const tx = this.db.transaction(STORE_NAME, 'readwrite')
-      const store = tx.objectStore(STORE_NAME)
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-      for (const record of records) {
-        store.put(record)
+  createMany(records: SessionMetaRecord[]): Promise<void> {
+    return this.write(
+      async () => {
+        await this.initialize()
+        if (records.length === 0) return
+        return new Promise((resolve, reject) => {
+          if (!this.db) throw new Error('Database not initialized')
+          const tx = this.db.transaction(STORE_NAME, 'readwrite')
+          const store = tx.objectStore(STORE_NAME)
+          tx.oncomplete = () => resolve()
+          tx.onerror = () => reject(tx.error)
+          for (const record of records) {
+            store.put(record)
+          }
+        })
+      },
+      (snapshot, _result, folderIds) => {
+        for (const record of records) applySortedSessionRecord(snapshot, record, folderIds)
       }
-    })
+    )
   }
 
-  async update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null> {
-    await this.initialize()
-    const existing = await this.getById(id)
-    if (!existing) return null
+  update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null> {
+    return this.write(
+      async () => {
+        await this.initialize()
+        const existing = await this.getById(id)
+        if (!existing) return null
 
-    const updated = { ...existing, ...updates }
-    return new Promise((resolve, reject) => {
-      const store = this.getStore('readwrite')
-      const request = store.put(updated)
-      request.onsuccess = () => resolve(updated)
-      request.onerror = () => reject(request.error)
-    })
+        const updated = { ...existing, ...updates }
+        return new Promise((resolve, reject) => {
+          const store = this.getStore('readwrite')
+          const request = store.put(updated)
+          request.onsuccess = () => resolve(updated)
+          request.onerror = () => reject(request.error)
+        })
+      },
+      (records, updated, folderIds) => {
+        if (updated) applySortedSessionRecord(records, updated, folderIds)
+      }
+    )
   }
 
   async getById(id: string): Promise<SessionMetaRecord | null> {
@@ -136,29 +192,49 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     })
   }
 
-  async delete(id: string): Promise<void> {
-    await this.initialize()
-    return new Promise((resolve, reject) => {
-      const store = this.getStore('readwrite')
-      const request = store.delete(id)
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
+  delete(id: string): Promise<void> {
+    return this.write(
+      async () => {
+        await this.initialize()
+        return new Promise((resolve, reject) => {
+          const store = this.getStore('readwrite')
+          const request = store.delete(id)
+          request.onsuccess = () => resolve()
+          request.onerror = () => reject(request.error)
+        })
+      },
+      (records) => {
+        const index = records.findIndex((record) => record.id === id)
+        if (index >= 0) records.splice(index, 1)
+      }
+    )
   }
 
-  async deleteMany(ids: string[]): Promise<void> {
-    await this.initialize()
-    if (ids.length === 0) return
-    return new Promise((resolve, reject) => {
-      if (!this.db) throw new Error('Database not initialized')
-      const tx = this.db.transaction(STORE_NAME, 'readwrite')
-      const store = tx.objectStore(STORE_NAME)
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-      for (const id of ids) {
-        store.delete(id)
+  deleteMany(ids: string[]): Promise<void> {
+    return this.write(
+      async () => {
+        await this.initialize()
+        if (ids.length === 0) return
+        return new Promise((resolve, reject) => {
+          if (!this.db) throw new Error('Database not initialized')
+          const tx = this.db.transaction(STORE_NAME, 'readwrite')
+          const store = tx.objectStore(STORE_NAME)
+          tx.oncomplete = () => resolve()
+          tx.onerror = () => reject(tx.error)
+          for (const id of ids) {
+            store.delete(id)
+          }
+        })
+      },
+      (records) => {
+        const deleted = new Set(ids)
+        let kept = 0
+        for (const record of records) {
+          if (!deleted.has(record.id)) records[kept++] = record
+        }
+        records.length = kept
       }
-    })
+    )
   }
 
   async getAll(): Promise<SessionMetaRecord[]> {
@@ -226,9 +302,7 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
   ): Promise<SessionMetaPage> {
     await this.initialize()
     if (folderIds.length > 0) {
-      // Folder grouping has no matching index (adding one needs a version bump),
-      // so order the small metadata records in memory.
-      const visible = sortSessionRecords(await this.getAllRecords(), folderIds)
+      const visible = await this.getFolderOrderedRecords(folderIds)
       const items = visible.slice(cursor, cursor + limit)
       const nextCursor = cursor + items.length < visible.length ? cursor + items.length : null
       return { items, nextCursor, total: visible.length }
@@ -401,13 +475,20 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     })
   }
 
-  async clear(): Promise<void> {
-    await this.initialize()
-    return new Promise((resolve, reject) => {
-      const store = this.getStore('readwrite')
-      const request = store.clear()
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
+  clear(): Promise<void> {
+    return this.write(
+      async () => {
+        await this.initialize()
+        return new Promise((resolve, reject) => {
+          const store = this.getStore('readwrite')
+          const request = store.clear()
+          request.onsuccess = () => resolve()
+          request.onerror = () => reject(request.error)
+        })
+      },
+      (records) => {
+        records.length = 0
+      }
+    )
   }
 }

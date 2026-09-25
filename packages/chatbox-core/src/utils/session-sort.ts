@@ -103,11 +103,73 @@ export function sortSessionRecords(
   sessions: SessionMetaRecord[],
   folderIds: readonly string[] = []
 ): SessionMetaRecord[] {
-  return sessions
-    .filter((s) => !s.hidden)
-    .sort((a, b) => {
-      const rankDelta = getSessionListGroupRank(a, folderIds) - getSessionListGroupRank(b, folderIds)
-      if (rankDelta !== 0) return rankDelta
-      return b.sortOrder - a.sortOrder
-    })
+  return sessions.filter((s) => !s.hidden).sort((a, b) => compareSessionRecords(a, b, folderIds))
+}
+
+/** Display order of `sortSessionRecords`: group rank, then sortOrder descending. */
+export function compareSessionRecords(
+  a: Pick<SessionMetaRecord, 'starred' | 'folderId' | 'sortOrder'>,
+  b: Pick<SessionMetaRecord, 'starred' | 'folderId' | 'sortOrder'>,
+  folderIds: readonly string[]
+): number {
+  const rankDelta = getSessionListGroupRank(a, folderIds) - getSessionListGroupRank(b, folderIds)
+  if (rankDelta !== 0) return rankDelta
+  return b.sortOrder - a.sortOrder
+}
+
+function isSameListPosition(a: SessionMetaRecord, b: SessionMetaRecord): boolean {
+  return a.starred === b.starred && a.folderId === b.folderId && a.sortOrder === b.sortOrder
+}
+
+/**
+ * Applies a written record to `records`, a list in `sortSessionRecords` order,
+ * in place: replaced where it stands when its position is unchanged, otherwise
+ * moved to its new position, and removed when it is hidden.
+ */
+export function applySortedSessionRecord(
+  records: SessionMetaRecord[],
+  record: SessionMetaRecord,
+  folderIds: readonly string[]
+): void {
+  const index = records.findIndex((item) => item.id === record.id)
+  if (index >= 0) {
+    if (!record.hidden && isSameListPosition(records[index], record)) {
+      records[index] = record
+      return
+    }
+    records.splice(index, 1)
+  }
+  if (record.hidden) return
+  let low = 0
+  let high = records.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (compareSessionRecords(records[middle], record, folderIds) <= 0) low = middle + 1
+    else high = middle
+  }
+  records.splice(low, 0, record)
+}
+
+/**
+ * The session listed directly after `before` in the display group of `group`,
+ * among `records` (all visible sessions), skipping `excludeId`. Loaded list
+ * pages can end inside a group, so a drop at the end of the loaded rows needs
+ * the stored successor to land between the right neighbors.
+ */
+export function findGroupSuccessor<
+  T extends Pick<SessionMetaRecord, 'id' | 'starred' | 'folderId' | 'sortOrder' | 'hidden'>,
+>(
+  records: readonly T[],
+  before: Pick<SessionMetaRecord, 'sortOrder'>,
+  group: Pick<SessionMeta, 'starred' | 'folderId'>,
+  excludeId: string,
+  folderIds: readonly string[]
+): T | undefined {
+  let successor: T | undefined
+  for (const record of records) {
+    if (record.id === excludeId || record.hidden || record.sortOrder >= before.sortOrder) continue
+    if (!areSessionsInSameListGroup(record, group, folderIds)) continue
+    if (!successor || record.sortOrder > successor.sortOrder) successor = record
+  }
+  return successor
 }

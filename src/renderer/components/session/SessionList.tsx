@@ -198,6 +198,7 @@ export default function SessionList(props: Props) {
     hasNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
+    isLoading,
   } = useSessionList()
   const { folders } = useSessionFolders()
   const collapsedFolderIds = useUIStore((state) => state.collapsedSessionFolderIds)
@@ -315,6 +316,7 @@ export default function SessionList(props: Props) {
       onDragEnd={onDragEnd}
       onDragCancel={onDragCancel}
     >
+      {!sortedSessions && isLoading && <SessionListLoadingFooter />}
       {sortedSessions && (
         <SortableContext items={sortableSessionIds} strategy={verticalListSortingStrategy}>
           {isSmallScreen && isReordering && (
@@ -493,6 +495,7 @@ function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty:
       >
         <UnstyledButton
           aria-expanded={!collapsed}
+          title={folder.workingDirectory}
           onClick={onToggle}
           className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5"
         >

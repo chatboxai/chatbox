@@ -48,6 +48,7 @@ import {
   hasSessionMetaFields,
   type SessionMetadataUpdate,
 } from './session-metadata'
+import { directoryFolderName, findDirectoryFolder, getSessionWorkingDirectory } from './working-directory-folders'
 
 export interface SessionServiceOptions {
   createId: () => string
@@ -118,6 +119,7 @@ export class SessionService {
   private initialization: Promise<void> | null = null
   private readonly folderStore: SessionFolderStorePort
   private folders: Promise<SessionFolder[]> | null = null
+  private folderWrites: Promise<unknown> = Promise.resolve()
 
   constructor(
     readonly repository: SessionRepositoryPort,
@@ -274,14 +276,76 @@ export class SessionService {
   }
 
   /**
-   * Replaces the folder list. Sessions are not rewritten: a session whose
-   * folder is gone is listed as unfiled (see `getSessionListGroup`).
+   * Applies `update` to the current folder list and returns the resulting
+   * list; `null` leaves it unchanged. Folder writes run one at a time, so
+   * concurrent callers never overwrite each other's changes. Sessions are not
+   * rewritten: a session whose folder is gone is listed as unfiled (see
+   * `getSessionListGroup`).
    */
+  updateSessionFolders(update: (folders: SessionFolder[]) => SessionFolder[] | null): Promise<SessionFolder[]> {
+    const write = this.folderWrites.then(async () => {
+      const current = await this.listSessionFolders()
+      const next = update(current)
+      if (!next) return current
+      await this.folderStore.save(next)
+      this.folders = Promise.resolve(next)
+      await this.events.publish({ type: 'session-folders-changed', folders: next })
+      await this.publishListReset({ visible: true })
+      return next
+    })
+    this.folderWrites = write.catch(() => undefined)
+    return write
+  }
+
   async saveSessionFolders(folders: SessionFolder[]): Promise<void> {
-    await this.folderStore.save(folders)
-    this.folders = Promise.resolve(folders)
-    await this.events.publish({ type: 'session-folders-changed', folders })
-    await this.publishListReset({ visible: true })
+    await this.updateSessionFolders(() => folders)
+  }
+
+  /** Id of the folder that collects `directory`, created when it is missing. */
+  private async getDirectoryFolderId(directory: string): Promise<string | undefined> {
+    const folders = await this.updateSessionFolders((current) =>
+      findDirectoryFolder(current, directory)
+        ? null
+        : [
+            ...current,
+            {
+              id: this.options.createId(),
+              name: directoryFolderName(directory, current),
+              workingDirectory: directory,
+            },
+          ]
+    )
+    return findDirectoryFolder(folders, directory)?.id
+  }
+
+  /**
+   * Folder a Work Mode session should be filed in after its working directory
+   * became `directory`, or `undefined` when its current placement stays: a
+   * folder the user picked is kept, while an unfiled session and one still in
+   * the previous directory's folder follow the directory.
+   */
+  private async resolveDirectoryFolder(
+    session: Session,
+    previousDirectory: string | undefined
+  ): Promise<string | undefined> {
+    const directory = getSessionWorkingDirectory(session)
+    if (!this.options.folders || directory === undefined || directory === previousDirectory) return undefined
+    try {
+      if (session.folderId) {
+        const current = (await this.listSessionFolders()).find((folder) => folder.id === session.folderId)
+        if (current && (previousDirectory === undefined || current.workingDirectory !== previousDirectory)) {
+          return undefined
+        }
+      }
+      const folderId = await this.getDirectoryFolderId(directory)
+      return folderId === session.folderId ? undefined : folderId
+    } catch (error) {
+      await this.log('warn', 'Failed to file session by working directory', {
+        sessionId: session.id,
+        error: describeError(error),
+      })
+      return undefined
+    }
   }
 
   /**
@@ -366,6 +430,9 @@ export class SessionService {
       },
     }
 
+    const directoryFolderId = await this.resolveDirectoryFolder(session, undefined)
+    if (directoryFolderId) session.folderId = directoryFolderId
+
     const record = await this.writes.create(session, async () => {
       await this.repository.setSession(session)
 
@@ -434,6 +501,18 @@ export class SessionService {
       meta: result.meta,
       preserveCachedGeneratingMessages: options.preserveCachedGeneratingMessages === true,
     })
+    const previousDirectory = result.previous ? getSessionWorkingDirectory(result.previous) : undefined
+    const directoryFolderId = await this.resolveDirectoryFolder(result.session, previousDirectory)
+    if (directoryFolderId) {
+      try {
+        return await this.updateSession(sessionId, { folderId: directoryFolderId })
+      } catch (error) {
+        await this.log('warn', 'Failed to file session by working directory', {
+          sessionId,
+          error: describeError(error),
+        })
+      }
+    }
     return result.session
   }
 

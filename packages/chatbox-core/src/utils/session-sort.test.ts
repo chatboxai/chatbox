@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionMetaRecord } from '../types/session'
 import {
+  applySortedSessionRecord,
   areSessionsInSameListGroup,
   excludeCollapsedFolderSessions,
+  findGroupSuccessor,
   getSessionListGroup,
   getSessionListGroupRank,
   sortSessionRecords,
@@ -94,5 +96,84 @@ describe('uniqueSessionRecords', () => {
       { id: 'b' },
       { id: 'c' },
     ])
+  })
+})
+
+describe('findGroupSuccessor', () => {
+  const record = (id: string, sortOrder: number, extra: Partial<SessionMetaRecord> = {}): SessionMetaRecord => ({
+    id,
+    name: id,
+    sortOrder,
+    createdAt: sortOrder,
+    ...extra,
+  })
+  const records = [
+    record('a1', 100, { folderId: 'a' }),
+    record('b1', 90, { folderId: 'b' }),
+    record('a2', 80, { folderId: 'a' }),
+    record('a3', 70, { folderId: 'a' }),
+    record('pinned', 60, { folderId: 'a', starred: true }),
+    record('archived', 75, { folderId: 'a', hidden: true }),
+    record('moving', 50, { folderId: 'a' }),
+  ]
+
+  it('returns the next stored session of the same group below the upper neighbor', () => {
+    expect(findGroupSuccessor(records, { sortOrder: 100 }, { folderId: 'a' }, 'moving', ['a', 'b'])?.id).toBe('a2')
+    expect(findGroupSuccessor(records, { sortOrder: 80 }, { folderId: 'a' }, 'moving', ['a', 'b'])?.id).toBe('a3')
+  })
+
+  it('skips the moved session, hidden sessions and other groups', () => {
+    expect(findGroupSuccessor(records, { sortOrder: 70 }, { folderId: 'a' }, 'moving', ['a', 'b'])).toBeUndefined()
+    expect(findGroupSuccessor(records, { sortOrder: 100 }, { folderId: 'b' }, 'moving', ['a', 'b'])?.id).toBe('b1')
+  })
+})
+
+describe('applySortedSessionRecord', () => {
+  const folderIds = ['f1', 'f2']
+  const record = (id: string, sortOrder: number, extra: Partial<SessionMetaRecord> = {}): SessionMetaRecord => ({
+    id,
+    name: id,
+    sortOrder,
+    createdAt: 0,
+    ...extra,
+  })
+
+  it('replaces a record in place when its position is unchanged', () => {
+    const records = sortSessionRecords([record('a', 3), record('b', 2), record('c', 1)], folderIds)
+    const renamed = record('b', 2, { name: 'Renamed' })
+    applySortedSessionRecord(records, renamed, folderIds)
+    expect(records.map((item) => item.id)).toEqual(['a', 'b', 'c'])
+    expect(records[1]).toBe(renamed)
+  })
+
+  it('moves, inserts and removes records to match a full sort', () => {
+    let seed = 7
+    const random = () => {
+      seed = (seed * 16807) % 2147483647
+      return seed / 2147483647
+    }
+    const stored = new Map<string, SessionMetaRecord>()
+    const records: SessionMetaRecord[] = []
+    for (let step = 0; step < 500; step++) {
+      const id = `s${Math.floor(random() * 40)}`
+      const next = record(id, Math.floor(random() * 20), {
+        starred: random() < 0.15 ? true : undefined,
+        hidden: random() < 0.1 ? true : undefined,
+        folderId: [undefined, 'f1', 'f2', 'gone'][Math.floor(random() * 4)],
+      })
+      stored.set(id, next)
+      applySortedSessionRecord(records, next, folderIds)
+      const expected = sortSessionRecords([...stored.values()], folderIds)
+      expect(records.map((item) => [getRank(item), item.sortOrder])).toEqual(
+        expected.map((item) => [getRank(item), item.sortOrder])
+      )
+      expect(new Set(records.map((item) => item.id))).toEqual(new Set(expected.map((item) => item.id)))
+    }
+
+    function getRank(item: SessionMetaRecord) {
+      if (item.starred) return 0
+      const index = item.folderId ? folderIds.indexOf(item.folderId) : -1
+      return index >= 0 ? index + 1 : folderIds.length + 1
+    }
   })
 })

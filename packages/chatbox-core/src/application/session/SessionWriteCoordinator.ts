@@ -11,6 +11,8 @@ import { clearChangedTextTokenSeeds, textTokenPatches } from './session-text-tok
 export interface SessionWriteResult {
   session: Session
   meta: SessionMeta | null
+  /** The session the update was applied to. */
+  previous?: Session
 }
 
 export interface SessionWriteOptions {
@@ -451,7 +453,7 @@ export class SessionWriteCoordinator {
         throw new SessionMetadataUpdateError(updated, meta, error)
       }
     }
-    return { session: updated, meta }
+    return { session: updated, meta, previous }
   }
 
   private async loadRecoveryArchive(sessionId: string): Promise<number | undefined> {

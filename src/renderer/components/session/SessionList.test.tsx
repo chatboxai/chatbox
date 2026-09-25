@@ -24,7 +24,8 @@ const {
   moveSessionToFolderMock: vi.fn(),
   reorderSessionsMock: vi.fn(),
   sessionListState: {
-    sessions: [] as SessionMetaRecord[],
+    sessions: [] as SessionMetaRecord[] | undefined,
+    isLoading: false,
     folders: [] as SessionFolder[],
     hasNextPage: false,
     isFetchNextPageError: false,
@@ -121,6 +122,7 @@ vi.mock('@/app/renderer-application', () => ({
         hasNextPage: sessionListState.hasNextPage,
         isFetchingNextPage: false,
         isFetchNextPageError: sessionListState.isFetchNextPageError,
+        isLoading: sessionListState.isLoading,
       }),
       useSessionFolders: () => ({ folders: sessionListState.folders }),
     },
@@ -201,6 +203,7 @@ describe('SessionList mobile reorder mode', () => {
     })
     dndContextState.handlers = null
     sessionListState.sessions = sessions
+    sessionListState.isLoading = false
     sessionListState.folders = []
     sessionListState.hasNextPage = false
     uiStore.setState({ collapsedSessionFolderIds: [] })
@@ -273,6 +276,7 @@ describe('SessionList section headers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     sessionListState.sessions = sessions
+    sessionListState.isLoading = false
     sessionListState.folders = []
     sessionListState.hasNextPage = false
     useSortableMock.mockImplementation(() => ({
@@ -284,6 +288,23 @@ describe('SessionList section headers', () => {
       transition: undefined,
     }))
     uiStore.setState({ showSidebar: true })
+  })
+
+  test('shows a loading indicator until the first page arrives', () => {
+    sessionListState.sessions = undefined
+    sessionListState.isLoading = true
+    const { container, rerender } = renderList()
+    expect(container.querySelector('.animate-spin')).toBeTruthy()
+
+    sessionListState.sessions = [sessions[1]]
+    sessionListState.isLoading = false
+    rerender(
+      <MantineProvider>
+        <SessionList sessionListViewportRef={{ current: null }} />
+      </MantineProvider>
+    )
+    expect(container.querySelector('.animate-spin')).toBeNull()
+    expect(screen.getByText('Regular session')).toBeTruthy()
   })
 
   test('shows the chats section even when nothing is pinned', () => {

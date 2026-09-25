@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import type { SessionMetaRecord } from '@shared/types'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { IndexedDBSessionMetaStorage } from '../SessionMetaStorage'
 
 function makeRecord(overrides: Partial<SessionMetaRecord> & { id: string }): SessionMetaRecord {
@@ -341,6 +341,95 @@ describe('IndexedDBSessionMetaStorage', () => {
       expect(page2.items.map((r) => r.id)).toEqual(['loose', 'orphan'])
       expect(page2.nextCursor).toBeNull()
       expect(page2.total).toBe(5)
+    })
+
+    it('reads the store once for consecutive folder pages', async () => {
+      for (const [id, sortOrder] of [
+        ['a', 400],
+        ['b', 300],
+        ['c', 200],
+        ['d', 100],
+      ] as const) {
+        await storage.create(makeRecord({ id, sortOrder, folderId: 'f' }))
+      }
+      const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+
+      await storage.getPage(0, 2, ['f'])
+      await storage.getPage(2, 2, ['f'])
+
+      expect(getAll).toHaveBeenCalledTimes(1)
+      getAll.mockRestore()
+    })
+
+    it('reflects writes and folder order changes in later folder pages', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 300, folderId: 'f1' }))
+      await storage.create(makeRecord({ id: 'b', sortOrder: 200, folderId: 'f2' }))
+      await storage.getPage(0, 10, ['f1', 'f2'])
+
+      await storage.update('b', { folderId: 'f1' })
+      await storage.create(makeRecord({ id: 'c', sortOrder: 100, folderId: 'f2' }))
+      expect((await storage.getPage(0, 10, ['f1', 'f2'])).items.map((r) => r.id)).toEqual(['a', 'b', 'c'])
+      expect((await storage.getPage(0, 10, ['f2', 'f1'])).items.map((r) => r.id)).toEqual(['c', 'a', 'b'])
+
+      await storage.delete('a')
+      expect((await storage.getPage(0, 10, ['f2', 'f1'])).items.map((r) => r.id)).toEqual(['c', 'b'])
+    })
+
+    it('patches folder order pages after writes without rereading the store', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 300, folderId: 'f1' }))
+      await storage.create(makeRecord({ id: 'b', sortOrder: 200, folderId: 'f2' }))
+      await storage.getPage(0, 10, ['f1', 'f2'])
+      const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+
+      await storage.update('a', { name: 'Renamed' })
+      await storage.update('b', { folderId: 'f1' })
+      await storage.createMany([makeRecord({ id: 'c', sortOrder: 250, folderId: 'f1' })])
+      await storage.update('a', { hidden: true })
+      await storage.deleteMany(['missing'])
+      const page = await storage.getPage(0, 10, ['f1', 'f2'])
+
+      expect(getAll).not.toHaveBeenCalled()
+      expect(page.items.map((r) => r.id)).toEqual(['c', 'b'])
+      getAll.mockRestore()
+
+      await storage.clear()
+      expect((await storage.getPage(0, 10, ['f1', 'f2'])).items).toEqual([])
+    })
+
+    it('rereads folder order pages after a failed write', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 300, folderId: 'f1' }))
+      await storage.getPage(0, 10, ['f1'])
+      await expect(storage.create(makeRecord({ id: 'a', sortOrder: 100 }))).rejects.toBeTruthy()
+      const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+
+      expect((await storage.getPage(0, 10, ['f1'])).items.map((r) => r.id)).toEqual(['a'])
+      expect(getAll).toHaveBeenCalledTimes(1)
+      getAll.mockRestore()
+    })
+
+    it('does not keep a folder order read that overlapped a write', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 300, folderId: 'f1' }))
+      await storage.create(makeRecord({ id: 'b', sortOrder: 200, folderId: 'f2' }))
+
+      const internals = storage as unknown as { getAllRecords: () => Promise<SessionMetaRecord[]> }
+      const readAll = internals.getAllRecords.bind(storage)
+      let releaseRead = () => {}
+      const readGate = new Promise<void>((resolve) => {
+        releaseRead = resolve
+      })
+      internals.getAllRecords = async () => {
+        const records = await readAll()
+        await readGate
+        return records
+      }
+      const reading = storage.getPage(0, 10, ['f1', 'f2'])
+      await storage.update('b', { folderId: 'f1' })
+      releaseRead()
+      await reading
+      internals.getAllRecords = readAll
+
+      const page = await storage.getPage(0, 10, ['f1', 'f2'])
+      expect(page.items.find((r) => r.id === 'b')?.folderId).toBe('f1')
     })
   })
 

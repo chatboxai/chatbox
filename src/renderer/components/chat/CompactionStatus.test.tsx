@@ -105,6 +105,23 @@ describe('CompactionStatus retry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
   }
 
+  test('retries as an explicit compression with the failed request prompt', () => {
+    getDefaultStore().set(compactionUIStateMapAtom, {
+      'session-1': {
+        status: 'failed',
+        error: 'Network error',
+        streamingText: '',
+        summaryMessageId: null,
+        retryPrompt: 'Keep exact paths.',
+      },
+    })
+    vi.mocked(requestManualCompaction).mockResolvedValue('started')
+
+    retry()
+
+    expect(requestManualCompaction).toHaveBeenCalledWith('session-1', { force: true, prompt: 'Keep exact paths.' })
+  })
+
   test('reports that a retry waits for the session instead of silently doing nothing', async () => {
     vi.mocked(requestManualCompaction).mockResolvedValue('queued')
 

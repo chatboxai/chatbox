@@ -204,6 +204,7 @@ async function runAcceptedCompaction(
       setCompactionUIState(sessionId, {
         status: 'failed',
         error: error instanceof Error ? error.message : String(error),
+        retryPrompt: options.prompt,
       })
       log.log('error', 'Manual compaction could not run', { error })
     })
@@ -249,6 +250,7 @@ async function compactWithUIState(
         error: result.failure.message,
         streamingText: '',
         summaryMessageId: null,
+        retryPrompt: options.prompt,
       })
       break
     case 'skipped':

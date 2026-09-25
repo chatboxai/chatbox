@@ -109,6 +109,16 @@ describe('runCompactionWithUIState', () => {
     expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'Keep exact paths.' }))
   })
 
+  it('keeps the custom prompt of a failed compaction for its retry', async () => {
+    generateSummaryWithStreamMock.mockResolvedValue({ success: false, error: new Error('Network error') })
+    await runCompactionWithUIState('session-1', { kind: 'manual' }, { prompt: 'Keep exact paths.' })
+    expect(getCompactionUIState('session-1')).toMatchObject({
+      status: 'failed',
+      error: 'Network error',
+      retryPrompt: 'Keep exact paths.',
+    })
+  })
+
   it('keeps long-history compaction within the normal send window', async () => {
     const oldText = ' historical'.repeat(100_001)
     const textTokenCounts = new Map<string, number>([[oldText, estimateTokensForTokenizerType(oldText, 'default')]])

@@ -69,8 +69,10 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId, onVi
   const { copied, copy } = useCopied(errorText)
   const isTruncated = shouldTruncate(errorText)
 
+  // Retry is an explicit request to compress now. The automatic threshold check would
+  // skip it once the message that triggered the failed compression is no longer pending.
   const handleRetry = useCallback(() => {
-    void requestManualCompaction(sessionId)
+    void requestManualCompaction(sessionId, { force: true, prompt: compactionState.retryPrompt })
       .then((outcome) => {
         if (outcome === 'queue-full') {
           addToast(t('Message queue is full'))
@@ -81,7 +83,7 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId, onVi
         }
       })
       .catch(() => addToast(t('Compression could not start')))
-  }, [sessionId, t])
+  }, [compactionState.retryPrompt, sessionId, t])
 
   const handleDismiss = useCallback(() => {
     setCompactionUIState(sessionId, {

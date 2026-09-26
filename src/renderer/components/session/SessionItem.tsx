@@ -20,6 +20,7 @@ import { rendererApplication } from '@/app/renderer-application'
 import { ShortcutKeysChip } from '@/components/Shortcut'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { useTouchLayout } from '@/hooks/useTouchLayout'
 import { navigateToSettings } from '@/modals/settings-navigation'
 import platform from '@/platform'
 import { showSessionArchiveUndo } from '@/presentation/session/session-archive-notification'
@@ -86,8 +87,8 @@ function SessionItem(props: Props) {
           : t('Completed')
   const pinActionLabel = session.starred ? t('Unpin') : t('Pin')
   const archiveActionLabel = t('Archive')
-  const moveToFolderLabel = t('Move to folder')
-  const openMoveToFolder = () => {
+  const moveToProjectLabel = t('Move to project')
+  const openMoveToProject = () => {
     void NiceModal.show('session-folder-move', { sessionId: session.id, folderId: session.folderId })
   }
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
@@ -99,17 +100,24 @@ function SessionItem(props: Props) {
       longPressTriggeredRef.current = false
       return
     }
+    // The menu does not treat its own row as outside, so a click on the row
+    // dismisses the menu instead of opening the chat.
+    if (menuOpened) {
+      setMenuOpened(false)
+      return
+    }
     switchCurrentSession(session.id)
     if (isSmallScreen) {
       setShowSidebar(false)
     }
   }
   const isSmallScreen = useIsSmallScreen()
+  const touchLayout = useTouchLayout()
   // const smallSize = theme.typography.pxToRem(20)
 
   const [archiving, setArchiving] = useState(false)
   const [actionTooltipDismissed, setActionTooltipDismissed] = useState(false)
-  const [mobileMenuOpened, setMobileMenuOpened] = useState(false)
+  const [menuOpened, setMenuOpened] = useState(false)
   const [longPressing, setLongPressing] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -130,12 +138,7 @@ function SessionItem(props: Props) {
   const startRenaming = (event: MouseEvent) => {
     event.stopPropagation()
     event.preventDefault()
-    if (
-      isSmallScreen ||
-      platform.type === 'mobile' ||
-      props.isReordering ||
-      !renameClickStartedOnSelectedSessionRef.current
-    ) {
+    if (touchLayout || props.isReordering || !renameClickStartedOnSelectedSessionRef.current) {
       return
     }
     setDraftName(session.name)
@@ -209,23 +212,25 @@ function SessionItem(props: Props) {
   }
 
   const handlePointerDown = (event: PointerEvent) => {
-    if (!isSmallScreen || props.isReordering) {
+    // A consumed click belongs to one press; a long press that no click follows
+    // must not swallow the next one.
+    longPressTriggeredRef.current = false
+    if (!touchLayout || props.isReordering) {
       return
     }
     clearLongPressTimer()
-    longPressTriggeredRef.current = false
     longPressStartPointRef.current = { x: event.clientX, y: event.clientY }
     setLongPressing(true)
     longPressTimerRef.current = setTimeout(() => {
       longPressTriggeredRef.current = true
       setLongPressing(false)
       triggerLongPressHaptic()
-      setMobileMenuOpened(true)
+      setMenuOpened(true)
     }, MOBILE_LONG_PRESS_DELAY)
   }
 
   const handlePointerMove = (event: PointerEvent) => {
-    if (!isSmallScreen || !longPressStartPointRef.current) {
+    if (!touchLayout || !longPressStartPointRef.current) {
       return
     }
     const deltaX = Math.abs(event.clientX - longPressStartPointRef.current.x)
@@ -241,21 +246,31 @@ function SessionItem(props: Props) {
   }
 
   const handleContextMenu = (event: MouseEvent) => {
-    if (!isSmallScreen) {
+    // The rename input keeps the native edit menu.
+    if (renaming) {
       return
     }
     event.preventDefault()
+    if (!props.isReordering && switchShortcutDigit === undefined) {
+      // Touch browsers also report a long press as a context menu, followed by a
+      // click that must not open the chat.
+      if ('pointerType' in event.nativeEvent && event.nativeEvent.pointerType === 'touch') {
+        clearLongPressTimer()
+        longPressTriggeredRef.current = true
+      }
+      setMenuOpened(true)
+    }
   }
 
-  const handleMobileMenuChange = (opened: boolean) => {
-    setMobileMenuOpened(opened)
+  const handleMenuChange = (opened: boolean) => {
+    setMenuOpened(opened)
     if (!opened) {
       clearLongPressTimer()
       longPressTriggeredRef.current = false
     }
   }
 
-  const mobileMenuItems: ActionMenuItemProps[] = [
+  const menuItems: ActionMenuItemProps[] = [
     {
       text: pinActionLabel || '',
       icon: session.starred ? IconPinnedFilled : IconPinned,
@@ -263,17 +278,27 @@ function SessionItem(props: Props) {
         void rendererApplication.sessions.updateSession(session.id, { starred: !session.starred })
       },
     },
-    {
-      text: moveToFolderLabel || '',
-      icon: IconFolderShare,
-      onClick: openMoveToFolder,
-    },
-    {
-      text: t('Adjust order') || '',
-      icon: IconArrowsMoveVertical,
-      disabled: !props.onStartReordering,
-      onClick: props.onStartReordering,
-    },
+    // A pinned chat stays in Pinned; it returns to its project once unpinned.
+    ...(session.starred
+      ? []
+      : [
+          {
+            text: moveToProjectLabel || '',
+            icon: IconFolderShare,
+            onClick: openMoveToProject,
+          },
+        ]),
+    // Hover layouts reorder by dragging; the menu entry starts the touch reorder mode.
+    ...(touchLayout
+      ? [
+          {
+            text: t('Adjust order') || '',
+            icon: IconArrowsMoveVertical,
+            disabled: !props.onStartReordering,
+            onClick: props.onStartReordering,
+          },
+        ]
+      : []),
     {
       text: archiveActionLabel || '',
       icon: IconArchive,
@@ -298,7 +323,7 @@ function SessionItem(props: Props) {
           ? 'bg-chatbox-background-primary'
           : selected
             ? 'bg-chatbox-background-secondary-hover'
-            : isSmallScreen
+            : touchLayout
               ? longPressing && 'bg-chatbox-background-gray-secondary'
               : 'hover:bg-chatbox-background-gray-secondary'
       )}
@@ -384,7 +409,7 @@ function SessionItem(props: Props) {
           title={activityLabel}
           className={clsx(
             'shrink-0 flex h-5 w-5 items-center justify-center',
-            !isSmallScreen && 'group-hover/session-item:hidden'
+            !touchLayout && 'group-hover/session-item:hidden'
           )}
         >
           {activity === 'generating' ? (
@@ -420,7 +445,7 @@ function SessionItem(props: Props) {
       <Flex
         gap={2}
         className={clsx(
-          isSmallScreen || renaming || switchShortcutDigit !== undefined
+          touchLayout || renaming || switchShortcutDigit !== undefined
             ? 'hidden'
             : 'group-hover/session-item:flex hidden'
         )}
@@ -444,24 +469,6 @@ function SessionItem(props: Props) {
             ) : (
               <ScalableIcon icon={IconPinned} className="text-inherit" size={16} />
             )}
-          </ActionIcon>
-        </Tooltip>
-
-        <Tooltip label={moveToFolderLabel} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
-          <ActionIcon
-            data-testid={TestId.sidebar.sessionMoveToFolder}
-            aria-label={moveToFolderLabel}
-            variant="transparent"
-            size={20}
-            color="chatbox-tertiary"
-            onPointerDown={stopItemClick}
-            onClick={(event) => {
-              stopItemClick(event)
-              dismissActionTooltip()
-              openMoveToFolder()
-            }}
-          >
-            <ScalableIcon icon={IconFolderShare} className="text-inherit" size={16} />
           </ActionIcon>
         </Tooltip>
 
@@ -490,18 +497,14 @@ function SessionItem(props: Props) {
     </Flex>
   )
 
-  if (!isSmallScreen) {
-    return content
-  }
-
   return (
     <ActionMenu
       type="contextual"
       trigger="manual"
-      items={mobileMenuItems}
-      opened={mobileMenuOpened}
-      onChange={handleMobileMenuChange}
-      position="bottom-end"
+      items={menuItems}
+      opened={menuOpened}
+      onChange={handleMenuChange}
+      position={isSmallScreen ? 'bottom-end' : 'bottom-start'}
       offset={0}
     >
       {content}

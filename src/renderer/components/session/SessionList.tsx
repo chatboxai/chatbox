@@ -33,6 +33,7 @@ import {
   IconGripVertical,
   IconLoader2,
   IconPencil,
+  IconPlus,
   IconTrash,
 } from '@tabler/icons-react'
 import { useRouterState } from '@tanstack/react-router'
@@ -51,6 +52,7 @@ import { Virtuoso } from 'react-virtuoso'
 import { rendererApplication } from '@/app/renderer-application'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionSwitchHintDigits } from '@/hooks/useSessionSwitchHints'
+import { useTouchLayout } from '@/hooks/useTouchLayout'
 import platform from '@/platform'
 import { reorderSessions } from '@/stores/session/crud'
 import { deleteSessionFolder, moveSessionToFolder, renameSessionFolder } from '@/stores/session/folders'
@@ -71,6 +73,8 @@ export interface Props {
   sessionListViewportRef: MutableRefObject<HTMLDivElement | null>
 }
 
+const PROJECTS_SECTION_ID = 'section:projects'
+
 type SessionListItem =
   | { type: 'section'; id: string; label: string; droppable?: boolean }
   | { type: 'folder'; id: string; folder: SessionFolder; collapsed: boolean; empty: boolean }
@@ -87,7 +91,7 @@ function buildDisplayItems(
   folders: SessionFolder[],
   collapsedFolderIds: readonly string[],
   hasNextPage: boolean,
-  labels: { pinned: string; chats: string }
+  labels: { pinned: string; projects: string; chats: string }
 ): SessionListItem[] {
   const folderIds = folders.map((folder) => folder.id)
   const lastSession = sessions.at(-1)
@@ -105,13 +109,19 @@ function buildDisplayItems(
   const pinned = sessionRows(0)
   const unfiledRank = folders.length + 1
   const unfiled = sessionRows(unfiledRank)
+  // The projects header is where projects are created, so it stays even with no
+  // projects or chats.
+  const projectsHeader: SessionListItem = { type: 'section', id: PROJECTS_SECTION_ID, label: labels.projects }
   if (sessions.length === 0 && folders.length === 0) {
-    return []
+    return [projectsHeader]
   }
 
   const items: SessionListItem[] = []
   if (pinned.length > 0) {
     items.push({ type: 'section', id: 'section:pinned', label: labels.pinned }, ...pinned)
+  }
+  if (loadedRank >= 1) {
+    items.push(projectsHeader)
   }
   folders.forEach((folder, index) => {
     const rank = index + 1
@@ -155,6 +165,7 @@ function SessionListSectionHeader(props: { label: string; testId?: string; child
 function ChatsSectionMenu() {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
+  const touchLayout = useTouchLayout()
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   return (
     <ActionMenu
@@ -181,12 +192,28 @@ function ChatsSectionMenu() {
         aria-label={t('More')}
         data-testid={TestId.sidebar.chatsSectionMenu}
         className={
-          isSmallScreen
+          touchLayout
             ? undefined
             : 'opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100 data-[expanded=true]:opacity-100'
         }
       />
     </ActionMenu>
+  )
+}
+
+function CreateProjectButton() {
+  const { t } = useTranslation()
+  const isSmallScreen = useIsSmallScreen()
+  return (
+    <IconButton
+      icon={IconPlus}
+      iconSize={ICON_SIZE.inline}
+      size={isSmallScreen ? 'md' : 'sm'}
+      color="chatbox-tertiary"
+      aria-label={t('New project')}
+      data-testid={TestId.sidebar.createProject}
+      onClick={() => void NiceModal.show('session-folder-create')}
+    />
   )
 }
 
@@ -208,7 +235,7 @@ export default function SessionList(props: Props) {
   const switchShortcutDigits = useSessionSwitchHintDigits()
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [isReordering, setIsReordering] = useState(false)
-  const isSmallScreen = useIsSmallScreen()
+  const touchLayout = useTouchLayout()
   const touchSensor = useSensor(TouchSensor, {
     activationConstraint: {
       delay: 150,
@@ -223,7 +250,7 @@ export default function SessionList(props: Props) {
   const keyboardSensor = useSensor(KeyboardSensor, {
     coordinateGetter: sortableKeyboardCoordinates,
   })
-  const sensors = useSensors(...(!isSmallScreen || isReordering ? [touchSensor] : []), mouseSensor, keyboardSensor)
+  const sensors = useSensors(...(!touchLayout || isReordering ? [touchSensor] : []), mouseSensor, keyboardSensor)
   const onDragStart = (event: DragStartEvent) => {
     setActiveDragId(String(event.active.id))
   }
@@ -266,6 +293,7 @@ export default function SessionList(props: Props) {
     }
     return buildDisplayItems(sortedSessions, folders ?? [], collapsedFolderIds, Boolean(hasNextPage), {
       pinned: t('Pinned'),
+      projects: t('Projects'),
       chats: t('Chats'),
     })
   }, [sortedSessions, folders, collapsedFolderIds, hasNextPage, t])
@@ -319,7 +347,7 @@ export default function SessionList(props: Props) {
       {!sortedSessions && isLoading && <SessionListLoadingFooter />}
       {sortedSessions && (
         <SortableContext items={sortableSessionIds} strategy={verticalListSortingStrategy}>
-          {isSmallScreen && isReordering && (
+          {touchLayout && isReordering && (
             <Flex
               align="center"
               justify="space-between"
@@ -368,6 +396,10 @@ export default function SessionList(props: Props) {
                     <SessionListSectionHeader label={item.label}>
                       <ChatsSectionMenu />
                     </SessionListSectionHeader>
+                  ) : item.id === PROJECTS_SECTION_ID ? (
+                    <SessionListSectionHeader label={item.label} testId={TestId.sidebar.projectsSection}>
+                      <CreateProjectButton />
+                    </SessionListSectionHeader>
                   ) : (
                     <SessionListSectionHeader label={item.label} testId={TestId.sidebar.pinnedSection} />
                   )
@@ -387,14 +419,14 @@ export default function SessionList(props: Props) {
               return (
                 <SortableItem
                   id={item.session.id}
-                  disabled={Boolean(isSmallScreen && !isReordering)}
+                  disabled={Boolean(touchLayout && !isReordering)}
                   dragLabel={`${t('Adjust order')}: ${item.session.name}`}
-                  showDragHandle={Boolean(isSmallScreen && isReordering)}
+                  showDragHandle={Boolean(touchLayout && isReordering)}
                 >
                   <SessionItem
                     selected={routerState.location.pathname === `/session/${item.session.id}`}
                     session={item.session}
-                    isReordering={Boolean(isSmallScreen && isReordering)}
+                    isReordering={Boolean(touchLayout && isReordering)}
                     onStartReordering={() => setIsReordering(true)}
                     switchShortcutDigit={switchShortcutDigits.get(item.session.id)}
                   />
@@ -408,7 +440,7 @@ export default function SessionList(props: Props) {
                 <SessionItem
                   selected={routerState.location.pathname === `/session/${activeDragSession.id}`}
                   session={activeDragSession}
-                  isReordering={Boolean(isSmallScreen && isReordering)}
+                  isReordering={Boolean(touchLayout && isReordering)}
                 />
               </div>
             ) : null}
@@ -475,9 +507,10 @@ function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty:
   const { folder, collapsed, empty, onToggle } = props
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
+  const touchLayout = useTouchLayout()
   const rename = async () => {
     const name = await NiceModal.show<string | null>('session-folder-name', {
-      title: t('Rename folder'),
+      title: t('Rename project'),
       initialName: folder.name,
     })
     if (name && name !== folder.name) await renameSessionFolder(folder.id, name)
@@ -485,7 +518,7 @@ function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty:
   return (
     <DropTarget id={`${FOLDER_DROP_PREFIX}${folder.id}`} className="mx-2">
       <Flex
-        data-testid={TestId.sidebar.folderHeader}
+        data-testid={TestId.sidebar.projectHeader}
         {...{ [AutomationAdjacentAttr.folderId]: folder.id }}
         align="center"
         gap={4}
@@ -514,10 +547,10 @@ function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty:
           items={[
             { text: t('Rename'), icon: IconPencil, onClick: () => void rename() },
             {
-              text: t('Delete folder'),
+              text: t('Delete project'),
               icon: IconTrash,
               color: 'chatbox-error',
-              doubleCheck: { text: t('Chats will be moved out of the folder. Delete?') || undefined },
+              doubleCheck: { text: t('Chats will be moved out of the project. Delete?') || undefined },
               onClick: () => void deleteSessionFolder(folder.id),
             },
           ]}
@@ -527,10 +560,10 @@ function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty:
             iconSize={ICON_SIZE.inline}
             size={isSmallScreen ? 'md' : 'sm'}
             color="chatbox-tertiary"
-            aria-label={t('Folder actions') || undefined}
+            aria-label={t('Project actions') || undefined}
             // Touch screens have no hover, so the menu trigger stays visible there.
             className={
-              isSmallScreen
+              touchLayout
                 ? undefined
                 : 'opacity-0 group-hover/folder-header:opacity-100 focus-visible:opacity-100 data-[expanded=true]:opacity-100'
             }

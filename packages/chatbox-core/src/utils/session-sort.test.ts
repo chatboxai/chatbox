@@ -177,3 +177,13 @@ describe('applySortedSessionRecord', () => {
     }
   })
 })
+
+describe('getSessionListGroup', () => {
+  it('shows a pinned project chat in Pinned and returns it to the project once unpinned', () => {
+    expect(getSessionListGroup({ starred: true, folderId: 'work' }, ['work'])).toEqual({ kind: 'pinned' })
+    expect(getSessionListGroup({ starred: false, folderId: 'work' }, ['work'])).toEqual({
+      kind: 'folder',
+      folderId: 'work',
+    })
+  })
+})

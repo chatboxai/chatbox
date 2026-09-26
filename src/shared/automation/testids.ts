@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.9.0'
+export const AUTOMATION_CONTRACT_VERSION = '1.10.0'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -101,11 +101,12 @@ export const TestId = {
     sessionTitle: 'session-title',
     sessionPin: 'session-pin',
     sessionArchive: 'session-archive',
-    sessionMoveToFolder: 'session-move-to-folder',
     sessionSwitchHint: 'session-switch-hint',
     pinnedSection: 'sidebar-pinned-section',
+    projectsSection: 'sidebar-projects-section',
+    createProject: 'sidebar-create-project',
     /** Hosts AutomationAdjacentAttr.folderId. */
-    folderHeader: 'sidebar-folder-header',
+    projectHeader: 'sidebar-project-header',
     collapse: 'sidebar-collapse',
   },
   session: {

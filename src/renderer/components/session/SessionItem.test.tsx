@@ -3,7 +3,7 @@
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const {
@@ -102,6 +102,115 @@ describe('SessionItem', () => {
         dispatchEvent: vi.fn(() => false),
       })),
     })
+  })
+
+  test('opens the chat menu with a right click on desktop', async () => {
+    renderItem()
+
+    expect(screen.queryByRole('button', { name: 'Move to project' })).toBeNull()
+    fireEvent.contextMenu(screen.getByTestId(TestId.sidebar.sessionItem))
+
+    expect(await screen.findByText('Move to project')).toBeTruthy()
+    expect(screen.getByText('Pin')).toBeTruthy()
+    expect(screen.getByText('Archive')).toBeTruthy()
+    expect(screen.queryByText('Adjust order')).toBeNull()
+  })
+
+  test('uses long press instead of hover actions on a wide touch screen', async () => {
+    platformMock.type = 'web'
+    vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
+      matches: query === '(pointer: coarse)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(() => false),
+    }))
+    renderItem()
+    expect(screen.getByTestId(TestId.sidebar.sessionPin).parentElement?.className).not.toContain('group-hover')
+
+    fireEvent.pointerDown(screen.getByTestId(TestId.sidebar.sessionItem), { clientX: 10, clientY: 10 })
+
+    expect(await screen.findByText('Move to project', undefined, { timeout: 2000 })).toBeTruthy()
+    expect(screen.getByText('Adjust order')).toBeTruthy()
+  })
+
+  test('opens the chat menu with a right click in a narrow window', async () => {
+    isSmallScreenMock.mockReturnValue(true)
+    renderItem()
+
+    fireEvent.contextMenu(screen.getByTestId(TestId.sidebar.sessionItem))
+
+    expect(await screen.findByText('Move to project')).toBeTruthy()
+    expect(screen.getByText('Adjust order')).toBeTruthy()
+  })
+
+  test('keeps a touch long press menu open through the click that follows it', async () => {
+    isSmallScreenMock.mockReturnValue(true)
+    renderItem()
+    const row = screen.getByTestId(TestId.sidebar.sessionItem)
+
+    const contextMenu = createEvent.contextMenu(row)
+    Object.defineProperty(contextMenu, 'pointerType', { value: 'touch' })
+    fireEvent(row, contextMenu)
+    fireEvent.click(row)
+
+    expect(await screen.findByText('Move to project')).toBeTruthy()
+    expect(switchCurrentSessionMock).not.toHaveBeenCalled()
+  })
+
+  test('dismisses a touch long press menu on the next tap when no click followed the press', async () => {
+    renderItem()
+    const row = screen.getByTestId(TestId.sidebar.sessionItem)
+
+    const contextMenu = createEvent.contextMenu(row)
+    Object.defineProperty(contextMenu, 'pointerType', { value: 'touch' })
+    fireEvent(row, contextMenu)
+    expect(await screen.findByText('Move to project')).toBeTruthy()
+
+    fireEvent.pointerDown(row)
+    fireEvent.click(row)
+    expect(switchCurrentSessionMock).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByText('Move to project')).toBeNull())
+  })
+
+  test('dismisses the right-click menu when its row is clicked', async () => {
+    renderItem()
+    const row = screen.getByTestId(TestId.sidebar.sessionItem)
+
+    fireEvent.contextMenu(row)
+    expect(await screen.findByText('Move to project')).toBeTruthy()
+
+    fireEvent.click(row)
+    expect(switchCurrentSessionMock).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByText('Move to project')).toBeNull())
+
+    fireEvent.click(row)
+    expect(switchCurrentSessionMock).toHaveBeenCalledWith(session.id)
+  })
+
+  test('keeps the native edit menu while renaming on desktop', () => {
+    renderItem()
+    fireEvent.doubleClick(screen.getByTestId(TestId.sidebar.sessionTitle))
+    const input = screen.getByRole('textbox', { name: 'Name' })
+
+    expect(fireEvent.contextMenu(input)).toBe(true)
+    expect(screen.queryByText('Move to project')).toBeNull()
+  })
+
+  test('leaves project moves out of a pinned chat menu', async () => {
+    render(
+      <MantineProvider>
+        <SessionItem session={{ ...session, starred: true, folderId: 'work' }} selected />
+      </MantineProvider>
+    )
+
+    fireEvent.contextMenu(screen.getByTestId(TestId.sidebar.sessionItem))
+
+    expect(await screen.findByText('Unpin')).toBeTruthy()
+    expect(screen.queryByText('Move to project')).toBeNull()
   })
 
   test.each(['desktop', 'web'] as const)(

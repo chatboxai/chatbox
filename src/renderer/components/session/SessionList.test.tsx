@@ -423,6 +423,25 @@ describe('SessionList folders', () => {
     expect(moveSessionToFolderMock).toHaveBeenCalledWith('w1', undefined)
   })
 
+  test('shows the projects header with a create button before any project exists', () => {
+    sessionListState.folders = []
+    sessionListState.sessions = [filed[2]]
+    renderList()
+
+    expect(screen.getByTestId(TestId.sidebar.projectsSection).textContent).toBe('Projects')
+    fireEvent.click(screen.getByTestId(TestId.sidebar.createProject))
+    expect(showModalMock).toHaveBeenCalledWith('session-folder-create')
+  })
+
+  test('keeps the projects header when there are no chats or projects', () => {
+    sessionListState.folders = []
+    sessionListState.sessions = []
+    renderList()
+
+    expect(screen.getByTestId(TestId.sidebar.createProject)).toBeTruthy()
+    expect(screen.queryByText('Chats')).toBeNull()
+  })
+
   test('reorders across folders through the row the chat is dropped on', async () => {
     renderList()
 

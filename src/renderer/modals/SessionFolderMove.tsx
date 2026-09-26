@@ -1,5 +1,6 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
 import { Button, Stack, Text } from '@mantine/core'
+import type { SessionFolder } from '@shared/types'
 import { IconFolder, IconFolderOff, IconFolderPlus } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { useState } from 'react'
@@ -7,12 +8,12 @@ import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
-import { createSessionFolder, moveSessionToFolder } from '@/stores/session/folders'
+import { moveSessionToFolder } from '@/stores/session/folders'
 import * as toastActions from '@/stores/toastActions'
 
 const useSessionFolders = () => rendererApplication.sessionHooks.useSessionFolders()
 
-/** Picks the folder a session is filed in, including "no folder" and a new folder. */
+/** Picks the project a session is filed in, including "no project" and a new project. */
 const SessionFolderMove = NiceModal.create((props: { sessionId: string; folderId?: string }) => {
   const modal = useModal()
   const { t } = useTranslation()
@@ -27,7 +28,7 @@ const SessionFolderMove = NiceModal.create((props: { sessionId: string; folderId
 
   const move = async (folderId: string | undefined) => {
     if (moving) return
-    // Compare with the stored value: "No folder" still clears a deleted folder's id.
+    // Compare with the stored value: "No project" still clears a deleted project's id.
     if (folderId === (props.folderId || undefined)) {
       close()
       return
@@ -45,9 +46,7 @@ const SessionFolderMove = NiceModal.create((props: { sessionId: string; folderId
   }
 
   const createAndMove = async () => {
-    const name = await NiceModal.show<string | null>('session-folder-name', { title: t('New folder') })
-    if (!name) return
-    const folder = await createSessionFolder(name)
+    const folder = await NiceModal.show<SessionFolder | null>('session-folder-create')
     if (folder) await move(folder.id)
   }
 
@@ -70,13 +69,19 @@ const SessionFolderMove = NiceModal.create((props: { sessionId: string; folderId
   )
 
   return (
-    <AdaptiveModal opened={modal.visible} onClose={close} centered title={t('Move to folder')}>
+    <AdaptiveModal
+      opened={modal.visible}
+      onClose={close}
+      onExitTransitionEnd={modal.remove}
+      centered
+      title={t('Move to project')}
+    >
       <Stack gap={2}>
-        {option('none', t('No folder'), IconFolderOff, currentFolderId === undefined, () => void move(undefined))}
+        {option('none', t('No project'), IconFolderOff, currentFolderId === undefined, () => void move(undefined))}
         {(folders ?? []).map((folder) =>
           option(folder.id, folder.name, IconFolder, folder.id === currentFolderId, () => void move(folder.id))
         )}
-        {option('new', t('New folder'), IconFolderPlus, false, () => void createAndMove())}
+        {option('new', t('New project'), IconFolderPlus, false, () => void createAndMove())}
       </Stack>
       <AdaptiveModal.Actions>
         <AdaptiveModal.CloseButton onClick={close} />

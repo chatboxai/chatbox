@@ -1,13 +1,27 @@
+import { directoryFolderName, findDirectoryFolder, normalizeWorkingDirectory } from '@chatbox/core/application/session'
 import type { SessionFolder } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { rendererApplication } from '@/app/renderer-application'
 import { uiStore } from '../uiStore'
 
-export async function createSessionFolder(name: string): Promise<SessionFolder | null> {
+/**
+ * Creates a project. With `workingDirectory`, Work Mode chats in that directory
+ * are filed into it, an empty `name` falls back to the directory's name, and a
+ * project that already collects the directory is returned instead of a new one.
+ */
+export async function createSessionFolder(name: string, workingDirectory?: string): Promise<SessionFolder | null> {
   if (!(await guardBackupWrite())) return null
-  const folder: SessionFolder = { id: uuidv4(), name }
-  await rendererApplication.sessions.updateSessionFolders((folders) => [...folders, folder])
+  const directory = workingDirectory ? normalizeWorkingDirectory(workingDirectory) : undefined
+  const id = uuidv4()
+  const folders = await rendererApplication.sessions.updateSessionFolders((current) => {
+    if (findDirectoryFolder(current, directory)) return null
+    const folderName = name || (directory ? directoryFolderName(directory, current) : '')
+    if (!folderName) return null
+    return [...current, { id, name: folderName, ...(directory ? { workingDirectory: directory } : {}) }]
+  })
+  const folder = findDirectoryFolder(folders, directory) ?? folders.find((item) => item.id === id) ?? null
+  if (folder) uiStore.getState().setSessionFolderCollapsed(folder.id, false)
   return folder
 }
 

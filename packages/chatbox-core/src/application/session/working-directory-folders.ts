@@ -1,7 +1,8 @@
 import { resolveSessionMode } from '../../session/mode-policy'
 import type { Session, SessionFolder } from '../../types'
 
-function normalizeDirectory(directory: string): string {
+/** The directory form folders are keyed by: trimmed, without trailing separators. */
+export function normalizeWorkingDirectory(directory: string): string {
   const trimmed = directory.trim()
   // Keep a filesystem root ("/", "C:\") intact; drop trailing separators elsewhere.
   const withoutTrailing = trimmed.replace(/[\\/]+$/, '')
@@ -15,7 +16,7 @@ function normalizeDirectory(directory: string): string {
 export function getSessionWorkingDirectory(session: Pick<Session, 'settings'>): string | undefined {
   if (resolveSessionMode(session.settings?.agentMode?.value) !== 'work') return undefined
   const directory = session.settings?.workingDirectories?.find((item) => item.trim().length > 0)
-  return directory === undefined ? undefined : normalizeDirectory(directory)
+  return directory === undefined ? undefined : normalizeWorkingDirectory(directory)
 }
 
 function directorySegments(directory: string): string[] {

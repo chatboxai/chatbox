@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 
-/** Asks for a folder name; resolves the trimmed name, or `null` when cancelled. */
+/** Asks for a project name; resolves the trimmed name, or `null` when cancelled. */
 const SessionFolderName = NiceModal.create((props: { title: string; initialName?: string }) => {
   const modal = useModal()
   const { t } = useTranslation()
@@ -19,11 +19,17 @@ const SessionFolderName = NiceModal.create((props: { title: string; initialName?
   }
 
   return (
-    <AdaptiveModal opened={modal.visible} onClose={() => close(null)} centered title={props.title}>
+    <AdaptiveModal
+      opened={modal.visible}
+      onClose={() => close(null)}
+      onExitTransitionEnd={modal.remove}
+      centered
+      title={props.title}
+    >
       <TextInput
         autoFocus={!isSmallScreen}
-        aria-label={t('Folder name') || undefined}
-        placeholder={t('Folder name') || undefined}
+        aria-label={t('Project name') || undefined}
+        placeholder={t('Project name') || undefined}
         value={name}
         onChange={(event) => setName(event.currentTarget.value)}
         onKeyDown={(event) => {

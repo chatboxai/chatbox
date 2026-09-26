@@ -114,9 +114,9 @@ export const KnowledgeBaseLoading: StoryObj<typeof ToolCallPartUI> = {
   name: 'Knowledge Base — Loading',
   args: {
     part: makeToolCallPart({
-      toolName: 'query_knowledge_base',
+      toolName: 'knowledge_base',
       state: 'call',
-      args: { query: 'authentication flow' },
+      args: { command: 'search', query: 'authentication flow' },
     }),
   },
 }

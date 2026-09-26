@@ -4,6 +4,7 @@
  */
 
 import { BUILT_IN_BROWSER_TOOL_NAME, builtInBrowserCommandOf } from './built-in-browser'
+import { KNOWLEDGE_BASE_TOOL_NAME, knowledgeBaseCommandOf } from './tools/knowledge-base'
 
 export type WorkActivityAction =
   | 'commands'
@@ -69,6 +70,7 @@ function isImageCliCall(args: unknown): boolean {
 export function classifyWorkActivity(toolName: string, args?: unknown): WorkActivityAction {
   if (toolName === 'chatbox_cli') return isImageCliCall(args) ? 'images' : 'tools'
   if (toolName === BUILT_IN_BROWSER_TOOL_NAME) return builtInBrowserCommandOf(args) === 'run' ? 'tools' : 'pages'
+  if (toolName === KNOWLEDGE_BASE_TOOL_NAME) return knowledgeBaseCommandOf(args) === 'read' ? 'files' : 'fileSearch'
   if (IMAGE_TOOLS.has(toolName)) return 'images'
   if (COMMAND_TOOLS.has(toolName)) return 'commands'
   if (EDIT_TOOLS.has(toolName)) return 'edits'

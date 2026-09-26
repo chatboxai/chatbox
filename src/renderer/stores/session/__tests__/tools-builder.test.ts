@@ -203,8 +203,7 @@ vi.mock('@/packages/model-calls/toolsets/filesystem', () => ({
 
 vi.mock('@/packages/model-calls/toolsets/knowledge-base', () => ({
   getToolSet: async () => ({
-    description: 'kb toolset',
-    tools: { kb_search: { execute: async () => ({}) } },
+    tools: { knowledge_base: { execute: async () => ({}) } },
   }),
 }))
 
@@ -588,8 +587,7 @@ describe('buildToolsForSession', () => {
       agentMode: 'off',
     })
 
-    expect(result.tools.kb_search).toBeDefined()
-    expect(result.instructions).toContain('kb toolset')
+    expect(result.tools.knowledge_base).toBeDefined()
     expect(result.tools.mcp_tool).toBeUndefined()
     expect(result.tools.load_skill).toBeUndefined()
     expect(result.tools.user_exec).toBeUndefined()
@@ -608,7 +606,7 @@ describe('buildToolsForSession', () => {
     })
 
     expect(result.tools.web_search).toBeDefined()
-    expect(result.tools.kb_search).toBeDefined()
+    expect(result.tools.knowledge_base).toBeDefined()
     expect(result.tools.mcp_tool).toBeUndefined()
     expect(result.tools.load_skill).toBeUndefined()
   })
@@ -631,7 +629,7 @@ describe('buildToolsForSession', () => {
 
     expect(result.tools.load_skill).toBeDefined()
     expect(result.tools.mcp_tool).toBeDefined()
-    expect(result.tools.kb_search).toBeUndefined()
+    expect(result.tools.knowledge_base).toBeUndefined()
     // Sandbox tools NOT present when code_execution is active
     for (const name of sandboxToolNames) {
       expect(result.tools[name]).toBeUndefined()
@@ -798,7 +796,7 @@ describe('buildToolsForSession', () => {
       agentMode: 'on',
     })
 
-    expect(result.tools.kb_search).toBeDefined()
+    expect(result.tools.knowledge_base).toBeDefined()
     expect(result.tools.mcp_tool).toBeDefined()
     expect(result.tools.load_skill).toBeDefined()
     expect(result.tools.list_files).toBeDefined()

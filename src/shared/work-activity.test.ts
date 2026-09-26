@@ -49,6 +49,12 @@ describe('classifyWorkActivity', () => {
       'tools'
     )
   })
+
+  it('counts knowledge base searches and listings as file searches and reads as files', () => {
+    expect(classifyWorkActivity('knowledge_base', { command: 'search', query: 'pricing' })).toBe('fileSearch')
+    expect(classifyWorkActivity('knowledge_base', { command: 'list' })).toBe('fileSearch')
+    expect(classifyWorkActivity('knowledge_base', { command: 'read', fileId: 7 })).toBe('files')
+  })
 })
 
 describe('dominantWorkActivity', () => {

@@ -6,6 +6,7 @@ import { workExecutionFeedback } from '@shared/mobile-work/execution-feedback'
 import { ChatboxAIAPIError } from '@shared/models/errors'
 import { SANDBOX_EXEC_ERROR_CODES } from '@shared/sandbox-provider'
 import { getToolResultImageReference } from '@shared/tool-result-image'
+import { KNOWLEDGE_BASE_TOOL_NAME, knowledgeBaseCommandOf } from '@shared/tools/knowledge-base'
 import type { MessageToolCallPart } from '@shared/types'
 import { getWorkArtifacts } from '@shared/work-artifacts'
 import { stepNeedsUserAction } from '@shared/work-timeline'
@@ -261,10 +262,14 @@ const toolIconMap: Record<string, React.ElementType> = {
 
 const browserCommandIconMap = { read: IconBrowser, run: IconCode, screenshot: IconPhoto }
 
+const knowledgeBaseCommandIconMap = { search: IconDatabase, read: IconFile, list: IconFileSearch }
+
 const getToolIcon = (toolName: string, args?: unknown) =>
   toolName === BUILT_IN_BROWSER_TOOL_NAME
     ? browserCommandIconMap[builtInBrowserCommandOf(args) ?? 'read']
-    : toolIconMap[toolName] || IconCode
+    : toolName === KNOWLEDGE_BASE_TOOL_NAME
+      ? knowledgeBaseCommandIconMap[knowledgeBaseCommandOf(args) ?? 'search']
+      : toolIconMap[toolName] || IconCode
 
 /** parse_link and the browser's read command both return a page's text. */
 const isPageReadPart = (part: MessageToolCallPart) =>
@@ -1562,7 +1567,17 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
           ? getFirstStringValue(part.result, ['file_path']) || getFirstStringValue(part.args, ['file_path'])
           : part.toolName === 'parse_link' || part.toolName === BUILT_IN_BROWSER_TOOL_NAME
             ? getFirstStringValue(part.args, ['url']) || getFirstStringValue(part.result, ['title', 'url'])
-            : getFirstStringValue(part.args, ['path', 'file_path', 'query', 'pattern', 'command', 'skillName', 'name'])
+            : part.toolName === KNOWLEDGE_BASE_TOOL_NAME
+              ? getFirstStringValue(part.args, ['query']) || getFirstStringValue(part.result, ['filename'])
+              : getFirstStringValue(part.args, [
+                  'path',
+                  'file_path',
+                  'query',
+                  'pattern',
+                  'command',
+                  'skillName',
+                  'name',
+                ])
 
   const resultSummary =
     !argSummary && part.state === 'result'

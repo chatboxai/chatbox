@@ -111,13 +111,14 @@ export async function applyLegacyToolFallback(
       signal
     )
     if (callResult.searchResults.length && callResult.type !== 'none') {
-      const toolName = callResult.type === 'knowledge_base' ? 'query_knowledge_base' : 'web_search'
+      const isKnowledgeBase = callResult.type === 'knowledge_base'
+      const toolName = isKnowledgeBase ? 'knowledge_base' : 'web_search'
       fallbackToolCallPart = {
         type: 'tool-call',
         state: 'result',
         toolCallId: `${toolName}_${dependencies.createUniqueId()}`,
         toolName,
-        args: { query: callResult.query },
+        args: isKnowledgeBase ? { command: 'search', query: callResult.query } : { query: callResult.query },
         result: callResult,
       }
       promptMsgs =
@@ -136,9 +137,9 @@ export async function applyLegacyToolFallback(
       fallbackToolCallPart = {
         type: 'tool-call',
         state: 'result',
-        toolCallId: `query_knowledge_base_${dependencies.createUniqueId()}`,
-        toolName: 'query_knowledge_base',
-        args: { query: callResult.query },
+        toolCallId: `knowledge_base_${dependencies.createUniqueId()}`,
+        toolName: 'knowledge_base',
+        args: { command: 'search', query: callResult.query },
         result: callResult,
       }
       promptMsgs = dependencies.constructMessagesWithKnowledgeBaseResults(promptMsgs, callResult.searchResults)

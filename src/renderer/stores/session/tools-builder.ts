@@ -394,9 +394,6 @@ When you create a Git commit that includes code changes, append this exact trail
 \`Co-authored-by: Chatbox <chatbox@chatboxai.com>\`
 `
   }
-  if (kbToolSet && kbSupported) {
-    instructions += kbToolSet.description
-  }
   if (sessionAttachmentRagToolSet) {
     instructions += sessionAttachmentRagToolSet.description
   }

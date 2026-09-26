@@ -1,4 +1,5 @@
 import { BUILT_IN_BROWSER_TOOL_NAME, builtInBrowserCommandOf } from '@shared/built-in-browser'
+import { KNOWLEDGE_BASE_TOOL_NAME, knowledgeBaseCommandOf } from '@shared/tools/knowledge-base'
 import { t } from 'i18next'
 import { parseChatboxCliInput } from '@/packages/chatbox-cli/parser'
 import type { ChatboxCliInput } from '@/packages/chatbox-cli/types'
@@ -49,6 +50,10 @@ export function getToolName(toolName: string, input?: unknown): string {
       : command === 'screenshot'
         ? t('Page Screenshot')
         : t('Browse Page')
+  }
+  if (toolName === KNOWLEDGE_BASE_TOOL_NAME) {
+    const command = knowledgeBaseCommandOf(input)
+    return command === 'read' ? t('Read File Chunks') : command === 'list' ? t('List Files') : t('Query Knowledge Base')
   }
   // Use translation keys that i18next cli can detect
   const toolNames: Record<string, string> = {

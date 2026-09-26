@@ -504,6 +504,8 @@ export const SessionFolderSchema = z.object({
   // Work Mode directory this folder collects; the folder's identity for
   // automatic filing, independent of its editable name.
   workingDirectory: z.string().optional(),
+  // Stable copilot identity, independent of the editable folder name.
+  copilotId: z.string().optional(),
 })
 
 export const SessionMetaPageSchema = z.object({

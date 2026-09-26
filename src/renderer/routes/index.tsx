@@ -290,39 +290,43 @@ function Index() {
       // continue the last explicit choice remembered from any earlier chat.
       const effectiveApprovalMode = newSessionState.commandApprovalMode ?? newSessionCommandApprovalModeDefault
       const effectiveWorkingDirectories = newSessionState.workingDirectories ?? newSessionWorkingDirectoriesDefault
-      const newSession = await rendererApplication.sessions.createSession({
-        name: options?.name ?? session.name,
-        type: 'chat',
-        assistantAvatarKey: session.assistantAvatarKey,
-        picUrl: session.picUrl,
-        backgroundImage: session.backgroundImage,
-        messages: options?.messages ?? session.messages,
-        copilotId: session.copilotId,
-        threadName: options?.threadName ?? session.threadName ?? '',
-        settings: {
-          ...session.settings,
-          ...options?.settingsPatch,
-          // Bake the exact mode shown while the chat was "new" into the created session, so
-          // remembered defaults and transient selections follow the same resolution path.
-          agentMode: getSessionAgentModeEntry('new', undefined, sessionAgentModeMap),
-          ...(newSessionState.localWorkCapabilities !== undefined
-            ? { localWorkCapabilities: newSessionState.localWorkCapabilities }
-            : {}),
-          // Working directories bound while the chat was still "new" (not yet persisted),
-          // falling back to the remembered default from earlier chats.
-          ...(effectiveWorkingDirectories?.length ? { workingDirectories: effectiveWorkingDirectories } : {}),
-          ...(effectiveApprovalMode
-            ? {
-                commandApprovalMode: effectiveApprovalMode,
-                // Keep the legacy flag in lockstep for older readers.
-                ...(effectiveApprovalMode === 'full_access' ? { agentFullAccess: true } : {}),
-              }
-            : newSessionState.agentFullAccess
-              ? { agentFullAccess: true }
+      const newSession = await rendererApplication.sessions.createSession(
+        {
+          name: options?.name ?? session.name,
+          type: 'chat',
+          assistantAvatarKey: session.assistantAvatarKey,
+          picUrl: session.picUrl,
+          backgroundImage: session.backgroundImage,
+          messages: options?.messages ?? session.messages,
+          copilotId: session.copilotId,
+          threadName: options?.threadName ?? session.threadName ?? '',
+          settings: {
+            ...session.settings,
+            ...options?.settingsPatch,
+            // Bake the exact mode shown while the chat was "new" into the created session, so
+            // remembered defaults and transient selections follow the same resolution path.
+            agentMode: getSessionAgentModeEntry('new', undefined, sessionAgentModeMap),
+            ...(newSessionState.localWorkCapabilities !== undefined
+              ? { localWorkCapabilities: newSessionState.localWorkCapabilities }
               : {}),
-          ...options?.settingsOverride,
+            // Working directories bound while the chat was still "new" (not yet persisted),
+            // falling back to the remembered default from earlier chats.
+            ...(effectiveWorkingDirectories?.length ? { workingDirectories: effectiveWorkingDirectories } : {}),
+            ...(effectiveApprovalMode
+              ? {
+                  commandApprovalMode: effectiveApprovalMode,
+                  // Keep the legacy flag in lockstep for older readers.
+                  ...(effectiveApprovalMode === 'full_access' ? { agentFullAccess: true } : {}),
+                }
+              : newSessionState.agentFullAccess
+                ? { agentFullAccess: true }
+                : {}),
+            ...options?.settingsOverride,
+          },
         },
-      })
+        undefined,
+        { copilotName: session.copilotId ? session.name : undefined }
+      )
 
       if (session.copilotId) {
         void remote

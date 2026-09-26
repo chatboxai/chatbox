@@ -115,6 +115,10 @@ const memoryTokens = createMirroredListAtom<CopilotMemoryStateToken>(
   parseCopilotMemoryStateTokens
 )
 
+export async function getCopilotName(copilotId: string): Promise<string | undefined> {
+  return (await myCopilots.read()).find((copilot) => copilot.id === copilotId)?.name
+}
+
 export const myCopilotsAtom = myCopilots.atom
 export const copilotMemoryOwnersAtom = memoryOwners.atom
 export const copilotMemoryTokensAtom = memoryTokens.atom

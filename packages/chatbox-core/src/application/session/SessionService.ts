@@ -61,6 +61,8 @@ export interface SessionServiceOptions {
   repairSessionOnRead?: (session: Session) => { session: Session; changed: boolean }
   /** Durable folder definitions. Without it folders live for the process only. */
   folders?: SessionFolderStorePort
+  /** Current saved copilot name, independent of conversation and thread titles. */
+  getCopilotName?: (copilotId: string) => Promise<string | undefined>
 }
 
 function createMemoryFolderStore(): SessionFolderStorePort {
@@ -318,6 +320,32 @@ export class SessionService {
     return findDirectoryFolder(folders, directory)?.id
   }
 
+  /** New copilot conversations share a folder keyed by the copilot's identity. */
+  private async resolveCopilotFolder(session: Session, copilotName?: string): Promise<string | undefined> {
+    const copilotId = session.copilotId
+    if (!this.options.folders || !copilotId || getSessionWorkingDirectory(session) !== undefined) return undefined
+    try {
+      if (session.folderId && (await this.listSessionFolders()).some((folder) => folder.id === session.folderId)) {
+        return undefined
+      }
+      const existing = (await this.listSessionFolders()).find((folder) => folder.copilotId === copilotId)
+      if (existing) return existing.id
+      const name = copilotName?.trim() || (await this.options.getCopilotName?.(copilotId))?.trim()
+      const folders = await this.updateSessionFolders((current) =>
+        !name || current.some((folder) => folder.copilotId === copilotId)
+          ? null
+          : [...current, { id: this.options.createId(), name, copilotId }]
+      )
+      return folders.find((folder) => folder.copilotId === copilotId)?.id
+    } catch (error) {
+      await this.log('warn', 'Failed to file session by copilot', {
+        sessionId: session.id,
+        error: describeError(error),
+      })
+      return undefined
+    }
+  }
+
   /**
    * Folder a Work Mode session should be filed in after its working directory
    * became `directory`, or `undefined` when its current placement stays: a
@@ -333,7 +361,12 @@ export class SessionService {
     try {
       if (session.folderId) {
         const current = (await this.listSessionFolders()).find((folder) => folder.id === session.folderId)
-        if (current && (previousDirectory === undefined || current.workingDirectory !== previousDirectory)) {
+        const followsCopilot = session.copilotId !== undefined && current?.copilotId === session.copilotId
+        if (
+          current &&
+          !followsCopilot &&
+          (previousDirectory === undefined || current.workingDirectory !== previousDirectory)
+        ) {
           return undefined
         }
       }
@@ -415,7 +448,12 @@ export class SessionService {
     return items
   }
 
-  async createSession(newSession: Omit<Session, 'id'>, previousId?: string): Promise<Session> {
+  /** `copilotName` comes from the selected definition, independently of the conversation title. */
+  async createSession(
+    newSession: Omit<Session, 'id'>,
+    previousId?: string,
+    options?: { copilotName?: string }
+  ): Promise<Session> {
     await this.initialize()
     const lastUsedModels = this.getLastUsedModels()
     const session: Session = {
@@ -432,6 +470,8 @@ export class SessionService {
 
     const directoryFolderId = await this.resolveDirectoryFolder(session, undefined)
     if (directoryFolderId) session.folderId = directoryFolderId
+    const copilotFolderId = await this.resolveCopilotFolder(session, options?.copilotName)
+    if (copilotFolderId) session.folderId = copilotFolderId
 
     const record = await this.writes.create(session, async () => {
       await this.repository.setSession(session)

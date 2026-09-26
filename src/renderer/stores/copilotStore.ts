@@ -12,6 +12,7 @@ export {
   addOrUpdateMyCopilot,
   copilotMemoryOwnersAtom,
   copilotMemoryTokensAtom,
+  getCopilotName,
   myCopilotsAtom,
   removeMyCopilot,
 } from './memoryRuntime'

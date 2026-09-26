@@ -10,6 +10,7 @@ import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import { createRendererQueryLifecycle } from '@/react-bindings/renderer-query-lifecycle'
 import { authInfoStore } from '@/stores/authInfoStore'
+import { getCopilotName } from '@/stores/copilotStore'
 import { initLastUsedModelStore, lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { reportError } from '@/utils/sentry'
 import { recoverSessionOnLoad } from '@/utils/session-utils'
@@ -53,6 +54,7 @@ const common: Omit<CreateRendererApplicationOptions, 'host'> = {
     createId: uuidv4,
     logger: getLogger('session-service'),
     folders: rendererSessionFolderStore,
+    getCopilotName,
     repairSessionOnRead: (session) => {
       const recovery = recoverSessionOnLoad(session)
       const backfill = backfillMissingThreadName(recovery.session)

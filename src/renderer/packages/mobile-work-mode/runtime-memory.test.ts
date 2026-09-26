@@ -19,6 +19,7 @@ function memory() {
 }
 
 vi.mock('@/stores/copilotStore', () => ({
+  getCopilotName: vi.fn().mockResolvedValue(undefined),
   getCopilotMemorySelection: (id: string | undefined) => memory().getCopilotMemorySelection(id),
 }))
 vi.mock('@/stores/memoryRuntime', () => ({

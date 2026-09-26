@@ -41,6 +41,7 @@ import {
   enableCopilotMemory,
   getCopilotMemoryScope,
   getCopilotMemorySelection,
+  getCopilotName,
   getPausedCallMemoryScope,
   myCopilotsAtom,
   reloadCopilotState,
@@ -65,6 +66,18 @@ describe('copilot store', () => {
     setItem.mockClear()
     setItemNow.mockClear()
     copilotMemoryEpoch.mockClear().mockReturnValue(0)
+  })
+
+  test('resolves directory names from current definitions and restored definitions', async () => {
+    await expect(getCopilotName('cp1')).resolves.toBe('Tutor')
+    await expect(getCopilotName('missing')).resolves.toBeUndefined()
+    await getDefaultStore().set(myCopilotsAtom, [{ ...copilot, name: 'Renamed tutor' }])
+    await expect(getCopilotName('cp1')).resolves.toBe('Renamed tutor')
+    persisted.set('myCopilots', [{ ...copilot, name: 'Restored tutor' }])
+    await reloadCopilotState()
+    await expect(getCopilotName('cp1')).resolves.toBe('Restored tutor')
+    await removeMyCopilot('cp1')
+    await expect(getCopilotName('cp1')).resolves.toBeUndefined()
   })
 
   test('sessions without a copilot stay on the global store', async () => {

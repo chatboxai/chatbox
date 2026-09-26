@@ -56,11 +56,11 @@ describe('SQLiteSessionMetaStorage', () => {
       [
         {
           statement: expect.stringContaining('INSERT OR REPLACE INTO session_meta'),
-          values: ['a', 'Test Session', 0, 0, null, null, null, null, 'chat', 100, 100, 0],
+          values: ['a', 'Test Session', 0, 0, null, null, null, null, null, 'chat', 100, 100, 0],
         },
         {
           statement: expect.stringContaining('INSERT OR REPLACE INTO session_meta'),
-          values: ['b', 'Test Session', 1, 0, null, null, null, null, 'chat', 100, 100, 0],
+          values: ['b', 'Test Session', 1, 0, null, null, null, null, null, 'chat', 100, 100, 0],
         },
       ],
       true
@@ -111,6 +111,7 @@ describe('SQLiteSessionMetaStorage', () => {
     await storage.initialize()
 
     expect(mockDatabase.execute).toHaveBeenCalledWith('ALTER TABLE session_meta ADD COLUMN archived_at INTEGER')
+    expect(mockDatabase.execute).toHaveBeenCalledWith('ALTER TABLE session_meta ADD COLUMN folder_id TEXT')
     expect(mockDatabase.execute).toHaveBeenCalledWith(
       'ALTER TABLE session_meta ADD COLUMN recovery_archived INTEGER NOT NULL DEFAULT 0'
     )
@@ -127,6 +128,7 @@ describe('SQLiteSessionMetaStorage', () => {
       0,
       1,
       100,
+      null,
       null,
       null,
       null,
@@ -182,6 +184,7 @@ describe('SQLiteSessionMetaStorage', () => {
       'Test Session',
       0,
       0,
+      null,
       null,
       null,
       null,

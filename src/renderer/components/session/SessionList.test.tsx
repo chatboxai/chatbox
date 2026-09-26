@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import type { SessionMetaRecord } from '@shared/types'
+import type { SessionFolder, SessionMetaRecord } from '@shared/types'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -10,15 +11,25 @@ type DndContextHandlers = {
   onDragEnd?: (event: { active: { id: string }; over: { id: string } | null }) => Promise<void>
 }
 
-const { dndContextState, reorderSessionsMock, sessionListState, sortablePointerDownMock, useSortableMock } = vi.hoisted(
-  () => ({
-    dndContextState: { handlers: null as DndContextHandlers | null },
-    reorderSessionsMock: vi.fn(),
-    sessionListState: { sessions: [] as SessionMetaRecord[] },
-    sortablePointerDownMock: vi.fn(),
-    useSortableMock: vi.fn(),
-  })
-)
+const {
+  dndContextState,
+  foldersState,
+  reorderSessionsMock,
+  sessionListState,
+  sortableContextState,
+  sortablePointerDownMock,
+  uiStoreState,
+  useSortableMock,
+} = vi.hoisted(() => ({
+  dndContextState: { handlers: null as DndContextHandlers | null },
+  foldersState: { folders: [] as SessionFolder[] },
+  reorderSessionsMock: vi.fn(),
+  sessionListState: { sessions: [] as SessionMetaRecord[] },
+  sortableContextState: { items: [] as string[] },
+  sortablePointerDownMock: vi.fn(),
+  uiStoreState: { collapsedFolders: {} as Record<string, boolean | undefined> },
+  useSortableMock: vi.fn(),
+}))
 
 vi.mock('@dnd-kit/core', async () => {
   const React = await import('react')
@@ -41,8 +52,10 @@ vi.mock('@dnd-kit/core', async () => {
 vi.mock('@dnd-kit/sortable', async () => {
   const React = await import('react')
   return {
-    SortableContext: ({ children }: { children: React.ReactNode }) =>
-      React.createElement(React.Fragment, null, children),
+    SortableContext: ({ children, items }: { children: React.ReactNode; items: string[] }) => {
+      sortableContextState.items = items
+      return React.createElement(React.Fragment, null, children)
+    },
     sortableKeyboardCoordinates: vi.fn(),
     useSortable: useSortableMock,
     verticalListSortingStrategy: {},
@@ -85,6 +98,13 @@ vi.mock('@/app/renderer-application', () => ({
   },
 }))
 vi.mock('@/stores/session/crud', () => ({ reorderSessions: reorderSessionsMock }))
+vi.mock('@/stores/sessionFolders', () => ({
+  useFolders: () => ({ folders: foldersState.folders, isLoading: false }),
+}))
+vi.mock('@/stores/uiStore', () => ({
+  useUIStore: (selector: (state: { collapsedFolders: Record<string, boolean | undefined> }) => unknown) =>
+    selector({ collapsedFolders: uiStoreState.collapsedFolders }),
+}))
 vi.mock('@tanstack/react-router', () => ({
   useRouterState: () => ({ location: { pathname: '/session/session-1' } }),
 }))
@@ -111,18 +131,27 @@ vi.mock('./SessionItem', async () => {
   }
 })
 
+vi.mock('./FolderHeader', async () => {
+  const React = await import('react')
+  return {
+    default: ({ folder }: { folder: SessionFolder }) =>
+      React.createElement('div', { 'data-testid': `folder-header-${folder.id}` }, folder.name),
+  }
+})
+
 import SessionList from './SessionList'
 
 const sessions: SessionMetaRecord[] = [
   { id: 'session-1', name: 'Pinned session', sortOrder: 1, starred: true, createdAt: 1 },
   { id: 'session-2', name: 'Regular session', sortOrder: 2, starred: false, createdAt: 2 },
 ]
-
 function renderList() {
   const sessionListViewportRef = { current: null }
   return render(
     <MantineProvider>
-      <SessionList sessionListViewportRef={sessionListViewportRef} />
+      <QueryClientProvider client={new QueryClient()}>
+        <SessionList sessionListViewportRef={sessionListViewportRef} />
+      </QueryClientProvider>
     </MantineProvider>
   )
 }
@@ -153,6 +182,8 @@ describe('SessionList mobile reorder mode', () => {
     })
     dndContextState.handlers = null
     sessionListState.sessions = sessions
+    foldersState.folders = []
+    uiStoreState.collapsedFolders = {}
     reorderSessionsMock.mockResolvedValue(undefined)
     useSortableMock.mockImplementation(({ disabled, id }: { disabled?: boolean; id: string }) => ({
       attributes: {
@@ -204,7 +235,7 @@ describe('SessionList mobile reorder mode', () => {
     expect(overlayContent?.className).toContain('shadow-lg')
   })
 
-  test('keeps pinned and regular sessions in separate reorder groups', async () => {
+  test('forwards cross-group drag ends to reorderSessions (the store layer guards groups)', async () => {
     renderList()
 
     await act(async () => {
@@ -214,6 +245,126 @@ describe('SessionList mobile reorder mode', () => {
       })
     })
 
+    expect(reorderSessionsMock).toHaveBeenCalledWith('session-1', 'session-2')
+  })
+
+  test('drops same-position drag ends without calling reorderSessions', async () => {
+    renderList()
+
+    await act(async () => {
+      await dndContextState.handlers?.onDragEnd?.({
+        active: { id: 'session-1' },
+        over: { id: 'session-1' },
+      })
+    })
+
     expect(reorderSessionsMock).not.toHaveBeenCalled()
+  })
+})
+
+const folderA: SessionFolder = { id: 'folder-a', name: 'Folder A', sortOrder: 2000, createdAt: 1 }
+
+describe('SessionList folder grouping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        addEventListener: vi.fn(),
+        addListener: vi.fn(),
+        dispatchEvent: vi.fn(() => false),
+        matches: false,
+        media: query,
+        onchange: null,
+        removeEventListener: vi.fn(),
+        removeListener: vi.fn(),
+      })),
+    })
+    dndContextState.handlers = null
+    foldersState.folders = [folderA]
+    uiStoreState.collapsedFolders = {}
+    sortableContextState.items = []
+    reorderSessionsMock.mockResolvedValue(undefined)
+    useSortableMock.mockImplementation(({ id }: { disabled?: boolean; id: string }) => ({
+      attributes: { role: 'button', tabIndex: 0 },
+      isDragging: false,
+      listeners: {},
+      setActivatorNodeRef: vi.fn(),
+      setNodeRef: vi.fn(),
+      transform: null,
+      transition: undefined,
+      id,
+    }))
+  })
+
+  test('renders a filed session under its folder and not in Chats', () => {
+    sessionListState.sessions = [
+      { id: 'filed-session', name: 'Filed session', sortOrder: 1, createdAt: 1, folderId: 'folder-a' },
+      { id: 'unfiled-session', name: 'Unfiled session', sortOrder: 2, createdAt: 2 },
+    ]
+    renderList()
+
+    expect(screen.getByTestId('folder-header-folder-a')).toBeTruthy()
+
+    const filedRow = getSortableRow('filed-session')
+    const folderHeader = screen.getByTestId('folder-header-folder-a')
+    const chatsHeader = screen.getByText('Chats')
+    const unfiledRow = getSortableRow('unfiled-session')
+
+    // DOM order: folder header, filed child, Chats section, unfiled child.
+    expect(filedRow.compareDocumentPosition(folderHeader) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    expect(chatsHeader.compareDocumentPosition(filedRow) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    expect(unfiledRow.compareDocumentPosition(chatsHeader) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+
+    // sortableSessionIds follows mounted order: filed session first, then unfiled.
+    expect(sortableContextState.items).toEqual(['filed-session', 'unfiled-session'])
+  })
+
+  test('falls back an orphan folderId to the Chats section (folder not loaded/deleted)', () => {
+    sessionListState.sessions = [
+      { id: 'orphan-session', name: 'Orphan session', sortOrder: 1, createdAt: 1, folderId: 'missing-folder' },
+      { id: 'unfiled-session', name: 'Unfiled session', sortOrder: 2, createdAt: 2 },
+    ]
+    renderList()
+
+    // Folder A exists (so the Chats section header renders) but orphan points elsewhere.
+    expect(screen.queryByTestId('folder-header-missing-folder')).toBeNull()
+    const chatsHeader = screen.getByText('Chats')
+    const orphanRow = getSortableRow('orphan-session')
+    const unfiledRow = getSortableRow('unfiled-session')
+    expect(orphanRow.compareDocumentPosition(chatsHeader) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    expect(unfiledRow.compareDocumentPosition(chatsHeader) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+
+    // The orphan still participates in sorting as a mounted chat.
+    expect(sortableContextState.items).toEqual(['orphan-session', 'unfiled-session'])
+  })
+
+  test('falls back sessions to Chats while folders are still loading (folders not loaded yet)', () => {
+    foldersState.folders = []
+    sessionListState.sessions = [
+      { id: 'orphan-session', name: 'Orphan session', sortOrder: 1, createdAt: 1, folderId: 'folder-a' },
+    ]
+    renderList()
+
+    // No folder header mounted; the session must still be visible under Chats
+    // (without a section header, since no groups exist in the loading window).
+    expect(screen.queryByTestId('folder-header-folder-a')).toBeNull()
+    expect(screen.queryByText('Chats')).toBeNull()
+    expect(screen.getByTestId('session-content-orphan-session')).toBeTruthy()
+    expect(sortableContextState.items).toEqual(['orphan-session'])
+  })
+
+  test('omits children of a collapsed folder from the list and the sortable ids', () => {
+    uiStoreState.collapsedFolders = { 'folder-a': true }
+    sessionListState.sessions = [
+      { id: 'filed-session', name: 'Filed session', sortOrder: 1, createdAt: 1, folderId: 'folder-a' },
+      { id: 'unfiled-session', name: 'Unfiled session', sortOrder: 2, createdAt: 2 },
+    ]
+    renderList()
+
+    expect(screen.getByTestId('folder-header-folder-a')).toBeTruthy()
+    expect(screen.queryByTestId('session-content-filed-session')).toBeNull()
+    expect(screen.getByTestId('session-content-unfiled-session')).toBeTruthy()
+    expect(sortableContextState.items).toEqual(['unfiled-session'])
   })
 })

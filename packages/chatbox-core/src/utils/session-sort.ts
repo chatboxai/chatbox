@@ -1,10 +1,19 @@
 import type { SessionMeta, SessionMetaRecord } from '../types/session'
 
-export function areSessionsInSamePinGroup(
-  first: Pick<SessionMeta, 'starred'> | undefined,
-  second: Pick<SessionMeta, 'starred'> | undefined
+/**
+ * Drag-reorder guard for the folder-aware sidebar: two sessions can only swap
+ * positions when they share the same visual group — both pinned, or both
+ * unpinned and filed into the same folder (null folderId = unfiled "Chats").
+ */
+export function areSessionsInSameDragGroup(
+  first: Pick<SessionMeta, 'starred' | 'folderId'> | undefined,
+  second: Pick<SessionMeta, 'starred' | 'folderId'> | undefined
 ): boolean {
-  return first !== undefined && second !== undefined && (first.starred === true) === (second.starred === true)
+  if (first === undefined || second === undefined) return false
+  if (first.starred === true || second.starred === true) {
+    return first.starred === true && second.starred === true
+  }
+  return (first.folderId ?? null) === (second.folderId ?? null)
 }
 
 export function uniqueSessionRecords<T extends { id: string }>(records: T[]): T[] {

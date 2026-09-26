@@ -445,6 +445,7 @@ export const SessionSchema = z.object({
   starred: z.boolean().optional(),
   hidden: z.boolean().optional(), // Hidden from session list (e.g., migrated picture sessions)
   archivedAt: z.number().optional(),
+  folderId: z.string().optional(),
   copilotId: z.string().optional(),
   assistantAvatarKey: z.string().optional(),
   backgroundImage: ImageSourceSchema.optional(),
@@ -461,6 +462,7 @@ export const SessionMetaSchema = SessionSchema.pick({
   starred: true,
   hidden: true,
   archivedAt: true,
+  folderId: true,
   assistantAvatarKey: true,
   picUrl: true,
   backgroundImage: true,
@@ -478,6 +480,15 @@ export const SessionMetaPageSchema = z.object({
   items: z.array(SessionMetaRecordSchema),
   nextCursor: z.number().nullable(),
   total: z.number(),
+})
+
+// Sidebar session folder: a flat (non-nested) group that sessions can be filed into.
+// Stored as a single KV blob (see StorageKey.SessionFolders), not in SessionMetaStorage.
+export const SessionFolderSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  sortOrder: z.number(),
+  createdAt: z.number(),
 })
 
 export const SessionThreadBriefSchema = z.object({
@@ -526,6 +537,7 @@ export type SessionType = z.infer<typeof SessionTypeSchema>
 export type CompactionPoint = z.infer<typeof CompactionPointSchema>
 export type Session = z.infer<typeof SessionSchema>
 export type SessionMeta = z.infer<typeof SessionMetaSchema>
+export type SessionFolder = z.infer<typeof SessionFolderSchema>
 export type SessionMetaRecord = z.infer<typeof SessionMetaRecordSchema>
 export type SessionMetaPage = z.infer<typeof SessionMetaPageSchema>
 export type SessionThread = z.infer<typeof SessionThreadSchema>

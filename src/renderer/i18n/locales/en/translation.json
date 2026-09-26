@@ -1439,5 +1439,15 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Used for automatic and manual compression. Leave empty to use the built-in prompt.",
   "Compaction Prompt": "Compaction Prompt",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Summarize earlier messages to reduce context usage. Your conversation history will remain available.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.",
+  "New Folder": "New Folder",
+  "Move to Folder": "Move to Folder",
+  "Remove from Folder": "Remove from Folder",
+  "Rename Folder": "Rename Folder",
+  "Delete Folder": "Delete Folder",
+  "Folder Name": "Folder Name",
+  "No folders yet. Create one to group your conversations.": "No folders yet. Create one to group your conversations.",
+  "Add Chats to Folder": "Add Chats to Folder",
+  "In another folder": "In another folder",
+  "No conversations found.": "No conversations found."
 }

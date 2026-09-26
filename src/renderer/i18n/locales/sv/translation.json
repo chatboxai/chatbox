@@ -1440,5 +1440,15 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Används för automatisk och manuell komprimering. Lämna tomt för att använda den inbyggda prompten.",
   "Compaction Prompt": "Komprimeringsprompt",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Sammanfatta tidigare meddelanden för att minska kontextanvändningen. Samtalshistoriken är fortfarande tillgänglig.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Arbetsläget använder inte konversationens systempromptar. Skapa en Copilot och ange dess prompt för att använda en egen prompt."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Arbetsläget använder inte konversationens systempromptar. Skapa en Copilot och ange dess prompt för att använda en egen prompt.",
+  "New Folder": "Ny mapp",
+  "Move to Folder": "Flytta till mapp",
+  "Remove from Folder": "Ta bort från mapp",
+  "Rename Folder": "Byt namn på mapp",
+  "Delete Folder": "Ta bort mapp",
+  "Folder Name": "Mappnamn",
+  "No folders yet. Create one to group your conversations.": "Inga mappar än. Skapa en för att gruppera dina konversationer.",
+  "Add Chats to Folder": "Lägg till chattar i mappen",
+  "In another folder": "I en annan mapp",
+  "No conversations found.": "Inga konversationer hittades."
 }

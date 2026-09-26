@@ -1440,5 +1440,15 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Используется для автоматического и ручного сжатия. Оставьте пустым, чтобы использовать встроенный промпт.",
   "Compaction Prompt": "Промпт сжатия",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Создайте сводку предыдущих сообщений, чтобы уменьшить объём контекста. История разговора останется доступной.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "В рабочем режиме системные промпты беседы не используются. Чтобы использовать свой промпт, создайте Copilot и задайте его промпт."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "В рабочем режиме системные промпты беседы не используются. Чтобы использовать свой промпт, создайте Copilot и задайте его промпт.",
+  "New Folder": "Новая папка",
+  "Move to Folder": "Переместить в папку",
+  "Remove from Folder": "Убрать из папки",
+  "Rename Folder": "Переименовать папку",
+  "Delete Folder": "Удалить папку",
+  "Folder Name": "Название папки",
+  "No folders yet. Create one to group your conversations.": "Папок пока нет. Создайте папку, чтобы группировать диалоги.",
+  "Add Chats to Folder": "Добавить чаты в папку",
+  "In another folder": "В другой папке",
+  "No conversations found.": "Диалоги не найдены."
 }

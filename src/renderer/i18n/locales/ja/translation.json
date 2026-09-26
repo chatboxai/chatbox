@@ -1440,5 +1440,15 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "自動・手動の圧縮に使用します。空欄の場合は標準のプロンプトを使用します。",
   "Compaction Prompt": "圧縮プロンプト",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "以前のメッセージを要約し、コンテキストの使用量を減らします。会話履歴は引き続き閲覧できます。",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "作業モードでは会話のシステムプロンプトは使用されません。カスタムプロンプトを使用するには、Copilot を作成してプロンプトを設定してください。"
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "作業モードでは会話のシステムプロンプトは使用されません。カスタムプロンプトを使用するには、Copilot を作成してプロンプトを設定してください。",
+  "New Folder": "新しいフォルダー",
+  "Move to Folder": "フォルダーに移動",
+  "Remove from Folder": "フォルダーから削除",
+  "Rename Folder": "フォルダーの名前を変更",
+  "Delete Folder": "フォルダーを削除",
+  "Folder Name": "フォルダー名",
+  "No folders yet. Create one to group your conversations.": "フォルダーはまだありません。会話をまとめるフォルダーを作成しましょう。",
+  "Add Chats to Folder": "チャットをフォルダーに追加",
+  "In another folder": "別のフォルダー内",
+  "No conversations found.": "会話が見つかりません。"
 }

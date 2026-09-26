@@ -1440,5 +1440,15 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Otomatik ve elle sıkıştırma için kullanılır. Yerleşik istemi kullanmak için boş bırakın.",
   "Compaction Prompt": "Sıkıştırma İstemi",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Bağlam kullanımını azaltmak için önceki mesajları özetleyin. Konuşma geçmişiniz kullanılabilir kalacaktır.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Çalışma Modu konuşma sistem istemlerini kullanmaz. Özel bir istem kullanmak için bir Copilot oluşturup istemini ayarlayın."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "Çalışma Modu konuşma sistem istemlerini kullanmaz. Özel bir istem kullanmak için bir Copilot oluşturup istemini ayarlayın.",
+  "New Folder": "Yeni Klasör",
+  "Move to Folder": "Klasöre Taşı",
+  "Remove from Folder": "Klasörden Kaldır",
+  "Rename Folder": "Klasörü Yeniden Adlandır",
+  "Delete Folder": "Klasörü Sil",
+  "Folder Name": "Klasör Adı",
+  "No folders yet. Create one to group your conversations.": "Henüz klasör yok. Konuşmalarınızı gruplamak için bir tane oluşturun.",
+  "Add Chats to Folder": "Sohbetleri Klasöre Ekle",
+  "In another folder": "Başka bir klasörde",
+  "No conversations found.": "Sohbet bulunamadı."
 }

@@ -1440,5 +1440,15 @@
   "Used for automatic and manual compression. Leave empty to use the built-in prompt.": "Usato per la compressione automatica e manuale. Lascia vuoto per usare il prompt integrato.",
   "Compaction Prompt": "Prompt di compressione",
   "Summarize earlier messages to reduce context usage. Your conversation history will remain available.": "Riassumi i messaggi precedenti per ridurre il contesto utilizzato. La cronologia della conversazione resterà disponibile.",
-  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "La modalità lavoro non utilizza i prompt di sistema della conversazione. Per utilizzare un prompt personalizzato, crea un Copilot e imposta il suo prompt."
+  "Work Mode does not use conversation system prompts. To use a custom prompt, create a Copilot and set its prompt.": "La modalità lavoro non utilizza i prompt di sistema della conversazione. Per utilizzare un prompt personalizzato, crea un Copilot e imposta il suo prompt.",
+  "New Folder": "Nuova cartella",
+  "Move to Folder": "Sposta nella cartella",
+  "Remove from Folder": "Rimuovi dalla cartella",
+  "Rename Folder": "Rinomina cartella",
+  "Delete Folder": "Elimina cartella",
+  "Folder Name": "Nome cartella",
+  "No folders yet. Create one to group your conversations.": "Nessuna cartella. Creane una per raggruppare le tue conversazioni.",
+  "Add Chats to Folder": "Aggiungi chat alla cartella",
+  "In another folder": "In un'altra cartella",
+  "No conversations found.": "Nessuna conversazione trovata."
 }

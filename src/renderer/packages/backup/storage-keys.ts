@@ -5,6 +5,7 @@ export const BackupStorageKey = {
   ChatSessionsList: 'chat-sessions-list',
   ChatSessionSettings: 'chat-session-settings',
   PictureSessionSettings: 'picture-session-settings',
+  SessionFolders: 'session-folders',
   AgentSoul: 'agent-soul',
   AgentMemories: 'agent-memories',
   CopilotMemories: 'copilot-memories',

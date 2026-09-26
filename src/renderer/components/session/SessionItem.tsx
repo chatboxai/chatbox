@@ -3,7 +3,14 @@ import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Box, Flex, Input, Text } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
-import { IconArchive, IconArrowsMoveVertical, IconLoader2, IconPinned, IconPinnedFilled } from '@tabler/icons-react'
+import {
+  IconArchive,
+  IconArrowsMoveVertical,
+  IconFolder,
+  IconLoader2,
+  IconPinned,
+  IconPinnedFilled,
+} from '@tabler/icons-react'
 import clsx from 'clsx'
 import dayjs from 'dayjs'
 import { type MouseEvent, memo, type PointerEvent, useRef, useState } from 'react'
@@ -236,6 +243,13 @@ function SessionItem(props: Props) {
       },
     },
     {
+      text: t('Move to Folder') || '',
+      icon: IconFolder,
+      onClick: () => {
+        void NiceModal.show('folder-picker', { sessionId: session.id })
+      },
+    },
+    {
       text: t('Adjust order') || '',
       icon: IconArrowsMoveVertical,
       disabled: !props.onStartReordering,
@@ -376,6 +390,30 @@ function SessionItem(props: Props) {
       )}
 
       <Flex gap={2} className={clsx(isSmallScreen || renaming ? 'hidden' : 'group-hover/session-item:flex hidden')}>
+        {/* Archive sits leftmost (folder rightmost) so the destructive action is
+            hardest to reach when sweeping the cursor in from the row edge. */}
+        <Tooltip label={archiveActionLabel} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
+          <ActionIcon
+            data-testid={TestId.sidebar.sessionArchive}
+            aria-label={archiveActionLabel}
+            variant="transparent"
+            size={20}
+            color="chatbox-tertiary"
+            loading={archiving}
+            onPointerDown={stopItemClick}
+            onClick={async (event) => {
+              stopItemClick(event)
+              if (archiving) {
+                return
+              }
+              dismissActionTooltip()
+              await archiveCurrentSession()
+            }}
+          >
+            <ScalableIcon icon={IconArchive} className="text-inherit" size={16} />
+          </ActionIcon>
+        </Tooltip>
+
         <Tooltip label={pinActionLabel} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
           <ActionIcon
             data-testid={TestId.sidebar.sessionPin}
@@ -398,25 +436,20 @@ function SessionItem(props: Props) {
           </ActionIcon>
         </Tooltip>
 
-        <Tooltip label={archiveActionLabel} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
+        <Tooltip label={t('Move to Folder')} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
           <ActionIcon
-            data-testid={TestId.sidebar.sessionArchive}
-            aria-label={archiveActionLabel}
+            aria-label={t('Move to Folder')}
             variant="transparent"
             size={20}
             color="chatbox-tertiary"
-            loading={archiving}
             onPointerDown={stopItemClick}
-            onClick={async (event) => {
+            onClick={(event) => {
               stopItemClick(event)
-              if (archiving) {
-                return
-              }
               dismissActionTooltip()
-              await archiveCurrentSession()
+              void NiceModal.show('folder-picker', { sessionId: session.id })
             }}
           >
-            <ScalableIcon icon={IconArchive} className="text-inherit" size={16} />
+            <ScalableIcon icon={IconFolder} className="text-inherit" size={16} />
           </ActionIcon>
         </Tooltip>
       </Flex>

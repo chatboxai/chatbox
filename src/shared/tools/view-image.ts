@@ -9,8 +9,23 @@ import type { ProviderModelInfo } from '../types'
  */
 export const VIEW_IMAGE_TOOL_NAME = 'view_image'
 
-// Only the browser's screenshot command yields an image; its other results carry no image reference.
-const IMAGE_VIEWING_TOOL_NAMES: ReadonlySet<string> = new Set([VIEW_IMAGE_TOOL_NAME, BUILT_IN_BROWSER_TOOL_NAME])
+const READ_FILE_TOOL_NAME = 'read_file'
+
+// The browser yields an image only for its screenshot command and read_file only for image files;
+// their other results carry no image reference.
+const IMAGE_VIEWING_TOOL_NAMES: ReadonlySet<string> = new Set([
+  VIEW_IMAGE_TOOL_NAME,
+  BUILT_IN_BROWSER_TOOL_NAME,
+  READ_FILE_TOOL_NAME,
+])
+
+/** Raster formats read_file returns as visual input. SVG stays text so it can be read and edited as markup. */
+export const READ_FILE_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'] as const
+
+export function isReadFileImagePath(filePath: string): boolean {
+  const lower = filePath.toLowerCase()
+  return READ_FILE_IMAGE_EXTENSIONS.some((extension) => lower.endsWith(extension))
+}
 
 /**
  * Tools whose result is an image the model asked to look at. Their pending results are always
@@ -72,13 +87,18 @@ export function supportsToolResultImages(apiStyle: ProviderModelInfo['apiStyle']
   return apiStyle === 'anthropic' || apiStyle === 'google' || apiStyle === 'openai-responses'
 }
 
+/** Leading text of every image-viewing tool result the model sees, embedded or not. */
+export function viewedImageLabel(filePath: string): string {
+  return `Viewed image: ${filePath}`
+}
+
 /**
  * Tool-result text used when the image cannot be embedded in the tool result itself and
  * is delivered as a follow-up user message instead. Shared by the live toolset and the
  * history converter so both paths tell the model the same thing.
  */
 export function viewImageAttachmentNotice(filePath: string): string {
-  return `Viewed image: ${filePath}. The image is attached in the user message directly after this tool result.`
+  return `${viewedImageLabel(filePath)}. The image is attached in the user message directly after this tool result.`
 }
 
 /** Label prefix for the injected user message carrying a view_image result. */
@@ -93,7 +113,7 @@ export function buildViewImageToolResultContent(injection: ViewImageInjection) {
   return {
     type: 'content' as const,
     value: [
-      { type: 'text' as const, text: `Viewed image: ${injection.filePath}` },
+      { type: 'text' as const, text: viewedImageLabel(injection.filePath) },
       {
         type: 'file' as const,
         data: { type: 'data' as const, data: injection.base64Data },

@@ -8,10 +8,15 @@ export const VIEW_IMAGE_BATCH_GUIDANCE =
   'New image results are included in the next model request. Only the five most recent historical tool images are retained; ' +
   'write important visual observations and their source paths into your working notes before continuing.'
 
-/** AI SDK supplies the same messages array to all concurrent tool calls in a step. */
-export function createViewImageBatchBudget(): (messages: ModelMessage[]) => void {
+/**
+ * AI SDK supplies the same messages array to all concurrent tool calls in a step. Resumed and
+ * retried calls run outside a model step and carry no messages; each is a single call with no
+ * batch to bound.
+ */
+export function createViewImageBatchBudget(): (messages: ModelMessage[] | undefined) => void {
   const callsByStep = new WeakMap<ModelMessage[], number>()
   return (messages) => {
+    if (!messages) return
     const calls = callsByStep.get(messages) ?? 0
     if (calls >= VIEW_IMAGE_MAX_CALLS_PER_STEP) {
       throw new Error(

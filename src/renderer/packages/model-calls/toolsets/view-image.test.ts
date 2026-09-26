@@ -1,6 +1,7 @@
 import type { LanguageModelV4Prompt, LanguageModelV4StreamPart } from '@ai-sdk/provider'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import { convertToModelMessages } from '@shared/services/model-message-converter'
+import { viewImageAttachmentNotice } from '@shared/tools/view-image'
 import type { MessageContentToolCallPart } from '@shared/types'
 import { isStepCount, jsonSchema, streamText } from 'ai'
 import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test'
@@ -48,7 +49,7 @@ vi.mock('@/utils/image', () => ({
   saveImage: (category: string, dataUrl: string) => saveImage(category, dataUrl),
 }))
 
-import { buildViewImageToolSet } from './view-image'
+import { buildViewImageToolSet, withImageFileReading } from './view-image'
 
 // Minimal PNG header with a readable IHDR size.
 const PNG_BYTES = Uint8Array.from([
@@ -325,7 +326,7 @@ describe('view_image without tool-result image support (user-message injection)'
             type: 'tool-result' as const,
             toolCallId: 'tool-call-id',
             toolName: 'view_image',
-            output: { type: 'text' as const, value: 'notice' },
+            output: { type: 'text' as const, value: viewImageAttachmentNotice('charts/output.png') },
           },
         ],
       },
@@ -387,7 +388,7 @@ describe('view_image without tool-result image support (user-message injection)'
             type: 'tool-result' as const,
             toolCallId: 'shot-call',
             toolName: 'browser',
-            output: { type: 'text' as const, value: 'notice' },
+            output: { type: 'text' as const, value: viewImageAttachmentNotice('https://example.com/') },
           },
         ],
       },
@@ -430,7 +431,7 @@ describe('view_image without tool-result image support (user-message injection)'
         type: 'tool-result' as const,
         toolCallId: 'call-0',
         toolName: 'view_image',
-        output: { type: 'text' as const, value: 'image attached next' },
+        output: { type: 'text' as const, value: viewImageAttachmentNotice(`chart-${index}.png`) },
       })
     }
 
@@ -481,7 +482,7 @@ describe('view_image without tool-result image support (user-message injection)'
             type: 'tool-result' as const,
             toolCallId: 'current-call',
             toolName: 'view_image',
-            output: { type: 'text' as const, value: 'image attached next' },
+            output: { type: 'text' as const, value: viewImageAttachmentNotice('current.png') },
           },
         ],
       },
@@ -511,7 +512,7 @@ describe('view_image without tool-result image support (user-message injection)'
       type: 'tool-result' as const,
       toolCallId: `call-${index}`,
       toolName: 'view_image',
-      output: { type: 'text' as const, value: 'image attached next' },
+      output: { type: 'text' as const, value: viewImageAttachmentNotice(`chart-${index}.png`) },
     }))
     await toolSet.injectImagesIntoStepMessages?.([
       { role: 'tool' as const, content: toolParts },
@@ -689,4 +690,174 @@ test.each([true, false])('SDK trims resumed image history after an unrelated too
     }, 0)
   expect(prompts.map(count)).toEqual([8, 5])
   expect(saveImage).not.toHaveBeenCalled()
+})
+
+describe('read_file with image file reading', () => {
+  const baseExecute = vi.fn((_input: unknown, _options: unknown) => Promise.resolve({ content: 'text body' }))
+  const baseToModelOutput = vi.fn((_options: unknown) =>
+    Promise.resolve({ type: 'text' as const, value: 'text output' })
+  )
+  const baseReadFile = {
+    description: 'Read a file.',
+    inputSchema: jsonSchema({ type: 'object' }),
+    execute: baseExecute,
+    toModelOutput: baseToModelOutput,
+  }
+
+  function buildReadFile(context: Partial<Parameters<typeof buildViewImageToolSet>[0]> = {}) {
+    const toolSet = buildToolSet(context)
+    return { toolSet, readFile: withImageFileReading(baseReadFile as never, toolSet) }
+  }
+
+  async function readWith(tool: unknown, input: unknown, toolCallId = 'read-call') {
+    const readFile = tool as {
+      execute: (input: unknown, options: { toolCallId: string; messages: [] }) => Promise<unknown>
+      toModelOutput: (options: { toolCallId: string; input: unknown; output: unknown }) => Promise<unknown>
+    }
+    const output = await readFile.execute(input, { toolCallId, messages: [] })
+    return { output, modelOutput: await readFile.toModelOutput({ toolCallId, input, output }) }
+  }
+
+  beforeEach(() => {
+    baseExecute.mockClear()
+    baseToModelOutput.mockClear()
+  })
+
+  test('returns image files as visual input through the view_image pipeline', async () => {
+    const { readFile } = buildReadFile()
+
+    const { output, modelOutput } = await readWith(readFile, { file_path: 'charts/output.JPG' })
+
+    expect(output).toEqual({
+      file_path: 'charts/output.JPG',
+      image_storage_key: 'picture:view-image:session-id:uuid',
+      media_type: 'image/webp',
+    })
+    expect(modelOutput).toEqual({
+      type: 'content',
+      value: [
+        { type: 'text', text: 'Viewed image: charts/output.JPG' },
+        { type: 'file', data: { type: 'data', data: 'UkVTSVpFRA==' }, mediaType: 'image/webp' },
+      ],
+    })
+    expect(baseExecute).not.toHaveBeenCalled()
+    expect((readFile as { description?: string }).description).toContain('returned as real visual input')
+  })
+
+  test.each(['notes.md', 'icon.svg', '/__chatbox__/files/photo.png'])(
+    'keeps the original read_file behavior for %s',
+    async (filePath) => {
+      const { readFile } = buildReadFile()
+
+      const { output, modelOutput } = await readWith(readFile, { file_path: filePath })
+
+      expect(output).toEqual({ content: 'text body' })
+      expect(modelOutput).toEqual({ type: 'text', value: 'text output' })
+      expect(sandboxReadFileBytes).not.toHaveBeenCalled()
+      expect(saveImage).not.toHaveBeenCalled()
+    }
+  )
+
+  test('reads an image when a paused call is resumed outside a model step', async () => {
+    const { readFile } = buildReadFile()
+    const resumable = readFile as unknown as {
+      execute: (input: unknown, options: { toolCallId: string; approved: boolean }) => Promise<unknown>
+    }
+
+    const output = await resumable.execute({ file_path: 'photo.png' }, { toolCallId: 'resumed-call', approved: true })
+
+    expect(output).toEqual({
+      file_path: 'photo.png',
+      image_storage_key: 'picture:view-image:session-id:uuid',
+      media_type: 'image/webp',
+    })
+  })
+
+  test('a text result reusing an image call ID does not claim that image', async () => {
+    const { toolSet, readFile } = buildReadFile({ toolResultImages: false })
+    await readWith(readFile, { file_path: 'photo.png' }, 'call_0')
+    const textOutput = await readWith(readFile, { file_path: 'notes.md' }, 'call_0')
+
+    const messages = [
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'call_0',
+            toolName: 'read_file',
+            output: { type: 'text', value: viewImageAttachmentNotice('photo.png') },
+          },
+        ],
+      },
+      { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 'call_0', toolName: 'read_file', input: {} }] },
+      {
+        role: 'tool',
+        content: [{ type: 'tool-result', toolCallId: 'call_0', toolName: 'read_file', output: textOutput.modelOutput }],
+      },
+    ]
+    const injected = await toolSet.injectImagesIntoStepMessages?.(messages as never)
+
+    expect(injected?.map((message) => message.role)).toEqual(['tool', 'user', 'assistant', 'tool'])
+    expect(injected?.[1]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: '[Image from view_image tool: photo.png]' },
+        { type: 'image', image: 'UkVTSVpFRA==', mediaType: 'image/webp' },
+      ],
+    })
+    expect(injected?.[3]).toEqual(messages[2])
+  })
+
+  test('text content quoting an image notice does not claim that image', async () => {
+    const { toolSet, readFile } = buildReadFile({ toolResultImages: false })
+    await readWith(readFile, { file_path: 'photo.png' }, 'call_0')
+
+    const injected = await toolSet.injectImagesIntoStepMessages?.([
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'call_0',
+            toolName: 'read_file',
+            output: { type: 'text', value: `${viewImageAttachmentNotice('photo.png')}\n\n[Showing lines 1-1 of 1.]` },
+          },
+        ],
+      },
+    ] as never)
+
+    expect(injected?.map((message) => message.role)).toEqual(['tool'])
+  })
+
+  test('injects the image after a read_file result on protocols without tool-result media', async () => {
+    const { toolSet, readFile } = buildReadFile({ toolResultImages: false })
+    await readWith(readFile, { file_path: 'photo.png' })
+
+    const injected = await toolSet.injectImagesIntoStepMessages?.([
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 'read-call', toolName: 'read_file', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'read-call',
+            toolName: 'read_file',
+            output: { type: 'text', value: viewImageAttachmentNotice('photo.png') },
+          },
+        ],
+      },
+    ] as never)
+
+    expect(injected?.[2]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: '[Image from view_image tool: photo.png]' },
+        { type: 'image', image: 'UkVTSVpFRA==', mediaType: 'image/webp' },
+      ],
+    })
+  })
 })

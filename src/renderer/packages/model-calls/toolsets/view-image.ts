@@ -5,13 +5,16 @@ import {
   buildViewImageToolResultContent,
   buildViewImageUserMessage,
   isImageViewingToolName,
+  isReadFileImagePath,
   parseViewImageToolResult,
+  READ_FILE_IMAGE_EXTENSIONS,
   VIEW_IMAGE_MAX_READ_BYTES,
   VIEW_IMAGE_MAX_SOURCE_DIMENSION,
   VIEW_IMAGE_MAX_SOURCE_PIXELS,
   VIEW_IMAGE_TOOL_NAME,
   type ViewImageInjection,
   type ViewImageToolResult,
+  viewedImageLabel,
   viewImageAttachmentNotice,
 } from '@shared/tools/view-image'
 import {
@@ -23,7 +26,7 @@ import {
 import { boundToolResultImages } from '@shared/tools/view-image-replay'
 import { isUploadedFilePath } from '@shared/uploaded-file-tools'
 import { validatedToolSchema } from '@shared/validated-tool-schema'
-import type { ModelMessage, ToolSet } from 'ai'
+import type { ModelMessage, ToolResultPart, ToolSet } from 'ai'
 import { getImageBase64AndResize, MODEL_IMAGE_MAX_DIMENSION, svgToPngBase64 } from '@/packages/pic_utils'
 import platform from '@/platform'
 import { saveImage } from '@/utils/image'
@@ -180,12 +183,75 @@ export interface ViewImageToolSetResult {
    * images as user messages. Wire it into prepareStep.
    */
   injectImagesIntoStepMessages?: (messages: ModelMessage[]) => Promise<ModelMessage[]>
+  /** Reads an image file into a stored result, sharing view_image's per-step budget, limits and replay bounds. */
+  viewFile(params: {
+    toolCallId: string
+    filePath: string
+    /** Step messages; absent when a paused or failed call is resumed outside a model step. */
+    messages?: ModelMessage[]
+  }): Promise<ViewImageToolResult | { error: string }>
+}
+
+/**
+ * Lets read_file open image files as real visual input through the view_image pipeline;
+ * every other path keeps the original read_file behavior.
+ */
+export function withImageFileReading(
+  readFile: ToolSet[string],
+  viewImage: Pick<ViewImageToolSetResult, 'viewFile' | 'imageResults'>
+): ToolSet[string] {
+  const readsImage = (input: unknown) => {
+    const filePath = stringField(asRecord(input), 'file_path')
+    return filePath !== undefined && !isUploadedFilePath(filePath) && isReadFileImagePath(filePath)
+  }
+  const baseDescription = typeof readFile.description === 'string' ? readFile.description : ''
+  const imageFormats = READ_FILE_IMAGE_EXTENSIONS.map((extension) => extension.slice(1)).join(', ')
+  const tool: ToolSet[string] = {
+    description: `${baseDescription} Image files (${imageFormats}) are returned as real visual input.`,
+    inputSchema: readFile.inputSchema,
+    execute: (input, toolOptions) => {
+      if (!readsImage(input)) return readFile.execute?.(input, toolOptions)
+      return viewImage.viewFile({
+        toolCallId: toolOptions.toolCallId,
+        filePath: (input as { file_path: string }).file_path,
+        messages: toolOptions.messages,
+      })
+    },
+    toModelOutput: (options: { toolCallId: string; input: unknown; output: unknown }) => {
+      if (readsImage(options.input)) return viewImage.imageResults.toModelOutput(options)
+      return readFile.toModelOutput
+        ? readFile.toModelOutput(options)
+        : { type: 'text' as const, value: JSON.stringify(options.output) }
+    },
+  }
+  return tool
 }
 
 async function resolveStoredImage(storageKey: string): Promise<{ base64Data: string; mediaType: string } | null> {
   const blob = await platform.getStoreBlob(storageKey).catch(() => null)
   if (!blob) return null
   return parseDataUrl(blob.startsWith('data:') ? blob : `data:image/png;base64,${blob}`)
+}
+
+function unavailableImageNotice(filePath: string): string {
+  return `${viewedImageLabel(filePath)} (image data is no longer available)`
+}
+
+/** Whether a tool result is exactly one of the outputs produced for this image, never arbitrary text content. */
+function reportsViewedImage(output: ToolResultPart['output'], filePath: string): boolean {
+  if (output.type === 'text') {
+    return output.value === viewImageAttachmentNotice(filePath) || output.value === unavailableImageNotice(filePath)
+  }
+  if (output.type === 'content') {
+    const [label, image] = output.value
+    return (
+      output.value.length === 2 &&
+      label.type === 'text' &&
+      label.text === viewedImageLabel(filePath) &&
+      image.type === 'file'
+    )
+  }
+  return false
 }
 
 function matchResultEntriesToMessagePositions(
@@ -208,6 +274,10 @@ function matchResultEntriesToMessagePositions(
       const part = message.content[partIndex]
       if (part.type !== 'tool-result' || !isImageViewingToolName(part.toolName)) continue
       const unmatchedResults = unmatchedResultsByToolCallId.get(part.toolCallId)
+      const candidate = unmatchedResults?.at(-1)
+      // A reused call ID may belong to a later text result (read_file on a text file, a browser
+      // read); only a result that reports this image may claim it.
+      if (!candidate || !reportsViewedImage(part.output, candidate.result.file_path)) continue
       const matchedResult = unmatchedResults?.pop()
       if (!matchedResult) continue
       const messageMatches = matchedResults.get(messageIndex) ?? new Map<number, ViewImageResultEntry>()
@@ -266,12 +336,77 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     const entry = resultEntriesByStorageKey.get(result.image_storage_key)
     const parsed = await resolveToolCallImage(result, entry?.toolCallId === toolCallId ? entry : undefined)
     if (!parsed) {
-      return { type: 'text' as const, value: `Viewed image: ${result.file_path} (image data is no longer available)` }
+      return { type: 'text' as const, value: unavailableImageNotice(result.file_path) }
     }
     if (!context.toolResultImages) {
       return { type: 'text' as const, value: viewImageAttachmentNotice(result.file_path) }
     }
     return buildViewImageToolResultContent(parsed)
+  }
+
+  const viewFile: ViewImageToolSetResult['viewFile'] = async ({ toolCallId, filePath: requestedPath, messages }) => {
+    reserveImageCall(messages)
+    if (isUploadedFilePath(requestedPath))
+      return {
+        error: 'This virtual path requires the uploaded-file read_file tool. Use a filesystem path for this operation.',
+      }
+    let filePath = await remapPhantomHomePathForProvider(requestedPath, context.provider)
+    filePath = normalizeToolPathForPlatform(filePath)
+
+    const readResult = await readImageBytes(context, filePath)
+    if ('error' in readResult) return { error: readResult.error }
+    const sourceBytes = new Uint8Array(readResult.bytes)
+
+    const mediaType = mediaTypeFromMagicBytes(sourceBytes.subarray(0, 12)) ?? mediaTypeFromExtension(filePath)
+    if (!mediaType) {
+      return { error: 'Unsupported or unrecognized image format. Supported: png, jpg, webp, gif, bmp, svg.' }
+    }
+    if (mediaType !== 'image/svg+xml') {
+      const sourceBounds = readRasterImageBounds(sourceBytes, mediaType)
+      if (!sourceBounds) {
+        return { error: 'Failed to inspect image dimensions safely. The file may be corrupted.' }
+      }
+      if (
+        sourceBounds.maxWidth > VIEW_IMAGE_MAX_SOURCE_DIMENSION ||
+        sourceBounds.maxHeight > VIEW_IMAGE_MAX_SOURCE_DIMENSION ||
+        sourceBounds.maxPixels > VIEW_IMAGE_MAX_SOURCE_PIXELS
+      ) {
+        return {
+          error: `Image dimensions are too large (${sourceBounds.maxWidth}x${sourceBounds.maxHeight}, up to ${sourceBounds.maxPixels} pixels)`,
+        }
+      }
+    }
+
+    // Downscale to mainstream vision-model limits and normalize exotic formats to
+    // png/jpeg before storing — keeps blobs and request payloads bounded.
+    let dataUrl: string
+    try {
+      let file: File
+      if (mediaType === 'image/svg+xml') {
+        const convertedSvg = await svgToPngBase64(`data:image/svg+xml;base64,${bytesToBase64(sourceBytes)}`, {
+          maxOutputDimension: MODEL_IMAGE_MAX_DIMENSION,
+          strictResourceIsolation: true,
+        })
+        const convertedImage = parseDataUrl(convertedSvg)
+        if (!convertedImage?.base64Data) throw new Error('SVG conversion produced an empty image')
+        const convertedBlob = await fetch(convertedSvg).then((response) => response.blob())
+        file = new File([convertedBlob], fileNameOf(filePath), { type: convertedImage.mediaType })
+      } else {
+        file = new File([readResult.bytes], fileNameOf(filePath), { type: mediaType })
+      }
+      dataUrl = await getImageBase64AndResize(file, { outputType: 'image/webp', quality: 0.85 })
+    } catch {
+      return { error: 'Failed to decode image. The file may be corrupted or not a valid image.' }
+    }
+
+    if (dataUrl.length > VIEW_IMAGE_MAX_NORMALIZED_LENGTH) {
+      return { error: 'Normalized image exceeds the request image limit. Resize or crop the image and try again.' }
+    }
+    const parsedImage = parseDataUrl(dataUrl)
+    if (!parsedImage) {
+      return { error: 'Failed to process image into a model-compatible format.' }
+    }
+    return recordImageResult({ toolCallId, label: requestedPath, dataUrl })
   }
 
   const view_image: ToolSet[string] = {
@@ -293,72 +428,12 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
       required: ['file_path'],
       additionalProperties: false,
     }),
-    execute: async (input, toolOptions) => {
-      reserveImageCall(toolOptions.messages)
-      const viewInput = input as { file_path: string }
-      if (isUploadedFilePath(viewInput.file_path))
-        return {
-          error:
-            'This virtual path requires the uploaded-file read_file tool. Use a filesystem path for this operation.',
-        }
-      let filePath = await remapPhantomHomePathForProvider(viewInput.file_path, context.provider)
-      filePath = normalizeToolPathForPlatform(filePath)
-
-      const readResult = await readImageBytes(context, filePath)
-      if ('error' in readResult) return { error: readResult.error }
-      const sourceBytes = new Uint8Array(readResult.bytes)
-
-      const mediaType = mediaTypeFromMagicBytes(sourceBytes.subarray(0, 12)) ?? mediaTypeFromExtension(filePath)
-      if (!mediaType) {
-        return { error: 'Unsupported or unrecognized image format. Supported: png, jpg, webp, gif, bmp, svg.' }
-      }
-      if (mediaType !== 'image/svg+xml') {
-        const sourceBounds = readRasterImageBounds(sourceBytes, mediaType)
-        if (!sourceBounds) {
-          return { error: 'Failed to inspect image dimensions safely. The file may be corrupted.' }
-        }
-        if (
-          sourceBounds.maxWidth > VIEW_IMAGE_MAX_SOURCE_DIMENSION ||
-          sourceBounds.maxHeight > VIEW_IMAGE_MAX_SOURCE_DIMENSION ||
-          sourceBounds.maxPixels > VIEW_IMAGE_MAX_SOURCE_PIXELS
-        ) {
-          return {
-            error: `Image dimensions are too large (${sourceBounds.maxWidth}x${sourceBounds.maxHeight}, up to ${sourceBounds.maxPixels} pixels)`,
-          }
-        }
-      }
-
-      // Downscale to mainstream vision-model limits and normalize exotic formats to
-      // png/jpeg before storing — keeps blobs and request payloads bounded.
-      let dataUrl: string
-      try {
-        let file: File
-        if (mediaType === 'image/svg+xml') {
-          const convertedSvg = await svgToPngBase64(`data:image/svg+xml;base64,${bytesToBase64(sourceBytes)}`, {
-            maxOutputDimension: MODEL_IMAGE_MAX_DIMENSION,
-            strictResourceIsolation: true,
-          })
-          const convertedImage = parseDataUrl(convertedSvg)
-          if (!convertedImage?.base64Data) throw new Error('SVG conversion produced an empty image')
-          const convertedBlob = await fetch(convertedSvg).then((response) => response.blob())
-          file = new File([convertedBlob], fileNameOf(filePath), { type: convertedImage.mediaType })
-        } else {
-          file = new File([readResult.bytes], fileNameOf(filePath), { type: mediaType })
-        }
-        dataUrl = await getImageBase64AndResize(file, { outputType: 'image/webp', quality: 0.85 })
-      } catch {
-        return { error: 'Failed to decode image. The file may be corrupted or not a valid image.' }
-      }
-
-      if (dataUrl.length > VIEW_IMAGE_MAX_NORMALIZED_LENGTH) {
-        return { error: 'Normalized image exceeds the request image limit. Resize or crop the image and try again.' }
-      }
-      const parsedImage = parseDataUrl(dataUrl)
-      if (!parsedImage) {
-        return { error: 'Failed to process image into a model-compatible format.' }
-      }
-      return recordImageResult({ toolCallId: toolOptions.toolCallId, label: viewInput.file_path, dataUrl })
-    },
+    execute: async (input, toolOptions) =>
+      viewFile({
+        toolCallId: toolOptions.toolCallId,
+        filePath: (input as { file_path: string }).file_path,
+        messages: toolOptions.messages,
+      }),
     // Within the running generation, later steps must receive the actual image — never
     // base64-as-text. Media-capable protocols embed it in the tool result; others get a
     // text notice here and the image via injectImagesIntoStepMessages (user message).
@@ -462,6 +537,7 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     }
 `,
     injectImagesIntoStepMessages,
+    viewFile,
     imageResults: { reserve: reserveImageCall, record: recordImageResult, toModelOutput: toImageModelOutput },
   }
 }

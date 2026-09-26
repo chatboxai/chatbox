@@ -501,6 +501,24 @@ describe('buildCodeExecutionTools', () => {
     expect(mockProvider.exec).not.toHaveBeenCalled()
   })
 
+  test('read_file rejects raster images instead of decoding them as text', async () => {
+    const { tools } = buildCodeExecutionTools({ sessionId: 'test-session', files: [], provider: mockProvider })
+
+    const result = await tools.read_file.execute({ file_path: '/Users/me/Desktop/Chart.PNG' }, {})
+
+    expect(result.error).toContain('image files cannot be viewed in this session')
+    expect(mockProvider.readFileOut).not.toHaveBeenCalled()
+    expect(fsReadMock).not.toHaveBeenCalled()
+  })
+
+  test('read_file keeps reading SVG files as text', async () => {
+    const { tools } = buildCodeExecutionTools({ sessionId: 'test-session', files: [], provider: mockProvider })
+
+    await tools.read_file.execute({ file_path: 'icon.svg' }, {})
+
+    expect(mockProvider.readFileOut).toHaveBeenCalledWith('icon.svg', expect.anything())
+  })
+
   test('code_execution tool handles non-zero exit code', async () => {
     mockProvider.exec.mockResolvedValue({ stdout: '', stderr: 'ReferenceError: x is not defined', exitCode: 1 })
     const { tools } = buildCodeExecutionTools({ sessionId: 'test-session', files: [], provider: mockProvider })

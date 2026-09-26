@@ -35,6 +35,7 @@ import {
   buildViewImageToolSet,
   type ImageToolResults,
   isViewImageAvailable,
+  withImageFileReading,
 } from '@/packages/model-calls/toolsets/view-image'
 import { parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
 import { buildWorkspaceInstructions } from '@/packages/model-calls/workspace-instructions'
@@ -545,6 +546,7 @@ When you create a Git commit that includes code changes, append this exact trail
     })
     instructions += viewImageToolSet.description
     tools = { ...tools, ...viewImageToolSet.tools }
+    if (tools.read_file) tools.read_file = withImageFileReading(tools.read_file, viewImageToolSet)
     prepareStepMessages = viewImageToolSet.injectImagesIntoStepMessages
     imageResults = viewImageToolSet.imageResults
   }

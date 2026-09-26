@@ -12,6 +12,7 @@ import {
   type SandboxProvider,
   type SandboxReadResult,
 } from '@shared/sandbox-provider'
+import { isReadFileImagePath } from '@shared/tools/view-image'
 import { isUploadedFilePath, READ_FILE_DEFAULT_LINES, readFileSchema } from '@shared/uploaded-file-tools'
 import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { ToolSet } from 'ai'
@@ -353,6 +354,12 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
         }
       if (isSoulVirtualPath(readInput.file_path)) {
         return readSoulVirtualFile()
+      }
+      if (isReadFileImagePath(readInput.file_path)) {
+        return {
+          error:
+            'This is an image file, and image files cannot be viewed in this session. For uploaded images, read <PARSED_SANDBOX_PATH> for extracted text when it is available.',
+        }
       }
       readInput.file_path = await remapPhantomHomePathForProvider(readInput.file_path, provider)
       if (isAbsolutePath(readInput.file_path)) {

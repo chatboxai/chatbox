@@ -1,4 +1,4 @@
-import type { SessionAttachmentQueryPlan } from '../types'
+import type { SessionAttachmentQueryPlan, SessionAttachmentStoryFilter } from '../types'
 
 export const QUERY_RECALL_TOP_K = 20
 export const QUERY_RETURN_TOP_K = 8
@@ -15,6 +15,7 @@ export interface NormalizedQueryPlan {
     | {
         enabled: false
       }
+  storyFilter?: SessionAttachmentStoryFilter
 }
 
 export function dedupeByParent<T extends { parentId: number }>(results: T[]): T[] {
@@ -43,5 +44,5 @@ export function normalizeQueryPlan(plan?: Partial<SessionAttachmentQueryPlan>): 
   const recallTopK = Math.max(1, Math.min(plan?.recallTopK ?? QUERY_RECALL_TOP_K, QUERY_RECALL_TOP_K))
   const finalTopK = Math.max(1, Math.min(plan?.finalTopK ?? QUERY_RETURN_TOP_K, QUERY_RETURN_TOP_K_MAX))
   const rerankPlan = plan?.rerank?.enabled ? { enabled: true as const, model: plan.rerank.model } : { enabled: false as const }
-  return { recallTopK, finalTopK, rerank: rerankPlan }
+  return { recallTopK, finalTopK, rerank: rerankPlan, storyFilter: plan?.storyFilter }
 }

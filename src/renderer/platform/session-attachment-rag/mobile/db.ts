@@ -62,6 +62,28 @@ function mapRowToParentRecord(row: Record<string, unknown>): SessionAttachmentPa
   }
 }
 
+function parseJsonArray(val: unknown): string[] | undefined {
+  if (!val) return undefined
+  if (Array.isArray(val)) return val.map(String)
+  try {
+    const parsed = JSON.parse(String(val))
+    return Array.isArray(parsed) ? parsed.map(String) : undefined
+  } catch {
+    return [String(val)]
+  }
+}
+
+function parseJsonObject(val: unknown): Record<string, unknown> | undefined {
+  if (!val) return undefined
+  if (typeof val === 'object' && !Array.isArray(val)) return val as Record<string, unknown>
+  try {
+    const parsed = JSON.parse(String(val))
+    return typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function mapRowToChunkRecord(row: Record<string, unknown>): SessionAttachmentChunkRecord {
   return {
     id: Number(row.id),
@@ -74,6 +96,13 @@ function mapRowToChunkRecord(row: Record<string, unknown>): SessionAttachmentChu
     rawText: String(row.raw_text),
     embeddedText: String(row.embedded_text),
     tokenEstimate: Number(row.token_estimate ?? 0),
+    entities: parseJsonArray(row.entities),
+    keywords: parseJsonArray(row.keywords),
+    chapterOrder: row.chapter_order !== null && row.chapter_order !== undefined ? Number(row.chapter_order) : undefined,
+    storyTime: row.story_time ? String(row.story_time) : undefined,
+    priorityRank: row.priority_rank !== null && row.priority_rank !== undefined ? Number(row.priority_rank) : 2,
+    kind: row.kind ? String(row.kind) : undefined,
+    metadata: parseJsonObject(row.metadata),
     createdAt: row.created_at ? String(row.created_at) : undefined,
   }
 }
@@ -157,6 +186,13 @@ export class MobileRagDatabase {
         raw_text TEXT NOT NULL,
         embedded_text TEXT NOT NULL,
         token_estimate INTEGER DEFAULT 0,
+        entities TEXT,
+        keywords TEXT,
+        chapter_order INTEGER,
+        story_time TEXT,
+        priority_rank INTEGER DEFAULT 2,
+        kind TEXT,
+        metadata TEXT,
         created_at INTEGER NOT NULL
       );
 
@@ -172,8 +208,27 @@ export class MobileRagDatabase {
       CREATE INDEX IF NOT EXISTS idx_sap_attachment_id ON session_attachment_parent(attachment_id);
       CREATE INDEX IF NOT EXISTS idx_sac_attachment_id ON session_attachment_chunk(attachment_id);
       CREATE INDEX IF NOT EXISTS idx_sac_parent_id ON session_attachment_chunk(parent_id);
+      CREATE INDEX IF NOT EXISTS idx_sac_chapter ON session_attachment_chunk(attachment_id, chapter_order);
+      CREATE INDEX IF NOT EXISTS idx_sac_priority ON session_attachment_chunk(attachment_id, priority_rank);
       CREATE INDEX IF NOT EXISTS idx_sav_attachment_id ON session_attachment_vector(attachment_id);
     `)
+
+    const colsToAdd: Array<{ name: string; type: string }> = [
+      { name: 'entities', type: 'TEXT' },
+      { name: 'keywords', type: 'TEXT' },
+      { name: 'chapter_order', type: 'INTEGER' },
+      { name: 'story_time', type: 'TEXT' },
+      { name: 'priority_rank', type: 'INTEGER DEFAULT 2' },
+      { name: 'kind', type: 'TEXT' },
+      { name: 'metadata', type: 'TEXT' },
+    ]
+    for (const col of colsToAdd) {
+      try {
+        await this.database.execute(`ALTER TABLE session_attachment_chunk ADD COLUMN ${col.name} ${col.type};`)
+      } catch {
+        // Column already exists or table just created with it
+      }
+    }
   }
 
   public async createAttachment(params: CreateSessionAttachmentParams): Promise<number> {
@@ -385,6 +440,13 @@ export class MobileRagDatabase {
       rawText: string
       embeddedText: string
       tokenEstimate: number
+      entities?: string[]
+      keywords?: string[]
+      chapterOrder?: number
+      storyTime?: string
+      priorityRank?: number
+      kind?: string
+      metadata?: Record<string, unknown>
     }>
   ): Promise<number[]> {
     await this.initialize()
@@ -422,15 +484,20 @@ export class MobileRagDatabase {
       parentIdByOrder.set(p.parentOrder, Number(parentId))
     }
 
-    // Insert children chunks
+    // Insert children chunks with hybrid metadata
     const chunkIds: number[] = []
     for (const c of children) {
       const parentId = parentIdByOrder.get(c.parentOrder) ?? 0
+      const entitiesJson = c.entities?.length ? JSON.stringify(c.entities) : null
+      const keywordsJson = c.keywords?.length ? JSON.stringify(c.keywords) : null
+      const metadataJson = c.metadata ? JSON.stringify(c.metadata) : null
+
       const res = await this.database.run(
         `INSERT INTO session_attachment_chunk (
           attachment_id, parent_id, chunk_order, section_path,
-          page_start, page_end, raw_text, embedded_text, token_estimate, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          page_start, page_end, raw_text, embedded_text, token_estimate,
+          entities, keywords, chapter_order, story_time, priority_rank, kind, metadata, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           attachmentId,
           parentId,
@@ -441,6 +508,13 @@ export class MobileRagDatabase {
           c.rawText,
           c.embeddedText,
           c.tokenEstimate,
+          entitiesJson,
+          keywordsJson,
+          c.chapterOrder ?? null,
+          c.storyTime ?? null,
+          c.priorityRank ?? 2,
+          c.kind ?? null,
+          metadataJson,
           now,
         ]
       )
@@ -449,6 +523,79 @@ export class MobileRagDatabase {
     }
 
     return chunkIds
+  }
+
+  public async searchKeywordChunks(
+    attachmentIds: number[],
+    options: {
+      keywords?: string[]
+      entities?: string[]
+      maxChapter?: number
+      limit?: number
+    }
+  ): Promise<Array<SessionAttachmentChunkRecord & { filename: string; matchScore: number }>> {
+    if (attachmentIds.length === 0) return []
+    await this.initialize()
+
+    const terms = [
+      ...(options.entities ?? []),
+      ...(options.keywords ?? []),
+    ]
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length > 0)
+
+    if (terms.length === 0) return []
+
+    const uniqueTerms = [...new Set(terms)].slice(0, 10)
+    const placeholders = attachmentIds.map(() => '?').join(',')
+
+    const termConditions = uniqueTerms
+      .map(
+        () =>
+          '(LOWER(c.raw_text) LIKE ? OR LOWER(c.section_path) LIKE ? OR LOWER(c.entities) LIKE ? OR LOWER(c.keywords) LIKE ?)'
+      )
+      .join(' OR ')
+
+    let sql = `
+      SELECT c.*, a.filename
+      FROM session_attachment_chunk c
+      JOIN session_attachment a ON c.attachment_id = a.id
+      WHERE c.attachment_id IN (${placeholders})
+        AND (${termConditions})
+    `
+    const params: unknown[] = [...attachmentIds]
+    for (const term of uniqueTerms) {
+      const pattern = `%${term}%`
+      params.push(pattern, pattern, pattern, pattern)
+    }
+
+    if (options.maxChapter !== undefined && Number.isFinite(options.maxChapter)) {
+      sql += ' AND (c.chapter_order IS NULL OR c.chapter_order <= ?)'
+      params.push(options.maxChapter)
+    }
+
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 100))
+    sql += ` ORDER BY c.priority_rank DESC, c.id ASC LIMIT ${limit}`
+
+    const res = await this.database.query(sql, params)
+    const rows = res.values ?? []
+
+    return rows.map((row) => {
+      const chunk = mapRowToChunkRecord(row)
+      const textToSearch = `${chunk.sectionPath || ''} ${chunk.rawText} ${(chunk.entities || []).join(' ')} ${(chunk.keywords || []).join(' ')}`.toLowerCase()
+      let hitCount = 0
+      for (const term of uniqueTerms) {
+        if (textToSearch.includes(term)) {
+          hitCount++
+        }
+      }
+      const matchScore = hitCount / uniqueTerms.length
+      return {
+        ...chunk,
+        filename: String(row.filename),
+        matchScore,
+      }
+    })
   }
 
   public async listChunks(attachmentId: number): Promise<SessionAttachmentChunkRecord[]> {

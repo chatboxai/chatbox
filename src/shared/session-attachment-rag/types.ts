@@ -49,6 +49,13 @@ export interface SessionAttachmentChunkRecord {
   rawText: string
   embeddedText: string
   tokenEstimate: number
+  entities?: string[]
+  keywords?: string[]
+  chapterOrder?: number
+  storyTime?: string
+  priorityRank?: number
+  kind?: string
+  metadata?: Record<string, unknown>
   createdAt?: string
 }
 

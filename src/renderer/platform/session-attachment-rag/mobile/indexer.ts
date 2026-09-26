@@ -174,6 +174,13 @@ export class MobileRagIndexer {
         text: c.rawText,
       }),
       tokenEstimate: c.tokenEstimate,
+      entities: c.entities,
+      keywords: c.keywords,
+      chapterOrder: c.chapterOrder,
+      storyTime: c.storyTime,
+      priorityRank: c.priorityRank,
+      kind: c.kind,
+      metadata: c.metadata,
     }))
 
     const chunkIds = await this.database.replaceParentsAndChunks(attachment.id, parentPayload, chunkPayload)

@@ -129,16 +129,43 @@ export async function getToolSet(attachmentIds: number[]) {
             maximum: 12,
             default: 8,
           },
+          currentChapter: {
+            type: 'integer',
+            description: 'Optional current story chapter number (to filter out future events and spoilers)',
+          },
+          currentTime: {
+            type: 'string',
+            description: 'Optional current story time or timeline stage',
+          },
+          entities: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional list of entities to prioritize (characters, gu, sects, locations)',
+          },
         },
         required: ['query'],
         additionalProperties: false,
       }),
       execute: (input) => {
-        const queryInput = input as { query: string; limit?: number }
+        const queryInput = input as {
+          query: string
+          limit?: number
+          currentChapter?: number
+          currentTime?: string
+          entities?: string[]
+        }
+        const plan = buildQueryPlan(queryInput.limit)
+        if (queryInput.currentChapter !== undefined || queryInput.currentTime || queryInput.entities?.length) {
+          plan.storyFilter = {
+            currentChapter: queryInput.currentChapter,
+            currentTime: queryInput.currentTime,
+            activeEntities: queryInput.entities,
+          }
+        }
         return controller.query({
           attachmentIds,
           query: queryInput.query,
-          plan: buildQueryPlan(queryInput.limit),
+          plan,
         })
       },
       toModelOutput: toTextModelOutput(formatSearchResults),

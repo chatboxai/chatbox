@@ -409,6 +409,13 @@ export type SessionAttachmentIndexStatus = 'pending' | 'indexing' | 'ready' | 'f
 export type SessionAttachmentStatus = SessionAttachmentIndexStatus
 export type SessionAttachmentIndexingStage = 'queued' | 'chunking' | 'embedding' | 'finalizing' | 'ready'
 
+export interface SessionAttachmentStoryFilter {
+  currentChapter?: number
+  currentTime?: string
+  activeEntities?: string[]
+  npcPerspective?: string
+}
+
 export interface SessionAttachmentQueryPlan {
   recallTopK: number
   finalTopK: number
@@ -416,6 +423,7 @@ export interface SessionAttachmentQueryPlan {
     enabled: boolean
     model?: string
   }
+  storyFilter?: SessionAttachmentStoryFilter
 }
 
 export interface SessionAttachment {

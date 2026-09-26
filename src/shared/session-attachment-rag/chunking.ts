@@ -25,6 +25,13 @@ export interface ChildChunk {
   sectionPath?: string
   rawText: string
   tokenEstimate: number
+  entities?: string[]
+  keywords?: string[]
+  chapterOrder?: number
+  storyTime?: string
+  priorityRank?: number
+  kind?: string
+  metadata?: Record<string, unknown>
 }
 
 export interface StructuralSegment {
@@ -293,11 +300,150 @@ export async function chunkPlainDocument(content: string): Promise<AttachmentChu
   return buildChunkingResult(parents)
 }
 
+export function isStoryKbFormat(content: string): boolean {
+  if (!content || typeof content !== 'string') return false
+  const trimmed = content.trimStart()
+  if (!trimmed.startsWith('{')) return false
+  return (
+    trimmed.includes('"GUR-KB-SINGLE-2.0-COMPACT"') ||
+    trimmed.includes('"mobile_card_catalog"') ||
+    trimmed.includes('"mobile_router"')
+  )
+}
+
+export function chunkStoryKbDocument(content: string): AttachmentChunkingResult {
+  const data = JSON.parse(content)
+  const catalog = data.mobile_card_catalog as Array<[string, string, number]> | undefined
+  const catalogMap = new Map<string, { kind: string; priorityRank: number }>()
+  if (Array.isArray(catalog)) {
+    for (const entry of catalog) {
+      if (Array.isArray(entry) && entry.length >= 3) {
+        catalogMap.set(String(entry[0]), { kind: String(entry[1]), priorityRank: Number(entry[2]) })
+      }
+    }
+  }
+
+  const sections = [
+    'entities',
+    'events',
+    'items_and_gu',
+    'character_states',
+    'rules',
+    'factions',
+    'locations',
+    'conflicts',
+    'claims',
+    'calibrated_cards',
+    'anchors',
+  ]
+
+  const parents: ParentBlock[] = []
+  const children: ChildChunk[] = []
+
+  let currentParentCards: string[] = []
+  let currentParentOrder = 0
+  let currentSection = ''
+
+  const flushParent = () => {
+    if (currentParentCards.length === 0) return
+    const text = currentParentCards.join('\n\n')
+    parents.push({
+      parentOrder: currentParentOrder,
+      sectionPath: currentSection,
+      text,
+      tokenEstimate: estimateTokenCount(text),
+      charCount: text.length,
+    })
+    currentParentOrder++
+    currentParentCards = []
+  }
+
+  for (const sectionName of sections) {
+    const list = data[sectionName]
+    if (!Array.isArray(list) || list.length === 0) continue
+
+    currentSection = sectionName
+    for (const card of list) {
+      if (!card || typeof card !== 'object') continue
+      const id = String(card._id || '')
+      const name = String(card.name || '')
+      const cardText = String(card.card || card.name || '').trim()
+      if (!cardText) continue
+
+      const catInfo = catalogMap.get(id)
+      const kind = catInfo?.kind || sectionName
+      const priorityRank = catInfo?.priorityRank ?? (sectionName === 'entities' || sectionName === 'events' ? 3 : 2)
+      const keys = Array.isArray(card.keys) ? card.keys.map(String) : []
+      const entities = name ? [name, ...keys] : keys
+      const chapterOrder = Array.isArray(card.ch) && typeof card.ch[0] === 'number' ? card.ch[0] : undefined
+      const storyTime = typeof card.story_time === 'string' ? card.story_time : undefined
+
+      const cardRepresentation = `[${kind}: ${id}] ${name}\n${cardText}`
+      if (currentParentCards.join('\n\n').length + cardRepresentation.length > PARENT_TARGET_CHARS) {
+        flushParent()
+      }
+      currentParentCards.push(cardRepresentation)
+
+      children.push({
+        parentOrder: currentParentOrder,
+        chunkOrder: children.length,
+        sectionPath: `${sectionName}:${name || id}`,
+        rawText: cardText,
+        tokenEstimate: estimateTokenCount(cardText),
+        entities,
+        keywords: keys,
+        chapterOrder,
+        storyTime,
+        priorityRank,
+        kind,
+        metadata: {
+          id,
+          refs: card.refs,
+          ev: card.ev,
+          src_ids: card.src_ids,
+          risk_categories: card.risk_categories,
+        },
+      })
+    }
+    flushParent()
+  }
+
+  // Include runtime_core if present (world/cultivation rules)
+  if (data.runtime_core && typeof data.runtime_core === 'object') {
+    const coreText = Object.entries(data.runtime_core)
+      .map(([k, v]) => `### [rule] ${k}\n${typeof v === 'string' ? v : JSON.stringify(v)}`)
+      .join('\n\n')
+    parents.push({
+      parentOrder: currentParentOrder,
+      sectionPath: 'runtime_core',
+      text: coreText,
+      tokenEstimate: estimateTokenCount(coreText),
+      charCount: coreText.length,
+    })
+    children.push({
+      parentOrder: currentParentOrder,
+      chunkOrder: children.length,
+      sectionPath: 'runtime_core',
+      rawText: coreText,
+      tokenEstimate: estimateTokenCount(coreText),
+      entities: ['世界规则', '修炼规则'],
+      keywords: ['世界规则', '修炼规则', '剧透策略'],
+      priorityRank: 4,
+      kind: 'rule',
+    })
+  }
+
+  return { parents, children }
+}
+
 export function selectAttachmentChunkingPipeline(filename?: string): AttachmentChunkingPipeline {
   return isStructuredChunkingType(filename) ? 'structured' : 'plain'
 }
 
 export async function buildAttachmentChunks(content: string, filename?: string): Promise<AttachmentChunkingResult> {
+  if (isStoryKbFormat(content)) {
+    return chunkStoryKbDocument(content)
+  }
   const pipeline = selectAttachmentChunkingPipeline(filename)
   return pipeline === 'structured' ? chunkStructuredDocument(content) : chunkPlainDocument(content)
 }

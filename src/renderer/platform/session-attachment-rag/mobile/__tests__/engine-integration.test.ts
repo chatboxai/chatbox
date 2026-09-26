@@ -151,6 +151,13 @@ describe('MobileLocalRagEngine Integration', () => {
           return { values }
         }
         if (sql.includes('FROM session_attachment_chunk c')) {
+          if (sql.includes('LIKE')) {
+            const values = [...chunksTable.values()].map((c) => {
+              const a = attachmentsTable.get(c.attachment_id)
+              return { ...c, filename: a?.filename ?? '' }
+            })
+            return { values }
+          }
           // listChunksWithDetails
           const ids = params
           const values = ids

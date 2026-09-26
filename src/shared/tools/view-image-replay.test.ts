@@ -4,7 +4,7 @@ import { buildViewImageToolResultContent, buildViewImageUserMessage, viewImageAt
 import { createViewImageBatchBudget } from './view-image-batch'
 import { boundToolResultImages } from './view-image-replay'
 
-function batch(native: boolean, prefix: string, count: number): ModelMessage[] {
+function batch(native: boolean, prefix: string, count: number, toolName = 'view_image'): ModelMessage[] {
   const images = Array.from({ length: count }, (_, i) => ({
     filePath: `${prefix}-${i}.png`,
     base64Data: 'aW1hZ2U=',
@@ -16,7 +16,7 @@ function batch(native: boolean, prefix: string, count: number): ModelMessage[] {
       content: images.map((image) => ({
         type: 'tool-call',
         toolCallId: image.filePath,
-        toolName: 'view_image',
+        toolName,
         input: { file_path: image.filePath },
       })),
     },
@@ -25,7 +25,7 @@ function batch(native: boolean, prefix: string, count: number): ModelMessage[] {
       content: images.map((image) => ({
         type: 'tool-result',
         toolCallId: image.filePath,
-        toolName: 'view_image',
+        toolName,
         output: native
           ? buildViewImageToolResultContent(image)
           : { type: 'text', value: viewImageAttachmentNotice(image.filePath) },
@@ -63,6 +63,11 @@ describe.each([true, false])('image replay native=%s', (native) => {
     expect(countImages(input)).toBe(16)
     expect(boundToolResultImages(bounded, 5)).toEqual(bounded)
     expect(countImages(boundToolResultImages([...bounded, { role: 'assistant', content: 'Inspected.' }], 5))).toBe(5)
+  })
+
+  it('keeps pending browser screenshot pixels like view_image', () => {
+    const input = [...batch(native, 'old', 8, 'browser'), ...batch(native, 'new', 8, 'browser')]
+    expect(countImages(boundToolResultImages(input, 5))).toBe(13)
   })
 
   it('does not count a steered user message as model consumption', () => {

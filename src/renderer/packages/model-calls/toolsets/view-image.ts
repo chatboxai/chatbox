@@ -4,6 +4,7 @@ import { DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT } from '@shared/tool-result-imag
 import {
   buildViewImageToolResultContent,
   buildViewImageUserMessage,
+  isImageViewingToolName,
   parseViewImageToolResult,
   VIEW_IMAGE_MAX_READ_BYTES,
   VIEW_IMAGE_MAX_SOURCE_DIMENSION,
@@ -159,9 +160,21 @@ export function isViewImageAvailable(): boolean {
   return Boolean(platform.fsReadImage || platform.sandboxReadFileBytes)
 }
 
+/** Lets another image-viewing tool deliver its image through the same step injection and replay bounds. */
+export interface ImageToolResults {
+  reserve: ReturnType<typeof createViewImageBatchBudget>
+  /** Stores a model-ready data URL and returns the tool result to persist. `label` names the image to the model. */
+  record(params: { toolCallId: string; label: string; dataUrl: string }): Promise<ViewImageToolResult>
+  /** Model output for a result returned by `record`. */
+  toModelOutput(options: { toolCallId: string; output: unknown }): Promise<ToolResultOutput>
+}
+
+type ToolResultOutput = { type: 'text'; value: string } | ReturnType<typeof buildViewImageToolResultContent>
+
 export interface ViewImageToolSetResult {
   tools: ToolSet
   description: string
+  imageResults: ImageToolResults
   /**
    * Preserves pending image results and bounds the consumed historical images. Protocols without tool-result media additionally receive those
    * images as user messages. Wire it into prepareStep.
@@ -193,7 +206,7 @@ function matchResultEntriesToMessagePositions(
     if (message.role !== 'tool' || !Array.isArray(message.content)) continue
     for (let partIndex = message.content.length - 1; partIndex >= 0 && unmatchedResultCount > 0; partIndex -= 1) {
       const part = message.content[partIndex]
-      if (part.type !== 'tool-result' || part.toolName !== VIEW_IMAGE_TOOL_NAME) continue
+      if (part.type !== 'tool-result' || !isImageViewingToolName(part.toolName)) continue
       const unmatchedResults = unmatchedResultsByToolCallId.get(part.toolCallId)
       const matchedResult = unmatchedResults?.pop()
       if (!matchedResult) continue
@@ -227,6 +240,38 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     if (entry) entry.image = image
     else resolvedImagesByStorageKey.set(result.image_storage_key, image)
     return image
+  }
+
+  const recordImageResult: ImageToolResults['record'] = async ({ toolCallId, label, dataUrl }) => {
+    const parsedImage = parseDataUrl(dataUrl)
+    if (!parsedImage) throw new Error('Failed to process image into a model-compatible format.')
+    const imageStorageKey = await saveImage(`view-image:${context.sessionId ?? 'session'}`, dataUrl)
+    const result: ViewImageToolResult = {
+      file_path: label,
+      image_storage_key: imageStorageKey,
+      media_type: parsedImage.mediaType,
+    }
+    const entry: ViewImageResultEntry = { toolCallId, result, image: { filePath: label, ...parsedImage } }
+    resultEntries.push(entry)
+    resultEntriesByStorageKey.set(result.image_storage_key, entry)
+    return result
+  }
+
+  const toImageModelOutput: ImageToolResults['toModelOutput'] = async ({ toolCallId, output }) => {
+    const record = asRecord(output)
+    const error = stringField(record, 'error')
+    if (error) return { type: 'text' as const, value: `Error: ${error}` }
+    const result = parseViewImageToolResult(output)
+    if (!result) return { type: 'text' as const, value: 'Error: the tool returned an unexpected image result.' }
+    const entry = resultEntriesByStorageKey.get(result.image_storage_key)
+    const parsed = await resolveToolCallImage(result, entry?.toolCallId === toolCallId ? entry : undefined)
+    if (!parsed) {
+      return { type: 'text' as const, value: `Viewed image: ${result.file_path} (image data is no longer available)` }
+    }
+    if (!context.toolResultImages) {
+      return { type: 'text' as const, value: viewImageAttachmentNotice(result.file_path) }
+    }
+    return buildViewImageToolResultContent(parsed)
   }
 
   const view_image: ToolSet[string] = {
@@ -310,41 +355,13 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
       if (!parsedImage) {
         return { error: 'Failed to process image into a model-compatible format.' }
       }
-      const imageStorageKey = await saveImage(`view-image:${context.sessionId ?? 'session'}`, dataUrl)
-      const result: ViewImageToolResult = {
-        file_path: viewInput.file_path,
-        image_storage_key: imageStorageKey,
-        media_type: parsedImage.mediaType,
-      }
-      const entry: ViewImageResultEntry = {
-        toolCallId: toolOptions.toolCallId,
-        result,
-        image: { filePath: result.file_path, ...parsedImage },
-      }
-      resultEntries.push(entry)
-      resultEntriesByStorageKey.set(result.image_storage_key, entry)
-      return result
+      return recordImageResult({ toolCallId: toolOptions.toolCallId, label: viewInput.file_path, dataUrl })
     },
     // Within the running generation, later steps must receive the actual image — never
     // base64-as-text. Media-capable protocols embed it in the tool result; others get a
     // text notice here and the image via injectImagesIntoStepMessages (user message).
     // History resends are handled by the shared model-message converter the same way.
-    toModelOutput: async ({ toolCallId, output }: { toolCallId: string; output: unknown }) => {
-      const record = asRecord(output)
-      const error = stringField(record, 'error')
-      if (error) return { type: 'text' as const, value: `Error: ${error}` }
-      const result = parseViewImageToolResult(output)
-      if (!result) return { type: 'text' as const, value: 'Error: view_image returned an unexpected result.' }
-      const entry = resultEntriesByStorageKey.get(result.image_storage_key)
-      const parsed = await resolveToolCallImage(result, entry?.toolCallId === toolCallId ? entry : undefined)
-      if (!parsed) {
-        return { type: 'text' as const, value: `Viewed image: ${result.file_path} (image data is no longer available)` }
-      }
-      if (!context.toolResultImages) {
-        return { type: 'text' as const, value: viewImageAttachmentNotice(result.file_path) }
-      }
-      return buildViewImageToolResultContent(parsed)
-    },
+    toModelOutput: toImageModelOutput,
   }
 
   // Keep pending results until a subsequent assistant response, and bound older pixels.
@@ -378,7 +395,7 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
       const imageInjections: ViewImageInjection[] = []
       const boundedContent = [] as typeof message.content
       for (const [partIndex, part] of message.content.entries()) {
-        if (part.type !== 'tool-result' || part.toolName !== VIEW_IMAGE_TOOL_NAME) {
+        if (part.type !== 'tool-result' || !isImageViewingToolName(part.toolName)) {
           boundedContent.push(part)
           continue
         }
@@ -392,7 +409,7 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
             ...part,
             output: {
               type: 'text' as const,
-              value: `Historical image pixels omitted: ${cached.result.file_path}. Call view_image again if needed.`,
+              value: `Historical image pixels omitted: ${cached.result.file_path}. View or capture it again if needed.`,
             },
           })
           continue
@@ -446,5 +463,6 @@ ${VIEW_IMAGE_BATCH_GUIDANCE}
     }
 `,
     injectImagesIntoStepMessages,
+    imageResults: { reserve: reserveImageCall, record: recordImageResult, toModelOutput: toImageModelOutput },
   }
 }

@@ -17,6 +17,11 @@ import { mcpController } from '@/packages/mcp/controller'
 import { generateCommandExplanation } from '@/packages/model-calls/command-explanation'
 import { buildAgentMemoryTools, buildPausedAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
 import { getBuiltInBrowserToolSet } from '@/packages/model-calls/toolsets/built-in-browser'
+import {
+  BUILT_IN_BROWSER_SKILL_DESCRIPTION,
+  BUILT_IN_BROWSER_SKILL_NAME,
+  builtInBrowserSkillBody,
+} from '@/packages/model-calls/toolsets/built-in-browser-skill'
 import { buildChatboxCliToolSet } from '@/packages/model-calls/toolsets/chatbox-cli'
 import { buildCodeExecutionTools } from '@/packages/model-calls/toolsets/code-execution'
 import { buildFileTools, fileToolSetDescription } from '@/packages/model-calls/toolsets/file'
@@ -26,7 +31,11 @@ import { asRecord, numberField, stringField, toTextModelOutput } from '@/package
 import { buildRunCommandTool } from '@/packages/model-calls/toolsets/run-command'
 import { remapPhantomHomePath } from '@/packages/model-calls/toolsets/sandbox-paths'
 import { getToolSet as getSessionAttachmentRagToolSet } from '@/packages/model-calls/toolsets/session-attachment-rag'
-import { buildViewImageToolSet, isViewImageAvailable } from '@/packages/model-calls/toolsets/view-image'
+import {
+  buildViewImageToolSet,
+  type ImageToolResults,
+  isViewImageAvailable,
+} from '@/packages/model-calls/toolsets/view-image'
 import { getToolSetDescription, parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
 import { buildWorkspaceInstructions } from '@/packages/model-calls/workspace-instructions'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
@@ -407,13 +416,6 @@ When you create a Git commit that includes code changes, append this exact trail
   if (webSupported) {
     instructions += getToolSetDescription({ includeParseLink: includeParseLinkTool })
   }
-  // The built-in browser is a Work Mode tool; only desktop platforms provide it.
-  const builtInBrowserToolSet = includeAgentTools
-    ? getBuiltInBrowserToolSet(platform.builtInBrowser, { hasParseLink: includeParseLinkTool })
-    : null
-  if (builtInBrowserToolSet) {
-    instructions += builtInBrowserToolSet.description
-  }
 
   let codeExecToolSet: ReturnType<typeof buildCodeExecutionTools> | null = null
   let sandboxWorkingDirectory: string | null = null
@@ -458,10 +460,6 @@ When you create a Git commit that includes code changes, append this exact trail
     if (includeParseLinkTool) {
       tools.parse_link = parseLinkTool
     }
-  }
-
-  if (builtInBrowserToolSet) {
-    tools = { ...tools, ...builtInBrowserToolSet.tools }
   }
 
   if (kbToolSet && kbSupported) {
@@ -548,6 +546,7 @@ When you create a Git commit that includes code changes, append this exact trail
   // Image viewing: agent mode + vision. prepareStepMessages bounds replay for every
   // protocol; chat-completions style protocols also use it to inject real user image parts.
   let prepareStepMessages: BuildToolsResult['prepareStepMessages']
+  let imageResults: ImageToolResults | undefined
   const includeViewImageTool = includeAgentTools && model.isSupportVision() && isViewImageAvailable()
   if (includeViewImageTool) {
     const viewImageToolSet = buildViewImageToolSet({
@@ -558,6 +557,16 @@ When you create a Git commit that includes code changes, append this exact trail
     instructions += viewImageToolSet.description
     tools = { ...tools, ...viewImageToolSet.tools }
     prepareStepMessages = viewImageToolSet.injectImagesIntoStepMessages
+    imageResults = viewImageToolSet.imageResults
+  }
+
+  // The built-in browser is a Work Mode tool; only desktop platforms provide it. Its screenshot
+  // command needs the image results of a vision model.
+  const builtInBrowserToolSet = includeAgentTools
+    ? getBuiltInBrowserToolSet(platform.builtInBrowser, { hasParseLink: includeParseLinkTool, imageResults })
+    : null
+  if (builtInBrowserToolSet) {
+    tools = { ...tools, ...builtInBrowserToolSet.tools }
   }
 
   if (includeAgentTools) {
@@ -575,7 +584,21 @@ When you create a Git commit that includes code changes, append this exact trail
   if (includeAgentTools) {
     const allSkills = await getDiscoveredSkills()
     const skillSettings = settingsStore.getState().getSettings().skills
-    const enabledSkills = allSkills.filter((s) => skillSettings.enabledSkillNames.includes(s.name))
+    const toolsetSkills = builtInBrowserToolSet
+      ? [
+          {
+            name: BUILT_IN_BROWSER_SKILL_NAME,
+            description: BUILT_IN_BROWSER_SKILL_DESCRIPTION,
+            body: builtInBrowserSkillBody({ screenshot: imageResults !== undefined }),
+          },
+        ]
+      : []
+    const enabledSkills = [
+      ...allSkills.filter(
+        (s) => skillSettings.enabledSkillNames.includes(s.name) && !toolsetSkills.some((skill) => skill.name === s.name)
+      ),
+      ...toolsetSkills,
+    ]
     const userExecWorkingDirectory = options.sessionSettings?.workingDirectories?.find((dir) => dir.trim().length > 0)
     instructions += buildSkillToolsInstruction(
       enabledSkills,
@@ -586,7 +609,7 @@ When you create a Git commit that includes code changes, append this exact trail
       sandboxCodeExecutionFallback,
       sandboxWorkingDirectory
     )
-    tools.load_skill = buildLoadSkillTool(options)
+    tools.load_skill = buildLoadSkillTool(options, toolsetSkills)
     if (enabledSkills.some((skill) => skill.name === 'chatbox-product-info')) {
       const chatboxCliToolSet = buildChatboxCliToolSet({
         sessionId: options.sessionId,
@@ -635,7 +658,14 @@ When you create a Git commit that includes code changes, append this exact trail
   return { tools, instructions, ...(prepareStepMessages ? { prepareStepMessages } : {}) }
 }
 
-function buildLoadSkillTool(options: BuildToolsOptions): ToolSet[string] {
+/**
+ * `toolsetSkills` document tools that are present in this request. They load regardless of the
+ * user's skill settings and take precedence over an installed skill with the same name.
+ */
+function buildLoadSkillTool(
+  options: BuildToolsOptions,
+  toolsetSkills: ReadonlyArray<{ name: string; body: string }>
+): ToolSet[string] {
   return {
     description:
       "Load a skill by name to get its full instructions. Call this when the user's request " +
@@ -653,6 +683,8 @@ function buildLoadSkillTool(options: BuildToolsOptions): ToolSet[string] {
     }),
     execute: async (input) => {
       const skillInput = input as { name: string }
+      const toolsetSkill = toolsetSkills.find((skill) => skill.name === skillInput.name)
+      if (toolsetSkill) return { instructions: toolsetSkill.body } satisfies LoadedSkill
       const skillSettings = settingsStore.getState().getSettings().skills
       if (!skillSettings.enabledSkillNames.includes(skillInput.name)) {
         return {

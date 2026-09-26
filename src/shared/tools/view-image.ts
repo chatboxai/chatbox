@@ -1,4 +1,5 @@
 import type { ImagePart, ModelMessage, TextPart } from 'ai'
+import { BUILT_IN_BROWSER_TOOL_NAME } from '../built-in-browser'
 import type { ProviderModelInfo } from '../types'
 
 /**
@@ -7,6 +8,17 @@ import type { ProviderModelInfo } from '../types'
  * resending history, and the UI renders a thumbnail from the storage key.
  */
 export const VIEW_IMAGE_TOOL_NAME = 'view_image'
+
+// Only the browser's screenshot command yields an image; its other results carry no image reference.
+const IMAGE_VIEWING_TOOL_NAMES: ReadonlySet<string> = new Set([VIEW_IMAGE_TOOL_NAME, BUILT_IN_BROWSER_TOOL_NAME])
+
+/**
+ * Tools whose result is an image the model asked to look at. Their pending results are always
+ * delivered, while other tool images count against the historical inline limit.
+ */
+export function isImageViewingToolName(toolName: string | undefined): boolean {
+  return toolName !== undefined && IMAGE_VIEWING_TOOL_NAMES.has(toolName)
+}
 
 /**
  * Upper bound for reading raw image bytes into memory, shared by the

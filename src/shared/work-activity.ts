@@ -3,7 +3,7 @@
  * counted per action, so a long run still says something instead of listing tools.
  */
 
-import { BROWSE_PAGE_TOOL_NAME } from './built-in-browser'
+import { BUILT_IN_BROWSER_TOOL_NAME, builtInBrowserCommandOf } from './built-in-browser'
 
 export type WorkActivityAction =
   | 'commands'
@@ -57,7 +57,7 @@ const EDIT_TOOLS = new Set([
 ])
 
 const WEB_SEARCH_TOOLS = new Set(['web_search'])
-const PAGE_TOOLS = new Set(['parse_link', BROWSE_PAGE_TOOL_NAME])
+const PAGE_TOOLS = new Set(['parse_link'])
 const IMAGE_TOOLS = new Set(['create_image', 'generate_image', 'image_generation'])
 
 function isImageCliCall(args: unknown): boolean {
@@ -68,6 +68,7 @@ function isImageCliCall(args: unknown): boolean {
 /** The action a tool call performs, as the folded run names it. */
 export function classifyWorkActivity(toolName: string, args?: unknown): WorkActivityAction {
   if (toolName === 'chatbox_cli') return isImageCliCall(args) ? 'images' : 'tools'
+  if (toolName === BUILT_IN_BROWSER_TOOL_NAME) return builtInBrowserCommandOf(args) === 'run' ? 'tools' : 'pages'
   if (IMAGE_TOOLS.has(toolName)) return 'images'
   if (COMMAND_TOOLS.has(toolName)) return 'commands'
   if (EDIT_TOOLS.has(toolName)) return 'edits'

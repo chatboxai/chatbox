@@ -41,6 +41,14 @@ describe('classifyWorkActivity', () => {
     expect(classifyWorkActivity('chatbox_cli', { argv: ['image', 'generate', 'a cat'] })).toBe('images')
     expect(classifyWorkActivity('chatbox_cli', { argv: ['chats', 'list'] })).toBe('tools')
   })
+
+  it('counts browser reads and screenshots as pages and scripts as tools', () => {
+    expect(classifyWorkActivity('browser', { command: 'read', url: 'https://example.com' })).toBe('pages')
+    expect(classifyWorkActivity('browser', { command: 'screenshot' })).toBe('pages')
+    expect(classifyWorkActivity('browser', { command: 'run', url: 'https://example.com', code: 'return 1' })).toBe(
+      'tools'
+    )
+  })
 })
 
 describe('dominantWorkActivity', () => {

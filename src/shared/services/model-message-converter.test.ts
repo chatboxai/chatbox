@@ -901,6 +901,16 @@ describe('convertToModelMessages — view_image tool results', () => {
   const resolveStored = (storageKey: string) =>
     Promise.resolve(storageKey === 'picture:view-image:s1:uuid' ? 'data:image/png;base64,SU1BR0U=' : null)
 
+  it.each([true, false])('replays screenshot pixels with native image support=%s', async (native) => {
+    const output = await convertToModelMessages(
+      [viewImageMessage(viewImageResult, { toolName: 'browser', args: { command: 'screenshot' } })],
+      resolveStored,
+      { modelSupportVision: true, supportToolResultImages: native }
+    )
+    expect(JSON.stringify(output)).toContain('SU1BR0U=')
+    for (const message of output) expect(() => modelMessageSchema.parse(message)).not.toThrow()
+  })
+
   it('re-inlines the stored image when the model supports tool-result images', async () => {
     const output = await convertToModelMessages([viewImageMessage(viewImageResult)], resolveStored, {
       modelSupportVision: true,

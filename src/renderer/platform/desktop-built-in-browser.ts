@@ -11,7 +11,13 @@ import type { BuiltInBrowser } from './interfaces'
 export class DesktopBuiltInBrowser implements BuiltInBrowser {
   constructor(private readonly ipc: ElectronIPC) {}
 
-  async readPage(params: { url?: string; timeoutMs?: number; signal?: AbortSignal }): Promise<BuiltInBrowserPage> {
+  async readPage(params: {
+    url?: string
+    timeoutMs?: number
+    screenshot?: boolean
+    script?: { code: string; expectedUrl: string }
+    signal?: AbortSignal
+  }): Promise<BuiltInBrowserPage> {
     const { signal } = params
     signal?.throwIfAborted()
     const requestId = uuidv4()
@@ -24,6 +30,8 @@ export class DesktopBuiltInBrowser implements BuiltInBrowser {
         requestId,
         url: params.url,
         timeoutMs: params.timeoutMs,
+        screenshot: params.screenshot,
+        script: params.script,
       })
     } finally {
       signal?.removeEventListener('abort', onAbort)

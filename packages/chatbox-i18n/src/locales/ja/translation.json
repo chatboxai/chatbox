@@ -1728,5 +1728,7 @@
   "The conversation has inconsistent branch relationships. Its messages and branches were preserved in legacy JSON format.": "この会話の分岐関係に不整合があります。メッセージと分岐は旧 JSON 形式で保持されました。",
   "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "このバックアップには旧形式の会話の分岐と大きな会話が含まれます。このバージョン以降の Chatbox でインポートしてください。",
   "Fast model": "高速モデル",
-  "Used to automatically generate conversation titles. Choose a model with fast responses.": "会話のタイトルを自動生成します。応答の速いモデルを選択してください。"
+  "Used to automatically generate conversation titles. Choose a model with fast responses.": "会話のタイトルを自動生成します。応答の速いモデルを選択してください。",
+  "Page Screenshot": "ページのスクリーンショット",
+  "Run Browser JavaScript": "ブラウザーで JavaScript を実行"
 }

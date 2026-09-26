@@ -15,7 +15,7 @@ export function createViewImageBatchBudget(): (messages: ModelMessage[]) => void
     const calls = callsByStep.get(messages) ?? 0
     if (calls >= VIEW_IMAGE_MAX_CALLS_PER_STEP) {
       throw new Error(
-        `Image not read: view_image allows at most ${VIEW_IMAGE_MAX_CALLS_PER_STEP} calls per step. Request this image in the next step.`
+        `Image not read: at most ${VIEW_IMAGE_MAX_CALLS_PER_STEP} images can be viewed or captured per step. Request this image in the next step.`
       )
     }
     // Reserve before asynchronous reads so concurrent calls cannot overbook the batch.

@@ -1,7 +1,7 @@
 import { isApprovalPauseReason } from '@chatbox/core/message-approval'
 import NiceModal from '@ebay/nice-modal-react'
 import { Alert, Box, Button, Code, Collapse, Group, Paper, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
-import { BROWSE_PAGE_TOOL_NAME } from '@shared/built-in-browser'
+import { BUILT_IN_BROWSER_TOOL_NAME, builtInBrowserCommandOf } from '@shared/built-in-browser'
 import { workExecutionFeedback } from '@shared/mobile-work/execution-feedback'
 import { ChatboxAIAPIError } from '@shared/models/errors'
 import { SANDBOX_EXEC_ERROR_CODES } from '@shared/sandbox-provider'
@@ -232,7 +232,6 @@ const toolIconMap: Record<string, React.ElementType> = {
   file_search: IconFileSearch,
   query_knowledge_base: IconDatabase,
   parse_link: IconExternalLink,
-  [BROWSE_PAGE_TOOL_NAME]: IconBrowser,
   create_file: IconFile,
   edit_file: IconEdit,
   delete_file: IconFileMinus,
@@ -260,7 +259,17 @@ const toolIconMap: Record<string, React.ElementType> = {
   view_image: IconPhoto,
 }
 
-const getToolIcon = (toolName: string) => toolIconMap[toolName] || IconCode
+const browserCommandIconMap = { read: IconBrowser, run: IconCode, screenshot: IconPhoto }
+
+const getToolIcon = (toolName: string, args?: unknown) =>
+  toolName === BUILT_IN_BROWSER_TOOL_NAME
+    ? browserCommandIconMap[builtInBrowserCommandOf(args) ?? 'read']
+    : toolIconMap[toolName] || IconCode
+
+/** parse_link and the browser's read command both return a page's text. */
+const isPageReadPart = (part: MessageToolCallPart) =>
+  part.toolName === 'parse_link' ||
+  (part.toolName === BUILT_IN_BROWSER_TOOL_NAME && builtInBrowserCommandOf(part.args) === 'read')
 
 // ─── Pill Header (shared) ───────────────────────────────────────────
 
@@ -270,7 +279,7 @@ const ToolCallPill: FC<{
   onClick: () => void
   expanded: boolean
 }> = ({ part, summary, onClick, expanded }) => {
-  const Icon = getToolIcon(part.toolName)
+  const Icon = getToolIcon(part.toolName, part.args)
   const isLoading = part.state === 'call'
   const isError = part.state === 'error' || isBashNotAvailableResult(part)
 
@@ -1233,7 +1242,7 @@ export const ToolCallPartUI: FC<{ part: MessageToolCallPart } & ToolCallActionCo
   if (part.toolName === 'web_search') {
     return <WebSearchGroupUI parts={[part]} />
   }
-  if (part.toolName === 'parse_link' || part.toolName === BROWSE_PAGE_TOOL_NAME) {
+  if (isPageReadPart(part)) {
     return <ParseLinkUI part={part} />
   }
   if (part.toolName === 'create_download') {
@@ -1379,7 +1388,7 @@ const TimelineToolCallDetail: FC<{ part: MessageToolCallPart }> = ({ part }) => 
   if (part.toolName === 'web_search') {
     return <WebSearchDetails part={part} />
   }
-  if (part.toolName === 'parse_link' || part.toolName === BROWSE_PAGE_TOOL_NAME) {
+  if (isPageReadPart(part)) {
     return <ParseLinkDetails part={part} />
   }
   if (isCommandExecutionPart(part)) {
@@ -1492,7 +1501,7 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
   useEffect(() => {
     if (approvalHighlighted) setExpanded(true)
   }, [approvalHighlighted, setExpanded])
-  const Icon = getToolIcon(part.toolName)
+  const Icon = getToolIcon(part.toolName, part.args)
   const handleResumeBackground = useCallback(async () => {
     if (!acceptedImageTask || !sessionId || !canResumeBackground || isResumingBackground) return
     setIsResumingBackground(true)
@@ -1551,7 +1560,7 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
         ? getFirstStringValue(part.args, ['code'])
         : part.toolName === 'create_download'
           ? getFirstStringValue(part.result, ['file_path']) || getFirstStringValue(part.args, ['file_path'])
-          : part.toolName === 'parse_link' || part.toolName === BROWSE_PAGE_TOOL_NAME
+          : part.toolName === 'parse_link' || part.toolName === BUILT_IN_BROWSER_TOOL_NAME
             ? getFirstStringValue(part.args, ['url']) || getFirstStringValue(part.result, ['title', 'url'])
             : getFirstStringValue(part.args, ['path', 'file_path', 'query', 'pattern', 'command', 'skillName', 'name'])
 

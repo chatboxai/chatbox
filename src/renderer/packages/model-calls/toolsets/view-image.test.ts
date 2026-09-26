@@ -2,7 +2,7 @@ import type { LanguageModelV4Prompt, LanguageModelV4StreamPart } from '@ai-sdk/p
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import { convertToModelMessages } from '@shared/services/model-message-converter'
 import type { MessageContentToolCallPart } from '@shared/types'
-import { jsonSchema, isStepCount, streamText } from 'ai'
+import { isStepCount, jsonSchema, streamText } from 'ai'
 import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -350,6 +350,58 @@ describe('view_image without tool-result image support (user-message injection)'
     expect(messages).toHaveLength(2)
   })
 
+  test('images recorded by another image-viewing tool are injected under its label', async () => {
+    const toolSet = buildToolSet({ toolResultImages: false })
+    const result = await toolSet.imageResults.record({
+      toolCallId: 'shot-call',
+      label: 'https://example.com/',
+      dataUrl: 'data:image/jpeg;base64,SlBFRw==',
+    })
+    expect(result).toEqual({
+      file_path: 'https://example.com/',
+      image_storage_key: 'picture:view-image:session-id:uuid',
+      media_type: 'image/jpeg',
+    })
+    expect(await toolSet.imageResults.toModelOutput({ toolCallId: 'shot-call', output: result })).toEqual({
+      type: 'text',
+      value:
+        'Viewed image: https://example.com/. The image is attached in the user message directly after this tool result.',
+    })
+
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: [
+          {
+            type: 'tool-call' as const,
+            toolCallId: 'shot-call',
+            toolName: 'browser',
+            input: { command: 'screenshot' },
+          },
+        ],
+      },
+      {
+        role: 'tool' as const,
+        content: [
+          {
+            type: 'tool-result' as const,
+            toolCallId: 'shot-call',
+            toolName: 'browser',
+            output: { type: 'text' as const, value: 'notice' },
+          },
+        ],
+      },
+    ]
+    const injected = await toolSet.injectImagesIntoStepMessages?.(messages as never)
+    expect(injected?.[2]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: '[Image from view_image tool: https://example.com/]' },
+        { type: 'image', image: 'SlBFRw==', mediaType: 'image/jpeg' },
+      ],
+    })
+  })
+
   test('injectImagesIntoStepMessages leaves messages untouched for unknown tool calls', async () => {
     const toolSet = buildToolSet({ toolResultImages: false })
     const messages = [
@@ -546,7 +598,7 @@ test.each([true, false])('SDK delivers a bounded batch before trimming history (
     }, 0)
   expect(prompts).toHaveLength(3)
   expect(imageCount(prompts[1])).toBe(8)
-  expect(JSON.stringify(prompts[1])).toContain('Image not read: view_image allows at most 8 calls per step')
+  expect(JSON.stringify(prompts[1])).toContain('Image not read: at most 8 images can be viewed or captured per step')
   expect(imageCount(prompts[2])).toBe(6)
   expect(JSON.stringify(prompts[2])).toContain('next.png')
   expect(saveImage).toHaveBeenCalledTimes(9)

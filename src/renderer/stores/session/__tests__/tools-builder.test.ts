@@ -940,26 +940,65 @@ describe('buildToolsForSession', () => {
     expect(result.instructions).not.toContain('## parse_link')
   })
 
-  test('Work Mode exposes browse_page where the platform provides a built-in browser', async () => {
+  function commandsOf(tool: ToolSet[string] | undefined) {
+    return (tool?.inputSchema as unknown as { jsonSchema: { properties: { command: { enum: string[] } } } }).jsonSchema
+      .properties.command.enum
+  }
+
+  test('Work Mode offers the built-in browser as one tool without a standing instruction section', async () => {
     builtInBrowser.current = { readPage: vi.fn() }
     const model = createMockModel()
 
     const result = await buildToolsForSession(model, { webBrowsing: false, messages: [], agentMode: 'on' })
 
-    expect(result.tools.browse_page).toBeDefined()
-    expect(result.instructions).toContain('## Built-in browser')
+    expect(Object.keys(result.tools).filter((name) => /browse|script|screenshot|browser/.test(name))).toEqual([
+      'browser',
+    ])
+    expect(result.instructions).not.toContain('## Built-in browser')
   })
 
-  test('browse_page stays off in chat mode and without a built-in browser', async () => {
+  test('the built-in-browser skill is listed and loadable only alongside the built-in browser', async () => {
+    const model = createMockModel()
+    const withoutBrowser = await buildToolsForSession(model, { webBrowsing: false, messages: [], agentMode: 'on' })
+    expect(withoutBrowser.instructions).not.toContain('**built-in-browser**')
+
+    builtInBrowser.current = { readPage: vi.fn() }
+    const result = await buildToolsForSession(model, { webBrowsing: false, messages: [], agentMode: 'on' })
+    expect(result.instructions).toContain('**built-in-browser**')
+    const loadSkillTool = result.tools.load_skill
+    if (!loadSkillTool?.execute) throw new Error('load_skill execute missing')
+    const loaded = await loadSkillTool.execute({ name: 'built-in-browser' }, {} as never)
+    expect(loaded).toEqual({ instructions: expect.stringContaining('browser.click(target)') })
+    expect(loadSkillMock).not.toHaveBeenCalled()
+  })
+
+  test('the screenshot command and its skill section exist only for vision models', async () => {
+    builtInBrowser.current = { readPage: vi.fn() }
+
+    const vision = await buildToolsForSession(createMockModel(), { webBrowsing: false, messages: [], agentMode: 'on' })
+    expect(commandsOf(vision.tools.browser)).toEqual(['read', 'run', 'screenshot'])
+    expect(vision.prepareStepMessages).toBeDefined()
+    const visionSkill = await vision.tools.load_skill.execute?.({ name: 'built-in-browser' }, {} as never)
+    expect(JSON.stringify(visionSkill)).toContain('## Screenshots')
+
+    const textOnly = createMockModel()
+    vi.mocked(textOnly.isSupportVision).mockReturnValue(false)
+    const withoutVision = await buildToolsForSession(textOnly, { webBrowsing: false, messages: [], agentMode: 'on' })
+    expect(commandsOf(withoutVision.tools.browser)).toEqual(['read', 'run'])
+    const textSkill = await withoutVision.tools.load_skill.execute?.({ name: 'built-in-browser' }, {} as never)
+    expect(JSON.stringify(textSkill)).not.toContain('Screenshots')
+  })
+
+  test('the browser stays off in chat mode and without a built-in browser', async () => {
     const model = createMockModel()
     const withoutBrowser = await buildToolsForSession(model, { webBrowsing: true, messages: [], agentMode: 'on' })
-    expect(withoutBrowser.tools.browse_page).toBeUndefined()
-    expect(withoutBrowser.instructions).not.toContain('## Built-in browser')
+    expect(withoutBrowser.tools.browser).toBeUndefined()
+    expect(withoutBrowser.instructions).not.toContain('built-in-browser')
 
     builtInBrowser.current = { readPage: vi.fn() }
     const chatMode = await buildToolsForSession(model, { webBrowsing: true, messages: [], agentMode: 'off' })
-    expect(chatMode.tools.browse_page).toBeUndefined()
-    expect(chatMode.instructions).not.toContain('## Built-in browser')
+    expect(chatMode.tools.browser).toBeUndefined()
+    expect(chatMode.instructions).not.toContain('built-in-browser')
   })
 
   test('agentMode="on" without codeExecution — load_skill only, no code-exec tools', async () => {

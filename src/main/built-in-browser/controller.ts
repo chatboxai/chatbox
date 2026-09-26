@@ -2,8 +2,11 @@ import {
   BUILT_IN_BROWSER_CHANNELS,
   BUILT_IN_BROWSER_DEFAULT_READ_TIMEOUT_MS,
   BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS,
+  BUILT_IN_BROWSER_SCREENSHOT_MAX_DIMENSION,
+  BUILT_IN_BROWSER_SCRIPT_MAX_CHARS,
   type BuiltInBrowserPage,
   type BuiltInBrowserReadRequest,
+  type BuiltInBrowserScreenshot,
   type BuiltInBrowserState,
   type BuiltInBrowserViewRequest,
   EMPTY_BUILT_IN_BROWSER_STATE,
@@ -17,6 +20,7 @@ import {
   WebContentsView,
 } from 'electron'
 import { extractReadableContent } from './extract'
+import { PAGE_HELPERS_SOURCE } from './page-helpers'
 import { normalizeBrowserUrl } from './url'
 
 /** Persistent profile of the built-in browser; sign-ins made in the sidebar are kept here. */
@@ -87,6 +91,8 @@ export class BuiltInBrowserController {
   private readQueue: Promise<unknown> = Promise.resolve()
   /** Whether the view's current main-frame document has reached DOM ready. */
   private documentReady = false
+  /** Whether the latest main-frame navigation failed to load; the page shown is then an error page. */
+  private mainFrameLoadFailed = false
   /** Orders view requests, so a hide that waits on a snapshot never undoes a later placement. */
   private viewGeneration = 0
 
@@ -209,16 +215,46 @@ export class BuiltInBrowserController {
         timeoutMs
       )
       try {
-        if (url) {
+        if (request.script) {
+          if (url || request.screenshot) throw new Error('Script execution cannot navigate or capture a screenshot.')
+          if (!this.documentReady) await waitForDocument(contents, signal)
+          signal.throwIfAborted()
+          const { code } = request.script
+          const expectedUrl = normalizeBrowserUrl(request.script.expectedUrl)
+          if (contents.getURL() !== expectedUrl)
+            throw new Error('The browser page changed. Read it again before executing a script.')
+          let navigated = false
+          const onNavigation = (event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>) => {
+            if (event.isMainFrame && !event.isSameDocument) navigated = true
+          }
+          contents.on('did-start-navigation', onNavigation)
+          try {
+            const scriptResult = await executePageScript(contents, code, expectedUrl, signal)
+            return {
+              url: contents.getURL(),
+              title: contents.getTitle(),
+              content: '',
+              scriptResult: navigated ? { ...scriptResult, navigated } : scriptResult,
+            }
+          } finally {
+            contents.off('did-start-navigation', onNavigation)
+          }
+        }
+        // The page already open and loaded is read as it is; reloading it would discard what was done
+        // on it. A pending navigation or a failed load is loaded again.
+        const reuseOpenPage = url === contents.getURL() && this.documentReady && !this.mainFrameLoadFailed
+        if (url && !reuseOpenPage) {
           this.documentReady = false
           contents.loadURL(url).catch(() => undefined)
         }
         const snapshot = await snapshotSettled(contents, signal, () => this.documentReady)
         const extracted = extractReadableContent({ html: snapshot.html, url: snapshot.url, visibleText: snapshot.text })
+        const screenshot = request.screenshot ? await captureViewport(contents, signal) : undefined
         return {
           url: snapshot.url,
           title: snapshot.title || extracted.title || '',
           content: extracted.content,
+          ...(screenshot ? { screenshot } : {}),
         }
       } finally {
         clearTimeout(timer)
@@ -286,6 +322,7 @@ export class BuiltInBrowserController {
     const view = this.view
     this.view = null
     this.documentReady = false
+    this.mainFrameLoadFailed = false
     if (view && !view.webContents.isDestroyed()) view.webContents.close()
   }
 
@@ -308,7 +345,13 @@ export class BuiltInBrowserController {
     })
     this.documentReady = false
     contents.on('did-start-navigation', (event) => {
-      if (event.isMainFrame && !event.isSameDocument) this.documentReady = false
+      if (!event.isMainFrame || event.isSameDocument) return
+      this.documentReady = false
+      this.mainFrameLoadFailed = false
+    })
+    contents.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
+      // ERR_ABORTED (-3) is a navigation replaced by another one, not a failed page.
+      if (isMainFrame && errorCode !== -3) this.mainFrameLoadFailed = true
     })
     contents.on('dom-ready', () => {
       this.documentReady = true
@@ -330,6 +373,90 @@ export class BuiltInBrowserController {
 }
 
 const MAX_SNAPSHOT_ATTEMPTS = 4
+const SCREENSHOT_JPEG_QUALITY = 80
+
+/** Captures the visible viewport, downscaled so its longest side fits a model image. */
+async function captureViewport(contents: WebContents, signal: AbortSignal): Promise<BuiltInBrowserScreenshot> {
+  // A capture that never settles must not hold the read queue after the read is cancelled.
+  const captured = await new Promise<NativeImage>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason)
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    contents
+      .capturePage(undefined, { stayHidden: true })
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', onAbort))
+  })
+  if (captured.isEmpty()) {
+    throw new Error('The built-in browser page is not visible, so it cannot be captured. Open the sidebar browser.')
+  }
+  const size = captured.getSize()
+  const scale = Math.min(1, BUILT_IN_BROWSER_SCREENSHOT_MAX_DIMENSION / Math.max(size.width, size.height))
+  const image =
+    scale < 1
+      ? captured.resize({
+          width: Math.max(1, Math.round(size.width * scale)),
+          height: Math.max(1, Math.round(size.height * scale)),
+          quality: 'good',
+        })
+      : captured
+  const output = image.getSize()
+  return {
+    base64Data: image.toJPEG(SCREENSHOT_JPEG_QUALITY).toString('base64'),
+    mediaType: 'image/jpeg',
+    width: output.width,
+    height: output.height,
+  }
+}
+
+const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor as new (body: string) => unknown
+
+/** Parses without running, so a syntax error is reported as such and the body cannot close the wrapper. */
+function assertScriptBody(code: string): void {
+  try {
+    new AsyncFunction(code)
+  } catch (error) {
+    throw new Error(`The script has a syntax error: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/**
+ * Bounds the serialized result in the page before it crosses IPC. The page can replace the
+ * builtins the wrapper uses, so the result is checked and bounded again here.
+ */
+async function executePageScript(
+  contents: WebContents,
+  code: string,
+  expectedUrl: string,
+  signal: AbortSignal
+): Promise<{ value: string; truncated: boolean }> {
+  assertScriptBody(code)
+  const source = `(async () => {
+    if (location.href !== ${JSON.stringify(expectedUrl)}) throw new Error('The browser page changed. Read it again before executing a script.');
+    ${PAGE_HELPERS_SOURCE}
+    const result = await (async () => {\n${code}\n})();
+    const text = typeof result === 'string' ? result : JSON.stringify(result, (_key, value) => typeof value === 'bigint' ? String(value) : value) ?? 'undefined';
+    return { value: text.slice(0, ${BUILT_IN_BROWSER_SCRIPT_MAX_CHARS}), truncated: text.length > ${BUILT_IN_BROWSER_SCRIPT_MAX_CHARS} };
+  })()`
+  const result = await new Promise<unknown>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+    contents
+      .executeJavaScript(source)
+      .then(resolve, reject)
+      .finally(() => {
+        signal.removeEventListener('abort', onAbort)
+      })
+  })
+  const value = (result as { value?: unknown } | null)?.value
+  if (typeof value !== 'string') throw new Error('The page returned an unexpected script result.')
+  const truncated =
+    value.length > BUILT_IN_BROWSER_SCRIPT_MAX_CHARS || (result as { truncated?: unknown }).truncated === true
+  return { value: value.slice(0, BUILT_IN_BROWSER_SCRIPT_MAX_CHARS), truncated }
+}
 
 /** Resolves on the next main-frame DOM ready; rejects when the main frame fails to load or on abort. */
 function waitForDocument(contents: WebContents, signal: AbortSignal): Promise<void> {

@@ -12,6 +12,7 @@ import { DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT, getToolResultImageReference } f
 import {
   buildViewImageToolResultContent,
   buildViewImageUserMessage,
+  isImageViewingToolName,
   type ViewImageInjection,
   viewImageAttachmentNotice,
 } from '../tools/view-image'
@@ -164,6 +165,16 @@ function isCompletedToolCall(part: MessageContentParts[number]): part is Message
   return part.type === 'tool-call' && (part.state === 'result' || part.state === 'error')
 }
 
+/** A completed call of an image-viewing tool whose result holds the image it looked at. */
+function isViewedImageResult(part: MessageContentParts[number]): boolean {
+  return (
+    part.type === 'tool-call' &&
+    part.state === 'result' &&
+    isImageViewingToolName(part.toolName) &&
+    getToolResultImageReference(part) !== null
+  )
+}
+
 function isAssistantResponsePart(part: MessageContentParts[number]): boolean {
   return (
     part.type === 'tool-call' ||
@@ -200,7 +211,7 @@ function getToolCallBatch(parts: MessageContentParts, start: number, allowUnmark
   if (first.type !== 'tool-call' || first.stepIndex === undefined) return { end, toolCallPartIndexes }
 
   let nextMarkedIndex = start
-  let hasViewImageResult = first.toolName === 'view_image' && first.state === 'result'
+  let hasViewImageResult = isViewedImageResult(first)
   for (; end < parts.length; end += 1) {
     const part = parts[end]
     const partStep = 'stepIndex' in part ? part.stepIndex : undefined
@@ -208,7 +219,7 @@ function getToolCallBatch(parts: MessageContentParts, start: number, allowUnmark
     if (part.type === 'tool-call') {
       if (partStep === undefined) break
       if (isCompletedToolCall(part)) toolCallPartIndexes.push(end)
-      if (part.toolName === 'view_image' && part.state === 'result') hasViewImageResult = true
+      if (isViewedImageResult(part)) hasViewImageResult = true
     } else if (isAssistantResponsePart(part) && partStep === undefined) {
       if (nextMarkedIndex <= end) {
         nextMarkedIndex = end + 1
@@ -480,7 +491,7 @@ function collectRecentToolResultImagePositions(
       if (part.type !== 'tool-call' || part.state !== 'result') continue
       if (!getToolResultImageReference(part)) continue
       const pending =
-        messageIndex === lastAssistantIndex && pendingIndexes.has(partIndex) && part.toolName === 'view_image'
+        messageIndex === lastAssistantIndex && pendingIndexes.has(partIndex) && isImageViewingToolName(part.toolName)
       if (!pending && selectedCount >= normalizedLimit) continue
       const selectedPartIndexes = selected.get(messageIndex) ?? new Set<number>()
       selectedPartIndexes.add(partIndex)

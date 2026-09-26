@@ -1728,5 +1728,7 @@
   "The conversation has inconsistent branch relationships. Its messages and branches were preserved in legacy JSON format.": "이 대화의 분기 관계가 일치하지 않습니다. 메시지와 분기는 이전 JSON 형식으로 보존되었습니다.",
   "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "이 백업에는 이전 대화 분기와 대용량 대화가 함께 포함됩니다. 현재 버전 이상의 Chatbox에서 가져오세요.",
   "Fast model": "빠른 모델",
-  "Used to automatically generate conversation titles. Choose a model with fast responses.": "대화 제목을 자동으로 생성합니다. 응답이 빠른 모델을 선택하세요."
+  "Used to automatically generate conversation titles. Choose a model with fast responses.": "대화 제목을 자동으로 생성합니다. 응답이 빠른 모델을 선택하세요.",
+  "Page Screenshot": "페이지 스크린샷",
+  "Run Browser JavaScript": "브라우저 JavaScript 실행"
 }

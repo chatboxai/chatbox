@@ -35,8 +35,14 @@ export interface Storage {
 
 /** Desktop-only browser with its own persistent profile for reading rendered or signed-in pages. */
 export interface BuiltInBrowser {
-  /** Reads `url`, or the page currently shown when `url` is omitted. */
-  readPage(params: { url?: string; timeoutMs?: number; signal?: AbortSignal }): Promise<BuiltInBrowserPage>
+  /** Reads `url`, or the page currently shown when `url` is omitted; `screenshot` also captures the viewport. */
+  readPage(params: {
+    url?: string
+    timeoutMs?: number
+    screenshot?: boolean
+    script?: { code: string; expectedUrl: string }
+    signal?: AbortSignal
+  }): Promise<BuiltInBrowserPage>
   navigate(url: string): Promise<void>
   goBack(): Promise<void>
   goForward(): Promise<void>

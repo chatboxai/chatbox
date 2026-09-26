@@ -1728,5 +1728,7 @@
   "The conversation has inconsistent branch relationships. Its messages and branches were preserved in legacy JSON format.": "此對話的分支關係不完整，訊息與分支已按舊版 JSON 格式完整保留。",
   "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "此備份同時包含舊版對話分支與大型對話，請使用目前版本或更新版本的 Chatbox 匯入。",
   "Fast model": "快速模型",
-  "Used to automatically generate conversation titles. Choose a model with fast responses.": "用於自動產生對話標題，建議選擇回應較快的模型。"
+  "Used to automatically generate conversation titles. Choose a model with fast responses.": "用於自動產生對話標題，建議選擇回應較快的模型。",
+  "Page Screenshot": "網頁截圖",
+  "Run Browser JavaScript": "執行瀏覽器 JavaScript"
 }

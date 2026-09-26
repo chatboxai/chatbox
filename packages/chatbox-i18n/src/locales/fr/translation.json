@@ -1728,5 +1728,7 @@
   "The conversation has inconsistent branch relationships. Its messages and branches were preserved in legacy JSON format.": "Les liens entre les branches de cette conversation sont incohérents. Les messages et les branches ont été conservés dans l’ancien format JSON.",
   "This backup preserves legacy conversation branches alongside large conversations. Import it with this version of Chatbox or later.": "Cette sauvegarde contient des branches de conversations anciennes et des conversations volumineuses. Importez-la avec cette version de Chatbox ou une version ultérieure.",
   "Fast model": "Modèle rapide",
-  "Used to automatically generate conversation titles. Choose a model with fast responses.": "Génère automatiquement les titres des conversations. Choisissez un modèle qui répond rapidement."
+  "Used to automatically generate conversation titles. Choose a model with fast responses.": "Génère automatiquement les titres des conversations. Choisissez un modèle qui répond rapidement.",
+  "Page Screenshot": "Capture d'écran de la page",
+  "Run Browser JavaScript": "Exécuter du JavaScript dans le navigateur"
 }

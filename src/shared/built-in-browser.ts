@@ -30,6 +30,21 @@ export interface BuiltInBrowserReadRequest {
   /** Page to open. Without it the page currently shown in the browser is read. */
   url?: string
   timeoutMs?: number
+  /** Also capture the visible viewport once the page has settled. */
+  screenshot?: boolean
+  /** Execute a script on this exact URL instead of extracting page text. */
+  script?: { code: string; expectedUrl: string }
+}
+
+/** Longest side, in pixels, of a viewport screenshot sent to a model. */
+export const BUILT_IN_BROWSER_SCREENSHOT_MAX_DIMENSION = 1568
+
+export interface BuiltInBrowserScreenshot {
+  /** Base64 image data without a data URL prefix. */
+  base64Data: string
+  mediaType: 'image/jpeg'
+  width: number
+  height: number
 }
 
 export interface BuiltInBrowserPage {
@@ -37,6 +52,10 @@ export interface BuiltInBrowserPage {
   url: string
   title: string
   content: string
+  /** Present when the read requested a screenshot. */
+  screenshot?: BuiltInBrowserScreenshot
+  /** `navigated` is set when the main frame started loading another document while the script ran. */
+  scriptResult?: { value: string; truncated: boolean; navigated?: boolean }
 }
 
 export interface BuiltInBrowserState {
@@ -71,5 +90,32 @@ export type BuiltInBrowserViewRequest =
   /** With `snapshot`, a still of the page is taken before it is hidden and returned as a data URL. */
   { visible: false; snapshot?: boolean } | { visible: true; bounds: BuiltInBrowserViewBounds }
 
-/** Model tool that reads a page in the built-in browser. */
-export const BROWSE_PAGE_TOOL_NAME = 'browse_page'
+/** The one model tool of the built-in browser; `command` selects what it does. */
+export const BUILT_IN_BROWSER_TOOL_NAME = 'browser'
+
+/** `read` opens or reads a page, `run` executes a script on it, `screenshot` captures its viewport. */
+export const BUILT_IN_BROWSER_COMMANDS = ['read', 'run', 'screenshot'] as const
+export type BuiltInBrowserCommand = (typeof BUILT_IN_BROWSER_COMMANDS)[number]
+
+/** The command of a `browser` tool call, when its input names a known one. */
+export function builtInBrowserCommandOf(input: unknown): BuiltInBrowserCommand | undefined {
+  const command = (input as { command?: unknown } | null | undefined)?.command
+  return BUILT_IN_BROWSER_COMMANDS.find((known) => known === command)
+}
+
+export const BUILT_IN_BROWSER_SCRIPT_MAX_CHARS = 12_000
+
+/**
+ * Methods of the `browser` object predefined in run scripts. The desktop controller implements them
+ * and the built-in-browser skill documents them; tests on both sides check against this list.
+ */
+export const BUILT_IN_BROWSER_SCRIPT_HELPERS = [
+  'elements',
+  'click',
+  'fill',
+  'press',
+  'scroll',
+  'waitFor',
+  'selector',
+  'sleep',
+] as const

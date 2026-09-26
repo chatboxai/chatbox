@@ -1,4 +1,5 @@
 import type { ModelMessage } from 'ai'
+import { isImageViewingToolName } from './view-image'
 import { lastAssistantMessageIndex } from './view-image-batch'
 
 const VIEW_IMAGE_LABEL_PREFIX = '[Image from view_image tool: '
@@ -90,15 +91,15 @@ export function boundToolResultImages(messages: ModelMessage[], limit: number): 
             boundedValue.unshift(valuePart)
             continue
           }
-          if ((messageIndex > lastAssistant && part.toolName === 'view_image') || remainingImages > 0) {
+          if ((messageIndex > lastAssistant && isImageViewingToolName(part.toolName)) || remainingImages > 0) {
             boundedValue.unshift(valuePart)
-            if (messageIndex <= lastAssistant || part.toolName !== 'view_image') remainingImages -= 1
+            if (messageIndex <= lastAssistant || !isImageViewingToolName(part.toolName)) remainingImages -= 1
           }
         }
         if (boundedValue.length < output.value.length) {
           boundedValue.push({
             type: 'text',
-            text: 'Historical image pixels omitted from this request. Call view_image again if needed.',
+            text: 'Historical image pixels omitted from this request. View or capture it again if needed.',
           })
         }
         boundedContent.unshift({ ...part, output: { ...output, value: boundedValue } })

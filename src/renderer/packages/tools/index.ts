@@ -1,3 +1,4 @@
+import { BUILT_IN_BROWSER_TOOL_NAME, builtInBrowserCommandOf } from '@shared/built-in-browser'
 import { t } from 'i18next'
 import { parseChatboxCliInput } from '@/packages/chatbox-cli/parser'
 import type { ChatboxCliInput } from '@/packages/chatbox-cli/types'
@@ -41,6 +42,14 @@ function getChatboxCliToolName(input: unknown): string {
 
 export function getToolName(toolName: string, input?: unknown): string {
   if (toolName === 'chatbox_cli') return getChatboxCliToolName(input)
+  if (toolName === BUILT_IN_BROWSER_TOOL_NAME) {
+    const command = builtInBrowserCommandOf(input)
+    return command === 'run'
+      ? t('Run Browser JavaScript')
+      : command === 'screenshot'
+        ? t('Page Screenshot')
+        : t('Browse Page')
+  }
   // Use translation keys that i18next cli can detect
   const toolNames: Record<string, string> = {
     query_knowledge_base: t('Query Knowledge Base'),
@@ -58,7 +67,6 @@ export function getToolName(toolName: string, input?: unknown): string {
     write_file: t('Write File'),
     search_files: t('Search Files'),
     parse_link: t('Parse Link'),
-    browse_page: t('Browse Page'),
     code_execution: t('Code Execution'),
     create_download: t('Create Download'),
     search_file_content: t('Search File Content'),

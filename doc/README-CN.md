@@ -3,6 +3,16 @@
   <a href="README-CN.md">简体中文</a>
 </p>
 
+> [!TIP]
+> 🚀 **本分支新增核心特性：端侧本地会话附件 RAG (混合检索 + 向量库) 与移动端 Android App 原生支持**  
+> 本代码库为 Chatbox 引入了 100% 本地化运行的会话附件混合检索（向量相似度 + 全文检索 + RRF 融合排序）引擎，同时支持桌面端（Electron / LanceDB）与移动端（Capacitor / Android SQLite 原生驱动）。
+> 
+> - 📱 **安卓安装包下载：** [Chatbox-mobile-rag-debug.apk](https://github.com/flupke91/chatbox/releases/latest/download/Chatbox-mobile-rag-debug.apk)  
+> - 💻 **Windows 安装包下载：** [Chatbox-1.23.5-Setup.exe](https://github.com/flupke91/chatbox/releases/latest/download/Chatbox-1.23.5-Setup.exe)  
+> - 📦 **查看所有发布版本与资产：** [GitHub Releases](https://github.com/flupke91/chatbox/releases)
+
+---
+
 这里是 Chatbox 社区版的代码仓库，以 GPLv3 许可证开源。
 
 [Chatbox 再次开源！](https://github.com/chatboxai/chatbox/issues/2266)

@@ -199,3 +199,9 @@ tmp_*.*
 
 # Local pnpm store accidentally created by pnpm install in worktrees
 .pnpm-store/
+
+# Release packages
+release/*.apk
+release/*.exe
+release/*.blockmap
+release/*.yml

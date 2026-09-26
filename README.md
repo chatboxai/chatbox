@@ -48,6 +48,16 @@
 
 ---
 
+> [!TIP]
+> 🚀 **New Feature in this Fork: Local Session Attachment RAG & Mobile Android App**  
+> This repository adds a complete client-side Hybrid Vector & Full-Text Retrieval (RAG) system for chat session attachments, running 100% locally on both Desktop (Electron) and Mobile (Capacitor Android).
+> 
+> - 📱 **Download Android APK:** [Chatbox-mobile-rag-debug.apk](https://github.com/flupke91/chatbox/releases/latest/download/Chatbox-mobile-rag-debug.apk)  
+> - 💻 **Download Windows Setup:** [Chatbox-1.23.5-Setup.exe](https://github.com/flupke91/chatbox/releases/latest/download/Chatbox-1.23.5-Setup.exe)  
+> - 📦 **All Releases & Assets:** [GitHub Releases](https://github.com/flupke91/chatbox/releases)
+
+---
+
 This is the repository for the Chatbox Community Edition, open-sourced under the GPLv3 license.
 
 [Chatbox is going open-source Again!](https://github.com/chatboxai/chatbox/issues/2266)

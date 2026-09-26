@@ -31,6 +31,22 @@ ON session_meta(sort_order DESC);
 `
 
 /**
+ * Partial indexes for the session list queries: hidden rows (archived, sub-agent)
+ * can outnumber visible ones many times over, and these keep visible and archived
+ * pages and counts from scanning them. `idx_session_meta_list` also serves one
+ * folder's unpinned sessions in order, and its count, as a single index range.
+ * Apply after the `session_meta` column migrations, since `archived_at` and
+ * `folder_id` are added to older tables by `ALTER TABLE`.
+ */
+export const CAPACITOR_SESSION_META_LIST_INDEX_SQL = `
+CREATE INDEX IF NOT EXISTS idx_session_meta_list
+ON session_meta(starred, folder_id, sort_order DESC) WHERE hidden = 0;
+
+CREATE INDEX IF NOT EXISTS idx_session_meta_archived
+ON session_meta(archived_at DESC) WHERE archived_at IS NOT NULL;
+`
+
+/**
  * `ORDER BY` clause for visible `session_meta` rows in the order of
  * `sortSessionRecords`: pinned, then each folder in `folderIds` order, then
  * unfiled (including rows whose folder no longer exists), each by sort_order.

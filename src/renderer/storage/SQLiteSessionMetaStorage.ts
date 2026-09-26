@@ -4,7 +4,11 @@ import {
   SQLiteConnection,
   type SQLiteDBConnection,
 } from '@capacitor-community/sqlite'
-import { CAPACITOR_SESSION_META_SCHEMA_SQL, capacitorSessionListOrderBy } from '@chatbox/core'
+import {
+  CAPACITOR_SESSION_META_LIST_INDEX_SQL,
+  CAPACITOR_SESSION_META_SCHEMA_SQL,
+  capacitorSessionListOrderBy,
+} from '@chatbox/core'
 import type { SessionMetaPage, SessionMetaRecord } from '@shared/types'
 import { type SessionMetaStorage, sortSessionRecords } from './SessionMetaStorage'
 
@@ -73,6 +77,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     if (!hasRecoveryArchived) {
       await this.database.execute('ALTER TABLE session_meta ADD COLUMN recovery_archived INTEGER NOT NULL DEFAULT 0')
     }
+    await this.database.execute(CAPACITOR_SESSION_META_LIST_INDEX_SQL)
   }
 
   private recordToRow(record: SessionMetaRecord): Record<string, unknown> {
@@ -273,7 +278,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     )
     const items = (result.values || []).map((row) => this.rowToRecord(row))
     const total = await this.getTotal()
-    const nextCursor = items.length === limit ? cursor + items.length : null
+    const nextCursor = cursor + items.length < total ? cursor + items.length : null
     return { items, nextCursor, total }
   }
 

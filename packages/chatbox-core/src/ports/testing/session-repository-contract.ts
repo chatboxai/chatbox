@@ -190,6 +190,11 @@ export function createSessionRepositoryContract(
           'Visible last page must terminate pagination'
         )
         assertDeepEqual(
+          await repository.meta.getPage(1, 2),
+          { items: [regularNew, regularOld], nextCursor: null, total: 3 },
+          'A full visible page that reaches the end must terminate pagination'
+        )
+        assertDeepEqual(
           await repository.meta.getArchivedPage(0, 1),
           { items: [archivedNew], nextCursor: 1, total: 2 },
           'Archived first page must preserve archivedAt ordering'

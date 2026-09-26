@@ -62,6 +62,14 @@ const FILE_STORAGE_QUOTA_EXCEEDED_ERROR = 'file_storage_quota_exceeded'
 const FILE_PREPROCESS_FAILED_ERROR = 'file_preprocess_failed'
 const SESSION_ATTACHMENT_RAG_INLINE_BYTE_THRESHOLD = 256 * 1024
 export const SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH = 6 * 1024 * 1024
+export const MOBILE_SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH = 64 * 1024 * 1024
+
+export function getSessionAttachmentRagMaxByteLength(): number {
+  if (platform.type === 'mobile') {
+    return MOBILE_SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH
+  }
+  return SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH
+}
 let sessionRagCapabilityCache:
   | {
       key: string
@@ -217,7 +225,7 @@ function getContentStats(content: string): ContentStats {
 }
 
 function isParsedContentVeryLarge(stats: ContentStats): boolean {
-  return stats.byteLength > SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH
+  return stats.byteLength > getSessionAttachmentRagMaxByteLength()
 }
 
 export function computePreviewMetadata(
@@ -241,12 +249,20 @@ export function computePreviewMetadata(
   const tokenCalculatedAt: Record<string, number> = {}
 
   if (includeFullTokenCounts && tokenCountMap[TOKEN_CACHE_KEYS.default] === undefined) {
-    tokenCountMap[TOKEN_CACHE_KEYS.default] = estimateTokens(content)
+    if (stats.byteLength > SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH) {
+      tokenCountMap[TOKEN_CACHE_KEYS.default] = Math.ceil(content.length / 4)
+    } else {
+      tokenCountMap[TOKEN_CACHE_KEYS.default] = estimateTokens(content)
+    }
     tokenCalculatedAt[TOKEN_CACHE_KEYS.default] = now
   }
 
   if (includeFullTokenCounts && tokenCountMap[TOKEN_CACHE_KEYS.deepseek] === undefined) {
-    tokenCountMap[TOKEN_CACHE_KEYS.deepseek] = estimateTokens(content, { provider: '', modelId: 'deepseek' })
+    if (stats.byteLength > SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH) {
+      tokenCountMap[TOKEN_CACHE_KEYS.deepseek] = Math.ceil(content.length / 4)
+    } else {
+      tokenCountMap[TOKEN_CACHE_KEYS.deepseek] = estimateTokens(content, { provider: '', modelId: 'deepseek' })
+    }
     tokenCalculatedAt[TOKEN_CACHE_KEYS.deepseek] = now
   }
 
@@ -589,13 +605,14 @@ async function analyzePickedAsset(input: {
     : undefined
   if (sessionAttachmentWarningReason) {
     log.info(
-      `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Parsed content is very large: file="${asset.name}", parser=${parserType ?? 'unknown'}, bytes=${stats.byteLength}, limit=${SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH}`
+      `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Parsed content is very large: file="${asset.name}", parser=${parserType ?? 'unknown'}, bytes=${stats.byteLength}, limit=${getSessionAttachmentRagMaxByteLength()}`
     )
   }
 
   const isSessionAttachmentRagFileType = isSessionAttachmentRagSupportedFilePath(asset.name)
+  const isPlatformSupported = platform.isDesktopLike || platform.type === 'mobile'
   const exceedsSessionAttachmentRagThreshold =
-    platform.isDesktopLike &&
+    isPlatformSupported &&
     isSessionAttachmentRagFileType &&
     stats.byteLength > SESSION_ATTACHMENT_RAG_INLINE_BYTE_THRESHOLD
   const sessionAttachmentRagAllowed = exceedsSessionAttachmentRagThreshold ? await canUseSessionAttachmentRag() : false

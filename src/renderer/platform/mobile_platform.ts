@@ -18,6 +18,7 @@ import type { KnowledgeBaseController } from './knowledge-base/interface'
 import MobileExporter from './mobile_exporter'
 import mobileLogger from './mobile_logger'
 import type { SessionAttachmentRagController } from './session-attachment-rag/interface'
+import { MobileSessionAttachmentRagController } from './session-attachment-rag/mobile-controller'
 import { MobileSQLiteStorage } from './storages'
 import { parseFileLocallyInBrowser } from './web_platform_utils'
 
@@ -310,8 +311,13 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
     throw new Error('Method not implemented.')
   }
 
+  private _sessionAttachmentRagController?: SessionAttachmentRagController
+
   public getSessionAttachmentRagController(): SessionAttachmentRagController {
-    throw new Error('Session attachment RAG is not implemented on mobile.')
+    if (!this._sessionAttachmentRagController) {
+      this._sessionAttachmentRagController = new MobileSessionAttachmentRagController()
+    }
+    return this._sessionAttachmentRagController
   }
 
   public getImageGenerationStorage(): ImageGenerationStorage {

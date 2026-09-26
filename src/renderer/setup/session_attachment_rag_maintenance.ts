@@ -9,6 +9,7 @@ import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { sessionStartupRecovery } from '@/packages/session-startup-recovery'
 import platform from '@/platform'
+import { supportsSessionAttachmentRag } from '@shared/platform'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
 import { collectAttachmentOwnershipClaims } from '../../shared/session-attachment-rag/ownership'
 
@@ -43,7 +44,7 @@ function collectSessionMessages(session: Session): Message[] {
 }
 
 async function collectMaintenanceScope(): Promise<SessionAttachmentRagMaintenanceScope | null> {
-  if (!platform.isDesktopLike) {
+  if (!supportsSessionAttachmentRag(platform.type)) {
     return {
       sessionIds: [],
       messageIds: [],
@@ -128,7 +129,7 @@ export async function runSessionAttachmentRagMaintenancePass() {
 }
 
 export function initSessionAttachmentRagMaintenance() {
-  if (maintenanceStarted || !platform.isDesktopLike) {
+  if (maintenanceStarted || !supportsSessionAttachmentRag(platform.type)) {
     return
   }
 

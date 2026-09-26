@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import platform from '@/platform'
+import { supportsSessionAttachmentRag } from '@shared/platform'
 import * as toastActions from '@/stores/toastActions'
 import { MessageAttachment } from '../InputBox/Attachments'
 
@@ -33,12 +34,12 @@ export function MessageAttachmentGrid({ files, links, align = 'start' }: Message
   const { data: sessionAttachments, refetch: refetchSessionAttachments } = useQuery({
     queryKey: ['session-attachment-rag-attachments', ...sessionAttachmentIds],
     queryFn: () => {
-      if (!platform.isDesktopLike || sessionAttachmentIds.length === 0) {
+      if (!supportsSessionAttachmentRag(platform.type) || sessionAttachmentIds.length === 0) {
         return []
       }
       return platform.getSessionAttachmentRagController().getAttachments(sessionAttachmentIds)
     },
-    enabled: platform.isDesktopLike && sessionAttachmentIds.length > 0,
+    enabled: supportsSessionAttachmentRag(platform.type) && sessionAttachmentIds.length > 0,
     staleTime: 3000,
     refetchInterval: (query) => {
       const attachments = query.state.data ?? []
@@ -88,7 +89,7 @@ export function MessageAttachmentGrid({ files, links, align = 'start' }: Message
   const shouldRightAlignLastItem = align === 'end' && visibleTotalCount % 2 === 1 && visibleTotalCount > 1
 
   const recoverAttachment = async (attachmentId: number) => {
-    if (!platform.isDesktopLike || recoveringIdsRef.current.has(attachmentId)) {
+    if (!supportsSessionAttachmentRag(platform.type) || recoveringIdsRef.current.has(attachmentId)) {
       return
     }
     recoveringIdsRef.current.add(attachmentId)

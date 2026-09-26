@@ -6,3 +6,10 @@ export type PlatformType = 'web' | 'desktop' | 'mobile'
 export function isDesktopLikePlatform(platformType: PlatformType): boolean {
   return platformType === 'desktop'
 }
+
+/**
+ * Platforms supporting session attachment RAG (desktop via Electron IPC, mobile via MobileLocalRagEngine).
+ */
+export function supportsSessionAttachmentRag(platformType: PlatformType): boolean {
+  return platformType === 'desktop' || platformType === 'mobile'
+}

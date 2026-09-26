@@ -19,6 +19,7 @@ import { estimateTokensFromMessages } from '@/packages/token'
 import platform from '@/platform'
 import { clearMessageGenerationStopOperation } from '@/stores/generationStopOperations'
 import { reportError } from '@/utils/sentry'
+import { supportsSessionAttachmentRag } from '@shared/platform'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attachment-rag/logging'
 import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndexing'
 import * as settingActions from '../settingActions'
@@ -40,7 +41,7 @@ function snapshotStreamingMessage(message: Message): Message {
 }
 
 export async function attachLargeFileRagMetadata(sessionId: string, message: Message): Promise<Message> {
-  if (!platform.isDesktopLike || !message.files?.length) {
+  if (!supportsSessionAttachmentRag(platform.type) || !message.files?.length) {
     return message
   }
 
@@ -233,7 +234,7 @@ export async function removeMessage(sessionId: string, messageId: string) {
   ) {
     return
   }
-  if (platform.isDesktopLike) {
+  if (supportsSessionAttachmentRag(platform.type)) {
     try {
       const controller = platform.getSessionAttachmentRagController()
       // Save & Resend versioning lets several messages share one indexed

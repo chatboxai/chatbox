@@ -30,9 +30,14 @@ import {
 } from './model-providers'
 
 const log = getLogger('session-attachment-rag:ipc-handlers')
-const QUERY_RECALL_TOP_K = 20
-const QUERY_RETURN_TOP_K = 8
-const QUERY_RETURN_TOP_K_MAX = 12
+import {
+  dedupeByParent,
+  normalizeQueryPlan,
+  QUERY_RECALL_TOP_K,
+  QUERY_RETURN_TOP_K,
+  QUERY_RETURN_TOP_K_MAX,
+  summarizeQuery,
+} from '../../shared/session-attachment-rag/query-plan'
 
 function toTimestamp(value?: string) {
   return value ? parseSQLiteTimestamp(value) : undefined
@@ -53,37 +58,6 @@ async function toRendererSessionAttachment(attachment: SessionAttachmentRecord, 
     processingStartedAt: toTimestamp(attachment.processingStartedAt),
     completedAt: toTimestamp(attachment.completedAt),
   }
-}
-
-function dedupeByParent<T extends { parentId: number }>(results: T[]) {
-  const deduped = new Map<number, T>()
-  for (const result of results) {
-    if (!deduped.has(result.parentId)) {
-      deduped.set(result.parentId, result)
-    }
-  }
-  return [...deduped.values()]
-}
-
-/**
- * Format a user query for logs without leaking the full text. The main process log file
- * sits in a user-readable location on disk, so query content (which can include private
- * questions about uploaded documents) should not be persisted verbatim.
- */
-function summarizeQuery(query: string): string {
-  const trimmed = query.trim()
-  const length = trimmed.length
-  const previewLength = 16
-  const preview = trimmed.slice(0, previewLength).replace(/\s+/g, ' ')
-  const ellipsis = length > previewLength ? '...' : ''
-  return `len=${length}, prefix="${preview}${ellipsis}"`
-}
-
-function normalizeQueryPlan(plan?: SessionAttachmentQueryPlan) {
-  const recallTopK = Math.max(1, Math.min(plan?.recallTopK ?? QUERY_RECALL_TOP_K, QUERY_RECALL_TOP_K))
-  const finalTopK = Math.max(1, Math.min(plan?.finalTopK ?? QUERY_RETURN_TOP_K, QUERY_RETURN_TOP_K_MAX))
-  const rerankPlan = plan?.rerank?.enabled ? { enabled: true, model: plan.rerank.model } : { enabled: false as const }
-  return { recallTopK, finalTopK, rerank: rerankPlan }
 }
 
 export function registerSessionAttachmentRagHandlers() {
@@ -247,11 +221,12 @@ export function registerSessionAttachmentRagHandlers() {
       let rankedResults = flatResults
 
       if (plan.rerank.enabled && plan.rerank.model && flatResults.length > 0) {
+        const rerankModel = plan.rerank.model
         try {
-          const rerankProvider = await getSessionAttachmentRerankProvider(plan.rerank.model)
+          const rerankProvider = await getSessionAttachmentRerankProvider(rerankModel)
           if (rerankProvider) {
             log.debug(
-              `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [IPC] Reranking query results with model=${plan.rerank.model}, candidates=${flatResults.length}`
+              `${SESSION_ATTACHMENT_RAG_LOG_PREFIX} [IPC] Reranking query results with model=${rerankModel}, candidates=${flatResults.length}`
             )
             const rerankedResults = await rerank(flatResults, params.query, rerankProvider, {
               topK: plan.recallTopK,
@@ -267,7 +242,7 @@ export function registerSessionAttachmentRagHandlers() {
             scope.setTag('component', 'session-attachment-rag')
             scope.setTag('operation', 'rerank_query')
             scope.setExtra('querySummary', summarizeQuery(params.query))
-            scope.setExtra('rerankModel', plan.rerank.model)
+            scope.setExtra('rerankModel', rerankModel)
             sentry.captureException(error)
           })
         }

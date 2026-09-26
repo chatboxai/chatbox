@@ -12,6 +12,7 @@ import {
 import { getDefaultStore } from 'jotai'
 import { omit } from 'lodash'
 import { rendererApplication } from '@/app/renderer-application'
+import { supportsSessionAttachmentRag } from '@shared/platform'
 import platform from '@/platform'
 import { navigateToDynamicPath, router } from '@/router'
 import { sortSessionRecords } from '@/storage/SessionMetaStorage'
@@ -341,7 +342,7 @@ export async function clear(sessionId: string) {
     return
   }
   abortSessionGenerations(sessionId, session, 'session-cleared')
-  if (platform.isDesktopLike) {
+  if (supportsSessionAttachmentRag(platform.type)) {
     try {
       await platform.getSessionAttachmentRagController().deleteSessionAttachments(sessionId)
     } catch (error) {

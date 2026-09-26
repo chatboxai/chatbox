@@ -377,6 +377,10 @@ export default class DesktopPlatform implements Platform {
     return this._sessionAttachmentRagController
   }
 
+  public supportsSessionAttachmentRag(): boolean {
+    return true
+  }
+
   public getImageGenerationStorage(): ImageGenerationStorage {
     if (!this._imageGenerationStorage) {
       this._imageGenerationStorage = new IndexedDBImageGenerationStorage()

@@ -33,12 +33,12 @@ export function MessageAttachmentGrid({ files, links, align = 'start' }: Message
   const { data: sessionAttachments, refetch: refetchSessionAttachments } = useQuery({
     queryKey: ['session-attachment-rag-attachments', ...sessionAttachmentIds],
     queryFn: () => {
-      if (!platform.isDesktopLike || sessionAttachmentIds.length === 0) {
+      if (!(platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) || sessionAttachmentIds.length === 0) {
         return []
       }
       return platform.getSessionAttachmentRagController().getAttachments(sessionAttachmentIds)
     },
-    enabled: platform.isDesktopLike && sessionAttachmentIds.length > 0,
+    enabled: (platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) && sessionAttachmentIds.length > 0,
     staleTime: 3000,
     refetchInterval: (query) => {
       const attachments = query.state.data ?? []
@@ -88,7 +88,7 @@ export function MessageAttachmentGrid({ files, links, align = 'start' }: Message
   const shouldRightAlignLastItem = align === 'end' && visibleTotalCount % 2 === 1 && visibleTotalCount > 1
 
   const recoverAttachment = async (attachmentId: number) => {
-    if (!platform.isDesktopLike || recoveringIdsRef.current.has(attachmentId)) {
+    if (!(platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) || recoveringIdsRef.current.has(attachmentId)) {
       return
     }
     recoveringIdsRef.current.add(attachmentId)

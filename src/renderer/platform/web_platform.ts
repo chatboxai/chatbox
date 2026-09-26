@@ -198,6 +198,10 @@ export default class WebPlatform extends IndexedDBStorage implements Platform {
     throw new Error('Session attachment RAG is not implemented on web.')
   }
 
+  public supportsSessionAttachmentRag(): boolean {
+    return false
+  }
+
   public getImageGenerationStorage(): ImageGenerationStorage {
     if (!this.imageGenerationStorage) {
       this.imageGenerationStorage = new IndexedDBImageGenerationStorage()

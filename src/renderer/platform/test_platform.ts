@@ -352,6 +352,10 @@ export default class TestPlatform implements Platform {
     throw new Error('Session attachment RAG not implemented in test platform.')
   }
 
+  public supportsSessionAttachmentRag(): boolean {
+    return true
+  }
+
   public getImageGenerationStorage(): ImageGenerationStorage {
     if (!this._imageGenerationStorage) {
       this._imageGenerationStorage = new IndexedDBImageGenerationStorage()

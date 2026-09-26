@@ -341,7 +341,7 @@ export async function clear(sessionId: string) {
     return
   }
   abortSessionGenerations(sessionId, session, 'session-cleared')
-  if (platform.isDesktopLike) {
+  if (platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) {
     try {
       await platform.getSessionAttachmentRagController().deleteSessionAttachments(sessionId)
     } catch (error) {

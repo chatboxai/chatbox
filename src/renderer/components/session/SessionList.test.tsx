@@ -3,7 +3,7 @@
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { SessionFolder, SessionMetaRecord } from '@shared/types'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 type DndContextHandlers = {
@@ -144,14 +144,16 @@ vi.mock('./SessionItem', async () => {
       isReordering,
       onStartReordering,
       session,
+      hideAvatar,
     }: {
+      hideAvatar?: boolean
       isReordering?: boolean
       onStartReordering?: () => void
       session: SessionMetaRecord
     }) =>
       React.createElement(
         'div',
-        { 'data-testid': `session-content-${session.id}` },
+        { 'data-testid': `session-content-${session.id}`, 'data-hide-avatar': String(Boolean(hideAvatar)) },
         session.name,
         !isReordering &&
           onStartReordering &&
@@ -253,7 +255,9 @@ describe('SessionList mobile reorder mode', () => {
       dndContextState.handlers?.onDragStart?.({ active: { id: 'session-1' } })
     })
 
-    const overlayContent = screen.getByTestId('drag-overlay').firstElementChild
+    const overlayRow = screen.getByTestId('drag-overlay').firstElementChild
+    expect(overlayRow?.className).not.toContain('pl-[22px]')
+    const overlayContent = overlayRow?.firstElementChild
     expect(overlayContent?.className).toContain('scale-[1.02]')
     expect(overlayContent?.className).toContain('shadow-lg')
   })
@@ -363,10 +367,43 @@ describe('SessionList folders', () => {
     renderList()
 
     expect(folderHeaders()).toEqual(['work', 'home'])
+    expect(screen.getByRole('button', { name: /Work/ }).querySelector('.tabler-icon-folder-open')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Home/ }).querySelector('.tabler-icon-folder')).toBeTruthy()
     expect(screen.getByText('Work chat')).toBeTruthy()
     expect(screen.queryByText('Home chat')).toBeNull()
     expect(screen.getByText('Chats')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Home/ }).getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('indents only project children, not pinned or unfiled chats', () => {
+    sessionListState.sessions = [
+      { id: 'p1', name: 'Pinned project chat', starred: true, folderId: 'work', sortOrder: 4, createdAt: 4 },
+      ...filed,
+      { id: 'orphan', name: 'Missing project', folderId: 'missing', sortOrder: 0, createdAt: 0 },
+    ]
+    renderList()
+
+    for (const id of ['w1', 'h1']) {
+      const row = screen.getByTestId(`session-content-${id}`).parentElement
+      expect(row?.classList.contains('pl-[22px]')).toBe(true)
+      expect(screen.getByTestId(`session-content-${id}`).getAttribute('data-hide-avatar')).toBe('true')
+    }
+    for (const id of ['p1', 'u1', 'orphan']) {
+      expect(screen.getByTestId(`session-content-${id}`).parentElement?.classList.contains('pl-[22px]')).toBe(false)
+      expect(screen.getByTestId(`session-content-${id}`).getAttribute('data-hide-avatar')).toBe('false')
+    }
+  })
+
+  test('keeps the project indent on the drag overlay of a project chat', () => {
+    renderList()
+
+    act(() => {
+      dndContextState.handlers?.onDragStart?.({ active: { id: 'w1' } })
+    })
+
+    const overlay = screen.getByTestId('drag-overlay')
+    expect(overlay.firstElementChild?.className).toContain('pl-[22px]')
+    expect(within(overlay).getByTestId('session-content-w1').getAttribute('data-hide-avatar')).toBe('true')
   })
 
   test('shows groups only up to the loaded page boundary', () => {

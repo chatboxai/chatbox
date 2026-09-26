@@ -69,15 +69,26 @@ const session: SessionMetaRecord = {
   createdAt: Date.now(),
 }
 
-function renderItem(selected = true) {
+function renderItem(selected = true, hideAvatar = false) {
   return render(
     <MantineProvider>
-      <SessionItem session={session} selected={selected} />
+      <SessionItem session={session} selected={selected} hideAvatar={hideAvatar} />
     </MantineProvider>
   )
 }
 
 describe('SessionItem', () => {
+  test('renders project children without an avatar', () => {
+    const { container } = renderItem(true, true)
+    expect(container.querySelector('.mantine-Avatar-root')).toBeNull()
+    expect(screen.getByTestId(TestId.sidebar.sessionTitle).textContent).toBe(session.name)
+  })
+
+  test('renders the avatar for top-level conversations', () => {
+    const { container } = renderItem()
+    expect(container.querySelector('.mantine-Avatar-root')).not.toBeNull()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     generationRuntimeStore.clear(session.id)

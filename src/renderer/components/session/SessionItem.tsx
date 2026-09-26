@@ -62,6 +62,7 @@ function triggerLongPressHaptic() {
 export interface Props {
   session: SessionMetaRecord
   selected: boolean
+  hideAvatar?: boolean
   isReordering?: boolean
   onStartReordering?: () => void
   /**
@@ -342,14 +343,16 @@ function SessionItem(props: Props) {
       onPointerLeave={handlePointerLeave}
       onPointerCancel={clearLongPressTimer}
     >
-      <AssistantAvatar
-        avatarKey={session.assistantAvatarKey}
-        picUrl={session.picUrl}
-        sessionType={session.type}
-        size="sm"
-        type="chat"
-        c="chatbox-primary"
-      />
+      {!props.hideAvatar && (
+        <AssistantAvatar
+          avatarKey={session.assistantAvatarKey}
+          picUrl={session.picUrl}
+          sessionType={session.type}
+          size="sm"
+          type="chat"
+          c="chatbox-primary"
+        />
+      )}
 
       {renaming ? (
         <Input

@@ -26,10 +26,9 @@ import { AutomationAdjacentAttr, TestId } from '@shared/automation/testids'
 import type { SessionFolder, SessionMetaRecord } from '@shared/types'
 import {
   IconArrowsMoveVertical,
-  IconChevronDown,
-  IconChevronRight,
   IconDots,
   IconFolder,
+  IconFolderOpen,
   IconGripVertical,
   IconLoader2,
   IconPencil,
@@ -78,7 +77,7 @@ const PROJECTS_SECTION_ID = 'section:projects'
 type SessionListItem =
   | { type: 'section'; id: string; label: string; droppable?: boolean }
   | { type: 'folder'; id: string; folder: SessionFolder; collapsed: boolean; empty: boolean }
-  | { type: 'session'; id: string; session: SessionMetaRecord }
+  | { type: 'session'; id: string; session: SessionMetaRecord; nested: boolean }
 
 /**
  * Builds the rendered rows from the loaded sessions, which arrive in display
@@ -104,7 +103,12 @@ function buildDisplayItems(
     else byRank.set(rank, [session])
   }
   const sessionRows = (rank: number): SessionListItem[] =>
-    (byRank.get(rank) ?? []).map((session) => ({ type: 'session', id: session.id, session }))
+    (byRank.get(rank) ?? []).map((session) => ({
+      type: 'session',
+      id: session.id,
+      session,
+      nested: rank > 0 && rank <= folders.length,
+    }))
 
   const pinned = sessionRows(0)
   const unfiledRank = folders.length + 1
@@ -283,10 +287,6 @@ export default function SessionList(props: Props) {
   const onDragCancel = () => {
     setActiveDragId(null)
   }
-  const activeDragSession = useMemo(
-    () => sortedSessions?.find((session) => session.id === activeDragId),
-    [activeDragId, sortedSessions]
-  )
   const displayItems = useMemo<SessionListItem[]>(() => {
     if (!sortedSessions) {
       return []
@@ -300,6 +300,14 @@ export default function SessionList(props: Props) {
   const sortableSessionIds = useMemo(
     () => displayItems.filter((item) => item.type === 'session').map((item) => item.id),
     [displayItems]
+  )
+  const activeDragItem = useMemo(
+    () =>
+      displayItems.find(
+        (item): item is Extract<SessionListItem, { type: 'session' }> =>
+          item.type === 'session' && item.id === activeDragId
+      ),
+    [activeDragId, displayItems]
   )
   const routerState = useRouterState()
   const onEndReached = useCallback(() => {
@@ -419,6 +427,7 @@ export default function SessionList(props: Props) {
               return (
                 <SortableItem
                   id={item.session.id}
+                  nested={item.nested}
                   disabled={Boolean(touchLayout && !isReordering)}
                   dragLabel={`${t('Adjust order')}: ${item.session.name}`}
                   showDragHandle={Boolean(touchLayout && isReordering)}
@@ -426,6 +435,7 @@ export default function SessionList(props: Props) {
                   <SessionItem
                     selected={routerState.location.pathname === `/session/${item.session.id}`}
                     session={item.session}
+                    hideAvatar={item.nested}
                     isReordering={Boolean(touchLayout && isReordering)}
                     onStartReordering={() => setIsReordering(true)}
                     switchShortcutDigit={switchShortcutDigits.get(item.session.id)}
@@ -435,13 +445,16 @@ export default function SessionList(props: Props) {
             }}
           />
           <DragOverlay dropAnimation={null}>
-            {activeDragSession ? (
-              <div className="pointer-events-none scale-[1.02] rounded-md bg-chatbox-background-primary shadow-lg">
-                <SessionItem
-                  selected={routerState.location.pathname === `/session/${activeDragSession.id}`}
-                  session={activeDragSession}
-                  isReordering={Boolean(touchLayout && isReordering)}
-                />
+            {activeDragItem ? (
+              <div className={clsx('pointer-events-none', activeDragItem.nested && 'pl-[22px]')}>
+                <div className="scale-[1.02] rounded-md bg-chatbox-background-primary shadow-lg">
+                  <SessionItem
+                    selected={routerState.location.pathname === `/session/${activeDragItem.id}`}
+                    session={activeDragItem.session}
+                    hideAvatar={activeDragItem.nested}
+                    isReordering={Boolean(touchLayout && isReordering)}
+                  />
+                </div>
               </div>
             ) : null}
           </DragOverlay>
@@ -453,6 +466,7 @@ export default function SessionList(props: Props) {
 
 function SortableItem(props: {
   id: string
+  nested?: boolean
   children?: React.ReactNode
   disabled?: boolean
   dragLabel?: string
@@ -472,7 +486,7 @@ function SortableItem(props: {
     <div
       ref={setNodeRef}
       style={style}
-      className={disabled ? 'relative pb-1' : 'relative pb-1 cursor-grab active:cursor-grabbing'}
+      className={clsx('relative pb-1', !disabled && 'cursor-grab active:cursor-grabbing', props.nested && 'pl-[22px]')}
       {...(!disabled ? attributes : {})}
       {...(!disabled ? listeners : {})}
       aria-label={disabled ? undefined : dragLabel}
@@ -533,11 +547,10 @@ function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty:
           className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5"
         >
           <ScalableIcon
-            icon={collapsed ? IconChevronRight : IconChevronDown}
-            size={14}
-            className="shrink-0 text-chatbox-tertiary"
+            icon={collapsed ? IconFolder : IconFolderOpen}
+            size={16}
+            className="shrink-0 text-chatbox-secondary"
           />
-          <ScalableIcon icon={IconFolder} size={16} className="shrink-0 text-chatbox-secondary" />
           <Text span size="sm" fw={500} c="chatbox-secondary" lineClamp={1}>
             {folder.name}
           </Text>
@@ -571,7 +584,7 @@ function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty:
         </ActionMenu>
       </Flex>
       {empty && !collapsed && (
-        <Text size="xs" c="chatbox-tertiary" pl={36} pb={6}>
+        <Text size="xs" c="chatbox-tertiary" pl={30} pb={6}>
           {t('Drag chats here')}
         </Text>
       )}

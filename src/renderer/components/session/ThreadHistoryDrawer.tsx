@@ -78,7 +78,7 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
       }}
       classes={{
         paper:
-          'bg-none box-border max-w-75vw min-w-[240px] flex flex-col gap-0 pt-[var(--mobile-safe-area-inset-top)] pb-[var(--mobile-safe-area-inset-bottom)]',
+          'bg-none box-border max-w-75vw min-w-[240px] flex flex-col gap-0 pt-[var(--mobile-safe-area-inset-top,env(safe-area-inset-top,0px))] pb-[var(--mobile-safe-area-inset-bottom,env(safe-area-inset-bottom,0px))]',
       }}
       SlideProps={language === 'ar' ? { direction: 'right' } : undefined}
       PaperProps={

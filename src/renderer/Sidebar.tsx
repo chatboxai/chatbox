@@ -168,8 +168,8 @@ export default function Sidebar() {
         data-testid={TestId.sidebar.root}
         h="100%"
         gap={0}
-        pt="var(--mobile-safe-area-inset-top, 0px)"
-        pb="var(--mobile-safe-area-inset-bottom, 0px)"
+        pt="max(env(safe-area-inset-top, 0px), var(--mobile-safe-area-inset-top, 0px))"
+        pb="max(env(safe-area-inset-bottom, 0px), var(--mobile-safe-area-inset-bottom, 0px))"
         className="relative"
       >
         {needRoomForMacWindowControls && <Box className="title-bar flex-[0_0_44px]" />}

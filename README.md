@@ -1,351 +1,195 @@
-<p align="right">
-  <a href="README.md">English</a> |
-  <a href="./doc/README-CN.md">简体中文</a>
-</p>
+<div align="center">
 
-<h1 align="center">
-<img src='./doc/statics/icon.png' width='30'>
-<span>
-    Chatbox
-    <span style="font-size:8px; font-weight: normal;">(Community Edition)</span>
-</span>
-</h1>
-<p align="center">
-    <em>Your Ultimate AI Copilot on the Desktop. <br />Chatbox is a desktop client for ChatGPT, Claude and other LLMs, available on Windows, Mac, Linux</em>
-</p>
+<img src="./doc/statics/icon.png" width="80" alt="Chatbox Logo" />
 
-<p align="center">
-<a href="https://github.com/chatboxai/chatbox/releases" target="_blank">
-<img alt="macOS" src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" />
-</a>
-<a href="https://github.com/chatboxai/chatbox/releases" target="_blank">
-<img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square&logo=windows&logoColor=white" />
-</a>
-<a href="https://github.com/chatboxai/chatbox/releases" target="_blank">
-<img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
-</a>
-<a href="https://github.com/chatboxai/chatbox/releases" target="_blank">
-<img alt="Downloads" src="https://img.shields.io/github/downloads/chatboxai/chatbox/total.svg?style=flat" />
-</a>
-<a href="#features">
-<img alt="Privacy" src="https://img.shields.io/badge/-Local%20First-green?style=flat-square&logo=shield&logoColor=white" />
-</a>
-</p>
+# Chatbox (Local Vector RAG 移动与桌面双端增强版)
 
-<p align="center">
-<a href="https://www.producthunt.com/posts/chatbox?utm_source=badge-featured&utm_medium=badge&utm_souce=badge-chatbox" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=429547&theme=light" alt="Chatbox - Better&#0032;UI&#0032;&#0038;&#0032;Desktop&#0032;App&#0032;for&#0032;ChatGPT&#0044;&#0032;Claude&#0032;and&#0032;other&#0032;LLMs&#0046; | Product Hunt" style="width: 150px; height: 30px;" width="100" height="40" /></a>
-<a href="https://trendshift.io/repositories/14871" target="_blank"><img src="https://trendshift.io/api/badge/repositories/14871" alt="chatboxai%2Fchatbox | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-</p>
+**一款专注于隐私安全、支持手机移动端与桌面端 100% 离线向量检索的跨平台开源 AI 助手**
 
-<p align="center">
-  <a href="./doc/statics/snapshot_light.png">
-    <img src="./doc/statics/snapshot_light.png" width="400"/>
-  </a>
-  <a href="./doc/statics/snapshot_dark.png">
-    <img src="./doc/statics/snapshot_dark.png" width="400"/>
-  </a>
-</p>
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Android Ready](https://img.shields.io/badge/Android-APK%20Available-brightgreen?logo=android&logoColor=white)](https://github.com/flupke91/chatbox/releases)
+[![iOS Ready](https://img.shields.io/badge/iOS-Xcode%20Ready-lightgrey?logo=apple&logoColor=white)](https://github.com/flupke91/chatbox)
+[![Windows](https://img.shields.io/badge/Windows-Desktop-blue?logo=windows&logoColor=white)](https://github.com/flupke91/chatbox/releases)
+[![Local First RAG](https://img.shields.io/badge/RAG-100%25%20Local%20Vector-orange?logo=sqlite&logoColor=white)](#-核心亮点与独家特性)
+
+[📥 下载 Android 安装包与桌面版](#-下载与安装) • [✨ 核心亮点](#-核心亮点与独家特性) • [📐 技术架构](#-移动端本地-rag-技术架构) • [🛠️ 编译构建](#-开发与编译指南) • [📑 工程白皮书](./chatbox_mobile_vector_rag_project.md)
+
+</div>
 
 ---
 
-> [!TIP]
-> 🚀 **New Feature in this Fork: Local Session Attachment RAG & Mobile Android App**  
-> This repository adds a complete client-side Hybrid Vector & Full-Text Retrieval (RAG) system for chat session attachments, running 100% locally on both Desktop (Electron) and Mobile (Capacitor Android).
-> 
-> - 📱 **Download Android APK:** [Chatbox-mobile-rag-debug.apk](https://github.com/flupke91/chatbox/releases/latest/download/Chatbox-mobile-rag-debug.apk)  
-> - 💻 **Download Windows Setup:** [Chatbox-1.23.5-Setup.exe](https://github.com/flupke91/chatbox/releases/latest/download/Chatbox-1.23.5-Setup.exe)  
-> - 📦 **All Releases & Assets:** [GitHub Releases](https://github.com/flupke91/chatbox/releases)
+> [!NOTE]
+> **本仓库是针对 [chatboxai/chatbox](https://github.com/chatboxai/chatbox) 官方开源社区版的重大功能增强分支。**  
+> 官方版本在移动端（Android / iOS）默认禁用了会话附件本地向量检索能力。本项目攻克了移动端本地嵌入与分层索引技术难题，完整实现了 **Android / iOS 端侧 SQLite 本地向量 RAG 引擎**、**混合召回（BM25 关键词 + 向量余弦相似度）**，并**全面优化适配了移动端异形屏与状态栏安全区**，彻底消除顶部按钮被遮蔽的问题。
 
 ---
 
-This is the repository for the Chatbox Community Edition, open-sourced under the GPLv3 license.
+## 🚀 核心亮点与独家特性
 
-[Chatbox is going open-source Again!](https://github.com/chatboxai/chatbox/issues/2266)
+### 1. 📱 移动端 100% 本地向量检索（Mobile Local RAG）
+- **无须 NAS，无须远端向量数据库**：完全摆脱对局域网 NAS、个人服务器或第三方昂贵云端向量库的依赖，索引数据库直接存储在手机端本地 SQLite 中。
+- **18MB+ 超长知识库实测秒级召回**：针对小说、长文报告、行业规范等超大附件，通过端侧 Parent / Child 分层切片技术与断点分批计算，既保障移动端内存安全，又保证上下文语义完整。
+- **混合检索（Hybrid Search）**：创新结合了精准词法检索（BM25）与语义特征检索（Cosine Similarity），既能搜到专有名词与精确数字，又能理解同义词与隐式意图。
 
-We regularly sync code from the pro repo to this repo, and vice versa.
+### 2. 🎨 完美适配手机异形屏与状态栏（Safe Area Fix）
+- **告别状态栏遮挡**：针对全面屏、打孔屏、刘海屏与灵动岛手机，采用 Capacitor 原生安全区插件结合动态 CSS 环境变量 `max(env(safe-area-inset-top), var(--mobile-safe-area-inset-top))` 双重回退策略。
+- **全界面精细校准**：聊天窗口顶部标题栏、汉堡抽屉菜单（Sidebar）、历史会话抽屉（Thread History）、全屏弹窗与代码预览组件均严格遵循设备安全区避让规范。
 
-## Download
+### 3. 🍏 双端移动支持（Android 原生 + iOS 原生）
+- **Android**：提供开箱即用的 Release / Debug APK，下载即可直接在 Android 手机或平板上安装体验。
+- **iOS**：仓库内完整交付了标准 Xcode 原生工程（`ios/App/App.xcodeproj`），已配置好 CocoaPods 依赖与原生插件，iOS 开发者或用户可在 macOS 上使用 Xcode 一键构建并安装到 iPhone/iPad。
 
-### Desktop
+### 4. 🔒 本地优先，极致隐私
+- 用户的个人文档、知识库、解析后的纯文本片段与特征向量，**永久留在用户自己的手机或电脑闪存中**。
+- 支持 OpenAI、DeepSeek、Claude、Gemini、Ollama 等任意兼容 OpenAI 协议的模型及 Embedding API。
 
-<table style="width: 100%">
-  <tr>
-    <td width="25%" align="center">
-      <b>Windows</b>
-    </td>
-    <td width="25%" align="center" colspan="2">
-      <b>MacOS</b>
-    </td>
-    <td width="25%" align="center">
-      <b>Linux</b>
-    </td>
-  </tr>
-  <tr style="text-align: center">
-    <td align="center" valign="middle">
-      <a href='https://chatboxai.app/?c=download-windows'>
-        <img src='./doc/statics/windows.png' style="height:24px; width: 24px" />
-        <br />
-        <b>Setup.exe</b>
-      </a>
-    </td>
-    <td align="center" valign="middle">
-      <a href='https://chatboxai.app/?c=download-mac-intel'>
-        <img src='./doc/statics/mac.png' style="height:24px; width: 24px" />
-        <br />
-        <b>Intel</b>
-      </a>
-    </td>
-    <td align="center" valign="middle">
-      <a href='https://chatboxai.app/?c=download-mac-aarch'>
-        <img src='./doc/statics/mac.png' style="height:24px; width: 24px" />
-        <br />
-        <b style="white-space: nowrap;">Apple Silicon</b>
-      </a>
-    </td>
-    <td align="center" valign="middle">
-      <a href='https://chatboxai.app/?c=download-linux'>
-        <img src='./doc/statics/linux.png' style="height:24px; width: 24px" />
-        <br />
-        <b>AppImage</b>
-      </a>
-    </td>
-  </tr>
-</table>
+---
 
-### iOS/Android
+## 📥 下载与安装
 
-<a href='https://apps.apple.com/app/chatbox-ai/id6471368056' style='margin-right: 4px'>
-<img src='./doc/statics/app_store.webp' style="height:38px;" />
-</a>
-<a href='https://play.google.com/store/apps/details?id=xyz.chatboxapp.chatbox' style='margin-right: 4px'>
-<img src='./doc/statics/google_play.png' style="height:38px;" />
-</a>
-<a href='https://chatboxai.app/install?download=android_apk' style='margin-right: 4px; display: inline-flex; justify-content: center'>
-<img src='./doc/statics/android.png' style="height:28px; display: inline-block" />
-.APK
-</a>
+### 📱 移动端（Android / iOS）
 
-For more information: [chatboxai.app](https://chatboxai.app/)
+| 平台 | 下载与安装方式 | 说明 |
+| :--- | :--- | :--- |
+| **Android** | [📱 点击下载 Android 安装包 (APK)](https://github.com/flupke91/chatbox/releases/download/v1.9.8-rag/Chatbox-mobile-rag-debug.apk) | 支持 Android 8.0 及以上系统，已集成状态栏避让与本地向量数据库。 |
+| **iOS** | [🍏 查看 iOS 工程源码目录](./ios) | 支持 iOS 14.0+。克隆本项目后，在 macOS 终端执行 `npx cap open ios` 即可在 Xcode 中运行。 |
 
-## Quick Start
+### 💻 桌面端（Windows / macOS / Linux）
 
-### For End Users
-1. Download the appropriate installer for your platform from the [releases page](https://github.com/chatboxai/chatbox/releases)
-2. Install and launch Chatbox
-3. Configure your AI provider (OpenAI, Claude, etc.) in settings
-4. Start chatting!
+| 操作系统 | 下载文件 | 架构支持 |
+| :--- | :--- | :--- |
+| **Windows** | [💻 Windows 安装包 (.exe)](https://github.com/flupke91/chatbox/releases/download/v1.9.8-rag/Chatbox-1.23.5-Setup.exe) | 64位 Windows 10 / 11 |
+| **macOS** | [前往 Releases 页面查看](https://github.com/flupke91/chatbox/releases) | Intel & Apple Silicon (M系列) |
+| **Linux** | [前往 Releases 页面查看](https://github.com/flupke91/chatbox/releases) | AppImage / deb |
 
-### System Requirements
+*所有版本的历史包、安装包校验和及完整发布资产请访问：[GitHub Releases 资产页](https://github.com/flupke91/chatbox/releases)*
 
-| Platform | Minimum Version | Architecture |
-|----------|----------------|--------------|
-| Windows | Windows 10 | x64 |
-| macOS | macOS 11 (Big Sur) | Intel/Apple Silicon |
-| Linux | Ubuntu 20.04+ / AppImage supported distros | x64 |
+---
 
-<!-- <table>
-<tr>
-<td>
-<img src="./dec/../doc/demo_mobile_1.png" alt="App Screenshot" style="box-shadow: 2px 2px 10px rgba(0,0,0,0.1); border: 1px solid #ddd; border-radius: 8px; height: 300px" />
-</td>
-<td>
-<img src="./dec/../doc/demo_mobile_2.png" alt="App Screenshot" style="box-shadow: 2px 2px 10px rgba(0,0,0,0.1); border: 1px solid #ddd; border-radius: 8px; height: 300px" />
-</td>
-</tr>
-</table> -->
+## 📐 移动端本地 RAG 技术架构
 
-## Features
+整个端侧检索链路完全运行在移动设备本地，其核心流转过程如下：
 
-### 🤖 AI Model Support
--   **Support for Multiple LLM Providers**  
-    :gear: Seamlessly integrate with a variety of cutting-edge language models:
-    -   OpenAI (ChatGPT)
-    -   Azure OpenAI
-    -   Claude
-    -   Google Gemini Pro
-    -   Ollama (enable access to local models like llama2, Mistral, Mixtral, codellama, vicuna, yi, and solar)
-    -   ChatGLM-6B
-
--   **Image Generation with Dall-E-3**  
-    :art: Create the images of your imagination with Dall-E-3.
-
--   **Enhanced Prompting**  
-    :speech_balloon: Advanced prompting features to refine and focus your queries for better responses.
-
-### 🖥️ User Experience
--   **Local Data Storage**  
-    :floppy_disk: Your data remains on your device, ensuring it never gets lost and maintains your privacy.
-
--   **No-Deployment Installation Packages**  
-    :package: Get started quickly with downloadable installation packages. No complex setup necessary!
-
--   **Ergonomic UI & Dark Theme**  
-    :new_moon: A user-friendly interface with a night mode option for reduced eye strain during extended use.
-
--   **Keyboard Shortcuts**  
-    :keyboard: Stay productive with shortcuts that speed up your workflow.
-
--   **Streaming Reply**  
-    :arrow_forward: Provide rapid responses to your interactions with immediate, progressive replies.
-
-### 📄 Content & Formatting
--   **Markdown, Latex & Code Highlighting**  
-    :scroll: Generate messages with the full power of Markdown and Latex formatting, coupled with syntax highlighting for various programming languages, enhancing readability and presentation.
-
--   **Prompt Library & Message Quoting**  
-    :books: Save and organize prompts for reuse, and quote messages for context in discussions.
-
-### 👥 Collaboration & Sharing
--   **Team Collaboration**  
-    :busts_in_silhouette: Collaborate with ease and share OpenAI API resources among your team. [Learn More](./team-sharing/README.md)
-
-### 🌐 Platform Availability
--   **Cross-Platform Desktop**  
-    :computer: Chatbox is ready for Windows, Mac, and Linux users.
-
--   **Web Version**  
-    :globe_with_meridians: Use the web application on any device with a browser, anywhere.
-
--   **Mobile Apps**  
-    :phone: Native iOS and Android applications for on-the-go access.
-
-### 🌍 Localization
--   **Multilingual Support**  
-    :earth_americas: Catering to a global audience by offering support in multiple languages:
-    -   English
-    -   简体中文 (Simplified Chinese)
-    -   繁體中文 (Traditional Chinese)
-    -   日本語 (Japanese)
-    -   한국어 (Korean)
-    -   Français (French)
-    -   Deutsch (German)
-    -   Русский (Russian)
-    -   Español (Spanish)
-
-### ✨ More Features
--   **And More...**  
-    :sparkles: Constantly enhancing the experience with new features!
-
-## FAQ
-
--   [Frequently Asked Questions](./doc/FAQ.md)
-
-## How to Contribute
-
-We welcome contributions from the community! Here's how you can help make Chatbox better:
-
-### 🐛 Reporting Issues
-- Use [GitHub Issues](https://github.com/chatboxai/chatbox/issues) to report bugs or request features
-- Before creating a new issue, please search existing issues to avoid duplicates
-- Provide detailed information including steps to reproduce, expected behavior, and screenshots if applicable
-
-### 🔧 Pull Requests
-1. Fork the repository and create your branch from `main`
-2. Make your changes and ensure the code follows our coding standards
-3. Test your changes thoroughly
-4. Update documentation if needed
-5. Submit a pull request with a clear description of the changes
-
-### 🌍 Translations
-Help make Chatbox accessible to more people by contributing translations:
-- Translation files are located in the `src/locales` directory
-- Follow the existing translation format
-- Submit a PR with your translation improvements
-
-### 📖 Documentation
-- Improve README, API documentation, or user guides
-- Fix typos or clarify unclear instructions
-- Add examples and tutorials
-
-### 🌟 Other Ways to Contribute
-- Star the repository to show your support
-- Share Chatbox with others
-- Answer questions in [GitHub Discussions](https://github.com/chatboxai/chatbox/discussions)
-- Provide feedback and suggestions
-
-**Thank you for contributing! 🙏**
-
-## Development
-
-### Prerequisites
-
-Before you begin, ensure you have the following installed:
-
-- **Node.js** (v20.x – v22.x) - [Download here](https://nodejs.org/)
-- **pnpm** (v10.x or later) - Install via `corepack enable && corepack prepare pnpm@latest --activate`
-- **Git** - [Download here](https://git-scm.com/)
-
-### Quick Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/chatboxai/chatbox.git
-   cd chatbox
-   ```
-
-2. **Install dependencies**
-   ```bash
-   pnpm install
-   ```
-
-3. **Start development server**
-   ```bash
-   pnpm run dev
-   ```
-   The application will start in development mode with hot-reload enabled.
-
-### Build Commands
-
-| Command | Description |
-|---------|-------------|
-| `pnpm run dev` | Start development server with hot-reload |
-| `pnpm run package` | Build and package for current platform |
-| `pnpm run package:all` | Build and package for all platforms |
-| `pnpm run build` | Build for production without packaging |
-| `pnpm run lint` | Run Biome to check code quality |
-| `pnpm run test` | Run Vitest test suite |
-
-### Project Structure
-
-```
-chatbox/
-├── src/
-│   ├── main/               # Electron main process
-│   ├── renderer/           # React renderer (UI)
-│   ├── preload/            # Electron preload scripts
-│   └── shared/             # Shared utilities
-├── doc/                    # Documentation and assets
-├── resources/              # App resources and icons
-├── team-sharing/           # Team collaboration features
-└── package.json            # Project configuration
+```text
+       ┌────────────────────────────────────────────────────────┐
+       │                 移动端文件导入 (18MB+ TXT/PDF)          │
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+                                   ▼
+                 [MobilePlatform 本地文本分段解析]
+                                   │
+                                   ▼
+          ┌──────────────────────────────────────────────────┐
+          │        MobileRagEngine 分层分块器 (Chunker)       │
+          │  - Parent Chunk: 1600~2400 字符 (语义上下文容器)    │
+          │  - Child Chunk: 448 字符 (精细检索匹配单元)         │
+          └────────────────────────┬─────────────────────────┘
+                                   │
+                                   ▼
+          ┌──────────────────────────────────────────────────┐
+          │          端侧断点续传队列 (Batch Size = 50)       │
+          │  - 避免移动端爆内存与网络请求超时                   │
+          │  - 记录进度 Checkpoint，支持退出断点恢复            │
+          └────────────────────────┬─────────────────────────┘
+                                   │
+                                   ▼
+          ┌──────────────────────────────────────────────────┐
+          │     Capacitor SQLite 原生移动端向量数据库          │
+          │  - chunks 表 (存储 Child & Parent 映射)           │
+          │  - vector_index 表 (BLOB 二进制存储 IEEE754 Float)│
+          └────────────────────────┬─────────────────────────┘
+                                   │
+                                   ▼
+          ┌──────────────────────────────────────────────────┐
+          │              端侧混合检索与重排序                 │
+          │  - BM25 词法评分 + 向量余弦相似度加权召回 Top 20   │
+          │  - 自动回溯读取对应的 Parent 上下文 (Top 8)        │
+          └────────────────────────┬─────────────────────────┘
+                                   │
+                                   ▼
+       ┌────────────────────────────────────────────────────────┐
+       │       通过标准 Tool 协议将最相关知识提供给大模型生成回答 │
+       └────────────────────────────────────────────────────────┘
 ```
 
-### Development Tips
+---
 
-- Use `pnpm run lint` before committing to ensure code quality
-- Follow the existing code style and patterns
-- Test your changes on both light and dark themes
-- Ensure cross-platform compatibility when making UI changes
+## 📱 移动端屏幕与安全区适配说明
 
-### Troubleshooting
+在现代手机（如具有挖孔屏、水滴屏、药丸灵动岛的设备）中，WebView 默认工作在 `viewport-fit=cover` 沉浸式全屏模式下。如果直接硬编码顶部内边距为 `0px`，状态栏中的信号电量图标会强行遮挡顶部功能栏的“新建会话”、“历史记录”及“模型切换”按钮。
 
-**Issue**: `pnpm install` fails
-- **Solution**: Ensure you're using pnpm (not npm or yarn) and Node.js version is within the required range. Run `corepack enable` if pnpm is not found.
+本项目对此进行了全局深度适配：
+1. **跨平台安全区监听**：统一在 `src/renderer/setup/mobile_safe_area.ts` 中初始化 Capacitor 原生安全区插件，同时针对 Android 与 iOS 注册屏幕旋转、窗口 Resize、软键盘弹出的高精度监听。
+2. **CSS 多重安全回退**：
+   ```css
+   padding-top: max(env(safe-area-inset-top, 0px), var(--mobile-safe-area-inset-top, 0px));
+   ```
+   双重保障确保无论系统 WebView 是何种版本，页面核心内容与按钮都完美避开状态栏遮挡。
 
-**Issue**: Build fails on Windows
-- **Solution**: Run `pnpm config set script-shell "C:\\Program Files\\git\\bin\\bash.exe"` if using Git Bash
+---
 
-**Issue**: Changes not reflecting in development
-- **Solution**: Stop the dev server, delete `node_modules/.vite`, and restart
+## 🛠️ 开发与编译指南
 
-## Star History
+### 1. 准备工作
+- 安装 [Node.js](https://nodejs.org/) (推荐 v20+)
+- 安装包管理器：`pnpm` (`npm install -g pnpm`)
+- 如需编译 Android：安装 JDK 17+ 及 Android Studio / Android SDK
+- 如需编译 iOS：macOS 环境下安装 Xcode 及 CocoaPods
 
-[![Star History Chart](https://star-history.dera.page/svg?repos=chatboxai/chatbox&type=Date)](https://star-history.dera.page/#chatboxai/chatbox&Date)
+### 2. 获取代码与安装依赖
+```bash
+git clone https://github.com/flupke91/chatbox.git
+cd chatbox
+pnpm install
+```
 
-## Contact
+### 3. 构建与运行
 
-[Email](mailto:hi@chatboxai.com)
+#### 📱 Android 移动端构建：
+```bash
+# 1. 编译前端移动端资源包
+pnpm run build:mobile
 
-## License
+# 2. 同步资源至 Android 工程
+npx cap sync android
 
-[LICENSE](./LICENSE)
+# 3. 编译 Android Debug APK
+cd android
+./gradlew assembleDebug
+# 生成的 APK 位于：android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+#### 🍏 iOS 移动端构建：
+```bash
+# 1. 编译前端移动端资源包
+pnpm run build:mobile
+
+# 2. 同步资源并更新 Pods
+npx cap sync ios
+
+# 3. 在 Xcode 中打开工程并运行
+npx cap open ios
+```
+
+#### 💻 桌面端开发与打包：
+```bash
+# 启动桌面端热重载开发服务器
+pnpm run dev
+
+# 打包 Windows / macOS / Linux 桌面安装包
+pnpm run package
+```
+
+---
+
+## 📄 文档与白皮书
+
+- 📖 **[移动端本地向量 RAG 项目白皮书与架构总结 (Markdown)](./chatbox_mobile_vector_rag_project.md)**
+- 📑 **[项目技术白皮书 (Word .docx 格式)](./chatbox_mobile_vector_rag_project.docx)**
+- 📜 **[更新日志与变更记录](./CHANGELOG.md)**
+
+---
+
+## ⚖️ 开源许可证
+
+本项目基于 [GPLv3 许可证](./LICENSE) 开源发布。保留对 Chatbox 原作者团队的全部版权与署名致敬。

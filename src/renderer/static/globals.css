@@ -296,7 +296,7 @@
 }
 
 .pswp__top-bar {
-  margin-top: var(--mobile-safe-area-inset-top);
+  margin-top: max(env(safe-area-inset-top, 0px), var(--mobile-safe-area-inset-top, 0px));
   -webkit-app-region: no-drag;
 }
 html[data-need-room-for-mac-controls="true"] .pswp__counter {

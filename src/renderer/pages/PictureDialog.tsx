@@ -107,10 +107,10 @@ function _PictureDialog(props: {
           zIndex: 1001,
           display: 'flex',
           gap: '12px',
-          paddingTop: 'var(--mobile-safe-area-inset-top, 0px)',
-          paddingRight: 'var(--mobile-safe-area-inset-right, 0px)',
-          paddingBottom: 'var(--mobile-safe-area-inset-bottom, 0px)',
-          paddingLeft: 'var(--mobile-safe-area-inset-left, 0px)',
+          paddingTop: 'max(env(safe-area-inset-top, 0px), var(--mobile-safe-area-inset-top, 0px))',
+          paddingRight: 'max(env(safe-area-inset-right, 0px), var(--mobile-safe-area-inset-right, 0px))',
+          paddingBottom: 'max(env(safe-area-inset-bottom, 0px), var(--mobile-safe-area-inset-bottom, 0px))',
+          paddingLeft: 'max(env(safe-area-inset-left, 0px), var(--mobile-safe-area-inset-left, 0px))',
         }}
       >
         {extraButtons?.map((button, index) => (

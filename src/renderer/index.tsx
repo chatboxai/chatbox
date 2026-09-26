@@ -34,8 +34,8 @@ import './setup/protect'
 // Token estimation system initialization (runs in all environments)
 void import('./setup/token_estimation_init')
 
-// 引入移动端安全区域代码，主要为了解决异形屏幕的问题
-if (CHATBOX_BUILD_TARGET === 'mobile_app' && CHATBOX_BUILD_PLATFORM === 'ios') {
+// 引入移动端安全区域代码，解决 Android / iOS 异形屏与状态栏/导航栏适配问题
+if (CHATBOX_BUILD_TARGET === 'mobile_app') {
   void import('./setup/mobile_safe_area')
 }
 

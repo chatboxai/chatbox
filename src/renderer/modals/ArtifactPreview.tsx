@@ -126,7 +126,7 @@ const ArtifactPreview = NiceModal.create((props: ArtifactPreviewProps) => {
             justify="space-between"
             gap="sm"
             px="md"
-            pt="calc(var(--mobile-safe-area-inset-top, 0px) + var(--mantine-spacing-xs))"
+            pt="calc(max(env(safe-area-inset-top, 0px), var(--mobile-safe-area-inset-top, 0px)) + var(--mantine-spacing-xs))"
             pb="xs"
             tabIndex={-1}
             data-autofocus

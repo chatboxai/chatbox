@@ -1,4 +1,4 @@
-import { MDocument } from '@mastra/rag'
+// Recursive text chunking without external runtime dependencies (avoids Node stream/web bundler issues in renderer)
 
 // Sizes are CHARACTER counts. Mastra's `recursive` chunker uses `text.length` as its
 // default length function, so `maxSize` is in chars, not tokens. Earlier `_TOKENS`
@@ -164,19 +164,127 @@ export function splitIntoStructuralSegments(content: string): StructuralSegment[
   return blocks
 }
 
+function splitTextWithSeparator(text: string, separator: string): string[] {
+  if (!separator) {
+    return Array.from(text)
+  }
+  return text.split(separator).filter((s) => s.length > 0)
+}
+
+function mergeSplits(splits: string[], separator: string, maxSize: number, overlap: number): string[] {
+  const docs: string[] = []
+  let currentDoc: string[] = []
+  let total = 0
+  const separatorLen = separator.length
+
+  for (const piece of splits) {
+    const pieceLen = piece.length
+    if (total + pieceLen + (currentDoc.length > 0 ? separatorLen : 0) > maxSize) {
+      if (currentDoc.length > 0) {
+        const doc = currentDoc.join(separator).trim()
+        if (doc) {
+          docs.push(doc)
+        }
+        if (overlap > 0) {
+          const overlapContent: string[] = []
+          let overlapSize = 0
+          for (let i = currentDoc.length - 1; i >= 0; i--) {
+            const p = currentDoc[i]!
+            if (overlapSize + p.length > overlap) {
+              break
+            }
+            overlapContent.unshift(p)
+            overlapSize += p.length + (overlapContent.length > 1 ? separatorLen : 0)
+          }
+          currentDoc = overlapContent
+          total = overlapSize
+        } else {
+          currentDoc = []
+          total = 0
+        }
+      }
+    }
+    currentDoc.push(piece)
+    total += pieceLen + (currentDoc.length > 1 ? separatorLen : 0)
+  }
+
+  if (currentDoc.length > 0) {
+    const doc = currentDoc.join(separator).trim()
+    if (doc) {
+      docs.push(doc)
+    }
+  }
+
+  return docs
+}
+
+export function recursiveSplitText(
+  text: string,
+  options: { maxSize: number; overlap?: number; separators?: string[] }
+): string[] {
+  const { maxSize, overlap = 0, separators = ['\n\n', '\n', ' ', ''] } = options
+  if (!text) return []
+  if (text.length <= maxSize) return [text.trim()].filter(Boolean)
+
+  function recurse(currentText: string, seps: string[]): string[] {
+    const finalChunks: string[] = []
+    let separator = seps[seps.length - 1] ?? ''
+    let newSeparators: string[] = []
+
+    for (let i = 0; i < seps.length; i++) {
+      const s = seps[i]!
+      if (s === '') {
+        separator = s
+        break
+      }
+      if (currentText.includes(s)) {
+        separator = s
+        newSeparators = seps.slice(i + 1)
+        break
+      }
+    }
+
+    const splits = splitTextWithSeparator(currentText, separator)
+    const goodSplits: string[] = []
+
+    for (const s of splits) {
+      if (s.length <= maxSize) {
+        goodSplits.push(s)
+      } else {
+        if (goodSplits.length > 0) {
+          finalChunks.push(...mergeSplits(goodSplits, separator, maxSize, overlap))
+          goodSplits.length = 0
+        }
+        if (newSeparators.length === 0) {
+          finalChunks.push(s)
+        } else {
+          finalChunks.push(...recurse(s, newSeparators))
+        }
+      }
+    }
+
+    if (goodSplits.length > 0) {
+      finalChunks.push(...mergeSplits(goodSplits, separator, maxSize, overlap))
+    }
+
+    return finalChunks
+  }
+
+  return recurse(text, separators)
+}
+
 async function splitOversizedSegment(segment: StructuralSegment): Promise<StructuralSegment[]> {
   if (segment.text.length <= PARENT_HARD_CAP_CHARS) {
     return [segment]
   }
 
-  const parts = await MDocument.fromText(segment.text).chunk({
-    strategy: 'recursive',
+  const parts = recursiveSplitText(segment.text, {
     maxSize: PARENT_HARD_CAP_CHARS,
     overlap: 0,
   })
 
   return parts
-    .map((part) => part.text.trim())
+    .map((part) => part.trim())
     .filter(Boolean)
     .map((text) => ({ text, sectionPath: segment.sectionPath }))
 }
@@ -239,14 +347,13 @@ export async function buildStructuredParentBlocks(content: string): Promise<Pare
 }
 
 export async function buildPlainParentBlocks(content: string): Promise<ParentBlock[]> {
-  const parts = await MDocument.fromText(content).chunk({
-    strategy: 'recursive',
+  const parts = recursiveSplitText(content, {
     maxSize: PARENT_TARGET_CHARS,
     overlap: PLAIN_PARENT_OVERLAP_CHARS,
   })
 
   return parts
-    .map((part) => part.text.trim())
+    .map((part) => part.trim())
     .filter(Boolean)
     .map((text, index) => ({
       parentOrder: index,
@@ -261,14 +368,13 @@ export async function buildChildChunks(parents: ParentBlock[]): Promise<ChildChu
   const children: ChildChunk[] = []
 
   for (const parent of parents) {
-    const chunks = await MDocument.fromText(parent.text).chunk({
-      strategy: 'recursive',
+    const chunks = recursiveSplitText(parent.text, {
       maxSize: CHILD_SIZE_CHARS,
       overlap: CHILD_OVERLAP_CHARS,
     })
 
     for (const chunk of chunks) {
-      const text = chunk.text.trim()
+      const text = chunk.trim()
       if (!text) {
         continue
       }

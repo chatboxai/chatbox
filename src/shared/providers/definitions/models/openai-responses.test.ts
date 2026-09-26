@@ -55,10 +55,11 @@ function createModel(overrides: Partial<ConstructorParameters<typeof OpenAIRespo
 }
 
 describe('OpenAIResponses call settings', () => {
-  it('forces store=false for stateless responses while preserving user OpenAI provider options', () => {
+  it('forces store=false and uses the stable session ID as the prompt cache key', () => {
     const openaiResponses = createModel()
 
     const settings = openaiResponses.exposeCallSettings({
+      sessionId: 'session-123',
       providerOptions: {
         openai: {
           reasoningEffort: 'high',
@@ -69,6 +70,19 @@ describe('OpenAIResponses call settings', () => {
     expect(settings.providerOptions).toEqual({
       openai: {
         reasoningEffort: 'high',
+        promptCacheKey: 'session-123',
+        store: false,
+      },
+    })
+  })
+
+  it('does not inject an empty prompt cache key when a stateless request has no session ID', () => {
+    const openaiResponses = createModel()
+
+    const settings = openaiResponses.exposeCallSettings()
+
+    expect(settings.providerOptions).toEqual({
+      openai: {
         store: false,
       },
     })

@@ -19,10 +19,10 @@ function buildSaveMemoryTool(
   languageName: string | undefined
 ): ToolSet[string] {
   const languageLine = languageName
-    ? `\nWrite the memory content in the user's preferred language: ${languageName}.`
+    ? `\nWrite it in the user's preferred language (${languageName}), regardless of the conversation language, so it stays readable in Settings.`
     : ''
   return {
-    description: `Save a durable fact to your persistent memory. It becomes part of your system prompt in FUTURE sessions (the current session keeps its frozen snapshot).
+    description: `Save a durable fact to your persistent memory for future sessions.
 Save only facts that will still matter across sessions: stable user preferences, environment details, corrections to your approach, project-level conventions. Do not save one-off task state, secrets, or anything the user asked to keep out of memory. Keep each entry a single compact fact under ${MEMORY_ENTRY_MAX_CHARS} characters.${languageLine}`,
     inputSchema: validatedToolSchema({
       type: 'object',
@@ -51,7 +51,7 @@ Save only facts that will still matter across sessions: stable user preferences,
 function buildDeleteMemoryTool(memory: MemoryToolsPort, scope: MemoryScope): ToolSet[string] {
   return {
     description:
-      'Delete a stale or incorrect entry from your persistent memory by id. Ids appear as [id] prefixes in the Memories section of your system prompt. The current session keeps its frozen snapshot; the deletion applies to future sessions.',
+      'Delete a stale or incorrect entry from your persistent memory by id. Ids appear as [id] prefixes in the Memories section of your system prompt. The deletion applies from the next session.',
     inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
@@ -91,9 +91,6 @@ export interface MemoryToolsOptions {
 
 export function createMemoryTools(options: MemoryToolsOptions): { tools: ToolSet; description: string } {
   const scope = options.scope ?? GLOBAL_SCOPE
-  const languageLine = options.languageName
-    ? `\n- Write memory content in the user's preferred language (${options.languageName}), regardless of the conversation language, so memories stay readable in Settings.`
-    : ''
   const scopeLine =
     scope.type === 'copilot'
       ? '\n- Your memory belongs to the assistant persona of this conversation: entries load only in future sessions that use the same assistant.'
@@ -105,10 +102,9 @@ export function createMemoryTools(options: MemoryToolsOptions): { tools: ToolSet
     },
     description: `
 ## Persistent Memory
-You have cross-session memory. Entries appear in the Memories section of your system prompt at session start; the prompt is a frozen snapshot, so writes apply to future sessions only.
+You have cross-session memory. The Memories section is a snapshot taken at session start, so writes apply to future sessions only.
 - When the user states a durable preference, corrects your approach, or you learn a stable fact about their environment, save it with save_memory right away.
-- When an existing memory turns out to be wrong or obsolete, delete it with delete_memory (then save a corrected entry if needed).
-- Never store secrets (API keys, passwords) or information the user asked you not to keep.${scopeLine}${languageLine}
+- When an existing memory turns out to be wrong or obsolete, delete it with delete_memory (then save a corrected entry if needed).${scopeLine}
 `,
   }
 }

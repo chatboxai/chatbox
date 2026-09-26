@@ -1,23 +1,12 @@
 import { validatedToolSchema } from '@shared/validated-tool-schema'
 import { ChatboxAIAPIError } from '@shared/models/errors'
-import { createWebSearchTool, WEB_SEARCH_TOOLSET_INSTRUCTION } from '@shared/web-search-tool'
+import { createWebSearchTool } from '@shared/web-search-tool'
 import type { ToolSet } from 'ai'
 import * as remote from '@/packages/remote'
 import { getParseLinkProvider, webSearchExecutor } from '@/packages/web-search'
 import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
 import { asRecord, numberField, stringField, toTextModelOutput } from './model-output'
-
-const parseLinkDescription = `
-## parse_link
-Extract readable content from a specific URL — typically one the user shared or that a prior search returned.
-`
-
-export function getToolSetDescription(options: { includeParseLink: boolean }) {
-  return options.includeParseLink
-    ? `${WEB_SEARCH_TOOLSET_INSTRUCTION}${parseLinkDescription}`
-    : WEB_SEARCH_TOOLSET_INSTRUCTION
-}
 
 // Tool definition shared with the native app; only the executor is renderer-specific.
 export const webSearchTool: ToolSet[string] = createWebSearchTool(async (query, abortSignal) => {
@@ -135,12 +124,4 @@ export const parseLinkTool: ToolSet[string] = {
     })
   },
   toModelOutput: toTextModelOutput(formatParseLinkOutput),
-}
-
-export default {
-  description: getToolSetDescription({ includeParseLink: true }),
-  tools: {
-    web_search: webSearchTool,
-    parse_link: parseLinkTool,
-  },
 }

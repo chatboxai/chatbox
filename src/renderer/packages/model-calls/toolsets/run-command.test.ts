@@ -526,9 +526,7 @@ describe('run_command', () => {
 
     expect(tool.description).toContain('Full Access, so commands run directly on the host')
     expect(tool.description).not.toContain('sandbox first')
-    expect(description).toContain(
-      'run_command executes directly on the host without an approval step; it does not execute inside the file sandbox and there is no host retry to request'
-    )
+    expect(description).toContain('Full Access is enabled: commands run directly on the host without an approval step')
     expect(description).not.toContain('there is no file sandbox')
     expect(description).not.toContain('commands run in the file sandbox first')
     const inputSchema = (await asSchema(tool.inputSchema).jsonSchema) as {
@@ -632,6 +630,14 @@ describe('run_command capability contract', () => {
       const input = { command, shell }
       expect((await schema.validate?.(input))?.success).toBe(true)
       expect(jsonSchema.properties?.shell).toMatchObject({ enum: [shell] })
+      if (platform === 'win32') {
+        expect(description).toContain('Bash is unavailable')
+        expect(description).toContain('forward slashes, such as C:/Users/name, are valid in PowerShell')
+        expect(description).toContain('do not prepend cd or Set-Location')
+      } else {
+        expect(description).not.toContain('PowerShell syntax')
+        expect(description).not.toContain('Set-Location')
+      }
       if (supportsRetry) {
         expect(tool.description).toContain('Commands run in the sandbox first')
         expect(description).toContain('Request full host access only after a real failed sandbox call')

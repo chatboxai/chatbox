@@ -400,6 +400,80 @@ describe('buildCodeExecutionTools', () => {
     }
   )
 
+  test.each([
+    { scriptTool: undefined, reader: 'code_execution' },
+    { scriptTool: 'code_execution', reader: 'code_execution' },
+    { scriptTool: 'run_command', reader: 'a Node.js script run through run_command' },
+  ])('read_file recovery guidance names the registered script tool ($scriptTool)', async ({ scriptTool, reader }) => {
+    const { tools } = buildCodeExecutionTools({
+      sessionId: 'test-session',
+      files: [],
+      provider: mockProvider,
+      scriptTool,
+    })
+    expect(tools.read_file.description).toContain(`read them in character chunks with ${reader}.`)
+
+    mockProvider.readFileOut.mockResolvedValue({
+      success: true,
+      content: `${'x'.repeat(1997)}...`,
+      startLine: 1,
+      endLine: 1,
+      totalLines: 1,
+      truncatedLineCount: 1,
+    })
+    const shortenedLine = await toModelOutput(
+      tools.read_file,
+      await tools.read_file.execute({ file_path: 'long.txt' }, {})
+    )
+    expect(shortenedLine.value).toContain(`Use ${reader} to read the same text file`)
+
+    mockProvider.readFileOut.mockResolvedValue({
+      success: true,
+      content: 'x'.repeat(60_000),
+      startLine: 1,
+      endLine: 100,
+      totalLines: 200,
+    })
+    const shortenedOutput = await toModelOutput(
+      tools.read_file,
+      await tools.read_file.execute({ file_path: 'long.txt' }, {})
+    )
+    expect(shortenedOutput.value).toContain(`use ${reader} to read bounded character chunks`)
+
+    if (scriptTool === 'run_command') {
+      for (const text of [tools.read_file.description, shortenedLine.value, shortenedOutput.value]) {
+        expect(text).not.toContain('code_execution')
+      }
+    }
+    expect(tools.create_download.description).not.toContain('code_execution')
+    expect(tools.create_download.description).toContain('Never present sandbox paths as download links')
+  })
+
+  test('description leaves platform shell guidance to the working-directory section', () => {
+    const { description } = buildCodeExecutionTools({ sessionId: 'test-session', files: [], provider: mockProvider })
+    expect(description).not.toContain('On Windows')
+    expect(description).toContain('refer the user to the download card')
+  })
+
+  test('HarmonyOS description advertises only Node.js', async () => {
+    const platform = (await import('@/platform')).default
+    platform.type = 'harmony'
+    try {
+      const { description, tools } = buildCodeExecutionTools({
+        sessionId: 'test-session',
+        files: [],
+        provider: mockProvider,
+      })
+      expect(description).toContain('Bash and PowerShell are unavailable on HarmonyOS')
+      expect(description).not.toMatch(/^- Bash$/m)
+      expect(description).not.toContain('Node.js, PowerShell, or Bash')
+      expect(description).not.toContain('On Windows, prefer PowerShell')
+      expect(tools.code_execution.description).not.toContain('shell tools')
+    } finally {
+      platform.type = 'desktop'
+    }
+  })
+
   test('read_file requests a retry before advancing when the total output is shortened', async () => {
     mockProvider.readFileOut.mockResolvedValue({
       success: true,

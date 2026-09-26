@@ -14,7 +14,7 @@ import type { ToolSet } from 'ai'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { rendererApplication } from '@/app/renderer-application'
 import { prepareMobileMCPTools } from '@/packages/mcp/mobile-tools'
-import { getToolSetDescription, parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
+import { parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
@@ -54,11 +54,11 @@ export const capacitorWorkMode = new LocalWorkMode(
 
 export function buildMobileWebTools(model: ModelInterface, enabled: boolean) {
   const tools: ToolSet = {}
-  if (!enabled || !model.isSupportToolUse('web-browsing')) return { tools, instructions: '' }
+  if (!enabled || !model.isSupportToolUse('web-browsing')) return { tools }
   const includeParseLink = PROVIDERS_WITH_PARSE_LINK.has(settingActions.getExtensionSettings().webSearch.provider)
   tools.web_search = webSearchTool
   if (includeParseLink) tools.parse_link = parseLinkTool
-  return { tools, instructions: getToolSetDescription({ includeParseLink }) }
+  return { tools }
 }
 
 export function capacitorImageTools(model: ModelInterface, sessionId: string, signal: AbortSignal) {
@@ -107,7 +107,7 @@ export async function prepareCapacitorWorkMode(
     prepareTools: async () => ({
       ...memory,
       tools,
-      instructions: `${memory.instructions ?? ''}${WORK_INSTRUCTIONS}\n${web.instructions}${mcp.unavailable.length ? '\nSome enabled MCP services are unavailable. Do not claim to have used their tools.' : ''}`,
+      instructions: `${memory.instructions ?? ''}${WORK_INSTRUCTIONS}${mcp.unavailable.length ? '\nSome enabled MCP services are unavailable. Do not claim to have used their tools.' : ''}`,
     }),
   }).prepare(request)
   return {

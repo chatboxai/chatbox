@@ -138,23 +138,20 @@ export function buildRunCommandTool(context: RunCommandContext): { tool: ToolSet
   const hostRetryAvailable = sandboxAvailable && !fullAccess
   const executionCache = new Map<string, { signature: string; promise: Promise<RunCommandResult> }>()
 
-  const retryGuidance = fullAccess
-    ? '- This session has Full Access: run_command executes directly on the host without an approval step; it does not execute inside the file sandbox and there is no host retry to request. Do not pass `sandbox_permissions` or `justification`.'
+  const executionGuidance = fullAccess
+    ? '- Full Access is enabled: commands run directly on the host without an approval step.'
     : !sandboxAvailable
-      ? '- No OS command sandbox is available in this session. Commands run on the host following the session approval policy; there is no sandbox failure to escalate. Do not pass `sandbox_permissions` or `justification`.'
-      : `- All user-granted workdirs remain writable in the sandbox.
-- On macOS/Linux, commands run in the file sandbox first. A failed call records a one-time retry reference inside the harness without exposing it to the model.
-- Request full host access only after a real failed sandbox call, by retrying the exact command/workdir/shell with \`sandbox_permissions\` and \`justification\`.
-- The harness finds and consumes the matching retry reference internally. Never add or infer a retry id.
-- A sandbox-denied marker is a diagnostic signal, not the only reason a host retry may be appropriate.`
+      ? '- No OS command sandbox is available in this session; commands run on the host following the session approval policy.'
+      : `- Commands run in the file sandbox first; user-granted workdirs remain writable inside the sandbox.
+- Request full host access only after a real failed sandbox call, by repeating the exact command/workdir/shell with \`sandbox_permissions\` and \`justification\`. A sandbox-denied marker is one signal, not the only one.`
 
   const description = `
 ## Command Execution
-Use \`run_command\` for project commands, shell commands, and Node.js scripts. The current platform shell is ${shell}.
-- Commands use the selected workdir as cwd.
-${retryGuidance}
-- Do not append \`| head\` or \`| tail\` merely to limit output. Output is already bounded; preserve the original command for exact retry matching.
-- Prefer writing reusable Node.js code to a file, then run it with \`node path/to/script.mjs\`.
+Use \`run_command\` for project commands, shell commands, commands required by loaded skills, and Node.js scripts. The shell is ${shell}${isWindows ? '; use PowerShell syntax (Bash is unavailable). Windows paths shown with forward slashes, such as C:/Users/name, are valid in PowerShell' : ''}.
+- Commands start in the selected workdir; do not prepend ${isWindows ? 'cd or Set-Location' : 'cd'}.
+${executionGuidance}
+- Do not append \`| head\` or \`| tail\` merely to limit output; output is already bounded.
+- For reusable Node.js work, write the code to a file, then run it with \`node path/to/script.mjs\`.
 `
 
   const tool: ToolSet[string] = {

@@ -857,3 +857,23 @@ test('reserved virtual paths cannot be listed or searched on disk', async () => 
   expect(fsList).not.toHaveBeenCalled()
   expect(exec).not.toHaveBeenCalled()
 })
+
+describe('filesystem instructions', () => {
+  test('with a sandbox, relative paths and create_download delivery are described', () => {
+    const { description } = buildFilesystemTools({ sessionId: 'session-id', provider })
+    expect(description).toContain('Relative paths resolve in the session sandbox working directory')
+    expect(description).toContain('Call create_download')
+    expect(description).toContain('Do not attempt destructive operations')
+  })
+
+  test('without a sandbox, relative paths are described as unavailable and create_download is omitted', async () => {
+    const result = buildFilesystemTools({})
+    expect(result.description).toContain('No session sandbox is available, so these file tools reject relative paths')
+    expect(result.description).not.toContain('Relative paths resolve in the session sandbox')
+    expect(result.description).not.toContain('create_download')
+    expect(result.description).toContain('Do not attempt destructive operations')
+    await expect(execute(result.tools.write_file, { file_path: 'notes.txt', content: 'x' })).resolves.toMatchObject({
+      error: 'Relative paths require an active session sandbox',
+    })
+  })
+})

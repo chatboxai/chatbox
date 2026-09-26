@@ -84,7 +84,6 @@ export {
 } from '@shared/utils/account-license'
 export {
   createWebSearchTool,
-  WEB_SEARCH_TOOLSET_INSTRUCTION,
   type WebSearchToolResult,
 } from '@shared/web-search-tool'
 export {

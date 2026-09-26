@@ -6,13 +6,6 @@ import type { ToolSet } from 'ai'
 // executor differs per platform; description, schema, and result shape must
 // stay identical so the model behaves the same everywhere.
 
-export const WEB_SEARCH_TOOLSET_INSTRUCTION = `
-Use web_search to search the web when doing so would genuinely improve your answer.
-
-## web_search
-Search the web when the question benefits from fresh, real-time, or source-specific information — e.g. current events, recent releases, live data, or facts you aren't confident about. For questions you can already answer well from your own knowledge, answer directly. Use short, concise queries (English preferred).
-`
-
 export interface WebSearchToolResult {
   searchResults: Array<{ title: string; snippet: string; link: string }>
 }

@@ -285,8 +285,8 @@ function buildSandboxAttachment(params: {
     '<SYSTEM_REMINDER>',
     'This uploaded file is available in the sandbox working directory, not inlined in the conversation. ',
     parsedSandboxPath
-      ? 'Use read_file on PARSED_SANDBOX_PATH for extracted text, or code_execution on SANDBOX_PATH for the original binary. Use those paths exactly — uploads that share a filename live in distinct subdirectories.'
-      : 'Use read_file or code_execution on SANDBOX_PATH to inspect it. Use that path exactly — uploads that share a filename live in distinct subdirectories.',
+      ? 'Use read_file on PARSED_SANDBOX_PATH for extracted text; process the original binary at SANDBOX_PATH with a script. Use those paths exactly — uploads that share a filename live in distinct subdirectories.'
+      : 'Use read_file on SANDBOX_PATH to inspect it, or process it with a script. Use that path exactly — uploads that share a filename live in distinct subdirectories.',
     ' ',
     WHOLE_DOCUMENT_READ_GUIDANCE,
     ' File metadata does not verify text completeness; confirm contents and totalLines with read_file.',

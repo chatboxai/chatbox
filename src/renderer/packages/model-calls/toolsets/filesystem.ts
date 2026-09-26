@@ -53,7 +53,6 @@ interface EditFileInput {
 const editFileInputSchema = validatedToolSchema(
   {
     type: 'object',
-    description: 'Provide file_path and a non-empty edits array, including for a single replacement.',
     properties: {
       file_path: {
         type: 'string',
@@ -62,7 +61,7 @@ const editFileInputSchema = validatedToolSchema(
       edits: {
         type: 'array',
         minItems: 1,
-        description: 'Multiple exact search-and-replace edits to apply atomically in order',
+        description: 'Exact search-and-replace edits, applied atomically in order',
         items: {
           type: 'object',
           properties: {
@@ -408,13 +407,12 @@ function editToolResult(result: FileEditResult, filePath: string) {
 }
 
 export function buildFilesystemTools(context: FilesystemContext): { tools: ToolSet; description: string } {
-  // create_download only exists when the session has a sandbox provider (code execution
-  // enabled), so only reference it in tool contracts when it is actually callable.
-  const hasCreateDownload = Boolean(context.provider)
+  // A sandbox provider backs both relative paths and create_download, so only describe
+  // them when the session has one.
+  const hasSandbox = Boolean(context.provider)
 
   const list_files: ToolSet[string] = {
-    description:
-      'List files in a directory. Relative paths are resolved in the session sandbox. Absolute paths read the user filesystem.',
+    description: 'List files in a directory.',
     inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
@@ -463,10 +461,8 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
 
   const search_files: ToolSet[string] = {
     description:
-      'Search file contents. Relative paths search the session sandbox; absolute paths search the user filesystem. ' +
-      'By default the query is matched literally; set regex=true to use the bounded ripgrep/Rust regex syntax ' +
-      '(look-around and backreferences are not supported). ' +
-      'Heavy directories (node_modules, .git, build output) are skipped and results are capped for speed.',
+      'Search file contents. The query is literal unless regex=true. ' +
+      'Heavy directories (node_modules, .git, build output) are skipped and results are capped.',
     inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
@@ -529,11 +525,7 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
   }
 
   const write_file: ToolSet[string] = {
-    description:
-      'Write a file. Relative sandbox paths are written directly. Writing absolute user filesystem paths requires user approval unless Full Access is enabled.' +
-      (hasCreateDownload
-        ? ' Writing a sandbox file does NOT deliver it to the user — call create_download for that.'
-        : ''),
+    description: 'Write a file with the full content.',
     inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
@@ -607,7 +599,7 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
 
   const edit_file: ToolSet[string] = {
     description:
-      'Edit a file with one or more exact search-and-replace edits. Use edits[] for every call, including a single replacement. Each old_text must be unique at the time it is applied. Relative sandbox paths are edited directly. Editing absolute user filesystem paths requires user approval unless Full Access is enabled.',
+      'Edit a file with exact search-and-replace edits. Always pass edits[], even for a single replacement. Each old_text must be unique when it is applied.',
     inputSchema: editFileInputSchema,
     execute: async (input, toolOptions) => {
       const editInput = input as EditFileInput
@@ -696,14 +688,16 @@ export function buildFilesystemTools(context: FilesystemContext): { tools: ToolS
     },
     description: `
 ## Filesystem
-Use these tools (write_file / edit_file / list_files / search_files) as the primary way to create and modify files — prefer them over writing files through code_execution.
-- Relative paths are resolved in the session sandbox working directory and can be written or edited without confirmation. Prefer relative paths.
-- Do NOT use phantom home paths like /home/user or /root — they do not exist. Use relative paths instead.
-- Absolute paths access the user's real filesystem. Read/list/search only when the user provided or clearly requested the path.
-- Writing or editing an absolute user filesystem path requires user approval unless it is inside a bound working directory or Full Access is enabled. Do not attempt destructive operations; file deletion is not available.
+Use write_file / edit_file / list_files / search_files as the primary way to inspect, create, and modify files.
+${
+  hasSandbox
+    ? '- Relative paths resolve in the session sandbox working directory and can be written or edited without confirmation. Prefer them; phantom home paths such as /home/user or /root do not exist.'
+    : '- No session sandbox is available, so these file tools reject relative paths. Use absolute paths.'
+}
+- Absolute paths access the user's real filesystem. Read, list, or search them only when the user provided or clearly requested the path. Writing or editing them requires user approval unless the path is inside a bound working directory or Full Access is enabled. Do not attempt destructive operations; file deletion is not available.
 - Keep tool results small. For large generated outputs, write a file and return a path plus a short summary.${
-      hasCreateDownload
-        ? '\n- Writing a sandbox file does NOT give the user access to it. To deliver a file, call create_download after writing it. NEVER present sandbox paths (sandbox:, /mnt/data/, or raw file paths) as download links in your reply — they are not clickable.'
+      hasSandbox
+        ? '\n- Writing a file does not deliver it. Call create_download, and never present sandbox paths (sandbox:, /mnt/data/, or raw file paths) as links in your reply.'
         : ''
     }
 `,

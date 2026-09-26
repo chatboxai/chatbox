@@ -3,7 +3,7 @@ export const WHOLE_DOCUMENT_READ_GUIDANCE =
   'sequentially with read_file; for original text files, use SANDBOX_PATH. Start at offset=1 with bounded limits. ' +
   'Check range and truncation notices on every result, including the final page. Only after the returned text is complete, continue from endLine + 1 until totalLines is covered. ' +
   'If the total output is shortened, reread the same offset with a smaller limit before advancing. If individual lines are shortened, reducing limit cannot recover them: ' +
-  'use code_execution to read the same text file in bounded Unicode-safe character chunks, track character offsets, and recover all omitted text before advancing. ' +
+  'read the same text file in bounded Unicode-safe character chunks with a script, track character offsets, and recover all omitted text before advancing. ' +
   'Line-number coverage alone does not establish complete text coverage. ' +
   'Use retrieval only to supplement specific gaps, not as evidence of full-document coverage. ' +
   'Preserve section headings and page markers when present; do not invent missing page mappings. ' +

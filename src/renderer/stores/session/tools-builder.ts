@@ -36,7 +36,7 @@ import {
   type ImageToolResults,
   isViewImageAvailable,
 } from '@/packages/model-calls/toolsets/view-image'
-import { getToolSetDescription, parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
+import { parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
 import { buildWorkspaceInstructions } from '@/packages/model-calls/workspace-instructions'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
 import {
@@ -133,7 +133,11 @@ export interface BuildToolsResult {
  * artifact from cloud sandboxes) that do not exist on the desktop host, wasting tool calls
  * on failed writes. workingDir may be null when the path is not yet known (e.g. cloud).
  */
-function buildWorkingDirectoryInstruction(workingDir: string | null, userWorkingDirectories?: string[]): string {
+function buildWorkingDirectoryInstruction(
+  workingDir: string | null,
+  userWorkingDirectories: string[] | undefined,
+  commandPlatform: string | undefined
+): string {
   // Forward slashes remain valid for native Windows file APIs while avoiding copied native paths
   // that POSIX shells interpret differently.
   const formatPathForModel = (filePath: string) => filePath.replace(/\\/g, '/')
@@ -145,46 +149,39 @@ function buildWorkingDirectoryInstruction(workingDir: string | null, userWorking
   const grantedDirsBlock = userWorkingDirectories?.length
     ? `\nThe user selected these real directories for working-directory access (use their absolute paths):\n${userWorkingDirectories.map((dir) => `- ${formatPathForModel(dir)}`).join('\n')}\nThe host validates each binding before use. Accepted bindings allow structured file-tool writes without additional approval; rejected bindings follow the normal approval flow.\n`
     : ''
+  const windowsGuidance = `- On Windows, prefer PowerShell for terminal commands and native filesystem paths. PowerShell accepts native paths such as \`C:\\Users\\name\` and also starts in the working directory, so do not prepend \`Set-Location <working-directory>\`. Use Bash only for POSIX-specific scripts.
+- When using Bash on Windows, use Unix shell syntax and forward slashes; never paste a backslash path such as \`C:\\Users\\name\` into Bash. Git Bash accepts \`C:/Users/name/...\`, while WSL uses \`/mnt/c/Users/name/...\`. Because the active shell may differ, use relative paths for targets inside the working directory and structured file tools for host paths outside it.
+- In Bash, \`~\` and \`$HOME\` point to the working directory. In PowerShell, use relative paths or \`$PWD\`; do not assume \`$HOME\` is the working directory.
+`
+  const shellPathGuidance =
+    commandPlatform === 'win32'
+      ? windowsGuidance
+      : commandPlatform === 'harmony'
+        ? ''
+        : '- In Bash, \`~\` and \`$HOME\` point to the working directory.\n'
   return `
 ## Working Directory & File Paths
 ${dirLine}
 - For files inside the working directory, prefer relative paths. They resolve from the working directory at the start of each tool call.
 - Use an absolute path when the target is outside the working directory, including a user-granted real directory. For these host paths, prefer the structured file tools instead of passing the path to shell code.
 - \`code_execution\` already starts in the working directory. Do not prepend \`cd <working-directory>\` to commands.
-- On Windows, prefer PowerShell for terminal commands and native filesystem paths. PowerShell accepts native paths such as \`C:\\Users\\name\` and also starts in the working directory, so do not prepend \`Set-Location <working-directory>\`. Use Bash only for POSIX-specific scripts.
-- When using Bash on Windows, use Unix shell syntax and forward slashes; never paste a backslash path such as \`C:\\Users\\name\` into Bash. Git Bash accepts \`C:/Users/name/...\`, while WSL uses \`/mnt/c/Users/name/...\`. Because the active shell may differ, use relative paths for targets inside the working directory and structured file tools for host paths outside it.
-- In Bash, \`~\` and \`$HOME\` point to the working directory. In PowerShell, use relative paths or \`$PWD\`; do not assume \`$HOME\` is the working directory.
-- Do NOT use absolute paths like /home/user or /root — they do not exist here. Write to the working directory instead.
-- To create or modify files, prefer the write_file and edit_file tools over writing through code_execution (echo, heredoc, fs.writeFileSync). The structured tools are more reliable and let the user see what changed.
+${shellPathGuidance}- Do NOT use absolute paths like /home/user or /root — they do not exist here. Write to the working directory instead.
+- To create or modify files, prefer the write_file and edit_file tools over writing through code_execution scripts. The structured tools are more reliable and let the user see what changed.
 ${grantedDirsBlock}`
 }
 
 function buildRunCommandFileProcessingInstruction(
-  commandPlatform: 'darwin' | 'linux' | 'win32',
   workingDir: string | null,
-  fullAccess: boolean,
   userWorkingDirectories?: string[]
 ): string {
   const formatPath = (filePath: string) => filePath.replace(/\\/g, '/')
   const directories = userWorkingDirectories?.length
     ? `\nUser-selected working directories:\n${userWorkingDirectories.map((dir) => `- ${formatPath(dir)}`).join('\n')}`
     : ''
-  const hostApproval = fullAccess
-    ? 'directly on the host because Full Access is enabled'
-    : 'on the host under the session approval policy'
-  const runtime =
-    commandPlatform === 'win32'
-      ? `run_command executes PowerShell ${hostApproval}. Use PowerShell syntax and native Windows paths; Bash is unavailable.`
-      : fullAccess
-        ? 'run_command executes Bash directly on the host because Full Access is enabled. Use Bash syntax; run_command does not execute inside the file sandbox and there is no host retry to request.'
-        : 'run_command executes Bash in the file sandbox first. Use Bash syntax and request a host retry only after a real sandbox failure.'
   return `
 ## Working Directory & File Processing
 Sandbox working directory: ${workingDir ? formatPath(workingDir) : '(created when first needed)'}${directories}
-- ${runtime}
-- Commands start in the selected workdir; do not prepend cd or Set-Location.
-- Prefer write_file and edit_file for file changes. For reusable Node.js work, write a script file and run it with node through run_command.
-- Use read_file for sandbox files and explicitly provided absolute user paths. Use create_download to deliver generated files to the user.
+- Use read_file for sandbox files and explicitly provided absolute user paths; prefer write_file and edit_file for file changes.
 - Do not assume Python, extra packages, or package installation is available.
 `
 }
@@ -192,11 +189,7 @@ Sandbox working directory: ${workingDir ? formatPath(workingDir) : '(created whe
 function buildToolUseCommunicationInstruction(): string {
   return `
 ## Tool-use Communication
-When you are about to call one or more tools, first include one short visible sentence explaining what you will do next and why.
-- Use the user's language for this sentence.
-- Keep it action-oriented and concise.
-- If several tool calls are part of the same immediate action, one sentence for the batch is enough.
-- You may skip this sentence for trivial single-tool lookups such as reading, listing, or searching.
+Before calling tools, write one short visible sentence in the user's language saying what you will do next and why; one sentence covers a batch of related calls. Skip it for trivial single lookups such as reading, listing, or searching.
 `
 }
 
@@ -207,7 +200,8 @@ function buildSkillToolsInstruction(
   legacyCommandTools: boolean,
   harmonyNodeExecution: boolean,
   sandboxCodeExecutionFallback: boolean,
-  skillStagingDirectory: string | null
+  skillStagingDirectory: string | null,
+  sandboxAvailable: boolean
 ): string {
   let instruction = `
 ## Skills
@@ -220,7 +214,6 @@ You have access to skills that can extend your capabilities.
 ${enabledSkills.map((s) => `- **${s.name}**: ${s.description}`).join('\n')}
 
 When the user's request matches a skill's purpose, call load_skill to load its full instructions before proceeding.
-Loading a skill activates agent mode.
 `
   } else {
     instruction += `
@@ -250,19 +243,15 @@ Use code_execution to download and unpack skill files, ensure the directory cont
     return instruction
   }
 
+  const installUnavailable = `
+### Installing Skills
+Installing skills requires the session sandbox, which is unavailable in this session.
+`
+
   if (!legacyCommandTools) {
-    const defaultWorkdir = userExecWorkingDirectory
-      ? `The default workdir is ${userExecWorkingDirectory.replace(/\\/g, '/')}.`
-      : ''
-    const runCommandExecution = agentFullAccess
-      ? 'Full Access is enabled, so it runs commands directly on the host without an approval step; it does not execute inside the file sandbox and there is no host retry to request.'
-      : 'It runs sandbox-first where confinement is available and applies the session approval policy before host execution.'
+    if (!sandboxAvailable) return instruction + installUnavailable
     const stagingDirectory = skillStagingDirectory?.replace(/\\/g, '/')
     instruction += `
-### Running Commands
-Use run_command for project commands and commands required by loaded skills. ${runCommandExecution}
-${defaultWorkdir}
-
 ### Installing Skills
 Use run_command with workdir set to ${stagingDirectory ?? 'the internal sandbox working directory shown above'} to download and unpack skill files. Keep the prepared skill directory beneath that sandbox root, ensure it contains a valid SKILL.md, then call install_skill with that path. User-granted working directories are not valid install_skill staging roots.
 `
@@ -273,12 +262,12 @@ Use run_command with workdir set to ${stagingDirectory ?? 'the internal sandbox 
 ### Running Commands in User Environment
 **user_exec** runs commands in the user's real environment with full system access. This is a privileged tool.
 In Work Mode, use user_exec when the user's task requires their real environment, including when a loaded skill instructs you to run a host command. It is not limited to skill-driven tasks.
-Prefer code_execution (sandbox) for file processing, data analysis, downloading files, and other work that does not require the user's host environment.
-Unless Full Access is enabled, every command is still subject to the host approval policy and may pause for user confirmation.
+${sandboxAvailable ? "Prefer code_execution (sandbox) for file processing, data analysis, downloading files, and other work that does not require the user's host environment.\n" : ''}Unless Full Access is enabled, every command is still subject to the host approval policy and may pause for user confirmation.
 On Windows, user_exec runs PowerShell commands; on macOS/Linux, it runs Bash commands. Write PowerShell syntax directly on Windows, and use newlines or semicolons instead of Bash-only operators such as && so the command also works with Windows PowerShell 5.1. Do not invoke PowerShell from Bash or paste a Windows path into Bash.
 ${userExecWorkingDirectory ? `user_exec already starts in the first user-granted working directory: ${userExecWorkingDirectory.replace(/\\/g, '/')}. Use relative paths there and do not prepend cd or Set-Location.\n` : 'Without a user-granted working directory, user_exec starts in the user home directory.\n'}
-${agentFullAccess ? 'Full Access is enabled, so user_exec commands run without per-command approval.\n' : ''}
-
+${agentFullAccess ? 'Full Access is enabled, so user_exec commands run without per-command approval.\n' : ''}`
+  if (!sandboxAvailable) return instruction + installUnavailable
+  instruction += `
 ### Installing Skills
 You can install skills from any source:
 1. Use code_execution (sandbox) to download and unpack the skill files
@@ -390,7 +379,7 @@ export async function buildToolsForSession(
   const userWorkingDirectories = options.sessionSettings?.workingDirectories?.filter((dir) => dir.trim().length > 0)
   let instructions = includeAgentTools
     ? `## Context Management
-In long conversations, earlier tool call results may be automatically compressed or summarized to stay within the context window. When you receive important results from tool calls, always include the key findings and essential data in your text response — do not rely on being able to re-read previous tool outputs later.
+In long conversations, earlier tool results may be compressed or summarized. Put key findings and essential data from tool results into your text response instead of relying on re-reading them later.
 `
     : ''
   if (includeAgentTools) {
@@ -413,9 +402,6 @@ When you create a Git commit that includes code changes, append this exact trail
   if (needFileToolSet) {
     instructions += fileToolSetDescription
   }
-  if (webSupported) {
-    instructions += getToolSetDescription({ includeParseLink: includeParseLinkTool })
-  }
 
   let codeExecToolSet: ReturnType<typeof buildCodeExecutionTools> | null = null
   let sandboxWorkingDirectory: string | null = null
@@ -425,23 +411,26 @@ When you create a Git commit that includes code changes, append this exact trail
       : undefined
   const commandRunnerAvailable =
     commandPlatform === 'darwin' || commandPlatform === 'linux' || commandPlatform === 'win32'
-  const sandboxCodeExecutionFallback = !legacyCommandTools && !commandRunnerAvailable && codeExecution !== undefined
+  const runCommandAvailable =
+    includeAgentTools && !legacyCommandTools && commandRunnerAvailable && commandExecution !== undefined
+  const sandboxCodeExecutionFallback = !legacyCommandTools && !runCommandAvailable && codeExecution !== undefined
   const harmonyNodeExecution = sandboxCodeExecutionFallback && commandPlatform === 'harmony'
+  // Exactly one script tool is registered: code_execution (legacy contract, or run_command
+  // unavailable) or run_command. Tool guidance must name the registered one.
+  const exposesCodeExecution = legacyCommandTools || sandboxCodeExecutionFallback
   if (includeAgentTools && codeExecution) {
-    codeExecToolSet = buildCodeExecutionTools(codeExecution)
+    codeExecToolSet = buildCodeExecutionTools({
+      ...codeExecution,
+      scriptTool: exposesCodeExecution ? 'code_execution' : 'run_command',
+    })
     sandboxWorkingDirectory = await codeExecution.provider
       .resolveWorkingDirectory(codeExecution.sessionId)
       .catch(() => null)
-    if (legacyCommandTools || sandboxCodeExecutionFallback) {
-      instructions += buildWorkingDirectoryInstruction(sandboxWorkingDirectory, userWorkingDirectories)
+    if (exposesCodeExecution) {
+      instructions += buildWorkingDirectoryInstruction(sandboxWorkingDirectory, userWorkingDirectories, commandPlatform)
       instructions += codeExecToolSet.description
-    } else if (commandRunnerAvailable) {
-      instructions += buildRunCommandFileProcessingInstruction(
-        commandPlatform,
-        sandboxWorkingDirectory,
-        commandApprovalMode === 'full_access',
-        userWorkingDirectories
-      )
+    } else {
+      instructions += buildRunCommandFileProcessingInstruction(sandboxWorkingDirectory, userWorkingDirectories)
     }
   }
 
@@ -471,7 +460,7 @@ When you create a Git commit that includes code changes, append this exact trail
   }
 
   if (codeExecToolSet) {
-    if (legacyCommandTools || sandboxCodeExecutionFallback) {
+    if (exposesCodeExecution) {
       tools = { ...tools, ...codeExecToolSet.tools }
       const legacyCodeExecution = tools.code_execution
       if (commandPlatform === 'win32' && commandApprovalMode !== 'full_access' && legacyCodeExecution?.execute) {
@@ -506,7 +495,7 @@ When you create a Git commit that includes code changes, append this exact trail
     }
   }
 
-  if (includeAgentTools && !legacyCommandTools && commandRunnerAvailable && commandExecution) {
+  if (runCommandAvailable && commandExecution) {
     const sessionSettings = options.sessionSettings
     const recentUserMsgs = messages
       .filter((message) => message.role === 'user')
@@ -607,7 +596,8 @@ When you create a Git commit that includes code changes, append this exact trail
       legacyCommandTools,
       harmonyNodeExecution,
       sandboxCodeExecutionFallback,
-      sandboxWorkingDirectory
+      sandboxWorkingDirectory,
+      codeExecution !== undefined
     )
     tools.load_skill = buildLoadSkillTool(options, toolsetSkills)
     if (enabledSkills.some((skill) => skill.name === 'chatbox-product-info')) {
@@ -620,11 +610,7 @@ When you create a Git commit that includes code changes, append this exact trail
     }
     if (legacyCommandTools) tools.user_exec = buildUserExecTool(options)
     if (codeExecution) {
-      tools.install_skill = buildInstallSkillTool(
-        options,
-        legacyCommandTools || sandboxCodeExecutionFallback,
-        sandboxWorkingDirectory
-      )
+      tools.install_skill = buildInstallSkillTool(options)
     }
   }
 
@@ -714,22 +700,11 @@ function buildLoadSkillTool(
   }
 }
 
-function buildInstallSkillTool(
-  options: BuildToolsOptions,
-  legacyCommandTools: boolean,
-  skillStagingDirectory: string | null
-): ToolSet[string] {
-  const stagingRequirement =
-    !legacyCommandTools && skillStagingDirectory
-      ? ` Set run_command workdir to ${skillStagingDirectory.replace(/\\/g, '/')} and keep the prepared directory beneath it; user-granted working directories are not accepted.`
-      : ''
+function buildInstallSkillTool(options: BuildToolsOptions): ToolSet[string] {
   return {
     description:
-      'Install a skill from a prepared directory. ' +
-      `First use ${legacyCommandTools ? 'code_execution (sandbox)' : 'run_command'} to download/unpack the skill files, ensure the directory ` +
-      'contains a valid SKILL.md with name and description fields, then call this tool. ' +
-      stagingRequirement +
-      'The skill will be auto-enabled after installation.',
+      'Install a skill from a prepared sandbox directory containing a valid SKILL.md with name and description fields. ' +
+      'Prepare it as described under Installing Skills. The skill is auto-enabled after installation.',
     inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
@@ -811,7 +786,9 @@ function buildUserExecTool(options: BuildToolsOptions): ToolSet[string] {
     description:
       "Execute a command in the user's real environment (not sandbox). " +
       "Use when the task requires the user's host environment, including when a loaded skill instructs you to run a host command; it is not limited to skill-driven tasks. " +
-      'Prefer code_execution (sandbox) for work that does not need the host environment. ' +
+      (options.codeExecution
+        ? 'Prefer code_execution (sandbox) for work that does not need the host environment. '
+        : '') +
       'Runs PowerShell on Windows and Bash on macOS/Linux with full system access. ' +
       (agentFullAccess
         ? 'Full Access is enabled, so commands run without per-command approval.'

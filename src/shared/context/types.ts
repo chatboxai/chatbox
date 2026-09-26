@@ -49,7 +49,7 @@ export interface ContextBuilderOptions extends ContextSelectionOptions {
 
   /**
    * When true, inject <ATTACHMENT_FILE> metadata instead of file content.
-   * Files are available in the sandbox for code_execution / read_file tools.
+   * Files are available in the sandbox for read_file and script tools.
    * Default: false
    */
   sandboxMode?: boolean

@@ -179,9 +179,6 @@ vi.mock('@/packages/model-calls/toolsets/web-search', () => {
   const { tool } = require('ai')
   const { z } = require('zod')
   return {
-    default: { description: 'web search toolset' },
-    getToolSetDescription: ({ includeParseLink }: { includeParseLink: boolean }) =>
-      includeParseLink ? 'web search toolset\n## parse_link' : 'web search toolset',
     webSearchTool: tool({ description: 'web_search', inputSchema: z.object({}), execute: async () => ({}) }),
     parseLinkTool: tool({ description: 'parse_link', inputSchema: z.object({}), execute: async () => ({}) }),
   }
@@ -664,7 +661,8 @@ describe('buildToolsForSession', () => {
     expect(result.tools.parse_file).toBeDefined()
     expect(result.instructions).toContain('run_command')
     expect(result.instructions).toContain('workdir set to /sandbox/session-1')
-    expect(result.tools.install_skill.description).toContain('Set run_command workdir to /sandbox/session-1')
+    expect(result.instructions).toContain('Use run_command with workdir set to /sandbox/session-1')
+    expect(result.tools.install_skill.description).toContain('Installing Skills')
     expect(buildRunCommandToolMock).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'session-1',
@@ -691,13 +689,13 @@ describe('buildToolsForSession', () => {
     expect(result.tools.code_execution).toBeDefined()
     expect(result.tools.run_command).toBeUndefined()
     expect(result.tools.user_exec).toBeUndefined()
-    expect(result.tools.install_skill.description).toContain('code_execution (sandbox)')
+    expect(result.instructions).toContain('Use code_execution to download and unpack skill files')
     expect(result.instructions).toContain('HarmonyOS currently supports sandboxed Node.js through code_execution')
     expect(result.instructions).not.toContain('Use run_command')
     expect(buildRunCommandToolMock).not.toHaveBeenCalled()
   })
 
-  test('v2 Windows command instructions describe PowerShell host execution without Bash claims', async () => {
+  test('v2 Windows instructions leave the execution contract to run_command', async () => {
     platformName.current = 'win32'
     const provider = createMockSandboxProvider()
     vi.mocked(provider.resolveWorkingDirectory).mockResolvedValue('C:\\sandbox\\session-1')
@@ -711,13 +709,14 @@ describe('buildToolsForSession', () => {
       commandExecution: { sessionId: 'session-1', provider },
     })
 
-    expect(result.instructions).toContain('run_command executes PowerShell on the host')
-    expect(result.instructions).toContain('session approval policy')
-    expect(result.instructions).toContain('Bash is unavailable')
+    expect(buildRunCommandToolMock).toHaveBeenCalledWith(expect.objectContaining({ platform: 'win32' }))
+    expect(result.instructions).toContain('run command toolset')
+    expect(result.instructions).toContain('Sandbox working directory: C:/sandbox/session-1')
+    expect(result.instructions).not.toContain('Bash')
     expect(result.instructions).not.toContain('sandboxed environment for lightweight code execution')
   })
 
-  test('v2 command instructions describe direct host execution under Full Access', async () => {
+  test('v2 Full Access instructions describe execution only through run_command', async () => {
     const provider = createMockSandboxProvider()
     vi.mocked(provider.resolveWorkingDirectory).mockResolvedValue('/sandbox/session-1')
     const result = await buildToolsForSession(createMockModel(), {
@@ -730,16 +729,11 @@ describe('buildToolsForSession', () => {
       commandExecution: { sessionId: 'session-1', provider },
     })
 
-    expect(result.instructions).toContain(
-      'run_command executes Bash directly on the host because Full Access is enabled'
-    )
-    expect(result.instructions).toContain(
-      'Full Access is enabled, so it runs commands directly on the host without an approval step; it does not execute inside the file sandbox and there is no host retry to request'
-    )
-    expect(result.instructions).not.toContain('this session has no file sandbox')
+    expect(buildRunCommandToolMock).toHaveBeenCalledWith(expect.objectContaining({ approvalMode: 'full_access' }))
     expect(result.instructions).toContain('Keep the prepared skill directory beneath that sandbox root')
-    expect(result.instructions).not.toContain('run_command executes Bash in the file sandbox first')
-    expect(result.instructions).not.toContain('It runs sandbox-first')
+    expect(result.instructions).not.toContain('file sandbox first')
+    expect(result.instructions).not.toContain('sandbox-first')
+    expect(result.instructions).not.toContain('### Running Commands')
   })
 
   test.each(['web', 'ios', 'android'])('v2 command contract does not expose Electron commands on %s', async (name) => {
@@ -871,6 +865,7 @@ describe('buildToolsForSession', () => {
   })
 
   test('normalizes Windows paths and prefers PowerShell without redundant directory changes', async () => {
+    platformName.current = 'win32'
     const model = createMockModel()
     const provider = createMockSandboxProvider()
     vi.mocked(provider.resolveWorkingDirectory).mockResolvedValue('C:\\Users\\themez\\workspace\\chatbox-pro')
@@ -920,9 +915,10 @@ describe('buildToolsForSession', () => {
     expect(result.tools.parse_link).toBeDefined()
     expect(result.instructions).toContain('## Tool-use Communication')
     expect(result.instructions).toContain('one short visible sentence')
-    expect(result.instructions).toContain("Use the user's language for this sentence.")
-    expect(result.instructions).toContain('trivial single-tool lookups')
-    expect(result.instructions).toContain('## parse_link')
+    expect(result.instructions).toContain("in the user's language")
+    expect(result.instructions).toContain('trivial single lookups')
+    expect(result.instructions).not.toContain('## parse_link')
+    expect(result.instructions).not.toContain('## web_search')
   })
 
   test('webBrowsing=true does not expose parse_link when configured search provider does not support it', async () => {
@@ -1835,4 +1831,80 @@ test('keeps the virtual reader available for compacted resource lookups', async 
   expect(result.tools.read_file).toBeDefined()
   expect(buildFileToolsMock.mock.lastCall?.[2]).toBe(loadFileMessages)
   expect(loadFileMessages).not.toHaveBeenCalled()
+})
+
+describe('buildToolsForSession script tool and sandbox guidance', () => {
+  const buildAgentTools = (overrides: Partial<BuildToolsOptions>) =>
+    buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      sessionSettings: { commandApprovalMode: 'smart' },
+      ...overrides,
+    })
+
+  test.each([
+    { name: 'v2 desktop', platform: 'darwin', version: 2, commandExecution: true, scriptTool: 'run_command' },
+    { name: 'v1 desktop', platform: 'darwin', version: 1, commandExecution: true, scriptTool: 'code_execution' },
+    { name: 'v2 HarmonyOS', platform: 'harmony', version: 2, commandExecution: true, scriptTool: 'code_execution' },
+    {
+      name: 'v2 desktop without commandExecution',
+      platform: 'darwin',
+      version: 2,
+      commandExecution: false,
+      scriptTool: 'code_execution',
+    },
+  ] as const)('$name names the registered script tool', async ({ platform, version, commandExecution, scriptTool }) => {
+    platformName.current = platform
+    const provider = { ...createMockSandboxProvider(), type: 'local' } as SandboxProvider
+    const result = await buildAgentTools({
+      agentToolContractVersion: version,
+      codeExecution: { sessionId: 'session-1', provider, files: [] },
+      ...(commandExecution ? { commandExecution: { sessionId: 'session-1', provider } } : {}),
+    })
+
+    expect(buildCodeExecutionToolsMock).toHaveBeenCalledWith(expect.objectContaining({ scriptTool }))
+    expect(result.tools.view_image.description).toContain('Relative paths resolve in the session sandbox')
+    if (version === 1) expect(result.tools.user_exec.description).toContain('Prefer code_execution (sandbox)')
+    if (scriptTool === 'run_command') {
+      expect(result.tools.run_command).toBeDefined()
+      expect(result.tools.code_execution).toBeUndefined()
+    } else {
+      expect(result.tools.code_execution).toBeDefined()
+      expect(result.tools.run_command).toBeUndefined()
+    }
+  })
+
+  test.each([1, 2] as const)('v%s without a sandbox omits skill installation steps', async (version) => {
+    const result = await buildAgentTools({
+      agentToolContractVersion: version,
+      commandExecution: { sessionId: 'session-1' },
+    })
+
+    expect(result.tools.install_skill).toBeUndefined()
+    expect(result.instructions).toContain('Installing skills requires the session sandbox')
+    expect(result.instructions).not.toContain('call install_skill')
+    expect(result.instructions).not.toContain('Call install_skill')
+    expect(result.instructions).not.toContain('Prefer code_execution (sandbox)')
+    if (version === 1) expect(result.tools.user_exec.description).not.toContain('code_execution')
+    expect(result.tools.view_image.description).toContain('Use absolute paths')
+    expect(result.tools.view_image.description).not.toContain('Relative paths resolve')
+  })
+
+  test.each([
+    { platform: 'darwin', windows: false, bashHome: true },
+    { platform: 'win32', windows: true, bashHome: true },
+    { platform: 'harmony', windows: false, bashHome: false },
+  ])('working-directory guidance on $platform covers only its shells', async ({ platform, windows, bashHome }) => {
+    platformName.current = platform
+    const provider = createMockSandboxProvider()
+    const result = await buildAgentTools({
+      agentToolContractVersion: platform === 'harmony' ? 2 : 1,
+      codeExecution: { sessionId: 'session-1', provider, files: [] },
+      commandExecution: { sessionId: 'session-1', provider },
+    })
+
+    expect(result.instructions.includes('On Windows, prefer PowerShell')).toBe(windows)
+    expect(result.instructions.includes('In Bash, `~` and `$HOME` point to the working directory')).toBe(bashHome)
+  })
 })

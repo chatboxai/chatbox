@@ -276,9 +276,11 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
 
   const view_image: ToolSet[string] = {
     description:
-      'View an image file so you can actually see its contents (screenshots, charts, photos, generated images). ' +
-      'Relative paths are resolved in the session sandbox; absolute paths read the user filesystem (read-only). ' +
-      'Supported formats: png, jpg, webp, gif, bmp, svg. Large images are downscaled automatically. ' +
+      'View an image file as real visual input (screenshots, charts, photos, generated images). ' +
+      (context.provider?.type === 'local' && context.sessionId
+        ? 'Relative paths resolve in the session sandbox; absolute paths read the user filesystem (read-only). '
+        : 'Use absolute paths; they read the user filesystem (read-only). ') +
+      'Supports png, jpg, webp, gif, bmp, svg; large images are downscaled. ' +
       VIEW_IMAGE_BATCH_GUIDANCE,
     inputSchema: validatedToolSchema({
       type: 'object',
@@ -453,10 +455,7 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     tools: { [VIEW_IMAGE_TOOL_NAME]: view_image },
     description: `
 ## Viewing Images
-Use the view_image tool to look at image files — you will see the actual image, not a text description. Use it to inspect screenshots, rendered charts, downloaded pictures, and images you generated or modified in the sandbox.
-${VIEW_IMAGE_BATCH_GUIDANCE}
-- Relative paths read from the session sandbox working directory; absolute paths read the user's filesystem (read-only).
-- After generating or editing an image in the sandbox, view it to verify the result before presenting it to the user.${
+- After generating or editing an image, view it with view_image to verify the result before presenting it to the user.${
       context.toolResultImages
         ? ''
         : '\n- The viewed image arrives in a user message immediately after the tool result. It is real image input, not text.'

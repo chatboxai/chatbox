@@ -594,7 +594,8 @@ describe('buildContext', () => {
       const budgetPath = sandboxAttachmentRelPath('budget.xlsx', 'file-key-raw')
       expect(text).toContain(`<SANDBOX_PATH>${budgetPath}</SANDBOX_PATH>`)
       expect(text).toContain(`<PARSED_SANDBOX_PATH>${sandboxAttachmentParsedRelPath(budgetPath)}</PARSED_SANDBOX_PATH>`)
-      expect(text).toContain('code_execution')
+      expect(text).toContain('process the original binary at SANDBOX_PATH with a script')
+      expect(text).not.toContain('code_execution')
       expect(text).toContain('<PARSED_TEXT_STATUS>available</PARSED_TEXT_STATUS>')
       expect(text).toContain('<FILE_LINES>1200</FILE_LINES>')
       expect(text).toContain('read PARSED_SANDBOX_PATH sequentially')
@@ -637,7 +638,7 @@ describe('buildContext', () => {
       expect(text).not.toContain('<PARSED_SANDBOX_PATH>')
       expect(text).toContain('<PARSED_TEXT_STATUS>unavailable</PARSED_TEXT_STATUS>')
       expect(text).not.toContain('<FILE_LINES>')
-      expect(text).toContain('Use read_file or code_execution on SANDBOX_PATH')
+      expect(text).toContain('Use read_file on SANDBOX_PATH to inspect it, or process it with a script')
     })
 
     it.each(['ready', 'indexing', 'failed'] as const)(

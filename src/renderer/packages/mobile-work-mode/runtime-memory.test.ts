@@ -32,7 +32,6 @@ vi.mock('@/stores/agentPersonaStore', () => ({
 vi.mock('@/i18n/locales', () => ({ languageNameMap: { en: 'English' } }))
 vi.mock('@/adapters/CurrentBlobStorage', () => ({ currentBlobStorage: { get: vi.fn(), set: vi.fn() } }))
 vi.mock('@/packages/model-calls/toolsets/web-search', () => ({
-  getToolSetDescription: () => '',
   parseLinkTool: {},
   webSearchTool: {},
 }))

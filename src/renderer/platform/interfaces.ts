@@ -146,6 +146,7 @@ export interface Platform extends Storage {
 
   getKnowledgeBaseController(): KnowledgeBaseController
   getSessionAttachmentRagController(): SessionAttachmentRagController
+  supportsSessionAttachmentRag(): boolean
 
   getImageGenerationStorage(): ImageGenerationStorage
 

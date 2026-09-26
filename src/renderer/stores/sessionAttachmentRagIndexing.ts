@@ -12,7 +12,7 @@ function shouldIndexPreparedAttachment(
   file: Pick<AttachmentPreparationResult, 'ragMode' | 'storageKey' | 'error' | 'sessionAttachmentAvailability'>
 ) {
   return (
-    platform.type === 'desktop' &&
+    (platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) &&
     file.ragMode === 'session-retrieval' &&
     !!file.storageKey &&
     !file.error &&
@@ -22,7 +22,7 @@ function shouldIndexPreparedAttachment(
 
 function shouldIndexMessageFile(file: MessageFile) {
   return (
-    platform.type === 'desktop' &&
+    (platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) &&
     file.ragMode === 'session-retrieval' &&
     !!file.storageKey &&
     isSessionAttachmentRagSupportedFilePath(file.name) &&

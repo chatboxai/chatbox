@@ -595,7 +595,7 @@ async function analyzePickedAsset(input: {
 
   const isSessionAttachmentRagFileType = isSessionAttachmentRagSupportedFilePath(asset.name)
   const exceedsSessionAttachmentRagThreshold =
-    platform.isDesktopLike &&
+    (platform.supportsSessionAttachmentRag ? platform.supportsSessionAttachmentRag() : platform.isDesktopLike) &&
     isSessionAttachmentRagFileType &&
     stats.byteLength > SESSION_ATTACHMENT_RAG_INLINE_BYTE_THRESHOLD
   const sessionAttachmentRagAllowed = exceedsSessionAttachmentRagThreshold ? await canUseSessionAttachmentRag() : false

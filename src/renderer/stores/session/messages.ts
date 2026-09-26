@@ -40,7 +40,7 @@ function snapshotStreamingMessage(message: Message): Message {
 }
 
 export async function attachLargeFileRagMetadata(sessionId: string, message: Message): Promise<Message> {
-  if (!platform.isDesktopLike || !message.files?.length) {
+  if (!(platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) || !message.files?.length) {
     return message
   }
 
@@ -233,7 +233,7 @@ export async function removeMessage(sessionId: string, messageId: string) {
   ) {
     return
   }
-  if (platform.isDesktopLike) {
+  if (platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) {
     try {
       const controller = platform.getSessionAttachmentRagController()
       // Save & Resend versioning lets several messages share one indexed

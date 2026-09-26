@@ -43,7 +43,7 @@ function collectSessionMessages(session: Session): Message[] {
 }
 
 async function collectMaintenanceScope(): Promise<SessionAttachmentRagMaintenanceScope | null> {
-  if (!platform.isDesktopLike) {
+  if (!(platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike)) {
     return {
       sessionIds: [],
       messageIds: [],
@@ -128,7 +128,7 @@ export async function runSessionAttachmentRagMaintenancePass() {
 }
 
 export function initSessionAttachmentRagMaintenance() {
-  if (maintenanceStarted || !platform.isDesktopLike) {
+  if (maintenanceStarted || !(platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike)) {
     return
   }
 

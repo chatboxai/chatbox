@@ -596,12 +596,12 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         ...[...preprocessedSessionAttachmentIds].sort((a, b) => a - b),
       ],
       queryFn: () => {
-        if (!platform.isDesktopLike || preprocessedSessionAttachmentIds.length === 0) {
+        if (!(platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) || preprocessedSessionAttachmentIds.length === 0) {
           return []
         }
         return platform.getSessionAttachmentRagController().getAttachments(preprocessedSessionAttachmentIds)
       },
-      enabled: platform.isDesktopLike && preprocessedSessionAttachmentIds.length > 0,
+      enabled: (platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) && preprocessedSessionAttachmentIds.length > 0,
       refetchInterval: (query): number | false => {
         const attachments = (query.state.data as SessionAttachment[] | undefined) ?? []
         return shouldRefetchSessionAttachmentStates(attachments, preprocessedSessionAttachmentIds.length) ? 1500 : false
@@ -640,7 +640,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
     const recoverPreprocessedAttachment = useCallback(
       async (attachmentId: number) => {
-        if (!platform.isDesktopLike || recoveringPreprocessedAttachmentIdsRef.current.has(attachmentId)) {
+        if (!(platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) || recoveringPreprocessedAttachmentIdsRef.current.has(attachmentId)) {
           return
         }
         recoveringPreprocessedAttachmentIdsRef.current.add(attachmentId)
@@ -921,7 +921,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             preprocessedFilesForSubmit.flatMap((file) => (file.sessionAttachmentId ? [file.sessionAttachmentId] : []))
           )
         )
-        if (platform.isDesktopLike && submitSessionAttachmentIds.length > 0) {
+        if ((platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) && submitSessionAttachmentIds.length > 0) {
           const latestAttachmentStates = await platform
             .getSessionAttachmentRagController()
             .getAttachments(submitSessionAttachmentIds)
@@ -1858,7 +1858,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                             // Ignore cancellation errors
                           })
                         }
-                        if (platform.isDesktopLike && preprocessedFile?.sessionAttachmentId) {
+                        if ((platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) && preprocessedFile?.sessionAttachmentId) {
                           void platform
                             .getSessionAttachmentRagController()
                             .deleteAttachment(preprocessedFile.sessionAttachmentId)

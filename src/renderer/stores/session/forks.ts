@@ -168,7 +168,7 @@ export async function deleteFork(sessionId: string, forkMessageId: string) {
 }
 
 async function reassignSharedAttachmentOwnership(sessionId: string, removed: Message[], survivors: Message[]) {
-  if (!platform.isDesktopLike || removed.length === 0) {
+  if (!(platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike) || removed.length === 0) {
     return
   }
   try {

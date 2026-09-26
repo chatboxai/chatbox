@@ -15,7 +15,7 @@ async function runInChunks<T>(items: T[], chunkSize: number, worker: (item: T) =
 }
 
 async function cleanupAttachmentRagEntries(event: Extract<SessionApplicationEvent, { type: 'session-will-delete' }>) {
-  if (!platform.isDesktopLike) return
+  if (!(platform.supportsSessionAttachmentRag?.() ?? platform.isDesktopLike)) return
   await runInChunks(event.ids, 10, async (sessionId) => {
     try {
       await platform.getSessionAttachmentRagController().deleteSessionAttachments(sessionId)

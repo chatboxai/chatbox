@@ -1,10 +1,11 @@
 /**
  * Contract between the renderer and the desktop built-in browser.
  *
- * The built-in browser is a single page view embedded in the app window's right sidebar. The
- * model reads pages through it and the user can take it over to sign in or click through a
- * page. It renders in a dedicated persistent session, so sign-ins survive restarts; sign-in
- * state lives only in that session and is never shared with the app window or sent to a model.
+ * Each conversation owns a page view embedded in the app window's right sidebar. The model
+ * reads its conversation's page and the user can take it over to sign in or click through it.
+ * Page URLs and navigation history are conversation-local. Views share a dedicated persistent
+ * website profile so sign-ins survive restarts; sign-in state is never shared with the app
+ * window or sent to a model.
  */
 
 export const BUILT_IN_BROWSER_CHANNELS = {
@@ -18,9 +19,16 @@ export const BUILT_IN_BROWSER_CHANNELS = {
   setView: 'built-in-browser:set-view',
   getState: 'built-in-browser:get-state',
   clearData: 'built-in-browser:clear-data',
+  dispose: 'built-in-browser:dispose',
   /** Main → renderer push whenever {@link BuiltInBrowserState} changes. */
   state: 'built-in-browser:state',
 } as const
+
+/** Page clears this conversation's view/history; all also clears the shared website profile. */
+export type BuiltInBrowserClearScope = 'page' | 'all'
+
+/** Initial layout for pages opened by background tools before a sidebar has placed them. */
+export const BUILT_IN_BROWSER_DEFAULT_VIEWPORT = { width: 1024, height: 768 } as const
 
 export const BUILT_IN_BROWSER_DEFAULT_READ_TIMEOUT_MS = 25_000
 export const BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS = 60_000
@@ -59,6 +67,8 @@ export interface BuiltInBrowserPage {
 }
 
 export interface BuiltInBrowserState {
+  /** Conversation owning this page; included in main-process state notifications. */
+  sessionId?: string
   /** Empty until a page has been opened. */
   url: string
   title: string

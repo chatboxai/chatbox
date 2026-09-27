@@ -1,5 +1,5 @@
-import { registerWorkspaceCleanup } from '@shared/mobile-work/workspace-cleanup'
 import type { SessionApplicationEvent, SessionEventBus } from '@chatbox/core/application/session'
+import { registerWorkspaceCleanup } from '@shared/mobile-work/workspace-cleanup'
 import { rendererApplication } from '@/app/renderer-application'
 import { clearScrollPositionCache } from '@/components/chat/MessageList'
 import { sessionStartupRecovery } from '@/packages/session-startup-recovery'
@@ -29,6 +29,13 @@ function cleanupDeletedSessionRuntimeState(sessionId: string): void {
   uiStore.getState().clearSessionWebBrowsing(sessionId)
   uiStore.getState().removeSessionKnowledgeBase(sessionId)
   uiStore.getState().clearSessionAgentMode(sessionId)
+  uiStore.getState().clearSessionBuiltInBrowser(sessionId)
+  platform.builtInBrowser
+    ?.forSession(sessionId)
+    .dispose()
+    .catch((error: unknown) => {
+      console.warn('Failed to release the deleted conversation browser:', error)
+    })
   clearScrollPositionCache(sessionId)
   clearSessionNameGenerationState(sessionId)
   clearSessionActivity(sessionId)

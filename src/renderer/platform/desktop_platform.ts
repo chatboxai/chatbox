@@ -22,10 +22,10 @@ import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/
 import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { rememberFileNativePath } from '@/utils/file-native-path'
 import { getOS } from '../packages/navigator'
-import { DesktopBuiltInBrowser } from './desktop-built-in-browser'
 import DesktopExporter from './desktop_exporter'
 import { desktopBackupBlobs } from './desktop-backup-blobs'
-import type { BuiltInBrowser, Exporter, Platform, PlatformType } from './interfaces'
+import { DesktopBuiltInBrowser } from './desktop-built-in-browser'
+import type { Exporter, Platform, PlatformType } from './interfaces'
 import DesktopKnowledgeBaseController from './knowledge-base/desktop-controller'
 import DesktopSessionAttachmentRagController from './session-attachment-rag/desktop-controller'
 import { parseTextFileLocally } from './web_platform_utils'
@@ -39,7 +39,7 @@ export default class DesktopPlatform implements Platform {
   public readonly isDesktopLike = true
 
   public exporter: Exporter
-  public builtInBrowser?: BuiltInBrowser
+  public builtInBrowser?: DesktopBuiltInBrowser
   public backupBlobStreams: ReturnType<typeof desktopBackupBlobs>
 
   private _kbController?: DesktopKnowledgeBaseController

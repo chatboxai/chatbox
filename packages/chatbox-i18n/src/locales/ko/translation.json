@@ -1737,5 +1737,11 @@
   "Fast model": "빠른 모델",
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "대화 제목을 자동으로 생성합니다. 응답이 빠른 모델을 선택하세요.",
   "Page Screenshot": "페이지 스크린샷",
-  "Run Browser JavaScript": "브라우저 JavaScript 실행"
+  "Run Browser JavaScript": "브라우저 JavaScript 실행",
+  "Clear current page and history": "현재 페이지 및 방문 기록 지우기",
+  "Clear all pages and website data": "모든 페이지 및 사이트 데이터 지우기",
+  "Clear all pages and sign out of websites?": "모든 페이지를 지우고 사이트에서 로그아웃할까요?",
+  "Current page and history cleared. Website sign-ins kept.": "현재 페이지와 방문 기록을 지웠습니다. 사이트 로그인은 유지됩니다.",
+  "All browser pages and website data cleared": "모든 브라우저 페이지와 사이트 데이터를 지웠습니다",
+  "Clearing browser data…": "브라우저 데이터 지우는 중…"
 }

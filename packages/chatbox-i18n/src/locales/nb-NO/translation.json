@@ -1737,5 +1737,11 @@
   "Fast model": "Rask modell",
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "Brukes til å generere samtaletitler automatisk. Velg en modell som svarer raskt.",
   "Page Screenshot": "Skjermbilde av side",
-  "Run Browser JavaScript": "Kjør JavaScript i nettleseren"
+  "Run Browser JavaScript": "Kjør JavaScript i nettleseren",
+  "Clear current page and history": "Tøm gjeldende side og historikk",
+  "Clear all pages and website data": "Slett alle sider og nettstedsdata",
+  "Clear all pages and sign out of websites?": "Tømme alle sider og logge ut av nettsteder?",
+  "Current page and history cleared. Website sign-ins kept.": "Gjeldende side og historikk er tømt. Innlogginger på nettsteder beholdes.",
+  "All browser pages and website data cleared": "Alle nettlesersider og nettstedsdata er slettet",
+  "Clearing browser data…": "Sletter nettleserdata…"
 }

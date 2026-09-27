@@ -193,7 +193,7 @@ export function SessionMenu({
 function BuiltInBrowserToggle({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation()
   const isWorkMode = resolveSessionMode(useSessionAgentMode(sessionId).value) === 'work'
-  const open = useUIStore((s) => s.showBuiltInBrowser)
+  const open = useUIStore((s) => s.builtInBrowserOpenBySession[sessionId] ?? false)
   const setOpen = useUIStore((s) => s.setShowBuiltInBrowser)
   if (!platform.builtInBrowser || !isWorkMode) return null
   return (
@@ -206,7 +206,7 @@ function BuiltInBrowserToggle({ sessionId }: { sessionId: string }) {
           aria-pressed={open}
           data-testid="built-in-browser-toggle"
           color={open ? 'chatbox-brand' : 'chatbox-secondary'}
-          onClick={() => setOpen(!open)}
+          onClick={() => setOpen(sessionId, !open)}
         />
       </TooltipTrigger>
       <TooltipContent>{t('Built-in Browser')}</TooltipContent>

@@ -104,7 +104,7 @@ export const uiStore = createStore(
         agentModeLastSelected: 'off' as Extract<AgentModeValue, 'on' | 'off'>,
         sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
         promptCacheBreakConfirmDismissed: {} as Record<string, boolean>,
-        showBuiltInBrowser: false,
+        builtInBrowserOpenBySession: {} as Record<string, boolean>,
       },
       (set, get) => ({
         addToast: (content: string, duration?: number, action?: Toast['action']) => {
@@ -129,8 +129,16 @@ export const uiStore = createStore(
           set({ showSidebar })
         },
 
-        setShowBuiltInBrowser: (showBuiltInBrowser: boolean) => {
-          set({ showBuiltInBrowser })
+        clearSessionBuiltInBrowser: (sessionId: string) => {
+          set((state) => {
+            const builtInBrowserOpenBySession = { ...state.builtInBrowserOpenBySession }
+            delete builtInBrowserOpenBySession[sessionId]
+            return { builtInBrowserOpenBySession }
+          })
+        },
+
+        setShowBuiltInBrowser: (sessionId: string, open: boolean) => {
+          set((state) => ({ builtInBrowserOpenBySession: { ...state.builtInBrowserOpenBySession, [sessionId]: open } }))
         },
 
         setOpenSearchDialog: (openSearchDialog: boolean, globalOnly = false) => {

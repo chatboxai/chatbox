@@ -1737,5 +1737,11 @@
   "Fast model": "النموذج السريع",
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "يُستخدم لإنشاء عناوين المحادثات تلقائيًا. اختر نموذجًا سريع الاستجابة.",
   "Page Screenshot": "لقطة شاشة للصفحة",
-  "Run Browser JavaScript": "تشغيل JavaScript في المتصفح"
+  "Run Browser JavaScript": "تشغيل JavaScript في المتصفح",
+  "Clear current page and history": "مسح الصفحة الحالية وسجلها",
+  "Clear all pages and website data": "مسح جميع الصفحات وبيانات المواقع",
+  "Clear all pages and sign out of websites?": "هل تريد مسح جميع الصفحات وتسجيل الخروج من المواقع؟",
+  "Current page and history cleared. Website sign-ins kept.": "تم مسح الصفحة الحالية وسجلها. تم الاحتفاظ بتسجيل الدخول إلى المواقع.",
+  "All browser pages and website data cleared": "تم مسح جميع صفحات المتصفح وبيانات المواقع",
+  "Clearing browser data…": "جارٍ مسح بيانات المتصفح…"
 }

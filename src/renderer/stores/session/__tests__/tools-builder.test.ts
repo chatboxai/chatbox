@@ -47,7 +47,10 @@ const {
   userExecMock: vi.fn(),
   readWorkspaceInstructionsMock: vi.fn(),
   platformName: { current: 'darwin' },
-  builtInBrowser: { current: undefined as { readPage: () => Promise<unknown> } | undefined },
+  builtInBrowser: {
+    current: undefined as { readPage: () => Promise<unknown> } | undefined,
+    sessionIds: [] as string[],
+  },
 }))
 
 const memoryValues = vi.hoisted(() => new Map<string, unknown>())
@@ -95,6 +98,13 @@ vi.mock('@/platform', () => ({
     fsReadImage: vi.fn(),
     get builtInBrowser() {
       return builtInBrowser.current
+        ? {
+            forSession: (sessionId: string) => {
+              builtInBrowser.sessionIds.push(sessionId)
+              return builtInBrowser.current
+            },
+          }
+        : undefined
     },
   },
 }))
@@ -262,6 +272,7 @@ const sandboxToolNames = [
 beforeEach(async () => {
   vi.clearAllMocks()
   builtInBrowser.current = undefined
+  builtInBrowser.sessionIds.length = 0
   memoryValues.clear()
   await rendererMemoryService.reload()
   for (const listener of skillsChangedListeners) {
@@ -943,21 +954,37 @@ describe('buildToolsForSession', () => {
     builtInBrowser.current = { readPage: vi.fn() }
     const model = createMockModel()
 
-    const result = await buildToolsForSession(model, { webBrowsing: false, messages: [], agentMode: 'on' })
+    const result = await buildToolsForSession(model, {
+      sessionId: 'browser-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
 
     expect(Object.keys(result.tools).filter((name) => /browse|script|screenshot|browser/.test(name))).toEqual([
       'browser',
     ])
     expect(result.instructions).not.toContain('## Built-in browser')
+    expect(builtInBrowser.sessionIds).toEqual(['browser-session'])
   })
 
   test('the built-in-browser skill is listed and loadable only alongside the built-in browser', async () => {
     const model = createMockModel()
-    const withoutBrowser = await buildToolsForSession(model, { webBrowsing: false, messages: [], agentMode: 'on' })
+    const withoutBrowser = await buildToolsForSession(model, {
+      sessionId: 'browser-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
     expect(withoutBrowser.instructions).not.toContain('**built-in-browser**')
 
     builtInBrowser.current = { readPage: vi.fn() }
-    const result = await buildToolsForSession(model, { webBrowsing: false, messages: [], agentMode: 'on' })
+    const result = await buildToolsForSession(model, {
+      sessionId: 'browser-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
     expect(result.instructions).toContain('**built-in-browser**')
     const loadSkillTool = result.tools.load_skill
     if (!loadSkillTool?.execute) throw new Error('load_skill execute missing')
@@ -969,7 +996,12 @@ describe('buildToolsForSession', () => {
   test('the screenshot command and its skill section exist only for vision models', async () => {
     builtInBrowser.current = { readPage: vi.fn() }
 
-    const vision = await buildToolsForSession(createMockModel(), { webBrowsing: false, messages: [], agentMode: 'on' })
+    const vision = await buildToolsForSession(createMockModel(), {
+      sessionId: 'browser-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
     expect(commandsOf(vision.tools.browser)).toEqual(['read', 'run', 'screenshot'])
     expect(vision.prepareStepMessages).toBeDefined()
     const visionSkill = await vision.tools.load_skill.execute?.({ name: 'built-in-browser' }, {} as never)
@@ -977,7 +1009,12 @@ describe('buildToolsForSession', () => {
 
     const textOnly = createMockModel()
     vi.mocked(textOnly.isSupportVision).mockReturnValue(false)
-    const withoutVision = await buildToolsForSession(textOnly, { webBrowsing: false, messages: [], agentMode: 'on' })
+    const withoutVision = await buildToolsForSession(textOnly, {
+      sessionId: 'browser-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
     expect(commandsOf(withoutVision.tools.browser)).toEqual(['read', 'run'])
     const textSkill = await withoutVision.tools.load_skill.execute?.({ name: 'built-in-browser' }, {} as never)
     expect(JSON.stringify(textSkill)).not.toContain('Screenshots')
@@ -985,14 +1022,31 @@ describe('buildToolsForSession', () => {
 
   test('the browser stays off in chat mode and without a built-in browser', async () => {
     const model = createMockModel()
-    const withoutBrowser = await buildToolsForSession(model, { webBrowsing: true, messages: [], agentMode: 'on' })
+    const withoutBrowser = await buildToolsForSession(model, {
+      sessionId: 'browser-session',
+      webBrowsing: true,
+      messages: [],
+      agentMode: 'on',
+    })
     expect(withoutBrowser.tools.browser).toBeUndefined()
     expect(withoutBrowser.instructions).not.toContain('built-in-browser')
 
     builtInBrowser.current = { readPage: vi.fn() }
-    const chatMode = await buildToolsForSession(model, { webBrowsing: true, messages: [], agentMode: 'off' })
+    const chatMode = await buildToolsForSession(model, {
+      sessionId: 'browser-session',
+      webBrowsing: true,
+      messages: [],
+      agentMode: 'off',
+    })
     expect(chatMode.tools.browser).toBeUndefined()
     expect(chatMode.instructions).not.toContain('built-in-browser')
+  })
+
+  test('the browser is unavailable without a conversation identity', async () => {
+    builtInBrowser.current = { readPage: vi.fn() }
+    const result = await buildToolsForSession(createMockModel(), { webBrowsing: false, messages: [], agentMode: 'on' })
+    expect(result.tools.browser).toBeUndefined()
+    expect(builtInBrowser.sessionIds).toEqual([])
   })
 
   test('agentMode="on" without codeExecution — load_skill only, no code-exec tools', async () => {

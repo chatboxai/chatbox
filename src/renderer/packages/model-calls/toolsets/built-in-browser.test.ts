@@ -27,6 +27,7 @@ function createBrowser(content: string): BuiltInBrowser {
     getState: vi.fn(),
     onStateChange: vi.fn(),
     clearData: vi.fn(),
+    dispose: vi.fn(),
   }
 }
 

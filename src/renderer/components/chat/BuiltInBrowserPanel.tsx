@@ -1,5 +1,9 @@
 import { Loader, Text, TextInput } from '@mantine/core'
-import { type BuiltInBrowserState, EMPTY_BUILT_IN_BROWSER_STATE } from '@shared/built-in-browser'
+import {
+  type BuiltInBrowserClearScope,
+  type BuiltInBrowserState,
+  EMPTY_BUILT_IN_BROWSER_STATE,
+} from '@shared/built-in-browser'
 import { IconArrowLeft, IconArrowRight, IconDots, IconRefresh, IconTrash, IconWorld, IconX } from '@tabler/icons-react'
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -86,17 +90,23 @@ function reportError(error: unknown) {
  * process draws over the placeholder below the toolbar, so the user can take the page over.
  * Opens on its own when the model starts reading a page.
  */
-export function BuiltInBrowserSidebar({ builtInBrowser }: { builtInBrowser: BuiltInBrowser }) {
+export function BuiltInBrowserSidebar({
+  builtInBrowser,
+  sessionId,
+}: {
+  builtInBrowser: BuiltInBrowser
+  sessionId: string
+}) {
   const state = useBuiltInBrowserState(builtInBrowser)
-  const open = useUIStore((s) => s.showBuiltInBrowser)
+  const open = useUIStore((s) => s.builtInBrowserOpenBySession[sessionId] ?? false)
   const setOpen = useUIStore((s) => s.setShowBuiltInBrowser)
 
   useEffect(() => {
-    if (state.reading) setOpen(true)
-  }, [state.reading, setOpen])
+    if (state.reading) setOpen(sessionId, true)
+  }, [state.reading, setOpen, sessionId])
 
   if (!open) return null
-  return <BuiltInBrowserPanel builtInBrowser={builtInBrowser} state={state} onClose={() => setOpen(false)} />
+  return <BuiltInBrowserPanel builtInBrowser={builtInBrowser} state={state} onClose={() => setOpen(sessionId, false)} />
 }
 
 function BuiltInBrowserPanel({
@@ -112,6 +122,7 @@ function BuiltInBrowserPanel({
   const pageRef = useRef<HTMLDivElement>(null)
   const [address, setAddress] = useState(state.url)
   const [editingAddress, setEditingAddress] = useState(false)
+  const [clearingData, setClearingData] = useState(false)
   const hasPage = Boolean(state.url)
   const [snapshot, setSnapshot] = useState<string | null>(null)
   const overlayOpen = useOverlayOver(pageRef)
@@ -165,11 +176,24 @@ function BuiltInBrowserPanel({
     builtInBrowser.navigate(url).catch(reportError)
   }
 
-  const clearData = () => {
-    builtInBrowser
-      .clearData()
-      .then(() => toastActions.add(t('Built-in browser data cleared')))
-      .catch(reportError)
+  const clearData = async (scope: BuiltInBrowserClearScope) => {
+    if (clearingData) return
+    setClearingData(true)
+    try {
+      await builtInBrowser.clearData(scope)
+      setEditingAddress(false)
+      setAddress('')
+      setSnapshot(null)
+      toastActions.add(
+        scope === 'page'
+          ? t('Current page and history cleared. Website sign-ins kept.')
+          : t('All browser pages and website data cleared')
+      )
+    } catch (error) {
+      reportError(error)
+    } finally {
+      setClearingData(false)
+    }
   }
 
   return (
@@ -230,16 +254,30 @@ function BuiltInBrowserPanel({
           position="bottom-end"
           items={[
             {
-              text: t('Clear built-in browser data'),
+              text: t('Clear current page and history'),
               icon: IconTrash,
-              onClick: clearData,
+              disabled: clearingData || !hasPage,
+              onClick: () => void clearData('page'),
+            },
+            {
+              text: t('Clear all pages and website data'),
+              icon: IconTrash,
+              disabled: clearingData,
+              doubleCheck: { text: t('Clear all pages and sign out of websites?') as string },
+              onClick: () => void clearData('all'),
             },
           ]}
         >
-          <IconButton icon={IconDots} iconSize={ICON_SIZE.inline} aria-label={t('More')} />
+          <IconButton icon={IconDots} iconSize={ICON_SIZE.inline} aria-label={t('More')} disabled={clearingData} />
         </ActionMenu>
         <IconButton icon={IconX} iconSize={ICON_SIZE.inline} aria-label={t('Close')} onClick={onClose} />
       </div>
+      {clearingData && (
+        <div role="status" className="flex items-center gap-2 px-3 py-2">
+          <Loader size="xs" />
+          <Text size="xs">{t('Clearing browser data…')}</Text>
+        </div>
+      )}
       {state.reading && (
         <div
           data-testid="built-in-browser-reading"

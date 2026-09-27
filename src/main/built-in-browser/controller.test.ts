@@ -1,4 +1,9 @@
 import { EventEmitter } from 'node:events'
+import {
+  BUILT_IN_BROWSER_CHANNELS,
+  BUILT_IN_BROWSER_DEFAULT_VIEWPORT,
+  EMPTY_BUILT_IN_BROWSER_STATE,
+} from '@shared/built-in-browser'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 class FakeContents extends EventEmitter {
@@ -47,9 +52,28 @@ function fakeImage(width: number, height: number) {
   }
 }
 
-const views: Array<{ webContents: FakeContents; visible: boolean }> = []
+const views: Array<{ webContents: FakeContents; visible: boolean; setBounds: ReturnType<typeof vi.fn> }> = []
+
+const captureHosts: Array<{ destroyed: boolean; options: unknown }> = []
+const profile = vi.hoisted(() => ({
+  clearStorageData: vi.fn(),
+  clearCache: vi.fn(),
+  clearAuthCache: vi.fn(),
+  closeAllConnections: vi.fn(),
+}))
 
 vi.mock('electron', () => {
+  class BrowserWindow {
+    destroyed = false
+    contentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
+    constructor(public options: unknown) {
+      captureHosts.push(this)
+    }
+    isDestroyed = () => this.destroyed
+    destroy = () => {
+      this.destroyed = true
+    }
+  }
   class WebContentsView {
     webContents = new FakeContents()
     setBackgroundColor = vi.fn()
@@ -58,24 +82,29 @@ vi.mock('electron', () => {
       this.visible = visible
     })
     getVisible = () => this.visible
-    setBounds = vi.fn()
+    bounds = { x: 0, y: 0, width: 0, height: 0 }
+    setBounds = vi.fn((bounds: typeof this.bounds) => {
+      this.bounds = bounds
+    })
+    getBounds = () => this.bounds
     constructor() {
       views.push(this)
     }
   }
   const fakeSession = {
+    ...profile,
     getUserAgent: () => 'Mozilla/5.0 Chrome/140 Electron/38.0.0',
     setUserAgent: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
     on: vi.fn(),
   }
-  return { WebContentsView, session: { fromPartition: () => fakeSession } }
+  return { BrowserWindow, WebContentsView, session: { fromPartition: () => fakeSession } }
 })
 
 class FakeHost extends EventEmitter {
   contentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
-  webContents = { send: vi.fn() }
+  webContents = { send: vi.fn(), isDestroyed: () => false }
   isDestroyed = () => false
 }
 
@@ -98,6 +127,65 @@ describe('BuiltInBrowserController reads', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('clears website storage, HTTP authentication and pooled connections globally', async () => {
+    await controller.clearData()
+    for (const method of Object.values(profile)) expect(method).toHaveBeenCalledOnce()
+    expect(profile.closeAllConnections.mock.invocationCallOrder[0]).toBeGreaterThan(
+      profile.clearAuthCache.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('initializes hidden pages with a usable viewport and allows the sidebar to replace it', async () => {
+    controller.navigate(host as unknown as Host, 'https://example.com/')
+    expect(views[0].visible).toBe(false)
+    expect(views[0].setBounds).toHaveBeenCalledWith({ x: 0, y: 0, ...BUILT_IN_BROWSER_DEFAULT_VIEWPORT })
+    const bounds = { x: 700, y: 20, width: 400, height: 600 }
+    await controller.setView(host as unknown as Host, { visible: true, bounds })
+    expect(views[0].setBounds).toHaveBeenLastCalledWith(bounds)
+  })
+
+  it('reset cancels active scripts, destroys page history and publishes the empty state', async () => {
+    controller = new BuiltInBrowserController('a', false)
+    controller.navigate(host as unknown as Host, 'https://example.com/')
+    const contents = views[0].webContents
+    contents.emit('dom-ready')
+    const read = controller.readPage(host as unknown as Host, 1, {
+      requestId: 'pending-script',
+      script: { expectedUrl: contents.url, code: 'await new Promise(() => {})' },
+    })
+    await flush()
+    controller.resetPage()
+    await expect(read).rejects.toThrow('cancelled')
+    expect(contents.closed).toBe(true)
+    expect(controller.getState()).toEqual(EMPTY_BUILT_IN_BROWSER_STATE)
+    expect(host.webContents.send).toHaveBeenCalledWith(BUILT_IN_BROWSER_CHANNELS.state, {
+      ...EMPTY_BUILT_IN_BROWSER_STATE,
+      sessionId: 'a',
+    })
+    controller.navigate(host as unknown as Host, 'https://new.example/')
+    expect(views).toHaveLength(2)
+    expect(controller.getState().canGoBack).toBe(false)
+  })
+
+  it('disposes queued reads before they create a page', async () => {
+    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'queued', url: 'https://example.com/' })
+    controller.dispose()
+    await expect(read).rejects.toThrow('cancelled')
+    expect(views).toHaveLength(0)
+  })
+
+  it('disposes its page without closing another conversation', () => {
+    const other = new BuiltInBrowserController('other', false)
+    controller.navigate(host as unknown as Host, 'https://first.example/')
+    other.navigate(host as unknown as Host, 'https://other.example/')
+    controller.dispose()
+    expect(views[0].webContents.closed).toBe(true)
+    expect(views[1].webContents.closed).toBe(false)
+    expect(other.getState().url).toBe('https://other.example/')
+    expect(host.contentView.removeChildView).toHaveBeenCalledWith(views[0])
+    other.dispose()
   })
 
   it('executes scripts only on the expected ready page', async () => {
@@ -298,11 +386,35 @@ describe('BuiltInBrowserController reads', () => {
     expect(contents.capturePage).toHaveBeenCalled()
     controller.cancelRead(1, 'shot')
     await expect(shot).rejects.toThrow('cancelled')
+    await flush()
+    expect(captureHosts.at(-1)?.destroyed).toBe(true)
+    expect(views[0].visible).toBe(false)
 
     const next = controller.readPage(host as unknown as Host, 1, { requestId: 'next' })
     await flush()
     contents.finishSnapshot('Still responsive.')
     await expect(next).resolves.toMatchObject({ content: 'Still responsive.' })
+  })
+
+  it('restores a background capture before showing the page and does not hide the new placement on completion', async () => {
+    const { read, contents } = await startLoadedRead('a', 'https://example.com/')
+    contents.finishSnapshot('Loaded.')
+    await read
+    const shot = controller.readPage(host as unknown as Host, 1, { requestId: 'shot', screenshot: true })
+    await flush()
+    contents.finishSnapshot('Loaded.')
+    await flush()
+    await controller.setView(host as unknown as Host, { visible: false })
+    expect(captureHosts.at(-1)?.destroyed).toBe(false)
+    await controller.setView(host as unknown as Host, {
+      visible: true,
+      bounds: { x: 700, y: 0, width: 400, height: 600 },
+    })
+    expect(captureHosts.at(-1)?.destroyed).toBe(true)
+    contents.captures.shift()?.(fakeImage(400, 600))
+    await shot
+    expect(views[0].visible).toBe(true)
+    expect(views[0].setBounds).toHaveBeenLastCalledWith({ x: 700, y: 0, width: 400, height: 600 })
   })
 
   it('settles a cancelled queued read at once and skips it', async () => {
@@ -366,6 +478,9 @@ describe('BuiltInBrowserController reads', () => {
       },
     })
     expect(contents.capturePage).toHaveBeenCalledWith(undefined, { stayHidden: true })
+    expect(captureHosts.at(-1)?.options).toMatchObject({ show: false, focusable: false })
+    expect(captureHosts.at(-1)?.destroyed).toBe(true)
+    expect(views[0].visible).toBe(false)
   })
 
   it('fails a screenshot read when the page has nothing to capture', async () => {

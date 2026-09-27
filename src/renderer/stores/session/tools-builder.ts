@@ -550,9 +550,14 @@ When you create a Git commit that includes code changes, append this exact trail
 
   // The built-in browser is a Work Mode tool; only desktop platforms provide it. Its screenshot
   // command needs the image results of a vision model.
-  const builtInBrowserToolSet = includeAgentTools
-    ? getBuiltInBrowserToolSet(platform.builtInBrowser, { hasParseLink: includeParseLinkTool, imageResults })
-    : null
+  const browserSessionId = options.sessionId ?? codeExecution?.sessionId
+  const builtInBrowserToolSet =
+    includeAgentTools && browserSessionId
+      ? getBuiltInBrowserToolSet(platform.builtInBrowser?.forSession(browserSessionId), {
+          hasParseLink: includeParseLinkTool,
+          imageResults,
+        })
+      : null
   if (builtInBrowserToolSet) {
     tools = { ...tools, ...builtInBrowserToolSet.tools }
   }

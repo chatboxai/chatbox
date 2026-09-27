@@ -1737,5 +1737,11 @@
   "Fast model": "Modello veloce",
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "Genera automaticamente i titoli delle conversazioni. Scegli un modello con risposte rapide.",
   "Page Screenshot": "Screenshot della pagina",
-  "Run Browser JavaScript": "Esegui JavaScript nel browser"
+  "Run Browser JavaScript": "Esegui JavaScript nel browser",
+  "Clear current page and history": "Cancella la pagina corrente e la cronologia",
+  "Clear all pages and website data": "Cancella tutte le pagine e i dati dei siti",
+  "Clear all pages and sign out of websites?": "Cancellare tutte le pagine e disconnettersi dai siti?",
+  "Current page and history cleared. Website sign-ins kept.": "Pagina corrente e cronologia cancellate. Gli accessi ai siti sono mantenuti.",
+  "All browser pages and website data cleared": "Tutte le pagine e i dati dei siti sono stati cancellati",
+  "Clearing browser data…": "Cancellazione dei dati del browser…"
 }

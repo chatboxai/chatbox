@@ -1737,5 +1737,11 @@
   "Fast model": "Быстрая модель",
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "Автоматически создаёт названия бесед. Выберите модель с быстрым откликом.",
   "Page Screenshot": "Снимок страницы",
-  "Run Browser JavaScript": "Выполнить JavaScript в браузере"
+  "Run Browser JavaScript": "Выполнить JavaScript в браузере",
+  "Clear current page and history": "Очистить текущую страницу и историю",
+  "Clear all pages and website data": "Очистить все страницы и данные сайтов",
+  "Clear all pages and sign out of websites?": "Очистить все страницы и выйти из аккаунтов на сайтах?",
+  "Current page and history cleared. Website sign-ins kept.": "Текущая страница и история очищены. Вход на сайты сохранён.",
+  "All browser pages and website data cleared": "Все страницы браузера и данные сайтов очищены",
+  "Clearing browser data…": "Очистка данных браузера…"
 }

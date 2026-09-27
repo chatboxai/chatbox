@@ -1,6 +1,7 @@
 import {
   BUILT_IN_BROWSER_CHANNELS,
   BUILT_IN_BROWSER_DEFAULT_READ_TIMEOUT_MS,
+  BUILT_IN_BROWSER_DEFAULT_VIEWPORT,
   BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS,
   BUILT_IN_BROWSER_SCREENSHOT_MAX_DIMENSION,
   BUILT_IN_BROWSER_SCRIPT_MAX_CHARS,
@@ -11,14 +12,7 @@ import {
   type BuiltInBrowserViewRequest,
   EMPTY_BUILT_IN_BROWSER_STATE,
 } from '@shared/built-in-browser'
-import {
-  type BrowserWindow,
-  type NativeImage,
-  type Session,
-  session,
-  type WebContents,
-  WebContentsView,
-} from 'electron'
+import { BrowserWindow, type NativeImage, type Session, session, type WebContents, WebContentsView } from 'electron'
 import { extractReadableContent } from './extract'
 import { PAGE_HELPERS_SOURCE } from './page-helpers'
 import { normalizeBrowserUrl } from './url'
@@ -84,7 +78,7 @@ function browserUserAgent(defaultUserAgent: string): string {
  * continue from the same page.
  */
 export class BuiltInBrowserController {
-  private configuredSession: Session | null = null
+  private static configuredSession: Session | null = null
   private view: WebContentsView | null = null
   private host: BrowserWindow | null = null
   private readonly activeReads = new Map<string, { ownerId: number; cancel: () => void }>()
@@ -95,16 +89,33 @@ export class BuiltInBrowserController {
   private mainFrameLoadFailed = false
   /** Orders view requests, so a hide that waits on a snapshot never undoes a later placement. */
   private viewGeneration = 0
+  private restoreCapture: (() => void) | null = null
+
+  constructor(
+    private readonly sessionId?: string,
+    private readonly manageHostLifecycle = true
+  ) {}
+
+  dispose(): void {
+    this.restoreCapture?.()
+    ++this.viewGeneration
+    for (const active of this.activeReads.values()) active.cancel()
+    this.activeReads.clear()
+    if (this.host) {
+      if (this.view && !this.host.isDestroyed()) this.host.contentView.removeChildView(this.view)
+      this.releaseHost(this.host)
+    }
+  }
 
   getSession(): Session {
-    if (this.configuredSession) return this.configuredSession
+    if (BuiltInBrowserController.configuredSession) return BuiltInBrowserController.configuredSession
     const ses = session.fromPartition(BUILT_IN_BROWSER_PARTITION)
     ses.setUserAgent(browserUserAgent(ses.getUserAgent()))
     // Camera, microphone, location, notifications and similar prompts are not needed to read or sign in.
     ses.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
     ses.setPermissionCheckHandler(() => false)
     ses.on('will-download', (event) => event.preventDefault())
-    this.configuredSession = ses
+    BuiltInBrowserController.configuredSession = ses
     return ses
   }
 
@@ -131,6 +142,8 @@ export class BuiltInBrowserController {
    * resolves to a still of the page taken just before it is hidden.
    */
   async setView(host: BrowserWindow, request: BuiltInBrowserViewRequest): Promise<string | null> {
+    if (this.restoreCapture && !request.visible) return null
+    this.restoreCapture?.()
     const generation = ++this.viewGeneration
     if (!request.visible) {
       const view = this.host === host ? this.view : null
@@ -249,7 +262,7 @@ export class BuiltInBrowserController {
         }
         const snapshot = await snapshotSettled(contents, signal, () => this.documentReady)
         const extracted = extractReadableContent({ html: snapshot.html, url: snapshot.url, visibleText: snapshot.text })
-        const screenshot = request.screenshot ? await captureViewport(contents, signal) : undefined
+        const screenshot = request.screenshot ? await this.captureScreenshot(contents, signal) : undefined
         return {
           url: snapshot.url,
           title: snapshot.title || extracted.title || '',
@@ -284,16 +297,62 @@ export class BuiltInBrowserController {
     }
   }
 
-  async clearData(): Promise<void> {
-    const contents = this.view?.webContents
-    if (contents && !contents.isDestroyed()) {
-      contents.navigationHistory.clear()
-      await contents.loadURL('about:blank').catch(() => undefined)
+  resetPage(): void {
+    const host = this.host
+    this.dispose()
+    if (host && !host.isDestroyed() && !host.webContents.isDestroyed()) {
+      host.webContents.send(BUILT_IN_BROWSER_CHANNELS.state, {
+        ...EMPTY_BUILT_IN_BROWSER_STATE,
+        sessionId: this.sessionId,
+      })
     }
+  }
+
+  async clearData(): Promise<void> {
     const ses = this.getSession()
     await ses.clearStorageData()
     await ses.clearCache()
-    this.pushState()
+    await ses.clearAuthCache()
+    await ses.closeAllConnections()
+  }
+
+  private async captureScreenshot(contents: WebContents, signal: AbortSignal): Promise<BuiltInBrowserScreenshot> {
+    const view = this.view
+    const host = this.host
+    if (!view || !host || view.getVisible()) return captureViewport(contents, signal)
+    signal.throwIfAborted()
+    const bounds = view.getBounds()
+    // Hidden native views have no capture surface. A never-shown window lets Chromium
+    // render this same page without exposing it over the conversation the user is viewing.
+    const captureHost = new BrowserWindow({
+      show: false,
+      focusable: false,
+      skipTaskbar: true,
+      width: bounds.width,
+      height: bounds.height,
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
+    })
+    const restore = () => {
+      if (this.restoreCapture !== restore) return
+      this.restoreCapture = null
+      if (!captureHost.isDestroyed()) captureHost.contentView.removeChildView(view)
+      if (!contents.isDestroyed()) {
+        view.setVisible(false)
+        view.setBounds(bounds)
+        if (!host.isDestroyed()) host.contentView.addChildView(view)
+      }
+      if (!captureHost.isDestroyed()) captureHost.destroy()
+    }
+    this.restoreCapture = restore
+    try {
+      host.contentView.removeChildView(view)
+      captureHost.contentView.addChildView(view)
+      view.setBounds({ ...bounds, x: 0, y: 0 })
+      view.setVisible(true)
+      return await captureViewport(contents, signal)
+    } finally {
+      restore()
+    }
   }
 
   private isReading(): boolean {
@@ -309,7 +368,7 @@ export class BuiltInBrowserController {
       this.host = host
       this.view.setVisible(false)
       host.contentView.addChildView(this.view)
-      host.once('closed', () => this.releaseHost(host))
+      if (this.manageHostLifecycle) host.once('closed', () => this.releaseHost(host))
     }
     return this.view
   }
@@ -317,6 +376,7 @@ export class BuiltInBrowserController {
   /** A closed window takes the page with it; reads waiting on that page are cancelled. */
   private releaseHost(host: BrowserWindow): void {
     if (this.host !== host) return
+    this.restoreCapture?.()
     this.host = null
     for (const active of this.activeReads.values()) active.cancel()
     const view = this.view
@@ -336,6 +396,7 @@ export class BuiltInBrowserController {
         backgroundThrottling: false,
       },
     })
+    view.setBounds({ x: 0, y: 0, ...BUILT_IN_BROWSER_DEFAULT_VIEWPORT })
     view.setBackgroundColor('#ffffff')
     const contents = view.webContents
     // Sign-in flows often open a popup; keep them in the sidebar so they share the profile.
@@ -368,7 +429,7 @@ export class BuiltInBrowserController {
   private pushState(): void {
     const host = this.host
     if (!host || host.isDestroyed()) return
-    host.webContents.send(BUILT_IN_BROWSER_CHANNELS.state, this.getState())
+    host.webContents.send(BUILT_IN_BROWSER_CHANNELS.state, { ...this.getState(), sessionId: this.sessionId })
   }
 }
 

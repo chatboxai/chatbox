@@ -1737,5 +1737,11 @@
   "Fast model": "快速模型",
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "用于自动生成对话标题，建议选择响应较快的模型。",
   "Page Screenshot": "网页截图",
-  "Run Browser JavaScript": "执行浏览器 JavaScript"
+  "Run Browser JavaScript": "执行浏览器 JavaScript",
+  "Clear current page and history": "清空当前页面和历史",
+  "Clear all pages and website data": "清除所有页面和网站数据",
+  "Clear all pages and sign out of websites?": "清空所有页面并退出网站登录？",
+  "Current page and history cleared. Website sign-ins kept.": "已清空当前页面和历史，网站登录已保留。",
+  "All browser pages and website data cleared": "已清除所有浏览器页面和网站数据",
+  "Clearing browser data…": "正在清除浏览器数据…"
 }

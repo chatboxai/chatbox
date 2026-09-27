@@ -4,7 +4,12 @@ import type { FileEditRequest, FileEditResult } from '@shared/file-edits'
 import type { SessionRowStorePort } from '@chatbox/core/ports'
 import type { LocalMemoryScanResult } from '@shared/agent-persona/memory-import'
 import type { AnalyticsEventParams } from '@shared/analytics'
-import type { BuiltInBrowserPage, BuiltInBrowserState, BuiltInBrowserViewRequest } from '@shared/built-in-browser'
+import type {
+  BuiltInBrowserClearScope,
+  BuiltInBrowserPage,
+  BuiltInBrowserState,
+  BuiltInBrowserViewRequest,
+} from '@shared/built-in-browser'
 import type { PlatformType as SharedPlatformType } from '@shared/platform'
 import type {
   SandboxExecLanguage,
@@ -52,12 +57,13 @@ export interface BuiltInBrowser {
   setView(request: BuiltInBrowserViewRequest): Promise<string | null>
   getState(): Promise<BuiltInBrowserState>
   onStateChange(callback: (state: BuiltInBrowserState) => void): () => void
-  clearData(): Promise<void>
+  clearData(scope: BuiltInBrowserClearScope): Promise<void>
+  dispose(): Promise<void>
 }
 
 export interface Platform extends Storage {
   type: PlatformType
-  builtInBrowser?: BuiltInBrowser
+  builtInBrowser?: BuiltInBrowser & { forSession(sessionId: string): BuiltInBrowser }
   /** Whether this platform is backed by the Electron main/preload bridge. */
   isDesktopLike: boolean
 

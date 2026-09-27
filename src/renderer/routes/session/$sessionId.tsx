@@ -102,7 +102,10 @@ function RouteComponent() {
   const { requireComplete } = useSessionViewNavigation(currentSessionId, messageListRef, Boolean(completeSession))
   const setLastUsedChatModel = useStore(lastUsedModelStore, (state) => state.setChatModel)
   const isWorkMode = resolveSessionMode(useSessionAgentMode(currentSessionId).value) === 'work'
-  const builtInBrowser = !isSmallScreen && isWorkMode ? platform.builtInBrowser : undefined
+  const builtInBrowser = useMemo(
+    () => (!isSmallScreen && isWorkMode ? platform.builtInBrowser?.forSession(currentSessionId) : undefined),
+    [isSmallScreen, isWorkMode, currentSessionId]
+  )
 
   useEffect(() => {
     setOnScreenSession(currentSessionId)
@@ -353,7 +356,9 @@ function RouteComponent() {
         </Box>
         {completeSession && <ThreadHistoryDrawer session={completeSession} />}
       </div>
-      {builtInBrowser && <BuiltInBrowserSidebar builtInBrowser={builtInBrowser} />}
+      {builtInBrowser && (
+        <BuiltInBrowserSidebar key={currentSessionId} sessionId={currentSessionId} builtInBrowser={builtInBrowser} />
+      )}
     </div>
   ) : (
     !isFetching && (

@@ -65,6 +65,9 @@ typings/
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 
+# Metro cache for the React Native smoke workspace (see METRO_CACHE_ROOT)
+.metro-cache
+
 # next.js build output
 .next
 

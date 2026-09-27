@@ -26,6 +26,7 @@ async function loadSettingsStoreModule(
     default: {
       type: platformType,
       isDesktopLike: platformType === 'desktop',
+      getSettings: vi.fn(async () => persistedSettings ?? { ...defaultSettings(), allowReportingAndTracking: false }),
       ensureShortcutConfig: vi.fn(),
       ensureProxyConfig: vi.fn(),
       ensureAutoLaunch: vi.fn(),

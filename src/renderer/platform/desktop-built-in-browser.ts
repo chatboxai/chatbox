@@ -28,7 +28,7 @@ export class DesktopBuiltInBrowser implements BuiltInBrowser {
     url?: string
     timeoutMs?: number
     screenshot?: boolean
-    script?: { code: string; expectedUrl: string }
+    script?: { code: string; page: string }
     signal?: AbortSignal
   }): Promise<BuiltInBrowserPage> {
     const { signal } = params

@@ -17,7 +17,7 @@ type BrowserTool = {
 
 function createBrowser(content: string): BuiltInBrowser {
   return {
-    readPage: vi.fn().mockResolvedValue({ url: 'https://example.com/final', title: 'Example', content }),
+    readPage: vi.fn().mockResolvedValue({ page: 'p-1', url: 'https://example.com/final', title: 'Example', content }),
     navigate: vi.fn(),
     goBack: vi.fn(),
     goForward: vi.fn(),
@@ -89,6 +89,7 @@ describe('browser tool', () => {
     expect(result).toEqual({
       url: 'https://example.com/final',
       title: 'Example',
+      page: 'p-1',
       content: 'Rendered article body.',
       originalLength: 'Rendered article body.'.length,
       truncated: false,
@@ -104,7 +105,27 @@ describe('browser tool', () => {
 
     expect(result).toMatchObject({ originalLength: 2_000, truncated: true })
     expect(output.value).toContain('Title: Example')
+    expect(output.value).toContain('Page: p-1')
     expect(output.value).toContain('[Content truncated. Showing 500 of 2000 characters.]')
+  })
+
+  it('tells the model once the user acted on the page and which earlier runs finished', async () => {
+    const browser = createBrowser('Body')
+    vi.mocked(browser.readPage).mockResolvedValue({
+      page: 'p-2',
+      url: 'https://example.com/',
+      title: 'Example',
+      content: 'Body',
+      userInteracted: true,
+      settledOperations: [{ operationId: 'op_1', status: 'completed', value: 'ok', truncated: false }],
+    })
+    const tool = browserTool(browser)
+    const input = { command: 'read' }
+    const result = await tool.execute(input, {})
+    const output = tool.toModelOutput({ toolCallId: 'call', input, output: result }) as { value: string }
+
+    expect(output.value).toContain('Note: The user clicked, typed or scrolled in this page')
+    expect(output.value).toContain('Earlier runs finished: [{"operationId":"op_1","status":"completed"')
   })
 
   it('reads the page left open in the sidebar when no url is given', async () => {
@@ -117,22 +138,30 @@ describe('browser tool', () => {
 })
 
 describe('browser run command', () => {
-  const input = { command: 'run', url: 'https://example.com/final', code: 'return document.title' }
+  const input = { command: 'run', page: 'p-1', code: 'return document.title' }
 
-  it('executes code directly with the expected page and bounded wait', async () => {
+  it('runs code on the referenced page with a bounded wait and returns its status', async () => {
     const browser = createBrowser('')
     vi.mocked(browser.readPage).mockResolvedValue({
-      url: input.url,
+      page: 'p-1',
+      url: 'https://example.com/final',
       title: 'Example',
       content: '',
-      scriptResult: { value: 'Example', truncated: false },
+      scriptResult: { operationId: 'op_1', status: 'completed', value: 'Example', truncated: false },
     })
     const tool = browserTool(browser)
     const result = await tool.execute(input, { toolCallId: 'script' })
 
-    expect(result).toEqual({ url: input.url, value: 'Example', truncated: false })
+    expect(result).toEqual({
+      status: 'completed',
+      value: 'Example',
+      truncated: false,
+      operationId: 'op_1',
+      page: 'p-1',
+      url: 'https://example.com/final',
+    })
     expect(browser.readPage).toHaveBeenCalledWith({
-      script: { code: input.code, expectedUrl: input.url },
+      script: { code: input.code, page: 'p-1' },
       timeoutMs: 5000,
       signal: undefined,
     })
@@ -142,10 +171,11 @@ describe('browser run command', () => {
     })
   })
 
-  it('needs both url and code', async () => {
+  it('needs both page and code', async () => {
     const browser = createBrowser('')
     expect(await browserTool(browser).execute({ command: 'run', code: 'return 1' }, {})).toEqual({
-      error: 'The run command needs url and code.',
+      status: 'not_started',
+      error: expect.stringContaining('needs page'),
     })
     expect(browser.readPage).not.toHaveBeenCalled()
   })
@@ -153,25 +183,51 @@ describe('browser run command', () => {
   it('tells the model to read the page again after the script navigated', async () => {
     const browser = createBrowser('')
     vi.mocked(browser.readPage).mockResolvedValue({
+      page: '',
       url: 'https://example.com/next',
       title: 'Next',
       content: '',
-      scriptResult: { value: 'Next', truncated: false, navigated: true },
+      scriptResult: { operationId: 'op_2', status: 'completed', value: 'Next', truncated: false, navigated: true },
+    })
+    const output = await browserTool(browser).execute(input, {})
+    expect(output).toMatchObject({
+      status: 'completed',
+      navigated: true,
+      next: expect.stringContaining('Read it without a url'),
+    })
+    expect(output).not.toHaveProperty('page')
+  })
+
+  it('passes on a refused run with the navigation that changed the page', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage).mockResolvedValue({
+      page: 'p-3',
+      url: 'https://github.com/o/r/issues/new',
+      title: 'New issue',
+      content: '',
+      scriptResult: { operationId: 'op_3', status: 'not_started', code: 'page_changed', message: 'Read it again.' },
+      lastNavigation: { source: 'user', url: 'https://github.com/o/r/issues/new' },
+      userInteracted: true,
     })
     expect(await browserTool(browser).execute(input, {})).toEqual({
-      url: 'https://example.com/next',
-      value: 'Next',
-      truncated: false,
-      navigated: true,
-      note: expect.stringContaining('Read it without a url'),
+      status: 'not_started',
+      code: 'page_changed',
+      message: 'Read it again.',
+      operationId: 'op_3',
+      page: 'p-3',
+      url: 'https://github.com/o/r/issues/new',
+      lastNavigation: { source: 'user', url: 'https://github.com/o/r/issues/new' },
+      userInteracted: true,
+      note: expect.stringContaining('take priority'),
     })
   })
 
-  it('returns execution failures with a no-blind-retry warning', async () => {
+  it('reports a request the browser rejected as not started', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockRejectedValue(new Error('timed out'))
+    vi.mocked(browser.readPage).mockRejectedValue(new Error('Browser data is being cleared.'))
     expect(await browserTool(browser).execute(input, {})).toEqual({
-      error: expect.stringContaining('do not automatically retry side effects'),
+      status: 'not_started',
+      error: 'Browser data is being cleared.',
     })
   })
 
@@ -186,6 +242,7 @@ describe('browser screenshot command', () => {
   it('captures the page, records the image under its final url and returns it as an image', async () => {
     const browser = createBrowser('Body')
     vi.mocked(browser.readPage).mockResolvedValue({
+      page: 'p-1',
       url: 'https://example.com/final',
       title: 'Example',
       content: 'Body',

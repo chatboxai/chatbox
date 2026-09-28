@@ -4,11 +4,22 @@
  * the page cannot read it and a script may shadow it. The built-in-browser skill documents this
  * API; keep the two in sync.
  *
+ * `operation` is an expression for the run's `{ cancelled }` record. Once the host stops waiting it
+ * sets `cancelled`, and waiting helpers throw so the script stops at its next wait.
+ *
  * Events dispatched here are synthetic (`isTrusted` is false) and trigger no default key actions.
  */
-export const PAGE_HELPERS_SOURCE = `const browser = (() => {
+export function pageHelpersSource(operation: string): string {
+  return `const browser = ((operation) => {
   const INTERACTIVE = 'a[href], button, input:not([type="hidden"]), textarea, select, summary, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="option"], [role="combobox"], [role="textbox"], [contenteditable=""], [contenteditable="true"], [onclick], [tabindex]:not([tabindex="-1"])';
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const checkCancelled = () => {
+    if (operation.cancelled) throw new Error('The run was stopped because the browser tool stopped waiting for it.');
+  };
+  const sleep = async (ms) => {
+    checkCancelled();
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    checkCancelled();
+  };
   const resolve = (target) => {
     if (target instanceof Element) return target;
     if (typeof target !== 'string') throw new Error('Expected a CSS selector or an element.');
@@ -102,6 +113,7 @@ export const PAGE_HELPERS_SOURCE = `const browser = (() => {
 
   return {
     sleep,
+    cancelled: () => operation.cancelled === true,
     selector: (target) => selectorFor(resolve(target)),
     elements: ({ limit = 80, within } = {}) => {
       const root = within ? resolve(within) : document;
@@ -123,6 +135,7 @@ export const PAGE_HELPERS_SOURCE = `const browser = (() => {
       return { total: visible.length, items };
     },
     click: (target) => {
+      checkCancelled();
       const element = resolve(target);
       const point = pointAt(element);
       fire(element, 'pointerover', point);
@@ -136,6 +149,7 @@ export const PAGE_HELPERS_SOURCE = `const browser = (() => {
       return labelFor(element);
     },
     fill: (target, text) => {
+      checkCancelled();
       const element = resolve(target);
       const value = String(text);
       element.scrollIntoView({ block: 'center' });
@@ -166,6 +180,7 @@ export const PAGE_HELPERS_SOURCE = `const browser = (() => {
       return element.value;
     },
     press: (key, target) => {
+      checkCancelled();
       const element = target ? resolve(target) : document.activeElement || document.body;
       const init = { key, bubbles: true, cancelable: true, composed: true };
       // As in a browser, a canceled keydown suppresses keypress, and either one cancels the default action.
@@ -175,6 +190,7 @@ export const PAGE_HELPERS_SOURCE = `const browser = (() => {
       if (proceed && key === 'Enter' && element instanceof HTMLInputElement && element.form) element.form.requestSubmit();
     },
     scroll: (amount, within) => {
+      checkCancelled();
       const area = within ? resolve(within) : scrollableArea();
       const isRoot = area === document.scrollingElement || area === document.documentElement;
       const viewport = isRoot ? innerHeight : area.clientHeight;
@@ -189,6 +205,7 @@ export const PAGE_HELPERS_SOURCE = `const browser = (() => {
     waitFor: async (target, timeoutMs = 3000) => {
       const deadline = Date.now() + timeoutMs;
       for (;;) {
+        checkCancelled();
         if (typeof target === 'function') {
           const value = await target();
           if (value) return value;
@@ -201,4 +218,5 @@ export const PAGE_HELPERS_SOURCE = `const browser = (() => {
       }
     },
   };
-})();`
+})(${operation});`
+}

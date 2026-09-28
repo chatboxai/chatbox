@@ -40,8 +40,8 @@ export interface BuiltInBrowserReadRequest {
   timeoutMs?: number
   /** Also capture the visible viewport once the page has settled. */
   screenshot?: boolean
-  /** Execute a script on this exact URL instead of extracting page text. */
-  script?: { code: string; expectedUrl: string }
+  /** Execute a script on the page `page` refers to instead of extracting page text. */
+  script?: { code: string; page: string }
 }
 
 /** Longest side, in pixels, of a viewport screenshot sent to a model. */
@@ -55,15 +55,90 @@ export interface BuiltInBrowserScreenshot {
   height: number
 }
 
+/**
+ * Who started a main-frame navigation. `agent` is a read that opened a url or a script run by the
+ * model, `user` is the sidebar's address bar and buttons, `page` is the page itself (a link the
+ * user clicked, a form or the site's own script), and `unknown` is anything else.
+ */
+export type BuiltInBrowserNavigationSource = 'agent' | 'user' | 'page' | 'unknown'
+
+export interface BuiltInBrowserNavigation {
+  source: BuiltInBrowserNavigationSource
+  url: string
+}
+
+/**
+ * `not_started`: the script did not run, so it is safe to retry after reading the page again.
+ * `completed` / `failed`: it ran and returned or threw. `unknown`: it started, but the wait ended
+ * before it finished, so its effects must be checked on the page before anything is repeated.
+ */
+export type BuiltInBrowserRunStatus = 'not_started' | 'completed' | 'failed' | 'unknown'
+
+export type BuiltInBrowserRunErrorCode =
+  /** The page reference no longer names the page shown: it navigated, reloaded or is loading. */
+  | 'page_changed'
+  | 'no_page'
+  | 'syntax_error'
+  /** An earlier script on this page has not finished yet. */
+  | 'busy'
+  | 'timeout'
+  | 'cancelled'
+  | 'script_error'
+  /** The page's document went away before the script returned. */
+  | 'page_unloaded'
+
+/** Bounded, redacted evidence about one script run; URLs keep only their origin and path. */
+export interface BuiltInBrowserDiagnostics {
+  /** Content Security Policy violations the page reported while the script ran. */
+  cspViolations?: Array<{ directive: string; blocked: string }>
+  /** Requests of the page that failed or returned an HTTP error status while the script ran. */
+  failedRequests?: Array<{ method: string; url: string; status?: number; error?: string }>
+}
+
+export interface BuiltInBrowserRunResult {
+  operationId: string
+  status: BuiltInBrowserRunStatus
+  code?: BuiltInBrowserRunErrorCode
+  message?: string
+  /** The script's serialized return value, when it completed. */
+  value?: string
+  truncated?: boolean
+  /** The main frame started loading another document while the script ran. */
+  navigated?: boolean
+  diagnostics?: BuiltInBrowserDiagnostics
+}
+
+/** Final outcome of a run that was reported as `unknown` and finished afterwards. */
+export interface BuiltInBrowserSettledOperation {
+  operationId: string
+  status: Exclude<BuiltInBrowserRunStatus, 'not_started'>
+  code?: BuiltInBrowserRunErrorCode
+  message?: string
+  value?: string
+  truncated?: boolean
+  diagnostics?: BuiltInBrowserDiagnostics
+}
+
 export interface BuiltInBrowserPage {
+  /**
+   * Opaque reference to the page this result describes. It changes whenever the main frame loads
+   * a document or changes its URL, including a reload of the same URL, and scripts only run on
+   * the page it names. Empty when the result did not observe the page, such as a refused run.
+   */
+  page: string
   /** Final URL after redirects. */
   url: string
   title: string
   content: string
   /** Present when the read requested a screenshot. */
   screenshot?: BuiltInBrowserScreenshot
-  /** `navigated` is set when the main frame started loading another document while the script ran. */
-  scriptResult?: { value: string; truncated: boolean; navigated?: boolean }
+  scriptResult?: BuiltInBrowserRunResult
+  /** Latest main-frame navigation, when a script was refused because the page changed. */
+  lastNavigation?: BuiltInBrowserNavigation
+  /** The user clicked, typed or scrolled in the page since the previous result. */
+  userInteracted?: boolean
+  /** Runs reported as `unknown` that finished since the previous result. */
+  settledOperations?: BuiltInBrowserSettledOperation[]
 }
 
 export interface BuiltInBrowserState {
@@ -128,4 +203,5 @@ export const BUILT_IN_BROWSER_SCRIPT_HELPERS = [
   'waitFor',
   'selector',
   'sleep',
+  'cancelled',
 ] as const

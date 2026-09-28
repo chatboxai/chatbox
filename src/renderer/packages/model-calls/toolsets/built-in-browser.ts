@@ -1,6 +1,7 @@
 import {
   BUILT_IN_BROWSER_TOOL_NAME,
   type BuiltInBrowserCommand,
+  type BuiltInBrowserPage,
   builtInBrowserCommandOf,
 } from '@shared/built-in-browser'
 import { VIEW_IMAGE_MAX_NORMALIZED_LENGTH } from '@shared/tools/view-image-batch'
@@ -17,27 +18,38 @@ const DEFAULT_RUN_TIMEOUT_MS = 5_000
 interface BrowserToolInput {
   command: BuiltInBrowserCommand
   url?: string
+  page?: string
   code?: string
   maxLength?: number
   timeoutMs?: number
 }
 
+const USER_INTERACTED_NOTE =
+  'The user clicked, typed or scrolled in this page since your last browser call. Their actions take priority; do not undo them.'
+
+/** Names the page a read result describes and what happened on it since the previous result. */
+function pageLines(record: Record<string, unknown> | null): string[] {
+  const title = stringField(record, 'title')
+  const url = stringField(record, 'url')
+  const page = stringField(record, 'page')
+  const settled = record?.settledOperations
+  return [
+    title ? `Title: ${title}` : undefined,
+    url ? `URL: ${url}` : undefined,
+    page ? `Page: ${page}` : undefined,
+    record?.userInteracted === true ? `Note: ${USER_INTERACTED_NOTE}` : undefined,
+    Array.isArray(settled) && settled.length ? `Earlier runs finished: ${JSON.stringify(settled)}` : undefined,
+  ].filter((line): line is string => line !== undefined)
+}
+
 function formatReadOutput(output: unknown): string {
   const record = asRecord(output)
   const error = stringField(record, 'error')
-  if (error) return `Error: ${error}`
-  const title = stringField(record, 'title')
-  const url = stringField(record, 'url')
+  if (error) return [`Error: ${error}`, ...pageLines(record)].join('\n')
   const content = stringField(record, 'content') ?? ''
   const originalLength = numberField(record, 'originalLength')
   const truncated = record?.truncated === true
-  const header = [
-    title ? `Title: ${title}` : undefined,
-    url ? `URL: ${url}` : undefined,
-    content ? 'Content:' : undefined,
-  ]
-    .filter(Boolean)
-    .join('\n')
+  const header = [...pageLines(record), ...(content ? ['Content:'] : [])].join('\n')
   const truncationHint =
     truncated && originalLength !== undefined
       ? `\n\n[Content truncated. Showing ${content.length} of ${originalLength} characters.]`
@@ -58,8 +70,16 @@ function describeTool(options: { hasParseLink: boolean; screenshot: boolean }): 
   return `Chatbox's built-in browser, shown to the user in the sidebar. Runs page JavaScript, reaches local addresses, and has the user's sign-ins.${whenToUse}
 Commands:
 - read: return the rendered text of url, or of the current page when url is omitted.
-- run: run code, an async function body, on the current page and return its return value. To click, type or scroll, load the ${BUILT_IN_BROWSER_SKILL_NAME} skill first.${screenshot}
+- run: run code, an async function body, on the page named by page, the reference from the latest read or run result that has one, and return its status and return value. To click, type or scroll, load the ${BUILT_IN_BROWSER_SKILL_NAME} skill first.${screenshot}
 If a page needs sign-in or a check only the user can do, ask them to do it in the sidebar, then read again.`
+}
+
+/** What happened on the page since the previous result, for the model to account for. */
+function pageEvents(page: BuiltInBrowserPage) {
+  return {
+    ...(page.userInteracted ? { userInteracted: true, note: USER_INTERACTED_NOTE } : {}),
+    ...(page.settledOperations?.length ? { settledOperations: page.settledOperations } : {}),
+  }
 }
 
 async function readPage(builtInBrowser: BuiltInBrowser, input: BrowserToolInput, signal?: AbortSignal) {
@@ -70,6 +90,8 @@ async function readPage(builtInBrowser: BuiltInBrowser, input: BrowserToolInput,
   return {
     url: page.url,
     title: page.title,
+    page: page.page,
+    ...pageEvents(page),
     content: shown,
     originalLength: content.length,
     truncated: content.length > shown.length,
@@ -77,30 +99,35 @@ async function readPage(builtInBrowser: BuiltInBrowser, input: BrowserToolInput,
 }
 
 async function runScript(builtInBrowser: BuiltInBrowser, input: BrowserToolInput, signal?: AbortSignal) {
-  if (!input.url || !input.code) return { error: 'The run command needs url and code.' }
+  if (!input.page || !input.code) {
+    return { status: 'not_started', error: 'The run command needs page, from the latest browser result, and code.' }
+  }
   signal?.throwIfAborted()
+  let page: BuiltInBrowserPage
   try {
-    const page = await builtInBrowser.readPage({
-      script: { code: input.code, expectedUrl: input.url },
+    page = await builtInBrowser.readPage({
+      script: { code: input.code, page: input.page },
       timeoutMs: input.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS,
       signal,
     })
-    if (!page.scriptResult) return { error: 'The browser did not return a script result.' }
-    const { navigated, ...scriptResult } = page.scriptResult
-    return navigated
-      ? {
-          url: page.url,
-          ...scriptResult,
-          navigated,
-          note: 'The page is loading another document. Read it without a url before running another script.',
-        }
-      : { url: page.url, ...scriptResult }
   } catch (error) {
     signal?.throwIfAborted()
-    const message = (error instanceof Error ? error.message : String(error)).replace(/\.?\s*$/, '.')
-    return {
-      error: `${message} A script that already started may still be running; do not automatically retry side effects.`,
-    }
+    // The browser reports every outcome of a script it handed to the page; a thrown error means it never started.
+    return { status: 'not_started', error: error instanceof Error ? error.message : String(error) }
+  }
+  const result = page.scriptResult
+  if (!result) return { status: 'unknown', error: 'The browser did not return a script result.' }
+  const { operationId, ...outcome } = result
+  return {
+    ...outcome,
+    operationId,
+    ...(page.page ? { page: page.page } : {}),
+    url: page.url,
+    ...(page.lastNavigation ? { lastNavigation: page.lastNavigation } : {}),
+    ...pageEvents(page),
+    ...(result.navigated && !page.page && result.status !== 'not_started'
+      ? { next: 'The page is loading another document. Read it without a url before running another script.' }
+      : {}),
   }
 }
 
@@ -125,8 +152,11 @@ export function getBuiltInBrowserToolSet(
         url: {
           type: 'string',
           format: 'uri',
-          description:
-            'read/screenshot: page to open; omit for the current page. run: current page URL from the last result.',
+          description: 'read/screenshot: page to open; omit for the current page.',
+        },
+        page: {
+          type: 'string',
+          description: 'run: the page reference from the latest read or run result that has one.',
         },
         code: {
           type: 'string',

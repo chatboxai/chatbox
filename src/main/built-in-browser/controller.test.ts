@@ -6,7 +6,10 @@ import {
 } from '@shared/built-in-browser'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+let nextContentsId = 1
+
 class FakeContents extends EventEmitter {
+  id = nextContentsId++
   url = 'about:blank'
   closed = false
   snapshots: Array<(value: unknown) => void> = []
@@ -18,6 +21,7 @@ class FakeContents extends EventEmitter {
       })
   )
   navigationHistory = { canGoBack: () => false, canGoForward: () => false, clear: vi.fn() }
+  reload = vi.fn()
   setWindowOpenHandler = vi.fn()
   isDestroyed = () => this.closed
   isLoading = () => false
@@ -28,7 +32,8 @@ class FakeContents extends EventEmitter {
   })
   loadURL = vi.fn((url: string) => {
     this.url = url
-    this.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    this.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url, initiator: null })
+    this.emit('did-navigate')
     return Promise.resolve()
   })
   executeJavaScript = vi.fn(
@@ -60,6 +65,11 @@ const profile = vi.hoisted(() => ({
   clearCache: vi.fn(),
   clearAuthCache: vi.fn(),
   closeAllConnections: vi.fn(),
+}))
+type RequestDetails = { webContentsId?: number; method: string; url: string; statusCode?: number; error?: string }
+const webRequest = vi.hoisted(() => ({
+  responseStarted: [] as Array<(details: RequestDetails) => void>,
+  failed: [] as Array<(details: RequestDetails) => void>,
 }))
 
 vi.mock('electron', () => {
@@ -98,6 +108,10 @@ vi.mock('electron', () => {
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
     on: vi.fn(),
+    webRequest: {
+      onResponseStarted: (listener: (details: RequestDetails) => void) => webRequest.responseStarted.push(listener),
+      onErrorOccurred: (listener: (details: RequestDetails) => void) => webRequest.failed.push(listener),
+    },
   }
   return { BrowserWindow, WebContentsView, session: { fromPartition: () => fakeSession } }
 })
@@ -109,6 +123,10 @@ class FakeHost extends EventEmitter {
 }
 
 const { BuiltInBrowserController } = await import('./controller')
+const { BUSY_WINDOW_MS } = await import('./page-tracker')
+
+/** Navigation listeners every view keeps: its page tracker's. */
+const VIEW_NAVIGATION_LISTENERS = 1
 type Host = Parameters<InstanceType<typeof BuiltInBrowserController>['readPage']>[0]
 
 function flush() {
@@ -151,13 +169,17 @@ describe('BuiltInBrowserController reads', () => {
     controller.navigate(host as unknown as Host, 'https://example.com/')
     const contents = views[0].webContents
     contents.emit('dom-ready')
+    const opened = controller.readPage(host as unknown as Host, 1, { requestId: 'open' })
+    await flush()
+    contents.finishSnapshot('Loaded.')
+    const { page } = await opened
     const read = controller.readPage(host as unknown as Host, 1, {
       requestId: 'pending-script',
-      script: { expectedUrl: contents.url, code: 'await new Promise(() => {})' },
+      script: { page, code: 'await new Promise(() => {})' },
     })
     await flush()
     controller.resetPage()
-    await expect(read).rejects.toThrow('cancelled')
+    await expect(read).resolves.toMatchObject({ scriptResult: { status: 'unknown', code: 'cancelled' } })
     expect(contents.closed).toBe(true)
     expect(controller.getState()).toEqual(EMPTY_BUILT_IN_BROWSER_STATE)
     expect(host.webContents.send).toHaveBeenCalledWith(BUILT_IN_BROWSER_CHANNELS.state, {
@@ -188,106 +210,636 @@ describe('BuiltInBrowserController reads', () => {
     other.dispose()
   })
 
-  it('executes scripts only on the expected ready page', async () => {
-    controller.navigate(host as unknown as Host, 'https://example.com/')
-    const contents = views[0].webContents
+  let openCount = 0
+
+  /** Opens `url` and reads it, returning the page reference a run needs. */
+  async function openPage(url = 'https://example.com/') {
+    controller.navigate(host as unknown as Host, url)
+    const contents = views[views.length - 1].webContents
     contents.emit('dom-ready')
-    contents.executeJavaScript.mockResolvedValueOnce({ value: 'data', truncated: false })
-    const result = await controller.readPage(host as unknown as Host, 1, {
-      requestId: 'script',
-      script: { code: 'return document.title', expectedUrl: contents.url },
+    const read = controller.readPage(host as unknown as Host, 1, { requestId: `open-${++openCount}` })
+    await flush()
+    contents.finishSnapshot('Loaded.')
+    const { page } = await read
+    contents.executeJavaScript.mockClear()
+    return { contents, page }
+  }
+
+  function run(page: string, code = 'return 1', extra: { timeoutMs?: number; requestId?: string } = {}) {
+    return controller.readPage(host as unknown as Host, 1, {
+      requestId: extra.requestId ?? `run-${++openCount}`,
+      timeoutMs: extra.timeoutMs,
+      script: { code, page },
     })
-    expect(result.scriptResult).toEqual({ value: 'data', truncated: false })
-    expect(contents.executeJavaScript.mock.calls[0]).toEqual([expect.stringContaining('return document.title')])
-    await expect(
-      controller.readPage(host as unknown as Host, 1, {
-        requestId: 'wrong',
-        script: { code: 'return 1', expectedUrl: 'https://other.example/' },
-      })
-    ).rejects.toThrow('page changed')
+  }
+
+  it('runs scripts only on the page their reference names', async () => {
+    const { contents, page } = await openPage()
+    expect(page).toMatch(/^[0-9a-f]{6}-\d+$/)
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'data', truncated: false })
+    const result = await run(page, 'return document.title')
+    expect(result).toMatchObject({
+      page,
+      url: 'https://example.com/',
+      scriptResult: { status: 'completed', value: 'data', truncated: false },
+    })
+    expect(result.scriptResult?.operationId).toMatch(/^op_[0-9a-f]{8}$/)
+    const source = String((contents.executeJavaScript.mock.calls[0] as unknown[])[0])
+    expect(source).toContain('return document.title')
+    expect(source).toContain(JSON.stringify('https://example.com/'))
+
+    await expect(run('other-1')).resolves.toMatchObject({
+      page: '',
+      scriptResult: { status: 'not_started', code: 'page_changed' },
+    })
     expect(contents.executeJavaScript).toHaveBeenCalledTimes(1)
   })
 
-  it('reports script syntax errors without running them and bounds what the page returns', async () => {
-    controller.navigate(host as unknown as Host, 'https://example.com/')
-    const contents = views[0].webContents
-    contents.emit('dom-ready')
-    await expect(
-      controller.readPage(host as unknown as Host, 1, {
-        requestId: 'syntax',
-        script: { code: '}); (async () => {', expectedUrl: contents.url },
-      })
-    ).rejects.toThrow('syntax error')
-    expect(contents.executeJavaScript).not.toHaveBeenCalled()
-
-    contents.executeJavaScript.mockResolvedValueOnce({ value: 'x'.repeat(20_000), truncated: false })
-    const bounded = await controller.readPage(host as unknown as Host, 1, {
-      requestId: 'bounded',
-      script: { code: 'return 1', expectedUrl: contents.url },
+  it('refuses an old reference after a reload of the same url or a same-document url change', async () => {
+    const { contents, page } = await openPage()
+    contents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: contents.url,
+      initiator: null,
     })
-    expect(bounded.scriptResult).toEqual({ value: 'x'.repeat(12_000), truncated: true })
+    contents.emit('did-navigate')
+    contents.emit('dom-ready')
+    await expect(run(page)).resolves.toMatchObject({
+      page: '',
+      url: 'https://example.com/',
+      scriptResult: { status: 'not_started', code: 'page_changed' },
+      lastNavigation: { source: 'unknown', url: 'https://example.com/' },
+    })
 
-    contents.executeJavaScript.mockResolvedValueOnce({ value: 42 })
-    await expect(
-      controller.readPage(host as unknown as Host, 1, {
-        requestId: 'malformed',
-        script: { code: 'return 1', expectedUrl: contents.url },
-      })
-    ).rejects.toThrow('unexpected script result')
+    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'reread' })
+    await flush()
+    contents.finishSnapshot('Reloaded.')
+    const current = (await read).page
+    expect(current).not.toBe(page)
+    contents.executeJavaScript.mockClear()
+    contents.url = 'https://example.com/#details'
+    contents.emit('did-navigate-in-page', {}, contents.url, true)
+    await expect(run(current)).resolves.toMatchObject({ scriptResult: { code: 'page_changed' } })
+    expect(contents.executeJavaScript).not.toHaveBeenCalled()
   })
 
-  it('gives scripts the page helpers and reports where the page went', async () => {
-    controller.navigate(host as unknown as Host, 'https://example.com/')
-    const contents = views[0].webContents
-    contents.emit('dom-ready')
-    contents.executeJavaScript.mockImplementationOnce(() => {
-      contents.url = 'https://example.com/results'
-      contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
-      return Promise.resolve({ value: 'Search', truncated: false })
-    })
-    const result = await controller.readPage(host as unknown as Host, 1, {
-      requestId: 'click',
-      script: { code: "return browser.click('button')", expectedUrl: contents.url },
-    })
+  it('keeps the reference when the page replaces its history state without a new url', async () => {
+    const { contents, page } = await openPage()
+    contents.emit('did-navigate-in-page', {}, contents.url, true)
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
+    await expect(run(page)).resolves.toMatchObject({ page, scriptResult: { status: 'completed' } })
+  })
 
+  it('refuses a run while the page is loading another document and reports who started it', async () => {
+    const { contents, page } = await openPage()
+    controller.reload()
+    contents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: contents.url,
+      initiator: null,
+    })
+    await expect(run(page)).resolves.toMatchObject({
+      page: '',
+      scriptResult: { status: 'not_started', code: 'page_changed', message: expect.stringContaining('loading') },
+      lastNavigation: { source: 'user' },
+    })
+    contents.emit('did-navigate')
+    contents.emit('dom-ready')
+
+    contents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'https://example.com/issues/new',
+      initiator: {},
+    })
+    await expect(run(page)).resolves.toMatchObject({
+      lastNavigation: { source: 'page', url: 'https://example.com/issues/new' },
+    })
+  })
+
+  it('attributes navigations a running script starts to the agent', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript.mockImplementationOnce(() => {
+      contents.emit('did-start-navigation', {
+        isMainFrame: true,
+        isSameDocument: false,
+        url: 'https://example.com/results',
+        initiator: {},
+      })
+      contents.url = 'https://example.com/results'
+      contents.emit('did-navigate')
+      return Promise.resolve({ kind: 'value', value: 'Search', truncated: false })
+    })
+    const result = await run(page, "return browser.click('button')")
     const source = String((contents.executeJavaScript.mock.calls[0] as unknown[])[0])
     expect(source.indexOf('const browser =')).toBeGreaterThan(-1)
     expect(source.indexOf('const browser =')).toBeLessThan(source.indexOf("return browser.click('button')"))
     expect(result).toMatchObject({
       url: 'https://example.com/results',
-      scriptResult: { value: 'Search', truncated: false, navigated: true },
+      scriptResult: { status: 'completed', value: 'Search', navigated: true },
     })
-    expect(contents.listenerCount('did-start-navigation')).toBe(1)
-
+    expect(result.page).not.toBe(page)
     contents.emit('dom-ready')
-    contents.executeJavaScript.mockResolvedValueOnce({ value: 'same page', truncated: false })
-    const quiet = await controller.readPage(host as unknown as Host, 1, {
-      requestId: 'read',
-      script: { code: 'return 1', expectedUrl: contents.url },
-    })
-    expect(quiet.scriptResult).toEqual({ value: 'same page', truncated: false })
+    await expect(run(page)).resolves.toMatchObject({ lastNavigation: { source: 'agent' } })
+    expect(contents.listenerCount('did-start-navigation')).toBe(VIEW_NAVIGATION_LISTENERS)
   })
 
-  it('releases the queue after a script times out without replaying it', async () => {
+  it('reports syntax errors without running them, bounds values and separates script errors', async () => {
+    const { contents, page } = await openPage()
+    await expect(run(page, '}); (async () => {')).resolves.toMatchObject({
+      scriptResult: { status: 'not_started', code: 'syntax_error', message: expect.stringContaining('syntax error') },
+    })
+    expect(contents.executeJavaScript).not.toHaveBeenCalled()
+
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'x'.repeat(20_000), truncated: false })
+    await expect(run(page)).resolves.toMatchObject({
+      scriptResult: { status: 'completed', value: 'x'.repeat(12_000), truncated: true },
+    })
+
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 42 })
+    await expect(run(page)).resolves.toMatchObject({ scriptResult: { status: 'unknown' } })
+
+    contents.executeJavaScript.mockResolvedValueOnce({
+      kind: 'error',
+      message: 'Failed to fetch',
+      violations: [
+        { directive: 'connect-src', blocked: 'http://127.0.0.1:9000/shot.png?token=secret' },
+        { directive: 'script-src', blocked: 'inline' },
+      ],
+    })
+    await expect(run(page)).resolves.toMatchObject({
+      scriptResult: {
+        status: 'failed',
+        code: 'script_error',
+        message: 'Failed to fetch',
+        diagnostics: {
+          cspViolations: [
+            { directive: 'connect-src', blocked: 'http://127.0.0.1:9000/shot.png' },
+            { directive: 'script-src', blocked: 'inline' },
+          ],
+        },
+      },
+    })
+
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'page_changed' })
+    await expect(run(page)).resolves.toMatchObject({ scriptResult: { status: 'not_started', code: 'page_changed' } })
+  })
+
+  it('reports failed requests of the page during a run without query strings', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript.mockImplementationOnce(() => {
+      for (const listener of webRequest.responseStarted) {
+        listener({
+          webContentsId: contents.id,
+          method: 'POST',
+          url: 'https://api.example/upload?sig=abc',
+          statusCode: 403,
+        })
+        listener({ webContentsId: contents.id, method: 'GET', url: 'https://api.example/ok', statusCode: 200 })
+        listener({ webContentsId: contents.id + 1000, method: 'GET', url: 'https://other.example/', statusCode: 500 })
+      }
+      for (const listener of webRequest.failed) {
+        listener({
+          webContentsId: contents.id,
+          method: 'GET',
+          url: 'https://down.example/a',
+          error: 'net::ERR_NAME_NOT_RESOLVED',
+        })
+      }
+      return Promise.resolve({ kind: 'value', value: 'done', truncated: false })
+    })
+    const result = await run(page)
+    expect(result.scriptResult?.diagnostics).toEqual({
+      failedRequests: [
+        { method: 'POST', url: 'https://api.example/upload', status: 403 },
+        { method: 'GET', url: 'https://down.example/a', error: 'net::ERR_NAME_NOT_RESOLVED' },
+      ],
+    })
+    for (const listener of webRequest.responseStarted) {
+      listener({ webContentsId: contents.id, method: 'GET', url: 'https://late.example/', statusCode: 500 })
+    }
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'quiet', truncated: false })
+    expect((await run(page)).scriptResult?.diagnostics).toBeUndefined()
+  })
+
+  it('reports a timed out run as unknown, asks it to stop and delivers its final outcome later', async () => {
+    const { contents, page } = await openPage()
+    let finish: (value: unknown) => void = () => undefined
+    contents.executeJavaScript
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      .mockResolvedValueOnce([{ directive: 'connect-src', blocked: 'https://blocked.example/x?y=1' }])
     vi.useFakeTimers()
-    controller.navigate(host as unknown as Host, 'https://example.com/')
-    const contents = views[0].webContents
-    contents.emit('dom-ready')
-    const pending = controller.readPage(host as unknown as Host, 1, {
-      requestId: 'timeout',
-      timeoutMs: 1000,
-      script: { code: 'await new Promise(() => {})', expectedUrl: contents.url },
-    })
-    const failed = expect(pending).rejects.toThrow('timed out')
+    const pending = run(page, 'await submit()', { timeoutMs: 1000 })
     await vi.advanceTimersByTimeAsync(1001)
-    await failed
-    contents.executeJavaScript.mockResolvedValueOnce({ value: 'next', truncated: false })
-    const next = await controller.readPage(host as unknown as Host, 1, {
-      requestId: 'next',
-      script: { code: 'return 2', expectedUrl: contents.url },
+    const timedOut = await pending
+    expect(timedOut.scriptResult).toMatchObject({
+      status: 'unknown',
+      code: 'timeout',
+      diagnostics: { cspViolations: [{ directive: 'connect-src', blocked: 'https://blocked.example/x' }] },
     })
-    expect(next.scriptResult?.value).toBe('next')
+    const operationId = timedOut.scriptResult?.operationId
+    const cancelSource = String((contents.executeJavaScript.mock.calls[1] as unknown[])[0])
+    expect(cancelSource).toContain(`__chatboxRun_${operationId}`)
+    expect(cancelSource).toContain('cancelled = true')
+
+    await expect(run(page)).resolves.toMatchObject({
+      scriptResult: { status: 'not_started', code: 'busy', message: expect.stringContaining(String(operationId)) },
+    })
     expect(contents.executeJavaScript).toHaveBeenCalledTimes(2)
+
+    webRequest.responseStarted[0]({
+      webContentsId: contents.id,
+      method: 'POST',
+      url: 'https://example.com/api?t=1',
+      statusCode: 403,
+    })
+    finish({ kind: 'value', value: 'submitted', truncated: false })
+    await vi.advanceTimersByTimeAsync(0)
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'next', truncated: false })
+    const next = await run(page)
+    expect(next).toMatchObject({
+      scriptResult: { status: 'completed', value: 'next' },
+      settledOperations: [
+        {
+          operationId,
+          status: 'completed',
+          value: 'submitted',
+          truncated: false,
+          diagnostics: { failedRequests: [{ method: 'POST', url: 'https://example.com/api', status: 403 }] },
+        },
+      ],
+    })
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'again', truncated: false })
+    expect((await run(page)).settledOperations).toBeUndefined()
+  })
+
+  it('lets runs proceed once a stuck run has been busy for the whole window', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript
+      .mockImplementationOnce(() => new Promise(() => undefined))
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ kind: 'value', value: 'after', truncated: false })
+    vi.useFakeTimers()
+    const pending = run(page, 'await new Promise(() => {})', { timeoutMs: 1000 })
+    await vi.advanceTimersByTimeAsync(1001)
+    await pending
+    expect((await run(page)).scriptResult?.code).toBe('busy')
+    await vi.advanceTimersByTimeAsync(BUSY_WINDOW_MS)
+    expect((await run(page)).scriptResult).toMatchObject({ status: 'completed', value: 'after' })
+  })
+
+  it('keeps collecting failed requests for a run that outlived its busy window', async () => {
+    const { contents, page } = await openPage()
+    let finishFirst: (value: unknown) => void = () => undefined
+    let finishSecond: (value: unknown) => void = () => undefined
+    contents.executeJavaScript
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirst = resolve
+          })
+      )
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishSecond = resolve
+          })
+      )
+    vi.useFakeTimers()
+    const first = run(page, 'await slowUpload()', { timeoutMs: 1000 })
+    await vi.advanceTimersByTimeAsync(1001)
+    const operationId = (await first).scriptResult?.operationId
+    await vi.advanceTimersByTimeAsync(BUSY_WINDOW_MS)
+    const second = run(page, 'return 2', { timeoutMs: 30_000 })
+    await vi.advanceTimersByTimeAsync(0)
+    finishSecond({ kind: 'value', value: '2', truncated: false })
+    await second
+
+    for (const listener of webRequest.failed) {
+      listener({
+        webContentsId: contents.id,
+        method: 'PUT',
+        url: 'https://example.com/upload?sig=1',
+        error: 'net::ERR_FAILED',
+      })
+    }
+    finishFirst({ kind: 'error', message: 'Upload failed', violations: [] })
+    await vi.advanceTimersByTimeAsync(0)
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '3', truncated: false })
+    await expect(run(page)).resolves.toMatchObject({
+      settledOperations: [
+        {
+          operationId,
+          status: 'failed',
+          diagnostics: {
+            failedRequests: [{ method: 'PUT', url: 'https://example.com/upload', error: 'net::ERR_FAILED' }],
+          },
+        },
+      ],
+    })
+  })
+
+  it('reports a run cancelled while queued as not started', async () => {
+    const { contents, page } = await openPage()
+    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'slow-read' })
+    const queued = run(page, 'return 1', { requestId: 'queued-run' })
+    controller.cancelRead(1, 'queued-run')
+    await expect(queued).resolves.toMatchObject({ scriptResult: { status: 'not_started', code: 'cancelled' } })
+    await flush()
+    contents.finishSnapshot('Loaded.')
+    await read
+    await flush()
+    expect(contents.executeJavaScript).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports once that the user interacted with the page', async () => {
+    const { contents, page } = await openPage()
+    contents.emit('input-event', {}, { type: 'mouseMove' })
+    contents.executeJavaScript.mockResolvedValue({ kind: 'value', value: '1', truncated: false })
+    expect((await run(page)).userInteracted).toBeUndefined()
+    contents.emit('input-event', {}, { type: 'mouseDown' })
+    expect((await run(page)).userInteracted).toBe(true)
+    expect((await run(page)).userInteracted).toBeUndefined()
+  })
+
+  it('keeps page events for the next result when a run is cancelled', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript.mockImplementationOnce(() => new Promise(() => undefined)).mockResolvedValueOnce(null)
+    contents.emit('input-event', {}, { type: 'mouseDown' })
+    const pending = run(page, 'await new Promise(() => {})', { requestId: 'cancelled-run' })
+    await flush()
+    controller.cancelRead(1, 'cancelled-run')
+    const cancelled = await pending
+    expect(cancelled.scriptResult).toMatchObject({ status: 'unknown', code: 'cancelled' })
+    expect(cancelled.userInteracted).toBeUndefined()
+
+    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'after-cancel' })
+    await flush()
+    contents.finishSnapshot('Loaded.')
+    await expect(read).resolves.toMatchObject({ userInteracted: true })
+  })
+
+  it('settles a run whose document is replaced before it answers and stops observing the page', async () => {
+    const { contents, page } = await openPage()
+    const listeners = contents.listenerCount('did-navigate')
+    contents.executeJavaScript.mockImplementationOnce(() => new Promise(() => undefined))
+    const pending = run(page, "browser.click('a.next'); await browser.waitFor('#result')", { timeoutMs: 30_000 })
+    await flush()
+    contents.url = 'https://example.com/next'
+    contents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: contents.url,
+      initiator: {},
+    })
+    contents.emit('did-navigate')
+
+    await expect(pending).resolves.toMatchObject({
+      page: '',
+      scriptResult: { status: 'unknown', code: 'page_unloaded', navigated: true },
+    })
+    expect(contents.listenerCount('did-navigate')).toBe(listeners)
+    expect(contents.listenerCount('did-start-navigation')).toBe(VIEW_NAVIGATION_LISTENERS)
+  })
+
+  it('reports a result the page replaced with nothing as unknown and frees the page', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript.mockResolvedValueOnce(undefined)
+    await expect(run(page)).resolves.toMatchObject({ scriptResult: { status: 'unknown' } })
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
+    await expect(run(page)).resolves.toMatchObject({ scriptResult: { status: 'completed' } })
+  })
+
+  it('refuses runs on a page that failed to load', async () => {
+    const { contents, page } = await openPage()
+    contents.emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', contents.url, true)
+    await expect(run(page)).resolves.toMatchObject({
+      scriptResult: {
+        status: 'not_started',
+        code: 'no_page',
+        message: expect.stringContaining('Failed to load https://example.com/: ERR_NAME_NOT_RESOLVED'),
+      },
+    })
+    expect(contents.executeJavaScript).not.toHaveBeenCalled()
+  })
+
+  it('attributes a popup a running script opens to the agent', async () => {
+    const { contents, page } = await openPage()
+    const openWindow = contents.setWindowOpenHandler.mock.calls[0][0] as (details: { url: string }) => unknown
+    contents.executeJavaScript.mockImplementationOnce(() => {
+      openWindow({ url: 'https://example.com/popup' })
+      return Promise.resolve({ kind: 'value', value: 'opened', truncated: false })
+    })
+    await run(page, "browser.click('a[target=_blank]')")
+    await expect(run(page)).resolves.toMatchObject({
+      scriptResult: { code: 'page_changed' },
+      lastNavigation: { source: 'agent', url: 'https://example.com/popup' },
+    })
+  })
+
+  it('keeps the page usable after a navigation that ends without a new document', async () => {
+    const { contents, page } = await openPage()
+    contents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'https://example.com/export.csv',
+      initiator: {},
+    })
+    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'during-download' })
+    await flush()
+    contents.emit('did-stop-loading')
+    await flush()
+    contents.finishSnapshot('Still here.')
+    await expect(read).resolves.toMatchObject({ page, content: 'Still here.' })
+
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
+    await expect(run(page)).resolves.toMatchObject({ page, scriptResult: { status: 'completed' } })
+  })
+
+  it('hands out the reference after a run whose navigation ended without a new document', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript.mockImplementationOnce(() => {
+      contents.emit('did-start-navigation', {
+        isMainFrame: true,
+        isSameDocument: false,
+        url: 'https://example.com/ping',
+        initiator: {},
+      })
+      contents.emit('did-stop-loading')
+      return Promise.resolve({ kind: 'value', value: 'sent', truncated: false })
+    })
+    await expect(run(page, "await fetch('/ping', { method: 'POST' })")).resolves.toMatchObject({
+      page,
+      scriptResult: { status: 'completed', navigated: true },
+    })
+  })
+
+  it('keeps the source of a reload when the new document replaces its history state', async () => {
+    const { contents, page } = await openPage()
+    controller.reload()
+    contents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: contents.url,
+      initiator: null,
+    })
+    contents.emit('did-navigate')
+    contents.emit('dom-ready')
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true, url: contents.url, initiator: {} })
+    contents.emit('did-navigate-in-page', {}, contents.url, true)
+    await expect(run(page)).resolves.toMatchObject({
+      scriptResult: { code: 'page_changed' },
+      lastNavigation: { source: 'user' },
+    })
+  })
+
+  it('settles a run whose document turns into an error page', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript.mockImplementationOnce(() => new Promise(() => undefined))
+    const pending = run(page, "browser.click('a')", { timeoutMs: 30_000 })
+    await flush()
+    contents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'http://localhost:9/',
+      initiator: {},
+    })
+    contents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', 'http://localhost:9/', true)
+    await expect(pending).resolves.toMatchObject({ scriptResult: { status: 'unknown', code: 'page_unloaded' } })
+  })
+
+  it('settles a run when the page crashes and refuses runs until another page loads', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript.mockImplementationOnce(() => new Promise(() => undefined))
+    const pending = run(page, 'await work()', { timeoutMs: 30_000 })
+    await flush()
+    contents.emit('render-process-gone', {}, { reason: 'crashed' })
+    await expect(pending).resolves.toMatchObject({ scriptResult: { status: 'unknown', code: 'page_unloaded' } })
+    await expect(run(page)).resolves.toMatchObject({ scriptResult: { status: 'not_started', code: 'no_page' } })
+
+    contents.loadURL.mockClear()
+    const reread = controller.readPage(host as unknown as Host, 1, { requestId: 'after-crash', url: contents.url })
+    await flush()
+    expect(contents.loadURL).toHaveBeenCalledWith(contents.url)
+    contents.emit('dom-ready')
+    await flush()
+    contents.finishSnapshot('Recovered.')
+    const recovered = await reread
+    expect(recovered.page).not.toBe('')
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
+    await expect(run(recovered.page)).resolves.toMatchObject({ scriptResult: { status: 'completed' } })
+  })
+
+  it('attributes a navigation to the page when the user touched it during a run', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript.mockImplementationOnce(() => {
+      contents.emit('input-event', {}, { type: 'mouseDown' })
+      contents.emit('did-start-navigation', {
+        isMainFrame: true,
+        isSameDocument: false,
+        url: 'https://example.com/clicked',
+        initiator: {},
+      })
+      return Promise.resolve({ kind: 'value', value: 'waited', truncated: false })
+    })
+    await run(page, 'await browser.sleep(1000)')
+    await expect(run(page)).resolves.toMatchObject({ lastNavigation: { source: 'page' } })
+  })
+
+  it('does not report aborted requests as failures', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript.mockImplementationOnce(() => {
+      for (const listener of webRequest.failed) {
+        listener({
+          webContentsId: contents.id,
+          method: 'GET',
+          url: 'https://example.com/a.js',
+          error: 'net::ERR_ABORTED',
+        })
+      }
+      return Promise.resolve({ kind: 'value', value: '1', truncated: false })
+    })
+    expect((await run(page)).scriptResult?.diagnostics).toBeUndefined()
+  })
+
+  it('reads the page still shown when a read of a url is cancelled before its navigation starts', async () => {
+    const { contents, page } = await openPage()
+    contents.loadURL.mockImplementationOnce(() => Promise.reject(new Error('ERR_ABORTED')))
+    const read = controller.readPage(host as unknown as Host, 1, {
+      requestId: 'blocked-by-beforeunload',
+      url: 'https://example.com/other',
+    })
+    await flush()
+    contents.finishSnapshot('Unsaved form.')
+    await expect(read).resolves.toMatchObject({ page, url: 'https://example.com/', content: 'Unsaved form.' })
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
+    await expect(run(page)).resolves.toMatchObject({ page, scriptResult: { status: 'completed' } })
+  })
+
+  it('keeps a failed page failed through a navigation that ends without a document', async () => {
+    const { contents, page } = await openPage()
+    contents.emit('render-process-gone', {}, { reason: 'crashed' })
+    contents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'https://example.com/export.csv',
+      initiator: null,
+    })
+    contents.emit('did-stop-loading')
+    await expect(run(page)).resolves.toMatchObject({
+      scriptResult: { code: 'no_page', message: expect.stringContaining('crashed') },
+    })
+
+    contents.loadURL.mockClear()
+    const reread = controller.readPage(host as unknown as Host, 1, { requestId: 'reload', url: contents.url })
+    await flush()
+    expect(contents.loadURL).toHaveBeenCalledWith(contents.url)
+    contents.emit('dom-ready')
+    await flush()
+    contents.finishSnapshot('Reloaded.')
+    await expect(reread).resolves.toMatchObject({ page: expect.stringMatching(/.+/), content: 'Reloaded.' })
+  })
+
+  it('refuses a run with no page open as no_page', async () => {
+    const result = await run('any-page')
+    expect(result.scriptResult).toMatchObject({ status: 'not_started', code: 'no_page' })
+  })
+
+  it('attributes navigations of a timed out script that is still running to the agent', async () => {
+    const { contents, page } = await openPage()
+    contents.executeJavaScript.mockImplementationOnce(() => new Promise(() => undefined)).mockResolvedValueOnce(null)
+    vi.useFakeTimers()
+    const pending = run(page, 'await new Promise(() => {})', { timeoutMs: 1000 })
+    await vi.advanceTimersByTimeAsync(1001)
+    expect((await pending).scriptResult?.status).toBe('unknown')
+
+    contents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'https://example.com/next',
+      initiator: {},
+    })
+    await expect(run(page)).resolves.toMatchObject({
+      scriptResult: { code: 'page_changed' },
+      lastNavigation: { source: 'agent', url: 'https://example.com/next' },
+    })
+
+    await vi.advanceTimersByTimeAsync(BUSY_WINDOW_MS)
+    contents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'https://example.com/later',
+      initiator: {},
+    })
+    await expect(run(page)).resolves.toMatchObject({ lastNavigation: { source: 'page' } })
   })
 
   async function startLoadedRead(requestId: string, url: string) {
@@ -306,7 +858,7 @@ describe('BuiltInBrowserController reads', () => {
 
     await expect(read).resolves.toMatchObject({ url: 'https://example.com/', content: 'Hello from the page.' })
     expect(contents.listenerCount('dom-ready') + contents.listenerCount('did-fail-load')).toBe(baseline)
-    expect(contents.listenerCount('did-start-navigation')).toBe(1)
+    expect(contents.listenerCount('did-start-navigation')).toBe(VIEW_NAVIGATION_LISTENERS)
   })
 
   it('reads the page already open without waiting for another DOM ready', async () => {
@@ -358,20 +910,6 @@ describe('BuiltInBrowserController reads', () => {
     await flush()
     contents.finishSnapshot('Back on the app.')
     await expect(back).resolves.toMatchObject({ content: 'Back on the app.' })
-  })
-
-  it('runs a script when the expected url differs from the page only in normalization', async () => {
-    controller.navigate(host as unknown as Host, 'https://example.com/')
-    const contents = views[0].webContents
-    contents.emit('dom-ready')
-    contents.executeJavaScript.mockResolvedValueOnce({ value: 'ok', truncated: false })
-
-    const result = await controller.readPage(host as unknown as Host, 1, {
-      requestId: 'script',
-      script: { code: 'return 1', expectedUrl: 'https://example.com' },
-    })
-
-    expect(result.scriptResult?.value).toBe('ok')
   })
 
   it('releases the queue when a screenshot that never finishes is cancelled', async () => {
@@ -481,6 +1019,30 @@ describe('BuiltInBrowserController reads', () => {
     expect(captureHosts.at(-1)?.options).toMatchObject({ show: false, focusable: false })
     expect(captureHosts.at(-1)?.destroyed).toBe(true)
     expect(views[0].visible).toBe(false)
+  })
+
+  it('leaves the page reference and page events of a screenshot for the next read', async () => {
+    const read = controller.readPage(host as unknown as Host, 1, {
+      requestId: 'a',
+      url: 'https://example.com/',
+      screenshot: true,
+    })
+    await flush()
+    const contents = views[0].webContents
+    contents.emit('dom-ready')
+    await flush()
+    contents.emit('input-event', {}, { type: 'mouseDown' })
+    contents.finishSnapshot('Visible page.')
+    await flush()
+    contents.captures.shift()?.(fakeImage(800, 600))
+    const shot = await read
+    expect(shot.page).toBe('')
+    expect(shot.userInteracted).toBeUndefined()
+
+    const next = controller.readPage(host as unknown as Host, 1, { requestId: 'b' })
+    await flush()
+    contents.finishSnapshot('Visible page.')
+    await expect(next).resolves.toMatchObject({ page: expect.any(String), userInteracted: true })
   })
 
   it('fails a screenshot read when the page has nothing to capture', async () => {

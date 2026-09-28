@@ -45,7 +45,7 @@ export interface BuiltInBrowser {
     url?: string
     timeoutMs?: number
     screenshot?: boolean
-    script?: { code: string; expectedUrl: string }
+    script?: { code: string; page: string }
     signal?: AbortSignal
   }): Promise<BuiltInBrowserPage>
   navigate(url: string): Promise<void>

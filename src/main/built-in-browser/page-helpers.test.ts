@@ -2,7 +2,7 @@
 
 import { BUILT_IN_BROWSER_SCRIPT_HELPERS } from '@shared/built-in-browser'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PAGE_HELPERS_SOURCE } from './page-helpers'
+import { pageHelpersSource } from './page-helpers'
 
 interface Helpers {
   elements(options?: { limit?: number; within?: string }): {
@@ -25,8 +25,8 @@ if (!globalThis.PointerEvent) {
   vi.stubGlobal('PointerEvent', class extends MouseEvent {})
 }
 
-function loadHelpers(): Helpers {
-  return new Function(`${PAGE_HELPERS_SOURCE}\nreturn browser`)() as Helpers
+function loadHelpers(operation: { cancelled: boolean } = { cancelled: false }): Helpers {
+  return new Function('operation', `${pageHelpersSource('operation')}\nreturn browser`)(operation) as Helpers
 }
 
 /** jsdom has no layout; give every element a box so it counts as visible. */
@@ -53,6 +53,19 @@ describe('built-in browser page helpers', () => {
     Element.prototype.scrollIntoView = vi.fn()
     layOut()
     browser = loadHelpers()
+  })
+
+  it('throws from waits and actions once the run is cancelled', async () => {
+    const operation = { cancelled: false }
+    const helpers = loadHelpers(operation) as Helpers & { cancelled(): boolean; sleep(ms: number): Promise<void> }
+    document.body.innerHTML = '<button id="go">Go</button>'
+    expect(helpers.cancelled()).toBe(false)
+    operation.cancelled = true
+    expect(helpers.cancelled()).toBe(true)
+    await expect(helpers.sleep(1)).rejects.toThrow('stopped')
+    await expect(helpers.waitFor('#go')).rejects.toThrow('stopped')
+    expect(() => helpers.click('#go')).toThrow('stopped')
+    expect(() => helpers.fill('#go', 'x')).toThrow('stopped')
   })
 
   it('defines exactly the helpers the skill documents', () => {

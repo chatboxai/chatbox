@@ -1744,5 +1744,6 @@
   "Clear all pages and sign out of websites?": "Effacer toutes les pages et se déconnecter des sites ?",
   "Current page and history cleared. Website sign-ins kept.": "Page actuelle et historique effacés. Connexions aux sites conservées.",
   "All browser pages and website data cleared": "Toutes les pages et données des sites ont été effacées",
-  "Clearing browser data…": "Effacement des données du navigateur…"
+  "Clearing browser data…": "Effacement des données du navigateur…",
+  "Upload Files to Page": "Téléverser des fichiers sur la page"
 }

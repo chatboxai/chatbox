@@ -556,6 +556,12 @@ When you create a Git commit that includes code changes, append this exact trail
       ? getBuiltInBrowserToolSet(platform.builtInBrowser?.forSession(browserSessionId), {
           hasParseLink: includeParseLinkTool,
           imageResults,
+          fileAccess: {
+            sessionId: codeExecution?.sessionId,
+            provider: codeExecution?.provider,
+            userWorkingDirectories: options.sessionSettings?.workingDirectories,
+            fullAccess: commandApprovalMode === 'full_access',
+          },
         })
       : null
   if (builtInBrowserToolSet) {

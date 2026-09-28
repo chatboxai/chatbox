@@ -1744,5 +1744,6 @@
   "Clear all pages and sign out of websites?": "Очистить все страницы и выйти из аккаунтов на сайтах?",
   "Current page and history cleared. Website sign-ins kept.": "Текущая страница и история очищены. Вход на сайты сохранён.",
   "All browser pages and website data cleared": "Все страницы браузера и данные сайтов очищены",
-  "Clearing browser data…": "Очистка данных браузера…"
+  "Clearing browser data…": "Очистка данных браузера…",
+  "Upload Files to Page": "Загрузить файлы на страницу"
 }

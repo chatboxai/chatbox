@@ -1,9 +1,9 @@
-import { BUILT_IN_BROWSER_TOOL_NAME } from '@shared/built-in-browser'
+import { BUILT_IN_BROWSER_MAX_DOWNLOADS_PER_RUN, BUILT_IN_BROWSER_TOOL_NAME } from '@shared/built-in-browser'
 import { VIEW_IMAGE_MAX_CALLS_PER_STEP } from '@shared/tools/view-image-batch'
 
 export const BUILT_IN_BROWSER_SKILL_NAME = 'built-in-browser'
 
-export const BUILT_IN_BROWSER_SKILL_DESCRIPTION = `How to click, type, scroll and wait on pages with the ${BUILT_IN_BROWSER_TOOL_NAME} tool's run command. Load it before interacting with a page.`
+export const BUILT_IN_BROWSER_SKILL_DESCRIPTION = `How to click, type, scroll and wait on pages with the ${BUILT_IN_BROWSER_TOOL_NAME} tool's run command, and upload or download files. Load it before interacting with a page.`
 
 /**
  * Loaded through load_skill. It documents the `browser` helpers injected by the desktop controller
@@ -18,7 +18,7 @@ The screenshot command captures the visible viewport as an image. Use it when th
     : ''
   return `# Built-in browser
 
-You drive the page open in Chatbox's built-in browser, which the user sees in the right sidebar, with the ${BUILT_IN_BROWSER_TOOL_NAME} tool. There is no separate click or type tool: every interaction is a script run with its run command.
+You drive the page open in Chatbox's built-in browser, which the user sees in the right sidebar, with the ${BUILT_IN_BROWSER_TOOL_NAME} tool. There is no separate click or type tool: every interaction is a script run with its run command. Files are uploaded with the upload command.
 
 ## Loop
 1. Read the page. Its result carries \`Page\`, a reference to that exact document and URL; pass it as the \`page\` of the run command. It stops working once the page loads another document, reloads or changes its URL.
@@ -54,14 +54,19 @@ Scripts are async function bodies; \`browser\` is predefined in them. A target i
 - A click that opens another page: return right after the click, then read the new page with the read command. The script cannot continue once the old page unloads.
 - Keep each script's return small: extract the fields you need instead of returning HTML.
 
+## Files
+- Upload with the upload command, not a script: pass \`page\`, \`target\` and \`files\` (paths in the working directory, such as files you created or the user attached). \`target\` is the file input (\`input[type="file"]\`, often hidden), a label or drop area holding one, or the button that opens the site's file picker. The browser hands the files to the site, which uploads them with its own code; the file contents never pass through you.
+- An upload result with \`completed\` only means the input received the files. Check the page (a preview, the file name, an upload-finished message) before submitting the form. \`no_file_chooser\` means the click opened no picker: target the file input itself. Files outside the working directories ask the user for approval first.
+- Downloads are blocked unless a run passes \`download: true\`; a blocked one is listed in \`downloads\` of the next result. To keep a file, repeat the action in a run with \`download: true\`. The run then waits for the downloads it starts and returns them in \`downloads\` with their \`path\` in the working directory; one still \`in_progress\` is reported again when it ends. A download that begins only after the run returned or timed out, such as a slow export, is still saved until your next browser call and reported with a later result. A run saves at most ${BUILT_IN_BROWSER_MAX_DOWNLOADS_PER_RUN} files; further downloads are cancelled as \`over_limit\`. Downloaded files are never opened; inspect them with your file tools.
+
 ## Selectors
 Prefer selectors from \`browser.elements()\`, ids, \`data-testid\`, \`name\`, \`aria-label\` and roles. Matching visible text is fine for finding an element once, but text changes with the site's language, so do not rely on it for anything you repeat.
 
 ## When the page resists
 - Events from scripts are synthetic. Some sites ignore them; key presses never type text or trigger browser shortcuts. If an action has no effect after trying a different target (for example the inner button or its parent) or \`element.click()\`, stop and ask the user to do that step in the sidebar.
-- Sign-in, CAPTCHAs, verification codes, payment and file pickers belong to the user: ask them to complete it in the sidebar and tell you when done, then read the page again.
+- Sign-in, CAPTCHAs, verification codes and payment belong to the user: ask them to complete it in the sidebar and tell you when done, then read the page again.
 - A page reached only by navigating does not keep script state: variables a script set on \`window\` are gone after the page loads another document. Keep what you need across steps in your own notes, not in the page.
-- Top-level navigation can open local addresses, but a script's \`fetch\` runs under the site's own CSP and CORS rules. If requests are blocked, do not reverse-engineer the site's upload or API protocol; ask the user to do that step in the sidebar.
+- Top-level navigation can open local addresses, but a script's \`fetch\` runs under the site's own CSP and CORS rules. Never fetch local files or servers from a page to upload them: use the upload command. If requests are blocked, do not reverse-engineer the site's upload or API protocol; ask the user to do that step in the sidebar.
 
 ## The user shares the page
 The user can act in the sidebar at any time, and their actions take priority. A result noting that they did means: read the page again before acting and do not undo what they did.

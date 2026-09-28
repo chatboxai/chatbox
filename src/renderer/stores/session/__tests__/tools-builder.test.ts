@@ -1002,7 +1002,7 @@ describe('buildToolsForSession', () => {
       messages: [],
       agentMode: 'on',
     })
-    expect(commandsOf(vision.tools.browser)).toEqual(['read', 'run', 'screenshot'])
+    expect(commandsOf(vision.tools.browser)).toEqual(['read', 'run', 'upload', 'screenshot'])
     expect(vision.prepareStepMessages).toBeDefined()
     const visionSkill = await vision.tools.load_skill.execute?.({ name: 'built-in-browser' }, {} as never)
     expect(JSON.stringify(visionSkill)).toContain('## Screenshots')
@@ -1015,7 +1015,7 @@ describe('buildToolsForSession', () => {
       messages: [],
       agentMode: 'on',
     })
-    expect(commandsOf(withoutVision.tools.browser)).toEqual(['read', 'run'])
+    expect(commandsOf(withoutVision.tools.browser)).toEqual(['read', 'run', 'upload'])
     const textSkill = await withoutVision.tools.load_skill.execute?.({ name: 'built-in-browser' }, {} as never)
     expect(JSON.stringify(textSkill)).not.toContain('Screenshots')
   })

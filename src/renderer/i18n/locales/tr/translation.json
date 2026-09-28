@@ -1740,5 +1740,6 @@
   "Clear all pages and sign out of websites?": "Tüm sayfalar temizlensin ve sitelerden çıkış yapılsın mı?",
   "Current page and history cleared. Website sign-ins kept.": "Geçerli sayfa ve geçmiş temizlendi. Site oturumları korundu.",
   "All browser pages and website data cleared": "Tüm tarayıcı sayfaları ve site verileri temizlendi",
-  "Clearing browser data…": "Tarayıcı verileri temizleniyor…"
+  "Clearing browser data…": "Tarayıcı verileri temizleniyor…",
+  "Upload Files to Page": "Sayfaya Dosya Yükle"
 }

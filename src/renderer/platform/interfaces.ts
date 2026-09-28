@@ -8,6 +8,7 @@ import type {
   BuiltInBrowserClearScope,
   BuiltInBrowserPage,
   BuiltInBrowserState,
+  BuiltInBrowserUploadRequest,
   BuiltInBrowserViewRequest,
 } from '@shared/built-in-browser'
 import type { PlatformType as SharedPlatformType } from '@shared/platform'
@@ -45,7 +46,8 @@ export interface BuiltInBrowser {
     url?: string
     timeoutMs?: number
     screenshot?: boolean
-    script?: { code: string; page: string }
+    script?: { code: string; page: string; downloadDirectory?: string }
+    upload?: BuiltInBrowserUploadRequest
     signal?: AbortSignal
   }): Promise<BuiltInBrowserPage>
   navigate(url: string): Promise<void>

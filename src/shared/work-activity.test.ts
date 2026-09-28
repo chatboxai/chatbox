@@ -42,6 +42,12 @@ describe('classifyWorkActivity', () => {
     expect(classifyWorkActivity('chatbox_cli', { argv: ['chats', 'list'] })).toBe('tools')
   })
 
+  it('counts browser uploads as tools, since they act on a page', () => {
+    expect(classifyWorkActivity('browser', { command: 'upload', page: 'p-1', target: 'input', files: ['a.png'] })).toBe(
+      'tools'
+    )
+  })
+
   it('counts browser reads and screenshots as pages and scripts as tools', () => {
     expect(classifyWorkActivity('browser', { command: 'read', url: 'https://example.com' })).toBe('pages')
     expect(classifyWorkActivity('browser', { command: 'screenshot' })).toBe('pages')

@@ -1744,5 +1744,6 @@
   "Clear all pages and sign out of websites?": "Rensa alla sidor och logga ut från webbplatser?",
   "Current page and history cleared. Website sign-ins kept.": "Aktuell sida och historik har rensats. Webbplatsinloggningar behålls.",
   "All browser pages and website data cleared": "Alla webbläsarsidor och webbplatsdata har rensats",
-  "Clearing browser data…": "Rensar webbläsardata…"
+  "Clearing browser data…": "Rensar webbläsardata…",
+  "Upload Files to Page": "Ladda upp filer till sidan"
 }

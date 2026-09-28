@@ -1,16 +1,26 @@
-import { BUILT_IN_BROWSER_SCRIPT_HELPERS } from '@shared/built-in-browser'
-import { describe, expect, it, vi } from 'vitest'
+import { BUILT_IN_BROWSER_SCRIPT_HELPERS, type BuiltInBrowserDownload } from '@shared/built-in-browser'
+import type { SandboxProvider } from '@shared/sandbox-provider'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
+import { AppActionApprovalPausedError } from '@/packages/app-action-approval'
 import type { BuiltInBrowser } from '@/platform/interfaces'
-import { getBuiltInBrowserToolSet } from './built-in-browser'
+import { type BrowserFileAccess, getBuiltInBrowserToolSet } from './built-in-browser'
 import { builtInBrowserSkillBody } from './built-in-browser-skill'
 import type { ImageToolResults } from './view-image'
+
+vi.mock('@/analytics/agent-mode', () => ({ trackAgentModeFullAccessBypass: vi.fn() }))
 
 type BrowserTool = {
   description: string
   inputSchema: { jsonSchema: { properties: { command: { enum: string[] } } } }
   execute: (
     input: unknown,
-    options: { abortSignal?: AbortSignal; toolCallId?: string }
+    options: {
+      abortSignal?: AbortSignal
+      toolCallId?: string
+      approved?: boolean
+      approvalDetails?: { type: 'browser_upload'; version: string }
+    }
   ) => Promise<Record<string, unknown>>
   toModelOutput: (options: { toolCallId: string; input: unknown; output: unknown }) => unknown
 }
@@ -45,7 +55,7 @@ function createImageResults(): ImageToolResults {
 
 function browserTool(
   browser: BuiltInBrowser,
-  options: { hasParseLink?: boolean; imageResults?: ImageToolResults } = {}
+  options: { hasParseLink?: boolean; imageResults?: ImageToolResults; fileAccess?: BrowserFileAccess } = {}
 ): BrowserTool {
   const toolSet = getBuiltInBrowserToolSet(browser, { hasParseLink: options.hasParseLink ?? true, ...options })
   if (!toolSet) throw new Error('expected a toolset')
@@ -63,9 +73,9 @@ describe('browser tool', () => {
     const vision = browserTool(browser, { imageResults: createImageResults() })
 
     expect(Object.keys(textOnly?.tools ?? {})).toEqual(['browser'])
-    expect(browserTool(browser).inputSchema.jsonSchema.properties.command.enum).toEqual(['read', 'run'])
+    expect(browserTool(browser).inputSchema.jsonSchema.properties.command.enum).toEqual(['read', 'run', 'upload'])
     expect(browserTool(browser).description).not.toContain('screenshot')
-    expect(vision.inputSchema.jsonSchema.properties.command.enum).toEqual(['read', 'run', 'screenshot'])
+    expect(vision.inputSchema.jsonSchema.properties.command.enum).toEqual(['read', 'run', 'upload', 'screenshot'])
   })
 
   it('puts parse_link first only when it is available, points to the skill and hands sign-in to the user', () => {
@@ -245,6 +255,264 @@ describe('browser run command', () => {
   it('does not execute an already cancelled request', async () => {
     const browser = createBrowser('')
     await expect(browserTool(browser).execute(input, { abortSignal: AbortSignal.abort() })).rejects.toThrow()
+    expect(browser.readPage).not.toHaveBeenCalled()
+  })
+})
+
+function localSandbox(workingDirectory: string | null = '/work/session'): SandboxProvider {
+  return {
+    type: 'local',
+    init: vi.fn(async () => ({ success: true })),
+    resolveWorkingDirectory: vi.fn(async () => workingDirectory),
+    getAcceptedExtraWritableDirs: () => ['/Users/me/project'],
+  } as unknown as SandboxProvider
+}
+
+describe('browser download events', () => {
+  const events: BuiltInBrowserDownload[] = [
+    { name: 'blocked.csv', url: 'https://example.com/blocked', status: 'blocked' },
+    {
+      name: 'slow.csv',
+      url: 'https://example.com/slow',
+      status: 'saved',
+      path: '/work/session/downloads/slow.csv',
+      size: 12,
+    },
+  ]
+
+  it.each(['read', 'run', 'upload'] as const)('exposes queued download events in %s model output', async (command) => {
+    const browser = createBrowser('Body')
+    vi.mocked(browser.readPage).mockResolvedValue({
+      page: 'p-1',
+      url: 'https://example.com/',
+      title: 'Example',
+      content: 'Body',
+      downloads: events,
+      scriptResult: { operationId: 'op_run', status: 'completed' },
+      uploadResult: { operationId: 'op_upload', status: 'completed' },
+    })
+    const tool = browserTool(browser)
+    const input = { command, page: 'p-1', code: 'return 1', target: 'input[type=file]', files: ['shot.png'] }
+
+    const result = await tool.execute(input, {})
+    const output = tool.toModelOutput({ toolCallId: 'events', input, output: result }) as { value: string }
+
+    expect(result.downloads).toEqual(events)
+    expect(output.value).toContain(JSON.stringify(events))
+    if (command === 'read') expect(output.value).toContain('Downloads: ')
+  })
+
+  it('merges queued events with the downloads captured by the current run', async () => {
+    const browser = createBrowser('')
+    const current: BuiltInBrowserDownload = {
+      name: 'current.csv',
+      url: 'https://example.com/current',
+      status: 'saved',
+      path: '/work/session/downloads/current.csv',
+    }
+    vi.mocked(browser.readPage).mockResolvedValue({
+      page: 'p-1',
+      url: 'https://example.com/',
+      title: 'Example',
+      content: '',
+      downloads: events,
+      scriptResult: { operationId: 'op_run', status: 'completed', downloads: [current] },
+    })
+    const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox() } })
+    const input = { command: 'run', page: 'p-1', code: 'return 1', download: true }
+
+    const result = await tool.execute(input, {})
+    const output = tool.toModelOutput({ toolCallId: 'events', input, output: result }) as { value: string }
+
+    expect(result.downloads).toEqual([...events, current])
+    expect(JSON.parse(output.value).downloads).toEqual([...events, current])
+  })
+})
+
+describe('browser run downloads', () => {
+  const input = { command: 'run', page: 'p-1', code: 'document.querySelector("a").click()', download: true }
+
+  it('saves the downloads of a run into the working directory', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage).mockResolvedValue({
+      page: 'p-1',
+      url: 'https://example.com/',
+      title: 'Example',
+      content: '',
+      scriptResult: {
+        operationId: 'op_1',
+        status: 'completed',
+        downloads: [
+          {
+            name: 'report.csv',
+            status: 'saved',
+            path: '/work/session/downloads/report.csv',
+            size: 12,
+            url: 'https://example.com/report',
+          },
+        ],
+      },
+    })
+    const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox() } })
+
+    const result = await tool.execute(input, {})
+
+    expect(browser.readPage).toHaveBeenCalledWith({
+      script: { code: input.code, page: 'p-1', downloadDirectory: '/work/session/downloads' },
+      timeoutMs: 5000,
+      signal: undefined,
+    })
+    expect(result).toMatchObject({ downloads: [{ name: 'report.csv', status: 'saved' }] })
+  })
+
+  it('refuses downloads without a local working directory', async () => {
+    const browser = createBrowser('')
+    const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox(null) } })
+    expect(await tool.execute(input, {})).toEqual({
+      status: 'not_started',
+      error: expect.stringContaining('working directory'),
+    })
+    expect(browser.readPage).not.toHaveBeenCalled()
+  })
+})
+
+describe('browser upload command', () => {
+  const input = { command: 'upload', page: 'p-1', target: 'input[type=file]', files: ['shot.png'] }
+  const handed = {
+    page: 'p-1',
+    url: 'https://github.com/o/r/pull/1',
+    title: 'PR',
+    content: '',
+    uploadResult: {
+      operationId: 'op_1',
+      status: 'completed' as const,
+      message: 'Handed over.',
+      files: [{ name: 'shot.png', size: 2048, path: '/work/session/shot.png' }],
+    },
+  }
+  const needsApproval = {
+    ...handed,
+    page: undefined,
+    uploadResult: {
+      operationId: 'op_0',
+      status: 'not_started' as const,
+      code: 'approval_required' as const,
+      message: 'Approve.',
+      files: [{ name: 'secret.txt', size: 1024, path: '/Users/me/secret.txt' }],
+      approvalVersion: 'v1',
+    },
+  }
+
+  beforeEach(() => vi.mocked(trackAgentModeFullAccessBypass).mockClear())
+
+  it('hands files from the working directories to the page and names the site and files', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage).mockResolvedValue(handed)
+    const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox() } })
+
+    const result = await tool.execute(input, { toolCallId: 'up' })
+
+    expect(browser.readPage).toHaveBeenCalledWith({
+      upload: {
+        page: 'p-1',
+        target: 'input[type=file]',
+        files: ['shot.png'],
+        baseDirectory: '/work/session',
+        allowedRoots: ['/work/session', '/Users/me/project', '/tmp'],
+      },
+      timeoutMs: 20000,
+      signal: undefined,
+    })
+    expect(result).toEqual({
+      status: 'completed',
+      message: 'Handed over.',
+      files: [{ name: 'shot.png', size: 2048, path: '/work/session/shot.png' }],
+      site: 'github.com',
+      page: 'p-1',
+      url: 'https://github.com/o/r/pull/1',
+    })
+  })
+
+  it('asks the user before uploading files outside the working directories, showing their canonical paths', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage).mockResolvedValue(needsApproval)
+    const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox() } })
+
+    const paused = tool.execute({ ...input, files: ['notes.txt'] }, { toolCallId: 'up' })
+
+    await expect(paused).rejects.toBeInstanceOf(AppActionApprovalPausedError)
+    await expect(paused).rejects.toMatchObject({
+      action: 'browser.upload',
+      title: 'Upload to github.com',
+      preview: 'Page: https://github.com/o/r/pull/1\n/Users/me/secret.txt (1 KB, requested as notes.txt)',
+      details: { type: 'browser_upload', version: 'v1' },
+    })
+    expect(browser.readPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands over approved files only while they are the files the user approved', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage).mockResolvedValue(handed)
+    const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox() } })
+    const approval = {
+      toolCallId: 'up',
+      approved: true,
+      approvalDetails: { type: 'browser_upload' as const, version: 'v1' },
+    }
+
+    await tool.execute(input, approval)
+    expect(vi.mocked(browser.readPage).mock.calls[0]?.[0].upload).toMatchObject({
+      allowedRoots: ['/work/session', '/Users/me/project', '/tmp'],
+      approvedVersion: 'v1',
+    })
+
+    // The files changed after the approval: the user is asked again about them as they are now.
+    vi.mocked(browser.readPage).mockResolvedValue({
+      ...needsApproval,
+      uploadResult: { ...needsApproval.uploadResult, approvalVersion: 'v2' },
+    })
+    await expect(tool.execute(input, approval)).rejects.toMatchObject({
+      details: { type: 'browser_upload', version: 'v2' },
+    })
+  })
+
+  it('lets Full Access skip the approval and records the bypass', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage).mockResolvedValueOnce(needsApproval).mockResolvedValueOnce(handed)
+    const tool = browserTool(browser, {
+      fileAccess: { sessionId: 's1', provider: localSandbox(), fullAccess: true },
+    })
+
+    expect(await tool.execute(input, { toolCallId: 'up' })).toMatchObject({ status: 'completed' })
+    expect(vi.mocked(browser.readPage).mock.calls[1]?.[0].upload).toMatchObject({ approvedVersion: 'v1' })
+    expect(trackAgentModeFullAccessBypass).toHaveBeenCalledWith({ tool: 'browser_upload' })
+  })
+
+  it('preserves download events from both upload attempts when Full Access grants approval', async () => {
+    const browser = createBrowser('')
+    const blocked: BuiltInBrowserDownload = { name: 'blocked.csv', url: 'https://example.com/file', status: 'blocked' }
+    const saved: BuiltInBrowserDownload = {
+      name: 'slow.csv',
+      url: 'https://example.com/slow',
+      status: 'saved',
+      path: '/work/session/downloads/slow.csv',
+    }
+    vi.mocked(browser.readPage)
+      .mockResolvedValueOnce({ ...needsApproval, downloads: [blocked] })
+      .mockResolvedValueOnce({ ...handed, downloads: [saved] })
+    const tool = browserTool(browser, {
+      fileAccess: { sessionId: 's1', provider: localSandbox(), fullAccess: true },
+    })
+
+    expect(await tool.execute(input, { toolCallId: 'up' })).toMatchObject({ downloads: [blocked, saved] })
+  })
+
+  it('needs page, target and files', async () => {
+    const browser = createBrowser('')
+    expect(await browserTool(browser).execute({ command: 'upload', page: 'p-1', files: ['a'] }, {})).toEqual({
+      status: 'not_started',
+      error: expect.stringContaining('needs page'),
+    })
     expect(browser.readPage).not.toHaveBeenCalled()
   })
 })

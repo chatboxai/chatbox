@@ -47,9 +47,11 @@ export function getToolName(toolName: string, input?: unknown): string {
     const command = builtInBrowserCommandOf(input)
     return command === 'run'
       ? t('Run Browser JavaScript')
-      : command === 'screenshot'
-        ? t('Page Screenshot')
-        : t('Browse Page')
+      : command === 'upload'
+        ? t('Upload Files to Page')
+        : command === 'screenshot'
+          ? t('Page Screenshot')
+          : t('Browse Page')
   }
   if (toolName === KNOWLEDGE_BASE_TOOL_NAME) {
     const command = knowledgeBaseCommandOf(input)

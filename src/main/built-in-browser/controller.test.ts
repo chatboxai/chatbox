@@ -1,12 +1,29 @@
 import { EventEmitter } from 'node:events'
+import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import {
   BUILT_IN_BROWSER_CHANNELS,
   BUILT_IN_BROWSER_DEFAULT_VIEWPORT,
   EMPTY_BUILT_IN_BROWSER_STATE,
 } from '@shared/built-in-browser'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { PageDownloads, routeDownload } from './page-downloads'
 
 let nextContentsId = 1
+
+/** Runs while an upload checks its files, before the page is touched. */
+const uploadHooks = vi.hoisted(() => ({ duringFileCheck: null as (() => void) | null }))
+vi.mock('./page-upload', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./page-upload')>()
+  return {
+    ...actual,
+    inspectUploadFiles: async (...args: Parameters<typeof actual.inspectUploadFiles>) => {
+      uploadHooks.duringFileCheck?.()
+      return await actual.inspectUploadFiles(...args)
+    },
+  }
+})
 
 class FakeContents extends EventEmitter {
   id = nextContentsId++
@@ -21,6 +38,28 @@ class FakeContents extends EventEmitter {
       })
   )
   navigationHistory = { canGoBack: () => false, canGoForward: () => false, clear: vi.fn() }
+  /** A page debugger whose file input takes any files. */
+  debugger = Object.assign(new EventEmitter(), {
+    attached: false,
+    isAttached() {
+      return this.attached
+    },
+    attach: vi.fn(function (this: { attached: boolean }) {
+      this.attached = true
+    }),
+    detach: vi.fn(function (this: { attached: boolean }) {
+      this.attached = false
+    }),
+    sendCommand: vi.fn(async (method: string, params?: { functionDeclaration?: string }) => {
+      if (method === 'Runtime.evaluate') return { result: { objectId: 'target' } }
+      if (method === 'Runtime.callFunctionOn') {
+        return String(params?.functionDeclaration).includes('isFileInput')
+          ? { result: { objectId: 'input' } }
+          : { result: { value: { disabled: false, multiple: true } } }
+      }
+      return {}
+    }),
+  })
   reload = vi.fn()
   setWindowOpenHandler = vi.fn()
   isDestroyed = () => this.closed
@@ -151,6 +190,7 @@ describe('BuiltInBrowserController reads', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    uploadHooks.duringFileCheck = null
   })
 
   it('clears website storage, HTTP authentication and pooled connections globally', async () => {
@@ -258,6 +298,191 @@ describe('BuiltInBrowserController reads', () => {
     expect(refused).not.toHaveProperty('page')
     expect(refused.scriptResult).toMatchObject({ status: 'not_started', code: 'page_changed' })
     expect(contents.executeJavaScript).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses uploads to a changed page or of unusable files before touching the page', async () => {
+    const { contents, page } = await openPage()
+    const upload = (request: { page: string; files: string[] }) =>
+      controller.readPage(host as unknown as Host, 1, {
+        requestId: `upload-${++openCount}`,
+        upload: { target: 'input', ...request },
+      })
+
+    expect((await upload({ page: 'other-1', files: ['/tmp/a.png'] })).uploadResult).toMatchObject({
+      status: 'not_started',
+      code: 'page_changed',
+    })
+    expect((await upload({ page, files: ['relative.png'] })).uploadResult).toMatchObject({
+      status: 'not_started',
+      code: 'file_unavailable',
+    })
+    expect(contents.debugger.sendCommand).not.toHaveBeenCalled()
+  })
+
+  it('reports an upload whose debugger another client takes after the page was touched as unknown', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-upload-takeover-'))
+    writeFileSync(path.join(directory, 'shot.png'), 'png')
+    const answer = contents.debugger.sendCommand.getMockImplementation()
+    if (!answer) throw new Error('The fake debugger has no answers.')
+    contents.debugger.sendCommand.mockImplementation(async (method, params) => {
+      const result = await answer(method, params)
+      if (method === 'Runtime.callFunctionOn' && !String(params?.functionDeclaration).includes('isFileInput')) {
+        // The developer tools take the page over once the input was checked.
+        contents.debugger.emit('detach')
+        contents.debugger.attached = true
+      }
+      return result
+    })
+
+    const result = await controller.readPage(host as unknown as Host, 1, {
+      requestId: 'upload-takeover',
+      upload: { page, target: 'input', files: ['shot.png'], baseDirectory: directory, allowedRoots: [directory] },
+    })
+
+    expect(result.uploadResult).toMatchObject({ status: 'unknown', code: 'debugger_unavailable' })
+  })
+
+  it('reports an upload whose page navigated before it was touched as not started', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-upload-navigated-'))
+    writeFileSync(path.join(directory, 'shot.png'), 'png')
+    contents.debugger.sendCommand.mockImplementationOnce(async () => {
+      // A navigation commits while the target is looked up, destroying the context it ran in.
+      contents.emit('did-navigate')
+      throw new Error('Execution context was destroyed.')
+    })
+
+    const result = await controller.readPage(host as unknown as Host, 1, {
+      requestId: 'upload-navigated',
+      upload: { page, target: 'input', files: ['shot.png'], baseDirectory: directory, allowedRoots: [directory] },
+    })
+
+    expect(result.uploadResult).toMatchObject({ status: 'not_started', code: 'page_unloaded' })
+  })
+
+  it('hands files to the page through its debugger and keeps the page reference', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-upload-'))
+    writeFileSync(path.join(directory, 'shot.png'), 'png')
+
+    const result = await controller.readPage(host as unknown as Host, 1, {
+      requestId: 'upload',
+      upload: {
+        page,
+        target: 'input[type=file]',
+        files: ['shot.png'],
+        baseDirectory: directory,
+        allowedRoots: [directory],
+      },
+    })
+
+    const canonical = path.join(realpathSync(directory), 'shot.png')
+    expect(result).toMatchObject({
+      page,
+      uploadResult: {
+        status: 'completed',
+        files: [{ name: 'shot.png', size: 3, path: canonical }],
+      },
+    })
+    expect(contents.debugger.attach).toHaveBeenCalledWith('1.3')
+    expect(contents.debugger.sendCommand).toHaveBeenCalledWith('DOM.setFileInputFiles', {
+      objectId: 'input',
+      files: [canonical],
+    })
+  })
+
+  it('does not hand files to a document that replaced the page while the files were checked', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-upload-'))
+    writeFileSync(path.join(directory, 'shot.png'), 'png')
+    uploadHooks.duringFileCheck = () => {
+      contents.url = 'https://other.example/'
+      contents.emit('did-start-navigation', {
+        isMainFrame: true,
+        isSameDocument: false,
+        url: contents.url,
+        initiator: {},
+      })
+      contents.emit('did-navigate')
+      contents.emit('dom-ready')
+    }
+
+    const result = await controller.readPage(host as unknown as Host, 1, {
+      requestId: 'upload',
+      upload: { page, target: 'input', files: [path.join(directory, 'shot.png')], allowedRoots: [directory] },
+    })
+
+    expect(result.uploadResult).toMatchObject({ status: 'not_started', code: 'page_changed' })
+    expect(contents.debugger.sendCommand).not.toHaveBeenCalled()
+  })
+
+  it('refuses a script when its page reloads while the download directory is prepared', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-download-reload-'))
+    const start = PageDownloads.prototype.start
+    vi.spyOn(PageDownloads.prototype, 'start').mockImplementationOnce(async function (
+      this: PageDownloads,
+      destination
+    ) {
+      const capture = await start.call(this, destination)
+      contents.emit('did-start-navigation', {
+        isMainFrame: true,
+        isSameDocument: false,
+        url: contents.url,
+        initiator: {},
+      })
+      contents.emit('did-navigate')
+      contents.emit('dom-ready')
+      return capture
+    })
+    const release = vi.spyOn(PageDownloads.prototype, 'release')
+    const result = await controller.readPage(host as unknown as Host, 1, {
+      requestId: 'download-reload',
+      script: { page, code: 'document.querySelector("button").click()', downloadDirectory: directory },
+    })
+    expect(result.scriptResult).toMatchObject({ status: 'not_started', code: 'page_changed' })
+    expect(contents.executeJavaScript).not.toHaveBeenCalled()
+    expect(release).toHaveBeenCalledOnce()
+  })
+
+  it('binds an approved upload to the files the user approved', async () => {
+    const { contents, page } = await openPage()
+    const work = mkdtempSync(path.join(tmpdir(), 'controller-upload-work-'))
+    const outside = mkdtempSync(path.join(tmpdir(), 'controller-upload-outside-'))
+    const file = path.join(outside, 'report.txt')
+    writeFileSync(file, 'v1')
+    const upload = (approvedVersion?: string) =>
+      controller.readPage(host as unknown as Host, 1, {
+        requestId: `upload-${++openCount}`,
+        upload: { page, target: 'input', files: [file], allowedRoots: [work], approvedVersion },
+      })
+
+    routeDownload(
+      { preventDefault: vi.fn() } as unknown as Parameters<typeof routeDownload>[0],
+      { getFilename: () => 'blocked.csv', getURL: () => 'https://example.com/blocked.csv' } as unknown as Parameters<
+        typeof routeDownload
+      >[1],
+      contents as unknown as Parameters<typeof routeDownload>[2]
+    )
+    const waiting = await upload()
+    expect(waiting.downloads).toBeUndefined()
+    const pending = waiting.uploadResult
+    expect(pending).toMatchObject({
+      status: 'not_started',
+      code: 'approval_required',
+      files: [{ name: 'report.txt', path: realpathSync(file) }],
+    })
+    writeFileSync(file, 'changed')
+    expect((await upload(pending?.approvalVersion)).uploadResult).toMatchObject({ code: 'approval_required' })
+    expect(contents.debugger.sendCommand).not.toHaveBeenCalled()
+
+    const current = (await upload()).uploadResult?.approvalVersion
+    const completed = await upload(current)
+    expect(completed.uploadResult).toMatchObject({ status: 'completed' })
+    expect(completed.downloads).toEqual([
+      { name: 'blocked.csv', status: 'blocked', url: 'https://example.com/blocked.csv' },
+    ])
   })
 
   it('refuses an old reference after a reload of the same url or a same-document url change', async () => {
@@ -553,6 +778,86 @@ describe('BuiltInBrowserController reads', () => {
     })
   })
 
+  it('saves a download that begins after a completed run returned and reports it with the next result', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-slow-export-'))
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'clicked', truncated: false })
+    const pending = controller.readPage(host as unknown as Host, 1, {
+      requestId: 'slow-export-run',
+      timeoutMs: 20_000,
+      script: {
+        page,
+        code: 'browser.click("#export"); return "clicked"',
+        downloadDirectory: path.join(directory, 'downloads'),
+      },
+    })
+    await vi.waitFor(() => expect(contents.executeJavaScript).toHaveBeenCalled())
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    await vi.advanceTimersByTimeAsync(5_001)
+    vi.useRealTimers()
+    const returned = await pending
+    expect(returned.scriptResult).toMatchObject({ status: 'completed' })
+    expect(returned.scriptResult).not.toHaveProperty('downloads')
+
+    // The server finishes the export a moment later.
+    const event = { preventDefault: vi.fn() }
+    const item = Object.assign(new EventEmitter(), {
+      getFilename: () => 'export.csv',
+      getURL: () => 'https://example.com/export.csv',
+      getTotalBytes: () => 3,
+      getReceivedBytes: () => 3,
+      setSavePath: vi.fn(),
+      cancel: vi.fn(),
+    })
+    routeDownload(
+      event as unknown as Parameters<typeof routeDownload>[0],
+      item as unknown as Parameters<typeof routeDownload>[1],
+      contents as unknown as Parameters<typeof routeDownload>[2]
+    )
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    item.emit('done', {}, 'completed')
+
+    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'after-slow-export' })
+    await flush()
+    contents.finishSnapshot('Loaded.')
+    await expect(read).resolves.toMatchObject({ downloads: [{ name: 'export.csv', status: 'saved' }] })
+  })
+
+  it('keeps page events for the next result when an upload is cancelled while its files are checked', async () => {
+    const { contents, page } = await openPage()
+    contents.emit('input-event', {}, { type: 'mouseDown' })
+    const pending = controller.readPage(host as unknown as Host, 1, {
+      requestId: 'upload-missing-file',
+      upload: { page, target: 'input', files: ['/nowhere/missing.png'], allowedRoots: [] },
+    })
+    // Microtasks let the queue start the upload; its file checks need I/O, which comes after them.
+    for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
+    controller.cancelRead(1, 'upload-missing-file')
+    await expect(pending).resolves.toMatchObject({ uploadResult: { status: 'not_started', code: 'cancelled' } })
+    await flush()
+
+    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'after-cancelled-upload' })
+    await flush()
+    contents.finishSnapshot('Loaded.')
+    await expect(read).resolves.toMatchObject({ userInteracted: true })
+  })
+
+  it('reports an upload that timed out before touching the page as a timeout', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-upload-timeout-'))
+    writeFileSync(path.join(directory, 'shot.png'), 'png')
+    // A busy page does not answer the lookup of the target.
+    contents.debugger.sendCommand.mockImplementationOnce(() => new Promise(() => undefined))
+
+    const result = await controller.readPage(host as unknown as Host, 1, {
+      requestId: 'upload-busy-page',
+      timeoutMs: 1000,
+      upload: { page, target: 'input', files: ['shot.png'], baseDirectory: directory, allowedRoots: [directory] },
+    })
+
+    expect(result.uploadResult).toMatchObject({ status: 'not_started', code: 'timeout' })
+  })
+
   it('reports a run cancelled while queued as not started', async () => {
     const { contents, page } = await openPage()
     const read = controller.readPage(host as unknown as Host, 1, { requestId: 'slow-read' })
@@ -574,6 +879,210 @@ describe('BuiltInBrowserController reads', () => {
     contents.emit('input-event', {}, { type: 'mouseDown' })
     expect((await run(page)).userInteracted).toBe(true)
     expect((await run(page)).userInteracted).toBeUndefined()
+  })
+
+  it('saves the downloads a timed out run starts before its script ends and reports them later', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-timed-out-download-'))
+    let finish: (value: unknown) => void = () => undefined
+    contents.executeJavaScript
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      .mockResolvedValueOnce([])
+    const pending = controller.readPage(host as unknown as Host, 1, {
+      requestId: 'slow-export',
+      timeoutMs: 1000,
+      script: {
+        page,
+        code: 'await browser.waitFor(".ready", 8000); document.querySelector("a").click()',
+        downloadDirectory: path.join(directory, 'downloads'),
+      },
+    })
+    // The shortest run timeout passes in real time; the grace period after the script is faked.
+    expect((await pending).scriptResult).toMatchObject({ status: 'unknown', code: 'timeout' })
+    vi.useFakeTimers()
+
+    // The script goes on and clicks the export link after the result was returned.
+    const setSavePath = vi.fn()
+    const item = Object.assign(new EventEmitter(), {
+      getFilename: () => 'export.csv',
+      getURL: () => 'https://example.com/export.csv',
+      getTotalBytes: () => 3,
+      getReceivedBytes: () => 3,
+      setSavePath,
+      cancel: vi.fn(),
+    })
+    const event = { preventDefault: vi.fn() }
+    routeDownload(
+      event as unknown as Parameters<typeof routeDownload>[0],
+      item as unknown as Parameters<typeof routeDownload>[1],
+      contents as unknown as Parameters<typeof routeDownload>[2]
+    )
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(setSavePath).toHaveBeenCalled()
+    item.emit('done', {}, 'completed')
+    finish({ kind: 'value', value: 'exported', truncated: false })
+    await vi.advanceTimersByTimeAsync(10_000)
+    vi.useRealTimers()
+
+    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'after-export' })
+    await flush()
+    contents.finishSnapshot('Loaded.')
+    await expect(read).resolves.toMatchObject({ downloads: [{ name: 'export.csv', status: 'saved' }] })
+  })
+
+  it('leaves a download the user starts after a timed out run to the user', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-download-user-'))
+    contents.executeJavaScript.mockImplementationOnce(() => new Promise(() => undefined)).mockResolvedValueOnce([])
+    const timedOut = await controller.readPage(host as unknown as Host, 1, {
+      requestId: 'stuck-export',
+      timeoutMs: 1000,
+      script: { page, code: 'await work()', downloadDirectory: path.join(directory, 'downloads') },
+    })
+    expect(timedOut.scriptResult).toMatchObject({ status: 'unknown', code: 'timeout' })
+
+    // The user clicks a download link in the sidebar page.
+    contents.emit('input-event', {}, { type: 'mouseDown' })
+    const event = { preventDefault: vi.fn() }
+    const item = Object.assign(new EventEmitter(), {
+      getFilename: () => 'mine.pdf',
+      getURL: () => 'https://example.com/mine.pdf',
+      getTotalBytes: () => 3,
+      getReceivedBytes: () => 0,
+      setSavePath: vi.fn(),
+      cancel: vi.fn(),
+    })
+    routeDownload(
+      event as unknown as Parameters<typeof routeDownload>[0],
+      item as unknown as Parameters<typeof routeDownload>[1],
+      contents as unknown as Parameters<typeof routeDownload>[2]
+    )
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(item.setSavePath).not.toHaveBeenCalled()
+  })
+
+  it('blocks a download that a later read opens while a timed out run still captures', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-download-read-'))
+    contents.executeJavaScript.mockImplementationOnce(() => new Promise(() => undefined)).mockResolvedValueOnce([])
+    const timedOut = await controller.readPage(host as unknown as Host, 1, {
+      requestId: 'stuck-download-run',
+      timeoutMs: 1000,
+      script: { page, code: 'await work()', downloadDirectory: path.join(directory, 'downloads') },
+    })
+    expect(timedOut.scriptResult).toMatchObject({ status: 'unknown', code: 'timeout' })
+
+    const read = controller.readPage(host as unknown as Host, 1, {
+      requestId: 'read-attachment',
+      url: 'https://example.com/attachment',
+    })
+    await flush()
+    const event = { preventDefault: vi.fn() }
+    const item = Object.assign(new EventEmitter(), {
+      getFilename: () => 'attachment.pdf',
+      getURL: () => 'https://example.com/attachment',
+      getTotalBytes: () => 3,
+      getReceivedBytes: () => 0,
+      setSavePath: vi.fn(),
+      cancel: vi.fn(),
+    })
+    routeDownload(
+      event as unknown as Parameters<typeof routeDownload>[0],
+      item as unknown as Parameters<typeof routeDownload>[1],
+      contents as unknown as Parameters<typeof routeDownload>[2]
+    )
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(item.setSavePath).not.toHaveBeenCalled()
+    contents.emit('dom-ready')
+    await flush()
+    contents.finishSnapshot('Attachment.')
+    await read
+  })
+
+  it('blocks downloads of a later run that did not ask for them while a timed out run still captures', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-download-leak-'))
+    let finish: (value: unknown) => void = () => undefined
+    contents.executeJavaScript
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      .mockResolvedValueOnce([])
+    const timedOut = await controller.readPage(host as unknown as Host, 1, {
+      requestId: 'slow-download-run',
+      timeoutMs: 1000,
+      script: { page, code: 'await work()', downloadDirectory: path.join(directory, 'downloads') },
+    })
+    expect(timedOut.scriptResult).toMatchObject({ status: 'unknown', code: 'timeout' })
+    // The script ends, so the page is free again while the capture still waits for late downloads.
+    finish({ kind: 'value', value: 'done', truncated: false })
+    await flush()
+
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'clicked', truncated: false })
+    await controller.readPage(host as unknown as Host, 1, {
+      requestId: 'plain-run',
+      script: { page, code: 'document.querySelector("a").click()' },
+    })
+    const event = { preventDefault: vi.fn() }
+    const item = Object.assign(new EventEmitter(), {
+      getFilename: () => 'other.csv',
+      getURL: () => 'https://example.com/other.csv',
+      getTotalBytes: () => 3,
+      getReceivedBytes: () => 0,
+      setSavePath: vi.fn(),
+      cancel: vi.fn(),
+    })
+    routeDownload(
+      event as unknown as Parameters<typeof routeDownload>[0],
+      item as unknown as Parameters<typeof routeDownload>[1],
+      contents as unknown as Parameters<typeof routeDownload>[2]
+    )
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(item.setSavePath).not.toHaveBeenCalled()
+  })
+
+  it('reports a download of a run cancelled while it waits for downloads with the next result', async () => {
+    const { contents, page } = await openPage()
+    const directory = mkdtempSync(path.join(tmpdir(), 'controller-cancelled-download-'))
+    contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'clicked', truncated: false })
+    const pending = controller.readPage(host as unknown as Host, 1, {
+      requestId: 'download-then-cancel',
+      timeoutMs: 20_000,
+      script: { page, code: 'return "clicked"', downloadDirectory: path.join(directory, 'downloads') },
+    })
+    // The script starts once the download folder is ready, so the capture is armed from then on.
+    await vi.waitFor(() => expect(contents.executeJavaScript).toHaveBeenCalled())
+    // The download finishes, and the user stops the call while the run waits for more.
+    const item = Object.assign(new EventEmitter(), {
+      getFilename: () => 'report.csv',
+      getURL: () => 'https://example.com/report.csv',
+      getTotalBytes: () => 3,
+      getReceivedBytes: () => 3,
+      setSavePath: vi.fn(),
+      cancel: vi.fn(),
+    })
+    routeDownload(
+      { preventDefault: vi.fn() } as unknown as Electron.Event,
+      item as unknown as Electron.DownloadItem,
+      contents as unknown as Electron.WebContents
+    )
+    item.emit('done', {}, 'completed')
+    controller.cancelRead(1, 'download-then-cancel')
+    const cancelled = await pending
+    expect(cancelled.downloads).toBeUndefined()
+
+    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'after-cancelled-download' })
+    await flush()
+    contents.finishSnapshot('Loaded.')
+    await expect(read).resolves.toMatchObject({ downloads: [{ name: 'report.csv', status: 'saved' }] })
   })
 
   it('keeps page events for the next result when a run is cancelled', async () => {

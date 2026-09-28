@@ -1744,5 +1744,6 @@
   "Clear all pages and sign out of websites?": "هل تريد مسح جميع الصفحات وتسجيل الخروج من المواقع؟",
   "Current page and history cleared. Website sign-ins kept.": "تم مسح الصفحة الحالية وسجلها. تم الاحتفاظ بتسجيل الدخول إلى المواقع.",
   "All browser pages and website data cleared": "تم مسح جميع صفحات المتصفح وبيانات المواقع",
-  "Clearing browser data…": "جارٍ مسح بيانات المتصفح…"
+  "Clearing browser data…": "جارٍ مسح بيانات المتصفح…",
+  "Upload Files to Page": "رفع الملفات إلى الصفحة"
 }

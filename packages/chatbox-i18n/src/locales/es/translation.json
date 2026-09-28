@@ -1744,5 +1744,6 @@
   "Clear all pages and sign out of websites?": "¿Borrar todas las páginas y cerrar sesión en los sitios?",
   "Current page and history cleared. Website sign-ins kept.": "Página actual e historial borrados. Se mantienen las sesiones de los sitios.",
   "All browser pages and website data cleared": "Se han borrado todas las páginas y los datos de sitios",
-  "Clearing browser data…": "Borrando datos del navegador…"
+  "Clearing browser data…": "Borrando datos del navegador…",
+  "Upload Files to Page": "Subir archivos a la página"
 }

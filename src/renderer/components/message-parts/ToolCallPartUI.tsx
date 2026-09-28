@@ -8,6 +8,7 @@ import { SANDBOX_EXEC_ERROR_CODES } from '@shared/sandbox-provider'
 import { getToolResultImageReference } from '@shared/tool-result-image'
 import { KNOWLEDGE_BASE_TOOL_NAME, knowledgeBaseCommandOf } from '@shared/tools/knowledge-base'
 import type { MessageToolCallPart } from '@shared/types'
+import { formatFileSize } from '@shared/utils'
 import { getWorkArtifacts } from '@shared/work-artifacts'
 import { stepNeedsUserAction } from '@shared/work-timeline'
 import {
@@ -33,6 +34,7 @@ import {
   IconPlayerPlay,
   IconSparkles,
   IconTerminal,
+  IconUpload,
   IconWorld,
   IconWriting,
   IconX,
@@ -260,7 +262,7 @@ const toolIconMap: Record<string, React.ElementType> = {
   view_image: IconPhoto,
 }
 
-const browserCommandIconMap = { read: IconBrowser, run: IconCode, screenshot: IconPhoto }
+const browserCommandIconMap = { read: IconBrowser, run: IconCode, upload: IconUpload, screenshot: IconPhoto }
 
 const knowledgeBaseCommandIconMap = { search: IconDatabase, read: IconFile, list: IconFileSearch }
 
@@ -1271,6 +1273,29 @@ function getFirstStringValue(source: unknown, keys: string[]): string | undefine
   return undefined
 }
 
+/** The site an upload went to and the name and size of each file, or the requested files before it ran. */
+function getBrowserUploadSummary(part: MessageToolCallPart): string | undefined {
+  const result = part.result as { site?: unknown; files?: unknown } | undefined
+  const handed = Array.isArray(result?.files)
+    ? result.files.flatMap((file: { name?: unknown; size?: unknown }) =>
+        typeof file?.name === 'string' && typeof file.size === 'number'
+          ? [`${file.name} (${formatFileSize(file.size)})`]
+          : []
+      )
+    : []
+  if (handed.length) {
+    const site = typeof result?.site === 'string' ? result.site : undefined
+    return [site, handed.join(', ')].filter(Boolean).join(' · ')
+  }
+  const requested = (part.args as { files?: unknown } | undefined)?.files
+  return Array.isArray(requested)
+    ? requested
+        .filter((file): file is string => typeof file === 'string')
+        .map((file) => getLocalFileName(file))
+        .join(', ') || undefined
+    : undefined
+}
+
 function truncateSummary(value: string, maxLength = 56): string {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value
 }
@@ -1565,19 +1590,21 @@ const TimelineToolCallStepContent: FC<TimelineToolCallStepProps & { commandResul
         ? getFirstStringValue(part.args, ['code'])
         : part.toolName === 'create_download'
           ? getFirstStringValue(part.result, ['file_path']) || getFirstStringValue(part.args, ['file_path'])
-          : part.toolName === 'parse_link' || part.toolName === BUILT_IN_BROWSER_TOOL_NAME
-            ? getFirstStringValue(part.args, ['url']) || getFirstStringValue(part.result, ['title', 'url'])
-            : part.toolName === KNOWLEDGE_BASE_TOOL_NAME
-              ? getFirstStringValue(part.args, ['query']) || getFirstStringValue(part.result, ['filename'])
-              : getFirstStringValue(part.args, [
-                  'path',
-                  'file_path',
-                  'query',
-                  'pattern',
-                  'command',
-                  'skillName',
-                  'name',
-                ])
+          : part.toolName === BUILT_IN_BROWSER_TOOL_NAME && builtInBrowserCommandOf(part.args) === 'upload'
+            ? getBrowserUploadSummary(part)
+            : part.toolName === 'parse_link' || part.toolName === BUILT_IN_BROWSER_TOOL_NAME
+              ? getFirstStringValue(part.args, ['url']) || getFirstStringValue(part.result, ['title', 'url'])
+              : part.toolName === KNOWLEDGE_BASE_TOOL_NAME
+                ? getFirstStringValue(part.args, ['query']) || getFirstStringValue(part.result, ['filename'])
+                : getFirstStringValue(part.args, [
+                    'path',
+                    'file_path',
+                    'query',
+                    'pattern',
+                    'command',
+                    'skillName',
+                    'name',
+                  ])
 
   const resultSummary =
     !argSummary && part.state === 'result'

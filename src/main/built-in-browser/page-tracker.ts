@@ -7,6 +7,7 @@ import type {
   BuiltInBrowserSettledOperation,
 } from '@shared/built-in-browser'
 import type { WebContents } from 'electron'
+import { PageDownloads } from './page-downloads'
 
 /** How long a run reported as unknown keeps other runs on its page waiting. */
 export const BUSY_WINDOW_MS = 10_000
@@ -68,8 +69,10 @@ export class PageTracker {
   private lastInputAt = 0
   private running: RunningScript | null = null
   private settled: BuiltInBrowserSettledOperation[] = []
+  readonly downloads: PageDownloads
 
   constructor(contents: WebContents) {
+    this.downloads = new PageDownloads(contents)
     contents.on('did-start-navigation', (event) => {
       if (!event.isMainFrame) return
       if (!event.isSameDocument) this.navigating = true
@@ -120,6 +123,7 @@ export class PageTracker {
       if (!USER_INPUT_TYPES.has(input.type)) return
       this.userInteracted = true
       this.lastInputAt = Date.now()
+      this.downloads.endLingeringCapture()
     })
     contents.on('render-process-gone', (_event, details) => this.fail(`The page crashed (${details.reason})`))
   }
@@ -259,13 +263,15 @@ export class PageTracker {
   }
 
   /** What happened on the page since the previous result; each event is handed out once. */
-  takeEvents(): Pick<BuiltInBrowserPage, 'userInteracted' | 'settledOperations'> {
+  takeEvents(): Pick<BuiltInBrowserPage, 'userInteracted' | 'settledOperations' | 'downloads'> {
     const { userInteracted, settled } = this
+    const downloads = this.downloads.takeEvents()
     this.userInteracted = false
     this.settled = []
     return {
       ...(userInteracted ? { userInteracted } : {}),
       ...(settled.length ? { settledOperations: settled } : {}),
+      ...(downloads.length ? { downloads } : {}),
     }
   }
 }

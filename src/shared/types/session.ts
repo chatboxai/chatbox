@@ -198,7 +198,17 @@ export const ImageGenerationApprovalDetailsSchema = z.object({
   computePointsRemaining: z.number().optional(),
 })
 
-export const AppActionApprovalDetailsSchema = z.discriminatedUnion('type', [ImageGenerationApprovalDetailsSchema])
+/** Binds an approved built-in browser upload to the files the user reviewed. */
+export const BrowserUploadApprovalDetailsSchema = z.object({
+  type: z.literal('browser_upload'),
+  /** Identity of the approved files: canonical paths, sizes and modification times. */
+  version: z.string(),
+})
+
+export const AppActionApprovalDetailsSchema = z.discriminatedUnion('type', [
+  ImageGenerationApprovalDetailsSchema,
+  BrowserUploadApprovalDetailsSchema,
+])
 
 /**
  * Line counts for a pending file mutation. `mode` tells the UI whether to show
